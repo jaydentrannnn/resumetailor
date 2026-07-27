@@ -1,0 +1,14 @@
+# Ignore build context noise. data/ and templates/ are mounted at runtime, not baked in.
+.git
+.venv
+.pytest_cache
+__pycache__
+*.pyc
+*.egg-info
+frontend/node_modules
+frontend/dist
+output
+.claude
+*.md
+!requirements.txt
+.env

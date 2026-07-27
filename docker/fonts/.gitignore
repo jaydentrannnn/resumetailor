@@ -1,0 +1,2 @@
+# Keep the vendored .ttf files in the tree — the Docker image needs the exact same
+# glyph metrics Word used for the baseline PDFs. See implementation-notes.md.

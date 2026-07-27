@@ -1,0 +1,26 @@
+# Secrets
+.env
+
+# Generated output — tailored resumes, job artifacts, and LLM caches (PII)
+output/
+
+# Python
+.venv/
+__pycache__/
+*.py[cod]
+*.egg-info/
+.pytest_cache/
+
+# Frontend
+frontend/node_modules/
+frontend/dist/
+
+# Word/Office lock files (created while a doc is open)
+~$*.docx
+
+# OS
+Thumbs.db
+desktop.ini
+
+templates/
+data/
