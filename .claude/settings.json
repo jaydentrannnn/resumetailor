@@ -1,0 +1,18 @@
+{
+  "env": {
+    "PYTHONUTF8": "1"
+  },
+  "permissions": {
+    "allow": [
+      "Bash(python:*)",
+      "Bash(py:*)",
+      "Bash(pip install:*)",
+      "Bash(pip list)",
+      "Bash(pip freeze)",
+      "Bash(pytest:*)",
+      "Bash(git status)",
+      "Bash(git diff:*)",
+      "Bash(git log:*)"
+    ]
+  }
+}
