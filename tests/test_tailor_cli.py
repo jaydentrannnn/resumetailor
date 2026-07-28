@@ -42,6 +42,22 @@ def _stub_relevance_api(cli, monkeypatch):
     monkeypatch.setattr(cli.rewrite, "score_table", lambda *a, **k: {})
 
 
+@pytest.fixture(autouse=True)
+def _stub_expand_api(cli, monkeypatch):
+    """Keep every CLI test off the expansion API.
+
+    `tailor.main` expands experience after a successful fit. Without this stub, tests that
+    only patch extract/fit would reach the network on the bonus stage.
+    """
+    from resume_tailor.expand import Expansion
+
+    monkeypatch.setattr(
+        cli.expand,
+        "expand_experience",
+        lambda *a, **k: Expansion(entries=[], warnings=[], model="stub", char_limit=2000),
+    )
+
+
 @pytest.fixture
 def jd_file(tmp_path) -> Path:
     path = tmp_path / "jd.txt"
@@ -205,7 +221,9 @@ def test_defaults_match_config(cli, jd_file, tmp_path, monkeypatch):
 
     assert seen["target_pages"] == config.DEFAULT_PAGE_TARGET
     assert seen["template"] is None  # render.render falls back to the default template
-    assert seen["out"] is None
+    # CLI builds the default export name so downloads match the contact + JD title.
+    assert seen["out"] is not None
+    assert seen["out"].name.endswith(".docx")
     # None, not the config value: fit() reads the default so one place owns it.
     assert seen["max_experience"] is None
     assert seen["max_projects"] is None
@@ -252,7 +270,7 @@ def stubbed_run(cli, tmp_path, monkeypatch):
 def test_default_model_is_claude_for_every_stage(cli, jd_file, stubbed_run):
     """The default path has to stay exactly what it was before backends were selectable."""
     assert cli.main(["--jd", str(jd_file)]) == 0
-    assert [config.provider_for(p) for p in config.PURPOSES] == ["anthropic"] * 3
+    assert [config.provider_for(p) for p in config.PURPOSES] == ["anthropic"] * 4
 
 
 def test_model_flag_routes_every_stage(cli, jd_file, stubbed_run):
@@ -266,6 +284,7 @@ def test_hybrid_keeps_rewriting_on_claude(cli, jd_file, stubbed_run):
     assert cli.main(["--jd", str(jd_file), "--model", "hybrid"]) == 0
     assert config.provider_for("score") == "openai"
     assert config.provider_for("rewrite") == "anthropic"
+    assert config.provider_for("expand") == "openai"
 
 
 def test_rewrite_model_overrides_only_that_stage(cli, jd_file, stubbed_run):
@@ -276,9 +295,17 @@ def test_rewrite_model_overrides_only_that_stage(cli, jd_file, stubbed_run):
     assert config.provider_for("rewrite") == "anthropic"
 
 
+def test_expand_model_overrides_only_that_stage(cli, jd_file, stubbed_run):
+    assert cli.main(
+        ["--jd", str(jd_file), "--model", "claude", "--expand-model", "ollama"]
+    ) == 0
+    assert config.provider_for("rewrite") == "anthropic"
+    assert config.provider_for("expand") == "openai"
+
+
 def test_effort_flag_applies_to_every_stage(cli, jd_file, stubbed_run):
     assert cli.main(["--jd", str(jd_file), "--effort", "high"]) == 0
-    assert [config.effort_for(p) for p in config.PURPOSES] == ["high"] * 3
+    assert [config.effort_for(p) for p in config.PURPOSES] == ["high"] * 4
 
 
 def test_default_effort_is_lower_for_the_cheap_stages(cli, jd_file, stubbed_run):

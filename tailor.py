@@ -20,7 +20,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 
-from resume_tailor import config, data, fit, jd, report, rewrite  # noqa: E402
+from resume_tailor import config, data, expand, fit, jd, report, rewrite  # noqa: E402
 from resume_tailor.llm import LLMError  # noqa: E402
 from resume_tailor.rewrite import FabricationError  # noqa: E402
 
@@ -132,6 +132,23 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--expand-model",
+        default=None,
+        metavar="MODEL",
+        help=(
+            "Override the experience-expansion stage only. Expansion produces "
+            "application-form paste text and follows the profile by default."
+        ),
+    )
+    parser.add_argument(
+        "--no-expand",
+        action="store_true",
+        help=(
+            "Skip generating expanded experience descriptions for application-form "
+            "paste fields. The tailored resume is still produced."
+        ),
+    )
+    parser.add_argument(
         "--effort",
         choices=("low", "medium", "high"),
         default=None,
@@ -148,9 +165,14 @@ def main(argv: list[str] | None = None) -> int:
 
     # Resolved before anything is read or spent, so a bad spec costs nothing.
     try:
+        overrides: dict[str, str] = {}
+        if args.rewrite_model:
+            overrides["rewrite"] = args.rewrite_model
+        if args.expand_model:
+            overrides["expand"] = args.expand_model
         config.resolve(
             args.model,
-            overrides={"rewrite": args.rewrite_model} if args.rewrite_model else None,
+            overrides=overrides or None,
             effort=args.effort,
         )
     except ValueError as exc:
@@ -235,6 +257,28 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     print(report.format_report(resume, requirements, result))
+
+    # Expansion is advisory paste text for application forms. It must never turn a
+    # successful resume run into a failure — the .docx is already on disk.
+    if not args.no_expand:
+        try:
+            expansion = expand.expand_experience(
+                resume,
+                requirements,
+                fit_result=result,
+                semantic=semantic,
+                use_cache=not args.no_cache,
+            )
+            print()
+            print(report.format_expansion(expansion))
+            expand_path = result.out_path.with_name(
+                result.out_path.stem + ".expansion.md"
+            )
+            expand_path.write_text(expand.format_markdown(expansion), encoding="utf-8")
+            print(f"Expansion: {expand_path}")
+        except Exception as exc:  # noqa: BLE001 - bonus artifact; never fail the run
+            print(f"warning: experience expansion skipped ({exc})", file=sys.stderr)
+
     return 0
 
 

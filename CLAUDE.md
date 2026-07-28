@@ -26,14 +26,16 @@ styling, template markup, or anything about layout.**
 Every AI resume tool that reformats you into its own template does so because it asked a
 model to reproduce formatting. This project refuses to:
 
-- `jd.py` and `rewrite.py` are the *only* modules that call the API, and they exchange
-  plain text and JSON with it. Three stages: JD extraction, bullet relevance scoring,
-  bullet rewriting. Rewriting may issue **one** follow-up call — `rewrite._polish`, which
-  re-sends only the bullets that wrapped onto a near-empty line and/or open with a repeated
-  verb — so a clean run is three calls. When `--merge` is enabled and the page has measured
-  over, `rewrite._merge_bullets` adds one more call (still bounded by the same five-call
-  cap: extract + score + rewrite + merge + polish).
-- `llm.py` decides *which* model those two call. It is a routing layer, not a fourth call
+- `jd.py`, `rewrite.py`, and `expand.py` are the *only* modules that call the API, and
+  they exchange plain text and JSON with it. Four stages: JD extraction, bullet relevance
+  scoring, bullet rewriting, and application-form experience expansion. Rewriting may
+  issue **one** follow-up call — `rewrite._polish`, which re-sends only the bullets that
+  wrapped onto a near-empty line and/or open with a repeated verb — so a clean run is four
+  calls (extract + score + rewrite + expand). When `--merge` is enabled and the page has
+  measured over, `rewrite._merge_bullets` adds one more (still bounded: extract + score +
+  rewrite + merge + polish + expand). Expansion is non-fatal: a failed expand leaves the
+  tailored `.docx` intact.
+- `llm.py` decides *which* model those call. It is a routing layer, not a fifth call
   site — it moves the same plain strings and JSON, and knows nothing about the document.
 - `render.py` is the only module that touches the document, and does so mechanically via
   `docxtpl` — filling placeholders, never generating structure. PDF conversion is
@@ -134,17 +136,19 @@ docker compose run --rm app python scripts/calibrate.py
 fit-loop retries), `--no-semantic` (rank on tag overlap only, skipping the relevance
 call — the control half of an A/B when a posting ranks surprisingly),
 `--no-widow-repair` / `--no-verb-repair` (skip halves of the shared polish follow-up; the
-controls for length and opening-verb variety), and `--merge` (opt-in: propose merges only
-after a measured page overflow).
+controls for length and opening-verb variety), `--merge` (opt-in: propose merges only
+after a measured page overflow), and `--no-expand` (skip application-form experience
+descriptions).
 
 It also selects the backend, which is what makes bulk applying affordable:
 
 ```powershell
 python tailor.py --jd jd.txt                     # claude (default, unchanged)
-python tailor.py --jd jd.txt --model hybrid      # rank on Ollama, rewrite on Claude
-python tailor.py --jd jd.txt --model ollama      # all three stages on Ollama Cloud
+python tailor.py --jd jd.txt --model hybrid      # rank/expand on Ollama, rewrite on Claude
+python tailor.py --jd jd.txt --model ollama      # all four stages on Ollama Cloud
 python tailor.py --jd jd.txt --model ollama --rewrite-model claude-sonnet-5
-python tailor.py --jd jd.txt --effort medium     # per-stage default is low/low/medium
+python tailor.py --jd jd.txt --expand-model ollama   # override expand only
+python tailor.py --jd jd.txt --effort medium     # per-stage default is low/low/medium/medium
 ```
 
 `--model` takes a profile (`claude`, `ollama`, `hybrid`) or a spec
@@ -179,9 +183,10 @@ that way; it is what makes the guard and the fit loop cheap to iterate on.
   goes one level lower and replaces `llm.httpx.post` with a recorder, because what it needs
   to assert is the wire payload (which `response_format` was sent, whether the schema
   reached the system prompt, how many round trips fired).
-- **`tests/test_tailor_cli.py` has an autouse fixture that stubs `rewrite.score_table`.**
-  If you add another API call to `tailor.main`, extend that fixture or the CLI tests will
-  start reaching the network. This bit once already, when scoring was introduced.
+- **`tests/test_tailor_cli.py` has an autouse fixture that stubs `rewrite.score_table`
+  and `expand.expand_experience`.** If you add another API call to `tailor.main`, extend
+  that fixture or the CLI tests will start reaching the network. This bit once already,
+  when scoring was introduced, and again when expansion was added.
 - **A stage that can call twice needs a *shared* reply queue in its fake.** `llm.client_for`
   is invoked once per call, so a fake that copies its queue per client (`list(replies)` in
   `__init__`) silently replays the first reply to `_polish` — the repair then looks
@@ -229,11 +234,17 @@ job description ────┘         │           canonicalised against the 
      drives this    under → restore bullets and retry (MAX_GROW_ATTEMPTS, then warn)
                               │
                               ▼
+                    expand.expand_experience()  application-form paste text (LLM, optional)
+                                               hard facts from MasterResume; bullets only
+                                               from the model; guard drops, never raises
+                              │
+                              ▼
                     report.format_report() ← tailor.py prints this and sets the exit code
 ```
 
 `fit.py` owns the loop; `tailor.py` is a thin CLI over it (argument parsing, error
 presentation, exit codes) and `report.py` is pure formatting over a `FitResult`.
+`expand.py` runs after a successful fit and never fails the run.
 
 Key structural facts that span files:
 
@@ -282,6 +293,13 @@ Key structural facts that span files:
 - **Education details and skills are never tailored.** They render in full on every run and
   count as fixed overhead in `fit._fixed_overhead_lines`, so on a tight one-pager they
   consume budget the loop cannot reclaim. Only bullets are negotiable.
+- **Application-form experience expansion is a separate artifact.** `expand.expand_experience`
+  ranks experience entries (force-including every role on the tailored resume), asks the
+  model for fuller bullets only, and joins title/company/dates/location from
+  `MasterResume` in code. Fabrication failures drop the offending bullet with a warning
+  rather than raising. The web UI shows the result as a copy-paste tile; `--no-expand`
+  / `settings.no_expand` skips it. Use `--model ollama` (or `hybrid`) to run expansion on
+  Ollama — it follows the profile like every other stage.
 - **Tags are canonicalised at load time** (`config.canonical_tag` + `TAG_ALIASES`), so JD
   keywords and bullet tags are guaranteed to share a vocabulary before matching.
 - **Web UI is an alternate front door, not a second pipeline.** `src/resume_tailor/web/`

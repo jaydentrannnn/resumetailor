@@ -1,129 +1,41 @@
-import { useEffect, useState } from "react";
 import {
   type AppConfig,
   type JobSettings,
-  type ProgressEvent,
   type RunReport,
-  createJob,
   downloadUrl,
-  fetchConfig,
-  fetchJob,
-  previewUrl,
 } from "../api";
-
-const DEFAULT_SETTINGS: JobSettings = {
-  pages: 1,
-  experience: null,
-  projects: null,
-  model: "claude",
-  rewrite_model: null,
-  effort: null,
-  no_semantic: false,
-  no_widow_repair: false,
-  no_verb_repair: false,
-  merge: false,
-  no_cache: false,
-};
+import { ExperienceCard } from "../components/ExperienceCard";
+import { ModelSpecField } from "../components/ModelSpecField";
+import { useRunState } from "../state/runState";
 
 /**
- * Main run page: paste a JD, adjust settings, watch progress, preview the PDF.
+ * Main run page: paste a JD, adjust settings, watch progress, download results.
+ *
+ * State lives in `RunProvider` so switching to Master resume mid-run does not
+ * lose the JD, settings, SSE stream, or results.
  */
 export function RunPage() {
-  const [config, setConfig] = useState<AppConfig | null>(null);
-  const [jdText, setJdText] = useState("");
-  const [settings, setSettings] = useState<JobSettings>(DEFAULT_SETTINGS);
-  const [jobId, setJobId] = useState<string | null>(null);
-  const [status, setStatus] = useState<string | null>(null);
-  const [events, setEvents] = useState<ProgressEvent[]>([]);
-  const [report, setReport] = useState<RunReport | null>(null);
-  const [error, setError] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-  const [queuePosition, setQueuePosition] = useState<number | null>(null);
-
-  useEffect(() => {
-    fetchConfig()
-      .then((c) => {
-        setConfig(c);
-        setSettings((s) => ({
-          ...s,
-          pages: c.pages,
-          experience: c.experience,
-          projects: c.projects,
-          model: c.model_profiles.includes("claude") ? "claude" : c.model_profiles[0] ?? "claude",
-        }));
-      })
-      .catch((err: Error) => setError(err.message));
-  }, []);
-
-  useEffect(() => {
-    if (!jobId || !busy) return;
-
-    const source = new EventSource(`/api/jobs/${jobId}/events`);
-    source.onmessage = (msg) => {
-      const event = JSON.parse(msg.data) as ProgressEvent;
-      setEvents((prev) => [...prev, event]);
-    };
-    source.addEventListener("done", async () => {
-      source.close();
-      try {
-        const job = await fetchJob(jobId);
-        setStatus(job.status);
-        setReport(job.report);
-        setError(job.error);
-        if (job.events.length) setEvents(job.events);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
-      } finally {
-        setBusy(false);
-      }
-    });
-    source.onerror = () => {
-      // Fall back to polling if SSE drops (proxy buffers, etc.).
-      source.close();
-      void pollUntilDone(jobId);
-    };
-    return () => source.close();
-  }, [jobId, busy]);
-
-  async function pollUntilDone(id: string) {
-    /** Poll job status until the run finishes, used when SSE is unavailable. */
-    try {
-      for (;;) {
-        const job = await fetchJob(id);
-        setStatus(job.status);
-        setEvents(job.events);
-        setQueuePosition(job.queue_position);
-        if (job.status === "succeeded" || job.status === "failed") {
-          setReport(job.report);
-          setError(job.error);
-          setBusy(false);
-          return;
-        }
-        await new Promise((r) => setTimeout(r, 1500));
-      }
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-      setBusy(false);
-    }
-  }
+  const {
+    config,
+    jdText,
+    setJdText,
+    settings,
+    setSettings,
+    jobId,
+    status,
+    events,
+    report,
+    expansion,
+    error,
+    busy,
+    queuePosition,
+    startJob,
+  } = useRunState();
 
   async function onSubmit(e: React.FormEvent) {
     /** Start a new job from the current JD text and settings. */
     e.preventDefault();
-    if (!jdText.trim() || busy) return;
-    setBusy(true);
-    setError(null);
-    setReport(null);
-    setEvents([]);
-    setStatus("queued");
-    try {
-      const { job_id, queue_position } = await createJob(jdText, settings);
-      setJobId(job_id);
-      setQueuePosition(queue_position);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
-      setBusy(false);
-    }
+    await startJob();
   }
 
   function onFile(file: File | null) {
@@ -135,106 +47,94 @@ export function RunPage() {
   }
 
   return (
-    <div className="grid gap-8 lg:grid-cols-[1.1fr_0.9fr]">
-      <form onSubmit={onSubmit} className="space-y-5">
-        <section className="rounded-xl border border-line bg-panel p-5 shadow-sm">
-          <div className="mb-3 flex items-center justify-between gap-3">
-            <h2 className="font-display text-xl font-semibold">Job description</h2>
-            <label className="cursor-pointer rounded-md border border-line px-3 py-1.5 text-sm text-ink-muted hover:border-accent hover:text-accent">
-              Upload .txt
-              <input
-                type="file"
-                accept=".txt,text/plain"
-                className="hidden"
-                onChange={(e) => onFile(e.target.files?.[0] ?? null)}
-              />
-            </label>
-          </div>
-          <textarea
-            value={jdText}
-            onChange={(e) => setJdText(e.target.value)}
-            rows={14}
-            placeholder="Paste the posting here…"
-            className="w-full resize-y rounded-lg border border-line bg-paper/40 px-3 py-2 text-sm leading-relaxed outline-none focus:border-accent"
-            required
-          />
-        </section>
-
-        <SettingsPanel config={config} settings={settings} onChange={setSettings} />
-
-        <button
-          type="submit"
-          disabled={busy || !jdText.trim()}
-          className="w-full rounded-lg bg-accent px-4 py-3 text-sm font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
-        >
-          {busy ? "Tailoring…" : "Tailor resume"}
-        </button>
-      </form>
-
-      <aside className="space-y-5">
-        {(busy || events.length > 0 || error || report) && (
+    <div className="space-y-8">
+      <div className="grid gap-8 lg:grid-cols-[1.1fr_0.9fr]">
+        <form onSubmit={onSubmit} className="space-y-5">
           <section className="rounded-xl border border-line bg-panel p-5 shadow-sm">
-            <h2 className="font-display text-xl font-semibold">Progress</h2>
-            {queuePosition != null && queuePosition > 1 && status === "queued" && (
-              <p className="mt-2 text-sm text-ink-muted">
-                Queued — position {queuePosition}
-              </p>
-            )}
-            <ol className="mt-3 max-h-56 space-y-2 overflow-y-auto text-sm">
-              {events.map((ev, i) => (
-                <li key={`${ev.stage}-${i}`} className="flex gap-2">
-                  <span className="mt-0.5 shrink-0 rounded bg-accent-soft px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent">
-                    {ev.stage}
-                  </span>
-                  <span>{ev.message}</span>
-                </li>
-              ))}
-            </ol>
-            {error && (
-              <p className="mt-3 rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">
-                {error}
-              </p>
-            )}
+            <div className="mb-3 flex items-center justify-between gap-3">
+              <h2 className="font-display text-xl font-semibold">Job description</h2>
+              <label className="cursor-pointer rounded-md border border-line px-3 py-1.5 text-sm text-ink-muted hover:border-accent hover:text-accent">
+                Upload .txt
+                <input
+                  type="file"
+                  accept=".txt,text/plain"
+                  className="hidden"
+                  onChange={(e) => onFile(e.target.files?.[0] ?? null)}
+                />
+              </label>
+            </div>
+            <textarea
+              value={jdText}
+              onChange={(e) => setJdText(e.target.value)}
+              rows={14}
+              placeholder="Paste the posting here…"
+              className="w-full resize-y rounded-lg border border-line bg-paper/40 px-3 py-2 text-sm leading-relaxed outline-none focus:border-accent"
+              required
+            />
           </section>
-        )}
 
-        {report && jobId && (
-          <>
-            <ReportCard report={report} jobId={jobId} />
-            <section className="overflow-hidden rounded-xl border border-line bg-panel shadow-sm">
-              <div className="flex items-center justify-between border-b border-line px-5 py-3">
-                <h2 className="font-display text-xl font-semibold">Preview</h2>
-                <a
-                  href={downloadUrl(jobId)}
-                  className="text-sm font-medium text-accent hover:underline"
-                >
-                  Download .docx
-                </a>
-              </div>
-              <iframe
-                title="Tailored resume PDF"
-                src={previewUrl(jobId)}
-                className="h-[32rem] w-full bg-white"
-              />
+          <SettingsPanel config={config} settings={settings} onChange={setSettings} />
+
+          <button
+            type="submit"
+            disabled={busy || !jdText.trim()}
+            className="w-full rounded-lg bg-accent px-4 py-3 text-sm font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+          >
+            {busy ? "Tailoring…" : "Tailor resume"}
+          </button>
+        </form>
+
+        <aside className="space-y-5">
+          {(busy || events.length > 0 || error || report) && (
+            <section className="rounded-xl border border-line bg-panel p-5 shadow-sm">
+              <h2 className="font-display text-xl font-semibold">Progress</h2>
+              {queuePosition != null && queuePosition > 1 && status === "queued" && (
+                <p className="mt-2 text-sm text-ink-muted">
+                  Queued — position {queuePosition}
+                </p>
+              )}
+              <ol className="mt-3 max-h-56 space-y-2 overflow-y-auto text-sm">
+                {events.map((ev, i) => (
+                  <li key={`${ev.stage}-${i}`} className="flex gap-2">
+                    <span className="mt-0.5 shrink-0 rounded bg-accent-soft px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent">
+                      {ev.stage}
+                    </span>
+                    <span>{ev.message}</span>
+                  </li>
+                ))}
+              </ol>
+              {error && (
+                <p className="mt-3 rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">
+                  {error}
+                </p>
+              )}
             </section>
-          </>
-        )}
+          )}
 
-        {config && !report && !busy && (
-          <section className="rounded-xl border border-dashed border-line bg-panel/60 p-5 text-sm text-ink-muted">
-            <p>
-              Measuring with <strong className="text-ink">{config.pdf_backend}</strong>
-              {config.calibration_source === "fallback"
-                ? " (using built-in fit constants)"
-                : " (calibrated)"}
-              . {config.chars_per_line} chars/line · {config.lines_per_page} lines/page.
-            </p>
-            {config.contact_name && (
-              <p className="mt-2">Master resume: {config.contact_name}</p>
-            )}
-          </section>
-        )}
-      </aside>
+          {report && jobId && (
+            <ReportCard report={report} jobId={jobId} />
+          )}
+
+          {config && !report && !busy && (
+            <section className="rounded-xl border border-dashed border-line bg-panel/60 p-5 text-sm text-ink-muted">
+              <p>
+                Measuring with <strong className="text-ink">{config.pdf_backend}</strong>
+                {config.calibration_source === "fallback"
+                  ? " (using built-in fit constants)"
+                  : " (calibrated)"}
+                . {config.chars_per_line} chars/line · {config.lines_per_page} lines/page.
+              </p>
+              {config.contact_name && (
+                <p className="mt-2">Master resume: {config.contact_name}</p>
+              )}
+            </section>
+          )}
+        </aside>
+      </div>
+
+      {report && jobId && expansion && (
+        <ExperienceCard expansion={expansion} jobId={jobId} />
+      )}
     </div>
   );
 }
@@ -300,15 +200,18 @@ function SettingsPanel({
             ))}
           </select>
         </Field>
-        <Field label="Rewrite model (optional)">
-          <input
-            type="text"
-            placeholder="e.g. claude-sonnet-5"
-            value={settings.rewrite_model ?? ""}
-            onChange={(e) => set("rewrite_model", e.target.value || null)}
-            className="field"
-          />
-        </Field>
+        <ModelSpecField
+          label="Rewrite model (optional)"
+          value={settings.rewrite_model}
+          onChange={(v) => set("rewrite_model", v)}
+          placeholder="e.g. claude-sonnet-5"
+        />
+        <ModelSpecField
+          label="Expand model (optional)"
+          value={settings.expand_model}
+          onChange={(v) => set("expand_model", v)}
+          placeholder="e.g. ollama:gemma4:cloud"
+        />
         <Field label="Effort">
           <select
             value={settings.effort ?? ""}
@@ -349,6 +252,11 @@ function SettingsPanel({
           label="Merge redundant bullets"
           checked={settings.merge}
           onChange={(v) => set("merge", v)}
+        />
+        <Toggle
+          label="Skip experience expansion"
+          checked={settings.no_expand}
+          onChange={(v) => set("no_expand", v)}
         />
         <Toggle
           label="Bypass cache"

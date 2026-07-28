@@ -1,16 +1,8 @@
-import { useEffect, useMemo, useState } from "react";
-import {
-  type AppConfig,
-  fetchConfig,
-  fetchMasterResume,
-  saveMasterResume,
-  validateMasterResume,
-} from "../api";
+import { useMemo } from "react";
 import { AddButton, EntryControls } from "../components/ListControls";
 import {
   type Bullet,
   type Experience,
-  type MasterResume,
   type Project,
   type SkillGroup,
   blankBullet,
@@ -19,7 +11,6 @@ import {
   blankSkillGroup,
   collectBulletIds,
   collectProjectIds,
-  completenessErrors,
   entryPrefix,
   insertAt,
   looksLikeHttpUrl,
@@ -28,25 +19,24 @@ import {
   nextProjectId,
   removeAt,
 } from "../lib/resumeEdit";
+import { useEditorState } from "../state/editorState";
 
 /**
  * Structured editor for data/master_resume.json — validates through the real Pydantic models.
+ *
+ * Draft state lives in `EditorProvider` so unsaved edits survive a switch to the Tailor tab.
  */
 export function EditorPage() {
-  const [resume, setResume] = useState<MasterResume | null>(null);
-  const [config, setConfig] = useState<AppConfig | null>(null);
-  const [errors, setErrors] = useState<string[]>([]);
-  const [message, setMessage] = useState<string | null>(null);
-  const [busy, setBusy] = useState(false);
-
-  useEffect(() => {
-    Promise.all([fetchMasterResume(), fetchConfig()])
-      .then(([raw, cfg]) => {
-        setResume(raw as MasterResume);
-        setConfig(cfg);
-      })
-      .catch((err: Error) => setErrors([err.message]));
-  }, []);
+  const {
+    resume,
+    setResume,
+    config,
+    errors,
+    message,
+    busy,
+    validate: onValidate,
+    save: onSave,
+  } = useEditorState();
 
   const tagVocab = useMemo(
     () => new Set(config?.tag_vocabulary ?? []),
@@ -57,61 +47,6 @@ export function EditorPage() {
     () => (resume ? collectBulletIds(resume) : new Set<string>()),
     [resume],
   );
-
-  async function onValidate() {
-    if (!resume) return;
-    setBusy(true);
-    setMessage(null);
-    try {
-      const local = completenessErrors(resume);
-      if (local.length) {
-        setErrors(local);
-        setBusy(false);
-        return;
-      }
-      const result = await validateMasterResume(resume as unknown as Record<string, unknown>);
-      setErrors(result.errors);
-      if (result.ok && result.summary) {
-        setMessage(
-          `Valid — ${result.summary.bullets} bullets, ${result.summary.tags} tags`,
-        );
-      }
-    } catch (err) {
-      setErrors([err instanceof Error ? err.message : String(err)]);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function onSave() {
-    if (!resume) return;
-    setBusy(true);
-    setMessage(null);
-    try {
-      const local = completenessErrors(resume);
-      if (local.length) {
-        setErrors(local);
-        setBusy(false);
-        return;
-      }
-      const result = await saveMasterResume(resume as unknown as Record<string, unknown>);
-      setErrors(result.errors);
-      if (result.ok && result.summary) {
-        setMessage(
-          `Saved — ${result.summary.name}: ${result.summary.bullets} bullets (previous file backed up)`,
-        );
-        // Reload so tags come back canonicalised the way the server stored them.
-        const fresh = (await fetchMasterResume()) as MasterResume;
-        setResume(fresh);
-        const cfg = await fetchConfig();
-        setConfig(cfg);
-      }
-    } catch (err) {
-      setErrors([err instanceof Error ? err.message : String(err)]);
-    } finally {
-      setBusy(false);
-    }
-  }
 
   if (!resume) {
     return (

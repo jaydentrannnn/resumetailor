@@ -103,6 +103,7 @@ def get_job(job_id: str) -> JobStatusResponse:
         queue_position=position if job.status == "queued" else None,
         error=job.error,
         report=job.report,
+        expansion=job.expansion,
         events=[_event_out(e) for e in job.events],
     )
 
@@ -177,12 +178,15 @@ def _export_download_name(job_id: str, *, suffix: str) -> str:
 
 @app.get("/api/jobs/{job_id}/preview.pdf")
 def preview_pdf(job_id: str) -> FileResponse:
-    """Inline PDF for the results panel's preview pane."""
+    """Inline PDF for embedding. Must not use attachment disposition — that forces a
+    download every time an iframe remounts (e.g. switching Tailor ↔ Master resume).
+    """
     path = _job_artifact(job_id, ".pdf")
     return FileResponse(
         path,
         media_type="application/pdf",
         filename=_export_download_name(job_id, suffix=".pdf"),
+        content_disposition_type="inline",
     )
 
 
@@ -194,6 +198,29 @@ def download_docx(job_id: str) -> FileResponse:
         path,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
         filename=_export_download_name(job_id, suffix=".docx"),
+    )
+
+
+@app.get("/api/jobs/{job_id}/expansion.md")
+def download_expansion(job_id: str) -> FileResponse:
+    """Plain-text expanded experience descriptions for a single copy-all paste."""
+    job = get_queue().get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail=f"Unknown job {job_id!r}.")
+    if job.status != "succeeded":
+        raise HTTPException(
+            status_code=409, detail=f"Job {job_id} is {job.status}, not ready for download."
+        )
+    path = (job.out_dir or config.OUTPUT_DIR / "jobs" / job_id) / "expansion.md"
+    if not path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail="Experience expansion was not produced for this job.",
+        )
+    return FileResponse(
+        path,
+        media_type="text/markdown; charset=utf-8",
+        filename=_export_download_name(job_id, suffix=".expansion.md"),
     )
 
 

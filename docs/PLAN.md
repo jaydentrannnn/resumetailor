@@ -602,3 +602,34 @@ toggle in the web UI.
 **Prompt versions:** `_SYSTEM` / merge / polish instructions are not cached, so no version
 bump was required (only `_SCORE_SYSTEM` is versioned). Editing bullet text in
 `master_resume.json` invalidates score caches by design.
+
+---
+
+## Phase 13 — Application-form experience expansion — **Done (unit-tested)**
+
+**What:** After a successful tailor run, generate expanded work-experience descriptions for
+the separate "Experience" fields of online applications (title, company, dates, location,
+description), shown as a copy-paste tile on the Tailor page.
+
+**How:**
+- New purpose `"expand"` in `config.PURPOSES`. Follows the profile (`claude` / `ollama`);
+  `hybrid` routes expand to Ollama. Override with `--expand-model` / `settings.expand_model`.
+- New module `expand.py`: deterministic entry selection via `rewrite.select_entries`,
+  force-including every experience entry that contributed bullets to the tailored resume;
+  one batched LLM call returning bullets only; hard facts joined from `MasterResume`.
+- Fabrication guard runs per bullet against the entry's full source vocabulary; offenders
+  are **dropped with a warning**, never raise — this artifact must not fail a run whose
+  `.docx` already succeeded. `numbers_dropped` and `verb_collisions` warn the same way.
+- Character budget `EXPAND_CHAR_LIMIT` (2000) advertised as a target band; overflow trims
+  from the end.
+- CLI prints the expansion and writes `<out>.expansion.md`. Web stores
+  `Job.expansion` on `JobStatusResponse`, writes `output/jobs/<id>/expansion.{json,md}`,
+  and serves `GET /api/jobs/{id}/expansion.md`. SPA tile: `ExperienceCard.tsx`.
+- `--no-expand` / `settings.no_expand` skips the stage.
+
+**Prompt version:** `_EXPAND_PROMPT_VERSION = 1`, folded into the cache key with
+`config.fingerprint("expand")`.
+
+**Status:** `pytest` covers selection force-include, hard-fact join, fabrication drop,
+number warnings, cache invalidation across backends, hybrid routing, CLI stubs, and the
+web expansion endpoint. Live API quality under Ollama is not measured in this environment.

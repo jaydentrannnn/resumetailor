@@ -6,6 +6,7 @@ export type JobSettings = {
   projects: number | null;
   model: string;
   rewrite_model: string | null;
+  expand_model: string | null;
   effort: "low" | "medium" | "high" | null;
   no_semantic: boolean;
   no_widow_repair: boolean;
@@ -13,6 +14,8 @@ export type JobSettings = {
   /** Combine near-duplicate bullets within an entry; only fires if the page overflows. */
   merge: boolean;
   no_cache: boolean;
+  /** Skip generating expanded experience descriptions for application forms. */
+  no_expand: boolean;
 };
 
 export type ProgressEvent = {
@@ -55,12 +58,33 @@ export type RunReport = {
   calibration_source: string;
 };
 
+export type ExpandedEntry = {
+  entry_key: string;
+  title: string;
+  company: string;
+  location: string;
+  start: string;
+  end: string;
+  bullets: string[];
+  char_count: number;
+  warnings: string[];
+  on_resume: boolean;
+};
+
+export type Expansion = {
+  entries: ExpandedEntry[];
+  warnings: string[];
+  model: string;
+  char_limit: number;
+};
+
 export type JobStatus = {
   job_id: string;
   status: "queued" | "running" | "succeeded" | "failed";
   queue_position: number | null;
   error: string | null;
   report: RunReport | null;
+  expansion: Expansion | null;
   events: ProgressEvent[];
 };
 
@@ -154,4 +178,9 @@ export function previewUrl(jobId: string): string {
 export function downloadUrl(jobId: string): string {
   /** URL of the tailored .docx for a finished job. */
   return `/api/jobs/${jobId}/download.docx`;
+}
+
+export function expansionUrl(jobId: string): string {
+  /** URL of the plain-text expansion for a finished job. */
+  return `/api/jobs/${jobId}/expansion.md`;
 }

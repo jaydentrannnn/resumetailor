@@ -19,12 +19,14 @@ class JobSettings(BaseModel):
     projects: int | None = Field(default=None, ge=1, le=10)
     model: str = "claude"
     rewrite_model: str | None = None
+    expand_model: str | None = None
     effort: Literal["low", "medium", "high"] | None = None
     no_semantic: bool = False
     no_widow_repair: bool = False
     no_verb_repair: bool = False
     merge: bool = False
     no_cache: bool = False
+    no_expand: bool = False
 
 
 class CreateJobRequest(BaseModel):
@@ -87,6 +89,34 @@ class RunReportOut(BaseModel):
     calibration_source: str
 
 
+class ExpandedEntryOut(BaseModel):
+    """One experience entry for the application-form copy-paste tile."""
+
+    entry_key: str
+    title: str
+    company: str
+    location: str
+    start: str
+    end: str
+    bullets: list[str] = Field(default_factory=list)
+    char_count: int = 0
+    warnings: list[str] = Field(default_factory=list)
+    on_resume: bool = False
+
+
+class ExpansionOut(BaseModel):
+    """Expanded experience descriptions for application-form paste fields.
+
+    Independent of `RunReportOut`: expansion can succeed, fail, or be skipped without
+    changing the tailored resume outcome.
+    """
+
+    entries: list[ExpandedEntryOut] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    model: str = ""
+    char_limit: int = 0
+
+
 class JobStatusResponse(BaseModel):
     """Current state of one queued or finished run."""
 
@@ -95,6 +125,7 @@ class JobStatusResponse(BaseModel):
     queue_position: int | None = None
     error: str | None = None
     report: RunReportOut | None = None
+    expansion: ExpansionOut | None = None
     events: list[ProgressEventOut] = Field(default_factory=list)
 
 
