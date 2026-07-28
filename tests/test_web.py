@@ -127,6 +127,31 @@ def test_job_runs_to_success_with_stubbed_pipeline(client, monkeypatch, tmp_path
     monkeypatch.setattr(jobs_mod.fit, "fit", fake_fit)
     monkeypatch.setattr(jobs_mod.jd, "verify_verbatim", lambda *a, **k: [])
 
+    from resume_tailor.expand import ExpandedEntry, Expansion
+
+    def fake_expand(*a, **k):
+        """Stub expansion so web tests never reach the network."""
+        entry = resume.experience[0]
+        return Expansion(
+            entries=[
+                ExpandedEntry(
+                    entry_key="exp:0",
+                    title=entry.title,
+                    company=entry.company,
+                    location=entry.location,
+                    start=entry.start,
+                    end=entry.end,
+                    bullets=["Expanded bullet from stub."],
+                    char_count=28,
+                    on_resume=True,
+                )
+            ],
+            model="stub",
+            char_limit=config.EXPAND_CHAR_LIMIT,
+        )
+
+    monkeypatch.setattr(jobs_mod.expand, "expand_experience", fake_expand)
+
     res = c.post(
         "/api/jobs",
         json={
@@ -158,6 +183,8 @@ def test_job_runs_to_success_with_stubbed_pipeline(client, monkeypatch, tmp_path
     assert status["report"]["title"] == "Stub Role"
     assert status["report"]["pages"] == 1
     assert status["report"]["verb_collisions_remaining"] == 0
+    assert status["expansion"] is not None
+    assert status["expansion"]["entries"][0]["company"] == resume.experience[0].company
     assert seen_fit == {
         "repair_widows": True,
         "repair_verbs": False,
@@ -177,6 +204,10 @@ def test_job_runs_to_success_with_stubbed_pipeline(client, monkeypatch, tmp_path
     assert f"{resume.contact.name} Resume - Stub Role.pdf" in unquote(
         pdf.headers.get("content-disposition", "")
     )
+
+    expansion_md = c.get(f"/api/jobs/{job_id}/expansion.md")
+    assert expansion_md.status_code == 200
+    assert b"Expanded bullet from stub." in expansion_md.content
 
 
 def test_master_resume_validate_rejects_bad_payload(client):

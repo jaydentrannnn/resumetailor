@@ -1,8 +1,8 @@
 """The provider boundary: where the pipeline gets a client from.
 
-`jd.py` and `rewrite.py` remain the only modules that *call* a model. This one decides
-which model they call, so that pointing a run at Ollama Cloud instead of Claude is
-configuration rather than a code change.
+`jd.py`, `rewrite.py`, and `expand.py` remain the only modules that *call* a model. This
+one decides which model they call, so that pointing a run at Ollama Cloud instead of
+Claude is configuration rather than a code change.
 
 The interface is `client.messages.parse(...)` -> object with `.parsed_output` and
 `.stop_reason`. That shape is Anthropic's, and it is kept deliberately: it was already the
@@ -367,12 +367,13 @@ class _OpenAICompatClient:
 
 
 def client_for(purpose: str) -> Any:
-    """Return a client for one pipeline stage: "extract", "score", or "rewrite".
+    """Return a client for one pipeline stage: extract, score, rewrite, or expand.
 
     Per-stage routing is the point. Extraction and scoring are structured-judgement tasks
     that survive a cheaper model; rewriting carries the fabrication risk and the length
     constraints, and is where model quality actually shows. Pointing the first two at a
     free endpoint and leaving rewriting on Claude is what `--model hybrid` does.
+    Expansion follows the profile (Ollama under `hybrid`) and is advisory paste text.
     """
     backend = config.backend_for(purpose)
 

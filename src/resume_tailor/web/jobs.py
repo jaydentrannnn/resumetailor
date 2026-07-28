@@ -22,12 +22,18 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
-from resume_tailor import config, data, fit, jd, report, rewrite
+from resume_tailor import config, data, expand, fit, jd, report, rewrite
 from resume_tailor.events import ProgressCallback, ProgressEvent
 from resume_tailor.fit import FitError
 from resume_tailor.llm import LLMError
 from resume_tailor.rewrite import FabricationError
-from resume_tailor.web.schemas import JobSettings, RunReportOut, SectionSummaryOut
+from resume_tailor.web.schemas import (
+    ExpandedEntryOut,
+    ExpansionOut,
+    JobSettings,
+    RunReportOut,
+    SectionSummaryOut,
+)
 
 
 JobStatus = Literal["queued", "running", "succeeded", "failed"]
@@ -46,6 +52,7 @@ class Job:
     )
     error: str | None = None
     report: RunReportOut | None = None
+    expansion: ExpansionOut | None = None
     events: list[ProgressEvent] = field(default_factory=list)
     #: Signalled whenever a new event lands, so the SSE endpoint can wake up.
     event_notify: threading.Event = field(default_factory=threading.Event)
@@ -132,9 +139,14 @@ class JobQueue:
         on_event: ProgressCallback = job.emit
 
         try:
+            overrides: dict[str, str] = {}
+            if settings.rewrite_model:
+                overrides["rewrite"] = settings.rewrite_model
+            if settings.expand_model:
+                overrides["expand"] = settings.expand_model
             config.resolve(
                 settings.model,
-                overrides={"rewrite": settings.rewrite_model} if settings.rewrite_model else None,
+                overrides=overrides or None,
                 effort=settings.effort,
             )
         except ValueError as exc:
@@ -228,6 +240,57 @@ class JobQueue:
                 )
 
         job.report = _to_report_out(report.report_data(resume, requirements, result))
+
+        if not settings.no_expand:
+            try:
+                expansion = expand.expand_experience(
+                    resume,
+                    requirements,
+                    fit_result=result,
+                    semantic=semantic,
+                    use_cache=not settings.no_cache,
+                    on_event=on_event,
+                )
+                job.expansion = _to_expansion_out(expansion)
+                (out_dir / "expansion.json").write_text(
+                    job.expansion.model_dump_json(indent=2),
+                    encoding="utf-8",
+                )
+                (out_dir / "expansion.md").write_text(
+                    expand.format_markdown(expansion), encoding="utf-8"
+                )
+            except Exception as exc:  # noqa: BLE001 - bonus artifact; never fail the job
+                on_event(
+                    ProgressEvent(
+                        stage="expand",
+                        message=f"Experience expansion skipped ({exc})",
+                        detail={},
+                    )
+                )
+
+
+def _to_expansion_out(expansion: expand.Expansion) -> ExpansionOut:
+    """Convert the expand dataclass into the Pydantic shape the API serves."""
+    return ExpansionOut(
+        entries=[
+            ExpandedEntryOut(
+                entry_key=e.entry_key,
+                title=e.title,
+                company=e.company,
+                location=e.location,
+                start=e.start,
+                end=e.end,
+                bullets=list(e.bullets),
+                char_count=e.char_count,
+                warnings=list(e.warnings),
+                on_resume=e.on_resume,
+            )
+            for e in expansion.entries
+        ],
+        warnings=list(expansion.warnings),
+        model=expansion.model,
+        char_limit=expansion.char_limit,
+    )
 
 
 def _to_report_out(data: report.RunReport) -> RunReportOut:

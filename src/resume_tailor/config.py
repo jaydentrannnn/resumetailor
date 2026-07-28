@@ -118,10 +118,12 @@ EFFORT = "medium"
 #
 # `--model` then addresses the other 20% by routing stages at different backends entirely.
 
-#: The three stages that call a model. Each resolves independently, so the cheap, safe
+#: The four stages that call a model. Each resolves independently, so the cheap, safe
 #: calls (extract, score) can run on a free backend while rewriting — where the
 #: fabrication guard lives and where model quality actually shows — stays on Claude.
-PURPOSES = ("extract", "score", "rewrite")
+#: `expand` produces application-form experience descriptions; it follows the profile
+#: like the others (Ollama under `ollama`/`hybrid`, Claude under `claude`).
+PURPOSES = ("extract", "score", "rewrite", "expand")
 
 #: Providers `parse_spec` recognises as a leading segment. Anything else is read as a bare
 #: model name, which matters more than it looks: `gemma4:cloud` contains a
@@ -158,6 +160,7 @@ DEFAULT_EFFORT: dict[str, str] = {
     "extract": os.environ.get("LLM_EFFORT_EXTRACT", "low"),
     "score": os.environ.get("LLM_EFFORT_SCORE", "low"),
     "rewrite": os.environ.get("LLM_EFFORT_REWRITE", "medium"),
+    "expand": os.environ.get("LLM_EFFORT_EXPAND", "medium"),
 }
 
 _ANTHROPIC_DEFAULT = f"anthropic:{MODEL}"
@@ -173,6 +176,10 @@ MODEL_PROFILES: dict[str, dict[str, str]] = {
         "extract": _OLLAMA_DEFAULT,
         "score": _OLLAMA_DEFAULT,
         "rewrite": _ANTHROPIC_DEFAULT,
+        # Expansion is guard-protected and advisory (never shipped as the .docx), so it
+        # rides the free backend even though it is generative — flip to Claude if quality
+        # drops under Ollama.
+        "expand": _OLLAMA_DEFAULT,
     },
 }
 
@@ -753,3 +760,14 @@ METRIC_BONUS = 0.5
 #: chosen entries and never drops an entry to save space.
 MAX_EXPERIENCE_ENTRIES = 3
 MAX_PROJECT_ENTRIES = 2
+
+#: How many work-experience entries the application-form expansion may cover. Higher than
+#: `MAX_EXPERIENCE_ENTRIES` because forms are not page-constrained — the tile should
+#: surface roles the one-pager dropped, not only the ones that made the resume.
+MAX_EXPANDED_ENTRIES = 5
+
+#: Soft character budget for one expanded entry's description field. LinkedIn's experience
+#: description cap is 2,000; many ATS forms are similar or shorter. Advertised to the model
+#: as a target band below this ceiling (see `expand._length_band`) so it does not optimise
+#: right up to the edge and truncate on paste.
+EXPAND_CHAR_LIMIT = 2000

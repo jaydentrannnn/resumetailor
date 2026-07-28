@@ -15,12 +15,16 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from typing import TYPE_CHECKING
 
 from . import config
 from .data import Experience, MasterResume, Project
 from .fit import FitResult
 from .jd import JobRequirements
 from .rewrite import keyword_coverage
+
+if TYPE_CHECKING:
+    from .expand import Expansion
 
 #: Characters Windows (and most filesystems) reject in a filename.
 _UNSAFE_FILENAME = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
@@ -315,4 +319,33 @@ def format_report(
     for warning in result.warnings:
         lines.append(f"WARNING: {warning}")
 
+    return "\n".join(lines)
+
+
+def format_expansion(expansion: Expansion) -> str:
+    """Render the application-form experience expansion for the terminal.
+
+    Kept separate from `format_report` because expansion succeeds or fails independently
+    of the fit loop, and the CLI prints it only when the call ran.
+    """
+    from . import expand as expand_mod
+
+    lines: list[str] = [
+        f"Application experience ({len(expansion.entries)} entr"
+        f"{'y' if len(expansion.entries) == 1 else 'ies'}, model={expansion.model}, "
+        f"limit={expansion.char_limit} chars/entry):",
+    ]
+    for entry in expansion.entries:
+        flag = " [on resume]" if entry.on_resume else ""
+        lines.append(
+            f"  {entry.title} @ {entry.company}{flag} "
+            f"({entry.char_count}/{expansion.char_limit} chars, {len(entry.bullets)} bullets)"
+        )
+        for warning in entry.warnings:
+            lines.append(f"    warning: {warning}")
+    for warning in expansion.warnings:
+        lines.append(f"  WARNING: {warning}")
+    if expansion.entries:
+        lines.append("")
+        lines.append(expand_mod.format_markdown(expansion))
     return "\n".join(lines)
