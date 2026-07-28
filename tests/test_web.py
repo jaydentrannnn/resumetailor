@@ -8,6 +8,7 @@ single-worker queue behaviour without spending tokens.
 from __future__ import annotations
 
 from pathlib import Path
+from urllib.parse import unquote
 
 import pytest
 from fastapi.testclient import TestClient
@@ -167,10 +168,15 @@ def test_job_runs_to_success_with_stubbed_pipeline(client, monkeypatch, tmp_path
     docx = c.get(f"/api/jobs/{job_id}/download.docx")
     assert docx.status_code == 200
     assert docx.content.startswith(b"PK")
+    disposition = unquote(docx.headers.get("content-disposition", ""))
+    assert f"{resume.contact.name} Resume - Stub Role.docx" in disposition
 
     pdf = c.get(f"/api/jobs/{job_id}/preview.pdf")
     assert pdf.status_code == 200
     assert pdf.content.startswith(b"%PDF")
+    assert f"{resume.contact.name} Resume - Stub Role.pdf" in unquote(
+        pdf.headers.get("content-disposition", "")
+    )
 
 
 def test_master_resume_validate_rejects_bad_payload(client):
