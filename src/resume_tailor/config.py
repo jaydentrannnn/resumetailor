@@ -89,7 +89,7 @@ MODEL = "claude-sonnet-5"
 #: This is the *requested* ceiling, not necessarily the one sent. Anthropic refuses a
 #: non-streaming request above 21,333 outright, so `max_tokens_for()` clamps that path —
 #: read it before assuming a Claude run actually gets this budget.
-MAX_TOKENS = 32_000
+MAX_TOKENS = 64_000
 
 #: Anthropic's hard limit for a non-streaming request: the SDK rejects anything where
 #: `3600 * max_tokens / 128_000 > 600` with "Streaming is required...". It is a client-side
@@ -124,15 +124,15 @@ EFFORT = "medium"
 PURPOSES = ("extract", "score", "rewrite")
 
 #: Providers `parse_spec` recognises as a leading segment. Anything else is read as a bare
-#: model name, which matters more than it looks: `minimax-m3:cloud` contains a colon, so a
-#: naive split would take "minimax-m3" for a provider.
+#: model name, which matters more than it looks: `gemma4:cloud` contains a
+#: colon, so a naive split would take "gemma4" for a provider.
 PROVIDERS = ("anthropic", "openai", "ollama")
 
 OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434/v1")
 
 #: Ollama Cloud runs this on Ollama's servers, so laptop VRAM is irrelevant. Note the
 #: colon in the tag — see `parse_spec`.
-OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "minimax-m3:cloud")
+OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "gemma4:cloud")
 
 #: Generous: a reasoning model over a cloud round trip is slow, and the score table sends
 #: all 39 bullets at once.
@@ -194,11 +194,11 @@ def parse_spec(spec: str) -> tuple[str, str, str | None]:
     """Parse `provider:model[@base_url]` into its parts.
 
     **Split on the first colon only.** Ollama tags embed colons, so the default model
-    `ollama:minimax-m3:cloud` must yield model `minimax-m3:cloud`; splitting anywhere else
-    breaks the primary use case rather than an edge case.
+    `ollama:gemma4:cloud` must yield model `gemma4:cloud`; splitting
+    anywhere else breaks the primary use case rather than an edge case.
 
     A leading segment that is not a known provider means the whole string is a model name
-    (`minimax-m3:cloud` on its own, or `claude-sonnet-5`). The provider is then inferred:
+    (`gemma4:cloud` on its own, or `claude-sonnet-5`). The provider is then inferred:
     Anthropic for `claude-*`, Ollama otherwise, since those are the two ways a bare name is
     realistically supplied.
     """
@@ -452,14 +452,22 @@ CHARS_PER_LINE, LINES_PER_PAGE, CALIBRATION_SOURCE = _load_calibration(PDF_BACKE
 #: This is the one knob here with a running cost, and it was measured rather than guessed.
 #: Same posting, same everything else:
 #:
+#:   0.93 -> grow until ≥93% fill (target density for one-pagers)
 #:   0.92 -> 13 of 15 bullets, 49/52 lines, 3 iterations
 #:   0.88 -> 12 of 15 bullets, 47/52 lines, 2 iterations
 #:   0.86 -> accepts ~86% fill on first measure; fewer grow rounds when the estimate
 #:         undershoots the real render (common after rewrite shortens bullets).
 #:
-#: One extra rewrite call buys one extra bullet. Lower = fewer API rounds, slightly more
-#: whitespace at the bottom; raise toward 0.92 if you want the loop to pack the page tighter.
-UNDERFLOW_THRESHOLD = 0.86
+#: One extra rewrite call buys one extra bullet. Lower = fewer API rounds, more
+#: whitespace; raise toward 0.93 for a denser page (more grow/rewrite rounds).
+UNDERFLOW_THRESHOLD = 0.93
+
+#: Extra estimated lines past page capacity that `fit._initial_selection_size` may claim.
+#:
+#: The first rewrite usually lands under the advertised max, so a small optimism margin
+#: packs the opening call denser (e.g. 13/15 instead of 12/15) and avoids a grow round.
+#: Raise if first renders are still sparse; lower if overflow/shorten thrashing is common.
+INITIAL_SELECTION_OVERSHOOT = 2
 
 # --------------------------------------------------------------------------------------
 # Bullet merging (non-regressive, deterministic proposal)
@@ -503,6 +511,96 @@ MAX_MERGES_PER_RUN = 3
 #: output, so the loop returns the fullest version it reached. The bound exists because
 #: each growth costs an API call and a Word render.
 MAX_GROW_ATTEMPTS = 4
+
+
+# --------------------------------------------------------------------------------------
+# Opening-verb variety
+# --------------------------------------------------------------------------------------
+#
+# A resume whose bullets all open "Designed... Engineered... Architected..." reads as one
+# note held too long, and the exact-duplicate case ("Designed" twice) reads as an editing
+# mistake. Detecting the second is trivial; detecting the first needs to know that those
+# three verbs make the same claim, which is what these families encode.
+#
+# Membership is deliberately conservative. Only verbs listed here participate in
+# family-level collisions, so an opener the table has never seen can never be flagged
+# wrongly — the cost of an omission is a missed catch, never a false one.
+
+#: Near-synonymous bullet openers, grouped by the claim they make. Past tense, because
+#: that is the register `rewrite._SYSTEM` asks for. A verb must appear in exactly one
+#: family; the index below fails loudly if that is ever violated.
+VERB_FAMILIES: dict[str, tuple[str, ...]] = {
+    "build": (
+        "architected", "assembled", "built", "composed", "constructed", "created",
+        "crafted", "designed", "developed", "engineered", "established", "founded",
+        "implemented", "initiated", "launched", "modelled", "modeled", "prototyped",
+        "shipped", "spearheaded",
+    ),
+    "improve": (
+        "accelerated", "boosted", "condensed", "cut", "enhanced", "expanded", "improved",
+        "increased", "optimised", "optimized", "reduced", "refactored", "refined",
+        "scaled", "simplified", "streamlined", "strengthened", "tightened", "tuned",
+    ),
+    "lead": (
+        "coordinated", "directed", "facilitated", "guided", "led", "managed", "mentored",
+        "onboarded", "organised", "organized", "oversaw", "partnered", "supervised",
+        "trained",
+    ),
+    "analyse": (
+        "analysed", "analyzed", "assessed", "audited", "benchmarked", "debugged",
+        "diagnosed", "evaluated", "examined", "identified", "investigated", "measured",
+        "profiled", "researched", "reviewed", "selected", "tested", "troubleshooted",
+        "validated",
+    ),
+    "write": (
+        "authored", "communicated", "documented", "drafted", "presented", "published",
+        "reported", "summarised", "summarized", "wrote",
+    ),
+    "operate": (
+        "addressed", "administered", "automated", "configured", "delivered", "deployed",
+        "enabled", "handled", "integrated", "maintained", "migrated", "monitored",
+        "operated", "processed", "provisioned", "resolved", "secured", "supported",
+    ),
+}
+
+#: How many bullets may open with verbs from the same family before it reads repetitive.
+#: Two is the point where a pattern becomes visible but is still plausibly incidental; a
+#: third makes the whole resume sound like one sentence.
+MAX_SAME_FAMILY_OPENERS = 2
+
+
+def _build_verb_index() -> dict[str, str]:
+    """Invert `VERB_FAMILIES` into {verb: family}, rejecting any verb listed twice.
+
+    A verb in two families would silently resolve to whichever came last, quietly
+    breaking collision detection for it, so the duplicate is raised at import time.
+    """
+    index: dict[str, str] = {}
+    for family, verbs in VERB_FAMILIES.items():
+        for verb in verbs:
+            if verb in index:
+                raise ValueError(
+                    f"verb {verb!r} appears in both {index[verb]!r} and {family!r} families"
+                )
+            index[verb] = family
+    return index
+
+
+_VERB_FAMILY_INDEX = _build_verb_index()
+
+
+def verb_family(word: str) -> str | None:
+    """The family `word` belongs to, or None if it is not a known opener.
+
+    Case-insensitive, and tolerant of the trailing punctuation a one-word opener never
+    has but a caller might pass in.
+    """
+    return _VERB_FAMILY_INDEX.get(word.strip().strip(".,;:").lower())
+
+
+def family_verbs(family: str) -> tuple[str, ...]:
+    """Every known opener in `family`, for suggesting alternatives to the model."""
+    return VERB_FAMILIES.get(family, ())
 
 
 # --------------------------------------------------------------------------------------

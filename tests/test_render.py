@@ -19,16 +19,75 @@ from lxml import etree
 from resume_tailor import config, data, render
 
 W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
+NOTO_MARKER_FONT = "Noto Sans Symbols"
 
 
 @pytest.fixture(scope="module")
-def rendered(tmp_path_factory) -> bytes:
-    """Render the full master resume and return its document.xml."""
+def rendered_docx(tmp_path_factory) -> zipfile.ZipFile:
+    """Render the full master resume and return the output package."""
     if not config.DEFAULT_TEMPLATE_PATH.exists():
         pytest.skip("template not built; run scripts/build_template.py")
     out = tmp_path_factory.mktemp("render") / "out.docx"
     render.render(data.load(), out=out)
-    return zipfile.ZipFile(out).read("word/document.xml")
+    return zipfile.ZipFile(out)
+
+
+@pytest.fixture(scope="module")
+def rendered(rendered_docx) -> bytes:
+    """Return document.xml bytes from the rendered resume."""
+    return rendered_docx.read("word/document.xml")
+
+
+def _num_to_abstract(numbering_root: etree._Element) -> dict[str, str]:
+    """Map list instance ids to abstract numbering definition ids."""
+    mapping: dict[str, str] = {}
+    for num in numbering_root.findall(f"{W}num"):
+        nid = num.get(f"{W}numId")
+        abs_el = num.find(f"{W}abstractNumId")
+        if nid is not None and abs_el is not None:
+            mapping[nid] = abs_el.get(f"{W}val", "")
+    return mapping
+
+
+def _lvl0_marker_font(numbering_root: etree._Element, abstract_id: str) -> str | None:
+    """Return the ascii font name used for an abstract list's lvl0 bullet marker."""
+    for anum in numbering_root.findall(f"{W}abstractNum"):
+        if anum.get(f"{W}abstractNumId") != abstract_id:
+            continue
+        for lvl in anum.findall(f"{W}lvl"):
+            if lvl.get(f"{W}ilvl") != "0":
+                continue
+            num_fmt = lvl.find(f"{W}numFmt")
+            if num_fmt is None or num_fmt.get(f"{W}val") != "bullet":
+                continue
+            r_pr = lvl.find(f"{W}rPr")
+            fonts = r_pr.find(f"{W}rFonts") if r_pr is not None else None
+            return fonts.get(f"{W}ascii") if fonts is not None else None
+    return None
+
+
+def _run_is_bold(run: etree._Element) -> bool:
+    """Return whether a run element is explicitly bold."""
+    r_pr = run.find(f"{W}rPr")
+    if r_pr is None:
+        return False
+    bold = r_pr.find(f"{W}b")
+    if bold is None:
+        return False
+    val = bold.get(f"{W}val")
+    return val is None or val not in ("0", "false")
+
+
+def _paragraph_num_id(paragraph: etree._Element) -> str | None:
+    """Return the list instance id for a paragraph, if any."""
+    p_pr = paragraph.find(f"{W}pPr")
+    if p_pr is None:
+        return None
+    num_pr = p_pr.find(f"{W}numPr")
+    if num_pr is None:
+        return None
+    num_id = num_pr.find(f"{W}numId")
+    return num_id.get(f"{W}val") if num_id is not None else None
 
 
 def test_document_is_well_formed(rendered):
@@ -137,3 +196,106 @@ def test_bullet_spacing_is_normalised_within_each_section(rendered):
     assert by_section, "no bullets found in any section"
     for name, variants in by_section.items():
         assert len(variants) == 1, f"{name} has inconsistent bullet spacing: {variants}"
+
+
+def test_all_content_paragraphs_use_single_spacing(rendered):
+    """Every non-empty body paragraph must be single-spaced (line=240).
+
+    Bullets use lineRule=exact so a substitute marker font cannot inflate auto height;
+    other paragraphs use Word's Single (lineRule=auto).
+    """
+    root = etree.fromstring(rendered)
+    bad: list[str] = []
+    for p in root.iter(f"{W}p"):
+        text = "".join(t.text or "" for t in p.iter(f"{W}t")).strip()
+        if not text:
+            continue
+        pPr = p.find(f"{W}pPr")
+        spacing = pPr.find(f"{W}spacing") if pPr is not None else None
+        line = spacing.get(f"{W}line") if spacing is not None else None
+        rule = spacing.get(f"{W}lineRule") if spacing is not None else None
+        is_list = p.find(f".//{W}numPr") is not None
+        expected_rule = "exact" if is_list else "auto"
+        if line != "240" or rule != expected_rule:
+            bad.append(f"{text[:40]!r} line={line} rule={rule}")
+    assert not bad, "non-single spacing:\\n" + "\\n".join(bad)
+
+
+def test_bullet_markers_use_noto_font(rendered_docx):
+    """Every lvl0 bullet definition should draw markers in Noto Sans Symbols."""
+    numbering = etree.fromstring(rendered_docx.read("word/numbering.xml"))
+    fonts = {
+        _lvl0_marker_font(numbering, anum.get(f"{W}abstractNumId"))
+        for anum in numbering.findall(f"{W}abstractNum")
+    }
+    bullet_fonts = {font for font in fonts if font is not None}
+    assert bullet_fonts, "no bullet numbering definitions found"
+    assert bullet_fonts == {NOTO_MARKER_FONT}
+
+
+def test_tailored_bullets_share_education_num_id(rendered):
+    """Experience and project bullets should use the same list id as education."""
+    root = etree.fromstring(rendered)
+    section = None
+    by_section: dict[str, set[str | None]] = {}
+    for paragraph in root.iter(f"{W}p"):
+        text = "".join(t.text or "" for t in paragraph.iter(f"{W}t")).strip()
+        if text in ("EDUCATION", "WORK EXPERIENCES", "PROJECTS", "SKILLS"):
+            section = text
+            continue
+        if section is None or _paragraph_num_id(paragraph) is None:
+            continue
+        by_section.setdefault(section, set()).add(_paragraph_num_id(paragraph))
+
+    assert by_section["EDUCATION"], "education bullets missing"
+    assert by_section["WORK EXPERIENCES"], "experience bullets missing"
+    assert by_section["PROJECTS"], "project bullets missing"
+    education_ids = by_section["EDUCATION"]
+    assert len(education_ids) == 1
+    education_num_id = next(iter(education_ids))
+    assert by_section["WORK EXPERIENCES"] == {education_num_id}
+    assert by_section["PROJECTS"] == {education_num_id}
+
+
+def test_experience_header_location_is_not_bold(rendered):
+    """Company stays bold; location after '|' must not inherit bold formatting."""
+    root = etree.fromstring(rendered)
+    section = None
+    checked = 0
+    for paragraph in root.iter(f"{W}p"):
+        text = "".join(t.text or "" for t in paragraph.iter(f"{W}t"))
+        stripped = text.strip()
+        if stripped == "WORK EXPERIENCES":
+            section = "WORK EXPERIENCES"
+            continue
+        if stripped == "PROJECTS":
+            break
+        if section != "WORK EXPERIENCES":
+            continue
+        if "|" not in text:
+            continue
+        runs = list(paragraph.findall(f"{W}r"))
+        if not any(run.find(f".//{W}tab") is not None for run in runs):
+            continue
+
+        company_run = next(
+            (run for run in runs if "|" in "".join(t.text or "" for t in run.iter(f"{W}t"))),
+            None,
+        )
+        location_run = next(
+            (
+                run
+                for run in runs
+                if "|" not in "".join(t.text or "" for t in run.iter(f"{W}t"))
+                and run.find(f".//{W}tab") is None
+                and "".join(t.text or "" for t in run.iter(f"{W}t")).strip()
+            ),
+            None,
+        )
+        assert company_run is not None, f"missing company run in {text!r}"
+        assert location_run is not None, f"missing location run in {text!r}"
+        assert _run_is_bold(company_run), f"company run not bold in {text!r}"
+        assert not _run_is_bold(location_run), f"location run is bold in {text!r}"
+        checked += 1
+
+    assert checked >= 1, "no experience header lines checked"

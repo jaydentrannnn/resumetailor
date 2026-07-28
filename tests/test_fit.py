@@ -24,8 +24,17 @@ def _requirements() -> JobRequirements:
 
 
 def _identity_rewrite(
-    bullets, requirements, *, char_budget, shorten_pct=0, repair_widows=True, merge_groups=None, on_event=None
+    bullets,
+    requirements,
+    *,
+    char_budget,
+    shorten_pct=0,
+    repair_widows=True,
+    repair_verbs=True,
+    merge_groups=None,
+    on_event=None,
 ):
+    """Pass-through rewrite stub that ignores polish and merge knobs."""
     return RewriteOutcome({b.id: b.text for b in bullets})
 
 
@@ -56,8 +65,17 @@ def test_fit_escalates_shorten_schedule_on_overflow(monkeypatch, tmp_path):
     calls: list[int] = []
 
     def fake_rewrite(
-        bullets, requirements, *, char_budget, shorten_pct=0, repair_widows=True, merge_groups=None, on_event=None
+        bullets,
+        requirements,
+        *,
+        char_budget,
+        shorten_pct=0,
+        repair_widows=True,
+        repair_verbs=True,
+        merge_groups=None,
+        on_event=None,
     ):
+        """Record shorten_pct so the overflow schedule can be asserted."""
         calls.append(shorten_pct)
         return _identity_rewrite(bullets, requirements, char_budget=char_budget, shorten_pct=shorten_pct)
 
@@ -84,8 +102,17 @@ def test_fit_raises_after_max_attempts_without_truncating(monkeypatch, tmp_path)
     calls: list[int] = []
 
     def fake_rewrite(
-        bullets, requirements, *, char_budget, shorten_pct=0, repair_widows=True, merge_groups=None, on_event=None
+        bullets,
+        requirements,
+        *,
+        char_budget,
+        shorten_pct=0,
+        repair_widows=True,
+        repair_verbs=True,
+        merge_groups=None,
+        on_event=None,
     ):
+        """Record shorten_pct so exhausting MAX_FIT_ATTEMPTS can be asserted."""
         calls.append(shorten_pct)
         return _identity_rewrite(bullets, requirements, char_budget=char_budget, shorten_pct=shorten_pct)
 
@@ -113,8 +140,17 @@ def test_fit_restores_bullets_on_underflow(monkeypatch, tmp_path):
     seen: dict[str, int] = {}
 
     def fake_rewrite(
-        bullets, requirements, *, char_budget, shorten_pct=0, repair_widows=True, merge_groups=None, on_event=None
+        bullets,
+        requirements,
+        *,
+        char_budget,
+        shorten_pct=0,
+        repair_widows=True,
+        repair_verbs=True,
+        merge_groups=None,
+        on_event=None,
     ):
+        """Track selection size so underflow growth can be asserted."""
         seen["count"] = len(bullets)
         return _identity_rewrite(bullets, requirements, char_budget=char_budget, shorten_pct=shorten_pct)
 
@@ -215,3 +251,48 @@ def test_fit_falls_back_to_budget_estimate_when_word_unavailable(monkeypatch, tm
 
     assert result.pages_are_estimated
     assert any("Word is not installed" in w for w in result.warnings)
+
+
+def test_merge_proposals_wait_until_measured_overflow(monkeypatch, tmp_path):
+    """With merge_bullets on, attempt 0 must not propose; overflow attempts may."""
+    resume = load()
+    requirements = _requirements()
+    seen_groups: list[list] = []
+
+    def fake_rewrite(
+        bullets,
+        requirements,
+        *,
+        char_budget,
+        shorten_pct=0,
+        repair_widows=True,
+        repair_verbs=True,
+        merge_groups=None,
+        on_event=None,
+    ):
+        """Capture merge_groups passed on each rewrite attempt."""
+        seen_groups.append(list(merge_groups or []))
+        return RewriteOutcome({b.id: b.text for b in bullets})
+
+    pages = iter([2, 1])  # first measure overflows, second fits
+
+    monkeypatch.setattr(fit_mod, "rewrite_bullets", fake_rewrite)
+    monkeypatch.setattr(fit_mod.render, "render", lambda *a, **k: tmp_path / "out.docx")
+    monkeypatch.setattr(
+        fit_mod.render, "measure_detail", lambda *a, **k: (next(pages), _FULL_LINES)
+    )
+    monkeypatch.setattr(fit_mod.render, "to_pdf", lambda *a, **k: tmp_path / "out.pdf")
+
+    # Force a deterministic non-empty proposal after overflow so the gate is visible.
+    sentinel = object()
+
+    def fake_propose(*a, **k):
+        """Return a sentinel group list whenever propose is reached."""
+        return [sentinel]
+
+    monkeypatch.setattr(fit_mod, "propose_merges", fake_propose)
+
+    fit_mod.fit(resume, requirements, target_pages=1, merge_bullets=True)
+
+    assert seen_groups[0] == [], "first draft must not merge"
+    assert seen_groups[1] == [sentinel], "overflow attempt must be allowed to merge"

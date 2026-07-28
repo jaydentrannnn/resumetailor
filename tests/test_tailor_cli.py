@@ -149,8 +149,9 @@ def test_pages_and_template_flags_reach_the_fit_loop(cli, jd_file, tmp_path, mon
 
     def capture(
         resume_arg, reqs, *, target_pages, template, out, max_experience, max_projects,
-        semantic=None, repair_widows=True, merge_bullets=False,
+        semantic=None, repair_widows=True, repair_verbs=True, merge_bullets=False,
     ):
+        """Capture fit kwargs so CLI flag plumbing can be asserted."""
         seen.update(
             target_pages=target_pages,
             template=template,
@@ -187,8 +188,9 @@ def test_defaults_match_config(cli, jd_file, tmp_path, monkeypatch):
 
     def capture(
         resume_arg, reqs, *, target_pages, template, out, max_experience, max_projects,
-        semantic=None, repair_widows=True, merge_bullets=False,
+        semantic=None, repair_widows=True, repair_verbs=True, merge_bullets=False,
     ):
+        """Capture defaults so they stay owned by fit(), not the CLI."""
         seen.update(
             target_pages=target_pages,
             template=template,
@@ -323,14 +325,42 @@ def test_no_widow_repair_flag_reaches_the_fit_loop(cli, jd_file, tmp_path, monke
     monkeypatch.setattr(cli.jd, "extract", lambda text, **kw: _requirements())
     monkeypatch.setattr(cli.jd, "verify_verbatim", lambda reqs, text: [])
 
-    def capture(*a, repair_widows=True, **k):
+    def capture(*a, repair_widows=True, repair_verbs=True, **k):
+        """Record polish knobs so --no-widow-repair and --no-verb-repair are testable."""
         seen["repair_widows"] = repair_widows
+        seen["repair_verbs"] = repair_verbs
         return _fit_result(resume, tmp_path / "tailored.docx")
 
     monkeypatch.setattr(cli.fit, "fit", capture)
 
     cli.main(["--jd", str(jd_file)])
     assert seen["repair_widows"] is True
+    assert seen["repair_verbs"] is True
 
     cli.main(["--jd", str(jd_file), "--no-widow-repair"])
     assert seen["repair_widows"] is False
+
+    cli.main(["--jd", str(jd_file), "--no-verb-repair"])
+    assert seen["repair_verbs"] is False
+
+
+def test_merge_flag_reaches_the_fit_loop(cli, jd_file, tmp_path, monkeypatch):
+    """--merge is opt-in; the default must leave merge_bullets False."""
+    resume = load()
+    seen: dict = {}
+
+    monkeypatch.setattr(cli.jd, "extract", lambda text, **kw: _requirements())
+    monkeypatch.setattr(cli.jd, "verify_verbatim", lambda reqs, text: [])
+
+    def capture(*a, merge_bullets=False, **k):
+        """Record whether merging was requested."""
+        seen["merge_bullets"] = merge_bullets
+        return _fit_result(resume, tmp_path / "tailored.docx")
+
+    monkeypatch.setattr(cli.fit, "fit", capture)
+
+    cli.main(["--jd", str(jd_file)])
+    assert seen["merge_bullets"] is False
+
+    cli.main(["--jd", str(jd_file), "--merge"])
+    assert seen["merge_bullets"] is True

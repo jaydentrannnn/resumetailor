@@ -92,11 +92,21 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--no-verb-repair",
+        action="store_true",
+        help=(
+            "Skip replacing opening verbs that repeat another bullet's. Rides in the same "
+            "follow-up call as widow repair, so this only saves a call on a run that has "
+            "no widows; the other half of the same A/B."
+        ),
+    )
+    parser.add_argument(
         "--merge",
         action="store_true",
         help=(
             "Enable merging redundant bullet points within a single entry, using an "
-            "additional non-regressive merge pass."
+            "additional non-regressive merge pass. Proposals fire only after the page has "
+            "measured over its target, so a resume that already fits is never merged."
         ),
     )
     parser.add_argument(
@@ -105,7 +115,7 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         metavar="MODEL",
         help=(
             "Which backend serves the run: a profile (claude, ollama, hybrid) or a spec "
-            "like 'ollama:minimax-m3:cloud'. 'hybrid' ranks on Ollama and rewrites "
+            "like 'ollama:gemma4:cloud'. 'hybrid' ranks on Ollama and rewrites "
             "on Claude. Default: claude."
         ),
     )
@@ -202,6 +212,7 @@ def main(argv: list[str] | None = None) -> int:
             max_projects=args.projects,
             semantic=semantic,
             repair_widows=not args.no_widow_repair,
+            repair_verbs=not args.no_verb_repair,
             merge_bullets=args.merge,
         )
     except FabricationError as exc:

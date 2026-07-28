@@ -152,6 +152,10 @@ class RunReport:
     widows_repaired: int
     widows_remaining: int
 
+    #: Opening verbs the polish pass replaced, and repeats it could not resolve.
+    verbs_diversified: int
+    verb_collisions_remaining: int
+
     warnings: list[str]
     out_path: str
 
@@ -190,6 +194,8 @@ def report_data(
         iterations=result.iterations,
         widows_repaired=result.widows_repaired,
         widows_remaining=result.widows_remaining,
+        verbs_diversified=result.verbs_diversified,
+        verb_collisions_remaining=result.verb_collisions_remaining,
         warnings=list(result.warnings),
         out_path=str(result.out_path),
         pdf_backend=config.PDF_BACKEND,
@@ -272,6 +278,13 @@ def format_report(
         f" ({result.widows_repaired} bullet(s) tightened)" if result.widows_repaired else ""
     )
     lines.append(f"Line waste: {result.widows_remaining} widowed line(s){tightened}")
+
+    # Costs no space, so it needs its own line for the same reason: a resume can hit every
+    # numeric target and still open half its bullets with the same verb.
+    revoiced = (
+        f" ({result.verbs_diversified} verb(s) replaced)" if result.verbs_diversified else ""
+    )
+    lines.append(f"Verb variety: {result.verb_collisions_remaining} repeated opener(s){revoiced}")
 
     lines.append(f"Output: {result.out_path}")
 
