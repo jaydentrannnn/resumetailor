@@ -28,10 +28,11 @@ model to reproduce formatting. This project refuses to:
 
 - `jd.py` and `rewrite.py` are the *only* modules that call the API, and they exchange
   plain text and JSON with it. Three stages: JD extraction, bullet relevance scoring,
-  bullet rewriting. Rewriting may issue **one** follow-up call — `rewrite._tighten_widows`,
-  which re-sends only the bullets that wrapped onto a near-empty line — so a run is three
-  to five calls, never more. When `--merge` is enabled and a merge proposal is accepted,
-  `rewrite._merge_bullets` adds one more call (still bounded by the same five-call cap).
+  bullet rewriting. Rewriting may issue **one** follow-up call — `rewrite._polish`, which
+  re-sends only the bullets that wrapped onto a near-empty line and/or open with a repeated
+  verb — so a clean run is three calls. When `--merge` is enabled and the page has measured
+  over, `rewrite._merge_bullets` adds one more call (still bounded by the same five-call
+  cap: extract + score + rewrite + merge + polish).
 - `llm.py` decides *which* model those two call. It is a routing layer, not a fourth call
   site — it moves the same plain strings and JSON, and knows nothing about the document.
 - `render.py` is the only module that touches the document, and does so mechanically via
@@ -57,10 +58,13 @@ stop. That is the bug this project exists to avoid.
   such change, and are pinned by tests: only letter-bearing parts enter the vocabulary (so
   `96.3` never licenses a `3`), and numbers are checked whole (so a fabricated `99%` or a
   version bump from `GPT-4.1` still fails). See `docs/PLAN.md`.
-- **Merging must preserve guard + numbers and avoid causal joins.** `rewrite._merge_bullets`
-  is accepted only when its candidate is non-regressive, passes the multi-source fabrication
-  guard, preserves every number-bearing token from all merged members, and does not
-  introduce new widow waste. The merge prompt forbids causal phrasing.
+- **Merging must preserve guard + numbers, avoid causal joins, and not restate claims.**
+  `rewrite._merge_bullets` is accepted only when its candidate is non-regressive, passes the
+  multi-source fabrication guard, preserves every number-bearing token from all merged
+  members, does not introduce new widow waste, and fails `redundancy_offenders` (no
+  restated tools/metrics, no second same-family verb). Proposals fire only after a measured
+  overflow (`attempt >= 1` in `fit.fit`). The merge prompt forbids causal phrasing and
+  concatenation-style restatement.
 - **Never silently truncate to fit a page.** If the fit loop cannot converge it must fail
   loudly and report which sections overflow.
 - **Editing a prompt means bumping its version constant.** `jd._PROMPT_VERSION` and
@@ -128,9 +132,10 @@ docker compose run --rm app python scripts/calibrate.py
 `tailor.py` takes `--out`, `--pages`, `--experience`, `--projects`, `--template`,
 `--no-cache` (JD extractions and relevance tables are cached to `output/` and reused across
 fit-loop retries), `--no-semantic` (rank on tag overlap only, skipping the relevance
-call — the control half of an A/B when a posting ranks surprisingly), and
-`--no-widow-repair` (skip the follow-up shortening call; the equivalent control for
-bullet length).
+call — the control half of an A/B when a posting ranks surprisingly),
+`--no-widow-repair` / `--no-verb-repair` (skip halves of the shared polish follow-up; the
+controls for length and opening-verb variety), and `--merge` (opt-in: propose merges only
+after a measured page overflow).
 
 It also selects the backend, which is what makes bulk applying affordable:
 
@@ -144,9 +149,9 @@ python tailor.py --jd jd.txt --effort medium     # per-stage default is low/low/
 
 `--model` takes a profile (`claude`, `ollama`, `hybrid`) or a spec
 `provider:model[@base_url]`. **The spec splits on the first colon only** — the default
-Ollama tag is `minimax-m3:cloud`, so `ollama:minimax-m3:cloud` has to keep the second
-colon in the model name. `ollama` is an alias for the OpenAI-compatible provider pointed
-at `OLLAMA_BASE_URL`, so the same path reaches local Ollama, Ollama Cloud, vLLM, Groq,
+Ollama tag is `gemma4:cloud`, so `ollama:gemma4:cloud` has to keep the second colon in
+the model name. `ollama` is an alias for the OpenAI-compatible provider pointed at
+`OLLAMA_BASE_URL`, so the same path reaches local Ollama, Ollama Cloud, vLLM, Groq,
 OpenRouter, GLM and Kimi.
 
 To regenerate the template from a **new** Google Docs export, copy it over the baseline
@@ -179,7 +184,7 @@ that way; it is what makes the guard and the fit loop cheap to iterate on.
   start reaching the network. This bit once already, when scoring was introduced.
 - **A stage that can call twice needs a *shared* reply queue in its fake.** `llm.client_for`
   is invoked once per call, so a fake that copies its queue per client (`list(replies)` in
-  `__init__`) silently replays the first reply to `_tighten_widows` — the repair then looks
+  `__init__`) silently replays the first reply to `_polish` — the repair then looks
   like a no-op and the test fails for a reason that has nothing to do with the code. See the
   `rewrite_calls` fixture in `tests/test_rewrite.py`, which builds the queue once and hands
   the same list to every client.
@@ -209,10 +214,10 @@ job description ────┘         │           canonicalised against the 
                     rewrite.select_within_entries()  bullets inside them (pure, no LLM)
                     rewrite.rewrite_bullets()  reword to mirror JD     (LLM, batched)
                     rewrite.check_fabrication() reject invented terms  (pure, in code)
-                    merge._merge_bullets() rewrite merged bullets (LLM, optional)
-                                               + guard/number checks in code
-                    rewrite._tighten_widows()  re-cut bullets that wrapped onto a
-                                               near-empty line  (LLM, only if any did)
+                    rewrite._merge_bullets()   merge after overflow    (LLM, optional)
+                                               + guard/number/redundancy checks in code
+                    rewrite._polish()          re-cut widows and/or
+                                               revoice colliding openers (LLM, only if any)
                               │
                               ▼
                     render.build_context() + docxtpl fill              (no LLM, ever)
@@ -381,8 +386,10 @@ One more, in `rewrite.py` rather than the template:
   difference. So the prompt advertises a `target` *range* and a `max` set below the budget,
   and `_SYSTEM` says which way to err — a bare ceiling is what let the model optimise right
   up to the edge and land on the wrong side a quarter of the time. `rewrite.widowed()` then
-  catches survivors and `_tighten_widows` re-cuts only those, non-regressively: a repaired
-  bullet is accepted only if it is both shorter and no longer widowed.
+  catches survivors and `_polish` re-cuts only those, non-regressively: a repaired
+  bullet is accepted only if it is both shorter and no longer widowed. The same polish call
+  also revoices opening-verb collisions (`verb_collisions` / `config.VERB_FAMILIES`); a bad
+  verb swap is discarded rather than failing the run.
 - **`UNDERFLOW_THRESHOLD` is the one fit constant with a running cost.** Measured on one
   posting: 0.92 gives 13 of 15 bullets in 3 iterations, 0.88 gives 12 in 2. It sits at
   **0.86** so a first render at ~86% fill does not trigger a grow/rewrite round; raise it

@@ -198,6 +198,7 @@ class JobQueue:
                 max_projects=settings.projects,
                 semantic=semantic,
                 repair_widows=not settings.no_widow_repair,
+                repair_verbs=not settings.no_verb_repair,
                 merge_bullets=settings.merge,
                 on_event=on_event,
             )
@@ -256,6 +257,8 @@ def _to_report_out(data: report.RunReport) -> RunReportOut:
         iterations=data.iterations,
         widows_repaired=data.widows_repaired,
         widows_remaining=data.widows_remaining,
+        verbs_diversified=data.verbs_diversified,
+        verb_collisions_remaining=data.verb_collisions_remaining,
         warnings=data.warnings,
         out_path=data.out_path,
         pdf_backend=data.pdf_backend,

@@ -9,8 +9,8 @@ page fitting, and the fabrication guard.
 All build phases are complete. What remains is in **Open items**, and is mostly decisions
 for the owner rather than missing code.
 
-**Last updated:** 2026-07-26 — added bullet merging (opt-in); unit tests pass; live A/B
-runs for the merge knob are pending.
+**Last updated:** 2026-07-27 — merge gated behind overflow; redundancy rejection; opening-verb
+variety polish; web toggles for merge / verb repair.
 
 ---
 
@@ -28,15 +28,16 @@ runs for the merge knob are pending.
 | 7 — Per-section ranking | **Done** | experience and projects ranked separately, capped at 3 and 2 |
 | 8 — Semantic-aware ranking | **Done** | closed-vocabulary canonicalisation, LLM score table, `kind` on keywords |
 | 9 — Pluggable model backends | **Done** | `llm.py`; `--model claude\|ollama\|hybrid`; per-stage effort; backend in cache keys |
-| 10 — Widow elimination | **Done** | length band + `_tighten_widows`; `UNDERFLOW_THRESHOLD` 0.85 → 0.92; template re-exported |
-| 11 — Bullet merging | **Done** | `merge.propose` + `rewrite._merge_bullets`; gated by `--merge` / web setting |
+| 10 — Widow elimination | **Done** | length band + `_polish` (widows); `UNDERFLOW_THRESHOLD` 0.85 → 0.92; template re-exported |
+| 11 — Bullet merging | **Done** | `merge.propose` + `rewrite._merge_bullets`; overflow-gated; redundancy gate |
+| 12 — Verb variety + merge anti-repetition | **Done** | `_polish` verb half; UI merge / `--no-verb-repair`; master openers diversified |
 
 **The pipeline runs end to end against the live API.** A search/retrieval intern posting
 produces a 1-page resume (90% full) at 100% must-have keyword coverage in 2 iterations,
 showing 3 experience entries and 2 projects, with the template's formatting, hyperlinks,
 and tab-aligned dates intact.
 
-**170 tests pass** (`pytest`). They cover selection scoring, the fabrication guard, four
+**187 tests pass** (`pytest`). They cover selection scoring, the fabrication guard, four
 template-rendering regressions, the fit loop's selection/shorten/underflow logic, the run
 report, and the CLI's exit codes (`rewrite_bullets`, `render`, and `jd.extract`
 monkeypatched). No test exercises a live API call.
@@ -566,7 +567,38 @@ fewer rewritten bullets.
 - Every number-bearing token from every merged member must survive into the candidate
   text (`numbers_dropped`).
 - The merged bullet must not be widowed (widow repair remains a later pass).
+- The merged text must not restate significant tokens or stack same-family verbs
+  (`redundancy_offenders`).
+
+**Gating:** `fit.fit` proposes merges only when `merge_bullets` is on *and* `attempt >= 1`
+(a measured overflow has already happened). Eager first-draft merges combined the most
+similar adjacent pair for no page reason and read repetitively.
 
 **Status:** `pytest` covers proposal heuristics, merge acceptance behavior, multi-source
-guard invariants, id-collapsing into the renderer, and the report string. Live API / rendered
-PDF A/B runs for the merge knob are not executed in this environment yet.
+guard invariants, redundancy rejection, id-collapsing into the renderer, and the report
+string. Live API / rendered PDF A/B runs for the merge knob are not executed in this
+environment yet.
+
+---
+
+## Phase 12 — Verb variety and merge anti-repetition — **Done**
+
+**What:** Stop resumes from reading as "Designed... Engineered... Architected..." and stop
+merges from concatenating two similar bullets into one repetitive line. Expose the merge
+toggle in the web UI.
+
+**How:**
+- `_SYSTEM` and `_MERGE_INSTRUCTION` ask the model not to stack near-synonym openers or
+  restate shared tools/metrics.
+- `config.VERB_FAMILIES` + `rewrite.verb_collisions` detect exact duplicate openers and
+  family over-concentration (`MAX_SAME_FAMILY_OPENERS = 2`).
+- `rewrite._tighten_widows` generalised to `_polish`: one follow-up call carrying widows
+  and/or verb collisions. Widow fabrication remains a hard failure; a bad verb swap is
+  discarded.
+- CLI `--no-verb-repair`; web `merge` + `no_verb_repair` toggles; report fields for
+  `verbs_diversified` / `verb_collisions_remaining`.
+- Master resume openers diversified (Designed/Built/Reduced collisions).
+
+**Prompt versions:** `_SYSTEM` / merge / polish instructions are not cached, so no version
+bump was required (only `_SCORE_SYSTEM` is versioned). Editing bullet text in
+`master_resume.json` invalidates score caches by design.

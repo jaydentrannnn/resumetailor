@@ -9,6 +9,9 @@ export type JobSettings = {
   effort: "low" | "medium" | "high" | null;
   no_semantic: boolean;
   no_widow_repair: boolean;
+  no_verb_repair: boolean;
+  /** Combine near-duplicate bullets within an entry; only fires if the page overflows. */
+  merge: boolean;
   no_cache: boolean;
 };
 
@@ -44,6 +47,8 @@ export type RunReport = {
   iterations: number;
   widows_repaired: number;
   widows_remaining: number;
+  verbs_diversified: number;
+  verb_collisions_remaining: number;
   warnings: string[];
   out_path: string;
   pdf_backend: string;

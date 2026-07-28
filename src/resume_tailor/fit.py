@@ -55,6 +55,13 @@ class FitResult:
     widows_repaired: int = 0
     widows_remaining: int = 0
 
+    #: Bullets whose opening verb the polish pass replaced, and bullets still opening with
+    #: a verb another bullet already used. Costs no page space — reported because a resume
+    #: that opens three bullets "Designed... Engineered... Architected..." reads as one
+    #: sentence, and nothing else in the output would say so.
+    verbs_diversified: int = 0
+    verb_collisions_remaining: int = 0
+
     #: Merge groups successfully accepted and applied during rewriting.
     merges: list[MergeGroup] = field(default_factory=list)
 
@@ -159,14 +166,24 @@ def choose_entries(
     return [*experience, *projects]
 
 
-def _select_bullets_dict(
+def _select_at_rewrite_budget(
     entries: list,
     requirements: JobRequirements,
     limit: int,
     semantic: dict[str, float] | None = None,
 ) -> dict[str, str]:
+    """Map a selection to rewrite-budget placeholders for cheap line estimates.
+
+    Initial sizing assumes each bullet lands near `_TARGET_LINES_PER_BULLET` after the
+    first rewrite, not at the (usually longer) master wording — estimating on originals
+    under-selected and left the page sparse until grow rounds caught up.
+    """
     selected = select_within_entries(entries, requirements, limit=limit, semantic=semantic)
-    return {b.id: b.text for b in selected}
+    # Match the hard max the rewrite prompt advertises (budget minus widow safety), not
+    # the full line cliff — that is what the model is told to land under.
+    stub_len = max(40, _TARGET_LINES_PER_BULLET * config.CHARS_PER_LINE - config.WIDOW_SAFETY)
+    stub = "x" * stub_len
+    return {b.id: stub for b in selected}
 
 
 def _initial_selection_size(
@@ -176,22 +193,24 @@ def _initial_selection_size(
     target_pages: int,
     semantic: dict[str, float] | None = None,
 ) -> int:
-    """Binary search the largest bullet count whose *original* text fits the target.
+    """Binary search the largest bullet count whose *post-rewrite* size should fit.
 
-    Only used to size the first selection cheaply. Rewriting can change each bullet's
-    length, so the real render/measure below is what actually confirms the fit.
+    Only used to size the first selection cheaply. Each candidate is estimated at the
+    rewrite line budget, not master length; the real render/measure still confirms fit.
+    `config.INITIAL_SELECTION_OVERSHOOT` lets the search claim a few lines past capacity
+    so the first call packs denser (overflow/shorten still corrects if needed).
 
     The search floor is one bullet per chosen entry, never zero: dropping below that would
     delete an entry the ranking already decided to keep.
     """
     floor = len(entries)
     total = sum(len(e.bullets) for e in entries)
-    capacity = target_pages * config.LINES_PER_PAGE
+    capacity = target_pages * config.LINES_PER_PAGE + config.INITIAL_SELECTION_OVERSHOOT
 
     low, high = floor, total
     while low < high:
         mid = (low + high + 1) // 2
-        bullets = _select_bullets_dict(entries, requirements, mid, semantic)
+        bullets = _select_at_rewrite_budget(entries, requirements, mid, semantic)
         if estimate_lines(resume, bullets) <= capacity:
             low = mid
         else:
@@ -235,6 +254,7 @@ def fit(
     max_projects: int | None = None,
     semantic: dict[str, float] | None = None,
     repair_widows: bool = True,
+    repair_verbs: bool = True,
     merge_bullets: bool = False,
     on_event: events.ProgressCallback | None = None,
 ) -> FitResult:
@@ -257,6 +277,14 @@ def fit(
     `repair_widows` is passed through to `rewrite_bullets`; see there. It matters to the
     loop because a widowed bullet inflates the measured line count with space that holds
     one word, which both hides real capacity and can push a fitting resume onto two pages.
+
+    `repair_verbs` is passed through the same way and shares that call. It does not affect
+    fitting at all — a repeated opening verb costs no space — so it is purely a readability
+    pass the loop carries rather than owns.
+
+    `merge_bullets` enables the merge proposal step, which fires only after a measured
+    overflow: merging is a space lever, and one applied to a page that already fit combined
+    bullets for no reason.
 
     `on_event` observes progress. A run costs several minutes of model calls and renders,
     so a UI driving this needs to report which iteration it is on; the callback cannot
@@ -304,6 +332,12 @@ def fit(
         attempt = 0
         while True:
             iterations += 1
+            # Merging is a space lever, so it fires only once the page has actually
+            # measured over — never on the first draft. Proposing at `attempt == 0` merged
+            # bullets the page had room for, and because affinity ranks the *most similar*
+            # adjacent pair first, those gratuitous merges were exactly the ones that read
+            # repetitively. Waiting for overflow makes every merge attributable to a
+            # measured shortfall.
             merge_groups = (
                 propose_merges(
                     entries,
@@ -314,7 +348,7 @@ def fit(
                     shorten_pct=shorten_pct,
                     attempt=attempt,
                 )
-                if merge_bullets
+                if merge_bullets and attempt >= 1
                 else []
             )
             outcome = rewrite_bullets(
@@ -323,6 +357,7 @@ def fit(
                 char_budget=char_budget,
                 shorten_pct=shorten_pct,
                 repair_widows=repair_widows,
+                repair_verbs=repair_verbs,
                 merge_groups=merge_groups,
                 on_event=on_event,
             )
@@ -395,6 +430,11 @@ def fit(
                     f"{outcome.widows_remaining} bullet(s) still end on a near-empty line, "
                     f"wasting that much of the page."
                 )
+            if outcome.verb_collisions_remaining:
+                warnings.append(
+                    f"{outcome.verb_collisions_remaining} bullet(s) still open with a verb "
+                    f"another bullet already used, or a near-synonym of one."
+                )
             if not pages_are_estimated:
                 render.to_pdf(doc_path, keep_active=False)  # release Word on the way out
             events.emit(
@@ -417,6 +457,8 @@ def fit(
                 semantic_used=bool(semantic),
                 widows_repaired=outcome.widows_repaired,
                 widows_remaining=outcome.widows_remaining,
+                verbs_diversified=outcome.verbs_diversified,
+                verb_collisions_remaining=outcome.verb_collisions_remaining,
                 merges=outcome.merges,
                 warnings=warnings,
             )

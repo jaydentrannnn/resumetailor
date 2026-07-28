@@ -366,3 +366,69 @@ def test_report_prints_merge_section_and_counts_absorbed_members_as_kept():
     assert "Merges: 1 accepted" in text
     assert "ACME: 2/2 bullets" in text
 
+
+def test_redundancy_offenders_flags_repeated_claims():
+    """A merge that restates the same tool twice must be detectable in code."""
+    clean = rewrite.redundancy_offenders(
+        "Built a Python service that reduced latency by 40%"
+    )
+    assert clean == []
+
+    redundant = rewrite.redundancy_offenders(
+        "Designed a Python pipeline and engineered a Python pipeline"
+    )
+    assert "engineered" in redundant
+    assert "Python" in redundant
+    assert "pipeline" in redundant
+
+
+def test_merge_rejects_redundant_candidate(rewrite_calls):
+    """A short, honest merge that restates shared terms must not be accepted."""
+    CPL = config.CHARS_PER_LINE
+    char_budget = 2 * CPL
+    _, hard_max = rewrite._length_band(char_budget)
+
+    a = bullet(
+        "a",
+        "Designed a Python retrieval pipeline for course search.",
+        ["python", "retrieval"],
+    )
+    b = bullet(
+        "b",
+        "Engineered a Python retrieval pipeline with reranking.",
+        ["python", "retrieval"],
+    )
+    # Pad so each source spans 2 lines; the redundant candidate still frees a line.
+    a = bullet(a.id, a.text + " " + _text(hard_max - len(a.text) - 1), a.tags)
+    b = bullet(b.id, b.text + " " + _text(hard_max - len(b.text) - 1), b.tags)
+
+    groups = [
+        merge.MergeGroup(
+            survivor_id=a.id,
+            member_ids=(a.id, b.id),
+            affinity=1.0,
+            reason="test",
+        )
+    ]
+
+    # Honest but redundant: same tool restated, same-family second verb.
+    candidate = (
+        "Designed a Python retrieval pipeline and engineered a Python retrieval pipeline."
+    )
+    assert len(candidate) <= hard_max
+    assert rewrite.redundancy_offenders(candidate)
+
+    rewrite_calls(_reply(**{a.id: a.text, b.id: b.text}), _reply(**{a.id: candidate}))
+
+    outcome = rewrite.rewrite_bullets(
+        [a, b],
+        requirements(("python", "must_have")),
+        char_budget=char_budget,
+        repair_widows=False,
+        repair_verbs=False,
+        merge_groups=groups,
+    )
+
+    assert outcome.merges == []
+    assert set(outcome.texts.keys()) == {a.id, b.id}
+

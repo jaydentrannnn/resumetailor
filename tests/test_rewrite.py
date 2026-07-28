@@ -754,8 +754,182 @@ def test_no_widow_repair_holds_the_run_to_one_call(rewrite_calls):
     src = [bullet("a", "Built a Python service.", ["python"])]
     calls = rewrite_calls(_reply(a=_text(204)))
 
-    outcome = rewrite.rewrite_bullets(src, _reqs(), char_budget=202, repair_widows=False)
+    outcome = rewrite.rewrite_bullets(
+        src, _reqs(), char_budget=202, repair_widows=False, repair_verbs=False
+    )
 
     assert len(calls) == 1
     assert outcome.texts["a"] == _text(204)
     assert outcome.widows_remaining == 1
+
+
+# --------------------------------------------------------------------------------------
+# Opening-verb variety
+# --------------------------------------------------------------------------------------
+
+
+def test_opening_verb_ignores_non_word_openers():
+    """Hyphenated or empty openers are not verbs and must not participate in collisions."""
+    assert rewrite.opening_verb("Designed a pipeline.") == "designed"
+    assert rewrite.opening_verb("Full-stack app") is None
+    assert rewrite.opening_verb("") is None
+
+
+def test_verb_collisions_flags_exact_duplicate_openers():
+    """A second bullet opening with the same word is always an offender."""
+    texts = {
+        "a": "Designed a Python service.",
+        "b": "Designed a retrieval pipeline.",
+        "c": "Led a mentoring cohort.",
+    }
+    collisions = rewrite.verb_collisions(texts)
+    assert set(collisions) == {"b"}
+    assert "designed" in collisions["b"]
+
+
+def test_verb_collisions_flags_family_over_concentration():
+    """More than MAX_SAME_FAMILY_OPENERS near-synonyms must flag the extras."""
+    texts = {
+        "a": "Designed a Python service.",
+        "b": "Engineered a retrieval pipeline.",
+        "c": "Architected a SQL router.",
+        "d": "Led a mentoring cohort.",
+    }
+    collisions = rewrite.verb_collisions(texts)
+    # First two build-family openers keep their claim; the third is the offender.
+    assert set(collisions) == {"c"}
+    assert "designed" in collisions["c"]
+    assert "engineered" in collisions["c"]
+
+
+def test_verb_collisions_ignores_unknown_openers_for_family_rules():
+    """An unlisted opener never participates in family over-concentration."""
+    texts = {
+        "a": "Photographed campus events.",
+        "b": "Photographed lab demos.",
+        "c": "Designed a Python service.",
+        "d": "Engineered a retrieval pipeline.",
+    }
+    collisions = rewrite.verb_collisions(texts)
+    # Exact duplicate of Photographed is still flagged; family rule does not invent one.
+    assert set(collisions) == {"b"}
+    assert "photographed" in collisions["b"]
+
+
+def test_polish_swaps_a_colliding_opener(rewrite_calls):
+    """One follow-up call replaces a repeated opener without rewriting the rest."""
+    src = [
+        bullet("a", "Designed a Python service for search.", ["python"]),
+        bullet("b", "Designed a Python retrieval pipeline.", ["python"]),
+    ]
+    # First call: echo source (exact collision). Second: swap b's opener only.
+    calls = rewrite_calls(
+        _reply(
+            a="Designed a Python service for search.",
+            b="Designed a Python retrieval pipeline.",
+        ),
+        _reply(b="Built a Python retrieval pipeline."),
+    )
+
+    outcome = rewrite.rewrite_bullets(
+        src, _reqs(), char_budget=202, repair_widows=False, repair_verbs=True
+    )
+
+    assert len(calls) == 2
+    assert "bullets_to_revoice" in calls[1]["messages"][0]["content"]
+    assert outcome.texts["b"].startswith("Built ")
+    assert outcome.verbs_diversified == 1
+    assert outcome.verb_collisions_remaining == 0
+
+
+def test_polish_discards_a_swap_that_still_collides(rewrite_calls):
+    """Non-regressive: a reply that keeps a forbidden opener leaves the original."""
+    src = [
+        bullet("a", "Designed a Python service for search.", ["python"]),
+        bullet("b", "Designed a Python retrieval pipeline.", ["python"]),
+    ]
+    rewrite_calls(
+        _reply(
+            a="Designed a Python service for search.",
+            b="Designed a Python retrieval pipeline.",
+        ),
+        _reply(b="Designed a Python retrieval pipeline."),  # no change
+    )
+
+    outcome = rewrite.rewrite_bullets(
+        src, _reqs(), char_budget=202, repair_widows=False, repair_verbs=True
+    )
+
+    assert outcome.texts["b"].startswith("Designed ")
+    assert outcome.verbs_diversified == 0
+    assert outcome.verb_collisions_remaining == 1
+
+
+def test_polish_discards_a_fabricating_verb_swap(rewrite_calls):
+    """A cosmetic pass must not kill the run; fabrication on a swap is discarded."""
+    src = [
+        bullet("a", "Designed a Python service for search.", ["python"]),
+        bullet("b", "Designed a Python retrieval pipeline.", ["python"]),
+    ]
+    rewrite_calls(
+        _reply(
+            a="Designed a Python service for search.",
+            b="Designed a Python retrieval pipeline.",
+        ),
+        _reply(b="Built a Kubernetes retrieval pipeline."),
+    )
+
+    outcome = rewrite.rewrite_bullets(
+        src, _reqs(), char_budget=202, repair_widows=False, repair_verbs=True
+    )
+
+    assert outcome.texts["b"].startswith("Designed ")
+    assert outcome.verbs_diversified == 0
+
+
+def test_no_verb_repair_holds_the_run_to_one_call(rewrite_calls):
+    """The control half of the A/B for verb variety."""
+    src = [
+        bullet("a", "Designed a Python service for search.", ["python"]),
+        bullet("b", "Designed a Python retrieval pipeline.", ["python"]),
+    ]
+    calls = rewrite_calls(
+        _reply(
+            a="Designed a Python service for search.",
+            b="Designed a Python retrieval pipeline.",
+        )
+    )
+
+    outcome = rewrite.rewrite_bullets(
+        src, _reqs(), char_budget=202, repair_widows=False, repair_verbs=False
+    )
+
+    assert len(calls) == 1
+    assert outcome.verb_collisions_remaining == 1
+
+
+def test_widow_and_verb_defects_share_one_polish_call(rewrite_calls):
+    """Both defect kinds ride in a single follow-up, preserving the five-call cap."""
+    # a is widowed (204 chars starting with Designed); b collides on Designed but fits.
+    widowed_text = "Designed " + ("x" * (204 - len("Designed ")))
+    src = [
+        bullet("a", "Designed a Python service.", ["python"]),
+        bullet("b", "Designed a short Python tool.", ["python"]),
+    ]
+    shortened = "Designed " + ("x" * (190 - len("Designed ")))
+    calls = rewrite_calls(
+        _reply(a=widowed_text, b="Designed a short Python tool."),
+        _reply(a=shortened, b="Built a short Python tool."),
+    )
+
+    outcome = rewrite.rewrite_bullets(src, _reqs(), char_budget=202)
+
+    assert len(calls) == 2
+    follow_up = calls[1]["messages"][0]["content"]
+    assert "bullets_to_shorten" in follow_up
+    # a was widowed so it is sent only as a widow; b is the verb-only offender.
+    assert "bullets_to_revoice" in follow_up
+    assert "'b'" in follow_up
+    assert outcome.widows_repaired == 1
+    assert outcome.verbs_diversified == 1
+    assert outcome.verb_collisions_remaining == 0

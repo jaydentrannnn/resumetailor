@@ -22,6 +22,7 @@ class JobSettings(BaseModel):
     effort: Literal["low", "medium", "high"] | None = None
     no_semantic: bool = False
     no_widow_repair: bool = False
+    no_verb_repair: bool = False
     merge: bool = False
     no_cache: bool = False
 
@@ -78,6 +79,8 @@ class RunReportOut(BaseModel):
     iterations: int
     widows_repaired: int
     widows_remaining: int
+    verbs_diversified: int
+    verb_collisions_remaining: int
     warnings: list[str]
     out_path: str
     pdf_backend: str

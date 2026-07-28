@@ -79,6 +79,8 @@ def test_job_runs_to_success_with_stubbed_pipeline(client, monkeypatch, tmp_path
             on_event(ProgressEvent("score", "stub score", {}))
         return {b.id: 5.0 for b in bullets}
 
+    seen_fit: dict = {}
+
     def fake_fit(
         resume,
         requirements,
@@ -90,9 +92,16 @@ def test_job_runs_to_success_with_stubbed_pipeline(client, monkeypatch, tmp_path
         max_projects=None,
         semantic=None,
         repair_widows=True,
+        repair_verbs=True,
         merge_bullets=False,
         on_event=None,
     ):
+        """Stub fit and record polish/merge knobs from JobSettings."""
+        seen_fit.update(
+            repair_widows=repair_widows,
+            repair_verbs=repair_verbs,
+            merge_bullets=merge_bullets,
+        )
         out = Path(out)
         out.parent.mkdir(parents=True, exist_ok=True)
         out.write_bytes(b"PK")  # pretend docx
@@ -119,7 +128,14 @@ def test_job_runs_to_success_with_stubbed_pipeline(client, monkeypatch, tmp_path
 
     res = c.post(
         "/api/jobs",
-        json={"jd_text": "Looking for a Python intern.", "settings": {"model": "claude"}},
+        json={
+            "jd_text": "Looking for a Python intern.",
+            "settings": {
+                "model": "claude",
+                "merge": True,
+                "no_verb_repair": True,
+            },
+        },
     )
     assert res.status_code == 200
     job_id = res.json()["job_id"]
@@ -140,6 +156,12 @@ def test_job_runs_to_success_with_stubbed_pipeline(client, monkeypatch, tmp_path
     assert status["status"] == "succeeded", status
     assert status["report"]["title"] == "Stub Role"
     assert status["report"]["pages"] == 1
+    assert status["report"]["verb_collisions_remaining"] == 0
+    assert seen_fit == {
+        "repair_widows": True,
+        "repair_verbs": False,
+        "merge_bullets": True,
+    }
     assert any(e["stage"] == "extract" for e in status["events"])
 
     docx = c.get(f"/api/jobs/{job_id}/download.docx")

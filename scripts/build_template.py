@@ -33,12 +33,14 @@ import docx
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.text.paragraph import Paragraph
+from docx.text.run import Run
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from resume_tailor import config  # noqa: E402
 
 W = qn("w:p")
+NOTO_MARKER_FONT = "Noto Sans Symbols"
 
 
 # --------------------------------------------------------------------------------------
@@ -115,15 +117,105 @@ def set_run_text(run, text: str, *, keep_tabs: bool = False) -> None:
     run._r.append(t)
 
 
-def clone_run_after(run, text: str):
+def clone_run_after(run, text: str) -> Run:
     """Duplicate a run (inheriting its formatting) with new text, placed just after it."""
     new_r = copy.deepcopy(run._r)
     run._r.addnext(new_r)
-    from docx.text.run import Run
-
     cloned = Run(new_r, run._parent)
     set_run_text(cloned, text)
     return cloned
+
+
+def strip_bold(run: Run) -> None:
+    """Remove bold from a run's character properties."""
+    rPr = run._r.find(qn("w:rPr"))
+    if rPr is None:
+        return
+    for tag in ("w:b", "w:bCs"):
+        el = rPr.find(qn(tag))
+        if el is not None:
+            rPr.remove(el)
+
+
+def tab_run_index(paragraph: Paragraph) -> int:
+    """Return the index of the run holding the header's date-alignment tab."""
+    for i, run in enumerate(paragraph.runs):
+        if "\t" in run.text or has_tab_element(run):
+            return i
+    return len(paragraph.runs) - 1
+
+
+def leading_runs_before_tab(paragraph: Paragraph) -> int:
+    """Count runs before the header tab — more runs usually means company/location split."""
+    return tab_run_index(paragraph)
+
+
+def set_num_id(paragraph: Paragraph, num_id: str) -> None:
+    """Point a list paragraph at a different numbering definition instance."""
+    pPr = paragraph._p.find(qn("w:pPr"))
+    if pPr is None:
+        pPr = OxmlElement("w:pPr")
+        paragraph._p.insert(0, pPr)
+    numPr = pPr.find(qn("w:numPr"))
+    if numPr is None:
+        numPr = OxmlElement("w:numPr")
+        pPr.insert(0, numPr)
+    num_id_el = numPr.find(qn("w:numId"))
+    if num_id_el is None:
+        num_id_el = OxmlElement("w:numId")
+        numPr.append(num_id_el)
+    num_id_el.set(qn("w:val"), num_id)
+
+
+def strip_right_indent(paragraph: Paragraph) -> None:
+    """Drop a paragraph's right indent — it narrows the column and inflates line count."""
+    pPr = paragraph._p.find(qn("w:pPr"))
+    if pPr is None:
+        return
+    ind = pPr.find(qn("w:ind"))
+    if ind is None:
+        return
+    if ind.get(qn("w:right")) is not None:
+        del ind.attrib[qn("w:right")]
+
+
+# Word single spacing under lineRule=auto is 240 (240ths of a line).
+SINGLE_LINE = "240"
+
+
+def set_single_spacing(paragraph: Paragraph, *, exact: bool = False) -> None:
+    """Force Word single line spacing on a paragraph, preserving before/after gaps.
+
+    `lineRule=auto` is Word's "Single". Bullets also get `exact` so a taller substitute
+    bullet font (common under LibreOffice when Noto is missing) cannot inflate the
+    auto line box past single — measured wraps were ~15.7pt for 10pt body text.
+    """
+    pPr = paragraph._p.find(qn("w:pPr"))
+    if pPr is None:
+        pPr = OxmlElement("w:pPr")
+        paragraph._p.insert(0, pPr)
+    spacing = pPr.find(qn("w:spacing"))
+    if spacing is None:
+        spacing = OxmlElement("w:spacing")
+        pPr.append(spacing)
+    spacing.set(qn("w:line"), SINGLE_LINE)
+    # exact locks height in twips (240 = 12pt); auto is Word UI "Single".
+    spacing.set(qn("w:lineRule"), "exact" if exact else "auto")
+
+
+def normalize_single_spacing(doc) -> None:
+    """Write single line spacing onto every body paragraph in the document.
+
+    Google Docs exports can leave spacing unset (inherits a looser default) or carry
+    Multiple > 1 on some paragraphs. Prototypes alone cannot fix education bullets or
+    the name/contact lines, so this runs over the whole document after tagging.
+    """
+    for paragraph in doc.paragraphs:
+        text = (paragraph.text or "").strip()
+        # Control-tag paragraphs are dropped at render time; leave them bare.
+        if text.startswith("{%p "):
+            continue
+        set_single_spacing(paragraph, exact=is_bullet(paragraph))
 
 
 # --------------------------------------------------------------------------------------
@@ -193,6 +285,119 @@ def vertical_cost(p: Paragraph) -> tuple[int, int]:
     return line, right
 
 
+def _num_to_abstract(numbering_root) -> dict[str, str]:
+    """Map numbering instance ids to their abstract definition ids."""
+    mapping: dict[str, str] = {}
+    for num in numbering_root.findall(qn("w:num")):
+        nid = num.get(qn("w:numId"))
+        abs_el = num.find(qn("w:abstractNumId"))
+        if nid is not None and abs_el is not None:
+            mapping[nid] = abs_el.get(qn("w:val"), "")
+    return mapping
+
+
+def _abstract_has_noto_marker(numbering_root, abstract_id: str) -> bool:
+    """Return whether an abstract numbering definition pins Noto for its lvl0 bullet."""
+    for anum in numbering_root.findall(qn("w:abstractNum")):
+        if anum.get(qn("w:abstractNumId")) != abstract_id:
+            continue
+        for lvl in anum.findall(qn("w:lvl")):
+            if lvl.get(qn("w:ilvl")) != "0":
+                continue
+            num_fmt = lvl.find(qn("w:numFmt"))
+            if num_fmt is None or num_fmt.get(qn("w:val")) != "bullet":
+                continue
+            rPr = lvl.find(qn("w:rPr"))
+            rf = rPr.find(qn("w:rFonts")) if rPr is not None else None
+            return rf is not None and rf.get(qn("w:ascii")) == NOTO_MARKER_FONT
+    return False
+
+
+def discover_noto_num_id(doc) -> str | None:
+    """Find a list instance id whose lvl0 bullet marker uses Noto Sans Symbols.
+
+    Prefer an id used by education bullets so experience/projects match that section.
+    """
+    numbering = doc.part.numbering_part
+    root = numbering.element
+    num_to_abs = _num_to_abstract(root)
+
+    bounds = find_sections(doc)
+    candidates: list[str] = []
+    if "EDUCATION" in bounds:
+        start, end = bounds["EDUCATION"]
+        for paragraph in doc.paragraphs[start:end]:
+            if not is_bullet(paragraph):
+                continue
+            pPr = paragraph._p.find(qn("w:pPr"))
+            numPr = pPr.find(qn("w:numPr")) if pPr is not None else None
+            if numPr is None:
+                continue
+            num_id_el = numPr.find(qn("w:numId"))
+            if num_id_el is None:
+                continue
+            num_id = num_id_el.get(qn("w:val"))
+            if num_id and _abstract_has_noto_marker(root, num_to_abs.get(num_id, "")):
+                return num_id
+            if num_id:
+                candidates.append(num_id)
+
+    for num_id, abstract_id in num_to_abs.items():
+        if _abstract_has_noto_marker(root, abstract_id):
+            return num_id
+    return candidates[0] if candidates else None
+
+
+def normalize_bullet_numbering(doc) -> None:
+    """Pin Noto Sans Symbols on every lvl0 bullet marker in numbering.xml."""
+    numbering = doc.part.numbering_part
+    root = numbering.element
+
+    ref_rfonts = None
+    for anum in root.findall(qn("w:abstractNum")):
+        for lvl in anum.findall(qn("w:lvl")):
+            if lvl.get(qn("w:ilvl")) != "0":
+                continue
+            num_fmt = lvl.find(qn("w:numFmt"))
+            if num_fmt is None or num_fmt.get(qn("w:val")) != "bullet":
+                continue
+            rPr = lvl.find(qn("w:rPr"))
+            rf = rPr.find(qn("w:rFonts")) if rPr is not None else None
+            if rf is not None and rf.get(qn("w:ascii")) == NOTO_MARKER_FONT:
+                ref_rfonts = copy.deepcopy(rf)
+                break
+        if ref_rfonts is not None:
+            break
+
+    if ref_rfonts is None:
+        ref_rfonts = OxmlElement("w:rFonts")
+        for attr in ("ascii", "hAnsi", "cs", "eastAsia"):
+            ref_rfonts.set(qn(f"w:{attr}"), NOTO_MARKER_FONT)
+
+    for anum in root.findall(qn("w:abstractNum")):
+        for lvl in anum.findall(qn("w:lvl")):
+            if lvl.get(qn("w:ilvl")) != "0":
+                continue
+            num_fmt = lvl.find(qn("w:numFmt"))
+            if num_fmt is None or num_fmt.get(qn("w:val")) != "bullet":
+                continue
+            rPr = lvl.find(qn("w:rPr"))
+            if rPr is None:
+                rPr = OxmlElement("w:rPr")
+                lvl.append(rPr)
+            old_rf = rPr.find(qn("w:rFonts"))
+            if old_rf is not None:
+                rPr.remove(old_rf)
+            rPr.insert(0, copy.deepcopy(ref_rfonts))
+
+
+def retarget_bullet(paragraph: Paragraph, num_id: str | None) -> None:
+    """Use the canonical small-marker list id and drop any right-indent inflation."""
+    if num_id is not None:
+        set_num_id(paragraph, num_id)
+    strip_right_indent(paragraph)
+
+
 def pick_bullet_prototype(entries: list[list[Paragraph]]) -> Paragraph:
     """Choose the most compact bullet in a section to serve as the loop body.
 
@@ -223,19 +428,24 @@ def tag_header(paragraph: Paragraph, fields: list[str], *, tail_field: str) -> N
     the text after the tab becomes `tail_field`. Working run-by-run rather than rewriting
     the paragraph is what preserves the bold prefix and the right-aligned tab stop.
     """
+    tab_idx = tab_run_index(paragraph)
     runs = paragraph.runs
-    tab_idx = next(
-        (i for i, r in enumerate(runs) if "\t" in r.text),
-        len(runs) - 1,
-    )
 
     # Everything before the tab carries the leading fields.
     lead = runs[:tab_idx]
     for i, run in enumerate(lead):
         set_run_text(run, fields[i] if i < len(fields) else "")
-    # More fields than runs: append the remainder to the last leading run.
+
+    # More fields than runs: insert plain runs instead of merging into the bold run.
     if len(fields) > len(lead) and lead:
-        set_run_text(lead[-1], lead[-1].text + "".join(fields[len(lead) :]))
+        anchor = lead[-1]
+        for field in fields[len(lead) :]:
+            plain = clone_run_after(anchor, field)
+            strip_bold(plain)
+            anchor = plain
+
+    runs = paragraph.runs
+    tab_idx = tab_run_index(paragraph)
 
     # The tab run keeps its tab; the date follows it.
     tab_run = runs[tab_idx]
@@ -290,11 +500,11 @@ def build_loop(
 # --------------------------------------------------------------------------------------
 
 
-def build_experience(doc, entries: list[list[Paragraph]]) -> None:
+def build_experience(doc, entries: list[list[Paragraph]], *, noto_num_id: str | None) -> None:
     """Replace all experience entries with one tagged, looped prototype."""
-    # Prefer the entry whose header has the fewest runs — fewer runs means a cleaner
-    # mapping from fields to runs, and every entry renders identically anyway.
-    prototype = min(entries, key=header_run_count)
+    # Prefer a header whose company and location already live in separate runs so
+    # company stays bold and location stays plain after tagging.
+    prototype = max(entries, key=lambda entry: leading_runs_before_tab(entry[0]))
 
     header, *rest = prototype
     title = next((p for p in rest if not is_bullet(p) and p.text.strip()), None)
@@ -303,6 +513,7 @@ def build_experience(doc, entries: list[list[Paragraph]]) -> None:
     # The bullet prototype is chosen across the whole section, independently of the
     # header, so spacing is normalised to the tightest variant present.
     bullet = pick_bullet_prototype(entries)
+    retarget_bullet(bullet, noto_num_id)
 
     tag_header(header, ["{{ job.company }} | ", "{{ job.location }}"], tail_field="{{ job.dates }}")
     set_run_text(title.runs[0], "{{ job.title }}")
@@ -324,11 +535,12 @@ def build_experience(doc, entries: list[list[Paragraph]]) -> None:
             delete(para)
 
 
-def build_projects(doc, entries: list[list[Paragraph]]) -> None:
+def build_projects(doc, entries: list[list[Paragraph]], *, noto_num_id: str | None) -> None:
     """Replace all project entries with one tagged, looped prototype."""
     prototype = min(entries, key=header_run_count)
     header, *rest = prototype
     bullet = pick_bullet_prototype(entries)
+    retarget_bullet(bullet, noto_num_id)
 
     # The per-project URL differs, so the baked-in hyperlink must go; render.py
     # reinstates it as a RichText carrying the right target.
@@ -437,9 +649,15 @@ def main() -> int:
 
     print(f"found {len(experience_entries)} experience entries, {len(project_entries)} projects")
 
-    build_experience(doc, experience_entries)
-    build_projects(doc, project_entries)
+    noto_num_id = discover_noto_num_id(doc)
+
+    build_experience(doc, experience_entries, noto_num_id=noto_num_id)
+    build_projects(doc, project_entries, noto_num_id=noto_num_id)
     build_skills(doc, skill_paras)
+    normalize_bullet_numbering(doc)
+    # After tagging: prototypes may still carry Multiple > 1 from the export, and
+    # education / header lines are never re-prototyped — force single everywhere.
+    normalize_single_spacing(doc)
 
     dst.parent.mkdir(parents=True, exist_ok=True)
     doc.save(dst)

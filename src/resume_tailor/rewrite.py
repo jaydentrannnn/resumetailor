@@ -594,6 +594,70 @@ def check_fabrication(source: Bullet, rewritten: str) -> list[str]:
     return _check_fabrication([source], rewritten)
 
 
+#: Shortest word that repeating actually reads as repetition. Below this the word is
+#: almost always structural ("and", "of", "team") rather than a claim being restated.
+_SIGNIFICANT_LENGTH = 4
+
+
+def _significant(term: str) -> str | None:
+    """`term` reduced to its comparison key, or None if repeating it means nothing.
+
+    Lowercased and de-pluralised so "pipeline" and "pipelines" count as the same word —
+    a merged bullet naming the same thing twice in two grammatical numbers is exactly as
+    repetitive as naming it twice identically.
+    """
+    lowered = term.lower()
+    if lowered in _BENIGN or len(lowered) < _SIGNIFICANT_LENGTH:
+        return None
+    if not _HAS_LETTER.search(lowered):
+        return None
+    return lowered[:-1] if lowered.endswith("s") and len(lowered) > _SIGNIFICANT_LENGTH else lowered
+
+
+def redundancy_offenders(text: str) -> list[str]:
+    """Terms `text` states more than once, in first-seen order.
+
+    Merging is the one stage that can produce this: `merge.propose` ranks candidates by
+    affinity, so the pair it offers first is the *most similar* one in the entry, and the
+    laziest way to combine two similar bullets is to concatenate them — restating the
+    shared tool, the shared metric, or the action verb on both sides of an "and".
+
+    Two signals, both computed on the merged text alone (no source needed):
+      - any significant word appearing twice
+      - a later verb from the *same family* as the opener, which is how "Designed X and
+        engineered Y" reads as two bullets wearing one bullet's clothes
+
+    Only the same family counts. A second verb from a different family is how a good
+    bullet states an outcome ("Built a service that reduced latency"), and rejecting that
+    would reject nearly every legitimate merge.
+
+    An empty result means the text says each thing once. Callers treat a non-empty result
+    as grounds to reject a merge candidate, never to fail a run.
+    """
+    seen: set[str] = set()
+    offenders: list[str] = []
+    opening_family: str | None = None
+    first = True
+
+    for match in _TOKEN.finditer(text):
+        term = match.group(0)
+        family = config.verb_family(term)
+        if first:
+            opening_family = family
+            first = False
+        elif family is not None and family == opening_family:
+            offenders.append(term)
+
+        key = _significant(term)
+        if key is None:
+            continue
+        if key in seen:
+            offenders.append(term)
+        seen.add(key)
+
+    return list(dict.fromkeys(offenders))
+
+
 # --------------------------------------------------------------------------------------
 # Stage 2 — rewrite (one batched LLM call)
 # --------------------------------------------------------------------------------------
@@ -609,16 +673,31 @@ rewrite that adds a technology the candidate never used is a serious error.
 between them. Avoid "thereby", "resulting in", and similar phrasing unless the \
 relationship is already explicit in the provided bullets.
 - Preserve every number exactly as written. Do not round, restate, or infer new figures.
-- Use the job posting's own phrasing wherever it names something the bullet already \
-describes. If the bullet says "fuzzy matching" and the posting says "approximate string \
-matching", prefer the posting's wording — but only when they genuinely mean the same \
-thing.
+- Mirror the posting's wording only where it names something the bullet already does, and \
+only when the two genuinely mean the same thing: if the bullet says "fuzzy matching" and \
+the posting says "approximate string matching", prefer the posting's. Never bend a bullet \
+toward a keyword to work it in. A keyword the resume cannot honestly claim is meant to go \
+unused; a forced one reads as padding and costs a line.
+- Soft skills are shown by the work, never named. Do not open a bullet by asserting \
+communication, collaboration, problem-solving, organisation, attention to detail, or \
+teamwork. "Applied problem-solving skills to a 45% accuracy bottleneck" and "Utilized \
+verbal communication skills to facilitate three weekly labs" both waste their strongest \
+words on a claim the rest of the sentence already proves — write "Diagnosed a 45% accuracy \
+bottleneck" and "Facilitated three weekly labs" instead.
+- Write like a person. The bullet should read as a plain description of what was done, \
+not as a checklist of the posting's vocabulary stitched into a sentence.
 - Length is a cliff, not a limit. Each bullet gives a `target` range and a hard `max`. \
 Text runs to a fixed line width, so a bullet that ends even two characters past `max` \
 wraps onto an extra line holding a single word, wasting a whole line of the page. Landing \
 25 characters short of `target` wastes nothing. Err short, never long.
 - Keep the strong-verb-first resume register. No first person, no full stops mid-bullet \
 where a semicolon reads better, no filler.
+- Vary the opening verb. You are given every bullet at once, so treat them as one \
+document: no two may open with the same verb, and no more than two may open with \
+near-synonyms — "designed", "engineered", "architected" and "built" are one verb wearing \
+four hats. Reach for the verb that names what the work actually was.
+- Say each thing once across the whole set. Two bullets making the same claim in different \
+words waste a line and read as padding; distinguish them by what each one actually did.
 
 Return one entry per input item, keyed by the exact id you were given.
 """
@@ -654,16 +733,31 @@ def _format_bullets(bullets: list[Bullet], budget: int) -> str:
 
 
 def _format_keywords(requirements: JobRequirements) -> str:
+    """Render the posting's keywords one per line for the rewrite prompt.
+
+    Soft skills are labelled rather than marked REQUIRED. Marked as required they came back
+    asserted verbatim ("Utilized verbal communication skills to..."), because the model was
+    correctly told to mirror required phrasing; they stay visible as a signal of what the
+    posting cares about without licensing the phrase itself.
+    """
     lines = []
     for kw in requirements.keywords:
-        marker = "REQUIRED" if kw.importance == "must_have" else "preferred"
+        if kw.kind == "soft":
+            marker = "soft — demonstrate, never name"
+        else:
+            marker = "REQUIRED" if kw.importance == "must_have" else "preferred"
         lines.append(f"  [{marker}] {kw.phrase}")
     return "\n".join(lines) or "  (none extracted)"
 
 
 # --------------------------------------------------------------------------------------
-# Stage 2b — widow repair (at most one extra call, only when one is needed)
+# Stage 2b — polish (at most one extra call, only when one is needed)
 # --------------------------------------------------------------------------------------
+#
+# Two cosmetic defects are detected here in code, for free, and repaired in a single
+# shared follow-up call: bullets that wrapped onto a near-empty line, and bullets whose
+# opening verb repeats another's. They ride together because the call is the expensive
+# part — separating them would double the cost of a run that has one of each.
 
 
 def widowed(texts: dict[str, str]) -> dict[str, int]:
@@ -685,11 +779,79 @@ def widowed(texts: dict[str, str]) -> dict[str, int]:
     return ceilings
 
 
+def opening_verb(text: str) -> str | None:
+    """`text`'s first word lowercased, or None if it is not a plain word.
+
+    Only a purely alphabetic first token counts. A hyphenated or numeric opener
+    ("Full-stack", "3-tier") is not a verb, and admitting it would let two bullets that
+    merely begin with the same adjective be flagged as a verb collision.
+    """
+    stripped = text.strip()
+    if not stripped:
+        return None
+    word = stripped.split(maxsplit=1)[0].strip(".,;:")
+    return word.lower() if word.isalpha() else None
+
+
+def verb_collisions(texts: dict[str, str]) -> dict[str, list[str]]:
+    """`{bullet id: verbs to avoid}` for every bullet whose opener repeats another's.
+
+    Two rules, both deterministic and both free:
+      - **exact duplicate**: a second bullet opening with the same word as an earlier one.
+        Applies to any alphabetic opener, so an unlisted verb is still caught.
+      - **family over-concentration**: more than `config.MAX_SAME_FAMILY_OPENERS` bullets
+        opening with near-synonyms ("Designed... Engineered... Architected..."), which
+        reads as one note held too long even though no word repeats. Only verbs in
+        `config.VERB_FAMILIES` participate, so an opener the table has never seen can
+        never be flagged wrongly.
+
+    The *first* bullet to claim a word or family keeps it; later ones are the offenders,
+    so the returned ids are the minimum set that has to change. Iteration follows the
+    dict's insertion order, which is selection order, making the choice reproducible.
+
+    The value is the list of verbs that bullet must not come back with: every opener
+    currently in use, plus the whole family when the family is what overflowed.
+    """
+    openers = {bid: opening_verb(text) for bid, text in texts.items()}
+
+    used_words: set[str] = set()
+    family_counts: dict[str, int] = {}
+    offenders: dict[str, set[str]] = {}
+
+    for bullet_id, word in openers.items():
+        if word is None:
+            continue
+        family = config.verb_family(word)
+
+        if word in used_words:
+            offenders[bullet_id] = set()
+        elif family is not None and family_counts.get(family, 0) >= config.MAX_SAME_FAMILY_OPENERS:
+            offenders[bullet_id] = set(config.family_verbs(family))
+        else:
+            # Only a bullet that keeps its opener holds a claim on it; an offender is
+            # about to change, so counting it would forbid a family it will vacate.
+            used_words.add(word)
+            if family is not None:
+                family_counts[family] = family_counts.get(family, 0) + 1
+
+    in_use = {w for w in openers.values() if w is not None}
+    return {bid: sorted(forbidden | in_use) for bid, forbidden in offenders.items()}
+
+
 _REPAIR_INSTRUCTION = """\
 Each bullet below wrapped onto a final line holding almost nothing, wasting a whole line \
 of the page. The wording is already right — the only problem is length. Bring each one to \
 at most its `max` characters by cutting hedges, redundant context, and secondary detail. \
-Keep every number and REQUIRED keyword exactly as written.
+Keep every number and every required technical keyword exactly as written.
+"""
+
+_VERB_INSTRUCTION = """\
+Each bullet below opens with a verb another bullet already used, or with a near-synonym of \
+one. Replace ONLY the opening verb with one that is not in its `avoid` list and does not \
+mean the same thing as those. Keep the rest of the bullet word for word, including every \
+number, unless the new verb makes the grammar wrong — then change as little as possible. \
+Do not lengthen the bullet. Do not restate the claim in different words: this is a \
+one-word substitution, not a rewrite.
 """
 
 
@@ -709,36 +871,101 @@ def _format_widows(
     return "\n".join(lines)
 
 
-def _tighten_widows(
+def _format_verb_items(
+    collisions: dict[str, list[str]], texts: dict[str, str], sources: dict[str, Bullet]
+) -> str:
+    """Format verb-colliding bullets, each carrying the openers it must not reuse."""
+    lines = []
+    for bullet_id, avoid in collisions.items():
+        text = texts[bullet_id]
+        tags = ", ".join(sources[bullet_id].tags)
+        lines.append(
+            f"<bullet id={bullet_id!r} max={len(text)} avoid={', '.join(avoid)!r}>\n"
+            f"  <current>{text}</current>\n"
+            f"  <permitted_skills>{tags}</permitted_skills>\n"
+            f"</bullet>"
+        )
+    return "\n".join(lines)
+
+
+def _accept_verb_swap(
+    original: str, candidate: str, source: Bullet, avoid: set[str]
+) -> bool:
+    """Whether a returned verb substitution is safe to apply.
+
+    Non-regressive on every axis the pass could damage: the opener must actually have
+    changed, must not be one of the openers already in use, the bullet must not occupy
+    more lines than before, and it must not have become a widow. A model that reworded
+    instead of substituting is also re-checked against the fabrication guard.
+
+    Unlike widow repair, a guard failure here *discards* the candidate instead of raising.
+    Widow repair earns its hard failure by compressing claims under length pressure;
+    swapping one verb asks for no compression at all, so the honest response to a bad
+    reply is to keep the original wording — failing a whole run over a cosmetic
+    substitution would be the worse outcome.
+    """
+    new_verb = opening_verb(candidate)
+    if new_verb is None or new_verb == opening_verb(original) or new_verb in avoid:
+        return False
+    if config.line_span(candidate) > config.line_span(original):
+        return False
+    if widowed({"_": candidate}):
+        return False
+    return not check_fabrication(source, candidate)
+
+
+def _polish(
     texts: dict[str, str],
     sources: dict[str, Bullet],
     requirements: JobRequirements,
-) -> tuple[dict[str, str], int]:
-    """Re-request the widowed bullets only. Returns (texts, number actually improved).
+    *,
+    repair_widows: bool = True,
+    repair_verbs: bool = True,
+) -> tuple[dict[str, str], int, int]:
+    """Re-request only the defective bullets. Returns (texts, widows fixed, verbs changed).
 
-    One round trip, never more: the same reasoning as `llm._repair`, that a model which
-    cannot hit an explicit ceiling once will not hit it on the third try. Anything still
-    widowed afterwards is reported, not retried.
+    One round trip, never more, and shared between both defects: the same reasoning as
+    `llm._repair`, that a model which cannot hit an explicit ceiling once will not hit it
+    on the third try. Anything still defective afterwards is reported, not retried.
 
-    The pass is non-regressive by construction. A returned bullet replaces the original
-    only if it is both shorter *and* no longer widowed; a reply that is longer, still
-    widowed, unrecognised, or missing leaves the original text exactly as it was. It can
-    improve a run or do nothing, but it cannot make one worse.
+    A bullet that is both widowed and verb-colliding is sent as a widow only. Two entries
+    under one id would make the reply ambiguous, and a wasted line costs real page space
+    while a repeated verb only reads badly — so length wins and the collision is reported.
 
-    Fabrication is still a hard failure here. Shortening under pressure is precisely when a
-    model is tempted to compress a claim into something the source never said, so the guard
-    runs on repaired text on the same terms as on the first draft.
+    The pass is non-regressive by construction. Each returned bullet replaces its original
+    only if it strictly improves that bullet's own defect without introducing another; a
+    reply that is longer, still defective, unrecognised, or missing leaves the original
+    text exactly as it was. It can improve a run or do nothing, but it cannot make one
+    worse.
+
+    Fabrication remains a hard failure for widow repair — shortening under pressure is
+    precisely when a model compresses a claim into something the source never said — and a
+    discard for verb swaps, per `_accept_verb_swap`.
     """
-    ceilings = widowed(texts)
-    if not ceilings:
-        return texts, 0
-
-    user = (
-        f"<role>{requirements.title} ({requirements.seniority})</role>\n\n"
-        f"<keywords_to_mirror>\n{_format_keywords(requirements)}\n</keywords_to_mirror>\n\n"
-        f"<bullets_to_shorten>\n{_format_widows(ceilings, texts, sources)}\n"
-        f"</bullets_to_shorten>\n\n{_REPAIR_INSTRUCTION}"
+    ceilings = widowed(texts) if repair_widows else {}
+    collisions = (
+        {bid: avoid for bid, avoid in verb_collisions(texts).items() if bid not in ceilings}
+        if repair_verbs
+        else {}
     )
+    if not ceilings and not collisions:
+        return texts, 0, 0
+
+    sections = [
+        f"<role>{requirements.title} ({requirements.seniority})</role>",
+        f"<keywords_to_mirror>\n{_format_keywords(requirements)}\n</keywords_to_mirror>",
+    ]
+    if ceilings:
+        sections.append(
+            f"<bullets_to_shorten>\n{_format_widows(ceilings, texts, sources)}\n"
+            f"</bullets_to_shorten>\n\n{_REPAIR_INSTRUCTION}"
+        )
+    if collisions:
+        sections.append(
+            f"<bullets_to_revoice>\n{_format_verb_items(collisions, texts, sources)}\n"
+            f"</bullets_to_revoice>\n\n{_VERB_INSTRUCTION}"
+        )
+    user = "\n\n".join(sections)
 
     client = llm.client_for("rewrite")
     response = client.messages.parse(
@@ -754,26 +981,40 @@ def _tighten_widows(
     if result is None:
         # Not fatal: the first draft is still valid output, just wasteful. Report it as a
         # surviving widow rather than failing a run over a cosmetic pass.
-        return texts, 0
+        return texts, 0, 0
 
     repaired = dict(texts)
     violations: list[str] = []
-    improved = 0
+    tightened = 0
+    revoiced = 0
+    # An accepted swap claims its new opener, so two colliding bullets cannot both be
+    # handed the same replacement verb.
+    claimed: set[str] = set()
 
     for item in result.bullets:
         source = sources.get(item.id)
-        if source is None or item.id not in ceilings:
+        if source is None:
             continue
         candidate = item.text.strip()
-        offenders = check_fabrication(source, candidate)
-        if offenders:
-            violations.append(
-                f"  {item.id}: introduced {', '.join(offenders)}\n    -> {candidate}"
-            )
-            continue
-        if len(candidate) < len(texts[item.id]) and not widowed({item.id: candidate}):
-            repaired[item.id] = candidate
-            improved += 1
+
+        if item.id in ceilings:
+            offenders = check_fabrication(source, candidate)
+            if offenders:
+                violations.append(
+                    f"  {item.id}: introduced {', '.join(offenders)}\n    -> {candidate}"
+                )
+                continue
+            if len(candidate) < len(texts[item.id]) and not widowed({item.id: candidate}):
+                repaired[item.id] = candidate
+                tightened += 1
+        elif item.id in collisions:
+            avoid = set(collisions[item.id]) | claimed
+            if _accept_verb_swap(texts[item.id], candidate, source, avoid):
+                repaired[item.id] = candidate
+                revoiced += 1
+                verb = opening_verb(candidate)
+                if verb is not None:
+                    claimed.add(verb)
 
     if violations:
         raise FabricationError(
@@ -783,7 +1024,7 @@ def _tighten_widows(
             "or shorten the source bullet in master_resume.json so the rewrite has room."
         )
 
-    return repaired, improved
+    return repaired, tightened, revoiced
 
 
 # --------------------------------------------------------------------------------------
@@ -793,15 +1034,21 @@ def _tighten_widows(
 
 @dataclass
 class RewriteOutcome:
-    """Final bullet text plus what the widow pass had to do to get there."""
+    """Final bullet text plus what the polish pass had to do to get there."""
 
     texts: dict[str, str]
     widows_repaired: int = 0
+    verbs_diversified: int = 0
     merges: list[MergeGroup] = field(default_factory=list)
 
     @property
     def widows_remaining(self) -> int:
         return len(widowed(self.texts))
+
+    @property
+    def verb_collisions_remaining(self) -> int:
+        """Bullets still opening with a verb another bullet already used."""
+        return len(verb_collisions(self.texts))
 
 
 def rewrite_bullets(
@@ -811,6 +1058,7 @@ def rewrite_bullets(
     char_budget: int,
     shorten_pct: int = 0,
     repair_widows: bool = True,
+    repair_verbs: bool = True,
     merge_groups: list[MergeGroup] | None = None,
     on_event: events.ProgressCallback | None = None,
 ) -> RewriteOutcome:
@@ -820,10 +1068,13 @@ def rewrite_bullets(
     model explicitly to cut, so successive overflow attempts get progressively terser
     output rather than the same length again.
 
-    `repair_widows` allows one follow-up call carrying only the bullets that ended on a
-    near-empty line. It fires only when such a bullet exists, so a clean draft costs exactly
-    one call as it always did. Setting it False is the control half of an A/B — it isolates
-    what the prompt's target band achieves on its own.
+    `repair_widows` and `repair_verbs` each allow one *shared* follow-up call carrying only
+    the defective bullets — those that ended on a near-empty line, and those whose opening
+    verb repeats another's. The call fires only when such a bullet exists, so a clean draft
+    costs exactly one call as it always did, and a draft with one of each still costs two
+    rather than three. Setting either False is the control half of an A/B: `repair_widows`
+    isolates what the prompt's target band achieves alone, `repair_verbs` what its
+    verb-variety rule does.
 
     Raises `FabricationError` if any rewrite introduces untraceable content.
     """
@@ -837,7 +1088,8 @@ def rewrite_bullets(
         instruction = (
             f"\n\nThe previous draft overflowed the page. Shorten every bullet by roughly "
             f"{shorten_pct}% relative to its current text. Cut hedges, redundant context, "
-            f"and secondary detail first; keep the numbers and the REQUIRED keywords."
+            f"and secondary detail first; keep every number and the required "
+            f"technical keywords."
         )
 
     user = (
@@ -908,19 +1160,39 @@ def rewrite_bullets(
     if merge_groups:
         out, accepted_merges = _merge_bullets(out, by_id, merge_groups, requirements, budget=budget)
 
-    if not repair_widows:
+    if not repair_widows and not repair_verbs:
         return RewriteOutcome(texts=out, merges=accepted_merges)
 
-    stranded = len(widowed(out))
-    if stranded:
+    # Both counts are measured before the call so the progress line says what the follow-up
+    # is for; the pass itself re-derives them, since merging may have changed either.
+    stranded = len(widowed(out)) if repair_widows else 0
+    colliding = len(verb_collisions(out)) if repair_verbs else 0
+    if stranded or colliding:
+        wanted = []
+        if stranded:
+            wanted.append(f"{stranded} bullet(s) that spilled onto a near-empty line")
+        if colliding:
+            wanted.append(f"{colliding} repeated opening verb(s)")
         events.emit(
             on_event,
             "rewrite",
-            f"Tightening {stranded} bullet(s) that spilled onto a near-empty line",
+            f"Polishing {' and '.join(wanted)}",
             widowed=stranded,
+            verb_collisions=colliding,
         )
-    out, improved = _tighten_widows(out, by_id, requirements)
-    return RewriteOutcome(texts=out, widows_repaired=improved, merges=accepted_merges)
+    out, improved, revoiced = _polish(
+        out,
+        by_id,
+        requirements,
+        repair_widows=repair_widows,
+        repair_verbs=repair_verbs,
+    )
+    return RewriteOutcome(
+        texts=out,
+        widows_repaired=improved,
+        verbs_diversified=revoiced,
+        merges=accepted_merges,
+    )
 
 
 _MERGE_INSTRUCTION = """\
@@ -930,6 +1202,12 @@ Absolute rules:
 - Do not imply that one bullet caused the other (avoid "thereby", "resulting in",
   "which led to" unless the relationship is already explicit in the provided bullets).
 - Preserve every number exactly as written in ANY member bullet.
+- Say each thing once. Name a shared tool, system, or metric a single time, and let one \
+opening verb govern the whole bullet — "Designed X and engineered Y" is two bullets \
+wearing one bullet's clothes. No "and also", no restating a skill already named earlier \
+in the same bullet.
+- The result must read as one coherent claim, not a list of two. If the members cannot be \
+stated as one claim without repeating yourself, return the stronger member alone.
 """
 
 
@@ -968,6 +1246,7 @@ def _merge_bullets(
     - the merged output must free at least one line vs the sum of source members
     - the merged text must pass multi-source fabrication guard
     - no number-bearing tokens from any member may be dropped
+    - the merged text must not restate anything (`redundancy_offenders`)
     - the merged bullet must not be widowed (widow repair happens later if enabled)
 
     If the LLM fails to return parseable output, this pass is skipped.
@@ -1028,6 +1307,11 @@ def _merge_bullets(
 
         dropped = numbers_dropped(member_sources, candidate)
         if dropped:
+            continue
+
+        # The failure mode this whole gate exists for: a candidate that is short enough,
+        # invents nothing, and drops no number can still simply say both members out loud.
+        if redundancy_offenders(candidate):
             continue
 
         if widowed({group.survivor_id: candidate}).get(group.survivor_id) is not None:

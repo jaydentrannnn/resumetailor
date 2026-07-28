@@ -20,6 +20,8 @@ const DEFAULT_SETTINGS: JobSettings = {
   effort: null,
   no_semantic: false,
   no_widow_repair: false,
+  no_verb_repair: false,
+  merge: false,
   no_cache: false,
 };
 
@@ -339,6 +341,16 @@ function SettingsPanel({
           onChange={(v) => set("no_widow_repair", v)}
         />
         <Toggle
+          label="Skip verb variety repair"
+          checked={settings.no_verb_repair}
+          onChange={(v) => set("no_verb_repair", v)}
+        />
+        <Toggle
+          label="Merge redundant bullets"
+          checked={settings.merge}
+          onChange={(v) => set("merge", v)}
+        />
+        <Toggle
           label="Bypass cache"
           checked={settings.no_cache}
           onChange={(v) => set("no_cache", v)}
@@ -413,7 +425,7 @@ function ReportCard({ report, jobId }: { report: RunReport; jobId: string }) {
         </a>
       </div>
 
-      <dl className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-4">
+      <dl className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-5">
         <Stat
           label="Must-haves"
           value={pct != null ? `${pct}%` : "n/a"}
@@ -433,6 +445,15 @@ function ReportCard({ report, jobId }: { report: RunReport; jobId: string }) {
           label="Widows"
           value={String(report.widows_remaining)}
           sub={report.widows_repaired ? `${report.widows_repaired} fixed` : "none fixed"}
+        />
+        <Stat
+          label="Verb repeats"
+          value={String(report.verb_collisions_remaining)}
+          sub={
+            report.verbs_diversified
+              ? `${report.verbs_diversified} fixed`
+              : "none fixed"
+          }
         />
       </dl>
 
