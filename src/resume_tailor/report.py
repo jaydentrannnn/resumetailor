@@ -13,6 +13,7 @@ What it answers, in the order a user actually asks it:
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 from . import config
@@ -20,6 +21,9 @@ from .data import Experience, MasterResume, Project
 from .fit import FitResult
 from .jd import JobRequirements
 from .rewrite import keyword_coverage
+
+#: Characters Windows (and most filesystems) reject in a filename.
+_UNSAFE_FILENAME = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 
 
 @dataclass
@@ -34,6 +38,26 @@ class SectionSummary:
 
 def _entry_name(entry: Experience | Project) -> str:
     return entry.company if isinstance(entry, Experience) else entry.name
+
+
+def _safe_filename_part(text: str) -> str:
+    """Strip characters that cannot appear in a cross-platform filename."""
+    cleaned = _UNSAFE_FILENAME.sub(" ", text)
+    cleaned = re.sub(r"\s+", " ", cleaned).strip(" .")
+    return cleaned or "untitled"
+
+
+def export_filename(name: str, title: str, *, suffix: str = ".docx") -> str:
+    """Build the user-facing export name: ``<name> Resume - <title><suffix>``.
+
+    Used for both the CLI default ``--out`` path and the download
+    ``Content-Disposition`` filename. On-disk job artifacts may still use a
+    stable internal name; this is what the applicant sees when saving the file.
+    """
+    stem = f"{_safe_filename_part(name)} Resume - {_safe_filename_part(title)}"
+    if not suffix.startswith("."):
+        suffix = f".{suffix}"
+    return f"{stem}{suffix}"
 
 
 def _summarise(

@@ -40,7 +40,10 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         "--out",
         type=Path,
         default=None,
-        help="Where to write the tailored .docx (default: output/tailored.docx).",
+        help=(
+            "Where to write the tailored .docx "
+            "(default: output/<name> Resume - <position>.docx)."
+        ),
     )
     parser.add_argument(
         "--pages",
@@ -201,13 +204,19 @@ def main(argv: list[str] | None = None) -> int:
                 file=sys.stderr,
             )
 
+    # Default export name mirrors the download: "<name> Resume - <position>.docx".
+    out = args.out or (
+        config.OUTPUT_DIR
+        / report.export_filename(resume.contact.name, requirements.title)
+    )
+
     try:
         result = fit.fit(
             resume,
             requirements,
             target_pages=args.pages,
             template=args.template,
-            out=args.out,
+            out=out,
             max_experience=args.experience,
             max_projects=args.projects,
             semantic=semantic,

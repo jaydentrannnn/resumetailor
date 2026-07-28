@@ -51,6 +51,18 @@ def test_report_shows_coverage_and_output_path():
     assert "1 page(s)" in text
 
 
+def test_export_filename_uses_name_and_title():
+    """Downloads and CLI defaults share '<name> Resume - <title>'."""
+    assert (
+        report.export_filename("Vu Tuong Huan Tran", "Software Engineer Intern")
+        == "Vu Tuong Huan Tran Resume - Software Engineer Intern.docx"
+    )
+    assert (
+        report.export_filename("Ada Lovelace", "SWE / Intern", suffix=".pdf")
+        == "Ada Lovelace Resume - SWE Intern.pdf"
+    )
+
+
 def test_report_names_unsupported_must_haves():
     """A keyword the master resume cannot support is a gap worth stating outright."""
     resume = load()

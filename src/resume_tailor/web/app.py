@@ -21,7 +21,7 @@ from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 
-from resume_tailor import config, data
+from resume_tailor import config, data, report
 from resume_tailor.data import MasterResume
 from resume_tailor.events import ProgressEvent
 from resume_tailor.web.jobs import get_queue
@@ -164,11 +164,26 @@ def _job_artifact(job_id: str, suffix: str) -> Path:
     return path
 
 
+def _export_download_name(job_id: str, *, suffix: str) -> str:
+    """User-facing download name from contact + JD title, with a safe fallback."""
+    job = get_queue().get(job_id)
+    title = (job.report.title if job and job.report else None) or "Resume"
+    try:
+        name = data.load().contact.name
+    except (FileNotFoundError, ValueError):
+        name = "Resume"
+    return report.export_filename(name, title, suffix=suffix)
+
+
 @app.get("/api/jobs/{job_id}/preview.pdf")
 def preview_pdf(job_id: str) -> FileResponse:
     """Inline PDF for the results panel's preview pane."""
     path = _job_artifact(job_id, ".pdf")
-    return FileResponse(path, media_type="application/pdf", filename=f"tailored-{job_id}.pdf")
+    return FileResponse(
+        path,
+        media_type="application/pdf",
+        filename=_export_download_name(job_id, suffix=".pdf"),
+    )
 
 
 @app.get("/api/jobs/{job_id}/download.docx")
@@ -178,7 +193,7 @@ def download_docx(job_id: str) -> FileResponse:
     return FileResponse(
         path,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        filename=f"tailored-{job_id}.docx",
+        filename=_export_download_name(job_id, suffix=".docx"),
     )
 
 
