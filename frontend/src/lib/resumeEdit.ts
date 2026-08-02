@@ -34,6 +34,17 @@ export type Project = {
 
 export type SkillGroup = { label: string; items: string[] };
 
+export type Education = {
+  school: string;
+  degree: string;
+  dates: string;
+  location?: string;
+  coursework?: string[];
+  gpa?: string;
+  show_gpa?: boolean;
+  details?: string[];
+};
+
 export type MasterResume = {
   _comment?: string | null;
   contact: {
@@ -41,13 +52,16 @@ export type MasterResume = {
     email: string;
     phone?: string;
     location?: string;
+    linkedin?: string;
+    github?: string;
     links?: string[];
   };
-  education: unknown[];
+  education: Education[];
   summary_variants?: unknown[];
   experience: Experience[];
   projects: Project[];
   skills: SkillGroup[];
+  tag_vocabulary?: string[];
 };
 
 /** Insert `item` at `index`, shifting later elements right. */
@@ -159,6 +173,107 @@ export function blankSkillGroup(): SkillGroup {
   return { label: "", items: [] };
 }
 
+/** Empty education row. */
+export function blankEducation(): Education {
+  return {
+    school: "",
+    degree: "",
+    dates: "",
+    location: "",
+    coursework: [],
+    gpa: "",
+    show_gpa: false,
+    details: [],
+  };
+}
+
+/**
+ * Split a comma-separated editor string into trimmed non-empty tokens.
+ *
+ * Prefer `ChipListField` for new UI; this remains for any leftover draft parsers.
+ */
+export function parseCommaList(raw: string): string[] {
+  return raw
+    .split(",")
+    .map((t) => t.trim())
+    .filter(Boolean);
+}
+
+/**
+ * Case-insensitive set: keep first spelling, drop later duplicates.
+ * Tags are stored as arrays in JSON but are set-valued — no duplicates.
+ */
+export function uniqueTags(tags: string[]): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const raw of tags) {
+    const t = raw.trim();
+    if (!t) continue;
+    const key = t.toLowerCase();
+    if (seen.has(key)) continue;
+    seen.add(key);
+    out.push(t);
+  }
+  return out;
+}
+
+/**
+ * Add `tag` to the stored vocabulary if missing (case-insensitive).
+ * Returns a new sorted list; does not mutate `vocab`.
+ */
+export function addToVocabulary(vocab: string[], tag: string): string[] {
+  const cleaned = tag.trim();
+  if (!cleaned) return vocab;
+  return uniqueTags([...vocab, cleaned]).sort((a, b) =>
+    a.toLowerCase().localeCompare(b.toLowerCase()),
+  );
+}
+
+/**
+ * Remove `tag` from the vocabulary and strip it from every bullet's tags.
+ * Returns a shallow-copied resume; does not mutate the input.
+ */
+export function removeTagFromResume(
+  resume: MasterResume,
+  tag: string,
+): MasterResume {
+  const lower = tag.toLowerCase();
+  const strip = (tags: string[]) =>
+    tags.filter((t) => t.toLowerCase() !== lower);
+
+  return {
+    ...resume,
+    tag_vocabulary: (resume.tag_vocabulary ?? []).filter(
+      (t) => t.toLowerCase() !== lower,
+    ),
+    experience: resume.experience.map((job) => ({
+      ...job,
+      bullets: job.bullets.map((b) => ({ ...b, tags: strip(b.tags) })),
+    })),
+    projects: resume.projects.map((proj) => ({
+      ...proj,
+      bullets: proj.bullets.map((b) => ({ ...b, tags: strip(b.tags) })),
+    })),
+  };
+}
+
+/** How many bullets currently carry `tag` (case-insensitive). */
+export function countTagUsage(resume: MasterResume, tag: string): number {
+  const lower = tag.toLowerCase();
+  let n = 0;
+  for (const job of resume.experience) {
+    for (const b of job.bullets) {
+      if (b.tags.some((t) => t.toLowerCase() === lower)) n += 1;
+    }
+  }
+  for (const proj of resume.projects) {
+    for (const b of proj.bullets) {
+      if (b.tags.some((t) => t.toLowerCase() === lower)) n += 1;
+    }
+  }
+  return n;
+}
+
 /**
  * Client-side completeness messages that name the offending row.
  * Server validation remains authoritative; this only blocks the obvious blanks
@@ -166,6 +281,13 @@ export function blankSkillGroup(): SkillGroup {
  */
 export function completenessErrors(resume: MasterResume): string[] {
   const errors: string[] = [];
+
+  resume.education.forEach((edu, i) => {
+    const label = edu.school.trim() || `Education #${i + 1}`;
+    if (!edu.school.trim()) errors.push(`${label}: school is required`);
+    if (!edu.degree.trim()) errors.push(`${label}: degree is required`);
+    if (!edu.dates.trim()) errors.push(`${label}: dates are required`);
+  });
 
   resume.experience.forEach((job, i) => {
     const label = job.company.trim() || `Experience #${i + 1}`;

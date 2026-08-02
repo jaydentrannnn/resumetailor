@@ -120,6 +120,54 @@ def test_spec_parses_a_base_url_suffix():
     )
 
 
+def test_lmstudio_spec_parses_and_remaps_to_openai_compat():
+    """`lmstudio` is an alias for the OpenAI-compatible client at LMSTUDIO_BASE_URL."""
+    assert config.parse_spec("lmstudio:foo-bar") == ("lmstudio", "foo-bar", None)
+    backends = config.resolve("lmstudio")
+    try:
+        for purpose in config.PURPOSES:
+            b = backends[purpose]
+            assert b.provider == "openai"
+            assert b.model == config.LMSTUDIO_MODEL
+            assert b.base_url == config.LMSTUDIO_BASE_URL
+    finally:
+        config.resolve("claude")
+
+
+def test_bare_override_under_lmstudio_stays_on_lmstudio():
+    """UI model ids like google/gemma-4-12b must not silently route to Ollama :11434."""
+    backends = config.resolve(
+        "lmstudio",
+        overrides={
+            "rewrite": "google/gemma-4-12b",
+            "expand": "google/gemma-4-12b",
+        },
+    )
+    try:
+        for purpose in ("rewrite", "expand"):
+            b = backends[purpose]
+            assert b.provider == "openai"
+            assert b.model == "google/gemma-4-12b"
+            assert b.base_url == config.LMSTUDIO_BASE_URL
+        # Un-overridden stages still use the profile default model.
+        assert backends["extract"].model == config.LMSTUDIO_MODEL
+        assert backends["extract"].base_url == config.LMSTUDIO_BASE_URL
+    finally:
+        config.resolve("claude")
+
+
+def test_bare_override_under_hybrid_rewrite_still_defaults_to_ollama():
+    """Hybrid rewrite is Anthropic; a bare local id keeps the historical Ollama default."""
+    backends = config.resolve("hybrid", overrides={"rewrite": "google/gemma-4-12b"})
+    try:
+        b = backends["rewrite"]
+        assert b.provider == "openai"
+        assert b.model == "google/gemma-4-12b"
+        assert b.base_url == config.OLLAMA_BASE_URL
+    finally:
+        config.resolve("claude")
+
+
 def test_profiles_route_stages_independently():
     """`hybrid` exists so the risky stage can differ from the cheap ones."""
     backends = config.resolve("hybrid")
@@ -279,7 +327,7 @@ def test_an_unreachable_daemon_says_so(client, monkeypatch):
         raise httpx.ConnectError("connection refused")
 
     monkeypatch.setattr(llm.httpx, "post", boom)
-    with pytest.raises(llm.LLMError, match="daemon"):
+    with pytest.raises(llm.LLMError, match="Could not reach.*11434"):
         _request(c)
 
 

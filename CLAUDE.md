@@ -287,12 +287,12 @@ Key structural facts that span files:
 - **`master_resume.json` is a superset**, deliberately larger than any one resume. It retains
   roles dropped from the current CV so an ops- or support-flavoured posting can surface them.
 - **`summary_variants` is dead schema.** `data.py` defines and validates it, but
-  `render.build_context` returns only `experience`, `projects`, and `skills`, and the
-  template has no summary block. Nothing reads it — wiring it up means changing
-  `build_template.py` too, not just the context.
-- **Education details and skills are never tailored.** They render in full on every run and
-  count as fixed overhead in `fit._fixed_overhead_lines`, so on a tight one-pager they
-  consume budget the loop cannot reclaim. Only bullets are negotiable.
+  `render.build_context` does not feed it to the template (no summary block). Nothing
+  selects a variant — wiring it up means changing `build_template.py` too.
+- **Education and skills are never tailored per posting.** They render in full from the
+  master resume on every run (coursework, GPA toggle, skill groups) and count as fixed
+  overhead in `fit._fixed_overhead_lines`, so on a tight one-pager they consume budget the
+  loop cannot reclaim. Only experience/project bullets are negotiable.
 - **Application-form experience expansion is a separate artifact.** `expand.expand_experience`
   ranks experience entries (force-including every role on the tailored resume), asks the
   model for fuller bullets only, and joins title/company/dates/location from
@@ -312,8 +312,9 @@ Key structural facts that span files:
 `build_template.py` clones one entry per section as a prototype, tags it, and deletes the
 rest. Formatting is inherited from real XML rather than reconstructed. Tags are placed
 *inside specific runs*, which is what preserves the bold company name, the right-aligned tab
-stop, and the fonts. Name/contact and the EDUCATION section stay literal — they don't vary
-by posting, and re-running the script after a re-export keeps them current.
+stop, and the fonts. The name line stays literal (it does not vary by posting). Contact
+and EDUCATION are tagged so LinkedIn/GitHub, coursework, and GPA come from
+`master_resume.json` without a re-export.
 
 ## Non-obvious gotchas
 

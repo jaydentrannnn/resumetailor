@@ -291,3 +291,168 @@ to `minimax-m3:cloud` unless `OLLAMA_MODEL` or a per-run model override is set.
 **Tradeoff:** Editor draft is memory-only across reloads (avoids shadowing disk). Persisted settings merge over `DEFAULT_SETTINGS` so older blobs missing newer fields stay valid.
 
 **Impact:** Rebuild SPA (`npm run build` or `docker compose up --build`) to pick up the UI.
+
+## 2026-07-31 — LM Studio model profile
+
+- **Decision:** Added `lmstudio` as a named `MODEL_PROFILES` entry (all four stages), with
+  provider alias remapping to the existing `_OpenAICompatClient` via `LMSTUDIO_BASE_URL`
+  (default `http://localhost:1234/v1`) and `LMSTUDIO_MODEL` (default `local-model`).
+- **Why:** Owner wanted a UI option beside Claude / Ollama; the SPA already lists
+  `sorted(MODEL_PROFILES)` from `/api/config`, so a profile is enough for the dropdown.
+- **Tradeoff:** `hybrid` still uses Ollama for cheap stages, not LM Studio. Override rewrite
+  with a Claude spec if quality suffers. `LMSTUDIO_MODEL` must match LM Studio’s exact
+  loaded id — the placeholder default will 404 until set in `.env`.
+- **Spec delta:** New provider token `lmstudio` in `PROVIDERS`; Docker compose sets
+  `LMSTUDIO_BASE_URL` to `host.docker.internal:1234` by default.
+- **Follow-up:** Set `LMSTUDIO_MODEL` to the id shown in LM Studio, start its local server,
+  pick **lmstudio** in the UI (rebuild SPA if the fallback list mattered before API load).
+
+## 2026-07-31 — Reachability error mentioned Ollama even for other URLs
+
+- **Decision:** `_OpenAICompatClient._post` error text now names the resolved `base_url`
+  and explains `:11434` = Ollama vs `:1234` = LM Studio, plus override/hybrid caveats.
+- **Why:** Selecting `lmstudio` still hit `:11434` when Rewrite/Expand overrides or an
+  `ollama`/`hybrid` profile were active; the old message always said “If this is Ollama”,
+  which hid that mismatch.
+- **Impact:** No routing change — clear Rewrite/Expand to “Use profile default” and set
+  Model profile to `lmstudio` for all four stages on LM Studio.
+
+## 2026-07-31 — Bare rewrite/expand overrides inherit lmstudio/ollama profile backend
+
+- **Decision:** `resolve()` rebinds bare model ids (no `provider:` prefix) onto the
+  profile stage’s `ollama`/`lmstudio` provider via `_bind_bare_override`.
+- **Why:** UI showed profile `lmstudio` with Rewrite/Expand = `google/gemma-4-12b`;
+  `parse_spec` inferred Ollama for bare names, so those stages hit `:11434` while
+  extract/score used LM Studio.
+- **Tradeoff:** On `hybrid`/`claude`, bare non-Claude overrides still default to Ollama
+  (unchanged). Explicit `ollama:…` / `lmstudio:…` / `claude-…` still win.
+- **Impact:** Rebuild/restart the API container to pick up the fix; no UI change required.
+
+## 2026-07-31 — LLM_TIMEOUT default 300 → 900
+
+- **Decision:** Raised default `LLM_TIMEOUT` to 900s and set the same default in
+  `docker-compose.yml` (`LLM_TIMEOUT: ${LLM_TIMEOUT:-900}`).
+- **Why:** LM Studio rewrite of ~14 bullets in one batched call was hitting the old
+  5-minute httpx ceiling (`timed out` to `host.docker.internal:1234`).
+- **Tradeoff:** A wedged local server holds the job worker longer before failing.
+- **Impact:** Recreate the compose app to pick up the env default (or set `LLM_TIMEOUT`
+  in `.env`).
+
+## 2026-08-01 — Rewrite prompt: no cross-bullet metric moves
+
+- **Decision:** Added an absolute rule to `rewrite._SYSTEM`: never move a number/metric
+  from one bullet id to another (with an eval-suite example).
+- **Why:** Live runs kept pasting `zot_b3` metrics (0.88, p95, 5.13s, −25%) onto
+  `aeth_b3` when both eval harness bullets were rewritten in one batch; the fabrication
+  guard correctly hard-failed, but the model needed an explicit id-scoped rule.
+- **Tradeoff:** Prompt-only; models can still slip. Merge still uses the same `_SYSTEM`
+  plus `_MERGE_INSTRUCTION` (numbers from any *member* are intentional). No rewrite
+  prompt-version cache to bump — rewrites are not cached like JD/scores.
+- **Follow-up:** If it keeps firing, soft-fail to source text or differentiate the two
+  master bullets further.
+
+## 2026-08-01 — PDF download button + auto-download on success
+
+- **Decision:** Added `/api/jobs/{id}/download.pdf` (attachment) beside the existing
+  inline `preview.pdf`; UI gets a `.pdf` button and one auto-download per succeeded
+  `jobId` via blob fetch (`triggerPdfDownload`).
+- **Why:** Jul 28 frontend drop of the preview iframe (plus inline disposition) removed
+  the accidental auto-download; user wants both a manual PDF control and the old
+  save-on-finish behavior without reintroducing iframe remount downloads.
+- **Tradeoff:** Auto-download is silent if LibreOffice never produced a PDF (404).
+  SPA is baked in Docker — rebuild required for the UI half.
+- **Follow-up:** Guard must live in `RunProvider`, not `RunPage` (see next entry).
+
+## 2026-08-01 — Auto-download guard moved to RunProvider
+
+- **Decision:** Moved the `autoDownloadedFor` ref + `triggerPdfDownload` effect from
+  `RunPage` into `RunProvider`.
+- **Why:** Routes unmount `RunPage` on Tailor ↔ Master switches, so a page-local ref
+  reset to `null` and re-fired the download whenever you came back to a succeeded job.
+  Provider sits above the router and survives those remounts.
+- **Tradeoff:** None — same one-download-per-jobId semantics; just the correct lifetime.
+- **Impact:** Rebuild Docker (or `npm run build`) for the SPA.
+
+## 2026-08-01 — Comma-list fields keep a draft while focused
+
+- **Decision:** Replaced join/split-on-every-keystroke for skills items, project tech,
+  and bullet tags with `CommaListField` (local draft + `parseCommaList` on change/blur).
+- **Why:** `value={items.join(", ")}` plus `.split(",").filter(Boolean)` drops the
+  empty trailing segment, so typing a comma immediately rewrites the field without it —
+  you could not add another skill/tag/tech item by typing.
+- **Tradeoff:** Parent still gets a cleaned array on each keystroke; only the displayed
+  string is drafty. Blur normalizes spacing (`a,b` → `a, b`).
+- **Impact:** Rebuild Docker for the Master resume editor.
+
+## 2026-08-01 — Project link toggle (`--no-project-links`)
+
+- **Decision:** Negative opt-out (`no_project_links` / `--no-project-links`), default
+  off so links still render. Threaded `include_project_links` through `render` → `fit`
+  → CLI and web; UI toggle labeled "Hide project links".
+- **Why:** Some postings/applications want the project name without a Github hyperlink;
+  the link is built per-entry as RichText in `build_context`, so the suppress path emits
+  the same empty RichText link-less projects already use (template `{{r }}` still safe).
+- **Tradeoff:** Hiding the link frees no page lines (inline in the header). Named as a
+  negative flag to match `--no-expand` / `no_semantic`.
+- **Impact:** Rebuild Docker for the SPA toggle; CLI works after API restart alone.
+
+## 2026-08-01 — Fabrication retry of failing ids only
+
+- **Decision:** On a first-draft fabrication, `_retry_fabrications` re-asks only the
+  offending bullet ids once, naming the exact rejected terms and re-shipping the master
+  source text. A second fabrication or a dropped id still raises `FabricationError`.
+- **Why:** Recurring live failures (`130+` vs `over 130`, invented `OS`, cross-bullet
+  metrics) are often fixable when the model is told which tokens failed; aborting the
+  whole run was blocking bulk apply for a local slip.
+- **Tradeoff:** At most one extra rewrite call per `rewrite_bullets` invocation (and
+  thus up to `MAX_FIT_ATTEMPTS` extras across a fit loop that keeps fabricating). Guard
+  is not relaxed — only the call budget changed. Widow-repair fabrication remains
+  immediately fatal.
+- **Follow-up:** Soft-fail to source text if the retry keeps firing in practice.
+
+## 2026-08-01 — Drop ` | ` with suppressed project links
+
+- **Decision:** Moved the ` | ` before the project link out of the template tech run
+  into the link `RichText` in `render.build_context`. Template rebuild required
+  (`scripts/build_template.py`).
+- **Why:** `include_project_links=False` already emptied the link RichText but left the
+  baked-in separator after tech (`"{{ proj.tech }} | "`), so headers ended with a
+  dangling pipe.
+- **Tradeoff:** None — same visual when links are on; separator still plain (not part of
+  the hyperlink run).
+- **Impact:** Rebuild template (done locally); Docker needs a rebuild/restart if the
+  container copies `templates/` at image build time.
+
+## 2026-08-02 — Contact + education become data-driven
+
+- **Decision:** `build_template.py` now tags the contact line as `{{r contact }}` and
+  loops EDUCATION from the master resume. Contact shows hyperlinked "LinkedIn" /
+  "GitHub" labels (not full URLs). Coursework is a `list[str]` joined into one
+  "Relevant Coursework:" bullet; GPA appends to the degree line when `show_gpa` is on.
+- **Why:** Editing those fields in the UI previously changed JSON only — the template
+  still carried literal text from the Google Docs export.
+- **Tradeoff:** First deliberate visual change to the baseline (URL → labelled link).
+  Name line stays literal. Deleted the NYU summer-program education entry so it would
+  not start appearing once education rendered from data.
+- **Follow-up:** Look at a rendered PDF to confirm the contact line still fits one line
+  with both LinkedIn and GitHub.
+
+## 2026-08-02 — Stored tag vocabulary + chip editors
+
+- **Decision:** `MasterResume.tag_vocabulary` is the shared tag option list (seeded from
+  the 102 in-use tags). Editor uses `ChipListField` tiles for tags, skills, coursework,
+  and project tech. Removing a vocab option confirms and strips it from every bullet.
+- **Why:** Comma-parsed strings made add/remove awkward; a derived-only vocab could not
+  express "remove an unused option."
+- **Tradeoff:** Vocabulary can drift from tags in use if the user adds options they
+  never assign; canonicalisation on save keeps aliases consistent.
+
+## 2026-08-02 — Settings regrouped + fill_target
+
+- **Decision:** Run settings split into Output / Models / Rewriting quality / Advanced
+  (collapsed). Added `fill_target` (0.80–0.95) through CLI `--fill-target`, web
+  `JobSettings`, and `fit.fit(fill_target=…)`, defaulting to `UNDERFLOW_THRESHOLD`.
+- **Why:** Flat checkbox list was hard to scan; fill target is the one fit constant with
+  a documented running cost worth exposing.
+- **Tradeoff:** Did not expose `SEMANTIC_WEIGHT` or calibration constants — those are
+  correctness levers, not preferences.

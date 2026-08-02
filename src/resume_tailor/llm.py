@@ -216,9 +216,14 @@ class _OpenAICompatClient:
                 timeout=self.timeout,
             )
         except httpx.RequestError as exc:
+            # base_url is whatever the profile/override resolved — do not assume Ollama.
+            # :11434 → Ollama, :1234 → LM Studio; from Docker both use host.docker.internal.
             raise LLMError(
-                f"Could not reach {self.base_url}: {exc}. If this is Ollama, check the "
-                f"daemon is running (it serves on http://localhost:11434)."
+                f"Could not reach {self.base_url}: {exc}. Check that server is running "
+                f"and reachable from this process (local: localhost; Docker: "
+                f"host.docker.internal). A :11434 URL is Ollama; :1234 is LM Studio. "
+                f"Profile 'lmstudio' uses LM Studio for all stages unless Rewrite/Expand "
+                f"model overrides (or profile hybrid/ollama) point elsewhere."
             ) from exc
 
     def _check_status(self, response: httpx.Response, model: str) -> None:
@@ -386,8 +391,9 @@ def client_for(purpose: str) -> Any:
         if not backend.base_url:
             raise LLMError(
                 f"Provider 'openai' for {purpose!r} needs a base URL. Use "
-                f"'openai:model@https://host/v1', or 'ollama:model' which defaults to "
-                f"{config.OLLAMA_BASE_URL}."
+                f"'openai:model@https://host/v1', 'ollama:model' (defaults to "
+                f"{config.OLLAMA_BASE_URL}), or 'lmstudio:model' (defaults to "
+                f"{config.LMSTUDIO_BASE_URL})."
             )
         return _OpenAICompatClient(
             base_url=backend.base_url,

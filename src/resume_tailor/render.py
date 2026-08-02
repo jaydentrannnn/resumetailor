@@ -19,6 +19,9 @@ from .data import MasterResume
 #: project link visually identical to the one in the original export.
 _LINK_COLOR = "0000EE"
 
+#: Contact-line separator matching the Google Docs export (U+2022 bullet).
+_CONTACT_SEP = " \u2022 "
+
 
 def format_month(value: str) -> str:
     """Render a `YYYY-MM` month as `Mon YYYY`, passing anything else through.
@@ -34,7 +37,60 @@ def format_month(value: str) -> str:
 
 
 def format_range(start: str, end: str) -> str:
+    """Format a start/end pair as `Mon YYYY - Mon YYYY` (or free text)."""
     return f"{format_month(start)} - {format_month(end)}"
+
+
+def _degree_line(edu) -> str:
+    """Degree text, optionally with ` | GPA: …` when the editor toggle is on."""
+    if edu.show_gpa and edu.gpa.strip():
+        return f"{edu.degree} | GPA: {edu.gpa.strip()}"
+    return edu.degree
+
+
+def _education_details(edu) -> list[str]:
+    """Detail bullets for one education entry: coursework line first, then free-text."""
+    details: list[str] = []
+    if edu.coursework:
+        details.append("Relevant Coursework: " + ", ".join(edu.coursework))
+    details.extend(edu.details)
+    return details
+
+
+def _contact_richtext(resume: MasterResume, tpl: DocxTemplate) -> RichText:
+    """Build the contact line as RichText with labelled LinkedIn/GitHub hyperlinks.
+
+    Empty fields (and their separators) are omitted so a missing phone or GitHub does
+    not leave a dangling bullet. Labels are short ("LinkedIn", "GitHub") to keep the
+    centered line from wrapping when both profiles are present.
+    """
+    contact = resume.contact
+    parts: list[tuple[str, str | None]] = []
+    if contact.location.strip():
+        parts.append((contact.location.strip(), None))
+    if contact.email.strip():
+        parts.append((contact.email.strip(), None))
+    if contact.phone.strip():
+        parts.append((contact.phone.strip(), None))
+    if contact.linkedin.strip():
+        parts.append(("LinkedIn", contact.linkedin.strip()))
+    if contact.github.strip():
+        parts.append(("GitHub", contact.github.strip()))
+
+    rt = RichText()
+    for i, (text, url) in enumerate(parts):
+        if i:
+            rt.add(_CONTACT_SEP)
+        if url:
+            rt.add(
+                text,
+                url_id=tpl.build_url_id(url),
+                color=_LINK_COLOR,
+                underline=True,
+            )
+        else:
+            rt.add(text)
+    return rt
 
 
 def build_context(
@@ -42,6 +98,7 @@ def build_context(
     tpl: DocxTemplate,
     *,
     bullets: dict[str, str] | None = None,
+    include_project_links: bool = True,
 ) -> dict:
     """Assemble the Jinja context for the template.
 
@@ -52,6 +109,10 @@ def build_context(
 
     Passing `None` renders the full master resume with its original text — the mode used
     for calibration and template smoke tests.
+
+    `include_project_links=False` suppresses the link label, its hyperlink, and the
+    ` | ` separator that precedes them — same empty `RichText` a project with no link
+    already produces.
     """
 
     def lines(source) -> list[str]:
@@ -84,8 +145,11 @@ def build_context(
         # baked into the template — see scripts/build_template.py. The template uses a
         # `{{r }}` RichText tag, so this must always be a RichText even when there is no
         # URL: a bare string there would be injected as raw XML and break on any "&".
+        # The " | " separator is part of this RichText so it vanishes with the link;
+        # baking it into the tech run left a dangling pipe when links were suppressed.
         link = RichText()
-        if proj.link:
+        if include_project_links and proj.link:
+            link.add(" | ")
             link.add(
                 proj.link,
                 url_id=tpl.build_url_id(proj.url) if proj.url else None,
@@ -108,7 +172,24 @@ def build_context(
     # invalid markup into the document. Keep context keys clear of dict attribute names.
     skills = [{"label": g.label, "entries": ", ".join(g.items)} for g in resume.skills]
 
-    return {"experience": experience, "projects": projects, "skills": skills}
+    education = [
+        {
+            "school": edu.school,
+            "location": edu.location,
+            "dates": edu.dates,
+            "degree_line": _degree_line(edu),
+            "details": _education_details(edu),
+        }
+        for edu in resume.education
+    ]
+
+    return {
+        "contact": _contact_richtext(resume, tpl),
+        "education": education,
+        "experience": experience,
+        "projects": projects,
+        "skills": skills,
+    }
 
 
 def render(
@@ -117,12 +198,16 @@ def render(
     bullets: dict[str, str] | None = None,
     template: Path | None = None,
     out: Path | None = None,
+    include_project_links: bool = True,
 ) -> Path:
     """Build the context and render it to a .docx.
 
     Context building and rendering share one `DocxTemplate` instance deliberately:
     `build_url_id` registers hyperlink relationships on the document, so it must run
     against the same object that is ultimately saved.
+
+    `include_project_links=False` renders projects without their link label, separator,
+    or hyperlink.
     """
     template = template or config.DEFAULT_TEMPLATE_PATH
     if not template.exists():
@@ -131,7 +216,9 @@ def render(
             "Generate it with: python scripts/build_template.py"
         )
     tpl = DocxTemplate(template)
-    context = build_context(resume, tpl, bullets=bullets)
+    context = build_context(
+        resume, tpl, bullets=bullets, include_project_links=include_project_links
+    )
 
     # autoescape is required, not optional. Without it a literal "&" in the content
     # ("Tools & Languages") is emitted raw into the XML and swallowed as a malformed

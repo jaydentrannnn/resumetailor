@@ -1,0 +1,22 @@
+{
+  "permissions": {
+    "allow": [
+      "Bash(python *)",
+      "Read(//c/Program Files/LibreOffice/program/**)",
+      "Read(//c/Program Files/Microsoft Office/root/Office16/**)",
+      "Read(//c/Program Files \\\\\\(x86\\\\\\)/**)",
+      "Bash(env)",
+      "Skill(claude-api)",
+      "Bash(.venv/Scripts/python.exe scripts/render_dummy.py)",
+      "Bash(.venv/Scripts/python.exe -c ' *)",
+      "Read(//tmp/**)",
+      "Bash(.venv/Scripts/python.exe scripts/calibrate.py)",
+      "Bash(.venv/Scripts/python.exe -m pytest -q)",
+      "Bash(.venv/Scripts/python.exe -m pytest tests/test_fit.py -v)",
+      "Bash(.venv/Scripts/python.exe -m pytest tests/test_report.py -v)",
+      "Bash(.venv/Scripts/python.exe tailor.py --help)",
+      "Bash(.venv/Scripts/python.exe tailor.py --jd \"C:/Users/jayde/AppData/Local/Temp/claude/C--Users-jayde-OneDrive-Documents-ResumeTailor/f41008b1-00bb-45b7-90bf-c44227fdee5d/scratchpad/jd_ml_intern.txt\")",
+      "Bash(.venv/Scripts/python.exe tailor.py --no-cache --jd \"C:/Users/jayde/AppData/Local/Temp/claude/C--Users-jayde-OneDrive-Documents-ResumeTailor/f41008b1-00bb-45b7-90bf-c44227fdee5d/scratchpad/jd_ml_intern.txt\")"
+    ]
+  }
+}

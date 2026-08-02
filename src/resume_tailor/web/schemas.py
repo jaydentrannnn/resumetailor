@@ -27,6 +27,9 @@ class JobSettings(BaseModel):
     merge: bool = False
     no_cache: bool = False
     no_expand: bool = False
+    no_project_links: bool = False
+    #: Fraction of page capacity below which the fit loop grows (0.80–0.95).
+    fill_target: float | None = Field(default=None, ge=0.8, le=0.95)
 
 
 class CreateJobRequest(BaseModel):
@@ -143,6 +146,8 @@ class ConfigResponse(BaseModel):
     lines_per_page: int
     tag_vocabulary: list[str]
     contact_name: str | None = None
+    #: Default page-fill target (UNDERFLOW_THRESHOLD) for the settings slider.
+    fill_target: float = 0.93
 
 
 class ValidateResponse(BaseModel):

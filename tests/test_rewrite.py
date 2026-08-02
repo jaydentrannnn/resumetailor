@@ -662,6 +662,11 @@ def test_the_system_prompt_states_which_way_to_err():
     assert "Err short, never long." in rewrite._SYSTEM
 
 
+def test_the_system_prompt_forbids_moving_metrics_across_bullet_ids():
+    """Regression pin for aeth_b3/zot_b3 cross-wiring of eval metrics."""
+    assert "Never move a number or metric from one bullet id to another" in rewrite._SYSTEM
+
+
 # --- the repair pass ------------------------------------------------------------------
 
 
@@ -747,6 +752,83 @@ def test_the_repair_pass_cannot_smuggle_in_a_fabrication(rewrite_calls):
 
     with pytest.raises(rewrite.FabricationError, match="Kubernetes"):
         rewrite.rewrite_bullets(src, _reqs(), char_budget=202)
+
+
+# --------------------------------------------------------------------------------------
+# Fabrication retry (one pass, failing ids only)
+# --------------------------------------------------------------------------------------
+
+
+def test_fabrication_retry_accepts_a_clean_second_try(rewrite_calls):
+    """A first-draft invention earns one retry; a clean reply replaces the draft."""
+    src = [bullet("a", "Built a Python service.", ["python"])]
+    clean = "Built a Python service for internal tooling."
+    calls = rewrite_calls(
+        _reply(a="Built a Kubernetes service in Python."),
+        _reply(a=clean),
+    )
+
+    outcome = rewrite.rewrite_bullets(
+        src, _reqs(), char_budget=202, repair_widows=False, repair_verbs=False
+    )
+
+    assert len(calls) == 2
+    assert outcome.texts["a"] == clean
+
+
+def test_fabrication_retry_is_scoped_to_offending_ids(rewrite_calls):
+    """Clean bullets must not be re-sent; the retry prompt names the rejected terms."""
+    src = [
+        bullet("a", "Built a Python service.", ["python"]),
+        bullet("b", "Shipped a Python tool.", ["python"]),
+    ]
+    calls = rewrite_calls(
+        _reply(
+            a="Built a Python service.",
+            b="Built a Kubernetes tool in Python.",
+        ),
+        _reply(b="Shipped a Python tool for teams."),
+    )
+
+    outcome = rewrite.rewrite_bullets(
+        src, _reqs(), char_budget=202, repair_widows=False, repair_verbs=False
+    )
+
+    assert len(calls) == 2
+    follow_up = calls[1]["messages"][0]["content"]
+    assert "'b'" in follow_up
+    assert "'a'" not in follow_up, "a clean bullet must not be re-sent"
+    assert "Kubernetes" in follow_up
+    assert outcome.texts["a"] == "Built a Python service."
+    assert outcome.texts["b"] == "Shipped a Python tool for teams."
+
+
+def test_fabrication_retry_still_fabricating_is_fatal(rewrite_calls):
+    """One retry only — a second invention remains a hard failure."""
+    src = [bullet("a", "Built a Python service.", ["python"])]
+    rewrite_calls(
+        _reply(a="Built a Kubernetes service in Python."),
+        _reply(a="Built a PyTorch service in Python."),
+    )
+
+    with pytest.raises(rewrite.FabricationError, match="PyTorch"):
+        rewrite.rewrite_bullets(
+            src, _reqs(), char_budget=202, repair_widows=False, repair_verbs=False
+        )
+
+
+def test_fabrication_retry_missing_id_is_fatal(rewrite_calls):
+    """Omitting the offender on retry must not silently pass the first draft."""
+    src = [bullet("a", "Built a Python service.", ["python"])]
+    rewrite_calls(
+        _reply(a="Built a Kubernetes service in Python."),
+        _reply(ghost="Built a Python service."),
+    )
+
+    with pytest.raises(rewrite.FabricationError, match="Kubernetes"):
+        rewrite.rewrite_bullets(
+            src, _reqs(), char_budget=202, repair_widows=False, repair_verbs=False
+        )
 
 
 def test_no_widow_repair_holds_the_run_to_one_call(rewrite_calls):

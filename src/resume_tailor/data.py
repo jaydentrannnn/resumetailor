@@ -41,6 +41,7 @@ class Bullet(_Strict):
 
     #: Skills/tools this bullet demonstrates. Doubles as the fabrication guard's
     #: whitelist, so it must name every technology mentioned in `text`.
+    #: Stored as a JSON array but set-valued: duplicates (incl. aliases) collapse on load.
     tags: list[str] = Field(min_length=1)
 
     #: Whether the bullet carries a concrete number. Nudges selection ordering.
@@ -49,7 +50,7 @@ class Bullet(_Strict):
     @field_validator("tags")
     @classmethod
     def _normalise_tags(cls, tags: list[str]) -> list[str]:
-        """Canonicalise tags at load time so matching never has to think about case."""
+        """Collapse to a sorted set of canonical tags (no case/alias duplicates)."""
         return sorted({config.canonical_tag(t) for t in tags if t.strip()})
 
 
@@ -58,6 +59,10 @@ class Contact(_Strict):
     email: str
     phone: str = ""
     location: str = ""
+    #: Profile URLs rendered as labelled hyperlinks on the contact line.
+    linkedin: str = ""
+    github: str = ""
+    #: Legacy free-form list; unused by render. Kept so older JSON still loads.
     links: list[str] = Field(default_factory=list)
 
 
@@ -82,6 +87,14 @@ class Education(_Strict):
     school: str
     degree: str
     dates: str
+    #: Shown after the school on the header line (`School | Location`).
+    location: str = ""
+    #: Courses rendered as one "Relevant Coursework: …" bullet when non-empty.
+    coursework: list[str] = Field(default_factory=list)
+    gpa: str = ""
+    #: When true and `gpa` is set, append ` | GPA: …` to the degree line.
+    show_gpa: bool = False
+    #: Extra education bullets (not coursework). Coursework has its own field.
     details: list[str] = Field(default_factory=list)
 
 
@@ -116,6 +129,15 @@ class MasterResume(_Strict):
     experience: list[Experience] = Field(default_factory=list)
     projects: list[Project] = Field(default_factory=list)
     skills: list[SkillGroup] = Field(default_factory=list)
+    #: Shared tag options for the editor and a hint for TAG_ALIASES coverage.
+    #: Canonicalised at load; removing an option in the UI also strips it from bullets.
+    tag_vocabulary: list[str] = Field(default_factory=list)
+
+    @field_validator("tag_vocabulary")
+    @classmethod
+    def _normalise_vocabulary(cls, tags: list[str]) -> list[str]:
+        """Collapse vocabulary to a sorted set of canonical tags."""
+        return sorted({config.canonical_tag(t) for t in tags if t.strip()})
 
     @model_validator(mode="after")
     def _ids_unique(self) -> "MasterResume":

@@ -48,8 +48,13 @@ def test_get_config_returns_defaults(client):
     assert body["pages"] == config.DEFAULT_PAGE_TARGET
     assert body["experience"] == config.MAX_EXPERIENCE_ENTRIES
     assert "claude" in body["model_profiles"]
+    assert "lmstudio" in body["model_profiles"]
     assert isinstance(body["tag_vocabulary"], list)
     assert body["pdf_backend"] in ("word", "soffice")
+    assert "fill_target" in body
+    assert 0.8 <= body["fill_target"] <= 0.95
+    # Stored vocabulary (or derived fallback) should be non-empty for a real master resume.
+    assert len(body["tag_vocabulary"]) >= 1
 
 
 def test_create_job_rejects_empty_jd(client):
@@ -95,13 +100,17 @@ def test_job_runs_to_success_with_stubbed_pipeline(client, monkeypatch, tmp_path
         repair_widows=True,
         repair_verbs=True,
         merge_bullets=False,
+        include_project_links=True,
+        fill_target=None,
         on_event=None,
     ):
-        """Stub fit and record polish/merge knobs from JobSettings."""
+        """Stub fit and record polish/merge/link knobs from JobSettings."""
         seen_fit.update(
             repair_widows=repair_widows,
             repair_verbs=repair_verbs,
             merge_bullets=merge_bullets,
+            include_project_links=include_project_links,
+            fill_target=fill_target,
         )
         out = Path(out)
         out.parent.mkdir(parents=True, exist_ok=True)
@@ -160,6 +169,8 @@ def test_job_runs_to_success_with_stubbed_pipeline(client, monkeypatch, tmp_path
                 "model": "claude",
                 "merge": True,
                 "no_verb_repair": True,
+                "no_project_links": True,
+                "fill_target": 0.88,
             },
         },
     )
@@ -189,6 +200,8 @@ def test_job_runs_to_success_with_stubbed_pipeline(client, monkeypatch, tmp_path
         "repair_widows": True,
         "repair_verbs": False,
         "merge_bullets": True,
+        "include_project_links": False,
+        "fill_target": 0.88,
     }
     assert any(e["stage"] == "extract" for e in status["events"])
 
@@ -201,9 +214,16 @@ def test_job_runs_to_success_with_stubbed_pipeline(client, monkeypatch, tmp_path
     pdf = c.get(f"/api/jobs/{job_id}/preview.pdf")
     assert pdf.status_code == 200
     assert pdf.content.startswith(b"%PDF")
-    assert f"{resume.contact.name} Resume - Stub Role.pdf" in unquote(
-        pdf.headers.get("content-disposition", "")
-    )
+    preview_disp = unquote(pdf.headers.get("content-disposition", ""))
+    assert f"{resume.contact.name} Resume - Stub Role.pdf" in preview_disp
+    assert "inline" in preview_disp.lower()
+
+    pdf_dl = c.get(f"/api/jobs/{job_id}/download.pdf")
+    assert pdf_dl.status_code == 200
+    assert pdf_dl.content.startswith(b"%PDF")
+    download_disp = unquote(pdf_dl.headers.get("content-disposition", ""))
+    assert f"{resume.contact.name} Resume - Stub Role.pdf" in download_disp
+    assert "attachment" in download_disp.lower()
 
     expansion_md = c.get(f"/api/jobs/{job_id}/expansion.md")
     assert expansion_md.status_code == 200

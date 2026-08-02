@@ -87,16 +87,16 @@ def _bullet_lines(text: str) -> int:
 def _fixed_overhead_lines(resume: MasterResume) -> int:
     """Lines that render regardless of selection: header, contact, education, skills.
 
-    Education and skills are literal per CLAUDE.md — they never vary by posting — but
-    their line *count* still depends on the master resume's own content, so it is
-    measured from `resume` rather than hard-coded.
+    Education and skills never vary by posting, but their line *count* still depends on
+    the master resume's own content (coursework wrap, GPA suffix, skill group length),
+    so it is measured from `resume` rather than hard-coded.
     """
     lines = 2  # name line + contact line
     lines += 1  # "EDUCATION" header
     for edu in resume.education:
         lines += 1  # school | location ... dates
-        lines += 1  # degree line
-        for detail in edu.details:
+        lines += _bullet_lines(render._degree_line(edu))
+        for detail in render._education_details(edu):
             lines += _bullet_lines(detail)
 
     if resume.skills:
@@ -256,6 +256,8 @@ def fit(
     repair_widows: bool = True,
     repair_verbs: bool = True,
     merge_bullets: bool = False,
+    include_project_links: bool = True,
+    fill_target: float | None = None,
     on_event: events.ProgressCallback | None = None,
 ) -> FitResult:
     """Select, rewrite, render, and measure until the resume fits `target_pages`.
@@ -286,17 +288,25 @@ def fit(
     overflow: merging is a space lever, and one applied to a page that already fit combined
     bullets for no reason.
 
+    `include_project_links` is passed straight to `render.render`. It is not a fit lever:
+    the link sits inline in a project's header line, so hiding it frees no lines.
+
+    `fill_target` overrides `config.UNDERFLOW_THRESHOLD` for this run (fraction of page
+    capacity). Lower means the loop accepts a sparser page; higher packs tighter at the
+    cost of extra grow/rewrite rounds.
+
     `on_event` observes progress. A run costs several minutes of model calls and renders,
     so a UI driving this needs to report which iteration it is on; the callback cannot
     influence the loop and is optional everywhere.
 
-    Underflow (measured fill below `config.UNDERFLOW_THRESHOLD`) restores bullets and
-    starts a fresh rewrite — a half-empty page is a failure mode, not an acceptable
-    result, per CLAUDE.md. Unlike overflow it is not fatal: after
-    `config.MAX_GROW_ATTEMPTS` the loop returns the fullest version it reached and says so
-    in `FitResult.warnings`.
+    Underflow (measured fill below `fill_target`) restores bullets and starts a fresh
+    rewrite — a half-empty page is a failure mode, not an acceptable result, per
+    CLAUDE.md. Unlike overflow it is not fatal: after `config.MAX_GROW_ATTEMPTS` the loop
+    returns the fullest version it reached and says so in `FitResult.warnings`.
     """
     target_pages = target_pages or config.DEFAULT_PAGE_TARGET
+    # Local so a per-run override does not mutate the process-wide constant.
+    underflow = fill_target if fill_target is not None else config.UNDERFLOW_THRESHOLD
     warnings: list[str] = []
     iterations = 0
     grow_attempts = 0
@@ -365,7 +375,13 @@ def fit(
             events.emit(
                 on_event, "render", f"Rendering draft {iterations}", iteration=iterations
             )
-            doc_path = render.render(resume, bullets=rewritten, template=template, out=out)
+            doc_path = render.render(
+                resume,
+                bullets=rewritten,
+                template=template,
+                out=out,
+                include_project_links=include_project_links,
+            )
 
             try:
                 # Keep Word alive across retries within this run; the caller gets the
@@ -415,13 +431,13 @@ def fit(
         capacity = target_pages * config.LINES_PER_PAGE
         fill_ratio = measured_lines / capacity
 
-        underfull = fill_ratio < config.UNDERFLOW_THRESHOLD
+        underfull = fill_ratio < underflow
         can_grow = limit < total_bullets and grow_attempts < config.MAX_GROW_ATTEMPTS
 
         if not underfull or not can_grow:
             if underfull:
                 warnings.append(
-                    f"Page is only {fill_ratio:.0%} full (target {config.UNDERFLOW_THRESHOLD:.0%}); "
+                    f"Page is only {fill_ratio:.0%} full (target {underflow:.0%}); "
                     f"{'ran out of bullets' if limit >= total_bullets else 'stopped growing after '
                        f'{grow_attempts} attempt(s)'}."
                 )
@@ -467,7 +483,7 @@ def fit(
         # trip. The divisor deliberately exceeds `_TARGET_LINES_PER_BULLET`: a restored
         # bullet may drag a whole entry's header lines back with it, so erring low costs
         # an extra cheap iteration, while erring high costs an overflow re-rewrite.
-        deficit = config.UNDERFLOW_THRESHOLD * capacity - measured_lines
+        deficit = underflow * capacity - measured_lines
         limit = min(total_bullets, limit + max(1, int(deficit // (_TARGET_LINES_PER_BULLET + 1))))
         grow_attempts += 1
         events.emit(

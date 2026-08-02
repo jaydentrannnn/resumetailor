@@ -2,17 +2,20 @@ import {
   type AppConfig,
   type JobSettings,
   type RunReport,
+  downloadPdfUrl,
   downloadUrl,
 } from "../api";
 import { ExperienceCard } from "../components/ExperienceCard";
 import { ModelSpecField } from "../components/ModelSpecField";
 import { useRunState } from "../state/runState";
+import { useState } from "react";
 
 /**
  * Main run page: paste a JD, adjust settings, watch progress, download results.
  *
  * State lives in `RunProvider` so switching to Master resume mid-run does not
- * lose the JD, settings, SSE stream, or results.
+ * lose the JD, settings, SSE stream, or results. PDF auto-download is also
+ * owned there so a tab remount cannot re-fire it.
  */
 export function RunPage() {
   const {
@@ -148,122 +151,213 @@ function SettingsPanel({
   settings: JobSettings;
   onChange: (s: JobSettings) => void;
 }) {
-  /** Collapsible-looking settings matching the CLI flags. */
+  /** Grouped run knobs mirroring the CLI flags, with short help under each control. */
+  const [advancedOpen, setAdvancedOpen] = useState(false);
+
   function set<K extends keyof JobSettings>(key: K, value: JobSettings[K]) {
     onChange({ ...settings, [key]: value });
   }
 
+  function resetDefaults() {
+    onChange({
+      pages: config?.pages ?? 1,
+      experience: config?.experience ?? 3,
+      projects: config?.projects ?? 2,
+      model: "claude",
+      rewrite_model: null,
+      expand_model: null,
+      effort: null,
+      no_semantic: false,
+      no_widow_repair: false,
+      no_verb_repair: false,
+      merge: false,
+      no_cache: false,
+      no_expand: false,
+      no_project_links: false,
+      fill_target: null,
+    });
+  }
+
+  const fillValue = settings.fill_target ?? config?.fill_target ?? 0.93;
+
   return (
     <section className="rounded-xl border border-line bg-panel p-5 shadow-sm">
-      <h2 className="font-display text-xl font-semibold">Settings</h2>
-      <div className="mt-4 grid gap-4 sm:grid-cols-2">
-        <Field label="Pages">
-          <input
-            type="number"
-            min={1}
-            max={5}
-            value={settings.pages}
-            onChange={(e) => set("pages", Number(e.target.value))}
-            className="field"
-          />
-        </Field>
-        <Field label="Experience entries">
-          <input
-            type="number"
-            min={1}
-            max={10}
-            value={settings.experience ?? config?.experience ?? 3}
-            onChange={(e) => set("experience", Number(e.target.value))}
-            className="field"
-          />
-        </Field>
-        <Field label="Project entries">
-          <input
-            type="number"
-            min={1}
-            max={10}
-            value={settings.projects ?? config?.projects ?? 2}
-            onChange={(e) => set("projects", Number(e.target.value))}
-            className="field"
-          />
-        </Field>
-        <Field label="Model profile">
-          <select
-            value={settings.model}
-            onChange={(e) => set("model", e.target.value)}
-            className="field"
-          >
-            {(config?.model_profiles ?? ["claude", "ollama", "hybrid"]).map((p) => (
-              <option key={p} value={p}>
-                {p}
-              </option>
-            ))}
-          </select>
-        </Field>
-        <ModelSpecField
-          label="Rewrite model (optional)"
-          value={settings.rewrite_model}
-          onChange={(v) => set("rewrite_model", v)}
-          placeholder="e.g. claude-sonnet-5"
-        />
-        <ModelSpecField
-          label="Expand model (optional)"
-          value={settings.expand_model}
-          onChange={(v) => set("expand_model", v)}
-          placeholder="e.g. ollama:gemma4:cloud"
-        />
-        <Field label="Effort">
-          <select
-            value={settings.effort ?? ""}
-            onChange={(e) =>
-              set(
-                "effort",
-                (e.target.value || null) as JobSettings["effort"],
-              )
-            }
-            className="field"
-          >
-            <option value="">Per-stage defaults</option>
-            {(config?.effort_options ?? ["low", "medium", "high"]).map((e) => (
-              <option key={e} value={e}>
-                {e}
-              </option>
-            ))}
-          </select>
-        </Field>
+      <div className="flex items-center justify-between gap-3">
+        <h2 className="font-display text-xl font-semibold">Settings</h2>
+        <button
+          type="button"
+          onClick={resetDefaults}
+          className="text-xs text-ink-muted underline-offset-2 hover:text-accent hover:underline"
+        >
+          Reset to defaults
+        </button>
       </div>
-      <div className="mt-4 flex flex-wrap gap-4 text-sm">
+
+      <fieldset className="mt-4 space-y-3">
+        <legend className="text-sm font-semibold text-ink">Output</legend>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Pages" help="Target page count for the tailored resume.">
+            <input
+              type="number"
+              min={1}
+              max={5}
+              value={settings.pages}
+              onChange={(e) => set("pages", Number(e.target.value))}
+              className="field"
+            />
+          </Field>
+          <Field
+            label="Experience entries"
+            help="Max work experience roles to keep (ranked by relevance)."
+          >
+            <input
+              type="number"
+              min={1}
+              max={10}
+              value={settings.experience ?? config?.experience ?? 3}
+              onChange={(e) => set("experience", Number(e.target.value))}
+              className="field"
+            />
+          </Field>
+          <Field
+            label="Project entries"
+            help="Max projects to keep (ranked separately from experience)."
+          >
+            <input
+              type="number"
+              min={1}
+              max={10}
+              value={settings.projects ?? config?.projects ?? 2}
+              onChange={(e) => set("projects", Number(e.target.value))}
+              className="field"
+            />
+          </Field>
+        </div>
+        <Toggle
+          label="Hide project links"
+          help="Omit the Github label and hyperlink from project headers."
+          checked={settings.no_project_links}
+          onChange={(v) => set("no_project_links", v)}
+        />
+      </fieldset>
+
+      <fieldset className="mt-6 space-y-3">
+        <legend className="text-sm font-semibold text-ink">Models</legend>
+        <div className="grid gap-4 sm:grid-cols-2">
+          <Field label="Model profile" help="claude, ollama, hybrid, or a custom provider:model spec.">
+            <select
+              value={settings.model}
+              onChange={(e) => set("model", e.target.value)}
+              className="field"
+            >
+              {(config?.model_profiles ?? ["claude", "ollama", "lmstudio", "hybrid"]).map(
+                (p) => (
+                  <option key={p} value={p}>
+                    {p}
+                  </option>
+                ),
+              )}
+            </select>
+          </Field>
+          <Field label="Effort" help="Reasoning depth for every stage. Blank uses per-stage defaults.">
+            <select
+              value={settings.effort ?? ""}
+              onChange={(e) =>
+                set("effort", (e.target.value || null) as JobSettings["effort"])
+              }
+              className="field"
+            >
+              <option value="">Per-stage defaults</option>
+              {(config?.effort_options ?? ["low", "medium", "high"]).map((e) => (
+                <option key={e} value={e}>
+                  {e}
+                </option>
+              ))}
+            </select>
+          </Field>
+          <ModelSpecField
+            label="Rewrite model (optional)"
+            value={settings.rewrite_model}
+            onChange={(v) => set("rewrite_model", v)}
+            placeholder="e.g. claude-sonnet-5"
+          />
+          <ModelSpecField
+            label="Expand model (optional)"
+            value={settings.expand_model}
+            onChange={(v) => set("expand_model", v)}
+            placeholder="e.g. ollama:gemma4:cloud"
+          />
+        </div>
+      </fieldset>
+
+      <fieldset className="mt-6 space-y-2">
+        <legend className="text-sm font-semibold text-ink">Rewriting quality</legend>
         <Toggle
           label="Skip semantic scoring"
+          help="Rank on keyword tags only (cheaper; useful for A/B ranking)."
           checked={settings.no_semantic}
           onChange={(v) => set("no_semantic", v)}
         />
         <Toggle
           label="Skip widow repair"
+          help="Do not re-cut bullets that wrapped onto a near-empty final line."
           checked={settings.no_widow_repair}
           onChange={(v) => set("no_widow_repair", v)}
         />
         <Toggle
           label="Skip verb variety repair"
+          help="Do not revoice colliding opening verbs across bullets."
           checked={settings.no_verb_repair}
           onChange={(v) => set("no_verb_repair", v)}
         />
         <Toggle
           label="Merge redundant bullets"
+          help="Only after a measured page overflow; combines near-duplicate lines."
           checked={settings.merge}
           onChange={(v) => set("merge", v)}
         />
-        <Toggle
-          label="Skip experience expansion"
-          checked={settings.no_expand}
-          onChange={(v) => set("no_expand", v)}
-        />
-        <Toggle
-          label="Bypass cache"
-          checked={settings.no_cache}
-          onChange={(v) => set("no_cache", v)}
-        />
+      </fieldset>
+
+      <div className="mt-6">
+        <button
+          type="button"
+          onClick={() => setAdvancedOpen((o) => !o)}
+          className="text-sm font-semibold text-ink hover:text-accent"
+        >
+          Advanced {advancedOpen ? "▾" : "▸"}
+        </button>
+        {advancedOpen && (
+          <fieldset className="mt-3 space-y-3">
+            <Field
+              label={`Page fill target (${Math.round(fillValue * 100)}%)`}
+              help="Grow when measured fill is below this. Lower = sparser page, fewer rewrites."
+            >
+              <input
+                type="range"
+                min={80}
+                max={95}
+                step={1}
+                value={Math.round(fillValue * 100)}
+                onChange={(e) => set("fill_target", Number(e.target.value) / 100)}
+                className="w-full accent-[var(--color-accent)]"
+              />
+            </Field>
+            <Toggle
+              label="Bypass cache"
+              help="Re-extract JD and re-score bullets instead of reusing cached files."
+              checked={settings.no_cache}
+              onChange={(v) => set("no_cache", v)}
+            />
+            <Toggle
+              label="Skip experience expansion"
+              help="Do not generate application-form paste text after a successful fit."
+              checked={settings.no_expand}
+              onChange={(v) => set("no_expand", v)}
+            />
+          </fieldset>
+        )}
       </div>
+
       <style>{`
         .field {
           width: 100%;
@@ -280,33 +374,47 @@ function SettingsPanel({
   );
 }
 
-function Field({ label, children }: { label: string; children: React.ReactNode }) {
+function Field({
+  label,
+  help,
+  children,
+}: {
+  label: string;
+  help?: string;
+  children: React.ReactNode;
+}) {
   return (
     <label className="block text-sm">
       <span className="mb-1 block text-ink-muted">{label}</span>
       {children}
+      {help && <span className="mt-1 block text-xs text-ink-muted">{help}</span>}
     </label>
   );
 }
 
 function Toggle({
   label,
+  help,
   checked,
   onChange,
 }: {
   label: string;
+  help?: string;
   checked: boolean;
   onChange: (v: boolean) => void;
 }) {
   return (
-    <label className="inline-flex cursor-pointer items-center gap-2">
+    <label className="flex cursor-pointer gap-2 text-sm">
       <input
         type="checkbox"
         checked={checked}
         onChange={(e) => onChange(e.target.checked)}
-        className="accent-[var(--color-accent)]"
+        className="mt-0.5 accent-[var(--color-accent)]"
       />
-      {label}
+      <span>
+        <span className="font-medium">{label}</span>
+        {help && <span className="mt-0.5 block text-xs text-ink-muted">{help}</span>}
+      </span>
     </label>
   );
 }
@@ -325,12 +433,20 @@ function ReportCard({ report, jobId }: { report: RunReport; jobId: string }) {
           <h2 className="font-display text-xl font-semibold">{report.title}</h2>
           <p className="text-sm text-ink-muted">{report.seniority}</p>
         </div>
-        <a
-          href={downloadUrl(jobId)}
-          className="shrink-0 rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white"
-        >
-          .docx
-        </a>
+        <div className="flex shrink-0 gap-2">
+          <a
+            href={downloadPdfUrl(jobId)}
+            className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white"
+          >
+            .pdf
+          </a>
+          <a
+            href={downloadUrl(jobId)}
+            className="rounded-md border border-line px-3 py-1.5 text-sm font-medium text-ink hover:border-accent hover:text-accent"
+          >
+            .docx
+          </a>
+        </div>
       </div>
 
       <dl className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-5">

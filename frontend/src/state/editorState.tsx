@@ -21,7 +21,9 @@ import {
 
 type EditorStateValue = {
   resume: MasterResume | null;
-  setResume: (resume: MasterResume) => void;
+  setResume: (
+    resume: MasterResume | ((prev: MasterResume) => MasterResume),
+  ) => void;
   config: AppConfig | null;
   errors: string[];
   message: string | null;
@@ -38,18 +40,32 @@ const EditorStateContext = createContext<EditorStateValue | null>(null);
  * across reloads risks shadowing what is on disk.
  */
 export function EditorProvider({ children }: { children: ReactNode }) {
-  const [resume, setResume] = useState<MasterResume | null>(null);
+  const [resume, setResumeState] = useState<MasterResume | null>(null);
   const [config, setConfig] = useState<AppConfig | null>(null);
   const [errors, setErrors] = useState<string[]>([]);
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [loaded, setLoaded] = useState(false);
 
+  const setResume = useCallback(
+    (next: MasterResume | ((prev: MasterResume) => MasterResume)) => {
+      /**
+       * Support functional updates so chained edits in one event (e.g. bullet
+       * tags + vocabulary) do not clobber each other with a stale snapshot.
+       */
+      setResumeState((prev) => {
+        if (!prev) return prev;
+        return typeof next === "function" ? next(prev) : next;
+      });
+    },
+    [],
+  );
+
   useEffect(() => {
     if (loaded) return;
     Promise.all([fetchMasterResume(), fetchConfig()])
       .then(([raw, cfg]) => {
-        setResume(raw as MasterResume);
+        setResumeState(raw as MasterResume);
         setConfig(cfg);
         setLoaded(true);
       })
@@ -106,7 +122,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
           `Saved — ${result.summary.name}: ${result.summary.bullets} bullets (previous file backed up)`,
         );
         const fresh = (await fetchMasterResume()) as MasterResume;
-        setResume(fresh);
+        setResumeState(fresh);
         const cfg = await fetchConfig();
         setConfig(cfg);
       }
@@ -128,7 +144,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
       validate,
       save,
     }),
-    [resume, config, errors, message, busy, validate, save],
+    [resume, setResume, config, errors, message, busy, validate, save],
   );
 
   return (

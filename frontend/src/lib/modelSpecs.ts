@@ -4,7 +4,11 @@ import { useSyncExternalStore } from "react";
 const STORAGE_KEY = "resumeTailor.modelSpecs";
 
 /** Seeded on first load from the project's default Anthropic and Ollama specs. */
-const DEFAULT_SPECS = ["claude-sonnet-5", "ollama:gemma4:cloud"];
+const DEFAULT_SPECS = [
+  "claude-sonnet-5",
+  "ollama:gemma4:cloud",
+  "lmstudio:local-model",
+];
 
 type Listener = () => void;
 

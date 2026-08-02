@@ -161,6 +161,40 @@ def test_each_project_keeps_its_own_url(tmp_path):
     assert expected <= targets, f"missing project URLs: {expected - targets}"
 
 
+def test_project_links_can_be_suppressed(tmp_path):
+    """`include_project_links=False` drops the label, hyperlink, and leading separator.
+
+    Contact hyperlinks (e.g. LinkedIn) still render — this flag only covers projects.
+    The context key must remain a RichText so the template's `{{r }}` tag stays valid.
+    """
+    if not config.DEFAULT_TEMPLATE_PATH.exists():
+        pytest.skip("template not built; run scripts/build_template.py")
+
+    out = tmp_path / "out.docx"
+    resume = data.load()
+    render.render(resume, out=out, include_project_links=False)
+
+    z = zipfile.ZipFile(out)
+    root = etree.fromstring(z.read("word/document.xml"))
+    rels = etree.fromstring(z.read("word/_rels/document.xml.rels"))
+    target_of = {r.get("Id"): r.get("Target") for r in rels}
+
+    R = "{http://schemas.openxmlformats.org/officeDocument/2006/relationships}"
+    targets = {target_of.get(h.get(f"{R}id")) for h in root.iter(f"{W}hyperlink")}
+    project_urls = {p.url for p in resume.projects if p.url}
+    assert not (project_urls & targets), f"project URLs still linked: {project_urls & targets}"
+
+    body_text = "".join(t.text or "" for t in root.iter(f"{W}t"))
+    for label in {p.link for p in resume.projects if p.link}:
+        assert label not in body_text
+    # Separator lived with the link RichText; a tech-run trailing " | " would remain.
+    for proj in resume.projects:
+        tech = ", ".join(proj.tech)
+        assert f"{tech} |" not in body_text, f"dangling separator after {proj.name!r} tech"
+    # Projects themselves must survive; only the link is gone.
+    assert resume.projects[0].name in body_text
+
+
 def test_bullet_spacing_is_normalised_within_each_section(rendered):
     """Every bullet in a section must share one spacing, the tightest source variant.
 
@@ -299,3 +333,94 @@ def test_experience_header_location_is_not_bold(rendered):
         checked += 1
 
     assert checked >= 1, "no experience header lines checked"
+
+
+def test_contact_line_has_linkedin_hyperlink(rendered_docx, rendered):
+    """Contact RichText should label LinkedIn and keep a real hyperlink relationship."""
+    root = etree.fromstring(rendered)
+    texts = [
+        "".join(t.text or "" for t in p.iter(f"{W}t"))
+        for p in root.iter(f"{W}p")
+    ]
+    contact = next((t for t in texts if "LinkedIn" in t), None)
+    assert contact is not None, "contact line missing LinkedIn label"
+    assert "https://www.linkedin.com" not in contact, "full LinkedIn URL should not print"
+    # Hyperlink target lives in document.xml.rels, not in visible text.
+    rels = rendered_docx.read("word/_rels/document.xml.rels").decode("utf-8")
+    assert "linkedin.com" in rels.lower()
+
+
+def test_education_renders_coursework_from_master(rendered):
+    """Coursework from master_resume.json should appear as one Relevant Coursework bullet."""
+    resume = data.load()
+    assert resume.education, "fixture master resume needs an education entry"
+    assert resume.education[0].coursework, "migration should have split coursework"
+    root = etree.fromstring(rendered)
+    body = "\n".join(
+        "".join(t.text or "" for t in p.iter(f"{W}t")) for p in root.iter(f"{W}p")
+    )
+    assert "Relevant Coursework:" in body
+    assert resume.education[0].coursework[0] in body
+
+
+def test_gpa_appended_only_when_show_gpa(tmp_path):
+    """GPA suffix appears on the degree line only when show_gpa is on and gpa is set."""
+    if not config.DEFAULT_TEMPLATE_PATH.exists():
+        pytest.skip("template not built; run scripts/build_template.py")
+    resume = data.load()
+    assert resume.education
+    edu = resume.education[0].model_copy(update={"gpa": "3.85", "show_gpa": False})
+    resume = resume.model_copy(update={"education": [edu]})
+    off = tmp_path / "gpa_off.docx"
+    render.render(resume, out=off)
+    with zipfile.ZipFile(off) as zf:
+        xml = zf.read("word/document.xml").decode("utf-8")
+    assert "GPA: 3.85" not in xml
+
+    edu = edu.model_copy(update={"show_gpa": True})
+    resume = resume.model_copy(update={"education": [edu]})
+    on = tmp_path / "gpa_on.docx"
+    render.render(resume, out=on)
+    with zipfile.ZipFile(on) as zf:
+        xml = zf.read("word/document.xml").decode("utf-8")
+    assert "GPA: 3.85" in xml
+
+
+def test_blank_github_omits_separator_in_contact_context():
+    """A missing GitHub URL must not leave a dangling contact-line separator."""
+    if not config.DEFAULT_TEMPLATE_PATH.exists():
+        pytest.skip("template not built; run scripts/build_template.py")
+    from docxtpl import DocxTemplate
+
+    resume = data.load()
+    contact = resume.contact.model_copy(update={"github": ""})
+    resume = resume.model_copy(update={"contact": contact})
+    tpl = DocxTemplate(config.DEFAULT_TEMPLATE_PATH)
+    ctx = render.build_context(resume, tpl)
+    # RichText xml should contain LinkedIn but not GitHub when github is blank.
+    xml = ctx["contact"].xml
+    assert "LinkedIn" in xml
+    assert "GitHub" not in xml
+
+
+def test_degree_line_and_education_details_helpers():
+    """Unit-level helpers used by build_context and fit overhead."""
+    from resume_tailor.data import Education
+
+    edu = Education(
+        school="UCI",
+        degree="B.S. Computer Science",
+        dates="2023-2027",
+        coursework=["Algorithms", "ML"],
+        gpa="3.9",
+        show_gpa=True,
+        details=["Honors"],
+    )
+    assert render._degree_line(edu) == "B.S. Computer Science | GPA: 3.9"
+    assert render._education_details(edu) == [
+        "Relevant Coursework: Algorithms, ML",
+        "Honors",
+    ]
+    edu2 = edu.model_copy(update={"show_gpa": False, "coursework": []})
+    assert render._degree_line(edu2) == "B.S. Computer Science"
+    assert render._education_details(edu2) == ["Honors"]

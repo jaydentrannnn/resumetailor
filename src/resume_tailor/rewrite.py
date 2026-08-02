@@ -5,8 +5,9 @@ Three deliberately separate stages:
 1. `score` / `select` — pure, deterministic tag matching. No LLM. Cheap and predictable,
    which is what lets the fit loop retry without cost blowing up.
 2. `rewrite_bullets` — a batched API call that rewords the surviving bullets to mirror the
-   posting's phrasing, plus at most one follow-up call carrying only the bullets that
-   wrapped onto a near-empty final line. The follow-up fires only when one exists.
+   posting's phrasing, plus at most one fabrication-retry call for offending ids, plus at
+   most one polish follow-up carrying only widows and/or verb collisions. Each follow-up
+   fires only when needed.
 3. `check_fabrication` — a post-hoc check *in code*. The prompt asks the model not to
    invent skills; this function is what actually guarantees it. Never relax it to make a
    run pass.
@@ -669,6 +670,9 @@ Absolute rules:
 - NEVER introduce a skill, tool, technology, metric, employer, or claim that is not \
 already present in the bullet(s) you are given. You are rewording, not embellishing. A \
 rewrite that adds a technology the candidate never used is a serious error.
+- Never move a number or metric from one bullet id to another. Each figure belongs only \
+to the bullet that already contains it — a sibling's 0.88 or p95 must not appear under a \
+different id, even when both bullets describe evaluation work.
 - When combining multiple bullets into one, do not create new causal relationships \
 between them. Avoid "thereby", "resulting in", and similar phrasing unless the \
 relationship is already explicit in the provided bullets.
@@ -854,6 +858,15 @@ Do not lengthen the bullet. Do not restate the claim in different words: this is
 one-word substitution, not a rewrite.
 """
 
+_RETRY_INSTRUCTION = """\
+Each bullet below was rejected: it contains a term or figure that does not appear in the \
+source material. The listed `rejected_terms` are the problem. Rewrite each bullet without \
+them, using only what its `source` and `permitted_skills` already state. Do not substitute \
+a synonym or a variant for a rejected figure — write a number exactly as the source writes \
+it (if the source says "over 130", do not write "130+"), or leave it out entirely. Do not \
+borrow a metric from any other bullet. Keep the rest of the bullet's meaning.
+"""
+
 
 def _format_widows(
     ceilings: dict[str, int], texts: dict[str, str], sources: dict[str, Bullet]
@@ -886,6 +899,91 @@ def _format_verb_items(
             f"</bullet>"
         )
     return "\n".join(lines)
+
+
+def _format_fabrications(
+    rejected: dict[str, tuple[str, list[str]]], sources: dict[str, Bullet]
+) -> str:
+    """Format rejected bullets, each carrying the terms that failed the guard.
+
+    The master text ships alongside the rejected draft because the model's mistake is
+    usually a *variant* of something the source does say ("130+" for "over 130"), and it
+    cannot correct that without seeing how the source words it.
+    """
+    lines = []
+    for bullet_id, (text, offenders) in rejected.items():
+        tags = ", ".join(sources[bullet_id].tags)
+        lines.append(
+            f"<bullet id={bullet_id!r} rejected_terms={', '.join(offenders)!r}>\n"
+            f"  <rejected>{text}</rejected>\n"
+            f"  <source>{sources[bullet_id].text}</source>\n"
+            f"  <permitted_skills>{tags}</permitted_skills>\n"
+            f"</bullet>"
+        )
+    return "\n".join(lines)
+
+
+def _retry_fabrications(
+    rejected: dict[str, tuple[str, list[str]]],
+    sources: dict[str, Bullet],
+    requirements: JobRequirements,
+) -> tuple[dict[str, str], list[str]]:
+    """Re-request only the fabricating bullets. Returns (accepted, surviving violations).
+
+    One round trip, never more — same bound as `_polish`. Each returned bullet replaces
+    its draft only if it passes the guard; length is left to the widow pass and the fit
+    loop. An id the model omits, or a candidate that fabricates again, stays in the
+    violation list so the caller can raise.
+    """
+    if not rejected:
+        return {}, []
+
+    user = (
+        f"<role>{requirements.title} ({requirements.seniority})</role>\n\n"
+        f"<keywords_to_mirror>\n{_format_keywords(requirements)}\n</keywords_to_mirror>\n\n"
+        f"<bullets_to_retry>\n{_format_fabrications(rejected, sources)}\n"
+        f"</bullets_to_retry>\n\n{_RETRY_INSTRUCTION}"
+    )
+
+    client = llm.client_for("rewrite")
+    response = client.messages.parse(
+        model=config.model_for("rewrite"),
+        max_tokens=config.max_tokens_for("rewrite"),
+        system=_SYSTEM,
+        messages=[{"role": "user", "content": user}],
+        output_format=RewriteResult,
+        output_config={"effort": config.effort_for("rewrite")},
+    )
+
+    result = response.parsed_output
+    if result is None:
+        # Unparseable reply leaves every id unresolved — report all rather than pass.
+        return {}, [
+            f"  {bid}: introduced {', '.join(offenders)}\n    -> {text}"
+            for bid, (text, offenders) in rejected.items()
+        ]
+
+    by_reply = {item.id: item.text.strip() for item in result.bullets}
+    accepted: dict[str, str] = {}
+    survivors: list[str] = []
+
+    for bullet_id, (draft, _offenders) in rejected.items():
+        candidate = by_reply.get(bullet_id)
+        if candidate is None:
+            survivors.append(
+                f"  {bullet_id}: introduced {', '.join(_offenders)}\n    -> {draft}"
+            )
+            continue
+        source = sources[bullet_id]
+        still = check_fabrication(source, candidate)
+        if still:
+            survivors.append(
+                f"  {bullet_id}: introduced {', '.join(still)}\n    -> {candidate}"
+            )
+            continue
+        accepted[bullet_id] = candidate
+
+    return accepted, survivors
 
 
 def _accept_verb_swap(
@@ -1076,7 +1174,9 @@ def rewrite_bullets(
     isolates what the prompt's target band achieves alone, `repair_verbs` what its
     verb-variety rule does.
 
-    Raises `FabricationError` if any rewrite introduces untraceable content.
+    A first draft that fabricates earns one targeted retry of only the offending ids
+    (`_retry_fabrications`). A second fabrication — or an id the model drops on retry —
+    still raises `FabricationError`.
     """
     if not bullets:
         return RewriteOutcome(texts={})
@@ -1131,25 +1231,36 @@ def rewrite_bullets(
 
     by_id = {b.id: b for b in bullets}
     out: dict[str, str] = {}
-    violations: list[str] = []
+    rejected: dict[str, tuple[str, list[str]]] = {}
 
     for item in result.bullets:
         source = by_id.get(item.id)
         if source is None:
             # An unknown id means the mapping is unreliable; skip rather than guess.
             continue
-        offenders = check_fabrication(source, item.text)
+        text = item.text.strip()
+        offenders = check_fabrication(source, text)
         if offenders:
-            violations.append(f"  {item.id}: introduced {', '.join(offenders)}\n    -> {item.text}")
-        out[item.id] = item.text.strip()
+            rejected[item.id] = (text, offenders)
+        else:
+            out[item.id] = text
 
-    if violations:
-        raise FabricationError(
-            "Rewrite introduced content absent from the master resume:\n"
-            + "\n".join(violations)
-            + "\n\nThis is a hard failure. Either the model embellished, or the source "
-            "bullet's `tags` are missing a technology it legitimately mentions."
+    if rejected:
+        events.emit(
+            on_event,
+            "rewrite",
+            f"Retrying {len(rejected)} fabricated bullet(s)",
+            fabricated=len(rejected),
         )
+        accepted, survivors = _retry_fabrications(rejected, by_id, requirements)
+        out.update(accepted)
+        if survivors:
+            raise FabricationError(
+                "Rewrite introduced content absent from the master resume:\n"
+                + "\n".join(survivors)
+                + "\n\nThis is a hard failure. Either the model embellished, or the source "
+                "bullet's `tags` are missing a technology it legitimately mentions."
+            )
 
     # Any bullet the model dropped keeps its original text — better an untailored true
     # line than a missing one.

@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -16,6 +17,7 @@ import {
   createJob,
   fetchConfig,
   fetchJob,
+  triggerPdfDownload,
 } from "../api";
 
 const JD_KEY = "resumeTailor.jdText";
@@ -36,6 +38,8 @@ export const DEFAULT_SETTINGS: JobSettings = {
   merge: false,
   no_cache: false,
   no_expand: false,
+  no_project_links: false,
+  fill_target: null,
 };
 
 /**
@@ -51,7 +55,7 @@ function loadJdText(): string {
 
 /**
  * Load settings from localStorage merged over DEFAULT_SETTINGS so older blobs
- * missing newer fields (expand_model, no_expand, …) stay valid.
+ * missing newer fields (expand_model, no_expand, no_project_links, …) stay valid.
  */
 function loadSettings(): JobSettings {
   try {
@@ -99,6 +103,9 @@ export function RunProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [queuePosition, setQueuePosition] = useState<number | null>(null);
+  // Lives here (not RunPage) so remounting on Tailor ↔ Master tab switches
+  // does not reset and re-trigger the post-success PDF download.
+  const autoDownloadedFor = useRef<string | null>(null);
 
   const setJdText = useCallback((text: string) => {
     setJdTextState(text);
@@ -217,6 +224,13 @@ export function RunProvider({ children }: { children: ReactNode }) {
     };
     return () => source.close();
   }, [jobId, busy, pollUntilDone]);
+
+  useEffect(() => {
+    if (!jobId || !report || status !== "succeeded") return;
+    if (autoDownloadedFor.current === jobId) return;
+    autoDownloadedFor.current = jobId;
+    void triggerPdfDownload(jobId);
+  }, [jobId, report, status]);
 
   const startJob = useCallback(async () => {
     /** Enqueue a new run from the current JD text and settings. */

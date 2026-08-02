@@ -149,6 +149,25 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--no-project-links",
+        action="store_true",
+        help=(
+            "Render projects without their link label or hyperlink. Frees no page space "
+            "— the link is inline in the project's header line."
+        ),
+    )
+    parser.add_argument(
+        "--fill-target",
+        type=float,
+        default=None,
+        metavar="RATIO",
+        help=(
+            "Page-fill fraction below which the fit loop grows "
+            f"(0.80–0.95, default: {config.UNDERFLOW_THRESHOLD}). "
+            "Lower accepts a sparser page; higher packs tighter."
+        ),
+    )
+    parser.add_argument(
         "--effort",
         choices=("low", "medium", "high"),
         default=None,
@@ -233,6 +252,9 @@ def main(argv: list[str] | None = None) -> int:
     )
 
     try:
+        if args.fill_target is not None and not (0.8 <= args.fill_target <= 0.95):
+            print("error: --fill-target must be between 0.80 and 0.95", file=sys.stderr)
+            return 1
         result = fit.fit(
             resume,
             requirements,
@@ -245,6 +267,8 @@ def main(argv: list[str] | None = None) -> int:
             repair_widows=not args.no_widow_repair,
             repair_verbs=not args.no_verb_repair,
             merge_bullets=args.merge,
+            include_project_links=not args.no_project_links,
+            fill_target=args.fill_target,
         )
     except FabricationError as exc:
         print(f"error: {exc}", file=sys.stderr)

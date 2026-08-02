@@ -45,11 +45,24 @@ def test_estimate_lines_scales_with_bullet_count():
     assert full > empty
 
 
-def test_estimate_lines_drops_entry_with_no_surviving_bullets():
-    """An entry whose bullets were all dropped contributes nothing, mirroring build_context."""
+def test_estimate_lines_counts_coursework_wrap():
+    """Coursework joined into one detail line must contribute to fixed overhead."""
     resume = load()
-    one_job_bullets = {b.id: b.text for b in resume.experience[0].bullets}
-    assert fit_mod.estimate_lines(resume, one_job_bullets) > fit_mod.estimate_lines(resume, {})
+    assert resume.education
+    assert resume.education[0].coursework
+    empty = fit_mod.estimate_lines(resume, {})
+    # Overhead alone (no experience/project bullets) still includes the coursework wrap.
+    assert empty >= 5
+
+
+def test_tag_vocabulary_canonicalises_on_load():
+    """Stored tag options are canonicalised the same way bullet tags are."""
+    resume = load()
+    assert resume.tag_vocabulary
+    assert resume.tag_vocabulary == sorted(resume.tag_vocabulary)
+    # Every in-use bullet tag should be in the seeded vocabulary after migration.
+    used = {t for b in resume.all_bullets() for t in b.tags}
+    assert used <= set(resume.tag_vocabulary)
 
 
 #: A measured line count that clears UNDERFLOW_THRESHOLD, so the loop stops rather than
