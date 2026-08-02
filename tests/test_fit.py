@@ -45,6 +45,53 @@ def test_estimate_lines_scales_with_bullet_count():
     assert full > empty
 
 
+def test_fixed_overhead_uses_shared_skill_line():
+    """Skills overhead is measured via `config.skill_group_line`, the same helper the
+    `facets` stage guards renames against — so the two cannot silently drift apart.
+    """
+    resume = load()
+    expected = 2  # name + contact
+    layout = fit_mod.active_layout()
+    enabled = layout.get("enabled") or {}
+    if enabled.get("education", True):
+        expected += 1
+        for edu in resume.education:
+            expected += 1
+            expected += config.line_span(fit_mod.render._degree_line(edu))
+            for detail in fit_mod.render._education_details(edu):
+                expected += config.line_span(detail)
+    if enabled.get("skills", True) and resume.skills:
+        expected += 1
+        for group in resume.skills:
+            expected += config.line_span(
+                config.skill_group_line(group.label, group.items)
+            )
+    assert fit_mod._fixed_overhead_lines(resume) == expected
+
+
+def test_estimate_lines_respects_disabled_sections(monkeypatch):
+    """Disabled education/skills/projects shrink the estimate and selection pool."""
+    resume = load()
+    layout = {
+        "contact_separator": " • ",
+        "contact_field_order": ["location", "email", "phone", "linkedin", "github"],
+        "enabled": {
+            "education": False,
+            "experience": True,
+            "projects": False,
+            "skills": False,
+        },
+    }
+    monkeypatch.setattr(fit_mod, "active_layout", lambda: layout)
+    empty = fit_mod.estimate_lines(resume, {}, layout=layout)
+    # Name + contact only when education/skills are off and no bullets selected.
+    assert empty == 2
+
+    entries = fit_mod.choose_entries(resume, _requirements(), layout=layout)
+    assert all(hasattr(e, "company") for e in entries)  # experience only
+    assert not any(hasattr(e, "tech") for e in entries)
+
+
 def test_estimate_lines_counts_coursework_wrap():
     """Coursework joined into one detail line must contribute to fixed overhead."""
     resume = load()

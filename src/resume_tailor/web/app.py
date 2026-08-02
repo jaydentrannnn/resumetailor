@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, File, HTTPException, UploadFile
+from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -24,6 +24,7 @@ from pydantic import ValidationError
 from resume_tailor import config, data, report
 from resume_tailor.data import MasterResume
 from resume_tailor.events import ProgressEvent
+from resume_tailor.template_profile import TemplateProfile
 from resume_tailor.web import template_ops
 from resume_tailor.web.jobs import get_queue
 from resume_tailor.web.schemas import (
@@ -32,8 +33,11 @@ from resume_tailor.web.schemas import (
     CreateJobResponse,
     JobStatusResponse,
     ProgressEventOut,
+    TemplateAnalyzeResponse,
     TemplateBuildResponse,
     TemplateInfoResponse,
+    TemplateLibraryRenameRequest,
+    TemplateLibraryResponse,
     ValidateResponse,
 )
 from resume_tailor.web.template_ops import TemplateBuildError, TemplateValidationError
@@ -346,9 +350,33 @@ def template_preview_pdf() -> FileResponse:
     )
 
 
+@app.post("/api/template/analyze", response_model=TemplateAnalyzeResponse)
+async def analyze_template(file: UploadFile = File(...)) -> TemplateAnalyzeResponse:
+    """Preflight an uploaded baseline without writing under templates/."""
+    raw = await file.read()
+    filename = file.filename or "upload.docx"
+    try:
+        return template_ops.analyze_upload(raw, filename)
+    except TemplateValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
 @app.post("/api/template", response_model=TemplateBuildResponse)
-async def upload_template(file: UploadFile = File(...)) -> TemplateBuildResponse:
+async def upload_template(
+    file: UploadFile = File(...),
+    profile: str | None = Form(None),
+    calibrate: str | None = Form(None),
+    label: str | None = Form(None),
+) -> TemplateBuildResponse:
     """Replace the baseline export and regenerate the tagged template.
+
+    Optional multipart field `profile` is a JSON TemplateProfile. When omitted, the
+    legacy hard-coded heading build runs (backward compatible).
+
+    Optional multipart field `calibrate` (truthy: ``1``/``true``/``yes``) measures fit
+    constants after a successful install and hot-reloads them in-process.
+
+    Optional multipart field `label` names the library snapshot (default: filename stem).
 
     Refuses while a tailoring job is queued or running so the fit loop never
     measures against a template that is mid-rebuild.
@@ -362,8 +390,24 @@ async def upload_template(file: UploadFile = File(...)) -> TemplateBuildResponse
 
     raw = await file.read()
     filename = file.filename or "upload.docx"
+    parsed_profile = None
+    if profile:
+        try:
+            parsed_profile = TemplateProfile.model_validate_json(profile)
+        except ValidationError as exc:
+            raise HTTPException(
+                status_code=400,
+                detail=f"Invalid template profile: {exc}",
+            ) from exc
+    do_calibrate = (calibrate or "").strip().lower() in ("1", "true", "yes", "on")
     try:
-        return template_ops.install_baseline(raw, filename)
+        return template_ops.install_baseline(
+            raw,
+            filename,
+            profile=parsed_profile,
+            do_calibrate=do_calibrate,
+            label=label,
+        )
     except TemplateValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except TemplateBuildError as exc:
@@ -371,6 +415,63 @@ async def upload_template(file: UploadFile = File(...)) -> TemplateBuildResponse
             status_code=422,
             detail={"message": str(exc), "log": exc.log},
         ) from exc
+
+
+@app.get("/api/template/library", response_model=TemplateLibraryResponse)
+def get_template_library() -> TemplateLibraryResponse:
+    """List named template snapshots; seeds Default from live when the library is empty."""
+    return template_ops.list_library()
+
+
+@app.post("/api/template/library/{entry_id}/activate", response_model=TemplateBuildResponse)
+async def activate_template_library_entry(
+    entry_id: str,
+    calibrate: str | None = None,
+) -> TemplateBuildResponse:
+    """Copy a library snapshot into the live template slot.
+
+    Optional query `calibrate=true` measures fit constants after activation.
+    Refuses while a tailoring job is busy.
+    """
+    if get_queue().busy():
+        raise HTTPException(
+            status_code=409,
+            detail="A tailoring job is in progress; wait for it to finish before "
+            "switching templates.",
+        )
+    do_calibrate = (calibrate or "").strip().lower() in ("1", "true", "yes", "on")
+    try:
+        return template_ops.activate_library_entry(
+            entry_id, do_calibrate=do_calibrate
+        )
+    except TemplateValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except TemplateBuildError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"message": str(exc), "log": exc.log},
+        ) from exc
+
+
+@app.patch("/api/template/library/{entry_id}", response_model=TemplateLibraryResponse)
+def rename_template_library_entry(
+    entry_id: str,
+    body: TemplateLibraryRenameRequest,
+) -> TemplateLibraryResponse:
+    """Rename a saved template; labels must be unique (case-insensitive)."""
+    try:
+        return template_ops.rename_library_entry(entry_id, body.label)
+    except TemplateValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.delete("/api/template/library/{entry_id}", response_model=TemplateLibraryResponse)
+def delete_template_library_entry(entry_id: str) -> TemplateLibraryResponse:
+    """Delete a non-active library entry."""
+    try:
+        return template_ops.delete_library_entry(entry_id)
+    except TemplateValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 # Serve the built SPA when it exists (production / Docker). The Vite dev server handles

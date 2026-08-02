@@ -22,6 +22,7 @@ from .data import Experience, MasterResume, Project
 from .jd import JobRequirements
 from .merge import MergeGroup, propose as propose_merges
 from .rewrite import rewrite_bullets, select_entries, select_within_entries
+from .template_profile import active_layout
 
 #: How many physical lines a bullet's rewritten text is targeted at, on average. Passed
 #: to `rewrite_bullets` as its starting character budget before any shortening.
@@ -84,25 +85,30 @@ def _bullet_lines(text: str) -> int:
     return config.line_span(text)
 
 
-def _fixed_overhead_lines(resume: MasterResume) -> int:
+def _fixed_overhead_lines(resume: MasterResume, *, layout: dict | None = None) -> int:
     """Lines that render regardless of selection: header, contact, education, skills.
 
     Education and skills never vary by posting, but their line *count* still depends on
     the master resume's own content (coursework wrap, GPA suffix, skill group length),
-    so it is measured from `resume` rather than hard-coded.
+    so it is measured from `resume` rather than hard-coded. Sections disabled in the
+    active template profile contribute zero.
     """
-    lines = 2  # name line + contact line
-    lines += 1  # "EDUCATION" header
-    for edu in resume.education:
-        lines += 1  # school | location ... dates
-        lines += _bullet_lines(render._degree_line(edu))
-        for detail in render._education_details(edu):
-            lines += _bullet_lines(detail)
+    layout = layout if layout is not None else active_layout()
+    enabled = layout.get("enabled") or {}
 
-    if resume.skills:
-        lines += 1  # "SKILLS" header
+    lines = 2  # name line + contact line
+    if enabled.get("education", True):
+        lines += 1  # section header
+        for edu in resume.education:
+            lines += 1  # school | location ... dates
+            lines += _bullet_lines(render._degree_line(edu))
+            for detail in render._education_details(edu):
+                lines += _bullet_lines(detail)
+
+    if enabled.get("skills", True) and resume.skills:
+        lines += 1  # section header
         for group in resume.skills:
-            lines += _bullet_lines(f"{group.label}: {', '.join(group.items)}")
+            lines += _bullet_lines(config.skill_group_line(group.label, group.items))
     return lines
 
 
@@ -124,13 +130,20 @@ def _section_lines(entries: list[Experience] | list[Project], bullets: dict[str,
     return total + (1 if total else 0)  # section header, once, if anything survived
 
 
-def estimate_lines(resume: MasterResume, bullets: dict[str, str]) -> int:
+def estimate_lines(
+    resume: MasterResume,
+    bullets: dict[str, str],
+    *,
+    layout: dict | None = None,
+) -> int:
     """Cheap character-budget estimate of total rendered lines for this bullet set."""
-    return (
-        _fixed_overhead_lines(resume)
-        + _section_lines(resume.experience, bullets)
-        + _section_lines(resume.projects, bullets)
-    )
+    layout = layout if layout is not None else active_layout()
+    enabled = layout.get("enabled") or {}
+    total = _fixed_overhead_lines(resume, layout=layout)
+    total += _section_lines(resume.experience, bullets)
+    if enabled.get("projects", True):
+        total += _section_lines(resume.projects, bullets)
+    return total
 
 
 # --------------------------------------------------------------------------------------
@@ -145,12 +158,22 @@ def choose_entries(
     max_experience: int | None = None,
     max_projects: int | None = None,
     semantic: dict[str, float] | None = None,
+    layout: dict | None = None,
 ) -> list:
     """Pick which jobs and projects appear, ranking the two sections independently.
 
     Done once per run, before any rewriting: which entries appear is a decision about the
     resume's shape, and the fit loop is only allowed to trim bullets inside them.
+
+    When the active template has no Projects section, `max_projects` is forced to 0.
     """
+    layout = layout if layout is not None else active_layout()
+    enabled = layout.get("enabled") or {}
+    project_limit = (
+        0
+        if not enabled.get("projects", True)
+        else (config.MAX_PROJECT_ENTRIES if max_projects is None else max_projects)
+    )
     experience = select_entries(
         resume.experience,
         requirements,
@@ -160,7 +183,7 @@ def choose_entries(
     projects = select_entries(
         resume.projects,
         requirements,
-        limit=config.MAX_PROJECT_ENTRIES if max_projects is None else max_projects,
+        limit=project_limit,
         semantic=semantic,
     )
     return [*experience, *projects]
