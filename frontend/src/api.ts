@@ -16,6 +16,8 @@ export type JobSettings = {
   no_cache: boolean;
   /** Skip generating expanded experience descriptions for application forms. */
   no_expand: boolean;
+  /** Skip LLM selection of project tech tags and coursework (budget-only truncation). */
+  no_facets: boolean;
   /** Render projects without their link label or hyperlink. */
   no_project_links: boolean;
   /** Page-fill fraction (0.80–0.95); null uses the server default. */
@@ -111,6 +113,37 @@ export type ValidateResponse = {
   ok: boolean;
   errors: string[];
   summary: Record<string, unknown> | null;
+};
+
+export type TemplateFileInfo = {
+  exists: boolean;
+  path: string;
+  size_bytes: number | null;
+  modified_at: string | null;
+};
+
+export type CalibrationInfo = {
+  source: string;
+  chars_per_line: number;
+  lines_per_page: number;
+  stale: boolean;
+  message: string | null;
+};
+
+export type TemplateInfo = {
+  baseline: TemplateFileInfo;
+  tagged: TemplateFileInfo;
+  experience_entries: number;
+  project_entries: number;
+  bullets: number;
+  calibration: CalibrationInfo;
+  preview_available: boolean;
+};
+
+export type TemplateBuildResponse = {
+  ok: boolean;
+  log: string;
+  info: TemplateInfo | null;
 };
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -219,4 +252,47 @@ export async function triggerPdfDownload(jobId: string): Promise<void> {
 export function expansionUrl(jobId: string): string {
   /** URL of the plain-text expansion for a finished job. */
   return `/api/jobs/${jobId}/expansion.md`;
+}
+
+export function fetchTemplateInfo(): Promise<TemplateInfo> {
+  /** Load baseline/tagged metadata and calibration freshness for the Template tab. */
+  return request<TemplateInfo>("/api/template");
+}
+
+export function templatePreviewUrl(): string {
+  /** URL of the inline PDF for the tagged template filled with the master resume. */
+  return "/api/template/preview.pdf";
+}
+
+/**
+ * Upload a Google Docs export, replace the baseline, and rebuild the tagged template.
+ *
+ * Uses a bare fetch with FormData — do not set Content-Type, or the browser cannot
+ * attach the multipart boundary that FastAPI/python-multipart expects.
+ */
+export async function uploadTemplate(file: File): Promise<TemplateBuildResponse> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch("/api/template", { method: "POST", body: form });
+  if (!res.ok) {
+    let detail = res.statusText;
+    try {
+      const body = await res.json();
+      const d = body.detail;
+      if (typeof d === "string") {
+        detail = d;
+      } else if (d && typeof d === "object" && "message" in d) {
+        // Build failures return { message, log }; surface both for the Template tab.
+        const msg = String((d as { message: string }).message);
+        const log = String((d as { log?: string }).log ?? "");
+        detail = log ? `${msg}\n\n${log}` : msg;
+      } else {
+        detail = JSON.stringify(d ?? body);
+      }
+    } catch {
+      /* keep statusText */
+    }
+    throw new Error(detail);
+  }
+  return res.json() as Promise<TemplateBuildResponse>;
 }

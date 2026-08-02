@@ -12,12 +12,9 @@ redone on every resume update — and the resume already changed once during dev
 
 What gets tagged, and what deliberately does not:
 
-- Tagged: the contact line (as a RichText so LinkedIn/GitHub stay hyperlinks),
-  EDUCATION (looped so coursework/GPA come from the master resume), WORK EXPERIENCES,
-  PROJECTS, and SKILLS.
-- Left as literal text: the name line. It does not vary by posting, and re-running this
-  script after a re-export keeps it current. Leaving it untouched avoids disturbing the
-  display-name formatting for no benefit.
+- Tagged: the name line (plain substitution from `contact.name`), the contact line (as a
+  RichText so LinkedIn/GitHub stay hyperlinks), EDUCATION (looped so coursework/GPA come
+  from the master resume), WORK EXPERIENCES, PROJECTS, and SKILLS.
 
 The transformation works by treating one entry in each section as a prototype, cloning its
 XML (which carries all formatting), and deleting the rest. Formatting is therefore
@@ -501,6 +498,26 @@ def build_loop(
 # --------------------------------------------------------------------------------------
 
 
+def build_name(doc) -> None:
+    """Replace the name line with a plain `{{ }}` tag so it comes from the master resume.
+
+    Plain substitution is fine here (unlike the contact line): the name carries no
+    hyperlink, so there is no risk of a run nesting inside `<w:t>`.
+    """
+    if not doc.paragraphs:
+        raise RuntimeError("Document is missing the name line (expected paragraph 0).")
+    paragraph = doc.paragraphs[0]
+    runs = paragraph.runs
+    if not runs:
+        raise RuntimeError("Name line has no runs to tag.")
+    # Keep the first run's display-name formatting; collapse everything else into it.
+    # Deliberately a distinct top-level key, not `contact.name` — `contact` in the render
+    # context is the RichText contact *line* (`{{r contact }}`), which has no attributes.
+    set_run_text(runs[0], "{{ name }}")
+    for extra in runs[1:]:
+        paragraph._p.remove(extra._r)
+
+
 def build_contact(doc) -> None:
     """Replace the contact line with a single RichText tag.
 
@@ -750,6 +767,7 @@ def main() -> int:
     # Discover Noto list id from the *source* education bullets before they are replaced.
     noto_num_id = discover_noto_num_id(doc)
 
+    build_name(doc)
     build_contact(doc)
     build_education(doc, education_entries, noto_num_id=noto_num_id)
     build_experience(doc, experience_entries, noto_num_id=noto_num_id)

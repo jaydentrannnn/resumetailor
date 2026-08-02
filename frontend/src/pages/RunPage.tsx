@@ -173,6 +173,7 @@ function SettingsPanel({
       merge: false,
       no_cache: false,
       no_expand: false,
+      no_facets: false,
       no_project_links: false,
       fill_target: null,
     });
@@ -353,6 +354,12 @@ function SettingsPanel({
               help="Do not generate application-form paste text after a successful fit."
               checked={settings.no_expand}
               onChange={(v) => set("no_expand", v)}
+            />
+            <Toggle
+              label="Skip tech / coursework selection"
+              help="Do not ask the model which project tags and courses to show; truncate pools in listed order to fit the line budgets."
+              checked={settings.no_facets}
+              onChange={(v) => set("no_facets", v)}
             />
           </fieldset>
         )}

@@ -372,13 +372,14 @@ class _OpenAICompatClient:
 
 
 def client_for(purpose: str) -> Any:
-    """Return a client for one pipeline stage: extract, score, rewrite, or expand.
+    """Return a client for one pipeline stage: extract, score, rewrite, expand, or facets.
 
-    Per-stage routing is the point. Extraction and scoring are structured-judgement tasks
-    that survive a cheaper model; rewriting carries the fabrication risk and the length
-    constraints, and is where model quality actually shows. Pointing the first two at a
-    free endpoint and leaving rewriting on Claude is what `--model hybrid` does.
-    Expansion follows the profile (Ollama under `hybrid`) and is advisory paste text.
+    Per-stage routing is the point. Extraction, scoring, and facets are structured-
+    judgement tasks that survive a cheaper model; rewriting carries the fabrication risk
+    and the length constraints, and is where model quality actually shows. Pointing the
+    cheap stages at a free endpoint and leaving rewriting on Claude is what
+    `--model hybrid` does. Expansion follows the profile (Ollama under `hybrid`) and is
+    advisory paste text.
     """
     backend = config.backend_for(purpose)
 

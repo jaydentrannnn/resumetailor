@@ -18,6 +18,7 @@ from resume_tailor.data import load
 from resume_tailor.events import ProgressEvent
 from resume_tailor.fit import FitResult
 from resume_tailor.web import jobs as jobs_mod
+from resume_tailor.web import template_ops
 from resume_tailor.web.app import app
 from resume_tailor.web.jobs import JobQueue
 from resume_tailor.web.schemas import JobSettings
@@ -135,6 +136,18 @@ def test_job_runs_to_success_with_stubbed_pipeline(client, monkeypatch, tmp_path
     monkeypatch.setattr(jobs_mod.rewrite, "score_table", fake_score)
     monkeypatch.setattr(jobs_mod.fit, "fit", fake_fit)
     monkeypatch.setattr(jobs_mod.jd, "verify_verbatim", lambda *a, **k: [])
+
+    def fake_facets(resume, requirements, **kwargs):
+        """Budget-only facets so the job path never reaches the network."""
+        from resume_tailor import facets as facets_mod
+
+        return facets_mod.budget_only(
+            resume,
+            requirements,
+            include_project_links=kwargs.get("include_project_links", True),
+        )
+
+    monkeypatch.setattr(jobs_mod.facets, "select_facets", fake_facets)
 
     from resume_tailor.expand import ExpandedEntry, Expansion
 
@@ -350,3 +363,195 @@ def test_queue_serialises_jobs(monkeypatch, tmp_path):
     assert q.get(j1.job_id).status == "succeeded"
     assert q.get(j2.job_id).status == "succeeded"
     assert not concurrent, "jobs overlapped — queue is not serial"
+
+
+# ---------------------------------------------------------------------------
+# Template tab
+# ---------------------------------------------------------------------------
+
+
+def _minimal_docx_bytes() -> bytes:
+    """Build a tiny valid .docx in memory for upload tests (no Word required)."""
+    import io
+
+    from docx import Document
+
+    buf = io.BytesIO()
+    Document().save(buf)
+    return buf.getvalue()
+
+
+def _point_templates_at(tmp_path: Path, monkeypatch) -> Path:
+    """Redirect baseline/tagged paths under tmp_path and return the templates dir."""
+    templates = tmp_path / "templates"
+    templates.mkdir(parents=True, exist_ok=True)
+    monkeypatch.setattr(config, "TEMPLATES_DIR", templates)
+    monkeypatch.setattr(config, "BASELINE_TEMPLATE_PATH", templates / "original_export.docx")
+    monkeypatch.setattr(config, "DEFAULT_TEMPLATE_PATH", templates / "main_template.docx")
+    return templates
+
+
+def test_get_template_returns_metadata(client, tmp_path, monkeypatch):
+    """GET /api/template reports existence and calibration for redirected template paths."""
+    c, _ = client
+    templates = _point_templates_at(tmp_path, monkeypatch)
+    (templates / "original_export.docx").write_bytes(_minimal_docx_bytes())
+    (templates / "main_template.docx").write_bytes(_minimal_docx_bytes())
+
+    res = c.get("/api/template")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["baseline"]["exists"] is True
+    assert body["tagged"]["exists"] is True
+    assert body["baseline"]["size_bytes"] > 0
+    assert "calibration" in body
+    assert "stale" in body["calibration"]
+    assert isinstance(body["experience_entries"], int)
+    assert isinstance(body["bullets"], int)
+
+
+def test_upload_template_rejects_non_docx(client, tmp_path, monkeypatch):
+    """POST /api/template with a .txt leaves the baseline untouched and returns 400."""
+    c, _ = client
+    templates = _point_templates_at(tmp_path, monkeypatch)
+    baseline = templates / "original_export.docx"
+    original = _minimal_docx_bytes()
+    baseline.write_bytes(original)
+
+    res = c.post(
+        "/api/template",
+        files={"file": ("resume.txt", b"not a docx", "text/plain")},
+    )
+    assert res.status_code == 400
+    assert "docx" in res.json()["detail"].lower()
+    assert baseline.read_bytes() == original
+
+
+def test_upload_template_rejects_when_queue_busy(client, tmp_path, monkeypatch):
+    """POST /api/template returns 409 while a job is queued or running."""
+    c, q = client
+    _point_templates_at(tmp_path, monkeypatch)
+
+    # Mark the queue busy without actually running the pipeline.
+    job, _ = q.submit("placeholder jd", JobSettings())
+    job.status = "running"
+
+    res = c.post(
+        "/api/template",
+        files={
+            "file": (
+                "resume.docx",
+                _minimal_docx_bytes(),
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+        },
+    )
+    assert res.status_code == 409
+    assert "progress" in res.json()["detail"].lower() or "job" in res.json()["detail"].lower()
+
+
+def test_upload_template_backs_up_and_rebuilds(client, tmp_path, monkeypatch):
+    """Successful upload writes a timestamped backup and invokes the build stub."""
+    c, _ = client
+    templates = _point_templates_at(tmp_path, monkeypatch)
+    baseline = templates / "original_export.docx"
+    tagged = templates / "main_template.docx"
+    old_bytes = _minimal_docx_bytes()
+    baseline.write_bytes(old_bytes)
+    tagged.write_bytes(old_bytes)
+
+    builds: list[int] = []
+
+    def fake_build():
+        """Pretend build_template.py succeeded and wrote a new tagged file."""
+        builds.append(1)
+        tagged.write_bytes(b"PK\x03\x04rebuilt")
+        return 0, "found 1 education, 1 experience entries, 1 projects\nwrote main_template.docx\n"
+
+    monkeypatch.setattr(template_ops, "_run_build", fake_build)
+
+    new_bytes = _minimal_docx_bytes()
+    # Ensure the new upload differs from the old baseline so we can assert replacement.
+    assert new_bytes  # non-empty
+
+    res = c.post(
+        "/api/template",
+        files={
+            "file": (
+                "resume.docx",
+                new_bytes,
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+        },
+    )
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["ok"] is True
+    assert builds == [1]
+    assert "wrote" in body["log"].lower() or "found" in body["log"].lower()
+    backups = list((templates / "backups").glob("original_export.*.docx"))
+    assert len(backups) == 1
+    assert backups[0].read_bytes() == old_bytes
+    assert baseline.read_bytes() == new_bytes
+
+
+def test_upload_template_restores_baseline_on_build_failure(client, tmp_path, monkeypatch):
+    """Failed build restores the previous baseline byte-for-byte and returns 422."""
+    c, _ = client
+    templates = _point_templates_at(tmp_path, monkeypatch)
+    baseline = templates / "original_export.docx"
+    old_bytes = _minimal_docx_bytes()
+    baseline.write_bytes(old_bytes)
+
+    def failing_build():
+        """Simulate build_template.py exiting non-zero with a useful log."""
+        return 1, "ERROR: could not find section heading(s): WORK EXPERIENCES.\n"
+
+    monkeypatch.setattr(template_ops, "_run_build", failing_build)
+
+    res = c.post(
+        "/api/template",
+        files={
+            "file": (
+                "resume.docx",
+                _minimal_docx_bytes(),
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+        },
+    )
+    assert res.status_code == 422
+    detail = res.json()["detail"]
+    assert isinstance(detail, dict)
+    assert "log" in detail
+    assert "WORK EXPERIENCES" in detail["log"]
+    assert baseline.read_bytes() == old_bytes
+
+
+def test_template_preview_uses_stubbed_render(client, tmp_path, monkeypatch):
+    """GET /api/template/preview.pdf serves a PDF produced via the render seam (no Word)."""
+    c, _ = client
+    templates = _point_templates_at(tmp_path, monkeypatch)
+    (templates / "main_template.docx").write_bytes(_minimal_docx_bytes())
+    monkeypatch.setattr(config, "OUTPUT_DIR", tmp_path / "output")
+    config.OUTPUT_DIR.mkdir(exist_ok=True)
+
+    def fake_render(resume, *, out, **_kwargs):
+        """Write a placeholder .docx where the preview would land."""
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(b"fake-docx")
+        return out
+
+    def fake_to_pdf(docx_path, pdf_path=None, **_kwargs):
+        """Write a minimal PDF-like payload without calling Word/LibreOffice."""
+        target = pdf_path or docx_path.with_suffix(".pdf")
+        # Minimal PDF header so FileResponse has something to stream.
+        target.write_bytes(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\ntrailer\n%%EOF\n")
+        return target
+
+    monkeypatch.setattr(template_ops.render, "render", fake_render)
+    monkeypatch.setattr(template_ops.render, "to_pdf", fake_to_pdf)
+
+    res = c.get("/api/template/preview.pdf")
+    assert res.status_code == 200
+    assert res.headers["content-type"].startswith("application/pdf")
+    assert res.content.startswith(b"%PDF")
