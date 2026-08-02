@@ -17,8 +17,11 @@ services:
     env_file:
       - .env
     environment:
-      # Reach Ollama (or anything else) on the Windows/macOS host from inside the container.
+      # Reach Ollama / LM Studio on the Windows/macOS host from inside the container.
       OLLAMA_BASE_URL: ${OLLAMA_BASE_URL:-http://host.docker.internal:11434/v1}
+      LMSTUDIO_BASE_URL: ${LMSTUDIO_BASE_URL:-http://host.docker.internal:1234/v1}
+      # Local rewrite batches often exceed five minutes; override via .env if needed.
+      LLM_TIMEOUT: ${LLM_TIMEOUT:-900}
       RESUME_TAILOR_PDF_BACKEND: soffice
       RESUME_TAILOR_CACHE_DIR: /app/output/cache
     volumes:

@@ -16,6 +16,10 @@ export type JobSettings = {
   no_cache: boolean;
   /** Skip generating expanded experience descriptions for application forms. */
   no_expand: boolean;
+  /** Render projects without their link label or hyperlink. */
+  no_project_links: boolean;
+  /** Page-fill fraction (0.80–0.95); null uses the server default. */
+  fill_target: number | null;
 };
 
 export type ProgressEvent = {
@@ -100,6 +104,7 @@ export type AppConfig = {
   lines_per_page: number;
   tag_vocabulary: string[];
   contact_name: string | null;
+  fill_target: number;
 };
 
 export type ValidateResponse = {
@@ -175,9 +180,40 @@ export function previewUrl(jobId: string): string {
   return `/api/jobs/${jobId}/preview.pdf`;
 }
 
+export function downloadPdfUrl(jobId: string): string {
+  /** URL that forces a PDF Save As (attachment disposition). */
+  return `/api/jobs/${jobId}/download.pdf`;
+}
+
 export function downloadUrl(jobId: string): string {
   /** URL of the tailored .docx for a finished job. */
   return `/api/jobs/${jobId}/download.docx`;
+}
+
+/**
+ * Trigger a one-shot browser download of the tailored PDF.
+ *
+ * Fetches as a blob first so a missing PDF (conversion failed) is a silent no-op
+ * instead of navigating the tab to a JSON 404.
+ */
+export async function triggerPdfDownload(jobId: string): Promise<void> {
+  const res = await fetch(downloadPdfUrl(jobId));
+  if (!res.ok) return;
+  const blob = await res.blob();
+  const url = URL.createObjectURL(blob);
+  const match = /filename\*?=(?:UTF-8''|")?([^\";]+)/i.exec(
+    res.headers.get("Content-Disposition") ?? "",
+  );
+  const filename = match
+    ? decodeURIComponent(match[1].replace(/["']/g, ""))
+    : "resume.pdf";
+  const anchor = document.createElement("a");
+  anchor.href = url;
+  anchor.download = filename;
+  document.body.appendChild(anchor);
+  anchor.click();
+  anchor.remove();
+  URL.revokeObjectURL(url);
 }
 
 export function expansionUrl(jobId: string): string {

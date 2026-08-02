@@ -12,11 +12,12 @@ redone on every resume update — and the resume already changed once during dev
 
 What gets tagged, and what deliberately does not:
 
-- Tagged: the WORK EXPERIENCES and PROJECTS sections (looped, since the tailorer varies
-  how many entries and bullets appear) and the SKILLS lines.
-- Left as literal text: name, contact line, and EDUCATION. These do not vary by posting,
-  and re-running this script after a re-export keeps them current anyway. Leaving them
-  untouched avoids disturbing the contact line's hyperlink for no benefit.
+- Tagged: the contact line (as a RichText so LinkedIn/GitHub stay hyperlinks),
+  EDUCATION (looped so coursework/GPA come from the master resume), WORK EXPERIENCES,
+  PROJECTS, and SKILLS.
+- Left as literal text: the name line. It does not vary by posting, and re-running this
+  script after a re-export keeps it current. Leaving it untouched avoids disturbing the
+  display-name formatting for no benefit.
 
 The transformation works by treating one entry in each section as a prototype, cloning its
 XML (which carries all formatting), and deleting the rest. Formatting is therefore
@@ -500,6 +501,87 @@ def build_loop(
 # --------------------------------------------------------------------------------------
 
 
+def build_contact(doc) -> None:
+    """Replace the contact line with a single RichText tag.
+
+    The line carries LinkedIn (and optionally GitHub) as real hyperlinks, which differ
+    per person and must not be baked into the template. `{{r contact }}` is required —
+    a plain `{{ }}` nests the hyperlink's `<w:r>` inside a `<w:t>` and the link vanishes
+    on read-back. The baked-in hyperlink is stripped first for the same reason project
+    URLs are.
+    """
+    # Contact is the second body paragraph in the export: name, then location/email/…
+    if len(doc.paragraphs) < 2:
+        raise RuntimeError("Document is missing the contact line (expected paragraph 1).")
+    paragraph = doc.paragraphs[1]
+    strip_hyperlinks(paragraph)
+    runs = paragraph.runs
+    if not runs:
+        raise RuntimeError("Contact line has no runs to tag.")
+    # Keep the first run's Spectral formatting; collapse everything else into it.
+    set_run_text(runs[0], "{{r contact }}")
+    for extra in runs[1:]:
+        paragraph._p.remove(extra._r)
+
+
+def build_education(doc, entries: list[list[Paragraph]], *, noto_num_id: str | None) -> None:
+    """Replace all education entries with one tagged, looped prototype.
+
+    Degree text and detail bullets (coursework joined upstream, plus free-text details)
+    come from the master resume so the editor can toggle GPA and edit coursework without
+    re-exporting the Google Doc.
+    """
+    if not entries:
+        raise RuntimeError("EDUCATION section has no entries to prototype.")
+    # Prefer a header whose school and location already live in separate runs so
+    # school stays bold and location stays plain after tagging.
+    prototype = max(entries, key=lambda entry: leading_runs_before_tab(entry[0]))
+    header, *rest = prototype
+    bullets = [p for p in rest if is_bullet(p)]
+    if not bullets:
+        raise RuntimeError("Education entry is missing a degree/detail bullet.")
+    degree = bullets[0]
+    # Prefer a different bullet for the detail loop body so tagging one does not
+    # overwrite the other when they happen to be the same paragraph object.
+    section_bullets = [p for entry in entries for p in entry if is_bullet(p)]
+    others = [p for p in section_bullets if p._p is not degree._p]
+    detail = min(others, key=vertical_cost) if others else degree
+    # When the section has only a degree bullet, clone it so the two tags stay independent.
+    if detail._p is degree._p:
+        detail_p = copy.deepcopy(degree._p)
+        degree._p.addnext(detail_p)
+        detail = Paragraph(detail_p, degree._parent)
+    retarget_bullet(degree, noto_num_id)
+    retarget_bullet(detail, noto_num_id)
+
+    tag_header(
+        header,
+        ["{{ edu.school }} | ", "{{ edu.location }}"],
+        tail_field="{{ edu.dates }}",
+    )
+    tag_bullet(degree, "{{ edu.degree_line }}")
+    tag_bullet(detail, "{{ detail }}")
+
+    anchor = entries[0][0]
+    anchor._p.addprevious(make_para("{%p for edu in education %}"))
+    anchor._p.addprevious(copy.deepcopy(header._p))
+    anchor._p.addprevious(copy.deepcopy(degree._p))
+    anchor._p.addprevious(make_para("{%p for detail in edu.details %}"))
+    anchor._p.addprevious(copy.deepcopy(detail._p))
+    anchor._p.addprevious(make_para("{%p endfor %}"))
+    anchor._p.addprevious(make_para("{%p endfor %}"))
+
+    # Drop the temporary clone if we inserted one next to the degree bullet.
+    if detail._p.getparent() is not None and detail not in [
+        p for entry in entries for p in entry
+    ]:
+        delete(detail)
+
+    for entry in entries:
+        for para in entry:
+            delete(para)
+
+
 def build_experience(doc, entries: list[list[Paragraph]], *, noto_num_id: str | None) -> None:
     """Replace all experience entries with one tagged, looped prototype."""
     # Prefer a header whose company and location already live in separate runs so
@@ -551,7 +633,9 @@ def build_projects(doc, entries: list[list[Paragraph]], *, noto_num_id: str | No
         # A plain `{{ }}` substitutes the value as text, which nests the hyperlink's
         # `<w:r>` inside a `<w:t>`; `w:t` may only contain characters, so the link is
         # silently dropped when the document is read back.
-        ["{{ proj.name }} | ", "{{ proj.tech }} | ", "{{r proj.link }}"],
+        # Separator before the link lives in the RichText (render.py), not here —
+        # otherwise suppressing the link leaves a dangling " | ".
+        ["{{ proj.name }} | ", "{{ proj.tech }}", "{{r proj.link }}"],
         tail_field="{{ proj.date }}",
     )
     tag_bullet(bullet, "{{ bullet }}")
@@ -639,24 +723,41 @@ def main() -> int:
 
     paras = doc.paragraphs
 
+    if "EDUCATION" not in bounds:
+        print(
+            "ERROR: could not find section heading: EDUCATION.\n"
+            "The build script locates sections by their exact all-caps heading text.",
+            file=sys.stderr,
+        )
+        return 1
+
+    edu_start, edu_end = bounds["EDUCATION"]
     exp_start, exp_end = bounds["WORK EXPERIENCES"]
     proj_start, proj_end = bounds["PROJECTS"]
     skill_start, skill_end = bounds["SKILLS"]
 
+    education_entries = split_entries(paras[edu_start:edu_end])
     experience_entries = split_entries(paras[exp_start:exp_end])
     project_entries = split_entries(paras[proj_start:proj_end])
     skill_paras = paras[skill_start:skill_end]
 
-    print(f"found {len(experience_entries)} experience entries, {len(project_entries)} projects")
+    print(
+        f"found {len(education_entries)} education, "
+        f"{len(experience_entries)} experience entries, "
+        f"{len(project_entries)} projects"
+    )
 
+    # Discover Noto list id from the *source* education bullets before they are replaced.
     noto_num_id = discover_noto_num_id(doc)
 
+    build_contact(doc)
+    build_education(doc, education_entries, noto_num_id=noto_num_id)
     build_experience(doc, experience_entries, noto_num_id=noto_num_id)
     build_projects(doc, project_entries, noto_num_id=noto_num_id)
     build_skills(doc, skill_paras)
     normalize_bullet_numbering(doc)
     # After tagging: prototypes may still carry Multiple > 1 from the export, and
-    # education / header lines are never re-prototyped — force single everywhere.
+    # header lines are never re-prototyped — force single everywhere.
     normalize_single_spacing(doc)
 
     dst.parent.mkdir(parents=True, exist_ok=True)

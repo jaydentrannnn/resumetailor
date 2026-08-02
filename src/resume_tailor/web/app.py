@@ -60,7 +60,9 @@ def get_config() -> ConfigResponse:
     try:
         resume = data.load()
         contact_name = resume.contact.name
-        tags = sorted({t for b in resume.all_bullets() for t in b.tags})
+        tags = list(resume.tag_vocabulary) or sorted(
+            {t for b in resume.all_bullets() for t in b.tags}
+        )
     except (FileNotFoundError, ValueError):
         # A missing or malformed master resume still lets the UI load; the editor and
         # the run page will surface the real error when the user tries to use them.
@@ -78,6 +80,7 @@ def get_config() -> ConfigResponse:
         lines_per_page=config.LINES_PER_PAGE,
         tag_vocabulary=tags,
         contact_name=contact_name,
+        fill_target=config.UNDERFLOW_THRESHOLD,
     )
 
 
@@ -187,6 +190,18 @@ def preview_pdf(job_id: str) -> FileResponse:
         media_type="application/pdf",
         filename=_export_download_name(job_id, suffix=".pdf"),
         content_disposition_type="inline",
+    )
+
+
+@app.get("/api/jobs/{job_id}/download.pdf")
+def download_pdf(job_id: str) -> FileResponse:
+    """Download the tailored PDF (attachment disposition for Save As / auto-download)."""
+    path = _job_artifact(job_id, ".pdf")
+    return FileResponse(
+        path,
+        media_type="application/pdf",
+        filename=_export_download_name(job_id, suffix=".pdf"),
+        content_disposition_type="attachment",
     )
 
 

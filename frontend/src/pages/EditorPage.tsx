@@ -1,16 +1,21 @@
-import { useMemo } from "react";
+import { ChipListField } from "../components/ChipListField";
 import { AddButton, EntryControls } from "../components/ListControls";
 import {
   type Bullet,
+  type Education,
   type Experience,
+  type MasterResume,
   type Project,
   type SkillGroup,
+  addToVocabulary,
   blankBullet,
+  blankEducation,
   blankExperience,
   blankProject,
   blankSkillGroup,
   collectBulletIds,
   collectProjectIds,
+  countTagUsage,
   entryPrefix,
   insertAt,
   looksLikeHttpUrl,
@@ -18,6 +23,8 @@ import {
   nextBulletId,
   nextProjectId,
   removeAt,
+  removeTagFromResume,
+  uniqueTags,
 } from "../lib/resumeEdit";
 import { useEditorState } from "../state/editorState";
 
@@ -38,15 +45,15 @@ export function EditorPage() {
     save: onSave,
   } = useEditorState();
 
-  const tagVocab = useMemo(
-    () => new Set(config?.tag_vocabulary ?? []),
-    [config],
+  const tagVocab = new Set([
+    ...(resume?.tag_vocabulary ?? []),
+    ...(config?.tag_vocabulary ?? []),
+  ]);
+  const vocabList = [...tagVocab].sort((a, b) =>
+    a.toLowerCase().localeCompare(b.toLowerCase()),
   );
 
-  const takenIds = useMemo(
-    () => (resume ? collectBulletIds(resume) : new Set<string>()),
-    [resume],
-  );
+  const takenIds = resume ? collectBulletIds(resume) : new Set<string>();
 
   if (!resume) {
     return (
@@ -54,6 +61,14 @@ export function EditorPage() {
         {errors.length ? errors.join("; ") : "Loading master resume…"}
       </p>
     );
+  }
+
+  function ensureVocab(token: string) {
+    /** Promote a newly typed tag into the stored vocabulary list. */
+    setResume((prev) => ({
+      ...prev,
+      tag_vocabulary: addToVocabulary(prev.tag_vocabulary ?? [], token),
+    }));
   }
 
   return (
@@ -97,6 +112,8 @@ export function EditorPage() {
         </ul>
       )}
 
+      <TagVocabularyPanel resume={resume} onChange={setResume} />
+
       <section className="rounded-xl border border-line bg-panel p-5 shadow-sm">
         <h2 className="font-display text-lg font-semibold">Contact</h2>
         <div className="mt-3 grid gap-3 sm:grid-cols-2">
@@ -128,21 +145,54 @@ export function EditorPage() {
               setResume({ ...resume, contact: { ...resume.contact, location: v } })
             }
           />
+          <TextField
+            label="LinkedIn URL"
+            value={resume.contact.linkedin ?? ""}
+            onChange={(v) =>
+              setResume({ ...resume, contact: { ...resume.contact, linkedin: v } })
+            }
+          />
+          <TextField
+            label="GitHub URL"
+            value={resume.contact.github ?? ""}
+            onChange={(v) =>
+              setResume({ ...resume, contact: { ...resume.contact, github: v } })
+            }
+          />
         </div>
+        {(resume.contact.linkedin ?? "").trim() &&
+          !looksLikeHttpUrl(resume.contact.linkedin ?? "") && (
+            <p className="mt-2 text-xs text-warn">
+              LinkedIn URL should start with http:// or https://.
+            </p>
+          )}
+        {(resume.contact.github ?? "").trim() &&
+          !looksLikeHttpUrl(resume.contact.github ?? "") && (
+            <p className="mt-2 text-xs text-warn">
+              GitHub URL should start with http:// or https://.
+            </p>
+          )}
       </section>
+
+      <EducationSection
+        entries={resume.education}
+        onChange={(education) => setResume({ ...resume, education })}
+      />
 
       <ExperienceSection
         entries={resume.experience}
-        tagVocab={tagVocab}
+        vocabList={vocabList}
         takenIds={takenIds}
+        onEnsureVocab={ensureVocab}
         onChange={(experience) => setResume({ ...resume, experience })}
       />
 
       <ProjectsSection
         entries={resume.projects}
-        tagVocab={tagVocab}
+        vocabList={vocabList}
         takenIds={takenIds}
         projectIds={collectProjectIds(resume)}
+        onEnsureVocab={ensureVocab}
         onChange={(projects) => setResume({ ...resume, projects })}
       />
 
@@ -154,15 +204,246 @@ export function EditorPage() {
   );
 }
 
+function TagVocabularyPanel({
+  resume,
+  onChange,
+}: {
+  resume: MasterResume;
+  onChange: (r: MasterResume) => void;
+}) {
+  /**
+   * Manage the shared tag option list. Removing an in-use option strips it from
+   * every bullet after confirmation — tags are the fabrication guard's whitelist.
+   */
+  const vocab = resume.tag_vocabulary ?? [];
+
+  function applyVocabulary(next: string[]) {
+    /** Diff against current vocab; removals strip the tag from every bullet. */
+    const nextLower = new Set(next.map((t) => t.toLowerCase()));
+    const removed = vocab.filter((t) => !nextLower.has(t.toLowerCase()));
+    let updated: MasterResume = { ...resume, tag_vocabulary: next };
+    for (const tag of removed) {
+      const used = countTagUsage(resume, tag);
+      if (used > 0) {
+        const ok = window.confirm(
+          `"${tag}" is on ${used} bullet(s). Remove it from the vocabulary and those bullets?`,
+        );
+        if (!ok) {
+          // Keep the tag in the list; abort this removal only.
+          updated = {
+            ...updated,
+            tag_vocabulary: addToVocabulary(updated.tag_vocabulary ?? [], tag),
+          };
+          continue;
+        }
+      }
+      updated = removeTagFromResume(updated, tag);
+      // removeTagFromResume also drops it from vocab; re-apply any newly added tokens.
+      updated = {
+        ...updated,
+        tag_vocabulary: next.filter((t) => t.toLowerCase() !== tag.toLowerCase()),
+      };
+    }
+    onChange(updated);
+  }
+
+  return (
+    <section className="rounded-xl border border-line bg-panel p-5 shadow-sm">
+      <h2 className="font-display text-lg font-semibold">Tag options</h2>
+      <p className="mt-1 text-sm text-ink-muted">
+        Shared list for bullet tags. Adding a tag on a bullet also adds it here; removing
+        an option strips it from every bullet that uses it.
+      </p>
+      <div className="mt-3">
+        <ChipListField
+          label="Vocabulary"
+          items={vocab}
+          onChange={applyVocabulary}
+          placeholder="Add a tag option"
+        />
+      </div>
+    </section>
+  );
+}
+
+function EducationSection({
+  entries,
+  onChange,
+}: {
+  entries: Education[];
+  onChange: (e: Education[]) => void;
+}) {
+  return (
+    <section className="space-y-4">
+      <div className="flex flex-wrap items-center justify-between gap-2">
+        <h2 className="font-display text-lg font-semibold">Education</h2>
+        <AddButton
+          label="Add education"
+          onClick={() => onChange([...entries, blankEducation()])}
+        />
+      </div>
+      {entries.map((edu, i) => {
+        const hasContent = Boolean(
+          edu.school.trim() ||
+            edu.degree.trim() ||
+            (edu.coursework?.length ?? 0) ||
+            (edu.details?.length ?? 0),
+        );
+        return (
+          <div key={i} className="rounded-xl border border-line bg-panel p-5 shadow-sm">
+            <div className="mb-3 flex items-start justify-between gap-2">
+              <p className="text-sm font-medium text-ink-muted">
+                {edu.school.trim() || `Education #${i + 1}`}
+              </p>
+              <EntryControls
+                index={i}
+                total={entries.length}
+                hasContent={hasContent}
+                label={edu.school}
+                onMove={(from, to) => onChange(moveItem(entries, from, to))}
+                onRemove={(idx) => onChange(removeAt(entries, idx))}
+              />
+            </div>
+            <div className="grid gap-3 sm:grid-cols-2">
+              <TextField
+                label="School"
+                value={edu.school}
+                onChange={(v) => {
+                  const next = [...entries];
+                  next[i] = { ...edu, school: v };
+                  onChange(next);
+                }}
+              />
+              <TextField
+                label="Location"
+                value={edu.location ?? ""}
+                onChange={(v) => {
+                  const next = [...entries];
+                  next[i] = { ...edu, location: v };
+                  onChange(next);
+                }}
+              />
+              <TextField
+                label="Degree"
+                value={edu.degree}
+                onChange={(v) => {
+                  const next = [...entries];
+                  next[i] = { ...edu, degree: v };
+                  onChange(next);
+                }}
+              />
+              <TextField
+                label="Dates"
+                value={edu.dates}
+                onChange={(v) => {
+                  const next = [...entries];
+                  next[i] = { ...edu, dates: v };
+                  onChange(next);
+                }}
+              />
+              <div className="sm:col-span-2">
+                <div className="flex flex-wrap items-end gap-3">
+                  <div className="min-w-[8rem] flex-1">
+                    <TextField
+                      label="GPA"
+                      value={edu.gpa ?? ""}
+                      onChange={(v) => {
+                        const next = [...entries];
+                        next[i] = { ...edu, gpa: v };
+                        onChange(next);
+                      }}
+                    />
+                  </div>
+                  <label className="mb-1.5 inline-flex items-center gap-2 text-sm">
+                    <input
+                      type="checkbox"
+                      checked={Boolean(edu.show_gpa)}
+                      onChange={(e) => {
+                        const next = [...entries];
+                        next[i] = { ...edu, show_gpa: e.target.checked };
+                        onChange(next);
+                      }}
+                    />
+                    Show GPA on resume
+                  </label>
+                </div>
+              </div>
+            </div>
+            <div className="mt-3">
+              <ChipListField
+                label="Relevant coursework"
+                items={edu.coursework ?? []}
+                onChange={(coursework) => {
+                  const next = [...entries];
+                  next[i] = { ...edu, coursework };
+                  onChange(next);
+                }}
+                placeholder="Add a course"
+              />
+            </div>
+            <div className="mt-3 space-y-2">
+              <div className="flex items-center justify-between gap-2">
+                <span className="text-sm text-ink-muted">Other detail lines</span>
+                <AddButton
+                  label="Add detail"
+                  onClick={() => {
+                    const next = [...entries];
+                    next[i] = {
+                      ...edu,
+                      details: [...(edu.details ?? []), ""],
+                    };
+                    onChange(next);
+                  }}
+                />
+              </div>
+              {(edu.details ?? []).map((detail, di) => (
+                <div key={di} className="flex gap-2">
+                  <input
+                    type="text"
+                    value={detail}
+                    onChange={(e) => {
+                      const details = [...(edu.details ?? [])];
+                      details[di] = e.target.value;
+                      const next = [...entries];
+                      next[i] = { ...edu, details };
+                      onChange(next);
+                    }}
+                    className="w-full rounded-md border border-line bg-paper/40 px-2 py-1.5 text-sm outline-none focus:border-accent"
+                  />
+                  <button
+                    type="button"
+                    title="Remove detail"
+                    onClick={() => {
+                      const details = (edu.details ?? []).filter((_, j) => j !== di);
+                      const next = [...entries];
+                      next[i] = { ...edu, details };
+                      onChange(next);
+                    }}
+                    className="shrink-0 rounded border border-line px-2 py-0.5 text-xs text-danger hover:border-danger"
+                  >
+                    ×
+                  </button>
+                </div>
+              ))}
+            </div>
+          </div>
+        );
+      })}
+    </section>
+  );
+}
+
 function ExperienceSection({
   entries,
-  tagVocab,
+  vocabList,
   takenIds,
+  onEnsureVocab,
   onChange,
 }: {
   entries: Experience[];
-  tagVocab: Set<string>;
+  vocabList: string[];
   takenIds: Set<string>;
+  onEnsureVocab: (token: string) => void;
   onChange: (e: Experience[]) => void;
 }) {
   function addEntry() {
@@ -212,6 +493,26 @@ function ExperienceSection({
                   onChange(next);
                 }}
               />
+              <div className="grid grid-cols-2 gap-3">
+                <TextField
+                  label="Start (YYYY-MM)"
+                  value={job.start}
+                  onChange={(v) => {
+                    const next = [...entries];
+                    next[i] = { ...job, start: v };
+                    onChange(next);
+                  }}
+                />
+                <TextField
+                  label="End"
+                  value={job.end}
+                  onChange={(v) => {
+                    const next = [...entries];
+                    next[i] = { ...job, end: v };
+                    onChange(next);
+                  }}
+                />
+              </div>
               <TextField
                 label="Location"
                 value={job.location ?? ""}
@@ -221,30 +522,13 @@ function ExperienceSection({
                   onChange(next);
                 }}
               />
-              <TextField
-                label="Start (YYYY-MM)"
-                value={job.start}
-                onChange={(v) => {
-                  const next = [...entries];
-                  next[i] = { ...job, start: v };
-                  onChange(next);
-                }}
-              />
-              <TextField
-                label="End"
-                value={job.end}
-                onChange={(v) => {
-                  const next = [...entries];
-                  next[i] = { ...job, end: v };
-                  onChange(next);
-                }}
-              />
             </div>
             <BulletList
               bullets={job.bullets}
-              tagVocab={tagVocab}
+              vocabList={vocabList}
               takenIds={takenIds}
               entryName={job.company}
+              onEnsureVocab={onEnsureVocab}
               onChange={(bullets) => {
                 const next = [...entries];
                 next[i] = { ...job, bullets };
@@ -260,15 +544,17 @@ function ExperienceSection({
 
 function ProjectsSection({
   entries,
-  tagVocab,
+  vocabList,
   takenIds,
   projectIds,
+  onEnsureVocab,
   onChange,
 }: {
   entries: Project[];
-  tagVocab: Set<string>;
+  vocabList: string[];
   takenIds: Set<string>;
   projectIds: Set<string>;
+  onEnsureVocab: (token: string) => void;
   onChange: (e: Project[]) => void;
 }) {
   function addEntry() {
@@ -319,21 +605,6 @@ function ProjectsSection({
                 }}
               />
               <TextField
-                label="Tech (comma-separated)"
-                value={(proj.tech ?? []).join(", ")}
-                onChange={(v) => {
-                  const next = [...entries];
-                  next[i] = {
-                    ...proj,
-                    tech: v
-                      .split(",")
-                      .map((t) => t.trim())
-                      .filter(Boolean),
-                  };
-                  onChange(next);
-                }}
-              />
-              <TextField
                 label="Date"
                 value={proj.date ?? ""}
                 onChange={(v) => {
@@ -342,6 +613,18 @@ function ProjectsSection({
                   onChange(next);
                 }}
               />
+              <div className="sm:col-span-2">
+                <ChipListField
+                  label="Tech"
+                  items={proj.tech ?? []}
+                  onChange={(tech) => {
+                    const next = [...entries];
+                    next[i] = { ...proj, tech };
+                    onChange(next);
+                  }}
+                  placeholder="Add a technology"
+                />
+              </div>
               <TextField
                 label="Link label"
                 value={link}
@@ -356,7 +639,6 @@ function ProjectsSection({
                 value={url}
                 onChange={(v) => {
                   const next = [...entries];
-                  // Auto-fill the resume label when typing a URL into an empty label.
                   const nextLink =
                     v.trim() && !link.trim() ? "Github" : proj.link;
                   next[i] = { ...proj, url: v, link: nextLink };
@@ -376,9 +658,10 @@ function ProjectsSection({
             )}
             <BulletList
               bullets={proj.bullets}
-              tagVocab={tagVocab}
+              vocabList={vocabList}
               takenIds={takenIds}
               entryName={proj.name}
+              onEnsureVocab={onEnsureVocab}
               onChange={(bullets) => {
                 const next = [...entries];
                 next[i] = { ...proj, bullets };
@@ -408,44 +691,41 @@ function SkillsSection({
           onClick={() => onChange([...groups, blankSkillGroup()])}
         />
       </div>
-      <div className="mt-3 space-y-3">
+      <div className="mt-3 space-y-4">
         {groups.map((g, i) => {
           const hasContent = Boolean(g.label.trim() || g.items.length);
           return (
-            <div key={i} className="flex flex-col gap-2 sm:flex-row sm:items-end">
-              <div className="grid flex-1 gap-2 sm:grid-cols-[10rem_1fr]">
-                <TextField
-                  label="Label"
-                  value={g.label}
-                  onChange={(v) => {
-                    const next = [...groups];
-                    next[i] = { ...g, label: v };
-                    onChange(next);
-                  }}
-                />
-                <TextField
-                  label="Items (comma-separated)"
-                  value={g.items.join(", ")}
-                  onChange={(v) => {
-                    const next = [...groups];
-                    next[i] = {
-                      ...g,
-                      items: v
-                        .split(",")
-                        .map((t) => t.trim())
-                        .filter(Boolean),
-                    };
-                    onChange(next);
-                  }}
+            <div key={i} className="rounded-lg border border-line/80 bg-paper/40 p-3">
+              <div className="mb-2 flex items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <TextField
+                    label="Label"
+                    value={g.label}
+                    onChange={(v) => {
+                      const next = [...groups];
+                      next[i] = { ...g, label: v };
+                      onChange(next);
+                    }}
+                  />
+                </div>
+                <EntryControls
+                  index={i}
+                  total={groups.length}
+                  hasContent={hasContent}
+                  label={g.label || "skill group"}
+                  onMove={(from, to) => onChange(moveItem(groups, from, to))}
+                  onRemove={(idx) => onChange(removeAt(groups, idx))}
                 />
               </div>
-              <EntryControls
-                index={i}
-                total={groups.length}
-                hasContent={hasContent}
-                label={g.label || "skill group"}
-                onMove={(from, to) => onChange(moveItem(groups, from, to))}
-                onRemove={(idx) => onChange(removeAt(groups, idx))}
+              <ChipListField
+                label="Items"
+                items={g.items}
+                onChange={(items) => {
+                  const next = [...groups];
+                  next[i] = { ...g, items };
+                  onChange(next);
+                }}
+                placeholder="Add a skill"
               />
             </div>
           );
@@ -457,15 +737,17 @@ function SkillsSection({
 
 function BulletList({
   bullets,
-  tagVocab,
+  vocabList,
   takenIds,
   entryName,
+  onEnsureVocab,
   onChange,
 }: {
   bullets: Bullet[];
-  tagVocab: Set<string>;
+  vocabList: string[];
   takenIds: Set<string>;
   entryName: string;
+  onEnsureVocab: (token: string) => void;
   onChange: (b: Bullet[]) => void;
 }) {
   function addBullet() {
@@ -474,6 +756,8 @@ function BulletList({
     onChange(insertAt(bullets, bullets.length, blankBullet(id)));
   }
 
+  const vocabSet = new Set(vocabList.map((t) => t.toLowerCase()));
+
   return (
     <div className="mt-4 space-y-3">
       <div className="flex items-center justify-between gap-2">
@@ -481,7 +765,7 @@ function BulletList({
         <AddButton label="Add bullet" onClick={addBullet} />
       </div>
       {bullets.map((b, i) => {
-        const missing = suggestMissingTags(b.text, b.tags, tagVocab);
+        const missing = suggestMissingTags(b.text, b.tags, vocabSet, vocabList);
         const hasContent = Boolean(b.text.trim() || b.tags.length);
         return (
           <div key={b.id} className="rounded-lg border border-line/80 bg-paper/40 p-3">
@@ -520,21 +804,20 @@ function BulletList({
               }}
               className="w-full rounded-md border border-line bg-white px-2 py-1.5 text-sm outline-none focus:border-accent"
             />
-            <TextField
-              label="Tags (comma-separated)"
-              value={b.tags.join(", ")}
-              onChange={(v) => {
-                const next = [...bullets];
-                next[i] = {
-                  ...b,
-                  tags: v
-                    .split(",")
-                    .map((t) => t.trim())
-                    .filter(Boolean),
-                };
-                onChange(next);
-              }}
-            />
+            <div className="mt-2">
+              <ChipListField
+                label="Tags"
+                items={b.tags}
+                suggestions={vocabList}
+                onAddNew={onEnsureVocab}
+                onChange={(tags) => {
+                  const next = [...bullets];
+                  next[i] = { ...b, tags: uniqueTags(tags) };
+                  onChange(next);
+                }}
+                placeholder="Add a tag"
+              />
+            </div>
             {missing.length > 0 && (
               <p className="mt-1 text-xs text-warn">
                 Text mentions vocabulary not in tags: {missing.join(", ")}
@@ -572,7 +855,8 @@ function TextField({
 function suggestMissingTags(
   text: string,
   tags: string[],
-  vocab: Set<string>,
+  vocabLower: Set<string>,
+  vocabList: string[],
 ): string[] {
   /**
    * Flag vocabulary words that appear in the bullet text but not its tags.
@@ -581,10 +865,13 @@ function suggestMissingTags(
   const have = new Set(tags.map((t) => t.toLowerCase()));
   const lower = text.toLowerCase();
   const hits: string[] = [];
-  for (const tag of vocab) {
+  for (const tag of vocabList) {
+    if (!vocabLower.has(tag.toLowerCase())) continue;
     if (have.has(tag.toLowerCase())) continue;
     // Whole-word-ish match: avoid flagging "go" inside "google".
-    const re = new RegExp(`(?:^|[^a-z0-9])${escapeReg(tag.toLowerCase())}(?:[^a-z0-9]|$)`);
+    const re = new RegExp(
+      `(?:^|[^a-z0-9])${escapeReg(tag.toLowerCase())}(?:[^a-z0-9]|$)`,
+    );
     if (re.test(lower)) hits.push(tag);
   }
   return hits.slice(0, 8);

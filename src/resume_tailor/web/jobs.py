@@ -212,6 +212,8 @@ class JobQueue:
                 repair_widows=not settings.no_widow_repair,
                 repair_verbs=not settings.no_verb_repair,
                 merge_bullets=settings.merge,
+                include_project_links=not settings.no_project_links,
+                fill_target=settings.fill_target,
                 on_event=on_event,
             )
         except FabricationError as exc:

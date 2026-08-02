@@ -89,7 +89,7 @@ MODEL = "claude-sonnet-5"
 #: This is the *requested* ceiling, not necessarily the one sent. Anthropic refuses a
 #: non-streaming request above 21,333 outright, so `max_tokens_for()` clamps that path —
 #: read it before assuming a Claude run actually gets this budget.
-MAX_TOKENS = 64_000
+MAX_TOKENS = 32_000
 
 #: Anthropic's hard limit for a non-streaming request: the SDK rejects anything where
 #: `3600 * max_tokens / 128_000 > 600` with "Streaming is required...". It is a client-side
@@ -128,7 +128,7 @@ PURPOSES = ("extract", "score", "rewrite", "expand")
 #: Providers `parse_spec` recognises as a leading segment. Anything else is read as a bare
 #: model name, which matters more than it looks: `gemma4:cloud` contains a
 #: colon, so a naive split would take "gemma4" for a provider.
-PROVIDERS = ("anthropic", "openai", "ollama")
+PROVIDERS = ("anthropic", "openai", "ollama", "lmstudio")
 
 OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434/v1")
 
@@ -136,9 +136,17 @@ OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434/v1")
 #: colon in the tag — see `parse_spec`.
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "gemma4:cloud")
 
-#: Generous: a reasoning model over a cloud round trip is slow, and the score table sends
-#: all 39 bullets at once.
-LLM_TIMEOUT = float(os.environ.get("LLM_TIMEOUT", "300"))
+#: LM Studio's local OpenAI-compatible server (Developer → Start Server). Default port 1234.
+LMSTUDIO_BASE_URL = os.environ.get("LMSTUDIO_BASE_URL", "http://localhost:1234/v1")
+
+#: Must match the exact model id shown in LM Studio for the loaded model — not an
+#: Ollama-style tag. Override via LMSTUDIO_MODEL before selecting the lmstudio profile.
+LMSTUDIO_MODEL = os.environ.get("LMSTUDIO_MODEL", "local-model")
+
+#: HTTP wait for one LLM completion. Local servers (LM Studio) rewriting a full
+#: bullet batch can take well past five minutes; 900s leaves headroom without
+#: hanging forever on a wedged daemon.
+LLM_TIMEOUT = float(os.environ.get("LLM_TIMEOUT", "900"))
 
 #: How to ask for JSON on the OpenAI-compatible path.
 #:
@@ -165,13 +173,16 @@ DEFAULT_EFFORT: dict[str, str] = {
 
 _ANTHROPIC_DEFAULT = f"anthropic:{MODEL}"
 _OLLAMA_DEFAULT = f"ollama:{OLLAMA_MODEL}"
+_LMSTUDIO_DEFAULT = f"lmstudio:{LMSTUDIO_MODEL}"
 
 #: Named shorthands for `--model`. `hybrid` is the one worth understanding: the two cheap,
 #: low-risk calls move to the free backend while rewriting stays on Claude, which is where
-#: an invented tool or a restated number would actually cost you.
+#: an invented tool or a restated number would actually cost you. `lmstudio` mirrors
+#: `ollama` but points at LM Studio's local server (see LMSTUDIO_BASE_URL).
 MODEL_PROFILES: dict[str, dict[str, str]] = {
     "claude": dict.fromkeys(PURPOSES, _ANTHROPIC_DEFAULT),
     "ollama": dict.fromkeys(PURPOSES, _OLLAMA_DEFAULT),
+    "lmstudio": dict.fromkeys(PURPOSES, _LMSTUDIO_DEFAULT),
     "hybrid": {
         "extract": _OLLAMA_DEFAULT,
         "score": _OLLAMA_DEFAULT,
@@ -207,7 +218,9 @@ def parse_spec(spec: str) -> tuple[str, str, str | None]:
     A leading segment that is not a known provider means the whole string is a model name
     (`gemma4:cloud` on its own, or `claude-sonnet-5`). The provider is then inferred:
     Anthropic for `claude-*`, Ollama otherwise, since those are the two ways a bare name is
-    realistically supplied.
+    realistically supplied. Stage overrides under an `lmstudio`/`ollama` profile are
+    rebound in `resolve` before this runs so LM Studio ids like `google/gemma-4-12b` do
+    not silently become Ollama.
     """
     spec = spec.strip()
     if not spec:
@@ -230,10 +243,52 @@ def parse_spec(spec: str) -> tuple[str, str, str | None]:
     return provider, model, base_url
 
 
+def _has_explicit_provider(spec: str) -> bool:
+    """True when the first `:` segment is a known provider (not part of a model tag)."""
+    spec = spec.strip()
+    if "@" in spec:
+        spec = spec.partition("@")[0]
+    head, sep, _tail = spec.partition(":")
+    return bool(sep and head.lower() in PROVIDERS)
+
+
+def _bind_bare_override(override: str, profile_spec: str) -> str:
+    """Keep a bare model id on the profile stage's local backend.
+
+    UI overrides are often LM Studio ids (`google/gemma-4-12b`) with no `lmstudio:`
+    prefix. Without rebinding, `parse_spec` would infer Ollama and hit :11434. Explicit
+    `provider:...` specs and bare `claude-*` names are left alone. When the profile stage
+    is Anthropic (e.g. hybrid rewrite), bare non-Claude names still fall through to the
+    historical Ollama default.
+    """
+    override = override.strip()
+    if _has_explicit_provider(override) or override.lower().startswith("claude"):
+        return override
+
+    provider, _model, base = parse_spec(profile_spec)
+    if provider not in ("ollama", "lmstudio"):
+        return override
+
+    model, o_base = override, None
+    if "@" in override:
+        model, _, o_base = override.partition("@")
+        o_base = o_base or None
+    bound = f"{provider}:{model}"
+    final_base = o_base or base
+    if final_base:
+        bound = f"{bound}@{final_base}"
+    return bound
+
+
 def _backend(spec: str, purpose: str, effort: str | None) -> Backend:
+    """Resolve a raw spec into a Backend, remapping local aliases to OpenAI-compat."""
     provider, model, base_url = parse_spec(spec)
+    # Both local servers speak /v1/chat/completions; keep distinct env defaults so
+    # switching profiles does not require editing a shared OLLAMA_BASE_URL.
     if provider == "ollama":
         provider, base_url = "openai", base_url or OLLAMA_BASE_URL
+    elif provider == "lmstudio":
+        provider, base_url = "openai", base_url or LMSTUDIO_BASE_URL
     return Backend(
         provider=provider,
         model=model,
@@ -258,6 +313,8 @@ def resolve(
 
     `profile` is a name from `MODEL_PROFILES` or a raw spec applied to every stage.
     `overrides` routes individual stages (`{"rewrite": "claude-sonnet-5"}`).
+    A bare model id in an override keeps the profile stage's ollama/lmstudio backend
+    (so `lmstudio` + `google/gemma-4-12b` does not silently call Ollama).
 
     Called once, early, so a bad spec fails before any file is read or any token spent.
     """
@@ -277,7 +334,7 @@ def resolve(
     for purpose, spec in (overrides or {}).items():
         if purpose not in PURPOSES:
             raise ValueError(f"Unknown stage {purpose!r}. Expected one of {PURPOSES}.")
-        specs[purpose] = spec
+        specs[purpose] = _bind_bare_override(spec, specs[purpose])
 
     _ACTIVE.clear()
     _ACTIVE.update(

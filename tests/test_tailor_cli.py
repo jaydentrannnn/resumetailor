@@ -166,6 +166,7 @@ def test_pages_and_template_flags_reach_the_fit_loop(cli, jd_file, tmp_path, mon
     def capture(
         resume_arg, reqs, *, target_pages, template, out, max_experience, max_projects,
         semantic=None, repair_widows=True, repair_verbs=True, merge_bullets=False,
+        include_project_links=True, fill_target=None,
     ):
         """Capture fit kwargs so CLI flag plumbing can be asserted."""
         seen.update(
@@ -205,6 +206,7 @@ def test_defaults_match_config(cli, jd_file, tmp_path, monkeypatch):
     def capture(
         resume_arg, reqs, *, target_pages, template, out, max_experience, max_projects,
         semantic=None, repair_widows=True, repair_verbs=True, merge_bullets=False,
+        include_project_links=True, fill_target=None,
     ):
         """Capture defaults so they stay owned by fit(), not the CLI."""
         seen.update(
@@ -213,6 +215,7 @@ def test_defaults_match_config(cli, jd_file, tmp_path, monkeypatch):
             out=out,
             max_experience=max_experience,
             max_projects=max_projects,
+            fill_target=fill_target,
         )
         return _fit_result(resume, tmp_path / "tailored.docx")
 
@@ -227,6 +230,7 @@ def test_defaults_match_config(cli, jd_file, tmp_path, monkeypatch):
     # None, not the config value: fit() reads the default so one place owns it.
     assert seen["max_experience"] is None
     assert seen["max_projects"] is None
+    assert seen["fill_target"] is None
 
 
 def test_no_cache_flag_forces_reextraction(cli, jd_file, tmp_path, monkeypatch):
@@ -391,3 +395,27 @@ def test_merge_flag_reaches_the_fit_loop(cli, jd_file, tmp_path, monkeypatch):
 
     cli.main(["--jd", str(jd_file), "--merge"])
     assert seen["merge_bullets"] is True
+
+
+def test_fill_target_flag_reaches_the_fit_loop(cli, jd_file, tmp_path, monkeypatch):
+    """--fill-target overrides UNDERFLOW_THRESHOLD for the run."""
+    resume = load()
+    seen: dict = {}
+
+    monkeypatch.setattr(cli.jd, "extract", lambda text, **kw: _requirements())
+    monkeypatch.setattr(cli.jd, "verify_verbatim", lambda reqs, text: [])
+
+    def capture(*a, fill_target=None, **k):
+        """Record the fill_target override from the CLI."""
+        seen["fill_target"] = fill_target
+        return _fit_result(resume, tmp_path / "tailored.docx")
+
+    monkeypatch.setattr(cli.fit, "fit", capture)
+
+    cli.main(["--jd", str(jd_file)])
+    assert seen["fill_target"] is None
+
+    cli.main(["--jd", str(jd_file), "--fill-target", "0.88"])
+    assert seen["fill_target"] == 0.88
+
+    assert cli.main(["--jd", str(jd_file), "--fill-target", "0.5"]) == 1
