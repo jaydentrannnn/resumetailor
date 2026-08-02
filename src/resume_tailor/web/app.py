@@ -11,6 +11,7 @@ from __future__ import annotations
 
 import asyncio
 import json
+import os
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -20,6 +21,7 @@ from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
+from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from resume_tailor import config, data, report
 from resume_tailor.data import MasterResume
@@ -474,8 +476,28 @@ def delete_template_library_entry(entry_id: str) -> TemplateLibraryResponse:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+class _SPAStaticFiles(StaticFiles):
+    """StaticFiles that falls back to index.html on a 404.
+
+    React Router uses real URL paths (BrowserRouter), so a hard refresh on
+    /editor or /template is a direct GET for a path that has no file on disk.
+    Plain StaticFiles(html=True) only serves index.html for the directory
+    root, so those requests 404 before React Router ever loads. Falling back
+    to index.html hands the route to the client-side router instead.
+    """
+
+    async def get_response(self, path: str, scope):
+        try:
+            return await super().get_response(path, scope)
+        except StarletteHTTPException as exc:
+            first_segment = path.split(os.sep, 1)[0]
+            if exc.status_code != 404 or first_segment == "api":
+                raise
+            return await super().get_response("index.html", scope)
+
+
 # Serve the built SPA when it exists (production / Docker). The Vite dev server handles
 # this in development, so a missing frontend/dist is not an error here.
 _FRONTEND_DIST = config.PROJECT_ROOT / "frontend" / "dist"
 if _FRONTEND_DIST.is_dir():
-    app.mount("/", StaticFiles(directory=str(_FRONTEND_DIST), html=True), name="spa")
+    app.mount("/", _SPAStaticFiles(directory=str(_FRONTEND_DIST), html=True), name="spa")
