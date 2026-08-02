@@ -456,3 +456,10 @@ to `minimax-m3:cloud` unless `OLLAMA_MODEL` or a per-run model override is set.
   a documented running cost worth exposing.
 - **Tradeoff:** Did not expose `SEMANTIC_WEIGHT` or calibration constants â€” those are
   correctness levers, not preferences.
+
+## 2026-08-01 — Root README
+
+- **Decision:** Added project-root `README.md` covering local venv install, CLI/web usage, Docker Compose, and Ollama / LM Studio profiles.
+- **Why:** No root readme existed; `frontend/README.md` is only the Vite template stub. Setup and alternate-backend usage lived in `CLAUDE.md` / `.env.example`.
+- **Tradeoff:** Kept it short and command-focused — deferred architecture / fabrication-guard detail to `CLAUDE.md` and `docs/PLAN.md`.
+- **Spec delta:** User asked for install, Docker, and Ollama/LM Studio guides only.
