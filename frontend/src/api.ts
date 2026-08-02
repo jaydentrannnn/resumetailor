@@ -130,6 +130,14 @@ export type CalibrationInfo = {
   message: string | null;
 };
 
+export type TemplateProfileSummary = {
+  exists: boolean;
+  schema_version: number | null;
+  enabled: Record<string, boolean>;
+  warnings: string[];
+  contact_separator: string | null;
+};
+
 export type TemplateInfo = {
   baseline: TemplateFileInfo;
   tagged: TemplateFileInfo;
@@ -138,12 +146,68 @@ export type TemplateInfo = {
   bullets: number;
   calibration: CalibrationInfo;
   preview_available: boolean;
+  profile: TemplateProfileSummary;
+  active_library_id: string | null;
+  active_label: string | null;
 };
 
 export type TemplateBuildResponse = {
   ok: boolean;
   log: string;
   info: TemplateInfo | null;
+};
+
+export type TemplateLibraryEntry = {
+  id: string;
+  label: string;
+  created_at: string;
+  source_filename: string | null;
+  size_bytes: number | null;
+  has_profile: boolean;
+  is_active: boolean;
+};
+
+export type TemplateLibraryResponse = {
+  entries: TemplateLibraryEntry[];
+  active_id: string | null;
+};
+
+export type TemplateIssue = {
+  code: string;
+  message: string;
+  blocking: boolean;
+};
+
+export type TemplateParagraph = {
+  id: number;
+  text: string;
+  is_bullet: boolean;
+  is_heading_candidate: boolean;
+  has_tab: boolean;
+  has_hyperlink: boolean;
+  run_count: number;
+  preview: string;
+};
+
+export type TemplateSection = {
+  key: string;
+  heading_paragraph_id: number;
+  heading_text: string;
+  body_start: number;
+  body_end: number;
+  entry_count: number;
+  bullet_count: number;
+  confidence: number;
+  aliases_matched: string;
+};
+
+export type TemplateAnalyzeResponse = {
+  source_sha256: string;
+  paragraphs: TemplateParagraph[];
+  sections: TemplateSection[];
+  suggested_profile: Record<string, unknown> | null;
+  issues: TemplateIssue[];
+  ready: boolean;
 };
 
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
@@ -265,34 +329,118 @@ export function templatePreviewUrl(): string {
 }
 
 /**
- * Upload a Google Docs export, replace the baseline, and rebuild the tagged template.
+ * Parse a FastAPI error body from a template upload/analyze response.
+ */
+async function templateErrorDetail(res: Response): Promise<string> {
+  let detail = res.statusText;
+  try {
+    const body = await res.json();
+    const d = body.detail;
+    if (typeof d === "string") {
+      detail = d;
+    } else if (d && typeof d === "object" && "message" in d) {
+      const msg = String((d as { message: string }).message);
+      const log = String((d as { log?: string }).log ?? "");
+      detail = log ? `${msg}\n\n${log}` : msg;
+    } else {
+      detail = JSON.stringify(d ?? body);
+    }
+  } catch {
+    /* keep statusText */
+  }
+  return detail;
+}
+
+/**
+ * Analyze an uploaded baseline without writing under templates/.
+ */
+export async function analyzeTemplate(file: File): Promise<TemplateAnalyzeResponse> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch("/api/template/analyze", { method: "POST", body: form });
+  if (!res.ok) {
+    throw new Error(await templateErrorDetail(res));
+  }
+  return res.json() as Promise<TemplateAnalyzeResponse>;
+}
+
+/**
+ * Upload a baseline export and rebuild the tagged template.
+ *
+ * When `profile` is provided it is sent as a multipart JSON field so the server can
+ * run the span-aware builder. Omit it for the legacy hard-coded heading path.
  *
  * Uses a bare fetch with FormData — do not set Content-Type, or the browser cannot
  * attach the multipart boundary that FastAPI/python-multipart expects.
  */
-export async function uploadTemplate(file: File): Promise<TemplateBuildResponse> {
+export async function uploadTemplate(
+  file: File,
+  profile?: Record<string, unknown> | null,
+  options?: { calibrate?: boolean; label?: string },
+): Promise<TemplateBuildResponse> {
   const form = new FormData();
   form.append("file", file);
+  if (profile) {
+    form.append("profile", JSON.stringify(profile));
+  }
+  if (options?.calibrate) {
+    form.append("calibrate", "true");
+  }
+  if (options?.label) {
+    form.append("label", options.label);
+  }
   const res = await fetch("/api/template", { method: "POST", body: form });
   if (!res.ok) {
-    let detail = res.statusText;
-    try {
-      const body = await res.json();
-      const d = body.detail;
-      if (typeof d === "string") {
-        detail = d;
-      } else if (d && typeof d === "object" && "message" in d) {
-        // Build failures return { message, log }; surface both for the Template tab.
-        const msg = String((d as { message: string }).message);
-        const log = String((d as { log?: string }).log ?? "");
-        detail = log ? `${msg}\n\n${log}` : msg;
-      } else {
-        detail = JSON.stringify(d ?? body);
-      }
-    } catch {
-      /* keep statusText */
-    }
-    throw new Error(detail);
+    throw new Error(await templateErrorDetail(res));
   }
   return res.json() as Promise<TemplateBuildResponse>;
+}
+
+/**
+ * List named template library entries (seeds Default from live when empty).
+ */
+export function fetchTemplateLibrary(): Promise<TemplateLibraryResponse> {
+  return request<TemplateLibraryResponse>("/api/template/library");
+}
+
+/**
+ * Activate a library snapshot into the live template slot.
+ */
+export async function activateTemplateLibrary(
+  entryId: string,
+  options?: { calibrate?: boolean },
+): Promise<TemplateBuildResponse> {
+  const qs = options?.calibrate ? "?calibrate=true" : "";
+  const res = await fetch(`/api/template/library/${encodeURIComponent(entryId)}/activate${qs}`, {
+    method: "POST",
+  });
+  if (!res.ok) {
+    throw new Error(await templateErrorDetail(res));
+  }
+  return res.json() as Promise<TemplateBuildResponse>;
+}
+
+/**
+ * Rename a saved template library entry.
+ */
+export function renameTemplateLibrary(
+  entryId: string,
+  label: string,
+): Promise<TemplateLibraryResponse> {
+  return request<TemplateLibraryResponse>(
+    `/api/template/library/${encodeURIComponent(entryId)}`,
+    { method: "PATCH", body: JSON.stringify({ label }) },
+  );
+}
+
+/**
+ * Delete a non-active library entry.
+ */
+export function deleteTemplateLibrary(
+  entryId: string,
+): Promise<TemplateLibraryResponse> {
+  return request<TemplateLibraryResponse>(
+    `/api/template/library/${encodeURIComponent(entryId)}`,
+    { method: "DELETE" },
+  );
 }

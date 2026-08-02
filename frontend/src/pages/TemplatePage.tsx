@@ -1,5 +1,6 @@
-import { useCallback, useRef, useState, type DragEvent } from "react";
 import { templatePreviewUrl } from "../api";
+import { SavedTemplatesPanel } from "../components/template/SavedTemplatesPanel";
+import { TemplateImportWizard } from "../components/template/TemplateImportWizard";
 import { useTemplateState } from "../state/templateState";
 
 /**
@@ -25,42 +26,10 @@ function formatWhen(iso: string | null | undefined): string {
 }
 
 /**
- * Template tab: preview the current tagged template and upload a new Google Docs export.
+ * Template tab: preview the current tagged template and import a new baseline.
  */
 export function TemplatePage() {
-  const {
-    info,
-    loading,
-    uploading,
-    error,
-    buildLog,
-    lastBuildOk,
-    previewKey,
-    refresh,
-    upload,
-  } = useTemplateState();
-  const inputRef = useRef<HTMLInputElement>(null);
-  const [dragging, setDragging] = useState(false);
-
-  const onFile = useCallback(
-    (file: File | null) => {
-      /** Hand a chosen .docx to the upload pipeline. */
-      if (!file) return;
-      void upload(file);
-    },
-    [upload],
-  );
-
-  const onDrop = useCallback(
-    (e: DragEvent<HTMLDivElement>) => {
-      /** Accept a dropped .docx from the drag target. */
-      e.preventDefault();
-      setDragging(false);
-      const file = e.dataTransfer.files?.[0] ?? null;
-      onFile(file);
-    },
-    [onFile],
-  );
+  const { info, loading, uploading, previewKey, refresh } = useTemplateState();
 
   return (
     <div className="space-y-6">
@@ -70,7 +39,7 @@ export function TemplatePage() {
             <h2 className="font-display text-xl font-semibold">Current template</h2>
             <p className="mt-1 text-sm text-ink-muted">
               Tagged template filled with your full master resume. Formatting comes from
-              your Google Docs export; only the words change when you tailor.
+              your uploaded single-column export; only the words change when you tailor.
             </p>
           </div>
           <button
@@ -88,6 +57,7 @@ export function TemplatePage() {
         ) : info ? (
           <>
             <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
+              <MetaItem label="Active label" value={info.active_label || "—"} />
               <MetaItem
                 label="Tagged template"
                 value={
@@ -112,7 +82,29 @@ export function TemplatePage() {
                 label="Fit constants"
                 value={`${info.calibration.chars_per_line} chars/line · ${info.calibration.lines_per_page} lines/page`}
               />
+              <MetaItem
+                label="Profile"
+                value={
+                  info.profile?.exists
+                    ? `v${info.profile.schema_version ?? "?"} · ${Object.entries(
+                        info.profile.enabled ?? {},
+                      )
+                        .filter(([, on]) => on)
+                        .map(([k]) => k)
+                        .join(", ") || "experience"}`
+                    : "Legacy (no profile file)"
+                }
+              />
             </dl>
+
+            {info.profile?.warnings?.length ? (
+              <p className="mt-4 rounded-md bg-warn-soft px-3 py-2 text-sm text-warn">
+                {info.profile.warnings[0]}
+                {info.profile.warnings.length > 1
+                  ? ` (+${info.profile.warnings.length - 1} more)`
+                  : ""}
+              </p>
+            ) : null}
 
             {info.calibration.stale && info.calibration.message ? (
               <p className="mt-4 rounded-md bg-warn-soft px-3 py-2 text-sm text-warn">
@@ -131,7 +123,7 @@ export function TemplatePage() {
               </div>
             ) : (
               <p className="mt-4 rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">
-                No tagged template on disk. Upload a Google Docs .docx export below to
+                No tagged template on disk. Upload a single-column .docx export below to
                 generate one.
               </p>
             )}
@@ -139,75 +131,8 @@ export function TemplatePage() {
         ) : null}
       </section>
 
-      <section className="rounded-xl border border-line bg-panel p-5 shadow-sm">
-        <h2 className="font-display text-xl font-semibold">Replace template</h2>
-        <p className="mt-1 text-sm text-ink-muted">
-          Upload a fresh Google Docs export (File → Download → Microsoft Word). This
-          overwrites{" "}
-          <code className="rounded bg-paper px-1 text-xs">templates/original_export.docx</code>{" "}
-          and regenerates the tagged template. A timestamped backup of the previous
-          baseline is kept under{" "}
-          <code className="rounded bg-paper px-1 text-xs">templates/backups/</code>.
-        </p>
-
-        <div
-          onDragEnter={(e) => {
-            e.preventDefault();
-            setDragging(true);
-          }}
-          onDragOver={(e) => e.preventDefault()}
-          onDragLeave={() => setDragging(false)}
-          onDrop={onDrop}
-          className={`mt-4 flex flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed px-6 py-10 transition ${
-            dragging
-              ? "border-accent bg-accent-soft/60"
-              : "border-line bg-paper/40 hover:border-accent/60"
-          }`}
-        >
-          <p className="text-sm text-ink-muted">
-            {uploading ? "Uploading and rebuilding…" : "Drop a .docx here, or"}
-          </p>
-          <button
-            type="button"
-            disabled={uploading}
-            onClick={() => inputRef.current?.click()}
-            className="rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
-          >
-            {uploading ? "Working…" : "Choose file"}
-          </button>
-          <input
-            ref={inputRef}
-            type="file"
-            accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
-            className="hidden"
-            onChange={(e) => {
-              onFile(e.target.files?.[0] ?? null);
-              e.target.value = "";
-            }}
-          />
-        </div>
-
-        {error && lastBuildOk === false ? (
-          <p className="mt-4 rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">
-            {error.split("\n")[0]}
-          </p>
-        ) : null}
-
-        {lastBuildOk === true ? (
-          <p className="mt-4 rounded-md bg-accent-soft px-3 py-2 text-sm text-accent">
-            Template rebuilt successfully.
-            {info?.calibration.stale
-              ? " Fit constants may be stale — run calibrate.py and restart the server."
-              : null}
-          </p>
-        ) : null}
-
-        {buildLog ? (
-          <pre className="mt-4 max-h-48 overflow-auto rounded-md border border-line bg-paper/60 p-3 text-xs text-ink whitespace-pre-wrap">
-            {buildLog}
-          </pre>
-        ) : null}
-      </section>
+      <SavedTemplatesPanel />
+      <TemplateImportWizard />
     </div>
   );
 }

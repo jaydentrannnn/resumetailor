@@ -370,24 +370,32 @@ def test_queue_serialises_jobs(monkeypatch, tmp_path):
 # ---------------------------------------------------------------------------
 
 
-def _minimal_docx_bytes() -> bytes:
-    """Build a tiny valid .docx in memory for upload tests (no Word required)."""
+def _minimal_docx_bytes(paragraph: str | None = None) -> bytes:
+    """Build a tiny valid .docx in memory for upload tests (no Word required).
+
+    Optional `paragraph` text makes two fixtures differ byte-for-byte.
+    """
     import io
 
     from docx import Document
 
     buf = io.BytesIO()
-    Document().save(buf)
+    doc = Document()
+    if paragraph is not None:
+        doc.add_paragraph(paragraph)
+    doc.save(buf)
     return buf.getvalue()
 
 
 def _point_templates_at(tmp_path: Path, monkeypatch) -> Path:
-    """Redirect baseline/tagged paths under tmp_path and return the templates dir."""
+    """Redirect baseline/tagged/library paths under tmp_path and return the templates dir."""
     templates = tmp_path / "templates"
     templates.mkdir(parents=True, exist_ok=True)
     monkeypatch.setattr(config, "TEMPLATES_DIR", templates)
     monkeypatch.setattr(config, "BASELINE_TEMPLATE_PATH", templates / "original_export.docx")
     monkeypatch.setattr(config, "DEFAULT_TEMPLATE_PATH", templates / "main_template.docx")
+    monkeypatch.setattr(config, "TEMPLATE_PROFILE_PATH", templates / "template_profile.json")
+    monkeypatch.setattr(config, "TEMPLATE_LIBRARY_DIR", templates / "library")
     return templates
 
 
@@ -555,3 +563,327 @@ def test_template_preview_uses_stubbed_render(client, tmp_path, monkeypatch):
     assert res.status_code == 200
     assert res.headers["content-type"].startswith("application/pdf")
     assert res.content.startswith(b"%PDF")
+
+
+def test_analyze_template_returns_structured_report(client, tmp_path, monkeypatch):
+    """POST /api/template/analyze does not write under templates/ and returns issues."""
+    c, _ = client
+    templates = _point_templates_at(tmp_path, monkeypatch)
+    before = list(templates.iterdir()) if templates.exists() else []
+
+    res = c.post(
+        "/api/template/analyze",
+        files={
+            "file": (
+                "resume.docx",
+                _minimal_docx_bytes(),
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+        },
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert "source_sha256" in body
+    assert "issues" in body
+    assert "paragraphs" in body
+    assert body["ready"] is False
+    after = list(templates.iterdir()) if templates.exists() else []
+    assert after == before
+
+
+def test_get_template_includes_profile_summary(client, tmp_path, monkeypatch):
+    """GET /api/template always includes a profile summary object."""
+    c, _ = client
+    _point_templates_at(tmp_path, monkeypatch)
+    res = c.get("/api/template")
+    assert res.status_code == 200
+    body = res.json()
+    assert "profile" in body
+    assert body["profile"]["exists"] is False
+
+
+def test_upload_template_with_calibrate_flag(client, tmp_path, monkeypatch):
+    """calibrate=true runs calibration after a successful legacy build and reloads config."""
+    from resume_tailor.calibrate import CalibrationResult
+
+    c, _ = client
+    templates = _point_templates_at(tmp_path, monkeypatch)
+    baseline = templates / "original_export.docx"
+    tagged = templates / "main_template.docx"
+    baseline.write_bytes(_minimal_docx_bytes())
+    tagged.write_bytes(_minimal_docx_bytes())
+
+    def fake_build():
+        """Pretend build_template.py succeeded."""
+        tagged.write_bytes(b"PK\x03\x04rebuilt")
+        return 0, "wrote main_template.docx\n"
+
+    cal_calls: list[dict] = []
+
+    def fake_calibrate(*, verify_anchors=True):
+        """Record the calibrate call without touching Word/LibreOffice."""
+        cal_calls.append({"verify_anchors": verify_anchors})
+        path = tmp_path / "calibration.json"
+        path.write_text("{}", encoding="utf-8")
+        return CalibrationResult(
+            chars_per_line=99,
+            lines_per_page=48,
+            path=path,
+            log="CHARS_PER_LINE = 99\nLINES_PER_PAGE = 48",
+        )
+
+    monkeypatch.setattr(template_ops, "_run_build", fake_build)
+    monkeypatch.setattr(template_ops.calibrate, "run", fake_calibrate)
+    monkeypatch.setattr(config, "reload_calibration", lambda: (99, 48, "test"))
+
+    res = c.post(
+        "/api/template",
+        data={"calibrate": "true"},
+        files={
+            "file": (
+                "resume.docx",
+                _minimal_docx_bytes(),
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+        },
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["ok"] is True
+    assert cal_calls == [{"verify_anchors": True}]
+    assert "CHARS_PER_LINE = 99" in body["log"]
+
+
+def test_library_seeds_default_from_live(client, tmp_path, monkeypatch):
+    """GET /api/template/library registers live baseline+tagged as Default when empty."""
+    c, _ = client
+    templates = _point_templates_at(tmp_path, monkeypatch)
+    payload = _minimal_docx_bytes()
+    (templates / "original_export.docx").write_bytes(payload)
+    (templates / "main_template.docx").write_bytes(payload)
+
+    res = c.get("/api/template/library")
+    assert res.status_code == 200
+    body = res.json()
+    assert len(body["entries"]) == 1
+    assert body["entries"][0]["label"] == "Default"
+    assert body["entries"][0]["is_active"] is True
+    assert body["active_id"] == body["entries"][0]["id"]
+
+    info = c.get("/api/template").json()
+    assert info["active_label"] == "Default"
+    assert info["active_library_id"] == body["active_id"]
+
+
+def test_upload_with_label_creates_library_entry(client, tmp_path, monkeypatch):
+    """POST /api/template with label snapshots the install into the named library."""
+    c, _ = client
+    templates = _point_templates_at(tmp_path, monkeypatch)
+    tagged = templates / "main_template.docx"
+    old = _minimal_docx_bytes()
+    (templates / "original_export.docx").write_bytes(old)
+    tagged.write_bytes(old)
+
+    def fake_build():
+        """Pretend build_template.py succeeded."""
+        tagged.write_bytes(b"PK\x03\x04rebuilt-for-library")
+        return 0, "wrote main_template.docx\n"
+
+    monkeypatch.setattr(template_ops, "_run_build", fake_build)
+
+    res = c.post(
+        "/api/template",
+        data={"label": "Campus CV"},
+        files={
+            "file": (
+                "campus.docx",
+                _minimal_docx_bytes(),
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+        },
+    )
+    assert res.status_code == 200, res.text
+    info = res.json()["info"]
+    assert info["active_label"] == "Campus CV"
+
+    lib = c.get("/api/template/library").json()
+    labels = {e["label"] for e in lib["entries"]}
+    # Prior live was seeded/preserved as Default; new install is Campus CV.
+    assert "Campus CV" in labels
+    assert "Default" in labels
+    active = next(e for e in lib["entries"] if e["is_active"])
+    assert active["label"] == "Campus CV"
+
+
+def test_activate_library_switches_live_baseline(client, tmp_path, monkeypatch):
+    """Activating another library entry restores its baseline bytes into the live slot."""
+    c, _ = client
+    templates = _point_templates_at(tmp_path, monkeypatch)
+    tagged = templates / "main_template.docx"
+    first = _minimal_docx_bytes()
+    (templates / "original_export.docx").write_bytes(first)
+    tagged.write_bytes(first)
+
+    # Seed Default.
+    assert c.get("/api/template/library").status_code == 200
+    default_id = c.get("/api/template/library").json()["active_id"]
+
+    builds: list[int] = []
+
+    def fake_build():
+        """Write a distinct tagged payload for the second install."""
+        builds.append(1)
+        tagged.write_bytes(b"PK\x03\x04second-tagged")
+        return 0, "wrote\n"
+
+    monkeypatch.setattr(template_ops, "_run_build", fake_build)
+    second = _minimal_docx_bytes("second baseline")
+    assert second != first
+    res = c.post(
+        "/api/template",
+        data={"label": "Second"},
+        files={
+            "file": (
+                "second.docx",
+                second,
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+        },
+    )
+    assert res.status_code == 200
+    assert (templates / "original_export.docx").read_bytes() == second
+
+    act = c.post(f"/api/template/library/{default_id}/activate")
+    assert act.status_code == 200, act.text
+    assert (templates / "original_export.docx").read_bytes() == first
+    body = act.json()
+    assert body["ok"] is True
+    assert body["info"]["active_library_id"] == default_id
+    assert body["info"]["active_label"] == "Default"
+
+
+def test_rename_library_rejects_duplicate_label(client, tmp_path, monkeypatch):
+    """PATCH rename fails when the new label collides case-insensitively."""
+    c, _ = client
+    templates = _point_templates_at(tmp_path, monkeypatch)
+    tagged = templates / "main_template.docx"
+    payload = _minimal_docx_bytes()
+    (templates / "original_export.docx").write_bytes(payload)
+    tagged.write_bytes(payload)
+    c.get("/api/template/library")
+
+    def fake_build():
+        """Legacy build stub."""
+        tagged.write_bytes(b"PK\x03\x04x")
+        return 0, "ok\n"
+
+    monkeypatch.setattr(template_ops, "_run_build", fake_build)
+    c.post(
+        "/api/template",
+        data={"label": "Alpha"},
+        files={
+            "file": (
+                "a.docx",
+                _minimal_docx_bytes(),
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+        },
+    )
+    lib = c.get("/api/template/library").json()
+    default = next(e for e in lib["entries"] if e["label"] == "Default")
+    res = c.patch(
+        f"/api/template/library/{default['id']}",
+        json={"label": "alpha"},
+    )
+    assert res.status_code == 400
+    assert "already exists" in res.json()["detail"].lower()
+
+
+def test_delete_library_refuses_active(client, tmp_path, monkeypatch):
+    """DELETE on the active entry returns 400; non-active deletes succeed."""
+    c, _ = client
+    templates = _point_templates_at(tmp_path, monkeypatch)
+    tagged = templates / "main_template.docx"
+    payload = _minimal_docx_bytes()
+    (templates / "original_export.docx").write_bytes(payload)
+    tagged.write_bytes(payload)
+    c.get("/api/template/library")
+
+    def fake_build():
+        """Legacy build stub."""
+        tagged.write_bytes(b"PK\x03\x04y")
+        return 0, "ok\n"
+
+    monkeypatch.setattr(template_ops, "_run_build", fake_build)
+    c.post(
+        "/api/template",
+        data={"label": "Spare"},
+        files={
+            "file": (
+                "s.docx",
+                _minimal_docx_bytes(),
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+        },
+    )
+    lib = c.get("/api/template/library").json()
+    active = next(e for e in lib["entries"] if e["is_active"])
+    other = next(e for e in lib["entries"] if not e["is_active"])
+
+    bad = c.delete(f"/api/template/library/{active['id']}")
+    assert bad.status_code == 400
+    assert "active" in bad.json()["detail"].lower()
+
+    ok = c.delete(f"/api/template/library/{other['id']}")
+    assert ok.status_code == 200
+    labels = {e["label"] for e in ok.json()["entries"]}
+    assert other["label"] not in labels
+    assert active["label"] in labels
+
+
+def test_library_cap_refuses_twenty_first(client, tmp_path, monkeypatch):
+    """Installing when the library already has 20 entries returns 400."""
+    c, _ = client
+    templates = _point_templates_at(tmp_path, monkeypatch)
+    tagged = templates / "main_template.docx"
+    payload = _minimal_docx_bytes()
+    (templates / "original_export.docx").write_bytes(payload)
+    tagged.write_bytes(payload)
+
+    # Fill the library with synthetic entries (no install needed).
+    monkeypatch.setattr(template_ops, "_LIBRARY_MAX_ENTRIES", 2)
+    c.get("/api/template/library")  # seeds Default (1)
+
+    def fake_build():
+        """Legacy build stub."""
+        tagged.write_bytes(b"PK\x03\x04z")
+        return 0, "ok\n"
+
+    monkeypatch.setattr(template_ops, "_run_build", fake_build)
+    first = c.post(
+        "/api/template",
+        data={"label": "Two"},
+        files={
+            "file": (
+                "t.docx",
+                _minimal_docx_bytes(),
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+        },
+    )
+    assert first.status_code == 200
+    assert len(c.get("/api/template/library").json()["entries"]) == 2
+
+    blocked = c.post(
+        "/api/template",
+        data={"label": "Three"},
+        files={
+            "file": (
+                "u.docx",
+                _minimal_docx_bytes(),
+                "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+            )
+        },
+    )
+    assert blocked.status_code == 400
+    assert "full" in blocked.json()["detail"].lower()

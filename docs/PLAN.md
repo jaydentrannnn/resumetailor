@@ -9,8 +9,8 @@ page fitting, and the fabrication guard.
 All build phases are complete. What remains is in **Open items**, and is mostly decisions
 for the owner rather than missing code.
 
-**Last updated:** 2026-07-27 — merge gated behind overflow; redundancy rejection; opening-verb
-variety polish; web toggles for merge / verb repair.
+**Last updated:** 2026-08-02 — facets stage extended to reword SKILLS-section items toward
+JD-anchored synonyms, under the same rename-guard pattern as project tech tags.
 
 ---
 
@@ -392,11 +392,10 @@ for Phase 9; the highest-value next change to extraction.
 
 ### Open items
 
-- **`build_template.py` reads only `templates/original_export.docx`.** A new export dropped
-  in `data/` will not be picked up — the script would silently rebuild from the stale copy.
-  Proposed fix: a `--from PATH` flag that copies into the baseline then builds, plus a
-  staleness warning when a newer `.docx` exists in `data/`. **Not yet implemented.**
-- Four unused-variable lint warnings in `build_template.py` (`doc` params, `rest`).
+- **`--from PATH` on `build_template.py` is implemented** (copies are not automatic: pass
+  `--from` or use the Template tab). Profile-based imports cover renamed headings /
+  separators for single-column paragraph resumes; tables and multi-column layouts remain
+  unsupported.
 - Two projects (`proj_zotassistant`, `proj_fuzzy_street`) have `link: "Github"` but no
   `url`, so the label renders as plain text rather than a hyperlink. Add the URLs or clear
   the labels.
@@ -633,3 +632,72 @@ description), shown as a copy-paste tile on the Tailor page.
 **Status:** `pytest` covers selection force-include, hard-fact join, fabrication drop,
 number warnings, cache invalidation across backends, hybrid routing, CLI stubs, and the
 web expansion endpoint. Live API quality under Ollama is not measured in this environment.
+
+## Phase 14 — Skills-section wording synonyms — **Done (unit-tested)**
+
+**What:** `facets.select_facets` may now reword individual SKILLS-section items toward the
+posting's own wording (`"Postgres"` -> `"PostgreSQL"`, `"RAG pipelines"` ->
+`"retrieval-augmented generation pipelines"`), mirroring the existing project-tech-tag
+rename. Scope is rename-only — group count, item count, and item order are unchanged;
+skill groups still render in full every run, only an item's spelling may change.
+
+**Why a new predicate instead of reusing `labels_are_equivalent` as-is:** project tech tags
+are single words, so `labels_are_equivalent`'s three "may claim more" branches — token-set
+containment, alphanumeric-prefix containment, sub-phrase acronym — never mattered in
+practice. Skill items are phrases, and each branch independently lets a rename *narrow* to
+part of what the item claims. Measured against real `master_resume.json` items before
+writing the guard:
+
+| old | new | branch that (wrongly) accepts it |
+|---|---|---|
+| `hybrid retrieval & reranking` | `retrieval` | token-set containment |
+| `retrieval eval (Recall@k, MRR, LLM-as-judge)` | `retrieval` | alphanumeric prefix |
+| `hybrid retrieval & reranking` | `HR` | sub-span acronym |
+| `Scikit-learn/XGBoost` | `scikit-learn` | alphanumeric prefix |
+
+A single `allow_narrowing` flag on `labels_are_equivalent` was considered and rejected — it
+can only close one branch at a time, and closing all three by branching inside the shared
+function would also change project-tag acceptance in ways not asked for. Instead
+`facets.rename_preserves_claim(old, new)` is a separate predicate applied *in addition to*
+`labels_are_equivalent`: the existing function answers "does not claim more," the new one
+answers "does not claim less." A skill rename is applied only when
+`rename_is_jd_anchored AND labels_are_equivalent AND rename_preserves_claim` all hold.
+
+**Acronym-in-phrase renames went into the shared function, not a skills-only one.**
+`"RAG pipelines" -> "retrieval-augmented generation pipelines"` needs per-token acronym
+alignment (`facets._aligns`, greedy word-by-word, expanding 2-5-word initial runs) that
+`labels_are_equivalent`'s existing acronym branch doesn't provide — that branch only
+matches when the *entire* label is the acronym, not one word inside a longer phrase.
+Deliberately added as an `_aligns` clause on `labels_are_equivalent` itself (owner's call,
+asked directly) rather than kept skills-only, so project tech tags gained the same
+capability. Verified additive: `SQL -> Snowflake` and `SQL -> MySQL` — the two existing
+rejection tests — still reject, because `_aligns` requires full word coverage on both sides
+and neither pair achieves it.
+
+**Line budget is a second, independent guard.** `_resolve_skill_group` accepts a
+guard-clean rename only if it does not increase `config.line_span` of the group's rendered
+line (`config.skill_group_line`, shared with `fit._fixed_overhead_lines` so the two cannot
+drift — before this, `": "` was hard-coded separately in `fit.py`). This is load-bearing,
+not theoretical: measured slack on the real resume was 28 characters on the `AI/ML` group
+against its two-line budget (202 chars), the tightest of the three groups. Renames are
+applied greedily and re-measured against the *accumulated* item list per group, so several
+individually-safe renames cannot jointly overflow.
+
+**Known accepted limitation:** `"RAG pipelines" -> "retrieval-augmented generation"`
+(dropping "pipelines") correctly rejects via `rename_preserves_claim`, but a rename that
+*adds* an acronym expansion inside an otherwise-unrelated longer phrase can still fail to
+align if the surrounding words don't match anything — this is intentional conservatism, not
+a known bug: the guard is designed to reject when in doubt.
+
+**Prompt version:** `_PROMPT_VERSION` bumped 1 -> 2 (schema and `_SYSTEM` both changed),
+invalidating every previously cached `.facets.json`. `_cache_path` also now folds in every
+skill group's items and `config.CHARS_PER_LINE`, since the prompt advertises a per-group
+character budget computed from it.
+
+**Status:** `pytest` covers all four narrowing rejections above, JD-anchored acceptance,
+acronym-expansion acceptance, the line-budget rejection (sized from `config.CHARS_PER_LINE`
+so it survives recalibration), rename-count/order preservation, duplicate-item rejection,
+unmatched-key warning, the `--no-facets` identity path, cache-key coverage, and the
+extended fake-client test asserting skill groups reach the prompt and `skill_renames`
+round-trips through `FacetResult`. Live API behavior (whether models reliably propose
+skill renames worth having) is not measured in this environment.

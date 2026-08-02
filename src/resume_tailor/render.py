@@ -16,6 +16,7 @@ from docxtpl import DocxTemplate, RichText
 
 from . import config, convert
 from .data import MasterResume
+from .template_profile import ContactField, active_layout
 
 #: Word renders hyperlinks in this blue by convention; matching it keeps a rendered
 #: project link visually identical to the one in the original export.
@@ -162,30 +163,55 @@ def _education_details(edu) -> list[str]:
     return details
 
 
-def _contact_richtext(resume: MasterResume, tpl: DocxTemplate) -> RichText:
+def _contact_richtext(
+    resume: MasterResume,
+    tpl: DocxTemplate,
+    *,
+    field_order: list[ContactField] | None = None,
+    separator: str | None = None,
+) -> RichText:
     """Build the contact line as RichText with labelled LinkedIn/GitHub hyperlinks.
 
     Empty fields (and their separators) are omitted so a missing phone or GitHub does
-    not leave a dangling bullet. Labels are short ("LinkedIn", "GitHub") to keep the
+    not leave a dangling separator. Labels are short ("LinkedIn", "GitHub") to keep the
     centered line from wrapping when both profiles are present.
+
+    `field_order` / `separator` come from the active template profile when present;
+    otherwise the Google Docs defaults (`_CONTACT_SEP`, location→…→github) apply.
     """
     contact = resume.contact
+    order = field_order or [
+        "location",
+        "email",
+        "phone",
+        "linkedin",
+        "github",
+    ]
+    sep = _CONTACT_SEP if separator is None else separator
+
+    value_for: dict[str, tuple[str, str | None]] = {
+        "location": (contact.location.strip(), None),
+        "email": (contact.email.strip(), None),
+        "phone": (contact.phone.strip(), None),
+        "linkedin": ("LinkedIn", contact.linkedin.strip() or None),
+        "github": ("GitHub", contact.github.strip() or None),
+    }
+
     parts: list[tuple[str, str | None]] = []
-    if contact.location.strip():
-        parts.append((contact.location.strip(), None))
-    if contact.email.strip():
-        parts.append((contact.email.strip(), None))
-    if contact.phone.strip():
-        parts.append((contact.phone.strip(), None))
-    if contact.linkedin.strip():
-        parts.append(("LinkedIn", contact.linkedin.strip()))
-    if contact.github.strip():
-        parts.append(("GitHub", contact.github.strip()))
+    for key in order:
+        text, url = value_for[key]
+        if key in ("linkedin", "github"):
+            # Need both a label and a URL; skip when the URL is empty.
+            if not url:
+                continue
+            parts.append((text, url))
+        elif text:
+            parts.append((text, None))
 
     rt = RichText()
     for i, (text, url) in enumerate(parts):
         if i:
-            rt.add(_CONTACT_SEP)
+            rt.add(sep)
         if url:
             _add_hyperlink(rt, text, tpl.build_url_id(url))
         else:
@@ -199,6 +225,7 @@ def build_context(
     *,
     bullets: dict[str, str] | None = None,
     include_project_links: bool = True,
+    layout: dict | None = None,
 ) -> dict:
     """Assemble the Jinja context for the template.
 
@@ -213,7 +240,18 @@ def build_context(
     `include_project_links=False` suppresses the link label, its hyperlink, and the
     ` | ` separator that precedes them — same empty `RichText` a project with no link
     already produces.
+
+    `layout` is the active template profile summary from `template_profile.active_layout`
+    (contact separator/order + enabled sections). When omitted, the active profile on
+    disk is loaded, falling back to legacy defaults.
     """
+    layout = layout if layout is not None else active_layout()
+    enabled = layout.get("enabled") or {
+        "education": True,
+        "experience": True,
+        "projects": True,
+        "skills": True,
+    }
 
     def lines(source) -> list[str]:
         if bullets is None:
@@ -236,55 +274,69 @@ def build_context(
         )
 
     projects = []
-    for proj in resume.projects:
-        rendered = lines(proj.bullets)
-        if not rendered:
-            continue
+    if enabled.get("projects", True):
+        for proj in resume.projects:
+            rendered = lines(proj.bullets)
+            if not rendered:
+                continue
 
-        # Each project carries its own URL, so the link is built per entry rather than
-        # baked into the template — see scripts/build_template.py. The template uses a
-        # `{{r }}` RichText tag, so this must always be a RichText even when there is no
-        # URL: a bare string there would be injected as raw XML and break on any "&".
-        # The " | " separator is part of this RichText so it vanishes with the link;
-        # baking it into the tech run left a dangling pipe when links were suppressed.
-        link = RichText()
-        if include_project_links and proj.link:
-            link.add(" | ")
-            _add_hyperlink(
-                link,
-                proj.link,
-                tpl.build_url_id(proj.url) if proj.url else None,
+            # Each project carries its own URL, so the link is built per entry rather than
+            # baked into the template — see scripts/build_template.py. The template uses a
+            # `{{r }}` RichText tag, so this must always be a RichText even when there is no
+            # URL: a bare string there would be injected as raw XML and break on any "&".
+            # The " | " separator is part of this RichText so it vanishes with the link;
+            # baking it into the tech run left a dangling pipe when links were suppressed.
+            link = RichText()
+            if include_project_links and proj.link:
+                link.add(" | ")
+                _add_hyperlink(
+                    link,
+                    proj.link,
+                    tpl.build_url_id(proj.url) if proj.url else None,
+                )
+
+            projects.append(
+                {
+                    "name": proj.name,
+                    "tech": ", ".join(proj.tech),
+                    "link": link,
+                    "date": proj.date,
+                    "bullets": rendered,
+                }
             )
-
-        projects.append(
-            {
-                "name": proj.name,
-                "tech": ", ".join(proj.tech),
-                "link": link,
-                "date": proj.date,
-                "bullets": rendered,
-            }
-        )
 
     # Key is `entries`, never `items`: in Jinja, `group.items` resolves to the dict's
     # built-in method rather than the key, and rendering that method's repr injects
     # invalid markup into the document. Keep context keys clear of dict attribute names.
-    skills = [{"label": g.label, "entries": ", ".join(g.items)} for g in resume.skills]
+    skills = (
+        [{"label": g.label, "entries": ", ".join(g.items)} for g in resume.skills]
+        if enabled.get("skills", True)
+        else []
+    )
 
-    education = [
-        {
-            "school": edu.school,
-            "location": edu.location,
-            "dates": edu.dates,
-            "degree_line": _degree_line(edu),
-            "details": _education_details(edu),
-        }
-        for edu in resume.education
-    ]
+    education = (
+        [
+            {
+                "school": edu.school,
+                "location": edu.location,
+                "dates": edu.dates,
+                "degree_line": _degree_line(edu),
+                "details": _education_details(edu),
+            }
+            for edu in resume.education
+        ]
+        if enabled.get("education", True)
+        else []
+    )
 
     return {
         "name": resume.contact.name,
-        "contact": _contact_richtext(resume, tpl),
+        "contact": _contact_richtext(
+            resume,
+            tpl,
+            field_order=layout.get("contact_field_order"),
+            separator=layout.get("contact_separator"),
+        ),
         "education": education,
         "experience": experience,
         "projects": projects,

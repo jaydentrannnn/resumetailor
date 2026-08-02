@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from resume_tailor import config, facets
-from resume_tailor.data import Education, MasterResume, Project, load
+from resume_tailor.data import Education, MasterResume, Project, SkillGroup, load
 from resume_tailor.facets import (
     FacetResult,
     FacetSelection,
@@ -16,6 +16,7 @@ from resume_tailor.facets import (
     labels_are_equivalent,
     project_header_tech_budget,
     rename_is_jd_anchored,
+    rename_preserves_claim,
     select_facets,
 )
 from resume_tailor.jd import JobRequirements, Keyword
@@ -109,6 +110,50 @@ def test_rename_rejects_sql_to_mysql():
     assert not _alnum_compact("sql").startswith(_alnum_compact("mysql"))
 
 
+def test_rename_accepts_acronym_embedded_in_phrase():
+    """An acronym alongside other words expands too, not just a bare acronym label.
+
+    Added for the skills rename feature (word-by-word `_aligns`), but the guard lives
+    on the shared `labels_are_equivalent`, so project tech tags benefit as well.
+    """
+    assert labels_are_equivalent(
+        "RAG pipelines", "retrieval-augmented generation pipelines"
+    )
+    assert labels_are_equivalent(
+        "retrieval-augmented generation pipelines", "RAG pipelines"
+    )
+    # Still rejects when the phrase's other words don't line up at all.
+    assert not labels_are_equivalent("RAG pipelines", "relational database systems")
+
+
+def test_project_rename_accepts_acronym_expansion():
+    """Project tech tags can rename an embedded acronym to its spelled-out JD form."""
+    resume = MasterResume(
+        contact={"name": "X", "email": "x@y.z"},
+        education=[],
+        experience=[],
+        projects=[_project(tech=["RAG pipelines"])],
+        skills=[],
+    )
+    raw = FacetSelection(
+        projects=[
+            ProjectTech(
+                id="proj_x",
+                tech=["RAG pipelines"],
+                renamed={"RAG pipelines": "retrieval-augmented generation pipelines"},
+            )
+        ]
+    )
+    reqs = _requirements(
+        (
+            "retrieval-augmented generation pipelines",
+            "retrieval-augmented generation pipelines",
+        )
+    )
+    result = finalise_selection(resume, raw, reqs)
+    assert result.projects["proj_x"] == ["retrieval-augmented generation pipelines"]
+
+
 def test_finalise_drops_out_of_pool_tags():
     """Tags the model invents are discarded with a warning."""
     resume = MasterResume(
@@ -181,10 +226,12 @@ def test_apply_does_not_mutate_input():
     resume = load()
     original_tech = [list(p.tech) for p in resume.projects]
     original_coursework = [list(e.coursework) for e in resume.education]
+    original_skills = [list(g.items) for g in resume.skills]
     result = budget_only(resume, _requirements(("Python", "python")))
     updated = apply(resume, result)
     assert [list(p.tech) for p in resume.projects] == original_tech
     assert [list(e.coursework) for e in resume.education] == original_coursework
+    assert [list(g.items) for g in resume.skills] == original_skills
     assert updated is not resume
 
 
@@ -236,13 +283,20 @@ def test_select_facets_uses_fake_client(monkeypatch, tmp_path):
         ],
         experience=[],
         projects=[_project(id="proj_a", tech=["Python", "FastAPI", "Docker", "React"])],
-        skills=[],
+        skills=[SkillGroup(label="AI/ML", items=["Postgres", "RAG pipelines"])],
     )
-    reqs = _requirements(("Python", "python"), ("FastAPI", "fastapi"))
+    reqs = _requirements(
+        ("Python", "python"),
+        ("FastAPI", "fastapi"),
+        ("PostgreSQL", "postgresql"),
+    )
+
+    captured_kwargs = {}
 
     class _FakeMessages:
         def parse(self, **kwargs):
             assert kwargs["output_format"] is FacetSelection
+            captured_kwargs.update(kwargs)
 
             class _Resp:
                 parsed_output = FacetSelection(
@@ -250,6 +304,7 @@ def test_select_facets_uses_fake_client(monkeypatch, tmp_path):
                         ProjectTech(id="proj_a", tech=["Python", "FastAPI", "Docker"]),
                     ],
                     coursework=["Machine Learning", "Linear Algebra"],
+                    skill_renames={"Postgres": "PostgreSQL"},
                 )
                 stop_reason = "end_turn"
 
@@ -263,8 +318,13 @@ def test_select_facets_uses_fake_client(monkeypatch, tmp_path):
     result = select_facets(resume, reqs, use_cache=False)
     assert result.projects["proj_a"][:2] == ["Python", "FastAPI"]
     assert "Machine Learning" in result.coursework
+    assert result.skills == [["PostgreSQL", "RAG pipelines"]]
     # Cache written for a subsequent hit.
     assert list(tmp_path.glob("*.facets.json"))
+
+    user_content = captured_kwargs["messages"][0]["content"]
+    assert "AI/ML" in user_content
+    assert "RAG pipelines" in user_content
 
 
 def test_apply_writes_coursework_on_first_education_only():
@@ -293,3 +353,196 @@ def test_apply_writes_coursework_on_first_education_only():
     updated = apply(resume, result)
     assert updated.education[0].coursework == ["ML", "IR"]
     assert updated.education[1].coursework == []
+
+
+def _skills_resume(*groups: SkillGroup) -> MasterResume:
+    """Minimal resume carrying only the given skill groups."""
+    return MasterResume(
+        contact={"name": "X", "email": "x@y.z"},
+        education=[],
+        experience=[],
+        projects=[],
+        skills=list(groups),
+    )
+
+
+def test_skill_rename_rejects_phrase_narrowing():
+    """A multi-word item cannot be renamed down to one of its own words."""
+    resume = _skills_resume(
+        SkillGroup(label="AI/ML", items=["hybrid retrieval & reranking"])
+    )
+    raw = FacetSelection(skill_renames={"hybrid retrieval & reranking": "retrieval"})
+    reqs = _requirements(("retrieval", "retrieval"))
+    result = finalise_selection(resume, raw, reqs)
+    assert result.skills == [["hybrid retrieval & reranking"]]
+    assert any("rejected skill rename" in w for w in result.warnings)
+
+
+def test_skill_rename_rejects_prefix_narrowing():
+    """Alphanumeric-prefix equivalence must not license dropping the rest of a phrase."""
+    resume = _skills_resume(
+        SkillGroup(
+            label="AI/ML",
+            items=["retrieval eval (Recall@k, MRR, LLM-as-judge)"],
+        )
+    )
+    raw = FacetSelection(
+        skill_renames={"retrieval eval (Recall@k, MRR, LLM-as-judge)": "retrieval"}
+    )
+    reqs = _requirements(("retrieval", "retrieval"))
+    result = finalise_selection(resume, raw, reqs)
+    assert result.skills == [["retrieval eval (Recall@k, MRR, LLM-as-judge)"]]
+    assert any("rejected skill rename" in w for w in result.warnings)
+
+
+def test_skill_rename_rejects_subspan_acronym():
+    """An acronym formed from only part of a phrase must not replace the whole item."""
+    resume = _skills_resume(
+        SkillGroup(label="AI/ML", items=["hybrid retrieval & reranking"])
+    )
+    raw = FacetSelection(skill_renames={"hybrid retrieval & reranking": "HR"})
+    reqs = _requirements(("HR", "HR"))
+    result = finalise_selection(resume, raw, reqs)
+    assert result.skills == [["hybrid retrieval & reranking"]]
+    assert any("rejected skill rename" in w for w in result.warnings)
+
+
+def test_skill_rename_rejects_compound_narrowing():
+    """`/` separates distinct claims, so one side cannot stand in for the whole item."""
+    resume = _skills_resume(
+        SkillGroup(label="Tools & Languages", items=["Scikit-learn/XGBoost"])
+    )
+    raw = FacetSelection(skill_renames={"Scikit-learn/XGBoost": "scikit-learn"})
+    reqs = _requirements(("scikit-learn", "scikit-learn"))
+    result = finalise_selection(resume, raw, reqs)
+    assert result.skills == [["Scikit-learn/XGBoost"]]
+    assert any("rejected skill rename" in w for w in result.warnings)
+
+
+def test_skill_rename_accepts_jd_anchored_synonym():
+    """A single-word item renames toward the JD's spelling; other groups stay untouched."""
+    resume = _skills_resume(
+        SkillGroup(label="Tools & Languages", items=["Postgres"]),
+        SkillGroup(label="Languages", items=["English (fluent)"]),
+    )
+    raw = FacetSelection(skill_renames={"Postgres": "PostgreSQL"})
+    reqs = _requirements(("PostgreSQL", "postgresql"))
+    result = finalise_selection(resume, raw, reqs)
+    assert result.skills == [["PostgreSQL"], ["English (fluent)"]]
+
+
+def test_skill_rename_accepts_longer_form_of_every_word():
+    """Every source word growing to a longer form of itself is accepted."""
+    resume = _skills_resume(SkillGroup(label="AI/ML", items=["fuzzy matching"]))
+    raw = FacetSelection(skill_renames={"fuzzy matching": "fuzzy string matching"})
+    reqs = _requirements(("fuzzy string matching", "fuzzy string matching"))
+    result = finalise_selection(resume, raw, reqs)
+    assert result.skills == [["fuzzy string matching"]]
+
+
+def test_skill_rename_accepts_acronym_expansion():
+    """Spelling out an embedded acronym is the case this feature exists for."""
+    resume = _skills_resume(SkillGroup(label="AI/ML", items=["RAG pipelines"]))
+    raw = FacetSelection(
+        skill_renames={
+            "RAG pipelines": "retrieval-augmented generation pipelines"
+        }
+    )
+    reqs = _requirements(
+        (
+            "retrieval-augmented generation pipelines",
+            "retrieval-augmented generation pipelines",
+        )
+    )
+    result = finalise_selection(resume, raw, reqs)
+    assert result.skills == [["retrieval-augmented generation pipelines"]]
+
+
+def test_skill_rename_rejected_when_it_adds_a_line():
+    """A rename that would push a group onto an extra rendered line is discarded."""
+    label = "X"
+    prefix_len = len(f"{label}: ")
+    old_item = "A" * (config.CHARS_PER_LINE - prefix_len)
+    new_item = old_item + "B"  # one character over the line boundary
+
+    group = SkillGroup(label=label, items=[old_item])
+    baseline = config.line_span(config.skill_group_line(label, [old_item]))
+    assert config.line_span(config.skill_group_line(label, [new_item])) > baseline
+
+    reqs = _requirements((new_item, new_item))
+    warnings: list[str] = []
+    kept = facets._resolve_skill_group(
+        group,
+        {facets._norm_ws(old_item): new_item},
+        reqs,
+        warnings=warnings,
+    )
+    assert kept == [old_item]
+    assert any("would add a line" in w for w in warnings)
+
+
+def test_skill_renames_preserve_count_and_order():
+    """A mix of valid, rejected, and unmatched renames never reorders or drops items."""
+    resume = _skills_resume(
+        SkillGroup(label="Tools", items=["Postgres", "SQL", "Docker"])
+    )
+    raw = FacetSelection(
+        skill_renames={
+            "Postgres": "PostgreSQL",  # valid
+            "SQL": "Snowflake",  # rejected: not equivalent
+            "Unmatched Item": "Whatever",  # matches no item
+        }
+    )
+    reqs = _requirements(("PostgreSQL", "postgresql"), ("Snowflake", "snowflake"))
+    result = finalise_selection(resume, raw, reqs)
+    assert result.skills == [["PostgreSQL", "SQL", "Docker"]]
+    assert any("rejected skill rename" in w and "Snowflake" in w for w in result.warnings)
+    assert any("matched no item" in w for w in result.warnings)
+
+
+def test_skill_rename_rejects_duplicate_item():
+    """A rename that would duplicate an item already in the group is rejected."""
+    resume = _skills_resume(
+        SkillGroup(label="Tools", items=["Postgres", "PostgreSQL"])
+    )
+    raw = FacetSelection(skill_renames={"Postgres": "PostgreSQL"})
+    reqs = _requirements(("PostgreSQL", "postgresql"))
+    result = finalise_selection(resume, raw, reqs)
+    assert result.skills == [["Postgres", "PostgreSQL"]]
+    assert any("would duplicate an existing item" in w for w in result.warnings)
+
+
+def test_skill_rename_unknown_item_warns():
+    """A rename key that matches no item in any group warns and changes nothing."""
+    resume = _skills_resume(SkillGroup(label="Tools", items=["Python"]))
+    raw = FacetSelection(skill_renames={"Not A Real Item": "Something"})
+    reqs = _requirements(("Something", "something"))
+    result = finalise_selection(resume, raw, reqs)
+    assert result.skills == [["Python"]]
+    assert any("matched no item" in w for w in result.warnings)
+
+
+def test_budget_only_leaves_skills_untouched():
+    """--no-facets path leaves every skill item exactly as in the master resume."""
+    resume = load()
+    original = [list(g.items) for g in resume.skills]
+    result = budget_only(resume, _requirements(("Python", "python")))
+    updated = apply(resume, result)
+    assert [list(g.items) for g in updated.skills] == original
+
+
+def test_cache_key_covers_skill_pools():
+    """Changing a skill item, or the char budget, changes the facets cache key."""
+    reqs = _requirements(("Python", "python"))
+    base = _skills_resume(SkillGroup(label="Tools", items=["Python"]))
+    changed = _skills_resume(SkillGroup(label="Tools", items=["Java"]))
+    assert facets._cache_path(base, reqs) != facets._cache_path(changed, reqs)
+
+    path_before = facets._cache_path(base, reqs)
+    original_chars_per_line = config.CHARS_PER_LINE
+    try:
+        config.CHARS_PER_LINE = original_chars_per_line + 1
+        path_after = facets._cache_path(base, reqs)
+    finally:
+        config.CHARS_PER_LINE = original_chars_per_line
+    assert path_before != path_after

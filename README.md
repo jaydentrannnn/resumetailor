@@ -18,11 +18,20 @@ copy .env.example .env
 # Edit .env — add ANTHROPIC_API_KEY for the default Claude setup
 ```
 
-Generate the tagged template once (or after replacing the export):
+Generate the tagged template once (or after replacing the export). Prefer the **Template**
+tab in the web UI (analyze → confirm mapping → install; optional calibrate). Each successful
+install is saved under a label in **Saved templates** so you can switch without re-uploading
+(max 20). The CLI legacy path still expects the original all-caps section titles:
 
 ```powershell
 python scripts\build_template.py
+# or with an explicit mapping:
+python scripts\build_template.py --from path\to\export.docx --profile templates\template_profile.json
+python scripts\build_template.py --legacy
 ```
+
+After any template change, run `python scripts\calibrate.py` (or use the UI calibrate
+checkbox on install/activate) so fit constants match.
 
 ---
 

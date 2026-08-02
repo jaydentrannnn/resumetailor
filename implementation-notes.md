@@ -516,3 +516,112 @@ to `minimax-m3:cloud` unless `OLLAMA_MODEL` or a per-run model override is set.
   architecture diagram includes facets before the fit loop.
 - **Follow-up:** Widen tech/coursework pools in `master_resume.json` for live usefulness;
   optionally re-calibrate `PROJECT_HEADER_GAP` after a full-master render.
+
+## 2026-08-01 ? Flexible single-column template import
+
+- **Decision:** Added analyze ? confirm ? install for single-column paragraph DOCX
+  resumes. Mapping lives in `templates/template_profile.json`. Build logic moved to
+  `src/resume_tailor/template_build.py`; `scripts/build_template.py` is a thin CLI.
+  Experience required; Education / Projects / Skills optional (omitted, never invented).
+- **Why:** Hard-coded `EDUCATION` / `WORK EXPERIENCES` / ? headings and baked-in ` | `
+  separators rejected otherwise-valid single-column exports.
+- **Tradeoff:** Tables, text boxes, multi-column layouts, and manual bullet glyphs are
+  still blocking. Header tagging reconstructs from field spans + literal interstitial
+  text (safer than sequential in-place run edits when replacement length changes).
+  Spacing/bullet-font normalization remain profile flags (default on, matching legacy).
+  Calibration stays manual (`calibrate.py` + restart).
+- **Runtime:** Analyze/install use no LLM. Staged profile installs smoke-render (DOCX
+  only, no PDF) before committing baseline + profile + tagged template. Legacy upload
+  without a profile keeps the previous zero-arg `_run_build` seam for tests.
+- **Spec delta:** Template tab is now a wizard; `GET /api/template` includes profile
+  summary; `POST /api/template/analyze` is new; `POST /api/template` accepts optional
+  multipart `profile` JSON.
+- **Follow-up:** Owner should install once through the wizard on the current export to
+  write `template_profile.json`, then calibrate. Vitest covers section-toggle helpers only.
+
+## 2026-08-01 ? Optional calibrate-after-install from the Template tab
+
+- **Decision:** Multipart `calibrate=true` on `POST /api/template` runs
+  `resume_tailor.calibrate.run()` after a successful install, then
+  `config.reload_calibration()` so the live process picks up new CHARS_PER_LINE /
+  LINES_PER_PAGE without a restart. UI checkbox defaults **on**.
+- **Why:** User asked for one upload path that does build + calibrate. Leaving it optional
+  keeps fast installs when only the mapping changed.
+- **Tradeoff:** Owner-specific anchor checks soft-fail (warnings in the log) so a different
+  layout does not undo a good build. Calibration still needs Word/LibreOffice and can take
+  tens of seconds; failures leave the installed template intact.
+- **Spec delta:** `scripts/calibrate.py` is now a thin wrapper over the package module.
+
+## 2026-08-02 ? Named template library
+
+- **Decision:** Successful Template-tab installs snapshot baseline + tagged (+ optional
+  profile) under `templates/library/<id>/` with a user label. Live paths remain
+  single-slot; activate copies a snapshot in. Cap 20; unique labels (case-insensitive).
+  Empty library seeds `Default` from the current live files.
+- **Why:** User asked for a named library to choose among uploaded templates without
+  re-uploading.
+- **Tradeoff:** No per-template calibration files ? activate can re-run calibrate into
+  the global backend file. Orphan live content that is not yet in the library is
+  auto-snapshotted before overwrite/activate when space allows. `templates/backups/`
+  stays install-rollback only and is not exposed in the UI.
+- **Spec delta:** New APIs `GET/PATCH/DELETE /api/template/library`,
+  `POST .../activate`; multipart `label` on `POST /api/template`;
+  `TemplateInfo` includes `active_library_id` / `active_label`.
+
+## 2026-08-02 ? Project header `name | tech | Github` span overlap
+
+- **Decision:** `_header_fields_from_text` only maps the first two pipe segments to
+  primary/secondary. Trailing segments (project link labels) stay unclaimed so link
+  detection can own them without overlapping `tech`.
+- **Why:** Live resume line
+  `Text-to-SQL ? | GRPO, ?, SQL | Github\\tdates` made tech include `| Github`, then
+  link span `Github` overlapped and staged install raised.
+- **Tradeoff:** A third pipe field on experience/education headers is ignored (those
+  sections do not use a link field). Acceptable for the single-column contract.
+
+## 2026-08-02 - Profile-mode header tagging: bold bleed, lost tab, doubled link separator
+
+- **Decision:** Replaced `_tag_mapped_header`'s flatten-into-one-run splice with a
+  segment-based rebuild (new `docx_text.py` + `template_build.build_segments` /
+  `rebuild_paragraph` / `retag_paragraph`). Each surviving literal or tag now gets its
+  own run cloned from whichever source run covered that character offset in the
+  uploaded document, instead of everything collapsing into `paragraph.runs[0]`.
+  `build_projects_profile` no longer calls `strip_hyperlinks` before tagging, and the
+  `" | "` before a project link is now dropped by the builder (keyed off which field
+  owns a render-supplied separator, via a punctuation character class rather than a
+  fixed string) instead of being emitted into the template at all.
+- **Why:** Three live bugs, confirmed against the user's own uploaded template
+  (`templates/library/.../VU TUONG HUAN TRAN Resume.docx`): project dates lost their
+  right alignment, the whole skills line rendered bold, and project tech tags rendered
+  bold with a phantom/doubled `|` before the GitHub link. Bold bleed: `_tag_mapped_header`
+  and `build_skills_profile` both wrote the whole reconstructed line into run 0 and
+  deleted the rest, so the bold company/label run's formatting leaked over everything —
+  same failure mode the 2026-07-26 skills-bold fix addressed in *legacy* mode, just not
+  yet ported to profile mode. Lost tab: `python-docx`'s `Paragraph.text` includes
+  hyperlink visible text while `Paragraph.runs` excludes hyperlink-nested runs;
+  stripping the hyperlink *before* tagging shortened the text the profile's spans were
+  measured against, sliding every later offset left until the tab character fell inside
+  the link's span and was deleted along with it. Phantom separator: `render.py` already
+  puts `" | "` inside the link `RichText` (so a link-less project doesn't render a
+  dangling pipe), but `_tag_mapped_header` also emitted the literal `" | "` between the
+  tech and link spans verbatim, so a project with a link rendered `Tech | | Github`.
+- **Tradeoff:** Experience/education profile headers that used to collapse into 1-2 runs
+  now produce one run per tagged field (functionally identical in Word, more runs on
+  disk — pinned by `test_profile_and_legacy_headers_agree`). `validate_profile_against_doc`
+  is now stricter — checks every mapped span (previously only `company`/`title`), and
+  rejects a span that straddles a tab or overlaps another — so a previously-installed
+  `templates/library/` profile that silently produced a garbled template may now fail
+  re-validation on install. Intentional (fail loudly beats a silent garble), but worth
+  knowing if an old saved template stops installing.
+- **Impact:** Also de-hardcoded the project link-label detection in `template_analyze.py`
+  — it now reads the hyperlink's own visible text (`docx_text.hyperlink_char_spans`)
+  instead of matching `("Github","GitHub","Demo","Link","Live")`, and fixed a crash where
+  a link-but-no-tech header (`"Name | Github\tdate"`) made `tech` and `link` claim the
+  same span. Verified by rebuilding the user's real saved profile
+  (`templates/library/20260802T073928Z-8bd4/`) and diffing run structure against the
+  known-good legacy build; live template files (`templates/main_template.docx`,
+  currently the legacy "Default") were left untouched per the user's choice — re-upload
+  through the Template tab to pick up the fix. 15 new tests across
+  `tests/test_template_build.py` / `tests/test_template_analyze.py`; full suite 272 passed.
+- **Spec delta:** None — bug fix within the documented profile-mode contract
+  (CLAUDE.md "Template generation").

@@ -53,9 +53,17 @@ MASTER_RESUME_PATH = DATA_DIR / "master_resume.json"
 #: fixes belong in the build script so they survive the next resume update.
 DEFAULT_TEMPLATE_PATH = TEMPLATES_DIR / "main_template.docx"
 
-#: The user's own resume as exported from Google Docs. Strictly read-only: it is both
-#: the build script's input and the visual baseline every render is compared against.
+#: The user's own resume as exported from Google Docs / Word. Strictly read-only: it is
+#: both the build script's input and the visual baseline every render is compared against.
 BASELINE_TEMPLATE_PATH = TEMPLATES_DIR / "original_export.docx"
+
+#: Confirmed field/section mapping for the active baseline (analyze → confirm → install).
+#: Absent when the template was built with the legacy hard-coded heading path.
+TEMPLATE_PROFILE_PATH = TEMPLATES_DIR / "template_profile.json"
+
+#: Named template snapshots (baseline + tagged + optional profile). Live paths stay single-slot;
+#: activate copies a library entry into the live files.
+TEMPLATE_LIBRARY_DIR = TEMPLATES_DIR / "library"
 
 
 def anthropic_api_key() -> str:
@@ -511,6 +519,17 @@ def _load_calibration(backend: str) -> tuple[int, int, str]:
 #: template, or the converter — these numbers describe one engine rendering one document.
 CHARS_PER_LINE, LINES_PER_PAGE, CALIBRATION_SOURCE = _load_calibration(PDF_BACKEND)
 
+
+def reload_calibration() -> tuple[int, int, str]:
+    """Re-read fit constants from disk into the module-level globals.
+
+    Needed after a web-triggered calibrate so the running process picks up new values
+    without a server restart. Returns the same triple as `_load_calibration`.
+    """
+    global CHARS_PER_LINE, LINES_PER_PAGE, CALIBRATION_SOURCE
+    CHARS_PER_LINE, LINES_PER_PAGE, CALIBRATION_SOURCE = _load_calibration(PDF_BACKEND)
+    return CHARS_PER_LINE, LINES_PER_PAGE, CALIBRATION_SOURCE
+
 #: Below this fraction of the target page's capacity, a page reads as half-empty and the
 #: fit loop restores bullets rather than accepting the result.
 #:
@@ -699,6 +718,18 @@ def last_line_fill(text: str) -> int:
     """
     remainder = len(text) % CHARS_PER_LINE
     return remainder or min(len(text), CHARS_PER_LINE)
+
+
+def skill_group_line(label: str, items: list[str]) -> str:
+    """The text one skills group renders as, for line-budget estimation.
+
+    Shared so `fit._fixed_overhead_lines` and `facets._resolve_skill_group` cannot drift:
+    one measures the overhead, the other must not grow it. Mirrors the join in
+    `render.build_context`'s skills block. The ": " separator is hardcoded here rather
+    than read from `template_profile.SkillsMapping.separator`; if that ever needs
+    honouring, this is the one place it lands.
+    """
+    return f"{label}: {', '.join(items)}"
 
 
 #: A final line filled below this fraction is a widow. 0.30 (~30 characters) sits clear of

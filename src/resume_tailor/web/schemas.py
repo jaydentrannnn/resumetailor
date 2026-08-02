@@ -179,6 +179,16 @@ class CalibrationInfo(BaseModel):
     message: str | None = None
 
 
+class TemplateProfileSummary(BaseModel):
+    """Active template-profile metadata shown on the Template tab."""
+
+    exists: bool = False
+    schema_version: int | None = None
+    enabled: dict[str, bool] = Field(default_factory=dict)
+    warnings: list[str] = Field(default_factory=list)
+    contact_separator: str | None = None
+
+
 class TemplateInfoResponse(BaseModel):
     """Current baseline + tagged template state for the Template tab."""
 
@@ -189,6 +199,10 @@ class TemplateInfoResponse(BaseModel):
     bullets: int = 0
     calibration: CalibrationInfo
     preview_available: bool = False
+    profile: TemplateProfileSummary = Field(default_factory=TemplateProfileSummary)
+    #: Active named-library entry, when the live slot was installed/activated from the library.
+    active_library_id: str | None = None
+    active_label: str | None = None
 
 
 class TemplateBuildResponse(BaseModel):
@@ -197,3 +211,74 @@ class TemplateBuildResponse(BaseModel):
     ok: bool
     log: str = ""
     info: TemplateInfoResponse | None = None
+
+
+class TemplateLibraryEntry(BaseModel):
+    """One saved template in the named library."""
+
+    id: str
+    label: str
+    created_at: str
+    source_filename: str | None = None
+    size_bytes: int | None = None
+    has_profile: bool = False
+    is_active: bool = False
+
+
+class TemplateLibraryResponse(BaseModel):
+    """List of named templates plus which one is currently live."""
+
+    entries: list[TemplateLibraryEntry] = Field(default_factory=list)
+    active_id: str | None = None
+
+
+class TemplateLibraryRenameRequest(BaseModel):
+    """Rename a library entry."""
+
+    label: str
+
+
+class TemplateIssueOut(BaseModel):
+    """One analyzer finding (blocking or advisory)."""
+
+    code: str
+    message: str
+    blocking: bool = False
+
+
+class TemplateParagraphOut(BaseModel):
+    """Paragraph preview for the mapping wizard."""
+
+    id: int
+    text: str
+    is_bullet: bool = False
+    is_heading_candidate: bool = False
+    has_tab: bool = False
+    has_hyperlink: bool = False
+    run_count: int = 0
+    preview: str = ""
+
+
+class TemplateSectionOut(BaseModel):
+    """Detected section heading candidate."""
+
+    key: str
+    heading_paragraph_id: int
+    heading_text: str
+    body_start: int
+    body_end: int
+    entry_count: int = 0
+    bullet_count: int = 0
+    confidence: float = 0.0
+    aliases_matched: str = ""
+
+
+class TemplateAnalyzeResponse(BaseModel):
+    """Preflight analysis for an uploaded baseline (no disk writes)."""
+
+    source_sha256: str
+    paragraphs: list[TemplateParagraphOut]
+    sections: list[TemplateSectionOut]
+    suggested_profile: dict[str, Any] | None = None
+    issues: list[TemplateIssueOut] = Field(default_factory=list)
+    ready: bool = False
