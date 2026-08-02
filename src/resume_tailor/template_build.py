@@ -378,11 +378,43 @@ def normalize_bullet_numbering(doc) -> None:
             rPr.insert(0, copy.deepcopy(ref_rfonts))
 
 
+#: Most fonts (Times New Roman included) draw U+25CF "●" as a near-full-em disc, not
+#: the small list dot a dedicated symbol font would give it. Pinning a symbol font at the
+#: numbering level does not help: the paragraph mark's own direct rFonts (written by every
+#: Google Docs export, on every bullet paragraph) takes precedence over the numbering
+#: level's rPr, so the marker always renders in the body font regardless. Shrinking the
+#: paragraph mark's own size sidesteps that precedence fight entirely, and works in
+#: whatever font actually wins.
+BULLET_MARKER_SIZE_RATIO = 0.8 * (2 / 3)  # ~0.53; a further 2/3 pass on top of the first cut
+_MIN_MARKER_HALF_POINTS = 8  # 4pt floor so a tiny body font can't shrink the dot to nothing
+
+
+def shrink_bullet_marker(paragraph: Paragraph) -> None:
+    """Scale down the paragraph-mark font size that governs the bullet glyph.
+
+    The paragraph mark's `rPr` (inside `pPr`, not the visible runs) formats only the
+    numbering symbol, so this changes the dot's size without touching the bullet's own
+    text size.
+    """
+    pPr = paragraph._p.find(qn("w:pPr"))
+    rPr = pPr.find(qn("w:rPr")) if pPr is not None else None
+    sz = rPr.find(qn("w:sz")) if rPr is not None else None
+    if sz is None or not sz.get(qn("w:val")):
+        return
+    body_size = int(sz.get(qn("w:val")))
+    marker_size = str(max(_MIN_MARKER_HALF_POINTS, round(body_size * BULLET_MARKER_SIZE_RATIO)))
+    sz.set(qn("w:val"), marker_size)
+    sz_cs = rPr.find(qn("w:szCs"))
+    if sz_cs is not None:
+        sz_cs.set(qn("w:val"), marker_size)
+
+
 def retarget_bullet(paragraph: Paragraph, num_id: str | None) -> None:
     """Use the canonical small-marker list id and drop any right-indent inflation."""
     if num_id is not None:
         set_num_id(paragraph, num_id)
     strip_right_indent(paragraph)
+    shrink_bullet_marker(paragraph)
 
 
 def pick_bullet_prototype(entries: list[list[Paragraph]]) -> Paragraph:
@@ -686,6 +718,8 @@ def build_skills(doc, paragraphs: list[Paragraph]) -> None:
     set_run_text(body, " {{ group.entries }}")
     for extra in list(prototype.runs[2:]):
         prototype._p.remove(extra._r)
+
+    shrink_bullet_marker(prototype)
 
     anchor = lines[0]
     anchor._p.addprevious(make_para("{%p for group in skills %}"))
@@ -1203,6 +1237,7 @@ def build_skills_profile(doc, profile: TemplateProfile) -> None:
         key=lambda it: it[0],
     )
     retag_paragraph(prototype, items)
+    shrink_bullet_marker(prototype)
 
     anchor = prototype
     anchor._p.addprevious(make_para("{%p for group in skills %}"))

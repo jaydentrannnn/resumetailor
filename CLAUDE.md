@@ -125,7 +125,12 @@ cd frontend; npm install; npm run build; cd ..
 ```
 
 Open http://127.0.0.1:8000. For a hot-reload SPA, run `npm run dev` in `frontend/`
-(proxies `/api` to port 8000) alongside uvicorn.
+(proxies `/api` to port 8000) alongside uvicorn. From `frontend/`: `npm run lint`
+(oxlint) and `npm run test` (vitest — coverage is thin, one spec file today) are the
+frontend equivalents of `pytest`.
+
+Run a single backend test with `pytest tests/test_rewrite.py::test_name` or
+`pytest tests/test_rewrite.py -k pattern`.
 
 ### Docker
 
@@ -137,6 +142,10 @@ the container so LibreOffice gets its own fit constants:
 docker compose up --build
 docker compose run --rm app python scripts/calibrate.py
 ```
+
+The container uses LibreOffice for PDF measurement, not Word. A host-machine Ollama or LM
+Studio server is reachable from inside the container via `host.docker.internal`, already
+set as the default `OLLAMA_BASE_URL` / `LMSTUDIO_BASE_URL` in `docker-compose.yml`.
 
 `tailor.py` takes `--out`, `--pages`, `--experience`, `--projects`, `--template`,
 `--no-cache` (JD extractions and relevance tables are cached to `output/` and reused across
@@ -153,19 +162,23 @@ It also selects the backend, which is what makes bulk applying affordable:
 
 ```powershell
 python tailor.py --jd jd.txt                     # claude (default, unchanged)
-python tailor.py --jd jd.txt --model hybrid      # rank/expand on Ollama, rewrite on Claude
-python tailor.py --jd jd.txt --model ollama      # all four stages on Ollama Cloud
+python tailor.py --jd jd.txt --model hybrid      # rank/expand/facets on Ollama, rewrite on Claude
+python tailor.py --jd jd.txt --model ollama      # all stages on Ollama Cloud
+python tailor.py --jd jd.txt --model lmstudio    # all stages on a local LM Studio server
 python tailor.py --jd jd.txt --model ollama --rewrite-model claude-sonnet-5
 python tailor.py --jd jd.txt --expand-model ollama   # override expand only
 python tailor.py --jd jd.txt --effort medium     # per-stage default is low/low/medium/medium
 ```
 
-`--model` takes a profile (`claude`, `ollama`, `hybrid`) or a spec
-`provider:model[@base_url]`. **The spec splits on the first colon only** — the default
-Ollama tag is `gemma4:cloud`, so `ollama:gemma4:cloud` has to keep the second colon in
-the model name. `ollama` is an alias for the OpenAI-compatible provider pointed at
-`OLLAMA_BASE_URL`, so the same path reaches local Ollama, Ollama Cloud, vLLM, Groq,
-OpenRouter, GLM and Kimi.
+`--model` takes a profile (`config.MODEL_PROFILES`: `claude`, `ollama`, `lmstudio`,
+`hybrid`) or a spec `provider:model[@base_url]`. **The spec splits on the first colon
+only** — the default Ollama tag is `gemma4:cloud`, so `ollama:gemma4:cloud` has to keep
+the second colon in the model name. `ollama` is an alias for the OpenAI-compatible
+provider pointed at `OLLAMA_BASE_URL`, so the same path reaches local Ollama, Ollama
+Cloud, vLLM, Groq, OpenRouter, GLM and Kimi. `lmstudio` is the same OpenAI-compatible path
+pointed at `LMSTUDIO_BASE_URL` instead — LM Studio ids look like `google/gemma-4-12b`
+(no colon), so a bare override under the `lmstudio` profile is rebound to stay on that
+provider rather than silently falling back to Ollama (`config.resolve`).
 
 To regenerate the template from a **new** Google Docs export, replace the baseline
 first — `build_template.py` reads only `templates/original_export.docx` and will otherwise
@@ -346,7 +359,12 @@ Key structural facts that span files:
   queues jobs into the same `jd` → `rewrite` → `facets` → `fit` → `render` path. Jobs run
   **one at a time** because `config._ACTIVE` is process-wide; concurrent model profiles
   would race. The SPA lives in `frontend/` and is served by FastAPI from `frontend/dist`
-  in production.
+  in production. `events.py` defines a one-way `ProgressEvent` (stage, message, structured
+  `detail`) that pipeline functions emit through an optional callback; the CLI ignores it
+  and `web/jobs.py` forwards it to the browser so a run that takes a minute-plus can show
+  more than "working". A callback cannot influence the run, and every emitting call site
+  keeps working unchanged when `on_event` is `None`, which is what keeps this out of the
+  existing (callback-free) tests.
 
 ## Template generation
 
@@ -413,6 +431,19 @@ yet was broken. Most are covered by regression tests in `tests/test_render.py`; 
   spacing cannot be preserved in principle (any bullet may render where another's used to),
   and Google Docs reintroduced this once already. Normalising *downward* is the invariant;
   the mixing is just the symptom that revealed it.
+- **A numbering level's `rPr` (font, in particular) is not what actually renders the
+  bullet glyph.** Google Docs writes direct formatting on every bullet paragraph's own
+  mark (`w:pPr/w:rPr`), and that takes precedence over the abstract numbering level's
+  `rPr` in `numbering.xml` — so pinning a symbol font there (`normalize_bullet_numbering`,
+  intended to force `Noto Sans Symbols`) has no visible effect; the marker still renders
+  in whatever body font the paragraph carries. Most fonts draw `●` (U+25CF) as a near-
+  full-em disc, not a small list dot, which is why bullets can look oversized even at the
+  "correct" point size. `template_build.shrink_bullet_marker` sidesteps the precedence
+  fight instead of fighting it: it scales down the paragraph mark's own `w:sz`
+  (`BULLET_MARKER_SIZE_RATIO`), which governs only the glyph, not the visible bullet text.
+  It has to be called explicitly on every bullet prototype — `retarget_bullet` covers
+  experience/project/education bullets, but `build_skills` / `build_skills_profile` build
+  their own prototype independently and needed the same call added separately.
 - **Each project has its own URL.** A hyperlink baked into the template points every project
   at the prototype's target; links are built per entry as `RichText` in `render.py`.
 - **`python-docx`'s `Paragraph.text` includes hyperlink visible text; `Paragraph.runs`
@@ -499,14 +530,13 @@ One more, in `rewrite.py` rather than the template:
   density. It was raised from 0.85 because that value had been calibrated against pages
   that still contained widows, so some "full" lines it counted held one word.
 - The venv is at `.venv`; tests and scripts assume the package is installed with `pip install -e .`.
-- **`output/` is NOT gitignored, and it holds the same PII `data/` is excluded for.**
-  `.gitignore` has a `# Generated output` heading with no pattern under it, so every
-  `output/*.docx` and `*.pdf` — each a full rendered resume carrying phone and email — is
-  untracked-but-stageable. The repo has no commits yet, so nothing is exposed, but a first
-  `git add -A` would stage ~15 MB of them. `docs/PLAN.md` states the opposite ("`data\jd\`
-  and `output\` are both gitignored"); that claim is wrong, verified with `git check-ignore`.
-  Flag this to the owner rather than fixing it silently — the `.gitignore` rule below cuts
-  both ways. The web UI writes even more under `output/jobs/<id>/`.
+- **`output/`, `data/`, and `templates/` are all gitignored** — `output/*.docx` / `*.pdf`
+  (each a full rendered resume carrying phone and email) and the web UI's
+  `output/jobs/<id>/` artifacts are PII, same as `data/master_resume.json`. This was not
+  always true — an earlier version of `.gitignore` had a `# Generated output` heading with
+  no pattern under it, leaving `output/` untracked-but-stageable — so if a `git add -A`
+  ever stages files under `output/`, treat it as a real regression and check history for
+  exposure before just re-adding the pattern.
 - **`data/` and `templates/` are gitignored, so the repo does not contain a working
   install.** A fresh clone has neither `master_resume.json` (every fact the tool can use)
   nor `original_export.docx` (which `build_template.py` reads), so nothing runs until both
