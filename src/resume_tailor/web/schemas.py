@@ -27,6 +27,7 @@ class JobSettings(BaseModel):
     merge: bool = False
     no_cache: bool = False
     no_expand: bool = False
+    no_facets: bool = False
     no_project_links: bool = False
     #: Fraction of page capacity below which the fit loop grows (0.80–0.95).
     fill_target: float | None = Field(default=None, ge=0.8, le=0.95)
@@ -156,3 +157,43 @@ class ValidateResponse(BaseModel):
     ok: bool
     errors: list[str] = Field(default_factory=list)
     summary: dict[str, Any] | None = None
+
+
+class TemplateFileInfo(BaseModel):
+    """Existence and metadata for one template .docx on disk."""
+
+    exists: bool
+    path: str
+    size_bytes: int | None = None
+    modified_at: str | None = None
+
+
+class CalibrationInfo(BaseModel):
+    """Whether fit constants are still valid for the current tagged template."""
+
+    source: str
+    chars_per_line: int
+    lines_per_page: int
+    #: True when main_template.docx is newer than the calibration file (or there is none).
+    stale: bool
+    message: str | None = None
+
+
+class TemplateInfoResponse(BaseModel):
+    """Current baseline + tagged template state for the Template tab."""
+
+    baseline: TemplateFileInfo
+    tagged: TemplateFileInfo
+    experience_entries: int = 0
+    project_entries: int = 0
+    bullets: int = 0
+    calibration: CalibrationInfo
+    preview_available: bool = False
+
+
+class TemplateBuildResponse(BaseModel):
+    """Outcome of uploading a new baseline and regenerating the tagged template."""
+
+    ok: bool
+    log: str = ""
+    info: TemplateInfoResponse | None = None

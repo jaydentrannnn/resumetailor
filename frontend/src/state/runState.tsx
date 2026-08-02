@@ -38,6 +38,7 @@ export const DEFAULT_SETTINGS: JobSettings = {
   merge: false,
   no_cache: false,
   no_expand: false,
+  no_facets: false,
   no_project_links: false,
   fill_target: null,
 };

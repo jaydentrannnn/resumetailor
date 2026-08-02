@@ -22,7 +22,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
-from resume_tailor import config, data, expand, fit, jd, report, rewrite
+from resume_tailor import config, data, expand, facets, fit, jd, report, rewrite
 from resume_tailor.events import ProgressCallback, ProgressEvent
 from resume_tailor.fit import FitError
 from resume_tailor.llm import LLMError
@@ -97,6 +97,11 @@ class JobQueue:
                 return self._order.index(job_id) + 1
             except ValueError:
                 return 0
+
+    def busy(self) -> bool:
+        """True when any job is queued or running (template must not swap mid-run)."""
+        with self._lock:
+            return any(j.status in ("queued", "running") for j in self._jobs.values())
 
     def _ensure_worker(self) -> None:
         """Start the background worker once, on first submit."""
@@ -195,6 +200,42 @@ class JobQueue:
                     )
                 )
 
+        include_links = not settings.no_project_links
+        try:
+            if settings.no_facets:
+                facet_result = facets.budget_only(
+                    resume, requirements, include_project_links=include_links
+                )
+            else:
+                facet_result = facets.select_facets(
+                    resume,
+                    requirements,
+                    use_cache=not settings.no_cache,
+                    include_project_links=include_links,
+                    on_event=on_event,
+                )
+        except LLMError as exc:
+            raise RuntimeError(str(exc)) from exc
+        except (RuntimeError, ValueError) as exc:
+            on_event(
+                ProgressEvent(
+                    stage="facets",
+                    message=(
+                        f"Facet selection unavailable; truncating pools in original "
+                        f"order ({exc})"
+                    ),
+                    detail={},
+                )
+            )
+            facet_result = facets.budget_only(
+                resume, requirements, include_project_links=include_links
+            )
+        for warning in facet_result.warnings:
+            on_event(
+                ProgressEvent(stage="facets", message=warning, detail={})
+            )
+        resume = facets.apply(resume, facet_result)
+
         out_dir = config.OUTPUT_DIR / "jobs" / job.job_id
         out_dir.mkdir(parents=True, exist_ok=True)
         job.out_dir = out_dir
@@ -212,7 +253,7 @@ class JobQueue:
                 repair_widows=not settings.no_widow_repair,
                 repair_verbs=not settings.no_verb_repair,
                 merge_bullets=settings.merge,
-                include_project_links=not settings.no_project_links,
+                include_project_links=include_links,
                 fill_target=settings.fill_target,
                 on_event=on_event,
             )

@@ -7,6 +7,8 @@ ever shown to the model.
 
 from __future__ import annotations
 
+import io
+import zipfile
 from datetime import datetime
 from pathlib import Path
 
@@ -19,11 +21,114 @@ from .data import MasterResume
 #: project link visually identical to the one in the original export.
 _LINK_COLOR = "0000EE"
 
+#: Character style LibreOffice requires on hyperlink runs to export them as PDF Link
+#: annotations. Without the style *and* a matching definition in styles.xml, soffice
+#: paints the blue underline but drops the click target (Word keeps links either way).
+#: See https://bugs.documentfoundation.org/show_bug.cgi?id=146575 and the Stack Overflow
+#: report that confirmed editing a link in LO injects this rStyle.
+_HYPERLINK_STYLE = "InternetLink"
+
 #: Contact-line separator matching the Google Docs export (U+2022 bullet).
 _CONTACT_SEP = " \u2022 "
 
 
+def _add_hyperlink(rt: RichText, text: str, url_id: str | None) -> None:
+    """Append linked (or plain) text with the LibreOffice-safe InternetLink run style.
+
+    `url_id` None means a labelled project with no URL — keep the label, skip the link.
+    """
+    if url_id:
+        rt.add(
+            text,
+            url_id=url_id,
+            style=_HYPERLINK_STYLE,
+            color=_LINK_COLOR,
+            underline=True,
+        )
+    else:
+        rt.add(text)
+
+
+def _ensure_pdf_hyperlink_styles(docx_path: Path) -> None:
+    """Guarantee every hyperlink run carries InternetLink and the style is defined.
+
+    Google Docs exports (and therefore our template) omit the Hyperlink/InternetLink
+    character style. docxtpl can emit `w:rStyle` via RichText, but LibreOffice still
+    ignores the link unless `styles.xml` defines that styleId. Patching after save keeps
+    existing templates working without a rebuild.
+    """
+    import re
+
+    raw = docx_path.read_bytes()
+    out_buf = io.BytesIO()
+    changed = False
+    with zipfile.ZipFile(io.BytesIO(raw), "r") as zin, zipfile.ZipFile(
+        out_buf, "w", compression=zipfile.ZIP_DEFLATED
+    ) as zout:
+        for info in zin.infolist():
+            data = zin.read(info.filename)
+            if info.filename == "word/document.xml":
+                xml = data.decode("utf-8")
+
+                def inject(match: re.Match[str]) -> str:
+                    """Add InternetLink rStyle to the first rPr inside one hyperlink."""
+                    block = match.group(0)
+                    if f'w:val="{_HYPERLINK_STYLE}"' in block:
+                        return block
+                    if "<w:rPr>" not in block:
+                        # RichText always emits rPr when color/underline/style are set; a
+                        # bare hyperlink still needs a property bag for the style.
+                        block = block.replace(
+                            "<w:r>",
+                            f'<w:r><w:rPr><w:rStyle w:val="{_HYPERLINK_STYLE}"/></w:rPr>',
+                            1,
+                        )
+                        return block
+                    return re.sub(
+                        r"(<w:rPr>)",
+                        rf'\1<w:rStyle w:val="{_HYPERLINK_STYLE}"/>',
+                        block,
+                        count=1,
+                    )
+
+                new_xml = re.sub(
+                    r"<w:hyperlink\b[^>]*>.*?</w:hyperlink>",
+                    inject,
+                    xml,
+                    flags=re.S,
+                )
+                if new_xml != xml:
+                    changed = True
+                    data = new_xml.encode("utf-8")
+            elif info.filename == "word/styles.xml":
+                xml = data.decode("utf-8")
+                if f'w:styleId="{_HYPERLINK_STYLE}"' not in xml:
+                    style = (
+                        f'<w:style w:type="character" w:styleId="{_HYPERLINK_STYLE}">'
+                        f'<w:name w:val="Hyperlink"/>'
+                        f"<w:rPr>"
+                        f'<w:color w:val="{_LINK_COLOR}"/>'
+                        f'<w:u w:val="single"/>'
+                        f"</w:rPr>"
+                        f"</w:style>"
+                    )
+                    if "</w:styles>" not in xml:
+                        raise RuntimeError(
+                            f"{docx_path.name}: styles.xml missing </w:styles>; "
+                            "cannot register InternetLink for PDF hyperlinks."
+                        )
+                    xml = xml.replace("</w:styles>", style + "</w:styles>")
+                    changed = True
+                    data = xml.encode("utf-8")
+            # ZipInfo date_time must stay valid; writestr(info, data) preserves metadata.
+            zout.writestr(info, data)
+
+    if changed:
+        docx_path.write_bytes(out_buf.getvalue())
+
+
 def format_month(value: str) -> str:
+
     """Render a `YYYY-MM` month as `Mon YYYY`, passing anything else through.
 
     Free-text values like "present" are deliberately left alone rather than rejected —
@@ -82,12 +187,7 @@ def _contact_richtext(resume: MasterResume, tpl: DocxTemplate) -> RichText:
         if i:
             rt.add(_CONTACT_SEP)
         if url:
-            rt.add(
-                text,
-                url_id=tpl.build_url_id(url),
-                color=_LINK_COLOR,
-                underline=True,
-            )
+            _add_hyperlink(rt, text, tpl.build_url_id(url))
         else:
             rt.add(text)
     return rt
@@ -150,11 +250,10 @@ def build_context(
         link = RichText()
         if include_project_links and proj.link:
             link.add(" | ")
-            link.add(
+            _add_hyperlink(
+                link,
                 proj.link,
-                url_id=tpl.build_url_id(proj.url) if proj.url else None,
-                color=_LINK_COLOR if proj.url else None,
-                underline=bool(proj.url),
+                tpl.build_url_id(proj.url) if proj.url else None,
             )
 
         projects.append(
@@ -184,6 +283,7 @@ def build_context(
     ]
 
     return {
+        "name": resume.contact.name,
         "contact": _contact_richtext(resume, tpl),
         "education": education,
         "experience": experience,
@@ -229,6 +329,9 @@ def render(
     out = out or config.OUTPUT_DIR / "tailored.docx"
     out.parent.mkdir(parents=True, exist_ok=True)
     tpl.save(out)
+    # LibreOffice PDF export needs InternetLink on hyperlink runs + in styles.xml;
+    # without this the blue underline survives but clicks do not (Docker / soffice).
+    _ensure_pdf_hyperlink_styles(out)
     return out
 
 

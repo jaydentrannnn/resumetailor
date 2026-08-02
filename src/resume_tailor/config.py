@@ -118,12 +118,13 @@ EFFORT = "medium"
 #
 # `--model` then addresses the other 20% by routing stages at different backends entirely.
 
-#: The four stages that call a model. Each resolves independently, so the cheap, safe
-#: calls (extract, score) can run on a free backend while rewriting — where the
+#: The five stages that call a model. Each resolves independently, so the cheap, safe
+#: calls (extract, score, facets) can run on a free backend while rewriting — where the
 #: fabrication guard lives and where model quality actually shows — stays on Claude.
 #: `expand` produces application-form experience descriptions; it follows the profile
 #: like the others (Ollama under `ollama`/`hybrid`, Claude under `claude`).
-PURPOSES = ("extract", "score", "rewrite", "expand")
+#: `facets` picks project tech tags and coursework for the posting (same risk class as score).
+PURPOSES = ("extract", "score", "rewrite", "expand", "facets")
 
 #: Providers `parse_spec` recognises as a leading segment. Anything else is read as a bare
 #: model name, which matters more than it looks: `gemma4:cloud` contains a
@@ -169,6 +170,7 @@ DEFAULT_EFFORT: dict[str, str] = {
     "score": os.environ.get("LLM_EFFORT_SCORE", "low"),
     "rewrite": os.environ.get("LLM_EFFORT_REWRITE", "medium"),
     "expand": os.environ.get("LLM_EFFORT_EXPAND", "medium"),
+    "facets": os.environ.get("LLM_EFFORT_FACETS", "low"),
 }
 
 _ANTHROPIC_DEFAULT = f"anthropic:{MODEL}"
@@ -191,6 +193,9 @@ MODEL_PROFILES: dict[str, dict[str, str]] = {
         # rides the free backend even though it is generative — flip to Claude if quality
         # drops under Ollama.
         "expand": _OLLAMA_DEFAULT,
+        # Facets is selection-only (pools supplied; code enforces budgets), same risk class
+        # as score — keep it on the free backend under hybrid.
+        "facets": _OLLAMA_DEFAULT,
     },
 }
 
@@ -817,6 +822,19 @@ METRIC_BONUS = 0.5
 #: chosen entries and never drops an entry to save space.
 MAX_EXPERIENCE_ENTRIES = 3
 MAX_PROJECT_ENTRIES = 2
+
+#: Cap on tech tags rendered in one project header line. The facets stage may propose
+#: more; code truncates to this after applying the character budget.
+MAX_PROJECT_TECH = 4
+
+#: Soft ceiling on the "Relevant Coursework: …" bullet, in rendered lines. The facets
+#: stage picks courses best-first; code keeps only as many as fit under this span.
+COURSEWORK_MAX_LINES = 2
+
+#: Characters reserved when estimating whether a project header fits one line. The
+#: calibration constant is for bullet body text; headers have a bold name run and a
+#: right-aligned tab, so this gap absorbs that approximation. Raise if a header wraps.
+PROJECT_HEADER_GAP = 4
 
 #: How many work-experience entries the application-form expansion may cover. Higher than
 #: `MAX_EXPERIENCE_ENTRIES` because forms are not page-constrained — the tile should

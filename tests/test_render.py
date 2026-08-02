@@ -136,6 +136,36 @@ def test_project_links_render_as_real_hyperlinks(rendered):
     assert "Github" in body_text
 
 
+def test_hyperlinks_carry_internetlink_style_for_libreoffice(tmp_path):
+    """LibreOffice drops PDF links unless hyperlink runs use a defined InternetLink style.
+
+    Word keeps clickable links without this; Docker/soffice does not. Regression for the
+    blue-but-dead LinkedIn/Github PDFs.
+    """
+    if not config.DEFAULT_TEMPLATE_PATH.exists():
+        pytest.skip("template not built; run scripts/build_template.py")
+
+    out = tmp_path / "out.docx"
+    render.render(data.load(), out=out)
+
+    with zipfile.ZipFile(out) as z:
+        doc = z.read("word/document.xml").decode("utf-8")
+        styles = z.read("word/styles.xml").decode("utf-8")
+
+    assert 'w:styleId="InternetLink"' in styles
+    assert 'w:val="InternetLink"' in doc
+    # Every hyperlink element should carry the style on at least one run.
+    root = etree.fromstring(doc.encode("utf-8"))
+    for link in root.iter(f"{W}hyperlink"):
+        # OOXML attributes are in the wordprocessingml namespace under lxml.
+        styles_on_runs = [
+            r.get(f"{W}val") or r.get("val")
+            for rPr in link.iter(f"{W}rPr")
+            for r in rPr.iter(f"{W}rStyle")
+        ]
+        assert "InternetLink" in styles_on_runs, etree.tostring(link)[:200]
+
+
 def test_each_project_keeps_its_own_url(tmp_path):
     """Baking one hyperlink into the template pointed every project at the same repo.
 

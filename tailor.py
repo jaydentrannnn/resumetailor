@@ -20,7 +20,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 
-from resume_tailor import config, data, expand, fit, jd, report, rewrite  # noqa: E402
+from resume_tailor import config, data, expand, facets, fit, jd, report, rewrite  # noqa: E402
 from resume_tailor.llm import LLMError  # noqa: E402
 from resume_tailor.rewrite import FabricationError  # noqa: E402
 
@@ -149,6 +149,14 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--no-facets",
+        action="store_true",
+        help=(
+            "Skip the LLM that picks project tech tags and coursework for the posting. "
+            "Pools are still truncated to the one-line / two-line budgets in original order."
+        ),
+    )
+    parser.add_argument(
         "--no-project-links",
         action="store_true",
         help=(
@@ -245,6 +253,37 @@ def main(argv: list[str] | None = None) -> int:
                 file=sys.stderr,
             )
 
+    # Facets: pick tech tags / coursework once before the fit loop. On skip or soft
+    # failure, still run budget-only truncation so headers cannot wrap.
+    include_links = not args.no_project_links
+    try:
+        if args.no_facets:
+            facet_result = facets.budget_only(
+                resume, requirements, include_project_links=include_links
+            )
+        else:
+            facet_result = facets.select_facets(
+                resume,
+                requirements,
+                use_cache=not args.no_cache,
+                include_project_links=include_links,
+            )
+    except LLMError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
+    except (RuntimeError, ValueError) as exc:
+        print(
+            f"warning: facet selection unavailable, truncating pools in original order "
+            f"({exc})",
+            file=sys.stderr,
+        )
+        facet_result = facets.budget_only(
+            resume, requirements, include_project_links=include_links
+        )
+    for warning in facet_result.warnings:
+        print(f"warning: {warning}", file=sys.stderr)
+    resume = facets.apply(resume, facet_result)
+
     # Default export name mirrors the download: "<name> Resume - <position>.docx".
     out = args.out or (
         config.OUTPUT_DIR
@@ -267,7 +306,7 @@ def main(argv: list[str] | None = None) -> int:
             repair_widows=not args.no_widow_repair,
             repair_verbs=not args.no_verb_repair,
             merge_bullets=args.merge,
-            include_project_links=not args.no_project_links,
+            include_project_links=include_links,
             fill_target=args.fill_target,
         )
     except FabricationError as exc:

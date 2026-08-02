@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
-from fastapi import FastAPI, HTTPException
+from fastapi import FastAPI, File, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
@@ -24,6 +24,7 @@ from pydantic import ValidationError
 from resume_tailor import config, data, report
 from resume_tailor.data import MasterResume
 from resume_tailor.events import ProgressEvent
+from resume_tailor.web import template_ops
 from resume_tailor.web.jobs import get_queue
 from resume_tailor.web.schemas import (
     ConfigResponse,
@@ -31,8 +32,11 @@ from resume_tailor.web.schemas import (
     CreateJobResponse,
     JobStatusResponse,
     ProgressEventOut,
+    TemplateBuildResponse,
+    TemplateInfoResponse,
     ValidateResponse,
 )
+from resume_tailor.web.template_ops import TemplateBuildError, TemplateValidationError
 
 app = FastAPI(title="ResumeTailor", version="0.1.0")
 
@@ -312,6 +316,61 @@ def validate_master_resume(body: dict[str, Any]) -> ValidateResponse:
             "tags": len(tags),
         },
     )
+
+
+@app.get("/api/template", response_model=TemplateInfoResponse)
+def get_template() -> TemplateInfoResponse:
+    """Current baseline and tagged template metadata for the Template tab."""
+    return template_ops.info()
+
+
+@app.get("/api/template/preview.pdf")
+def template_preview_pdf() -> FileResponse:
+    """Inline PDF of the tagged template filled with the full master resume."""
+    try:
+        path = template_ops.ensure_preview()
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        # PDF conversion unavailable (no Word / LibreOffice).
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    except Exception as exc:
+        raise HTTPException(
+            status_code=500, detail=f"Failed to render template preview: {exc}"
+        ) from exc
+    return FileResponse(
+        path,
+        media_type="application/pdf",
+        filename="template-preview.pdf",
+        content_disposition_type="inline",
+    )
+
+
+@app.post("/api/template", response_model=TemplateBuildResponse)
+async def upload_template(file: UploadFile = File(...)) -> TemplateBuildResponse:
+    """Replace the baseline export and regenerate the tagged template.
+
+    Refuses while a tailoring job is queued or running so the fit loop never
+    measures against a template that is mid-rebuild.
+    """
+    if get_queue().busy():
+        raise HTTPException(
+            status_code=409,
+            detail="A tailoring job is in progress; wait for it to finish before "
+            "replacing the template.",
+        )
+
+    raw = await file.read()
+    filename = file.filename or "upload.docx"
+    try:
+        return template_ops.install_baseline(raw, filename)
+    except TemplateValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except TemplateBuildError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"message": str(exc), "log": exc.log},
+        ) from exc
 
 
 # Serve the built SPA when it exists (production / Docker). The Vite dev server handles

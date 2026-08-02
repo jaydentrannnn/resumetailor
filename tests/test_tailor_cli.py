@@ -58,6 +58,27 @@ def _stub_expand_api(cli, monkeypatch):
     )
 
 
+@pytest.fixture(autouse=True)
+def _stub_facets_api(cli, monkeypatch):
+    """Keep every CLI test off the facets API.
+
+    `tailor.main` selects tech/coursework before fitting. Without this stub, tests that
+    only patch extract/fit would reach the network. Budget-only truncation matches the
+    `--no-facets` path these tests do not care about.
+    """
+    from resume_tailor import facets as facets_mod
+
+    def fake_select(resume, requirements, **kwargs):
+        """Delegate to budget_only so layout guarantees still hold."""
+        return facets_mod.budget_only(
+            resume,
+            requirements,
+            include_project_links=kwargs.get("include_project_links", True),
+        )
+
+    monkeypatch.setattr(cli.facets, "select_facets", fake_select)
+
+
 @pytest.fixture
 def jd_file(tmp_path) -> Path:
     path = tmp_path / "jd.txt"
@@ -274,7 +295,7 @@ def stubbed_run(cli, tmp_path, monkeypatch):
 def test_default_model_is_claude_for_every_stage(cli, jd_file, stubbed_run):
     """The default path has to stay exactly what it was before backends were selectable."""
     assert cli.main(["--jd", str(jd_file)]) == 0
-    assert [config.provider_for(p) for p in config.PURPOSES] == ["anthropic"] * 4
+    assert [config.provider_for(p) for p in config.PURPOSES] == ["anthropic"] * 5
 
 
 def test_model_flag_routes_every_stage(cli, jd_file, stubbed_run):
@@ -289,6 +310,7 @@ def test_hybrid_keeps_rewriting_on_claude(cli, jd_file, stubbed_run):
     assert config.provider_for("score") == "openai"
     assert config.provider_for("rewrite") == "anthropic"
     assert config.provider_for("expand") == "openai"
+    assert config.provider_for("facets") == "openai"
 
 
 def test_rewrite_model_overrides_only_that_stage(cli, jd_file, stubbed_run):
@@ -309,7 +331,7 @@ def test_expand_model_overrides_only_that_stage(cli, jd_file, stubbed_run):
 
 def test_effort_flag_applies_to_every_stage(cli, jd_file, stubbed_run):
     assert cli.main(["--jd", str(jd_file), "--effort", "high"]) == 0
-    assert [config.effort_for(p) for p in config.PURPOSES] == ["high"] * 4
+    assert [config.effort_for(p) for p in config.PURPOSES] == ["high"] * 5
 
 
 def test_default_effort_is_lower_for_the_cheap_stages(cli, jd_file, stubbed_run):
