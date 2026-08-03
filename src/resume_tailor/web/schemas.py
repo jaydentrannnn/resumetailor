@@ -48,6 +48,9 @@ class JobSettings(BaseModel):
     no_project_links: bool = False
     #: Fraction of page capacity below which the fit loop grows (0.80–0.95).
     fill_target: float | None = Field(default=None, ge=0.8, le=0.95)
+    #: Fraction of the chosen entries' bullets the first selection may claim (0.30–1.00).
+    #: Bounds only the first draft — see `fit.fit`'s docstring for the `fill_target` pairing.
+    initial_bullet_share: float | None = Field(default=None, ge=0.3, le=1.0)
 
 
 class WorkspaceSettings(BaseModel):
@@ -230,6 +233,8 @@ class ConfigResponse(BaseModel):
     contact_name: str | None = None
     #: Default page-fill target (UNDERFLOW_THRESHOLD) for the settings slider.
     fill_target: float = 0.93
+    #: Default first-draft bullet-share ceiling (INITIAL_BULLET_SHARE) for the settings slider.
+    initial_bullet_share: float = 1.0
     active_workspace_id: str | None = None
     active_workspace_label: str | None = None
     #: True on the first response after the legacy single-slot layout was migrated

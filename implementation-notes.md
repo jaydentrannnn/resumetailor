@@ -970,3 +970,64 @@ to `minimax-m3:cloud` unless `OLLAMA_MODEL` or a per-run model override is set.
   cache. Full suite: 377 collected, 361 passing, 16 pre-existing failures untouched
   (verified identical on `main` before this work — `test_facets`/`test_fit`/`test_merge`/
   `test_render`/`test_rewrite`, unrelated to anything here).
+
+## 2026-08-02 - `--initial-bullet-share`: a ceiling on the first draft, not a floor
+
+- **What triggered this:** the user reported the fit loop's opening draft almost always
+  landing at "14/15 or 16/17" bullets and asked for a way to start sparser, the same way
+  `--fill-target` already lets them ask for a sparser *finished* page.
+- **Two semantic choices, both confirmed with the user rather than assumed:**
+  1. **Ceiling only, never a floor.** The new `share` param to
+     `fit._initial_selection_size` only lowers the binary search's upper bound
+     (`high = max(floor, min(total, round(total * share)))`); it cannot force the search
+     to claim *more* than the line estimate already says fits. At `share=1.0` the search
+     is byte-identical to before this change — verified in `test_fit.py`.
+  2. **First draft only, not the grow loop.** `total_bullets` (the grow loop's own
+     ceiling, `fit.py` underflow branch) is untouched. This was a deliberate rejection of
+     the alternative — capping the whole run — because that would have turned "page is
+     only X% full" into a permanent state for a low share paired with the default
+     `fill_target=0.93`, rather than a starting point the loop is free to grow away from.
+  3. **Same discussion also considered making the share *set* the initial count directly**
+     (bypassing the binary search, able to force an overflow the shorten schedule then has
+     to claw back). Rejected: "ceiling only" was chosen specifically so this knob can never
+     by itself cause a `FitError`, matching `fill_target`'s own non-destructive framing.
+- **Consequence worth stating loudly, and stated in three places (the `fit.fit` docstring,
+  the CLI `--help` text, and the settings-panel help string):** because the grow loop is
+  untouched, a low share *alone* is often undone by that same loop at the default fill
+  target — it mostly buys extra rewrite rounds for the same final page, not a sparser one.
+  It bites when paired with a lower `--fill-target`, or when the shortfall is bigger than
+  `MAX_GROW_ATTEMPTS` (4) rounds can recover in. Framed as a UI hint ("but the page fill
+  target above may still grow it back, so lower both to end sparser") rather than a
+  separate warning banner, since it is a property of the two knobs' interaction, not a
+  failure state.
+- **Plumbing:** followed the `fill_target` chain exactly — `config.INITIAL_BULLET_SHARE`
+  (default `1.0`) → `fit.fit(initial_bullet_share=...)` (resolved locally, same
+  `param if param is not None else config.CONST` pattern, never mutating the module
+  constant) → `tailor.py --initial-bullet-share` (hand-rolled 0.30–1.00 range check,
+  argparse has no range type) → `JobSettings.initial_bullet_share` /
+  `ConfigResponse.initial_bullet_share` (`web/schemas.py`) → `web/jobs.py`'s `fit.fit`
+  call → `frontend/src/api.ts` types → `DEFAULT_SETTINGS` (`null` = server default) →
+  a second range slider in the Run page's Advanced fieldset, right under the fill-target
+  one, reusing its integer-percent-to-fraction conversion. No new touch point was needed
+  in `WorkspaceSettings`/`SettingsResponse`/`CreateJobRequest` — all three wrap
+  `JobSettings` whole, so an old `settings.json` missing the field just falls back to the
+  Pydantic default.
+
+## 2026-08-02 - `SHORTEN_SCHEDULE` shifted down: (15, 25, 35) -> (5, 15, 25)
+
+- **What triggered this:** immediately after the initial-bullet-share knob above, the user
+  asked to soften the overflow rewrite's first cut from 15% to 5%.
+- **Whole schedule shifted, not just the first entry.** Asked directly rather than assumed:
+  the alternative was leaving attempts 2/3 at 25/35 and only softening attempt 1, which
+  would have widened the jump between attempts 1 and 2 from 10 points to 20. The user chose
+  the even shift, preserving the existing 10-point escalation between attempts.
+  `fit.py`'s `shorten_pct = config.SHORTEN_SCHEDULE[min(attempt - 1, len(...) - 1)]` needed
+  no change — it already reads the tuple positionally.
+- **No other file changes needed.** `tests/test_fit.py`'s two assertions
+  (`test_fit_escalates_shorten_schedule_on_overflow`,
+  `test_fit_raises_after_max_attempts_without_truncating`) both read
+  `config.SHORTEN_SCHEDULE` rather than hardcoding 15/25/35, so they track the new values
+  automatically. `docs/ARCHITECTURE.md` and `docs/PLAN.md` still show the old numbers —
+  left alone deliberately: `ARCHITECTURE.md` is already documented stale in `CLAUDE.md`,
+  and `PLAN.md` is a curated record of *why* 15/25/35 was chosen originally, not a live
+  constants table — rewriting it here would misattribute this change to that history.

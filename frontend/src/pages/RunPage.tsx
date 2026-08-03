@@ -230,6 +230,7 @@ function SettingsPanel({
   }
 
   const fillValue = settings.fill_target ?? config?.fill_target ?? 0.93;
+  const initialShareValue = settings.initial_bullet_share ?? config?.initial_bullet_share ?? 1;
 
   // Which profiles route a stage to Ollama comes from the server, not a hardcoded
   // ["ollama", "hybrid"] — MODEL_PROFILES is free to change without this going stale.
@@ -433,6 +434,20 @@ function SettingsPanel({
                 step={1}
                 value={Math.round(fillValue * 100)}
                 onChange={(e) => set("fill_target", Number(e.target.value) / 100)}
+                className="w-full accent-[var(--color-accent)]"
+              />
+            </Field>
+            <Field
+              label={`First-draft bullets (${Math.round(initialShareValue * 100)}%)`}
+              help="Cap the opening selection to this share of available bullets. Lower starts sparser — but the page fill target above may still grow it back, so lower both to end sparser."
+            >
+              <input
+                type="range"
+                min={30}
+                max={100}
+                step={5}
+                value={Math.round(initialShareValue * 100)}
+                onChange={(e) => set("initial_bullet_share", Number(e.target.value) / 100)}
                 className="w-full accent-[var(--color-accent)]"
               />
             </Field>

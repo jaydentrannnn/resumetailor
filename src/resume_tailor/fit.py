@@ -215,6 +215,8 @@ def _initial_selection_size(
     requirements: JobRequirements,
     target_pages: int,
     semantic: dict[str, float] | None = None,
+    *,
+    share: float = 1.0,
 ) -> int:
     """Binary search the largest bullet count whose *post-rewrite* size should fit.
 
@@ -225,12 +227,19 @@ def _initial_selection_size(
 
     The search floor is one bullet per chosen entry, never zero: dropping below that would
     delete an entry the ranking already decided to keep.
+
+    `share` caps the search's upper bound at `round(total * share)` — a ceiling on the
+    first draft, never a floor, and never allowed below one bullet per entry. It does not
+    change what the loop grows back to afterward; see `config.INITIAL_BULLET_SHARE`.
     """
     floor = len(entries)
     total = sum(len(e.bullets) for e in entries)
     capacity = target_pages * config.LINES_PER_PAGE + config.INITIAL_SELECTION_OVERSHOOT
 
-    low, high = floor, total
+    # Ceiling only: `share` may lower the search's upper bound, never raise it past what
+    # the estimate says fits. Clamped up to `floor` so a small share can never delete an
+    # entry `choose_entries` already decided to keep.
+    low, high = floor, max(floor, min(total, round(total * share)))
     while low < high:
         mid = (low + high + 1) // 2
         bullets = _select_at_rewrite_budget(entries, requirements, mid, semantic)
@@ -281,6 +290,7 @@ def fit(
     merge_bullets: bool = False,
     include_project_links: bool = True,
     fill_target: float | None = None,
+    initial_bullet_share: float | None = None,
     on_event: events.ProgressCallback | None = None,
 ) -> FitResult:
     """Select, rewrite, render, and measure until the resume fits `target_pages`.
@@ -318,6 +328,13 @@ def fit(
     capacity). Lower means the loop accepts a sparser page; higher packs tighter at the
     cost of extra grow/rewrite rounds.
 
+    `initial_bullet_share` overrides `config.INITIAL_BULLET_SHARE`: a ceiling on the
+    fraction of available bullets `_initial_selection_size` may claim for the first draft,
+    never below one bullet per chosen entry. It bounds only the first draft, not the grow
+    loop below — at the default `fill_target`, a low share is often grown back and mostly
+    trades extra rewrite rounds for the same final page. Pair it with a lower `fill_target`
+    to actually end on a sparser page.
+
     `on_event` observes progress. A run costs several minutes of model calls and renders,
     so a UI driving this needs to report which iteration it is on; the callback cannot
     influence the loop and is optional everywhere.
@@ -330,6 +347,9 @@ def fit(
     target_pages = target_pages or config.DEFAULT_PAGE_TARGET
     # Local so a per-run override does not mutate the process-wide constant.
     underflow = fill_target if fill_target is not None else config.UNDERFLOW_THRESHOLD
+    initial_share = (
+        initial_bullet_share if initial_bullet_share is not None else config.INITIAL_BULLET_SHARE
+    )
     warnings: list[str] = []
     iterations = 0
     grow_attempts = 0
@@ -347,14 +367,18 @@ def fit(
     # The pool the loop draws from is the chosen entries' bullets, not the whole master
     # resume — a bullet in a dropped entry can never come back.
     total_bullets = sum(len(e.bullets) for e in entries)
-    limit = _initial_selection_size(resume, entries, requirements, target_pages, semantic)
+    limit = _initial_selection_size(
+        resume, entries, requirements, target_pages, semantic, share=initial_share
+    )
+    share_note = f" (capped at {initial_share:.0%} of {total_bullets})" if initial_share < 1.0 else ""
     events.emit(
         on_event,
         "fit",
-        f"Selected {len(entries)} entries; starting at {limit} of {total_bullets} bullets",
+        f"Selected {len(entries)} entries; starting at {limit} of {total_bullets} bullets{share_note}",
         entries=len(entries),
         limit=limit,
         total_bullets=total_bullets,
+        initial_bullet_share=initial_share,
     )
 
     while True:

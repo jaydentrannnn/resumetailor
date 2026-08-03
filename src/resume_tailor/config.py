@@ -785,8 +785,9 @@ MAX_FIT_ATTEMPTS = 3
 
 #: How much to ask the rewriter to shorten by on each successive overflow, in percent.
 #: Escalating rather than fixed, because a bullet set that overflows twice needs a bigger
-#: cut than the first attempt gave it.
-SHORTEN_SCHEDULE = (15, 25, 35)
+#: cut than the first attempt gave it. First step lowered from 15 to 5 so a
+#: barely-over-budget draft isn't cut as hard as one that's badly over.
+SHORTEN_SCHEDULE = (5, 15, 25)
 
 #: Where `scripts/calibrate.py` writes its measurements, one file per PDF backend.
 CALIBRATION_DIR = _dir_from_env("RESUME_TAILOR_CALIBRATION_DIR", DATA_DIR / "calibration")
@@ -861,6 +862,18 @@ UNDERFLOW_THRESHOLD = 0.93
 #: packs the opening call denser (e.g. 13/15 instead of 12/15) and avoids a grow round.
 #: Raise if first renders are still sparse; lower if overflow/shorten thrashing is common.
 INITIAL_SELECTION_OVERSHOOT = 2
+
+#: Fraction of the chosen entries' bullets the *first* selection may claim.
+#:
+#: 1.0 leaves `fit._initial_selection_size` exactly as it was: the binary search's only
+#: bound is what the line estimate says fits (typically 14 of 15). Lowering it caps that
+#: search — a ceiling, never a floor, and never below one bullet per entry.
+#:
+#: This bounds the first draft only. The grow loop still restores toward the full pool
+#: when a measured page is under `UNDERFLOW_THRESHOLD`, so on its own a low value mostly
+#: trades extra rewrite rounds for the same final page. Lower `UNDERFLOW_THRESHOLD`
+#: alongside it to actually end on a sparser page.
+INITIAL_BULLET_SHARE = 1.0
 
 # --------------------------------------------------------------------------------------
 # Bullet merging (non-regressive, deterministic proposal)
