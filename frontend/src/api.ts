@@ -5,6 +5,10 @@ export type JobSettings = {
   experience: number | null;
   projects: number | null;
   model: string;
+  /** Ollama tag for every Ollama-routed stage; null uses the server's OLLAMA_MODEL. */
+  ollama_model: string | null;
+  /** Gemini tag for every Gemini-routed stage; null uses the server's GEMINI_MODEL. */
+  gemini_model: string | null;
   rewrite_model: string | null;
   expand_model: string | null;
   effort: "low" | "medium" | "high" | null;
@@ -99,6 +103,19 @@ export type AppConfig = {
   experience: number;
   projects: number;
   model_profiles: string[];
+  /** Server-side OLLAMA_MODEL / OLLAMA_BASE_URL defaults, shown when no override is set. */
+  ollama_model: string;
+  ollama_base_url: string;
+  /** Profiles with at least one Ollama-routed stage (the tag field applies to these). */
+  ollama_profiles: string[];
+  /** Server-side GEMINI_MODEL / GEMINI_BASE_URL defaults, mirroring the Ollama pair. */
+  gemini_model: string;
+  gemini_base_url: string;
+  /** Profiles with at least one Gemini-routed stage (the tag field applies to these). */
+  gemini_profiles: string[];
+  /** Whether a credential is present for each origin that requires one (e.g. "gemini").
+   * Booleans only — never the key value itself. */
+  provider_keys: Record<string, boolean>;
   effort_options: string[];
   pdf_backend: string;
   calibration_source: string;
@@ -107,6 +124,40 @@ export type AppConfig = {
   tag_vocabulary: string[];
   contact_name: string | null;
   fill_target: number;
+  active_workspace_id: string | null;
+  active_workspace_label: string | null;
+  /** True once, on the first /api/config response after a legacy-layout migration. */
+  migrated_from_legacy: boolean;
+};
+
+export type SettingsResponse = {
+  workspace_id: string | null;
+  settings: JobSettings;
+  /** True when settings.json did not exist yet and JobSettings defaults were served. */
+  seeded: boolean;
+};
+
+export type Workspace = {
+  id: string;
+  label: string;
+  created_at: string;
+  is_active: boolean;
+  has_master_resume: boolean;
+  has_template: boolean;
+};
+
+export type WorkspaceListResponse = {
+  entries: Workspace[];
+  active_id: string | null;
+};
+
+export type WorkspaceActivateResponse = {
+  ok: boolean;
+  active_id: string;
+  entries: Workspace[];
+  config: AppConfig;
+  settings: JobSettings;
+  template: TemplateInfo;
 };
 
 export type ValidateResponse = {
@@ -236,6 +287,58 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export function fetchConfig(): Promise<AppConfig> {
   /** Load UI defaults and the master resume's tag vocabulary. */
   return request<AppConfig>("/api/config");
+}
+
+export function fetchSettings(): Promise<SettingsResponse> {
+  /** Load the active profile's saved run defaults. */
+  return request<SettingsResponse>("/api/settings");
+}
+
+export function saveSettings(settings: JobSettings): Promise<SettingsResponse> {
+  /** Persist new run defaults for the active profile. */
+  return request<SettingsResponse>("/api/settings", {
+    method: "PUT",
+    body: JSON.stringify({ settings }),
+  });
+}
+
+export function fetchWorkspaces(): Promise<WorkspaceListResponse> {
+  /** List every registered profile and which one is active. */
+  return request<WorkspaceListResponse>("/api/workspaces");
+}
+
+export function createWorkspace(
+  label: string,
+  copyFrom?: string | null,
+): Promise<WorkspaceListResponse> {
+  /** Register a new profile, or duplicate `copyFrom`'s resume/template/settings. */
+  return request<WorkspaceListResponse>("/api/workspaces", {
+    method: "POST",
+    body: JSON.stringify({ label, copy_from: copyFrom ?? null }),
+  });
+}
+
+export function activateWorkspace(id: string): Promise<WorkspaceActivateResponse> {
+  /** Switch the active profile; returns fresh config/settings/template in one call. */
+  return request<WorkspaceActivateResponse>(
+    `/api/workspaces/${encodeURIComponent(id)}/activate`,
+    { method: "POST" },
+  );
+}
+
+export function renameWorkspace(id: string, label: string): Promise<WorkspaceListResponse> {
+  /** Rename a profile. Its on-disk directory never moves. */
+  return request<WorkspaceListResponse>(`/api/workspaces/${encodeURIComponent(id)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ label }),
+  });
+}
+
+export function deleteWorkspace(id: string): Promise<WorkspaceListResponse> {
+  /** Delete a profile. Refuses the active profile and the last remaining one. */
+  return request<WorkspaceListResponse>(`/api/workspaces/${encodeURIComponent(id)}`, {
+    method: "DELETE",
+  });
 }
 
 export function createJob(

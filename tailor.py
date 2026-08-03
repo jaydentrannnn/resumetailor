@@ -20,7 +20,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 
-from resume_tailor import config, data, expand, facets, fit, jd, report, rewrite  # noqa: E402
+from resume_tailor import config, data, expand, facets, fit, jd, report, rewrite, workspace  # noqa: E402
 from resume_tailor.llm import LLMError  # noqa: E402
 from resume_tailor.rewrite import FabricationError  # noqa: E402
 
@@ -114,12 +114,13 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--model",
-        default="claude",
+        default="ollama",
         metavar="MODEL",
         help=(
-            "Which backend serves the run: a profile (claude, ollama, hybrid) or a spec "
-            "like 'ollama:gemma4:cloud'. 'hybrid' ranks on Ollama and rewrites "
-            "on Claude. Default: claude."
+            "Which backend serves the run: a profile (claude, ollama, lmstudio, gemini, "
+            "hybrid) or a spec like 'ollama:gemma4:cloud' or 'gemini:gemini-3.5-flash'. "
+            "'hybrid' ranks on Ollama and rewrites on Claude. Default: ollama (no "
+            "Anthropic key needed). 'gemini' needs GEMINI_API_KEY in .env."
         ),
     )
     parser.add_argument(
@@ -184,11 +185,27 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "tokens, so this is the cheapest lever available."
         ),
     )
+    parser.add_argument(
+        "--workspace",
+        default=None,
+        metavar="ID",
+        help=(
+            "Run against this profile's master resume / template / cache instead of "
+            "the active one. Applies to this invocation only — it never changes which "
+            "profile the web UI (or a running server) has active."
+        ),
+    )
     return parser.parse_args(argv)
 
 
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
+
+    try:
+        workspace.bootstrap(workspace_id=args.workspace)
+    except workspace.WorkspaceError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
 
     # Resolved before anything is read or spent, so a bad spec costs nothing.
     try:

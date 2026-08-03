@@ -1,6 +1,6 @@
 """Filesystem operations for the Template tab: inspect, preview, analyze, install.
 
-All Word/LibreOffice work is serialised behind `_LOCK` so a preview render and a
+All Word/LibreOffice work is serialised behind `LOCK` so a preview render and a
 rebuild never overlap. `scripts/build_template.py` remains the sole CLI producer of
 `main_template.docx`; this module shells out to it (or calls `template_build` for
 staged profile installs).
@@ -26,6 +26,7 @@ from pathlib import Path
 import docx
 
 from resume_tailor import calibrate, config, data, render, template_analyze, template_build, template_profile
+from resume_tailor.labels import label_taken, normalize_label
 from resume_tailor.template_profile import TemplateProfile, save_profile
 from resume_tailor.web.schemas import (
     CalibrationInfo,
@@ -51,7 +52,7 @@ _LIBRARY_MAX_ENTRIES = 20
 _LIBRARY_LABEL_MAX = 80
 
 #: Serialises preview render and baseline install so Word/LibreOffice is never concurrent.
-_LOCK = threading.Lock()
+LOCK = threading.Lock()
 
 
 class TemplateValidationError(ValueError):
@@ -228,14 +229,10 @@ def _write_library_index(*, active_id: str | None) -> None:
 
 def _normalize_library_label(label: str) -> str:
     """Strip and validate a library label; raise TemplateValidationError if invalid."""
-    cleaned = " ".join((label or "").split())
-    if not cleaned:
-        raise TemplateValidationError("Template label is required.")
-    if len(cleaned) > _LIBRARY_LABEL_MAX:
-        raise TemplateValidationError(
-            f"Template label is too long (max {_LIBRARY_LABEL_MAX} characters)."
-        )
-    return cleaned
+    try:
+        return normalize_label(label, max_len=_LIBRARY_LABEL_MAX, what="Template label")
+    except ValueError as exc:
+        raise TemplateValidationError(str(exc)) from exc
 
 
 def _default_label_from_filename(filename: str) -> str:
@@ -304,13 +301,12 @@ def _library_active_meta() -> tuple[str | None, str | None]:
 
 def _label_taken(label: str, *, except_id: str | None = None) -> bool:
     """True when another entry already uses `label` (case-insensitive)."""
-    needle = label.casefold()
-    for meta in _iter_library_metas():
-        if except_id and meta.get("id") == except_id:
-            continue
-        if str(meta.get("label") or "").casefold() == needle:
-            return True
-    return False
+    others = (
+        str(meta.get("label") or "")
+        for meta in _iter_library_metas()
+        if not (except_id and meta.get("id") == except_id)
+    )
+    return label_taken(label, others)
 
 
 def _entry_to_schema(meta: dict, *, active_id: str | None) -> TemplateLibraryEntry:
@@ -338,7 +334,7 @@ def _snapshot_live_to_library(
     """Copy the live baseline/tagged/profile into a new library entry.
 
     Requires the live baseline and tagged template to exist. Caller must hold
-    `_LOCK` (or accept races) and have already validated label uniqueness / cap.
+    `LOCK` (or accept races) and have already validated label uniqueness / cap.
     """
     baseline = config.BASELINE_TEMPLATE_PATH
     tagged = config.DEFAULT_TEMPLATE_PATH
@@ -449,7 +445,7 @@ def _library_preserve_orphan_live() -> None:
 
 def list_library() -> TemplateLibraryResponse:
     """Seed Default if needed, then return all named library entries."""
-    with _LOCK:
+    with LOCK:
         _library_seed_if_empty()
         active_id = _read_library_index().get("active_id")
         entries = [
@@ -475,7 +471,7 @@ def list_library() -> TemplateLibraryResponse:
 def rename_library_entry(entry_id: str, label: str) -> TemplateLibraryResponse:
     """Rename a library entry; labels must stay unique (case-insensitive)."""
     cleaned = _normalize_library_label(label)
-    with _LOCK:
+    with LOCK:
         meta = _load_entry_meta(entry_id)
         if meta is None:
             raise TemplateValidationError(f"Unknown template library id: {entry_id}")
@@ -491,7 +487,7 @@ def rename_library_entry(entry_id: str, label: str) -> TemplateLibraryResponse:
 
 def delete_library_entry(entry_id: str) -> TemplateLibraryResponse:
     """Delete a non-active library entry from disk."""
-    with _LOCK:
+    with LOCK:
         meta = _load_entry_meta(entry_id)
         if meta is None:
             raise TemplateValidationError(f"Unknown template library id: {entry_id}")
@@ -515,7 +511,7 @@ def activate_library_entry(
     not already present. Does not re-run `build_template` — tagged files travel with
     the snapshot.
     """
-    with _LOCK:
+    with LOCK:
         meta = _load_entry_meta(entry_id)
         if meta is None:
             raise TemplateValidationError(f"Unknown template library id: {entry_id}")
@@ -602,11 +598,11 @@ def _library_record_after_install(*, label: str, source_filename: str) -> None:
 def ensure_preview() -> Path:
     """Render the full master resume through the tagged template and return its PDF path.
 
-    Regenerates only when `main_template.docx` is newer than the cached PDF (or the PDF
-    is missing). Raises `RuntimeError` when PDF conversion is unavailable so the route
-    can return 503 instead of a broken frame.
+    Regenerates when the cached PDF is missing or older than **either** of its two
+    inputs. Raises `RuntimeError` when PDF conversion is unavailable so the route can
+    return 503 instead of a broken frame.
     """
-    with _LOCK:
+    with LOCK:
         tagged = config.DEFAULT_TEMPLATE_PATH
         if not tagged.exists():
             raise FileNotFoundError(
@@ -617,10 +613,20 @@ def ensure_preview() -> Path:
         docx_path, pdf_path = _preview_paths()
         pdf_path.parent.mkdir(parents=True, exist_ok=True)
 
+        # The preview is the master resume rendered *through* the tagged template, so
+        # both files are inputs. Keying staleness on the template alone meant editing
+        # the resume never invalidated the cache — the Template tab kept serving the
+        # pre-edit PDF indefinitely, including after an explicit Refresh. Checking
+        # mtime (rather than having the editor call `invalidate_preview`) also covers
+        # a master_resume.json edited by hand or by the CLI.
+        newest_input = max(
+            (p.stat().st_mtime for p in (tagged, config.MASTER_RESUME_PATH) if p.exists()),
+            default=0.0,
+        )
         needs_render = (
             not pdf_path.exists()
             or not docx_path.exists()
-            or tagged.stat().st_mtime > pdf_path.stat().st_mtime
+            or newest_input > pdf_path.stat().st_mtime
         )
         if not needs_render:
             return pdf_path
@@ -706,6 +712,11 @@ def _run_build(
         cmd.extend(["--out", str(output)])
     if profile_path is not None:
         cmd.extend(["--profile", str(profile_path)])
+    # The subprocess re-imports config fresh, so without this it would build against
+    # the legacy/default paths regardless of which workspace this process has active.
+    active_workspace = config.active_workspace_id()
+    if active_workspace is not None:
+        cmd.extend(["--workspace", active_workspace])
     completed = subprocess.run(
         cmd,
         capture_output=True,
@@ -733,12 +744,12 @@ def _smoke_render(tagged: Path) -> None:
 def _maybe_calibrate(log: str, *, do_calibrate: bool) -> str:
     """Optionally measure fit constants and hot-reload them into `config`.
 
-    Runs under `_LOCK` so Word/LibreOffice is not concurrent with preview. Failures are
+    Runs under `LOCK` so Word/LibreOffice is not concurrent with preview. Failures are
     appended to the log but do not undo a successful template install.
     """
     if not do_calibrate:
         return log
-    with _LOCK:
+    with LOCK:
         try:
             # Soft-fail owner anchors: a new layout may not hit the 39→3 / 13→1 checks.
             result = calibrate.run(verify_anchors=True)
@@ -784,7 +795,7 @@ def install_baseline(
         else _default_label_from_filename(filename)
     )
 
-    with _LOCK:
+    with LOCK:
         _library_seed_if_empty()
         _library_preserve_orphan_live()
         _library_ensure_room_for_new(label=resolved_label)
@@ -794,7 +805,7 @@ def install_baseline(
     else:
         response = _install_legacy(raw, filename)
 
-    with _LOCK:
+    with LOCK:
         _library_record_after_install(
             label=resolved_label,
             source_filename=Path(filename).name,
@@ -808,7 +819,7 @@ def install_baseline(
 
 def _install_legacy(raw: bytes, filename: str) -> TemplateBuildResponse:
     """Original upload path: write baseline, run legacy build, restore on failure."""
-    with _LOCK:
+    with LOCK:
         with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as tmp:
             tmp.write(raw)
             tmp_path = Path(tmp.name)
@@ -870,7 +881,7 @@ def _install_with_profile(
     if blockers:
         raise TemplateValidationError("; ".join(i.message for i in blockers))
 
-    with _LOCK:
+    with LOCK:
         with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as tmp:
             tmp.write(raw)
             tmp_path = Path(tmp.name)

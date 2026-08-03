@@ -18,6 +18,16 @@ routing, and no widow handling; its constants table lists `UNDERFLOW_THRESHOLD =
 `LINES_PER_PAGE = 51`, both since changed. Prefer this file and `docs/PLAN.md`. Anything
 taken from it should be verified against the code first.
 
+**`implementation-notes.md` is the running decision log for the web UI / container /
+template-import work** — the same role `docs/PLAN.md` plays for the CLI pipeline, but
+append-only and chronological rather than curated, so a later entry can supersede an
+earlier one without the earlier one being deleted. Treat it as "why was it built this
+way," not as a source of current constant values — cross-check any number it cites
+against the code (e.g. `UNDERFLOW_THRESHOLD` went 0.85 → 0.92 → 0.86 → 0.96 across four
+entries there; the code is the current value, `0.93`, one more change than the log
+shows). `README.md` is the user-facing counterpart: install, CLI/web/Docker usage, and
+Ollama / LM Studio walkthroughs — this file supersedes it wherever the two overlap.
+
 ## The architectural invariant
 
 **The LLM produces plain strings and nothing else. It never sees, receives, or emits XML,
@@ -29,12 +39,14 @@ model to reproduce formatting. This project refuses to:
 - `jd.py`, `rewrite.py`, `facets.py`, and `expand.py` are the *only* modules that call
   the API, and they exchange plain text and JSON with it. Five stages: JD extraction,
   bullet relevance scoring, project-tech / coursework selection, bullet rewriting, and
-  application-form experience expansion. Rewriting may issue **one** follow-up call —
-  `rewrite._polish`, which re-sends only the bullets that wrapped onto a near-empty line
-  and/or open with a repeated verb — so a clean run is five calls (extract + score +
-  facets + rewrite + expand). When `--merge` is enabled and the page has measured over,
-  `rewrite._merge_bullets` adds one more (still bounded: extract + score + facets +
-  rewrite + merge + polish + expand). Expansion is non-fatal: a failed expand leaves the
+  application-form experience expansion. Rewriting may issue up to **two** kinds of
+  follow-up call, each bounded to at most one extra round trip: `rewrite._polish`,
+  which re-sends only the bullets that wrapped onto a near-empty line and/or open with
+  a repeated verb; and `rewrite._retry_fabrications`, which fires only when a draft
+  fabricates and re-asks only the offending ids. A clean run is five calls (extract +
+  score + facets + rewrite + expand). When `--merge` is enabled and the page has
+  measured over, `rewrite._merge_bullets` adds one more (still bounded: extract +
+  score + facets + rewrite + merge + polish + expand). Expansion is non-fatal: a failed expand leaves the
   tailored `.docx` intact. Facets failures degrade to budget-only truncation of the pools
   rather than failing the run (except hard `LLMError`s such as an unreachable backend).
 - `llm.py` decides *which* model those call. It is a routing layer, not a sixth call
@@ -66,7 +78,11 @@ stop. That is the bug this project exists to avoid.
   plurals, or it rejects rewrites that invented nothing. Two invariants must survive any
   such change, and are pinned by tests: only letter-bearing parts enter the vocabulary (so
   `96.3` never licenses a `3`), and numbers are checked whole (so a fabricated `99%` or a
-  version bump from `GPT-4.1` still fails). See `docs/PLAN.md`.
+  version bump from `GPT-4.1` still fails). See `docs/PLAN.md`. A first draft that
+  fabricates gets **one** targeted retry re-asking only the offending bullet ids
+  (`rewrite._retry_fabrications`), naming the exact rejected terms; a second fabrication,
+  or an id the model drops on retry, still raises `FabricationError`. The retry costs at
+  most one extra call — the guard itself is not relaxed, only the call budget.
 - **Merging must preserve guard + numbers, avoid causal joins, and not restate claims.**
   `rewrite._merge_bullets` is accepted only when its candidate is non-regressive, passes the
   multi-source fabrication guard, preserves every number-bearing token from all merged
@@ -83,10 +99,15 @@ stop. That is the bug this project exists to avoid.
   from the *old* prompt — wrong with no symptom, which is why this used to depend on someone
   remembering `--no-cache`.
 - **Anything that changes what the model returns belongs in the cache key.** The same rule,
-  generalised: `config.fingerprint(purpose)` (provider, model, effort) is folded into
-  `jd._slug` and `rewrite._score_cache_path` for exactly this reason. Without it, switching
-  `--model` and re-running replays the *previous* backend's output under the new backend's
-  name, which is both wrong and quietly makes any comparison between them meaningless.
+  generalised: `config.fingerprint(purpose)` (`origin or provider`, model, effort) is
+  folded into `jd._slug` and `rewrite._score_cache_path` for exactly this reason. Without
+  it, switching `--model` and re-running replays the *previous* backend's output under the
+  new backend's name, which is both wrong and quietly makes any comparison between them
+  meaningless. The fingerprint keys on `Backend.origin`, not `Backend.provider`, since
+  Ollama/LM Studio/Gemini all remap to `provider == "openai"` for the client shape —
+  without `origin` two of them sharing a model string would collide on the same cache
+  entry. Added when Gemini did, and it invalidated every existing cached artifact once,
+  which was accepted rather than worked around (see `implementation-notes.md`).
 
 ## Setup
 
@@ -107,7 +128,7 @@ with the launcher. 3.14 is too new for some wheels.
 ```powershell
 python tailor.py --jd jd.txt              # CLI: JD in, tailored resume out
 python scripts\build_template.py          # regenerate main_template.docx from the export
-python scripts\calibrate.py               # write data/calibration/<pdf-backend>.json
+python scripts\calibrate.py               # write <active profile>/calibration/<pdf-backend>.json
 python scripts\render_dummy.py            # render full master resume + report page count
 python scripts\compare_pdf_backends.py    # Word vs LibreOffice page/line comparison
 python -m resume_tailor.data --validate   # validate master_resume.json
@@ -115,6 +136,9 @@ pytest                                    # full suite (no Word or API required)
 uvicorn resume_tailor.web.app:app --reload --app-dir src   # API + SPA (build frontend first)
 docker compose up --build                 # one-click: UI at http://localhost:8000
 ```
+
+`tailor.py`, `build_template.py`, and `calibrate.py` all take `--workspace <id>` to run
+against a non-active profile for that invocation only (see "Profiles (workspaces)" below).
 
 ### Web UI (local without Docker)
 
@@ -161,7 +185,9 @@ skill items keep their master-resume wording unchanged).
 It also selects the backend, which is what makes bulk applying affordable:
 
 ```powershell
-python tailor.py --jd jd.txt                     # claude (default, unchanged)
+python tailor.py --jd jd.txt                     # ollama (default — no Anthropic key needed)
+python tailor.py --jd jd.txt --model claude      # all stages on Claude (the pre-2026-08-02 default)
+python tailor.py --jd jd.txt --model gemini      # all stages on Gemini (needs GEMINI_API_KEY)
 python tailor.py --jd jd.txt --model hybrid      # rank/expand/facets on Ollama, rewrite on Claude
 python tailor.py --jd jd.txt --model ollama      # all stages on Ollama Cloud
 python tailor.py --jd jd.txt --model lmstudio    # all stages on a local LM Studio server
@@ -171,27 +197,38 @@ python tailor.py --jd jd.txt --effort medium     # per-stage default is low/low/
 ```
 
 `--model` takes a profile (`config.MODEL_PROFILES`: `claude`, `ollama`, `lmstudio`,
-`hybrid`) or a spec `provider:model[@base_url]`. **The spec splits on the first colon
-only** — the default Ollama tag is `gemma4:cloud`, so `ollama:gemma4:cloud` has to keep
-the second colon in the model name. `ollama` is an alias for the OpenAI-compatible
+`gemini`, `hybrid`) or a spec `provider:model[@base_url]`. **The spec splits on the first
+colon only** — the default Ollama tag is `gemma4:cloud`, so `ollama:gemma4:cloud` has to
+keep the second colon in the model name. `ollama` is an alias for the OpenAI-compatible
 provider pointed at `OLLAMA_BASE_URL`, so the same path reaches local Ollama, Ollama
 Cloud, vLLM, Groq, OpenRouter, GLM and Kimi. `lmstudio` is the same OpenAI-compatible path
 pointed at `LMSTUDIO_BASE_URL` instead — LM Studio ids look like `google/gemma-4-12b`
 (no colon), so a bare override under the `lmstudio` profile is rebound to stay on that
-provider rather than silently falling back to Ollama (`config.resolve`).
+provider rather than silently falling back to Ollama (`config.resolve`). `gemini` is the
+same shape again, pointed at `GEMINI_BASE_URL` — but unlike the other two it genuinely
+requires a credential (`GEMINI_API_KEY`/`GOOGLE_API_KEY`/`LLM_API_KEY`, checked in that
+order by `config.api_key_for`); `llm.client_for` raises before any call is made if none is
+set, and the web layer's `config.credential_gaps` rejects the job synchronously at
+`POST /api/jobs` for the same reason. `Backend.origin` (`config.py`) is what makes this
+possible — it survives the ollama/lmstudio/gemini → `openai` client-shape remap so
+credentials, the JSON structured-output mode, and the token-cap table can still tell the
+three apart even though they now share `provider == "openai"`.
 
 To regenerate the template from a **new** Google Docs export, replace the baseline
-first — `build_template.py` reads only `templates/original_export.docx` and will otherwise
+first — `build_template.py` reads only `config.BASELINE_TEMPLATE_PATH` (the active
+profile's `original_export.docx`; see "Profiles (workspaces)" below) and will otherwise
 silently rebuild from the stale copy. Either copy on the CLI or use the Template tab in
-the web UI (which backs up the previous baseline under `templates/backups/`):
+the web UI (which backs up the previous baseline under `<active profile>/backups/`):
 
 ```powershell
-copy "data\YOUR RESUME.docx" templates\original_export.docx
-python scripts\build_template.py
+copy "data\YOUR RESUME.docx" templates\workspaces\<id>\original_export.docx
+python scripts\build_template.py --workspace <id>
 ```
 
-After any template change, re-run `python scripts/calibrate.py` and restart the server so
-fit constants match the new layout.
+Pre-profiles (no `data/workspaces/` yet), the paths are the legacy
+`templates\original_export.docx` and no `--workspace` flag is needed. After any
+template change, re-run `python scripts/calibrate.py` and restart the server so fit
+constants match the new layout.
 
 ## Testing conventions
 
@@ -366,6 +403,107 @@ Key structural facts that span files:
   keeps working unchanged when `on_event` is `None`, which is what keeps this out of the
   existing (callback-free) tests.
 
+## Profiles (workspaces)
+
+The web UI can hold more than one **profile** — a full master resume + template +
+calibration + settings, switched together as a single unit via the header dropdown.
+Internally this is called a **workspace**, never "profile": `profile` was already
+taken twice (`TemplateProfile`, the docx section mapping in `template_profile.py`;
+and `config.MODEL_PROFILES`, the `claude`/`ollama`/`hybrid` backend presets). The UI
+label stays "Profile"; the code — `workspace.py`, `config.set_active_workspace`,
+`/api/workspaces` — says `workspace` throughout.
+
+| Term | Means |
+|---|---|
+| Profile (UI) / workspace (code) | This feature — one resume+template+settings unit |
+| `TemplateProfile` (`template_profile.py`) | The confirmed docx section mapping for one template |
+| `config.MODEL_PROFILES` | Backend presets (`claude`, `ollama`, `lmstudio`, `hybrid`) |
+
+**Layout.** Each workspace is a directory tree replicated under the three existing
+storage roots, so Docker's bind mounts and every `RESUME_TAILOR_*_DIR` override need
+no change — the tree just appears one level down inside each mount:
+
+```
+data/workspaces/index.json                 registry: {active_id, entries:[...]}
+data/workspaces/<id>/master_resume.json
+data/workspaces/<id>/settings.json
+data/workspaces/<id>/calibration/<backend>.json
+templates/workspaces/<id>/{original_export.docx, main_template.docx, template_profile.json}
+templates/workspaces/<id>/library/ , backups/
+output/workspaces/<id>/{cache/, jobs/<job_id>/, template/}
+```
+
+Ids are slugs derived from the label (`swe-newgrad`), not opaque — these directories
+are browsed by hand. **Rename never moves the directory**; the id is fixed at
+creation. The template library cap (`_LIBRARY_MAX_ENTRIES = 20`) is per workspace.
+
+**`config.py` rebinds, it doesn't parametrise.** `set_active_workspace()` reassigns
+eleven module globals (`DATA_DIR`, `MASTER_RESUME_PATH`, `DEFAULT_TEMPLATE_PATH`,
+`CALIBRATION_DIR`, …) to point inside one workspace, then calls
+`reload_calibration()`. This works because there is not one `from config import X`
+anywhere in the tree — all path references go through `config.X` and resolve on next
+read, the same property that already made `reload_calibration()` (pre-existing,
+used after a web-triggered calibrate) safe. It is **not** safe to call concurrently
+with a running job or a template-tab operation: every mutating workspace route holds
+`get_queue().busy()` and `template_ops.LOCK` before calling it, in that order, never
+reversed.
+
+**`workspace.bootstrap()`** resolves and activates a workspace on every process
+start — the FastAPI lifespan calls it with no args; `tailor.py`, `build_template.py`,
+and `calibrate.py` each take a `--workspace <id>` override that applies to that
+invocation only and never writes the registry, so a background CLI run can't silently
+flip which profile the running server has active. On the very first boot with no
+registry, it **migrates** today's single-slot `data/master_resume.json` +
+`templates/*` into a `default` workspace — by copying, never moving, so a failed or
+partial migration leaves the legacy files untouched and retries cleanly on the next
+boot. `GET /api/workspaces` reports `migrated_from_legacy: true` once, and the UI
+shows a banner.
+
+**Settings moved server-side.** Each workspace's `settings.json` wraps a
+`JobSettings` (the same per-run shape `POST /api/jobs` already took) under a
+`{schema_version, defaults}` envelope. `GET`/`PUT /api/settings` read/write the
+active workspace; `POST /api/jobs` still takes settings per call so a one-off
+override never becomes the saved default, falling back to the saved ones only when
+the request omits `settings` entirely.
+
+**Every workspace must always have a loadable `master_resume.json`.**
+`workspace.ensure_master_resume()` writes a placeholder (`"Your Name"`) when the file
+is absent, and is called from `create()`, `activate()`, and `bootstrap()`. It is
+create-if-absent only and can never overwrite real content. This is not cosmetic: a
+workspace without that file is broken in three places at once — the editor 404s,
+`template_ops._smoke_render` raises `FileNotFoundError` so **every profile-mode
+template install fails** ("Staged build or smoke render failed: Master resume not
+found at …"), and no run can start. It shipped broken exactly once, for profiles
+created with the duplicate checkbox *un*checked. The `activate`/`bootstrap` calls are
+what repair profiles created before the seeding existed.
+
+When testing this, note that `_install_legacy` never calls `_smoke_render` — only
+`_install_with_profile` does. A legacy-path install (upload with no `profile` field)
+passes even with the bug present, so the regression test
+(`test_profile_template_install_works_on_a_freshly_created_profile`) has to drive the
+real analyze → install wizard flow with a resume the analyzer reports `ready` for.
+
+**Frontend**: `WorkspaceProvider` (`state/workspaceState.tsx`) sits above the router
+and never remounts. `RunProvider` / `EditorProvider` / `TemplateProvider` are keyed
+on the active workspace id in `App.tsx`, so a switch discards their cached state by
+unmounting and remounting rather than by reset logic in any of them — each already
+refetches on mount. `ProfileSwitcher` lives inside that keyed scope specifically so
+it can read the *outgoing* profile's `useEditorState().dirty` at the moment a switch
+is requested, to warn before discarding unsaved master-resume edits.
+
+**Single process is now a hard requirement, not just a queue-serialisation nicety.**
+`config._ACTIVE` was already process-wide (see "Web UI is an alternate front door"
+above); `set_active_workspace` adds eleven more path globals to that list. Running
+`uvicorn --workers 2` would let one worker serve a switch the other never sees —
+don't add `--workers` to the Dockerfile CMD or the dev command.
+
+**Fresh-clone restore now has two valid targets.** Placing a resume/export at the
+legacy paths (`data/master_resume.json`, `templates/original_export.docx`) before
+the server's first-ever boot gets migrated into `data/workspaces/default/…`
+automatically. Restoring into an *existing* multi-profile setup means writing
+directly under `data/workspaces/<id>/…` / `templates/workspaces/<id>/…` instead —
+migration only ever runs once, on the boot that finds no registry at all.
+
 ## Template generation
 
 Four modules divide the work: `template_analyze.py` inspects an uploaded `.docx`
@@ -393,7 +531,8 @@ Two modes:
   `template_analyze.validate_profile_against_doc` re-checks every mapped span (range,
   no tabs inside a span, no overlaps) before install commits — a bad mapping is rejected
   loudly there rather than producing a silently garbled template. Successful installs
-  are also snapshotted under `templates/library/` with a user label (max 20); the
+  are also snapshotted under `templates/library/` (per-profile: `templates/workspaces/
+  <id>/library/` — see "Profiles (workspaces)" above) with a user label (max 20); the
   Template tab can activate / rename / delete saved entries without re-uploading. Live
   render paths stay single-slot (`original_export.docx` / `main_template.docx`).
 - **Legacy** (`--legacy` or upload without a profile): exact all-caps headings
@@ -456,6 +595,46 @@ yet was broken. Most are covered by regression tests in `tests/test_render.py`; 
   span/offset in `template_analyze.py` and `template_build.py` agree on which of the two
   they mean; strip hyperlinks *after* resolving offsets against the run map, never before.
 
+One in PDF hyperlinks specifically:
+
+- **A hyperlink can render correctly in Word and still be dead in the PDF.**
+  LibreOffice paints the blue underline but emits **zero** PDF `Link` annotations for a
+  run unless it carries `w:rStyle w:val="InternetLink"` *and* `styles.xml` actually
+  defines that style id — Word keeps the link clickable with neither. Google Docs
+  exports (and therefore the template built from one) define neither. `RichText`'s
+  `style=` param (used in `render._add_hyperlink`) can emit the `w:rStyle` reference
+  for links `render.py` builds itself, but it only ever touches `document.xml` — it has
+  no way to add the style *definition* `styles.xml` needs, and cannot help a hyperlink
+  that was already baked into the template rather than added via `RichText`. That's why
+  `render._ensure_pdf_hyperlink_styles` runs as a post-save zip patch: it registers the
+  `InternetLink` style in `styles.xml` if missing, and backfills the `rStyle` reference
+  onto any hyperlink run that lacks one, so existing templates work without a rebuild.
+  Any code that builds a hyperlink run outside `render.py` needs the same treatment or
+  it will look fine in Word and quietly fail only in the PDF path — the format most
+  users actually download.
+
+One in the Template tab's preview cache:
+
+- **The template preview has two inputs, and the cache must key on both.**
+  `template_ops.ensure_preview` renders `master_resume.json` *through*
+  `main_template.docx` into `output/template/preview.pdf`, but its staleness check
+  originally compared the cached PDF's mtime against the tagged template alone. A
+  resume edit leaves the template untouched, so the cache looked fresh and the tab
+  served the pre-edit PDF indefinitely — reported as "Refresh doesn't show my
+  changes". Both files are now in the comparison. Keeping it an mtime check (rather
+  than having `PUT /api/master-resume` call `invalidate_preview`) is deliberate: it
+  also catches a `master_resume.json` edited by hand or by the CLI, which no
+  route-level hook would see. This bug had a second half in the SPA — see below.
+
+One in the SPA, which is why the above looked unfixable from the backend alone:
+
+- **`refresh()` must bump `previewKey`.** The preview iframe's src is
+  `preview.pdf?v=${previewKey}`, so a Refresh that only re-fetched
+  `GET /api/template` updated the metadata card while the browser re-displayed the
+  PDF it already had. The two bugs masked each other: fixing only the cache still
+  showed a stale frame, and fixing only the cache-buster still fetched a stale PDF.
+  Anything that changes what the preview should show has to bump `previewKey`.
+
 One more, in `rewrite.py` rather than the template:
 
 - **The fabrication guard fails on *tokenisation*, not on dishonesty.** Nearly every live
@@ -480,12 +659,32 @@ One more, in `rewrite.py` rather than the template:
 
 ## Environment notes
 
-- **Model**: `claude-sonnet-5` by default (`config.MODEL`), routed per stage through
+- **The default profile is `ollama`, not `claude`.** Both `tailor.py --model` and
+  `JobSettings.model` default to `ollama` (tag `config.OLLAMA_MODEL`, `gemma4:cloud`), so
+  a fresh install runs with no Anthropic key at all. `config.MODEL` (`claude-sonnet-5`) is
+  still the Anthropic model *when* a stage routes there — it is the `claude`/`hybrid`
+  answer, no longer the zero-config one. Note the one place that did **not** flip:
+  `config.resolve()`'s own `profile or "claude"` fallback, and `backend_for`'s
+  resolve-if-unresolved. Those guard importable library functions (`jd.extract`,
+  `rewrite.score_table`) called by scripts and tests that never went through the CLI, and
+  flipping them would silently reroute callers that never asked for a backend.
+- **Model**: routed per stage through
   `llm.client_for()`. Every call uses `client.messages.parse()` with a Pydantic model —
-  schema-validated, never prose parsing. Reasoning tokens come out of `max_tokens`, and
-  these non-streaming calls are capped at 21,333 by the SDK, so effort and `MAX_TOKENS` are
-  coupled — raising effort past `"medium"` means switching to streaming, not raising the
-  ceiling. See `docs/PLAN.md`.
+  schema-validated, never prose parsing. Reasoning tokens come out of `max_tokens`, and on
+  the Anthropic path these non-streaming calls are capped at 21,333 by the SDK, so effort
+  and `MAX_TOKENS` are coupled there — raising effort past `"medium"` means switching to
+  streaming, not raising the ceiling. See `docs/PLAN.md`. **`MAX_TOKENS` is no longer a
+  fixed ceiling on the OpenAI-compatible path** (Ollama/LM Studio/Gemini) — it is only the
+  *starting* request. `llm._OpenAICompatClient.request` escalates a truncated response
+  (`finish == "length"`) up to `config.max_token_cap_for(purpose)` (per-origin, e.g. 65,536
+  for Gemini; `LLM_MAX_TOKENS` pins both the start and the cap for every stage) before
+  raising. This exists because Gemini counts thinking tokens against the same budget as the
+  answer, so a fixed ceiling either truncated outright or had to be hand-tuned generously.
+  Escalation only fires on what was already a hard `LLMError` before this existed, so a
+  working run is never billed more for it — see `llm._LEARNED_CEILING`, which memoises the
+  ceiling that worked per `(base_url, model)` so a multi-call run (rewrite makes up to five)
+  does not rediscover it on every call. The Anthropic path is unaffected — it bypasses
+  `_OpenAICompatClient` entirely, so its cap stays a client-side SDK refusal.
 - **Most of the per-call cost is reasoning, not prompt.** Measured: the largest call sends
   ~2,800 input tokens and returns ~1,250, which is ~$0.03 at Sonnet rates against ~$0.16
   billed. Hence per-stage effort (`config.DEFAULT_EFFORT`), defaulting to `low` for
@@ -499,14 +698,34 @@ One more, in `rewrite.py` rather than the template:
   `nemotron-3-super:cloud`: `response_format: json_schema` and Ollama's own native `format`
   parameter both return HTTP 200 carrying markdown prose. So `llm.py` puts the schema in the
   system prompt, sends `response_format: json_object`, and escalates on **parse failure, not
-  status code** — a design keyed on 4xx would sail past every fallback. See
-  `config.LLM_STRUCTURED_MODE` to opt into real schema enforcement where it exists.
+  status code** — a design keyed on 4xx would sail past every fallback. This is now the
+  **per-origin default**, not a single global one: `config.structured_mode_for(purpose)`
+  answers `"prompt"` for Ollama/LM Studio (the measured-safe default above) and `"schema"`
+  for Gemini, whose endpoint genuinely constrains decoding. An explicit
+  `config.LLM_STRUCTURED_MODE` env value still overrides everywhere, unchanged from before —
+  set it to opt a non-Gemini endpoint into real schema enforcement, or to force `"prompt"`
+  globally if Gemini's schema mode turns out to reject this project's nested output models
+  (every one has `$defs`/`$ref`, a known gap area for OpenAI-compat shims). A rejection at
+  any rung now walks a ladder (`llm._response_format_ladder`: `json_schema` → `json_object`
+  → none in `schema` mode) rather than dropping straight to no constraint at all, which
+  would otherwise land *below* the `prompt` default it started from.
 - **PDF rendering** goes through `convert.py`, selected by `config.PDF_BACKEND`
   (`word` on Windows by default, `soffice` in Docker / Linux). Word via COM remains the
   native Windows path; LibreOffice headless is what makes the container possible. Fit
-  constants are per-backend under `data/calibration/<backend>.json` — do not inherit
+  constants are per-backend *and* per-profile, under `<active profile>/calibration/
+  <backend>.json` (`data/calibration/<backend>.json` pre-profiles) — do not inherit
   Word's `LINES_PER_PAGE` under LibreOffice. Callers should catch `RuntimeError` from
   `render.to_pdf` and fall back to the character budget rather than failing the run.
+  LibreOffice's calibration is trustworthy specifically because the container vendors
+  the **exact same font files** Word used to produce the baseline PDFs (`docker/fonts/`
+  → `/usr/local/share/fonts/resumetailor/`, not metric-compatible substitutes) — a
+  measured comparison across 14 existing renders found identical line counts on all 14
+  and matching page counts on 13/14, the one disagreement being the calibration
+  artifact sitting exactly on the page boundary. `CHARS_PER_LINE` describes wrap
+  points, and wrap points come from glyph advances, which is why that constant does
+  not move between backends but `LINES_PER_PAGE` does. Spectral (section headings) was
+  missing on the Windows dev machine and is installed for real in the container; that
+  only affects heading glyphs, never wrapping, since headings are short.
 - **Page fitting is budget-first, but not budget-only.** `CHARS_PER_LINE` /
   `LINES_PER_PAGE` are measured by `scripts/calibrate.py` against the real template and
   the active PDF backend; re-run it after any template, font, margin, or converter change.
@@ -536,7 +755,8 @@ One more, in `rewrite.py` rather than the template:
   always true — an earlier version of `.gitignore` had a `# Generated output` heading with
   no pattern under it, leaving `output/` untracked-but-stageable — so if a `git add -A`
   ever stages files under `output/`, treat it as a real regression and check history for
-  exposure before just re-adding the pattern.
+  exposure before just re-adding the pattern. The per-profile `workspaces/` subtree nests
+  inside these same three roots, so it needed no new `.gitignore` entry.
 - **`data/` and `templates/` are gitignored, so the repo does not contain a working
   install.** A fresh clone has neither `master_resume.json` (every fact the tool can use)
   nor `original_export.docx` (which `build_template.py` reads), so nothing runs until both

@@ -145,6 +145,17 @@ class JobQueue:
 
         try:
             overrides: dict[str, str] = {}
+            # Broadest first: the blanket Ollama/Gemini tags repoint every stage routed to
+            # that origin, then the two per-stage fields overwrite whichever of them they
+            # name. Reversing this would let a blanket tag clobber an explicit per-stage
+            # choice. Order between the two blanket loops is irrelevant — a stage is
+            # routed to at most one of them in the profile's own specs, never both.
+            if settings.ollama_model:
+                for purpose in config.provider_stages(settings.model, "ollama"):
+                    overrides[purpose] = settings.ollama_model
+            if settings.gemini_model:
+                for purpose in config.provider_stages(settings.model, "gemini"):
+                    overrides[purpose] = settings.gemini_model
             if settings.rewrite_model:
                 overrides["rewrite"] = settings.rewrite_model
             if settings.expand_model:

@@ -3,11 +3,17 @@ import { useSyncExternalStore } from "react";
 /** localStorage key for the shared rewrite/expand model-spec list. */
 const STORAGE_KEY = "resumeTailor.modelSpecs";
 
-/** Seeded on first load from the project's default Anthropic and Ollama specs. */
+/** Seeded on first load from the project's default Anthropic and Ollama specs.
+ *
+ * Seeded once into localStorage on first read (below) and never re-seeded, so an
+ * existing user's saved list will not pick up a newly added default here — not worth
+ * a migration for one extra option that "Add" already covers.
+ */
 const DEFAULT_SPECS = [
   "claude-sonnet-5",
   "ollama:gemma4:cloud",
   "lmstudio:local-model",
+  "gemini:gemini-3.5-flash",
 ];
 
 type Listener = () => void;

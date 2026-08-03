@@ -59,7 +59,12 @@ def _completion(content, *, finish="stop", status=200) -> httpx.Response:
 
 @pytest.fixture
 def client(monkeypatch):
-    def _make(*responses, structured_mode="prompt"):
+    # `_LEARNED_CEILING` is module-global (see llm.py) so a value recorded by one test
+    # would otherwise leak into the next and turn a call-count assertion flaky for reasons
+    # that have nothing to do with what that test is checking.
+    llm._LEARNED_CEILING.clear()
+
+    def _make(*responses, structured_mode="prompt", max_token_cap=0):
         recorder = _Recorder(*responses)
         monkeypatch.setattr(llm.httpx, "post", recorder)
         c = llm._OpenAICompatClient(
@@ -67,6 +72,7 @@ def client(monkeypatch):
             api_key="",
             timeout=5,
             structured_mode=structured_mode,
+            max_token_cap=max_token_cap,
         )
         c.recorder = recorder
         return c
@@ -156,6 +162,132 @@ def test_bare_override_under_lmstudio_stays_on_lmstudio():
         config.resolve("claude")
 
 
+def test_gemini_spec_parses_and_remaps_to_openai_compat():
+    """`gemini` is a third alias for the OpenAI-compatible client, at GEMINI_BASE_URL."""
+    assert config.parse_spec("gemini:foo-bar") == ("gemini", "foo-bar", None)
+    backends = config.resolve("gemini")
+    try:
+        for purpose in config.PURPOSES:
+            b = backends[purpose]
+            assert b.provider == "openai"
+            assert b.origin == "gemini"
+            assert b.model == config.GEMINI_MODEL
+            assert b.base_url == config.GEMINI_BASE_URL
+    finally:
+        config.resolve("claude")
+
+
+def test_bare_override_under_gemini_stays_on_gemini():
+    """Without this, a bare id typed into the UI's Rewrite field under `gemini` would
+    fall through `parse_spec`'s bare-name inference and 404 against Ollama's :11434."""
+    backends = config.resolve("gemini", overrides={"rewrite": "gemini-3.5-pro"})
+    try:
+        b = backends["rewrite"]
+        assert b.provider == "openai"
+        assert b.origin == "gemini"
+        assert b.model == "gemini-3.5-pro"
+        assert b.base_url == config.GEMINI_BASE_URL
+    finally:
+        config.resolve("claude")
+
+
+def test_backend_origin_defaults_empty_for_hand_built_backends():
+    """The NamedTuple append (`origin`) must not break existing kwarg-only construction."""
+    b = config.Backend(provider="openai", model="x", base_url=None, effort="low")
+    assert b.origin == ""
+
+
+def test_gemini_and_ollama_fingerprints_differ_for_the_same_model():
+    """After the openai remap both share provider=='openai'; origin is what still tells
+    a Gemini cache entry apart from an Ollama one for the same model string."""
+    try:
+        config.resolve("gemini", overrides={"extract": "gemini:shared-name"})
+        gemini_fp = config.fingerprint("extract")
+        config.resolve("ollama", overrides={"extract": "ollama:shared-name"})
+        ollama_fp = config.fingerprint("extract")
+        assert gemini_fp != ollama_fp
+    finally:
+        config.resolve("claude")
+
+
+def test_structured_mode_defaults_to_schema_for_gemini_only():
+    try:
+        config.resolve("gemini")
+        assert config.structured_mode_for("extract") == "schema"
+        config.resolve("ollama")
+        assert config.structured_mode_for("extract") == "prompt"
+    finally:
+        config.resolve("claude")
+
+
+def test_explicit_structured_mode_env_wins_over_the_provider_default(monkeypatch):
+    monkeypatch.setattr(config, "_STRUCTURED_MODE_ENV", "prompt")
+    try:
+        config.resolve("gemini")
+        assert config.structured_mode_for("extract") == "prompt"
+    finally:
+        config.resolve("claude")
+
+
+def test_api_key_for_prefers_gemini_key_then_google_then_llm(monkeypatch):
+    assert config.api_key_env_for("gemini") == (
+        "GEMINI_API_KEY",
+        "GOOGLE_API_KEY",
+        "LLM_API_KEY",
+    )
+    for name in ("GEMINI_API_KEY", "GOOGLE_API_KEY", "LLM_API_KEY", "OLLAMA_API_KEY"):
+        monkeypatch.delenv(name, raising=False)
+    try:
+        config.resolve("gemini")
+        assert config.api_key_for("extract") == ""
+
+        monkeypatch.setenv("LLM_API_KEY", "llm-key")
+        assert config.api_key_for("extract") == "llm-key"
+
+        monkeypatch.setenv("GOOGLE_API_KEY", "google-key")
+        assert config.api_key_for("extract") == "google-key"
+
+        monkeypatch.setenv("GEMINI_API_KEY", "gemini-key")
+        assert config.api_key_for("extract") == "gemini-key"
+    finally:
+        config.resolve("claude")
+
+
+def test_provider_stages_generalises_and_ollama_stages_still_wraps_it():
+    assert config.provider_stages("gemini", "gemini") == config.PURPOSES
+    assert config.provider_stages("ollama", "gemini") == ()
+    # ollama_stages is a thin wrapper — existing callers (web/jobs.py, web/app.py) keep
+    # working unchanged.
+    assert config.ollama_stages("hybrid") == config.provider_stages("hybrid", "ollama")
+
+
+def test_credential_gaps_does_not_touch_active_routing(monkeypatch):
+    """Pure: a web-layer preflight call must never resolve, since `_ACTIVE` is
+    process-global and a job could be mid-run on another thread."""
+    for name in ("GEMINI_API_KEY", "GOOGLE_API_KEY", "LLM_API_KEY"):
+        monkeypatch.delenv(name, raising=False)
+    config.resolve("claude")
+    gaps = config.credential_gaps("gemini")
+    assert "GEMINI_API_KEY" in gaps[0]
+    assert config.provider_for("extract") == "anthropic"  # unchanged by the call above
+
+
+def test_credential_gaps_is_empty_when_a_key_is_present(monkeypatch):
+    monkeypatch.setenv("GEMINI_API_KEY", "x")
+    assert config.credential_gaps("gemini") == []
+
+
+def test_credential_gaps_ignores_profiles_with_no_key_requirement():
+    assert config.credential_gaps("ollama") == []
+    assert config.credential_gaps("claude") == []
+
+
+def test_credential_gaps_on_an_unparseable_spec_returns_no_gaps():
+    """Rejecting a bad spec stays `resolve`'s job (it raises `ValueError`); this one
+    just reports no gaps rather than raising."""
+    assert config.credential_gaps("") == []
+
+
 def test_bare_override_under_hybrid_rewrite_still_defaults_to_ollama():
     """Hybrid rewrite is Anthropic; a bare local id keeps the historical Ollama default."""
     backends = config.resolve("hybrid", overrides={"rewrite": "google/gemma-4-12b"})
@@ -170,10 +302,44 @@ def test_bare_override_under_hybrid_rewrite_still_defaults_to_ollama():
 
 def test_profiles_route_stages_independently():
     """`hybrid` exists so the risky stage can differ from the cheap ones."""
-    backends = config.resolve("hybrid")
-    assert backends["extract"].provider == "openai"
-    assert backends["rewrite"].provider == "anthropic"
-    assert config.fingerprint("extract") != config.fingerprint("rewrite")
+    try:
+        backends = config.resolve("hybrid")
+        assert backends["extract"].provider == "openai"
+        assert backends["rewrite"].provider == "anthropic"
+        assert config.fingerprint("extract") != config.fingerprint("rewrite")
+    finally:
+        # `_ACTIVE` is process-wide, so leaving 'hybrid' resolved leaks into later tests.
+        config.resolve("claude")
+
+
+def test_ollama_stages_excludes_hybrids_anthropic_rewrite():
+    """The UI tag field must repoint Ollama stages only — never hybrid's Claude rewrite."""
+    assert config.ollama_stages("ollama") == config.PURPOSES
+    assert set(config.ollama_stages("hybrid")) == {"extract", "score", "expand", "facets"}
+    assert config.ollama_stages("claude") == ()
+    assert config.ollama_stages("lmstudio") == ()
+
+
+def test_ollama_stages_handles_raw_specs_and_junk():
+    """`model` is free text, so a spec (or a typo) must not raise on the job path."""
+    assert config.ollama_stages("ollama:gemma4:cloud") == config.PURPOSES
+    assert config.ollama_stages("claude-sonnet-5") == ()
+    assert config.ollama_stages("") == ()
+
+
+def test_ollama_tag_override_repoints_every_ollama_stage_under_hybrid():
+    """What the web UI's Ollama-model field expands into, end to end through resolve."""
+    overrides = dict.fromkeys(config.ollama_stages("hybrid"), "gemma4")
+    backends = config.resolve("hybrid", overrides=overrides)
+    try:
+        for purpose in ("extract", "score", "expand", "facets"):
+            assert backends[purpose].model == "gemma4"
+            assert backends[purpose].base_url == config.OLLAMA_BASE_URL
+        # The stage the tag must not touch.
+        assert backends["rewrite"].provider == "anthropic"
+        assert backends["rewrite"].model == config.MODEL
+    finally:
+        config.resolve("claude")
 
 
 def test_unknown_profile_names_the_valid_ones():
@@ -287,12 +453,50 @@ def test_prose_in_a_200_triggers_the_repair_retry(client):
 
 
 def test_a_400_on_response_format_retries_without_it(client):
-    """Some endpoints reject the field outright; the schema is already in the prompt."""
+    """Some endpoints reject the field outright; the schema is already in the prompt.
+
+    Default `prompt` mode's ladder is `[json_object, None]` — the same one-step drop this
+    behaviour always had, so this passes unchanged by the graded-ladder rewrite.
+    """
     c = client(httpx.Response(400, text="unknown parameter response_format"), _completion(VALID))
     result = _request(c)
 
     assert result.parsed_output.title == "Engineer"
     assert "response_format" not in c.recorder.payloads[1]
+
+
+def test_schema_mode_downgrades_to_json_object_before_dropping_the_format(client):
+    """`schema` mode's ladder has a middle rung `prompt` mode doesn't: a rejection of a
+    strict json_schema should try plain json_object before giving up on structure
+    entirely — dropping straight to nothing would be strictly worse than the `prompt`
+    default it started from."""
+    c = client(
+        httpx.Response(400, text="bad schema"),
+        httpx.Response(400, text="still bad"),
+        _completion(VALID),
+        structured_mode="schema",
+    )
+    result = _request(c)
+
+    assert result.parsed_output.title == "Engineer"
+    assert c.recorder.payloads[0]["response_format"]["type"] == "json_schema"
+    assert c.recorder.payloads[1]["response_format"] == {"type": "json_object"}
+    assert "response_format" not in c.recorder.payloads[2]
+
+
+def test_the_format_ladder_does_not_retry_past_its_last_rung(client):
+    """Bounded: once the ladder is exhausted, a further 400 is a real failure, not
+    something to keep retrying against a metered quota."""
+    c = client(
+        httpx.Response(400, text="bad"),
+        httpx.Response(400, text="bad"),
+        httpx.Response(400, text="bad"),
+        httpx.Response(400, text="bad"),
+        structured_mode="schema",
+    )
+    with pytest.raises(llm.LLMError, match="400"):
+        _request(c)
+    assert c.recorder.calls == 3  # 3 rungs: json_schema, json_object, none
 
 
 def test_repair_is_attempted_exactly_once_then_raises(client):
@@ -304,13 +508,101 @@ def test_repair_is_attempted_exactly_once_then_raises(client):
     assert c.recorder.calls == 2
 
 
-def test_truncation_is_reported_rather_than_retried(client):
-    """Reasoning tokens come out of max_tokens, so this is a real failure for a verbose
-    model. Retrying with the same ceiling would just burn another round trip."""
+def test_truncation_is_reported_rather_than_retried_when_already_at_the_cap(client):
+    """No `max_token_cap` (the direct-construction default of 0) means no headroom to
+    escalate into — cap collapses to the starting request, so this still hard-fails
+    exactly as it always did. Reasoning tokens come out of max_tokens, so this is a real
+    failure for a verbose model with nowhere left to grow."""
     c = client(_completion('{"title": "Engi', finish="length"))
     with pytest.raises(llm.LLMError, match="ceiling"):
         _request(c)
     assert c.recorder.calls == 1
+
+
+def test_truncation_escalates_the_ceiling_and_succeeds(client):
+    """The headline behaviour: given headroom, a truncated response is not a dead end —
+    the ceiling doubles and the same request is retried at the higher value."""
+    c = client(
+        _completion('{"title": "Engi', finish="length"),
+        _completion(VALID),
+        max_token_cap=64_000,
+    )
+    result = _request(c)
+
+    assert result.parsed_output.title == "Engineer"
+    assert c.recorder.payloads[0]["max_tokens"] == 1000
+    assert c.recorder.payloads[1]["max_tokens"] == 2000
+
+
+def test_escalation_stops_at_the_provider_cap_and_reports_it(client):
+    """Escalation is bounded by the cap, not just by MAX_TOKEN_ESCALATIONS — a model
+    verbose enough to blow through the cap itself still gets a clean failure."""
+    c = client(
+        _completion('{"title": "Engi', finish="length"),
+        _completion('{"title": "Engi', finish="length"),
+        max_token_cap=1500,
+    )
+    with pytest.raises(llm.LLMError, match="ceiling"):
+        _request(c)
+    assert c.recorder.payloads[0]["max_tokens"] == 1000
+    assert c.recorder.payloads[1]["max_tokens"] == 1500  # 1000*2 clamped to the 1500 cap
+    assert c.recorder.calls == 2
+
+
+def test_a_truncated_response_that_parses_is_not_escalated(client):
+    """A `finish == 'length'` response that nonetheless satisfies the schema is not
+    escalated — escalating a call that already succeeded would double the cost of a
+    *working* run, the exact thing that makes this feature safe to turn on by default."""
+    c = client(_completion(VALID, finish="length"), max_token_cap=64_000)
+    result = _request(c)
+
+    assert result.parsed_output.title == "Engineer"
+    assert result.stop_reason == "length"
+    assert c.recorder.calls == 1
+
+
+def test_the_learned_ceiling_is_reused_by_a_later_call(client, monkeypatch):
+    """A rewrite-heavy run makes several calls to the same model; the second one should
+    not have to rediscover a ceiling the first one already found the hard way."""
+    c1 = client(
+        _completion('{"title": "Engi', finish="length"),
+        _completion(VALID),
+        max_token_cap=64_000,
+    )
+    _request(c1)
+    assert llm._LEARNED_CEILING[("http://localhost:11434/v1", "nemotron-3-super:cloud")] == 2000
+
+    # A second, independent client against the same (base_url, model) starts already
+    # escalated — it does not need `_LEARNED_CEILING.clear()` to have skipped happening.
+    recorder2 = _Recorder(_completion(VALID))
+    monkeypatch.setattr(llm.httpx, "post", recorder2)
+    c2 = llm._OpenAICompatClient(
+        base_url="http://localhost:11434/v1",
+        api_key="",
+        timeout=5,
+        structured_mode="prompt",
+        max_token_cap=64_000,
+    )
+    _request(c2)
+    assert recorder2.payloads[0]["max_tokens"] == 2000
+
+
+def test_worst_case_round_trips_are_bounded(client):
+    """Ladder retries + escalation retries + one repair, all firing in the same call,
+    must still terminate rather than retry forever against a metered quota."""
+    c = client(
+        httpx.Response(400, text="bad"),  # rung 0 -> 1 (schema -> json_object)
+        httpx.Response(400, text="bad"),  # rung 1 -> 2 (json_object -> none)
+        _completion('{"title": "Engi', finish="length"),  # truncated, escalate
+        _completion('{"title": "Engi', finish="length"),  # truncated again, escalate
+        _completion("nope"),  # parses status-wise but fails validation -> repair
+        _completion("still nope"),  # repair also fails -> raise
+        structured_mode="schema",
+        max_token_cap=10_000,
+    )
+    with pytest.raises(llm.LLMError, match="repair attempt"):
+        _request(c)
+    assert c.recorder.calls <= 6
 
 
 def test_a_404_explains_that_the_model_is_not_available(client):

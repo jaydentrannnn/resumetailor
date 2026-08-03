@@ -1440,8 +1440,11 @@ def build(
 
 
 def main(argv: list[str] | None = None) -> int:
-    """CLI entry: optional ``--from``, ``--profile``, ``--out``."""
+    """CLI entry: optional ``--from``, ``--profile``, ``--out``, ``--workspace``."""
     import argparse
+    import sys
+
+    from . import workspace
 
     parser = argparse.ArgumentParser(description="Build main_template.docx from a baseline export.")
     parser.add_argument(
@@ -1468,7 +1471,18 @@ def main(argv: list[str] | None = None) -> int:
         action="store_true",
         help="Ignore any profile and use hard-coded section headings.",
     )
+    parser.add_argument(
+        "--workspace",
+        default=None,
+        metavar="ID",
+        help="Build against this profile instead of the active one (this invocation only).",
+    )
     args = parser.parse_args(argv)
+    try:
+        workspace.bootstrap(workspace_id=args.workspace)
+    except workspace.WorkspaceError as exc:
+        print(f"error: {exc}", file=sys.stderr)
+        return 1
     if args.legacy:
         return build_legacy(args.source, args.out)
     return build(args.source, args.out, profile_path=args.profile)

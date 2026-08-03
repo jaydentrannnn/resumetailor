@@ -12,6 +12,7 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
@@ -23,7 +24,7 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from resume_tailor import config, data, report
+from resume_tailor import config, data, report, workspace
 from resume_tailor.data import MasterResume
 from resume_tailor.events import ProgressEvent
 from resume_tailor.template_profile import TemplateProfile
@@ -33,18 +34,42 @@ from resume_tailor.web.schemas import (
     ConfigResponse,
     CreateJobRequest,
     CreateJobResponse,
+    JobSettings,
     JobStatusResponse,
     ProgressEventOut,
+    SettingsResponse,
+    SettingsUpdateRequest,
     TemplateAnalyzeResponse,
     TemplateBuildResponse,
     TemplateInfoResponse,
     TemplateLibraryRenameRequest,
     TemplateLibraryResponse,
     ValidateResponse,
+    WorkspaceActivateResponse,
+    WorkspaceCreateRequest,
+    WorkspaceEntryOut,
+    WorkspaceListResponse,
+    WorkspaceRenameRequest,
 )
 from resume_tailor.web.template_ops import TemplateBuildError, TemplateValidationError
 
-app = FastAPI(title="ResumeTailor", version="0.1.0")
+#: Set by `lifespan` on startup — True only the first time the legacy single-slot
+#: layout was migrated into a "Default" workspace. Surfaced once by `GET /api/config`
+#: so the UI can tell the user where their files went.
+_migrated_from_legacy = False
+
+
+@asynccontextmanager
+async def lifespan(app: FastAPI):
+    """Resolve the active workspace (migrating the legacy layout on first boot)."""
+    global _migrated_from_legacy
+    result = workspace.bootstrap()
+    if result is not None:
+        _migrated_from_legacy = result.migrated
+    yield
+
+
+app = FastAPI(title="ResumeTailor", version="0.1.0", lifespan=lifespan)
 
 # The Vite dev server runs on a different origin; production serves the SPA from this
 # same process, so CORS is only needed in development. Allowing * is fine for a
@@ -62,9 +87,15 @@ def _event_out(event: ProgressEvent) -> ProgressEventOut:
     return ProgressEventOut(stage=event.stage, message=event.message, detail=event.detail)
 
 
-@app.get("/api/config", response_model=ConfigResponse)
-def get_config() -> ConfigResponse:
-    """Defaults and vocabulary the UI needs before a run starts."""
+def _config_response(*, consume_migrated: bool = True) -> ConfigResponse:
+    """Build the `GET /api/config` payload; also reused by `activate_workspace`.
+
+    `consume_migrated` clears `_migrated_from_legacy` after reporting it once — the
+    banner is a one-time notice, not a persistent status field. Both call sites want
+    that (an activation response is exactly as good a place to surface it as a config
+    fetch would have been).
+    """
+    global _migrated_from_legacy
     contact_name: str | None = None
     tags: list[str] = []
     try:
@@ -78,11 +109,40 @@ def get_config() -> ConfigResponse:
         # the run page will surface the real error when the user tries to use them.
         pass
 
+    active_id = config.active_workspace_id()
+    active_label: str | None = None
+    if active_id is not None:
+        try:
+            active_label = workspace.resolve(active_id).label
+        except workspace.WorkspaceError:
+            pass
+
+    migrated = _migrated_from_legacy
+    if consume_migrated:
+        _migrated_from_legacy = False
+
     return ConfigResponse(
         pages=config.DEFAULT_PAGE_TARGET,
         experience=config.MAX_EXPERIENCE_ENTRIES,
         projects=config.MAX_PROJECT_ENTRIES,
         model_profiles=sorted(config.MODEL_PROFILES),
+        ollama_model=config.OLLAMA_MODEL,
+        ollama_base_url=config.OLLAMA_BASE_URL,
+        ollama_profiles=sorted(
+            p for p in config.MODEL_PROFILES if config.provider_stages(p, "ollama")
+        ),
+        gemini_model=config.GEMINI_MODEL,
+        gemini_base_url=config.GEMINI_BASE_URL,
+        gemini_profiles=sorted(
+            p for p in config.MODEL_PROFILES if config.provider_stages(p, "gemini")
+        ),
+        # Direct env check, not `credential_gaps` — that takes a *profile* name, and an
+        # origin word coinciding with one (as "gemini" does today) would be a coincidence
+        # to depend on, not a guarantee.
+        provider_keys={
+            origin: any(os.environ.get(name) for name in config.api_key_env_for(origin))
+            for origin in config.PROVIDERS_REQUIRING_KEY
+        },
         effort_options=["low", "medium", "high"],
         pdf_backend=config.PDF_BACKEND,
         calibration_source=config.CALIBRATION_SOURCE,
@@ -91,6 +151,50 @@ def get_config() -> ConfigResponse:
         tag_vocabulary=tags,
         contact_name=contact_name,
         fill_target=config.UNDERFLOW_THRESHOLD,
+        active_workspace_id=active_id,
+        active_workspace_label=active_label,
+        migrated_from_legacy=migrated,
+    )
+
+
+def _workspace_entry_out(entry: workspace.WorkspaceEntry) -> WorkspaceEntryOut:
+    """Map a core `WorkspaceEntry` dataclass onto its wire shape."""
+    return WorkspaceEntryOut(
+        id=entry.id,
+        label=entry.label,
+        created_at=entry.created_at,
+        is_active=entry.is_active,
+        has_master_resume=entry.has_master_resume,
+        has_template=entry.has_template,
+    )
+
+
+@app.get("/api/config", response_model=ConfigResponse)
+def get_config() -> ConfigResponse:
+    """Defaults and vocabulary the UI needs before a run starts."""
+    return _config_response()
+
+
+@app.get("/api/settings", response_model=SettingsResponse)
+def get_settings() -> SettingsResponse:
+    """The active profile's saved run defaults, seeded from `JobSettings()` if unset."""
+    raw = workspace.load_settings()
+    settings = JobSettings.model_validate(raw["defaults"])
+    return SettingsResponse(
+        workspace_id=config.active_workspace_id(),
+        settings=settings,
+        seeded=not raw["defaults"],
+    )
+
+
+@app.put("/api/settings", response_model=SettingsResponse)
+def put_settings(body: SettingsUpdateRequest) -> SettingsResponse:
+    """Persist new run defaults for the active profile."""
+    workspace.save_settings(body.settings.model_dump())
+    return SettingsResponse(
+        workspace_id=config.active_workspace_id(),
+        settings=body.settings,
+        seeded=False,
     )
 
 
@@ -99,7 +203,26 @@ def create_job(body: CreateJobRequest) -> CreateJobResponse:
     """Enqueue a tailoring run. Returns immediately with a job id."""
     if not body.jd_text.strip():
         raise HTTPException(status_code=400, detail="Job description is empty.")
-    job, position = get_queue().submit(body.jd_text.strip(), body.settings)
+    settings = body.settings
+    if settings is None:
+        # No per-run override: fall back to the active profile's saved defaults so a
+        # bare `POST /api/jobs {"jd_text": ...}` behaves like the UI.
+        settings = JobSettings.model_validate(workspace.load_settings()["defaults"])
+    # A missing key otherwise only surfaces as an async `job.status == "failed"` once the
+    # worker gets to it. `credential_gaps` is pure (never touches `_ACTIVE`), so this check
+    # is safe to run on the request thread even while another job is mid-run.
+    overrides = {
+        k: v
+        for k, v in (
+            ("rewrite", settings.rewrite_model),
+            ("expand", settings.expand_model),
+        )
+        if v
+    }
+    gaps = config.credential_gaps(settings.model, overrides=overrides or None)
+    if gaps:
+        raise HTTPException(status_code=400, detail="; ".join(gaps))
+    job, position = get_queue().submit(body.jd_text.strip(), settings)
     return CreateJobResponse(job_id=job.job_id, queue_position=position)
 
 
@@ -474,6 +597,101 @@ def delete_template_library_entry(entry_id: str) -> TemplateLibraryResponse:
         return template_ops.delete_library_entry(entry_id)
     except TemplateValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def _workspace_list_response() -> WorkspaceListResponse:
+    """Current registry contents, mapped onto the wire shape."""
+    entries = workspace.list_workspaces()
+    active_id = next((e.id for e in entries if e.is_active), None)
+    return WorkspaceListResponse(
+        entries=[_workspace_entry_out(e) for e in entries], active_id=active_id
+    )
+
+
+def _busy_conflict(action: str) -> HTTPException:
+    return HTTPException(
+        status_code=409,
+        detail=f"A tailoring job is in progress; wait for it to finish before {action}.",
+    )
+
+
+@app.get("/api/workspaces", response_model=WorkspaceListResponse)
+def get_workspaces() -> WorkspaceListResponse:
+    """Every registered profile and which one is active."""
+    return _workspace_list_response()
+
+
+@app.post("/api/workspaces", response_model=WorkspaceListResponse)
+def create_workspace(body: WorkspaceCreateRequest) -> WorkspaceListResponse:
+    """Register a new, empty profile — or, with `copy_from` set, a duplicate of it.
+
+    Duplicating reads another profile's live template files, so (like every other
+    template-tab mutation) it refuses while a tailoring job is busy.
+    """
+    if body.copy_from is not None:
+        if get_queue().busy():
+            raise _busy_conflict("duplicating a profile")
+        with template_ops.LOCK:
+            try:
+                workspace.create(body.label, copy_from=body.copy_from)
+            except workspace.WorkspaceError as exc:
+                raise HTTPException(status_code=400, detail=str(exc)) from exc
+    else:
+        try:
+            workspace.create(body.label)
+        except workspace.WorkspaceError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    return _workspace_list_response()
+
+
+@app.post("/api/workspaces/{workspace_id}/activate", response_model=WorkspaceActivateResponse)
+def activate_workspace(workspace_id: str) -> WorkspaceActivateResponse:
+    """Switch the active profile — master resume, template, calibration, and settings.
+
+    Refuses while a tailoring job is busy: rebinding paths mid-job would silently mix
+    one profile's content with another's paths instead of failing loudly.
+    """
+    if get_queue().busy():
+        raise _busy_conflict("switching profiles")
+
+    with template_ops.LOCK:
+        try:
+            workspace.activate(workspace_id)
+        except workspace.WorkspaceError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+        entries = workspace.list_workspaces()
+        return WorkspaceActivateResponse(
+            active_id=workspace_id,
+            entries=[_workspace_entry_out(e) for e in entries],
+            config=_config_response(),
+            settings=JobSettings.model_validate(workspace.load_settings()["defaults"]),
+            template=template_ops.info(),
+        )
+
+
+@app.patch("/api/workspaces/{workspace_id}", response_model=WorkspaceListResponse)
+def rename_workspace(workspace_id: str, body: WorkspaceRenameRequest) -> WorkspaceListResponse:
+    """Rename a profile. Its on-disk directory (named from the id) never moves."""
+    try:
+        workspace.rename(workspace_id, body.label)
+    except workspace.WorkspaceError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _workspace_list_response()
+
+
+@app.delete("/api/workspaces/{workspace_id}", response_model=WorkspaceListResponse)
+def delete_workspace(workspace_id: str) -> WorkspaceListResponse:
+    """Delete a profile. Refuses the active profile and the last remaining one."""
+    if get_queue().busy():
+        raise _busy_conflict("deleting a profile")
+    with template_ops.LOCK:
+        try:
+            workspace.delete(workspace_id)
+        except workspace.WorkspaceError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+    return _workspace_list_response()
 
 
 class _SPAStaticFiles(StaticFiles):

@@ -292,9 +292,21 @@ def stubbed_run(cli, tmp_path, monkeypatch):
     config.resolve("claude")
 
 
-def test_default_model_is_claude_for_every_stage(cli, jd_file, stubbed_run):
-    """The default path has to stay exactly what it was before backends were selectable."""
+def test_default_model_is_ollama_for_every_stage(cli, jd_file, stubbed_run):
+    """A bare `tailor.py --jd ...` must run without an Anthropic key configured at all.
+
+    Was `claude` until the default flipped; the point of the flip is that the zero-config
+    path costs nothing, so this asserts the *whole* set of stages moved — a partial flip
+    would still demand a key on the one stage left behind.
+    """
     assert cli.main(["--jd", str(jd_file)]) == 0
+    assert [config.provider_for(p) for p in config.PURPOSES] == ["openai"] * 5
+    assert config.model_for("rewrite") == config.OLLAMA_MODEL
+
+
+def test_claude_profile_still_routes_every_stage_to_anthropic(cli, jd_file, stubbed_run):
+    """`--model claude` remains the way to get the old default back, unchanged."""
+    assert cli.main(["--jd", str(jd_file), "--model", "claude"]) == 0
     assert [config.provider_for(p) for p in config.PURPOSES] == ["anthropic"] * 5
 
 

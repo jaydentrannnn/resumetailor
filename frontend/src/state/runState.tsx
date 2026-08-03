@@ -17,18 +17,31 @@ import {
   createJob,
   fetchConfig,
   fetchJob,
+  fetchSettings,
+  saveSettings,
   triggerPdfDownload,
 } from "../api";
+import { useWorkspaceState } from "./workspaceState";
 
-const JD_KEY = "resumeTailor.jdText";
-const SETTINGS_KEY = "resumeTailor.settings";
+const JD_KEY_PREFIX = "resumeTailor.jdText";
+//: Pre-server-settings storage key. Settings now live in the active profile's
+//: settings.json; this is only read once, to import a leftover blob on first load.
+const LEGACY_SETTINGS_KEY = "resumeTailor.settings";
+const SETTINGS_SAVE_DEBOUNCE_MS = 600;
 
-/** Defaults for a fresh Tailor session; also the merge base for persisted settings. */
+/** Defaults for a fresh Tailor session; also the merge base for settings from the server. */
 export const DEFAULT_SETTINGS: JobSettings = {
   pages: 1,
   experience: null,
   projects: null,
-  model: "claude",
+  // Ollama, not Claude: a fresh install should run without an Anthropic key. Keep this in
+  // step with `JobSettings.model`'s server-side default — the seeding branch below reads
+  // this value rather than repeating the name.
+  model: "ollama",
+  /** null keeps the server's OLLAMA_MODEL (gemma4:cloud); only a typed value overrides. */
+  ollama_model: null,
+  /** null keeps the server's GEMINI_MODEL; only a typed value overrides. */
+  gemini_model: null,
   rewrite_model: null,
   expand_model: null,
   effort: null,
@@ -44,28 +57,36 @@ export const DEFAULT_SETTINGS: JobSettings = {
 };
 
 /**
- * Load a previously typed JD from localStorage, or an empty string.
+ * A JD draft is scoped per profile — different profiles target different postings —
+ * but stays client-side scratch rather than server state, since it is never final
+ * until a run is started.
  */
-function loadJdText(): string {
+function jdStorageKey(workspaceId: string | null): string {
+  return workspaceId ? `${JD_KEY_PREFIX}:${workspaceId}` : JD_KEY_PREFIX;
+}
+
+/**
+ * Load a previously typed JD from localStorage for this profile, or an empty string.
+ */
+function loadJdText(workspaceId: string | null): string {
   try {
-    return localStorage.getItem(JD_KEY) ?? "";
+    return localStorage.getItem(jdStorageKey(workspaceId)) ?? "";
   } catch {
     return "";
   }
 }
 
 /**
- * Load settings from localStorage merged over DEFAULT_SETTINGS so older blobs
- * missing newer fields (expand_model, no_expand, no_project_links, …) stay valid.
+ * Read a settings blob left over from before settings moved server-side. Consulted
+ * exactly once, by the settings-loading effect below, to avoid losing a returning
+ * user's choices the first time their profile's settings.json is created.
  */
-function loadSettings(): JobSettings {
+function loadLegacySettings(): Partial<JobSettings> | null {
   try {
-    const raw = localStorage.getItem(SETTINGS_KEY);
-    if (!raw) return { ...DEFAULT_SETTINGS };
-    const parsed = JSON.parse(raw) as Partial<JobSettings>;
-    return { ...DEFAULT_SETTINGS, ...parsed };
+    const raw = localStorage.getItem(LEGACY_SETTINGS_KEY);
+    return raw ? (JSON.parse(raw) as Partial<JobSettings>) : null;
   } catch {
-    return { ...DEFAULT_SETTINGS };
+    return null;
   }
 }
 
@@ -75,6 +96,7 @@ type RunStateValue = {
   setJdText: (text: string) => void;
   settings: JobSettings;
   setSettings: (settings: JobSettings) => void;
+  settingsLoaded: boolean;
   jobId: string | null;
   status: string | null;
   events: ProgressEvent[];
@@ -93,9 +115,13 @@ const RunStateContext = createContext<RunStateValue | null>(null);
  * do not tear down the SSE stream or wipe JD text / settings / results.
  */
 export function RunProvider({ children }: { children: ReactNode }) {
+  // `RunProvider` is remounted (keyed) on a profile switch — see App.tsx — so
+  // `activeId` is fixed for the lifetime of any one mount of this component.
+  const { activeId } = useWorkspaceState();
   const [config, setConfig] = useState<AppConfig | null>(null);
-  const [jdText, setJdTextState] = useState(loadJdText);
-  const [settings, setSettingsState] = useState<JobSettings>(loadSettings);
+  const [jdText, setJdTextState] = useState(() => loadJdText(activeId));
+  const [settings, setSettingsState] = useState<JobSettings>(DEFAULT_SETTINGS);
+  const [settingsLoaded, setSettingsLoaded] = useState(false);
   const [jobId, setJobId] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [events, setEvents] = useState<ProgressEvent[]>([]);
@@ -107,70 +133,94 @@ export function RunProvider({ children }: { children: ReactNode }) {
   // Lives here (not RunPage) so remounting on Tailor ↔ Master tab switches
   // does not reset and re-trigger the post-success PDF download.
   const autoDownloadedFor = useRef<string | null>(null);
+  const saveSettingsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
 
-  const setJdText = useCallback((text: string) => {
-    setJdTextState(text);
-    try {
-      localStorage.setItem(JD_KEY, text);
-    } catch {
-      /* quota / private mode — keep in-memory state */
-    }
-  }, []);
+  const setJdText = useCallback(
+    (text: string) => {
+      setJdTextState(text);
+      try {
+        localStorage.setItem(jdStorageKey(activeId), text);
+      } catch {
+        /* quota / private mode — keep in-memory state */
+      }
+    },
+    [activeId],
+  );
 
   const setSettings = useCallback((next: JobSettings) => {
     setSettingsState(next);
-    try {
-      localStorage.setItem(SETTINGS_KEY, JSON.stringify(next));
-    } catch {
-      /* quota / private mode — keep in-memory state */
-    }
+    if (saveSettingsTimer.current) clearTimeout(saveSettingsTimer.current);
+    // Debounced so dragging the fill-target slider or ticking several toggles in a
+    // row does not fire a PUT per change — only once settings stop changing.
+    saveSettingsTimer.current = setTimeout(() => {
+      void saveSettings(next).catch(() => {
+        /* best-effort persistence; the in-memory value is still correct for this run */
+      });
+    }, SETTINGS_SAVE_DEBOUNCE_MS);
   }, []);
 
   useEffect(() => {
-    fetchConfig()
-      .then((c) => {
+    // Cancel a pending debounced save on unmount (e.g. a profile switch remounts
+    // this provider) so it cannot fire a PUT against a profile that is no longer active.
+    return () => {
+      if (saveSettingsTimer.current) clearTimeout(saveSettingsTimer.current);
+    };
+  }, []);
+
+  useEffect(() => {
+    let cancelled = false;
+    (async () => {
+      try {
+        const c = await fetchConfig();
+        if (cancelled) return;
         setConfig(c);
-        setSettingsState((s) => {
-          // Only fill pages/experience/projects from the server when this is a
-          // brand-new session (no prior persisted settings). A restored blob
-          // already carries the user's last choices.
-          const hadPersisted = (() => {
-            try {
-              return localStorage.getItem(SETTINGS_KEY) != null;
-            } catch {
-              return false;
-            }
-          })();
-          const merged: JobSettings = hadPersisted
-            ? {
-                ...s,
-                // Keep a valid profile if the saved one disappeared from the server list.
-                model: c.model_profiles.includes(s.model)
-                  ? s.model
-                  : c.model_profiles.includes("claude")
-                    ? "claude"
-                    : (c.model_profiles[0] ?? "claude"),
-              }
-            : {
-                ...s,
-                pages: c.pages,
-                experience: c.experience,
-                projects: c.projects,
-                model: c.model_profiles.includes("claude")
-                  ? "claude"
-                  : (c.model_profiles[0] ?? "claude"),
-              };
-          try {
-            localStorage.setItem(SETTINGS_KEY, JSON.stringify(merged));
-          } catch {
-            /* ignore */
-          }
-          return merged;
-        });
-      })
-      .catch((err: Error) => {
-        setError(err.message);
-      });
+
+        const res = await fetchSettings();
+        if (cancelled) return;
+
+        const legacy = loadLegacySettings();
+        let next: JobSettings;
+        if (res.seeded && legacy) {
+          // This profile has never saved settings, and this browser has a blob from
+          // before settings moved server-side: import it once rather than losing it.
+          next = { ...DEFAULT_SETTINGS, ...legacy };
+        } else if (res.seeded) {
+          // Brand-new profile with nothing to import: seed run-size defaults from
+          // the resume-derived config, same as a fresh session always has.
+          next = {
+            ...DEFAULT_SETTINGS,
+            pages: c.pages,
+            experience: c.experience,
+            projects: c.projects,
+            model: c.model_profiles.includes(DEFAULT_SETTINGS.model)
+              ? DEFAULT_SETTINGS.model
+              : (c.model_profiles[0] ?? DEFAULT_SETTINGS.model),
+          };
+        } else {
+          next = res.settings;
+        }
+
+        setSettingsState(next);
+        if (res.seeded) {
+          // Persist the seeded/imported value so the next load already has it saved.
+          void saveSettings(next).catch(() => undefined);
+        }
+        try {
+          localStorage.removeItem(LEGACY_SETTINGS_KEY);
+        } catch {
+          /* ignore */
+        }
+        setSettingsLoaded(true);
+      } catch (err) {
+        if (!cancelled) {
+          setError(err instanceof Error ? err.message : String(err));
+          setSettingsLoaded(true);
+        }
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
   }, []);
 
   const pollUntilDone = useCallback(async (id: string) => {
@@ -259,6 +309,7 @@ export function RunProvider({ children }: { children: ReactNode }) {
       setJdText,
       settings,
       setSettings,
+      settingsLoaded,
       jobId,
       status,
       events,
@@ -275,6 +326,7 @@ export function RunProvider({ children }: { children: ReactNode }) {
       setJdText,
       settings,
       setSettings,
+      settingsLoaded,
       jobId,
       status,
       events,

@@ -110,13 +110,18 @@ export function TemplateProvider({ children }: { children: ReactNode }) {
   }, []);
 
   const refresh = useCallback(async () => {
-    /** Reload template metadata and library from the API. */
+    /** Reload template metadata and library from the API, and re-fetch the preview. */
     setLoading(true);
     setError(null);
     try {
       const next = await fetchTemplateInfo();
       setInfo(next);
       await refreshLibrary();
+      // Bump the cache-buster too: the iframe src is `preview.pdf?v=${previewKey}`, so
+      // without this Refresh only updated the metadata card and the browser re-showed
+      // the PDF it already had — which is what made a master-resume edit look like it
+      // had not applied.
+      setPreviewKey((k) => k + 1);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     } finally {
