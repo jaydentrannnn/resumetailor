@@ -151,6 +151,7 @@ def _config_response(*, consume_migrated: bool = True) -> ConfigResponse:
         tag_vocabulary=tags,
         contact_name=contact_name,
         fill_target=config.UNDERFLOW_THRESHOLD,
+        initial_bullet_share=config.INITIAL_BULLET_SHARE,
         active_workspace_id=active_id,
         active_workspace_label=active_label,
         migrated_from_legacy=migrated,

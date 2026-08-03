@@ -112,6 +112,52 @@ def test_tag_vocabulary_canonicalises_on_load():
     assert used <= set(resume.tag_vocabulary)
 
 
+def test_initial_selection_size_share_is_a_ceiling_not_a_floor():
+    """`share=1.0` must reproduce the unbounded search exactly (no-behaviour-change)."""
+    resume = load()
+    requirements = _requirements()
+    entries = fit_mod.choose_entries(resume, requirements)
+
+    unbounded = fit_mod._initial_selection_size(resume, entries, requirements, target_pages=1)
+    default_share = fit_mod._initial_selection_size(
+        resume, entries, requirements, target_pages=1, share=1.0
+    )
+    assert default_share == unbounded
+
+
+def test_initial_selection_size_share_caps_below_the_estimate():
+    """A share below the unbounded result caps the search's upper bound exactly."""
+    resume = load()
+    requirements = _requirements()
+    entries = fit_mod.choose_entries(resume, requirements)
+    total = sum(len(e.bullets) for e in entries)
+
+    unbounded = fit_mod._initial_selection_size(resume, entries, requirements, target_pages=1)
+    share = 0.5
+    capped_high = max(len(entries), min(total, round(total * share)))
+    assume_room = capped_high < unbounded  # only a meaningful test if the cap actually bites
+    assert assume_room, "fixture needs the cap to bind below the unbounded estimate"
+
+    capped = fit_mod._initial_selection_size(
+        resume, entries, requirements, target_pages=1, share=share
+    )
+    assert capped == capped_high
+    assert capped < unbounded
+
+
+def test_initial_selection_size_share_never_drops_below_one_bullet_per_entry():
+    """A share so low it would fall under one bullet per entry is clamped up to the floor."""
+    resume = load()
+    requirements = _requirements()
+    entries = fit_mod.choose_entries(resume, requirements)
+
+    floor = len(entries)
+    capped = fit_mod._initial_selection_size(
+        resume, entries, requirements, target_pages=1, share=0.01
+    )
+    assert capped >= floor
+
+
 #: A measured line count that clears UNDERFLOW_THRESHOLD, so the loop stops rather than
 #: growing the selection. Derived from config so it tracks a re-calibration.
 _FULL_LINES = config.LINES_PER_PAGE

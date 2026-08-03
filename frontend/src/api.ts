@@ -26,6 +26,8 @@ export type JobSettings = {
   no_project_links: boolean;
   /** Page-fill fraction (0.80–0.95); null uses the server default. */
   fill_target: number | null;
+  /** First-draft bullet-share ceiling (0.30–1.00); null uses the server default. */
+  initial_bullet_share: number | null;
 };
 
 export type ProgressEvent = {
@@ -133,6 +135,7 @@ export type AppConfig = {
   tag_vocabulary: string[];
   contact_name: string | null;
   fill_target: number;
+  initial_bullet_share: number;
   active_workspace_id: string | null;
   active_workspace_label: string | null;
   /** True once, on the first /api/config response after a legacy-layout migration. */

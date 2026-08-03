@@ -187,6 +187,19 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--initial-bullet-share",
+        type=float,
+        default=None,
+        metavar="RATIO",
+        help=(
+            "Cap the first draft's bullet selection to this fraction of what's available "
+            f"(0.30–1.00, default: {config.INITIAL_BULLET_SHARE}). Bounds only the first "
+            "draft — the grow loop can still restore bullets toward the full pool if the "
+            "measured page is under --fill-target, so pair a lower share with a lower "
+            "--fill-target to actually end on a sparser page."
+        ),
+    )
+    parser.add_argument(
         "--effort",
         choices=("low", "medium", "high"),
         default=None,
@@ -327,6 +340,12 @@ def main(argv: list[str] | None = None) -> int:
         if args.fill_target is not None and not (0.8 <= args.fill_target <= 0.95):
             print("error: --fill-target must be between 0.80 and 0.95", file=sys.stderr)
             return 1
+        if args.initial_bullet_share is not None and not (0.3 <= args.initial_bullet_share <= 1.0):
+            print(
+                "error: --initial-bullet-share must be between 0.30 and 1.00",
+                file=sys.stderr,
+            )
+            return 1
         result = fit.fit(
             resume,
             requirements,
@@ -341,6 +360,7 @@ def main(argv: list[str] | None = None) -> int:
             merge_bullets=args.merge,
             include_project_links=include_links,
             fill_target=args.fill_target,
+            initial_bullet_share=args.initial_bullet_share,
         )
     except FabricationError as exc:
         print(f"error: {exc}", file=sys.stderr)

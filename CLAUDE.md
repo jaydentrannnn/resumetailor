@@ -89,7 +89,11 @@ stop. That is the bug this project exists to avoid.
   members, does not introduce new widow waste, and fails `redundancy_offenders` (no
   restated tools/metrics, no second same-family verb). Proposals fire only after a measured
   overflow (`attempt >= 1` in `fit.fit`). The merge prompt forbids causal phrasing and
-  concatenation-style restatement.
+  concatenation-style restatement. Candidate *grouping* (which bullets are affinity-eligible
+  to merge, at `config.MERGE_AFFINITY_SCHEDULE`'s escalating thresholds) is deterministic,
+  no-LLM logic in `merge.py`; only the rewrite of an accepted group and the guard checks
+  above live in `rewrite.py`. Touching what gets proposed means editing `merge.py`; touching
+  what makes a proposal acceptable means editing `rewrite._merge_bullets`.
 - **Never silently truncate to fit a page.** If the fit loop cannot converge it must fail
   loudly and report which sections overflow.
 - **Editing a prompt means bumping its version constant.** `jd._PROMPT_VERSION` and
@@ -150,11 +154,12 @@ cd frontend; npm install; npm run build; cd ..
 
 Open http://127.0.0.1:8000. For a hot-reload SPA, run `npm run dev` in `frontend/`
 (proxies `/api` to port 8000) alongside uvicorn. From `frontend/`: `npm run lint`
-(oxlint) and `npm run test` (vitest — coverage is thin, one spec file today) are the
-frontend equivalents of `pytest`.
+(oxlint) and `npm run test` (vitest — coverage is thin, a handful of spec files today)
+are the frontend equivalents of `pytest`.
 
 Run a single backend test with `pytest tests/test_rewrite.py::test_name` or
-`pytest tests/test_rewrite.py -k pattern`.
+`pytest tests/test_rewrite.py -k pattern`. Run a single frontend test with
+`npx vitest run src/lib/runProgress.test.ts` (from `frontend/`).
 
 ### Docker
 
@@ -180,9 +185,14 @@ call — the control half of an A/B when a posting ranks surprisingly),
 `--no-widow-repair` / `--no-verb-repair` (skip halves of the shared polish follow-up; the
 controls for length and opening-verb variety), `--merge` (opt-in: propose merges only
 after a measured page overflow), `--no-expand` (skip application-form experience
-descriptions), and `--no-facets` (skip LLM selection of project tech / coursework / skill
+descriptions), `--no-facets` (skip LLM selection of project tech / coursework / skill
 wording; pools are still truncated to the one-line / two-line budgets in listed order, and
-skill items keep their master-resume wording unchanged).
+skill items keep their master-resume wording unchanged), `--fill-target` (override
+`UNDERFLOW_THRESHOLD` for one run; see the Environment notes entry below), and
+`--initial-bullet-share` (cap the *first* draft's bullet count to a fraction of what fits,
+default 1.0 — a ceiling on `fit._initial_selection_size` only, not the grow loop, so a low
+value alone is usually grown back at the default fill target; pair it with a lower
+`--fill-target` to actually end sparser).
 
 It also selects the backend, which is what makes bulk applying affordable:
 
@@ -798,6 +808,15 @@ One more, in `rewrite.py` rather than the template:
   lower it toward 0.86 if API cost from grow/rewrite rounds matters more than page
   density. It was raised from 0.85 because that value had been calibrated against pages
   that still contained widows, so some "full" lines it counted held one word.
+- **`INITIAL_BULLET_SHARE` bounds only the first draft, not the fit loop overall.** It caps
+  `fit._initial_selection_size`'s binary search at `round(total * share)` — a ceiling that
+  can lower the search's upper bound but never force more bullets than the line estimate
+  already allows, and never below one bullet per chosen entry. At its default (`1.0`) the
+  search is unchanged from before this constant existed. Because the grow loop below it is
+  untouched, lowering it alone at the default `UNDERFLOW_THRESHOLD` mostly buys extra
+  rewrite rounds for the same final page rather than a sparser one — it has to be paired
+  with a lower `UNDERFLOW_THRESHOLD` (`--fill-target`) to change the result. See the
+  `fit.fit` docstring and `implementation-notes.md`'s 2026-08-02 entry.
 - The venv is at `.venv`; tests and scripts assume the package is installed with `pip install -e .`.
 - **`output/`, `data/`, and `templates/` are all gitignored** — `output/*.docx` / `*.pdf`
   (each a full rendered resume carrying phone and email) and the web UI's

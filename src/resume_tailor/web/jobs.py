@@ -271,6 +271,7 @@ class JobQueue:
                 merge_bullets=settings.merge,
                 include_project_links=include_links,
                 fill_target=settings.fill_target,
+                initial_bullet_share=settings.initial_bullet_share,
                 on_event=on_event,
             )
         except FabricationError as exc:

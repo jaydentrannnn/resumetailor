@@ -73,6 +73,8 @@ def test_get_config_returns_defaults(client):
     assert body["pdf_backend"] in ("word", "soffice")
     assert "fill_target" in body
     assert 0.8 <= body["fill_target"] <= 0.95
+    assert "initial_bullet_share" in body
+    assert 0.3 <= body["initial_bullet_share"] <= 1.0
     # Stored vocabulary (or derived fallback) should be non-empty for a real master resume.
     assert len(body["tag_vocabulary"]) >= 1
 
@@ -390,6 +392,7 @@ def test_job_runs_to_success_with_stubbed_pipeline(client, monkeypatch, tmp_path
         merge_bullets=False,
         include_project_links=True,
         fill_target=None,
+        initial_bullet_share=None,
         on_event=None,
     ):
         """Stub fit and record polish/merge/link knobs from JobSettings."""
@@ -399,6 +402,7 @@ def test_job_runs_to_success_with_stubbed_pipeline(client, monkeypatch, tmp_path
             merge_bullets=merge_bullets,
             include_project_links=include_project_links,
             fill_target=fill_target,
+            initial_bullet_share=initial_bullet_share,
         )
         out = Path(out)
         out.parent.mkdir(parents=True, exist_ok=True)
@@ -471,6 +475,7 @@ def test_job_runs_to_success_with_stubbed_pipeline(client, monkeypatch, tmp_path
                 "no_verb_repair": True,
                 "no_project_links": True,
                 "fill_target": 0.88,
+                "initial_bullet_share": 0.6,
             },
         },
     )
@@ -491,6 +496,7 @@ def test_job_runs_to_success_with_stubbed_pipeline(client, monkeypatch, tmp_path
         "merge_bullets": True,
         "include_project_links": False,
         "fill_target": 0.88,
+        "initial_bullet_share": 0.6,
     }
     assert any(e["stage"] == "extract" for e in status["events"])
 

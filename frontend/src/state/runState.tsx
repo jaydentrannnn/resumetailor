@@ -54,6 +54,7 @@ export const DEFAULT_SETTINGS: JobSettings = {
   no_facets: false,
   no_project_links: false,
   fill_target: null,
+  initial_bullet_share: null,
 };
 
 /**
