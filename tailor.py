@@ -78,6 +78,16 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         help="Re-extract the job description instead of reusing a cached extraction.",
     )
     parser.add_argument(
+        "--extract-runs",
+        type=int,
+        default=config.EXTRACT_CONSENSUS_RUNS,
+        metavar="N",
+        help=(
+            "Vote over N independent JD extractions to damp per-call canonicalisation "
+            f"noise (default: {config.EXTRACT_CONSENSUS_RUNS}). 1 restores a single call."
+        ),
+    )
+    parser.add_argument(
         "--no-semantic",
         action="store_true",
         help=(
@@ -230,8 +240,11 @@ def main(argv: list[str] | None = None) -> int:
         # coining tags that can never match anything ("communication skills" against a
         # resume tagged `communication`). An unmatched canonical then means a real gap.
         known_tags = sorted({t for b in resume.all_bullets() for t in b.tags})
-        requirements = jd.extract(
-            jd_text, known_tags=known_tags, use_cache=not args.no_cache
+        requirements = jd.extract_consensus(
+            jd_text,
+            known_tags=known_tags,
+            runs=args.extract_runs,
+            use_cache=not args.no_cache,
         )
     except (FileNotFoundError, ValueError, RuntimeError) as exc:
         print(f"error: {exc}", file=sys.stderr)
@@ -299,6 +312,9 @@ def main(argv: list[str] | None = None) -> int:
         )
     for warning in facet_result.warnings:
         print(f"warning: {warning}", file=sys.stderr)
+    # Captured before the rebind: facets.apply truncates Project.tech to its render
+    # budget, and report.diagnose_gaps needs the untruncated pool to find evidence there.
+    master_resume = resume
     resume = facets.apply(resume, facet_result)
 
     # Default export name mirrors the download: "<name> Resume - <position>.docx".
@@ -336,7 +352,7 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
-    print(report.format_report(resume, requirements, result))
+    print(report.format_report(resume, requirements, result, master=master_resume))
 
     # Expansion is advisory paste text for application forms. It must never turn a
     # successful resume run into a failure — the .docx is already on disk.

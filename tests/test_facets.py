@@ -110,6 +110,61 @@ def test_rename_rejects_sql_to_mysql():
     assert not _alnum_compact("sql").startswith(_alnum_compact("mysql"))
 
 
+def test_rename_rejects_single_letter_alnum_prefix():
+    """A one-character alphanumeric compaction must not license a prefix match.
+
+    `_alnum_compact("C++")` is `"c"` (the `+`s are stripped), so without a length
+    floor `"cloudcomputing".startswith("c")` and `"react".startswith("r")` both
+    spuriously pass, which would let a posting's "cloud computing environments"
+    requirement rename the skills list's "C++" entry — a real, reproduced hole
+    reported live against this project's own resume. `rename_preserves_claim` does
+    not guard this case (a single claim like "C++" cannot narrow by definition, so
+    it is `True` regardless) — the fix has to live in `labels_are_equivalent`, and
+    the end-to-end guard below confirms all three predicates reject it together.
+    """
+    assert not labels_are_equivalent("C++", "cloud computing")
+
+
+def test_rename_keeps_two_char_alnum_prefix_matches():
+    """The length-2 floor must not regress legitimate short-token renames."""
+    assert labels_are_equivalent("Go", "Golang")
+    assert labels_are_equivalent("CI", "CI/CD")
+    assert labels_are_equivalent("Postgres", "PostgreSQL")
+
+
+def test_aligns_rejects_single_letter_word_prefix():
+    """The word-by-word alignment ladder has the same single-letter hole as the
+    alphanumeric-prefix branch, in a different function.
+
+    Reproduced live: `report.diagnose_gaps` misreported the Two Sigma posting's
+    "Curiosity" requirement as evidenced by this resume's "C++" skill, because
+    `_aligns("curiosity", "C++")` treated the lone "c" word as a valid prefix match
+    for "curiosity". An exact single-letter match (not exercised here) must stay legal;
+    only the *prefix* shortcut needed the floor.
+    """
+    from resume_tailor.facets import _aligns
+
+    assert not _aligns("curiosity", "C++")
+    assert not _aligns("C++", "curiosity")
+    assert not _aligns("R", "React")
+    assert not labels_are_equivalent("Curiosity", "C++")
+
+
+def test_skill_rename_rejects_single_letter_alnum_prefix():
+    """End-to-end: `_resolve_skill_group` must reject the C++ -> cloud computing hole.
+
+    Reproduces the exact posting that exposed it (Two Sigma "Research Intern": must-have
+    "cloud computing environments" -> canonical "cloud computing") against a skills group
+    that carries "C++", the way this project's own `Tools & Languages` group does.
+    """
+    resume = _skills_resume(SkillGroup(label="Tools & Languages", items=["C++"]))
+    raw = FacetSelection(skill_renames={"C++": "cloud computing"})
+    reqs = _requirements(("cloud computing environments", "cloud computing"))
+    result = finalise_selection(resume, raw, reqs)
+    assert result.skills == [["C++"]]
+    assert any("rejected skill rename" in w for w in result.warnings)
+
+
 def test_rename_accepts_acronym_embedded_in_phrase():
     """An acronym alongside other words expands too, not just a bare acronym label.
 

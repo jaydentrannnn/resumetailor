@@ -7,6 +7,7 @@ never requires touching the pipeline code.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
 import os
@@ -339,6 +340,16 @@ DEFAULT_EFFORT: dict[str, str] = {
     "expand": os.environ.get("LLM_EFFORT_EXPAND", "medium"),
     "facets": os.environ.get("LLM_EFFORT_FACETS", "low"),
 }
+
+#: How many independent extractions `jd.extract_consensus` runs and votes over. Measured
+#: on one posting at `temperature=0` (already the default — see `llm.py`'s `_OpenAICompatClient`):
+#: identical JD, identical resume, 8 extractions still ranged 3/10 to 6/11 must-have coverage,
+#: because `canonical` is free text the model re-derives per call and the denominator itself
+#: (how many must-haves the posting has) was not stable either. Voting on the majority reading
+#: of each verbatim `phrase` fixes this without inventing anything the model did not itself
+#: propose — see `extract_consensus`'s docstring for the exact rule. 3 is the minimum that
+#: produces a majority; 1 restores today's single-call behaviour exactly.
+EXTRACT_CONSENSUS_RUNS = int(os.environ.get("LLM_EXTRACT_CONSENSUS_RUNS", "3"))
 
 _ANTHROPIC_DEFAULT = f"anthropic:{MODEL}"
 _OLLAMA_DEFAULT = f"ollama:{OLLAMA_MODEL}"
@@ -1100,6 +1111,21 @@ def canonical_tag(raw: str) -> str:
     """Normalise a skill name to the canonical tag form used across the project."""
     cleaned = raw.strip().lower()
     return TAG_ALIASES.get(cleaned, cleaned)
+
+
+def tag_alias_fingerprint() -> str:
+    """Digest of `TAG_ALIASES`, for folding into `jd._slug`.
+
+    `jd.extract` re-canonicalises every keyword through this table after the model
+    responds (`jd.py`, right before the cache write), but the cache key itself never
+    covered the table — so editing an alias silently changes what a cached extraction
+    would produce today while every already-cached `.requirements.json` keeps serving
+    the pre-edit mapping. That is the exact failure `config.fingerprint()` exists to
+    prevent for the backend/model/effort triple; this closes the same hole for the one
+    remaining input `_slug` was missing.
+    """
+    payload = "\n".join(f"{k}={v}" for k, v in sorted(TAG_ALIASES.items()))
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:12]
 
 
 # --------------------------------------------------------------------------------------

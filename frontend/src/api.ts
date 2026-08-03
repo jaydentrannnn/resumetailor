@@ -41,6 +41,14 @@ export type SectionSummary = {
   rewritten: number;
 };
 
+export type KeywordGap = {
+  canonical: string;
+  phrase: string;
+  importance: string;
+  reason: "no_evidence" | "untagged_evidence" | "near_miss";
+  evidence: string[];
+};
+
 export type RunReport = {
   title: string;
   seniority: string;
@@ -48,6 +56,7 @@ export type RunReport = {
   coverage_total: number;
   missing_must_haves: string[];
   unmatched_canonicals: string[][];
+  gaps: KeywordGap[];
   model: string;
   semantic_used: boolean;
   bullets_selected: number;

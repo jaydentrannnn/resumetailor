@@ -59,6 +59,25 @@ def _stub_expand_api(cli, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _stub_extract_consensus(cli, monkeypatch):
+    """Route `extract_consensus` straight to `extract` for CLI wiring tests.
+
+    `tailor.main` now calls `jd.extract_consensus`, which — at the default
+    `--extract-runs` > 1 — calls `jd.extract` multiple times and writes a real
+    consensus cache file to `config.CACHE_DIR`. These tests exist to check argument
+    wiring, not the voting algorithm (that's `test_jd.py`'s job), and letting the
+    real consensus path run would multiply every per-test `jd.extract` stub's call
+    count by `--extract-runs` and touch disk. Delegates by live attribute lookup, so
+    a test's own `monkeypatch.setattr(cli.jd, "extract", ...)` is still honoured.
+    """
+
+    def fake_consensus(text, *, known_tags=None, runs=1, use_cache=True, on_event=None):
+        return cli.jd.extract(text, known_tags=known_tags, use_cache=use_cache)
+
+    monkeypatch.setattr(cli.jd, "extract_consensus", fake_consensus)
+
+
+@pytest.fixture(autouse=True)
 def _stub_facets_api(cli, monkeypatch):
     """Keep every CLI test off the facets API.
 
@@ -272,6 +291,26 @@ def test_no_cache_flag_forces_reextraction(cli, jd_file, tmp_path, monkeypatch):
 
     cli.main(["--jd", str(jd_file), "--no-cache"])
     assert seen["use_cache"] is False
+
+
+def test_extract_runs_flag_reaches_extract_consensus(cli, jd_file, tmp_path, monkeypatch):
+    """`--extract-runs` must reach `jd.extract_consensus`, and default to the config value."""
+    resume = load()
+    seen: dict = {}
+
+    def fake_consensus(text, *, known_tags=None, runs=1, use_cache=True, on_event=None):
+        seen["runs"] = runs
+        return _requirements()
+
+    monkeypatch.setattr(cli.jd, "extract_consensus", fake_consensus)
+    monkeypatch.setattr(cli.jd, "verify_verbatim", lambda reqs, text: [])
+    monkeypatch.setattr(cli.fit, "fit", lambda *a, **k: _fit_result(resume, tmp_path / "o.docx"))
+
+    cli.main(["--jd", str(jd_file)])
+    assert seen["runs"] == config.EXTRACT_CONSENSUS_RUNS
+
+    cli.main(["--jd", str(jd_file), "--extract-runs", "1"])
+    assert seen["runs"] == 1
 
 
 # --------------------------------------------------------------------------------------

@@ -10,6 +10,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
+from .. import config
+
 
 class JobSettings(BaseModel):
     """Per-run knobs, mirroring the CLI flags in `tailor.py`."""
@@ -38,6 +40,9 @@ class JobSettings(BaseModel):
     no_verb_repair: bool = False
     merge: bool = False
     no_cache: bool = False
+    #: How many independent JD extractions to vote over — see `jd.extract_consensus`.
+    #: 1 restores a single call.
+    extract_runs: int = Field(default_factory=lambda: config.EXTRACT_CONSENSUS_RUNS, ge=1, le=10)
     no_expand: bool = False
     no_facets: bool = False
     no_project_links: bool = False
@@ -110,6 +115,16 @@ class SectionSummaryOut(BaseModel):
     rewritten: int
 
 
+class KeywordGapOut(BaseModel):
+    """Why one unmatched must-have missed — see `report.KeywordGap`."""
+
+    canonical: str
+    phrase: str
+    importance: str
+    reason: Literal["no_evidence", "untagged_evidence", "near_miss"]
+    evidence: list[str]
+
+
 class RunReportOut(BaseModel):
     """Structured end-of-run summary for the results panel."""
 
@@ -119,6 +134,8 @@ class RunReportOut(BaseModel):
     coverage_total: int
     missing_must_haves: list[str]
     unmatched_canonicals: list[list[str]]
+    #: Defaulted so a job payload cached before this field existed still validates.
+    gaps: list[KeywordGapOut] = Field(default_factory=list)
     model: str
     semantic_used: bool
     bullets_selected: int

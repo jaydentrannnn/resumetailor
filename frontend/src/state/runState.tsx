@@ -291,7 +291,15 @@ export function RunProvider({ children }: { children: ReactNode }) {
     setReport(null);
     setExpansion(null);
     setEvents([]);
+    setQueuePosition(null);
     setStatus("queued");
+    // Drop the finished run's id *before* awaiting `createJob`. Without this the SSE
+    // effect below re-fires on (previous jobId, busy=true) and subscribes to the job
+    // that already finished: the server replays that job's whole event list and then
+    // sends `done`, which refills the progress tile with the previous run's events,
+    // restores its report, and sets `busy` false — so the new job, once its id
+    // arrives, is never subscribed to at all and runs invisibly.
+    setJobId(null);
     try {
       const { job_id, queue_position } = await createJob(jdText, settings);
       setJobId(job_id);

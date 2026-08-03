@@ -116,7 +116,7 @@ stop. That is the bug this project exists to avoid.
 .venv\Scripts\activate
 pip install -r requirements.txt
 pip install -e .
-copy .env.example .env    # then add ANTHROPIC_API_KEY
+copy .env.example .env    # ollama is the default backend — no key needed to run
 ```
 
 Python 3.13 specifically, via that full path: the `py` launcher on this machine registers
@@ -158,9 +158,11 @@ Run a single backend test with `pytest tests/test_rewrite.py::test_name` or
 
 ### Docker
 
-Requires Docker Desktop, `.env` with `ANTHROPIC_API_KEY`, and the gitignored `data/` +
-`templates/` directories. First time (or after a template/font change), calibrate inside
-the container so LibreOffice gets its own fit constants:
+Requires Docker Desktop, a `.env` (the default `ollama` backend needs no key in it — add
+`ANTHROPIC_API_KEY` only for `--model claude`/`hybrid`, or `GEMINI_API_KEY` for
+`--model gemini`), and the gitignored `data/` + `templates/` directories. First time (or
+after a template/font change), calibrate inside the container so LibreOffice gets its own
+fit constants:
 
 ```powershell
 docker compose up --build
@@ -265,7 +267,14 @@ that way; it is what makes the guard and the fit loop cheap to iterate on.
   resume text straight through — some source bullets happen to end on a near-empty line, so
   a blanket `assert not result.warnings` fails for an unrelated reason.
 - Tests that need real content call `data.load()` against the actual
-  `data/master_resume.json`, so a few assertions depend on it (39 bullets, 102 tags).
+  `data/master_resume.json` (the legacy path — `conftest.py`'s autouse fixture stubs
+  `workspace.bootstrap` to a no-op for every test but `test_web.py`'s profile tests, so
+  `config.MASTER_RESUME_PATH` never points at a workspace copy unless a test switches it
+  itself), so a few assertions depend on it (57 bullets, 136 tags as of 2026-08-02 — this
+  number drifts with the content and has already been wrong once; verify with
+  `python -m resume_tailor.data --validate` rather than trusting it here). Note this is a
+  different, and by design *older*, copy than `data/workspaces/<active>/master_resume.json`
+  — see `implementation-notes.md`'s 2026-08-02 entry for why the two are allowed to diverge.
 
 ## Architecture
 
@@ -340,8 +349,32 @@ Key structural facts that span files:
 - **JD keywords are canonicalised against the resume's own tag vocabulary**, not in a vacuum.
   Without it the extractor coins tags that can never match (`communication skills` against a
   resume tagged `communication`) and the miss is completely silent — it cost 7 of 10 keywords
-  on one posting. `TAG_ALIASES` fixes this per-domain by hand and does not generalise; both
-  are in the path. An unmatched canonical now means a real gap, and `report.py` prints it.
+  on one posting. `TAG_ALIASES` fixes this per-domain by hand and does not generalise (its own
+  docstring on `jd.extract` says so); `known_tags` steering the model is the mechanism that
+  does, which is also why it's the one worth trusting for a non-CS resume — `TAG_ALIASES`
+  should stay a small global spelling-collapser, not grow per-workspace copies. An unmatched
+  canonical now means a real gap, and `report.py` prints it.
+- **Extraction is voted, not trusted from one call.** Measured on one real posting: the same
+  JD against the same resume, same backend, `temperature: 0` already the default — 8 separate
+  extractions still ranged 3/10 to 6/11 must-have coverage, because `canonical` is free text
+  the model re-derives per call (the *count* of must-haves wasn't even stable). `--extract-runs`
+  (`jd.extract_consensus`, `config.EXTRACT_CONSENSUS_RUNS` = 3 by default) groups by verbatim
+  `phrase` — the stable half of a `Keyword`, guaranteed literal by `verify_verbatim` — keeps a
+  phrase only if a majority of runs proposed it, and among the canonicals its surviving runs
+  proposed, prefers one that hits `known_tags` over a more frequent one that doesn't. It never
+  invents a canonical no run proposed. `runs=1` is byte-identical to a single `extract()` call
+  — the control for an A/B, same idea as `--no-semantic`.
+- **A missed keyword now says why, not just that it missed.** `report.diagnose_gaps` classifies
+  every unmatched canonical as `near_miss` (a bullet tag names the same thing, spelled
+  differently — reuses `facets.labels_are_equivalent`'s acronym/prefix/token-containment ladder
+  rather than a second implementation), `untagged_evidence` (the JD term matches `Project.tech`,
+  a skills item, or coursework, but no *bullet tag* — real but not wired into the graph the
+  scorer reads), or `no_evidence` (nothing anywhere — the honest answer). `Project.tech` feeds
+  this diagnosis but must never feed scoring — it's per-project while `rewrite._keyword_score`
+  is per-bullet and sums across a project, so folding it in would let one tech label inflate
+  every bullet's score. Because `facets.apply` truncates `Project.tech` to its render budget
+  before the report is built, `report_data`/`format_report` both take a keyword-only `master=`
+  (the pre-facets resume) so the diagnosis reads the full pool, not the truncated one.
 - **Selection happens at two levels, and only the inner one is negotiable.**
   `rewrite.select_entries` ranks experience and projects **separately** (capped by
   `config.MAX_EXPERIENCE_ENTRIES` / `MAX_PROJECT_ENTRIES`), and `fit.choose_entries` runs it
@@ -634,6 +667,23 @@ One in the SPA, which is why the above looked unfixable from the backend alone:
   PDF it already had. The two bugs masked each other: fixing only the cache still
   showed a stale frame, and fixing only the cache-buster still fetched a stale PDF.
   Anything that changes what the preview should show has to bump `previewKey`.
+
+One in how the built SPA is served in production (`web/app.py`):
+
+- **A client-side route needs a `StaticFiles` fallback, not just `html=True`.** React
+  Router here uses real URL paths (`BrowserRouter`), so a hard refresh on `/editor` or
+  `/template` is a direct `GET` for a path with no file on disk — plain
+  `StaticFiles(html=True)` only serves `index.html` for the directory root, so those
+  requests 404 before React Router ever loads. `_SPAStaticFiles` catches that 404 and
+  re-serves `index.html` instead, but it has to catch `starlette.exceptions.HTTPException`
+  — `StaticFiles.get_response` raises the Starlette one directly, and FastAPI's
+  `HTTPException` is a subclass that does not cross-catch it, so `except
+  fastapi.HTTPException` here would silently do nothing and every deep-link refresh would
+  keep 404ing. Only the request's first path segment being `api` is excluded from the
+  fallback — without that check a mistyped or removed `/api/...` route would also resolve
+  to `index.html` (this mount is last in the router, so an unmatched `/api/*` path falls
+  through to it) and a genuine backend bug would look like a working page returning HTML
+  instead of the 404 it should be.
 
 One more, in `rewrite.py` rather than the template:
 

@@ -13,6 +13,7 @@ from __future__ import annotations
 import hashlib
 import json
 import re
+from collections import Counter
 from pathlib import Path
 from typing import Literal
 
@@ -120,12 +121,19 @@ def _slug(text: str, known_tags: list[str] | None = None) -> str:
     extractions, so reusing one under the other's name would misrank silently — and would
     make comparing backends impossible, since the second run would just replay the first.
 
+    `config.tag_alias_fingerprint()` is part of the key for the same reason: `extract`
+    re-canonicalises every keyword through `TAG_ALIASES` right before the cache write
+    (below), so an alias-table edit changes what a fresh extraction would produce even
+    though nothing else here changed — without this, a cached `.requirements.json` from
+    before the edit would keep serving the pre-edit mapping forever.
+
     The leading words come from the JD alone, so the filename stays recognisable.
     """
     payload = "\n".join(
         [
             str(_PROMPT_VERSION),
             config.fingerprint("extract"),
+            config.tag_alias_fingerprint(),
             text,
             *sorted(known_tags or []),
         ]
@@ -226,6 +234,160 @@ def extract(
         title=requirements.title,
     )
     return requirements
+
+
+def _norm_phrase(text: str) -> str:
+    """Lowercase and collapse whitespace, for grouping votes by verbatim phrase."""
+    return " ".join(text.lower().split())
+
+
+def _vote(samples: list[JobRequirements], known_tags: list[str] | None) -> JobRequirements:
+    """Collapse `samples` (independent extractions of the same JD) into one consensus.
+
+    Grouped by `phrase` rather than `canonical`, because `phrase` is guaranteed verbatim
+    from the JD (`verify_verbatim`) and is therefore the stable half of a `Keyword` — it is
+    `canonical` that varies run to run, precisely the noise this function exists to damp.
+
+    A phrase survives only if at least half the runs proposed it (majority vote), which is
+    what drops a one-off hallucination like a phrase invented in a single sample. Among the
+    canonicals that survivors' own runs proposed for that phrase, one *present in
+    `known_tags`* wins over a more frequent one that hits nothing — this is the whole point:
+    if any run's own reading of a requirement happens to land on the candidate's real
+    vocabulary, that reading should not be outvoted by two runs that guessed a spelling with
+    no match. This never invents a canonical no run proposed; it only picks among what the
+    model itself already said.
+    """
+    total = len(samples)
+    threshold = -(-total // 2)  # ceil(total / 2)
+    known = set(known_tags or [])
+
+    groups: dict[str, list[Keyword]] = {}
+    order: list[str] = []
+    for sample in samples:
+        for kw in sample.keywords:
+            key = _norm_phrase(kw.phrase)
+            if key not in groups:
+                groups[key] = []
+                order.append(key)
+            groups[key].append(kw)
+
+    keywords: list[Keyword] = []
+    for key in order:
+        votes = groups[key]
+        if len(votes) < threshold:
+            continue
+        phrase = Counter(kw.phrase for kw in votes).most_common(1)[0][0]
+        # Binary field: break a tie toward "must_have" rather than Counter's insertion-order
+        # tiebreak, since a keyword the model was unsure about should keep full weight.
+        importance_counts = Counter(kw.importance for kw in votes)
+        importance = (
+            "must_have"
+            if importance_counts["must_have"] >= importance_counts["nice_to_have"]
+            else "nice_to_have"
+        )
+        kind = Counter(kw.kind for kw in votes).most_common(1)[0][0]
+
+        canonical_counts = Counter(kw.canonical for kw in votes)
+        hitting = [c for c in canonical_counts if c in known]
+        if hitting:
+            canonical = max(hitting, key=lambda c: (canonical_counts[c], c))
+        else:
+            best = canonical_counts.most_common()
+            top_count = best[0][1]
+            canonical = min(c for c, n in best if n == top_count)
+
+        keywords.append(
+            Keyword(phrase=phrase, canonical=canonical, importance=importance, kind=kind)
+        )
+
+    titles = Counter(s.title for s in samples)
+    seniorities = Counter(s.seniority for s in samples)
+    domain_notes: list[str] = []
+    seen_notes: set[str] = set()
+    for sample in samples:
+        for note in sample.domain_notes:
+            if note not in seen_notes:
+                seen_notes.add(note)
+                domain_notes.append(note)
+
+    return JobRequirements(
+        title=titles.most_common(1)[0][0],
+        seniority=seniorities.most_common(1)[0][0],
+        keywords=keywords,
+        domain_notes=domain_notes,
+    )
+
+
+def extract_consensus(
+    jd_text: str,
+    *,
+    known_tags: list[str] | None = None,
+    runs: int = 1,
+    use_cache: bool = True,
+    on_event: events.ProgressCallback | None = None,
+) -> JobRequirements:
+    """Extract requirements by voting over `runs` independent extractions.
+
+    `runs=1` (the default) delegates straight to `extract` — identical behaviour, identical
+    cache file, zero change for every existing caller.
+
+    Extraction was measured to be noisy even at `temperature=0` (already the default on the
+    OpenAI-compatible path — see `llm.py`): the same JD against the same resume produced
+    must-have coverage ranging 3/10 to 6/11 across eight runs, because `canonical` is free
+    text the model re-derives per call, and even the *count* of must-haves was not stable.
+    `runs > 1` re-extracts (each inner call bypasses its own cache, or every run would just
+    replay the first) and hands the samples to `_vote`.
+
+    Cached separately from a single extraction — the cache key is `_slug`'s digest plus a
+    `-consensusN` suffix, so `runs=1` and `runs=3` results never collide and a later change
+    to `runs` cache-misses cleanly rather than serving a stale vote count.
+    """
+    if runs <= 1:
+        return extract(jd_text, known_tags=known_tags, use_cache=use_cache, on_event=on_event)
+
+    jd_text = jd_text.strip()
+    if not jd_text:
+        raise ValueError("Job description is empty.")
+
+    config.CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    cache_path = (
+        config.CACHE_DIR / f"{_slug(jd_text, known_tags)}-consensus{runs}.requirements.json"
+    )
+
+    if use_cache and cache_path.exists():
+        events.emit(
+            on_event, "extract", "Reusing cached job-description analysis", cached=True
+        )
+        return JobRequirements.model_validate_json(cache_path.read_text(encoding="utf-8"))
+
+    samples: list[JobRequirements] = []
+    for i in range(runs):
+        events.emit(
+            on_event,
+            "extract",
+            f"Reading the job description ({i + 1}/{runs})",
+            cached=False,
+            model=config.model_for("extract"),
+        )
+        samples.append(
+            extract(jd_text, known_tags=known_tags, use_cache=False, on_event=None)
+        )
+
+    consensus = _vote(samples, known_tags)
+
+    cache_path.write_text(
+        json.dumps(consensus.model_dump(), indent=2, ensure_ascii=False),
+        encoding="utf-8",
+    )
+    events.emit(
+        on_event,
+        "extract",
+        f"Found {len(consensus.keywords)} keyword(s) for {consensus.title} "
+        f"(consensus of {runs})",
+        keywords=len(consensus.keywords),
+        title=consensus.title,
+    )
+    return consensus
 
 
 def extract_from_file(

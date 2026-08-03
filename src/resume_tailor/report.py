@@ -15,10 +15,11 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
-from typing import TYPE_CHECKING
+from typing import TYPE_CHECKING, Literal
 
 from . import config
 from .data import Experience, MasterResume, Project
+from .facets import labels_are_equivalent
 from .fit import FitResult
 from .jd import JobRequirements
 from .rewrite import keyword_coverage
@@ -128,6 +129,113 @@ def unmatched_canonicals(
     return sorted(seen.items())
 
 
+@dataclass
+class KeywordGap:
+    """Why one unmatched must-have missed, and what (if anything) to do about it.
+
+    `missing_must_haves` and `unmatched_canonicals` say *that* a keyword matched no bullet
+    tag; they cannot say why, and "you've never touched TensorFlow" and "PyTorch is in your
+    project tech array but no bullet is tagged for it" call for opposite actions. This is
+    the diagnosis that tells them apart.
+    """
+
+    canonical: str
+    #: The JD's own wording — what to paste into the tag editor.
+    phrase: str
+    importance: str
+    #: "near_miss": a bullet tag names the same thing under a different spelling.
+    #: "untagged_evidence": the tech/skills/coursework pools have it, but no bullet tag does.
+    #: "no_evidence": nothing in the master resume supports it.
+    reason: Literal["no_evidence", "untagged_evidence", "near_miss"]
+    evidence: list[str]
+
+
+def diagnose_gaps(requirements: JobRequirements, master: MasterResume) -> list[KeywordGap]:
+    """Explain every unmatched keyword instead of just naming it.
+
+    Takes `master` — the *pre-facets* resume — deliberately, not whatever resume a caller
+    happens to have in scope. `facets.apply` truncates `Project.tech` to its ≤4-label
+    render budget, so a resume already run through facets can easily be missing the exact
+    evidence this function exists to find (see the `master=` parameter on `report_data` /
+    `format_report`, added for the same reason).
+
+    Reuses `facets.labels_are_equivalent` for the near-miss and untagged-evidence checks
+    rather than a second string-similarity implementation: it already carries the acronym
+    ladder, alphanumeric-prefix containment, token-set containment, and word-by-word
+    acronym alignment, each added for a live rename failure. It catches *spelling*
+    variance only — it does not relate `aws` to `cloud computing`, or `distributed
+    training` to `multi-machine setups` (both verified `no_evidence`). That conceptual
+    relatedness is `SEMANTIC_WEIGHT`'s job for ranking; hand-rolling a hyponym table here
+    would recreate `TAG_ALIASES`'s own documented failure mode in a second place.
+
+    Does not consult `tag_vocabulary`: the editor keeps it set-identical to the bullet-tag
+    set, so it can only ever duplicate a `near_miss` this function already finds via tags.
+    """
+    bullet_tags = sorted({t for b in master.all_bullets() for t in b.tags})
+    unmatched = unmatched_canonicals(requirements, master)
+    if not unmatched:
+        return []
+
+    phrase_by_canonical = {kw.canonical: kw.phrase for kw in requirements.keywords}
+    importance_by_canonical = {kw.canonical: kw.importance for kw in requirements.keywords}
+
+    gaps: list[KeywordGap] = []
+    for canonical, _phrase in unmatched:
+        phrase = phrase_by_canonical.get(canonical, canonical)
+        importance = importance_by_canonical.get(canonical, "nice_to_have")
+
+        near_miss = next(
+            (tag for tag in bullet_tags if labels_are_equivalent(canonical, tag)), None
+        )
+        if near_miss is not None:
+            gaps.append(
+                KeywordGap(
+                    canonical=canonical,
+                    phrase=phrase,
+                    importance=importance,
+                    reason="near_miss",
+                    evidence=[f'bullet tag: "{near_miss}"'],
+                )
+            )
+            continue
+
+        evidence: list[str] = []
+        for proj in master.projects:
+            for tech in proj.tech:
+                if labels_are_equivalent(canonical, tech):
+                    evidence.append(f'project tech {proj.id!r}: "{tech}"')
+        for group in master.skills:
+            for item in group.items:
+                if labels_are_equivalent(canonical, item):
+                    evidence.append(f'skills {group.label!r}: "{item}"')
+        for edu in master.education:
+            for course in edu.coursework:
+                if labels_are_equivalent(canonical, course):
+                    evidence.append(f'coursework: "{course}"')
+
+        if evidence:
+            gaps.append(
+                KeywordGap(
+                    canonical=canonical,
+                    phrase=phrase,
+                    importance=importance,
+                    reason="untagged_evidence",
+                    evidence=evidence,
+                )
+            )
+        else:
+            gaps.append(
+                KeywordGap(
+                    canonical=canonical,
+                    phrase=phrase,
+                    importance=importance,
+                    reason="no_evidence",
+                    evidence=[],
+                )
+            )
+    return gaps
+
+
 def backends_used() -> str:
     """One line naming the model behind each stage.
 
@@ -165,6 +273,10 @@ class RunReport:
     #: (canonical, phrase) for every keyword — must-have or not — matching no tag.
     unmatched_canonicals: list[tuple[str, str]]
 
+    #: Why each unmatched keyword missed, and what evidence (if any) supports it elsewhere
+    #: in the master resume. See `diagnose_gaps`.
+    gaps: list[KeywordGap]
+
     model: str
     semantic_used: bool
 
@@ -195,9 +307,19 @@ class RunReport:
 
 
 def report_data(
-    resume: MasterResume, requirements: JobRequirements, result: FitResult
+    resume: MasterResume,
+    requirements: JobRequirements,
+    result: FitResult,
+    *,
+    master: MasterResume | None = None,
 ) -> RunReport:
-    """Assemble the run summary as structured data."""
+    """Assemble the run summary as structured data.
+
+    `master` should be the *pre-facets* resume, for `diagnose_gaps` — see its docstring
+    for why. Defaults to `resume` so every existing 3-argument call site (and every test
+    that predates this parameter) keeps working unchanged.
+    """
+    master = master or resume
     matched, total = keyword_coverage(requirements, resume)
     return RunReport(
         title=requirements.title,
@@ -206,6 +328,7 @@ def report_data(
         coverage_total=total,
         missing_must_haves=missing_must_haves(requirements, resume),
         unmatched_canonicals=unmatched_canonicals(requirements, resume),
+        gaps=diagnose_gaps(requirements, master),
         model=backends_used(),
         semantic_used=result.semantic_used,
         bullets_selected=result.bullets_selected,
@@ -232,9 +355,18 @@ def report_data(
 
 
 def format_report(
-    resume: MasterResume, requirements: JobRequirements, result: FitResult
+    resume: MasterResume,
+    requirements: JobRequirements,
+    result: FitResult,
+    *,
+    master: MasterResume | None = None,
 ) -> str:
-    """Render the end-of-run summary as plain text."""
+    """Render the end-of-run summary as plain text.
+
+    `master` should be the *pre-facets* resume — see `report_data`'s docstring; defaults
+    to `resume` so every existing 3-argument call site keeps working unchanged.
+    """
+    master = master or resume
     matched, total = keyword_coverage(requirements, resume)
     pct = f"{matched / total:.0%}" if total else "n/a"
 
@@ -254,6 +386,24 @@ def format_report(
             f"  Matched no tag ({len(unmatched)} of {len(requirements.keywords)} keywords): "
             + ", ".join(canonical for canonical, _ in unmatched)
         )
+
+    gaps = diagnose_gaps(requirements, master)
+    no_evidence = [g for g in gaps if g.reason == "no_evidence"]
+    untagged = [g for g in gaps if g.reason == "untagged_evidence"]
+    near_miss = [g for g in gaps if g.reason == "near_miss"]
+    if no_evidence:
+        lines.append(
+            "  No evidence in the master resume: "
+            + ", ".join(g.phrase for g in no_evidence)
+        )
+    if untagged:
+        lines.append("  Evidence exists but no bullet is tagged for it:")
+        for g in untagged:
+            lines.append(f"    {g.phrase} <- {'; '.join(g.evidence)}")
+    if near_miss:
+        lines.append("  Tagged under a different name:")
+        for g in near_miss:
+            lines.append(f"    {g.phrase} <- {'; '.join(g.evidence)}")
 
     ranking = "keyword overlap + semantic relevance" if result.semantic_used else "keyword overlap only"
     lines += [

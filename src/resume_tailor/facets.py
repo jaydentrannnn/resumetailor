@@ -233,17 +233,30 @@ def rename_is_jd_anchored(new_label: str, requirements: JobRequirements) -> bool
 def _aligns(a: str, b: str) -> bool:
     """True when every word of `a` maps in order onto `b`, expanding acronyms.
 
-    Greedy left-to-right: a word matches a `b` word by prefix either way, or a run of
-    2-5 `b` words whose initials spell it ("RAG" -> "retrieval augmented generation").
-    Requires BOTH sides fully consumed, so alignment can never drop a claim — that is
-    why `rename_preserves_claim` can short-circuit on it.
+    Greedy left-to-right: a word matches a `b` word by prefix either way (with a 2-char
+    floor on both sides — see below), or a run of 2-5 `b` words whose initials spell it
+    ("RAG" -> "retrieval augmented generation"). Requires BOTH sides fully consumed, so
+    alignment can never drop a claim — that is why `rename_preserves_claim` can
+    short-circuit on it.
+
+    The 2-char floor on the prefix branch closes the same hole `labels_are_equivalent`'s
+    alphanumeric-prefix branch had: every word "starts with" any single-letter word, so
+    without it `_aligns("curiosity", "C++")` and `_aligns("R", "React")` both spuriously
+    return `True` — reproduced live via `report.diagnose_gaps` misreporting a posting's
+    "Curiosity" requirement as evidenced by this resume's "C++" skill. An exact match
+    (line below) is exempt from the floor: two single-letter words that are actually
+    equal is a real identity, not a hole.
     """
     a_words = [w.lower() for w in _WORDS_ONLY.findall(a)]
     b_words = [w.lower() for w in _WORDS_ONLY.findall(b)]
     i = j = 0
     while i < len(a_words) and j < len(b_words):
         word = a_words[i]
-        if b_words[j] == word or b_words[j].startswith(word) or word.startswith(b_words[j]):
+        b_word = b_words[j]
+        if b_word == word or (
+            min(len(word), len(b_word)) >= 2
+            and (b_word.startswith(word) or word.startswith(b_word))
+        ):
             i += 1
             j += 1
             continue
@@ -288,7 +301,12 @@ def labels_are_equivalent(old: str, new: str) -> bool:
         return True
 
     # Prefix containment on alphanumerics (postgres / postgresql), not bare substring.
-    if old_acro and new_acro:
+    # A floor of 2 chars on *both* sides matters: `_alnum_compact("C++")` is `"c"` (the
+    # `+`s are stripped by `_WORDS_ONLY`), so without the floor `"cloudcomputing"` and
+    # `"react"` both spuriously "start with" a single letter and `labels_are_equivalent`
+    # would license "C++" -> "cloud computing" or "R" -> "React". 2 is the minimal floor
+    # that still keeps legitimate short renames like Go/Golang and CI/CI-CD.
+    if old_acro and new_acro and min(len(old_acro), len(new_acro)) >= 2:
         if old_acro.startswith(new_acro) or new_acro.startswith(old_acro):
             return True
 
