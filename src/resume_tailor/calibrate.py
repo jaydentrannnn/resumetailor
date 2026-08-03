@@ -235,8 +235,26 @@ def run(*, verify_anchors: bool = True) -> CalibrationResult:
     )
 
 
-def main() -> int:
+def main(argv: list[str] | None = None) -> int:
     """CLI entry used by `scripts/calibrate.py`."""
+    import argparse
+
+    from resume_tailor import workspace
+
+    parser = argparse.ArgumentParser(description="Measure fit constants for the active template.")
+    parser.add_argument(
+        "--workspace",
+        default=None,
+        metavar="ID",
+        help="Calibrate this profile instead of the active one (this invocation only).",
+    )
+    args = parser.parse_args(argv)
+    try:
+        workspace.bootstrap(workspace_id=args.workspace)
+    except workspace.WorkspaceError as exc:
+        print(f"ERROR: {exc}")
+        return 1
+
     try:
         result = run(verify_anchors=True)
     except Exception as exc:

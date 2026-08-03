@@ -625,3 +625,194 @@ to `minimax-m3:cloud` unless `OLLAMA_MODEL` or a per-run model override is set.
   `tests/test_template_build.py` / `tests/test_template_analyze.py`; full suite 272 passed.
 - **Spec delta:** None — bug fix within the documented profile-mode contract
   (CLAUDE.md "Template generation").
+
+## 2026-08-02 - Ollama model tag selectable from the UI, and Ollama Cloud without the daemon
+
+- **What:** Two related changes aimed at handing this project to someone who does not
+  want to install Ollama. (1) Documented that Ollama Cloud has a direct HTTPS endpoint
+  (`https://ollama.com/v1`, OpenAI-compatible) reachable with only an `OLLAMA_API_KEY` —
+  no `ollama serve`, no `ollama signin`, no local install. This needed **zero** code
+  changes: `_OpenAICompatClient` already POSTs to `{OLLAMA_BASE_URL}/chat/completions`
+  and already sends a bearer header when a key exists, so it is purely `.env`
+  (`OLLAMA_BASE_URL=https://ollama.com/v1` + `OLLAMA_API_KEY=` + a tag with the local
+  `:cloud` suffix dropped). Added to `README.md` and `.env.example`. (2) Wired
+  `OLLAMA_MODEL` to the web UI's model selection: new `JobSettings.ollama_model`, new
+  `config.ollama_stages(profile)`, and an "Ollama model" field in the Run page's Models
+  fieldset that appears only for Ollama-routed profiles.
+- **Why:** The two halves are the same complaint. Before this, which Ollama tag a run
+  used was fixed at import time (`OLLAMA_MODEL` → `MODEL_PROFILES`), so the UI could pick
+  the *profile* but not the *tag* — changing model meant editing `.env` and restarting the
+  server, which is not something you hand a friend. The env var was also completely
+  invisible in the UI, so there was no way to confirm which model a run would actually use.
+- **Decision — stages, not a rewritten profile dict.** `ollama_stages` returns *which
+  purposes* route to Ollama and `web/jobs.py` expands that into per-stage
+  `resolve(overrides=...)` entries, rather than substituting the tag into
+  `MODEL_PROFILES[profile]`. This is what keeps `hybrid` intact: its `rewrite` stage is
+  Anthropic and must not be repointed at an Ollama tag. Reusing the existing `overrides`
+  channel also means `_bind_bare_override` already handles binding a bare tag to the right
+  provider, so no new parsing was needed.
+- **Decision — order matters in the override dict.** The blanket Ollama tag is applied
+  *first*, then `rewrite_model` / `expand_model` overwrite whichever stages they name.
+  Reversed, the broad tag would silently clobber the narrower explicit choice. Pinned by
+  `test_explicit_stage_override_beats_the_blanket_ollama_tag`.
+- **Decision — the server tells the client which profiles are Ollama-routed.** Added
+  `ConfigResponse.ollama_profiles` (plus `ollama_model` / `ollama_base_url` for the
+  placeholder and help line) instead of hardcoding `["ollama", "hybrid"]` in the SPA, so
+  `MODEL_PROFILES` can change without the UI going stale. The SPA keeps a name-check
+  fallback only for the window while `/api/config` is still in flight.
+- **Impact:** `ollama_model` is part of `JobSettings`, so it persists per profile via the
+  existing `WorkspaceSettings` envelope with no migration — an absent field defaults to
+  `None`, which reproduces today's behavior exactly. Also extracted a `_drain(c, job_id)`
+  helper in `tests/test_web.py`: the two new routing tests assert on work the queue's
+  *background thread* does, which without a wait is a race that passes on a fast machine.
+  Folded the one pre-existing copy of that poll loop into it.
+- **Not done:** `LMSTUDIO_MODEL` has the identical problem and the identical fix shape
+  (the README currently works around it by telling users to set the rewrite/expand model
+  ids by hand). Left out to keep this change surgical; `ollama_stages` would become
+  `local_stages(profile, provider)` if it is picked up.
+- **Spec delta:** None. `--model ollama:<tag>` from the CLI was always able to do this;
+  the UI just had no equivalent.
+
+## 2026-08-02 - Ollama becomes the default profile; `gemma4:cloud` stays the default tag
+
+- **What:** Flipped the default backend from `claude` to `ollama` in both front doors —
+  `tailor.py --model` (`default="ollama"`) and `JobSettings.model` / the SPA's
+  `DEFAULT_SETTINGS.model`. `OLLAMA_MODEL` was already `gemma4:cloud` and is unchanged;
+  the new UI field overrides it only when a value is actually entered (blank → `None` →
+  no override reaches `config.resolve`).
+- **Why:** Owner's call, and it matches what the tool is for: a fresh clone now runs with
+  no Anthropic key at all, which is the difference between "install this" and "install
+  this, then go buy API credit" for someone being handed the project.
+- **Decision — the library fallback did NOT flip.** `config.resolve()`'s
+  `profile or "claude"` and `backend_for`'s resolve-if-unresolved still say Claude. Those
+  exist for importable functions (`jd.extract`, `rewrite.score_table`) that scripts and
+  tests call without going through a CLI; flipping them would silently reroute callers
+  that never picked a backend, which is a different (and worse) change than flipping a
+  documented default. Both front doors pass their profile explicitly, so the two never
+  disagree in practice — but this is deliberate asymmetry, not an oversight. Documented
+  in CLAUDE.md so it does not get "fixed" later.
+- **Decision — the SPA seeds from `DEFAULT_SETTINGS.model` rather than a second literal.**
+  `runState.tsx` previously hardcoded `"claude"` three times in the fresh-profile seeding
+  branch; it now reads `DEFAULT_SETTINGS.model`, so the default lives in exactly one place
+  on the frontend and cannot drift from the constant right above it.
+- **Correction to the previous entry:** it claimed direct Ollama Cloud calls need the
+  local `:cloud` suffix dropped (`gemma4`, not `gemma4:cloud`). That came from Ollama's
+  docs describing a `-cloud` *size* suffix (`gpt-oss:120b-cloud` → `gpt-oss:120b`) and I
+  over-generalised it to this project's `gemma4:cloud`, where `cloud` is the tag itself.
+  Per the owner, who is running it: the tag is `gemma4:cloud` either way. `README.md` and
+  `.env.example` corrected — switching to the direct endpoint changes `OLLAMA_BASE_URL`
+  and adds `OLLAMA_API_KEY`, and touches the model tag not at all.
+- **Impact:** Two tests pinned the old default and were updated rather than deleted —
+  `test_default_model_is_claude_for_every_stage` became
+  `test_default_model_is_ollama_for_every_stage`, with a new
+  `test_claude_profile_still_routes_every_stage_to_anthropic` keeping the old assertion
+  alive under its explicit flag. Added
+  `test_blank_ollama_model_leaves_the_env_default_in_place`, which is the case users
+  actually depend on: a settings blob with no tag must resolve to `gemma4:cloud`, not send
+  an empty model. Existing saved `settings.json` files are untouched — a profile that
+  already stored `"model": "claude"` keeps it; only never-seeded profiles get the new
+  default.
+
+## 2026-08-02 - Gemini support: `Backend.origin` survives the openai remap
+
+- **What:** Added a `gemini` provider/profile alongside `ollama`/`lmstudio`/`hybrid`, all
+  through the existing `_OpenAICompatClient` path (`GEMINI_BASE_URL` defaults to Google's
+  OpenAI-compatible endpoint, `GEMINI_MODEL` defaults to `gemini-3.5-flash`). The one real
+  addition is a fifth field on the `Backend` `NamedTuple`, `origin: str = ""`, set in
+  `config._backend` to the *pre-remap* provider word before `ollama`/`lmstudio`/`gemini`
+  all collapse to `provider == "openai"`. Everything that needs to tell the three apart
+  now reads `origin` instead: `config.api_key_for` (Gemini genuinely needs a key; the
+  others don't), `config.structured_mode_for` (Gemini's shim enforces `json_schema`;
+  Ollama Cloud silently ignores it — this was already the reason `LLM_STRUCTURED_MODE`
+  defaulted to `"prompt"`, now made per-origin instead of global), `config.fingerprint`
+  (see below), and the new `config.max_token_cap_for` (see the next entry).
+- **Why:** The alternative — keep `provider == "gemini"` distinct and teach
+  `llm.client_for` a set of "OpenAI-shaped" providers instead of one literal `"openai"` —
+  is arguably cleaner in isolation, but buys nothing the `origin` field doesn't, while
+  forcing every existing ollama/lmstudio backend's `fingerprint()` output to change
+  (a bigger cache invalidation than the one taken below) and ~15 test assertions across
+  `test_llm.py`/`test_expand.py`/`test_tailor_cli.py` to be rewritten for backends that
+  didn't change behaviour. `origin` is additive with a default, so nothing that already
+  worked had to change.
+- **Decision — the missing-key check lives in `llm.client_for`, raises `LLMError`.** Not
+  `RuntimeError`, and not folded into `api_key_for`. `tailor.py` catches bare
+  `RuntimeError` for the score and facets stages and *degrades with a warning* — a missing
+  Gemini key raised that way would silently fall back to keyword-only ranking and report
+  success. `LLMError` hard-fails at the same call sites, which is the correct behaviour
+  for "the run cannot proceed at all," and the check has to live in `llm.py` because
+  that's where `LLMError` is defined.
+- **Decision — the web preflight (`config.credential_gaps`) is pure and profile-shaped,
+  not resolve-and-check.** It never calls `config.resolve()` and never touches the
+  process-global `_ACTIVE` dict, deliberately: `POST /api/jobs` runs on a request thread
+  while a different job may be mid-run on the worker thread, and `_ACTIVE` is the same
+  process-wide state `set_active_workspace` warns about mutating outside the
+  busy-then-lock ordering. A request-thread call that resolved would silently reroute the
+  running job's backend out from under it. `create_job` in `web/app.py` calls it and
+  returns 400 synchronously on a gap, so a missing key is caught before the job queue ever
+  sees it — previously this only surfaced as an async `job.status == "failed"` once the
+  worker got around to it.
+- **Impact:** `Backend.label()` also changed, from `f"{provider}:{model}"` to
+  `f"{origin or provider}:{model}"`, so the run report says `gemini:gemini-3.5-flash`
+  (and, as a side effect, `ollama:gemma4:cloud` instead of the previously-misleading
+  `openai:gemma4:cloud`). Verified no test pinned the old `label()` output before changing
+  it. `config.ollama_stages(profile)` is now a one-line wrapper over the new
+  `config.provider_stages(profile, provider)`, kept for the existing callers
+  (`web/jobs.py`, `web/app.py`, `test_llm.py`) rather than renaming them all at once.
+
+## 2026-08-02 - Adaptive token ceiling: escalate on truncation instead of failing outright
+
+- **What:** `config.MAX_TOKENS` (32,000) is now only the *starting* request on the
+  OpenAI-compatible path, not a hard ceiling. `llm._OpenAICompatClient.request` restructures
+  around a loop: a response that truncates (`finish == "length"` and the JSON doesn't
+  parse) doubles `max_tokens` and retries, up to `config.max_token_cap_for(purpose)` — a
+  per-origin table (`PROVIDER_MAX_TOKENS`, Gemini at 65,536, Anthropic mirroring the
+  existing 21,333 SDK limit for consistency even though that path never uses it) or a flat
+  `LLM_MAX_TOKENS` env override that pins both the start and the cap. Bounded by
+  `MAX_TOKEN_ESCALATIONS = 2` independent of the cap itself. A working ceiling is memoised
+  in a module-level `llm._LEARNED_CEILING` dict keyed `(base_url, model)`, so later calls
+  to the same model in one run start there instead of re-discovering it.
+- **Why:** Gemini counts its internal thinking against the same output budget as the
+  answer, so a fixed 32k ceiling could truncate outright on a stage that reasons for a
+  while, with no recovery — previously an immediate hard `LLMError`. The alternative
+  (raise `MAX_TOKENS` generously for everyone) either wastes the request on providers that
+  don't need it or still isn't enough for a sufficiently verbose model; escalating on
+  actual truncation adapts to what the model needed rather than guessing.
+- **Decision — this cannot make a working run more expensive.** The escalation branch is
+  only reachable from what was already a hard failure before this feature existed: a run
+  that succeeds today issues the identical requests at the identical `max_tokens` it always
+  did. This is the property that makes it safe to ship as the default rather than opt-in,
+  and it is pinned by a test (`test_a_truncated_response_that_parses_is_not_escalated`)
+  that a `finish == "length"` response which nonetheless *parses* successfully is returned
+  as-is, not escalated — escalating that case would double the cost of a call that already
+  worked.
+- **Decision — the 400/422 `response_format` fallback became a graded ladder, not
+  incidental to the ceiling work but exposed by thinking about Gemini's schema mode at the
+  same time.** Previously a rejection dropped `response_format` entirely in one step. Once
+  `structured_mode_for` defaults Gemini to `"schema"`, a rejection of the strict
+  `_strictify`'d schema (every output model here is nested — `$defs`/`$ref` — a known gap
+  area for OpenAI-compat shims) would have landed with *no* format constraint at all,
+  strictly worse than the `"prompt"` default it started from. `llm._response_format_ladder`
+  now walks `json_schema → json_object → none` in schema mode; `"prompt"` mode's ladder is
+  `[json_object, none]`, identical to the old one-step behaviour, so
+  `test_a_400_on_response_format_retries_without_it` needed no change.
+- **Known blind spot, logged rather than fixed:** a `finish == "length"` response that
+  parses successfully is not escalated (see above) even though it may represent a
+  shorter-than-ideal answer (e.g. a truncated `bullets` list that still satisfies the
+  schema). Not treated as a bug — the pipeline's own guards (fabrication guard, id
+  reconciliation in `rewrite._retry_fabrications`, the fit loop) are where a short-but-valid
+  result would actually surface, and escalating every truncated-but-valid response would
+  break the cost-safety property above for a case that's usually fine.
+- **Non-goal, explicitly:** the Anthropic path is untouched. `llm.client_for` returns the
+  raw `anthropic.Anthropic` SDK client for that provider — it never enters
+  `_OpenAICompatClient`, so none of this applies. Its ceiling is a client-side SDK refusal
+  above 21,333 tokens for non-streaming requests; raising it means converting the call
+  sites to streaming, a separate project, not a constant to tune here.
+- **Impact:** `tests/test_llm.py`'s `client` fixture now clears `llm._LEARNED_CEILING`
+  between cases and accepts `max_token_cap=` — necessary because the dict is module-global
+  by design (a measurement, not run configuration, so it deliberately isn't threaded
+  through `config._ACTIVE`), and without the clear a call-count assertion in one test could
+  fail for a reason that has nothing to do with what that test checks.
+  `test_truncation_is_reported_rather_than_retried` was renamed
+  `..._when_already_at_the_cap` and kept (not deleted) — with no `max_token_cap` supplied,
+  the cap collapses to the starting request and the hard failure still happens exactly as
+  before, which is worth a test on its own.

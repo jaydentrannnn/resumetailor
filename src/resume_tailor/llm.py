@@ -36,6 +36,11 @@ Two things follow, and they shape everything below. Non-compliance arrives as a 
 a 4xx, so escalation keys on parse failure rather than status code. And a speculative
 `json_schema` attempt is a round trip that always fails on this backend, which costs quota
 rather than costing nothing — hence `config.LLM_STRUCTURED_MODE` defaults to "prompt".
+
+That default is now per-provider, not global (`config.structured_mode_for`). Gemini's
+OpenAI-compat shim is a different story from Ollama's: it genuinely constrains decoding, so
+it defaults to "schema" instead. An explicit `LLM_STRUCTURED_MODE` still wins everywhere —
+this only fills the gap where nothing was configured.
 """
 
 from __future__ import annotations
@@ -146,6 +151,46 @@ def _strictify(schema: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
+def _response_format_ladder(
+    structured_mode: str, output_format: type[T], schema: dict[str, Any]
+) -> list[dict[str, Any] | None]:
+    """Ordered `response_format` values to try on a 400/422, most-constrained first.
+
+    A rejection walks down this list instead of jumping straight to no constraint at all.
+    That distinction matters once `schema` mode is a real default (Gemini): every output
+    model in this project is nested (`$defs` + `$ref`), where OpenAI-compat shims commonly
+    have gaps, and dropping straight to nothing on a schema rejection would land *below*
+    the "prompt" default it started from. "prompt" mode's ladder is `[json_object, None]`,
+    which is exactly the one-step drop this replaces — unchanged behaviour by construction.
+    """
+    json_object = {"type": "json_object"}
+    if structured_mode == "schema":
+        json_schema = {
+            "type": "json_schema",
+            "json_schema": {
+                "name": output_format.__name__,
+                "strict": True,
+                "schema": _strictify(schema),
+            },
+        }
+        return [json_schema, json_object, None]
+    return [json_object, None]
+
+
+#: Working `max_tokens` ceiling discovered by escalation, keyed `(base_url, model)` rather
+#: than by pipeline stage — verbosity is a property of the model, and several stages
+#: (score, rewrite's several sub-calls, expand) can share one within a single run. A
+#: rewrite-heavy run makes up to five calls; without this, a verbose model pays a full
+#: truncated generation to rediscover the same working ceiling on every one of them.
+#:
+#: Module-global and never cleared in production — the project already requires a single
+#: process and serial jobs (see `config._ACTIVE`), and this is strictly a *measurement*,
+#: not configuration, which is why it lives here rather than growing `config._ACTIVE`.
+#: Tests MUST clear this between cases or a call-count assertion becomes flaky for reasons
+#: that have nothing to do with the test — see the `client` fixture in tests/test_llm.py.
+_LEARNED_CEILING: dict[tuple[str, str], int] = {}
+
+
 # --------------------------------------------------------------------------------------
 # OpenAI-compatible adapter
 # --------------------------------------------------------------------------------------
@@ -193,11 +238,24 @@ class _Messages:
 class _OpenAICompatClient:
     """Minimal `/chat/completions` client that gets JSON out of unconstrained models."""
 
-    def __init__(self, *, base_url: str, api_key: str, timeout: float, structured_mode: str):
+    def __init__(
+        self,
+        *,
+        base_url: str,
+        api_key: str,
+        timeout: float,
+        structured_mode: str,
+        max_token_cap: int = 0,
+    ):
         self.base_url = base_url.rstrip("/")
         self.api_key = api_key
         self.timeout = timeout
         self.structured_mode = structured_mode
+        #: 0 disables escalation entirely — a truncated response fails exactly as it did
+        #: before this feature existed. `client_for` always supplies the real per-stage
+        #: cap; direct construction (every existing test) gets that safe default unless it
+        #: opts in.
+        self.max_token_cap = max_token_cap
         self.messages = _Messages(self)
 
     # -- transport ---------------------------------------------------------------------
@@ -264,63 +322,82 @@ class _OpenAICompatClient:
         output_format: type[T],
     ) -> _Response:
         schema = output_format.model_json_schema()
-        payload: dict[str, Any] = {
-            "model": model,
-            # `max_tokens` only. Ollama maps it to num_predict; stricter servers reject
-            # `max_completion_tokens` alongside it.
-            "max_tokens": max_tokens,
-            "temperature": 0,
-            "messages": [
-                {
-                    "role": "system",
-                    "content": system
-                    + "\n\n"
-                    + _JSON_INSTRUCTION.format(
-                        schema=json.dumps(schema, ensure_ascii=False)
-                    ),
-                },
-                {"role": "user", "content": user},
-            ],
-            "response_format": {"type": "json_object"},
-        }
-        if self.structured_mode == "schema":
-            payload["response_format"] = {
-                "type": "json_schema",
-                "json_schema": {
-                    "name": output_format.__name__,
-                    "strict": True,
-                    "schema": _strictify(schema),
-                },
+        messages = [
+            {
+                "role": "system",
+                "content": system
+                + "\n\n"
+                + _JSON_INSTRUCTION.format(schema=json.dumps(schema, ensure_ascii=False)),
+            },
+            {"role": "user", "content": user},
+        ]
+        ladder = _response_format_ladder(self.structured_mode, output_format, schema)
+
+        # `max_token_cap` of 0 (the direct-construction default) means "no escalation":
+        # cap collapses to the starting request, so `ceiling` below can never rise past it.
+        cap = max(max_tokens, self.max_token_cap) if self.max_token_cap else max_tokens
+        learned = _LEARNED_CEILING.get((self.base_url, model), 0)
+        ceiling = min(max(max_tokens, learned), cap)
+        escalations = 0
+
+        rung = 0
+        while True:
+            payload: dict[str, Any] = {
+                "model": model,
+                # `max_tokens` only. Ollama maps it to num_predict; stricter servers reject
+                # `max_completion_tokens` alongside it.
+                "max_tokens": ceiling,
+                "temperature": 0,
+                "messages": messages,
             }
+            response_format = ladder[rung]
+            if response_format is not None:
+                payload["response_format"] = response_format
 
-        response = self._post(payload)
-
-        # Some endpoints reject `response_format` in any form. The schema is already in the
-        # prompt, so dropping it degrades cleanly rather than failing the run.
-        #
-        # Only on a *parameter* rejection. A 404 means the model does not exist and a 401
-        # means the sign-in lapsed; retrying either just spends another round trip against
-        # a metered quota to be told the same thing.
-        if response.status_code in (400, 422) and "response_format" in payload:
-            payload.pop("response_format")
             response = self._post(payload)
 
-        self._check_status(response, model)
-        content, finish = self._read(response, model)
+            # Some endpoints reject `response_format` in any form. Walk the ladder toward
+            # less structure rather than jumping straight to none.
+            #
+            # Only on a *parameter* rejection. A 404 means the model does not exist and a
+            # 401 means the sign-in lapsed; retrying either just spends another round trip
+            # against a metered quota to be told the same thing.
+            if response.status_code in (400, 422) and rung < len(ladder) - 1:
+                rung += 1
+                continue
 
-        try:
-            parsed = output_format.model_validate_json(_extract_json_object(content))
-            return _Response(parsed, finish)
-        except ValidationError as first_error:
-            # Truncation is not repairable by asking again with the same ceiling, so say
-            # so instead of spending a second round trip discovering it.
-            if finish == "length":
+            self._check_status(response, model)
+            content, finish = self._read(response, model)
+
+            try:
+                parsed = output_format.model_validate_json(_extract_json_object(content))
+                if ceiling > max_tokens:
+                    _LEARNED_CEILING[(self.base_url, model)] = ceiling
+                return _Response(parsed, finish)
+            except ValidationError as first_error:
+                if finish != "length":
+                    return self._repair(payload, content, first_error, model, output_format)
+
+                # Truncated. Escalating only fires on what would otherwise be a hard
+                # failure right here, so a run that already succeeds never pays for this —
+                # it issues the same requests at the same ceiling it always did.
+                if ceiling < cap and escalations < config.MAX_TOKEN_ESCALATIONS:
+                    ceiling = min(ceiling * 2, cap)
+                    escalations += 1
+                    continue
+
+                if escalations:
+                    raise LLMError(
+                        f"{model!r} hit the {ceiling}-token ceiling after escalating "
+                        f"from {max_tokens} (cap {cap}) before finishing its JSON. "
+                        f"Reasoning tokens count against this budget — set "
+                        f"LLM_MAX_TOKENS to raise the cap, or lower the stage's effort."
+                    ) from first_error
                 raise LLMError(
-                    f"{model!r} hit the {max_tokens}-token ceiling before finishing its "
-                    f"JSON. Reasoning tokens count against this budget — raise "
-                    f"config.MAX_TOKENS or lower the stage's effort."
+                    f"{model!r} hit the {ceiling}-token ceiling (cap {cap}) before "
+                    f"finishing its JSON. Reasoning tokens count against this budget — "
+                    f"set LLM_MAX_TOKENS to raise the cap, or lower the stage's effort."
                 ) from first_error
-            return self._repair(payload, content, first_error, model, output_format)
 
     def _repair(
         self,
@@ -393,14 +470,24 @@ def client_for(purpose: str) -> Any:
             raise LLMError(
                 f"Provider 'openai' for {purpose!r} needs a base URL. Use "
                 f"'openai:model@https://host/v1', 'ollama:model' (defaults to "
-                f"{config.OLLAMA_BASE_URL}), or 'lmstudio:model' (defaults to "
-                f"{config.LMSTUDIO_BASE_URL})."
+                f"{config.OLLAMA_BASE_URL}), 'lmstudio:model' (defaults to "
+                f"{config.LMSTUDIO_BASE_URL}), or 'gemini:model' (defaults to "
+                f"{config.GEMINI_BASE_URL})."
+            )
+        if backend.origin in config.PROVIDERS_REQUIRING_KEY and not config.api_key_for(
+            purpose
+        ):
+            env_names = " or ".join(config.api_key_env_for(backend.origin))
+            raise LLMError(
+                f"No API key found for the {backend.origin!r} provider ({purpose!r} "
+                f"stage). Set {env_names} in .env."
             )
         return _OpenAICompatClient(
             base_url=backend.base_url,
             api_key=config.api_key_for(purpose),
             timeout=config.LLM_TIMEOUT,
-            structured_mode=config.LLM_STRUCTURED_MODE,
+            structured_mode=config.structured_mode_for(purpose),
+            max_token_cap=config.max_token_cap_for(purpose),
         )
 
     raise LLMError(

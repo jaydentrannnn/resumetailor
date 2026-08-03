@@ -7,7 +7,7 @@ import {
 } from "../api";
 import { ExperienceCard } from "../components/ExperienceCard";
 import { ModelSpecField } from "../components/ModelSpecField";
-import { useRunState } from "../state/runState";
+import { DEFAULT_SETTINGS, useRunState } from "../state/runState";
 import { useState } from "react";
 
 /**
@@ -160,26 +160,27 @@ function SettingsPanel({
 
   function resetDefaults() {
     onChange({
-      pages: config?.pages ?? 1,
+      ...DEFAULT_SETTINGS,
+      pages: config?.pages ?? DEFAULT_SETTINGS.pages,
       experience: config?.experience ?? 3,
       projects: config?.projects ?? 2,
-      model: "claude",
-      rewrite_model: null,
-      expand_model: null,
-      effort: null,
-      no_semantic: false,
-      no_widow_repair: false,
-      no_verb_repair: false,
-      merge: false,
-      no_cache: false,
-      no_expand: false,
-      no_facets: false,
-      no_project_links: false,
-      fill_target: null,
     });
   }
 
   const fillValue = settings.fill_target ?? config?.fill_target ?? 0.93;
+
+  // Which profiles route a stage to Ollama comes from the server, not a hardcoded
+  // ["ollama", "hybrid"] — MODEL_PROFILES is free to change without this going stale.
+  // Fall back to a name check only while /api/config is still in flight.
+  const usesOllama = config
+    ? config.ollama_profiles.includes(settings.model)
+    : settings.model === "ollama" || settings.model === "hybrid";
+  const usesGemini = config
+    ? config.gemini_profiles.includes(settings.model)
+    : settings.model === "gemini";
+  // `provider_keys` holds booleans only, never the key itself — this just decides
+  // whether to show the warning before a run fails deep in the job queue.
+  const missingGeminiKey = usesGemini && config?.provider_keys.gemini === false;
 
   return (
     <section className="rounded-xl border border-line bg-panel p-5 shadow-sm">
@@ -245,20 +246,34 @@ function SettingsPanel({
       <fieldset className="mt-6 space-y-3">
         <legend className="text-sm font-semibold text-ink">Models</legend>
         <div className="grid gap-4 sm:grid-cols-2">
-          <Field label="Model profile" help="claude, ollama, hybrid, or a custom provider:model spec.">
+          <Field
+            label="Model profile"
+            help={
+              usesOllama && config
+                ? `Ollama stages use ${settings.ollama_model || config.ollama_model} at ${config.ollama_base_url}.`
+                : usesGemini && config
+                  ? `Gemini stages use ${settings.gemini_model || config.gemini_model} at ${config.gemini_base_url}.`
+                  : "claude, ollama, gemini, hybrid, or a custom provider:model spec."
+            }
+          >
             <select
               value={settings.model}
               onChange={(e) => set("model", e.target.value)}
               className="field"
             >
-              {(config?.model_profiles ?? ["claude", "ollama", "lmstudio", "hybrid"]).map(
-                (p) => (
-                  <option key={p} value={p}>
-                    {p}
-                  </option>
-                ),
-              )}
+              {(
+                config?.model_profiles ?? ["claude", "ollama", "lmstudio", "gemini", "hybrid"]
+              ).map((p) => (
+                <option key={p} value={p}>
+                  {p}
+                </option>
+              ))}
             </select>
+            {missingGeminiKey && (
+              <p className="mt-1 rounded-md bg-danger-soft px-2 py-1 text-xs text-danger">
+                No Gemini API key found. Set GEMINI_API_KEY in .env before running.
+              </p>
+            )}
           </Field>
           <Field label="Effort" help="Reasoning depth for every stage. Blank uses per-stage defaults.">
             <select
@@ -276,6 +291,22 @@ function SettingsPanel({
               ))}
             </select>
           </Field>
+          {usesOllama && (
+            <ModelSpecField
+              label="Ollama model (optional)"
+              value={settings.ollama_model}
+              onChange={(v) => set("ollama_model", v)}
+              placeholder={config?.ollama_model ?? "e.g. gemma4"}
+            />
+          )}
+          {usesGemini && (
+            <ModelSpecField
+              label="Gemini model (optional)"
+              value={settings.gemini_model}
+              onChange={(v) => set("gemini_model", v)}
+              placeholder={config?.gemini_model ?? "e.g. gemini-3.5-flash"}
+            />
+          )}
           <ModelSpecField
             label="Rewrite model (optional)"
             value={settings.rewrite_model}

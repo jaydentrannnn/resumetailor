@@ -17,7 +17,19 @@ class JobSettings(BaseModel):
     pages: int = Field(default=1, ge=1, le=5)
     experience: int | None = Field(default=None, ge=1, le=10)
     projects: int | None = Field(default=None, ge=1, le=10)
-    model: str = "claude"
+    #: Defaults to `ollama` rather than `claude` so a fresh install runs without an
+    #: Anthropic key — the Ollama free tier is what makes bulk applying affordable.
+    model: str = "ollama"
+    #: Ollama tag for *every* Ollama-routed stage of the chosen profile, overriding the
+    #: `OLLAMA_MODEL` env default without an edit-and-restart. Under `hybrid` this leaves
+    #: the Anthropic rewrite stage alone (see `config.ollama_stages`). The two per-stage
+    #: overrides below still win where they are set.
+    ollama_model: str | None = None
+    #: Same idea, for the `gemini` profile's stages (`config.provider_stages(model,
+    #: "gemini")`). A separate field rather than reusing `ollama_model` under a generic
+    #: name — a `hybrid`-style profile mixing Ollama and Gemini stages needs both tags
+    #: distinguishable, and this is additive so existing `settings.json` files keep loading.
+    gemini_model: str | None = None
     rewrite_model: str | None = None
     expand_model: str | None = None
     effort: Literal["low", "medium", "high"] | None = None
@@ -33,11 +45,45 @@ class JobSettings(BaseModel):
     fill_target: float | None = Field(default=None, ge=0.8, le=0.95)
 
 
+class WorkspaceSettings(BaseModel):
+    """The on-disk shape of one profile's `settings.json`.
+
+    Wraps `JobSettings` rather than forking its fields, so the run-knob list has one
+    definition — adding a knob to `JobSettings` is the only edit needed for it to be
+    persistable. `schema_version` exists because this file is user data that outlives
+    a release.
+    """
+
+    schema_version: int = 1
+    defaults: JobSettings = Field(default_factory=JobSettings)
+
+
+class SettingsResponse(BaseModel):
+    """Response for `GET /api/settings` and `PUT /api/settings`."""
+
+    workspace_id: str | None = None
+    settings: JobSettings
+    #: True when settings.json did not exist and JobSettings() defaults were served.
+    seeded: bool = False
+
+
+class SettingsUpdateRequest(BaseModel):
+    """Body for `PUT /api/settings`."""
+
+    settings: JobSettings
+
+
 class CreateJobRequest(BaseModel):
-    """Start a tailoring run from a pasted or uploaded job description."""
+    """Start a tailoring run from a pasted or uploaded job description.
+
+    `settings` is optional: when omitted, the run falls back to the active profile's
+    saved defaults (`GET /api/settings`) rather than `JobSettings()` — this is what
+    lets a bare `POST /api/jobs {"jd_text": "..."}` behave like the UI, whose settings
+    panel always shows and sends the profile's current defaults explicitly.
+    """
 
     jd_text: str = Field(min_length=1)
-    settings: JobSettings = Field(default_factory=JobSettings)
+    settings: JobSettings | None = None
 
 
 class CreateJobResponse(BaseModel):
@@ -140,6 +186,24 @@ class ConfigResponse(BaseModel):
     experience: int
     projects: int
     model_profiles: list[str]
+    #: The `OLLAMA_MODEL` / `OLLAMA_BASE_URL` env defaults, so the settings panel can show
+    #: what an `ollama`/`hybrid` profile actually resolves to instead of leaving it
+    #: invisible in `.env`.
+    ollama_model: str = ""
+    ollama_base_url: str = ""
+    #: Profiles with at least one Ollama-routed stage, so the UI knows when the tag field
+    #: applies without hardcoding `["ollama", "hybrid"]` against `config.MODEL_PROFILES`.
+    ollama_profiles: list[str] = Field(default_factory=list)
+    #: The `GEMINI_MODEL` / `GEMINI_BASE_URL` env defaults, mirroring the Ollama pair above.
+    gemini_model: str = ""
+    gemini_base_url: str = ""
+    #: Profiles with at least one Gemini-routed stage — mirrors `ollama_profiles`.
+    gemini_profiles: list[str] = Field(default_factory=list)
+    #: Whether a credential is present for each origin that requires one
+    #: (`config.PROVIDERS_REQUIRING_KEY`), so the settings panel can warn the moment a
+    #: profile is picked rather than only after a run fails deep in the job queue. Booleans
+    #: only — never the key value itself.
+    provider_keys: dict[str, bool] = Field(default_factory=dict)
     effort_options: list[str]
     pdf_backend: str
     calibration_source: str
@@ -149,6 +213,11 @@ class ConfigResponse(BaseModel):
     contact_name: str | None = None
     #: Default page-fill target (UNDERFLOW_THRESHOLD) for the settings slider.
     fill_target: float = 0.93
+    active_workspace_id: str | None = None
+    active_workspace_label: str | None = None
+    #: True on the first response after the legacy single-slot layout was migrated
+    #: into a "Default" profile. The UI shows a one-time banner and never sets it again.
+    migrated_from_legacy: bool = False
 
 
 class ValidateResponse(BaseModel):
@@ -282,3 +351,47 @@ class TemplateAnalyzeResponse(BaseModel):
     suggested_profile: dict[str, Any] | None = None
     issues: list[TemplateIssueOut] = Field(default_factory=list)
     ready: bool = False
+
+
+class WorkspaceEntryOut(BaseModel):
+    """One profile in the switcher's list."""
+
+    id: str
+    label: str
+    created_at: str
+    is_active: bool = False
+    has_master_resume: bool = False
+    has_template: bool = False
+
+
+class WorkspaceListResponse(BaseModel):
+    """Response for `GET /api/workspaces` and the CRUD mutations that return a list."""
+
+    entries: list[WorkspaceEntryOut] = Field(default_factory=list)
+    active_id: str | None = None
+
+
+class WorkspaceCreateRequest(BaseModel):
+    """Body for `POST /api/workspaces`."""
+
+    label: str
+    #: When set, the new profile starts as a duplicate of this one's resume, template,
+    #: template library, and calibration (never its LLM caches — those regenerate).
+    copy_from: str | None = None
+
+
+class WorkspaceRenameRequest(BaseModel):
+    """Body for `PATCH /api/workspaces/{id}`."""
+
+    label: str
+
+
+class WorkspaceActivateResponse(BaseModel):
+    """Everything the SPA needs to re-seed itself after a profile switch, in one call."""
+
+    ok: bool = True
+    active_id: str
+    entries: list[WorkspaceEntryOut] = Field(default_factory=list)
+    config: ConfigResponse
+    settings: JobSettings
+    template: TemplateInfoResponse

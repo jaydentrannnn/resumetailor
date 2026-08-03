@@ -56,7 +56,7 @@ Output lands in `output/` (`.docx` + `.pdf`). Useful flags:
 
 | Flag | Effect |
 |------|--------|
-| `--model PROFILE` | Backend profile: `claude` (default), `ollama`, `lmstudio`, `hybrid` |
+| `--model PROFILE` | Backend profile: `ollama` (default), `claude`, `gemini`, `lmstudio`, `hybrid` |
 | `--rewrite-model SPEC` | Override rewrite stage only |
 | `--expand-model SPEC` | Override expansion stage only |
 | `--no-cache` | Ignore cached JD / score artifacts |
@@ -125,6 +125,26 @@ OLLAMA_MODEL=gemma4:cloud
 
 Leave `LLM_API_KEY` unset for local Ollama. Do not set an Authorization header unless your endpoint requires one.
 
+### Skipping the local daemon (Ollama Cloud, direct)
+
+Cloud models can also be called directly at `https://ollama.com` — no local `ollama`
+install, no `ollama serve`, nothing running on the machine at all. Useful for handing
+this project to someone who just wants to run `tailor.py` without installing Ollama.
+
+1. Create a key at [ollama.com/settings/keys](https://ollama.com/settings/keys) (just
+   needs an ollama.com account — the free plan works, same quota as the daemon-proxied path).
+2. Set in `.env`:
+
+```env
+OLLAMA_BASE_URL=https://ollama.com/v1
+OLLAMA_API_KEY=your-key-here
+```
+
+`OLLAMA_MODEL` does not need setting — it already defaults to `gemma4:cloud`, and the tag
+is the same whether you reach it through the local daemon or straight over HTTPS. If a tag
+404s, the error names the exact one that failed; check
+[ollama.com's model library](https://ollama.com/library) and set `OLLAMA_MODEL` to override.
+
 ### 3. Run with the Ollama profile
 
 ```powershell
@@ -145,7 +165,65 @@ Specs use `provider:model`. The first colon splits provider from model, so tags 
 python tailor.py --jd jd.txt --model ollama:gemma4:cloud
 ```
 
-In the web UI, pick the **ollama** or **hybrid** profile under Models.
+**ollama** is the default profile in both the CLI and the web UI, so a fresh install runs
+without an Anthropic key at all. Under Models you'll see an **Ollama model** field
+whenever an Ollama-routed profile is selected: leave it blank and the run uses
+`OLLAMA_MODEL` (`gemma4:cloud`), shown as the placeholder and in the help line under the
+profile dropdown. Only a value you actually enter overrides it, and then only for that
+run — no `.env` edit, no restart. Under
+`hybrid` this leaves the Claude rewrite stage alone; the per-stage **Rewrite model** /
+**Expand model** fields still win wherever they are set. Saved with the rest of the
+profile's settings, so it sticks across runs.
+
+---
+
+## Using Gemini
+
+Google's Gemini models are reachable through their own OpenAI-compatible endpoint — same
+`_OpenAICompatClient` path as Ollama/LM Studio, but this one genuinely requires a key.
+
+### 1. Get an API key
+
+Create one at [aistudio.google.com/apikey](https://aistudio.google.com/apikey) (an
+ollama.com-style free tier is available; no billing setup required to start).
+
+### 2. Set `.env`
+
+```env
+GEMINI_API_KEY=your-key-here
+```
+
+`GEMINI_MODEL` and `GEMINI_BASE_URL` do not need setting — they already default to
+`gemini-3.5-flash` and Google's OpenAI-compatible endpoint. Override `GEMINI_MODEL` if you
+want a different one.
+
+### 3. Run with the Gemini profile
+
+```powershell
+python tailor.py --jd jd.txt --model gemini
+
+# Cheap ranking on Gemini, rewrite on Claude
+python tailor.py --jd jd.txt --model gemini --rewrite-model claude-sonnet-5
+
+# Pin a specific model
+python tailor.py --jd jd.txt --model gemini:gemini-3.5-pro
+```
+
+In the web UI, pick **gemini**; a missing `GEMINI_API_KEY` is flagged inline under the
+profile dropdown before you can start a run, rather than failing partway through one. A
+**Gemini model** field appears the same way the Ollama one does — leave it blank to use
+`GEMINI_MODEL`, or enter a tag to override it for that run (saved with the rest of the
+profile's settings).
+
+### A note on token limits
+
+Gemini counts its internal "thinking" toward the same output budget as the answer, so a
+stage that reasons a lot can occasionally run out of room before finishing its JSON. This
+project handles that automatically: a response that truncates is retried once or twice at
+a doubled token ceiling (up to Gemini's real output cap) before giving up, and the working
+ceiling is remembered for the rest of the run so later calls to the same model start there
+instead of rediscovering it. You should not need to touch this — `LLM_MAX_TOKENS` in
+`.env.example` documents the manual override, for debugging only.
 
 ---
 
@@ -197,8 +275,9 @@ Start the LM Studio server on the host, then use the `lmstudio` profile from the
 
 | Profile | Extract / Score | Rewrite | Expand |
 |---------|-----------------|---------|--------|
+| `ollama` (default) | Ollama | Ollama | Ollama |
 | `claude` | Claude | Claude | Claude |
-| `ollama` | Ollama | Ollama | Ollama |
+| `gemini` | Gemini | Gemini | Gemini |
 | `lmstudio` | LM Studio | LM Studio | LM Studio |
 | `hybrid` | Ollama | Claude | Ollama |
 

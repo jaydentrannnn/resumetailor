@@ -28,6 +28,8 @@ type EditorStateValue = {
   errors: string[];
   message: string | null;
   busy: boolean;
+  /** True when the draft differs from what was last loaded or saved. */
+  dirty: boolean;
   validate: () => Promise<void>;
   save: () => Promise<void>;
 };
@@ -46,6 +48,9 @@ export function EditorProvider({ children }: { children: ReactNode }) {
   const [message, setMessage] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [loaded, setLoaded] = useState(false);
+  // Snapshot of the resume as last loaded or saved, so `dirty` reflects genuinely
+  // unsaved edits rather than "a resume is loaded at all".
+  const [savedSnapshot, setSavedSnapshot] = useState<string | null>(null);
 
   const setResume = useCallback(
     (next: MasterResume | ((prev: MasterResume) => MasterResume)) => {
@@ -66,6 +71,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
     Promise.all([fetchMasterResume(), fetchConfig()])
       .then(([raw, cfg]) => {
         setResumeState(raw as MasterResume);
+        setSavedSnapshot(JSON.stringify(raw));
         setConfig(cfg);
         setLoaded(true);
       })
@@ -123,6 +129,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
         );
         const fresh = (await fetchMasterResume()) as MasterResume;
         setResumeState(fresh);
+        setSavedSnapshot(JSON.stringify(fresh));
         const cfg = await fetchConfig();
         setConfig(cfg);
       }
@@ -133,6 +140,11 @@ export function EditorProvider({ children }: { children: ReactNode }) {
     }
   }, [resume]);
 
+  const dirty = useMemo(
+    () => resume != null && savedSnapshot != null && JSON.stringify(resume) !== savedSnapshot,
+    [resume, savedSnapshot],
+  );
+
   const value = useMemo<EditorStateValue>(
     () => ({
       resume,
@@ -141,10 +153,11 @@ export function EditorProvider({ children }: { children: ReactNode }) {
       errors,
       message,
       busy,
+      dirty,
       validate,
       save,
     }),
-    [resume, setResume, config, errors, message, busy, validate, save],
+    [resume, setResume, config, errors, message, busy, dirty, validate, save],
   );
 
   return (
