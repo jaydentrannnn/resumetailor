@@ -158,7 +158,8 @@ function EntryBlock({
 }
 
 /**
- * Full-width copy-paste tile for expanded application-form experience descriptions.
+ * Copy-paste tile for expanded application-form experience descriptions, sitting
+ * beside the report on the Tailor page's final row.
  *
  * Entries collapse into an accordion (first open) so a long list does not stretch the page.
  */

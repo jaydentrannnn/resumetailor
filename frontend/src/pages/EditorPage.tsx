@@ -14,6 +14,7 @@ import {
   blankProject,
   blankSkillGroup,
   collectBulletIds,
+  collectExperienceIds,
   collectProjectIds,
   countTagUsage,
   entryPrefix,
@@ -21,6 +22,7 @@ import {
   looksLikeHttpUrl,
   moveItem,
   nextBulletId,
+  nextExperienceId,
   nextProjectId,
   removeAt,
   removeTagFromResume,
@@ -183,6 +185,7 @@ export function EditorPage() {
         entries={resume.experience}
         vocabList={vocabList}
         takenIds={takenIds}
+        experienceIds={collectExperienceIds(resume)}
         onEnsureVocab={ensureVocab}
         onChange={(experience) => setResume({ ...resume, experience })}
       />
@@ -342,31 +345,18 @@ function EducationSection({
                 }}
               />
               <div className="sm:col-span-2">
-                <div className="flex flex-wrap items-end gap-3">
-                  <div className="min-w-[8rem] flex-1">
-                    <TextField
-                      label="GPA"
-                      value={edu.gpa ?? ""}
-                      onChange={(v) => {
-                        const next = [...entries];
-                        next[i] = { ...edu, gpa: v };
-                        onChange(next);
-                      }}
-                    />
-                  </div>
-                  <label className="mb-1.5 inline-flex items-center gap-2 text-sm">
-                    <input
-                      type="checkbox"
-                      checked={Boolean(edu.show_gpa)}
-                      onChange={(e) => {
-                        const next = [...entries];
-                        next[i] = { ...edu, show_gpa: e.target.checked };
-                        onChange(next);
-                      }}
-                    />
-                    Show GPA on resume
-                  </label>
-                </div>
+                <TextField
+                  label="GPA"
+                  value={edu.gpa ?? ""}
+                  onChange={(v) => {
+                    const next = [...entries];
+                    next[i] = { ...edu, gpa: v };
+                    onChange(next);
+                  }}
+                />
+                <p className="mt-1 text-xs text-ink-muted">
+                  Whether GPA appears on the resume is set per run on the Tailor tab.
+                </p>
               </div>
             </div>
             <div className="mt-3">
@@ -437,17 +427,20 @@ function ExperienceSection({
   entries,
   vocabList,
   takenIds,
+  experienceIds,
   onEnsureVocab,
   onChange,
 }: {
   entries: Experience[];
   vocabList: string[];
   takenIds: Set<string>;
+  experienceIds: Set<string>;
   onEnsureVocab: (token: string) => void;
   onChange: (e: Experience[]) => void;
 }) {
   function addEntry() {
-    onChange([...entries, blankExperience()]);
+    const id = nextExperienceId("new role", experienceIds);
+    onChange([...entries, blankExperience(id)]);
   }
 
   return (

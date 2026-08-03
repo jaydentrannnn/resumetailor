@@ -6,6 +6,7 @@ import {
   downloadUrl,
 } from "../api";
 import { ExperienceCard } from "../components/ExperienceCard";
+import { IncludePanel } from "../components/IncludePanel";
 import { ModelSpecField } from "../components/ModelSpecField";
 import { type RunProgress, runProgress } from "../lib/runProgress";
 import { DEFAULT_SETTINGS, useRunState } from "../state/runState";
@@ -17,6 +18,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
  * State lives in `RunProvider` so switching to Master resume mid-run does not
  * lose the JD, settings, SSE stream, or results. PDF auto-download is also
  * owned there so a tab remount cannot re-fire it.
+ *
+ * Layout at `lg` is an explicit 2x4 grid rather than stacked columns: Settings
+ * and What-to-include sit on row 1, Job description and Progress share row 2
+ * (equal height — see the Progress cell below), the submit button spans both
+ * columns on row 3, and Application experience / Report share row 4. Placement
+ * is stated per tile (`col-start`/`row-start`) because several of the seven
+ * tiles render conditionally — auto-flow would reshuffle the rest the moment
+ * one of them disappeared.
  */
 export function RunPage() {
   const {
@@ -62,83 +71,89 @@ export function RunPage() {
     reader.readAsText(file);
   }
 
+  // Progress and the calibration note share one cell and are mutually exclusive:
+  // a failed run leaves `error` set with `busy` false, which used to render both
+  // stacked. Only one can occupy the pinned tile.
+  const showStatus = busy || events.length > 0 || Boolean(error) || Boolean(report);
+
   return (
-    <div className="space-y-8">
-      <div className="grid gap-8 lg:grid-cols-[1.1fr_0.9fr]">
-        <form onSubmit={onSubmit} className="space-y-5">
-          <section className="rounded-xl border border-line bg-panel p-5 shadow-sm">
-            <div className="mb-3 flex items-center justify-between gap-3">
-              <h2 className="font-display text-xl font-semibold">Job description</h2>
-              <label className="cursor-pointer rounded-md border border-line px-3 py-1.5 text-sm text-ink-muted hover:border-accent hover:text-accent">
-                Upload .txt
-                <input
-                  type="file"
-                  accept=".txt,text/plain"
-                  className="hidden"
-                  onChange={(e) => onFile(e.target.files?.[0] ?? null)}
-                />
-              </label>
-            </div>
-            <textarea
-              value={jdText}
-              onChange={(e) => setJdText(e.target.value)}
-              rows={14}
-              placeholder="Paste the posting here…"
-              className="w-full resize-y rounded-lg border border-line bg-paper/40 px-3 py-2 text-sm leading-relaxed outline-none focus:border-accent"
-              required
+    <form
+      onSubmit={onSubmit}
+      className="grid gap-x-8 gap-y-5 lg:grid-cols-[1.1fr_0.9fr]"
+    >
+      <div className="lg:col-start-1 lg:row-start-1">
+        <SettingsPanel config={config} settings={settings} onChange={setSettings} />
+      </div>
+
+      <div className="lg:col-start-2 lg:row-start-1">
+        <IncludePanel settings={settings} onChange={setSettings} />
+      </div>
+
+      <section className="rounded-xl border border-line bg-panel p-5 shadow-sm lg:col-start-1 lg:row-start-2">
+        <div className="mb-3 flex items-center justify-between gap-3">
+          <h2 className="font-display text-xl font-semibold">Job description</h2>
+          <label className="cursor-pointer rounded-md border border-line px-3 py-1.5 text-sm text-ink-muted hover:border-accent hover:text-accent">
+            Upload .txt
+            <input
+              type="file"
+              accept=".txt,text/plain"
+              className="hidden"
+              onChange={(e) => onFile(e.target.files?.[0] ?? null)}
             />
+          </label>
+        </div>
+        <textarea
+          value={jdText}
+          onChange={(e) => setJdText(e.target.value)}
+          rows={14}
+          placeholder="Paste the posting here…"
+          className="w-full resize-y rounded-lg border border-line bg-paper/40 px-3 py-2 text-sm leading-relaxed outline-none focus:border-accent"
+          required
+        />
+      </section>
+
+      {/*
+        The progress tile is absolutely positioned inside this cell at `lg`, so it
+        contributes no height of its own: row 2 is sized by the job-description tile
+        alone and `inset-0` then stretches progress to exactly that height, in both
+        directions and through a manual textarea resize. The event list takes the
+        slack (`flex-1 min-h-0`) and scrolls rather than growing the row. Static on
+        mobile, where the grid collapses to one column.
+      */}
+      <div className="lg:relative lg:col-start-2 lg:row-start-2">
+        {showStatus ? (
+          <section className="rounded-xl border border-line bg-panel p-5 shadow-sm lg:absolute lg:inset-0 lg:flex lg:flex-col lg:overflow-hidden">
+            <div className="flex items-baseline justify-between gap-3">
+              <h2 className="font-display text-xl font-semibold">Progress</h2>
+              <span className="text-sm text-ink-muted">{progress.label}</span>
+            </div>
+            <ProgressBar progress={progress} failed={status === "failed"} />
+            {queuePosition != null && queuePosition > 1 && status === "queued" && (
+              <p className="mt-2 text-sm text-ink-muted">
+                Queued — position {queuePosition}
+              </p>
+            )}
+            <ol
+              ref={progressListRef}
+              className="mt-3 max-h-56 space-y-2 overflow-y-auto text-sm lg:max-h-none lg:min-h-0 lg:flex-1"
+            >
+              {events.map((ev, i) => (
+                <li key={`${ev.stage}-${i}`} className="flex gap-2">
+                  <span className="mt-0.5 shrink-0 rounded bg-accent-soft px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent">
+                    {ev.stage}
+                  </span>
+                  <span>{ev.message}</span>
+                </li>
+              ))}
+            </ol>
+            {error && (
+              <p className="mt-3 rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">
+                {error}
+              </p>
+            )}
           </section>
-
-          <SettingsPanel config={config} settings={settings} onChange={setSettings} />
-
-          <button
-            type="submit"
-            disabled={busy || !jdText.trim()}
-            className="w-full rounded-lg bg-accent px-4 py-3 text-sm font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
-          >
-            {busy ? "Tailoring…" : "Tailor resume"}
-          </button>
-        </form>
-
-        <aside className="space-y-5">
-          {(busy || events.length > 0 || error || report) && (
-            <section className="rounded-xl border border-line bg-panel p-5 shadow-sm">
-              <div className="flex items-baseline justify-between gap-3">
-                <h2 className="font-display text-xl font-semibold">Progress</h2>
-                <span className="text-sm text-ink-muted">{progress.label}</span>
-              </div>
-              <ProgressBar progress={progress} failed={status === "failed"} />
-              {queuePosition != null && queuePosition > 1 && status === "queued" && (
-                <p className="mt-2 text-sm text-ink-muted">
-                  Queued — position {queuePosition}
-                </p>
-              )}
-              <ol
-                ref={progressListRef}
-                className="mt-3 max-h-56 space-y-2 overflow-y-auto text-sm"
-              >
-                {events.map((ev, i) => (
-                  <li key={`${ev.stage}-${i}`} className="flex gap-2">
-                    <span className="mt-0.5 shrink-0 rounded bg-accent-soft px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent">
-                      {ev.stage}
-                    </span>
-                    <span>{ev.message}</span>
-                  </li>
-                ))}
-              </ol>
-              {error && (
-                <p className="mt-3 rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">
-                  {error}
-                </p>
-              )}
-            </section>
-          )}
-
-          {report && jobId && (
-            <ReportCard report={report} jobId={jobId} />
-          )}
-
-          {config && !report && !busy && (
+        ) : (
+          config && (
             <section className="rounded-xl border border-dashed border-line bg-panel/60 p-5 text-sm text-ink-muted">
               <p>
                 Measuring with <strong className="text-ink">{config.pdf_backend}</strong>
@@ -151,14 +166,30 @@ export function RunPage() {
                 <p className="mt-2">Master resume: {config.contact_name}</p>
               )}
             </section>
-          )}
-        </aside>
+          )
+        )}
       </div>
 
+      <button
+        type="submit"
+        disabled={busy || !jdText.trim()}
+        className="w-full rounded-lg bg-accent px-4 py-3 text-sm font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50 lg:col-start-1 lg:col-span-2 lg:row-start-3"
+      >
+        {busy ? "Tailoring…" : "Tailor resume"}
+      </button>
+
       {report && jobId && expansion && (
-        <ExperienceCard expansion={expansion} jobId={jobId} />
+        <div className="lg:col-start-1 lg:row-start-4">
+          <ExperienceCard expansion={expansion} jobId={jobId} />
+        </div>
       )}
-    </div>
+
+      {report && jobId && (
+        <div className="lg:col-start-2 lg:row-start-4">
+          <ReportCard report={report} jobId={jobId} />
+        </div>
+      )}
+    </form>
   );
 }
 
@@ -298,12 +329,6 @@ function SettingsPanel({
             />
           </Field>
         </div>
-        <Toggle
-          label="Hide project links"
-          help="Omit the Github label and hyperlink from project headers."
-          checked={settings.no_project_links}
-          onChange={(v) => set("no_project_links", v)}
-        />
       </fieldset>
 
       <fieldset className="mt-6 space-y-3">

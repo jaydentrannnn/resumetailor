@@ -1,5 +1,18 @@
 /** Shared types and fetch helpers for the ResumeTailor API. */
 
+export type ContactField = "location" | "email" | "phone" | "linkedin" | "github";
+
+export type IncludeOptions = {
+  /** Ordered contact-line fields, name excluded (it always renders first). Omitting a
+   * field both hides it and shortens the line. Null keeps the active template's order. */
+  contact_fields: ContactField[] | null;
+  gpa: boolean;
+  coursework: boolean;
+  /** Experience/project ids omitted from this run entirely. */
+  exclude_experience: string[];
+  exclude_projects: string[];
+};
+
 export type JobSettings = {
   pages: number;
   experience: number | null;
@@ -28,6 +41,8 @@ export type JobSettings = {
   fill_target: number | null;
   /** First-draft bullet-share ceiling (0.30–1.00); null uses the server default. */
   initial_bullet_share: number | null;
+  /** What to leave out — contact fields/order, GPA, coursework, whole entries. */
+  include: IncludeOptions;
 };
 
 export type ProgressEvent = {
@@ -140,6 +155,29 @@ export type AppConfig = {
   active_workspace_label: string | null;
   /** True once, on the first /api/config response after a legacy-layout migration. */
   migrated_from_legacy: boolean;
+};
+
+export type ResumeOutlineEntry = {
+  id: string;
+  label: string;
+  bullets: number;
+};
+
+export type ResumeOutline = {
+  /** Which of location/email/phone/linkedin/github are non-empty in the master resume. */
+  available_contact_fields: string[];
+  /** The active template profile's order, used when `include.contact_fields` is null. */
+  default_contact_order: string[];
+  has_gpa: boolean;
+  /** Whether GPA is currently shown for any entry — seeds the tile from the resume's
+   * existing behaviour rather than silently flipping it on the next run. */
+  gpa_currently_shown: boolean;
+  has_coursework: boolean;
+  experience: ResumeOutlineEntry[];
+  projects: ResumeOutlineEntry[];
+  /** A template with no Projects section should not offer project checkboxes or the
+   * link toggle. */
+  sections_enabled: Record<string, boolean>;
 };
 
 export type SettingsResponse = {
@@ -299,6 +337,12 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
 export function fetchConfig(): Promise<AppConfig> {
   /** Load UI defaults and the master resume's tag vocabulary. */
   return request<AppConfig>("/api/config");
+}
+
+export function fetchResumeOutline(): Promise<ResumeOutline> {
+  /** Load the master-resume shape the include tile needs — refetched on every mount
+   * so an edit made on the Master resume tab shows up the next time Tailor is visited. */
+  return request<ResumeOutline>("/api/resume-outline");
 }
 
 export function fetchSettings(): Promise<SettingsResponse> {

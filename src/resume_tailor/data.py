@@ -75,6 +75,11 @@ class SummaryVariant(_Strict):
 
 
 class Experience(_Strict):
+    #: Stable identifier, unique across `experience`. Addresses the entry for per-run
+    #: exclusion, so it must never be reused or renumbered casually — same contract as
+    #: `Bullet.id` and `Project.id`. Auto-filled from a company slug when absent so files
+    #: written before this field existed still load; see `MasterResume._fill_experience_ids`.
+    id: str = ""
     company: str
     title: str
     location: str = ""
@@ -140,12 +145,41 @@ class MasterResume(_Strict):
         return sorted({config.canonical_tag(t) for t in tags if t.strip()})
 
     @model_validator(mode="after")
+    def _fill_experience_ids(self) -> "MasterResume":
+        """Auto-fill blank `Experience.id`s from a company slug, deterministically.
+
+        Runs before `_ids_unique` so a file predating this field (every id blank) still
+        validates instead of failing on an all-empty duplicate check. A collision (two
+        entries at the same company, or two blanks slugging to the same base) gets a
+        `-2`, `-3`, … suffix in document order.
+        """
+        taken = {e.id for e in self.experience if e.id.strip()}
+        for entry in self.experience:
+            if entry.id.strip():
+                continue
+            base = config.slugify(entry.company) or "role"
+            candidate = base
+            suffix = 2
+            while candidate in taken:
+                candidate = f"{base}-{suffix}"
+                suffix += 1
+            entry.id = candidate
+            taken.add(candidate)
+        return self
+
+    @model_validator(mode="after")
     def _ids_unique(self) -> "MasterResume":
-        """Bullet ids address rewrites; a duplicate would silently overwrite one."""
+        """Bullet/experience ids address rewrites and exclusions; a duplicate would
+        silently overwrite or misapply one."""
         ids = [b.id for b in self.all_bullets()]
         dupes = [i for i, n in Counter(ids).items() if n > 1]
         if dupes:
             raise ValueError(f"duplicate bullet id(s): {', '.join(sorted(dupes))}")
+
+        exp_ids = [e.id for e in self.experience]
+        exp_dupes = [i for i, n in Counter(exp_ids).items() if n > 1]
+        if exp_dupes:
+            raise ValueError(f"duplicate experience id(s): {', '.join(sorted(exp_dupes))}")
         return self
 
     def all_bullets(self) -> list[Bullet]:

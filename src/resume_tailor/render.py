@@ -226,6 +226,7 @@ def build_context(
     bullets: dict[str, str] | None = None,
     include_project_links: bool = True,
     layout: dict | None = None,
+    contact_fields: list[ContactField] | None = None,
 ) -> dict:
     """Assemble the Jinja context for the template.
 
@@ -244,6 +245,10 @@ def build_context(
     `layout` is the active template profile summary from `template_profile.active_layout`
     (contact separator/order + enabled sections). When omitted, the active profile on
     disk is loaded, falling back to legacy defaults.
+
+    `contact_fields`, when set, overrides `layout`'s contact field order — see
+    `include.contact_order`, which is what callers use to resolve a per-run override
+    against the template's own default.
     """
     layout = layout if layout is not None else active_layout()
     enabled = layout.get("enabled") or {
@@ -334,7 +339,9 @@ def build_context(
         "contact": _contact_richtext(
             resume,
             tpl,
-            field_order=layout.get("contact_field_order"),
+            field_order=contact_fields if contact_fields is not None else layout.get(
+                "contact_field_order"
+            ),
             separator=layout.get("contact_separator"),
         ),
         "education": education,
@@ -351,6 +358,7 @@ def render(
     template: Path | None = None,
     out: Path | None = None,
     include_project_links: bool = True,
+    contact_fields: list[ContactField] | None = None,
 ) -> Path:
     """Build the context and render it to a .docx.
 
@@ -360,6 +368,9 @@ def render(
 
     `include_project_links=False` renders projects without their link label, separator,
     or hyperlink.
+
+    `contact_fields`, when set, overrides the active template profile's contact field
+    order/inclusion — see `build_context`.
     """
     template = template or config.DEFAULT_TEMPLATE_PATH
     if not template.exists():
@@ -369,7 +380,11 @@ def render(
         )
     tpl = DocxTemplate(template)
     context = build_context(
-        resume, tpl, bullets=bullets, include_project_links=include_project_links
+        resume,
+        tpl,
+        bullets=bullets,
+        include_project_links=include_project_links,
+        contact_fields=contact_fields,
     )
 
     # autoescape is required, not optional. Without it a literal "&" in the content

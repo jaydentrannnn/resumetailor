@@ -19,7 +19,6 @@ from __future__ import annotations
 
 import json
 import os
-import re
 import secrets
 import shutil
 import threading
@@ -162,7 +161,7 @@ def _entry_from_meta(meta: dict, *, active_id: str | None) -> WorkspaceEntry:
 
 
 def _slugify(label: str) -> str:
-    return re.sub(r"[^a-z0-9]+", "-", label.lower()).strip("-")[:40]
+    return config.slugify(label)
 
 
 def new_workspace_id(label: str, *, existing: Iterable[str]) -> str:

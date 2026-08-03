@@ -11,6 +11,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from .. import config
+from ..include import IncludeOptions
 
 
 class JobSettings(BaseModel):
@@ -51,6 +52,11 @@ class JobSettings(BaseModel):
     #: Fraction of the chosen entries' bullets the first selection may claim (0.30–1.00).
     #: Bounds only the first draft — see `fit.fit`'s docstring for the `fill_target` pairing.
     initial_bullet_share: float | None = Field(default=None, ge=0.3, le=1.0)
+    #: What to leave out — contact fields/order, GPA, coursework, whole entries. See
+    #: `include.py`. Nested rather than flattened so the "what to include" tile's state
+    #: has one field to read/write, and an old settings.json without this key just gets
+    #: `IncludeOptions()` defaults.
+    include: IncludeOptions = Field(default_factory=IncludeOptions)
 
 
 class WorkspaceSettings(BaseModel):
@@ -240,6 +246,40 @@ class ConfigResponse(BaseModel):
     #: True on the first response after the legacy single-slot layout was migrated
     #: into a "Default" profile. The UI shows a one-time banner and never sets it again.
     migrated_from_legacy: bool = False
+
+
+class ResumeOutlineEntryOut(BaseModel):
+    """One experience/project entry as the include tile lists it."""
+
+    id: str
+    label: str
+    bullets: int
+
+
+class ResumeOutlineResponse(BaseModel):
+    """Master-resume shape the include tile needs: what exists, so it knows what to offer.
+
+    Served from its own endpoint (not folded into `ConfigResponse`) because `RunProvider`
+    fetches config once and holds it for the life of a profile mount, while this needs to
+    be fresh every time the Tailor tab is visited — the master resume may have changed on
+    the Editor tab in between.
+    """
+
+    #: Which of location/email/phone/linkedin/github are non-empty in the master resume.
+    available_contact_fields: list[str] = Field(default_factory=list)
+    #: The active template profile's order, used when `include.contact_fields` is null.
+    default_contact_order: list[str] = Field(default_factory=list)
+    has_gpa: bool = False
+    #: Whether `Education.show_gpa` is currently on for any entry — lets a profile
+    #: upgrading to this feature seed the tile from its existing behaviour instead of
+    #: silently flipping GPA visibility on the next run.
+    gpa_currently_shown: bool = False
+    has_coursework: bool = False
+    experience: list[ResumeOutlineEntryOut] = Field(default_factory=list)
+    projects: list[ResumeOutlineEntryOut] = Field(default_factory=list)
+    #: From `template_profile.active_layout()["enabled"]` — a template with no Projects
+    #: section should not offer project checkboxes or the link toggle.
+    sections_enabled: dict[str, bool] = Field(default_factory=dict)
 
 
 class ValidateResponse(BaseModel):

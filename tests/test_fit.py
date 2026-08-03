@@ -102,6 +102,29 @@ def test_estimate_lines_counts_coursework_wrap():
     assert empty >= 5
 
 
+def test_include_apply_clearing_coursework_shrinks_fixed_overhead():
+    """`include.apply(coursework=False)` must free exactly the coursework wrap's lines
+    from `_fixed_overhead_lines` — the mechanism the fit loop relies on to reclaim that
+    space via the grow step, with no fit.py-side special case for it."""
+    from resume_tailor.include import IncludeOptions, apply as include_apply
+
+    resume = load()
+    assert resume.education
+    assert resume.education[0].coursework  # sanity: fixture has some to clear
+
+    with_coursework = fit_mod._fixed_overhead_lines(resume)
+    trimmed = include_apply(resume, IncludeOptions(coursework=False))
+    without_coursework = fit_mod._fixed_overhead_lines(trimmed)
+
+    freed = sum(
+        config.line_span("Relevant Coursework: " + ", ".join(edu.coursework))
+        for edu in resume.education
+        if edu.coursework
+    )
+    assert with_coursework - without_coursework == freed
+    assert freed > 0
+
+
 def test_tag_vocabulary_canonicalises_on_load():
     """Stored tag options are canonicalised the same way bullet tags are."""
     resume = load()
