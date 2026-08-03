@@ -24,10 +24,10 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from resume_tailor import config, data, report, workspace
+from resume_tailor import config, data, include, report, workspace
 from resume_tailor.data import MasterResume
 from resume_tailor.events import ProgressEvent
-from resume_tailor.template_profile import TemplateProfile
+from resume_tailor.template_profile import active_layout, TemplateProfile
 from resume_tailor.web import template_ops
 from resume_tailor.web.jobs import get_queue
 from resume_tailor.web.schemas import (
@@ -37,6 +37,8 @@ from resume_tailor.web.schemas import (
     JobSettings,
     JobStatusResponse,
     ProgressEventOut,
+    ResumeOutlineEntryOut,
+    ResumeOutlineResponse,
     SettingsResponse,
     SettingsUpdateRequest,
     TemplateAnalyzeResponse,
@@ -176,11 +178,32 @@ def get_config() -> ConfigResponse:
     return _config_response()
 
 
+def _seed_include_gpa_if_missing(defaults: dict, settings: JobSettings) -> None:
+    """A settings.json predating `include` has no saved opinion on GPA visibility.
+
+    Pydantic fills the missing key with `IncludeOptions()`'s default (`gpa=True`)
+    regardless of what the resume's `Education.show_gpa` actually says — for a profile
+    that had deliberately hidden its GPA, that would silently reveal it on the very
+    next run. Falling back to the resume's current `show_gpa` instead means upgrading
+    to this feature changes nothing about a run's output until the user explicitly
+    touches the new tile. A no-op once `include` has ever been saved once (`"include"
+    in defaults`), since a value the user actually set must never be overridden.
+    """
+    if "include" in defaults:
+        return
+    try:
+        resume = data.load()
+    except (FileNotFoundError, ValueError):
+        return
+    settings.include.gpa = any(edu.show_gpa and edu.gpa.strip() for edu in resume.education)
+
+
 @app.get("/api/settings", response_model=SettingsResponse)
 def get_settings() -> SettingsResponse:
     """The active profile's saved run defaults, seeded from `JobSettings()` if unset."""
     raw = workspace.load_settings()
     settings = JobSettings.model_validate(raw["defaults"])
+    _seed_include_gpa_if_missing(raw["defaults"], settings)
     return SettingsResponse(
         workspace_id=config.active_workspace_id(),
         settings=settings,
@@ -208,7 +231,9 @@ def create_job(body: CreateJobRequest) -> CreateJobResponse:
     if settings is None:
         # No per-run override: fall back to the active profile's saved defaults so a
         # bare `POST /api/jobs {"jd_text": ...}` behaves like the UI.
-        settings = JobSettings.model_validate(workspace.load_settings()["defaults"])
+        raw_defaults = workspace.load_settings()["defaults"]
+        settings = JobSettings.model_validate(raw_defaults)
+        _seed_include_gpa_if_missing(raw_defaults, settings)
     # A missing key otherwise only surfaces as an async `job.status == "failed"` once the
     # worker gets to it. `credential_gaps` is pure (never touches `_ACTIVE`), so this check
     # is safe to run on the request thread even while another job is mid-run.
@@ -223,8 +248,69 @@ def create_job(body: CreateJobRequest) -> CreateJobResponse:
     gaps = config.credential_gaps(settings.model, overrides=overrides or None)
     if gaps:
         raise HTTPException(status_code=400, detail="; ".join(gaps))
+    # Same reasoning as the credential check above: a resume where every entry is
+    # excluded is a broken run, and catching it here means the job never reaches the
+    # worker to fail several minutes and several LLM calls later.
+    try:
+        resume = data.load()
+    except (FileNotFoundError, ValueError) as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    problems = include.validate(resume, settings.include)
+    if problems:
+        raise HTTPException(status_code=400, detail="; ".join(problems))
     job, position = get_queue().submit(body.jd_text.strip(), settings)
     return CreateJobResponse(job_id=job.job_id, queue_position=position)
+
+
+@app.get("/api/resume-outline", response_model=ResumeOutlineResponse)
+def get_resume_outline() -> ResumeOutlineResponse:
+    """Master-resume shape the include tile needs — refetched every Tailor tab visit.
+
+    Deliberately its own endpoint rather than fields on `/api/config`: `RunProvider`
+    fetches config once and holds it for the profile's whole mount, while an edit made on
+    the Master resume tab (adding a job, clearing coursework) must show up here the next
+    time the Tailor tab is visited.
+    """
+    try:
+        resume = data.load()
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+
+    contact = resume.contact
+    field_values = {
+        "location": contact.location,
+        "email": contact.email,
+        "phone": contact.phone,
+        "linkedin": contact.linkedin,
+        "github": contact.github,
+    }
+    available_contact_fields = [k for k, v in field_values.items() if v.strip()]
+
+    layout = active_layout()
+    has_coursework = any(edu.coursework for edu in resume.education)
+    has_gpa = any(edu.gpa.strip() for edu in resume.education)
+    gpa_currently_shown = any(edu.show_gpa and edu.gpa.strip() for edu in resume.education)
+
+    return ResumeOutlineResponse(
+        available_contact_fields=available_contact_fields,
+        default_contact_order=list(layout.get("contact_field_order") or []),
+        has_gpa=has_gpa,
+        gpa_currently_shown=gpa_currently_shown,
+        has_coursework=has_coursework,
+        experience=[
+            ResumeOutlineEntryOut(
+                id=e.id, label=f"{e.company} — {e.title}", bullets=len(e.bullets)
+            )
+            for e in resume.experience
+        ],
+        projects=[
+            ResumeOutlineEntryOut(id=p.id, label=p.name, bullets=len(p.bullets))
+            for p in resume.projects
+        ],
+        sections_enabled=dict(layout.get("enabled") or {}),
+    )
 
 
 @app.get("/api/jobs/{job_id}", response_model=JobStatusResponse)
@@ -663,11 +749,14 @@ def activate_workspace(workspace_id: str) -> WorkspaceActivateResponse:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
         entries = workspace.list_workspaces()
+        raw_defaults = workspace.load_settings()["defaults"]
+        activated_settings = JobSettings.model_validate(raw_defaults)
+        _seed_include_gpa_if_missing(raw_defaults, activated_settings)
         return WorkspaceActivateResponse(
             active_id=workspace_id,
             entries=[_workspace_entry_out(e) for e in entries],
             config=_config_response(),
-            settings=JobSettings.model_validate(workspace.load_settings()["defaults"]),
+            settings=activated_settings,
             template=template_ops.info(),
         )
 

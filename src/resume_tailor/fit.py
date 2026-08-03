@@ -22,7 +22,7 @@ from .data import Experience, MasterResume, Project
 from .jd import JobRequirements
 from .merge import MergeGroup, propose as propose_merges
 from .rewrite import rewrite_bullets, select_entries, select_within_entries
-from .template_profile import active_layout
+from .template_profile import ContactField, active_layout
 
 #: How many physical lines a bullet's rewritten text is targeted at, on average. Passed
 #: to `rewrite_bullets` as its starting character budget before any shortening.
@@ -289,6 +289,7 @@ def fit(
     repair_verbs: bool = True,
     merge_bullets: bool = False,
     include_project_links: bool = True,
+    contact_fields: list[ContactField] | None = None,
     fill_target: float | None = None,
     initial_bullet_share: float | None = None,
     on_event: events.ProgressCallback | None = None,
@@ -323,6 +324,10 @@ def fit(
 
     `include_project_links` is passed straight to `render.render`. It is not a fit lever:
     the link sits inline in a project's header line, so hiding it frees no lines.
+
+    `contact_fields` is also passed straight to `render.render` and is not a fit lever
+    either: the contact line is one centered line regardless of how many fields it
+    carries, so `_fixed_overhead_lines`' flat `lines = 2` stays correct either way.
 
     `fill_target` overrides `config.UNDERFLOW_THRESHOLD` for this run (fraction of page
     capacity). Lower means the loop accepts a sparser page; higher packs tighter at the
@@ -428,6 +433,7 @@ def fit(
                 template=template,
                 out=out,
                 include_project_links=include_project_links,
+                contact_fields=contact_fields,
             )
 
             try:

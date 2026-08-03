@@ -22,11 +22,12 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
-from resume_tailor import config, data, expand, facets, fit, jd, report, rewrite
+from resume_tailor import config, data, expand, facets, fit, include, jd, report, rewrite
 from resume_tailor.events import ProgressCallback, ProgressEvent
 from resume_tailor.fit import FitError
 from resume_tailor.llm import LLMError
 from resume_tailor.rewrite import FabricationError
+from resume_tailor.template_profile import active_layout
 from resume_tailor.web.schemas import (
     ExpandedEntryOut,
     ExpansionOut,
@@ -213,6 +214,13 @@ class JobQueue:
                     )
                 )
 
+        # Kept unfiltered for `expand.expand_experience` below — an excluded job still
+        # appears in the application-form paste tile, per its own decision. Applied here
+        # (after scoring, before facets) so an exclusion toggle never invalidates the
+        # score cache, and so facets never sees a pool an excluded entry contributed to.
+        full_resume = resume
+        resume = include.apply(resume, settings.include)
+
         include_links = not settings.no_project_links
         try:
             if settings.no_facets:
@@ -270,6 +278,7 @@ class JobQueue:
                 repair_verbs=not settings.no_verb_repair,
                 merge_bullets=settings.merge,
                 include_project_links=include_links,
+                contact_fields=include.contact_order(settings.include, active_layout()),
                 fill_target=settings.fill_target,
                 initial_bullet_share=settings.initial_bullet_share,
                 on_event=on_event,
@@ -305,8 +314,10 @@ class JobQueue:
 
         if not settings.no_expand:
             try:
+                # Unfiltered resume: an experience entry excluded from the tailored
+                # resume still appears in the application-form paste tile.
                 expansion = expand.expand_experience(
-                    resume,
+                    full_resume,
                     requirements,
                     fit_result=result,
                     semantic=semantic,

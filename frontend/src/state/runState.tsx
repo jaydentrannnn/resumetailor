@@ -11,17 +11,29 @@ import {
 import {
   type AppConfig,
   type Expansion,
+  type IncludeOptions,
   type JobSettings,
   type ProgressEvent,
   type RunReport,
   createJob,
   fetchConfig,
   fetchJob,
+  fetchResumeOutline,
   fetchSettings,
   saveSettings,
   triggerPdfDownload,
 } from "../api";
 import { useWorkspaceState } from "./workspaceState";
+
+/** All-included defaults for a fresh `IncludeOptions` — the merge base whenever a
+ * settings.json predates this field or a fresh session needs a starting point. */
+export const DEFAULT_INCLUDE: IncludeOptions = {
+  contact_fields: null,
+  gpa: true,
+  coursework: true,
+  exclude_experience: [],
+  exclude_projects: [],
+};
 
 const JD_KEY_PREFIX = "resumeTailor.jdText";
 //: Pre-server-settings storage key. Settings now live in the active profile's
@@ -55,6 +67,7 @@ export const DEFAULT_SETTINGS: JobSettings = {
   no_project_links: false,
   fill_target: null,
   initial_bullet_share: null,
+  include: DEFAULT_INCLUDE,
 };
 
 /**
@@ -187,7 +200,17 @@ export function RunProvider({ children }: { children: ReactNode }) {
           next = { ...DEFAULT_SETTINGS, ...legacy };
         } else if (res.seeded) {
           // Brand-new profile with nothing to import: seed run-size defaults from
-          // the resume-derived config, same as a fresh session always has.
+          // the resume-derived config, same as a fresh session always has. GPA is
+          // seeded from the resume's own current show_gpa (rather than the
+          // all-included default) so this never silently reveals or hides it on the
+          // first run.
+          let gpa = DEFAULT_INCLUDE.gpa;
+          try {
+            const outline = await fetchResumeOutline();
+            gpa = outline.gpa_currently_shown;
+          } catch {
+            /* outline fetch is best-effort here; fall back to the all-included default */
+          }
           next = {
             ...DEFAULT_SETTINGS,
             pages: c.pages,
@@ -196,6 +219,7 @@ export function RunProvider({ children }: { children: ReactNode }) {
             model: c.model_profiles.includes(DEFAULT_SETTINGS.model)
               ? DEFAULT_SETTINGS.model
               : (c.model_profiles[0] ?? DEFAULT_SETTINGS.model),
+            include: { ...DEFAULT_INCLUDE, gpa },
           };
         } else {
           next = res.settings;

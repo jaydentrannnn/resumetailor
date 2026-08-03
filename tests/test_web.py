@@ -391,6 +391,7 @@ def test_job_runs_to_success_with_stubbed_pipeline(client, monkeypatch, tmp_path
         repair_verbs=True,
         merge_bullets=False,
         include_project_links=True,
+        contact_fields=None,
         fill_target=None,
         initial_bullet_share=None,
         on_event=None,
@@ -523,6 +524,224 @@ def test_job_runs_to_success_with_stubbed_pipeline(client, monkeypatch, tmp_path
     expansion_md = c.get(f"/api/jobs/{job_id}/expansion.md")
     assert expansion_md.status_code == 200
     assert b"Expanded bullet from stub." in expansion_md.content
+
+
+def test_settings_round_trip_with_nested_include(client, tmp_path, monkeypatch):
+    """PUT/GET round-trip the nested `include` field alongside the flat ones."""
+    c, _ = client
+    _point_settings_at(tmp_path, monkeypatch)
+
+    res = c.put(
+        "/api/settings",
+        json={
+            "settings": {
+                "pages": 1,
+                "include": {
+                    "contact_fields": ["email", "linkedin"],
+                    "gpa": False,
+                    "coursework": False,
+                    "exclude_experience": ["some-job"],
+                    "exclude_projects": ["some-project"],
+                },
+            }
+        },
+    )
+    assert res.status_code == 200
+    body = res.json()["settings"]["include"]
+    assert body["contact_fields"] == ["email", "linkedin"]
+    assert body["gpa"] is False
+    assert body["coursework"] is False
+    assert body["exclude_experience"] == ["some-job"]
+    assert body["exclude_projects"] == ["some-project"]
+
+    got = c.get("/api/settings").json()["settings"]["include"]
+    assert got == body
+
+
+def test_settings_json_predating_include_key_still_loads(client, tmp_path, monkeypatch):
+    """A settings.json written before `include` existed must not 500 on GET, and its
+    GPA field must reflect the resume's own current `show_gpa` rather than the schema
+    default — see `_seed_include_gpa_if_missing`. This fixture resume has GPA hidden."""
+    c, _ = client
+    resume = load()
+    assert not any(edu.show_gpa for edu in resume.education)  # sanity: GPA is hidden
+    path = _point_settings_at(tmp_path, monkeypatch)
+    path.write_text(
+        json.dumps({"schema_version": 1, "defaults": {"pages": 2, "model": "ollama"}}),
+        encoding="utf-8",
+    )
+
+    res = c.get("/api/settings")
+    assert res.status_code == 200
+    body = res.json()["settings"]
+    assert body["pages"] == 2
+    assert body["include"] == {
+        "contact_fields": None,
+        "gpa": False,
+        "coursework": True,
+        "exclude_experience": [],
+        "exclude_projects": [],
+    }
+
+
+def test_settings_include_gpa_seed_never_overrides_an_explicit_choice(
+    client, tmp_path, monkeypatch
+):
+    """Once `include` has been saved once, its `gpa` value is the user's own choice —
+    the resume-derived fallback in `test_settings_json_predating_include_key_still_loads`
+    must never apply after that point, even if it now disagrees with the resume."""
+    c, _ = client
+    path = _point_settings_at(tmp_path, monkeypatch)
+    path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "defaults": {
+                    "pages": 2,
+                    "model": "ollama",
+                    "include": {
+                        "contact_fields": None,
+                        "gpa": True,
+                        "coursework": True,
+                        "exclude_experience": [],
+                        "exclude_projects": [],
+                    },
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    res = c.get("/api/settings")
+    assert res.status_code == 200
+    # The fixture resume's show_gpa is False, but an explicitly saved `gpa: True`
+    # must win — this profile has already been through the include-aware save path.
+    assert res.json()["settings"]["include"]["gpa"] is True
+
+
+def test_get_resume_outline(client):
+    """GET /api/resume-outline reports the shape the include tile needs to render."""
+    c, _ = client
+    resume = load()
+
+    res = c.get("/api/resume-outline")
+    assert res.status_code == 200
+    body = res.json()
+
+    assert set(body["available_contact_fields"]) <= {
+        "location", "email", "phone", "linkedin", "github",
+    }
+    assert "email" in body["available_contact_fields"]  # every fixture resume has one
+    assert body["default_contact_order"]
+    assert body["has_coursework"] is True  # fixture resume has coursework
+    assert {e["id"] for e in body["experience"]} == {e.id for e in resume.experience}
+    assert {p["id"] for p in body["projects"]} == {p.id for p in resume.projects}
+    assert set(body["sections_enabled"]) == {"education", "experience", "projects", "skills"}
+    assert all(isinstance(v, bool) for v in body["sections_enabled"].values())
+
+
+def test_create_job_rejects_a_fully_excluded_resume(client):
+    """Excluding every experience and project entry must 400 synchronously, before the
+    job ever reaches the worker — the same treatment as a missing credential."""
+    c, q = client
+    resume = load()
+
+    res = c.post(
+        "/api/jobs",
+        json={
+            "jd_text": "Some job description.",
+            "settings": {
+                "include": {
+                    "exclude_experience": [e.id for e in resume.experience],
+                    "exclude_projects": [p.id for p in resume.projects],
+                }
+            },
+        },
+    )
+    assert res.status_code == 400
+    assert "nothing would render" in res.json()["detail"]
+    assert q._jobs == {}
+
+
+def test_job_honours_exclusions_but_expansion_still_sees_the_excluded_job(
+    client, monkeypatch
+):
+    """An excluded experience entry must be absent from what `fit.fit` receives, but the
+    application-form expansion tile still gets the unfiltered resume — see `include.py`'s
+    module docstring and `web/jobs.py::_execute` for why."""
+    c, q = client
+    resume = load()
+    excluded_id = resume.experience[0].id
+
+    def fake_extract(text, *, known_tags=None, use_cache=True, on_event=None):
+        from resume_tailor.jd import JobRequirements, Keyword
+
+        return JobRequirements(
+            title="Stub Role",
+            seniority="intern",
+            keywords=[Keyword(phrase="Python", canonical="python", importance="must_have")],
+        )
+
+    monkeypatch.setattr(jobs_mod.jd, "extract", fake_extract)
+    monkeypatch.setattr(jobs_mod.jd, "verify_verbatim", lambda *a, **k: [])
+    monkeypatch.setattr(
+        jobs_mod.rewrite, "score_table", lambda bullets, *a, **k: {b.id: 5.0 for b in bullets}
+    )
+
+    seen_fit_resume = {}
+    seen_expand_resume = {}
+
+    def fake_fit(resume_arg, requirements, *, out=None, on_event=None, **kwargs):
+        seen_fit_resume["ids"] = {e.id for e in resume_arg.experience}
+        out = Path(out)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(b"PK")
+        out.with_suffix(".pdf").write_bytes(b"%PDF-1.4 stub")
+        bullet = resume_arg.all_bullets()[0]
+        return FitResult(
+            out_path=out,
+            pages=1,
+            pages_are_estimated=False,
+            iterations=1,
+            bullets_selected=1,
+            bullets_total=1,
+            bullets={bullet.id: bullet.text},
+        )
+
+    monkeypatch.setattr(jobs_mod.fit, "fit", fake_fit)
+
+    def fake_facets(resume_arg, requirements, **kwargs):
+        from resume_tailor import facets as facets_mod
+
+        return facets_mod.budget_only(
+            resume_arg, requirements, include_project_links=kwargs.get(
+                "include_project_links", True
+            ),
+        )
+
+    monkeypatch.setattr(jobs_mod.facets, "select_facets", fake_facets)
+
+    def fake_expand(resume_arg, requirements, **kwargs):
+        seen_expand_resume["ids"] = {e.id for e in resume_arg.experience}
+        from resume_tailor.expand import Expansion
+
+        return Expansion(entries=[], model="stub", char_limit=config.EXPAND_CHAR_LIMIT)
+
+    monkeypatch.setattr(jobs_mod.expand, "expand_experience", fake_expand)
+
+    res = c.post(
+        "/api/jobs",
+        json={
+            "jd_text": "Looking for a Python intern.",
+            "settings": {"include": {"exclude_experience": [excluded_id]}},
+        },
+    )
+    assert res.status_code == 200
+    status = _drain(c, res.json()["job_id"])
+    assert status["status"] == "succeeded", status
+
+    assert excluded_id not in seen_fit_resume["ids"]
+    assert excluded_id in seen_expand_resume["ids"]
 
 
 def test_master_resume_validate_rejects_bad_payload(client):

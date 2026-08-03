@@ -12,6 +12,7 @@ import json
 import math
 import os
 import platform
+import re
 import shutil
 from pathlib import Path
 from typing import NamedTuple
@@ -1021,6 +1022,16 @@ def family_verbs(family: str) -> tuple[str, ...]:
 #
 # These live here rather than in fit.py because rewrite.py needs them too, and fit.py
 # already imports rewrite — defining them there would invert that dependency.
+
+
+def slugify(label: str) -> str:
+    """Lowercase, hyphenated, filesystem/id-friendly form of `label`.
+
+    Shared so `workspace.new_workspace_id` and `data.Experience`'s auto-filled id use the
+    same rule — two independent slug functions would drift the moment either one's edge
+    cases (accents, leading digits, empty input) were fixed only in one place.
+    """
+    return re.sub(r"[^a-z0-9]+", "-", label.lower()).strip("-")[:40]
 
 
 def line_span(text: str) -> int:

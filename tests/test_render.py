@@ -433,6 +433,41 @@ def test_blank_github_omits_separator_in_contact_context():
     assert "GitHub" not in xml
 
 
+def test_contact_fields_override_renders_exactly_those_in_order():
+    """`build_context(contact_fields=...)` overrides the template's own order — this is
+    the mechanism `include.contact_order` relies on for both reordering and omission."""
+    if not config.DEFAULT_TEMPLATE_PATH.exists():
+        pytest.skip("template not built; run scripts/build_template.py")
+    from docxtpl import DocxTemplate
+
+    resume = data.load()
+    tpl = DocxTemplate(config.DEFAULT_TEMPLATE_PATH)
+    ctx = render.build_context(resume, tpl, contact_fields=["email", "linkedin"])
+    xml = ctx["contact"].xml
+    assert resume.contact.email in xml
+    assert "LinkedIn" in xml
+    # Fields omitted from the override must not render even though they are set.
+    assert resume.contact.location not in xml
+    assert "GitHub" not in xml
+    # Exactly one separator between the two included fields, none elsewhere.
+    assert xml.count("•") == 1
+
+
+def test_contact_fields_none_falls_back_to_template_order():
+    """Omitting `contact_fields` must reproduce the un-overridden render exactly."""
+    if not config.DEFAULT_TEMPLATE_PATH.exists():
+        pytest.skip("template not built; run scripts/build_template.py")
+    from docxtpl import DocxTemplate
+
+    resume = data.load()
+    tpl = DocxTemplate(config.DEFAULT_TEMPLATE_PATH)
+    default_xml = render.build_context(resume, tpl)["contact"].xml
+
+    tpl2 = DocxTemplate(config.DEFAULT_TEMPLATE_PATH)
+    overridden_xml = render.build_context(resume, tpl2, contact_fields=None)["contact"].xml
+    assert default_xml == overridden_xml
+
+
 def test_degree_line_and_education_details_helpers():
     """Unit-level helpers used by build_context and fit overhead."""
     from resume_tailor.data import Education

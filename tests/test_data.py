@@ -12,7 +12,7 @@ import json
 import sys
 from pathlib import Path
 
-from resume_tailor.data import _alias_rewrites, _validate_cli
+from resume_tailor.data import MasterResume, _alias_rewrites, _validate_cli
 
 _RESUME_TEMPLATE: dict = {
     "contact": {"name": "Test User", "email": "test@example.com"},
@@ -84,3 +84,71 @@ def test_validate_cli_omits_the_rewrite_line_when_nothing_was_rewritten(
     assert _validate_cli() == 0
     out = capsys.readouterr().out
     assert "rewritten by TAG_ALIASES" not in out
+
+
+# ----------------------------------------------------------------------------------------
+# Experience.id auto-fill and uniqueness
+#
+# Files written before this field existed have every experience id blank; these tests
+# pin the auto-fill behaviour that keeps them loading, and the collision handling that
+# keeps auto-filled ids distinct within one file.
+# ----------------------------------------------------------------------------------------
+
+
+def _resume_with_experience(*entries: dict) -> dict:
+    resume = json.loads(json.dumps(_RESUME_TEMPLATE))
+    resume["experience"] = [
+        {"company": "Acme", "title": "Engineer", "start": "2020", "end": "2021", "bullets": []}
+        | entry
+        for entry in entries
+    ]
+    return resume
+
+
+def test_blank_experience_id_autofills_from_company_slug():
+    resume = MasterResume.model_validate(
+        _resume_with_experience({"company": "Bank of America"})
+    )
+    assert resume.experience[0].id == "bank-of-america"
+
+
+def test_explicit_experience_id_is_left_alone():
+    resume = MasterResume.model_validate(_resume_with_experience({"id": "my-custom-id"}))
+    assert resume.experience[0].id == "my-custom-id"
+
+
+def test_two_blank_entries_at_the_same_company_get_distinct_ids():
+    resume = MasterResume.model_validate(
+        _resume_with_experience({"company": "Acme"}, {"company": "Acme"})
+    )
+    ids = [e.id for e in resume.experience]
+    assert ids == ["acme", "acme-2"]
+
+
+def test_blank_id_avoids_colliding_with_an_explicit_one():
+    resume = MasterResume.model_validate(
+        _resume_with_experience({"id": "acme"}, {"company": "Acme"})
+    )
+    ids = [e.id for e in resume.experience]
+    assert ids == ["acme", "acme-2"]
+
+
+def test_a_resume_written_before_this_field_existed_still_loads():
+    """Every entry blank (the pre-migration shape) fills in without colliding."""
+    resume = MasterResume.model_validate(
+        _resume_with_experience({"company": "Acme"}, {"company": "Globex"})
+    )
+    ids = [e.id for e in resume.experience]
+    assert ids == ["acme", "globex"]
+    assert len(set(ids)) == len(ids)
+
+
+def test_duplicate_explicit_experience_id_raises():
+    try:
+        MasterResume.model_validate(
+            _resume_with_experience({"id": "dup"}, {"id": "dup"})
+        )
+    except Exception as exc:  # pydantic ValidationError wraps the raised ValueError
+        assert "duplicate experience id" in str(exc)
+    else:
+        raise AssertionError("expected duplicate experience id to raise")

@@ -206,7 +206,8 @@ def test_pages_and_template_flags_reach_the_fit_loop(cli, jd_file, tmp_path, mon
     def capture(
         resume_arg, reqs, *, target_pages, template, out, max_experience, max_projects,
         semantic=None, repair_widows=True, repair_verbs=True, merge_bullets=False,
-        include_project_links=True, fill_target=None, initial_bullet_share=None,
+        include_project_links=True, contact_fields=None, fill_target=None,
+        initial_bullet_share=None,
     ):
         """Capture fit kwargs so CLI flag plumbing can be asserted."""
         seen.update(
@@ -246,7 +247,8 @@ def test_defaults_match_config(cli, jd_file, tmp_path, monkeypatch):
     def capture(
         resume_arg, reqs, *, target_pages, template, out, max_experience, max_projects,
         semantic=None, repair_widows=True, repair_verbs=True, merge_bullets=False,
-        include_project_links=True, fill_target=None, initial_bullet_share=None,
+        include_project_links=True, contact_fields=None, fill_target=None,
+        initial_bullet_share=None,
     ):
         """Capture defaults so they stay owned by fit(), not the CLI."""
         seen.update(
@@ -255,6 +257,7 @@ def test_defaults_match_config(cli, jd_file, tmp_path, monkeypatch):
             out=out,
             max_experience=max_experience,
             max_projects=max_projects,
+            contact_fields=contact_fields,
             fill_target=fill_target,
             initial_bullet_share=initial_bullet_share,
         )
@@ -268,6 +271,9 @@ def test_defaults_match_config(cli, jd_file, tmp_path, monkeypatch):
     # CLI builds the default export name so downloads match the contact + JD title.
     assert seen["out"] is not None
     assert seen["out"].name.endswith(".docx")
+    # No --contact-fields flag: falls back to the active template profile's own order
+    # (legacy defaults here, since no profile is installed in this test fixture).
+    assert seen["contact_fields"] == cli.active_layout().get("contact_field_order")
     # None, not the config value: fit() reads the default so one place owns it.
     assert seen["max_experience"] is None
     assert seen["max_projects"] is None

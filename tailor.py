@@ -20,9 +20,21 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 
-from resume_tailor import config, data, expand, facets, fit, jd, report, rewrite, workspace  # noqa: E402
+from resume_tailor import (  # noqa: E402
+    config,
+    data,
+    expand,
+    facets,
+    fit,
+    include,
+    jd,
+    report,
+    rewrite,
+    workspace,
+)
 from resume_tailor.llm import LLMError  # noqa: E402
 from resume_tailor.rewrite import FabricationError  # noqa: E402
+from resume_tailor.template_profile import active_layout  # noqa: E402
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
@@ -176,6 +188,38 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--no-gpa",
+        action="store_true",
+        help="Suppress the GPA suffix on the degree line, regardless of Education.show_gpa.",
+    )
+    parser.add_argument(
+        "--no-coursework",
+        action="store_true",
+        help='Suppress the "Relevant Coursework:" bullet.',
+    )
+    parser.add_argument(
+        "--contact-fields",
+        default=None,
+        metavar="FIELD,FIELD,...",
+        help=(
+            "Comma-separated contact-line fields, in render order, from "
+            "location/email/phone/linkedin/github. Name is not included here — it always "
+            "renders first, on its own line. Omitted fields are hidden. Default: the "
+            "active template profile's order."
+        ),
+    )
+    parser.add_argument(
+        "--exclude",
+        action="append",
+        default=[],
+        metavar="ID",
+        dest="exclude_ids",
+        help=(
+            "Omit this experience or project id entirely (repeatable). Ids come from "
+            "master_resume.json's experience[].id / projects[].id."
+        ),
+    )
+    parser.add_argument(
         "--fill-target",
         type=float,
         default=None,
@@ -246,8 +290,34 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
+    contact_fields: list[str] | None = None
+    if args.contact_fields:
+        valid = {"location", "email", "phone", "linkedin", "github"}
+        contact_fields = [f.strip() for f in args.contact_fields.split(",") if f.strip()]
+        unknown = [f for f in contact_fields if f not in valid]
+        if unknown:
+            print(
+                f"error: --contact-fields has unknown field(s): {', '.join(unknown)} "
+                f"(valid: {', '.join(sorted(valid))})",
+                file=sys.stderr,
+            )
+            return 1
+
+    include_options = include.IncludeOptions(
+        contact_fields=contact_fields,
+        gpa=not args.no_gpa,
+        coursework=not args.no_coursework,
+        exclude_experience=list(args.exclude_ids),
+        exclude_projects=list(args.exclude_ids),
+    )
+
     try:
         resume = data.load()
+        problems = include.validate(resume, include_options)
+        if problems:
+            for problem in problems:
+                print(f"error: {problem}", file=sys.stderr)
+            return 1
         jd_text = args.jd.read_text(encoding="utf-8")
         # The resume's own tag vocabulary steers `canonical`, so the extractor stops
         # coining tags that can never match anything ("communication skills" against a
@@ -295,6 +365,13 @@ def main(argv: list[str] | None = None) -> int:
                 f"overlap only ({exc})",
                 file=sys.stderr,
             )
+
+    # Kept unfiltered for the experience expansion below — an excluded job still appears
+    # in the application-form paste text. Applied here (after scoring, before facets) so
+    # an exclusion never invalidates the score cache, and facets never sees a pool an
+    # excluded entry contributed to.
+    full_resume = resume
+    resume = include.apply(resume, include_options)
 
     # Facets: pick tech tags / coursework once before the fit loop. On skip or soft
     # failure, still run budget-only truncation so headers cannot wrap.
@@ -359,6 +436,7 @@ def main(argv: list[str] | None = None) -> int:
             repair_verbs=not args.no_verb_repair,
             merge_bullets=args.merge,
             include_project_links=include_links,
+            contact_fields=include.contact_order(include_options, active_layout()),
             fill_target=args.fill_target,
             initial_bullet_share=args.initial_bullet_share,
         )
@@ -378,8 +456,10 @@ def main(argv: list[str] | None = None) -> int:
     # successful resume run into a failure — the .docx is already on disk.
     if not args.no_expand:
         try:
+            # Unfiltered resume: an experience entry excluded from the tailored resume
+            # still appears in the application-form paste text.
             expansion = expand.expand_experience(
-                resume,
+                full_resume,
                 requirements,
                 fit_result=result,
                 semantic=semantic,

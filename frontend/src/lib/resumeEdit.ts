@@ -14,6 +14,7 @@ export type Bullet = {
 };
 
 export type Experience = {
+  id: string;
   company: string;
   title: string;
   location?: string;
@@ -103,6 +104,11 @@ export function collectProjectIds(resume: MasterResume): Set<string> {
   return new Set(resume.projects.map((p) => p.id));
 }
 
+/** Every experience entry id (for nextExperienceId dedupe). */
+export function collectExperienceIds(resume: MasterResume): Set<string> {
+  return new Set(resume.experience.map((e) => e.id).filter(Boolean));
+}
+
 /**
  * Prefer the existing `_bN` prefix on the entry's first bullet; otherwise slug
  * the fallback name. Existing prefixes (`aol`, `aeth`, …) are not name-derivable.
@@ -135,14 +141,24 @@ export function nextProjectId(name: string, taken: Set<string>): string {
   return `${base}_${n}`;
 }
 
+/** Next free `<slug>` id for a new experience row, same style as `nextProjectId`. */
+export function nextExperienceId(company: string, taken: Set<string>): string {
+  const base = slugify(company) || "role";
+  if (!taken.has(base)) return base;
+  let n = 2;
+  while (taken.has(`${base}_${n}`)) n += 1;
+  return `${base}_${n}`;
+}
+
 /** Empty bullet with a pre-allocated unique id. */
 export function blankBullet(id: string): Bullet {
   return { id, text: "", tags: [], metric: false };
 }
 
 /** Empty experience row ready for the editor. */
-export function blankExperience(): Experience {
+export function blankExperience(id: string): Experience {
   return {
+    id,
     company: "",
     title: "",
     location: "",

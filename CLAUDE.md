@@ -192,7 +192,16 @@ skill items keep their master-resume wording unchanged), `--fill-target` (overri
 `--initial-bullet-share` (cap the *first* draft's bullet count to a fraction of what fits,
 default 1.0 — a ceiling on `fit._initial_selection_size` only, not the grow loop, so a low
 value alone is usually grown back at the default fill target; pair it with a lower
-`--fill-target` to actually end sparser).
+`--fill-target` to actually end sparser). CLI/UI parity for what to leave out
+(`include.py`): `--no-gpa` (suppress the GPA suffix regardless of `Education.show_gpa`),
+`--no-coursework` (suppress the "Relevant Coursework:" bullet), `--contact-fields
+email,phone,linkedin` (comma-separated render order from `location`/`email`/`phone`/
+`linkedin`/`github`; name is never included here — it always renders first, on its own
+line; omitted means the active template profile's order), and `--exclude <id>`
+(repeatable; matched against `experience[].id` then `projects[].id`). Applied once,
+after scoring and before facets — see `include.apply`'s docstring for why that specific
+placement. An experience entry excluded from the resume still appears in the
+application-form expansion output; only the tailored `.docx` omits it.
 
 It also selects the backend, which is what makes bulk applying affordable:
 
@@ -297,6 +306,9 @@ job description ────┘         │           canonicalised against the 
                               ▼
                     rewrite.score_table()  all bullets → 0-10 relevance  (LLM, once, cached)
                               │            the only place domain_notes reaches ranking
+                              ▼
+                    include.apply()        drop excluded entries; force (pure, no LLM)
+                              │            GPA/coursework on/off
                               ▼
                     facets.select_facets() project tech + coursework    (LLM, once, cached)
                               │            + skill-item wording
@@ -433,13 +445,34 @@ Key structural facts that span files:
   rather than raising. The web UI shows the result as a copy-paste tile; `--no-expand`
   / `settings.no_expand` skips it. Use `--model ollama` (or `hybrid`) to run expansion on
   Ollama — it follows the profile like every other stage.
+- **`include.py` is a pure resume transform, applied once, after scoring and before
+  facets.** `include.apply()` drops excluded experience/project entries and forces
+  `Education.show_gpa`/`coursework` for the run; contact-field order/omission is a
+  separate `contact_fields` parameter threaded through `render.build_context` →
+  `fit.fit` (reusing `_contact_richtext`'s existing `field_order` argument, so
+  reordering the contact line needs no template rebuild). Placement matters: applying
+  it *before* `rewrite.score_table` would invalidate the score cache on every exclusion
+  toggle (the cache key hashes the bullet list); applying it *after* facets would let an
+  excluded entry's tech/coursework still shape what facets picks to show.
+  `expand.expand_experience` deliberately receives the *unfiltered* resume — an entry
+  excluded from the tailored `.docx` still appears in the application-form paste tile,
+  since the two are independent artifacts. `Experience` gained a stable `id` (mirroring
+  `Project.id`), auto-filled from a company slug when blank at load time
+  (`MasterResume._fill_experience_ids`) — this is what lets an exclusion list survive a
+  company rename or a reorder in the editor. **A `settings.json` saved before `include`
+  existed has no saved opinion on GPA visibility** — `web/app.py::_seed_include_gpa_if_missing`
+  falls back to the resume's own current `show_gpa` rather than `IncludeOptions()`'s
+  schema default (`gpa=True`), so upgrading to this feature cannot silently reveal a GPA
+  the user had deliberately hidden. It is a no-op the moment `include` has been saved
+  once — an explicit choice always wins, checked by looking for the key in the raw
+  settings dict, not by comparing values.
 - **Tags are canonicalised at load time** (`config.canonical_tag` + `TAG_ALIASES`), so JD
   keywords and bullet tags are guaranteed to share a vocabulary before matching.
 - **Web UI is an alternate front door, not a second pipeline.** `src/resume_tailor/web/`
-  queues jobs into the same `jd` → `rewrite` → `facets` → `fit` → `render` path. Jobs run
-  **one at a time** because `config._ACTIVE` is process-wide; concurrent model profiles
-  would race. The SPA lives in `frontend/` and is served by FastAPI from `frontend/dist`
-  in production. `events.py` defines a one-way `ProgressEvent` (stage, message, structured
+  queues jobs into the same `jd` → `rewrite` → `include` → `facets` → `fit` → `render`
+  path. Jobs run **one at a time** because `config._ACTIVE` is process-wide; concurrent
+  model profiles would race. The SPA lives in `frontend/` and is served by FastAPI from
+  `frontend/dist` in production. `events.py` defines a one-way `ProgressEvent` (stage, message, structured
   `detail`) that pipeline functions emit through an optional callback; the CLI ignores it
   and `web/jobs.py` forwards it to the browser so a run that takes a minute-plus can show
   more than "working". A callback cannot influence the run, and every emitting call site
