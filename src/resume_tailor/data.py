@@ -178,6 +178,28 @@ def load(path: Path | None = None) -> MasterResume:
     return MasterResume.model_validate(raw)
 
 
+def _alias_rewrites(raw: dict) -> list[tuple[str, str]]:
+    """Every raw bullet tag `TAG_ALIASES` silently rewrote, as (original, canonical) pairs.
+
+    `Bullet._normalise_tags` runs `config.canonical_tag` at load time with no way to see
+    the transform happen — a tag typed as `"performance measurement"` becomes
+    `"performance"` and the person who typed it never finds out. This exists so
+    `--validate` makes that visible instead. Deliberately checks membership in
+    `TAG_ALIASES` specifically, not `canonical_tag(tag) != tag`, so a pure case/whitespace
+    fold ("Python" -> "python") — expected and not surprising — doesn't drown out an
+    actual alias substitution in the output.
+    """
+    seen: dict[str, str] = {}
+    for section in ("experience", "projects"):
+        for entry in raw.get(section, []):
+            for bullet in entry.get("bullets", []):
+                for tag in bullet.get("tags", []):
+                    cleaned = tag.strip().lower()
+                    if cleaned in config.TAG_ALIASES and tag not in seen:
+                        seen[tag] = config.TAG_ALIASES[cleaned]
+    return sorted(seen.items())
+
+
 def _validate_cli() -> int:
     """Back the `--validate` entrypoint. Returns a process exit code."""
     parser = argparse.ArgumentParser(description="Validate the master resume store.")
@@ -189,6 +211,7 @@ def _validate_cli() -> int:
         parser.print_help()
         return 0
 
+    path = args.path or config.MASTER_RESUME_PATH
     try:
         resume = load(args.path)
     except Exception as exc:
@@ -201,6 +224,14 @@ def _validate_cli() -> int:
     print(f"    {len(resume.experience)} experience entries, {len(resume.projects)} projects")
     print(f"    {len(bullets)} bullets, {sum(b.metric for b in bullets)} with metrics")
     print(f"    {len(tags)} distinct tags")
+
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    rewrites = _alias_rewrites(raw)
+    if rewrites:
+        print(f"    {len(rewrites)} tag(s) rewritten by TAG_ALIASES on load:")
+        for original, canonical in rewrites:
+            print(f"      {original!r} -> {canonical!r}")
+
     return 0
 
 

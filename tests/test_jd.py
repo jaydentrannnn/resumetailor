@@ -124,6 +124,20 @@ def test_slug_varies_with_prompt_version(monkeypatch):
     assert jd._slug(text, ["python"]) != before
 
 
+def test_slug_varies_with_the_tag_alias_table(monkeypatch):
+    """Editing `TAG_ALIASES` must invalidate stored extractions, the same as a prompt edit.
+
+    `extract` re-canonicalises every keyword through the table right before the cache
+    write, so a table edit changes what a fresh extraction produces even though nothing
+    else about the request changed — without this in the key, a cached extraction from
+    before the edit would keep serving the pre-edit mapping forever.
+    """
+    text = "We need Postgres."
+    before = jd._slug(text, ["postgresql"])
+    monkeypatch.setitem(config.TAG_ALIASES, "pg", "postgresql")
+    assert jd._slug(text, ["postgresql"]) != before
+
+
 def test_slug_keeps_a_readable_prefix():
     assert jd._slug("Senior Python Engineer wanted").startswith("senior-python-engineer")
 
@@ -159,6 +173,178 @@ def test_cache_is_reused_and_bypassed(calls, tmp_path):
     # A different vocabulary is a different key, so it must re-extract.
     jd.extract("We need Python.", known_tags=["python", "sql"])
     assert len(calls) == 3
+
+
+# --------------------------------------------------------------------------------------
+# Consensus voting
+# --------------------------------------------------------------------------------------
+
+
+class _FakeConsensusMessages:
+    def __init__(self, replies, calls):
+        self._replies = replies
+        self._calls = calls
+
+    def parse(self, **kwargs):
+        self._calls.append(kwargs)
+        if not self._replies:
+            raise AssertionError("model called more times than the test supplied replies")
+        return _FakeResponse(self._replies.pop(0))
+
+
+class _FakeConsensusClient:
+    """Returns each queued `JobRequirements` in turn, recording every call's kwargs.
+
+    The queue is shared, not copied: `llm.client_for` runs once per `extract()` call, and
+    `extract_consensus` makes several — a per-client copy would silently replay the first
+    reply to every run, making every "vote" identical and the test meaningless. Same trap
+    documented for `rewrite_calls` in `tests/test_rewrite.py`.
+    """
+
+    def __init__(self, replies, calls):
+        self.messages = _FakeConsensusMessages(replies, calls)
+
+
+@pytest.fixture
+def consensus_calls(monkeypatch, tmp_path):
+    """Queue distinct per-run extractions; yields the recorded call kwargs list."""
+    calls: list[dict] = []
+
+    def install(*replies):
+        queue = list(replies)
+        monkeypatch.setattr(config, "CACHE_DIR", tmp_path)
+        monkeypatch.setattr(jd.config, "CACHE_DIR", tmp_path)
+        monkeypatch.setattr(
+            jd.llm, "client_for", lambda purpose: _FakeConsensusClient(queue, calls)
+        )
+        return calls
+
+    return install
+
+
+def _reqs(*keywords: Keyword, title="Engineer", seniority="entry") -> JobRequirements:
+    return JobRequirements(title=title, seniority=seniority, keywords=list(keywords))
+
+
+def test_majority_keeps_a_keyword_seen_in_most_runs(consensus_calls):
+    """A phrase 2 of 3 runs agree on survives; a one-off does not."""
+    consensus_calls(
+        _reqs(
+            Keyword(phrase="Python", canonical="python", importance="must_have"),
+            Keyword(phrase="Rust", canonical="rust", importance="nice_to_have"),
+        ),
+        _reqs(
+            Keyword(phrase="Python", canonical="python", importance="must_have"),
+        ),
+        _reqs(
+            Keyword(phrase="Python", canonical="python", importance="must_have"),
+        ),
+    )
+    reqs = jd.extract_consensus("We need Python, maybe Rust.", runs=3, use_cache=False)
+    phrases = {k.phrase for k in reqs.keywords}
+    assert phrases == {"Python"}  # "Rust" seen in only 1 of 3 runs is dropped
+
+
+def test_canonical_prefers_one_that_hits_known_tags(consensus_calls):
+    """Among the canonicals runs proposed for the same phrase, a known-tag hit wins
+    over a more frequent miss — this is the mechanism that recovered the real
+    "multi-machine setups" -> "distributed training" match lost to canonical noise."""
+    consensus_calls(
+        _reqs(
+            Keyword(
+                phrase="multi-machine setups",
+                canonical="distributed computing",
+                importance="must_have",
+            )
+        ),
+        _reqs(
+            Keyword(
+                phrase="multi-machine setups",
+                canonical="distributed training",
+                importance="must_have",
+            )
+        ),
+        _reqs(
+            Keyword(
+                phrase="multi-machine setups",
+                canonical="distributed computing",
+                importance="must_have",
+            )
+        ),
+    )
+    reqs = jd.extract_consensus(
+        "Comfortable in multi-machine setups.",
+        known_tags=["distributed training"],
+        runs=3,
+        use_cache=False,
+    )
+    assert reqs.keywords[0].canonical == "distributed training"
+
+
+def test_canonical_never_invents_beyond_what_a_run_proposed(consensus_calls):
+    """The known-tags preference only ever picks among canonicals a run actually emitted."""
+    consensus_calls(
+        _reqs(Keyword(phrase="SQL", canonical="sql", importance="must_have")),
+        _reqs(Keyword(phrase="SQL", canonical="sql", importance="must_have")),
+        _reqs(Keyword(phrase="SQL", canonical="sql", importance="must_have")),
+    )
+    reqs = jd.extract_consensus(
+        "SQL required.", known_tags=["postgresql", "mysql"], runs=3, use_cache=False
+    )
+    assert reqs.keywords[0].canonical == "sql"
+
+
+def test_runs_one_delegates_to_extract(calls):
+    """`runs=1` must be byte-identical to calling `extract` directly — no vote, no suffix."""
+    direct = jd.extract("We need Python.", known_tags=["python"])
+    consensus = jd.extract_consensus("We need Python.", known_tags=["python"], runs=1)
+    assert consensus == direct
+    assert len(calls) == 1  # the second call was served from `extract`'s own cache
+
+
+def test_consensus_cache_key_varies_with_runs(consensus_calls, tmp_path):
+    """`runs=1` and `runs=3` must write to different cache files, never colliding."""
+    consensus_calls(_reqs(Keyword(phrase="Python", canonical="python", importance="must_have")))
+    jd.extract_consensus("We need Python.", runs=1)
+    single_run_files = set(tmp_path.glob("*.requirements.json"))
+
+    consensus_calls(
+        _reqs(Keyword(phrase="Python", canonical="python", importance="must_have")),
+        _reqs(Keyword(phrase="Python", canonical="python", importance="must_have")),
+        _reqs(Keyword(phrase="Python", canonical="python", importance="must_have")),
+    )
+    jd.extract_consensus("We need Python.", runs=3)
+    all_files = set(tmp_path.glob("*.requirements.json"))
+
+    new_files = all_files - single_run_files
+    assert len(new_files) == 1
+    assert "-consensus3" in new_files.pop().name
+
+
+def test_consensus_result_is_cached_across_calls(consensus_calls):
+    calls = consensus_calls(
+        _reqs(Keyword(phrase="Python", canonical="python", importance="must_have")),
+        _reqs(Keyword(phrase="Python", canonical="python", importance="must_have")),
+        _reqs(Keyword(phrase="Python", canonical="python", importance="must_have")),
+    )
+    jd.extract_consensus("We need Python.", runs=3)
+    assert len(calls) == 3
+
+    jd.extract_consensus("We need Python.", runs=3)
+    assert len(calls) == 3  # served from the consensus cache, no re-extraction
+
+
+def test_verify_verbatim_passes_on_a_consensus_result(consensus_calls):
+    """Consensus never rewrites `phrase`, so the verbatim guarantee still holds."""
+    consensus_calls(
+        _reqs(Keyword(phrase="vector databases", canonical="vector database", importance="must_have")),
+        _reqs(Keyword(phrase="vector databases", canonical="vector database", importance="must_have")),
+        _reqs(Keyword(phrase="vector databases", canonical="vector database", importance="must_have")),
+    )
+    reqs = jd.extract_consensus(
+        "Experience with vector databases required.", runs=3, use_cache=False
+    )
+    assert jd.verify_verbatim(reqs, "Experience with vector databases required.") == []
 
 
 # --------------------------------------------------------------------------------------

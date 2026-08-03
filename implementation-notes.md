@@ -816,3 +816,157 @@ to `minimax-m3:cloud` unless `OLLAMA_MODEL` or a per-run model override is set.
   `..._when_already_at_the_cap` and kept (not deleted) — with no `max_token_cap` supplied,
   the cap collapses to the starting request and the hard failure still happens exactly as
   before, which is worth a test on its own.
+
+## 2026-08-02 - Keyword-coverage instability, a live rename-guard fabrication hole, and
+"why did this miss" diagnosis
+
+- **What triggered this:** a user reported must-have coverage dropping from 5/10 to 3/10
+  on a real posting (Two Sigma "Research Intern") right after they *improved* the master
+  resume — added 35 real bullet tags (`aws`, `bedrock`, `distributed training`, `vllm`,
+  `trl`, `accelerate`, …), removed exactly one (`deeplearn`, a typo). A resume getting
+  richer while its score drops was the anomaly worth chasing.
+- **Measured: most of the "drop" was extraction noise, not a data regression.** Scoring
+  all 8 cached extractions of that one JD against the *current* resume: coverage ranged
+  **3/10 to 6/11** — same posting, same resume, same backend, `temperature: 0` already the
+  default (`llm.py:350`). The denominator itself was unstable (10/11/13 must-haves across
+  runs) and "multi-machine setups" canonicalised to `distributed computing`, `multi
+  machine`, and `distributed systems` across three different runs — never once to
+  `distributed training`, a tag the resume genuinely has. One run invented `financial data
+  modeling` outright. Only 5 keywords missed in *every* run: `tensorflow`, `pytorch`,
+  `deep learning`, `statistics`, `cloud computing` — that was the real, stable gap.
+- **Root cause of the one genuine regression:** `t2s_b3`'s old text read "the DeepLearn
+  accelerator" — a garbled reference to Hugging Face **Accelerate** — and was tagged
+  `deeplearn`. The JD's "Deep Learning" happened to canonicalise to that exact typo, so it
+  was an accidental match, not real coverage. The master-resume cleanup correctly fixed the
+  wording and removed the tag; the honest fix (add a real `deep learning` tag backed by
+  real content) is below.
+- **Decision — a live fabrication-adjacent bug, found by accident while building the
+  diagnosis feature, not something we went looking for:** `facets.labels_are_equivalent`
+  reported `"C++" ~ "cloud computing"` as equivalent. `_alnum_compact("C++")` is `"c"` (the
+  `+`s are stripped), so `"cloudcomputing".startswith("c")` passed the alphanumeric-prefix
+  branch — and this project's own `Tools & Languages` skill group contains `"C++"`, so it
+  was reachable end to end (`rename_is_jd_anchored` also passed, since the posting literally
+  said "cloud computing environments"). A sibling bug lived in `_aligns` (the word-by-word
+  acronym-alignment branch): `_aligns("curiosity", "C++")` returned `True` for the same
+  reason — "curiosity".startswith("c"). **Fix: both branches now require a 2-character floor
+  on the shorter side of a prefix match** (exact single-character matches, e.g. identical
+  one-letter tokens, stay legal — only the *prefix shortcut* needed the floor).
+  `Go`/`Golang`, `CI`/`CI-CD`, `Postgres`/`PostgreSQL`, and the RAG/GRPO acronym-expansion
+  tests all still pass; `C++`/`cloud computing` and `R`/`React` now correctly fail. This
+  found itself because the new `diagnose_gaps` feature (below) initially misreported
+  "Curiosity" as evidenced by this resume's "C++" skill — a wrong answer from the very
+  feature meant to give more precise answers, so it had to be fixed before that feature
+  could ship.
+- **New: `jd.extract_consensus(jd_text, known_tags=, runs=3)`** votes over `runs`
+  independent extractions instead of trusting one. Groups by verbatim `phrase` (guaranteed
+  literal by `verify_verbatim`, unlike `canonical` which is exactly what varies), keeps a
+  phrase only if a majority of runs proposed it, and — the part that actually recovers real
+  matches — among the canonicals a phrase's own surviving runs proposed, prefers one that
+  hits `known_tags` over a more frequent one that doesn't. This never invents a mapping no
+  run proposed; it only arbitrates between what the model itself already said across calls.
+  `runs=1` is byte-identical to calling `extract` directly (existing behaviour, existing
+  cache file) — `--extract-runs 1` on the CLI, or `extract_runs` in `JobSettings`, is the
+  control. Cost: a clean CLI run goes from 5 calls to 7 at the default `runs=3`; `extract`
+  is the cheapest stage (`effort="low"`), so this is the affordable place to spend it.
+- **New: `report.diagnose_gaps(requirements, master) -> list[KeywordGap]`** answers *why*
+  a must-have missed, not just that it did. Three reasons, first hit wins: `near_miss` (a
+  bullet tag names the same thing under a different spelling — reuses the now-fixed
+  `facets.labels_are_equivalent` rather than a second string-similarity implementation, so
+  it inherits the acronym ladder, prefix containment, and token-set containment for free);
+  `untagged_evidence` (the JD keyword matches `Project.tech`, a skills item, or coursework,
+  but no *bullet tag* — real evidence, just not wired into the tag graph the scorer reads);
+  `no_evidence` (nothing anywhere — the honest "you don't have this" answer). Verified
+  against the real posting: `PyTorch` → `untagged_evidence` naming `proj_text2sql` (it was
+  only ever in the project's `tech` array, never a bullet tag); `Tensorflow`, `statistics`,
+  `cloud computing`, `Curiosity` → `no_evidence`, correctly, even after the `_aligns` fix.
+- **Decision — `Project.tech` feeds `diagnose_gaps` but must never feed scoring.** `tech`
+  is per-*project*; `rewrite._keyword_score` and `score_entry` are per-*bullet* and *sum*
+  across a project's bullets. Folding tech into scoring would let one label like "PyTorch"
+  earn a 4-bullet project `4 × MUST_HAVE_WEIGHT = 12.0` for a single fact, which is enough
+  to evict a real employer under `MAX_PROJECT_ENTRIES`, and would require touching
+  `merge.py`'s independent duplicate `_keyword_score` too. Reporting-only is zero risk;
+  scoring it is a ranking change nobody asked for.
+- **Trap, and how it's closed:** `facets.apply` truncates `Project.tech` to its ≤4-label
+  render budget *before* `report.format_report`/`report_data` are called in both
+  `tailor.py` and `web/jobs.py` — so diagnosing the post-facets resume can make
+  `diagnose_gaps` wrongly say `no_evidence` for evidence that exists but got trimmed for
+  display. Both functions gained a keyword-only `master: MasterResume | None = None`
+  parameter (defaults to `resume`, so every pre-existing 3-arg call site is unchanged); both
+  call sites now capture the resume *before* the `facets.apply` rebind and pass it through.
+  Regression-tested (`test_diagnosis_reads_the_unfaceted_master`) by constructing a resume
+  where the JD-relevant tech label is intentionally 5th of a `MAX_PROJECT_TECH`-4 pool.
+- **Closed a related cache-invalidation hole:** `jd._slug` covered `_PROMPT_VERSION`, the
+  backend fingerprint, the JD text, and `known_tags` — but not `TAG_ALIASES`, even though
+  `extract` re-canonicalises every keyword through that table right before the cache write.
+  Editing an alias therefore silently changed what a fresh extraction would produce while
+  every already-cached `.requirements.json` kept serving the pre-edit mapping — exactly the
+  failure class `config.fingerprint()` exists to prevent for the model/effort triple.
+  `config.tag_alias_fingerprint()` (a 12-hex digest of the sorted table) is now folded into
+  the payload. **One-time cost accepted, not worked around:** every existing cached
+  extraction invalidates on the next run, same as when `config.fingerprint` was added for
+  Gemini.
+- **Data edits, made only after the diagnosis above could measure them:**
+  - Added `deep learning` to `t2s_b1`/`t2s_b2`/`t2s_b3`'s tags (not `t2s_b4` — no deep
+    learning content there — and not `inc_b1`, whose Random Forest/KNN/XGBoost content is
+    classical ML, already covered by the `machine learning` tag). **Zero fabrication-guard
+    widening, verified**: `deep` and `learning` are both already-permitted common words
+    under `rewrite._is_factual_claim` (no digit, not `_ACRONYM`, not `_INTERNAL_CAPS`, not
+    `_CAPITALISED` mid-sentence) on every bullet in the file regardless of tags — the tag
+    adds no new licence to the guard.
+  - `t2s_b3`'s text now reads "Optimized **PyTorch** GPU memory utilization…" (was:
+    "Optimized GPU memory utilization…"), with a `pytorch` tag added alongside. Tag-only was
+    rejected: `PyTorch` is `_INTERNAL_CAPS` (a real factual claim under the guard), so a
+    bare tag with no text support would have inverted `data.py`'s own invariant ("tags …
+    must name every technology mentioned in `text`") from a description into a licence.
+    Naming it in the text first — true, since PyTorch is already in the project's `tech`
+    array and TRL/DeepSpeed/Accelerate/vLLM are all PyTorch — makes the tag legitimate and
+    adds zero new guard surface, since the text now licenses the token itself. Verified with
+    `rewrite.check_fabrication` against a plausible rewrite: zero offenders.
+  - Left `tensorflow`, `statistics`, `cloud computing` alone — `no_evidence` is the correct,
+    honest answer, and the new report now says so explicitly instead of leaving it a
+    mystery. Adding an umbrella `cloud computing` tag over the real AWS/Bedrock work would
+    be `TAG_ALIASES`-by-another-name at the data layer; `SEMANTIC_WEIGHT` already gives that
+    resonance to ranking, which is where it belongs.
+  - Measured effect on the real posting: coverage went 3/10 → 4/10 on the same (noisy,
+    unrevoted) cached extraction, with `Deep Learning` now correctly reported as `near_miss`
+    (evidenced by the new tag) rather than `no_evidence`.
+  - **Only `data/workspaces/default/master_resume.json` was edited.** The legacy
+    `data/master_resume.json` (pre-workspaces path) was already stale before this session —
+    it still reads `deeplearn`/no-PyTorch — and remains so. `config.MASTER_RESUME_PATH`
+    defaults to the *legacy* path unless something calls `workspace.bootstrap()` first, which
+    `python -m resume_tailor.data --validate` does not — so a bare `--validate` with no
+    `--path`/`--workspace` silently validates the stale copy, not whatever profile is
+    actually active. Logged here as a known gap, not fixed: `tailor.py` / `build_template.py`
+    / `calibrate.py` all take `--workspace`; `data.py --validate` does not, and adding one
+    is a small, separate, unrequested change.
+- **New: `--validate` now surfaces `TAG_ALIASES` rewrites.** `Bullet._normalise_tags` runs
+  `config.canonical_tag` silently at load — a tag typed `"performance measurement"` becomes
+  `"performance"` with no signal to whoever typed it. `data._alias_rewrites` walks the raw
+  (pre-validation) JSON and reports every raw tag that hit `TAG_ALIASES` specifically (not
+  every tag `canonical_tag` touched — a pure case fold like `"Python"` → `"python"` is
+  expected and would drown out a genuine substitution). This resume's own file currently
+  reports zero rewrites — every tag in it is already written in canonical form.
+- **On cross-industry generalisation (asked, not built — analysis only):** `TAG_ALIASES`
+  should not become per-workspace. Its own docstring in `jd.extract` already concedes it
+  "was hand-tuned for retrieval vocabulary and a different-domain posting re-opens the same
+  gap" — per-workspace copies would multiply that hand-tuning per profile rather than fix
+  it. What actually generalises: `known_tags` steering the LLM's own synonym judgement
+  (already domain-agnostic — nothing about "reuse the candidate's vocabulary" is
+  CS-specific), `diagnose_gaps`'s feedback loop (a business resume's first run reports
+  `no_evidence: media planning` with the JD's verbatim phrase; tag the bullet; second run
+  matches — feedback beats prediction because it cannot be wrong about what the posting
+  asked for), `extract_consensus` (domain-agnostic by construction), and `SEMANTIC_WEIGHT`
+  (already the mechanism for conceptual relatedness no tag encodes, in any domain). The
+  fabrication guard also generalises unmodified — it keys on token *shape* (digits,
+  acronyms, internal caps), not a CS dictionary, so `P&L`, `SEO`, `B2B` all behave.
+- **Impact / tests added:** `tests/test_facets.py` (rename-guard + `_aligns` regressions,
+  9 new), `tests/test_jd.py` (consensus voting + alias-fingerprint slug sensitivity, 9
+  new), `tests/test_report.py` / `test_report_data.py` (`diagnose_gaps`, the facets-trap
+  regression, 7 new), `tests/test_config.py` (new file — `canonical_tag` and
+  `tag_alias_fingerprint` had no unit test before this), `tests/test_data.py` (new file —
+  `data.py` had no test file before this), `tests/test_tailor_cli.py` /
+  `tests/test_web.py` gained an autouse stub routing `extract_consensus` back to `extract`
+  so existing wiring tests don't multiply their call counts or touch the real on-disk
+  cache. Full suite: 377 collected, 361 passing, 16 pre-existing failures untouched
+  (verified identical on `main` before this work — `test_facets`/`test_fit`/`test_merge`/
+  `test_render`/`test_rewrite`, unrelated to anything here).

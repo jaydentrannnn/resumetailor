@@ -31,6 +31,7 @@ from resume_tailor.web.schemas import (
     ExpandedEntryOut,
     ExpansionOut,
     JobSettings,
+    KeywordGapOut,
     RunReportOut,
     SectionSummaryOut,
 )
@@ -172,9 +173,10 @@ class JobQueue:
         known_tags = sorted({t for b in resume.all_bullets() for t in b.tags})
 
         try:
-            requirements = jd.extract(
+            requirements = jd.extract_consensus(
                 job.jd_text,
                 known_tags=known_tags,
+                runs=settings.extract_runs,
                 use_cache=not settings.no_cache,
                 on_event=on_event,
             )
@@ -245,6 +247,9 @@ class JobQueue:
             on_event(
                 ProgressEvent(stage="facets", message=warning, detail={})
             )
+        # Captured before the rebind: facets.apply truncates Project.tech to its render
+        # budget, and report.diagnose_gaps needs the untruncated pool to find evidence there.
+        master_resume = resume
         resume = facets.apply(resume, facet_result)
 
         out_dir = config.OUTPUT_DIR / "jobs" / job.job_id
@@ -293,7 +298,9 @@ class JobQueue:
                     )
                 )
 
-        job.report = _to_report_out(report.report_data(resume, requirements, result))
+        job.report = _to_report_out(
+            report.report_data(resume, requirements, result, master=master_resume)
+        )
 
         if not settings.no_expand:
             try:
@@ -356,6 +363,16 @@ def _to_report_out(data: report.RunReport) -> RunReportOut:
         coverage_total=data.coverage_total,
         missing_must_haves=data.missing_must_haves,
         unmatched_canonicals=[[c, p] for c, p in data.unmatched_canonicals],
+        gaps=[
+            KeywordGapOut(
+                canonical=g.canonical,
+                phrase=g.phrase,
+                importance=g.importance,
+                reason=g.reason,
+                evidence=g.evidence,
+            )
+            for g in data.gaps
+        ],
         model=data.model,
         semantic_used=data.semantic_used,
         bullets_selected=data.bullets_selected,

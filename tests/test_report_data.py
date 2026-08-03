@@ -48,3 +48,4 @@ def test_report_data_matches_format_report_facts():
     assert data.pdf_backend  # whatever the host selected
     assert f"{data.coverage_matched}/{data.coverage_total}" in text
     assert "example warning" in text
+    assert isinstance(data.gaps, list)  # defaults `master` to `resume` unchanged

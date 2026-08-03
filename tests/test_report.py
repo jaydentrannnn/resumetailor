@@ -8,8 +8,17 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from resume_tailor import report
-from resume_tailor.data import load
+from resume_tailor import facets, report
+from resume_tailor.data import (
+    Bullet,
+    Contact,
+    Education,
+    Experience,
+    MasterResume,
+    Project,
+    SkillGroup,
+    load,
+)
 from resume_tailor.fit import FitResult
 from resume_tailor.jd import JobRequirements, Keyword
 
@@ -120,6 +129,171 @@ def test_report_omits_the_unmatched_line_when_everything_matched():
     result = _result(resume, {b.id: b.text for b in resume.experience[0].bullets})
 
     assert "Matched no tag" not in report.format_report(resume, reqs, result)
+
+
+def _synthetic_resume(
+    *,
+    bullet_tags: tuple[str, ...] = ("python",),
+    project_tech: tuple[str, ...] = (),
+    skill_items: tuple[str, ...] = (),
+    coursework: tuple[str, ...] = (),
+) -> MasterResume:
+    """Minimal resume for gap-diagnosis tests, so they don't drift with real data."""
+    return MasterResume(
+        contact=Contact(name="X", email="x@y.z"),
+        education=(
+            [Education(school="U", degree="BS", dates="2020", coursework=list(coursework))]
+            if coursework
+            else []
+        ),
+        experience=[
+            Experience(
+                company="Acme",
+                title="Engineer",
+                start="2020",
+                end="2021",
+                bullets=[Bullet(id="b1", text="Did a thing.", tags=list(bullet_tags))],
+            )
+        ],
+        projects=(
+            [Project(id="proj_x", name="X", tech=list(project_tech))] if project_tech else []
+        ),
+        skills=[SkillGroup(label="Tools", items=list(skill_items))] if skill_items else [],
+    )
+
+
+def test_gap_reports_no_evidence_when_nothing_matches():
+    resume = _synthetic_resume(bullet_tags=("python",))
+    reqs = _requirements(("tensorflow", "must_have"))
+
+    gaps = report.diagnose_gaps(reqs, resume)
+
+    assert len(gaps) == 1
+    assert gaps[0].reason == "no_evidence"
+    assert gaps[0].evidence == []
+
+
+def test_gap_reports_untagged_evidence_from_project_tech():
+    """Real but untagged: PyTorch lives in the project's tech array, on no bullet tag."""
+    resume = _synthetic_resume(bullet_tags=("python",), project_tech=("PyTorch",))
+    reqs = JobRequirements(
+        title="T",
+        seniority="entry",
+        keywords=[Keyword(phrase="PyTorch", canonical="pytorch", importance="must_have")],
+    )
+
+    gaps = report.diagnose_gaps(reqs, resume)
+
+    assert len(gaps) == 1
+    assert gaps[0].reason == "untagged_evidence"
+    assert "proj_x" in gaps[0].evidence[0]
+    assert "PyTorch" in gaps[0].evidence[0]
+
+
+def test_gap_reports_untagged_evidence_from_skills_and_coursework():
+    resume = _synthetic_resume(
+        bullet_tags=("python",),
+        skill_items=("Elasticsearch",),
+        coursework=("Distributed Systems",),
+    )
+    reqs = JobRequirements(
+        title="T",
+        seniority="entry",
+        keywords=[
+            Keyword(phrase="Elasticsearch", canonical="elasticsearch", importance="must_have"),
+            Keyword(
+                phrase="Distributed Systems",
+                canonical="distributed systems",
+                importance="must_have",
+            ),
+        ],
+    )
+
+    gaps = {g.canonical: g for g in report.diagnose_gaps(reqs, resume)}
+
+    assert gaps["elasticsearch"].reason == "untagged_evidence"
+    assert "Tools" in gaps["elasticsearch"].evidence[0]
+    assert gaps["distributed systems"].reason == "untagged_evidence"
+    assert "coursework" in gaps["distributed systems"].evidence[0]
+
+
+def test_gap_reports_near_miss_for_a_differently_spelled_tag():
+    """`grpo` is not a `TAG_ALIASES` entry, so this only matches via `diagnose_gaps`'s
+    reuse of `labels_are_equivalent`'s acronym-expansion branch — a genuine near-miss
+    that canonicalisation alone does not already resolve (unlike e.g. "postgres", which
+    `TAG_ALIASES` collapses onto "postgresql" before `diagnose_gaps` ever runs)."""
+    resume = _synthetic_resume(bullet_tags=("grpo",))
+    reqs = JobRequirements(
+        title="T",
+        seniority="entry",
+        keywords=[
+            Keyword(
+                phrase="Group Relative Policy Optimization",
+                canonical="group relative policy optimization",
+                importance="must_have",
+            )
+        ],
+    )
+
+    gaps = report.diagnose_gaps(reqs, resume)
+
+    assert len(gaps) == 1
+    assert gaps[0].reason == "near_miss"
+    assert "grpo" in gaps[0].evidence[0]
+
+
+def test_tech_only_evidence_still_counts_as_a_miss():
+    """`Project.tech` must never feed scoring/coverage — only `diagnose_gaps`.
+
+    Pins the deliberate split in `report.diagnose_gaps`'s docstring: `tech` is
+    per-*project* while `keyword_coverage` scores per-*bullet*, and folding it in would
+    let one tech label inflate every bullet in that project's score.
+    """
+    resume = _synthetic_resume(bullet_tags=("python",), project_tech=("PyTorch",))
+    reqs = JobRequirements(
+        title="T",
+        seniority="entry",
+        keywords=[Keyword(phrase="PyTorch", canonical="pytorch", importance="must_have")],
+    )
+
+    assert report.keyword_coverage(reqs, resume) == (0, 1)
+    assert report.missing_must_haves(reqs, resume) == ["PyTorch"]
+
+
+def test_diagnosis_reads_the_unfaceted_master():
+    """Regression for the facets-truncation trap.
+
+    `facets.apply` trims `Project.tech` to its ≤4-label render budget, so a resume already
+    run through facets can be missing the exact evidence `diagnose_gaps` looks for.
+    `report_data`/`format_report`'s `master=` parameter exists so the *pre*-facets resume
+    is what gets diagnosed.
+    """
+    resume = _synthetic_resume(
+        bullet_tags=("python",),
+        project_tech=("Alpha", "Bravo", "Charlie", "Delta", "PyTorch"),
+    )
+    reqs = JobRequirements(
+        title="T",
+        seniority="entry",
+        keywords=[Keyword(phrase="PyTorch", canonical="pytorch", importance="must_have")],
+    )
+    facet_result = facets.budget_only(resume, reqs, include_project_links=True)
+    faceted = facets.apply(resume, facet_result)
+    # The trap: PyTorch was 5th of 5 and MAX_PROJECT_TECH truncates to 4, so it is gone
+    # from the faceted resume — diagnosing that copy would wrongly say `no_evidence`.
+    assert "PyTorch" not in faceted.projects[0].tech
+
+    gaps_on_faceted = report.diagnose_gaps(reqs, faceted)
+    assert gaps_on_faceted[0].reason == "no_evidence"  # wrong, and what `master=` avoids
+
+    gaps_on_master = report.diagnose_gaps(reqs, resume)
+    assert gaps_on_master[0].reason == "untagged_evidence"
+
+    result = _result(resume, {"b1": "Did a thing."})
+    text = report.format_report(faceted, reqs, result, master=resume)
+    assert "Evidence exists but no bullet is tagged for it:" in text
+    assert "PyTorch" in text
+    assert "No evidence in the master resume" not in text
 
 
 def test_report_states_which_ranking_was_used():

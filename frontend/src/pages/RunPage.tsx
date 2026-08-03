@@ -7,8 +7,9 @@ import {
 } from "../api";
 import { ExperienceCard } from "../components/ExperienceCard";
 import { ModelSpecField } from "../components/ModelSpecField";
+import { type RunProgress, runProgress } from "../lib/runProgress";
 import { DEFAULT_SETTINGS, useRunState } from "../state/runState";
-import { useState } from "react";
+import { useEffect, useMemo, useRef, useState } from "react";
 
 /**
  * Main run page: paste a JD, adjust settings, watch progress, download results.
@@ -34,6 +35,18 @@ export function RunPage() {
     queuePosition,
     startJob,
   } = useRunState();
+
+  const progressListRef = useRef<HTMLOListElement>(null);
+  const progress = useMemo(
+    () => runProgress(events, status, busy),
+    [events, status, busy],
+  );
+
+  useEffect(() => {
+    /** Keep the progress list pinned to its newest row as events stream in. */
+    const el = progressListRef.current;
+    if (el) el.scrollTop = el.scrollHeight;
+  }, [events]);
 
   async function onSubmit(e: React.FormEvent) {
     /** Start a new job from the current JD text and settings. */
@@ -90,13 +103,20 @@ export function RunPage() {
         <aside className="space-y-5">
           {(busy || events.length > 0 || error || report) && (
             <section className="rounded-xl border border-line bg-panel p-5 shadow-sm">
-              <h2 className="font-display text-xl font-semibold">Progress</h2>
+              <div className="flex items-baseline justify-between gap-3">
+                <h2 className="font-display text-xl font-semibold">Progress</h2>
+                <span className="text-sm text-ink-muted">{progress.label}</span>
+              </div>
+              <ProgressBar progress={progress} failed={status === "failed"} />
               {queuePosition != null && queuePosition > 1 && status === "queued" && (
                 <p className="mt-2 text-sm text-ink-muted">
                   Queued — position {queuePosition}
                 </p>
               )}
-              <ol className="mt-3 max-h-56 space-y-2 overflow-y-auto text-sm">
+              <ol
+                ref={progressListRef}
+                className="mt-3 max-h-56 space-y-2 overflow-y-auto text-sm"
+              >
                 {events.map((ev, i) => (
                   <li key={`${ev.stage}-${i}`} className="flex gap-2">
                     <span className="mt-0.5 shrink-0 rounded bg-accent-soft px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent">
@@ -138,6 +158,48 @@ export function RunPage() {
       {report && jobId && expansion && (
         <ExperienceCard expansion={expansion} jobId={jobId} />
       )}
+    </div>
+  );
+}
+
+function ProgressBar({
+  progress,
+  failed,
+}: {
+  progress: RunProgress;
+  failed: boolean;
+}) {
+  /**
+   * The run's position in the pipeline. Indeterminate only before the first stage
+   * event lands — after that `runProgress` always has a band to sit in.
+   */
+  const pct = Math.round(progress.value * 100);
+  return (
+    <div
+      role="progressbar"
+      aria-label="Tailoring progress"
+      aria-valuemin={0}
+      aria-valuemax={100}
+      aria-valuenow={progress.indeterminate ? undefined : pct}
+      aria-valuetext={progress.label}
+      className="mt-3 h-1.5 overflow-hidden rounded-full bg-paper/80"
+    >
+      <div
+        className={
+          failed
+            ? "h-full rounded-full bg-danger"
+            : progress.indeterminate
+              ? "h-full w-1/3 rounded-full bg-accent [animation:rt-progress-slide_1.2s_ease-in-out_infinite]"
+              : "h-full rounded-full bg-accent transition-[width] duration-500 ease-out"
+        }
+        style={progress.indeterminate ? undefined : { width: `${pct}%` }}
+      />
+      <style>{`
+        @keyframes rt-progress-slide {
+          0%   { transform: translateX(-100%); }
+          100% { transform: translateX(300%); }
+        }
+      `}</style>
     </div>
   );
 }
@@ -529,6 +591,36 @@ function ReportCard({ report, jobId }: { report: RunReport; jobId: string }) {
         <p className="mt-2 text-sm text-ink-muted">
           Matched no tag: {report.unmatched_canonicals.map(([c]) => c).join(", ")}
         </p>
+      )}
+
+      {report.gaps.some((g) => g.reason === "no_evidence") && (
+        <p className="mt-2 rounded-md bg-warn-soft px-3 py-2 text-sm text-warn">
+          No evidence in the master resume:{" "}
+          {report.gaps
+            .filter((g) => g.reason === "no_evidence")
+            .map((g) => g.phrase)
+            .join(", ")}
+        </p>
+      )}
+
+      {report.gaps.some((g) => g.reason !== "no_evidence") && (
+        <div className="mt-2 text-sm text-ink-muted">
+          {report.gaps
+            .filter((g) => g.reason === "untagged_evidence")
+            .map((g) => (
+              <p key={g.canonical}>
+                {g.phrase}: evidence exists but no bullet is tagged for it (
+                {g.evidence.join("; ")})
+              </p>
+            ))}
+          {report.gaps
+            .filter((g) => g.reason === "near_miss")
+            .map((g) => (
+              <p key={g.canonical}>
+                {g.phrase}: tagged under a different name ({g.evidence.join("; ")})
+              </p>
+            ))}
+        </div>
       )}
 
       <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2">

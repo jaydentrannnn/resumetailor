@@ -30,6 +30,18 @@ from resume_tailor.web.schemas import JobSettings
 from resume_tailor.workspace import bootstrap as real_bootstrap
 
 
+def _stub_extract_consensus(text, *, known_tags=None, runs=1, use_cache=True, on_event=None):
+    """Route `extract_consensus` straight to `jd.extract` for web tests.
+
+    `jobs.py` now calls `jd.extract_consensus`, which at `runs > 1` (the default) would
+    call `jd.extract` multiple times and write a real consensus cache file. These tests
+    stub `jd.extract` directly and care about the job/queue contract, not the voting
+    algorithm (that's `test_jd.py`'s job) — a live attribute lookup on `jobs_mod.jd.extract`
+    means each test's own stub is still honoured.
+    """
+    return jobs_mod.jd.extract(text, known_tags=known_tags, use_cache=use_cache, on_event=on_event)
+
+
 @pytest.fixture
 def client(tmp_path, monkeypatch):
     """Fresh app client with an isolated job queue and output directory."""
@@ -37,6 +49,7 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "CACHE_DIR", tmp_path / "cache")
     config.OUTPUT_DIR.mkdir()
     config.CACHE_DIR.mkdir()
+    monkeypatch.setattr(jobs_mod.jd, "extract_consensus", _stub_extract_consensus)
 
     q = JobQueue()
     monkeypatch.setattr(jobs_mod, "queue_singleton", q)
@@ -469,6 +482,7 @@ def test_job_runs_to_success_with_stubbed_pipeline(client, monkeypatch, tmp_path
     assert status["report"]["title"] == "Stub Role"
     assert status["report"]["pages"] == 1
     assert status["report"]["verb_collisions_remaining"] == 0
+    assert isinstance(status["report"]["gaps"], list)
     assert status["expansion"] is not None
     assert status["expansion"]["entries"][0]["company"] == resume.experience[0].company
     assert seen_fit == {
