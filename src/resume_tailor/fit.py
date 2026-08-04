@@ -21,7 +21,7 @@ from . import config, events, render
 from .data import Experience, MasterResume, Project
 from .jd import JobRequirements
 from .merge import MergeGroup, propose as propose_merges
-from .rewrite import rewrite_bullets, select_entries, select_within_entries
+from .rewrite import rewrite_bullets, select_entries, select_within_entries, selectable_total
 from .template_profile import ContactField, active_layout
 
 #: How many physical lines a bullet's rewritten text is targeted at, on average. Passed
@@ -194,6 +194,9 @@ def _select_at_rewrite_budget(
     requirements: JobRequirements,
     limit: int,
     semantic: dict[str, float] | None = None,
+    *,
+    experience_share: float | None = None,
+    max_per_entry: int | None = None,
 ) -> dict[str, str]:
     """Map a selection to rewrite-budget placeholders for cheap line estimates.
 
@@ -201,7 +204,10 @@ def _select_at_rewrite_budget(
     first rewrite, not at the (usually longer) master wording — estimating on originals
     under-selected and left the page sparse until grow rounds caught up.
     """
-    selected = select_within_entries(entries, requirements, limit=limit, semantic=semantic)
+    selected = select_within_entries(
+        entries, requirements, limit=limit, semantic=semantic,
+        experience_share=experience_share, max_per_entry=max_per_entry,
+    )
     # Match the hard max the rewrite prompt advertises (budget minus widow safety), not
     # the full line cliff — that is what the model is told to land under.
     stub_len = max(40, _TARGET_LINES_PER_BULLET * config.CHARS_PER_LINE - config.WIDOW_SAFETY)
@@ -217,6 +223,8 @@ def _initial_selection_size(
     semantic: dict[str, float] | None = None,
     *,
     share: float = 1.0,
+    experience_share: float | None = None,
+    max_per_entry: int | None = None,
 ) -> int:
     """Binary search the largest bullet count whose *post-rewrite* size should fit.
 
@@ -231,9 +239,15 @@ def _initial_selection_size(
     `share` caps the search's upper bound at `round(total * share)` — a ceiling on the
     first draft, never a floor, and never allowed below one bullet per entry. It does not
     change what the loop grows back to afterward; see `config.INITIAL_BULLET_SHARE`.
+
+    `experience_share` and `max_per_entry` are forwarded to `_select_at_rewrite_budget` so
+    the estimate is computed against the same distribution the loop will actually select —
+    `total` (the search's raw ceiling) is `selectable_total(entries, max_per_entry=...)`
+    rather than the raw bullet count, since a per-entry cap can make part of the pool
+    unreachable regardless of `share`.
     """
     floor = len(entries)
-    total = sum(len(e.bullets) for e in entries)
+    total = selectable_total(entries, max_per_entry=max_per_entry)
     capacity = target_pages * config.LINES_PER_PAGE + config.INITIAL_SELECTION_OVERSHOOT
 
     # Ceiling only: `share` may lower the search's upper bound, never raise it past what
@@ -242,7 +256,10 @@ def _initial_selection_size(
     low, high = floor, max(floor, min(total, round(total * share)))
     while low < high:
         mid = (low + high + 1) // 2
-        bullets = _select_at_rewrite_budget(entries, requirements, mid, semantic)
+        bullets = _select_at_rewrite_budget(
+            entries, requirements, mid, semantic,
+            experience_share=experience_share, max_per_entry=max_per_entry,
+        )
         if estimate_lines(resume, bullets) <= capacity:
             low = mid
         else:
@@ -292,14 +309,17 @@ def fit(
     contact_fields: list[ContactField] | None = None,
     fill_target: float | None = None,
     initial_bullet_share: float | None = None,
+    experience_bullet_share: float | None = None,
+    max_bullets_per_entry: int | None = None,
     on_event: events.ProgressCallback | None = None,
 ) -> FitResult:
     """Select, rewrite, render, and measure until the resume fits `target_pages`.
 
     Which entries appear is decided once up front by `choose_entries` (experience and
     projects ranked separately, capped by `config.MAX_EXPERIENCE_ENTRIES` /
-    `MAX_PROJECT_ENTRIES`). The loop then only varies how many *bullets* those entries get,
-    and never drops one entirely.
+    `MAX_PROJECT_ENTRIES`). The loop then varies how many *bullets* those entries get —
+    overall via `limit`, and now optionally by section (`experience_bullet_share`) and
+    per-entry (`max_bullets_per_entry`) — but never drops an entry entirely.
 
     `semantic` is an optional {bullet_id: 0-10} relevance table from `rewrite.score_table`,
     computed once by the caller and held fixed for the whole run. It must not be recomputed
@@ -340,6 +360,19 @@ def fit(
     trades extra rewrite rounds for the same final page. Pair it with a lower `fill_target`
     to actually end on a sparser page.
 
+    `experience_bullet_share` overrides `config.EXPERIENCE_BULLET_SHARE`: the fraction of
+    the *overall* selected bullets that go to experience, budgeted separately from
+    projects (see `rewrite._section_budgets`). `None` is one flat pool ranked purely by
+    `score`, which is how a keyword-dense project can otherwise out-rank every job for the
+    shared discretionary budget.
+
+    `max_bullets_per_entry` overrides `config.MAX_BULLETS_PER_ENTRY`: a ceiling on how many
+    bullets any single job or project may take. Because this can make the achievable total
+    lower than the raw bullet pool, the loop's grow ceiling is
+    `rewrite.selectable_total(entries, max_per_entry=...)`, not the raw count — comparing
+    against the raw count here would keep raising `limit` while the selection stays
+    unchanged, burning grow attempts for nothing.
+
     `on_event` observes progress. A run costs several minutes of model calls and renders,
     so a UI driving this needs to report which iteration it is on; the callback cannot
     influence the loop and is optional everywhere.
@@ -354,6 +387,14 @@ def fit(
     underflow = fill_target if fill_target is not None else config.UNDERFLOW_THRESHOLD
     initial_share = (
         initial_bullet_share if initial_bullet_share is not None else config.INITIAL_BULLET_SHARE
+    )
+    section_share = (
+        experience_bullet_share
+        if experience_bullet_share is not None
+        else config.EXPERIENCE_BULLET_SHARE
+    )
+    entry_cap = (
+        max_bullets_per_entry if max_bullets_per_entry is not None else config.MAX_BULLETS_PER_ENTRY
     )
     warnings: list[str] = []
     iterations = 0
@@ -370,10 +411,14 @@ def fit(
         raise FitError("No experience or project entries were selected; nothing to render.")
 
     # The pool the loop draws from is the chosen entries' bullets, not the whole master
-    # resume — a bullet in a dropped entry can never come back.
+    # resume — a bullet in a dropped entry can never come back. `total_bullets` is the raw
+    # pool size (reported in `FitResult.bullets_total`); `growth_ceiling` is what the caps
+    # actually let the loop reach, which is what the grow condition must compare against.
     total_bullets = sum(len(e.bullets) for e in entries)
+    growth_ceiling = selectable_total(entries, max_per_entry=entry_cap)
     limit = _initial_selection_size(
-        resume, entries, requirements, target_pages, semantic, share=initial_share
+        resume, entries, requirements, target_pages, semantic, share=initial_share,
+        experience_share=section_share, max_per_entry=entry_cap,
     )
     share_note = f" (capped at {initial_share:.0%} of {total_bullets})" if initial_share < 1.0 else ""
     events.emit(
@@ -384,10 +429,15 @@ def fit(
         limit=limit,
         total_bullets=total_bullets,
         initial_bullet_share=initial_share,
+        experience_bullet_share=section_share,
+        max_bullets_per_entry=entry_cap,
     )
 
     while True:
-        selected = select_within_entries(entries, requirements, limit=limit, semantic=semantic)
+        selected = select_within_entries(
+            entries, requirements, limit=limit, semantic=semantic,
+            experience_share=section_share, max_per_entry=entry_cap,
+        )
         char_budget = _TARGET_LINES_PER_BULLET * config.CHARS_PER_LINE
 
         shorten_pct = 0
@@ -485,14 +535,14 @@ def fit(
         fill_ratio = measured_lines / capacity
 
         underfull = fill_ratio < underflow
-        can_grow = limit < total_bullets and grow_attempts < config.MAX_GROW_ATTEMPTS
+        can_grow = limit < growth_ceiling and grow_attempts < config.MAX_GROW_ATTEMPTS
 
         if not underfull or not can_grow:
             if underfull:
                 warnings.append(
                     f"Page is only {fill_ratio:.0%} full (target {underflow:.0%}); "
-                    f"{'ran out of bullets' if limit >= total_bullets else 'stopped growing after '
-                       f'{grow_attempts} attempt(s)'}."
+                    f"{'reached the selectable bullet cap' if limit >= growth_ceiling
+                       else f'stopped growing after {grow_attempts} attempt(s)'}."
                 )
             if outcome.widows_remaining:
                 warnings.append(
@@ -537,7 +587,7 @@ def fit(
         # bullet may drag a whole entry's header lines back with it, so erring low costs
         # an extra cheap iteration, while erring high costs an overflow re-rewrite.
         deficit = underflow * capacity - measured_lines
-        limit = min(total_bullets, limit + max(1, int(deficit // (_TARGET_LINES_PER_BULLET + 1))))
+        limit = min(growth_ceiling, limit + max(1, int(deficit // (_TARGET_LINES_PER_BULLET + 1))))
         grow_attempts += 1
         events.emit(
             on_event,

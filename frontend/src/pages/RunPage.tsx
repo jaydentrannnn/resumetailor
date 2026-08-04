@@ -262,6 +262,8 @@ function SettingsPanel({
 
   const fillValue = settings.fill_target ?? config?.fill_target ?? 0.93;
   const initialShareValue = settings.initial_bullet_share ?? config?.initial_bullet_share ?? 1;
+  const experienceShareValue =
+    settings.experience_bullet_share ?? config?.experience_bullet_share ?? 0.65;
 
   // Which profiles route a stage to Ollama comes from the server, not a hardcoded
   // ["ollama", "hybrid"] — MODEL_PROFILES is free to change without this going stale.
@@ -475,6 +477,49 @@ function SettingsPanel({
                 onChange={(e) => set("initial_bullet_share", Number(e.target.value) / 100)}
                 className="w-full accent-[var(--color-accent)]"
               />
+            </Field>
+            <Toggle
+              label="Weight bullets toward experience"
+              help="Budget experience and projects separately instead of one shared pool, where a keyword-dense project can otherwise out-rank every job."
+              checked={settings.experience_bullet_share !== null}
+              onChange={(v) => set("experience_bullet_share", v ? 0.65 : null)}
+            />
+            {settings.experience_bullet_share !== null && (
+              <Field
+                label={`${Math.round(experienceShareValue * 100)}% experience / ${100 - Math.round(experienceShareValue * 100)}% projects`}
+              >
+                <input
+                  type="range"
+                  min={0}
+                  max={100}
+                  step={5}
+                  value={Math.round(experienceShareValue * 100)}
+                  onChange={(e) => set("experience_bullet_share", Number(e.target.value) / 100)}
+                  className="w-full accent-[var(--color-accent)]"
+                />
+              </Field>
+            )}
+            <Field
+              label="Max bullets per entry"
+              help="Cap on how many bullets any single job or project may take."
+            >
+              <select
+                value={settings.max_bullets_per_entry ?? ""}
+                onChange={(e) =>
+                  set(
+                    "max_bullets_per_entry",
+                    e.target.value === "" ? null : Number(e.target.value),
+                  )
+                }
+                className="field"
+              >
+                <option value="">No limit</option>
+                {[2, 3, 4, 5, 6].map((n) => (
+                  <option key={n} value={n}>
+                    {n}
+                  </option>
+                ))}
+              </select>
             </Field>
             <Toggle
               label="Bypass cache"

@@ -874,6 +874,10 @@ INITIAL_SELECTION_OVERSHOOT = 2
 #: when a measured page is under `UNDERFLOW_THRESHOLD`, so on its own a low value mostly
 #: trades extra rewrite rounds for the same final page. Lower `UNDERFLOW_THRESHOLD`
 #: alongside it to actually end on a sparser page.
+#:
+#: Distinct from `EXPERIENCE_BULLET_SHARE` (selection scoring block, below): this one
+#: bounds the total count; that one has no opinion on the count and instead bounds how it
+#: splits between experience and projects.
 INITIAL_BULLET_SHARE = 1.0
 
 # --------------------------------------------------------------------------------------
@@ -1197,6 +1201,23 @@ METRIC_BONUS = 0.5
 #: chosen entries and never drops an entry to save space.
 MAX_EXPERIENCE_ENTRIES = 3
 MAX_PROJECT_ENTRIES = 2
+
+#: Overall experience-vs-projects split of the bullets `rewrite.select_within_entries`
+#: chooses, as a fraction going to experience (e.g. 0.65 -> 65% experience / 35% projects).
+#: `None` is the original behaviour: one flat pool ranked purely by `score`, which lets a
+#: keyword-dense project out-rank every job for the shared discretionary budget. Distinct
+#: from `INITIAL_BULLET_SHARE` (page-fitting block, above), which bounds the *first
+#: draft's total bullet count* and has no opinion on how that count splits between
+#: sections.
+EXPERIENCE_BULLET_SHARE: float | None = None
+
+#: Ceiling on how many bullets any single job or project may take, applied inside whichever
+#: pool (flat, or per-section under `EXPERIENCE_BULLET_SHARE`) is in play. `None` is
+#: uncapped — the original behaviour, where a single rich entry could take as many lines as
+#: the ranking gave it. `rewrite.selectable_total` is what the fit loop's grow condition
+#: must compare against once this is set, since the pool saturates below the raw bullet
+#: count and comparing against the raw count would spin the grow loop for nothing.
+MAX_BULLETS_PER_ENTRY: int | None = None
 
 #: Cap on tech tags rendered in one project header line. The facets stage may propose
 #: more; code truncates to this after applying the character budget.

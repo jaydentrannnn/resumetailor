@@ -281,6 +281,8 @@ class JobQueue:
                 contact_fields=include.contact_order(settings.include, active_layout()),
                 fill_target=settings.fill_target,
                 initial_bullet_share=settings.initial_bullet_share,
+                experience_bullet_share=settings.experience_bullet_share,
+                max_bullets_per_entry=settings.max_bullets_per_entry,
                 on_event=on_event,
             )
         except FabricationError as exc:

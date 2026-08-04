@@ -41,6 +41,11 @@ export type JobSettings = {
   fill_target: number | null;
   /** First-draft bullet-share ceiling (0.30–1.00); null uses the server default. */
   initial_bullet_share: number | null;
+  /** Fraction of overall selected bullets given to experience (0.00–1.00), budgeted
+   * separately from projects; null means unweighted (one flat relevance-ranked pool). */
+  experience_bullet_share: number | null;
+  /** Cap on bullets any single job or project may take; null means uncapped. */
+  max_bullets_per_entry: number | null;
   /** What to leave out — contact fields/order, GPA, coursework, whole entries. */
   include: IncludeOptions;
 };
@@ -151,6 +156,10 @@ export type AppConfig = {
   contact_name: string | null;
   fill_target: number;
   initial_bullet_share: number;
+  /** Server default share; null means unweighted. */
+  experience_bullet_share: number | null;
+  /** Server default per-entry cap; null means uncapped. */
+  max_bullets_per_entry: number | null;
   active_workspace_id: string | null;
   active_workspace_label: string | null;
   /** True once, on the first /api/config response after a legacy-layout migration. */

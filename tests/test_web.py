@@ -75,6 +75,10 @@ def test_get_config_returns_defaults(client):
     assert 0.8 <= body["fill_target"] <= 0.95
     assert "initial_bullet_share" in body
     assert 0.3 <= body["initial_bullet_share"] <= 1.0
+    assert "experience_bullet_share" in body
+    assert body["experience_bullet_share"] == config.EXPERIENCE_BULLET_SHARE
+    assert "max_bullets_per_entry" in body
+    assert body["max_bullets_per_entry"] == config.MAX_BULLETS_PER_ENTRY
     # Stored vocabulary (or derived fallback) should be non-empty for a real master resume.
     assert len(body["tag_vocabulary"]) >= 1
 
@@ -176,6 +180,25 @@ def test_settings_round_trip(client, tmp_path, monkeypatch):
     assert got_body["seeded"] is False
     assert got_body["settings"]["pages"] == 2
     assert got_body["settings"]["model"] == "ollama"
+
+
+def test_settings_round_trip_with_section_weighting(client, tmp_path, monkeypatch):
+    """PUT/GET round-trip experience_bullet_share and max_bullets_per_entry."""
+    c, _ = client
+    _point_settings_at(tmp_path, monkeypatch)
+
+    res = c.put(
+        "/api/settings",
+        json={"settings": {"experience_bullet_share": 0.7, "max_bullets_per_entry": 3}},
+    )
+    assert res.status_code == 200
+    body = res.json()["settings"]
+    assert body["experience_bullet_share"] == 0.7
+    assert body["max_bullets_per_entry"] == 3
+
+    got = c.get("/api/settings").json()["settings"]
+    assert got["experience_bullet_share"] == 0.7
+    assert got["max_bullets_per_entry"] == 3
 
 
 def test_create_job_without_settings_uses_saved_defaults(client, tmp_path, monkeypatch):
@@ -394,6 +417,8 @@ def test_job_runs_to_success_with_stubbed_pipeline(client, monkeypatch, tmp_path
         contact_fields=None,
         fill_target=None,
         initial_bullet_share=None,
+        experience_bullet_share=None,
+        max_bullets_per_entry=None,
         on_event=None,
     ):
         """Stub fit and record polish/merge/link knobs from JobSettings."""
@@ -404,6 +429,8 @@ def test_job_runs_to_success_with_stubbed_pipeline(client, monkeypatch, tmp_path
             include_project_links=include_project_links,
             fill_target=fill_target,
             initial_bullet_share=initial_bullet_share,
+            experience_bullet_share=experience_bullet_share,
+            max_bullets_per_entry=max_bullets_per_entry,
         )
         out = Path(out)
         out.parent.mkdir(parents=True, exist_ok=True)
@@ -477,6 +504,8 @@ def test_job_runs_to_success_with_stubbed_pipeline(client, monkeypatch, tmp_path
                 "no_project_links": True,
                 "fill_target": 0.88,
                 "initial_bullet_share": 0.6,
+                "experience_bullet_share": 0.7,
+                "max_bullets_per_entry": 4,
             },
         },
     )
@@ -498,6 +527,8 @@ def test_job_runs_to_success_with_stubbed_pipeline(client, monkeypatch, tmp_path
         "include_project_links": False,
         "fill_target": 0.88,
         "initial_bullet_share": 0.6,
+        "experience_bullet_share": 0.7,
+        "max_bullets_per_entry": 4,
     }
     assert any(e["stage"] == "extract" for e in status["events"])
 

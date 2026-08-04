@@ -207,7 +207,7 @@ def test_pages_and_template_flags_reach_the_fit_loop(cli, jd_file, tmp_path, mon
         resume_arg, reqs, *, target_pages, template, out, max_experience, max_projects,
         semantic=None, repair_widows=True, repair_verbs=True, merge_bullets=False,
         include_project_links=True, contact_fields=None, fill_target=None,
-        initial_bullet_share=None,
+        initial_bullet_share=None, experience_bullet_share=None, max_bullets_per_entry=None,
     ):
         """Capture fit kwargs so CLI flag plumbing can be asserted."""
         seen.update(
@@ -248,7 +248,7 @@ def test_defaults_match_config(cli, jd_file, tmp_path, monkeypatch):
         resume_arg, reqs, *, target_pages, template, out, max_experience, max_projects,
         semantic=None, repair_widows=True, repair_verbs=True, merge_bullets=False,
         include_project_links=True, contact_fields=None, fill_target=None,
-        initial_bullet_share=None,
+        initial_bullet_share=None, experience_bullet_share=None, max_bullets_per_entry=None,
     ):
         """Capture defaults so they stay owned by fit(), not the CLI."""
         seen.update(
@@ -522,5 +522,53 @@ def test_initial_bullet_share_flag_reaches_the_fit_loop(cli, jd_file, tmp_path, 
 
     cli.main(["--jd", str(jd_file), "--initial-bullet-share", "0.6"])
     assert seen["initial_bullet_share"] == 0.6
+
+
+def test_experience_bullet_share_flag_reaches_the_fit_loop(cli, jd_file, tmp_path, monkeypatch):
+    """--experience-bullet-share overrides EXPERIENCE_BULLET_SHARE for the run."""
+    resume = load()
+    seen: dict = {}
+
+    monkeypatch.setattr(cli.jd, "extract", lambda text, **kw: _requirements())
+    monkeypatch.setattr(cli.jd, "verify_verbatim", lambda reqs, text: [])
+
+    def capture(*a, experience_bullet_share=None, **k):
+        """Record the experience_bullet_share override from the CLI."""
+        seen["experience_bullet_share"] = experience_bullet_share
+        return _fit_result(resume, tmp_path / "tailored.docx")
+
+    monkeypatch.setattr(cli.fit, "fit", capture)
+
+    cli.main(["--jd", str(jd_file)])
+    assert seen["experience_bullet_share"] is None
+
+    cli.main(["--jd", str(jd_file), "--experience-bullet-share", "0.7"])
+    assert seen["experience_bullet_share"] == 0.7
+
+    assert cli.main(["--jd", str(jd_file), "--experience-bullet-share", "1.5"]) == 1
+
+
+def test_max_bullets_per_entry_flag_reaches_the_fit_loop(cli, jd_file, tmp_path, monkeypatch):
+    """--max-bullets-per-entry overrides MAX_BULLETS_PER_ENTRY for the run."""
+    resume = load()
+    seen: dict = {}
+
+    monkeypatch.setattr(cli.jd, "extract", lambda text, **kw: _requirements())
+    monkeypatch.setattr(cli.jd, "verify_verbatim", lambda reqs, text: [])
+
+    def capture(*a, max_bullets_per_entry=None, **k):
+        """Record the max_bullets_per_entry override from the CLI."""
+        seen["max_bullets_per_entry"] = max_bullets_per_entry
+        return _fit_result(resume, tmp_path / "tailored.docx")
+
+    monkeypatch.setattr(cli.fit, "fit", capture)
+
+    cli.main(["--jd", str(jd_file)])
+    assert seen["max_bullets_per_entry"] is None
+
+    cli.main(["--jd", str(jd_file), "--max-bullets-per-entry", "4"])
+    assert seen["max_bullets_per_entry"] == 4
+
+    assert cli.main(["--jd", str(jd_file), "--max-bullets-per-entry", "0"]) == 1
 
     assert cli.main(["--jd", str(jd_file), "--initial-bullet-share", "0.1"]) == 1

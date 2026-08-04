@@ -10,7 +10,7 @@ from __future__ import annotations
 import pytest
 
 from resume_tailor import config, rewrite
-from resume_tailor.data import Bullet, Experience, load
+from resume_tailor.data import Bullet, Experience, Project, load
 from resume_tailor.jd import JobRequirements, Keyword
 from resume_tailor.rewrite import (
     BulletScore,
@@ -21,6 +21,7 @@ from resume_tailor.rewrite import (
     select,
     select_entries,
     select_within_entries,
+    selectable_total,
 )
 
 
@@ -191,6 +192,138 @@ def test_extra_budget_goes_to_the_strongest_bullets():
     assert len(floors) == len(entries)
     assert len(richer) == len(entries) + 2
     assert set(b.id for b in floors) <= set(b.id for b in richer)
+
+
+def test_flat_pool_selection_unchanged_by_default():
+    """`experience_share=None, max_per_entry=None` must reproduce the original flat-pool
+    floors+select algorithm exactly (pinned per CLAUDE.md/the plan's equivalence
+    requirement), not just something with the same size.
+    """
+    reqs = requirements(("python", "must_have"))
+    resume = load()
+    entries = [
+        *select_entries(resume.experience, reqs, limit=3),
+        *select_entries(resume.projects, reqs, limit=2),
+    ]
+
+    floors = [max(e.bullets, key=lambda b: score(b, reqs)) for e in entries if e.bullets]
+    kept = {id(b) for b in floors}
+    pool = [b for e in entries for b in e.bullets if id(b) not in kept]
+    kept |= {id(b) for b in select(pool, reqs, limit=10 - len(floors))}
+    expected = [b for e in entries for b in e.bullets if id(b) in kept]
+
+    actual = select_within_entries(entries, reqs, limit=10)
+    assert [b.id for b in actual] == [b.id for b in expected]
+
+
+# --------------------------------------------------------------------------------------
+# Section weighting (experience_share) and per-entry cap (max_per_entry)
+# --------------------------------------------------------------------------------------
+
+
+def _exp(company: str, *bullets: Bullet) -> Experience:
+    return Experience(company=company, title="t", start="2024-01", end="2024-02", bullets=list(bullets))
+
+
+def _proj(name: str, *bullets: Bullet) -> Project:
+    return Project(id=name, name=name, bullets=list(bullets))
+
+
+def test_experience_share_moves_budget_from_projects_to_experience():
+    """A flat pool lets keyword-dense project bullets out-rank low-scoring experience
+    bullets for the whole discretionary budget; a high experience_share reverses that at
+    the same overall limit.
+    """
+    reqs = requirements(("python", "must_have"))
+    exp = _exp("Exp1", bullet("e1", "x", ["misc"]), bullet("e2", "x", ["misc"]), bullet("e3", "x", ["misc"]))
+    proj = _proj("Proj1", bullet("p1", "x", ["python"]), bullet("p2", "x", ["python"]), bullet("p3", "x", ["python"]))
+    entries = [exp, proj]
+
+    flat = select_within_entries(entries, reqs, limit=4)
+    flat_exp = sum(1 for b in flat if b.id.startswith("e"))
+    flat_proj = sum(1 for b in flat if b.id.startswith("p"))
+    assert (flat_exp, flat_proj) == (1, 3)  # project's keyword match wins the flat pool
+
+    weighted = select_within_entries(entries, reqs, limit=4, experience_share=0.75)
+    weighted_exp = sum(1 for b in weighted if b.id.startswith("e"))
+    weighted_proj = sum(1 for b in weighted if b.id.startswith("p"))
+    assert (weighted_exp, weighted_proj) == (3, 1)
+    assert len(weighted) == 4
+
+
+def test_experience_share_extremes_never_drop_a_floor():
+    """share=0.0 and share=1.0 must still leave every entry its one floor bullet."""
+    reqs = requirements(("python", "must_have"))
+    exp = _exp("Exp1", bullet("e1", "x", ["misc"]), bullet("e2", "x", ["misc"]))
+    proj = _proj("Proj1", bullet("p1", "x", ["python"]), bullet("p2", "x", ["python"]))
+    entries = [exp, proj]
+
+    starved_exp = select_within_entries(entries, reqs, limit=4, experience_share=0.0)
+    assert sum(1 for b in starved_exp if b.id.startswith("e")) >= 1
+    assert sum(1 for b in starved_exp if b.id.startswith("p")) >= 1
+
+    starved_proj = select_within_entries(entries, reqs, limit=4, experience_share=1.0)
+    assert sum(1 for b in starved_proj if b.id.startswith("e")) >= 1
+    assert sum(1 for b in starved_proj if b.id.startswith("p")) >= 1
+
+
+def test_max_per_entry_caps_richest_entry_and_spills_the_rest():
+    """A capped entry's forfeited slot goes to the next-best bullet elsewhere, so the
+    overall selection still reaches `limit` rather than shrinking.
+    """
+    reqs = requirements(("python", "must_have"))
+    exp = _exp(
+        "Exp1",
+        bullet("a1", "x", ["misc"]),
+        bullet("a2", "x", ["misc"]),
+        bullet("a3", "x", ["misc"]),
+    )
+    proj = _proj(
+        "Proj1",
+        bullet("p1", "x", ["python"]),
+        bullet("p2", "x", ["python"]),
+        bullet("p3", "x", ["python"]),
+    )
+    entries = [exp, proj]
+
+    uncapped = select_within_entries(entries, reqs, limit=4)
+    assert sum(1 for b in uncapped if b.id.startswith("p")) == 3  # project takes all it can
+
+    capped = select_within_entries(entries, reqs, limit=4, max_per_entry=2)
+    assert len(capped) == 4  # still reaches the limit — the freed slot spilled to Exp1
+    assert sum(1 for b in capped if b.id.startswith("p")) == 2
+    assert sum(1 for b in capped if b.id.startswith("a")) == 2
+
+
+def test_experience_share_spillover_when_a_section_cannot_fill_its_budget():
+    """A share requesting more than a section can supply spills the surplus to the other
+    section rather than stranding it (and shrinking the total below `limit`).
+    """
+    reqs = requirements(("python", "must_have"))
+    exp = _exp("Exp1", bullet("e1", "x", ["misc"]))  # only one bullet available
+    proj = _proj(
+        "Proj1",
+        bullet("p1", "x", ["python"]),
+        bullet("p2", "x", ["python"]),
+        bullet("p3", "x", ["python"]),
+        bullet("p4", "x", ["python"]),
+    )
+    entries = [exp, proj]
+
+    selected = select_within_entries(entries, reqs, limit=5, experience_share=0.9)
+    assert len(selected) == 5  # exp can only give 1; the other 4 must come from proj
+    assert sum(1 for b in selected if b.id.startswith("e")) == 1
+    assert sum(1 for b in selected if b.id.startswith("p")) == 4
+
+
+def test_selectable_total():
+    exp = _exp("Exp1", bullet("e1", "x", ["misc"]), bullet("e2", "x", ["misc"]))
+    proj = _proj("Proj1", bullet("p1", "x", ["misc"]), bullet("p2", "x", ["misc"]), bullet("p3", "x", ["misc"]))
+    entries = [exp, proj]
+
+    assert selectable_total(entries) == 5
+    assert selectable_total(entries, max_per_entry=2) == 4  # proj's 3rd bullet is unreachable
+    assert selectable_total(entries, max_per_entry=10) == 5  # cap above every entry's size is a no-op
 
 
 # --------------------------------------------------------------------------------------
@@ -665,6 +798,16 @@ def test_the_system_prompt_states_which_way_to_err():
 def test_the_system_prompt_forbids_moving_metrics_across_bullet_ids():
     """Regression pin for aeth_b3/zot_b3 cross-wiring of eval metrics."""
     assert "Never move a number or metric from one bullet id to another" in rewrite._SYSTEM
+
+
+def test_the_system_prompt_encourages_leadership_and_drive_verbs_without_forcing_them():
+    assert "a stretched \"led\"" in rewrite._SYSTEM
+    assert "do not imply managing people, owning a decision" in rewrite._SYSTEM
+
+
+def test_the_system_prompt_foregrounds_accomplishment_without_inventing_one():
+    assert "Foreground the accomplishment." in rewrite._SYSTEM
+    assert "never manufacture a result, number, or comparison" in rewrite._SYSTEM
 
 
 # --- the repair pass ------------------------------------------------------------------

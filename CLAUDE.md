@@ -192,7 +192,15 @@ skill items keep their master-resume wording unchanged), `--fill-target` (overri
 `--initial-bullet-share` (cap the *first* draft's bullet count to a fraction of what fits,
 default 1.0 — a ceiling on `fit._initial_selection_size` only, not the grow loop, so a low
 value alone is usually grown back at the default fill target; pair it with a lower
-`--fill-target` to actually end sparser). CLI/UI parity for what to leave out
+`--fill-target` to actually end sparser), `--experience-bullet-share` (fraction of the
+*overall* selected bullets given to experience, budgeted separately from projects via
+`rewrite._section_budgets`; default unweighted — one flat pool ranked by relevance, which
+lets a keyword-dense project out-rank every job for the shared discretionary budget), and
+`--max-bullets-per-entry` (ceiling on bullets any single job or project may take; default
+uncapped — a capped entry's forfeited slot spills to the next-best bullet elsewhere rather
+than being lost, and the fit loop's grow ceiling becomes `rewrite.selectable_total`, not
+the raw bullet count, so growth stops where the caps actually saturate instead of retrying
+a selection that can no longer change). CLI/UI parity for what to leave out
 (`include.py`): `--no-gpa` (suppress the GPA suffix regardless of `Education.show_gpa`),
 `--no-coursework` (suppress the "Relevant Coursework:" bullet), `--contact-fields
 email,phone,linkedin` (comma-separated render order from `location`/`email`/`phone`/
@@ -401,9 +409,19 @@ Key structural facts that span files:
   `rewrite.select_entries` ranks experience and projects **separately** (capped by
   `config.MAX_EXPERIENCE_ENTRIES` / `MAX_PROJECT_ENTRIES`), and `fit.choose_entries` runs it
   once per run. Ranking both sections in one pool let a stack of relevant side projects
-  evict the candidate's current employer. The fit loop then varies only how many *bullets*
-  those entries get — `select_within_entries` guarantees every chosen entry keeps at least
-  its best bullet, since `build_context` omits an entry whose bullets were all dropped.
+  evict the candidate's current employer. The fit loop then varies how many *bullets* those
+  entries get — `select_within_entries` guarantees every chosen entry keeps at least its
+  best bullet, since `build_context` omits an entry whose bullets were all dropped. By
+  default the discretionary remainder is one flat pool ranked purely by relevance, which
+  is exactly what lets a keyword-dense project out-rank every job for it —
+  `config.EXPERIENCE_BULLET_SHARE` (`--experience-bullet-share`) budgets experience and
+  projects separately instead, via `rewrite._section_budgets`, and
+  `config.MAX_BULLETS_PER_ENTRY` (`--max-bullets-per-entry`) caps any one entry's take
+  within whichever pool is in play. Both default to `None` (today's flat-pool behaviour,
+  unchanged). A per-entry cap can make the achievable total lower than the raw bullet
+  pool, so the fit loop's grow condition compares against `rewrite.selectable_total(...)`,
+  not the raw count — otherwise it would keep raising `limit` while the selection stayed
+  the same, burning grow attempts (an LLM call and a render each) for nothing.
 - **`bullets: dict[id -> text]` is the pipeline's currency.** `render.build_context` uses it
   as both content source *and* selection filter — an entry whose bullets were all dropped is
   omitted entirely. That is how the fit loop sheds a whole job or project. Passing `None`
@@ -589,7 +607,10 @@ is the Pydantic schema for that mapping (`templates/template_profile.json`);
 `main_template.docx`, in both legacy and profile mode; `docx_text.py` is a shared helper
 that reconciles `python-docx` character offsets with the actual runs at those offsets
 (see the gotcha below — every one of profile mode's header/skills/link bugs traced back
-to getting this reconciliation wrong).
+to getting this reconciliation wrong). Calibration follows the same split: the
+measurement logic lives in `resume_tailor.calibrate`, with `scripts/calibrate.py` as a
+thin CLI wrapper — so the Template tab's calibrate-on-install / calibrate-on-activate
+call that module directly rather than shelling out.
 
 `template_build` clones one entry per section as a prototype, tags it, and deletes the
 rest. Formatting is inherited from real XML rather than reconstructed: each tagged

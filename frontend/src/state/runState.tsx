@@ -67,6 +67,8 @@ export const DEFAULT_SETTINGS: JobSettings = {
   no_project_links: false,
   fill_target: null,
   initial_bullet_share: null,
+  experience_bullet_share: null,
+  max_bullets_per_entry: null,
   include: DEFAULT_INCLUDE,
 };
 
