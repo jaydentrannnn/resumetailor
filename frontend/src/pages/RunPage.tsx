@@ -6,6 +6,7 @@ import {
   downloadUrl,
 } from "../api";
 import { ExperienceCard } from "../components/ExperienceCard";
+import { Field, Toggle } from "../components/Field";
 import { IncludePanel } from "../components/IncludePanel";
 import { ModelSpecField } from "../components/ModelSpecField";
 import { type RunProgress, runProgress } from "../lib/runProgress";
@@ -281,7 +282,7 @@ function SettingsPanel({
   return (
     <section className="rounded-xl border border-line bg-panel p-5 shadow-sm">
       <div className="flex items-center justify-between gap-3">
-        <h2 className="font-display text-xl font-semibold">Settings</h2>
+        <h2 className="font-display text-xl font-semibold">Run options</h2>
         <button
           type="button"
           onClick={resetDefaults}
@@ -543,64 +544,7 @@ function SettingsPanel({
         )}
       </div>
 
-      <style>{`
-        .field {
-          width: 100%;
-          border: 1px solid var(--color-line);
-          border-radius: 0.5rem;
-          padding: 0.4rem 0.65rem;
-          font-size: 0.875rem;
-          background: color-mix(in srgb, var(--color-paper) 40%, white);
-          outline: none;
-        }
-        .field:focus { border-color: var(--color-accent); }
-      `}</style>
     </section>
-  );
-}
-
-function Field({
-  label,
-  help,
-  children,
-}: {
-  label: string;
-  help?: string;
-  children: React.ReactNode;
-}) {
-  return (
-    <label className="block text-sm">
-      <span className="mb-1 block text-ink-muted">{label}</span>
-      {children}
-      {help && <span className="mt-1 block text-xs text-ink-muted">{help}</span>}
-    </label>
-  );
-}
-
-function Toggle({
-  label,
-  help,
-  checked,
-  onChange,
-}: {
-  label: string;
-  help?: string;
-  checked: boolean;
-  onChange: (v: boolean) => void;
-}) {
-  return (
-    <label className="flex cursor-pointer gap-2 text-sm">
-      <input
-        type="checkbox"
-        checked={checked}
-        onChange={(e) => onChange(e.target.checked)}
-        className="mt-0.5 accent-[var(--color-accent)]"
-      />
-      <span>
-        <span className="font-medium">{label}</span>
-        {help && <span className="mt-0.5 block text-xs text-ink-muted">{help}</span>}
-      </span>
-    </label>
   );
 }
 

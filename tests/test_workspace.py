@@ -37,6 +37,7 @@ def isolated_roots(tmp_path, monkeypatch):
         ("CACHE_DIR", output_root),
         ("MASTER_RESUME_PATH", data_root / "master_resume.json"),
         ("SETTINGS_PATH", data_root / "settings.json"),
+        ("LIBRARIES_PATH", data_root / "libraries.json"),
         ("DEFAULT_TEMPLATE_PATH", templates_root / "main_template.docx"),
         ("BASELINE_TEMPLATE_PATH", templates_root / "original_export.docx"),
         ("TEMPLATE_PROFILE_PATH", templates_root / "template_profile.json"),
@@ -179,6 +180,33 @@ def test_create_duplicate_copies_resume_and_templates(isolated_roots):
     assert dup_paths["DEFAULT_TEMPLATE_PATH"].read_bytes() == b"tagged bytes"
 
 
+def test_create_without_copy_from_writes_a_default_libraries_file(isolated_roots):
+    from resume_tailor import libraries
+
+    bootstrap()
+    entry = workspace.create("Nina")
+
+    paths = config.workspace_paths(entry.id)
+    assert paths["LIBRARIES_PATH"].exists()
+    state = libraries.read_workspace_state(entry.id)
+    assert state.enabled_packs == ["core-tech"]
+
+
+def test_create_duplicate_copies_libraries_json(isolated_roots):
+    from resume_tailor import libraries
+
+    bootstrap()  # empty "default"
+    libraries.write_pack(libraries.Pack(id="a", label="A", tag_aliases={"x": "y"}))
+    libraries.write_workspace_state(
+        libraries.WorkspaceLibraryState(enabled_packs=["core-tech", "a"])
+    )
+
+    entry = workspace.create("Data Science", copy_from="default")
+
+    dup_state = libraries.read_workspace_state(entry.id)
+    assert dup_state.enabled_packs == ["core-tech", "a"]
+
+
 def test_create_without_copy_from_seeds_a_loadable_resume(isolated_roots):
     """A profile created without duplicating is immediately usable.
 
@@ -198,6 +226,31 @@ def test_create_without_copy_from_seeds_a_loadable_resume(isolated_roots):
     workspace.activate(entry.id)
     # This is exactly the call `_smoke_render` makes before any template install.
     assert data.load().contact.name == "Your Name"
+
+
+def test_activate_reloads_the_effective_library(isolated_roots):
+    """Switching profiles must rebind config.TAG_ALIASES to the new profile's own
+    pack selection, the same way it already rebinds the path globals."""
+    from resume_tailor import libraries
+
+    bootstrap()  # "default", core-tech only
+    workspace.create("Nina")
+    libraries.write_pack(libraries.Pack(id="nursing", label="Nursing", tag_aliases={"bls": "basic life support"}))
+    libraries.write_workspace_state(
+        libraries.WorkspaceLibraryState(enabled_packs=["nursing"]), workspace_id="nina"
+    )
+
+    assert "bls" not in config.TAG_ALIASES
+
+    workspace.activate("nina")
+
+    assert config.TAG_ALIASES.get("bls") == "basic life support"
+    assert "py" not in config.TAG_ALIASES  # core-tech is not enabled for this profile
+
+    workspace.activate("default")
+
+    assert config.TAG_ALIASES.get("py") == "python"
+    assert "bls" not in config.TAG_ALIASES
 
 
 def test_activate_heals_a_workspace_missing_its_resume(isolated_roots):

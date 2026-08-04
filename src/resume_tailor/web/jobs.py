@@ -22,7 +22,20 @@ from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any, Literal
 
-from resume_tailor import config, data, expand, facets, fit, include, jd, report, rewrite
+from resume_tailor import (
+    config,
+    data,
+    expand,
+    facets,
+    fit,
+    include,
+    jd,
+    libraries,
+    propose,
+    report,
+    rewrite,
+)
+from resume_tailor.data import MasterResume
 from resume_tailor.events import ProgressCallback, ProgressEvent
 from resume_tailor.fit import FitError
 from resume_tailor.llm import LLMError
@@ -342,6 +355,89 @@ class JobQueue:
                         detail={},
                     )
                 )
+
+        if settings.suggest_vocabulary:
+            try:
+                _draft_vocabulary_proposals(
+                    known_tags=known_tags,
+                    master_resume=master_resume,
+                    requirements=requirements,
+                    selected_texts=result.bullets,
+                    on_event=on_event,
+                )
+            except Exception as exc:  # noqa: BLE001 - advisory only; never fail the job
+                on_event(
+                    ProgressEvent(
+                        stage="propose",
+                        message=f"Vocabulary suggestions skipped ({exc})",
+                        detail={},
+                    )
+                )
+
+
+def _draft_vocabulary_proposals(
+    *,
+    known_tags: list[str],
+    master_resume: MasterResume,
+    requirements: jd.JobRequirements,
+    selected_texts: dict[str, str],
+    on_event: ProgressCallback,
+) -> None:
+    """Opportunistic, opt-in vocabulary-proposal draft for the active profile, run at
+    the end of a successful job (`settings.suggest_vocabulary`).
+
+    Fed by this run's own near-miss keyword gaps and unclassified opening verbs among
+    the bullets actually selected — the same signals a user would eyeball in the report,
+    turned into a queued suggestion instead. Non-fatal by construction: the caller wraps
+    this in a bare `except Exception`, since a run whose `.docx` already succeeded must
+    never fail over an advisory feature.
+    """
+    unmatched = propose.near_miss_alias_candidates(requirements, master_resume)
+    unknown_verbs = sorted(
+        {
+            verb
+            for text in selected_texts.values()
+            if (verb := rewrite.opening_verb(text)) and config.verb_family(verb) is None
+        }
+    )
+    if not unmatched and not unknown_verbs:
+        return
+
+    effective = libraries.resolve_effective()
+    state = libraries.read_workspace_state()
+    raw = propose.propose_vocabulary(
+        known_tags=known_tags,
+        unmatched=unmatched,
+        unknown_verbs=unknown_verbs,
+        families=effective.verb_families,
+        on_event=on_event,
+    )
+    filtered = propose.filter_proposals(
+        raw,
+        known_tags=known_tags,
+        effective=effective,
+        rejected=state.rejected,
+        source="run",
+    )
+    if not filtered:
+        return
+
+    # filter_proposals already excludes anything in state.rejected; this only needs to
+    # dedupe against proposals already pending, which it has no visibility into.
+    existing_ids = {p.id for p in state.proposals}
+    new_ones = [p for p in filtered if p.id not in existing_ids]
+    if not new_ones:
+        return
+    state.proposals = [*state.proposals, *new_ones]
+    libraries.write_workspace_state(state)
+    libraries.reload()
+    on_event(
+        ProgressEvent(
+            stage="propose",
+            message=f"Drafted {len(new_ones)} vocabulary suggestion(s) for review in Settings",
+            detail={"count": len(new_ones)},
+        )
+    )
 
 
 def _to_expansion_out(expansion: expand.Expansion) -> ExpansionOut:
