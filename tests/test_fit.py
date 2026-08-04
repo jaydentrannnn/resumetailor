@@ -317,6 +317,29 @@ def test_fit_stops_growing_after_max_attempts_and_warns(monkeypatch, tmp_path):
     assert any("full" in w for w in result.warnings)
 
 
+def test_fit_growth_ceiling_stops_early_when_entries_are_capped(monkeypatch, tmp_path):
+    """A per-entry cap can saturate the achievable selection below the raw bullet pool;
+    growth must stop there instead of burning `MAX_GROW_ATTEMPTS` retrying a selection
+    that never changes (each retry costs a rewrite call and a render).
+    """
+    resume = load()
+    requirements = _requirements()
+
+    monkeypatch.setattr(fit_mod, "rewrite_bullets", _identity_rewrite)
+    monkeypatch.setattr(fit_mod.render, "render", lambda *a, **k: tmp_path / "out.docx")
+    monkeypatch.setattr(fit_mod.render, "measure_detail", lambda *a, **k: (1, _SPARSE_LINES))
+    monkeypatch.setattr(fit_mod.render, "to_pdf", lambda *a, **k: tmp_path / "out.pdf")
+
+    result = fit_mod.fit(resume, requirements, target_pages=1, max_bullets_per_entry=1)
+
+    entries = fit_mod.choose_entries(resume, requirements)
+    # Every entry is capped at its one floor bullet, so the achievable total equals the
+    # entry count — reached immediately, with no room to grow into at all.
+    assert result.bullets_selected == len(entries)
+    assert result.iterations == 1
+    assert any("selectable bullet cap" in w for w in result.warnings)
+
+
 def test_fit_honours_entry_caps_and_never_drops_a_chosen_entry(monkeypatch, tmp_path):
     """Entry count is a shape decision; the loop may trim bullets but not whole entries."""
     resume = load()

@@ -52,6 +52,12 @@ class JobSettings(BaseModel):
     #: Fraction of the chosen entries' bullets the first selection may claim (0.30–1.00).
     #: Bounds only the first draft — see `fit.fit`'s docstring for the `fill_target` pairing.
     initial_bullet_share: float | None = Field(default=None, ge=0.3, le=1.0)
+    #: Fraction of the *overall* selected bullets given to experience, budgeted separately
+    #: from projects (0.00–1.00). `None` is one flat pool ranked by relevance, which lets a
+    #: keyword-dense project out-rank every job for the shared discretionary budget.
+    experience_bullet_share: float | None = Field(default=None, ge=0.0, le=1.0)
+    #: Ceiling on how many bullets any single job or project may take. `None` is uncapped.
+    max_bullets_per_entry: int | None = Field(default=None, ge=1, le=10)
     #: What to leave out — contact fields/order, GPA, coursework, whole entries. See
     #: `include.py`. Nested rather than flattened so the "what to include" tile's state
     #: has one field to read/write, and an old settings.json without this key just gets
@@ -241,6 +247,11 @@ class ConfigResponse(BaseModel):
     fill_target: float = 0.93
     #: Default first-draft bullet-share ceiling (INITIAL_BULLET_SHARE) for the settings slider.
     initial_bullet_share: float = 1.0
+    #: Default experience-vs-projects share (EXPERIENCE_BULLET_SHARE); `None` means
+    #: unweighted, matching the config default.
+    experience_bullet_share: float | None = None
+    #: Default per-entry bullet cap (MAX_BULLETS_PER_ENTRY); `None` means uncapped.
+    max_bullets_per_entry: int | None = None
     active_workspace_id: str | None = None
     active_workspace_label: str | None = None
     #: True on the first response after the legacy single-slot layout was migrated

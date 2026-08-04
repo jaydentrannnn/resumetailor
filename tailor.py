@@ -244,6 +244,27 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--experience-bullet-share",
+        type=float,
+        default=None,
+        metavar="RATIO",
+        help=(
+            "Fraction of the overall selected bullets given to experience, budgeted "
+            "separately from projects (0.00–1.00, default: unweighted — one flat pool "
+            "ranked by relevance, which lets a keyword-dense project out-rank every job)."
+        ),
+    )
+    parser.add_argument(
+        "--max-bullets-per-entry",
+        type=int,
+        default=None,
+        metavar="N",
+        help=(
+            "Cap on how many bullets any single job or project may take "
+            "(default: unlimited)."
+        ),
+    )
+    parser.add_argument(
         "--effort",
         choices=("low", "medium", "high"),
         default=None,
@@ -423,6 +444,17 @@ def main(argv: list[str] | None = None) -> int:
                 file=sys.stderr,
             )
             return 1
+        if args.experience_bullet_share is not None and not (
+            0.0 <= args.experience_bullet_share <= 1.0
+        ):
+            print(
+                "error: --experience-bullet-share must be between 0.00 and 1.00",
+                file=sys.stderr,
+            )
+            return 1
+        if args.max_bullets_per_entry is not None and args.max_bullets_per_entry < 1:
+            print("error: --max-bullets-per-entry must be at least 1", file=sys.stderr)
+            return 1
         result = fit.fit(
             resume,
             requirements,
@@ -439,6 +471,8 @@ def main(argv: list[str] | None = None) -> int:
             contact_fields=include.contact_order(include_options, active_layout()),
             fill_target=args.fill_target,
             initial_bullet_share=args.initial_bullet_share,
+            experience_bullet_share=args.experience_bullet_share,
+            max_bullets_per_entry=args.max_bullets_per_entry,
         )
     except FabricationError as exc:
         print(f"error: {exc}", file=sys.stderr)

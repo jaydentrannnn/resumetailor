@@ -172,12 +172,114 @@ def select_entries(
     return [e for e in entries if id(e) in chosen]
 
 
+def selectable_total(entries: list, *, max_per_entry: int | None = None) -> int:
+    """How many bullets the caps actually allow — what the fit loop can grow to.
+
+    Without a cap this is just the raw pool size. With `max_per_entry` set, the pool
+    saturates below that once every entry hits its ceiling, and the fit loop's grow
+    condition (`limit < total_bullets`) has to compare against *this*, not the raw count —
+    otherwise it keeps raising `limit` while `select_within_entries` returns the same
+    selection, burning grow attempts (an LLM call and a render each) for no change.
+    """
+    if max_per_entry is None:
+        return sum(len(e.bullets) for e in entries)
+    return sum(min(len(e.bullets), max_per_entry) for e in entries)
+
+
+def _section_budgets(
+    experience: list,
+    projects: list,
+    requirements: JobRequirements,
+    *,
+    limit: int,
+    semantic: dict[str, float] | None = None,
+    experience_share: float,
+    max_per_entry: int | None = None,
+) -> tuple[int, int]:
+    """Split `limit` between experience and projects by `experience_share`.
+
+    The share is of the *total* selected bullets, not just the discretionary remainder
+    past each section's floors — that is the more intuitive read of "70% experience" and
+    matches how a user would describe the split they want to see.
+
+    Each section's floor (one bullet per non-empty entry) is a hard minimum: a share can
+    never starve a section below what `select_entries` already decided it should keep.
+    Any budget a section cannot use (its floor already exceeds its share, or it has fewer
+    bullets than its share implies) spills to the other section, so a share never strands
+    part of `limit` and stalls the grow loop into thinking it must keep growing.
+
+    Each section's cap is `selectable_total`, not the raw bullet count — when
+    `max_per_entry` is also set, a section can be achievably smaller than its raw pool, and
+    budgeting against the raw count would hand it more than `_take_ranked` can actually
+    fill, silently under-selecting rather than spilling the surplus to the other section.
+    """
+    exp_floor = sum(1 for e in experience if e.bullets)
+    proj_floor = sum(1 for e in projects if e.bullets)
+    exp_cap = selectable_total(experience, max_per_entry=max_per_entry)
+    proj_cap = selectable_total(projects, max_per_entry=max_per_entry)
+
+    exp = max(exp_floor, min(exp_cap, round(limit * experience_share)))
+    proj = max(proj_floor, min(proj_cap, limit - exp))
+    # Second pass: give back to whichever section still has room, in case the first pass
+    # under-allocated one side (e.g. the other section's cap was smaller than its share).
+    exp = min(exp_cap, max(exp, limit - proj))
+    proj = min(proj_cap, max(proj, limit - exp))
+    return exp, proj
+
+
+def _take_ranked(
+    entries: list,
+    requirements: JobRequirements,
+    *,
+    limit: int,
+    semantic: dict[str, float] | None = None,
+    max_per_entry: int | None = None,
+) -> set[int]:
+    """Return `id()`s of up to `limit` bullets: every entry's floor, then the
+    highest-scoring remainder, skipping any entry already at `max_per_entry`.
+
+    A capped entry's forfeited slot is not lost — the walk simply continues to the
+    next-best bullet elsewhere, so spillover within the pool falls out for free.
+    """
+    floors: list[Bullet] = []
+    counts: dict[int, int] = {}
+    for entry in entries:
+        if entry.bullets:
+            best = max(entry.bullets, key=lambda b: score(b, requirements, semantic=semantic))
+            floors.append(best)
+            counts[id(entry)] = 1
+
+    kept = {id(b) for b in floors}
+    remaining = limit - len(floors)
+    if remaining <= 0:
+        return kept
+
+    entry_of = {id(b): id(e) for e in entries for b in e.bullets}
+    pool = [b for e in entries for b in e.bullets if id(b) not in kept]
+    ranked = sorted(pool, key=lambda b: score(b, requirements, semantic=semantic), reverse=True)
+
+    taken = 0
+    for b in ranked:
+        if taken >= remaining:
+            break
+        eid = entry_of[id(b)]
+        if max_per_entry is not None and counts.get(eid, 0) >= max_per_entry:
+            continue
+        kept.add(id(b))
+        counts[eid] = counts.get(eid, 0) + 1
+        taken += 1
+
+    return kept
+
+
 def select_within_entries(
     entries: list,
     requirements: JobRequirements,
     *,
     limit: int,
     semantic: dict[str, float] | None = None,
+    experience_share: float | None = None,
+    max_per_entry: int | None = None,
 ) -> list[Bullet]:
     """Choose up to `limit` bullets from already-selected entries.
 
@@ -188,22 +290,34 @@ def select_within_entries(
     when it is smaller.
 
     Remaining budget goes to the highest-scoring bullets across all the entries pooled
-    together, so a rich entry can take more lines than a thin one.
+    together, so a rich entry can take more lines than a thin one. `experience_share`
+    overrides this: when set, experience and projects are budgeted separately via
+    `_section_budgets` and each section's remainder is filled independently, so a
+    keyword-dense project can no longer out-rank every job in one flat pool.
+
+    `max_per_entry` caps how many bullets any single entry — job or project — may take,
+    applied within whichever pool (flat or per-section) is in play.
+
+    Both default to `None`, reproducing the original flat-pool selection exactly.
     """
-    floors: list[Bullet] = []
-    for entry in entries:
-        if entry.bullets:
-            floors.append(
-                max(entry.bullets, key=lambda b: score(b, requirements, semantic=semantic))
-            )
+    if experience_share is None:
+        kept = _take_ranked(
+            entries, requirements, limit=limit, semantic=semantic, max_per_entry=max_per_entry
+        )
+        return [b for e in entries for b in e.bullets if id(b) in kept]
 
-    kept = {id(b) for b in floors}
-    pool = [b for e in entries for b in e.bullets if id(b) not in kept]
-    kept |= {
-        id(b)
-        for b in select(pool, requirements, limit=limit - len(floors), semantic=semantic)
-    }
-
+    experience = [e for e in entries if not isinstance(e, Project)]
+    projects = [e for e in entries if isinstance(e, Project)]
+    exp_limit, proj_limit = _section_budgets(
+        experience, projects, requirements, limit=limit, semantic=semantic,
+        experience_share=experience_share, max_per_entry=max_per_entry,
+    )
+    kept = _take_ranked(
+        experience, requirements, limit=exp_limit, semantic=semantic, max_per_entry=max_per_entry
+    )
+    kept |= _take_ranked(
+        projects, requirements, limit=proj_limit, semantic=semantic, max_per_entry=max_per_entry
+    )
     return [b for e in entries for b in e.bullets if id(b) in kept]
 
 
@@ -688,6 +802,18 @@ teamwork. "Applied problem-solving skills to a 45% accuracy bottleneck" and "Uti
 verbal communication skills to facilitate three weekly labs" both waste their strongest \
 words on a claim the rest of the sentence already proves — write "Diagnosed a 45% accuracy \
 bottleneck" and "Facilitated three weekly labs" instead.
+- When the bullet already shows the candidate driving, owning, or leading something — not \
+just contributing to it — say so with the verb that names it plainly ("led", "drove", \
+"spearheaded", "owned") rather than a flatter one ("worked on", "helped with", \
+"contributed to"). Never upgrade the scope beyond what the bullet states: do not imply \
+managing people, owning a decision, or leading a team the source never mentions. If \
+nothing in the bullet supports it, the plain accurate verb wins — an honest "built" beats \
+a stretched "led".
+- Foreground the accomplishment. When the bullet already states a result, scale, or \
+comparison, lead with what changed rather than burying it after the mechanism that \
+produced it — a reader weighs outcome over process. This is about ordering and emphasis, \
+not new content: never manufacture a result, number, or comparison that is not already \
+there.
 - Write like a person. The bullet should read as a plain description of what was done, \
 not as a checklist of the posting's vocabulary stitched into a sentence.
 - Length is a cliff, not a limit. Each bullet gives a `target` range and a hard `max`. \

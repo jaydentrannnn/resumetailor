@@ -1031,3 +1031,80 @@ to `minimax-m3:cloud` unless `OLLAMA_MODEL` or a per-run model override is set.
   left alone deliberately: `ARCHITECTURE.md` is already documented stale in `CLAUDE.md`,
   and `PLAN.md` is a curated record of *why* 15/25/35 was chosen originally, not a live
   constants table — rewriting it here would misattribute this change to that history.
+
+## 2026-08-03 - `--experience-bullet-share` / `--max-bullets-per-entry`: bullet allocation was never section-aware
+
+- **What triggered this:** the user reported tailored resumes routinely giving projects
+  more bullets than experience and asked for a weighting knob between the two, plus
+  separately floated a per-entry bullet cap as another way to get the same control. Asked
+  to evaluate the pipeline first rather than just bolt something on.
+- **Root cause, found by tracing the selection code rather than assumed:** entry
+  *selection* was already section-separated — `fit.choose_entries` calls
+  `rewrite.select_entries` once for experience and once for projects, each against its own
+  `MAX_*_ENTRIES` cap, specifically so a stack of projects can't evict a job. But
+  `choose_entries` then returns `[*experience, *projects]`, and bullet *allocation* inside
+  those chosen entries was never section-aware: `select_within_entries` gives every entry
+  a floor of one bullet, then pools **every remaining bullet from every entry** into one
+  flat ranked competition for the shared discretionary budget. `Bullet` carries no
+  back-pointer to its parent entry, so that function could not have told an experience
+  bullet from a project bullet even if it wanted to. Project bullets are typically
+  keyword-dense (tech tags matching JD must-haves), so they systematically won the flat
+  pool at experience's expense — not a tuning artifact, a structural gap.
+- **Both knobs shipped, confirmed via a direct question rather than picking one:** an
+  overall `EXPERIENCE_BULLET_SHARE` (fraction of experience vs. projects) and a
+  `MAX_BULLETS_PER_ENTRY` ceiling, both `None` by default so an unconfigured run stays
+  byte-identical to before — the same convention `INITIAL_BULLET_SHARE = 1.0` and
+  `SEMANTIC_WEIGHT = 0.0` already set.
+- **The share is of the *overall* limit, not just the remainder past floors** — chosen as
+  the more intuitive read of "70% experience" a user would actually ask for, over a
+  reading scoped to only the leftover discretionary budget.
+- **Section discrimination is `isinstance(e, Project)`** in `rewrite.py` — safe because
+  `Experience` and `Project` are independent subclasses of `_Strict` (`data.py`) with no
+  inheritance between them, so no flat-list caller needed to change shape.
+- **A capped entry's forfeited slot is not lost.** `rewrite._take_ranked`'s single ranked
+  walk just skips a saturated entry and keeps going to the next-best bullet elsewhere, so
+  spillover falls out of the existing loop rather than needing separate handling.
+- **Two correctness bugs caught during implementation, not anticipated in the initial
+  design:**
+  1. `rewrite._section_budgets` originally sized each section's cap from its *raw* bullet
+     count. Once `max_bullets_per_entry` is also set, a section can be achievably smaller
+     than its raw pool, so budgeting against the raw count could hand a section more than
+     `_take_ranked` can actually fill — silently under-selecting instead of spilling the
+     surplus to the other section. Fixed by sizing both caps via
+     `rewrite.selectable_total(section, max_per_entry=...)` instead of `sum(len(...))`,
+     so the existing two-pass spillover logic operates on achievable capacity.
+  2. The fit loop's grow condition compared `limit < total_bullets` (the raw pool size).
+     With a per-entry cap, the achievable selection saturates below that, so unpatched the
+     loop would keep raising `limit` while the selection stayed unchanged, burning up to
+     `MAX_GROW_ATTEMPTS` (4) full rewrite-call-plus-render rounds for zero effect. Fixed by
+     adding `rewrite.selectable_total(entries, max_per_entry=...)` and using that
+     `growth_ceiling` — not `total_bullets` — in both the `can_grow` check and the
+     deficit-based `limit` update. `FitResult.bullets_total` keeps reporting the raw pool
+     size unchanged; it is a display value, not a loop-control one.
+- **Plumbing followed the `--initial-bullet-share` / `--fill-target` chain exactly:**
+  `config.py` constants (both `None`) → `fit.fit()` new kwargs, resolved locally via
+  `param if param is not None else config.CONST` (never mutating the module constant) →
+  `tailor.py` CLI flags with hand-rolled range checks (argparse has no range type) →
+  `JobSettings` + `ConfigResponse` (`web/schemas.py`) → `web/app.py`'s
+  `_config_response()` → `web/jobs.py`'s `fit.fit()` call → `frontend/src/api.ts` types →
+  `DEFAULT_SETTINGS` (`null` = server default) → `RunPage.tsx`'s Advanced fieldset: a
+  toggle that sets the share to `0.65` on / `null` off plus a reveal-on-toggle percentage
+  slider, and a plain `<select>` for the per-entry cap (No limit / 2-6). No touch point
+  needed in `WorkspaceSettings`/`SettingsResponse` — both wrap `JobSettings` whole.
+- **Impact / tests added:** `tests/test_rewrite.py` gained an explicit equivalence test
+  pinning that `experience_share=None, max_per_entry=None` reproduces the original
+  floors+select algorithm bullet-for-bullet (not just matching size), plus tests for
+  section-share reallocation, floor preservation at the `0.0`/`1.0` extremes, per-entry
+  capping with spillover, cross-section spillover when one side can't fill its budget, and
+  `selectable_total` itself. `tests/test_fit.py` gained a regression test proving growth
+  stops at `growth_ceiling` (`iterations == 1`) instead of burning `MAX_GROW_ATTEMPTS` when
+  a per-entry cap saturates the selection immediately — this is the bug fix in (2) above,
+  pinned so it can't regress silently. `tests/test_tailor_cli.py`'s two `capture()` stubs
+  that spell out `fit()`'s full keyword signature needed both new kwargs added (else a
+  `TypeError`), plus two new flag-plumbing tests mirroring
+  `test_fill_target_flag_reaches_the_fit_loop`. `tests/test_web.py`'s `fake_fit` stub and
+  `seen_fit` assertion gained both keys, plus a settings round-trip test. Full suite after
+  this change: the same 16 pre-existing failures as a clean `main` checkout, verified
+  byte-identical by diffing the failing-test list before/after — none of them are
+  connected to this work. Frontend `npm run lint` (no new warnings), `npm run test`
+  (10/10), and `npm run build` all clean.
