@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from datetime import datetime, timezone
 from pathlib import Path
 
-from resume_tailor import config
+from resume_tailor import config, libraries
 from resume_tailor.labels import label_taken, normalize_label
 
 #: Serialises registry mutations (create/rename/delete/activate) against each other.
@@ -213,6 +213,16 @@ def _write_default_settings(path: Path) -> None:
     )
 
 
+def _write_default_libraries(path: Path) -> None:
+    """A workspace's starting library selection: only the built-in `core-tech` pack
+    enabled, nothing overridden. Mirrors `_write_default_settings`'s shape."""
+    path.parent.mkdir(parents=True, exist_ok=True)
+    path.write_text(
+        libraries.WorkspaceLibraryState().model_dump_json(indent=2) + "\n",
+        encoding="utf-8",
+    )
+
+
 #: Smallest structurally valid `MasterResume`: `contact` is the only required field, and
 #: within it only `name` and `email` lack defaults. Everything else is an empty list the
 #: user fills in from the Master resume tab.
@@ -251,9 +261,10 @@ def ensure_master_resume(workspace_id: str | None = None) -> bool:
 def _copy_workspace_files(source: dict[str, Path], dest: dict[str, Path]) -> None:
     """Duplicate one workspace's content into another's (already-created) directories.
 
-    Copies the master resume, settings, the live template trio, the template library,
-    template backups, and calibration. LLM caches (`CACHE_DIR`) are deliberately not
-    copied — they are regenerable, and a cache miss costs at most one extra call.
+    Copies the master resume, settings, the library selection, the live template trio,
+    the template library, template backups, and calibration. LLM caches (`CACHE_DIR`)
+    are deliberately not copied — they are regenerable, and a cache miss costs at most
+    one extra call.
     """
     if source["MASTER_RESUME_PATH"].exists():
         shutil.copy2(source["MASTER_RESUME_PATH"], dest["MASTER_RESUME_PATH"])
@@ -261,6 +272,10 @@ def _copy_workspace_files(source: dict[str, Path], dest: dict[str, Path]) -> Non
         shutil.copy2(source["SETTINGS_PATH"], dest["SETTINGS_PATH"])
     else:
         _write_default_settings(dest["SETTINGS_PATH"])
+    if source["LIBRARIES_PATH"].exists():
+        shutil.copy2(source["LIBRARIES_PATH"], dest["LIBRARIES_PATH"])
+    else:
+        _write_default_libraries(dest["LIBRARIES_PATH"])
     for key in ("BASELINE_TEMPLATE_PATH", "DEFAULT_TEMPLATE_PATH", "TEMPLATE_PROFILE_PATH"):
         if source[key].exists():
             shutil.copy2(source[key], dest[key])
@@ -300,6 +315,7 @@ def create(label: str, *, copy_from: str | None = None) -> WorkspaceEntry:
             _copy_workspace_files(config.workspace_paths(copy_from), paths)
         else:
             _write_default_settings(paths["SETTINGS_PATH"])
+            _write_default_libraries(paths["LIBRARIES_PATH"])
         # Also covers a duplicate whose *source* had no master resume.
         ensure_master_resume(workspace_id)
 
@@ -381,6 +397,9 @@ def activate(workspace_id: str) -> WorkspaceEntry:
         # Self-heal profiles created before `create` seeded a starter resume — without
         # this they stay broken (editor 404, template install fails) on every switch.
         ensure_master_resume()
+        # Rebind config.TAG_ALIASES / VERB_FAMILIES to this workspace's own pack
+        # selection — same spot config.set_active_workspace calls reload_calibration().
+        libraries.reload()
         return _entry_from_meta(entry, active_id=workspace_id)
 
 
@@ -519,6 +538,7 @@ def _migrate_legacy(default_id: str = _DEFAULT_ID) -> BootstrapResult:
             log_lines.append(f"copied {legacy_backups}")
 
         _write_default_settings(paths["SETTINGS_PATH"])
+        _write_default_libraries(paths["LIBRARIES_PATH"])
 
         meta = {
             "id": default_id,
@@ -556,6 +576,7 @@ def bootstrap(*, workspace_id: str | None = None, migrate: bool = True) -> Boots
         resolve(workspace_id)  # raises WorkspaceError if unknown
         config.set_active_workspace(workspace_id, create_dirs=True)
         ensure_master_resume()
+        libraries.reload()
         return BootstrapResult(active_id=workspace_id, migrated=False)
 
     index = read_index()
@@ -565,6 +586,7 @@ def bootstrap(*, workspace_id: str | None = None, migrate: bool = True) -> Boots
     if active_id and any(e["id"] == active_id for e in entries):
         config.set_active_workspace(active_id, create_dirs=True)
         ensure_master_resume()
+        libraries.reload()
         return BootstrapResult(active_id=active_id, migrated=False)
 
     if entries:
@@ -573,12 +595,14 @@ def bootstrap(*, workspace_id: str | None = None, migrate: bool = True) -> Boots
         write_index(index)
         config.set_active_workspace(healed_id, create_dirs=True)
         ensure_master_resume()
+        libraries.reload()
         return BootstrapResult(active_id=healed_id, migrated=False)
 
     if migrate:
         result = _migrate_legacy()
         config.set_active_workspace(result.active_id, create_dirs=True)
         ensure_master_resume()
+        libraries.reload()
         return result
 
     entry = create(_DEFAULT_LABEL)
@@ -587,4 +611,5 @@ def bootstrap(*, workspace_id: str | None = None, migrate: bool = True) -> Boots
     write_index(index)
     config.set_active_workspace(entry.id, create_dirs=True)
     ensure_master_resume()
+    libraries.reload()
     return BootstrapResult(active_id=entry.id, migrated=False)

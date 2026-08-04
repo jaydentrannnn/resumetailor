@@ -2,8 +2,10 @@ import { BrowserRouter, NavLink, Route, Routes } from "react-router-dom";
 import { ProfileSwitcher } from "./components/workspace/ProfileSwitcher";
 import { EditorPage } from "./pages/EditorPage";
 import { RunPage } from "./pages/RunPage";
+import { SettingsPage } from "./pages/SettingsPage";
 import { TemplatePage } from "./pages/TemplatePage";
 import { EditorProvider } from "./state/editorState";
+import { LibraryProvider } from "./state/libraryState";
 import { RunProvider } from "./state/runState";
 import { TemplateProvider } from "./state/templateState";
 import { WorkspaceProvider, useWorkspaceState } from "./state/workspaceState";
@@ -59,7 +61,9 @@ function WorkspaceScope() {
     <RunProvider key={activeId}>
       <EditorProvider key={activeId}>
         <TemplateProvider key={activeId}>
-          <Shell />
+          <LibraryProvider key={activeId}>
+            <Shell />
+          </LibraryProvider>
         </TemplateProvider>
       </EditorProvider>
     </RunProvider>
@@ -98,6 +102,9 @@ function Shell() {
               <NavLink to="/template" className={navLinkClassName}>
                 Template
               </NavLink>
+              <NavLink to="/settings" className={navLinkClassName}>
+                Settings
+              </NavLink>
             </nav>
           </div>
         </div>
@@ -107,6 +114,7 @@ function Shell() {
           <Route path="/" element={<RunPage />} />
           <Route path="/editor" element={<EditorPage />} />
           <Route path="/template" element={<TemplatePage />} />
+          <Route path="/settings" element={<SettingsPage />} />
         </Routes>
       </main>
     </div>

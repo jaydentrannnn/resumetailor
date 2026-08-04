@@ -63,6 +63,12 @@ class JobSettings(BaseModel):
     #: has one field to read/write, and an old settings.json without this key just gets
     #: `IncludeOptions()` defaults.
     include: IncludeOptions = Field(default_factory=IncludeOptions)
+    #: Opt-in: after a successful run, opportunistically draft vocabulary-library
+    #: proposals from this run's near-miss keyword gaps and unclassified opening verbs
+    #: (`propose.py`). Defaults off — an always-on extra call would silently add a call
+    #: to every run's budget for a feature most runs have no use for, and would break
+    #: every test whose fake LLM client is queued with a fixed number of replies.
+    suggest_vocabulary: bool = False
 
 
 class WorkspaceSettings(BaseModel):
@@ -468,3 +474,159 @@ class WorkspaceActivateResponse(BaseModel):
     config: ConfigResponse
     settings: JobSettings
     template: TemplateInfoResponse
+
+
+class LibraryOverridesOut(BaseModel):
+    """A workspace's own additions and removals, layered on top of its enabled packs.
+    Wire shape of `libraries.LibraryOverrides`."""
+
+    tag_aliases: dict[str, str] = Field(default_factory=dict)
+    tag_aliases_removed: list[str] = Field(default_factory=list)
+    #: verb -> family. One family per overridden verb, not a pack's family -> [verbs].
+    verb_families: dict[str, str] = Field(default_factory=dict)
+    verb_families_removed: list[str] = Field(default_factory=list)
+
+
+class LibraryPackSummaryOut(BaseModel):
+    """One pack's summary row for the Settings tab's pack list — no alias/verb bodies,
+    since a workspace may have several packs enabled and the list view doesn't need
+    every one's full contents."""
+
+    id: str
+    label: str
+    description: str = ""
+    builtin: bool = False
+    tag_alias_count: int = 0
+    verb_count: int = 0
+    created_at: str = ""
+    updated_at: str = ""
+
+
+class LibraryPackOut(BaseModel):
+    """One pack's full contents, for `GET /api/libraries/packs/{id}` (the edit form)."""
+
+    id: str
+    label: str
+    description: str = ""
+    builtin: bool = False
+    tag_aliases: dict[str, str] = Field(default_factory=dict)
+    verb_families: dict[str, list[str]] = Field(default_factory=dict)
+    created_at: str = ""
+    updated_at: str = ""
+
+
+class LibraryPackWriteRequest(BaseModel):
+    """Body for `POST /api/libraries/packs` and `PUT /api/libraries/packs/{id}`.
+
+    `label` is required for both; create derives a fresh id from it, update takes the
+    id from the path and uses this field only to change the label itself.
+    """
+
+    label: str
+    description: str = ""
+    tag_aliases: dict[str, str] = Field(default_factory=dict)
+    verb_families: dict[str, list[str]] = Field(default_factory=dict)
+    #: Allow overwriting a target another pack already claims — see
+    #: `libraries.validate_pack`. Without this, a genuine conflict is a 400.
+    force: bool = False
+
+
+class LibraryEffectiveOut(BaseModel):
+    """Summary of the composed table. Per-pack contents already sit in `packs`, so this
+    is counts and a fingerprint, not the tables themselves."""
+
+    tag_alias_count: int = 0
+    verb_count: int = 0
+    fingerprint: str = ""
+
+
+ProposalKindOut = Literal["tag_alias", "verb_family"]
+
+
+class LibraryProposalOut(BaseModel):
+    """One LLM-drafted addition awaiting approval."""
+
+    id: str
+    kind: ProposalKindOut
+    alias: str | None = None
+    canonical: str | None = None
+    verb: str | None = None
+    family: str | None = None
+    rationale: str = ""
+    source: Literal["run", "manual"] = "manual"
+    created_at: str = ""
+
+
+class LibraryStateResponse(BaseModel):
+    """Response for `GET /api/libraries` and every mutating library route, so the
+    Settings tab can always re-render from what a mutation returns rather than issuing
+    a second fetch."""
+
+    packs: list[LibraryPackSummaryOut] = Field(default_factory=list)
+    enabled_packs: list[str] = Field(default_factory=list)
+    overrides: LibraryOverridesOut = Field(default_factory=LibraryOverridesOut)
+    effective: LibraryEffectiveOut = Field(default_factory=LibraryEffectiveOut)
+    #: Human-readable notes from composition: a missing pack, a cross-pack verb
+    #: collision, or a dropped alias chain. Never errors — see `libraries.py`.
+    diagnostics: list[str] = Field(default_factory=list)
+    proposals: list[LibraryProposalOut] = Field(default_factory=list)
+    #: Set only by `POST /api/libraries/proposals` when generation partially failed
+    #: (an `LLMError`) — that route still returns 200 with whatever succeeded rather
+    #: than failing the whole request over an advisory feature.
+    warning: str | None = None
+
+
+class LibrarySelectionRequest(BaseModel):
+    """Body for `PUT /api/libraries/selection`."""
+
+    enabled_packs: list[str]
+    overrides: LibraryOverridesOut = Field(default_factory=LibraryOverridesOut)
+
+
+class LibraryAliasImpactOut(BaseModel):
+    """What approving one alias would rewrite in the current master resume, if
+    anything. Empty `affected_tags` means the alias is purely additive."""
+
+    alias: str
+    canonical: str
+    affected_tags: list[str] = Field(default_factory=list)
+    #: (entry label, bullet id) pairs carrying the affected tag.
+    affected_bullets: list[tuple[str, str]] = Field(default_factory=list)
+
+
+class LibraryImpactRequest(BaseModel):
+    """Body for `POST /api/libraries/impact`."""
+
+    tag_aliases: dict[str, str]
+
+
+class LibraryImpactResponse(BaseModel):
+    impacts: list[LibraryAliasImpactOut] = Field(default_factory=list)
+
+
+class ProposalGenerateRequest(BaseModel):
+    """Body for `POST /api/libraries/proposals`. `jd_text` is optional context — the
+    request's own gaps (near-miss tags, unclassified opening verbs) drive most of the
+    prompt regardless."""
+
+    jd_text: str = ""
+
+
+class ProposalApproveRequest(BaseModel):
+    """Body for `POST /api/libraries/proposals/approve`."""
+
+    proposal_ids: list[str]
+    #: An existing user-authored pack to fold the approved items into. Never a built-in
+    #: id — `libraries.write_pack` refuses those.
+    target_pack_id: str
+    #: Required (re-POST with this set) once `libraries.alias_impact` reports that an
+    #: approved alias would rewrite an existing bullet tag on the next master-resume
+    #: save — see `approve_library_proposals`'s 409 path.
+    acknowledge_rewrites: bool = False
+
+
+class ProposalRejectRequest(BaseModel):
+    """Body for `POST /api/libraries/proposals/reject`. Rejected ids move to the
+    workspace's `rejected` list so they are never re-proposed."""
+
+    proposal_ids: list[str]
