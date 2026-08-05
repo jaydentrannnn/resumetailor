@@ -15,6 +15,7 @@ in the same space as `paragraph.text`, including hyperlink text.
 
 from __future__ import annotations
 
+import re
 from dataclasses import dataclass
 
 from docx.oxml.ns import qn
@@ -22,6 +23,22 @@ from docx.text.paragraph import Paragraph
 
 _R = qn("w:r")
 _HYPERLINK = qn("w:hyperlink")
+
+#: Blank, or a decorative rule made only of underscores/dashes/dots/middots.
+_CHROME_RE = re.compile(r"[\s_\-–—=·.]+")
+
+
+def is_chrome_text(text: str) -> bool:
+    """True for a paragraph carrying no content: blank, or a decorative rule line.
+
+    Lives here rather than in `template_analyze` because `template_build` needs the
+    identical judgement — the analyzer records which chrome paragraphs to reproduce as
+    spacers, and the builder clones exactly those. Two copies of this rule would drift,
+    and the failure mode is silent (a rule paragraph read as an entry header, or a
+    recorded spacer donor the builder then refuses to clone).
+    """
+    stripped = text.strip()
+    return not stripped or bool(_CHROME_RE.fullmatch(stripped))
 
 
 @dataclass(frozen=True)

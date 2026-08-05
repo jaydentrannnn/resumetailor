@@ -11,6 +11,10 @@ type EntryControlsProps = {
   onRemove: (index: number) => void;
   /** Optional short label for the confirm dialog, e.g. company name. */
   label?: string;
+  /** When false, the move buttons are omitted entirely — used where reordering lives
+   * elsewhere (e.g. sections, whose order is a per-run choice on the Tailor tab, not a
+   * master-resume edit). Defaults to true. */
+  canMove?: boolean;
 };
 
 /**
@@ -24,6 +28,7 @@ export function EntryControls({
   onMove,
   onRemove,
   label,
+  canMove = true,
 }: EntryControlsProps) {
   function handleRemove() {
     if (hasContent) {
@@ -35,24 +40,28 @@ export function EntryControls({
 
   return (
     <div className="flex shrink-0 items-center gap-1">
-      <button
-        type="button"
-        title="Move up"
-        disabled={index === 0}
-        onClick={() => onMove(index, index - 1)}
-        className="rounded border border-line px-2 py-0.5 text-xs disabled:opacity-30"
-      >
-        ↑
-      </button>
-      <button
-        type="button"
-        title="Move down"
-        disabled={index >= total - 1}
-        onClick={() => onMove(index, index + 1)}
-        className="rounded border border-line px-2 py-0.5 text-xs disabled:opacity-30"
-      >
-        ↓
-      </button>
+      {canMove && (
+        <>
+          <button
+            type="button"
+            title="Move up"
+            disabled={index === 0}
+            onClick={() => onMove(index, index - 1)}
+            className="rounded border border-line px-2 py-0.5 text-xs disabled:opacity-30"
+          >
+            ↑
+          </button>
+          <button
+            type="button"
+            title="Move down"
+            disabled={index >= total - 1}
+            onClick={() => onMove(index, index + 1)}
+            className="rounded border border-line px-2 py-0.5 text-xs disabled:opacity-30"
+          >
+            ↓
+          </button>
+        </>
+      )}
       <button
         type="button"
         title="Remove"

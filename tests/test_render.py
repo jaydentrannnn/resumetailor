@@ -393,6 +393,21 @@ def test_education_renders_coursework_from_master(rendered):
     assert resume.education[0].coursework[0] in body
 
 
+def _with_education(resume, entries):
+    """Replace the entries of every education-kind section with `entries`.
+
+    `resume.education` is a read-only flattened view over `resume.sections` (see
+    `data.MasterResume`), so `model_copy(update={"education": ...})` no longer has any
+    effect — the update lands on the instance `__dict__`, which the property never reads.
+    Mutating through `sections` is the real write path.
+    """
+    resume = resume.model_copy(deep=True)
+    for section in resume.sections:
+        if section.kind == "education":
+            section.entries = list(entries)
+    return resume
+
+
 def test_gpa_appended_only_when_show_gpa(tmp_path):
     """GPA suffix appears on the degree line only when show_gpa is on and gpa is set."""
     if not config.DEFAULT_TEMPLATE_PATH.exists():
@@ -400,7 +415,7 @@ def test_gpa_appended_only_when_show_gpa(tmp_path):
     resume = data.load()
     assert resume.education
     edu = resume.education[0].model_copy(update={"gpa": "3.85", "show_gpa": False})
-    resume = resume.model_copy(update={"education": [edu]})
+    resume = _with_education(resume, [edu])
     off = tmp_path / "gpa_off.docx"
     render.render(resume, out=off)
     with zipfile.ZipFile(off) as zf:
@@ -408,7 +423,7 @@ def test_gpa_appended_only_when_show_gpa(tmp_path):
     assert "GPA: 3.85" not in xml
 
     edu = edu.model_copy(update={"show_gpa": True})
-    resume = resume.model_copy(update={"education": [edu]})
+    resume = _with_education(resume, [edu])
     on = tmp_path / "gpa_on.docx"
     render.render(resume, out=on)
     with zipfile.ZipFile(on) as zf:

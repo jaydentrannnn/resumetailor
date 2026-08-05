@@ -16,24 +16,35 @@ from docx.oxml.ns import qn
 from docx.text.paragraph import Paragraph
 from pydantic import BaseModel, ConfigDict, Field
 
-from . import docx_text
+from . import config, docx_text
 from .template_profile import (
     CharSpan,
     ContactField,
     ContactMapping,
+    DetectedSection,
     EducationMapping,
     EnabledSections,
     ExperienceMapping,
     HeaderFieldMapping,
+    HeadingPrototype,
+    ListMapping,
     NormalizationFlags,
     OptionalSpan,
     ProjectsMapping,
     SkillsMapping,
+    SpacingProfile,
     TemplateProfile,
 )
 
 #: Canonical section keys the pipeline understands.
 SECTION_KEYS = ("education", "experience", "projects", "skills")
+
+#: `SectionCandidate.key`/`by_kind` use the legacy plural `"projects"` (matching
+#: `SECTION_KEYS` and `EnabledSections.projects`); `template_profile.GenericSectionKind`
+#: uses singular `"project"` (matching `data.Section`'s discriminator). Every other key is
+#: spelled the same in both places. Without this remap, `DetectedSection(kind="projects")`
+#: raises a `ValidationError` the first time a resume has two projects-shaped headings.
+_TO_GENERIC_KIND: dict[str, str] = {"projects": "project"}
 
 #: Heading aliases → canonical key. Exact match on stripped uppercase text first;
 #: then substring heuristics below.
@@ -222,16 +233,153 @@ def _classify_heading(text: str) -> tuple[str | None, float, str]:
     return None, 0.0, ""
 
 
+def _is_chrome(text: str) -> bool:
+    """Blank, or a decorative rule/underscore line — never an entry header or content.
+
+    Without this, a horizontal-rule paragraph (`"______________"`) reads as an entry
+    header to `_split_entries` (non-blank, non-bullet), and whatever field gets mapped to
+    "the first header in the section" lands on the rule instead of the real entry below
+    it — a live bug in an installed profile, traced back to exactly this.
+
+    Delegates to `docx_text.is_chrome_text` so `template_build` (which clones exactly the
+    chrome paragraphs recorded here as spacer donors) cannot drift from this judgement."""
+    return docx_text.is_chrome_text(text)
+
+
+def _looks_like_heading(text: str) -> bool:
+    """Structural heading candidate: short, no tab, no colon, no date, mostly uppercase.
+
+    Catches a section title `_classify_heading`'s alias table has no entry for (e.g.
+    "OTHER ACTIVITIES", "CERTIFICATIONS") — a user can name a section anything, so no
+    fixed alias list can be complete. Deliberately permissive; the caller still requires
+    the paragraph to be followed by entry- or bullet-shaped content before treating it as
+    a real heading, so an ALL-CAPS one-line achievement is not mistaken for one.
+    """
+    stripped = text.strip()
+    if not stripped or len(stripped) > 48 or "\t" in text or ":" in stripped:
+        return False
+    if _DATE_RE.search(stripped):
+        return False
+    letters = [c for c in stripped if c.isalpha()]
+    if not letters:
+        return False
+    return sum(1 for c in letters if c.isupper()) / len(letters) >= 0.8
+
+
 def _split_entries(paras: list[_Para]) -> list[list[_Para]]:
     """Group a section body into entries (non-bullet start + following bullets/title)."""
     entries: list[list[_Para]] = []
     for p in paras:
+        if _is_chrome(p.text):
+            continue
         starts = (not p.is_bullet) and bool(p.text.strip())
         if starts and (not entries or any(x.is_bullet for x in entries[-1])):
             entries.append([p])
         elif entries:
             entries[-1].append(p)
     return entries
+
+
+def _representative_run(runs: list[list[int]], applicable: int) -> list[int]:
+    """Pick the run to reproduce from every run observed at one slot.
+
+    Two filters, in order. A slot must have been observed in a **majority** of the places
+    it could apply, so one stray blank does not add a spacer everywhere the mapping is
+    later applied. Among the surviving runs the **modal length** wins, so a section that
+    happens to carry three blank paragraphs where every other section carries one does
+    not inflate the gap document-wide; ties go to the shorter run, since over-spacing
+    costs page height and this only ever needs to look consistent.
+    """
+    if not runs or not applicable or len(runs) <= applicable / 2:
+        return []
+    lengths = [len(r) for r in runs]
+    best = min(set(lengths), key=lambda n: (-lengths.count(n), n))
+    return next(r for r in runs if len(r) == best)
+
+
+def _chrome_runs(body: list[_Para]) -> list[tuple[_Para | None, list[_Para], _Para | None]]:
+    """Split `body` into maximal runs of chrome paragraphs, each with the non-chrome
+    paragraph immediately before and after it (`None` at a boundary of the list)."""
+    runs: list[tuple[_Para | None, list[_Para], _Para | None]] = []
+    i = 0
+    while i < len(body):
+        if not _is_chrome(body[i].text):
+            i += 1
+            continue
+        start = i
+        while i < len(body) and _is_chrome(body[i].text):
+            i += 1
+        before = body[start - 1] if start > 0 else None
+        after = body[i] if i < len(body) else None
+        runs.append((before, body[start:i], after))
+    return runs
+
+
+def _detect_spacing(
+    paras: list[_Para], section_candidates: list[SectionCandidate]
+) -> SpacingProfile:
+    """Detect the chrome-paragraph runs a document reproduces consistently around
+    sections: before each heading, right after each heading, and between entries.
+
+    Runs, not single paragraphs, because real exports put several chrome paragraphs at
+    one slot — a horizontal rule plus a blank under every heading is the common case, and
+    two consecutive blanks between entries is not rare. Detecting only a single blank
+    both dropped the rule (it is not blank, so it matched nothing and was deleted with
+    the rest of the body) and missed the two-blank gap entirely (each blank's neighbour
+    was the other blank rather than the bullet/header pair the boundary test looked for).
+    """
+    if not section_candidates:
+        return SpacingProfile()
+
+    before_runs: list[list[int]] = []
+    after_runs: list[list[int]] = []
+    between_runs: list[list[int]] = []
+    between_applicable = 0
+
+    for sec in section_candidates:
+        # Walk back from the heading while the paragraph above is chrome.
+        run: list[int] = []
+        pid = sec.heading_paragraph_id - 1
+        while pid >= 0 and _is_chrome(paras[pid].text):
+            run.insert(0, pid)
+            pid -= 1
+        if run:
+            before_runs.append(run)
+
+        body = [p for p in paras if sec.body_start <= p.id < sec.body_end]
+        runs = _chrome_runs(body)
+
+        # The after-heading run is the one that opens the body (nothing non-chrome
+        # before it inside this section).
+        for before, chrome, _after in runs:
+            if before is None:
+                after_runs.append([p.id for p in chrome])
+            break
+
+        if sec.key in ("experience", "projects", "education") and sec.entry_count >= 2:
+            between_applicable += 1
+            for before, chrome, after in runs:
+                # An entry boundary: the run closes one entry's bullets and opens the
+                # next entry's header. A run with no `after` is the trailing gap before
+                # the *next section's* heading (counted as `before_heading` instead), and
+                # a run whose predecessor is not a bullet sits inside an entry (between a
+                # company line and its title line, say), not between two entries.
+                if (
+                    before is not None
+                    and before.is_bullet
+                    and after is not None
+                    and not after.is_bullet
+                    and after.text.strip()
+                ):
+                    between_runs.append([p.id for p in chrome])
+                    break
+
+    n = len(section_candidates)
+    return SpacingProfile(
+        before_heading=_representative_run(before_runs, n),
+        after_heading=_representative_run(after_runs, n),
+        between_entries=_representative_run(between_runs, between_applicable),
+    )
 
 
 def _contact_separator(text: str) -> str:
@@ -555,48 +703,82 @@ def _analyze_document(doc, digest: str) -> AnalyzeResult:
         for p in paras
     ]
 
-    # Detect section headings (first match wins per key).
-    found: dict[str, SectionCandidate] = {}
+    # Detect every section heading in the document — alias-matched or structurally
+    # inferred — without deduplicating by kind. A resume may have any number of
+    # experience-shaped sections (WORK EXPERIENCE, LEADERSHIP EXPERIENCE, OTHER
+    # ACTIVITIES, …); each becomes its own candidate, and the code below pools same-kind
+    # candidates together when picking that kind's prototype entry.
+    raw_headings: list[SectionCandidate] = []
     for p in paras:
-        if p.is_bullet or not p.text.strip():
+        if p.is_bullet or not p.text.strip() or _is_chrome(p.text):
             continue
         key, conf, alias = _classify_heading(p.text)
+        # `p.id >= 2` keeps the structural fallback off the name/contact lines — both are
+        # short, and a name in particular is very often all-caps or Title Case, which
+        # would otherwise misclassify paragraph 0 as a heading. Paragraphs 0/1 are name
+        # and contact everywhere else in this codebase (`build_name`/`build_contact`
+        # legacy mode, `content_paras[0]`/`[1]` below); an alias match is unaffected by
+        # this guard since a name or contact line never happens to equal a known alias.
+        if key is None and p.id >= 2 and _looks_like_heading(p.text):
+            # Structural fallback: no alias matched, but this looks like a heading. A
+            # user can name a section anything, so no fixed alias list can be complete.
+            # Default to "experience" — the common case for an unnamed
+            # achievements-with-employer section — unless it is immediately followed by
+            # bullets with no entry header, which is a plain list-shaped section
+            # (certifications, awards, …).
+            next_content = next(
+                (q for q in paras if q.id > p.id and not _is_chrome(q.text)), None
+            )
+            key = "list" if next_content is not None and next_content.is_bullet else "experience"
+            conf, alias = 0.4, "structural"
         if key is None:
             continue
-        if key in found and found[key].confidence >= conf:
-            continue
-        found[key] = SectionCandidate(
-            key=key,
-            heading_paragraph_id=p.id,
-            heading_text=p.text.strip(),
-            body_start=p.id + 1,
-            body_end=len(paras),
-            confidence=conf,
-            aliases_matched=alias,
+        raw_headings.append(
+            SectionCandidate(
+                key=key,
+                heading_paragraph_id=p.id,
+                heading_text=p.text.strip(),
+                body_start=p.id + 1,
+                body_end=len(paras),
+                confidence=conf,
+                aliases_matched=alias,
+            )
         )
+    raw_headings.sort(key=lambda s: s.heading_paragraph_id)
 
-    # Resolve body_end from next heading in document order.
-    ordered = sorted(found.values(), key=lambda s: s.heading_paragraph_id)
+    # Resolve body_end from the next heading OF ANY KIND, so an embedded same-kind
+    # sub-heading (e.g. "LEADERSHIP EXPERIENCE" after "WORK EXPERIENCE") is never
+    # mis-read as an entry header by `_split_entries` — each heading's slice already
+    # excludes every other heading paragraph by construction.
     section_candidates: list[SectionCandidate] = []
-    for i, sec in enumerate(ordered):
+    by_kind: dict[str, list[SectionCandidate]] = {}
+    for i, sec in enumerate(raw_headings):
         end = (
-            ordered[i + 1].heading_paragraph_id
-            if i + 1 < len(ordered)
+            raw_headings[i + 1].heading_paragraph_id
+            if i + 1 < len(raw_headings)
             else len(paras)
         )
         body = paras[sec.body_start : end]
         entries = _split_entries(body)
         bullets = sum(1 for x in body if x.is_bullet)
-        section_candidates.append(
-            sec.model_copy(
-                update={
-                    "body_end": end,
-                    "entry_count": len(entries),
-                    "bullet_count": bullets,
-                }
-            )
+        resolved = sec.model_copy(
+            update={"body_end": end, "entry_count": len(entries), "bullet_count": bullets}
         )
-    section_by_key = {s.key: s for s in section_candidates}
+        section_candidates.append(resolved)
+        by_kind.setdefault(resolved.key, []).append(resolved)
+
+    # One representative heading per kind — the first found, in document order — whose
+    # `heading_paragraph_id`/`heading_text` become that kind's mapping fields (what
+    # `template_build` anchors the kind's tagged prototype on). `combined_body` pools
+    # every same-kind heading's body for prototype/bullet selection, so the best entry
+    # can come from any of them, not only the first.
+    section_by_key: dict[str, SectionCandidate] = {
+        key: candidates[0] for key, candidates in by_kind.items()
+    }
+    combined_body: dict[str, list[_Para]] = {
+        key: [p for sec in candidates for p in paras[sec.body_start : sec.body_end]]
+        for key, candidates in by_kind.items()
+    }
 
     if "experience" not in section_by_key:
         issues.append(
@@ -649,16 +831,18 @@ def _analyze_document(doc, digest: str) -> AnalyzeResult:
         experience="experience" in section_by_key,
         projects="projects" in section_by_key,
         skills="skills" in section_by_key,
+        list_section="list" in section_by_key,
     )
 
     experience_mapping: ExperienceMapping | None = None
     education_mapping: EducationMapping | None = None
     projects_mapping: ProjectsMapping | None = None
     skills_mapping: SkillsMapping | None = None
+    list_mapping: ListMapping | None = None
 
     if "experience" in section_by_key:
         sec = section_by_key["experience"]
-        body = paras[sec.body_start : sec.body_end]
+        body = combined_body["experience"]
         entries = _split_entries(body)
         if not entries:
             issues.append(
@@ -745,7 +929,7 @@ def _analyze_document(doc, digest: str) -> AnalyzeResult:
 
     if "education" in section_by_key:
         sec = section_by_key["education"]
-        body = paras[sec.body_start : sec.body_end]
+        body = combined_body["education"]
         entries = _split_entries(body)
         if entries:
             proto = max(
@@ -759,6 +943,16 @@ def _analyze_document(doc, digest: str) -> AnalyzeResult:
             bullets = [x for x in proto[1:] if x.is_bullet] or [
                 x for x in body if x.is_bullet
             ]
+            plain_fallback = not bullets
+            if plain_fallback:
+                # No real Word-list bullets under this entry. `retarget_bullet` (called
+                # at build time) creates a paragraph's numbering properties rather than
+                # requiring them to already exist, so a plain degree line still produces
+                # a working template — it becomes a real bullet in the output. A warning,
+                # not a blocker: the visual result is a reasonable, working outcome.
+                bullets = [x for x in proto[1:] if x.text.strip()] or [
+                    x for x in body if x.text.strip()
+                ]
             if not bullets:
                 issues.append(
                     Issue(
@@ -768,6 +962,17 @@ def _analyze_document(doc, digest: str) -> AnalyzeResult:
                     )
                 )
             else:
+                if plain_fallback:
+                    issues.append(
+                        Issue(
+                            code="education_bullets_not_list",
+                            message=(
+                                "Education degree/detail line is not a Word list bullet; "
+                                "it will be converted to one in the tagged template."
+                            ),
+                            blocking=False,
+                        )
+                    )
                 degree = bullets[0]
                 detail = bullets[1] if len(bullets) > 1 else bullets[0]
                 education_mapping = EducationMapping(
@@ -790,7 +995,7 @@ def _analyze_document(doc, digest: str) -> AnalyzeResult:
 
     if "projects" in section_by_key:
         sec = section_by_key["projects"]
-        body = paras[sec.body_start : sec.body_end]
+        body = combined_body["projects"]
         entries = _split_entries(body)
         if entries:
             proto = min(entries, key=lambda e: len(e[0].runs))
@@ -858,7 +1063,7 @@ def _analyze_document(doc, digest: str) -> AnalyzeResult:
 
     if "skills" in section_by_key:
         sec = section_by_key["skills"]
-        body = [p for p in paras[sec.body_start : sec.body_end] if p.text.strip()]
+        body = [p for p in combined_body["skills"] if p.text.strip()]
         if body:
             proto = next((p for p in body if ":" in p.text), body[0])
             spans = _skills_spans(proto)
@@ -894,6 +1099,19 @@ def _analyze_document(doc, digest: str) -> AnalyzeResult:
         else:
             enabled = enabled.model_copy(update={"skills": False})
 
+    if "list" in section_by_key:
+        sec = section_by_key["list"]
+        body = [p for p in combined_body["list"] if p.text.strip()]
+        bullets = [p for p in body if p.is_bullet]
+        if bullets:
+            list_mapping = ListMapping(
+                heading_paragraph_id=sec.heading_paragraph_id,
+                heading_text=sec.heading_text,
+                bullet_paragraph_id=bullets[0].id,
+            )
+        else:
+            enabled = enabled.model_copy(update={"list_section": False})
+
     for key in ("education", "projects", "skills"):
         if key not in section_by_key:
             issues.append(
@@ -916,6 +1134,40 @@ def _analyze_document(doc, digest: str) -> AnalyzeResult:
             field_order=_contact_field_order(contact_para.text),
             separator=_contact_separator(contact_para.text),
         )
+
+        # Generic mode is needed the moment fixed mode could not represent what was
+        # found: more than one heading of some kind (two experience-shaped sections
+        # cannot both keep their own title/position under one hard-coded heading), or a
+        # `list`-kind section (fixed mode has no such prototype at all). Otherwise
+        # today's exact single-heading-per-kind case stays on fixed mode, byte-identical
+        # to before this existed.
+        needs_generic = "list" in by_kind or any(len(v) > 1 for v in by_kind.values())
+        detected_sections: list[DetectedSection] = []
+        heading_prototype: HeadingPrototype | None = None
+        spacing = SpacingProfile()
+        if needs_generic:
+            seen_ids: set[str] = set()
+            for sec in section_candidates:
+                base = config.slugify(sec.heading_text) or sec.key
+                candidate_id = base
+                suffix = 2
+                while candidate_id in seen_ids:
+                    candidate_id = f"{base}-{suffix}"
+                    suffix += 1
+                seen_ids.add(candidate_id)
+                detected_sections.append(
+                    DetectedSection(
+                        id=candidate_id,
+                        title=sec.heading_text,
+                        kind=_TO_GENERIC_KIND.get(sec.key, sec.key),  # type: ignore[arg-type]
+                        heading_paragraph_id=sec.heading_paragraph_id,
+                    )
+                )
+            heading_prototype = HeadingPrototype(
+                paragraph_id=section_candidates[0].heading_paragraph_id
+            )
+            spacing = _detect_spacing(paras, section_candidates)
+
         suggested = TemplateProfile(
             source_sha256=digest,
             name_paragraph_id=name_id,
@@ -925,8 +1177,13 @@ def _analyze_document(doc, digest: str) -> AnalyzeResult:
             education=education_mapping if enabled.education else None,
             projects=projects_mapping if enabled.projects else None,
             skills=skills_mapping if enabled.skills else None,
+            list_section=list_mapping if enabled.list_section else None,
             normalization=NormalizationFlags(),
             warnings=[i.message for i in issues if not i.blocking],
+            section_mode="generic" if needs_generic else "fixed",
+            sections=detected_sections,
+            heading_prototype=heading_prototype,
+            spacing=spacing,
         )
 
     ready = suggested is not None and not blockers
@@ -1060,8 +1317,17 @@ def validate_profile_against_doc(
                         )
                     )
 
-    def _check_bullet(paragraph_id: int | None, label: str) -> None:
-        """Blocking issue when a bullet-prototype paragraph is missing or not a list item."""
+    def _check_bullet(paragraph_id: int | None, label: str, *, strict: bool = True) -> None:
+        """Issue when a bullet-prototype paragraph is missing or not a list item.
+
+        A missing paragraph always blocks. A non-list paragraph blocks only when
+        `strict` — the experience/project bullet loop is the resume's main visual list
+        content, where real Word numbering matters. Education's degree/detail role is not
+        strict: `template_build.retarget_bullet` creates a paragraph's numbering
+        properties rather than requiring them, so a plain degree line still builds fine
+        and only needs a non-blocking heads-up (see `template_analyze`'s
+        `education_bullets_not_list` issue, raised for the same reason at analyze time).
+        """
         if paragraph_id is None:
             return
         para = para_by_id.get(paragraph_id)
@@ -1078,7 +1344,7 @@ def validate_profile_against_doc(
                 Issue(
                     code="bullet_not_list",
                     message=f"{label}: paragraph {paragraph_id} is not a Word list item.",
-                    blocking=True,
+                    blocking=strict,
                 )
             )
 
@@ -1106,9 +1372,9 @@ def validate_profile_against_doc(
         for label, span in edu_spans:
             _check_span(span, label)
         _check_no_overlap(edu_spans)
-        _check_bullet(edu.degree_paragraph_id, "education degree paragraph")
+        _check_bullet(edu.degree_paragraph_id, "education degree paragraph", strict=False)
         if edu.detail_paragraph_id is not None:
-            _check_bullet(edu.detail_paragraph_id, "education detail paragraph")
+            _check_bullet(edu.detail_paragraph_id, "education detail paragraph", strict=False)
 
     if profile.enabled.projects and profile.projects is not None:
         proj = profile.projects
@@ -1137,5 +1403,28 @@ def validate_profile_against_doc(
                     blocking=True,
                 )
             )
+
+    if profile.section_mode == "generic":
+        for label, donor_ids in (
+            ("spacing.before_heading", profile.spacing.before_heading),
+            ("spacing.after_heading", profile.spacing.after_heading),
+            ("spacing.between_entries", profile.spacing.between_entries),
+        ):
+            for donor_id in donor_ids:
+                donor = para_by_id.get(donor_id)
+                # Non-blocking: a stale or no-longer-chrome donor should degrade to a
+                # narrower gap at build time, not block the whole install — a spacer is a
+                # cosmetic fidelity nicety, not load-bearing content.
+                if donor is None or not docx_text.is_chrome_text(donor.text):
+                    issues.append(
+                        Issue(
+                            code="spacer_donor_missing",
+                            message=(
+                                f"{label}: donor paragraph {donor_id} is missing or no "
+                                "longer a blank/rule line; it will be omitted."
+                            ),
+                            blocking=False,
+                        )
+                    )
 
     return issues

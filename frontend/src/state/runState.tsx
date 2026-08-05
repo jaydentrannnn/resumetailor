@@ -31,8 +31,11 @@ export const DEFAULT_INCLUDE: IncludeOptions = {
   contact_fields: null,
   gpa: true,
   coursework: true,
+  exclude_entries: [],
+  exclude_sections: [],
   exclude_experience: [],
   exclude_projects: [],
+  section_order: null,
 };
 
 const JD_KEY_PREFIX = "resumeTailor.jdText";

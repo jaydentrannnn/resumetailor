@@ -273,6 +273,17 @@ class ResumeOutlineEntryOut(BaseModel):
     bullets: int
 
 
+class ResumeOutlineSectionOut(BaseModel):
+    """One resume section as the include tile lists it — any kind, any count, in
+    resume order. The general form of the flattened `experience`/`projects` fields
+    below, which stay for callers that only ever assumed exactly two sections."""
+
+    id: str
+    title: str
+    kind: str
+    entries: list[ResumeOutlineEntryOut] = Field(default_factory=list)
+
+
 class ResumeOutlineResponse(BaseModel):
     """Master-resume shape the include tile needs: what exists, so it knows what to offer.
 
@@ -294,9 +305,18 @@ class ResumeOutlineResponse(BaseModel):
     has_coursework: bool = False
     experience: list[ResumeOutlineEntryOut] = Field(default_factory=list)
     projects: list[ResumeOutlineEntryOut] = Field(default_factory=list)
+    #: Every entry section (any kind, any count), in resume order — lets the include
+    #: tile show which section an entry belongs to instead of merging same-kind
+    #: sections into one flat list.
+    sections: list[ResumeOutlineSectionOut] = Field(default_factory=list)
     #: From `template_profile.active_layout()["enabled"]` — a template with no Projects
     #: section should not offer project checkboxes or the link toggle.
     sections_enabled: dict[str, bool] = Field(default_factory=dict)
+    #: From `template_profile.active_layout()["section_mode"]` — `"fixed"` templates bake
+    #: section order into the tagged XML, so reordering `include.section_order` has no
+    #: visible effect until the template is rebuilt in generic mode. The include tile uses
+    #: this to disable/annotate its section-order control rather than silently no-op.
+    section_mode: str = "fixed"
 
 
 class ValidateResponse(BaseModel):

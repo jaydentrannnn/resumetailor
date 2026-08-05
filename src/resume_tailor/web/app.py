@@ -54,6 +54,7 @@ from resume_tailor.web.schemas import (
     ProposalRejectRequest,
     ResumeOutlineEntryOut,
     ResumeOutlineResponse,
+    ResumeOutlineSectionOut,
     SettingsResponse,
     SettingsUpdateRequest,
     TemplateAnalyzeResponse,
@@ -326,7 +327,35 @@ def get_resume_outline() -> ResumeOutlineResponse:
             ResumeOutlineEntryOut(id=p.id, label=p.name, bullets=len(p.bullets))
             for p in resume.projects
         ],
+        sections=[
+            ResumeOutlineSectionOut(
+                id=section.id,
+                title=section.title,
+                kind=section.kind,
+                entries=(
+                    [
+                        ResumeOutlineEntryOut(
+                            id=entry.id,
+                            label=(
+                                f"{entry.company} — {entry.title}"
+                                if section.kind == "experience"
+                                else entry.name
+                            ),
+                            bullets=len(entry.bullets),
+                        )
+                        for entry in section.entries
+                    ]
+                    if section.kind in ("experience", "project")
+                    else []
+                ),
+            )
+            # Every section, not just entry sections — education/skills/list sections are
+            # orderable from the include tile too, even though they have no per-entry
+            # excludes and so contribute an empty `entries` list here.
+            for section in resume.sections
+        ],
         sections_enabled=dict(layout.get("enabled") or {}),
+        section_mode=str(layout.get("section_mode") or "fixed"),
     )
 
 
@@ -478,7 +507,12 @@ def download_expansion(job_id: str) -> FileResponse:
 
 @app.get("/api/master-resume")
 def get_master_resume() -> dict[str, Any]:
-    """Return the current master resume as JSON for the editor."""
+    """Return the current master resume as JSON for the editor.
+
+    `sections`-shaped, matching what `PUT` writes — the editor speaks this format
+    natively. `data.to_legacy_dict` remains available (and tested) for anything still
+    sending the pre-`sections` shape to `PUT`, which the migrator folds in unchanged.
+    """
     try:
         resume = data.load()
     except FileNotFoundError as exc:

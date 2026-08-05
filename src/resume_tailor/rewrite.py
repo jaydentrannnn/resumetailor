@@ -186,45 +186,65 @@ def selectable_total(entries: list, *, max_per_entry: int | None = None) -> int:
     return sum(min(len(e.bullets), max_per_entry) for e in entries)
 
 
-def _section_budgets(
-    experience: list,
-    projects: list,
-    requirements: JobRequirements,
+def _allocate_budgets(
+    pools: list[list],
     *,
     limit: int,
-    semantic: dict[str, float] | None = None,
-    experience_share: float,
+    weights: list[float | None],
     max_per_entry: int | None = None,
-) -> tuple[int, int]:
-    """Split `limit` between experience and projects by `experience_share`.
+) -> list[int]:
+    """Split `limit` bullets across `pools` (one list of entries per pool) by `weights`.
 
-    The share is of the *total* selected bullets, not just the discretionary remainder
-    past each section's floors — that is the more intuitive read of "70% experience" and
-    matches how a user would describe the split they want to see.
+    Generalises the old two-section (`experience`, `projects`) split to N pools — needed
+    because two experience-*kind* sections are the same Python class, so nothing but
+    section identity can tell them apart; `select_within_entries` now groups entries into
+    `pools` by section rather than by `isinstance`.
 
-    Each section's floor (one bullet per non-empty entry) is a hard minimum: a share can
-    never starve a section below what `select_entries` already decided it should keep.
-    Any budget a section cannot use (its floor already exceeds its share, or it has fewer
-    bullets than its share implies) spills to the other section, so a share never strands
+    Each weight is a share of the *total* `limit`, not just the discretionary remainder
+    past a pool's floor — that is the more intuitive read of "70% experience" and matches
+    how a user would describe the split they want. A pool whose weight is `None` splits
+    whatever share the explicit weights leave unclaimed evenly with every other `None`
+    pool; all-`None` is an even split.
+
+    Each pool's floor (one bullet per non-empty entry) is a hard minimum a weight can
+    never starve it below. Each pool's cap is `selectable_total`, not the raw bullet
+    count — when `max_per_entry` is also set, a pool can be achievably smaller than its
+    raw bullet count, and budgeting against the raw count would hand it more than
+    `_take_ranked` can actually fill. Any budget a pool cannot use spills to whichever
+    other pools still have room, iterated until nothing moves, so a weight never strands
     part of `limit` and stalls the grow loop into thinking it must keep growing.
-
-    Each section's cap is `selectable_total`, not the raw bullet count — when
-    `max_per_entry` is also set, a section can be achievably smaller than its raw pool, and
-    budgeting against the raw count would hand it more than `_take_ranked` can actually
-    fill, silently under-selecting rather than spilling the surplus to the other section.
     """
-    exp_floor = sum(1 for e in experience if e.bullets)
-    proj_floor = sum(1 for e in projects if e.bullets)
-    exp_cap = selectable_total(experience, max_per_entry=max_per_entry)
-    proj_cap = selectable_total(projects, max_per_entry=max_per_entry)
+    n = len(pools)
+    floors = [sum(1 for e in pool if e.bullets) for pool in pools]
+    caps = [selectable_total(pool, max_per_entry=max_per_entry) for pool in pools]
 
-    exp = max(exp_floor, min(exp_cap, round(limit * experience_share)))
-    proj = max(proj_floor, min(proj_cap, limit - exp))
-    # Second pass: give back to whichever section still has room, in case the first pass
-    # under-allocated one side (e.g. the other section's cap was smaller than its share).
-    exp = min(exp_cap, max(exp, limit - proj))
-    proj = min(proj_cap, max(proj, limit - exp))
-    return exp, proj
+    explicit = sum(w for w in weights if w is not None)
+    unweighted = [i for i, w in enumerate(weights) if w is None]
+    remainder_share = max(0.0, 1.0 - explicit) / len(unweighted) if unweighted else 0.0
+    resolved = [w if w is not None else remainder_share for w in weights]
+
+    allocations = [
+        max(floors[i], min(caps[i], round(limit * resolved[i]))) for i in range(n)
+    ]
+
+    # Iterative spill: hand any budget a pool cannot use (its floor already exceeds its
+    # share, or it has less capacity than its share implies) to pools that still have
+    # room, until the total reaches `limit` or every pool is at its cap. N passes is
+    # always enough — each pass either converges or drains at least one pool to its cap.
+    for _ in range(max(n, 1)):
+        deficit = limit - sum(allocations)
+        if deficit <= 0:
+            break
+        room = [caps[i] - allocations[i] for i in range(n)]
+        if sum(room) <= 0:
+            break
+        for i in range(n):
+            if room[i] <= 0 or deficit <= 0:
+                continue
+            give = min(room[i], deficit)
+            allocations[i] += give
+            deficit -= give
+    return allocations
 
 
 def _take_ranked(
@@ -280,6 +300,8 @@ def select_within_entries(
     semantic: dict[str, float] | None = None,
     experience_share: float | None = None,
     max_per_entry: int | None = None,
+    pools: list[list] | None = None,
+    weights: list[float | None] | None = None,
 ) -> list[Bullet]:
     """Choose up to `limit` bullets from already-selected entries.
 
@@ -290,16 +312,41 @@ def select_within_entries(
     when it is smaller.
 
     Remaining budget goes to the highest-scoring bullets across all the entries pooled
-    together, so a rich entry can take more lines than a thin one. `experience_share`
-    overrides this: when set, experience and projects are budgeted separately via
-    `_section_budgets` and each section's remainder is filled independently, so a
-    keyword-dense project can no longer out-rank every job in one flat pool.
+    together, so a rich entry can take more lines than a thin one.
 
-    `max_per_entry` caps how many bullets any single entry — job or project — may take,
-    applied within whichever pool (flat or per-section) is in play.
+    `pools`/`weights` overrides this: each pool (one list of entries per resume section)
+    is budgeted separately via `_allocate_budgets` and filled independently, so a
+    keyword-dense section can no longer out-rank every entry in one flat pool. This is
+    what `fit.py` passes once a resume can hold more than one experience-kind section —
+    `isinstance` can no longer tell two sections of the same kind apart, so section
+    membership has to come from the caller. `weights` defaults to an even split across
+    `pools` when omitted.
 
-    Both default to `None`, reproducing the original flat-pool selection exactly.
+    `experience_share` is two-pool sugar for the same mechanism, kept for backward
+    compatibility and for callers (including tests) that pass a flat, unwrapped list of
+    `Experience`/`Project` entries with no section grouping at all: it derives `pools` via
+    `isinstance(e, Project)` and `weights=[experience_share, None]`. Ignored when `pools`
+    is given explicitly.
+
+    `max_per_entry` caps how many bullets any single entry may take, applied within
+    whichever pool (flat, or per-section under `pools`/`experience_share`) is in play.
+
+    All of `experience_share`, `pools`, and `weights` default to `None`, reproducing the
+    original flat-pool selection exactly.
     """
+    if pools is not None:
+        resolved_weights = weights if weights is not None else [None] * len(pools)
+        allocations = _allocate_budgets(
+            pools, limit=limit, weights=resolved_weights, max_per_entry=max_per_entry
+        )
+        kept: set[int] = set()
+        for pool, pool_limit in zip(pools, allocations):
+            kept |= _take_ranked(
+                pool, requirements, limit=pool_limit, semantic=semantic,
+                max_per_entry=max_per_entry,
+            )
+        return [b for e in entries for b in e.bullets if id(b) in kept]
+
     if experience_share is None:
         kept = _take_ranked(
             entries, requirements, limit=limit, semantic=semantic, max_per_entry=max_per_entry
@@ -308,9 +355,9 @@ def select_within_entries(
 
     experience = [e for e in entries if not isinstance(e, Project)]
     projects = [e for e in entries if isinstance(e, Project)]
-    exp_limit, proj_limit = _section_budgets(
-        experience, projects, requirements, limit=limit, semantic=semantic,
-        experience_share=experience_share, max_per_entry=max_per_entry,
+    exp_limit, proj_limit = _allocate_budgets(
+        [experience, projects], limit=limit, weights=[experience_share, None],
+        max_per_entry=max_per_entry,
     )
     kept = _take_ranked(
         experience, requirements, limit=exp_limit, semantic=semantic, max_per_entry=max_per_entry

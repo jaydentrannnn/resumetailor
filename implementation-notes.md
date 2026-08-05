@@ -1108,3 +1108,155 @@ to `minimax-m3:cloud` unless `OLLAMA_MODEL` or a per-run model override is set.
   byte-identical by diffing the failing-test list before/after — none of them are
   connected to this work. Frontend `npm run lint` (no new warnings), `npm run test`
   (10/10), and `npm run build` all clean.
+
+## 2026-08-04 - Arbitrary, renameable, reorderable resume sections
+
+- **Motivating bug, found before writing any code:** the live install already had
+  `templates/original_export.docx` with `EXPERIENCE`, `INTERNSHIP & PROGRAMS`, and
+  `OTHER ACTIVITIES` headings, but `templates/main_template.docx` only had `EXPERIENCE` —
+  the other two headings and every entry under them had been silently absorbed into
+  `EXPERIENCE`'s body and deleted, because `template_analyze._classify_heading` was
+  first-match-wins per canonical key. Separately, `template_profile.json` had
+  `education.header.header_paragraph_id` pointing at the `______________` horizontal
+  rule, not the school line — `_split_entries` read the rule as an entry header because
+  nothing filtered non-content chrome. Both are fixed by this change, not just the
+  feature request that motivated it.
+- **Data model: `MasterResume.sections: list[Section]`**, a Pydantic discriminated union
+  on `kind` (`experience` / `project` / `list` / `education` / `skills`), replaces the
+  four fixed top-level lists. `Section.kind == "project"` (singular) while the render
+  context / `EnabledSections` key stays `"projects"` (plural) — a deliberate naming split
+  documented at each site that bridges it (`config.SECTION_KIND_ENABLED_KEY`), not a typo.
+  A `model_validator(mode="before")` folds a legacy file's `education`/`experience`/
+  `projects`/`skills` keys into four sections in that fixed order with ids equal to the
+  key names, which is what keeps `all_bullets()`'s order — and therefore
+  `rewrite._score_cache_path`'s cache key — byte-identical for every existing file; a
+  test pins this against the real `data/master_resume.json`. Read-only `@property`
+  `experience`/`projects`/`education`/`skills` flatten across same-kind sections and
+  return the *same* objects, so `facets.apply`'s in-place mutation through
+  `model_copy(deep=True)` and ~50 other read sites needed no change. Never
+  `@computed_field` — that would put the legacy keys back into `model_dump` and a saved
+  file would carry two sources of truth. One real footgun found by a failing test:
+  `resume.model_copy(update={"education": [...]})` silently no-ops now (the property
+  ignores whatever lands in `__dict__`) — production code never did this, but two tests
+  did and had to switch to mutating through `sections` directly.
+- **New `list` section kind** (`ListSection` / `ListItem`) — a heading plus plain bullet
+  lines with no entry header (certifications, awards, languages). Never rewritten by the
+  LLM, never resized by the fit loop — renders in full like a skills group. Chosen as a
+  named kind rather than folding it into `experience` because it has no header fields at
+  all, the simplest of the five kinds to both detect and tag.
+- **Selection/fitting generalized from two hardcoded sections to N.**
+  `rewrite._section_budgets` (exactly one function whose *algorithm*, not just its
+  plumbing, assumed two pools) became `_allocate_budgets(pools, weights, ...)`: floors
+  per pool, proportional shares, then an iterative spill loop that keeps going until
+  every pool is either satisfied or at its cap — verified by hand against all four
+  existing `experience_share`/`max_per_entry` test scenarios before trusting it.
+  `select_within_entries` gained `pools`/`weights` params for the N-pool path; the old
+  `experience_share` float stays as two-pool sugar (`isinstance(e, Project)`-derived),
+  kept specifically so tests that build raw `Experience`/`Project` lists with no section
+  wrapper keep working. `fit.choose_entries` now loops `resume.entry_sections`, ranking
+  each one independently against a per-kind default cap
+  (`MAX_EXPERIENCE_ENTRIES`/`MAX_PROJECT_ENTRIES`) — the point being that a "Leadership"
+  section's entries never compete with a job's for a slot. `fit.estimate_lines` reads a
+  new `layout["section_mode"]` (`"fixed"` vs `"generic"`, see below) because under fixed
+  mode N same-kind sections still flatten under *one* physical heading (one header line),
+  while generic mode gives each its own — getting this wrong doesn't produce a wrong
+  page, just an extra grow/shorten round, per the project's existing "estimate is cheap,
+  real render is authoritative" invariant.
+- **Template build: `section_mode: "fixed" | "generic"`.** Fixed mode is byte-for-byte
+  today's contract (one hard-coded loop per kind) and is what a resume with one heading
+  per kind still gets — zero behavior change, proven by every pre-existing
+  `test_template_build.py`/`test_template_analyze.py` test passing unmodified. Generic
+  mode tags **one shared `{%p for section in sections %}` block** with independent
+  `{%p if section.kind == '<kind>' %}` branches (not an `elif` ladder — verified
+  `docxtpl 0.20.2`'s `patch_xml` regex doesn't care which keyword follows `{%p`, but
+  independent blocks let a kind with no prototype be omitted with no ladder-ordering
+  bookkeeping), each with its own `{%p for <var> in section.entries %}` loop reusing the
+  *exact* tag strings and loop-variable names (`job`/`proj`/`edu`/`group`/`bullet`/
+  `detail`, plus new `item` for list) fixed mode already used. The four existing
+  `build_*_profile` functions were split into pure `_tag_*_prototype` helpers (tagging
+  only, no loop/delete) reused by both modes — a mechanical extraction verified
+  byte-identical by the existing test suite before `build_generic` was written on top.
+  **One real bug found only by testing against a synthetic doc shaped like the actual
+  motivating resume** (education with a single, non-bulleted degree line — no separate
+  detail bullet): `_tag_education_prototype`'s existing degree/detail-share-one-paragraph
+  fallback does `degree._p.addnext(detail_p)`, inserting a new paragraph mid-build. Under
+  fixed mode this is harmless because `build_from_profile` already processes kinds
+  bottom-up specifically to avoid this; `build_generic`'s per-kind loop did not, so
+  processing EDUCATION (physically above SKILLS in the doc) shifted every later
+  paragraph's index and corrupted the skills prototype's span. Fixed by sorting
+  `build_generic`'s processing order by descending `heading_paragraph_id` too — same
+  reasoning as the fixed-mode comment it was copied from, just not previously needed
+  since generic mode didn't exist. Caught by hand-testing against the user's real
+  resume end-to-end (`RuntimeError: skills_label: span [0:9] exceeds paragraph length 0`),
+  not by a unit test written in advance; a regression test now pins it.
+- **Analyzer: structural heading detection, not just alias lookup.** The old
+  first-match-wins-per-key loop is now an ordered, undeduped list of every detected
+  heading. Two additions: (1) `_is_chrome` — blank or a decorative rule line — is
+  filtered out of `_split_entries` everywhere, which is the actual fix for the
+  rule-mistagged-as-degree-line bug found up front; (2) `_looks_like_heading` — short,
+  no tab, no colon, no date, mostly-uppercase, guarded to `paragraph_id >= 2` so an
+  all-caps *name* line is never misread as a heading (found by testing, not anticipated)
+  — catches a heading with no alias match (`"OTHER ACTIVITIES"`), defaulting its kind to
+  `experience` unless immediately followed by bullets with no entry header (`list`).
+  Same-kind headings' bodies are pooled (`combined_body[key]`) before prototype
+  selection, so the best-formatted entry can come from any of them, not only the first —
+  this is also what makes `_section_body_paragraphs`'s existing "next *other-kind*
+  heading" boundary logic correctly treat an embedded same-kind sub-heading as chrome
+  to walk past, with no separate heading-filter needed inside `_split_entries`.
+  `section_mode` becomes `"generic"` automatically the moment fixed mode could not
+  represent what was found (two headings of one kind, or any `list`-kind heading) —
+  never user-chosen at analyze time. A non-bulleted degree/detail line downgrades from a
+  blocking `no_education_bullets` to a non-blocking warning (`retarget_bullet` creates a
+  paragraph's numbering properties rather than requiring them, so it still builds fine)
+  — `validate_profile_against_doc`'s `_check_bullet` gained a `strict` flag so this
+  relaxation applies only to education's degree/detail role, not the experience/project
+  bullet loops where real Word numbering still matters.
+- **Verified against the user's actual upload**, not just synthetic fixtures:
+  `NGOC_DAO_RESUME_Intern.docx` (EDUCATION / WORK EXPERIENCE / LEADERSHIP EXPERIENCE /
+  OTHER ACTIVITIES / SKILLS, non-bulleted degree line) now analyzes `ready: True`,
+  `section_mode: "generic"`, all five sections detected correctly. A full build-and-render
+  pass renamed `OTHER ACTIVITIES` → `VOLUNTEERING` and moved `SKILLS` to the top of the
+  section list on the `MasterResume` side only (no template rebuild) — both changes
+  appeared correctly in the rendered `.docx`.
+- **Wire format flip.** `GET /api/master-resume` now returns `sections`-shaped JSON
+  (previously flattened via a temporary `data.to_legacy_dict`, kept — and still tested —
+  as the shape `PUT` transparently still accepts, since the model's before-validator
+  folds either shape in identically). `ResumeOutlineResponse` gained a `sections` field
+  (one entry per resume section, any kind/count) alongside the pre-existing flattened
+  `experience`/`projects`, so `IncludePanel` can show which section an entry belongs to
+  instead of merging every same-kind section into one flat list.
+- **Frontend: `EditorPage.tsx` rewritten around `resume.sections.map(...)`.** A generic
+  `SectionShell` (editable title input, kind badge, move/remove via the pre-existing
+  `EntryControls`) wraps a per-kind body component; the four existing body components
+  (education/experience/projects/skills) were adapted with minimal changes (they already
+  took `entries`/`onChange` — just re-scoped to one section instead of the whole
+  resume), plus a new `ListEntries` body. An "Add section" control at the bottom picks a
+  kind and appends a blank one. `resumeEdit.ts`'s helpers (`collectBulletIds`,
+  `nextEntryId`, `blankSection`, `completenessErrors`, …) all iterate `resume.sections`
+  now instead of two hardcoded arrays. `SectionMapStep.tsx` (the upload wizard) shows one
+  toggle per detected *kind* still (unchanged mechanism — kind-level enable/disable is
+  still what controls which prototypes get built), plus an informational banner when
+  `section_mode` came back `"generic"` explaining that per-section title/order edits now
+  live entirely on the Master Resume tab and need no re-upload — deliberately not
+  pretending to let the wizard reassign an individual detected heading's kind, since
+  `TemplateProfile.sections` (the analyzer's per-heading detection list) has no
+  functional effect on the build; only the five kind-level prototype mappings do.
+- **Verification, given no `chromium-cli`/Playwright available in this environment:**
+  full backend suite (523 passed, the same 16 pre-existing failures as `main`, diffed
+  before/after), `npx tsc -b` clean, `oxlint` clean (same pre-existing warnings only),
+  `npm run test` (11/11), `npm run build` clean. Started the real `uvicorn` server against
+  live data and `curl`-verified `GET /` (SPA shell), `GET /api/master-resume` (returns
+  `sections`, no flattened keys), `GET /api/resume-outline`, and `GET /api/config`, then
+  fetched the real resume, applied the exact mutation `EditorPage.tsx` would produce
+  (renamed a section, appended a brand-new `list`-kind section with a fresh id) and
+  posted it to `POST /api/master-resume/validate` (non-destructive) — `ok: true`, zero
+  errors, confirming the full payload shape end to end without writing to the user's
+  real file.
+- **Deliberately deferred, not attempted: blank-line/rule visual fidelity and fit-constant
+  recalibration** (the plan's own Phase 6). Restoring inter-section spacing changes what
+  `LINES_PER_PAGE`/`UNDERFLOW_THRESHOLD` mean and needs a real Word/LibreOffice
+  render-and-measure pass to calibrate correctly — "measure, don't guess" is this
+  project's own standing rule for exactly this class of constant, and neither Word COM
+  nor a verified LibreOffice container was exercised this session. Every other phase of
+  the design is complete and tested; this one is the documented, isolated exception,
+  not a silently dropped scope corner.

@@ -177,7 +177,7 @@ def test_hard_facts_come_from_master_not_model(expand_calls, tmp_path):
         ExpansionLLMResult(
             entries=[
                 ExpandedEntryLLM(
-                    entry_key="exp:0",
+                    entry_key="exp:alpha-co",
                     bullets=[
                         "Built a Python API serving 1,000 users across production.",
                         "Shipped FastAPI endpoints for internal tooling.",
@@ -188,7 +188,7 @@ def test_hard_facts_come_from_master_not_model(expand_calls, tmp_path):
     )
     result = expand_experience(resume, reqs, fit_result=fit, use_cache=False)
     assert result.entries
-    entry = next(e for e in result.entries if e.entry_key == "exp:0")
+    entry = next(e for e in result.entries if e.entry_key == "exp:alpha-co")
     assert entry.company == "Alpha Co"
     assert entry.title == "Engineer"
     assert entry.location == "Remote"
@@ -205,7 +205,7 @@ def test_fabricated_bullet_is_dropped_not_raised(expand_calls, tmp_path):
         ExpansionLLMResult(
             entries=[
                 ExpandedEntryLLM(
-                    entry_key="exp:0",
+                    entry_key="exp:alpha-co",
                     bullets=[
                         "Built a Python API serving 1,000 users.",
                         "Migrated the stack to Kubernetes and Terraform.",
@@ -215,7 +215,7 @@ def test_fabricated_bullet_is_dropped_not_raised(expand_calls, tmp_path):
         )
     )
     result = expand_experience(resume, reqs, use_cache=False)
-    entry = next(e for e in result.entries if e.entry_key == "exp:0")
+    entry = next(e for e in result.entries if e.entry_key == "exp:alpha-co")
     assert len(entry.bullets) == 1
     assert "Kubernetes" not in " ".join(entry.bullets)
     assert any("unsupported" in w.lower() or "Kubernetes" in w for w in entry.warnings)
@@ -229,14 +229,14 @@ def test_missing_source_number_warns(expand_calls, tmp_path):
         ExpansionLLMResult(
             entries=[
                 ExpandedEntryLLM(
-                    entry_key="exp:0",
+                    entry_key="exp:alpha-co",
                     bullets=["Built a Python API for production traffic."],
                 )
             ]
         )
     )
     result = expand_experience(resume, reqs, use_cache=False)
-    entry = next(e for e in result.entries if e.entry_key == "exp:0")
+    entry = next(e for e in result.entries if e.entry_key == "exp:alpha-co")
     assert any("number" in w.lower() for w in entry.warnings)
 
 
@@ -247,7 +247,7 @@ def test_cache_key_changes_with_backend(expand_calls, tmp_path, monkeypatch):
     reply = ExpansionLLMResult(
         entries=[
             ExpandedEntryLLM(
-                entry_key="exp:0",
+                entry_key="exp:alpha-co",
                 bullets=["Built a Python API serving 1,000 users."],
             )
         ]
@@ -286,7 +286,7 @@ def test_format_markdown_includes_hard_facts():
     expansion = Expansion(
         entries=[
             ExpandedEntry(
-                entry_key="exp:0",
+                entry_key="exp:alpha-co",
                 title="Engineer",
                 company="Alpha Co",
                 location="Remote",

@@ -1148,6 +1148,40 @@ METRIC_BONUS = 0.5
 MAX_EXPERIENCE_ENTRIES = 3
 MAX_PROJECT_ENTRIES = 2
 
+#: Titles used when `data.MasterResume` migrates a legacy (pre-`sections`) file into the
+#: four default sections, and when the editor creates a new section of one of these kinds
+#: with no title of its own yet.
+DEFAULT_SECTION_TITLES: dict[str, str] = {
+    "education": "Education",
+    "experience": "Experience",
+    "projects": "Projects",
+    "skills": "Skills",
+}
+
+#: Which `template_profile.TemplateProfile.enabled` key gates each `data.Section.kind`,
+#: and whether that kind renders when the key is absent from an older or hand-built
+#: layout dict. `render.build_context`'s `sections` list and `fit.fit`'s
+#: missing-prototype warning both key off this so the two can never disagree about what
+#: "enabled" means for a kind. Not the kind string itself for `project`/`list` — `enabled`'s
+#: keys predate `Section.kind` and use the legacy plural/suffixed names (`"projects"`,
+#: `"list_section"`).
+SECTION_KIND_ENABLED_KEY: dict[str, str] = {
+    "experience": "experience",
+    "project": "projects",
+    "list": "list_section",
+    "education": "education",
+    "skills": "skills",
+}
+#: `list_section` defaults closed — no template has ever had this prototype before
+#: generic mode existed; the other four default open, matching pre-existing behaviour.
+SECTION_KIND_ENABLED_DEFAULT: dict[str, bool] = {
+    "experience": True,
+    "project": True,
+    "list": False,
+    "education": True,
+    "skills": True,
+}
+
 #: Overall experience-vs-projects split of the bullets `rewrite.select_within_entries`
 #: chooses, as a fraction going to experience (e.g. 0.65 -> 65% experience / 35% projects).
 #: `None` is the original behaviour: one flat pool ranked purely by `score`, which lets a

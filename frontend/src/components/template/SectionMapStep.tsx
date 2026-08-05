@@ -1,11 +1,20 @@
-import type { TemplateAnalyzeResponse } from "../../api";
+import type { TemplateAnalyzeResponse, TemplateSection } from "../../api";
 
 type Enabled = {
   education: boolean;
   experience: boolean;
   projects: boolean;
   skills: boolean;
+  list_section: boolean;
 };
+
+const SECTION_ROWS: readonly [keyof Enabled, string][] = [
+  ["experience", "Experience (required)"],
+  ["education", "Education"],
+  ["projects", "Projects"],
+  ["skills", "Skills"],
+  ["list_section", "Simple list (certifications, awards, …)"],
+];
 
 type Props = {
   analysis: TemplateAnalyzeResponse;
@@ -14,10 +23,13 @@ type Props = {
 };
 
 /**
- * Confirm which optional sections to keep and show contact separator / headings.
+ * Confirm which kinds of section to keep and show contact separator / headings.
  *
- * Experience cannot be disabled. Omitting Education / Projects / Skills clears their
- * mapping objects so the builder skips those sections.
+ * Experience cannot be disabled. Omitting a kind clears its mapping object so the
+ * builder skips it. Detection is a heuristic — multiple headings of one kind, or a
+ * plain-list section, upgrade the template to "generic" mode automatically (see
+ * `template_analyze._analyze_document`); this step shows what was found so the user can
+ * confirm it before installing, not a guarantee.
  */
 export function SectionMapStep({ analysis, profile, onChange }: Props) {
   const enabled = (profile.enabled as Enabled | undefined) ?? {
@@ -25,24 +37,36 @@ export function SectionMapStep({ analysis, profile, onChange }: Props) {
     experience: true,
     projects: true,
     skills: true,
+    list_section: false,
   };
   const contact = (profile.contact as { separator?: string } | undefined) ?? {};
-  const sectionByKey = Object.fromEntries(
-    analysis.sections.map((s) => [s.key, s]),
-  );
+
+  // `analysis.sections` is every detected heading, in document order — no longer one
+  // per key, since a resume can have several headings of the same kind (e.g. WORK
+  // EXPERIENCE + LEADERSHIP EXPERIENCE both classify as "experience").
+  const sectionsByKey = new Map<string, TemplateSection[]>();
+  for (const s of analysis.sections) {
+    const list = sectionsByKey.get(s.key) ?? [];
+    list.push(s);
+    sectionsByKey.set(s.key, list);
+  }
+
+  const sectionMode = (profile.section_mode as string | undefined) ?? "fixed";
+  const isGeneric = sectionMode === "generic";
 
   const setEnabled = (key: keyof Enabled, value: boolean) => {
-    /** Toggle an optional section and drop/restore its mapping blob. */
+    /** Toggle a section kind and drop/restore its mapping blob. */
     if (key === "experience") return;
     const nextEnabled = { ...enabled, [key]: value };
     const next: Record<string, unknown> = {
       ...profile,
       enabled: nextEnabled,
     };
+    const profileKey = key === "list_section" ? "list_section" : key;
     if (!value) {
-      next[key] = null;
-    } else if (analysis.suggested_profile && analysis.suggested_profile[key]) {
-      next[key] = analysis.suggested_profile[key];
+      next[profileKey] = null;
+    } else if (analysis.suggested_profile && analysis.suggested_profile[profileKey]) {
+      next[profileKey] = analysis.suggested_profile[profileKey];
     }
     onChange(next);
   };
@@ -62,15 +86,8 @@ export function SectionMapStep({ analysis, profile, onChange }: Props) {
           Sections to include
         </p>
         <div className="mt-2 grid gap-2 sm:grid-cols-2">
-          {(
-            [
-              ["experience", "Experience (required)"],
-              ["education", "Education"],
-              ["projects", "Projects"],
-              ["skills", "Skills"],
-            ] as const
-          ).map(([key, label]) => {
-            const detected = sectionByKey[key];
+          {SECTION_ROWS.map(([key, label]) => {
+            const detected = sectionsByKey.get(key) ?? [];
             const checked = enabled[key];
             return (
               <label
@@ -81,15 +98,19 @@ export function SectionMapStep({ analysis, profile, onChange }: Props) {
                   type="checkbox"
                   className="mt-1"
                   checked={checked}
-                  disabled={key === "experience" || !detected}
+                  disabled={key === "experience" || detected.length === 0}
                   onChange={(e) => setEnabled(key, e.target.checked)}
                 />
                 <span>
                   <span className="font-medium text-ink">{label}</span>
                   <span className="block text-xs text-ink-muted">
-                    {detected
-                      ? `Heading: “${detected.heading_text}”`
-                      : "Not detected in upload"}
+                    {detected.length === 0
+                      ? "Not detected in upload"
+                      : detected.length === 1
+                        ? `Heading: “${detected[0].heading_text}”`
+                        : `${detected.length} headings: ${detected
+                            .map((s) => `“${s.heading_text}”`)
+                            .join(", ")}`}
                   </span>
                 </span>
               </label>
@@ -97,6 +118,21 @@ export function SectionMapStep({ analysis, profile, onChange }: Props) {
           })}
         </div>
       </div>
+
+      {isGeneric && (
+        <div className="rounded-lg border border-accent/40 bg-accent-soft px-3 py-2 text-xs text-ink">
+          <p className="font-medium text-accent">
+            This template will support multiple &amp; custom sections.
+          </p>
+          <p className="mt-1 text-ink-muted">
+            Detection found more sections than a fixed layout can represent (either two
+            headings of the same kind, or a plain-list section), so the tagged template
+            will render whatever sections exist on the Master Resume tab — in their own
+            order, under their own titles — with no rebuild needed to add, rename, or
+            reorder one there later.
+          </p>
+        </div>
+      )}
 
       <div>
         <label className="text-xs font-medium uppercase tracking-wide text-ink-muted">

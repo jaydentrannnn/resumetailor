@@ -19,6 +19,7 @@ describe("template wizard section toggles", () => {
       experience: true,
       projects: true,
       skills: true,
+      list_section: false,
     };
     expect(nextEnabled(enabled, "experience", false).experience).toBe(true);
   });
@@ -29,7 +30,19 @@ describe("template wizard section toggles", () => {
       experience: true,
       projects: true,
       skills: true,
+      list_section: false,
     };
     expect(nextEnabled(enabled, "projects", false).projects).toBe(false);
+  });
+
+  it("allows enabling the new list_section kind", () => {
+    const enabled = {
+      education: true,
+      experience: true,
+      projects: true,
+      skills: true,
+      list_section: false,
+    };
+    expect(nextEnabled(enabled, "list_section", true).list_section).toBe(true);
   });
 });

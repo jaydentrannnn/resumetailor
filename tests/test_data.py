@@ -12,7 +12,8 @@ import json
 import sys
 from pathlib import Path
 
-from resume_tailor.data import MasterResume, _alias_rewrites, _validate_cli
+from resume_tailor import config
+from resume_tailor.data import MasterResume, _alias_rewrites, _validate_cli, to_legacy_dict
 
 _RESUME_TEMPLATE: dict = {
     "contact": {"name": "Test User", "email": "test@example.com"},
@@ -149,6 +150,117 @@ def test_duplicate_explicit_experience_id_raises():
             _resume_with_experience({"id": "dup"}, {"id": "dup"})
         )
     except Exception as exc:  # pydantic ValidationError wraps the raised ValueError
-        assert "duplicate experience id" in str(exc)
+        assert "duplicate entry id" in str(exc)
     else:
-        raise AssertionError("expected duplicate experience id to raise")
+        raise AssertionError("expected duplicate entry id to raise")
+
+
+# ----------------------------------------------------------------------------------------
+# Legacy -> `sections` migration
+#
+# A pre-`sections` file has top-level `education`/`experience`/`projects`/`skills` lists.
+# `_migrate_legacy_sections` folds those into `sections` at load time so every existing
+# file, fixture, and test-constructed resume keeps working through the `experience` /
+# `projects` / `education` / `skills` read-only properties.
+# ----------------------------------------------------------------------------------------
+
+
+def test_migration_produces_four_default_sections_in_fixed_order():
+    resume = MasterResume.model_validate(json.loads(json.dumps(_RESUME_TEMPLATE)))
+    assert [(s.id, s.kind) for s in resume.sections] == [
+        ("education", "education"),
+        ("experience", "experience"),
+        ("projects", "project"),
+        ("skills", "skills"),
+    ]
+    assert resume.sections[1].title == config.DEFAULT_SECTION_TITLES["experience"]
+
+
+def test_all_bullets_order_matches_pre_migration_order_for_the_real_master_resume():
+    """`rewrite._score_cache_path` hashes `all_bullets()` in list order — if migrating a
+    legacy file changed that order, every cached relevance score would silently
+    invalidate. Compares against the raw JSON's own experience-then-projects order,
+    independent of any pipeline code."""
+    path = config.MASTER_RESUME_PATH
+    if not path.exists():
+        import pytest
+
+        pytest.skip("data/master_resume.json is gitignored and not present here")
+    raw = json.loads(path.read_text(encoding="utf-8"))
+    expected = [
+        bullet["id"]
+        for section_key in ("experience", "projects")
+        for entry in raw.get(section_key, [])
+        for bullet in entry.get("bullets", [])
+    ]
+    resume = MasterResume.model_validate(raw)
+    assert [b.id for b in resume.all_bullets()] == expected
+
+
+def test_a_sections_native_file_loads_without_migrating():
+    native = {
+        "contact": {"name": "Test User", "email": "test@example.com"},
+        "sections": [
+            {
+                "id": "leadership",
+                "kind": "experience",
+                "title": "LEADERSHIP EXPERIENCE",
+                "entries": [
+                    {
+                        "company": "Club",
+                        "title": "President",
+                        "start": "2024",
+                        "end": "2025",
+                        "bullets": [{"id": "b1", "text": "Led a thing.", "tags": ["leadership"]}],
+                    }
+                ],
+            }
+        ],
+    }
+    resume = MasterResume.model_validate(native)
+    assert [s.id for s in resume.sections] == ["leadership"]
+    assert resume.experience[0].company == "Club"
+
+
+def test_duplicate_entry_id_across_two_different_sections_raises():
+    native = {
+        "contact": {"name": "Test User", "email": "test@example.com"},
+        "sections": [
+            {
+                "id": "experience",
+                "kind": "experience",
+                "title": "Experience",
+                "entries": [
+                    {"id": "dup", "company": "A", "title": "T", "start": "2020", "end": "2021"}
+                ],
+            },
+            {
+                "id": "projects",
+                "kind": "project",
+                "title": "Projects",
+                "entries": [{"id": "dup", "name": "P"}],
+            },
+        ],
+    }
+    try:
+        MasterResume.model_validate(native)
+    except Exception as exc:
+        assert "duplicate entry id" in str(exc)
+    else:
+        raise AssertionError("expected duplicate entry id to raise")
+
+
+def test_model_dump_then_validate_is_a_fixpoint():
+    resume = MasterResume.model_validate(json.loads(json.dumps(_RESUME_TEMPLATE)))
+    dumped_once = resume.model_dump(by_alias=True)
+    resume_again = MasterResume.model_validate(dumped_once)
+    assert resume_again.model_dump(by_alias=True) == dumped_once
+
+
+def test_to_legacy_dict_round_trips_through_model_validate():
+    resume = MasterResume.model_validate(json.loads(json.dumps(_RESUME_TEMPLATE)))
+    legacy = to_legacy_dict(resume)
+    assert "sections" not in legacy
+    assert legacy["experience"][0]["company"] == "Acme"
+    reloaded = MasterResume.model_validate(legacy)
+    assert reloaded.model_dump(by_alias=True) == resume.model_dump(by_alias=True)
