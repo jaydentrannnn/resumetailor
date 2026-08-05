@@ -256,6 +256,7 @@ def build_context(
         "experience": True,
         "projects": True,
         "skills": True,
+        "list_section": False,
     }
 
     def lines(source) -> list[str]:
@@ -263,24 +264,26 @@ def build_context(
             return [b.text for b in source]
         return [bullets[b.id] for b in source if b.id in bullets]
 
-    experience = []
-    for job in resume.experience:
-        rendered = lines(job.bullets)
-        if not rendered:
-            continue
-        experience.append(
-            {
-                "company": job.company,
-                "location": job.location,
-                "title": job.title,
-                "dates": format_range(job.start, job.end),
-                "bullets": rendered,
-            }
-        )
+    def render_experience(entries) -> list[dict]:
+        out = []
+        for job in entries:
+            rendered = lines(job.bullets)
+            if not rendered:
+                continue
+            out.append(
+                {
+                    "company": job.company,
+                    "location": job.location,
+                    "title": job.title,
+                    "dates": format_range(job.start, job.end),
+                    "bullets": rendered,
+                }
+            )
+        return out
 
-    projects = []
-    if enabled.get("projects", True):
-        for proj in resume.projects:
+    def render_projects(entries) -> list[dict]:
+        out = []
+        for proj in entries:
             rendered = lines(proj.bullets)
             if not rendered:
                 continue
@@ -300,7 +303,7 @@ def build_context(
                     tpl.build_url_id(proj.url) if proj.url else None,
                 )
 
-            projects.append(
+            out.append(
                 {
                     "name": proj.name,
                     "tech": ", ".join(proj.tech),
@@ -309,18 +312,15 @@ def build_context(
                     "bullets": rendered,
                 }
             )
+        return out
 
-    # Key is `entries`, never `items`: in Jinja, `group.items` resolves to the dict's
-    # built-in method rather than the key, and rendering that method's repr injects
-    # invalid markup into the document. Keep context keys clear of dict attribute names.
-    skills = (
-        [{"label": g.label, "entries": ", ".join(g.items)} for g in resume.skills]
-        if enabled.get("skills", True)
-        else []
-    )
+    def render_list_items(entries) -> list[str]:
+        # Never filtered by `bullets` — list items are never selected, rewritten, or
+        # resized by the fit loop; they render in full, the same as skills/coursework.
+        return [item.text for item in entries]
 
-    education = (
-        [
+    def render_education(entries) -> list[dict]:
+        return [
             {
                 "school": edu.school,
                 "location": edu.location,
@@ -328,11 +328,51 @@ def build_context(
                 "degree_line": _degree_line(edu),
                 "details": _education_details(edu),
             }
-            for edu in resume.education
+            for edu in entries
         ]
-        if enabled.get("education", True)
-        else []
-    )
+
+    def render_skills(entries) -> list[dict]:
+        # Key is `entries`, never `items`: in Jinja, `group.items` resolves to the dict's
+        # built-in method rather than the key, and rendering that method's repr injects
+        # invalid markup into the document. Keep context keys clear of dict attribute names.
+        return [{"label": g.label, "entries": ", ".join(g.items)} for g in entries]
+
+    _kind_renderers = {
+        "experience": render_experience,
+        "project": render_projects,
+        "list": render_list_items,
+        "education": render_education,
+        "skills": render_skills,
+    }
+
+    # Generic-mode section list — consumed only by a template tagged via
+    # `template_build.build_generic`. A section whose kind the active template cannot
+    # render (no prototype) is silently omitted here; `fit.py` is what turns that into a
+    # warning, since this function has no result channel of its own to carry one.
+    sections = []
+    for section in resume.sections:
+        key = config.SECTION_KIND_ENABLED_KEY[section.kind]
+        if not enabled.get(key, config.SECTION_KIND_ENABLED_DEFAULT[section.kind]):
+            continue
+        rendered_entries = _kind_renderers[section.kind](section.entries)
+        if not rendered_entries:
+            continue
+        sections.append(
+            {
+                "id": section.id,
+                "title": section.title,
+                "kind": section.kind,
+                "entries": rendered_entries,
+            }
+        )
+
+    # Legacy flattened keys — what a fixed-mode template consumes. Built from the same
+    # renderers as `sections` above so the two can never disagree on what one entry
+    # renders as.
+    experience = render_experience(resume.experience)
+    projects = render_projects(resume.projects) if enabled.get("projects", True) else []
+    skills = render_skills(resume.skills) if enabled.get("skills", True) else []
+    education = render_education(resume.education) if enabled.get("education", True) else []
 
     return {
         "name": resume.contact.name,
@@ -348,6 +388,7 @@ def build_context(
         "experience": experience,
         "projects": projects,
         "skills": skills,
+        "sections": sections,
     }
 
 

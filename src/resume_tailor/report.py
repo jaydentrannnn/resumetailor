@@ -33,12 +33,27 @@ _UNSAFE_FILENAME = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
 
 @dataclass
 class SectionSummary:
-    """How much of one experience/project entry survived into the final document."""
+    """How much of one experience/project entry survived into the final document.
+
+    Named for historical reasons (it predates `MasterResume.sections`) — despite the
+    name, one instance covers one *entry*, not one section. `RunReportSection` below is
+    the actual per-section grouping.
+    """
 
     label: str
     kept: int
     total: int
     rewritten: int
+
+
+@dataclass
+class RunReportSection:
+    """One resume section's worth of entry summaries, in section order."""
+
+    id: str
+    title: str
+    kind: str
+    entries: list[SectionSummary]
 
 
 def _entry_name(entry: Experience | Project) -> str:
@@ -284,6 +299,10 @@ class RunReport:
     bullets_total: int
     experience: list[SectionSummary]
     projects: list[SectionSummary]
+    #: Every entry section (any kind, any count), in resume order — the general form of
+    #: `experience`/`projects` above, which stay as flattened two-section views for
+    #: existing callers.
+    sections: list[RunReportSection]
     dropped: list[str]
 
     pages: int
@@ -335,9 +354,19 @@ def report_data(
         bullets_total=result.bullets_total,
         experience=_summarise(resume.experience, result),
         projects=_summarise(resume.projects, result),
+        sections=[
+            RunReportSection(
+                id=section.id,
+                title=section.title,
+                kind=section.kind,
+                entries=_summarise(section.entries, result),
+            )
+            for section in resume.entry_sections
+        ],
         dropped=[
             _entry_name(e)
-            for e in [*resume.experience, *resume.projects]
+            for section in resume.entry_sections
+            for e in section.entries
             if e.bullets and not any(b.id in result.bullets for b in e.bullets)
         ],
         pages=result.pages,
@@ -413,14 +442,11 @@ def format_report(
         f"Bullets: {result.bullets_selected} of {result.bullets_total} selected",
     ]
 
-    for title, entries in (
-        ("Experience", resume.experience),
-        ("Projects", resume.projects),
-    ):
-        summaries = _summarise(entries, result)
+    for section in resume.entry_sections:
+        summaries = _summarise(section.entries, result)
         if not summaries:
             continue
-        lines.append(f"  {title}: {len(summaries)} of {len(entries)} entries")
+        lines.append(f"  {section.title}: {len(summaries)} of {len(section.entries)} entries")
         for s in summaries:
             lines.append(
                 f"    {s.label}: {s.kept}/{s.total} bullets, {s.rewritten} rewritten"
@@ -428,7 +454,8 @@ def format_report(
 
     dropped = [
         _entry_name(e)
-        for e in [*resume.experience, *resume.projects]
+        for section in resume.entry_sections
+        for e in section.entries
         if e.bullets and not any(b.id in result.bullets for b in e.bullets)
     ]
     if dropped:

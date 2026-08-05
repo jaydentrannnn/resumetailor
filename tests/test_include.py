@@ -119,3 +119,46 @@ def test_contact_order_falls_back_to_layout_when_option_is_none():
 
 def test_contact_order_returns_none_when_neither_is_set():
     assert contact_order(IncludeOptions(), {}) is None
+
+
+def test_section_order_none_is_a_noop():
+    resume = _resume()
+    result = apply(resume, IncludeOptions())
+    assert [s.id for s in result.sections] == [s.id for s in resume.sections]
+
+
+def test_section_order_reorders_named_sections_first():
+    resume = _resume()
+    ids = [s.id for s in resume.sections]
+    reversed_ids = list(reversed(ids))
+    result = apply(resume, IncludeOptions(section_order=reversed_ids))
+    assert [s.id for s in result.sections] == reversed_ids
+
+
+def test_section_order_appends_unnamed_sections_after_named_ones_in_original_order():
+    resume = _resume()
+    ids = [s.id for s in resume.sections]
+    assert len(ids) >= 2  # sanity: fixture has more than one section
+    last_id = ids[-1]
+    result = apply(resume, IncludeOptions(section_order=[last_id]))
+    expected = [last_id] + [i for i in ids if i != last_id]
+    assert [s.id for s in result.sections] == expected
+
+
+def test_section_order_ignores_unknown_ids():
+    resume = _resume()
+    ids = [s.id for s in resume.sections]
+    result = apply(resume, IncludeOptions(section_order=["no-such-section", *ids]))
+    assert [s.id for s in result.sections] == ids
+
+
+def test_section_order_applies_after_section_exclusion():
+    resume = _resume()
+    ids = [s.id for s in resume.sections]
+    assert len(ids) >= 2
+    excluded, kept = ids[0], ids[1:]
+    result = apply(
+        resume,
+        IncludeOptions(exclude_sections=[excluded], section_order=list(reversed(kept))),
+    )
+    assert [s.id for s in result.sections] == list(reversed(kept))

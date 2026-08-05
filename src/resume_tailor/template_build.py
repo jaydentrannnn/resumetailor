@@ -190,19 +190,131 @@ def set_single_spacing(paragraph: Paragraph, *, exact: bool = False) -> None:
     spacing.set(qn("w:lineRule"), "exact" if exact else "auto")
 
 
+def pin_sub_single_to_exact(paragraph: Paragraph) -> bool:
+    """Rewrite a sub-single `lineRule="auto"` paragraph to the equivalent `"exact"` height.
+
+    Returns whether anything was changed.
+
+    Proportional (`auto`) line spacing below 100% is **not portable**. Word honours it
+    literally — `w:line="72"` is 30% of a line, ~3.5pt — while LibreOffice refuses to
+    compress a line below its glyph height and floors the same paragraph at ~9.6pt, 2.8x
+    taller. A source whose blank filler paragraphs are invisible in Word therefore grows a
+    full blank line per filler once rendered through the container's LibreOffice.
+
+    `exact` is honoured identically by both, and the twip number carries over directly:
+    `w:line="72"` as `exact` is 72 twips = 3.6pt, within a rounding error of what Word
+    already drew. This is the same reasoning that already pins bullets to `exact` in
+    `set_single_spacing`.
+
+    Only safe for paragraphs holding no text — an exact 3.6pt box would clip a 10pt glyph.
+    Text paragraphs are normalised up to single instead; see `normalize_single_spacing`.
+    """
+    pPr = paragraph._p.find(qn("w:pPr"))
+    spacing = pPr.find(qn("w:spacing")) if pPr is not None else None
+    if spacing is None or spacing.get(qn("w:lineRule")) != "auto":
+        return False
+    line = spacing.get(qn("w:line"))
+    if line is None:
+        return False
+    try:
+        if int(line) >= int(SINGLE_LINE):
+            return False
+    except ValueError:
+        return False
+    spacing.set(qn("w:lineRule"), "exact")
+    return True
+
+
 def normalize_single_spacing(doc) -> None:
-    """Write single line spacing onto every body paragraph in the document.
+    """Make every body paragraph's line height renderer-independent.
 
     Google Docs exports can leave spacing unset (inherits a looser default) or carry
     Multiple > 1 on some paragraphs. Prototypes alone cannot fix education bullets or
     the name/contact lines, so this runs over the whole document after tagging.
+
+    The governing rule is that a sub-100% `lineRule="auto"` value must never survive into
+    a built template, because Word and LibreOffice disagree about it by ~3x (see
+    `pin_sub_single_to_exact`). Two treatments, split on whether the paragraph holds text:
+
+    - **Text** is normalised to single. Anything tighter only renders as the author
+      intended in Word; under LibreOffice it floors out and merely looks cramped, or
+      overlaps the line above.
+    - **Chrome** (blank spacers, horizontal rules) keeps its authored height but is pinned
+      to `exact`, so the thin gaps a source encodes as fractional filler paragraphs come
+      out the same in both renderers instead of ballooning to a full blank line.
     """
     for paragraph in doc.paragraphs:
         text = (paragraph.text or "").strip()
         # Control-tag paragraphs are dropped at render time; leave them bare.
         if text.startswith("{%p "):
             continue
+        if docx_text.is_chrome_text(text):
+            pin_sub_single_to_exact(paragraph)
+            continue
         set_single_spacing(paragraph, exact=is_bullet(paragraph))
+
+
+def _section_text_width(doc) -> float | None:
+    """Body text column width in twips, or `None` if the section geometry is missing.
+
+    Deliberately reads `w:pgSz`/`w:pgMar` from the raw XML as `float` rather than using
+    python-docx's typed `Section.page_width`/`.left_margin`/`.right_margin`: Google Docs
+    exports non-integer twips (e.g. `w:left="1417.3228346456694"`), and those accessors
+    raise `ValueError` on such a file.
+    """
+    body = doc.element.body
+    sectPr = body.find(qn("w:sectPr"))
+    if sectPr is None:
+        return None
+    pgSz = sectPr.find(qn("w:pgSz"))
+    pgMar = sectPr.find(qn("w:pgMar"))
+    if pgSz is None or pgMar is None:
+        return None
+    try:
+        width = float(pgSz.get(qn("w:w")))
+        left = float(pgMar.get(qn("w:left")))
+        right = float(pgMar.get(qn("w:right")))
+    except (TypeError, ValueError):
+        return None
+    return width - left - right
+
+
+def clamp_tab_stops(doc) -> None:
+    """Clamp every tab stop to its own paragraph's right edge, as Word silently does.
+
+    A Google Docs export can carry a right tab stop (`w:tab/@w:pos`, measured from the
+    left text margin) that overruns the paragraph's own right boundary — `text_width -
+    w:ind/@w:right` — and even the page's text column. Word clamps such a stop back to the
+    paragraph's right edge when it renders; LibreOffice honours it literally and lets the
+    tab-aligned text hang past the margin. Baking Word's clamp into the XML makes both
+    renderers agree, the same reasoning `pin_sub_single_to_exact` applies to line spacing.
+    """
+    text_width = _section_text_width(doc)
+    if text_width is None:
+        return
+    for paragraph in doc.paragraphs:
+        pPr = paragraph._p.find(qn("w:pPr"))
+        if pPr is None:
+            continue
+        tabs = pPr.find(qn("w:tabs"))
+        if tabs is None:
+            continue
+        ind = pPr.find(qn("w:ind"))
+        try:
+            right_indent = float(ind.get(qn("w:right"))) if ind is not None else 0.0
+        except (TypeError, ValueError):
+            right_indent = 0.0
+        limit = text_width - right_indent
+        for tab in tabs.findall(qn("w:tab")):
+            pos = tab.get(qn("w:pos"))
+            if pos is None:
+                continue
+            try:
+                pos_val = float(pos)
+            except ValueError:
+                continue
+            if pos_val > limit:
+                tab.set(qn("w:pos"), str(round(limit)))
 
 
 # --------------------------------------------------------------------------------------
@@ -388,20 +500,65 @@ def normalize_bullet_numbering(doc) -> None:
 BULLET_MARKER_SIZE_RATIO = 0.8 * (2 / 3)  # ~0.53; a further 2/3 pass on top of the first cut
 _MIN_MARKER_HALF_POINTS = 8  # 4pt floor so a tiny body font can't shrink the dot to nothing
 
+#: Large geometric glyphs that render as a near-full-em disc/square in most fonts — the
+#: shape `BULLET_MARKER_SIZE_RATIO` was tuned against. A hyphen, en-dash, small bullet
+#: (U+2022, already text-sized), or asterisk is left alone: shrinking one of those by the
+#: same ~53% that tames a "●" renders it as a near-invisible hairline, not a smaller dot.
+_SHRINKABLE_MARKERS = frozenset("●⬤○◉■□◆◇")
 
-def shrink_bullet_marker(paragraph: Paragraph) -> None:
+
+def _marker_glyph(doc, paragraph: Paragraph) -> str | None:
+    """The literal lvl0 bullet character governing `paragraph`'s numbering marker."""
+    pPr = paragraph._p.find(qn("w:pPr"))
+    numPr = pPr.find(qn("w:numPr")) if pPr is not None else None
+    num_id_el = numPr.find(qn("w:numId")) if numPr is not None else None
+    num_id = num_id_el.get(qn("w:val")) if num_id_el is not None else None
+    if num_id is None:
+        return None
+    root = doc.part.numbering_part.element
+    abstract_id = _num_to_abstract(root).get(num_id)
+    if abstract_id is None:
+        return None
+    for anum in root.findall(qn("w:abstractNum")):
+        if anum.get(qn("w:abstractNumId")) != abstract_id:
+            continue
+        for lvl in anum.findall(qn("w:lvl")):
+            if lvl.get(qn("w:ilvl")) != "0":
+                continue
+            text = lvl.find(qn("w:lvlText"))
+            return text.get(qn("w:val")) if text is not None else None
+    return None
+
+
+def _body_run_size(paragraph: Paragraph) -> int | None:
+    """Font size in half-points of the paragraph's first run that sets one explicitly."""
+    for run in paragraph.runs:
+        rPr = run._r.find(qn("w:rPr"))
+        sz = rPr.find(qn("w:sz")) if rPr is not None else None
+        if sz is not None and sz.get(qn("w:val")):
+            return int(sz.get(qn("w:val")))
+    return None
+
+
+def shrink_bullet_marker(doc, paragraph: Paragraph) -> None:
     """Scale down the paragraph-mark font size that governs the bullet glyph.
 
     The paragraph mark's `rPr` (inside `pPr`, not the visible runs) formats only the
     numbering symbol, so this changes the dot's size without touching the bullet's own
-    text size.
+    text size. Only applies to `_SHRINKABLE_MARKERS` glyphs — see that constant.
+
+    Idempotent: the target size is derived from the paragraph's own body-run size (via
+    `_body_run_size`) when one is set, not from the marker's current size, so calling
+    this twice does not halve an already-shrunk marker.
     """
+    if _marker_glyph(doc, paragraph) not in _SHRINKABLE_MARKERS:
+        return
     pPr = paragraph._p.find(qn("w:pPr"))
     rPr = pPr.find(qn("w:rPr")) if pPr is not None else None
     sz = rPr.find(qn("w:sz")) if rPr is not None else None
     if sz is None or not sz.get(qn("w:val")):
         return
-    body_size = int(sz.get(qn("w:val")))
+    body_size = _body_run_size(paragraph) or int(sz.get(qn("w:val")))
     marker_size = str(max(_MIN_MARKER_HALF_POINTS, round(body_size * BULLET_MARKER_SIZE_RATIO)))
     sz.set(qn("w:val"), marker_size)
     sz_cs = rPr.find(qn("w:szCs"))
@@ -409,12 +566,12 @@ def shrink_bullet_marker(paragraph: Paragraph) -> None:
         sz_cs.set(qn("w:val"), marker_size)
 
 
-def retarget_bullet(paragraph: Paragraph, num_id: str | None) -> None:
+def retarget_bullet(doc, paragraph: Paragraph, num_id: str | None) -> None:
     """Use the canonical small-marker list id and drop any right-indent inflation."""
     if num_id is not None:
         set_num_id(paragraph, num_id)
     strip_right_indent(paragraph)
-    shrink_bullet_marker(paragraph)
+    shrink_bullet_marker(doc, paragraph)
 
 
 def pick_bullet_prototype(entries: list[list[Paragraph]]) -> Paragraph:
@@ -589,8 +746,8 @@ def build_education(doc, entries: list[list[Paragraph]], *, noto_num_id: str | N
         detail_p = copy.deepcopy(degree._p)
         degree._p.addnext(detail_p)
         detail = Paragraph(detail_p, degree._parent)
-    retarget_bullet(degree, noto_num_id)
-    retarget_bullet(detail, noto_num_id)
+    retarget_bullet(doc, degree, noto_num_id)
+    retarget_bullet(doc, detail, noto_num_id)
 
     tag_header(
         header,
@@ -633,7 +790,7 @@ def build_experience(doc, entries: list[list[Paragraph]], *, noto_num_id: str | 
     # The bullet prototype is chosen across the whole section, independently of the
     # header, so spacing is normalised to the tightest variant present.
     bullet = pick_bullet_prototype(entries)
-    retarget_bullet(bullet, noto_num_id)
+    retarget_bullet(doc, bullet, noto_num_id)
 
     tag_header(header, ["{{ job.company }} | ", "{{ job.location }}"], tail_field="{{ job.dates }}")
     set_run_text(title.runs[0], "{{ job.title }}")
@@ -660,7 +817,7 @@ def build_projects(doc, entries: list[list[Paragraph]], *, noto_num_id: str | No
     prototype = min(entries, key=header_run_count)
     header, *rest = prototype
     bullet = pick_bullet_prototype(entries)
-    retarget_bullet(bullet, noto_num_id)
+    retarget_bullet(doc, bullet, noto_num_id)
 
     # The per-project URL differs, so the baked-in hyperlink must go; render.py
     # reinstates it as a RichText carrying the right target.
@@ -719,7 +876,7 @@ def build_skills(doc, paragraphs: list[Paragraph]) -> None:
     for extra in list(prototype.runs[2:]):
         prototype._p.remove(extra._r)
 
-    shrink_bullet_marker(prototype)
+    shrink_bullet_marker(doc, prototype)
 
     anchor = lines[0]
     anchor._p.addprevious(make_para("{%p for group in skills %}"))
@@ -1072,10 +1229,14 @@ def _tag_mapped_header(
     return paragraph
 
 
-def build_experience_profile(doc, profile: TemplateProfile, *, noto_num_id: str | None) -> None:
-    """Loop-tag the experience section from the confirmed mapping."""
-    mapping = profile.experience
-    victims = _section_body_paragraphs(doc, mapping.heading_paragraph_id, profile)
+def _tag_experience_prototype(
+    doc, mapping, *, noto_num_id: str | None
+) -> tuple[Paragraph, Paragraph, Paragraph]:
+    """Tag one experience header/title/bullet prototype in place. Pure tagging — no loop
+    insertion, no deletion — so both `build_experience_profile` (fixed mode) and
+    `build_generic` (generic mode) can wrap the result in whichever loop shape they need.
+    Returns `(header, title, bullet)`, still at their original document positions.
+    """
     header = _tag_mapped_header(
         doc,
         mapping.header,
@@ -1103,8 +1264,16 @@ def build_experience_profile(doc, profile: TemplateProfile, *, noto_num_id: str 
         else _para_by_id(doc, mapping.title_paragraph_id)  # type: ignore[arg-type]
     )
     bullet = _para_by_id(doc, mapping.bullet_paragraph_id)
-    retarget_bullet(bullet, noto_num_id)
+    retarget_bullet(doc, bullet, noto_num_id)
     tag_bullet(bullet, "{{ bullet }}")
+    return header, title_para, bullet
+
+
+def build_experience_profile(doc, profile: TemplateProfile, *, noto_num_id: str | None) -> None:
+    """Loop-tag the experience section from the confirmed mapping."""
+    mapping = profile.experience
+    victims = _section_body_paragraphs(doc, mapping.heading_paragraph_id, profile)
+    header, title_para, bullet = _tag_experience_prototype(doc, mapping, noto_num_id=noto_num_id)
 
     # Insert clones before the (still-present) prototype header, then drop originals.
     anchor = header
@@ -1119,11 +1288,11 @@ def build_experience_profile(doc, profile: TemplateProfile, *, noto_num_id: str 
     _delete_paragraphs(victims)
 
 
-def build_education_profile(doc, profile: TemplateProfile, *, noto_num_id: str | None) -> None:
-    """Loop-tag the education section from the confirmed mapping."""
-    mapping = profile.education
-    assert mapping is not None
-    victims = _section_body_paragraphs(doc, mapping.heading_paragraph_id, profile)
+def _tag_education_prototype(
+    doc, mapping, *, noto_num_id: str | None
+) -> tuple[Paragraph, Paragraph, Paragraph]:
+    """Tag one education header/degree/detail prototype in place. Pure tagging, same
+    split as `_tag_experience_prototype`. Returns `(header, degree, detail)`."""
     header = _tag_mapped_header(
         doc,
         mapping.header,
@@ -1134,7 +1303,7 @@ def build_education_profile(doc, profile: TemplateProfile, *, noto_num_id: str |
         },
     )
     degree = _para_by_id(doc, mapping.degree_paragraph_id)
-    retarget_bullet(degree, noto_num_id)
+    retarget_bullet(doc, degree, noto_num_id)
     tag_bullet(degree, "{{ edu.degree_line }}")
 
     if mapping.detail_paragraph_id is not None:
@@ -1145,13 +1314,22 @@ def build_education_profile(doc, profile: TemplateProfile, *, noto_num_id: str |
             detail = Paragraph(detail_p, degree._parent)
             tag_bullet(detail, "{{ detail }}")
         else:
-            retarget_bullet(detail, noto_num_id)
+            retarget_bullet(doc, detail, noto_num_id)
             tag_bullet(detail, "{{ detail }}")
     else:
         detail_p = copy.deepcopy(degree._p)
         degree._p.addnext(detail_p)
         detail = Paragraph(detail_p, degree._parent)
         tag_bullet(detail, "{{ detail }}")
+    return header, degree, detail
+
+
+def build_education_profile(doc, profile: TemplateProfile, *, noto_num_id: str | None) -> None:
+    """Loop-tag the education section from the confirmed mapping."""
+    mapping = profile.education
+    assert mapping is not None
+    victims = _section_body_paragraphs(doc, mapping.heading_paragraph_id, profile)
+    header, degree, detail = _tag_education_prototype(doc, mapping, noto_num_id=noto_num_id)
 
     anchor = header
     anchor._p.addprevious(make_para("{%p for edu in education %}"))
@@ -1168,12 +1346,9 @@ def build_education_profile(doc, profile: TemplateProfile, *, noto_num_id: str |
         delete(detail)
 
 
-def build_projects_profile(doc, profile: TemplateProfile, *, noto_num_id: str | None) -> None:
-    """Loop-tag the projects section from the confirmed mapping."""
-    mapping = profile.projects
-    assert mapping is not None
-    victims = _section_body_paragraphs(doc, mapping.heading_paragraph_id, profile)
-
+def _tag_project_prototype(doc, mapping, *, noto_num_id: str | None) -> tuple[Paragraph, Paragraph]:
+    """Tag one project header/bullet prototype in place. Pure tagging, same split as
+    `_tag_experience_prototype`. Returns `(header, bullet)`."""
     tag_for = {
         "name": "{{ proj.name }}",
         "tech": "{{ proj.tech }}",
@@ -1195,8 +1370,17 @@ def build_projects_profile(doc, profile: TemplateProfile, *, noto_num_id: str | 
     )
 
     bullet = _para_by_id(doc, mapping.bullet_paragraph_id)
-    retarget_bullet(bullet, noto_num_id)
+    retarget_bullet(doc, bullet, noto_num_id)
     tag_bullet(bullet, "{{ bullet }}")
+    return header_para, bullet
+
+
+def build_projects_profile(doc, profile: TemplateProfile, *, noto_num_id: str | None) -> None:
+    """Loop-tag the projects section from the confirmed mapping."""
+    mapping = profile.projects
+    assert mapping is not None
+    victims = _section_body_paragraphs(doc, mapping.heading_paragraph_id, profile)
+    header_para, bullet = _tag_project_prototype(doc, mapping, noto_num_id=noto_num_id)
 
     anchor = header_para
     anchor._p.addprevious(make_para("{%p for proj in projects %}"))
@@ -1209,11 +1393,9 @@ def build_projects_profile(doc, profile: TemplateProfile, *, noto_num_id: str | 
     _delete_paragraphs(victims)
 
 
-def build_skills_profile(doc, profile: TemplateProfile) -> None:
-    """Loop-tag the skills section from the confirmed mapping."""
-    mapping = profile.skills
-    assert mapping is not None
-    victims = _section_body_paragraphs(doc, mapping.heading_paragraph_id, profile)
+def _tag_skills_prototype(doc, mapping) -> Paragraph:
+    """Tag one skills label/entries prototype in place. Pure tagging. Returns the
+    tagged prototype paragraph."""
     prototype = _para_by_id(doc, mapping.prototype_paragraph_id)
 
     # A separate run per tag — rather than collapsing the whole line into one, as the
@@ -1237,7 +1419,16 @@ def build_skills_profile(doc, profile: TemplateProfile) -> None:
         key=lambda it: it[0],
     )
     retag_paragraph(prototype, items)
-    shrink_bullet_marker(prototype)
+    shrink_bullet_marker(doc, prototype)
+    return prototype
+
+
+def build_skills_profile(doc, profile: TemplateProfile) -> None:
+    """Loop-tag the skills section from the confirmed mapping."""
+    mapping = profile.skills
+    assert mapping is not None
+    victims = _section_body_paragraphs(doc, mapping.heading_paragraph_id, profile)
+    prototype = _tag_skills_prototype(doc, mapping)
 
     anchor = prototype
     anchor._p.addprevious(make_para("{%p for group in skills %}"))
@@ -1245,6 +1436,15 @@ def build_skills_profile(doc, profile: TemplateProfile) -> None:
     anchor._p.addprevious(make_para("{%p endfor %}"))
 
     _delete_paragraphs(victims)
+
+
+def _tag_list_prototype(doc, mapping, *, noto_num_id: str | None) -> Paragraph:
+    """Tag one plain-list bullet prototype in place. The simplest of the five kinds — no
+    header, no entry structure, just a bullet loop. Returns the tagged bullet paragraph."""
+    bullet = _para_by_id(doc, mapping.bullet_paragraph_id)
+    retarget_bullet(doc, bullet, noto_num_id)
+    tag_bullet(bullet, "{{ item }}")
+    return bullet
 
 
 def _section_body_paragraphs(doc, heading_id: int, profile: TemplateProfile) -> list[Paragraph]:
@@ -1259,6 +1459,8 @@ def _section_body_paragraphs(doc, heading_id: int, profile: TemplateProfile) -> 
         ends.append(profile.projects.heading_text)
     if profile.skills and profile.skills.heading_paragraph_id != heading_id:
         ends.append(profile.skills.heading_text)
+    if profile.list_section and profile.list_section.heading_paragraph_id != heading_id:
+        ends.append(profile.list_section.heading_text)
 
     seen_heading = False
     body: list[Paragraph] = []
@@ -1282,6 +1484,230 @@ def _delete_paragraphs(paragraphs: list[Paragraph]) -> None:
             delete(para)
 
 
+#: Order the generic block's `{%p if section.kind == '...' %}` branches are emitted in.
+#: Rendering order does not depend on this (each branch fires only for its own kind), but
+#: a fixed order keeps the generated XML deterministic and readable.
+_GENERIC_KIND_ORDER = ("experience", "project", "list", "education", "skills")
+
+#: Entry-shaped kinds a `between_entries` spacer applies to — skills groups and list
+#: items are consecutive bullet lines with no blank between them in any observed source.
+_ENTRY_SHAPED_KINDS = ("experience", "project", "education")
+
+
+def _spacer_donors(doc, paragraph_ids: list[int]) -> list:
+    """Resolve a spacing donor *run* up front, before any tagging that could shift
+    paragraph indices — same hazard `build_generic`'s descending processing order exists
+    to dodge, sidestepped entirely by cloning while indices are still pristine.
+
+    Returns the donors' deep-copied `<w:p>` elements in order. Any id that is out of
+    range or no longer chrome drops out, and an empty result means "no spacer here" —
+    degrading rather than failing the build, matching
+    `template_analyze.validate_profile_against_doc`'s non-blocking `spacer_donor_missing`.
+    """
+    donors = []
+    for paragraph_id in paragraph_ids:
+        try:
+            para = _para_by_id(doc, paragraph_id)
+        except RuntimeError:
+            continue
+        if not docx_text.is_chrome_text(para.text):
+            continue
+        donors.append(copy.deepcopy(para._p))
+    return donors
+
+
+def _spacer_clones(donors: list) -> list:
+    """Fresh copies of a resolved spacer run for one insertion point. Each physical spot
+    in the tagged template needs its own elements — docxtpl's `{%p for %}` repeats
+    paragraphs that appear once in the template, so this is called once per *position*
+    (before-heading, after-heading, one per entry-shaped branch), never once per entry."""
+    return [copy.deepcopy(el) for el in donors]
+
+
+def build_generic(doc, profile: TemplateProfile) -> None:
+    """Tag `doc` for `section_mode="generic"`: one shared block driven by the `sections`
+    render-context key, so adding, renaming, or reordering a resume section never needs a
+    template rebuild — see `data.MasterResume.sections` and `render.build_context`.
+
+    Each enabled kind's prototype is tagged exactly the way `build_from_profile`'s
+    per-kind builders already do (same helpers, same tag strings, same loop-variable
+    names — `job`/`proj`/`edu`/`group`/`bullet`/`detail`, plus `item` for the new `list`
+    kind), so a resume with exactly today's four sections renders identically to a
+    fixed-mode build. What differs is the outer shape: one `{%p for section in sections %}`
+    loop wraps a cloned, `{{ section.title }}`-tagged heading and one `{%p if
+    section.kind == '<kind>' %}` branch per enabled kind, each with its own `{%p for
+    <var> in section.entries %}` loop — so any number of sections of any kind, in any
+    order, under any title, all render from the same tagged template.
+
+    Deliberately independent `{%p if %}` blocks rather than an `elif` ladder: each kind's
+    branch is then a self-contained unit that can be entirely omitted when that kind has
+    no prototype, with no ladder ordering or dangling-`elif` bookkeeping to get right.
+    """
+    # Resolve spacer donors first, before any tagging — `_tag_education_prototype` can
+    # insert a paragraph mid-build (see the descending-order comment below), which would
+    # invalidate a donor id resolved afterward.
+    before_heading_donors = _spacer_donors(doc, profile.spacing.before_heading)
+    after_heading_donors = _spacer_donors(doc, profile.spacing.after_heading)
+    between_entries_donors = _spacer_donors(doc, profile.spacing.between_entries)
+
+    noto_num_id = discover_noto_num_id(doc) if profile.normalization.normalize_bullet_font else None
+
+    build_name_profile(doc, profile)
+    build_contact_profile(doc, profile)
+
+    mappings = {
+        "experience": profile.experience,
+        "project": profile.projects,
+        "list": profile.list_section,
+        "education": profile.education,
+        "skills": profile.skills,
+    }
+    enabled = {
+        "experience": True,  # always required, same as fixed mode
+        "project": profile.enabled.projects,
+        "list": profile.enabled.list_section,
+        "education": profile.enabled.education,
+        "skills": profile.enabled.skills,
+    }
+
+    all_victims: list[Paragraph] = []
+    heading_paragraphs: list[Paragraph] = []
+    heading_ids: list[int] = []
+    # kind -> ordered list of (paragraph-to-clone | literal control-tag string)
+    branches: dict[str, list[Paragraph | str]] = {}
+
+    # Process bottom-up (later headings first), same reasoning as `build_from_profile`'s
+    # fixed-mode dispatch: `_tag_education_prototype` can INSERT a paragraph (cloning the
+    # degree line when degree and detail share one paragraph — the common case for a
+    # single-line education entry), which shifts every later paragraph's index. Tagging
+    # a lower (later-in-document) kind first means that insertion can only affect
+    # positions below kinds not yet processed, never above them, so an
+    # already-resolved `heading_paragraph_id` for a still-pending kind never goes stale.
+    processing_order = sorted(
+        (
+            (mappings[kind].heading_paragraph_id, kind)
+            for kind in _GENERIC_KIND_ORDER
+            if mappings[kind] is not None and enabled[kind]
+        ),
+        reverse=True,
+    )
+
+    for _heading_id, kind in processing_order:
+        mapping = mappings[kind]
+        all_victims.extend(_section_body_paragraphs(doc, mapping.heading_paragraph_id, profile))
+        heading_paragraphs.append(_para_by_id(doc, mapping.heading_paragraph_id))
+        heading_ids.append(mapping.heading_paragraph_id)
+
+        if kind == "experience":
+            header, title_para, bullet = _tag_experience_prototype(
+                doc, mapping, noto_num_id=noto_num_id
+            )
+            branches[kind] = [
+                "{%p for job in section.entries %}",
+                header,
+                title_para,
+                "{%p for bullet in job.bullets %}",
+                bullet,
+                "{%p endfor %}",
+                "{%p endfor %}",
+            ]
+        elif kind == "project":
+            header, bullet = _tag_project_prototype(doc, mapping, noto_num_id=noto_num_id)
+            branches[kind] = [
+                "{%p for proj in section.entries %}",
+                header,
+                "{%p for bullet in proj.bullets %}",
+                bullet,
+                "{%p endfor %}",
+                "{%p endfor %}",
+            ]
+        elif kind == "list":
+            bullet = _tag_list_prototype(doc, mapping, noto_num_id=noto_num_id)
+            branches[kind] = ["{%p for item in section.entries %}", bullet, "{%p endfor %}"]
+        elif kind == "education":
+            header, degree, detail = _tag_education_prototype(
+                doc, mapping, noto_num_id=noto_num_id
+            )
+            branches[kind] = [
+                "{%p for edu in section.entries %}",
+                header,
+                degree,
+                "{%p for detail in edu.details %}",
+                detail,
+                "{%p endfor %}",
+                "{%p endfor %}",
+            ]
+            # `_tag_education_prototype` clones the degree paragraph in place
+            # (`addnext`) when degree/detail share one paragraph — the common
+            # single-line-entry case. `branches[kind]` above already captured its own
+            # independent copy for insertion, so the clone left sitting at its original
+            # document position is now a duplicate; `_section_body_paragraphs` was
+            # called (into `all_victims`) before this clone existed, so nothing else
+            # will ever delete it. Same cleanup `build_education_profile` (fixed mode)
+            # already does after its own call to this same tagging helper.
+            if detail._p.getparent() is not None and detail not in all_victims:
+                delete(detail)
+        elif kind == "skills":
+            group = _tag_skills_prototype(doc, mapping)
+            branches[kind] = ["{%p for group in section.entries %}", group, "{%p endfor %}"]
+
+    if not branches:
+        raise RuntimeError("Generic template build found no enabled sections to tag.")
+
+    # Anchor the whole block at the topmost enabled heading; every other enabled heading
+    # is deleted too (folded into `all_victims` below), since one shared block now covers
+    # all of them. Compared by `heading_paragraph_id`, not `doc.paragraphs.index(...)` —
+    # `Paragraph.__eq__` is identity, and `doc.paragraphs` builds fresh wrapper objects on
+    # every access, so no paragraph fetched earlier is ever found in a freshly-built list.
+    anchor = _para_by_id(doc, min(heading_ids))
+
+    heading_source = _para_by_id(doc, profile.heading_prototype.paragraph_id)
+    heading_clone_el = copy.deepcopy(heading_source._p)
+    heading_clone = Paragraph(heading_clone_el, heading_source._parent)
+    heading_runs = heading_clone.runs
+    if not heading_runs:
+        raise RuntimeError("Heading prototype paragraph has no runs to tag.")
+    set_run_text(heading_runs[0], "{{ section.title }}")
+    for extra in heading_runs[1:]:
+        heading_clone._p.remove(extra._r)
+
+    insertions: list = [make_para("{%p for section in sections %}")]
+    if before_heading_donors:
+        # `loop` here is the outer `for section in sections` loop — the only one open at
+        # this point in the document — so `loop.first` means "first section", which is
+        # what makes the gap precede every heading except the very first.
+        insertions.append(make_para("{%p if not loop.first %}"))
+        insertions.extend(_spacer_clones(before_heading_donors))
+        insertions.append(make_para("{%p endif %}"))
+    insertions.append(heading_clone_el)
+    insertions.extend(_spacer_clones(after_heading_donors))
+    for kind in _GENERIC_KIND_ORDER:
+        body = branches.get(kind)
+        if body is None:
+            continue
+        insertions.append(make_para(f"{{%p if section.kind == '{kind}' %}}"))
+        for idx, item in enumerate(body):
+            insertions.append(make_para(item) if isinstance(item, str) else copy.deepcopy(item._p))
+            # `item` at index 0 of an entry-shaped branch is always its opening
+            # `{%p for <var> in section.entries %}` tag (see the per-kind blocks above).
+            # Inserting the spacer right after it, guarded on `loop.first` of that
+            # now-innermost loop, means "first entry" — skipping the gap before the
+            # first entry and placing it only between entries.
+            if idx == 0 and between_entries_donors and kind in _ENTRY_SHAPED_KINDS:
+                insertions.append(make_para("{%p if not loop.first %}"))
+                insertions.extend(_spacer_clones(between_entries_donors))
+                insertions.append(make_para("{%p endif %}"))
+        insertions.append(make_para("{%p endif %}"))
+    insertions.append(make_para("{%p endfor %}"))
+
+    for element in insertions:
+        anchor._p.addprevious(element)
+
+    _delete_paragraphs(all_victims)
+    for heading in heading_paragraphs:
+        delete(heading)
+
+
 def build_from_profile(
     src: Path,
     dst: Path,
@@ -1289,40 +1715,45 @@ def build_from_profile(
 ) -> None:
     """Tag `src` using `profile` and write the result to `dst`."""
     doc = docx.Document(str(src))
-    noto_num_id = None
-    if profile.normalization.normalize_bullet_font:
-        noto_num_id = discover_noto_num_id(doc)
 
-    build_name_profile(doc, profile)
-    build_contact_profile(doc, profile)
+    if profile.section_mode == "generic":
+        build_generic(doc, profile)
+    else:
+        noto_num_id = None
+        if profile.normalization.normalize_bullet_font:
+            noto_num_id = discover_noto_num_id(doc)
 
-    # Build sections bottom-up (later headings first) so earlier paragraph indices stay
-    # valid for still-pending sections. Deletion of a later section does not shift
-    # earlier heading ids.
-    builders: list[tuple[int, object]] = []
-    builders.append((profile.experience.heading_paragraph_id, "experience"))
-    if profile.enabled.education and profile.education is not None:
-        builders.append((profile.education.heading_paragraph_id, "education"))
-    if profile.enabled.projects and profile.projects is not None:
-        builders.append((profile.projects.heading_paragraph_id, "projects"))
-    if profile.enabled.skills and profile.skills is not None:
-        builders.append((profile.skills.heading_paragraph_id, "skills"))
-    builders.sort(key=lambda t: t[0], reverse=True)
+        build_name_profile(doc, profile)
+        build_contact_profile(doc, profile)
 
-    for _hid, kind in builders:
-        if kind == "experience":
-            build_experience_profile(doc, profile, noto_num_id=noto_num_id)
-        elif kind == "education":
-            build_education_profile(doc, profile, noto_num_id=noto_num_id)
-        elif kind == "projects":
-            build_projects_profile(doc, profile, noto_num_id=noto_num_id)
-        elif kind == "skills":
-            build_skills_profile(doc, profile)
+        # Build sections bottom-up (later headings first) so earlier paragraph indices
+        # stay valid for still-pending sections. Deletion of a later section does not
+        # shift earlier heading ids.
+        builders: list[tuple[int, object]] = []
+        builders.append((profile.experience.heading_paragraph_id, "experience"))
+        if profile.enabled.education and profile.education is not None:
+            builders.append((profile.education.heading_paragraph_id, "education"))
+        if profile.enabled.projects and profile.projects is not None:
+            builders.append((profile.projects.heading_paragraph_id, "projects"))
+        if profile.enabled.skills and profile.skills is not None:
+            builders.append((profile.skills.heading_paragraph_id, "skills"))
+        builders.sort(key=lambda t: t[0], reverse=True)
+
+        for _hid, kind in builders:
+            if kind == "experience":
+                build_experience_profile(doc, profile, noto_num_id=noto_num_id)
+            elif kind == "education":
+                build_education_profile(doc, profile, noto_num_id=noto_num_id)
+            elif kind == "projects":
+                build_projects_profile(doc, profile, noto_num_id=noto_num_id)
+            elif kind == "skills":
+                build_skills_profile(doc, profile)
 
     if profile.normalization.normalize_bullet_font:
         normalize_bullet_numbering(doc)
     if profile.normalization.force_single_spacing:
         normalize_single_spacing(doc)
+    clamp_tab_stops(doc)
 
     dst.parent.mkdir(parents=True, exist_ok=True)
     doc.save(str(dst))
@@ -1394,6 +1825,7 @@ def build_legacy(src: Path | None = None, dst: Path | None = None) -> int:
     build_skills(doc, skill_paras)
     normalize_bullet_numbering(doc)
     normalize_single_spacing(doc)
+    clamp_tab_stops(doc)
 
     dst.parent.mkdir(parents=True, exist_ok=True)
     doc.save(str(dst))

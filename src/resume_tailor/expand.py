@@ -122,17 +122,17 @@ class Expansion:
     char_limit: int = 0
 
 
-def entry_key(index: int) -> str:
-    """Stable key for an experience entry at `index` in `MasterResume.experience`."""
-    return f"exp:{index}"
+def entry_key(entry_id: str) -> str:
+    """Stable key for an experience entry, addressed by its own id rather than its
+    position in `MasterResume.experience`.
 
-
-def _experience_index(resume: MasterResume, entry: Experience) -> int:
-    """Return the index of `entry` in `resume.experience`, or raise if missing."""
-    for i, candidate in enumerate(resume.experience):
-        if candidate is entry:
-            return i
-    raise ValueError(f"Experience entry {entry.company!r} is not on the master resume.")
+    Keying on position meant reordering entries in the editor silently replayed a
+    *different* entry's cached expansion on the next run — the cache path is built from
+    these keys (`_cache_path`), so a stale index pointed at whatever now sat there. Keying
+    on `Experience.id` (stable across reorders, and the same id `include.py` and the fit
+    loop already address entries by) fixes that; old `exp:<index>` cache files just miss.
+    """
+    return f"exp:{entry_id}"
 
 
 def choose_entries(
@@ -187,8 +187,8 @@ def _cache_path(
 ) -> Path:
     """Cache key covering everything the expansion depends on.
 
-    Keys must be the master-resume `exp:<index>` values, not positions in the filtered
-    list — otherwise editing an earlier entry would not invalidate a later one's cache.
+    Keys must be the `entry_key(entry.id)` values, not positions in the filtered list —
+    otherwise editing an earlier entry would not invalidate a later one's cache.
     """
     payload = "\n".join(
         [
@@ -336,7 +336,7 @@ def expand_experience(
         events.emit(on_event, "expand", "No experience entries to expand")
         return Expansion(entries=[], warnings=[], model=model_label, char_limit=char_limit)
 
-    keyed = [(entry_key(_experience_index(resume, e)), e) for e in chosen]
+    keyed = [(entry_key(e.id), e) for e in chosen]
     by_key = {key: entry for key, entry in keyed}
 
     config.CACHE_DIR.mkdir(parents=True, exist_ok=True)

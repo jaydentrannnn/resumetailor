@@ -16,7 +16,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from resume_tailor import config
-from resume_tailor.data import load
+from resume_tailor.data import load, to_legacy_dict
 from resume_tailor.events import ProgressEvent
 from resume_tailor.fit import FitResult
 from resume_tailor.web import jobs as jobs_mod
@@ -610,8 +610,11 @@ def test_settings_json_predating_include_key_still_loads(client, tmp_path, monke
         "contact_fields": None,
         "gpa": False,
         "coursework": True,
+        "exclude_entries": [],
+        "exclude_sections": [],
         "exclude_experience": [],
         "exclude_projects": [],
+        "section_order": None,
     }
 
 
@@ -667,8 +670,25 @@ def test_get_resume_outline(client):
     assert body["has_coursework"] is True  # fixture resume has coursework
     assert {e["id"] for e in body["experience"]} == {e.id for e in resume.experience}
     assert {p["id"] for p in body["projects"]} == {p.id for p in resume.projects}
-    assert set(body["sections_enabled"]) == {"education", "experience", "projects", "skills"}
+    assert set(body["sections_enabled"]) == {
+        "education", "experience", "projects", "skills", "list_section",
+    }
+
+    # `sections` covers every section (any kind), not just entry sections — education
+    # and skills are orderable from the include tile too, even though they carry no
+    # per-entry excludes and so contribute an empty `entries` list.
+    section_kinds = {s["kind"] for s in body["sections"]}
+    assert {"education", "skills"} <= section_kinds
+    entry_ids_via_sections = {e["id"] for s in body["sections"] for e in s["entries"]}
+    entry_ids_via_flat = {e["id"] for e in body["experience"]} | {
+        p["id"] for p in body["projects"]
+    }
+    assert entry_ids_via_sections == entry_ids_via_flat
+    for s in body["sections"]:
+        if s["kind"] not in ("experience", "project"):
+            assert s["entries"] == []
     assert all(isinstance(v, bool) for v in body["sections_enabled"].values())
+    assert body["section_mode"] in ("fixed", "generic")
 
 
 def test_create_job_rejects_a_fully_excluded_resume(client):
@@ -809,8 +829,10 @@ def test_master_resume_round_trip(client, tmp_path, monkeypatch):
     assert got.json()["contact"]["name"] == "Test User"
 
 
-def test_master_resume_accepts_appended_experience_bullet(client, tmp_path, monkeypatch):
-    """PUT with a UI-authored experience entry and new bullet id grows the store."""
+def test_master_resume_put_accepts_legacy_shaped_payload(client, tmp_path, monkeypatch):
+    """PUT still accepts the pre-`sections` wire shape — anything that never migrated to
+    sending `sections` (an old script, a saved request) keeps working; the model's
+    before-validator folds it in unchanged."""
     c, _ = client
     resume = load()
     path = tmp_path / "master_resume.json"
@@ -819,7 +841,7 @@ def test_master_resume_accepts_appended_experience_bullet(client, tmp_path, monk
     monkeypatch.setattr(config, "DATA_DIR", tmp_path)
 
     before = len(resume.all_bullets())
-    payload = resume.model_dump(by_alias=True)
+    payload = to_legacy_dict(resume)
     payload["experience"].append(
         {
             "company": "Editor Test Co",
@@ -845,10 +867,51 @@ def test_master_resume_accepts_appended_experience_bullet(client, tmp_path, monk
     assert body["summary"]["bullets"] == before + 1
     assert body["summary"]["experience"] == len(resume.experience) + 1
 
-    got = c.get("/api/master-resume").json()
-    last = got["experience"][-1]
+
+def test_master_resume_get_put_round_trips_sections_natively(client, tmp_path, monkeypatch):
+    """GET returns `sections` (no flattened `experience`/`projects` keys); appending an
+    entry to a section there and PUTting it back grows that section, and a follow-up GET
+    reflects it — the editor's actual read-edit-write flow."""
+    c, _ = client
+    path = tmp_path / "master_resume.json"
+    path.write_text(config.MASTER_RESUME_PATH.read_text(encoding="utf-8"), encoding="utf-8")
+    monkeypatch.setattr(config, "MASTER_RESUME_PATH", path)
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
+
+    got = c.get("/api/master-resume")
+    assert got.status_code == 200
+    payload = got.json()
+    assert "sections" in payload
+    assert "experience" not in payload
+
+    exp_section = next(s for s in payload["sections"] if s["kind"] == "experience")
+    exp_section["entries"].append(
+        {
+            "company": "Editor Test Co",
+            "title": "Software Engineer",
+            "location": "Remote",
+            "start": "2024-01",
+            "end": "present",
+            "bullets": [
+                {
+                    "id": "edittest_b2",
+                    "text": "Shipped a feature with Python and FastAPI.",
+                    "tags": ["Python", "FastAPI"],
+                    "metric": False,
+                }
+            ],
+        }
+    )
+
+    res = c.put("/api/master-resume", json=payload)
+    assert res.status_code == 200
+    assert res.json()["ok"] is True
+
+    got2 = c.get("/api/master-resume").json()
+    exp_section2 = next(s for s in got2["sections"] if s["kind"] == "experience")
+    last = exp_section2["entries"][-1]
     assert last["company"] == "Editor Test Co"
-    assert last["bullets"][0]["id"] == "edittest_b1"
+    assert last["bullets"][0]["id"] == "edittest_b2"
     # Tags come back canonicalised the way data.Bullet._normalise_tags stores them.
     assert "python" in [t.lower() for t in last["bullets"][0]["tags"]]
 

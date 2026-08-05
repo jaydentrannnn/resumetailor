@@ -15,7 +15,7 @@ from datetime import datetime, timezone
 from pathlib import Path
 
 from resume_tailor import config, data, render
-from resume_tailor.data import Bullet, Experience, MasterResume
+from resume_tailor.data import Bullet, Experience, ExperienceSection, MasterResume
 
 _WORDS = (
     "Delivered scalable systems by partnering across engineering and product teams to "
@@ -66,41 +66,47 @@ def _nonblank_lines(pdf_path: Path, page_index: int) -> list[str]:
     return [line for line in text.split("\n") if line.strip()]
 
 
+def _experience_only_sections(base: MasterResume, entry: Experience) -> list:
+    """Every section from `base` except experience/project kinds, plus one experience
+    section holding `entry` — used by the calibration resumes below, which need a
+    controlled single job and no projects."""
+    sections = [s for s in base.sections if s.kind not in ("experience", "project")]
+    sections.append(ExperienceSection(id="experience", title="Experience", entries=[entry]))
+    return sections
+
+
 def _single_bullet_resume(base: MasterResume, text: str) -> MasterResume:
     """A minimal resume: one experience entry, one bullet, no projects or skills."""
     resume = base.model_copy(deep=True)
-    resume.experience = [
-        Experience(
-            company="Calibration Co",
-            title="Calibration Role",
-            location="",
-            start="2025-01",
-            end="2025-02",
-            bullets=[Bullet(id="calib_1", text=text, tags=["calibration"])],
-        )
+    entry = Experience(
+        company="Calibration Co",
+        title="Calibration Role",
+        location="",
+        start="2025-01",
+        end="2025-02",
+        bullets=[Bullet(id="calib_1", text=text, tags=["calibration"])],
+    )
+    resume.sections = [
+        s for s in _experience_only_sections(resume, entry) if s.kind != "skills"
     ]
-    resume.projects = []
-    resume.skills = []
     return resume
 
 
 def _n_bullet_resume(base: MasterResume, n: int, bullet_text: str) -> MasterResume:
     """One experience entry with `n` short one-line bullets, no projects."""
     resume = base.model_copy(deep=True)
-    resume.experience = [
-        Experience(
-            company="Calibration Co",
-            title="Calibration Role",
-            location="",
-            start="2025-01",
-            end="2025-02",
-            bullets=[
-                Bullet(id=f"calib_{i}", text=bullet_text, tags=["calibration"])
-                for i in range(n)
-            ],
-        )
-    ]
-    resume.projects = []
+    entry = Experience(
+        company="Calibration Co",
+        title="Calibration Role",
+        location="",
+        start="2025-01",
+        end="2025-02",
+        bullets=[
+            Bullet(id=f"calib_{i}", text=bullet_text, tags=["calibration"])
+            for i in range(n)
+        ],
+    )
+    resume.sections = _experience_only_sections(resume, entry)
     return resume
 
 

@@ -70,6 +70,18 @@ export function EditorProvider({ children }: { children: ReactNode }) {
     if (loaded) return;
     Promise.all([fetchMasterResume(), fetchConfig()])
       .then(([raw, cfg]) => {
+        const record = raw as Record<string, unknown>;
+        if (!Array.isArray(record.sections)) {
+          // The backend now always returns a `sections`-shaped resume (see
+          // `web/app.py::get_master_resume`); a payload without it means a stale
+          // frontend build talking to a newer backend (or vice versa) — fail loudly
+          // rather than rendering an editor with no sections to show.
+          throw new Error(
+            "Master resume response is missing `sections` — the app build is out of " +
+              "date with the server. Reload the page; if that doesn't help, rebuild " +
+              "the frontend.",
+          );
+        }
         setResumeState(raw as MasterResume);
         setSavedSnapshot(JSON.stringify(raw));
         setConfig(cfg);

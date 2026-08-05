@@ -116,11 +116,15 @@ def _entry_lines(entry: Experience | Project, bullets: dict[str, str]) -> int:
     kept = [bullets[b.id] for b in entry.bullets if b.id in bullets]
     if not kept:
         return 0
-    return 2 + sum(_bullet_lines(text) for text in kept)  # header/title line + tab line
+    # An experience entry has its own header line plus a separate title line
+    # (`render.build_context`'s `job` dict); a project's header line already carries
+    # name/tech/date with no second line.
+    header_lines = 2 if isinstance(entry, Experience) else 1
+    return header_lines + sum(_bullet_lines(text) for text in kept)
 
 
 def _section_lines(entries: list[Experience] | list[Project], bullets: dict[str, str]) -> int:
-    """Lines for one experience/project section, honoring the bullets filter.
+    """Lines for one entry section, honoring the bullets filter.
 
     An entry whose bullets were all dropped contributes nothing at all — not even its
     header — mirroring `render.build_context`'s own filtering.
@@ -130,19 +134,103 @@ def _section_lines(entries: list[Experience] | list[Project], bullets: dict[str,
     return total + (1 if total else 0)  # section header, once, if anything survived
 
 
+def _spacer_lines(resume: MasterResume, bullets: dict[str, str], *, layout: dict) -> int:
+    """Blank-separator lines a generic-mode template's spacing donors add on top of
+    content lines — see `template_profile.SpacingProfile` and `template_build.
+    build_generic`. Zero whenever the active profile has no spacer donors set, so this
+    term is a pure addition for a template that actually reproduces blank lines; every
+    existing profile (which has none) sizes exactly as before.
+
+    A separate term rather than folded into `_fixed_overhead_lines`/`_section_lines`:
+    those two are shared with fixed mode, where no per-section heading spacer exists to
+    count, and mixing "which section is first overall" bookkeeping into them is exactly
+    where this would get wrong. This only sizes selection; the real render still
+    measures, so an error here costs a retry round, not a wrong final page.
+    """
+    spacing = layout.get("spacing") or {}
+    # Each value is a run of chrome paragraph ids (see `template_profile.SpacingProfile`),
+    # so its length is how many physical lines that slot costs each time it fires.
+    before_n = len(spacing.get("before_heading") or [])
+    after_n = len(spacing.get("after_heading") or [])
+    between_n = len(spacing.get("between_entries") or [])
+    if not (before_n or after_n or between_n):
+        return 0
+
+    enabled = layout.get("enabled") or {}
+    kind_enabled = {
+        "experience": True,
+        "project": enabled.get("projects", True),
+        "list": enabled.get("list_section", True),
+        "education": enabled.get("education", True),
+        "skills": enabled.get("skills", True),
+    }
+
+    rendered = 0
+    between_total = 0
+    for section in resume.sections:
+        if not kind_enabled.get(section.kind, True):
+            continue
+        if section.kind in ("experience", "project"):
+            surviving = sum(
+                1 for e in section.entries if any(b.id in bullets for b in e.bullets)
+            )
+            if surviving == 0:
+                continue
+            rendered += 1
+            between_total += max(0, surviving - 1)
+        elif section.kind == "education":
+            if not section.entries:
+                continue
+            rendered += 1
+            between_total += max(0, len(section.entries) - 1)
+        else:  # skills / list — never trimmed by selection, render whenever non-empty
+            if not section.entries:
+                continue
+            rendered += 1
+
+    return (
+        before_n * max(0, rendered - 1) + after_n * rendered + between_n * between_total
+    )
+
+
 def estimate_lines(
     resume: MasterResume,
     bullets: dict[str, str],
     *,
     layout: dict | None = None,
 ) -> int:
-    """Cheap character-budget estimate of total rendered lines for this bullet set."""
+    """Cheap character-budget estimate of total rendered lines for this bullet set.
+
+    `layout["section_mode"]` changes how many section-header lines same-kind sections
+    cost: under `"fixed"` (the default — see `template_profile.TemplateProfile.
+    section_mode`), every experience-kind section flattens under the one physical
+    "EXPERIENCE" heading the template was built with, and likewise for projects — so two
+    experience-kind resume sections cost one header line, not two. Under `"generic"`,
+    each resume section gets its own tagged heading, so each contributes its own header
+    line. Getting this wrong biases the estimate in the direction that costs an extra
+    grow-or-shorten round, not a wrong final page — the real render still measures.
+    """
     layout = layout if layout is not None else active_layout()
     enabled = layout.get("enabled") or {}
+    section_mode = layout.get("section_mode", "fixed")
     total = _fixed_overhead_lines(resume, layout=layout)
-    total += _section_lines(resume.experience, bullets)
-    if enabled.get("projects", True):
-        total += _section_lines(resume.projects, bullets)
+
+    if section_mode == "generic":
+        for section in resume.entry_sections:
+            if section.kind == "project" and not enabled.get("projects", True):
+                continue
+            total += _section_lines(section.entries, bullets)
+        total += _spacer_lines(resume, bullets, layout=layout)
+    else:
+        experience_entries = [
+            e for s in resume.entry_sections if s.kind == "experience" for e in s.entries
+        ]
+        total += _section_lines(experience_entries, bullets)
+        if enabled.get("projects", True):
+            project_entries = [
+                e for s in resume.entry_sections if s.kind == "project" for e in s.entries
+            ]
+            total += _section_lines(project_entries, bullets)
     return total
 
 
@@ -159,34 +247,43 @@ def choose_entries(
     max_projects: int | None = None,
     semantic: dict[str, float] | None = None,
     layout: dict | None = None,
+    section_limits: dict[str, int] | None = None,
 ) -> list:
-    """Pick which jobs and projects appear, ranking the two sections independently.
+    """Pick which entries appear, ranking every entry section independently.
 
     Done once per run, before any rewriting: which entries appear is a decision about the
-    resume's shape, and the fit loop is only allowed to trim bullets inside them.
+    resume's shape, and the fit loop is only allowed to trim bullets inside them. Each
+    section is ranked against only its own entries — a leadership-section entry never
+    competes with a job for a slot, the same guarantee the original two-section split
+    gave experience vs. projects, generalised to any number of sections.
 
-    When the active template has no Projects section, `max_projects` is forced to 0.
+    `max_experience`/`max_projects` are the pre-`sections` overrides: they apply as the
+    default limit to every experience-kind / project-kind section respectively (today's
+    one-of-each behaviour is the special case where that is one section apiece).
+    `section_limits`, keyed by section id, overrides a specific section's limit and wins
+    over both.
+
+    When the active template has no Projects-kind prototype, every project-kind section
+    is forced to a limit of 0.
     """
     layout = layout if layout is not None else active_layout()
     enabled = layout.get("enabled") or {}
-    project_limit = (
-        0
-        if not enabled.get("projects", True)
-        else (config.MAX_PROJECT_ENTRIES if max_projects is None else max_projects)
-    )
-    experience = select_entries(
-        resume.experience,
-        requirements,
-        limit=config.MAX_EXPERIENCE_ENTRIES if max_experience is None else max_experience,
-        semantic=semantic,
-    )
-    projects = select_entries(
-        resume.projects,
-        requirements,
-        limit=project_limit,
-        semantic=semantic,
-    )
-    return [*experience, *projects]
+    section_limits = section_limits or {}
+    chosen: list = []
+    for section in resume.entry_sections:
+        if section.kind == "project":
+            default_limit = config.MAX_PROJECT_ENTRIES if max_projects is None else max_projects
+            if not enabled.get("projects", True):
+                default_limit = 0
+        else:
+            default_limit = (
+                config.MAX_EXPERIENCE_ENTRIES if max_experience is None else max_experience
+            )
+        limit = section_limits.get(section.id, default_limit)
+        chosen.extend(
+            select_entries(section.entries, requirements, limit=limit, semantic=semantic)
+        )
+    return chosen
 
 
 def _select_at_rewrite_budget(
@@ -197,6 +294,8 @@ def _select_at_rewrite_budget(
     *,
     experience_share: float | None = None,
     max_per_entry: int | None = None,
+    pools: list[list] | None = None,
+    weights: list[float | None] | None = None,
 ) -> dict[str, str]:
     """Map a selection to rewrite-budget placeholders for cheap line estimates.
 
@@ -207,6 +306,7 @@ def _select_at_rewrite_budget(
     selected = select_within_entries(
         entries, requirements, limit=limit, semantic=semantic,
         experience_share=experience_share, max_per_entry=max_per_entry,
+        pools=pools, weights=weights,
     )
     # Match the hard max the rewrite prompt advertises (budget minus widow safety), not
     # the full line cliff — that is what the model is told to land under.
@@ -225,6 +325,8 @@ def _initial_selection_size(
     share: float = 1.0,
     experience_share: float | None = None,
     max_per_entry: int | None = None,
+    pools: list[list] | None = None,
+    weights: list[float | None] | None = None,
 ) -> int:
     """Binary search the largest bullet count whose *post-rewrite* size should fit.
 
@@ -240,11 +342,11 @@ def _initial_selection_size(
     first draft, never a floor, and never allowed below one bullet per entry. It does not
     change what the loop grows back to afterward; see `config.INITIAL_BULLET_SHARE`.
 
-    `experience_share` and `max_per_entry` are forwarded to `_select_at_rewrite_budget` so
-    the estimate is computed against the same distribution the loop will actually select —
-    `total` (the search's raw ceiling) is `selectable_total(entries, max_per_entry=...)`
-    rather than the raw bullet count, since a per-entry cap can make part of the pool
-    unreachable regardless of `share`.
+    `experience_share`/`max_per_entry`/`pools`/`weights` are forwarded to
+    `_select_at_rewrite_budget` so the estimate is computed against the same distribution
+    the loop will actually select — `total` (the search's raw ceiling) is
+    `selectable_total(entries, max_per_entry=...)` rather than the raw bullet count, since
+    a per-entry cap can make part of the pool unreachable regardless of `share`.
     """
     floor = len(entries)
     total = selectable_total(entries, max_per_entry=max_per_entry)
@@ -259,6 +361,7 @@ def _initial_selection_size(
         bullets = _select_at_rewrite_budget(
             entries, requirements, mid, semantic,
             experience_share=experience_share, max_per_entry=max_per_entry,
+            pools=pools, weights=weights,
         )
         if estimate_lines(resume, bullets) <= capacity:
             low = mid
@@ -267,17 +370,54 @@ def _initial_selection_size(
     return low
 
 
+def _section_pools(
+    resume: MasterResume, entries: list, experience_share: float | None
+) -> tuple[list[list] | None, list[float | None] | None]:
+    """Group `entries` (already narrowed to the chosen subset) back into per-section
+    pools, with one weight per pool derived from `experience_share`.
+
+    Returns `(None, None)` when `experience_share` is None — the original flat-pool
+    default, which `select_within_entries` handles without any pool at all. When set,
+    every experience-kind section shares `experience_share` evenly and every
+    project-kind section shares the remainder evenly: the natural generalisation of the
+    old single-float experience-vs-projects split to any number of sections. Pools are
+    built from section identity, not `isinstance` — two experience-kind sections are the
+    same Python class, so only the section itself can tell them apart.
+    """
+    if experience_share is None:
+        return None, None
+    chosen_ids = {id(e) for e in entries}
+    pools = [
+        [e for e in section.entries if id(e) in chosen_ids] for section in resume.entry_sections
+    ]
+    kinds = [section.kind for section in resume.entry_sections]
+    present = {i for i, pool in enumerate(pools) if pool}
+    n_experience = sum(1 for i in present if kinds[i] == "experience")
+    n_project = sum(1 for i in present if kinds[i] == "project")
+    remainder = max(0.0, 1.0 - experience_share)
+
+    weights: list[float | None] = []
+    for i, kind in enumerate(kinds):
+        if i not in present:
+            weights.append(None)
+        elif kind == "experience":
+            weights.append(experience_share / n_experience if n_experience else None)
+        else:
+            weights.append(remainder / n_project if n_project else None)
+    return pools, weights
+
+
 def _overflow_report(resume: MasterResume, bullets: dict[str, str], target_pages: int) -> str:
     capacity = target_pages * config.LINES_PER_PAGE
     total = estimate_lines(resume, bullets)
 
     contributions: list[tuple[int, str]] = []
-    for label, entries in (("experience", resume.experience), ("projects", resume.projects)):
-        for entry in entries:
+    for section in resume.entry_sections:
+        for entry in section.entries:
             lines = _entry_lines(entry, bullets)
             if lines:
                 name = entry.company if isinstance(entry, Experience) else entry.name
-                contributions.append((lines, f"{label}: {name} (~{lines} lines)"))
+                contributions.append((lines, f"{section.title}: {name} (~{lines} lines)"))
     contributions.sort(reverse=True)
     top = "\n".join(f"  - {desc}" for _, desc in contributions[:5]) or "  (none)"
 
@@ -400,6 +540,22 @@ def fit(
     iterations = 0
     grow_attempts = 0
 
+    # A resume section whose kind the active template has no prototype for is skipped by
+    # `render.build_context` silently (it has no result channel of its own to carry a
+    # warning) — this is where that becomes visible, per the "skip it and warn loudly"
+    # policy for a declared-but-unbuildable section kind.
+    layout_check = active_layout()
+    enabled_check = layout_check.get("enabled") or {}
+    for section in resume.sections:
+        if not section.entries:
+            continue
+        key = config.SECTION_KIND_ENABLED_KEY[section.kind]
+        if not enabled_check.get(key, config.SECTION_KIND_ENABLED_DEFAULT[section.kind]):
+            warnings.append(
+                f"Section {section.title!r} has no matching layout in the active "
+                f"template and will not appear in the rendered resume."
+            )
+
     entries = choose_entries(
         resume,
         requirements,
@@ -416,9 +572,10 @@ def fit(
     # actually let the loop reach, which is what the grow condition must compare against.
     total_bullets = sum(len(e.bullets) for e in entries)
     growth_ceiling = selectable_total(entries, max_per_entry=entry_cap)
+    section_pools, section_weights = _section_pools(resume, entries, section_share)
     limit = _initial_selection_size(
         resume, entries, requirements, target_pages, semantic, share=initial_share,
-        experience_share=section_share, max_per_entry=entry_cap,
+        max_per_entry=entry_cap, pools=section_pools, weights=section_weights,
     )
     share_note = f" (capped at {initial_share:.0%} of {total_bullets})" if initial_share < 1.0 else ""
     events.emit(
@@ -436,7 +593,7 @@ def fit(
     while True:
         selected = select_within_entries(
             entries, requirements, limit=limit, semantic=semantic,
-            experience_share=section_share, max_per_entry=entry_cap,
+            max_per_entry=entry_cap, pools=section_pools, weights=section_weights,
         )
         char_budget = _TARGET_LINES_PER_BULLET * config.CHARS_PER_LINE
 

@@ -8,9 +8,20 @@ export type IncludeOptions = {
   contact_fields: ContactField[] | null;
   gpa: boolean;
   coursework: boolean;
-  /** Experience/project ids omitted from this run entirely. */
+  /** Entry ids (any experience/project section) omitted from this run entirely — one
+   * flat namespace, matching the server's `IncludeOptions.exclude_entries`. */
+  exclude_entries: string[];
+  /** Whole section ids omitted from this run entirely. */
+  exclude_sections: string[];
+  /** Legacy: folded into the same exclusion set as `exclude_entries` server-side. Kept
+   * only so a `settings.json` saved before `exclude_entries` existed still round-trips. */
   exclude_experience: string[];
   exclude_projects: string[];
+  /** Per-run display order for resume sections, by id. Null keeps the resume's own
+   * order. Sections not named here keep their relative position and are appended after
+   * the named ones. Has no visible effect under a `"fixed"` template — see
+   * `ResumeOutline.section_mode`. */
+  section_order: string[] | null;
 };
 
 export type JobSettings = {
@@ -172,6 +183,14 @@ export type ResumeOutlineEntry = {
   bullets: number;
 };
 
+/** One resume section (any kind, any count), as the include tile lists it. */
+export type ResumeOutlineSection = {
+  id: string;
+  title: string;
+  kind: string;
+  entries: ResumeOutlineEntry[];
+};
+
 export type ResumeOutline = {
   /** Which of location/email/phone/linkedin/github are non-empty in the master resume. */
   available_contact_fields: string[];
@@ -184,9 +203,15 @@ export type ResumeOutline = {
   has_coursework: boolean;
   experience: ResumeOutlineEntry[];
   projects: ResumeOutlineEntry[];
+  /** Every entry section (any kind, any count), in resume order — the general form of
+   * `experience`/`projects` above, which group same-kind sections into one flat list. */
+  sections: ResumeOutlineSection[];
   /** A template with no Projects section should not offer project checkboxes or the
    * link toggle. */
   sections_enabled: Record<string, boolean>;
+  /** `"fixed"` templates bake section order into the tagged XML, so `section_order` has
+   * no visible effect until the template is rebuilt in generic mode. */
+  section_mode: string;
 };
 
 export type SettingsResponse = {

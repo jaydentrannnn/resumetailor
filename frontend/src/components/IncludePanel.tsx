@@ -23,6 +23,32 @@ const CONTACT_FIELD_LABELS: Record<ContactField, string> = {
   github: "GitHub",
 };
 
+const SECTION_KIND_LABELS: Record<string, string> = {
+  experience: "Experience-like",
+  project: "Project-like",
+  list: "Simple list",
+  education: "Education",
+  skills: "Skills",
+};
+
+/**
+ * Merge a saved per-run section order against what the resume currently has: sections
+ * named in `saved` come first (in that order, dropping ids that no longer exist), then
+ * every other section keeps its resume-order relative position and is appended after.
+ * Pure so it is testable without mounting React — mirrors `include._apply_section_order`
+ * on the server, which resolves the same way at run time.
+ */
+export function effectiveSectionOrder(
+  saved: string[] | null,
+  sections: { id: string }[],
+): string[] {
+  const known = new Set(sections.map((s) => s.id));
+  const namedValid = (saved ?? []).filter((id) => known.has(id));
+  const namedSet = new Set(namedValid);
+  const unnamed = sections.filter((s) => !namedSet.has(s.id)).map((s) => s.id);
+  return [...namedValid, ...unnamed];
+}
+
 /**
  * Centralized "what to leave out" tile: contact field order/visibility, GPA and
  * coursework, and per-entry experience/project exclusion — one place instead of
@@ -102,6 +128,16 @@ export function IncludePanel({
   }
 
   const projectsEnabled = outline.sections_enabled.projects !== false;
+  const sectionOrder = effectiveSectionOrder(settings.include.section_order, outline.sections);
+  const sectionById = new Map(outline.sections.map((s) => [s.id, s]));
+  const orderedSections = sectionOrder
+    .map((id) => sectionById.get(id))
+    .filter((s): s is (typeof outline.sections)[number] => Boolean(s));
+  const isGeneric = outline.section_mode === "generic";
+
+  function moveSection(index: number, direction: -1 | 1) {
+    setInclude({ section_order: moveItem(sectionOrder, index, index + direction) });
+  }
 
   return (
     <section className="rounded-xl border border-line bg-panel p-5 shadow-sm">
@@ -167,6 +203,47 @@ export function IncludePanel({
       </fieldset>
 
       <fieldset className="mt-5 space-y-2">
+        <legend className="text-sm font-semibold text-ink">Section order</legend>
+        {!isGeneric && (
+          <p className="text-xs text-warn">
+            This template renders sections in a fixed order baked into the file — reordering
+            here has no effect until it&apos;s re-imported through the Template tab in
+            multi-section (&quot;generic&quot;) mode.
+          </p>
+        )}
+        <ul className="space-y-1">
+          {orderedSections.map((section, i) => (
+            <li key={section.id} className="flex items-center gap-2 text-sm">
+              <span className="flex-1">
+                {section.title}
+                <span className="ml-2 text-xs text-ink-muted">
+                  {SECTION_KIND_LABELS[section.kind] ?? section.kind}
+                </span>
+              </span>
+              <button
+                type="button"
+                title="Move up"
+                disabled={!isGeneric || i === 0}
+                onClick={() => moveSection(i, -1)}
+                className="rounded border border-line px-2 py-0.5 text-xs disabled:opacity-30"
+              >
+                ↑
+              </button>
+              <button
+                type="button"
+                title="Move down"
+                disabled={!isGeneric || i >= orderedSections.length - 1}
+                onClick={() => moveSection(i, 1)}
+                className="rounded border border-line px-2 py-0.5 text-xs disabled:opacity-30"
+              >
+                ↓
+              </button>
+            </li>
+          ))}
+        </ul>
+      </fieldset>
+
+      <fieldset className="mt-5 space-y-2">
         <legend className="text-sm font-semibold text-ink">Education</legend>
         <Toggle
           label="Show GPA"
@@ -186,45 +263,35 @@ export function IncludePanel({
         />
       </fieldset>
 
-      {outline.experience.length > 0 && (
-        <fieldset className="mt-5 space-y-2">
-          <legend className="text-sm font-semibold text-ink">Experience</legend>
-          {outline.experience.map((entry) => (
-            <Toggle
-              key={entry.id}
-              label={entry.label}
-              help={`${entry.bullets} bullet${entry.bullets === 1 ? "" : "s"}`}
-              checked={!settings.include.exclude_experience.includes(entry.id)}
-              onChange={(v) =>
-                setInclude({
-                  exclude_experience: v
-                    ? settings.include.exclude_experience.filter((id) => id !== entry.id)
-                    : [...settings.include.exclude_experience, entry.id],
-                })
-              }
-            />
-          ))}
-        </fieldset>
-      )}
+      {outline.sections.map((section) => {
+        if (section.kind === "project" && !projectsEnabled) return null;
+        if (section.entries.length === 0) return null;
+        const excluded = new Set(settings.include.exclude_entries);
+        return (
+          <fieldset key={section.id} className="mt-5 space-y-2">
+            <legend className="text-sm font-semibold text-ink">{section.title}</legend>
+            {section.entries.map((entry) => (
+              <Toggle
+                key={entry.id}
+                label={entry.label}
+                help={`${entry.bullets} bullet${entry.bullets === 1 ? "" : "s"}`}
+                checked={!excluded.has(entry.id)}
+                onChange={(v) =>
+                  setInclude({
+                    exclude_entries: v
+                      ? settings.include.exclude_entries.filter((id) => id !== entry.id)
+                      : [...settings.include.exclude_entries, entry.id],
+                  })
+                }
+              />
+            ))}
+          </fieldset>
+        );
+      })}
 
-      {projectsEnabled && outline.projects.length > 0 && (
+      {projectsEnabled && outline.sections.some((s) => s.kind === "project" && s.entries.length) && (
         <fieldset className="mt-5 space-y-2">
-          <legend className="text-sm font-semibold text-ink">Projects</legend>
-          {outline.projects.map((entry) => (
-            <Toggle
-              key={entry.id}
-              label={entry.label}
-              help={`${entry.bullets} bullet${entry.bullets === 1 ? "" : "s"}`}
-              checked={!settings.include.exclude_projects.includes(entry.id)}
-              onChange={(v) =>
-                setInclude({
-                  exclude_projects: v
-                    ? settings.include.exclude_projects.filter((id) => id !== entry.id)
-                    : [...settings.include.exclude_projects, entry.id],
-                })
-              }
-            />
-          ))}
+          <legend className="text-sm font-semibold text-ink">Project links</legend>
           <Toggle
             label="Show project links"
             help="Github label and hyperlink in each project's header line."

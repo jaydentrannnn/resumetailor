@@ -215,8 +215,8 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         metavar="ID",
         dest="exclude_ids",
         help=(
-            "Omit this experience or project id entirely (repeatable). Ids come from "
-            "master_resume.json's experience[].id / projects[].id."
+            "Omit this entry id entirely (repeatable) — any experience or project entry, "
+            "in any section. Ids come from master_resume.json's sections[].entries[].id."
         ),
     )
     parser.add_argument(
@@ -328,8 +328,7 @@ def main(argv: list[str] | None = None) -> int:
         contact_fields=contact_fields,
         gpa=not args.no_gpa,
         coursework=not args.no_coursework,
-        exclude_experience=list(args.exclude_ids),
-        exclude_projects=list(args.exclude_ids),
+        exclude_entries=list(args.exclude_ids),
     )
 
     try:

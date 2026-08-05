@@ -10,7 +10,16 @@ from __future__ import annotations
 import pytest
 
 from resume_tailor import config, fit as fit_mod
-from resume_tailor.data import load
+from resume_tailor.data import (
+    Bullet,
+    EducationSection,
+    Experience,
+    ExperienceSection,
+    MasterResume,
+    SkillGroup,
+    SkillsSection,
+    load,
+)
 from resume_tailor.jd import JobRequirements, Keyword
 from resume_tailor.rewrite import RewriteOutcome
 
@@ -90,6 +99,163 @@ def test_estimate_lines_respects_disabled_sections(monkeypatch):
     entries = fit_mod.choose_entries(resume, _requirements(), layout=layout)
     assert all(hasattr(e, "company") for e in entries)  # experience only
     assert not any(hasattr(e, "tech") for e in entries)
+
+
+def _spacer_test_resume() -> MasterResume:
+    """Small hand-built resume with a known, easy-to-hand-verify section/entry shape:
+    2 education entries, 3 experience entries (one of which will have every bullet
+    excluded from the `bullets` filter in tests below, so it does not "survive"), and
+    one non-empty skills section."""
+    return MasterResume(
+        contact={"name": "N", "email": "n@example.com"},
+        sections=[
+            EducationSection(
+                id="edu",
+                title="EDUCATION",
+                entries=[
+                    {"school": "A", "degree": "BA", "dates": "2020"},
+                    {"school": "B", "degree": "MA", "dates": "2022"},
+                ],
+            ),
+            ExperienceSection(
+                id="work",
+                title="WORK",
+                entries=[
+                    Experience(
+                        company="X", title="Eng", start="2020", end="2021",
+                        bullets=[Bullet(id="b1", text="did x", tags=["x"])],
+                    ),
+                    Experience(
+                        company="Y", title="Eng2", start="2021", end="2022",
+                        bullets=[Bullet(id="b2", text="did y", tags=["x"])],
+                    ),
+                    Experience(
+                        company="Z", title="Eng3", start="2022", end="2023",
+                        bullets=[Bullet(id="b3", text="did z", tags=["x"])],
+                    ),
+                ],
+            ),
+            SkillsSection(
+                id="skills", title="SKILLS", entries=[SkillGroup(label="Tools", items=["Python"])]
+            ),
+        ],
+    )
+
+
+def test_spacer_lines_zero_when_layout_has_no_spacing():
+    """No `spacing` key at all (every pre-existing profile) contributes nothing."""
+    resume = _spacer_test_resume()
+    layout = {"section_mode": "generic", "enabled": {}}
+    assert fit_mod._spacer_lines(resume, {}, layout=layout) == 0
+
+
+def test_spacer_lines_zero_when_donors_all_none():
+    resume = _spacer_test_resume()
+    layout = {
+        "section_mode": "generic",
+        "enabled": {},
+        "spacing": {"before_heading": [], "after_heading": [], "between_entries": []},
+    }
+    assert fit_mod._spacer_lines(resume, {}, layout=layout) == 0
+
+
+def test_spacer_lines_counts_before_after_and_between():
+    """2 education entries (always survive), 2 of 3 experience entries surviving the
+    bullets filter, 1 non-empty skills section: 3 rendered sections, so before_heading
+    contributes 2 (rendered - 1), after_heading contributes 3 (one per rendered
+    section), and between_entries contributes 1 (education, 2-1) + 1 (experience,
+    2 surviving - 1) = 2. Total 2 + 3 + 2 = 7."""
+    resume = _spacer_test_resume()
+    bullets = {"b1": "did x", "b2": "did y"}  # b3 excluded — entry Z does not survive
+    layout = {
+        "section_mode": "generic",
+        "enabled": {"education": True, "skills": True},
+        "spacing": {"before_heading": [1], "after_heading": [1], "between_entries": [1]},
+    }
+    assert fit_mod._spacer_lines(resume, bullets, layout=layout) == 7
+
+
+def test_spacer_lines_scale_with_run_length():
+    """A slot's cost is its run length — a rule-plus-blank `after_heading` is two lines
+    per rendered section, not one. Getting this wrong under-counts every heading."""
+    resume = _spacer_test_resume()
+    bullets = {"b1": "did x", "b2": "did y"}
+    layout = {
+        "section_mode": "generic",
+        "enabled": {"education": True, "skills": True},
+        "spacing": {"before_heading": [], "after_heading": [1, 2], "between_entries": []},
+    }
+    # 3 rendered sections x 2 paragraphs each.
+    assert fit_mod._spacer_lines(resume, bullets, layout=layout) == 6
+
+
+def test_spacer_lines_only_the_set_donors_contribute():
+    resume = _spacer_test_resume()
+    bullets = {"b1": "did x", "b2": "did y"}
+    layout = {
+        "section_mode": "generic",
+        "enabled": {"education": True, "skills": True},
+        "spacing": {"before_heading": [1], "after_heading": [], "between_entries": []},
+    }
+    assert fit_mod._spacer_lines(resume, bullets, layout=layout) == 2  # rendered - 1
+
+
+def test_spacer_lines_skips_a_disabled_kind():
+    """A kind the active template has no prototype for never renders, so it must not
+    count toward `rendered` or contribute a between-entries term."""
+    resume = _spacer_test_resume()
+    bullets = {"b1": "did x", "b2": "did y"}
+    layout = {
+        "section_mode": "generic",
+        "enabled": {"education": True, "skills": False},
+        "spacing": {"before_heading": [1], "after_heading": [1], "between_entries": []},
+    }
+    # rendered = education + experience only (skills disabled) = 2
+    assert fit_mod._spacer_lines(resume, bullets, layout=layout) == 1 + 2  # (2-1) + 2
+
+
+def test_spacer_lines_zero_when_nothing_survives():
+    resume = _spacer_test_resume()
+    layout = {
+        "section_mode": "generic",
+        "enabled": {"education": False, "skills": False},
+        "spacing": {"before_heading": [1], "after_heading": [1], "between_entries": [1]},
+    }
+    assert fit_mod._spacer_lines(resume, {}, layout=layout) == 0
+
+
+def test_estimate_lines_adds_spacer_term_under_generic_mode():
+    resume = _spacer_test_resume()
+    bullets = {"b1": "did x", "b2": "did y"}
+    layout = {
+        "contact_separator": " • ",
+        "contact_field_order": ["location", "email"],
+        "enabled": {"education": True, "experience": True, "projects": True, "skills": True},
+        "section_mode": "generic",
+        "spacing": {"before_heading": [1], "after_heading": [1], "between_entries": [1]},
+    }
+    layout_no_spacing = {**layout, "spacing": {}}
+    with_spacing = fit_mod.estimate_lines(resume, bullets, layout=layout)
+    without_spacing = fit_mod.estimate_lines(resume, bullets, layout=layout_no_spacing)
+    assert with_spacing - without_spacing == 7
+
+
+def test_estimate_lines_ignores_spacing_under_fixed_mode():
+    """Fixed-mode layouts never carry a `spacing` key in practice, but the guard lives
+    on `section_mode`, not presence-of-key, for defense in depth."""
+    resume = _spacer_test_resume()
+    bullets = {"b1": "did x", "b2": "did y"}
+    layout = {
+        "contact_separator": " • ",
+        "contact_field_order": ["location", "email"],
+        "enabled": {"education": True, "experience": True, "projects": True, "skills": True},
+        "section_mode": "fixed",
+        "spacing": {"before_heading": [1], "after_heading": [1], "between_entries": [1]},
+    }
+    layout_no_spacing = {**layout, "spacing": {}}
+    with_spacing = fit_mod.estimate_lines(resume, bullets, layout=layout)
+    without_spacing = fit_mod.estimate_lines(resume, bullets, layout=layout_no_spacing)
+    assert with_spacing == without_spacing
 
 
 def test_estimate_lines_counts_coursework_wrap():
