@@ -6,7 +6,6 @@ producer entry point (see CLAUDE.md).
 
     python scripts/build_template.py
     python scripts/build_template.py --profile templates/template_profile.json
-    python scripts/build_template.py --legacy
 """
 
 from __future__ import annotations

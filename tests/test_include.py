@@ -6,12 +6,12 @@ no-network convention as the rest of the suite.
 
 from __future__ import annotations
 
-from resume_tailor.data import load
 from resume_tailor.include import IncludeOptions, apply, contact_order, validate
+from tests.fixtures import synthetic_resume
 
 
 def _resume():
-    return load()
+    return synthetic_resume()
 
 
 def test_apply_with_defaults_changes_nothing_but_gpa_flag():

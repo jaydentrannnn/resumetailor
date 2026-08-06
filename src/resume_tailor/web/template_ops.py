@@ -25,13 +25,23 @@ from pathlib import Path
 
 import docx
 
-from resume_tailor import calibrate, config, data, render, template_analyze, template_build, template_profile
+from resume_tailor import (
+    calibrate,
+    config,
+    data,
+    render,
+    template_analyze,
+    template_build,
+    template_profile,
+    template_verify,
+)
 from resume_tailor.labels import label_taken, normalize_label
 from resume_tailor.template_profile import TemplateProfile, save_profile
 from resume_tailor.web.schemas import (
     CalibrationInfo,
     TemplateAnalyzeResponse,
     TemplateBuildResponse,
+    TemplateFieldCandidateOut,
     TemplateFileInfo,
     TemplateInfoResponse,
     TemplateIssueOut,
@@ -83,10 +93,27 @@ def _file_info(path: Path) -> TemplateFileInfo:
     )
 
 
+def _other_backend_calibrations(*, exclude: str) -> list[str]:
+    """Backend names (other than `exclude`) that already have a calibration file.
+
+    Used to explain a "fallback" calibration state precisely: fit constants are not
+    portable between Word and LibreOffice (they lay text out slightly differently), so
+    a file present for the *other* backend cannot silently cover for a missing one —
+    but a user seeing "fallback" with no further detail has no way to know that a real
+    measurement exists at all, just for the wrong engine.
+    """
+    return [
+        backend
+        for backend in config.PDF_BACKENDS
+        if backend != exclude and (config.CALIBRATION_DIR / f"{backend}.json").exists()
+    ]
+
+
 def _calibration_info(tagged: Path) -> CalibrationInfo:
     """Report fit-constant freshness relative to the tagged template's mtime."""
     cal_path = config.CALIBRATION_DIR / f"{config.PDF_BACKEND}.json"
     source = config.CALIBRATION_SOURCE
+    rejection = config.CALIBRATION_REJECTION
     chars = config.CHARS_PER_LINE
     lines = config.LINES_PER_PAGE
 
@@ -99,16 +126,37 @@ def _calibration_info(tagged: Path) -> CalibrationInfo:
             message="Tagged template is missing; generate it before calibrating.",
         )
 
-    if not cal_path.exists() or source == "fallback":
+    if rejection:
+        # A file exists on disk but its numbers were implausible (see
+        # `config.PLAUSIBLE_CHARS_PER_LINE`/`PLAUSIBLE_LINES_PER_PAGE`) — distinct from
+        # "no file at all" below, and must be checked first: `cal_path.exists()` is
+        # True here, so the next branch's "no calibration file" message would be wrong.
         return CalibrationInfo(
             source=source,
             chars_per_line=chars,
             lines_per_page=lines,
             stale=True,
-        message=(
-            "No calibration file for this PDF backend. Re-upload with "
-            "“Also calibrate fit constants”, or run `python scripts/calibrate.py`."
-        ),
+            message=rejection,
+        )
+
+    if not cal_path.exists() or source == "fallback":
+        other = _other_backend_calibrations(exclude=config.PDF_BACKEND)
+        hint = (
+            f" A calibration file exists for {', '.join(other)}, but fit constants are "
+            "not portable between PDF backends — that measurement cannot be reused here."
+            if other
+            else ""
+        )
+        return CalibrationInfo(
+            source=source,
+            chars_per_line=chars,
+            lines_per_page=lines,
+            stale=True,
+            message=(
+                "No calibration file for this PDF backend. Re-upload with "
+                "“Also calibrate fit constants”, or run `python scripts/calibrate.py`."
+                + hint
+            ),
         )
 
     # Module-level CHARS_PER_LINE / LINES_PER_PAGE were loaded at import time; if the
@@ -659,6 +707,99 @@ def _validate_upload_bytes(raw: bytes, filename: str) -> None:
         raise TemplateValidationError("Upload is empty.")
 
 
+def _upload_cache_dir() -> Path:
+    """Directory holding uploaded bytes for the wizard's remap/preview steps.
+
+    Keyed by the upload's own sha256 so the remap and preview endpoints never need to
+    re-upload the file — the wizard already sent it once, to `/analyze`. Lives under
+    the active workspace's own `output/` root (via `config.OUTPUT_DIR`, one of the
+    globals `set_active_workspace` rebinds), so switching profiles never leaks one
+    workspace's in-progress upload into another's.
+    """
+    return config.OUTPUT_DIR / "template" / "uploads"
+
+
+def _prune_upload_cache(*, max_age_seconds: float = 24 * 3600) -> None:
+    """Delete cached uploads older than `max_age_seconds`.
+
+    A wizard session that is abandoned mid-flow (tab closed after analyze, before
+    install or reset) would otherwise leak its upload forever; this runs opportunistically
+    whenever a new upload is cached, which is cheap and frequent enough that unbounded
+    growth never accumulates.
+    """
+    directory = _upload_cache_dir()
+    if not directory.exists():
+        return
+    cutoff = datetime.now(timezone.utc).timestamp() - max_age_seconds
+    for entry in directory.glob("*.docx"):
+        try:
+            if entry.stat().st_mtime < cutoff:
+                entry.unlink()
+        except OSError:
+            pass
+
+
+def _cache_upload(raw: bytes, sha: str) -> None:
+    """Persist an analyzed upload's bytes for later remap/preview calls."""
+    _prune_upload_cache()
+    directory = _upload_cache_dir()
+    directory.mkdir(parents=True, exist_ok=True)
+    (directory / f"{sha}.docx").write_bytes(raw)
+
+
+def _load_cached_upload(sha: str) -> bytes:
+    """Load a previously analyzed upload's bytes by its sha256.
+
+    Raises `TemplateValidationError` (400, not 404/500) when the cache has expired or
+    the wizard is pointing at a sha that was never analyzed — both are "start over",
+    the same class of problem as a bad upload.
+    """
+    path = _upload_cache_dir() / f"{sha}.docx"
+    if not path.exists():
+        raise TemplateValidationError(
+            "This upload is no longer available for preview/remap — analyze the file "
+            "again."
+        )
+    return path.read_bytes()
+
+
+def clear_upload_cache() -> None:
+    """Drop every cached upload — called after a successful install, once the wizard's
+    staged file has become the live template and has no further use as a cache entry."""
+    directory = _upload_cache_dir()
+    if directory.exists():
+        shutil.rmtree(directory, ignore_errors=True)
+
+
+def _analysis_to_response(result: template_analyze.AnalyzeResult) -> TemplateAnalyzeResponse:
+    """Shared `AnalyzeResult` -> wire-shape conversion for `analyze_upload`/`remap_upload`."""
+    return TemplateAnalyzeResponse(
+        source_sha256=result.source_sha256,
+        paragraphs=[
+            TemplateParagraphOut(**p.model_dump()) for p in result.paragraphs
+        ],
+        sections=[TemplateSectionOut(**s.model_dump()) for s in result.sections],
+        field_candidates=[
+            TemplateFieldCandidateOut(
+                field=c.field,
+                paragraph_id=c.span.paragraph_id,
+                start=c.span.start,
+                end=c.span.end,
+                confidence=c.confidence,
+                preview=c.preview,
+            )
+            for c in result.field_candidates
+        ],
+        suggested_profile=(
+            result.suggested_profile.model_dump(mode="json")
+            if result.suggested_profile is not None
+            else None
+        ),
+        issues=[TemplateIssueOut(**i.model_dump()) for i in result.issues],
+        ready=result.ready,
+    )
+
+
 def analyze_upload(raw: bytes, filename: str) -> TemplateAnalyzeResponse:
     """Analyse an uploaded DOCX without writing under templates/."""
     _validate_upload_bytes(raw, filename)
@@ -674,20 +815,72 @@ def analyze_upload(raw: bytes, filename: str) -> TemplateAnalyzeResponse:
     finally:
         tmp_path.unlink(missing_ok=True)
 
-    return TemplateAnalyzeResponse(
-        source_sha256=result.source_sha256,
-        paragraphs=[
-            TemplateParagraphOut(**p.model_dump()) for p in result.paragraphs
-        ],
-        sections=[TemplateSectionOut(**s.model_dump()) for s in result.sections],
-        suggested_profile=(
-            result.suggested_profile.model_dump(mode="json")
-            if result.suggested_profile is not None
-            else None
-        ),
-        issues=[TemplateIssueOut(**i.model_dump()) for i in result.issues],
-        ready=result.ready,
+    _cache_upload(raw, result.source_sha256)
+    return _analysis_to_response(result)
+
+
+def remap_upload(source_sha256: str, overrides: dict[int, str | None]) -> TemplateAnalyzeResponse:
+    """Re-run analysis on a previously uploaded file with specific headings' kinds
+    forced by the user, bypassing every heuristic gate for just those paragraphs (see
+    `template_analyze._analyze_document`'s `overrides` parameter)."""
+    raw = _load_cached_upload(source_sha256)
+    result = template_analyze.analyze_docx(raw=raw, overrides=overrides)
+    return _analysis_to_response(result)
+
+
+def preview_source(source_sha256: str) -> Path:
+    """Convert a previously uploaded (not-yet-installed) baseline to PDF, for the
+    wizard's side-by-side comparison. Raises `RuntimeError` when no PDF backend is
+    available, matching `ensure_preview`'s contract for the same 503 the route returns."""
+    raw = _load_cached_upload(source_sha256)
+    directory = _upload_cache_dir()
+    docx_path = directory / f"{source_sha256}.source.docx"
+    pdf_path = directory / f"{source_sha256}.source.pdf"
+    # Keyed by the upload's own sha256, so the source bytes for a given path can never
+    # change underneath it — an existing PDF here is never stale, unlike `ensure_preview`'s
+    # mtime check (which exists only because *that* cache's docx input can be re-rendered
+    # in place from an edited master resume).
+    if pdf_path.exists():
+        return pdf_path
+    docx_path.write_bytes(raw)
+    with LOCK:
+        render.to_pdf(docx_path, pdf_path)
+    return pdf_path
+
+
+def preview_draft(source_sha256: str, profile: TemplateProfile | dict) -> Path:
+    """Build a staged profile into a temp tagged template and render the master resume
+    through it, without touching the live template slot — lets the wizard show what
+    installing this exact mapping would produce before committing to it.
+
+    Runs the same build `_install_with_profile` does, minus the atomic commit: no
+    baseline/tagged/profile file under `templates/` is ever written or replaced.
+    """
+    confirmed = (
+        profile if isinstance(profile, TemplateProfile) else TemplateProfile.model_validate(profile)
     )
+    raw = _load_cached_upload(source_sha256)
+
+    directory = _upload_cache_dir()
+    directory.mkdir(parents=True, exist_ok=True)
+    with LOCK:
+        with tempfile.TemporaryDirectory() as stage_dir:
+            stage = Path(stage_dir)
+            staged_src = stage / "baseline.docx"
+            staged_tagged = stage / "main_template.docx"
+            staged_src.write_bytes(raw)
+            template_build.build_from_profile(staged_src, staged_tagged, confirmed)
+
+            docx_path = directory / f"{source_sha256}.draft.docx"
+            pdf_path = directory / f"{source_sha256}.draft.pdf"
+            render.render(
+                data.load(),
+                template=staged_tagged,
+                out=docx_path,
+                layout=template_profile.active_layout(confirmed),
+            )
+            render.to_pdf(docx_path, pdf_path)
+    return pdf_path
 
 
 def _run_build(
@@ -695,7 +888,6 @@ def _run_build(
     source: Path | None = None,
     output: Path | None = None,
     profile_path: Path | None = None,
-    legacy: bool = False,
 ) -> tuple[int, str]:
     """Shell out to `scripts/build_template.py`. Returns `(exit_code, combined_log)`.
 
@@ -704,8 +896,6 @@ def _run_build(
     """
     script = config.PROJECT_ROOT / "scripts" / "build_template.py"
     cmd = [sys.executable, str(script)]
-    if legacy:
-        cmd.append("--legacy")
     if source is not None:
         cmd.extend(["--from", str(source)])
     if output is not None:
@@ -741,6 +931,26 @@ def _smoke_render(tagged: Path) -> None:
         docx.Document(str(out))
 
 
+def _verify_staged_build(tagged: Path, profile: TemplateProfile) -> None:
+    """Hold a staged, profile-based build accountable to its own mapping before it can
+    replace the live template — `_smoke_render` only proves the file opens; a template
+    can smoke-render cleanly and still be missing a field entirely (an unmapped
+    `dates`/`location` silently drops from every job) or point a mapped field at the
+    wrong span (builds and renders fine, just with the wrong text). Both are
+    `TemplateBuildError`s, the same as a smoke-render failure — a staged install that
+    fails either check must never reach the live slot.
+    """
+    issues = template_verify.verify_tagged(tagged, profile)
+    issues += template_verify.verify_roundtrip(tagged, profile, data.load())
+    blockers = [i for i in issues if i.blocking]
+    if blockers:
+        detail = "; ".join(i.message for i in blockers)
+        raise TemplateBuildError(
+            f"Build verification failed: {detail}",
+            log="\n".join(f"{i.code}: {i.message}" for i in blockers),
+        )
+
+
 def _maybe_calibrate(log: str, *, do_calibrate: bool) -> str:
     """Optionally measure fit constants and hot-reload them into `config`.
 
@@ -766,18 +976,14 @@ def install_baseline(
     raw: bytes,
     filename: str,
     *,
-    profile: TemplateProfile | dict | None = None,
-    legacy: bool = False,
+    profile: TemplateProfile | dict,
     do_calibrate: bool = False,
     label: str | None = None,
 ) -> TemplateBuildResponse:
     """Validate an uploaded .docx, rebuild the tagged template, then swap live files.
 
-    With a confirmed `profile`, build + smoke-render happen in a temp directory and only
-    then replace baseline, tagged template, and `template_profile.json` together.
-
-    Without a profile (legacy Template-tab / CLI-compatible path), replace the baseline
-    and shell out to `build_template.py --legacy`, restoring the baseline on failure.
+    Build + smoke-render happen in a temp directory and only then replace baseline,
+    tagged template, and `template_profile.json` together.
 
     When `do_calibrate` is True, measure CHARS_PER_LINE / LINES_PER_PAGE after a successful
     install and reload them in-process (no server restart).
@@ -800,69 +1006,22 @@ def install_baseline(
         _library_preserve_orphan_live()
         _library_ensure_room_for_new(label=resolved_label)
 
-    if profile is not None and not legacy:
-        response = _install_with_profile(raw, filename, profile)
-    else:
-        response = _install_legacy(raw, filename)
+    response = _install_with_profile(raw, filename, profile)
 
     with LOCK:
         _library_record_after_install(
             label=resolved_label,
             source_filename=Path(filename).name,
         )
+    # The wizard's cached upload (for remap/preview) has now become the live template;
+    # nothing further needs it, and keeping it around would just be dead weight until
+    # `_prune_upload_cache`'s 24h sweep got to it.
+    clear_upload_cache()
 
     if do_calibrate:
         new_log = _maybe_calibrate(response.log, do_calibrate=True)
         return TemplateBuildResponse(ok=True, log=new_log, info=info())
     return TemplateBuildResponse(ok=True, log=response.log, info=info())
-
-
-def _install_legacy(raw: bytes, filename: str) -> TemplateBuildResponse:
-    """Original upload path: write baseline, run legacy build, restore on failure."""
-    with LOCK:
-        with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as tmp:
-            tmp.write(raw)
-            tmp_path = Path(tmp.name)
-        try:
-            docx.Document(str(tmp_path))
-        except Exception as exc:
-            tmp_path.unlink(missing_ok=True)
-            raise TemplateValidationError(
-                f"File is not a readable .docx: {exc}"
-            ) from exc
-
-        baseline = config.BASELINE_TEMPLATE_PATH
-        baseline.parent.mkdir(parents=True, exist_ok=True)
-        previous: bytes | None = None
-
-        if baseline.exists():
-            previous = baseline.read_bytes()
-            stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-            backup_dir = baseline.parent / "backups"
-            backup_dir.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(baseline, backup_dir / f"original_export.{stamp}.docx")
-
-        shutil.move(str(tmp_path), str(baseline))
-
-        # Ensure the no-arg build script path uses legacy headings (tests monkeypatch
-        # `_run_build` with a zero-argument stub).
-        profile_file = template_profile.profile_path()
-        if profile_file.exists():
-            profile_file.unlink()
-
-        exit_code, log = _run_build()
-        if exit_code != 0:
-            if previous is not None:
-                baseline.write_bytes(previous)
-            raise TemplateBuildError(
-                "build_template.py failed; previous baseline restored."
-                if previous is not None
-                else "build_template.py failed.",
-                log=log.strip() or f"(exit {exit_code}, no output)",
-            )
-
-        invalidate_preview()
-        return TemplateBuildResponse(ok=True, log=log.strip(), info=info())
 
 
 def _install_with_profile(
@@ -964,6 +1123,7 @@ def _install_with_profile(
                         ) from exc
 
                 _smoke_render(staged_out)
+                _verify_staged_build(staged_out, confirmed)
             except TemplateBuildError:
                 raise
             except Exception as exc:

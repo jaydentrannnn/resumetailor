@@ -7,6 +7,11 @@ passed a naive "does it parse" check, yet were rejected by Word or silently lost
 
 These run without Word: they inspect the .docx package directly rather than converting to
 PDF, so they stay fast and work on any platform.
+
+Renders `tests.fixtures.synthetic_resume()` through the `built_template` fixture
+(`conftest.py`) rather than a developer's own `data/master_resume.json` /
+`templates/main_template.docx` — those may not exist at all on a clean checkout or in
+CI, which previously forced most tests here into a conditional `pytest.skip`.
 """
 
 from __future__ import annotations
@@ -16,23 +21,34 @@ import zipfile
 import pytest
 from lxml import etree
 
-from resume_tailor import config, data, render
+from resume_tailor import render
+from tests.fixtures import synthetic_resume
 
 W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 NOTO_MARKER_FONT = "Noto Sans Symbols"
 
 
-@pytest.fixture(scope="module")
-def rendered_docx(tmp_path_factory) -> zipfile.ZipFile:
-    """Render the full master resume and return the output package."""
-    if not config.DEFAULT_TEMPLATE_PATH.exists():
-        pytest.skip("template not built; run scripts/build_template.py")
-    out = tmp_path_factory.mktemp("render") / "out.docx"
-    render.render(data.load(), out=out)
+@pytest.fixture
+def rendered_docx(built_template, tmp_path) -> zipfile.ZipFile:
+    """Render the synthetic resume and return the output package.
+
+    Function-scoped deliberately, even though `built_template` (its one expensive
+    dependency) stays session-scoped: this fixture reads `config.TEMPLATE_PROFILE_PATH`
+    indirectly via `render.build_context`'s default `active_layout()` lookup, which
+    `conftest.py`'s `_isolated_template_paths` redirects — but that redirect is itself
+    function-scoped, and pytest sets up module-scoped fixtures *before* function-scoped
+    ones for a given test. A module-scoped version of this fixture would therefore
+    construct using whichever `TEMPLATE_PROFILE_PATH` was live before any isolation
+    fixture ran — on a developer machine, a real, possibly stale profile — silently
+    changing what renders for a reason invisible in the diff. Re-rendering per test is
+    cheap here regardless: no Word/LibreOffice is involved, just docxtpl.
+    """
+    out = tmp_path / "out.docx"
+    render.render(synthetic_resume(), template=built_template, out=out)
     return zipfile.ZipFile(out)
 
 
-@pytest.fixture(scope="module")
+@pytest.fixture
 def rendered(rendered_docx) -> bytes:
     """Return document.xml bytes from the rendered resume."""
     return rendered_docx.read("word/document.xml")
@@ -110,12 +126,15 @@ def test_no_python_repr_leaked_into_document(rendered):
 def test_ampersands_survive(rendered):
     """An unescaped "&" was swallowed as a malformed XML entity.
 
-    "Tools & Languages" rendered as "Tools  Languages" until autoescape was enabled.
+    `synthetic_resume()` places an ampersand in both a skills group item and a bullet
+    (matching this test's original discovery: the bug did not depend on which context
+    key carried it) so this stays a check on autoescaping generally, not one specific
+    field.
     """
     root = etree.fromstring(rendered)
     body_text = "".join(t.text or "" for t in root.iter(f"{W}t"))
-    assert "Tools & Languages" in body_text
-    assert "hybrid retrieval & reranking" in body_text
+    assert "Data & Analytics" in body_text
+    assert "Improved reliability & throughput" in body_text
 
 
 def test_project_links_render_as_real_hyperlinks(rendered):
@@ -133,20 +152,17 @@ def test_project_links_render_as_real_hyperlinks(rendered):
         assert t.find(f".//{W}hyperlink") is None, "hyperlink nested inside w:t"
 
     body_text = "".join(t.text or "" for t in root.iter(f"{W}t"))
-    assert "Github" in body_text
+    assert "Repo" in body_text  # synthetic_resume()'s Project.link label
 
 
-def test_hyperlinks_carry_internetlink_style_for_libreoffice(tmp_path):
+def test_hyperlinks_carry_internetlink_style_for_libreoffice(built_template, tmp_path):
     """LibreOffice drops PDF links unless hyperlink runs use a defined InternetLink style.
 
     Word keeps clickable links without this; Docker/soffice does not. Regression for the
-    blue-but-dead LinkedIn/Github PDFs.
+    blue-but-dead LinkedIn/project PDFs.
     """
-    if not config.DEFAULT_TEMPLATE_PATH.exists():
-        pytest.skip("template not built; run scripts/build_template.py")
-
     out = tmp_path / "out.docx"
-    render.render(data.load(), out=out)
+    render.render(synthetic_resume(), template=built_template, out=out)
 
     with zipfile.ZipFile(out) as z:
         doc = z.read("word/document.xml").decode("utf-8")
@@ -166,18 +182,15 @@ def test_hyperlinks_carry_internetlink_style_for_libreoffice(tmp_path):
         assert "InternetLink" in styles_on_runs, etree.tostring(link)[:200]
 
 
-def test_each_project_keeps_its_own_url(tmp_path):
+def test_each_project_keeps_its_own_url(built_template, tmp_path):
     """Baking one hyperlink into the template pointed every project at the same repo.
 
     Checks resolved targets, not relationship ids: distinct ids can still resolve to the
     same URL, which is precisely the bug.
     """
-    if not config.DEFAULT_TEMPLATE_PATH.exists():
-        pytest.skip("template not built; run scripts/build_template.py")
-
     out = tmp_path / "out.docx"
-    resume = data.load()
-    render.render(resume, out=out)
+    resume = synthetic_resume()
+    render.render(resume, template=built_template, out=out)
 
     z = zipfile.ZipFile(out)
     root = etree.fromstring(z.read("word/document.xml"))
@@ -188,21 +201,19 @@ def test_each_project_keeps_its_own_url(tmp_path):
     targets = {target_of.get(h.get(f"{R}id")) for h in root.iter(f"{W}hyperlink")}
 
     expected = {p.url for p in resume.projects if p.url}
+    assert expected, "fixture must have at least one project URL to make this check meaningful"
     assert expected <= targets, f"missing project URLs: {expected - targets}"
 
 
-def test_project_links_can_be_suppressed(tmp_path):
+def test_project_links_can_be_suppressed(built_template, tmp_path):
     """`include_project_links=False` drops the label, hyperlink, and leading separator.
 
     Contact hyperlinks (e.g. LinkedIn) still render — this flag only covers projects.
     The context key must remain a RichText so the template's `{{r }}` tag stays valid.
     """
-    if not config.DEFAULT_TEMPLATE_PATH.exists():
-        pytest.skip("template not built; run scripts/build_template.py")
-
     out = tmp_path / "out.docx"
-    resume = data.load()
-    render.render(resume, out=out, include_project_links=False)
+    resume = synthetic_resume()
+    render.render(resume, template=built_template, out=out, include_project_links=False)
 
     z = zipfile.ZipFile(out)
     root = etree.fromstring(z.read("word/document.xml"))
@@ -339,20 +350,35 @@ def test_experience_header_location_is_not_bold(rendered):
         if "|" not in text:
             continue
         runs = list(paragraph.findall(f"{W}r"))
-        if not any(run.find(f".//{W}tab") is not None for run in runs):
+        tab_idx = next(
+            (i for i, run in enumerate(runs) if run.find(f".//{W}tab") is not None), None
+        )
+        if tab_idx is None:
             continue
 
-        company_run = next(
-            (run for run in runs if "|" in "".join(t.text or "" for t in run.iter(f"{W}t"))),
+        # The company span always starts at offset 0 (`_header_fields_from_text`), so
+        # the first run is always part of it. Find the *last* run before the tab that
+        # still contains "|" and search for location only after it — a tagged/rebuilt
+        # header legitimately splits "Company | " into a `{{ job.company }}` tag run
+        # plus its own literal " | " run, both bold; scanning the whole paragraph for
+        # "the first run without a pipe" would catch the bare company-name run first.
+        sep_idx = next(
+            (
+                i
+                for i in range(tab_idx - 1, -1, -1)
+                if "|" in "".join(t.text or "" for t in runs[i].iter(f"{W}t"))
+            ),
             None,
         )
+        if sep_idx is None:
+            continue
+
+        company_run = runs[0]
         location_run = next(
             (
                 run
-                for run in runs
-                if "|" not in "".join(t.text or "" for t in run.iter(f"{W}t"))
-                and run.find(f".//{W}tab") is None
-                and "".join(t.text or "" for t in run.iter(f"{W}t")).strip()
+                for run in runs[sep_idx + 1 : tab_idx]
+                if "".join(t.text or "" for t in run.iter(f"{W}t")).strip()
             ),
             None,
         )
@@ -381,10 +407,11 @@ def test_contact_line_has_linkedin_hyperlink(rendered_docx, rendered):
 
 
 def test_education_renders_coursework_from_master(rendered):
-    """Coursework from master_resume.json should appear as one Relevant Coursework bullet."""
-    resume = data.load()
-    assert resume.education, "fixture master resume needs an education entry"
-    assert resume.education[0].coursework, "migration should have split coursework"
+    """Coursework on a resume's education entry should appear as one Relevant Coursework
+    bullet."""
+    resume = synthetic_resume()
+    assert resume.education, "fixture resume needs an education entry"
+    assert resume.education[0].coursework, "fixture resume needs coursework"
     root = etree.fromstring(rendered)
     body = "\n".join(
         "".join(t.text or "" for t in p.iter(f"{W}t")) for p in root.iter(f"{W}p")
@@ -408,16 +435,14 @@ def _with_education(resume, entries):
     return resume
 
 
-def test_gpa_appended_only_when_show_gpa(tmp_path):
+def test_gpa_appended_only_when_show_gpa(built_template, tmp_path):
     """GPA suffix appears on the degree line only when show_gpa is on and gpa is set."""
-    if not config.DEFAULT_TEMPLATE_PATH.exists():
-        pytest.skip("template not built; run scripts/build_template.py")
-    resume = data.load()
+    resume = synthetic_resume()
     assert resume.education
     edu = resume.education[0].model_copy(update={"gpa": "3.85", "show_gpa": False})
     resume = _with_education(resume, [edu])
     off = tmp_path / "gpa_off.docx"
-    render.render(resume, out=off)
+    render.render(resume, template=built_template, out=off)
     with zipfile.ZipFile(off) as zf:
         xml = zf.read("word/document.xml").decode("utf-8")
     assert "GPA: 3.85" not in xml
@@ -425,22 +450,20 @@ def test_gpa_appended_only_when_show_gpa(tmp_path):
     edu = edu.model_copy(update={"show_gpa": True})
     resume = _with_education(resume, [edu])
     on = tmp_path / "gpa_on.docx"
-    render.render(resume, out=on)
+    render.render(resume, template=built_template, out=on)
     with zipfile.ZipFile(on) as zf:
         xml = zf.read("word/document.xml").decode("utf-8")
     assert "GPA: 3.85" in xml
 
 
-def test_blank_github_omits_separator_in_contact_context():
+def test_blank_github_omits_separator_in_contact_context(built_template):
     """A missing GitHub URL must not leave a dangling contact-line separator."""
-    if not config.DEFAULT_TEMPLATE_PATH.exists():
-        pytest.skip("template not built; run scripts/build_template.py")
     from docxtpl import DocxTemplate
 
-    resume = data.load()
+    resume = synthetic_resume()
     contact = resume.contact.model_copy(update={"github": ""})
     resume = resume.model_copy(update={"contact": contact})
-    tpl = DocxTemplate(config.DEFAULT_TEMPLATE_PATH)
+    tpl = DocxTemplate(built_template)
     ctx = render.build_context(resume, tpl)
     # RichText xml should contain LinkedIn but not GitHub when github is blank.
     xml = ctx["contact"].xml
@@ -448,39 +471,63 @@ def test_blank_github_omits_separator_in_contact_context():
     assert "GitHub" not in xml
 
 
-def test_contact_fields_override_renders_exactly_those_in_order():
+def test_contact_fields_override_renders_exactly_those_in_order(built_template):
     """`build_context(contact_fields=...)` overrides the template's own order — this is
     the mechanism `include.contact_order` relies on for both reordering and omission."""
-    if not config.DEFAULT_TEMPLATE_PATH.exists():
-        pytest.skip("template not built; run scripts/build_template.py")
     from docxtpl import DocxTemplate
 
-    resume = data.load()
-    tpl = DocxTemplate(config.DEFAULT_TEMPLATE_PATH)
+    resume = synthetic_resume()
+    tpl = DocxTemplate(built_template)
     ctx = render.build_context(resume, tpl, contact_fields=["email", "linkedin"])
     xml = ctx["contact"].xml
     assert resume.contact.email in xml
     assert "LinkedIn" in xml
     # Fields omitted from the override must not render even though they are set.
+    # `synthetic_resume()` deliberately gives contact/education/experience distinct
+    # location strings (none a substring of another) so this can't false-negative from
+    # an unrelated section that legitimately renders regardless of `contact_fields`.
     assert resume.contact.location not in xml
     assert "GitHub" not in xml
     # Exactly one separator between the two included fields, none elsewhere.
     assert xml.count("•") == 1
 
 
-def test_contact_fields_none_falls_back_to_template_order():
+def test_contact_fields_none_falls_back_to_template_order(built_template):
     """Omitting `contact_fields` must reproduce the un-overridden render exactly."""
-    if not config.DEFAULT_TEMPLATE_PATH.exists():
-        pytest.skip("template not built; run scripts/build_template.py")
     from docxtpl import DocxTemplate
 
-    resume = data.load()
-    tpl = DocxTemplate(config.DEFAULT_TEMPLATE_PATH)
+    resume = synthetic_resume()
+    tpl = DocxTemplate(built_template)
     default_xml = render.build_context(resume, tpl)["contact"].xml
 
-    tpl2 = DocxTemplate(config.DEFAULT_TEMPLATE_PATH)
+    tpl2 = DocxTemplate(built_template)
     overridden_xml = render.build_context(resume, tpl2, contact_fields=None)["contact"].xml
     assert default_xml == overridden_xml
+
+
+def test_parse_month_inverts_format_month():
+    assert render.parse_month("Jan 2023") == "2023-01"
+    assert render.parse_month("June 2022") == "2022-06"
+    assert render.format_month(render.parse_month("Jan 2023")) == "Jan 2023"
+
+
+def test_parse_month_passes_through_unrecognized_text():
+    """A bare year, "Present", or free text is passed through unchanged — the master
+    file tolerates whatever a human wrote, exactly as `format_month` already does."""
+    assert render.parse_month("Present") == "Present"
+    assert render.parse_month("2020") == "2020"
+    assert render.parse_month("Expected June 2027") == "Expected June 2027"
+
+
+def test_parse_range_inverts_format_range():
+    assert render.parse_range("Jan 2023 - Present") == ("2023-01", "Present")
+    assert render.parse_range("Jun 2022 - Aug 2022") == ("2022-06", "2022-08")
+    assert render.format_range(*render.parse_range("Jan 2023 - Aug 2023")) == "Jan 2023 - Aug 2023"
+
+
+def test_parse_range_handles_a_bare_year_range_and_missing_separator():
+    assert render.parse_range("2018 - 2022") == ("2018", "2022")
+    assert render.parse_range("2020") == ("2020", "")
 
 
 def test_degree_line_and_education_details_helpers():

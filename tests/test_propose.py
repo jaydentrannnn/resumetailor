@@ -378,3 +378,75 @@ def test_proposal_ids_are_stable_across_calls():
         raw, known_tags=["postgresql"], effective=_effective(), rejected=[]
     )
     assert first[0].id == second[0].id
+
+
+# --------------------------------------------------------------------------------------
+# propose_bullet_tags
+# --------------------------------------------------------------------------------------
+
+
+@pytest.fixture
+def tag_calls(monkeypatch):
+    """Stub the API for propose_bullet_tags; no cache seam to redirect (unlike
+    propose_vocabulary, this pass is not cached — see its own docstring)."""
+    recorded: list[dict] = []
+    parsed = propose._BulletTagProposals(
+        proposals=[
+            propose._BulletTagProposal(bullet_index=0, tags=["python", "not-a-real-tag"]),
+            propose._BulletTagProposal(bullet_index=1, tags=[]),
+            propose._BulletTagProposal(bullet_index=99, tags=["python"]),
+        ]
+    )
+    monkeypatch.setattr(config, "anthropic_api_key", lambda: "test-key")
+    monkeypatch.setattr(propose.llm, "client_for", lambda purpose: _FakeClient(parsed, recorded))
+    return recorded
+
+
+def test_no_call_when_nothing_to_tag(tag_calls):
+    assert propose.propose_bullet_tags([], ["python"]) == {}
+    assert propose.propose_bullet_tags(["Built a thing."], []) == {}
+    assert tag_calls == []
+
+
+def test_bullets_and_known_tags_reach_the_prompt(tag_calls):
+    propose.propose_bullet_tags(["Built a Python service.", "Led a team."], ["python", "sql"])
+    content = tag_calls[0]["messages"][0]["content"]
+    assert "<known_tags>" in content and "python" in content and "sql" in content
+    assert "<bullets>" in content and "Built a Python service." in content
+
+
+def test_drops_a_tag_outside_known_tags(tag_calls):
+    """The model proposed "not-a-real-tag" alongside "python" for bullet 0 — only the
+    known one survives, mirroring `filter_proposals`'s own "model selects, code
+    enforces" contract for vocabulary proposals."""
+    result = propose.propose_bullet_tags(
+        ["Built a Python service.", "Led a team."], ["python", "sql"]
+    )
+    assert result == {0: ["python"]}
+
+
+def test_empty_tag_list_is_a_valid_answer_not_included(tag_calls):
+    """Bullet 1 got an explicit empty list back (a real 'no known tag applies'
+    answer) — it must not appear in the result at all, same as never being proposed."""
+    result = propose.propose_bullet_tags(
+        ["Built a Python service.", "Led a team."], ["python", "sql"]
+    )
+    assert 1 not in result
+
+
+def test_out_of_range_bullet_index_is_ignored(tag_calls):
+    """Bullet index 99 does not exist in a two-bullet request; it must not crash or
+    leak into the result."""
+    result = propose.propose_bullet_tags(
+        ["Built a Python service.", "Led a team."], ["python", "sql"]
+    )
+    assert 99 not in result
+
+
+def test_llm_error_is_not_fatal_by_construction_for_tags(monkeypatch):
+    def _raise(purpose):
+        raise RuntimeError("boom")
+
+    monkeypatch.setattr(propose.llm, "client_for", _raise)
+    with pytest.raises(RuntimeError):
+        propose.propose_bullet_tags(["Built a thing."], ["python"])

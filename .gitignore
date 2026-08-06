@@ -24,3 +24,9 @@ desktop.ini
 
 templates/
 data/
+
+# A stray resume/export dropped at the repo root (e.g. an upload saved for debugging)
+# must never be stageable, even by `git add -A`. Nested .docx/.pdf under data/ or
+# templates/ are already covered by the rules above; this is root-only.
+/*.docx
+/*.pdf

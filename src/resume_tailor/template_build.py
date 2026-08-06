@@ -29,6 +29,55 @@ from .template_profile import CharSpan, OptionalSpan, TemplateProfile
 W = qn("w:p")
 NOTO_MARKER_FONT = "Noto Sans Symbols"
 
+# --------------------------------------------------------------------------------------
+# Jinja tag strings
+#
+# Hoisted to module constants — not just inlined at each tagging call site — so
+# `template_verify.py` can assert a built template actually contains what tagging
+# claims to have produced, reading the exact same source rather than a second,
+# driftable copy of this list.
+# --------------------------------------------------------------------------------------
+
+NAME_TAG = "{{ name }}"
+CONTACT_TAG = "{{r contact }}"
+
+EXPERIENCE_HEADER_TAGS: dict[str, str] = {
+    "company": "{{ job.company }}",
+    "location": "{{ job.location }}",
+    "dates": "{{ job.dates }}",
+}
+EXPERIENCE_TITLE_TAG = "{{ job.title }}"
+#: Shared with `PROJECT_BULLET_TAG` deliberately — each is a different `{%p for bullet
+#: in ... %}` loop's own variable, so the identical tag *text* is not evidence of one
+#: loop leaking into another; `expected_tags` treats it as presence-only, never an
+#: exactly-once count, for this reason.
+BULLET_TAG = "{{ bullet }}"
+
+EDUCATION_HEADER_TAGS: dict[str, str] = {
+    "school": "{{ edu.school }}",
+    "location": "{{ edu.location }}",
+    "dates": "{{ edu.dates }}",
+}
+EDUCATION_DEGREE_TAG = "{{ edu.degree_line }}"
+EDUCATION_DETAIL_TAG = "{{ detail }}"
+
+PROJECT_HEADER_TAGS: dict[str, str] = {
+    "name": "{{ proj.name }}",
+    "tech": "{{ proj.tech }}",
+    "date": "{{ proj.date }}",
+}
+PROJECT_LINK_TAG = "{{r proj.link }}"
+PROJECT_BULLET_TAG = BULLET_TAG
+
+SKILLS_LABEL_TAG = "{{ group.label }}"
+SKILLS_BODY_TAG = "{{ group.entries }}"
+
+LIST_ITEM_TAG = "{{ item }}"
+
+#: Generic-mode only: the shared heading clone's tag, and the outer per-section loop.
+SECTION_TITLE_TAG = "{{ section.title }}"
+SECTION_LOOP_OPEN = "{%p for section in sections %}"
+
 
 # --------------------------------------------------------------------------------------
 # Low-level XML helpers
@@ -130,11 +179,6 @@ def tab_run_index(paragraph: Paragraph) -> int:
         if "\t" in run.text or has_tab_element(run):
             return i
     return len(paragraph.runs) - 1
-
-
-def leading_runs_before_tab(paragraph: Paragraph) -> int:
-    """Count runs before the header tab — more runs usually means company/location split."""
-    return tab_run_index(paragraph)
 
 
 def set_num_id(paragraph: Paragraph, num_id: str) -> None:
@@ -345,45 +389,6 @@ def find_sections(doc) -> dict[str, tuple[int, int]]:
     return bounds
 
 
-def split_entries(paragraphs: list[Paragraph]) -> list[list[Paragraph]]:
-    """Group a section's paragraphs into entries.
-
-    An entry starts at a non-bullet paragraph that has actual text; its bullets and any
-    sub-heading (a job title) belong to it until the next such paragraph.
-    """
-    entries: list[list[Paragraph]] = []
-    for p in paragraphs:
-        starts_entry = not is_bullet(p) and p.text.strip()
-        if starts_entry and (not entries or any(is_bullet(x) for x in entries[-1])):
-            entries.append([p])
-        elif entries:
-            entries[-1].append(p)
-    return entries
-
-
-def header_run_count(entry: list[Paragraph]) -> int:
-    return len(entry[0].runs)
-
-
-def vertical_cost(p: Paragraph) -> tuple[int, int]:
-    """Approximate how much vertical space a paragraph's formatting costs.
-
-    Returns (line spacing, right indent); lower is more compact. Word's default line
-    value is 240 (single), and a right indent narrows the text column, causing earlier
-    wrapping and therefore taller blocks.
-    """
-    line, right = 240, 0
-    pPr = p._p.find(qn("w:pPr"))
-    if pPr is not None:
-        spacing = pPr.find(qn("w:spacing"))
-        if spacing is not None and spacing.get(qn("w:line")):
-            line = int(float(spacing.get(qn("w:line"))))
-        ind = pPr.find(qn("w:ind"))
-        if ind is not None and ind.get(qn("w:right")):
-            right = int(float(ind.get(qn("w:right"))))
-    return line, right
-
-
 def _num_to_abstract(numbering_root) -> dict[str, str]:
     """Map numbering instance ids to their abstract definition ids."""
     mapping: dict[str, str] = {}
@@ -574,24 +579,6 @@ def retarget_bullet(doc, paragraph: Paragraph, num_id: str | None) -> None:
     shrink_bullet_marker(doc, paragraph)
 
 
-def pick_bullet_prototype(entries: list[list[Paragraph]]) -> Paragraph:
-    """Choose the most compact bullet in a section to serve as the loop body.
-
-    The source resume is internally inconsistent: some entries' bullets carry a 1.15
-    line-spacing override and a right indent, others carry neither. Since one prototype
-    drives every rendered bullet, that formatting is necessarily normalised — a bullet
-    from any entry may appear where another entry's used to, so per-entry spacing cannot
-    survive the loop regardless.
-
-    Given that, normalise *downward*. Picking the loosest prototype silently inflated the
-    resume by roughly 15% of a line per bullet and pushed a one-page resume onto two.
-    """
-    bullets = [p for entry in entries for p in entry if is_bullet(p)]
-    if not bullets:
-        raise RuntimeError("Section contains no bullet paragraphs to use as a prototype.")
-    return min(bullets, key=vertical_cost)
-
-
 # --------------------------------------------------------------------------------------
 # Tagging
 # --------------------------------------------------------------------------------------
@@ -669,227 +656,6 @@ def build_loop(
         anchor._p.addprevious(copy.deepcopy(para._p))
     anchor._p.addprevious(make_para("{%p endfor %}"))
     _ = inner
-
-
-# --------------------------------------------------------------------------------------
-# Section builders
-# --------------------------------------------------------------------------------------
-
-
-def build_name(doc) -> None:
-    """Replace the name line with a plain `{{ }}` tag so it comes from the master resume.
-
-    Plain substitution is fine here (unlike the contact line): the name carries no
-    hyperlink, so there is no risk of a run nesting inside `<w:t>`.
-    """
-    if not doc.paragraphs:
-        raise RuntimeError("Document is missing the name line (expected paragraph 0).")
-    paragraph = doc.paragraphs[0]
-    runs = paragraph.runs
-    if not runs:
-        raise RuntimeError("Name line has no runs to tag.")
-    # Keep the first run's display-name formatting; collapse everything else into it.
-    # Deliberately a distinct top-level key, not `contact.name` — `contact` in the render
-    # context is the RichText contact *line* (`{{r contact }}`), which has no attributes.
-    set_run_text(runs[0], "{{ name }}")
-    for extra in runs[1:]:
-        paragraph._p.remove(extra._r)
-
-
-def build_contact(doc) -> None:
-    """Replace the contact line with a single RichText tag.
-
-    The line carries LinkedIn (and optionally GitHub) as real hyperlinks, which differ
-    per person and must not be baked into the template. `{{r contact }}` is required —
-    a plain `{{ }}` nests the hyperlink's `<w:r>` inside a `<w:t>` and the link vanishes
-    on read-back. The baked-in hyperlink is stripped first for the same reason project
-    URLs are.
-    """
-    # Contact is the second body paragraph in the export: name, then location/email/…
-    if len(doc.paragraphs) < 2:
-        raise RuntimeError("Document is missing the contact line (expected paragraph 1).")
-    paragraph = doc.paragraphs[1]
-    strip_hyperlinks(paragraph)
-    runs = paragraph.runs
-    if not runs:
-        raise RuntimeError("Contact line has no runs to tag.")
-    # Keep the first run's Spectral formatting; collapse everything else into it.
-    set_run_text(runs[0], "{{r contact }}")
-    for extra in runs[1:]:
-        paragraph._p.remove(extra._r)
-
-
-def build_education(doc, entries: list[list[Paragraph]], *, noto_num_id: str | None) -> None:
-    """Replace all education entries with one tagged, looped prototype.
-
-    Degree text and detail bullets (coursework joined upstream, plus free-text details)
-    come from the master resume so the editor can toggle GPA and edit coursework without
-    re-exporting the Google Doc.
-    """
-    if not entries:
-        raise RuntimeError("EDUCATION section has no entries to prototype.")
-    # Prefer a header whose school and location already live in separate runs so
-    # school stays bold and location stays plain after tagging.
-    prototype = max(entries, key=lambda entry: leading_runs_before_tab(entry[0]))
-    header, *rest = prototype
-    bullets = [p for p in rest if is_bullet(p)]
-    if not bullets:
-        raise RuntimeError("Education entry is missing a degree/detail bullet.")
-    degree = bullets[0]
-    # Prefer a different bullet for the detail loop body so tagging one does not
-    # overwrite the other when they happen to be the same paragraph object.
-    section_bullets = [p for entry in entries for p in entry if is_bullet(p)]
-    others = [p for p in section_bullets if p._p is not degree._p]
-    detail = min(others, key=vertical_cost) if others else degree
-    # When the section has only a degree bullet, clone it so the two tags stay independent.
-    if detail._p is degree._p:
-        detail_p = copy.deepcopy(degree._p)
-        degree._p.addnext(detail_p)
-        detail = Paragraph(detail_p, degree._parent)
-    retarget_bullet(doc, degree, noto_num_id)
-    retarget_bullet(doc, detail, noto_num_id)
-
-    tag_header(
-        header,
-        ["{{ edu.school }} | ", "{{ edu.location }}"],
-        tail_field="{{ edu.dates }}",
-    )
-    tag_bullet(degree, "{{ edu.degree_line }}")
-    tag_bullet(detail, "{{ detail }}")
-
-    anchor = entries[0][0]
-    anchor._p.addprevious(make_para("{%p for edu in education %}"))
-    anchor._p.addprevious(copy.deepcopy(header._p))
-    anchor._p.addprevious(copy.deepcopy(degree._p))
-    anchor._p.addprevious(make_para("{%p for detail in edu.details %}"))
-    anchor._p.addprevious(copy.deepcopy(detail._p))
-    anchor._p.addprevious(make_para("{%p endfor %}"))
-    anchor._p.addprevious(make_para("{%p endfor %}"))
-
-    # Drop the temporary clone if we inserted one next to the degree bullet.
-    if detail._p.getparent() is not None and detail not in [
-        p for entry in entries for p in entry
-    ]:
-        delete(detail)
-
-    for entry in entries:
-        for para in entry:
-            delete(para)
-
-
-def build_experience(doc, entries: list[list[Paragraph]], *, noto_num_id: str | None) -> None:
-    """Replace all experience entries with one tagged, looped prototype."""
-    # Prefer a header whose company and location already live in separate runs so
-    # company stays bold and location stays plain after tagging.
-    prototype = max(entries, key=lambda entry: leading_runs_before_tab(entry[0]))
-
-    header, *rest = prototype
-    title = next((p for p in rest if not is_bullet(p) and p.text.strip()), None)
-    if title is None:
-        raise RuntimeError("Experience entry is missing a title paragraph.")
-    # The bullet prototype is chosen across the whole section, independently of the
-    # header, so spacing is normalised to the tightest variant present.
-    bullet = pick_bullet_prototype(entries)
-    retarget_bullet(doc, bullet, noto_num_id)
-
-    tag_header(header, ["{{ job.company }} | ", "{{ job.location }}"], tail_field="{{ job.dates }}")
-    set_run_text(title.runs[0], "{{ job.title }}")
-    for extra in title.runs[1:]:
-        title._p.remove(extra._r)
-    tag_bullet(bullet, "{{ bullet }}")
-
-    anchor = entries[0][0]
-    anchor._p.addprevious(make_para("{%p for job in experience %}"))
-    anchor._p.addprevious(copy.deepcopy(header._p))
-    anchor._p.addprevious(copy.deepcopy(title._p))
-    anchor._p.addprevious(make_para("{%p for bullet in job.bullets %}"))
-    anchor._p.addprevious(copy.deepcopy(bullet._p))
-    anchor._p.addprevious(make_para("{%p endfor %}"))
-    anchor._p.addprevious(make_para("{%p endfor %}"))
-
-    for entry in entries:
-        for para in entry:
-            delete(para)
-
-
-def build_projects(doc, entries: list[list[Paragraph]], *, noto_num_id: str | None) -> None:
-    """Replace all project entries with one tagged, looped prototype."""
-    prototype = min(entries, key=header_run_count)
-    header, *rest = prototype
-    bullet = pick_bullet_prototype(entries)
-    retarget_bullet(doc, bullet, noto_num_id)
-
-    # The per-project URL differs, so the baked-in hyperlink must go; render.py
-    # reinstates it as a RichText carrying the right target.
-    strip_hyperlinks(header)
-    tag_header(
-        header,
-        # `{{r ... }}` is docxtpl's RichText tag — the inline counterpart of `{%p %}`.
-        # A plain `{{ }}` substitutes the value as text, which nests the hyperlink's
-        # `<w:r>` inside a `<w:t>`; `w:t` may only contain characters, so the link is
-        # silently dropped when the document is read back.
-        # Separator before the link lives in the RichText (render.py), not here —
-        # otherwise suppressing the link leaves a dangling " | ".
-        ["{{ proj.name }} | ", "{{ proj.tech }}", "{{r proj.link }}"],
-        tail_field="{{ proj.date }}",
-    )
-    tag_bullet(bullet, "{{ bullet }}")
-
-    anchor = entries[0][0]
-    anchor._p.addprevious(make_para("{%p for proj in projects %}"))
-    anchor._p.addprevious(copy.deepcopy(header._p))
-    anchor._p.addprevious(make_para("{%p for bullet in proj.bullets %}"))
-    anchor._p.addprevious(copy.deepcopy(bullet._p))
-    anchor._p.addprevious(make_para("{%p endfor %}"))
-    anchor._p.addprevious(make_para("{%p endfor %}"))
-
-    for entry in entries:
-        for para in entry:
-            delete(para)
-
-
-def build_skills(doc, paragraphs: list[Paragraph]) -> None:
-    """Replace the skills lines with a single looped, tagged line."""
-    lines = [p for p in paragraphs if p.text.strip()]
-    if not lines:
-        return
-    # The prototype must keep the export's two-run split: a bold label run and a plain
-    # body run. Writing both tags into the label run and dropping the rest discards the
-    # plain run's formatting, so the entire rendered line comes out bold.
-    prototype = min(
-        (p for p in lines if len(p.runs) >= 2), key=lambda p: len(p.runs), default=lines[0]
-    )
-
-    # `entries`, not `items`: Jinja resolves `x.items` to the dict's built-in method
-    # before the key, and the method's repr gets mangled into bogus XML that Word
-    # refuses to open. Avoid any name that collides with a dict attribute.
-    #
-    # The colon lives in the label run because that is how the export bolds it; the
-    # separating space moves to the body run, where `set_run_text` preserves it.
-    set_run_text(prototype.runs[0], "{{ group.label }}:")
-    if len(prototype.runs) >= 2:
-        body = prototype.runs[1]
-    else:
-        body = clone_run_after(prototype.runs[0], "")
-        body.bold = False  # the clone inherits the label's bold
-    set_run_text(body, " {{ group.entries }}")
-    for extra in list(prototype.runs[2:]):
-        prototype._p.remove(extra._r)
-
-    shrink_bullet_marker(doc, prototype)
-
-    anchor = lines[0]
-    anchor._p.addprevious(make_para("{%p for group in skills %}"))
-    anchor._p.addprevious(copy.deepcopy(prototype._p))
-    anchor._p.addprevious(make_para("{%p endfor %}"))
-
-    for p in lines:
-        delete(p)
-
-
-# --------------------------------------------------------------------------------------
-# Entry point
-# --------------------------------------------------------------------------------------
 
 
 # --------------------------------------------------------------------------------------
@@ -1176,7 +942,7 @@ def build_name_profile(doc, profile: TemplateProfile) -> None:
     runs = paragraph.runs
     if not runs:
         raise RuntimeError("Name line has no runs to tag.")
-    set_run_text(runs[0], "{{ name }}")
+    set_run_text(runs[0], NAME_TAG)
     for extra in runs[1:]:
         paragraph._p.remove(extra._r)
 
@@ -1188,7 +954,7 @@ def build_contact_profile(doc, profile: TemplateProfile) -> None:
     runs = paragraph.runs
     if not runs:
         raise RuntimeError("Contact line has no runs to tag.")
-    set_run_text(runs[0], "{{r contact }}")
+    set_run_text(runs[0], CONTACT_TAG)
     for extra in runs[1:]:
         paragraph._p.remove(extra._r)
 
@@ -1237,22 +1003,14 @@ def _tag_experience_prototype(
     `build_generic` (generic mode) can wrap the result in whichever loop shape they need.
     Returns `(header, title, bullet)`, still at their original document positions.
     """
-    header = _tag_mapped_header(
-        doc,
-        mapping.header,
-        {
-            "company": "{{ job.company }}",
-            "location": "{{ job.location }}",
-            "dates": "{{ job.dates }}",
-        },
-    )
+    header = _tag_mapped_header(doc, mapping.header, EXPERIENCE_HEADER_TAGS)
     if mapping.title.present and mapping.title.span is not None:
         title_para = _para_by_id(doc, mapping.title.span.paragraph_id)
-        replace_span_with_tag(title_para, mapping.title.span, "{{ job.title }}")
+        replace_span_with_tag(title_para, mapping.title.span, EXPERIENCE_TITLE_TAG)
     elif mapping.title_paragraph_id is not None:
         title_para = _para_by_id(doc, mapping.title_paragraph_id)
         if title_para.runs:
-            set_run_text(title_para.runs[0], "{{ job.title }}")
+            set_run_text(title_para.runs[0], EXPERIENCE_TITLE_TAG)
             for extra in title_para.runs[1:]:
                 title_para._p.remove(extra._r)
     else:
@@ -1265,14 +1023,16 @@ def _tag_experience_prototype(
     )
     bullet = _para_by_id(doc, mapping.bullet_paragraph_id)
     retarget_bullet(doc, bullet, noto_num_id)
-    tag_bullet(bullet, "{{ bullet }}")
+    tag_bullet(bullet, BULLET_TAG)
     return header, title_para, bullet
 
 
-def build_experience_profile(doc, profile: TemplateProfile, *, noto_num_id: str | None) -> None:
+def build_experience_profile(
+    doc, profile: TemplateProfile, *, noto_num_id: str | None, other_headings: list[Paragraph]
+) -> None:
     """Loop-tag the experience section from the confirmed mapping."""
     mapping = profile.experience
-    victims = _section_body_paragraphs(doc, mapping.heading_paragraph_id, profile)
+    victims = _section_body_paragraphs(doc, mapping.heading_paragraph_id, other_headings)
     header, title_para, bullet = _tag_experience_prototype(doc, mapping, noto_num_id=noto_num_id)
 
     # Insert clones before the (still-present) prototype header, then drop originals.
@@ -1293,18 +1053,10 @@ def _tag_education_prototype(
 ) -> tuple[Paragraph, Paragraph, Paragraph]:
     """Tag one education header/degree/detail prototype in place. Pure tagging, same
     split as `_tag_experience_prototype`. Returns `(header, degree, detail)`."""
-    header = _tag_mapped_header(
-        doc,
-        mapping.header,
-        {
-            "school": "{{ edu.school }}",
-            "location": "{{ edu.location }}",
-            "dates": "{{ edu.dates }}",
-        },
-    )
+    header = _tag_mapped_header(doc, mapping.header, EDUCATION_HEADER_TAGS)
     degree = _para_by_id(doc, mapping.degree_paragraph_id)
     retarget_bullet(doc, degree, noto_num_id)
-    tag_bullet(degree, "{{ edu.degree_line }}")
+    tag_bullet(degree, EDUCATION_DEGREE_TAG)
 
     if mapping.detail_paragraph_id is not None:
         detail = _para_by_id(doc, mapping.detail_paragraph_id)
@@ -1312,23 +1064,25 @@ def _tag_education_prototype(
             detail_p = copy.deepcopy(degree._p)
             degree._p.addnext(detail_p)
             detail = Paragraph(detail_p, degree._parent)
-            tag_bullet(detail, "{{ detail }}")
+            tag_bullet(detail, EDUCATION_DETAIL_TAG)
         else:
             retarget_bullet(doc, detail, noto_num_id)
-            tag_bullet(detail, "{{ detail }}")
+            tag_bullet(detail, EDUCATION_DETAIL_TAG)
     else:
         detail_p = copy.deepcopy(degree._p)
         degree._p.addnext(detail_p)
         detail = Paragraph(detail_p, degree._parent)
-        tag_bullet(detail, "{{ detail }}")
+        tag_bullet(detail, EDUCATION_DETAIL_TAG)
     return header, degree, detail
 
 
-def build_education_profile(doc, profile: TemplateProfile, *, noto_num_id: str | None) -> None:
+def build_education_profile(
+    doc, profile: TemplateProfile, *, noto_num_id: str | None, other_headings: list[Paragraph]
+) -> None:
     """Loop-tag the education section from the confirmed mapping."""
     mapping = profile.education
     assert mapping is not None
-    victims = _section_body_paragraphs(doc, mapping.heading_paragraph_id, profile)
+    victims = _section_body_paragraphs(doc, mapping.heading_paragraph_id, other_headings)
     header, degree, detail = _tag_education_prototype(doc, mapping, noto_num_id=noto_num_id)
 
     anchor = header
@@ -1349,15 +1103,11 @@ def build_education_profile(doc, profile: TemplateProfile, *, noto_num_id: str |
 def _tag_project_prototype(doc, mapping, *, noto_num_id: str | None) -> tuple[Paragraph, Paragraph]:
     """Tag one project header/bullet prototype in place. Pure tagging, same split as
     `_tag_experience_prototype`. Returns `(header, bullet)`."""
-    tag_for = {
-        "name": "{{ proj.name }}",
-        "tech": "{{ proj.tech }}",
-        "date": "{{ proj.date }}",
-    }
+    tag_for = dict(PROJECT_HEADER_TAGS)
     fields = dict(mapping.header.fields)
     if mapping.link.present and mapping.link.span is not None:
         fields["link"] = OptionalSpan(present=True, span=mapping.link.span)
-        tag_for["link"] = "{{r proj.link }}"
+        tag_for["link"] = PROJECT_LINK_TAG
     header_mapping = mapping.header.model_copy(update={"fields": fields})
     # The baked-in hyperlink, if any, is removed by `_tag_mapped_header`'s rebuild — not
     # stripped here first. `mapping.link.span` was measured against the paragraph WITH
@@ -1371,15 +1121,17 @@ def _tag_project_prototype(doc, mapping, *, noto_num_id: str | None) -> tuple[Pa
 
     bullet = _para_by_id(doc, mapping.bullet_paragraph_id)
     retarget_bullet(doc, bullet, noto_num_id)
-    tag_bullet(bullet, "{{ bullet }}")
+    tag_bullet(bullet, PROJECT_BULLET_TAG)
     return header_para, bullet
 
 
-def build_projects_profile(doc, profile: TemplateProfile, *, noto_num_id: str | None) -> None:
+def build_projects_profile(
+    doc, profile: TemplateProfile, *, noto_num_id: str | None, other_headings: list[Paragraph]
+) -> None:
     """Loop-tag the projects section from the confirmed mapping."""
     mapping = profile.projects
     assert mapping is not None
-    victims = _section_body_paragraphs(doc, mapping.heading_paragraph_id, profile)
+    victims = _section_body_paragraphs(doc, mapping.heading_paragraph_id, other_headings)
     header_para, bullet = _tag_project_prototype(doc, mapping, noto_num_id=noto_num_id)
 
     anchor = header_para
@@ -1406,13 +1158,13 @@ def _tag_skills_prototype(doc, mapping) -> Paragraph:
             (
                 mapping.label_span.start,
                 mapping.label_span.end,
-                "{{ group.label }}",
+                SKILLS_LABEL_TAG,
                 "skills_label",
             ),
             (
                 mapping.body_span.start,
                 mapping.body_span.end,
-                "{{ group.entries }}",
+                SKILLS_BODY_TAG,
                 "skills_body",
             ),
         ],
@@ -1423,11 +1175,13 @@ def _tag_skills_prototype(doc, mapping) -> Paragraph:
     return prototype
 
 
-def build_skills_profile(doc, profile: TemplateProfile) -> None:
+def build_skills_profile(
+    doc, profile: TemplateProfile, *, other_headings: list[Paragraph]
+) -> None:
     """Loop-tag the skills section from the confirmed mapping."""
     mapping = profile.skills
     assert mapping is not None
-    victims = _section_body_paragraphs(doc, mapping.heading_paragraph_id, profile)
+    victims = _section_body_paragraphs(doc, mapping.heading_paragraph_id, other_headings)
     prototype = _tag_skills_prototype(doc, mapping)
 
     anchor = prototype
@@ -1443,24 +1197,28 @@ def _tag_list_prototype(doc, mapping, *, noto_num_id: str | None) -> Paragraph:
     header, no entry structure, just a bullet loop. Returns the tagged bullet paragraph."""
     bullet = _para_by_id(doc, mapping.bullet_paragraph_id)
     retarget_bullet(doc, bullet, noto_num_id)
-    tag_bullet(bullet, "{{ item }}")
+    tag_bullet(bullet, LIST_ITEM_TAG)
     return bullet
 
 
-def _section_body_paragraphs(doc, heading_id: int, profile: TemplateProfile) -> list[Paragraph]:
-    """Return current body paragraphs of a section (after heading, before next heading)."""
+def _section_body_paragraphs(
+    doc, heading_id: int, other_headings: list[Paragraph]
+) -> list[Paragraph]:
+    """Return current body paragraphs of a section (after heading, before next heading).
+
+    Stops at the first *paragraph object* in `other_headings` — every other enabled
+    kind's own heading, resolved by the caller once via `_para_by_id` before any
+    section's body is touched, so the reference stays valid regardless of what gets
+    inserted or deleted elsewhere in the document afterward (headings themselves are
+    never moved or deleted mid-build; only the space between them is).
+
+    Identity, not text: comparing walked-paragraph *text* against other headings' text
+    (the previous approach) means an ordinary entry line that happens to read exactly
+    "SKILLS" or "PROJECTS" — a bolded label inside a bullet, for instance — is
+    indistinguishable from the real heading and silently truncates the body early.
+    """
     heading = _para_by_id(doc, heading_id)
-    ends: list[str] = []
-    if profile.education and profile.education.heading_paragraph_id != heading_id:
-        ends.append(profile.education.heading_text)
-    if profile.experience.heading_paragraph_id != heading_id:
-        ends.append(profile.experience.heading_text)
-    if profile.projects and profile.projects.heading_paragraph_id != heading_id:
-        ends.append(profile.projects.heading_text)
-    if profile.skills and profile.skills.heading_paragraph_id != heading_id:
-        ends.append(profile.skills.heading_text)
-    if profile.list_section and profile.list_section.heading_paragraph_id != heading_id:
-        ends.append(profile.list_section.heading_text)
+    other_elements = {p._p for p in other_headings}
 
     seen_heading = False
     body: list[Paragraph] = []
@@ -1470,8 +1228,7 @@ def _section_body_paragraphs(doc, heading_id: int, profile: TemplateProfile) -> 
             continue
         if not seen_heading:
             continue
-        text = (para.text or "").strip()
-        if text in ends or text.upper() in {e.upper() for e in ends}:
+        if para._p in other_elements:
             break
         body.append(para)
     return body
@@ -1592,9 +1349,22 @@ def build_generic(doc, profile: TemplateProfile) -> None:
         reverse=True,
     )
 
+    # Resolve every enabled kind's heading paragraph *object* once, up front, before
+    # any section's body is touched — same reasoning as `build_from_profile`'s
+    # fixed-mode dispatch: `_section_body_paragraphs` stops on object identity, which
+    # stays valid across the whole build, rather than re-deriving an index (which an
+    # earlier insertion could shift) or matching heading text (which an ordinary entry
+    # line could coincidentally equal).
+    all_headings = {hid: _para_by_id(doc, hid) for hid, _kind in processing_order}
+
     for _heading_id, kind in processing_order:
         mapping = mappings[kind]
-        all_victims.extend(_section_body_paragraphs(doc, mapping.heading_paragraph_id, profile))
+        other_headings = [
+            p for h, p in all_headings.items() if h != mapping.heading_paragraph_id
+        ]
+        all_victims.extend(
+            _section_body_paragraphs(doc, mapping.heading_paragraph_id, other_headings)
+        )
         heading_paragraphs.append(_para_by_id(doc, mapping.heading_paragraph_id))
         heading_ids.append(mapping.heading_paragraph_id)
 
@@ -1667,11 +1437,11 @@ def build_generic(doc, profile: TemplateProfile) -> None:
     heading_runs = heading_clone.runs
     if not heading_runs:
         raise RuntimeError("Heading prototype paragraph has no runs to tag.")
-    set_run_text(heading_runs[0], "{{ section.title }}")
+    set_run_text(heading_runs[0], SECTION_TITLE_TAG)
     for extra in heading_runs[1:]:
         heading_clone._p.remove(extra._r)
 
-    insertions: list = [make_para("{%p for section in sections %}")]
+    insertions: list = [make_para(SECTION_LOOP_OPEN)]
     if before_heading_donors:
         # `loop` here is the outer `for section in sections` loop — the only one open at
         # this point in the document — so `loop.first` means "first section", which is
@@ -1739,15 +1509,29 @@ def build_from_profile(
             builders.append((profile.skills.heading_paragraph_id, "skills"))
         builders.sort(key=lambda t: t[0], reverse=True)
 
-        for _hid, kind in builders:
+        # Resolve every enabled kind's heading paragraph *object* once, before any
+        # section's body is touched. `_section_body_paragraphs` then stops on object
+        # identity rather than re-deriving indices (which insertions elsewhere would
+        # go on to shift) or matching heading text (which an ordinary entry line could
+        # coincidentally equal) — see its own docstring.
+        heading_paragraphs = {hid: _para_by_id(doc, hid) for hid, _kind in builders}
+
+        for hid, kind in builders:
+            other_headings = [p for h, p in heading_paragraphs.items() if h != hid]
             if kind == "experience":
-                build_experience_profile(doc, profile, noto_num_id=noto_num_id)
+                build_experience_profile(
+                    doc, profile, noto_num_id=noto_num_id, other_headings=other_headings
+                )
             elif kind == "education":
-                build_education_profile(doc, profile, noto_num_id=noto_num_id)
+                build_education_profile(
+                    doc, profile, noto_num_id=noto_num_id, other_headings=other_headings
+                )
             elif kind == "projects":
-                build_projects_profile(doc, profile, noto_num_id=noto_num_id)
+                build_projects_profile(
+                    doc, profile, noto_num_id=noto_num_id, other_headings=other_headings
+                )
             elif kind == "skills":
-                build_skills_profile(doc, profile)
+                build_skills_profile(doc, profile, other_headings=other_headings)
 
     if profile.normalization.normalize_bullet_font:
         normalize_bullet_numbering(doc)
@@ -1764,85 +1548,21 @@ def build_from_profile(
 # --------------------------------------------------------------------------------------
 
 
-def build_legacy(src: Path | None = None, dst: Path | None = None) -> int:
-    """Build using the hard-coded Google Docs section headings (original behaviour)."""
-    src = src or config.BASELINE_TEMPLATE_PATH
-    dst = dst or config.DEFAULT_TEMPLATE_PATH
-
-    if not src.exists():
-        print(
-            f"ERROR: {src} not found.\n"
-            "Export your resume from Google Docs (File > Download > Microsoft Word) "
-            "and save it there."
-        )
-        return 1
-
-    doc = docx.Document(str(src))
-    bounds = find_sections(doc)
-
-    missing = [s for s in ("WORK EXPERIENCES", "PROJECTS", "SKILLS") if s not in bounds]
-    if missing:
-        print(
-            f"ERROR: could not find section heading(s): {', '.join(missing)}.\n"
-            "The build script locates sections by their exact all-caps heading text. "
-            "If you renamed a heading in the Google Doc, update SECTIONS in this script "
-            "or install a template profile via the Template tab."
-        )
-        return 1
-
-    paras = doc.paragraphs
-
-    if "EDUCATION" not in bounds:
-        print(
-            "ERROR: could not find section heading: EDUCATION.\n"
-            "The build script locates sections by their exact all-caps heading text."
-        )
-        return 1
-
-    edu_start, edu_end = bounds["EDUCATION"]
-    exp_start, exp_end = bounds["WORK EXPERIENCES"]
-    proj_start, proj_end = bounds["PROJECTS"]
-    skill_start, skill_end = bounds["SKILLS"]
-
-    education_entries = split_entries(paras[edu_start:edu_end])
-    experience_entries = split_entries(paras[exp_start:exp_end])
-    project_entries = split_entries(paras[proj_start:proj_end])
-    skill_paras = paras[skill_start:skill_end]
-
-    print(
-        f"found {len(education_entries)} education, "
-        f"{len(experience_entries)} experience entries, "
-        f"{len(project_entries)} projects"
-    )
-
-    noto_num_id = discover_noto_num_id(doc)
-
-    build_name(doc)
-    build_contact(doc)
-    build_education(doc, education_entries, noto_num_id=noto_num_id)
-    build_experience(doc, experience_entries, noto_num_id=noto_num_id)
-    build_projects(doc, project_entries, noto_num_id=noto_num_id)
-    build_skills(doc, skill_paras)
-    normalize_bullet_numbering(doc)
-    normalize_single_spacing(doc)
-    clamp_tab_stops(doc)
-
-    dst.parent.mkdir(parents=True, exist_ok=True)
-    doc.save(str(dst))
-    print(f"wrote {dst}")
-    return 0
-
-
 def build(
     src: Path | None = None,
     dst: Path | None = None,
     profile: TemplateProfile | None = None,
     profile_path: Path | None = None,
+    verify: bool = True,
 ) -> int:
-    """Build a tagged template, using a profile when provided or present on disk.
+    """Build a tagged template from `profile`, or a readable profile file on disk.
 
-    When neither `profile` nor a readable profile file is available, falls back to
-    legacy hard-coded headings.
+    `verify` (default True) runs `template_verify.verify_tagged`/`verify_roundtrip`
+    against the freshly-built template — the same check `web/template_ops.py`'s staged
+    install runs before committing, exposed here so a CLI/scripted rebuild gets the
+    same guarantee. Unlike the web install, this write is not staged/atomic — a
+    verification failure is reported with a non-zero exit code, but the just-written
+    `dst` is not rolled back; re-run after fixing the mapping.
     """
     from .template_profile import load_profile
 
@@ -1854,13 +1574,36 @@ def build(
         profile = load_profile()
 
     if profile is None:
-        return build_legacy(src, dst)
+        print(
+            "ERROR: no template profile found (and none was passed in).\n"
+            "Run the Template tab's analyze/confirm wizard, or pass --profile to "
+            "point at a template_profile.json."
+        )
+        return 1
 
     try:
         build_from_profile(src, dst, profile)
     except Exception as exc:
         print(f"ERROR: profile build failed: {exc}")
         return 1
+
+    if verify:
+        from . import data, template_verify
+
+        issues = template_verify.verify_tagged(dst, profile)
+        try:
+            resume = data.load()
+        except (FileNotFoundError, ValueError) as exc:
+            print(f"WARNING: could not load master resume to verify roundtrip: {exc}")
+        else:
+            issues += template_verify.verify_roundtrip(dst, profile, resume)
+        blockers = [i for i in issues if i.blocking]
+        if blockers:
+            print(f"ERROR: build verification failed for {dst}:")
+            for issue in blockers:
+                print(f"  {issue.code}: {issue.message}")
+            return 1
+
     print(
         f"wrote {dst} (profile v{profile.schema_version}; "
         f"sections: experience"
@@ -1899,15 +1642,19 @@ def main(argv: list[str] | None = None) -> int:
         help="Template profile JSON (default: templates/template_profile.json if present).",
     )
     parser.add_argument(
-        "--legacy",
-        action="store_true",
-        help="Ignore any profile and use hard-coded section headings.",
-    )
-    parser.add_argument(
         "--workspace",
         default=None,
         metavar="ID",
         help="Build against this profile instead of the active one (this invocation only).",
+    )
+    parser.add_argument(
+        "--no-verify",
+        dest="verify",
+        action="store_false",
+        help=(
+            "Skip post-build verification (tag presence + a real render's field "
+            "values) that runs by default for a profile-based build."
+        ),
     )
     args = parser.parse_args(argv)
     try:
@@ -1915,9 +1662,7 @@ def main(argv: list[str] | None = None) -> int:
     except workspace.WorkspaceError as exc:
         print(f"error: {exc}", file=sys.stderr)
         return 1
-    if args.legacy:
-        return build_legacy(args.source, args.out)
-    return build(args.source, args.out, profile_path=args.profile)
+    return build(args.source, args.out, profile_path=args.profile, verify=args.verify)
 
 
 if __name__ == "__main__":

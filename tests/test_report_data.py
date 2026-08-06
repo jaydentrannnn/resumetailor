@@ -4,10 +4,10 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from resume_tailor.data import load
 from resume_tailor.fit import FitResult
 from resume_tailor.jd import JobRequirements, Keyword
 from resume_tailor.report import format_report, report_data
+from tests.fixtures import synthetic_resume
 
 
 def _requirements() -> JobRequirements:
@@ -20,7 +20,7 @@ def _requirements() -> JobRequirements:
 
 def test_report_data_matches_format_report_facts():
     """report_data carries the same numbers the text report prints."""
-    resume = load()
+    resume = synthetic_resume()
     requirements = _requirements()
     bullet = resume.all_bullets()[0]
     result = FitResult(

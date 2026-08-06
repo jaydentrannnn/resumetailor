@@ -21,13 +21,13 @@ copy .env.example .env
 Generate the tagged template once (or after replacing the export). Prefer the **Template**
 tab in the web UI (analyze → confirm mapping → install; optional calibrate). Each successful
 install is saved under a label in **Saved templates** so you can switch without re-uploading
-(max 20). The CLI legacy path still expects the original all-caps section titles:
+(max 20). The CLI reads whatever mapping the wizard already confirmed and saved to
+`templates/template_profile.json`:
 
 ```powershell
 python scripts\build_template.py
 # or with an explicit mapping:
 python scripts\build_template.py --from path\to\export.docx --profile templates\template_profile.json
-python scripts\build_template.py --legacy
 ```
 
 After any template change, run `python scripts\calibrate.py` (or use the UI calibrate

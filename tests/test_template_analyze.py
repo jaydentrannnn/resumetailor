@@ -666,3 +666,229 @@ def test_validate_rejects_overlapping_spans():
     )
     issues = template_analyze.validate_profile_against_doc(bad_profile, raw=raw)
     assert any(i.code == "overlapping_spans" and i.blocking for i in issues)
+
+
+# --- Phase 4: structure-first heading detection -----------------------------------
+
+
+def _bold_heading(document, text: str):
+    """Append a bold-run heading paragraph, so real headings form their own formatting
+    class distinct from plain body/entry text — the shape most real resume exports use
+    and the one `_heading_classes` is designed to corroborate against."""
+    p = document.add_paragraph()
+    run = p.add_run(text)
+    run.bold = True
+    return p
+
+
+def test_summary_section_is_excluded_when_a_real_heading_follows():
+    """'PROFESSIONAL SUMMARY' followed only by a paragraph of prose — never a bullet or
+    a tab-aligned entry header — introduces nothing and must not become a section, even
+    though it is short, unaliased, and all-caps enough to pass `_looks_like_heading`."""
+    def build(document):
+        num_id = _add_bullet_numbering(document)
+        document.add_paragraph("Jordan Ray")
+        document.add_paragraph("jordan@example.com")
+        _bold_heading(document, "PROFESSIONAL SUMMARY")
+        document.add_paragraph(
+            "Detail-oriented engineer with five years of experience shipping products."
+        )
+        _bold_heading(document, "EDUCATION")
+        document.add_paragraph("State University\t2016 - 2020")
+        _make_bullet(document, "B.S. Computer Science", num_id)
+        _bold_heading(document, "WORK EXPERIENCE")
+        document.add_paragraph("Acme Corp | Remote\t2020 - Present")
+        document.add_paragraph("Engineer")
+        _make_bullet(document, "Built things.", num_id)
+
+    result = template_analyze.analyze_docx(raw=_docx_bytes(build))
+    keys = {s.key for s in result.sections}
+    assert keys == {"education", "experience"}
+    assert "PROFESSIONAL SUMMARY" not in {s.heading_text for s in result.sections}
+    assert result.ready is True
+
+
+def test_summary_only_resume_is_blocking():
+    """A resume with nothing but a professional summary — no real section heading at
+    all — must fail loudly (`missing_experience`), not report `ready: true` with the
+    summary mis-mapped as an experience section."""
+    def build(document):
+        document.add_paragraph("Jordan Ray")
+        document.add_paragraph("jordan@example.com")
+        _bold_heading(document, "PROFESSIONAL SUMMARY")
+        document.add_paragraph(
+            "Detail-oriented engineer with five years of experience shipping products."
+        )
+
+    result = template_analyze.analyze_docx(raw=_docx_bytes(build))
+    assert result.ready is False
+    assert any(i.code == "missing_experience" and i.blocking for i in result.issues)
+    assert "PROFESSIONAL SUMMARY" not in {s.heading_text for s in result.sections}
+
+
+def test_all_caps_entry_line_not_corroborated_as_heading():
+    """An all-caps company name with no distinguishing formatting from body text is
+    structurally plausible on text alone (`_looks_like_heading` returns True for it in
+    isolation) but must not become a spurious heading when the document's real headings
+    are styled distinctly (bold here) and this line is not."""
+    def build(document):
+        num_id = _add_bullet_numbering(document)
+        document.add_paragraph("Jamie Lee")
+        document.add_paragraph("jamie@example.com")
+        _bold_heading(document, "EDUCATION")
+        document.add_paragraph("State University\t2016 - 2020")
+        _make_bullet(document, "B.S. Computer Science", num_id)
+        _bold_heading(document, "WORK EXPERIENCE")
+        document.add_paragraph("AMAZON WEB SERVICES")
+        document.add_paragraph("Software Engineer Intern\tJune 2022 - Present")
+        _make_bullet(document, "Shipped a feature.", num_id)
+
+    result = template_analyze.analyze_docx(raw=_docx_bytes(build))
+    keys = {s.key for s in result.sections}
+    assert keys == {"education", "experience"}
+    assert "AMAZON WEB SERVICES" not in {s.heading_text for s in result.sections}
+
+
+def test_job_title_containing_a_section_keyword_not_misdetected_as_heading():
+    """A job title like 'Experience Designer' sitting right under its own entry's
+    company/dates header line must never be read as a new 'experience' section, even
+    though the word 'experience' gives it a nonzero-confidence text match — the
+    <=0.6-confidence tiers have no case requirement at all. Regression test for the
+    false positive found while validating the structural-fallback corroboration work:
+    fingerprint corroboration alone can't screen this out, since a plain title line's
+    formatting can coincidentally land in the same class as the real headings.
+    """
+    def build(document):
+        num_id = _add_bullet_numbering(document)
+        document.add_paragraph("Alex Kim")
+        document.add_paragraph("alex@example.com")
+        _bold_heading(document, "EDUCATION")
+        document.add_paragraph("State University\t2016 - 2020")
+        _make_bullet(document, "B.S. Computer Science", num_id)
+        _bold_heading(document, "WORK EXPERIENCE")
+        document.add_paragraph("Acme Corp | Remote\tJan 2023 - Present")
+        document.add_paragraph("Experience Designer")
+        _make_bullet(document, "Redesigned the onboarding flow.", num_id)
+
+    result = template_analyze.analyze_docx(raw=_docx_bytes(build))
+    keys = {s.key for s in result.sections}
+    assert keys == {"education", "experience"}
+    assert "Experience Designer" not in {s.heading_text for s in result.sections}
+
+
+def test_entry_header_with_keyword_and_date_not_misdetected_as_heading():
+    """A later entry's own tab-aligned 'Name\\tDate' header line must never be read as
+    a new section just because its text happens to contain another section's keyword
+    ('Education' inside 'Advocate of Sexual Education in School'). Regression test for
+    the real-world case found in the `nina` workspace's uploaded resume: a second,
+    bulletless-header entry inside an unaliased 'OTHER ACTIVITIES' section, whose own
+    header line carries a trailing tab-aligned date exactly like a real section heading
+    never does.
+    """
+    def build(document):
+        num_id = _add_bullet_numbering(document)
+        document.add_paragraph("Nina Dao")
+        document.add_paragraph("nina@example.com")
+        _bold_heading(document, "EDUCATION")
+        document.add_paragraph("UC Irvine\t2027")
+        _make_bullet(document, "B.A. in Business Administration", num_id)
+        _bold_heading(document, "OTHER ACTIVITIES")
+        document.add_paragraph("Heartbeat Bazaar\tMar 2022 - Jun 2022")
+        document.add_paragraph("Organizer")
+        _make_bullet(document, "Directed fundraising events.", num_id)
+        document.add_paragraph("Advocate of Sexual Education in School\t2022")
+        _make_bullet(document, "Issued a petition.", num_id)
+
+    result = template_analyze.analyze_docx(raw=_docx_bytes(build))
+    keys = {s.key for s in result.sections}
+    assert keys == {"education", "experience"}
+    assert "Advocate of Sexual Education in School\t2022" not in {
+        s.heading_text for s in result.sections
+    }
+
+
+def test_experience_section_with_no_dates_is_blocking():
+    """Every experience entry header lacking a detectable date must block install
+    (`experience_dates_not_detected`), not silently drop dates from every rendered job
+    with `ready: true`."""
+    def build(document):
+        num_id = _add_bullet_numbering(document)
+        document.add_paragraph("Sam Rivers")
+        document.add_paragraph("sam@example.com")
+        _bold_heading(document, "EDUCATION")
+        document.add_paragraph("State University\t2016 - 2020")
+        _make_bullet(document, "B.S. Computer Science", num_id)
+        _bold_heading(document, "WORK EXPERIENCE")
+        document.add_paragraph("Acme Corp | Remote")
+        document.add_paragraph("Engineer")
+        _make_bullet(document, "Built things.", num_id)
+
+    result = template_analyze.analyze_docx(raw=_docx_bytes(build))
+    assert result.ready is False
+    assert any(
+        i.code == "experience_dates_not_detected" and i.blocking for i in result.issues
+    )
+
+
+def test_experience_partial_dates_is_a_non_blocking_warning():
+    """A minority of experience entries missing a date is a warning, not a blocker —
+    only a majority-missing date is a `experience_dates_not_detected` blocker."""
+    def build(document):
+        num_id = _add_bullet_numbering(document)
+        document.add_paragraph("Sam Rivers")
+        document.add_paragraph("sam@example.com")
+        _bold_heading(document, "EDUCATION")
+        document.add_paragraph("State University\t2016 - 2020")
+        _make_bullet(document, "B.S. Computer Science", num_id)
+        _bold_heading(document, "WORK EXPERIENCE")
+        document.add_paragraph("Acme Corp | Remote\t2022 - Present")
+        document.add_paragraph("Engineer")
+        _make_bullet(document, "Built things.", num_id)
+        document.add_paragraph("Beta LLC | Remote\t2020 - 2022")
+        document.add_paragraph("Analyst")
+        _make_bullet(document, "Analyzed things.", num_id)
+        document.add_paragraph("Gamma Inc | Remote")
+        document.add_paragraph("Intern")
+        _make_bullet(document, "Interned.", num_id)
+
+    result = template_analyze.analyze_docx(raw=_docx_bytes(build))
+    assert any(
+        i.code == "experience_dates_partial" and not i.blocking for i in result.issues
+    )
+    assert not any(i.code == "experience_dates_not_detected" for i in result.issues)
+
+
+def test_project_section_with_no_dates_is_blocking():
+    """Same guarantee as experience, for projects: no detected date on any project
+    entry blocks install instead of silently dropping every project's date."""
+    def build(document):
+        num_id = _add_bullet_numbering(document)
+        document.add_paragraph("Sam Rivers")
+        document.add_paragraph("sam@example.com")
+        _bold_heading(document, "WORK EXPERIENCE")
+        document.add_paragraph("Acme Corp | Remote\t2022 - Present")
+        document.add_paragraph("Engineer")
+        _make_bullet(document, "Built things.", num_id)
+        _bold_heading(document, "PROJECTS")
+        document.add_paragraph("Note Engine | Python, FastAPI")
+        _make_bullet(document, "Indexed research notes with embeddings.", num_id)
+
+    result = template_analyze.analyze_docx(raw=_docx_bytes(build))
+    assert result.ready is False
+    assert any(
+        i.code == "project_dates_not_detected" and i.blocking for i in result.issues
+    )
+
+
+def test_contact_field_order_does_not_read_a_date_range_as_a_phone_number():
+    """A bare year range ('2021 - 2025') is digits-space-punctuation-digits just like a
+    phone number to `_PHONE_RE` alone; `_contact_field_order` must exclude anything that
+    also looks like a date before trusting it as a phone field. `_contact_field_order`
+    always returns the full field set (order is a rendering preference, not a presence
+    filter — see its own "always allow the full set" comment), so the observable is
+    which field the text's own content is attributed to first, not membership."""
+    order = template_analyze._contact_field_order("2021 - 2025")
+    assert order[0] == "location"  # not "phone" — a date range is not a phone number
+
+    order_with_real_phone = template_analyze._contact_field_order("555-123-4567")
+    assert order_with_real_phone[0] == "phone"

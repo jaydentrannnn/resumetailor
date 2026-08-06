@@ -507,6 +507,7 @@ def _to_report_out(data: report.RunReport) -> RunReportOut:
         out_path=data.out_path,
         pdf_backend=data.pdf_backend,
         calibration_source=data.calibration_source,
+        calibration_rejection=data.calibration_rejection,
     )
 
 

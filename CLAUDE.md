@@ -216,13 +216,38 @@ The whole suite runs **without an API key, network, or Word** — keep it that w
   `FitResult` carries underflow *and* widow warnings, and identity-rewrite fakes feed
   master-resume text straight through, so some source bullets legitimately end on a
   near-empty line.
-- Tests needing real content call `data.load()` against `data/master_resume.json` (the
-  legacy path — `conftest.py`'s autouse fixture stubs `workspace.bootstrap` to a no-op for
-  every test but `test_web.py`'s profile tests). 57 bullets, 136 tags as of 2026-08-02 —
-  verify with `python -m resume_tailor.data --validate` rather than trusting that number.
+- **The suite is hermetic — no developer's own `data/`/`templates/` is required.**
+  `tests/fixtures.py` holds the shared synthetic-docx builders (`_add_bullet_numbering`,
+  `_make_bullet`, `_docx_bytes`, `_add_hyperlink`, `_standard_resume`,
+  `_multi_section_resume`, `_full_featured_resume`) and `synthetic_resume()`, the
+  matching `MasterResume` — tests needing real content use these, not `data.load()`
+  against a personal `data/master_resume.json`. `tests/conftest.py`'s autouse fixtures
+  pin the rest of the machine-local state a bare run would otherwise pick up:
+  `_pinned_calibration` (fixed `CHARS_PER_LINE`/`LINES_PER_PAGE` instead of whatever the
+  local calibration file says), `_isolated_template_paths` (redirects
+  baseline/tagged/profile paths into a temp dir), and session-scoped `built_template`
+  (analyzes + builds `_full_featured_resume` once per session for tests that need a real
+  tagged template). Verify hermeticity directly:
+  `RESUME_TAILOR_DATA_DIR=<empty> RESUME_TAILOR_TEMPLATES_DIR=<empty> pytest`.
+- **Anything genuinely specific to the real `data/master_resume.json` is
+  `@pytest.mark.owner`-marked** and excluded by default (`pyproject.toml`'s
+  `addopts = -m "not owner"`); run it explicitly with `pytest -m owner`. It still guards
+  itself at runtime with a skip if the file isn't present, since it's gitignored and
+  won't exist on a clean checkout or in CI.
 - **`tests/conftest.py`'s `_isolated_libraries` autouse fixture** redirects the vocabulary
   pack store and resets `config.TAG_ALIASES`/`VERB_FAMILIES` per test, so a bare run never
   picks up a developer's own approved packs.
+- **A staged/profile-based template build has an in-process fallback** —
+  `template_ops._install_with_profile` shells out to `scripts/build_template.py` first,
+  but falls back to calling `template_build.build_from_profile` directly whenever the
+  subprocess exits non-zero *or* doesn't write the staged output path. A test stubbing
+  `_run_build` to skip the subprocess (returning e.g. `(1, "stub: subprocess skipped")`
+  without writing anything) therefore still exercises a real, verified build via that
+  fallback — `_smoke_render`/`_verify_staged_build`/`template_verify` all run for real
+  against it. See `tests/test_web.py::_resume_upload_with_profile` and its callers for
+  the pattern: a real analyzable upload + its own suggested profile, not
+  `_minimal_docx_bytes()`, since `POST /api/template` requires a profile now (no
+  hard-coded-heading fallback — see "Template generation" below).
 
 ## Architecture
 
@@ -458,18 +483,94 @@ range in the upload.
   insertion, no deletion — shared by both modes. Fixed mode's `build_*_profile` wrap them in
   a single hard-coded loop; `build_generic` wraps them in the shared block instead.
 
-Two upload paths:
-
-- **Profile** (Template tab wizard): `POST /api/template/analyze` proposes a mapping;
-  install writes `template_profile.json` and builds from character spans.
-  `template_analyze.validate_profile_against_doc` re-checks every mapped span before
-  install commits. Successful installs are snapshotted under `templates/workspaces/<id>/
-  library/` with a user label (max 20 saved entries).
-- **Legacy** (`--legacy` or upload without a profile): exact all-caps headings `EDUCATION`
-  / `WORK EXPERIENCES` / `PROJECTS` / `SKILLS`, name/contact on paragraphs 0/1.
+**One upload path**: `POST /api/template/analyze` proposes a mapping;
+`POST /api/template` (profile now *required* — the hard-coded-headings legacy path was
+retired once `templates/original_export.docx` was confirmed to analyze `ready: true`
+under the current analyzer) writes `template_profile.json` and builds from character
+spans. `template_analyze.validate_profile_against_doc` re-checks every mapped span
+before install commits. Successful installs are snapshotted under
+`templates/workspaces/<id>/library/` with a user label (max 20 saved entries).
+`template_build.build()`'s CLI/scripted path errors clearly when no profile is found
+(on disk or passed in) rather than silently falling back to anything.
 
 After any template change, re-run `python scripts/calibrate.py` (or use calibrate-on-install
 / calibrate-on-activate in the UI).
+
+### Analyzer correctness: structure, not just text
+
+`template_analyze.py` corroborates every text-based heading/entry match against the
+document's own structure — formatting, position, content — rather than trusting a
+keyword substring alone:
+
+- **`_fingerprint(paragraph)` + `_heading_classes(paras)`**: a formatting signature
+  (style, bold, size, alignment, indent, spacing, has-tab, all-caps bucket) clustered
+  across the document. A class needs ≥2 short, non-bulleted, content-introducing
+  members — real section headings usually share one formatting signature; a single
+  stray ALL-CAPS line does not repeat and never forms a class of its own. An unaliased
+  text match is hard-gated on class membership when a class exists; a weak aliased
+  match (the ≤0.6-confidence tiers, which have no case requirement at all) is
+  downgraded and flagged (`heading_formatting_mismatch`, non-blocking) rather than
+  excluded outright, since a real template occasionally styles one heading slightly
+  differently.
+- **Two position-based hard exclusions**, below 1.0 confidence, that fingerprint
+  corroboration alone cannot catch (an entry header's formatting can coincidentally
+  land in the same class as the real headings just as easily as a genuine heading
+  styled differently can fail to): `p.has_tab` (a real section heading never itself
+  carries a trailing tab-aligned date — a later entry's own header, e.g. an
+  "OTHER ACTIVITIES" entry whose text happens to contain "Education", must not be
+  read as a new section), and `_immediately_follows_entry_header` (a title line
+  sitting right under its own entry's company/dates header, e.g. "Experience
+  Designer", is that entry's title, never a new "experience" section).
+- **`_split_entries`** is bootstrap (bullet-anchored) plus a fingerprint-corroborated
+  re-split, unioned rather than replacing — a fingerprint-only re-split would
+  incorrectly re-merge an entry that simply lacks the section's dominant format (e.g.
+  a still-current role with no end date) into its predecessor.
+- **`_reconcile_header_fields`** runs field detection on *every* entry in a section,
+  not just one prototype, and keeps a field only when a majority of entries carry it —
+  `FieldCandidate.confidence` is a real presence rate. A field absent from the
+  majority is a blocking `experience_dates_not_detected` / `project_dates_not_detected`;
+  present on some entries but not all is a non-blocking `..._dates_partial`.
+
+### Wizard: confirm + preview
+
+- **`field_candidates`** (per-field detected spans, not just section summaries) rides
+  on `TemplateAnalyzeResponse` — the wizard shows a red row for any required field
+  (`company`/`dates`, `name`/`date`, `school`/`dates`) nothing was found for.
+- **`POST /api/template/analyze/remap`** re-runs analysis with specific headings'
+  kinds forced by the user (paragraph id → kind, or `null` for "not a section"),
+  bypassing every heuristic gate for just those paragraphs —
+  `template_analyze._analyze_document`'s `overrides` parameter. Needs the original
+  upload's bytes without re-uploading: `template_ops._cache_upload`/
+  `_load_cached_upload` keys a short-lived cache by the upload's own sha256 under
+  `output/.../template/uploads/`, cleared on install or after 24h.
+- **`POST /api/template/preview/source`** and **`POST /api/template/preview/draft`**
+  give the wizard a real side-by-side: the uploaded document as-is, and what
+  installing the current draft profile would actually produce (built in a temp
+  directory, never touching the live template slot).
+
+### DOCX → master_resume.json import
+
+`resume_import.py` turns an uploaded document's own *content* (not just its layout)
+into a `MasterResume` draft — `POST /api/master-resume/import` (multipart, optional
+`suggest_tags` field) returns `{resume, warnings, untagged_bullet_count}` and writes
+nothing; the editor loads the result as unsaved state via `editorState.loadDraft`.
+
+- Deterministic, no LLM required: reuses `template_analyze`'s own paragraph-level
+  helpers (`_split_entries`, `_header_fields_from_text`, `_skills_spans`) to parse
+  *every* entry (not one prototype), and seeds tags by whole-word substring match
+  against a known-tag vocabulary (`resume_import._seed_tags`). A bullet nothing
+  matched gets the sentinel tag `"untagged"` (`Bullet.tags` requires ≥1 entry) and is
+  counted, not silently guessed at.
+- **Optional, explicitly opt-in LLM pass**: `propose.propose_bullet_tags(bullets,
+  known_tags)` — same "model selects, code enforces" contract as
+  `propose_vocabulary` (a tag outside `known_tags` is dropped). Never part of
+  `resume_import`'s own call graph; a failure there becomes a warning in the
+  response, never a failed import.
+- `render.parse_month`/`render.parse_range` are the literal inverse of
+  `format_month`/`format_range`, living next to them. `docx_text.hyperlink_target`
+  resolves a `w:hyperlink`'s actual target URL (every other caller in this codebase
+  only ever needed the visible label text; this is the first that needs where a link
+  actually points, to reconstruct `Project.url`).
 
 ## Non-obvious gotchas
 
@@ -526,6 +627,17 @@ yet was broken.
   `_split_entries` — without it, a horizontal-rule paragraph under a heading is read as the
   first entry's header line, and whatever field maps to "the first header in the section"
   lands on the rule instead of the real content below it.
+- **A section's body boundary must be found by paragraph identity, not by matching
+  another heading's text.** `template_build._section_body_paragraphs` stops at the
+  first paragraph *object* in a pre-resolved `other_headings` list, not at a walked
+  paragraph whose text happens to equal another heading's text — an ordinary entry
+  line that reads exactly "SKILLS" (a bolded label inside a bullet, say) is otherwise
+  indistinguishable from the real heading and silently truncates the section early,
+  building without error. The `other_headings` objects must be resolved once, before
+  any section's body is touched (`_para_by_id` at each kind's own
+  `heading_paragraph_id`) — headings themselves are never moved or deleted mid-build
+  (only the space between them is), so the reference stays valid regardless of build
+  order, but an index re-derived later would not.
 
 ## Environment notes
 

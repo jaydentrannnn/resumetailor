@@ -1260,3 +1260,666 @@ to `minimax-m3:cloud` unless `OLLAMA_MODEL` or a per-run model override is set.
   nor a verified LibreOffice container was exercised this session. Every other phase of
   the design is complete and tested; this one is the documented, isolated exception,
   not a silently dropped scope corner.
+
+## 2026-08-04 - Calibration was silently poisoning every run; hardened against a repeat
+
+- **Found live, not hypothesized:** `data/calibration/word.json` and
+  `data/workspaces/default/calibration/word.json` both held `chars_per_line: 20` —
+  exactly `calibrate.py`'s binary-search floor, written to disk as if it were a
+  measurement. Effect, confirmed before touching anything:
+  `rewrite._length_band(2 * 20) == (20, 40)`, so the rewrite prompt was asking for
+  20-40 character bullets. A third file with the identical signature
+  (`data/calibration/soffice.json`, `chars_per_line: 20`) turned up once the workspace-
+  scoped ones were fixed and re-measured — all three dated 2026-08-02, all deleted.
+- **Root-caused, not just patched:** `calibrate_chars_per_line`'s wrapped-line filter
+  hardcoded `line.strip() not in ("PROJECTS", "SKILLS")` to exclude the static section
+  headings that render unconditionally on the calibration probe page even with zero
+  entries (`_single_bullet_resume` empties Projects/Skills to isolate one bullet's own
+  wrap behavior). A **fixed-mode profile install preserves the uploaded heading text
+  verbatim** — it does not force it to literally read "PROJECTS"/"SKILLS" the way the
+  legacy path does — so a resume whose heading said e.g. "Selected Projects" made that
+  heading survive every filter attempt. The trailing heading line then made
+  `len(wrapped_lines) == 1` false for *every* candidate length, and the search walked
+  every step the same direction, converging on its own floor. Fixed by deriving the
+  stop-title set from the *active template profile* (`calibrate._static_heading_texts`)
+  instead of a hardcoded pair: reads `profile.projects.heading_text`/
+  `profile.skills.heading_text` under `section_mode="fixed"`, returns the legacy
+  4-literal set with no profile installed, and returns an empty set under
+  `section_mode="generic"` — a zero-entry section renders no heading there at all
+  (`render.build_context`'s `if not rendered_entries: continue`), so nothing needs
+  excluding in the first place. Confirmed nina's workspace (`section_mode="generic"`,
+  Skills heading literally "SKILLS & Interests") never had a `word.json` at all before
+  this — consistent with the same class of bug, just never previously calibrated on
+  Word to surface it.
+- **Defense in depth, since the historical root cause of one specific file couldn't be
+  pinned with certainty** (the corrupted files predate this session's changes by two
+  days, likely measured against an earlier template/profile state): both binary
+  searches (`calibrate_chars_per_line`, the bullet-count half of
+  `calibrate_lines_per_page`) now raise `CalibrationError` if their result sits exactly
+  on a search bound (`_check_not_collapsed`) — a converged search and a collapsed one
+  are otherwise indistinguishable from the return value alone. Both final metrics are
+  also checked against an absolute plausibility band, `config.PLAUSIBLE_CHARS_PER_LINE
+  = (40, 200)` / `PLAUSIBLE_LINES_PER_PAGE = (25, 90)` — catches a collapse that lands
+  one step off a bound rather than on it. A new resume-independent self-check,
+  `verify_chars_per_line_boundary` (a `chars_per_line`-length bullet must render as one
+  line; `chars_per_line + 15` must wrap to two) runs unconditionally in `run()` and
+  hard-fails — unlike `verify_known_anchors`, which stays a soft warning because it's
+  owner-specific (hardcoded bullet ids, page counts for one person's resume, so a
+  mismatch might just mean the resume changed, not that calibration is wrong).
+  `write_calibration` is only ever reached after all of the above pass, so a bad
+  measurement is now structurally prevented from reaching disk, not just less likely.
+- **Second line of defense on load, for a bad file that reaches disk anyway**
+  (hand-edited, copied from another template, or written before this guard existed):
+  `config._load_calibration` now rejects out-of-band values and falls back to the
+  built-in constants rather than trusting them, same as a missing file. `source` stays
+  exactly `"fallback"` in both cases (every existing `== "fallback"` check, backend and
+  frontend, already means "not using a real measurement" and must not change shape); a
+  new `config.CALIBRATION_REJECTION: str | None` carries the *why*, threaded through
+  `RunReport`/`ReportOut`/`ConfigResponse` and surfaced as a warning banner on the
+  RunPage (both the pre-run config strip and the per-job report footer) and in the
+  Template tab's calibration status. Also added: when no calibration file exists for
+  the active backend but one exists for the *other* backend, the message says so
+  explicitly (constants are not portable between Word and LibreOffice — silently
+  reusing one for the other was another way this class of bug could hide).
+- **Regenerated for real**, not just fixed in code: `scripts/calibrate.py` against the
+  active (default/Jayden) workspace via Word COM landed `chars_per_line=101,
+  lines_per_page=55` — matching that workspace's existing LibreOffice measurement
+  (101/55) exactly. `--workspace nina` landed `121/58` against her `soffice.json`'s
+  `122/58` — a 1-char difference consistent with normal Word/LibreOffice glyph-metric
+  variance, not a fluke. Both self-consistency checks passed; both runs'
+  `verify_known_anchors` warned (expected — it checks Jayden-specific bullet ids and a
+  39-bullet/3-page anchor against resumes that have since changed shape, nina's
+  obviously so; this is the pre-existing soft-warning behavior, not a regression).
+- **`tests/test_calibrate.py` added** (23 tests, no Word/LibreOffice): pins the
+  collapsed-search guard, the plausibility band, `_static_heading_texts`'s three modes,
+  and reproduces the custom-heading-text bug end to end against a stubbed renderer —
+  proving both that the old (removed) hardcoded filter would have collapsed on it and
+  that the fix converges correctly. Also pins that `run()` never calls
+  `write_calibration` when the boundary check raises.
+
+## 2026-08-05 - Test suite decoupled from the developer's own data/master_resume.json
+
+- **Verified the coupling was real, not hypothetical, before touching anything:**
+  temporarily moved `data/master_resume.json` and every real template file
+  (`templates/{main_template.docx,original_export.docx,template_profile.json}`) out of
+  the tree and ran the full suite. Before this session's changes it would have been 21+
+  failures in `test_web.py` alone (`FileNotFoundError`, or assertions like
+  `test_get_config_returns_defaults`'s `len(tag_vocabulary) >= 1` silently depending on
+  whichever real resume happened to be checked out) plus dozens more across
+  `test_render.py`/`test_report.py`/`test_report_data.py`/`test_rewrite.py`/
+  `test_tailor_cli.py`/`test_facets.py`/`test_fit.py`/`test_include.py` — none of it
+  visible from a green CI run on a machine that happens to have the file.
+- **`tests/fixtures.py` (new)**: the DOCX-builder helpers previously defined in
+  `test_template_analyze.py` and cross-imported by `test_template_build.py`
+  (`_add_bullet_numbering`, `_make_bullet`, `_docx_bytes`, `_add_hyperlink`,
+  `_standard_resume`, `_multi_section_resume`, `_spacer_multi_section_resume`,
+  `_rule_separated_resume` — two more of these than the originally-scoped plan named,
+  found by grepping every `def _` in that file rather than trusting the enumerated
+  list) moved here, since a second file already treated the first as a shared-fixtures
+  module in every way but name. Added `_full_featured_resume` (a synthetic docx: linked
+  project, education with GPA + coursework, an ampersand in a skills group and a
+  bullet, three location strings chosen to never be substrings of one another so a
+  contact-field-override test can assert one is absent without a false negative from an
+  unrelated section) and `synthetic_resume()`, the matching `MasterResume` — kept in
+  section-kind-and-order lockstep, though under the fixed-mode template this fixture
+  builds, only the docx's own heading text and paragraph shapes affect what renders;
+  `synthetic_resume()`'s section titles are inert prototypes.
+- **`conftest.py` gained three more autouse fixtures**, same reasoning as the
+  pre-existing `_isolated_libraries`: `_pinned_calibration` (pins `CHARS_PER_LINE`/
+  `LINES_PER_PAGE`/`CALIBRATION_SOURCE`/`CALIBRATION_REJECTION` to the fallback pair —
+  otherwise a test asserting on line counts would pass or fail depending on this
+  machine's own `data/calibration/<backend>.json`, the exact failure mode the
+  `chars_per_line: 20` incident produced) and `_isolated_template_paths`
+  (`TEMPLATE_PROFILE_PATH`/`DEFAULT_TEMPLATE_PATH`/`BASELINE_TEMPLATE_PATH` redirected
+  to nonexistent temp paths by default). The second one was found the hard way, not
+  planned in advance: building the first hermetic render test, `resume.projects`
+  rendered as silently empty even with `config.MASTER_RESUME_PATH` correctly isolated,
+  because `render.build_context`'s default `active_layout()` lookup was still reading
+  *this developer's own* `templates/template_profile.json` — a stale, pre-workspace
+  file with `enabled.projects: False` sitting on disk, unrelated to anything this
+  session changed, that nothing had ever surfaced before because every prior test
+  happened to either override the path or not care whether projects rendered.
+- **A second, subtler instance of the same bug class**: `tests/test_render.py`'s
+  `rendered_docx` fixture was `scope="module"` (render once, reuse across every test in
+  the file, since none of them touch Word/LibreOffice). Pytest sets up module-scoped
+  fixtures *before* function-scoped ones for a given test, so a module-scoped fixture
+  that reads `config.TEMPLATE_PROFILE_PATH` indirectly can construct *before* the
+  function-scoped `_isolated_template_paths` autouse fixture has ever run — seeing the
+  real, unpatched path regardless of the isolation fixture existing at all. Fixed by
+  dropping the module scope (rendering is cheap here; the whole file still runs in
+  ~1 second) rather than trying to make the isolation fixture wider-scoped, which would
+  have needed a hand-rolled `MonkeyPatch()` instance (the built-in `monkeypatch` fixture
+  is function-scoped only) and risked leaking patches across unrelated test files.
+- **One real bug found in a test's own logic, not a fixture gap**: `test_render.py`'s
+  `test_experience_header_location_is_not_bold` picked "the first run in the paragraph
+  containing no pipe" as the location run. Against the real resume this happened to
+  work; against a tagged/rebuilt header (which legitimately splits `"Company | "` into
+  a `{{ job.company }}` tag run plus its own literal `" | "` run, both bold, since the
+  separator is never part of the company field's span) the bare company-name run itself
+  satisfies "no pipe" and was matched first. Fixed by searching for the location run
+  only *after* the last pipe-bearing run before the tab, not from the top of the
+  paragraph — a latent bug this test's logic always had, only surfaced by testing
+  against a resume shaped differently than the one it happened to be written against.
+- **`test_web.py`'s `client` fixture now seeds `config.MASTER_RESUME_PATH` with
+  `synthetic_resume()`** rather than leaving it pointing at whatever the developer's
+  own file holds. Five existing tests already followed a "copy the current
+  `MASTER_RESUME_PATH`'s content, then redirect" pattern (`path.write_text(config.
+  MASTER_RESUME_PATH.read_text(...))`) to get a realistic resume before making their
+  own further edits — seeding it here made all five copy synthetic content instead,
+  with no change to their own bodies.
+- **`test_tailor_cli.py` gained the equivalent autouse fixture** (`tailor.main` calls
+  `data.load()` internally regardless of what any given test stubs), and its 14
+  `resume = load()` call sites — used only to build a stubbed `fit.fit` return value,
+  since `fit.fit` is monkeypatched in every one of these tests — became `synthetic_resume()`.
+- **Files needing more than the shared fixture**, each solved locally rather than by
+  stretching `synthetic_resume()`'s shape for one caller: `test_report.py` already had
+  its own parametrised `_synthetic_resume(bullet_tags=..., project_tech=..., ...)` for
+  gap-diagnosis tests; its ten other `load()`-calling tests switched to it directly
+  (default `bullet_tags=("python",)` already matched what they needed), except the one
+  needing two experience entries (`test_report_lists_entries_dropped_entirely`), which
+  builds its own inline. `test_rewrite.py` and `test_fit.py` needed resumes generous
+  enough to exercise entry-ranking/budget-growth/page-fitting meaningfully — both files
+  already had tests that assert their own sizing assumptions explicitly (e.g. "test
+  needs room to grow the selection"), so undersizing the replacement fixture surfaced
+  as a clear, named assertion failure rather than a silent false pass; sized each
+  fixture up until every such self-check held (`test_fit.py`'s went from 3 to 5 bullets
+  per experience entry, 2 to 4 per project, before `test_fit_restores_bullets_on_underflow`
+  stopped reporting `initial_limit(13) == available(13)`, i.e. no room to grow).
+  `synthetic_resume()`'s one experience bullet is tagged `"python"` specifically (not
+  e.g. `"backend"`) so a consumer can write a plain `Keyword(canonical="python")`
+  requirement and get a real match — the convention the rest of the suite's fixtures
+  already used, discovered when `test_tailor_cli.py`'s coverage assertion needed it.
+- **`pyproject.toml` gained an `owner` marker** (`addopts = "-m \"not owner\""`),
+  applied to exactly one test in the end:
+  `test_data.py::test_all_bullets_order_matches_pre_migration_order_for_the_real_master_resume`,
+  which validates a property of the real file specifically (that migrating it preserved
+  bullet order, load-bearing for the relevance-score cache key) and cannot be
+  meaningfully replaced by a synthetic fixture. Every other `data.load()`/
+  `config.MASTER_RESUME_PATH` dependency found across the suite turned out to be
+  convenience, not genuine specificity to the owner's content.
+- **Verification**: full suite green (595 passed, 1 deselected) with
+  `data/master_resume.json` *and* every real template file physically absent from the
+  tree, and again via `RESUME_TAILOR_DATA_DIR`/`RESUME_TAILOR_TEMPLATES_DIR` pointed at
+  genuinely empty directories (the env-var path a container or CI would actually use).
+  Frontend (`tsc -b`, `oxlint`, `vitest`) unaffected — no frontend files touched this
+  pass.
+
+## 2026-08-05 - Build verification: hold a tagged template accountable to its own mapping
+
+- **The gap this closes**: `_smoke_render` (`web/template_ops.py`) only proves a built
+  template opens and renders without an exception — it says nothing about whether the
+  render used the fields it should have. A profile whose `dates`/`location` never got
+  detected on an experience header builds a template that opens fine, smoke-renders
+  fine, and silently drops every job's dates from every resume built with it,
+  forever, with nothing in the install flow ever saying so.
+- **`template_build.py`'s Jinja tag strings hoisted to module constants**
+  (`NAME_TAG`, `CONTACT_TAG`, `EXPERIENCE_HEADER_TAGS`, `BULLET_TAG`,
+  `EDUCATION_HEADER_TAGS`, `PROJECT_HEADER_TAGS`, `SKILLS_LABEL_TAG`/`_BODY_TAG`,
+  `LIST_ITEM_TAG`, `SECTION_TITLE_TAG`, `SECTION_LOOP_OPEN`, …) — every
+  `_tag_*_prototype` function updated to reference them instead of inlining the
+  literal string a second time. Purely mechanical (verified against the existing
+  33-test `test_template_build.py` suite, unmodified, before writing anything new);
+  the point is that `template_verify.py` can read the exact same constants tagging
+  emits, so the two can never quietly drift into disagreement about what "tagged
+  correctly" means. `BULLET_TAG` is deliberately shared between experience and
+  projects (each is a different `{%p for bullet in ... %}` loop's own variable, so
+  identical tag *text* is not evidence of a leak) — documented at the constant so
+  `expected_tags` doesn't try to assert an exactly-once count for it.
+- **New `src/resume_tailor/template_verify.py`**, two checks:
+  - `verify_tagged(tagged, profile)`: `expected_tags(profile)` (every tag a correctly
+    built template must contain, derived by walking the profile's own `OptionalSpan.
+    present` flags against the same module constants) must all appear somewhere in
+    the built document; `{%p for %}`/`{%p if %}` control tags must be balanced *and*
+    correctly nested (a stack walk, not just a count match, since a miscount-free but
+    misnested structure would pass a naive count comparison); under generic mode,
+    exactly one outer `{%p for section in sections %}`; and no `w:hyperlink` element
+    survives anywhere in the built template — every path that ever touches one
+    (`build_contact_profile`, a project header's link) strips it, since the real
+    per-item URL is only ever reinstated at render time as a `RichText`.
+  - `verify_roundtrip(tagged, profile, resume)`: renders `resume` through `tagged`
+    and confirms each mapped field's actual *value* reaches the output — catches a
+    tag that is present (passes `verify_tagged`) but wired to the wrong span, which
+    builds and renders without error, just with the wrong text. Skips entries with no
+    surviving bullets, matching `render.build_context`'s own filtering.
+- **Found and fixed while writing this, not before**: `verify_roundtrip` initially
+  called `render.render()` directly, which has no way to pass an explicit layout —
+  `build_context`'s default `active_layout()` call reads `config.
+  TEMPLATE_PROFILE_PATH` from disk, meaning a staged, not-yet-committed profile being
+  verified would silently render against whatever profile is *already live* instead
+  of itself. Caught immediately by a smoke test against the fixture (a project
+  section rendered empty because the developer machine's own live profile happened
+  to have `enabled.projects: False`) — the same class of bug Phase 2's
+  `_isolated_template_paths` fixture exists to catch in tests, just in production
+  code this time. Fixed by adding a `layout: dict | None = None` passthrough
+  parameter to `render.render()` (backward compatible — `None` keeps every existing
+  caller's behavior unchanged) and having `verify_roundtrip` pass
+  `template_profile.active_layout(profile)` explicitly. This also directly enables
+  Phase 5's draft-preview endpoint, which has the identical need.
+- **Wired into `web/template_ops.py`**: `_verify_staged_build(tagged, profile)` runs
+  `verify_tagged` + `verify_roundtrip` (against `data.load()`) right after
+  `_smoke_render` inside `_install_with_profile`'s staged build, before the staged
+  files ever replace the live baseline/tagged/profile trio. A blocking issue raises
+  `TemplateBuildError`, the same exception type (and the same rollback path) a
+  smoke-render failure already produces. Profile-only, matching `_smoke_render`'s own
+  scope — `_install_legacy` has no `TemplateProfile` for either check to run against.
+- **One test exposed a stub that was too fake to be useful**:
+  `test_profile_template_install_works_on_a_freshly_created_profile` stubbed
+  `_run_build` with a function that wrote a bare "Tagged template" placeholder
+  document — sufficient to pass `_smoke_render` (which only opens the file) but not
+  the new tag-presence check. Its own docstring already said "Only `_run_build` is
+  stubbed here; the smoke render is real" — the fix makes that literally true: the
+  stub now calls `template_build.build_from_profile` in-process instead of writing a
+  placeholder, skipping only the subprocess spawn, exactly as documented.
+- **Exposed on the CLI**: `template_build.build()` gained a `verify: bool = True`
+  parameter, run after a successful profile build (skipped for a legacy build, same
+  reason as the web path). `scripts/build_template.py --no-verify` opts out.
+  Verification failure prints each blocking issue and returns exit code 1; unlike the
+  web install this path is not staged/atomic, so the just-written file is not rolled
+  back — re-run after fixing the mapping, matching how a build failure already
+  behaved here.
+- **`tests/test_template_verify.py` added** (13 tests): known-good builds (fixed mode
+  via the Phase 2 `_full_featured_resume` fixture, generic mode via the pre-existing
+  `_multi_section_resume` fixture) verify clean on both checks — regression guard
+  against the checks themselves drifting from what tagging emits. Corruption tests
+  inject a defect into an already-successfully-built template's XML directly (delete
+  the paragraph carrying `{{ job.dates }}`; delete an `{%p endfor %}`; delete the
+  generic section loop-open; append a stray `w:hyperlink`; swap
+  `{{ job.company }}`'s text for `{{ job.location }}`) rather than trying to first
+  reproduce a specific analyzer bug that happens to produce that state — proves each
+  check catches something real without depending on Phase 4's not-yet-written
+  analyzer fixes.
+- **Verified against both real, live templates**, not just synthetic fixtures:
+  `python scripts/build_template.py` (default/Jayden workspace, fixed mode) and
+  `python scripts/build_template.py --workspace nina` (generic mode) both rebuild and
+  verify clean with the mechanical tag-hoisting in place — confirms the refactor
+  changed nothing about what either real template produces.
+- **Full suite**: 608 passed, 1 deselected (the Phase 2 `owner`-marked test).
+  Frontend (`tsc -b`, `oxlint`, `vitest`) unaffected — no frontend files touched.
+
+## 2026-08-05 - Analyzer correctness: heading detection stops trusting text alone
+
+**What:** `template_analyze.py`'s heading/entry detection (Phase 4 of the remediation
+plan) now corroborates every text-based match against the document's own structure —
+formatting, position, and content — instead of trusting a keyword substring on its own.
+Four independent mechanisms, landed together because each one's test fixtures depend on
+the others being in place first:
+
+- **`_fingerprint(paragraph)` + `_heading_classes(paras)`**: a formatting signature
+  (style, bold, size, alignment, indent, spacing, has-tab, caps bucket) clustered across
+  the document. A class needs >=2 short, non-bulleted, content-introducing members to
+  count — real section headings are almost always styled identically to each other and
+  to nothing else, so they cluster; a single stray ALL-CAPS line does not. An unaliased
+  text match (`_looks_like_heading`'s structural-fallback path) is now *hard*-gated on
+  class membership when a class exists at all; an aliased-but-weak match (the
+  <=0.6-confidence tiers, which have no case requirement whatsoever) is downgraded and
+  flagged (`heading_formatting_mismatch`, non-blocking) rather than excluded outright,
+  since a real template occasionally styles one heading slightly differently.
+- **`_introduces_content(p, paras, heading_fp_classes=frozenset())`**: implements the
+  guard `_looks_like_heading`'s own docstring has long claimed the caller enforces — a
+  candidate must actually precede a bullet or a tab-aligned entry header before the next
+  *recognizable* heading, or it introduces nothing and is not a section. This is what
+  rejects `"PROFESSIONAL SUMMARY"` followed only by a paragraph of prose. "Recognizable"
+  matters: an earlier version stopped the scan at the first short/plain/no-tab line,
+  full stop — which made a real heading followed by a two-line entry (company name on
+  its own line, title+date on the next, e.g. `"WORK EXPERIENCE"` → `"AMAZON WEB
+  SERVICES"` → `"Software Engineer Intern\tJune 2022 - Present"`) register as
+  introducing *nothing*, since the scan gave up at the company line one paragraph too
+  early. Fixed by only stopping at a line that is unambiguously a heading by the same
+  signals the rest of the module already trusts: an alias/keyword match, or (once a
+  class is known) fingerprint-class membership — never "short and plain" alone.
+- **`_split_entries`, two passes**: `_bootstrap_split_entries` (today's bullet-anchored
+  rule, unchanged, kept as its own function) still runs first; a second pass clusters
+  each bootstrap entry's own header by fingerprint and, when a majority share one,
+  re-splits using the **union** of the bootstrap rule and that class's membership — not
+  a replacement. Union matters for the same reason as above: an entry that legitimately
+  lacks the dominant format (an otherwise-ordinary job with no tab-aligned date) is
+  *already* a correct bootstrap boundary, and a fingerprint-only re-split would
+  incorrectly re-merge it into its predecessor for no reason but the format mismatch —
+  caught by the `experience_dates_partial` test fixture (three entries, one dateless),
+  which the first replacement-based design silently merged down to two.
+- **Two position-based exclusions**, neither expressible as fingerprint corroboration
+  alone, both hard gates on any match below 1.0 confidence: `p.has_tab` (a real section
+  heading never itself carries a trailing tab-aligned date — `_heading_classes`'s own
+  candidate filter already assumed this; a later entry's own header, e.g. `"Advocate of
+  Sexual Education in School\t2022"` inside an unaliased `"OTHER ACTIVITIES"` section,
+  matches the `"education"` keyword at 0.6 confidence and has a tab), and
+  `_immediately_follows_entry_header(p, paras)` (the nearest preceding non-chrome
+  paragraph has a tab and is not a bullet — the shape of "this line is an entry's title,
+  sitting right under its own company/dates header", e.g. `"Experience Designer"` under
+  `"Acme Corp | Remote\tJan 2023 - Present"`).
+- **`_reconcile_header_fields`** (4d) runs `_header_fields_from_text` on *every* entry in
+  a section, not just the one prototype `_exp_score`/`_proj_score` would pick, and keeps
+  a field only when a majority of entries carry it — `FieldCandidate.confidence` is
+  finally a real presence rate instead of a single entry's yes/no. A field absent from
+  the majority is a **blocking** `experience_dates_not_detected` /
+  `project_dates_not_detected`; present on some entries but not all is a non-blocking
+  `experience_dates_partial` / `project_dates_partial`. The prototype entry itself is
+  now chosen from the entries matching the *modal* field-presence signature, so an
+  outlier entry that scores well on `_exp_score` (more runs, has a title line) but
+  happens to be missing a field most other entries have can no longer become the
+  prototype and silently drop that field for the whole section.
+- **`_prototype_consistency_issue`** (4e): blocking issue if a prototype's header/title/
+  bullet paragraphs don't all fall within one entry's own span — catches the original
+  review's exact finding (header from one entry, title from another) directly, as a
+  named assertion, rather than relying on the detection fixes above to prevent it from
+  ever arising.
+- **`validate_profile_against_doc`** (4f) gained semantic checks it never had: a mapped
+  date span must actually look like a date (`date_span_not_date_shaped`, non-blocking);
+  an experience/project/education header paragraph must be a genuine entry start, not a
+  bullet or blank (`header_not_entry_start`, blocking); every `heading_prototype`/
+  `DetectedSection.heading_paragraph_id` must be in document range
+  (`bad_heading_prototype` / `bad_detected_section`, blocking) — previously unchecked
+  entirely.
+- **`_contact_field_order`** (4g): `_PHONE_RE` matches a bare year range
+  (`"2021 - 2025"` is digit-space-punctuation-digit, same shape as a phone number) —
+  excluded anything that also matches `_DATE_RE` before trusting it as a phone.
+
+**Why:** All four mechanisms trace back to one root cause — the analyzer decided
+"this is a heading" (or "this is a new entry") from text content alone, with no
+cross-check against how the document actually looks or is laid out. That is precisely
+how a `PROFESSIONAL SUMMARY` heading silently became an experience section's header
+prototype, dragging a real job's title in from a different entry and dropping its dates
+with `ready: true` and zero warnings — the finding that opened this whole remediation
+effort. Landed after the hermetic suite (Phase 2) and the build verifier (Phase 3)
+specifically so the safety net existed before touching the highest-risk file in the
+codebase.
+
+**Impact:** Found and fixed one real design flaw during validation, beyond what static
+review anticipated: a `conf <= 0.6 and uncorroborated -> exclude` gate (an earlier,
+coarser attempt at the has-tab/immediately-follows-header exclusions above) correctly
+rejected `"Experience Designer"` but also collateral-damaged the `nina` workspace's
+genuine `"SKILLS & Interests"` heading, since both are "uncorroborated" by fingerprint
+for the same structural reason (mixed case / a lone stylistic outlier) and confidence
+alone cannot tell them apart — replaced with the two targeted, position-based checks
+described above, which correctly keep one and reject the other. A second, subtler
+issue turned up only once a fixture exercised it: the original `_introduces_content`
+and the original (replacement-based) `_split_entries` each had their own version of
+"stops one line too early" / "merges a boundary that didn't need fixing" — both fixed
+before this entry was written, not after. `tests/test_template_analyze.py` gained 11
+regression tests (summary-section exclusion, summary-only blocking, an all-caps
+uncorroborated entry line, the "Experience Designer" and "Advocate of ... Education ..."
+false positives, no-dates/partial-dates blocking for both experience and projects, and
+the phone/date regex fix) — file total 33 passed, template suite (analyze + build +
+verify) 79 passed, full project suite 617 passed, 1 deselected. Both real workspace
+templates (`default`, fixed mode; `nina`, generic mode) re-verified end to end
+(analyze -> build -> `template_verify.verify_tagged`) after every change in this phase,
+not just at the end: `default` stays `ready: true` with zero issues throughout; `nina`
+now correctly reports all five real sections (education, three experience-kind, skills)
+with exactly two honest, non-blocking issues (the skills heading's own formatting
+mismatch, and no projects section present) — no spurious sections, no dropped ones.
+
+## 2026-08-05 - Wizard confirm + preview: the analyzer's own findings reach the UI
+
+**What:** The template wizard (Phase 5) can now show what the analyzer actually found,
+let the user correct a specific heading's classification with a real server round
+trip, and preview the installable result before committing to it.
+
+- **`field_candidates` reaches the wire.** `template_analyze.analyze_docx` always
+  computed per-field spans (company/dates/title/…), but `template_ops.analyze_upload`
+  dropped them building `TemplateAnalyzeResponse`. New `TemplateFieldCandidateOut`
+  schema + `field_candidates` field, populated from `AnalyzeResult.field_candidates`.
+  `AnalyzeReport.tsx` renders one row per field under each detected section — a red
+  "not detected" row for `company`/`dates` (experience), `name`/`date` (projects),
+  `school`/`dates` (education) when nothing was found, which is exactly the class of
+  problem (a silently unmapped field) that started this whole remediation effort.
+- **`template_analyze._analyze_document` takes an `overrides: dict[int, str | None]`
+  parameter** (paragraph id -> forced kind, or `None` for "not a section"). Threaded
+  through `analyze_docx`. An override bypasses *every* heuristic gate for that specific
+  paragraph — fingerprint corroboration, has-tab exclusion, `_introduces_content` — by
+  design: those gates exist to make a good guess when the only evidence is the
+  document itself, but a user override is not a guess, it is the user correcting the
+  guess, so re-running it through the same uncertainty would be backwards. Wired in
+  right where `_classify_heading` is called in the main detection loop, so an override
+  produces exactly the same downstream shape (entry splitting, field reconciliation,
+  date-detection issues) as a naturally-detected heading of that kind — the wizard's
+  remap result is never a special case the rest of the pipeline treats differently.
+- **`POST /api/template/analyze/remap`** takes an upload's sha256 (not the file again)
+  plus the accumulated override map, re-runs analysis, returns the same
+  `TemplateAnalyzeResponse` shape as `/analyze`. Needs the upload's bytes without a
+  second upload, which is what the new upload cache (`template_ops._cache_upload` /
+  `_load_cached_upload`, keyed by sha under `output/.../template/uploads/`) exists for
+  — written once by `analyze_upload`, read by every subsequent remap/preview call in
+  that wizard session, cleared by `clear_upload_cache()` on a successful install (the
+  upload has become the live template; nothing further needs the cache entry) and
+  opportunistically pruned past 24h so an abandoned wizard session (tab closed after
+  analyze, before install or reset) does not leak forever.
+- **`POST /api/template/preview/source` and `POST /api/template/preview/draft`** give
+  the wizard a real side-by-side: the uploaded document as-is, and what installing the
+  current draft profile would actually produce. `preview/source` converts the cached
+  upload straight to PDF. `preview/draft` runs the same staged build
+  `_install_with_profile` does — `template_build.build_from_profile` into a temp
+  directory, `render.render` with `template_profile.active_layout(profile)` passed
+  explicitly (the same fix Phase 3 needed for `verify_roundtrip`, for the same reason:
+  a staged/never-installed profile has no business reading whatever profile happens to
+  be live on disk) — minus the atomic commit: nothing under `templates/` is ever
+  written or replaced. Confirmed by a test that snapshots the templates directory
+  before and after calling the endpoint and asserts it is byte-for-byte unchanged.
+- **Frontend**: `SectionMapStep.tsx` gained a `<select>` per detected heading (its
+  value defaults to the analyzer's own classification, options are the five kinds plus
+  "Not a section"), positioned as the primary confirmation control above the existing
+  kind-level include/exclude checkboxes — kept both, deliberately: the new select
+  answers "what *is* this heading", the old checkboxes answer "do I want this *kind*
+  in the template at all", which stays a meaningful, independent question (e.g. omit a
+  correctly-detected Projects section). New `PreviewCompare.tsx`: the source preview
+  loads automatically (one conversion, cheap relative to a rebuild); the draft preview
+  is a manual "Generate draft preview" button rather than auto-refreshing on every
+  profile edit, since `templateState.tsx`'s own docstring already documents install as
+  "Word ~9s" and the profile can change on nearly every keystroke while mapping — an
+  auto-refresh there would mean a near-permanent spinner, not a preview.
+- **State**: `templateState.tsx` gained `headingOverrides` (accumulated across remap
+  calls — a second correction must never lose the first), `remapBusy`, and
+  `remapHeading()`, which POSTs the full accumulated override map every time and
+  replaces both `analysis` and `profileDraft` with the server's fresh response —
+  intentionally never a client-side patch, for the same "let the analyzer's own
+  downstream logic decide" reason the endpoint itself exists.
+- **Verified against a live server, not just the test suite**: started `uvicorn`
+  locally and drove `/analyze` -> `/analyze/remap` -> `/preview/source` ->
+  `/preview/draft` with real HTTP requests against a hand-built synthetic .docx (no
+  test doubles) — confirmed `field_candidates` populate with real spans, a remap
+  (`EDUCATION` forced to kind `list`) correctly changes `sections` in the response, an
+  unknown sha 400s, and — since Word turned out to be available in this environment —
+  both preview endpoints returned real, valid PDFs (`%PDF-1.7` headers, hundreds of KB,
+  openable), not just the stubbed-render assertions the test suite necessarily uses.
+- **Tests**: 6 new backend tests in `tests/test_web.py` (field candidates present,
+  remap changes section kind, unknown-sha 400, both preview endpoints via the
+  established `render`/`to_pdf` monkeypatch seam, install clears the upload cache).
+  Frontend: `tsc -b`, `oxlint`, `vitest run`, and `vite build` all clean — no new
+  warnings beyond the pre-existing "only-export-components" fast-refresh warning every
+  other state-context file in the codebase already carries. Full backend suite: 623
+  passed, 1 deselected.
+
+## 2026-08-05 - DOCX importer: an upload becomes content, not just layout
+
+**What:** A Template-tab upload was, until now, a layout donor whose content was
+discarded — a new user uploaded their resume and then retyped every bullet by hand into
+the editor. New `src/resume_tailor/resume_import.py` (Phase 6) turns
+`template_analyze.analyze_docx`'s own structural findings into a `MasterResume` draft;
+`POST /api/master-resume/import` exposes it without writing anything.
+
+- **No LLM required for a usable draft.** `import_from_analysis(result, doc)` reuses
+  `template_analyze`'s private per-paragraph helpers (`_load_paras`, `_split_entries`,
+  `_header_fields_from_text`, `_skills_spans`) — the exact machinery Phase 4 made
+  reconcile *every* entry, not just a prototype, which is precisely what "parse the
+  whole resume" needs instead of "parse one representative entry." Tags are seeded
+  deterministically: `_seed_tags` whole-word-matches each bullet's text against a
+  known-tag vocabulary (the built-in `TAG_ALIASES` keys/values, unioned with an
+  existing workspace's own `tag_vocabulary` when re-importing into one that already has
+  a resume). A bullet nothing matched gets the sentinel tag `"untagged"` (`Bullet.tags`
+  requires at least one entry) and is counted in `ImportedResume.
+  untagged_bullet_count`, surfaced to the user rather than silently guessed at.
+  Deliberately conservative in the false-negative direction: a missed tag is safe (the
+  user or the opt-in LLM pass adds it), a *wrong* tag would corrupt the fabrication
+  guard's own whitelist for that bullet.
+- **New `render.parse_month`/`render.parse_range`**, the literal inverse of
+  `format_month`/`format_range`, living right next to them rather than in the importer
+  — one module owns both directions of the date format now. Only converts a
+  recognizable "Mon YYYY" shape; anything else (a bare year, "Present", free text)
+  passes through unchanged, mirroring `format_month`'s own tolerance for whatever a
+  human actually wrote.
+- **New `docx_text.hyperlink_target(paragraph, hyperlink_element)`** resolves a
+  `w:hyperlink`'s `r:id` to its actual target URL via the paragraph part's
+  relationships — genuinely new capability. Every existing caller in this codebase
+  only ever needed a hyperlink's visible *label* text (`template_analyze`'s link-span
+  detection, `template_build`'s stripping); this importer is the first thing that
+  needs where a link actually points, to reconstruct `Project.url`.
+- **Three real bugs found and fixed by testing against `nina`'s actual uploaded
+  resume, not just synthetic fixtures** — the same "verify against both real
+  workspace templates" discipline Phase 4 used, applied here to content instead of
+  layout:
+  - `_PHONE_RE` requires its match to start on a digit, so `"(555) 123-4567"` silently
+    lost its opening parenthesis. Fixed by restoring it when the character immediately
+    before the match is `"("`.
+  - The location-detection loop originally split the contact line on a bare `/`
+    character (among other separators) — correct for a real field separator, wrong for
+    a plain-text profile URL typed inline instead of a real hyperlink (`"www.linkedin.
+    com/in/ngocdao2006"`, common when an export loses its hyperlinks): splitting on its
+    own internal slash shredded it into unrelated fragments, one of which (`"in"`)
+    then passed every exclusion check and became a bogus `location`. Fixed by
+    switching to `template_analyze._contact_separator`'s own detection (the actual,
+    space-padded separator this specific line uses) instead of a bare character class.
+  - A two-line entry header whose *second* line (the title) also carries its own
+    trailing tab-aligned date (`"Organizer and Marketing Member\tJan. 2023 – Feb.
+    2023"`, a real shape in `nina`'s "OTHER ACTIVITIES" section) was stored verbatim
+    into `title`, tab and date included. Fixed by stripping the title at its own tab
+    and using its date only as a fallback when the entry's primary header had none —
+    the primary header's own date still wins when present.
+- **Optional, explicitly opt-in LLM pass**: `propose.propose_bullet_tags(bullets,
+  known_tags)`, modeled on `propose_vocabulary`'s existing "model selects, code
+  enforces" contract — a proposed tag outside `known_tags` is dropped, never trusted,
+  since a model is not a validator. Addressed by list position (no stable bullet ids
+  exist yet at this point in the flow) rather than by id. Deliberately *not* cached
+  (unlike `propose_vocabulary`): this is a one-off import action, not a repeated
+  pipeline stage, so there is no hot path a cache would be protecting. Never part of
+  `resume_import`'s own call graph — the web route runs it only when the caller passes
+  `suggest_tags=true`, and a failure there becomes a warning in the response, not a
+  failed import; the deterministic draft already produced is still useful on its own.
+- **`POST /api/master-resume/import`** (multipart, optional `suggest_tags` field)
+  returns `{resume, warnings, untagged_bullet_count}` and writes nothing — the same
+  "draft, not a write" contract the template preview endpoints established in Phase 5.
+  The editor loads the result as unsaved state via a new `editorState.loadDraft(resume,
+  message)`, which intentionally does not touch the saved-snapshot comparison `dirty`
+  is computed from, so the imported draft immediately reads as unsaved and the user is
+  prompted to review before it can be lost.
+- **Frontend**: `TemplateImportWizard.tsx` gained "Also import content from this file"
+  (and, nested under it, "Suggest tags for untagged bullets") checkboxes. `confirmInstall`
+  now returns a success boolean rather than `Promise<void>`, specifically so the
+  wizard's chained "install, then import" action never has to read back a state
+  variable a stale closure or React's batching could make wrong — the exact class of
+  bug `PreviewCompare`'s manual-refresh design (Phase 5) was already worried about
+  avoiding, here on the write side instead of the read side.
+- **Tests**: `tests/test_resume_import.py` (new, 13 tests) — full-fixture round trip
+  through real JSON serialization (not just in-memory construction), entry-id collision
+  safety across different section kinds sharing one flat namespace (matching `data.
+  MasterResume._fill_entry_ids`'s own suffixing), the multi-experience-section fixture
+  importing every section rather than just the first, and a dedicated regression test
+  for each of the three bugs found above. `tests/test_render.py` gained 4 tests for
+  `parse_month`/`parse_range`. `tests/test_propose.py` gained 6 tests for
+  `propose_bullet_tags` (prompt contents, dropping an out-of-vocabulary tag, an
+  explicit empty-list answer counting as "no tags" rather than being ignored, an
+  out-of-range bullet index not crashing, LLM failure propagating normally). 4 new
+  `tests/test_web.py` tests for the API route (draft returned with nothing written to
+  disk — content and mtime both asserted unchanged, non-docx rejected, the suggest-tags
+  pass filling in untagged bullets via a stubbed `propose.propose_bullet_tags`, and a
+  stubbed failure there degrading to a warning instead of a 500).
+- **Verified against a live server**: analyzed and imported a hand-built synthetic
+  .docx via real HTTP against a running `uvicorn` instance (no test doubles),
+  confirming `warnings`/`untagged_bullet_count`/`resume.contact`/`resume.sections`
+  all arrive in the shape the frontend expects. Full backend suite: 649 passed, 1
+  deselected. Frontend: `tsc -b`, `oxlint`, `vitest run`, `vite build` all clean.
+
+## 2026-08-05 - Phase 7 cleanups: retiring the legacy build path and its debts
+
+**What:** The last remediation-plan phase — four cleanups the earlier phases either
+required or made safe to finally do.
+
+- **Retired `build_legacy` and everything only it used**, after confirming both real
+  workspace templates (`default`, `nina`) analyze `ready: true` with zero blocking
+  issues under the current analyzer — the precondition the plan named, verified rather
+  than assumed. Removed from `template_build.py`: `build_legacy`, `build_name`,
+  `build_contact`, `build_education`, `build_experience`, `build_projects`,
+  `build_skills`, the legacy `split_entries`, and three helpers that turned out to be
+  legacy-only despite living in the shared-looking part of the file once traced
+  (`header_run_count`, `vertical_cost`, `pick_bullet_prototype`, `leading_runs_before_tab`)
+  — each confirmed by grep to have no caller outside the functions being removed
+  before deletion, not assumed from the plan's own list. **`SECTIONS` and
+  `find_sections` were deliberately kept**, contradicting the plan's literal text: the
+  plan predates this phase's own discovery that `discover_noto_num_id` (used by *both*
+  build modes, to find which bullet numbering instance uses Noto Sans Symbols) depends
+  on `find_sections` to locate the EDUCATION section as a heuristic anchor — removing
+  it would have broken bullet-marker-font normalization in the still-live profile
+  path. `build()`'s profile-absent branch now prints a clear error and returns exit
+  code 1 instead of silently calling `build_legacy`; the CLI's `--legacy` flag,
+  `template_ops._install_legacy`, `install_baseline`'s `legacy` parameter, and
+  `POST /api/template`'s optional-profile fallback are all gone — `profile` is a
+  required multipart field now, both at the FastAPI layer (`Form(...)`, not
+  `Form(None)`) and in `uploadTemplate`'s TypeScript signature. Frontend:
+  `uploadLegacy` removed from `templateState.tsx`, "Legacy install (no mapping)"
+  button removed from the wizard.
+  - **Real cost, not just a rename**: ~10 `tests/test_web.py` tests had quietly come
+    to depend on the profile-less upload path as a *convenience shortcut* for testing
+    unrelated concerns (library snapshots, backup/restore, the calibrate flag, queue-busy
+    rejection) — none of them were actually testing legacy-headings behavior on
+    purpose. Fixing them properly (new shared helper `_resume_upload_with_profile()`:
+    a real analyzable upload plus its own suggested profile) surfaced a real behavioral
+    difference worth documenting: the profile path's staged/atomic design means a build
+    failure during staging never touches the live baseline at all (nothing to
+    "restore" — the live files were simply never written), which is a *stronger*
+    guarantee than the old legacy path's write-then-restore-on-failure, not just a
+    different implementation of the same guarantee. One test's docstring/assertions
+    were rewritten to say so rather than papering over the difference.
+- **`_section_body_paragraphs` now stops on paragraph *identity*, not paragraph
+  *text*.** The old code matched a walked paragraph's text against every other
+  enabled kind's `heading_text` to find where the current section's body ends — which
+  reads a bullet whose own text happens to exactly equal another heading's text (a
+  bolded "SKILLS" label inside an experience bullet, say) as *that* heading, silently
+  truncating the section early with no error. Fixed by resolving every enabled kind's
+  heading paragraph *object* once, up front — before any section's body is touched —
+  via `_para_by_id`, and passing the resolved `other_headings: list[Paragraph]` down
+  into `build_experience_profile`/`build_education_profile`/`build_projects_profile`/
+  `build_skills_profile` and `build_generic`'s own loop, all five call sites. This is
+  safe regardless of the bottom-up processing order specifically because heading
+  paragraphs themselves are never moved, inserted around, or deleted mid-build — only
+  the *space between* headings is — so a reference captured before processing starts
+  stays valid throughout, unlike a re-derived index (which an earlier section's own
+  insertions could shift) or re-matched text (works, but can't tell a real heading from
+  an entry line that happens to say the same thing). Verified the bug was real before
+  fixing it: reproduced the old text-matching logic standalone against a synthetic
+  fixture and confirmed it silently stopped short exactly as suspected, before writing
+  the fix or the regression test. New test:
+  `test_entry_bullet_matching_another_headings_text_does_not_truncate_body`.
+- **Removed `data.to_legacy_dict`.** Confirmed `GET /api/master-resume` no longer
+  calls it (returns `resume.model_dump(by_alias=True)` directly, already
+  `sections`-native) — its only remaining callers were two tests constructing a
+  legacy-shaped payload to exercise `PUT`'s acceptance of that shape, which is
+  `MasterResume._migrate_legacy_sections`'s before-validator's job, not a dedicated
+  function's, matching the plan's own reasoning. `test_data.py`'s test of
+  `to_legacy_dict` itself was deleted outright (nothing left to test once the function
+  is gone); its one non-redundant assertion — a legacy-shaped dict round-trips through
+  `model_validate` — was already independently covered by `_RESUME_TEMPLATE`-based
+  tests elsewhere in the same file. `test_web.py`'s legacy-payload test was kept and
+  rewritten to hand-build the same shape inline.
+- **New `tests/test_config_rebinding.py`**: an AST scan asserting no first-party module
+  (`src/`, `tailor.py`, `scripts/`) does `from config import <X>` for any name
+  `set_active_workspace` reassigns — that import would bind a name at import time,
+  permanently decoupled from any later workspace switch, silently leaving that one
+  reader on the previous (or default) workspace's path forever. The rebound-name set
+  is extracted from `set_active_workspace`'s own `global` statements via AST rather
+  than hardcoded, so a rebound global added later is covered automatically instead of
+  falling outside a stale list. Verified the detector has teeth (not just checking it
+  passes on a clean tree) by running its own extraction-and-match logic against a
+  deliberately bad synthetic snippet and confirming it flags it.
+- **Docs**: `CLAUDE.md`'s testing-conventions section was still describing the
+  pre-Phase-2 state (`data.load()` against a personal `data/master_resume.json`) —
+  updated to describe the actual hermetic fixture/`owner`-marker setup, plus a new
+  note on the in-process build fallback tests rely on. "Template generation" gained
+  three new subsections (analyzer correctness, wizard confirm+preview, DOCX import)
+  covering Phases 4-6, and its "Two upload paths" note was corrected to one (legacy
+  retired this phase). Added one new "Non-obvious gotchas" entry for the
+  identity-vs-text section-boundary bug. `README.md`'s `--legacy` CLI example removed.
+- **Verified against both real workspace templates end to end** after every change in
+  this phase, not just at the end: `python scripts/build_template.py` (default, fixed
+  mode) and `--workspace nina` (generic mode) both still build successfully with the
+  legacy path gone and the identity-based boundary fix in place; a full
+  analyze → build → `verify_tagged` → `verify_roundtrip` pass came back clean for both.
+  Full backend suite: 649 passed, 1 deselected. Frontend: `tsc -b`, `oxlint`,
+  `vitest run`, `vite build` all clean.

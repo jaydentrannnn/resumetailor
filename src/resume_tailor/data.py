@@ -357,25 +357,6 @@ class MasterResume(_Strict):
         return next((b for b in self.all_bullets() if b.id == bullet_id), None)
 
 
-def to_legacy_dict(resume: MasterResume) -> dict[str, Any]:
-    """Render `resume` in the pre-`sections` wire shape: top-level `education` /
-    `experience` / `projects` / `skills` lists instead of `sections`.
-
-    Temporary compatibility layer for `web/app.py`'s `GET /api/master-resume`, which the
-    editor still consumes in this shape until it goes `sections`-native. Flattens
-    same-kind sections together — lossless for anything the current editor can produce
-    (it cannot create a second section of the same kind), but would silently merge two
-    hand-authored sections of the same kind into one list. Remove this once the editor
-    and `PUT /api/master-resume` both speak `sections` directly.
-    """
-    dump = resume.model_dump(by_alias=True, exclude={"sections"})
-    dump["education"] = [e.model_dump(by_alias=True) for e in resume.education]
-    dump["experience"] = [e.model_dump(by_alias=True) for e in resume.experience]
-    dump["projects"] = [e.model_dump(by_alias=True) for e in resume.projects]
-    dump["skills"] = [e.model_dump(by_alias=True) for e in resume.skills]
-    return dump
-
-
 def load(path: Path | None = None) -> MasterResume:
     """Load and validate the master resume.
 

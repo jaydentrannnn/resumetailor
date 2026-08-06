@@ -10,7 +10,7 @@ from __future__ import annotations
 import pytest
 
 from resume_tailor import config, rewrite
-from resume_tailor.data import Bullet, Experience, Project, load
+from resume_tailor.data import Bullet, Contact, Experience, MasterResume, Project
 from resume_tailor.jd import JobRequirements, Keyword
 from resume_tailor.rewrite import (
     BulletScore,
@@ -133,10 +133,42 @@ def test_select_still_fills_when_nothing_matches():
 # --------------------------------------------------------------------------------------
 
 
+def _rich_resume() -> MasterResume:
+    """A resume with enough entries and bullets per entry to exercise entry-ranking and
+    budget-allocation meaningfully: 4 experience entries and 3 projects (so a `limit=3`/
+    `limit=2` selection is a genuine subset, not "everything there is"), each carrying 2
+    python-tagged bullets (so budgets up to `len(entries) + 2` and flat-pool limits up to
+    10 have enough real supply to draw from, not just enough to pad the count).
+    """
+    return MasterResume(
+        contact=Contact(name="X", email="x@y.z"),
+        experience=[
+            Experience(
+                company=name, title="Engineer", start="2020-01", end="2020-06",
+                bullets=[
+                    bullet(f"{name.lower()}_b1", f"Did {name} thing one.", ["python"]),
+                    bullet(f"{name.lower()}_b2", f"Did {name} thing two.", ["python"]),
+                ],
+            )
+            for name in ("Alpha", "Beta", "Gamma", "Delta")
+        ],
+        projects=[
+            Project(
+                id=name.lower().replace(" ", "-"), name=name,
+                bullets=[
+                    bullet(f"{name.lower().replace(' ', '_')}_b1", f"Built {name} one.", ["python"]),
+                    bullet(f"{name.lower().replace(' ', '_')}_b2", f"Built {name} two.", ["python"]),
+                ],
+            )
+            for name in ("Proj One", "Proj Two", "Proj Three")
+        ],
+    )
+
+
 def test_select_entries_ranks_sections_independently():
     """The point of separate ranking: strong projects must not evict a relevant job."""
     reqs = requirements(("python", "must_have"))
-    resume = load()
+    resume = _rich_resume()
 
     jobs = select_entries(resume.experience, reqs, limit=3)
     projects = select_entries(resume.projects, reqs, limit=2)
@@ -149,7 +181,7 @@ def test_select_entries_ranks_sections_independently():
 
 def test_select_entries_preserves_document_order():
     reqs = requirements(("python", "must_have"))
-    resume = load()
+    resume = _rich_resume()
 
     chosen = select_entries(resume.experience, reqs, limit=3)
     order = [e.company for e in resume.experience]
@@ -172,7 +204,7 @@ def test_score_entry_sums_its_bullets():
 def test_every_selected_entry_keeps_at_least_one_bullet():
     """An entry that won its slot must render; build_context omits bullet-less entries."""
     reqs = requirements(("rust", "must_have"))  # nothing matches, so all scores are 0
-    resume = load()
+    resume = _rich_resume()
     entries = select_entries(resume.experience, reqs, limit=3)
 
     # A limit below the entry count must still leave every entry represented.
@@ -183,7 +215,7 @@ def test_every_selected_entry_keeps_at_least_one_bullet():
 
 def test_extra_budget_goes_to_the_strongest_bullets():
     reqs = requirements(("python", "must_have"))
-    resume = load()
+    resume = _rich_resume()
     entries = select_entries(resume.experience, reqs, limit=3)
 
     floors = select_within_entries(entries, reqs, limit=len(entries))
@@ -200,7 +232,7 @@ def test_flat_pool_selection_unchanged_by_default():
     requirement), not just something with the same size.
     """
     reqs = requirements(("python", "must_have"))
-    resume = load()
+    resume = _rich_resume()
     entries = [
         *select_entries(resume.experience, reqs, limit=3),
         *select_entries(resume.projects, reqs, limit=2),

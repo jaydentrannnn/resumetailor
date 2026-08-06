@@ -166,22 +166,6 @@ def test_build_omits_disabled_projects(tmp_path: Path):
     assert "{%p for proj in projects %}" not in joined
 
 
-def test_legacy_build_requires_exact_headings(tmp_path: Path):
-    """Legacy mode still fails loudly when WORK EXPERIENCES is missing."""
-    def build(document):
-        document.add_paragraph("Name")
-        document.add_paragraph("email@example.com")
-        document.add_paragraph("EXPERIENCE")
-        document.add_paragraph("Acme")
-
-    src = tmp_path / "baseline.docx"
-    dst = tmp_path / "out.docx"
-    src.write_bytes(_docx_bytes(build))
-    code = template_build.build_legacy(src, dst)
-    assert code != 0
-    assert not dst.exists()
-
-
 def test_build_project_header_with_github_link(tmp_path: Path):
     """Three-part project headers (name | tech | Github\\tdate) tag without overlap errors."""
     from tests.test_template_analyze import (
@@ -322,41 +306,6 @@ def test_experience_header_keeps_bold_company_and_plain_location(tmp_path: Path)
     assert not _run_bold(_run_with_text(header, "{{ job.location }}"))
     assert not _run_bold(_run_with_text(header, "{{ job.dates }}"))
     assert any(_run_has_tab(r) for r in header.runs)
-
-
-def test_profile_and_legacy_headers_agree(tmp_path: Path):
-    """Profile and legacy builds produce the same bold/plain/tab shape for one header."""
-    raw = _docx_bytes(_project_resume_with_link)
-
-    legacy_dst = tmp_path / "legacy.docx"
-    src = tmp_path / "baseline.docx"
-    src.write_bytes(raw)
-    assert template_build.build_legacy(src, legacy_dst) == 0
-
-    analysis = template_analyze.analyze_docx(raw=raw)
-    assert analysis.suggested_profile is not None
-    profile_dst = tmp_path / "profile.docx"
-    template_build.build_from_profile(src, profile_dst, analysis.suggested_profile)
-
-    def tag_bold(doc, tag: str) -> bool:
-        header = _paragraph_containing(doc, tag)
-        return _run_bold(_run_with_text(header, tag))
-
-    def has_tab(doc) -> bool:
-        header = _paragraph_containing(doc, "{{ job.company }}")
-        return any(_run_has_tab(r) for r in header.runs)
-
-    legacy_doc = docx.Document(str(legacy_dst))
-    profile_doc = docx.Document(str(profile_dst))
-
-    # Legacy bakes "{{ job.company }} | " into one run; profile keeps company and the
-    # separator as separate runs. Both are bold either way — compare the *tag's* bold
-    # state, not the exact run split, since the split itself is allowed to differ.
-    assert tag_bold(legacy_doc, "{{ job.company }} | ") == tag_bold(profile_doc, "{{ job.company }}")
-    assert tag_bold(legacy_doc, "{{ job.location }}") == tag_bold(profile_doc, "{{ job.location }}")
-    assert tag_bold(legacy_doc, "{{ job.location }}") is False
-    assert tag_bold(profile_doc, "{{ job.location }}") is False
-    assert has_tab(legacy_doc) == has_tab(profile_doc) is True
 
 
 def test_span_past_paragraph_end_raises():
@@ -1176,3 +1125,48 @@ def test_shrink_bullet_marker_is_idempotent():
     once = _marker_size(bullet)
     template_build.shrink_bullet_marker(doc, bullet)
     assert _marker_size(bullet) == once
+
+
+def test_entry_bullet_matching_another_headings_text_does_not_truncate_body(tmp_path: Path):
+    """A bullet whose own text happens to exactly equal another section's heading text
+    ("SKILLS") must not be mistaken for that heading and truncate the experience
+    section early — regression test for `_section_body_paragraphs`'s move from text
+    matching to paragraph object identity as the stop condition.
+    """
+    def build(document):
+        num_id = _add_bullet_numbering(document)
+        document.add_paragraph("Name")
+        document.add_paragraph("email@example.com")
+        document.add_paragraph("WORK EXPERIENCES")
+        document.add_paragraph("Acme | Remote\t2020 - Present")
+        document.add_paragraph("Engineer")
+        _make_bullet(document, "Built things.", num_id)
+        _make_bullet(document, "SKILLS", num_id)
+        _make_bullet(document, "Led a project after acquiring new skills.", num_id)
+        document.add_paragraph("SKILLS")
+        sk = document.add_paragraph()
+        run = sk.add_run("Languages:")
+        run.bold = True
+        sk.add_run(" Python, SQL")
+
+    raw = _docx_bytes(build)
+    result = template_analyze.analyze_docx(raw=raw)
+    assert result.suggested_profile is not None, result.issues
+
+    src = tmp_path / "baseline.docx"
+    dst = tmp_path / "out.docx"
+    src.write_bytes(raw)
+    template_build.build_from_profile(src, dst, result.suggested_profile)
+
+    doc = docx.Document(str(dst))
+    texts = [p.text for p in doc.paragraphs]
+    # Both bullets after (and including) the "SKILLS"-text one must have been swept up
+    # as experience victims and deleted — under the old text-matching stop condition,
+    # the walk would have given up at the "SKILLS" bullet, leaving both this bullet and
+    # everything after it as stray, undeleted paragraphs in the built template.
+    assert "Built things." not in texts
+    assert "Led a project after acquiring new skills." not in texts
+    # The real SKILLS heading (fixed mode keeps it verbatim) and skills prototype tag
+    # still made it through untouched.
+    assert "SKILLS" in texts
+    assert any("{{ group.label }}" in t for t in texts)

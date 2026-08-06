@@ -15,8 +15,8 @@ from urllib.parse import unquote
 import pytest
 from fastapi.testclient import TestClient
 
-from resume_tailor import config
-from resume_tailor.data import load, to_legacy_dict
+from resume_tailor import config, template_profile
+from resume_tailor.data import load
 from resume_tailor.events import ProgressEvent
 from resume_tailor.fit import FitResult
 from resume_tailor.web import jobs as jobs_mod
@@ -28,6 +28,7 @@ from resume_tailor.web.schemas import JobSettings
 # the autouse fixture in conftest.py stubs the module attribute to a no-op for every
 # other test in this file; these tests want the real implementation.
 from resume_tailor.workspace import bootstrap as real_bootstrap
+from tests.fixtures import synthetic_resume
 
 
 def _stub_extract_consensus(text, *, known_tags=None, runs=1, use_cache=True, on_event=None):
@@ -44,12 +45,31 @@ def _stub_extract_consensus(text, *, known_tags=None, runs=1, use_cache=True, on
 
 @pytest.fixture
 def client(tmp_path, monkeypatch):
-    """Fresh app client with an isolated job queue and output directory."""
+    """Fresh app client with an isolated job queue, output directory, and master resume.
+
+    `config.MASTER_RESUME_PATH` is seeded with `synthetic_resume()` rather than left
+    pointing at whatever `data/master_resume.json` happens to hold on the machine
+    running the suite — that file is gitignored (personal data) and may not exist at
+    all on a clean checkout or in CI. Most tests in this file exercise API behavior
+    that merely needs *a* valid resume, not any particular content; the ones that do
+    care about specific content already build their own via `_write_test_resume` or an
+    explicit `monkeypatch.setattr(config, "MASTER_RESUME_PATH", ...)`, both of which
+    still win, since they run later. A handful of tests read
+    `config.MASTER_RESUME_PATH.read_text()` to copy "the current resume" into a second
+    temp location before redirecting further — seeding it here is what makes that
+    pattern copy synthetic content instead of a developer's own.
+    """
     monkeypatch.setattr(config, "OUTPUT_DIR", tmp_path / "output")
     monkeypatch.setattr(config, "CACHE_DIR", tmp_path / "cache")
     config.OUTPUT_DIR.mkdir()
     config.CACHE_DIR.mkdir()
     monkeypatch.setattr(jobs_mod.jd, "extract_consensus", _stub_extract_consensus)
+
+    resume_path = tmp_path / "master_resume.json"
+    resume_path.write_text(
+        json.dumps(synthetic_resume().model_dump(mode="json"), indent=2), encoding="utf-8"
+    )
+    monkeypatch.setattr(config, "MASTER_RESUME_PATH", resume_path)
 
     q = JobQueue()
     monkeypatch.setattr(jobs_mod, "queue_singleton", q)
@@ -841,7 +861,18 @@ def test_master_resume_put_accepts_legacy_shaped_payload(client, tmp_path, monke
     monkeypatch.setattr(config, "DATA_DIR", tmp_path)
 
     before = len(resume.all_bullets())
-    payload = to_legacy_dict(resume)
+    # Pre-`sections` wire shape: top-level lists instead of `sections`. Hand-built
+    # here (rather than via a `to_legacy_dict` helper, since none exists any more —
+    # accepting this shape is `MasterResume._migrate_legacy_sections`'s job, not a
+    # dedicated function's) purely to exercise that before-validator through the API.
+    payload = {
+        "contact": resume.contact.model_dump(by_alias=True),
+        "education": [e.model_dump(by_alias=True) for e in resume.education],
+        "experience": [e.model_dump(by_alias=True) for e in resume.experience],
+        "projects": [e.model_dump(by_alias=True) for e in resume.projects],
+        "skills": [e.model_dump(by_alias=True) for e in resume.skills],
+        "tag_vocabulary": resume.tag_vocabulary,
+    }
     payload["experience"].append(
         {
             "company": "Editor Test Co",
@@ -914,6 +945,113 @@ def test_master_resume_get_put_round_trips_sections_natively(client, tmp_path, m
     assert last["bullets"][0]["id"] == "edittest_b2"
     # Tags come back canonicalised the way data.Bullet._normalise_tags stores them.
     assert "python" in [t.lower() for t in last["bullets"][0]["tags"]]
+
+
+def test_import_master_resume_returns_a_draft_without_writing(client, tmp_path, monkeypatch):
+    """POST /api/master-resume/import parses content into a draft and writes nothing —
+    the master resume on disk (and its mtime) must be untouched."""
+    c, _ = client
+    path = tmp_path / "master_resume.json"
+    path.write_text(config.MASTER_RESUME_PATH.read_text(encoding="utf-8"), encoding="utf-8")
+    monkeypatch.setattr(config, "MASTER_RESUME_PATH", path)
+    before = path.read_text(encoding="utf-8")
+    before_mtime = path.stat().st_mtime
+
+    res = c.post(
+        "/api/master-resume/import",
+        files={"file": ("resume.docx", _resume_docx_bytes(), _DOCX_MIME)},
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["resume"]["contact"]["name"] == "Ada Lovelace"
+    assert any(s["kind"] == "experience" for s in body["resume"]["sections"])
+    assert "warnings" in body
+    assert "untagged_bullet_count" in body
+
+    assert path.read_text(encoding="utf-8") == before
+    assert path.stat().st_mtime == before_mtime
+
+
+def test_import_master_resume_rejects_a_non_docx(client):
+    c, _ = client
+    res = c.post(
+        "/api/master-resume/import",
+        files={"file": ("resume.txt", b"not a docx", "text/plain")},
+    )
+    assert res.status_code == 400
+
+
+def _resume_docx_bytes_with_an_untaggable_bullet() -> bytes:
+    """`_resume_docx_bytes`'s own bullets ("Built numerical engines in Python.",
+    "Indexed research notes with embeddings.") both match the default tag vocabulary
+    on their own — no good for exercising the untagged/suggest-tags path. This is the
+    same fixture with one experience bullet whose words match nothing in it."""
+    import io
+
+    import docx as docx_mod
+
+    raw = _resume_docx_bytes()
+    document = docx_mod.Document(io.BytesIO(raw))
+    for p in document.paragraphs:
+        if p.text == "Built numerical engines in Python.":
+            for run in list(p.runs):
+                run.text = ""
+            p.runs[0].text = "Coordinated stakeholder alignment across the org."
+            break
+    buf = io.BytesIO()
+    document.save(buf)
+    return buf.getvalue()
+
+
+def test_import_master_resume_suggest_tags_fills_in_untagged_bullets(client, monkeypatch):
+    """`suggest_tags=true` runs the opt-in LLM pass for whatever the deterministic
+    seeding left untagged, and the response's untagged count drops to reflect it."""
+    c, _ = client
+    upload = _resume_docx_bytes_with_an_untaggable_bullet()
+
+    baseline = c.post(
+        "/api/master-resume/import",
+        files={"file": ("resume.docx", upload, _DOCX_MIME)},
+    ).json()
+    assert baseline["untagged_bullet_count"] >= 1
+
+    from resume_tailor import propose as propose_mod
+
+    def fake_propose_bullet_tags(bullets, known_tags, **_kwargs):
+        return {0: ["python"]}
+
+    monkeypatch.setattr(propose_mod, "propose_bullet_tags", fake_propose_bullet_tags)
+
+    res = c.post(
+        "/api/master-resume/import",
+        data={"suggest_tags": "true"},
+        files={"file": ("resume.docx", upload, _DOCX_MIME)},
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["untagged_bullet_count"] == baseline["untagged_bullet_count"] - 1
+
+
+def test_import_master_resume_suggest_tags_failure_is_a_warning_not_a_500(client, monkeypatch):
+    """The LLM pass must never fail the import itself — a raised error becomes a
+    warning in the response, and the deterministic draft is still returned."""
+    c, _ = client
+    from resume_tailor import propose as propose_mod
+
+    def fake_propose_bullet_tags(bullets, known_tags, **_kwargs):
+        raise RuntimeError("model unreachable")
+
+    monkeypatch.setattr(propose_mod, "propose_bullet_tags", fake_propose_bullet_tags)
+
+    res = c.post(
+        "/api/master-resume/import",
+        data={"suggest_tags": "true"},
+        files={"file": ("resume.docx", _resume_docx_bytes_with_an_untaggable_bullet(), _DOCX_MIME)},
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert any("model unreachable" in w for w in body["warnings"])
+    assert body["resume"]["contact"]["name"] == "Ada Lovelace"
 
 
 def test_queue_serialises_jobs(monkeypatch, tmp_path):
@@ -1051,6 +1189,20 @@ def _resume_docx_bytes() -> bytes:
     return buf.getvalue()
 
 
+def _resume_upload_with_profile() -> tuple[bytes, str]:
+    """A real, analyzable resume upload plus its suggested profile as a JSON string —
+    `POST /api/template` requires a profile now that there is no legacy hard-coded-
+    heading fallback (Phase 7 retired it), so any test exercising the install plumbing
+    itself (backup/restore, library recording, busy-queue rejection, …) needs a real
+    uploadable file and a profile that actually matches it, not `_minimal_docx_bytes`."""
+    from resume_tailor import template_analyze
+
+    raw = _resume_docx_bytes()
+    result = template_analyze.analyze_docx(raw=raw)
+    assert result.suggested_profile is not None, result.issues
+    return raw, result.suggested_profile.model_dump_json()
+
+
 def _point_templates_at(tmp_path: Path, monkeypatch) -> Path:
     """Redirect baseline/tagged/library paths under tmp_path and return the templates dir."""
     templates = tmp_path / "templates"
@@ -1083,15 +1235,22 @@ def test_get_template_returns_metadata(client, tmp_path, monkeypatch):
 
 
 def test_upload_template_rejects_non_docx(client, tmp_path, monkeypatch):
-    """POST /api/template with a .txt leaves the baseline untouched and returns 400."""
+    """POST /api/template with a .txt leaves the baseline untouched and returns 400.
+
+    `profile` is required now (Phase 7 retired the legacy no-profile path), but the
+    extension check runs before the profile is even parsed, so any well-formed profile
+    string reaches the assertion this test actually cares about.
+    """
     c, _ = client
     templates = _point_templates_at(tmp_path, monkeypatch)
     baseline = templates / "original_export.docx"
     original = _minimal_docx_bytes()
     baseline.write_bytes(original)
+    _, profile = _resume_upload_with_profile()
 
     res = c.post(
         "/api/template",
+        data={"profile": profile},
         files={"file": ("resume.txt", b"not a docx", "text/plain")},
     )
     assert res.status_code == 400
@@ -1100,7 +1259,11 @@ def test_upload_template_rejects_non_docx(client, tmp_path, monkeypatch):
 
 
 def test_upload_template_rejects_when_queue_busy(client, tmp_path, monkeypatch):
-    """POST /api/template returns 409 while a job is queued or running."""
+    """POST /api/template returns 409 while a job is queued or running.
+
+    The busy check runs before the profile is parsed, so any non-empty string for
+    `profile` (required by FastAPI's own Form validation) reaches it.
+    """
     c, q = client
     _point_templates_at(tmp_path, monkeypatch)
 
@@ -1110,6 +1273,7 @@ def test_upload_template_rejects_when_queue_busy(client, tmp_path, monkeypatch):
 
     res = c.post(
         "/api/template",
+        data={"profile": "{}"},
         files={
             "file": (
                 "resume.docx",
@@ -1123,31 +1287,28 @@ def test_upload_template_rejects_when_queue_busy(client, tmp_path, monkeypatch):
 
 
 def test_upload_template_backs_up_and_rebuilds(client, tmp_path, monkeypatch):
-    """Successful upload writes a timestamped backup and invokes the build stub."""
+    """Successful upload writes a timestamped backup and installs a real, verified build.
+
+    `_run_build` is stubbed to skip the subprocess spawn; since it doesn't write the
+    staged output path, `_install_with_profile`'s in-process fallback does the actual
+    build, so this still exercises a real, verified template rather than a placeholder.
+    """
     c, _ = client
     templates = _point_templates_at(tmp_path, monkeypatch)
     baseline = templates / "original_export.docx"
-    tagged = templates / "main_template.docx"
     old_bytes = _minimal_docx_bytes()
     baseline.write_bytes(old_bytes)
-    tagged.write_bytes(old_bytes)
 
-    builds: list[int] = []
+    def stub_run_build(**_kwargs):
+        return 1, "stub: subprocess skipped"
 
-    def fake_build():
-        """Pretend build_template.py succeeded and wrote a new tagged file."""
-        builds.append(1)
-        tagged.write_bytes(b"PK\x03\x04rebuilt")
-        return 0, "found 1 education, 1 experience entries, 1 projects\nwrote main_template.docx\n"
+    monkeypatch.setattr(template_ops, "_run_build", stub_run_build)
 
-    monkeypatch.setattr(template_ops, "_run_build", fake_build)
-
-    new_bytes = _minimal_docx_bytes()
-    # Ensure the new upload differs from the old baseline so we can assert replacement.
-    assert new_bytes  # non-empty
+    new_bytes, profile = _resume_upload_with_profile()
 
     res = c.post(
         "/api/template",
+        data={"profile": profile},
         files={
             "file": (
                 "resume.docx",
@@ -1159,8 +1320,7 @@ def test_upload_template_backs_up_and_rebuilds(client, tmp_path, monkeypatch):
     assert res.status_code == 200, res.text
     body = res.json()
     assert body["ok"] is True
-    assert builds == [1]
-    assert "wrote" in body["log"].lower() or "found" in body["log"].lower()
+    assert "in-process profile build ok" in body["log"].lower()
     backups = list((templates / "backups").glob("original_export.*.docx"))
     assert len(backups) == 1
     assert backups[0].read_bytes() == old_bytes
@@ -1168,25 +1328,39 @@ def test_upload_template_backs_up_and_rebuilds(client, tmp_path, monkeypatch):
 
 
 def test_upload_template_restores_baseline_on_build_failure(client, tmp_path, monkeypatch):
-    """Failed build restores the previous baseline byte-for-byte and returns 422."""
+    """A build that fails during staging (subprocess and in-process fallback both fail)
+    never touches the live baseline and returns 422.
+
+    Unlike the retired legacy path (which wrote the new baseline before building, so a
+    failure needed an explicit restore), the profile path stages everything in a temp
+    directory first — a staging failure means the live files were simply never written,
+    which is a stronger guarantee than "restored to their old bytes".
+    """
     c, _ = client
     templates = _point_templates_at(tmp_path, monkeypatch)
     baseline = templates / "original_export.docx"
     old_bytes = _minimal_docx_bytes()
     baseline.write_bytes(old_bytes)
 
-    def failing_build():
-        """Simulate build_template.py exiting non-zero with a useful log."""
+    def failing_run_build(**_kwargs):
         return 1, "ERROR: could not find section heading(s): WORK EXPERIENCES.\n"
 
-    monkeypatch.setattr(template_ops, "_run_build", failing_build)
+    def failing_build_from_profile(src, dst, profile):
+        raise RuntimeError("could not find section heading(s): WORK EXPERIENCES.")
 
+    monkeypatch.setattr(template_ops, "_run_build", failing_run_build)
+    monkeypatch.setattr(
+        template_ops.template_build, "build_from_profile", failing_build_from_profile
+    )
+
+    upload, profile = _resume_upload_with_profile()
     res = c.post(
         "/api/template",
+        data={"profile": profile},
         files={
             "file": (
                 "resume.docx",
-                _minimal_docx_bytes(),
+                upload,
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             )
         },
@@ -1304,6 +1478,170 @@ def test_analyze_template_returns_structured_report(client, tmp_path, monkeypatc
     assert after == before
 
 
+_DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+
+def test_analyze_template_exposes_field_candidates(client, tmp_path, monkeypatch):
+    """POST /api/template/analyze surfaces per-field spans, not just section summaries
+    — `field_candidates` was computed by `template_analyze` all along but dropped at
+    the API boundary; the wizard's confirm step needs the per-field rows to show which
+    specific span (company/dates/…) it is about to install."""
+    c, _ = client
+    _point_templates_at(tmp_path, monkeypatch)
+
+    res = c.post(
+        "/api/template/analyze",
+        files={"file": ("resume.docx", _resume_docx_bytes(), _DOCX_MIME)},
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["ready"] is True
+    assert body["field_candidates"], "expected at least one field candidate"
+    fields = {c["field"] for c in body["field_candidates"]}
+    assert "dates" in fields or "date" in fields
+    sample = body["field_candidates"][0]
+    assert {"field", "paragraph_id", "start", "end", "confidence", "preview"} <= sample.keys()
+
+
+def test_remap_template_forces_a_heading_kind(client, tmp_path, monkeypatch):
+    """POST /api/template/analyze/remap re-runs analysis with a user-confirmed kind for
+    one heading, bypassing the heuristic entirely for that paragraph — a real server
+    round trip so the wizard's remap reflects the analyzer's own downstream logic."""
+    c, _ = client
+    _point_templates_at(tmp_path, monkeypatch)
+
+    analyzed = c.post(
+        "/api/template/analyze",
+        files={"file": ("resume.docx", _resume_docx_bytes(), _DOCX_MIME)},
+    ).json()
+    sha = analyzed["source_sha256"]
+    skills_heading = next(s for s in analyzed["sections"] if s["key"] == "skills")
+
+    remapped = c.post(
+        "/api/template/analyze/remap",
+        json={
+            "source_sha256": sha,
+            "overrides": {str(skills_heading["heading_paragraph_id"]): "list"},
+        },
+    )
+    assert remapped.status_code == 200
+    body = remapped.json()
+    keys = {s["key"] for s in body["sections"]}
+    assert "skills" not in keys
+    assert "list" in keys
+
+
+def test_remap_template_unknown_sha_is_400(client, tmp_path, monkeypatch):
+    """Remapping a sha that was never analyzed (or whose cache expired) is a 400 asking
+    the wizard to start over, not a 404/500."""
+    c, _ = client
+    _point_templates_at(tmp_path, monkeypatch)
+
+    res = c.post(
+        "/api/template/analyze/remap",
+        json={"source_sha256": "0" * 64, "overrides": {}},
+    )
+    assert res.status_code == 400
+
+
+def test_preview_source_returns_pdf(client, tmp_path, monkeypatch):
+    """POST /api/template/preview/source serves the uploaded (not-yet-installed)
+    baseline as a PDF for the wizard's side-by-side comparison, via the same
+    render/convert seam the other preview endpoint stubs."""
+    c, _ = client
+    _point_templates_at(tmp_path, monkeypatch)
+
+    def fake_to_pdf(docx_path, pdf_path=None, **_kwargs):
+        target = pdf_path or docx_path.with_suffix(".pdf")
+        target.write_bytes(b"%PDF-1.4\n%%EOF\n")
+        return target
+
+    monkeypatch.setattr(template_ops.render, "to_pdf", fake_to_pdf)
+
+    analyzed = c.post(
+        "/api/template/analyze",
+        files={"file": ("resume.docx", _resume_docx_bytes(), _DOCX_MIME)},
+    ).json()
+
+    res = c.post(
+        "/api/template/preview/source",
+        json={"source_sha256": analyzed["source_sha256"], "overrides": {}},
+    )
+    assert res.status_code == 200
+    assert res.headers["content-type"].startswith("application/pdf")
+    assert res.content.startswith(b"%PDF")
+
+
+def test_preview_draft_returns_pdf(client, tmp_path, monkeypatch):
+    """POST /api/template/preview/draft builds the staged profile into a temp tagged
+    template and renders the master resume through it, without touching the live
+    template slot."""
+    c, _ = client
+    templates = _point_templates_at(tmp_path, monkeypatch)
+    before = list(templates.iterdir()) if templates.exists() else []
+
+    def fake_to_pdf(docx_path, pdf_path=None, **_kwargs):
+        target = pdf_path or docx_path.with_suffix(".pdf")
+        target.write_bytes(b"%PDF-1.4\n%%EOF\n")
+        return target
+
+    monkeypatch.setattr(template_ops.render, "to_pdf", fake_to_pdf)
+
+    analyzed = c.post(
+        "/api/template/analyze",
+        files={"file": ("resume.docx", _resume_docx_bytes(), _DOCX_MIME)},
+    ).json()
+    assert analyzed["suggested_profile"], analyzed["issues"]
+
+    res = c.post(
+        "/api/template/preview/draft",
+        json={
+            "source_sha256": analyzed["source_sha256"],
+            "profile": analyzed["suggested_profile"],
+        },
+    )
+    assert res.status_code == 200
+    assert res.headers["content-type"].startswith("application/pdf")
+    assert res.content.startswith(b"%PDF")
+    # Never touches the live template slot.
+    after = list(templates.iterdir()) if templates.exists() else []
+    assert after == before
+
+
+def test_install_clears_the_upload_cache(client, tmp_path, monkeypatch):
+    """A successful install clears the wizard's cached upload — remap/preview against
+    that sha afterward must 400, not silently keep serving a now-stale draft."""
+    from resume_tailor import template_build as tb_mod
+
+    c, _ = client
+    _point_templates_at(tmp_path, monkeypatch)
+
+    def fake_build(*, source=None, output=None, profile_path=None, legacy=False):
+        out = Path(output) if output else config.DEFAULT_TEMPLATE_PATH
+        out.parent.mkdir(parents=True, exist_ok=True)
+        loaded_profile = template_profile.load_profile(Path(profile_path))
+        tb_mod.build_from_profile(Path(source), out, loaded_profile)
+        return 0, "stub build ok"
+
+    monkeypatch.setattr(template_ops, "_run_build", fake_build)
+
+    upload = _resume_docx_bytes()
+    analyzed = c.post(
+        "/api/template/analyze", files={"file": ("resume.docx", upload, _DOCX_MIME)}
+    ).json()
+    sha = analyzed["source_sha256"]
+
+    install = c.post(
+        "/api/template",
+        data={"profile": json.dumps(analyzed["suggested_profile"])},
+        files={"file": ("resume.docx", upload, _DOCX_MIME)},
+    )
+    assert install.status_code == 200, install.json()
+
+    res = c.post("/api/template/analyze/remap", json={"source_sha256": sha, "overrides": {}})
+    assert res.status_code == 400
+
+
 def test_get_template_includes_profile_summary(client, tmp_path, monkeypatch):
     """GET /api/template always includes a profile summary object."""
     c, _ = client
@@ -1316,20 +1654,16 @@ def test_get_template_includes_profile_summary(client, tmp_path, monkeypatch):
 
 
 def test_upload_template_with_calibrate_flag(client, tmp_path, monkeypatch):
-    """calibrate=true runs calibration after a successful legacy build and reloads config."""
+    """calibrate=true runs calibration after a successful build and reloads config."""
     from resume_tailor.calibrate import CalibrationResult
 
     c, _ = client
     templates = _point_templates_at(tmp_path, monkeypatch)
     baseline = templates / "original_export.docx"
-    tagged = templates / "main_template.docx"
     baseline.write_bytes(_minimal_docx_bytes())
-    tagged.write_bytes(_minimal_docx_bytes())
 
-    def fake_build():
-        """Pretend build_template.py succeeded."""
-        tagged.write_bytes(b"PK\x03\x04rebuilt")
-        return 0, "wrote main_template.docx\n"
+    def stub_run_build(**_kwargs):
+        return 1, "stub: subprocess skipped"
 
     cal_calls: list[dict] = []
 
@@ -1345,17 +1679,18 @@ def test_upload_template_with_calibrate_flag(client, tmp_path, monkeypatch):
             log="CHARS_PER_LINE = 99\nLINES_PER_PAGE = 48",
         )
 
-    monkeypatch.setattr(template_ops, "_run_build", fake_build)
+    monkeypatch.setattr(template_ops, "_run_build", stub_run_build)
     monkeypatch.setattr(template_ops.calibrate, "run", fake_calibrate)
     monkeypatch.setattr(config, "reload_calibration", lambda: (99, 48, "test"))
 
+    upload, profile = _resume_upload_with_profile()
     res = c.post(
         "/api/template",
-        data={"calibrate": "true"},
+        data={"calibrate": "true", "profile": profile},
         files={
             "file": (
                 "resume.docx",
-                _minimal_docx_bytes(),
+                upload,
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             )
         },
@@ -1392,25 +1727,26 @@ def test_upload_with_label_creates_library_entry(client, tmp_path, monkeypatch):
     """POST /api/template with label snapshots the install into the named library."""
     c, _ = client
     templates = _point_templates_at(tmp_path, monkeypatch)
-    tagged = templates / "main_template.docx"
     old = _minimal_docx_bytes()
     (templates / "original_export.docx").write_bytes(old)
-    tagged.write_bytes(old)
+    # A prior tagged file alongside the baseline is what makes the live install look
+    # like a genuine prior install worth preserving as "Default" before this one
+    # overwrites it — without it there is no orphan live template to seed.
+    (templates / "main_template.docx").write_bytes(old)
 
-    def fake_build():
-        """Pretend build_template.py succeeded."""
-        tagged.write_bytes(b"PK\x03\x04rebuilt-for-library")
-        return 0, "wrote main_template.docx\n"
+    def stub_run_build(**_kwargs):
+        return 1, "stub: subprocess skipped"
 
-    monkeypatch.setattr(template_ops, "_run_build", fake_build)
+    monkeypatch.setattr(template_ops, "_run_build", stub_run_build)
 
+    upload, profile = _resume_upload_with_profile()
     res = c.post(
         "/api/template",
-        data={"label": "Campus CV"},
+        data={"label": "Campus CV", "profile": profile},
         files={
             "file": (
                 "campus.docx",
-                _minimal_docx_bytes(),
+                upload,
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             )
         },
@@ -1441,20 +1777,15 @@ def test_activate_library_switches_live_baseline(client, tmp_path, monkeypatch):
     assert c.get("/api/template/library").status_code == 200
     default_id = c.get("/api/template/library").json()["active_id"]
 
-    builds: list[int] = []
+    def stub_run_build(**_kwargs):
+        return 1, "stub: subprocess skipped"
 
-    def fake_build():
-        """Write a distinct tagged payload for the second install."""
-        builds.append(1)
-        tagged.write_bytes(b"PK\x03\x04second-tagged")
-        return 0, "wrote\n"
-
-    monkeypatch.setattr(template_ops, "_run_build", fake_build)
-    second = _minimal_docx_bytes("second baseline")
+    monkeypatch.setattr(template_ops, "_run_build", stub_run_build)
+    second, profile = _resume_upload_with_profile()
     assert second != first
     res = c.post(
         "/api/template",
-        data={"label": "Second"},
+        data={"label": "Second", "profile": profile},
         files={
             "file": (
                 "second.docx",
@@ -1485,19 +1816,18 @@ def test_rename_library_rejects_duplicate_label(client, tmp_path, monkeypatch):
     tagged.write_bytes(payload)
     c.get("/api/template/library")
 
-    def fake_build():
-        """Legacy build stub."""
-        tagged.write_bytes(b"PK\x03\x04x")
-        return 0, "ok\n"
+    def stub_run_build(**_kwargs):
+        return 1, "stub: subprocess skipped"
 
-    monkeypatch.setattr(template_ops, "_run_build", fake_build)
+    monkeypatch.setattr(template_ops, "_run_build", stub_run_build)
+    upload, profile = _resume_upload_with_profile()
     c.post(
         "/api/template",
-        data={"label": "Alpha"},
+        data={"label": "Alpha", "profile": profile},
         files={
             "file": (
                 "a.docx",
-                _minimal_docx_bytes(),
+                upload,
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             )
         },
@@ -1522,19 +1852,18 @@ def test_delete_library_refuses_active(client, tmp_path, monkeypatch):
     tagged.write_bytes(payload)
     c.get("/api/template/library")
 
-    def fake_build():
-        """Legacy build stub."""
-        tagged.write_bytes(b"PK\x03\x04y")
-        return 0, "ok\n"
+    def stub_run_build(**_kwargs):
+        return 1, "stub: subprocess skipped"
 
-    monkeypatch.setattr(template_ops, "_run_build", fake_build)
+    monkeypatch.setattr(template_ops, "_run_build", stub_run_build)
+    upload, profile = _resume_upload_with_profile()
     c.post(
         "/api/template",
-        data={"label": "Spare"},
+        data={"label": "Spare", "profile": profile},
         files={
             "file": (
                 "s.docx",
-                _minimal_docx_bytes(),
+                upload,
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             )
         },
@@ -1567,33 +1896,32 @@ def test_library_cap_refuses_twenty_first(client, tmp_path, monkeypatch):
     monkeypatch.setattr(template_ops, "_LIBRARY_MAX_ENTRIES", 2)
     c.get("/api/template/library")  # seeds Default (1)
 
-    def fake_build():
-        """Legacy build stub."""
-        tagged.write_bytes(b"PK\x03\x04z")
-        return 0, "ok\n"
+    def stub_run_build(**_kwargs):
+        return 1, "stub: subprocess skipped"
 
-    monkeypatch.setattr(template_ops, "_run_build", fake_build)
+    monkeypatch.setattr(template_ops, "_run_build", stub_run_build)
+    upload, profile = _resume_upload_with_profile()
     first = c.post(
         "/api/template",
-        data={"label": "Two"},
+        data={"label": "Two", "profile": profile},
         files={
             "file": (
                 "t.docx",
-                _minimal_docx_bytes(),
+                upload,
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             )
         },
     )
-    assert first.status_code == 200
+    assert first.status_code == 200, first.text
     assert len(c.get("/api/template/library").json()["entries"]) == 2
 
     blocked = c.post(
         "/api/template",
-        data={"label": "Three"},
+        data={"label": "Three", "profile": profile},
         files={
             "file": (
                 "u.docx",
-                _minimal_docx_bytes(),
+                upload,
                 "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
             )
         },
@@ -2263,9 +2591,12 @@ def test_profile_template_install_works_on_a_freshly_created_profile(
 
     Must exercise the **profile** path specifically — `_install_legacy` never calls
     `_smoke_render`, so a legacy-path install passes even with the bug present.
-    Only `_run_build` is stubbed here; the smoke render is real.
+    Only the `_run_build` subprocess spawn is stubbed here — it builds in-process
+    instead — so the smoke render and build verification that follow it both see an
+    actually-tagged template, not a placeholder, and stay real regression checks
+    rather than passing on unverified output.
     """
-    import docx as docx_mod
+    from resume_tailor import template_build as tb_mod
 
     c, _ = client
     _point_workspaces_at(tmp_path, monkeypatch)
@@ -2275,12 +2606,11 @@ def test_profile_template_install_works_on_a_freshly_created_profile(
     assert c.post("/api/workspaces/nina/activate").status_code == 200
 
     def fake_build(*, source=None, output=None, profile_path=None, legacy=False):
-        """Pretend build_template.py ran; the smoke render still opens this for real."""
+        """Skip the subprocess spawn but still run the real build in-process."""
         out = Path(output) if output else config.DEFAULT_TEMPLATE_PATH
         out.parent.mkdir(parents=True, exist_ok=True)
-        doc = docx_mod.Document()
-        doc.add_paragraph("Tagged template")
-        doc.save(str(out))
+        loaded_profile = template_profile.load_profile(Path(profile_path))
+        tb_mod.build_from_profile(Path(source), out, loaded_profile)
         return 0, "stub build ok"
 
     monkeypatch.setattr(template_ops, "_run_build", fake_build)

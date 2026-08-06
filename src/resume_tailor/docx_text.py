@@ -127,6 +127,21 @@ def hyperlink_char_spans(paragraph: Paragraph) -> list[tuple[int, int]]:
     return spans
 
 
+def hyperlink_target(paragraph: Paragraph, hyperlink_element) -> str | None:
+    """Resolve a `w:hyperlink` element's `r:id` to its target URL via the paragraph
+    part's relationships. Returns `None` for an internal bookmark reference (`w:anchor`,
+    no `r:id`) or a dangling relationship id — a caller wants the label text either way,
+    so a missing target should degrade to "no link", not raise.
+    """
+    r_id = hyperlink_element.get(qn("r:id"))
+    if not r_id:
+        return None
+    try:
+        return paragraph.part.rels[r_id].target_ref
+    except KeyError:
+        return None
+
+
 def slice_at(
     slices: list[RunSlice], offset: int, *, skip_hyperlinks: bool = False
 ) -> RunSlice | None:

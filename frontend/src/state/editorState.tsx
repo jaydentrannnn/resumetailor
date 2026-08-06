@@ -32,6 +32,10 @@ type EditorStateValue = {
   dirty: boolean;
   validate: () => Promise<void>;
   save: () => Promise<void>;
+  /** Replace the working draft with `resume` (e.g. a template-wizard import),
+   * intentionally leaving the saved snapshot untouched so `dirty` immediately
+   * reflects that this draft has not been saved to disk. */
+  loadDraft: (resume: MasterResume, message?: string) => void;
 };
 
 const EditorStateContext = createContext<EditorStateValue | null>(null);
@@ -157,6 +161,12 @@ export function EditorProvider({ children }: { children: ReactNode }) {
     [resume, savedSnapshot],
   );
 
+  const loadDraft = useCallback((next: MasterResume, draftMessage?: string) => {
+    setResumeState(next);
+    setErrors([]);
+    setMessage(draftMessage ?? "Imported draft loaded — review and save to keep it.");
+  }, []);
+
   const value = useMemo<EditorStateValue>(
     () => ({
       resume,
@@ -168,8 +178,9 @@ export function EditorProvider({ children }: { children: ReactNode }) {
       dirty,
       validate,
       save,
+      loadDraft,
     }),
-    [resume, setResume, config, errors, message, busy, dirty, validate, save],
+    [resume, setResume, config, errors, message, busy, dirty, validate, save, loadDraft],
   );
 
   return (
