@@ -16,9 +16,9 @@ from resume_tailor.data import (
     Experience,
     ExperienceSection,
     MasterResume,
+    Project,
     SkillGroup,
     SkillsSection,
-    load,
 )
 from resume_tailor.jd import JobRequirements, Keyword
 from resume_tailor.rewrite import RewriteOutcome
@@ -47,8 +47,52 @@ def _identity_rewrite(
     return RewriteOutcome({b.id: b.text for b in bullets})
 
 
+def _test_resume() -> MasterResume:
+    """A resume generous enough to exercise the fit loop's entry-capping, budget-growth,
+    and page-fitting logic meaningfully — several tests below assert their own sizing
+    assumptions explicitly (e.g. "test needs room to grow the selection") and fail with
+    a clear message if this fixture is ever too small for them, rather than passing
+    vacuously. Sized well above `config.MAX_EXPERIENCE_ENTRIES`/`MAX_PROJECT_ENTRIES`
+    (3/2) specifically so `choose_entries`'s default caps always drop something real,
+    and every entry carries multiple bullets so a per-entry cap has something to cut.
+    """
+    return MasterResume(
+        contact={"name": "N", "email": "n@example.com"},
+        tag_vocabulary=["python"],
+        education=[
+            {
+                "school": "State University",
+                "degree": "BS Computer Science",
+                "dates": "2019 - 2023",
+                "coursework": ["Algorithms", "Databases"],
+            }
+        ],
+        experience=[
+            Experience(
+                company=f"Company {n}", title="Engineer", start="2020-01", end="2020-06",
+                bullets=[
+                    Bullet(id=f"exp{n}_b{i}", text=f"Company {n} did thing {i}.", tags=["python"])
+                    for i in range(1, 6)
+                ],
+            )
+            for n in range(1, 6)
+        ],
+        projects=[
+            Project(
+                id=f"proj{n}", name=f"Project {n}", tech=["Python"],
+                bullets=[
+                    Bullet(id=f"proj{n}_b{i}", text=f"Project {n} built thing {i}.", tags=["python"])
+                    for i in range(1, 5)
+                ],
+            )
+            for n in range(1, 5)
+        ],
+        skills=[SkillGroup(label="Tools", items=["Python"])],
+    )
+
+
 def test_estimate_lines_scales_with_bullet_count():
-    resume = load()
+    resume = _test_resume()
     empty = fit_mod.estimate_lines(resume, {})
     full = fit_mod.estimate_lines(resume, {b.id: b.text for b in resume.all_bullets()})
     assert full > empty
@@ -58,7 +102,7 @@ def test_fixed_overhead_uses_shared_skill_line():
     """Skills overhead is measured via `config.skill_group_line`, the same helper the
     `facets` stage guards renames against — so the two cannot silently drift apart.
     """
-    resume = load()
+    resume = _test_resume()
     expected = 2  # name + contact
     layout = fit_mod.active_layout()
     enabled = layout.get("enabled") or {}
@@ -80,7 +124,7 @@ def test_fixed_overhead_uses_shared_skill_line():
 
 def test_estimate_lines_respects_disabled_sections(monkeypatch):
     """Disabled education/skills/projects shrink the estimate and selection pool."""
-    resume = load()
+    resume = _test_resume()
     layout = {
         "contact_separator": " • ",
         "contact_field_order": ["location", "email", "phone", "linkedin", "github"],
@@ -260,7 +304,7 @@ def test_estimate_lines_ignores_spacing_under_fixed_mode():
 
 def test_estimate_lines_counts_coursework_wrap():
     """Coursework joined into one detail line must contribute to fixed overhead."""
-    resume = load()
+    resume = _test_resume()
     assert resume.education
     assert resume.education[0].coursework
     empty = fit_mod.estimate_lines(resume, {})
@@ -274,7 +318,7 @@ def test_include_apply_clearing_coursework_shrinks_fixed_overhead():
     space via the grow step, with no fit.py-side special case for it."""
     from resume_tailor.include import IncludeOptions, apply as include_apply
 
-    resume = load()
+    resume = _test_resume()
     assert resume.education
     assert resume.education[0].coursework  # sanity: fixture has some to clear
 
@@ -293,7 +337,7 @@ def test_include_apply_clearing_coursework_shrinks_fixed_overhead():
 
 def test_tag_vocabulary_canonicalises_on_load():
     """Stored tag options are canonicalised the same way bullet tags are."""
-    resume = load()
+    resume = _test_resume()
     assert resume.tag_vocabulary
     assert resume.tag_vocabulary == sorted(resume.tag_vocabulary)
     # Every in-use bullet tag should be in the seeded vocabulary after migration.
@@ -303,7 +347,7 @@ def test_tag_vocabulary_canonicalises_on_load():
 
 def test_initial_selection_size_share_is_a_ceiling_not_a_floor():
     """`share=1.0` must reproduce the unbounded search exactly (no-behaviour-change)."""
-    resume = load()
+    resume = _test_resume()
     requirements = _requirements()
     entries = fit_mod.choose_entries(resume, requirements)
 
@@ -316,7 +360,7 @@ def test_initial_selection_size_share_is_a_ceiling_not_a_floor():
 
 def test_initial_selection_size_share_caps_below_the_estimate():
     """A share below the unbounded result caps the search's upper bound exactly."""
-    resume = load()
+    resume = _test_resume()
     requirements = _requirements()
     entries = fit_mod.choose_entries(resume, requirements)
     total = sum(len(e.bullets) for e in entries)
@@ -336,7 +380,7 @@ def test_initial_selection_size_share_caps_below_the_estimate():
 
 def test_initial_selection_size_share_never_drops_below_one_bullet_per_entry():
     """A share so low it would fall under one bullet per entry is clamped up to the floor."""
-    resume = load()
+    resume = _test_resume()
     requirements = _requirements()
     entries = fit_mod.choose_entries(resume, requirements)
 
@@ -354,7 +398,7 @@ _SPARSE_LINES = int(config.LINES_PER_PAGE * config.UNDERFLOW_THRESHOLD) - 5
 
 
 def test_fit_escalates_shorten_schedule_on_overflow(monkeypatch, tmp_path):
-    resume = load()
+    resume = _test_resume()
     requirements = _requirements()
 
     calls: list[int] = []
@@ -391,7 +435,7 @@ def test_fit_escalates_shorten_schedule_on_overflow(monkeypatch, tmp_path):
 
 
 def test_fit_raises_after_max_attempts_without_truncating(monkeypatch, tmp_path):
-    resume = load()
+    resume = _test_resume()
     requirements = _requirements()
 
     calls: list[int] = []
@@ -425,7 +469,7 @@ def test_fit_raises_after_max_attempts_without_truncating(monkeypatch, tmp_path)
 
 def test_fit_restores_bullets_on_underflow(monkeypatch, tmp_path):
     """A sparse page must pull bullets back rather than shipping half-empty."""
-    resume = load()
+    resume = _test_resume()
     requirements = _requirements()
     entries = fit_mod.choose_entries(resume, requirements)
     available = sum(len(e.bullets) for e in entries)
@@ -469,7 +513,7 @@ def test_fit_restores_bullets_on_underflow(monkeypatch, tmp_path):
 
 def test_fit_stops_growing_after_max_attempts_and_warns(monkeypatch, tmp_path):
     """Underflow is not fatal: return the fullest version reached, but say it is sparse."""
-    resume = load()
+    resume = _test_resume()
     requirements = _requirements()
 
     monkeypatch.setattr(fit_mod, "rewrite_bullets", _identity_rewrite)
@@ -488,7 +532,7 @@ def test_fit_growth_ceiling_stops_early_when_entries_are_capped(monkeypatch, tmp
     growth must stop there instead of burning `MAX_GROW_ATTEMPTS` retrying a selection
     that never changes (each retry costs a rewrite call and a render).
     """
-    resume = load()
+    resume = _test_resume()
     requirements = _requirements()
 
     monkeypatch.setattr(fit_mod, "rewrite_bullets", _identity_rewrite)
@@ -508,7 +552,7 @@ def test_fit_growth_ceiling_stops_early_when_entries_are_capped(monkeypatch, tmp
 
 def test_fit_honours_entry_caps_and_never_drops_a_chosen_entry(monkeypatch, tmp_path):
     """Entry count is a shape decision; the loop may trim bullets but not whole entries."""
-    resume = load()
+    resume = _test_resume()
     requirements = _requirements()
 
     monkeypatch.setattr(fit_mod, "rewrite_bullets", _identity_rewrite)
@@ -528,7 +572,7 @@ def test_fit_honours_entry_caps_and_never_drops_a_chosen_entry(monkeypatch, tmp_
 
 def test_semantic_table_reaches_entry_selection(monkeypatch, tmp_path):
     """The relevance table must actually steer which entries appear, not just be accepted."""
-    resume = load()
+    resume = _test_resume()
     requirements = _requirements()
 
     monkeypatch.setattr(fit_mod, "rewrite_bullets", _identity_rewrite)
@@ -553,7 +597,7 @@ def test_semantic_table_reaches_entry_selection(monkeypatch, tmp_path):
 
 def test_fit_falls_back_to_budget_estimate_when_word_unavailable(monkeypatch, tmp_path):
     """render.measure_detail raising RuntimeError (no Word) must not crash the run."""
-    resume = load()
+    resume = _test_resume()
     requirements = _requirements()
 
     monkeypatch.setattr(fit_mod, "rewrite_bullets", _identity_rewrite)
@@ -573,7 +617,7 @@ def test_fit_falls_back_to_budget_estimate_when_word_unavailable(monkeypatch, tm
 
 def test_merge_proposals_wait_until_measured_overflow(monkeypatch, tmp_path):
     """With merge_bullets on, attempt 0 must not propose; overflow attempts may."""
-    resume = load()
+    resume = _test_resume()
     requirements = _requirements()
     seen_groups: list[list] = []
 

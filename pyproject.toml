@@ -17,3 +17,7 @@ where = ["src"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
+markers = [
+    "owner: needs the developer's own data/master_resume.json or templates/main_template.docx; excluded by default so the suite is reproducible on any machine.",
+]
+addopts = "-m \"not owner\""

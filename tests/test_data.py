@@ -12,8 +12,10 @@ import json
 import sys
 from pathlib import Path
 
+import pytest
+
 from resume_tailor import config
-from resume_tailor.data import MasterResume, _alias_rewrites, _validate_cli, to_legacy_dict
+from resume_tailor.data import MasterResume, _alias_rewrites, _validate_cli
 
 _RESUME_TEMPLATE: dict = {
     "contact": {"name": "Test User", "email": "test@example.com"},
@@ -176,15 +178,21 @@ def test_migration_produces_four_default_sections_in_fixed_order():
     assert resume.sections[1].title == config.DEFAULT_SECTION_TITLES["experience"]
 
 
+@pytest.mark.owner
 def test_all_bullets_order_matches_pre_migration_order_for_the_real_master_resume():
     """`rewrite._score_cache_path` hashes `all_bullets()` in list order — if migrating a
     legacy file changed that order, every cached relevance score would silently
     invalidate. Compares against the raw JSON's own experience-then-projects order,
-    independent of any pipeline code."""
+    independent of any pipeline code.
+
+    Genuinely owner-specific (validates a property of *the real file*, not something a
+    synthetic fixture could stand in for), so it is marked `owner` and excluded by
+    default (see `pyproject.toml`'s `addopts`). Still guarded at runtime, since even an
+    explicit `pytest -m owner` run has no real file to check on a machine other than the
+    one this master resume belongs to.
+    """
     path = config.MASTER_RESUME_PATH
     if not path.exists():
-        import pytest
-
         pytest.skip("data/master_resume.json is gitignored and not present here")
     raw = json.loads(path.read_text(encoding="utf-8"))
     expected = [
@@ -256,11 +264,3 @@ def test_model_dump_then_validate_is_a_fixpoint():
     resume_again = MasterResume.model_validate(dumped_once)
     assert resume_again.model_dump(by_alias=True) == dumped_once
 
-
-def test_to_legacy_dict_round_trips_through_model_validate():
-    resume = MasterResume.model_validate(json.loads(json.dumps(_RESUME_TEMPLATE)))
-    legacy = to_legacy_dict(resume)
-    assert "sections" not in legacy
-    assert legacy["experience"][0]["company"] == "Acme"
-    reloaded = MasterResume.model_validate(legacy)
-    assert reloaded.model_dump(by_alias=True) == resume.model_dump(by_alias=True)

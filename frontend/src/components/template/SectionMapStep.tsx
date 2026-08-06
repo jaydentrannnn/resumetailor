@@ -1,4 +1,8 @@
-import type { TemplateAnalyzeResponse, TemplateSection } from "../../api";
+import type {
+  TemplateAnalyzeResponse,
+  TemplateHeadingKind,
+  TemplateSection,
+} from "../../api";
 
 type Enabled = {
   education: boolean;
@@ -16,22 +20,52 @@ const SECTION_ROWS: readonly [keyof Enabled, string][] = [
   ["list_section", "Simple list (certifications, awards, …)"],
 ];
 
+//: Wire kind -> the label shown in the per-heading remap `<select>`. `null` reads as
+//: "Not a section" — the user telling the analyzer a candidate heading is actually
+//: body text (a job title, an entry header that happens to contain a keyword, …).
+const KIND_OPTIONS: readonly [TemplateHeadingKind, string][] = [
+  ["experience", "Experience"],
+  ["education", "Education"],
+  ["projects", "Projects"],
+  ["skills", "Skills"],
+  ["list", "Simple list"],
+  [null, "Not a section"],
+];
+
 type Props = {
   analysis: TemplateAnalyzeResponse;
   profile: Record<string, unknown>;
   onChange: (next: Record<string, unknown>) => void;
+  headingOverrides: Record<number, TemplateHeadingKind>;
+  remapBusy: boolean;
+  onRemapHeading: (paragraphId: number, kind: TemplateHeadingKind) => void;
 };
 
 /**
- * Confirm which kinds of section to keep and show contact separator / headings.
+ * Confirm what the analyzer detected, one heading at a time, then which kinds to keep.
  *
- * Experience cannot be disabled. Omitting a kind clears its mapping object so the
- * builder skips it. Detection is a heuristic — multiple headings of one kind, or a
- * plain-list section, upgrade the template to "generic" mode automatically (see
- * `template_analyze._analyze_document`); this step shows what was found so the user can
- * confirm it before installing, not a guarantee.
+ * Two controls, deliberately kept separate:
+ * - **Detected headings** (below) is the primary confirmation step — one `<select>`
+ *   per heading the analyzer actually found in the document, defaulting to its
+ *   detected kind. Reassigning one is a real server round trip (`onRemapHeading`):
+ *   changing what a heading *is* can change entry splitting, field reconciliation,
+ *   and date detection for the rest of the document, not just that row, so the
+ *   result the user sees always reflects the analyzer's own downstream logic rather
+ *   than a client-side guess.
+ * - **Sections to include** is a coarser, kind-level on/off toggle — useful when a
+ *   kind was detected correctly but the user simply does not want it in the
+ *   template (e.g. omit Projects even though a Projects heading exists). Experience
+ *   cannot be disabled. Multiple headings of one kind, or a plain-list section,
+ *   upgrade the template to "generic" mode automatically.
  */
-export function SectionMapStep({ analysis, profile, onChange }: Props) {
+export function SectionMapStep({
+  analysis,
+  profile,
+  onChange,
+  headingOverrides,
+  remapBusy,
+  onRemapHeading,
+}: Props) {
   const enabled = (profile.enabled as Enabled | undefined) ?? {
     education: true,
     experience: true,
@@ -81,6 +115,60 @@ export function SectionMapStep({ analysis, profile, onChange }: Props) {
 
   return (
     <div className="mt-4 space-y-4 text-sm">
+      <div>
+        <p className="text-xs font-medium uppercase tracking-wide text-ink-muted">
+          Detected headings
+        </p>
+        <p className="mt-1 text-xs text-ink-muted">
+          Confirm what each heading is, or correct it — reassigning one re-runs
+          detection for the rest of the document.
+        </p>
+        <div className="mt-2 space-y-1.5">
+          {analysis.sections.length === 0 ? (
+            <p className="rounded-lg border border-line/80 bg-paper/40 px-3 py-2 text-ink-muted">
+              No headings detected.
+            </p>
+          ) : (
+            analysis.sections.map((s) => {
+              const overridden = headingOverrides[s.heading_paragraph_id];
+              const currentKind: TemplateHeadingKind =
+                overridden !== undefined ? overridden : (s.key as TemplateHeadingKind);
+              return (
+                <div
+                  key={s.heading_paragraph_id}
+                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line/80 bg-paper/40 px-3 py-2"
+                >
+                  <div className="min-w-0">
+                    <span className="font-medium text-ink">“{s.heading_text}”</span>
+                    <span className="ml-2 text-xs text-ink-muted">
+                      paragraph {s.heading_paragraph_id} · {(s.confidence * 100).toFixed(0)}%
+                      conf.
+                    </span>
+                  </div>
+                  <select
+                    value={currentKind ?? ""}
+                    disabled={remapBusy}
+                    onChange={(e) =>
+                      onRemapHeading(
+                        s.heading_paragraph_id,
+                        (e.target.value || null) as TemplateHeadingKind,
+                      )
+                    }
+                    className="rounded-md border border-line bg-paper px-2 py-1 text-xs text-ink disabled:opacity-50"
+                  >
+                    {KIND_OPTIONS.map(([kind, label]) => (
+                      <option key={label} value={kind ?? ""}>
+                        {label}
+                      </option>
+                    ))}
+                  </select>
+                </div>
+              );
+            })
+          )}
+        </div>
+      </div>
+
       <div>
         <p className="text-xs font-medium uppercase tracking-wide text-ink-muted">
           Sections to include

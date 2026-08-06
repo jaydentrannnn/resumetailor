@@ -323,3 +323,97 @@ def filter_proposals(
         )
 
     return out
+
+
+class _BulletTagProposal(BaseModel):
+    """One drafted set of tags for one bullet, addressed by its position in the
+    request list rather than a resume-wide id — the caller (`resume_import`) has no
+    stable bullet ids yet at the point this runs."""
+
+    bullet_index: int
+    tags: list[str] = Field(default_factory=list)
+
+
+class _BulletTagProposals(BaseModel):
+    proposals: list[_BulletTagProposal] = Field(default_factory=list)
+
+
+_TAG_SYSTEM = """\
+You are tagging resume bullets with the skills/tools/technologies each one \
+demonstrates, for a candidate's own tag vocabulary.
+
+For each numbered bullet in <bullets>, choose zero or more tags from <known_tags> that \
+the bullet's text actually names or clearly demonstrates. A tag must be copied \
+verbatim from <known_tags> — never invent a new spelling, and never propose a tag the \
+bullet's own words do not support. A bullet that genuinely uses none of the listed \
+tags gets an empty tag list; that is a normal, expected answer, not a failure to find \
+something.
+
+Return one entry per bullet you have an opinion on (an empty list still counts). Omit \
+a bullet entirely only if you have no opinion at all.
+"""
+
+#: Bumped whenever `_TAG_SYSTEM` or the user-message shape changes — this pass is not
+#: cached (a one-off import action, not a repeated pipeline stage), so there is no
+#: cache key to fold it into, but the constant still documents that a prompt edit is a
+#: behavior change worth noting in review.
+_TAG_PROMPT_VERSION = 1
+
+
+def propose_bullet_tags(
+    bullets: list[str], known_tags: list[str], *, on_event: ProgressCallback | None = None
+) -> dict[int, list[str]]:
+    """Suggest tags for bullets the deterministic importer left untagged.
+
+    `bullets` is addressed by list position; returns `{index: tags}` only for indices
+    the model proposed a non-empty, `known_tags`-only tag list for — the same
+    "model selects, code enforces" split `filter_proposals` uses for vocabulary
+    proposals: a tag outside `known_tags` is dropped rather than trusted, since a model
+    is not a validator.
+
+    Never part of `resume_import`'s own call graph — an explicit opt-in the caller
+    (the import API route) runs only when the user asks for it, exactly as
+    `propose_vocabulary` is a Settings-tab action, not a pipeline stage. Raises
+    normally (`LLMError`, `RuntimeError`) like every other LLM call; import itself must
+    never fail because this did.
+    """
+    if not bullets or not known_tags:
+        return {}
+
+    events.emit(
+        on_event,
+        "propose",
+        "Suggesting tags for untagged bullets",
+        count=len(bullets),
+        model=config.model_for("extract"),
+    )
+
+    bullets_block = "\n".join(f"  {i}. {text}" for i, text in enumerate(bullets))
+    known_tags_block = "\n".join(f"  - {t}" for t in sorted(known_tags))
+    user = f"<known_tags>\n{known_tags_block}\n</known_tags>\n\n<bullets>\n{bullets_block}\n</bullets>"
+
+    client = llm.client_for("extract")
+    response = client.messages.parse(
+        model=config.model_for("extract"),
+        max_tokens=config.max_tokens_for("extract"),
+        system=_TAG_SYSTEM,
+        messages=[{"role": "user", "content": user}],
+        output_format=_BulletTagProposals,
+        output_config={"effort": config.effort_for("extract")},
+    )
+    raw = response.parsed_output
+    if raw is None:
+        raise RuntimeError(
+            f"Model did not return parseable bullet tag proposals "
+            f"(stop_reason={response.stop_reason!r})."
+        )
+
+    known_lower = {t.strip().lower(): t.strip() for t in known_tags}
+    result: dict[int, list[str]] = {}
+    for item in raw.proposals:
+        if not (0 <= item.bullet_index < len(bullets)):
+            continue
+        tags = sorted({known_lower[t.strip().lower()] for t in item.tags if t.strip().lower() in known_lower})
+        if tags:
+            result[item.bullet_index] = tags
+    return result

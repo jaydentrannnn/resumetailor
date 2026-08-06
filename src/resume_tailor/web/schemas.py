@@ -175,6 +175,9 @@ class RunReportOut(BaseModel):
     out_path: str
     pdf_backend: str
     calibration_source: str
+    #: See `report.RunReport.calibration_rejection` — non-None only when a calibration
+    #: file existed but was rejected as implausible, not simply absent.
+    calibration_rejection: str | None = None
 
 
 class ExpandedEntryOut(BaseModel):
@@ -245,6 +248,8 @@ class ConfigResponse(BaseModel):
     effort_options: list[str]
     pdf_backend: str
     calibration_source: str
+    #: See `report.RunReport.calibration_rejection`.
+    calibration_rejection: str | None = None
     chars_per_line: int
     lines_per_page: int
     tag_vocabulary: list[str]
@@ -325,6 +330,16 @@ class ValidateResponse(BaseModel):
     ok: bool
     errors: list[str] = Field(default_factory=list)
     summary: dict[str, Any] | None = None
+
+
+class MasterResumeImportResponse(BaseModel):
+    """Result of `POST /api/master-resume/import`: a draft the editor loads as unsaved
+    state — nothing is written to disk here. The user reviews and saves through the
+    existing `PUT /api/master-resume`, the same path a hand edit takes."""
+
+    resume: dict[str, Any]
+    warnings: list[str] = Field(default_factory=list)
+    untagged_bullet_count: int = 0
 
 
 class TemplateFileInfo(BaseModel):
@@ -441,15 +456,52 @@ class TemplateSectionOut(BaseModel):
     aliases_matched: str = ""
 
 
+class TemplateFieldCandidateOut(BaseModel):
+    """One suggested character span for a semantic field (company, dates, …), so the
+    wizard can show a per-field confidence row instead of just a pass/fail section
+    summary."""
+
+    field: str
+    paragraph_id: int
+    start: int
+    end: int
+    confidence: float = 0.0
+    preview: str = ""
+
+
 class TemplateAnalyzeResponse(BaseModel):
     """Preflight analysis for an uploaded baseline (no disk writes)."""
 
     source_sha256: str
     paragraphs: list[TemplateParagraphOut]
     sections: list[TemplateSectionOut]
+    field_candidates: list[TemplateFieldCandidateOut] = Field(default_factory=list)
     suggested_profile: dict[str, Any] | None = None
     issues: list[TemplateIssueOut] = Field(default_factory=list)
     ready: bool = False
+
+
+class TemplateRemapRequest(BaseModel):
+    """Body for `POST /api/template/analyze/remap`.
+
+    `source_sha256` must match a sha the wizard already analyzed in this process
+    lifetime (see `template_ops._cache_upload`) — the remap step never re-uploads the
+    file. `overrides` maps a heading paragraph id to a user-confirmed kind
+    (`experience`/`education`/`projects`/`skills`/`list`), or `null` to say "this is
+    not a section" regardless of what the heuristics concluded.
+    """
+
+    source_sha256: str
+    overrides: dict[int, str | None] = Field(default_factory=dict)
+
+
+class TemplatePreviewDraftRequest(BaseModel):
+    """Body for `POST /api/template/preview/draft`: build a staged profile into a temp
+    tagged template and render the master resume through it, without touching the live
+    template slot."""
+
+    source_sha256: str
+    profile: dict[str, Any]
 
 
 class WorkspaceEntryOut(BaseModel):

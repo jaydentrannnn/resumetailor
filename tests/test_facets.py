@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from resume_tailor import config, facets
-from resume_tailor.data import Education, MasterResume, Project, SkillGroup, load
+from resume_tailor.data import Education, MasterResume, Project, SkillGroup
 from resume_tailor.facets import (
     FacetResult,
     FacetSelection,
@@ -20,6 +20,7 @@ from resume_tailor.facets import (
     select_facets,
 )
 from resume_tailor.jd import JobRequirements, Keyword
+from tests.fixtures import synthetic_resume
 
 
 def _requirements(*phrases: tuple[str, str]) -> JobRequirements:
@@ -278,7 +279,7 @@ def test_finalise_accepts_jd_anchored_equivalent_rename():
 
 def test_apply_does_not_mutate_input():
     """apply() deep-copies; the caller's MasterResume is untouched."""
-    resume = load()
+    resume = synthetic_resume()
     original_tech = [list(p.tech) for p in resume.projects]
     original_coursework = [list(e.coursework) for e in resume.education]
     original_skills = [list(g.items) for g in resume.skills]
@@ -311,7 +312,7 @@ def test_coursework_fits_two_lines():
 
 def test_budget_only_truncates_without_llm():
     """--no-facets path still enforces the one-line / two-line guarantees."""
-    resume = load()
+    resume = synthetic_resume()
     result = budget_only(resume, _requirements(("Python", "python")))
     for proj in resume.projects:
         assert len(result.projects[proj.id]) <= config.MAX_PROJECT_TECH
@@ -579,7 +580,7 @@ def test_skill_rename_unknown_item_warns():
 
 def test_budget_only_leaves_skills_untouched():
     """--no-facets path leaves every skill item exactly as in the master resume."""
-    resume = load()
+    resume = synthetic_resume()
     original = [list(g.items) for g in resume.skills]
     result = budget_only(resume, _requirements(("Python", "python")))
     updated = apply(resume, result)

@@ -7,14 +7,15 @@ error presentation, and neither should require an API key or Word to verify.
 from __future__ import annotations
 
 import importlib.util
+import json
 from pathlib import Path
 
 import pytest
 
 from resume_tailor import config, fit as fit_mod
-from resume_tailor.data import load
 from resume_tailor.jd import JobRequirements, Keyword
 from resume_tailor.rewrite import FabricationError
+from tests.fixtures import synthetic_resume
 
 _TAILOR_PATH = Path(__file__).resolve().parents[1] / "tailor.py"
 
@@ -29,6 +30,25 @@ def _load_cli():
 @pytest.fixture
 def cli():
     return _load_cli()
+
+
+@pytest.fixture(autouse=True)
+def _synthetic_master_resume(tmp_path, monkeypatch):
+    """Seed `config.MASTER_RESUME_PATH` with `synthetic_resume()` for every CLI test.
+
+    `tailor.main` calls `data.load()` internally regardless of whether a given test
+    also stubs `fit.fit` — without this, every test in this file would read whatever
+    `data/master_resume.json` happens to hold on the machine running the suite (personal
+    data, gitignored, not guaranteed to exist on a clean checkout or in CI). Individual
+    tests' own `resume = load()` calls build a *stubbed* `fit.fit` return value, not the
+    resume the CLI actually loads — both need to resolve to something valid, and using
+    the same synthetic resume for both keeps them consistent.
+    """
+    path = tmp_path / "master_resume.json"
+    path.write_text(
+        json.dumps(synthetic_resume().model_dump(mode="json"), indent=2), encoding="utf-8"
+    )
+    monkeypatch.setattr(config, "MASTER_RESUME_PATH", path)
 
 
 @pytest.fixture(autouse=True)
@@ -127,7 +147,7 @@ def _fit_result(resume, out_path: Path) -> fit_mod.FitResult:
 
 
 def test_successful_run_prints_report_and_exits_zero(cli, jd_file, tmp_path, monkeypatch, capsys):
-    resume = load()
+    resume = synthetic_resume()
     out = tmp_path / "tailored.docx"
 
     monkeypatch.setattr(cli.jd, "extract", lambda text, **kw: _requirements())
@@ -181,7 +201,7 @@ def test_missing_jd_file_exits_one(cli, tmp_path, capsys):
 
 def test_paraphrased_phrases_warn_but_do_not_abort(cli, jd_file, tmp_path, monkeypatch, capsys):
     """A broken verbatim guarantee is worth flagging, but the run still produces a resume."""
-    resume = load()
+    resume = synthetic_resume()
     out = tmp_path / "tailored.docx"
 
     monkeypatch.setattr(cli.jd, "extract", lambda text, **kw: _requirements())
@@ -197,7 +217,7 @@ def test_paraphrased_phrases_warn_but_do_not_abort(cli, jd_file, tmp_path, monke
 
 
 def test_pages_and_template_flags_reach_the_fit_loop(cli, jd_file, tmp_path, monkeypatch):
-    resume = load()
+    resume = synthetic_resume()
     seen: dict = {}
 
     monkeypatch.setattr(cli.jd, "extract", lambda text, **kw: _requirements())
@@ -238,7 +258,7 @@ def test_pages_and_template_flags_reach_the_fit_loop(cli, jd_file, tmp_path, mon
 
 
 def test_defaults_match_config(cli, jd_file, tmp_path, monkeypatch):
-    resume = load()
+    resume = synthetic_resume()
     seen: dict = {}
 
     monkeypatch.setattr(cli.jd, "extract", lambda text, **kw: _requirements())
@@ -282,7 +302,7 @@ def test_defaults_match_config(cli, jd_file, tmp_path, monkeypatch):
 
 
 def test_no_cache_flag_forces_reextraction(cli, jd_file, tmp_path, monkeypatch):
-    resume = load()
+    resume = synthetic_resume()
     seen: dict = {}
 
     def fake_extract(text, *, known_tags=None, use_cache=True):
@@ -303,7 +323,7 @@ def test_no_cache_flag_forces_reextraction(cli, jd_file, tmp_path, monkeypatch):
 
 def test_extract_runs_flag_reaches_extract_consensus(cli, jd_file, tmp_path, monkeypatch):
     """`--extract-runs` must reach `jd.extract_consensus`, and default to the config value."""
-    resume = load()
+    resume = synthetic_resume()
     seen: dict = {}
 
     def fake_consensus(text, *, known_tags=None, runs=1, use_cache=True, on_event=None):
@@ -329,7 +349,7 @@ def test_extract_runs_flag_reaches_extract_consensus(cli, jd_file, tmp_path, mon
 @pytest.fixture
 def stubbed_run(cli, tmp_path, monkeypatch):
     """A run that reaches `fit.fit` without touching the network."""
-    resume = load()
+    resume = synthetic_resume()
     monkeypatch.setattr(cli.jd, "extract", lambda *a, **k: _requirements())
     monkeypatch.setattr(cli.jd, "verify_verbatim", lambda reqs, text: [])
     monkeypatch.setattr(
@@ -413,7 +433,7 @@ def test_a_backend_failure_while_scoring_fails_the_run(cli, jd_file, tmp_path, m
     An unreachable daemon or an exhausted quota is a broken run. Silently ranking on
     keywords instead would report success while quietly producing a worse resume.
     """
-    resume = load()
+    resume = synthetic_resume()
     monkeypatch.setattr(cli.jd, "extract", lambda *a, **k: _requirements())
     monkeypatch.setattr(cli.jd, "verify_verbatim", lambda reqs, text: [])
     monkeypatch.setattr(
@@ -431,7 +451,7 @@ def test_a_backend_failure_while_scoring_fails_the_run(cli, jd_file, tmp_path, m
 
 def test_no_widow_repair_flag_reaches_the_fit_loop(cli, jd_file, tmp_path, monkeypatch):
     """The control half of the A/B has to actually reach the rewriter to be one."""
-    resume = load()
+    resume = synthetic_resume()
     seen: dict = {}
 
     monkeypatch.setattr(cli.jd, "extract", lambda text, **kw: _requirements())
@@ -458,7 +478,7 @@ def test_no_widow_repair_flag_reaches_the_fit_loop(cli, jd_file, tmp_path, monke
 
 def test_merge_flag_reaches_the_fit_loop(cli, jd_file, tmp_path, monkeypatch):
     """--merge is opt-in; the default must leave merge_bullets False."""
-    resume = load()
+    resume = synthetic_resume()
     seen: dict = {}
 
     monkeypatch.setattr(cli.jd, "extract", lambda text, **kw: _requirements())
@@ -480,7 +500,7 @@ def test_merge_flag_reaches_the_fit_loop(cli, jd_file, tmp_path, monkeypatch):
 
 def test_fill_target_flag_reaches_the_fit_loop(cli, jd_file, tmp_path, monkeypatch):
     """--fill-target overrides UNDERFLOW_THRESHOLD for the run."""
-    resume = load()
+    resume = synthetic_resume()
     seen: dict = {}
 
     monkeypatch.setattr(cli.jd, "extract", lambda text, **kw: _requirements())
@@ -504,7 +524,7 @@ def test_fill_target_flag_reaches_the_fit_loop(cli, jd_file, tmp_path, monkeypat
 
 def test_initial_bullet_share_flag_reaches_the_fit_loop(cli, jd_file, tmp_path, monkeypatch):
     """--initial-bullet-share overrides INITIAL_BULLET_SHARE for the run."""
-    resume = load()
+    resume = synthetic_resume()
     seen: dict = {}
 
     monkeypatch.setattr(cli.jd, "extract", lambda text, **kw: _requirements())
@@ -526,7 +546,7 @@ def test_initial_bullet_share_flag_reaches_the_fit_loop(cli, jd_file, tmp_path, 
 
 def test_experience_bullet_share_flag_reaches_the_fit_loop(cli, jd_file, tmp_path, monkeypatch):
     """--experience-bullet-share overrides EXPERIENCE_BULLET_SHARE for the run."""
-    resume = load()
+    resume = synthetic_resume()
     seen: dict = {}
 
     monkeypatch.setattr(cli.jd, "extract", lambda text, **kw: _requirements())
@@ -550,7 +570,7 @@ def test_experience_bullet_share_flag_reaches_the_fit_loop(cli, jd_file, tmp_pat
 
 def test_max_bullets_per_entry_flag_reaches_the_fit_loop(cli, jd_file, tmp_path, monkeypatch):
     """--max-bullets-per-entry overrides MAX_BULLETS_PER_ENTRY for the run."""
-    resume = load()
+    resume = synthetic_resume()
     seen: dict = {}
 
     monkeypatch.setattr(cli.jd, "extract", lambda text, **kw: _requirements())

@@ -163,6 +163,11 @@ export function RunPage() {
                   : " (calibrated)"}
                 . {config.chars_per_line} chars/line · {config.lines_per_page} lines/page.
               </p>
+              {config.calibration_rejection && (
+                <p className="mt-2 rounded-md bg-warn-soft px-3 py-2 text-sm text-warn">
+                  {config.calibration_rejection}
+                </p>
+              )}
               {config.contact_name && (
                 <p className="mt-2">Master resume: {config.contact_name}</p>
               )}
@@ -668,6 +673,12 @@ function ReportCard({ report, jobId }: { report: RunReport; jobId: string }) {
           {w}
         </p>
       ))}
+
+      {report.calibration_rejection && (
+        <p className="mt-2 rounded-md bg-warn-soft px-3 py-2 text-sm text-warn">
+          {report.calibration_rejection}
+        </p>
+      )}
 
       <p className="mt-3 text-xs text-ink-muted">
         Model: {report.model} · ranking:{" "}

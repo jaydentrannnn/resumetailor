@@ -809,43 +809,78 @@ CALIBRATION_DIR = _dir_from_env("RESUME_TAILOR_CALIBRATION_DIR", DATA_DIR / "cal
 _FALLBACK_CHARS_PER_LINE = 101
 _FALLBACK_LINES_PER_PAGE = 52
 
+#: Plausibility band for a *loaded* calibration file. `calibrate.py` has its own,
+#: independent collapsed-search guard that stops a bad measurement from ever being
+#: written — this is the second, cheaper line of defense for a file that reached disk
+#: anyway (hand-edited, copied from a different template, or written before that guard
+#: existed). A `chars_per_line=20` file measured exactly this way once: it silently
+#: capped every rewritten bullet at ~15-35 characters for two days before anyone noticed.
+PLAUSIBLE_CHARS_PER_LINE = (40, 200)
+PLAUSIBLE_LINES_PER_PAGE = (25, 90)
 
-def _load_calibration(backend: str) -> tuple[int, int, str]:
+
+def _load_calibration(backend: str) -> tuple[int, int, str, str | None]:
     """Read measured fit constants for `backend`, falling back to the Word-derived pair.
 
-    Returns `(chars_per_line, lines_per_page, source)` where `source` names the file used
-    or "fallback". The source is reported rather than swallowed because inheriting Word's
-    constants under LibreOffice is a silent way to mis-size every page — `report.py` and
-    the web UI both surface it.
+    Returns `(chars_per_line, lines_per_page, source, rejection)`. `source` names the
+    file used, or is literally `"fallback"` when using the built-in constants — checked
+    by exact string equality elsewhere (`template_ops.py`, the frontend), so its two
+    possible shapes ("fallback" / a path) must never change. `rejection` is `None`
+    unless a file existed but its numbers fell outside `PLAUSIBLE_CHARS_PER_LINE`/
+    `PLAUSIBLE_LINES_PER_PAGE`, in which case it names what was rejected and why —
+    additional detail layered on top of `source == "fallback"`, not a new source shape.
+    The source is reported rather than swallowed because inheriting Word's constants
+    under LibreOffice is a silent way to mis-size every page — `report.py` and the web
+    UI both surface it.
     """
     path = CALIBRATION_DIR / f"{backend}.json"
     if not path.exists():
-        return _FALLBACK_CHARS_PER_LINE, _FALLBACK_LINES_PER_PAGE, "fallback"
+        return _FALLBACK_CHARS_PER_LINE, _FALLBACK_LINES_PER_PAGE, "fallback", None
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
-        return int(raw["chars_per_line"]), int(raw["lines_per_page"]), str(path)
+        chars_per_line = int(raw["chars_per_line"])
+        lines_per_page = int(raw["lines_per_page"])
     except (json.JSONDecodeError, KeyError, TypeError, ValueError) as exc:
         raise ValueError(
             f"{path} is not a usable calibration file ({exc}). Delete it to fall back to "
             f"the built-in constants, or regenerate it with scripts/calibrate.py."
         ) from exc
 
+    chars_lo, chars_hi = PLAUSIBLE_CHARS_PER_LINE
+    lines_lo, lines_hi = PLAUSIBLE_LINES_PER_PAGE
+    if not (chars_lo <= chars_per_line <= chars_hi) or not (lines_lo <= lines_per_page <= lines_hi):
+        # A bad file must not brick the app — fall back rather than raise, but name
+        # what was rejected so the cause (not just the symptom) is visible wherever
+        # CALIBRATION_SOURCE/CALIBRATION_REJECTION are surfaced.
+        rejection = (
+            f"{path} was rejected: chars_per_line={chars_per_line}, "
+            f"lines_per_page={lines_per_page} (plausible ranges are "
+            f"{PLAUSIBLE_CHARS_PER_LINE} and {PLAUSIBLE_LINES_PER_PAGE}). Using built-in "
+            "constants instead — delete this file and re-run scripts/calibrate.py."
+        )
+        return _FALLBACK_CHARS_PER_LINE, _FALLBACK_LINES_PER_PAGE, "fallback", rejection
+    return chars_per_line, lines_per_page, str(path), None
+
 
 #: Calibration constants, measured by `scripts/calibrate.py` against the real template and
 #: the active PDF backend. Re-run that script after any change to fonts, margins, the
 #: template, or the converter — these numbers describe one engine rendering one document.
-CHARS_PER_LINE, LINES_PER_PAGE, CALIBRATION_SOURCE = _load_calibration(PDF_BACKEND)
+CHARS_PER_LINE, LINES_PER_PAGE, CALIBRATION_SOURCE, CALIBRATION_REJECTION = _load_calibration(
+    PDF_BACKEND
+)
 
 
-def reload_calibration() -> tuple[int, int, str]:
+def reload_calibration() -> tuple[int, int, str, str | None]:
     """Re-read fit constants from disk into the module-level globals.
 
     Needed after a web-triggered calibrate so the running process picks up new values
-    without a server restart. Returns the same triple as `_load_calibration`.
+    without a server restart. Returns the same 4-tuple as `_load_calibration`.
     """
-    global CHARS_PER_LINE, LINES_PER_PAGE, CALIBRATION_SOURCE
-    CHARS_PER_LINE, LINES_PER_PAGE, CALIBRATION_SOURCE = _load_calibration(PDF_BACKEND)
-    return CHARS_PER_LINE, LINES_PER_PAGE, CALIBRATION_SOURCE
+    global CHARS_PER_LINE, LINES_PER_PAGE, CALIBRATION_SOURCE, CALIBRATION_REJECTION
+    CHARS_PER_LINE, LINES_PER_PAGE, CALIBRATION_SOURCE, CALIBRATION_REJECTION = _load_calibration(
+        PDF_BACKEND
+    )
+    return CHARS_PER_LINE, LINES_PER_PAGE, CALIBRATION_SOURCE, CALIBRATION_REJECTION
 
 #: Below this fraction of the target page's capacity, a page reads as half-empty and the
 #: fit loop restores bullets rather than accepting the result.

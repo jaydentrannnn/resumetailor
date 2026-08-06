@@ -17,7 +17,6 @@ from resume_tailor.data import (
     MasterResume,
     Project,
     SkillGroup,
-    load,
 )
 from resume_tailor.fit import FitResult
 from resume_tailor.jd import JobRequirements, Keyword
@@ -48,7 +47,7 @@ def _result(resume, bullets: dict[str, str], **kw) -> FitResult:
 
 
 def test_report_shows_coverage_and_output_path():
-    resume = load()
+    resume = _synthetic_resume()
     reqs = _requirements(("python", "must_have"), ("rust", "must_have"))
     first = resume.experience[0]
     result = _result(resume, {b.id: b.text for b in first.bullets})
@@ -74,7 +73,7 @@ def test_export_filename_uses_name_and_title():
 
 def test_report_names_unsupported_must_haves():
     """A keyword the master resume cannot support is a gap worth stating outright."""
-    resume = load()
+    resume = _synthetic_resume()
     reqs = _requirements(("rust", "must_have"))
     result = _result(resume, {b.id: b.text for b in resume.experience[0].bullets})
 
@@ -85,7 +84,7 @@ def test_report_names_unsupported_must_haves():
 
 def test_report_counts_only_actually_changed_bullets_as_rewritten():
     """The fit loop keeps original text for bullets the model dropped; those aren't rewrites."""
-    resume = load()
+    resume = _synthetic_resume()
     reqs = _requirements(("python", "must_have"))
     entry = resume.experience[0]
     bullets = {b.id: b.text for b in entry.bullets}
@@ -97,7 +96,28 @@ def test_report_counts_only_actually_changed_bullets_as_rewritten():
 
 
 def test_report_lists_entries_dropped_entirely():
-    resume = load()
+    """Needs two experience entries (one kept, one dropped) — `_synthetic_resume` above
+    only ever builds one, so this test builds its own inline rather than stretching that
+    helper's signature for a single caller."""
+    resume = MasterResume(
+        contact=Contact(name="X", email="x@y.z"),
+        experience=[
+            Experience(
+                company="Acme",
+                title="Engineer",
+                start="2020",
+                end="2021",
+                bullets=[Bullet(id="b1", text="Did a thing.", tags=["python"])],
+            ),
+            Experience(
+                company="Globex",
+                title="Analyst",
+                start="2019",
+                end="2020",
+                bullets=[Bullet(id="b2", text="Did another thing.", tags=["rust"])],
+            ),
+        ],
+    )
     reqs = _requirements(("python", "must_have"))
     kept = resume.experience[0]
     result = _result(resume, {b.id: b.text for b in kept.bullets})
@@ -111,7 +131,7 @@ def test_report_lists_entries_dropped_entirely():
 
 def test_report_names_canonicals_that_matched_no_tag():
     """A vocabulary miss is otherwise completely silent — it just scores zero."""
-    resume = load()
+    resume = _synthetic_resume()
     reqs = _requirements(("python", "must_have"), ("rust", "nice_to_have"))
     result = _result(resume, {b.id: b.text for b in resume.experience[0].bullets})
 
@@ -124,7 +144,7 @@ def test_report_names_canonicals_that_matched_no_tag():
 
 
 def test_report_omits_the_unmatched_line_when_everything_matched():
-    resume = load()
+    resume = _synthetic_resume()
     reqs = _requirements(("python", "must_have"))
     result = _result(resume, {b.id: b.text for b in resume.experience[0].bullets})
 
@@ -298,7 +318,7 @@ def test_diagnosis_reads_the_unfaceted_master():
 
 def test_report_states_which_ranking_was_used():
     """With semantic scoring off, ranking is pure tag overlap — worth saying so."""
-    resume = load()
+    resume = _synthetic_resume()
     reqs = _requirements(("python", "must_have"))
     bullets = {b.id: b.text for b in resume.experience[0].bullets}
 
@@ -312,7 +332,7 @@ def test_report_states_which_ranking_was_used():
 
 
 def test_report_flags_estimated_page_count_and_warnings():
-    resume = load()
+    resume = _synthetic_resume()
     reqs = _requirements(("python", "must_have"))
     result = _result(
         resume,
@@ -337,7 +357,7 @@ def test_report_flags_estimated_page_count_and_warnings():
 
 
 def test_report_states_line_waste_even_when_there_is_none():
-    resume = load()
+    resume = _synthetic_resume()
     reqs = _requirements(("python", "must_have"))
     result = _result(resume, {b.id: b.text for b in resume.experience[0].bullets})
 
@@ -347,7 +367,7 @@ def test_report_states_line_waste_even_when_there_is_none():
 
 
 def test_report_credits_the_bullets_the_widow_pass_tightened():
-    resume = load()
+    resume = _synthetic_resume()
     reqs = _requirements(("python", "must_have"))
     result = _result(
         resume,
@@ -362,7 +382,7 @@ def test_report_credits_the_bullets_the_widow_pass_tightened():
 
 
 def test_report_shows_a_surviving_widow():
-    resume = load()
+    resume = _synthetic_resume()
     reqs = _requirements(("python", "must_have"))
     result = _result(
         resume,

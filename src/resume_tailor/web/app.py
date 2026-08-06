@@ -12,11 +12,13 @@ from __future__ import annotations
 import asyncio
 import json
 import os
+import tempfile
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
 from typing import Any
 
+import docx
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.responses import FileResponse, StreamingResponse
@@ -24,7 +26,18 @@ from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from resume_tailor import config, data, include, jd, libraries, propose, report, workspace
+from resume_tailor import (
+    config,
+    data,
+    include,
+    jd,
+    libraries,
+    propose,
+    report,
+    resume_import,
+    template_analyze,
+    workspace,
+)
 from resume_tailor.data import MasterResume
 from resume_tailor.events import ProgressEvent
 from resume_tailor.llm import LLMError
@@ -48,6 +61,7 @@ from resume_tailor.web.schemas import (
     LibraryProposalOut,
     LibrarySelectionRequest,
     LibraryStateResponse,
+    MasterResumeImportResponse,
     ProgressEventOut,
     ProposalApproveRequest,
     ProposalGenerateRequest,
@@ -62,6 +76,8 @@ from resume_tailor.web.schemas import (
     TemplateInfoResponse,
     TemplateLibraryRenameRequest,
     TemplateLibraryResponse,
+    TemplatePreviewDraftRequest,
+    TemplateRemapRequest,
     ValidateResponse,
     WorkspaceActivateResponse,
     WorkspaceCreateRequest,
@@ -164,6 +180,7 @@ def _config_response(*, consume_migrated: bool = True) -> ConfigResponse:
         effort_options=["low", "medium", "high"],
         pdf_backend=config.PDF_BACKEND,
         calibration_source=config.CALIBRATION_SOURCE,
+        calibration_rejection=config.CALIBRATION_REJECTION,
         chars_per_line=config.CHARS_PER_LINE,
         lines_per_page=config.LINES_PER_PAGE,
         tag_vocabulary=tags,
@@ -510,8 +527,8 @@ def get_master_resume() -> dict[str, Any]:
     """Return the current master resume as JSON for the editor.
 
     `sections`-shaped, matching what `PUT` writes — the editor speaks this format
-    natively. `data.to_legacy_dict` remains available (and tested) for anything still
-    sending the pre-`sections` shape to `PUT`, which the migrator folds in unchanged.
+    natively. `PUT` still accepts the pre-`sections` shape too (anything that never
+    migrated), via `MasterResume._migrate_legacy_sections`'s before-validator.
     """
     try:
         resume = data.load()
@@ -592,6 +609,78 @@ def validate_master_resume(body: dict[str, Any]) -> ValidateResponse:
     )
 
 
+@app.post("/api/master-resume/import", response_model=MasterResumeImportResponse)
+async def import_master_resume(
+    file: UploadFile = File(...),
+    suggest_tags: str | None = Form(None),
+) -> MasterResumeImportResponse:
+    """Parse an uploaded .docx into a `MasterResume` draft — content, not just layout.
+
+    Writes nothing: the editor loads the result as unsaved state and the user saves
+    through the existing `PUT /api/master-resume`, same as a hand edit. Tags are seeded
+    deterministically (`resume_import._seed_tags`); optional multipart field
+    `suggest_tags` (truthy: `1`/`true`/`yes`) additionally runs `propose.
+    propose_bullet_tags` for whatever the deterministic pass left untagged — an LLM
+    call that must never fail the import itself, so a failure there is appended to
+    `warnings` instead of raised.
+    """
+    raw = await file.read()
+    filename = file.filename or "upload.docx"
+    try:
+        template_ops._validate_upload_bytes(raw, filename)
+        with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as tmp:
+            tmp.write(raw)
+            tmp_path = Path(tmp.name)
+        try:
+            try:
+                doc = docx.Document(str(tmp_path))
+            except Exception as exc:
+                raise template_ops.TemplateValidationError(
+                    f"File is not a readable .docx: {exc}"
+                ) from exc
+            result = template_analyze.analyze_docx(raw=raw)
+
+            known_tags = resume_import._default_vocabulary()
+            try:
+                known_tags |= set(data.load().tag_vocabulary)
+            except (FileNotFoundError, ValueError):
+                pass  # brand-new workspace with no master resume yet
+
+            imported = resume_import.import_from_analysis(result, doc, known_tags=known_tags)
+        finally:
+            tmp_path.unlink(missing_ok=True)
+    except template_ops.TemplateValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+    do_suggest = (suggest_tags or "").strip().lower() in ("1", "true", "yes", "on")
+    if do_suggest and imported.untagged_bullet_count:
+        all_bullets = imported.resume.all_bullets()
+        untagged_indices = [
+            i for i, b in enumerate(all_bullets) if b.tags == [resume_import.UNTAGGED]
+        ]
+        try:
+            suggestions = propose.propose_bullet_tags(
+                [all_bullets[i].text for i in untagged_indices], sorted(known_tags)
+            )
+        except (LLMError, RuntimeError) as exc:
+            imported.warnings.append(f"Tag suggestion pass failed: {exc}")
+        else:
+            for local_i, global_i in enumerate(untagged_indices):
+                if local_i in suggestions:
+                    all_bullets[global_i].tags = sorted(
+                        {config.canonical_tag(t) for t in suggestions[local_i]}
+                    )
+            imported.untagged_bullet_count = sum(
+                1 for b in all_bullets if b.tags == [resume_import.UNTAGGED]
+            )
+
+    return MasterResumeImportResponse(
+        resume=imported.resume.model_dump(by_alias=True),
+        warnings=imported.warnings,
+        untagged_bullet_count=imported.untagged_bullet_count,
+    )
+
+
 @app.get("/api/template", response_model=TemplateInfoResponse)
 def get_template() -> TemplateInfoResponse:
     """Current baseline and tagged template metadata for the Template tab."""
@@ -631,17 +720,75 @@ async def analyze_template(file: UploadFile = File(...)) -> TemplateAnalyzeRespo
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+@app.post("/api/template/analyze/remap", response_model=TemplateAnalyzeResponse)
+def remap_template(body: TemplateRemapRequest) -> TemplateAnalyzeResponse:
+    """Re-analyze a previously uploaded baseline with specific headings' kinds forced
+    by the user — a real server round trip so the wizard's confirm step reflects the
+    analyzer's own downstream logic (entry splitting, field reconciliation, dates
+    checks), not a client-side guess at what re-classifying a heading would do.
+    """
+    try:
+        return template_ops.remap_upload(body.source_sha256, body.overrides)
+    except TemplateValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@app.post("/api/template/preview/source")
+def preview_source_template(body: TemplateRemapRequest) -> FileResponse:
+    """PDF of the uploaded baseline as-is, for the wizard's side-by-side comparison.
+
+    Reuses `TemplateRemapRequest` for its `source_sha256` field only; `overrides` is
+    ignored here (nothing to remap — this is the original document, unmodified).
+    """
+    try:
+        path = template_ops.preview_source(body.source_sha256)
+    except TemplateValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return FileResponse(
+        path,
+        media_type="application/pdf",
+        filename="source-preview.pdf",
+        content_disposition_type="inline",
+    )
+
+
+@app.post("/api/template/preview/draft")
+def preview_draft_template(body: TemplatePreviewDraftRequest) -> FileResponse:
+    """PDF of the master resume rendered through a staged (not-yet-installed) profile
+    — lets the wizard show what installing this exact mapping would produce, without
+    touching the live template slot.
+    """
+    try:
+        path = template_ops.preview_draft(body.source_sha256, body.profile)
+    except TemplateValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except ValidationError as exc:
+        raise HTTPException(status_code=400, detail=f"Invalid template profile: {exc}") from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return FileResponse(
+        path,
+        media_type="application/pdf",
+        filename="draft-preview.pdf",
+        content_disposition_type="inline",
+    )
+
+
 @app.post("/api/template", response_model=TemplateBuildResponse)
 async def upload_template(
     file: UploadFile = File(...),
-    profile: str | None = Form(None),
+    profile: str = Form(...),
     calibrate: str | None = Form(None),
     label: str | None = Form(None),
 ) -> TemplateBuildResponse:
     """Replace the baseline export and regenerate the tagged template.
 
-    Optional multipart field `profile` is a JSON TemplateProfile. When omitted, the
-    legacy hard-coded heading build runs (backward compatible).
+    Required multipart field `profile` is a JSON TemplateProfile, confirmed through
+    `POST /api/template/analyze` (and optionally `/analyze/remap`) first — there is no
+    hard-coded-heading fallback; a resume whose layout the analyzer cannot map is a
+    blocking issue on that response, not something this route silently guesses at.
 
     Optional multipart field `calibrate` (truthy: ``1``/``true``/``yes``) measures fit
     constants after a successful install and hot-reloads them in-process.
@@ -660,15 +807,13 @@ async def upload_template(
 
     raw = await file.read()
     filename = file.filename or "upload.docx"
-    parsed_profile = None
-    if profile:
-        try:
-            parsed_profile = TemplateProfile.model_validate_json(profile)
-        except ValidationError as exc:
-            raise HTTPException(
-                status_code=400,
-                detail=f"Invalid template profile: {exc}",
-            ) from exc
+    try:
+        parsed_profile = TemplateProfile.model_validate_json(profile)
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail=f"Invalid template profile: {exc}",
+        ) from exc
     do_calibrate = (calibrate or "").strip().lower() in ("1", "true", "yes", "on")
     try:
         return template_ops.install_baseline(

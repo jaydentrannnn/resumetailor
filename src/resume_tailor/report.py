@@ -323,6 +323,10 @@ class RunReport:
     #: every page slightly wrong, and nothing else in the output would reveal it.
     pdf_backend: str
     calibration_source: str
+    #: Non-None when a calibration file existed but was rejected as implausible (see
+    #: `config.PLAUSIBLE_CHARS_PER_LINE`) rather than simply absent — both cases leave
+    #: `calibration_source == "fallback"`, so this is the only way to tell them apart.
+    calibration_rejection: str | None = None
 
 
 def report_data(
@@ -380,6 +384,7 @@ def report_data(
         out_path=str(result.out_path),
         pdf_backend=config.PDF_BACKEND,
         calibration_source=config.CALIBRATION_SOURCE,
+        calibration_rejection=config.CALIBRATION_REJECTION,
     )
 
 

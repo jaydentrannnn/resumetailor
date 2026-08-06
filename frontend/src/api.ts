@@ -108,6 +108,8 @@ export type RunReport = {
   out_path: string;
   pdf_backend: string;
   calibration_source: string;
+  /** Non-null only when a calibration file existed but was rejected as implausible. */
+  calibration_rejection: string | null;
 };
 
 export type ExpandedEntry = {
@@ -161,6 +163,8 @@ export type AppConfig = {
   effort_options: string[];
   pdf_backend: string;
   calibration_source: string;
+  /** Non-null only when a calibration file existed but was rejected as implausible. */
+  calibration_rejection: string | null;
   chars_per_line: number;
   lines_per_page: number;
   tag_vocabulary: string[];
@@ -336,14 +340,27 @@ export type TemplateSection = {
   aliases_matched: string;
 };
 
+export type TemplateFieldCandidate = {
+  field: string;
+  paragraph_id: number;
+  start: number;
+  end: number;
+  confidence: number;
+  preview: string;
+};
+
 export type TemplateAnalyzeResponse = {
   source_sha256: string;
   paragraphs: TemplateParagraph[];
   sections: TemplateSection[];
+  field_candidates: TemplateFieldCandidate[];
   suggested_profile: Record<string, unknown> | null;
   issues: TemplateIssue[];
   ready: boolean;
 };
+
+/** A heading kind the wizard's remap step can assign, or `null` for "not a section". */
+export type TemplateHeadingKind = "experience" | "education" | "projects" | "skills" | "list" | null;
 
 /** A workspace's own additions and removals, layered on top of its enabled packs. */
 export type LibraryOverrides = {
@@ -536,6 +553,34 @@ export function fetchMasterResume(): Promise<Record<string, unknown>> {
   return request("/api/master-resume");
 }
 
+export type MasterResumeImportResponse = {
+  resume: Record<string, unknown>;
+  warnings: string[];
+  untagged_bullet_count: number;
+};
+
+/**
+ * Parse an uploaded .docx into a `MasterResume` draft — content, not just layout.
+ * Writes nothing; the caller loads the result as unsaved editor state and saves
+ * through `saveMasterResume` when ready. `suggestTags` additionally runs an opt-in LLM
+ * pass for whatever the deterministic import left untagged.
+ */
+export async function importMasterResumeContent(
+  file: File,
+  options?: { suggestTags?: boolean },
+): Promise<MasterResumeImportResponse> {
+  const form = new FormData();
+  form.append("file", file);
+  if (options?.suggestTags) {
+    form.append("suggest_tags", "true");
+  }
+  const res = await fetch("/api/master-resume/import", { method: "POST", body: form });
+  if (!res.ok) {
+    throw new Error(await templateErrorDetail(res));
+  }
+  return res.json() as Promise<MasterResumeImportResponse>;
+}
+
 export function saveMasterResume(body: Record<string, unknown>): Promise<ValidateResponse> {
   /** Validate and persist the master resume (with a backup of the previous file). */
   return request("/api/master-resume", { method: "PUT", body: JSON.stringify(body) });
@@ -642,24 +687,78 @@ export async function analyzeTemplate(file: File): Promise<TemplateAnalyzeRespon
 }
 
 /**
+ * Re-analyze a previously uploaded baseline with specific headings' kinds forced by
+ * the user. `overrides` maps a heading paragraph id to a confirmed kind, or `null` to
+ * say "this is not a section" — a real server round trip, since reassigning one
+ * heading can change entry splitting, field reconciliation, and date detection for
+ * the rest of the document, not just that one row.
+ */
+export async function remapTemplateHeadings(
+  sourceSha256: string,
+  overrides: Record<number, TemplateHeadingKind>,
+): Promise<TemplateAnalyzeResponse> {
+  return request<TemplateAnalyzeResponse>("/api/template/analyze/remap", {
+    method: "POST",
+    body: JSON.stringify({ source_sha256: sourceSha256, overrides }),
+  });
+}
+
+/**
+ * Fetch a PDF of the uploaded (not-yet-installed) baseline, for the wizard's
+ * side-by-side comparison. Returns an object URL the caller must revoke when done.
+ */
+export async function fetchTemplateSourcePreview(sourceSha256: string): Promise<string> {
+  const res = await fetch("/api/template/preview/source", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ source_sha256: sourceSha256, overrides: {} }),
+  });
+  if (!res.ok) {
+    throw new Error(await templateErrorDetail(res));
+  }
+  const blob = await res.blob();
+  return URL.createObjectURL(blob);
+}
+
+/**
+ * Fetch a PDF of the master resume rendered through a staged (not-yet-installed)
+ * profile — what installing this exact mapping would produce. Returns an object URL
+ * the caller must revoke when done.
+ */
+export async function fetchTemplateDraftPreview(
+  sourceSha256: string,
+  profile: Record<string, unknown>,
+): Promise<string> {
+  const res = await fetch("/api/template/preview/draft", {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ source_sha256: sourceSha256, profile }),
+  });
+  if (!res.ok) {
+    throw new Error(await templateErrorDetail(res));
+  }
+  const blob = await res.blob();
+  return URL.createObjectURL(blob);
+}
+
+/**
  * Upload a baseline export and rebuild the tagged template.
  *
- * When `profile` is provided it is sent as a multipart JSON field so the server can
- * run the span-aware builder. Omit it for the legacy hard-coded heading path.
+ * `profile` is required — the server has no hard-coded-heading fallback (retired
+ * along with the rest of the legacy build path); confirm one via `analyzeTemplate`
+ * (and optionally `remapTemplateHeadings`) first.
  *
  * Uses a bare fetch with FormData — do not set Content-Type, or the browser cannot
  * attach the multipart boundary that FastAPI/python-multipart expects.
  */
 export async function uploadTemplate(
   file: File,
-  profile?: Record<string, unknown> | null,
+  profile: Record<string, unknown>,
   options?: { calibrate?: boolean; label?: string },
 ): Promise<TemplateBuildResponse> {
   const form = new FormData();
   form.append("file", file);
-  if (profile) {
-    form.append("profile", JSON.stringify(profile));
-  }
+  form.append("profile", JSON.stringify(profile));
   if (options?.calibrate) {
     form.append("calibrate", "true");
   }

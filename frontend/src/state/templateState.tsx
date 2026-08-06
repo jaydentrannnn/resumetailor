@@ -10,6 +10,7 @@ import {
 import {
   type TemplateAnalyzeResponse,
   type TemplateBuildResponse,
+  type TemplateHeadingKind,
   type TemplateInfo,
   type TemplateLibraryEntry,
   activateTemplateLibrary,
@@ -17,6 +18,7 @@ import {
   deleteTemplateLibrary,
   fetchTemplateInfo,
   fetchTemplateLibrary,
+  remapTemplateHeadings,
   renameTemplateLibrary,
   uploadTemplate,
 } from "../api";
@@ -42,6 +44,11 @@ type TemplateStateValue = {
   draftFile: File | null;
   analysis: TemplateAnalyzeResponse | null;
   profileDraft: Record<string, unknown> | null;
+  /** Accumulated user-confirmed heading reassignments, keyed by paragraph id, sent
+   * with every remap call so a second override never loses the first. */
+  headingOverrides: Record<number, TemplateHeadingKind>;
+  remapBusy: boolean;
+  remapHeading: (paragraphId: number, kind: TemplateHeadingKind) => Promise<void>;
   /** When true, install also measures fit constants (Word/LibreOffice; slower). */
   calibrateAlso: boolean;
   setCalibrateAlso: (value: boolean) => void;
@@ -55,10 +62,8 @@ type TemplateStateValue = {
   refreshLibrary: () => Promise<void>;
   beginAnalyze: (file: File) => Promise<void>;
   setProfileDraft: (profile: Record<string, unknown> | null) => void;
-  confirmInstall: () => Promise<void>;
+  confirmInstall: () => Promise<boolean>;
   resetWizard: () => void;
-  /** Legacy one-shot upload without a profile (hard-coded headings). */
-  uploadLegacy: (file: File) => Promise<void>;
   activateLibraryEntry: (id: string) => Promise<void>;
   renameLibraryEntry: (id: string, label: string) => Promise<void>;
   deleteLibraryEntry: (id: string) => Promise<void>;
@@ -92,6 +97,10 @@ export function TemplateProvider({ children }: { children: ReactNode }) {
   const [profileDraft, setProfileDraft] = useState<Record<string, unknown> | null>(
     null,
   );
+  const [headingOverrides, setHeadingOverrides] = useState<
+    Record<number, TemplateHeadingKind>
+  >({});
+  const [remapBusy, setRemapBusy] = useState(false);
   const [calibrateAlso, setCalibrateAlso] = useState(true);
   const [installLabel, setInstallLabel] = useState("");
   const [library, setLibrary] = useState<TemplateLibraryEntry[]>([]);
@@ -139,6 +148,7 @@ export function TemplateProvider({ children }: { children: ReactNode }) {
     setDraftFile(null);
     setAnalysis(null);
     setProfileDraft(null);
+    setHeadingOverrides({});
     setInstallLabel("");
     setError(null);
     setBuildLog(null);
@@ -156,6 +166,7 @@ export function TemplateProvider({ children }: { children: ReactNode }) {
     setWizardStep("analyzing");
     setAnalysis(null);
     setProfileDraft(null);
+    setHeadingOverrides({});
     try {
       const result = await analyzeTemplate(file);
       setAnalysis(result);
@@ -170,12 +181,37 @@ export function TemplateProvider({ children }: { children: ReactNode }) {
     }
   }, []);
 
-  const confirmInstall = useCallback(async () => {
-    /** Install the retained File with the confirmed profile draft. */
+  const remapHeading = useCallback(
+    async (paragraphId: number, kind: TemplateHeadingKind) => {
+      /** Confirm/reassign one heading's kind; a real server round trip since it can
+       * change entry splitting, field reconciliation, and date detection elsewhere. */
+      if (!analysis) return;
+      const nextOverrides = { ...headingOverrides, [paragraphId]: kind };
+      setRemapBusy(true);
+      setError(null);
+      try {
+        const result = await remapTemplateHeadings(analysis.source_sha256, nextOverrides);
+        setHeadingOverrides(nextOverrides);
+        setAnalysis(result);
+        setProfileDraft(result.suggested_profile);
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setRemapBusy(false);
+      }
+    },
+    [analysis, headingOverrides],
+  );
+
+  const confirmInstall = useCallback(async (): Promise<boolean> => {
+    /** Install the retained File with the confirmed profile draft. Returns whether
+     * the install succeeded, so a caller chaining a follow-up action (e.g. "also
+     * import content") never has to read back a state variable that a stale closure
+     * or React's batching could make out of date. */
     if (!draftFile || !profileDraft) {
       setError("Choose a file and confirm the mapping before installing.");
       setWizardStep("error");
-      return;
+      return false;
     }
     setUploading(true);
     setError(null);
@@ -198,52 +234,18 @@ export function TemplateProvider({ children }: { children: ReactNode }) {
       await refreshLibrary();
       setPreviewKey((k) => k + 1);
       setWizardStep("done");
+      return true;
     } catch (err) {
       const message = err instanceof Error ? err.message : String(err);
       setError(message);
       setBuildLog(message);
       setLastBuildOk(false);
       setWizardStep("error");
+      return false;
     } finally {
       setUploading(false);
     }
   }, [draftFile, profileDraft, calibrateAlso, installLabel, refresh, refreshLibrary]);
-
-  const uploadLegacy = useCallback(
-    async (file: File) => {
-      /** One-shot legacy install without a profile (exact all-caps headings). */
-      setUploading(true);
-      setError(null);
-      setBuildLog(null);
-      setLastBuildOk(null);
-      setWizardStep("installing");
-      try {
-        const result: TemplateBuildResponse = await uploadTemplate(file, null, {
-          calibrate: calibrateAlso,
-          label: installLabel.trim() || labelFromFilename(file.name),
-        });
-        setBuildLog(result.log || null);
-        setLastBuildOk(true);
-        if (result.info) {
-          setInfo(result.info);
-        } else {
-          await refresh();
-        }
-        await refreshLibrary();
-        setPreviewKey((k) => k + 1);
-        setWizardStep("done");
-      } catch (err) {
-        const message = err instanceof Error ? err.message : String(err);
-        setError(message);
-        setBuildLog(message);
-        setLastBuildOk(false);
-        setWizardStep("error");
-      } finally {
-        setUploading(false);
-      }
-    },
-    [calibrateAlso, installLabel, refresh, refreshLibrary],
-  );
 
   const activateLibraryEntry = useCallback(
     async (id: string) => {
@@ -321,6 +323,9 @@ export function TemplateProvider({ children }: { children: ReactNode }) {
       draftFile,
       analysis,
       profileDraft,
+      headingOverrides,
+      remapBusy,
+      remapHeading,
       calibrateAlso,
       setCalibrateAlso,
       installLabel,
@@ -334,7 +339,6 @@ export function TemplateProvider({ children }: { children: ReactNode }) {
       setProfileDraft,
       confirmInstall,
       resetWizard,
-      uploadLegacy,
       activateLibraryEntry,
       renameLibraryEntry,
       deleteLibraryEntry,
@@ -351,6 +355,9 @@ export function TemplateProvider({ children }: { children: ReactNode }) {
       draftFile,
       analysis,
       profileDraft,
+      headingOverrides,
+      remapBusy,
+      remapHeading,
       calibrateAlso,
       installLabel,
       library,
@@ -361,7 +368,6 @@ export function TemplateProvider({ children }: { children: ReactNode }) {
       beginAnalyze,
       confirmInstall,
       resetWizard,
-      uploadLegacy,
       activateLibraryEntry,
       renameLibraryEntry,
       deleteLibraryEntry,

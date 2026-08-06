@@ -8,6 +8,7 @@ ever shown to the model.
 from __future__ import annotations
 
 import io
+import re
 import zipfile
 from datetime import datetime
 from pathlib import Path
@@ -145,6 +146,47 @@ def format_month(value: str) -> str:
 def format_range(start: str, end: str) -> str:
     """Format a start/end pair as `Mon YYYY - Mon YYYY` (or free text)."""
     return f"{format_month(start)} - {format_month(end)}"
+
+
+_MONTH_ABBR = {
+    "jan": 1, "feb": 2, "mar": 3, "apr": 4, "may": 5, "jun": 6,
+    "jul": 7, "aug": 8, "sep": 9, "oct": 10, "nov": 11, "dec": 12,
+}  # fmt: skip
+
+_MONTH_YEAR_RE = re.compile(r"^([A-Za-z]{3,9})\.?\s+(\d{4})$")
+
+
+def parse_month(text: str) -> str:
+    """Inverse of `format_month`: `"Jan 2023"` -> `"2023-01"`.
+
+    Anything that doesn't match a recognizable "Mon YYYY" shape (a bare year, "Present",
+    free text) is passed through verbatim, unchanged — `format_month` already tolerates
+    exactly this for the same reason: the master file is meant to hold whatever a human
+    wrote on their resume, not force every date into a strict machine format.
+    """
+    stripped = text.strip()
+    m = _MONTH_YEAR_RE.match(stripped)
+    if not m:
+        return stripped
+    month = _MONTH_ABBR.get(m.group(1)[:3].lower())
+    if month is None:
+        return stripped
+    return f"{m.group(2)}-{month:02d}"
+
+
+def parse_range(text: str) -> tuple[str, str]:
+    """Inverse of `format_range`: `"Jan 2023 - Present"` -> `("2023-01", "Present")`.
+
+    Splits on the first dash-like separator only, so a free-text date that itself
+    contains a hyphen (rare, but the master file does not forbid it) still yields a
+    usable `end`. No separator at all puts the whole text in `start` and leaves `end`
+    blank, rather than raising — an importer's job is to produce a *draft* the user
+    reviews, not to reject a document for one odd date line.
+    """
+    parts = re.split(r"\s*[-–—]\s*", text.strip(), maxsplit=1)
+    if len(parts) == 2:
+        return parse_month(parts[0]), parse_month(parts[1])
+    return parse_month(parts[0]), ""
 
 
 def _degree_line(edu) -> str:
@@ -400,6 +442,7 @@ def render(
     out: Path | None = None,
     include_project_links: bool = True,
     contact_fields: list[ContactField] | None = None,
+    layout: dict | None = None,
 ) -> Path:
     """Build the context and render it to a .docx.
 
@@ -412,6 +455,12 @@ def render(
 
     `contact_fields`, when set, overrides the active template profile's contact field
     order/inclusion — see `build_context`.
+
+    `layout`, when set, overrides `build_context`'s default `active_layout()` disk
+    read — see there. Needed whenever the template being rendered is not (or not yet)
+    the one installed at `config.TEMPLATE_PROFILE_PATH`: a staged install verifying
+    itself before commit, or a wizard preview of a profile that was never installed at
+    all, would otherwise silently render against whatever profile happens to be live.
     """
     template = template or config.DEFAULT_TEMPLATE_PATH
     if not template.exists():
@@ -426,6 +475,7 @@ def render(
         bullets=bullets,
         include_project_links=include_project_links,
         contact_fields=contact_fields,
+        layout=layout,
     )
 
     # autoescape is required, not optional. Without it a literal "&" in the content
