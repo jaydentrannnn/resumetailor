@@ -40,7 +40,6 @@ from resume_tailor import (
 )
 from resume_tailor.data import MasterResume
 from resume_tailor.events import ProgressEvent
-from resume_tailor.llm import LLMError
 from resume_tailor.template_profile import active_layout, TemplateProfile
 from resume_tailor.web import template_ops
 from resume_tailor.web.jobs import get_queue
@@ -62,6 +61,7 @@ from resume_tailor.web.schemas import (
     LibrarySelectionRequest,
     LibraryStateResponse,
     MasterResumeImportResponse,
+    MasterResumeMergeResponse,
     ProgressEventOut,
     ProposalApproveRequest,
     ProposalGenerateRequest,
@@ -539,14 +539,34 @@ def get_master_resume() -> dict[str, Any]:
     return resume.model_dump(by_alias=True)
 
 
-def _backup_master_resume(path: Path) -> None:
-    """Copy `path` to a timestamped `.bak.json` sibling if it exists. Shared by
-    `put_master_resume` (every save) and `approve_library_proposals` (only when
-    approving would rewrite an existing tag) so both use the identical naming."""
-    if path.exists():
-        stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-        backup = path.with_suffix(f".{stamp}.bak.json")
-        backup.write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
+def _backup_master_resume(path: Path) -> Path | None:
+    """Copy `path` to a timestamped `.bak.json` sibling if it exists, returning that
+    backup's path (`None` if there was nothing to back up). Shared by
+    `_write_master_resume` (`put_master_resume`/`merge_master_resume`, every save) and
+    `approve_library_proposals` (only when approving would rewrite an existing tag) so
+    all three use the identical naming."""
+    if not path.exists():
+        return None
+    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    backup = path.with_suffix(f".{stamp}.bak.json")
+    backup.write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
+    return backup
+
+
+def _write_master_resume(resume: MasterResume) -> Path | None:
+    """Back up the previous file (if any) and write `resume` to
+    `config.MASTER_RESUME_PATH`, returning the backup's path. Shared by
+    `put_master_resume` and `merge_master_resume` so the write+backup path is defined
+    once."""
+    path = config.MASTER_RESUME_PATH
+    path.parent.mkdir(parents=True, exist_ok=True)
+    backup = _backup_master_resume(path)
+
+    # Round-trip through the model so tags are canonicalised and unknown keys stripped
+    # before anything hits disk — same guarantees `data.load` enforces on the way in.
+    payload = resume.model_dump(by_alias=True)
+    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    return backup
 
 
 @app.put("/api/master-resume")
@@ -560,14 +580,7 @@ def put_master_resume(body: dict[str, Any]) -> ValidateResponse:
             errors=[f"{'.'.join(str(p) for p in e['loc'])}: {e['msg']}" for e in exc.errors()],
         )
 
-    path = config.MASTER_RESUME_PATH
-    path.parent.mkdir(parents=True, exist_ok=True)
-    _backup_master_resume(path)
-
-    # Round-trip through the model so tags are canonicalised and unknown keys stripped
-    # before anything hits disk — same guarantees `data.load` enforces on the way in.
-    payload = resume.model_dump(by_alias=True)
-    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    _write_master_resume(resume)
 
     bullets = resume.all_bullets()
     tags = sorted({t for b in bullets for t in b.tags})
@@ -622,7 +635,9 @@ async def import_master_resume(
     `suggest_tags` (truthy: `1`/`true`/`yes`) additionally runs `propose.
     propose_bullet_tags` for whatever the deterministic pass left untagged — an LLM
     call that must never fail the import itself, so a failure there is appended to
-    `warnings` instead of raised.
+    `warnings` instead of raised. Not a tailoring job, so it never touches `config._ACTIVE`
+    (which only a running job resolves); it is pinned to `config.ONE_OFF_PROFILE`
+    (`config.pinned`) instead, so it never falls through to `backend_for`'s claude default.
     """
     raw = await file.read()
     filename = file.filename or "upload.docx"
@@ -659,10 +674,16 @@ async def import_master_resume(
             i for i, b in enumerate(all_bullets) if b.tags == [resume_import.UNTAGGED]
         ]
         try:
-            suggestions = propose.propose_bullet_tags(
-                [all_bullets[i].text for i in untagged_indices], sorted(known_tags)
-            )
-        except (LLMError, RuntimeError) as exc:
+            with config.pinned(config.ONE_OFF_PROFILE):
+                suggestions = propose.propose_bullet_tags(
+                    [all_bullets[i].text for i in untagged_indices], sorted(known_tags)
+                )
+        except Exception as exc:
+            # Broad on purpose: this is a convenience pass over a deterministic import
+            # that must always succeed on its own. Backend SDK errors (e.g.
+            # `anthropic.BadRequestError`) are neither `LLMError` nor `RuntimeError`, so a
+            # narrower catch here previously let them escape as a 500 despite this
+            # function's own contract.
             imported.warnings.append(f"Tag suggestion pass failed: {exc}")
         else:
             for local_i, global_i in enumerate(untagged_indices):
@@ -678,6 +699,45 @@ async def import_master_resume(
         resume=imported.resume.model_dump(by_alias=True),
         warnings=imported.warnings,
         untagged_bullet_count=imported.untagged_bullet_count,
+    )
+
+
+@app.post("/api/master-resume/merge", response_model=MasterResumeMergeResponse)
+def merge_master_resume(body: dict[str, Any]) -> MasterResumeMergeResponse:
+    """Fold an already-parsed draft (typically the `.resume` from `POST
+    /api/master-resume/import`) into the current master resume and save the result.
+
+    Unlike `PUT`, entries/sections in the current resume with no counterpart in `body`
+    are left untouched rather than replaced — see `resume_import.merge_into` for the
+    matching rules. A workspace with no master resume yet merges against an empty one
+    (contact seeded from `body`), the same tolerance `import_master_resume` already
+    applies to `data.load()` failing.
+    """
+    try:
+        incoming = MasterResume.model_validate(body)
+    except ValidationError as exc:
+        raise HTTPException(
+            status_code=400,
+            detail="; ".join(
+                f"{'.'.join(str(p) for p in e['loc'])}: {e['msg']}" for e in exc.errors()
+            ),
+        ) from exc
+
+    try:
+        existing = data.load()
+    except (FileNotFoundError, ValueError):
+        existing = MasterResume(contact=incoming.contact, sections=[])
+
+    merged, stats = resume_import.merge_into(existing, incoming)
+    backup = _write_master_resume(merged)
+
+    return MasterResumeMergeResponse(
+        resume=merged.model_dump(by_alias=True),
+        updated=stats.updated,
+        added=stats.added,
+        added_sections=stats.added_sections,
+        warnings=stats.warnings,
+        backup=backup.name if backup else None,
     )
 
 
@@ -1100,7 +1160,10 @@ def generate_library_proposals(body: ProposalGenerateRequest) -> LibraryStateRes
         try:
             requirements = jd.extract(jd_text, known_tags=known_tags)
             unmatched = propose.near_miss_alias_candidates(requirements, resume)
-        except (LLMError, RuntimeError, ValueError) as exc:
+        except Exception as exc:
+            # Broad on purpose — see the matching comment on the import route's tag
+            # pass: a raw backend SDK error (not `LLMError`/`RuntimeError`) must still
+            # come back as a warning, not a 500.
             return _library_state_response(
                 warning=f"Could not read the pasted job description: {exc}"
             )
@@ -1119,7 +1182,7 @@ def generate_library_proposals(body: ProposalGenerateRequest) -> LibraryStateRes
                 families=effective.verb_families,
                 jd_text=jd_text,
             )
-        except (LLMError, RuntimeError) as exc:
+        except Exception as exc:
             return _library_state_response(warning=f"Could not draft suggestions: {exc}")
 
         rejected = libraries.read_workspace_state().rejected

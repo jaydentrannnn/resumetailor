@@ -1923,3 +1923,338 @@ required or made safe to finally do.
   analyze → build → `verify_tagged` → `verify_roundtrip` pass came back clean for both.
   Full backend suite: 649 passed, 1 deselected. Frontend: `tsc -b`, `oxlint`,
   `vitest run`, `vite build` all clean.
+
+## 2026-08-07 - Table-layout resumes: `layout="table"`, a whole new physical shape the pipeline never had
+
+**Trigger:** `Nina Dao - aug.docx` (a newer export of the same person the `nina`
+workspace above is named after — same content shape, entirely different physical
+layout) couldn't be parsed at all. `template_analyze` blocked on a blanket
+`code="tables"` issue the moment it saw a `w:tbl` in the body; nothing downstream ever
+ran. Root cause: the whole document's content lives inside one 20-row×4-col table used
+purely as an invisible layout grid (no borders, no fill) to right-align
+location/dates without tab stops — a legitimate, common Word/Google Docs export shape
+this codebase had never supported. Full design writeup lives in the approved plan; this
+entry is what actually shipped and what surprised me building it.
+
+- **One flattened id space, shared by construction.** `docx_text.iter_document_paragraphs(doc)`
+  is now THE only place a paragraph id is minted — depth-first: body children in order,
+  descending into a `w:tbl` as rows → *physical* cells (`tc` children, not
+  `Row.cells`, which python-docx expands over `gridSpan` and would silently double-count
+  a merged cell) → paragraphs. `template_analyze._load_paras` and
+  `template_build._para_by_id` both call it, which is what keeps `CharSpan.paragraph_id`
+  meaning the same thing on both sides of the analyze/build boundary — the single
+  invariant the whole template system rests on. `_para_by_id` stays a *recomputed* walk,
+  never cached, for the same reason the existing "descending heading id" build order
+  exists: a mid-build paragraph insertion (education's degree/detail-share-one-paragraph
+  fallback) shifts every later id, and a cached list would silently resolve to the wrong
+  paragraph the moment that happens.
+- **`_has_tab_like` generalizes `has_tab` for one specific, load-bearing reason:** in a
+  table layout a section heading always sits alone in its row (one populated cell); an
+  entry header (company | location, degree | dates) always shares its row with a second
+  populated cell. That's exactly the structural role a literal tab plays in a
+  paragraph-layout resume ("Company | Location\tDates"), so every heading-detection gate
+  that used to check `p.has_tab` now checks `_has_tab_like(p)` instead (row-based when
+  `p.location` is set, literal-tab-based otherwise — a no-op for every existing
+  paragraph-layout document, confirmed by the full suite passing byte-identically before
+  any table-specific code was added).
+- **Two surprises the real document produced that a synthetic fixture wouldn't have:**
+  (1) the flattened id space doesn't start at the table — this document's body is
+  `p, tbl, p, sectPr` (two empty body paragraphs bracket the table), so the name lands
+  at paragraph id 1, not 0. `resume_import._import_contact`'s old `paras[0]`/`paras[1]`
+  convention would have silently imported an empty name. (2) `_classify_heading`'s
+  lowercase-substring heuristic tier matches `"skills"` against `"technologies"` —
+  meaning the row-19 label `"Skills:"` (a value cell in a label/value skills grid) reads
+  as a heading candidate on text alone. Neither bug is table-specific in origin; both
+  were just never reachable before because the paragraph-layout gates that would catch
+  them (`p.has_tab`, `_immediately_follows_entry_header`) happened to also catch these
+  cases by coincidence. Fixed by generalizing the position-based gates (`_has_tab_like`)
+  rather than special-casing the heuristic keyword collision.
+- **Linear-vs-sidebar classification is not width- or majority-based.** Tried "row is
+  majority full-width" first — fails on this exact document (12 of 20 rows are
+  entry-header rows, i.e. two-cell, against 8 full-width ones). Tried "cell 0 is the
+  widest cell" next — fails on the skills row, where the label cell (1509 twips) is
+  narrower than the value cell (8859 twips). What actually holds for "used only as an
+  invisible layout grid": no row has 3+ populated cells, no bullet or heading ever sits
+  outside cell 0, nothing is vertically merged. `classify_table_layout` blocks on the
+  first violation of those, in a fixed order, each with a message naming the offending
+  row.
+- **Contact block gets a new optional `ContactMapping.slots: list[ContactSlot]`**
+  (`paragraph_id`/`fields`/`separator` per slot) rather than trying to force a
+  multi-paragraph, multi-cell contact block through the existing single-paragraph
+  joined-line `ContactMapping`. Empty `slots` (every profile before this field existed,
+  and any ordinary single-paragraph contact block, table layout or not) is byte-identical
+  to today. A street-address line with no recognizable field
+  (`_contact_fields_present` returns nothing for it) is left as a template literal with a
+  non-blocking `contact_unmapped_paragraph` warning — deliberately not guessed at, since
+  `data.Contact` has no address field and inventing one to swallow a single document's
+  shape isn't worth the ripple through the editor/API schema/import path.
+- **Row-level repetition needs its own marker rows — paragraph-level `{%p for %}`
+  doesn't survive inside a table row.** Verified by reading `docxtpl` 0.20.2's
+  `DocxTemplate.patch_xml` source rather than assuming: the `tr`-tag pass (processed
+  *before* the `p`-tag pass) replaces the **entire** `<w:tr>` containing a `{%tr %}` tag
+  with the bare Jinja text — the row is consumed, not repeated. So every row-level
+  `for`/`if`/`endfor`/`endif` gets its own disposable one-cell marker row
+  (`template_build._marker_row`), and the rows meant to actually repeat sit between an
+  open marker and a close marker. This is exactly a well-formed-XML-but-wrong trap (the
+  intermediate tagged template opens fine in Word, looks structurally plausible, and
+  silently produces nothing at render time), so it's now also in CLAUDE.md's
+  "Non-obvious gotchas".
+- **The one real bug found only by rendering to PDF and looking at it, not by any of the
+  structural checks:** `template_build.build_contact_profile` correctly tagged
+  `contact_slot_0`/`_1`/`_2` into the built template, `verify_tagged` and
+  `verify_roundtrip` both came back clean — but the actual rendered PDF showed the name
+  and street address only, with email/phone/city-state blank. `render.build_context`
+  had never been taught to *supply* `contact_slot_<i>` context keys at all; Jinja's
+  default-undefined behavior for a missing RichText key renders empty rather than
+  erroring, so nothing caught it structurally. `verify_roundtrip` didn't catch it either
+  because its own field checks only ever asserted against `profile.experience`/
+  `profile.education`/`profile.projects`, never against contact fields. Fixed in
+  `render.build_context` (loop over `layout["contact_slots"]`, build one
+  `_contact_richtext` per slot, intersected with any `--contact-fields` override). Left
+  as a documented gap rather than adding a new automated check for it in this session:
+  a real visual/PDF diff of contact-block rendering would need calibration-style
+  tooling `template_verify.py` doesn't have yet.
+- **A cell holding several repeatable items (three stacked bullets, three skill-group
+  labels) needs everything but the FIRST stripped after wrapping it in a loop** — the
+  chosen prototype is always the first of its kind (`bullet_paragraph_id`/
+  `detail_paragraph_id`/a skills `label_span.paragraph_id` all name the first occurrence,
+  an existing convention, not something new here), but the row gets cloned once as the
+  loop's per-iteration template, so an untouched second/third sibling would render
+  verbatim on *every* entry instead of being replaced by however many the loop actually
+  produces. `_wrap_cell_loop` now removes every paragraph *after* the wrapped one within
+  its own cell (never before — that's fixed content, e.g. a school/degree line the
+  education fallback's synthetic single-paragraph detail clone sits after). Caught by
+  rendering the actual built template and finding "Led outreach..."/"Represented the
+  company..." duplicated verbatim beside the `{%p for bullet %}` loop in a bullet cell
+  that should have held only the loop.
+- **Verified against the actual driving document end to end, including a visual PDF
+  diff against the original**, not just the structural checks: analyze → import →
+  build → `verify_tagged` (0 issues) → `verify_roundtrip` (0 issues) → render →
+  Word-COM PDF conversion, side by side against the original document's own PDF. Same
+  table grid, same right-aligned dates, same header rule, same bullet formatting;
+  the tailored render is one page where the original slightly overflows to a second
+  (the redistributed bullets are marginally shorter). `fit.estimate_lines` runs
+  unmodified against a table-layout profile and returns a plausible count — confirms
+  the plan's prediction that `fit.py` needs no logic change, only a correct `layout`
+  dict, which it already gets from `template_profile.active_layout`.
+- **Deferred, not shipped this session:** the frontend wizard's `SectionMapStep`
+  doesn't yet show a `layout="table"` badge or list contact slots read-only (currently
+  falls through to the generic-mode UI, which is not wrong, just silent about the
+  extra structure). `POST /api/template/preview/draft` and `POST /api/template` were
+  not smoke-tested through the actual FastAPI routes in this session — only the
+  underlying `analyze_docx`/`build_from_profile`/`import_from_analysis`/`render.render`
+  functions were exercised directly. Full backend suite: 666 passed, 1 deselected
+  (started at 649; net +17 covering the flattened walk, table classification, and the
+  build/import/verify round trip on a synthetic fixture reproducing the driving
+  document's exact row shapes).
+
+## 2026-08-07 - Wizard field-detection rows were kind-wide, not section-wide: false "not detected" on every second same-kind section
+
+- **What:** Uploading `Nina Dao - aug.docx` (the `layout="table"` driving document
+  above) through the Template wizard showed LEADERSHIP's company/dates as red
+  "not detected" rows, even though the section installs and renders correctly. Root
+  cause was general, not table-specific: `_analyze_document` only ever emitted
+  `FieldCandidate`s for one *pooled* prototype entry per **kind** (`combined_body[kind]`,
+  spanning every same-kind section), while `AnalyzeReport.tsx` attributed candidates to
+  a section by checking whether `paragraph_id` fell inside that section's own
+  `[body_start, body_end)` range. A candidate from a different same-kind section's
+  prototype never falls in that range, so the second (and any later) same-kind section
+  always read as undetected — confirmed on the legacy paragraph-layout `nina` export
+  too (`INTERNSHIPS & PROGRAMS`/`OTHER ACTIVITIES` both showed the same false red rows),
+  so this predates table-layout support entirely and was just never visible until a
+  document with more than one same-kind section got run through the wizard.
+- **Why:** The *installed* mapping is correctly kind-wide by design — one prototype
+  entry per kind is what `template_build` actually clones. But the wizard's display is
+  per-section, so display and install need different scopes; conflating them was the
+  bug. Fix: `_section_field_candidates(paras, sections, ..., pick=...)` (new,
+  `template_analyze.py`) loops every same-kind `SectionCandidate`, splits its own body
+  into entries, reconciles *that section's own* field presence rate via the existing
+  `_reconcile_header_fields`, and picks its own prototype with the same tie-break the
+  kind-wide code already used (`_exp_score`/`_edu_score`/`_proj_score`, hoisted from
+  inline closures/lambdas to module level so both the install site and the display
+  helper share one definition each). Every `FieldCandidate` now carries
+  `section_heading_paragraph_id`, and the frontend filter prefers that explicit
+  attribution over the old range-based inference (kept as a fallback for a candidate
+  that somehow carries no section id, which none now do).
+- **Impact:** `FieldCandidate`/`TemplateFieldCandidateOut` gained the new field —
+  additive, so nothing that constructed one before breaks. Bonus fix caught while
+  hoisting the projects tie-break: the *installed* Projects prototype's header was
+  still being resolved via the plain-text-only `_header_fields_from_text`, bypassing
+  the cross-cell dispatcher (`_entry_header_fields`) that experience/education already
+  routed through — a table-layout resume with a Projects section would have
+  reconciled dates fine and then silently lost them on the actual installed mapping.
+  Swapped to `_entry_header_fields(proto, ..., exclude_after=exclude_after)`; falls
+  through to the old text path when the row has no second populated cell, so
+  paragraph-layout behavior is unchanged. Verified end to end through the actual
+  `POST /api/template/analyze` route (FastAPI `TestClient`, not just the underlying
+  function) against both `Nina Dao - aug.docx` and the legacy `nina` export — no
+  section shows a false "not detected" row on either anymore, and the build/render
+  smoke path (analyze → `build_from_profile` → `verify_tagged` → `render.render`) still
+  produces a clean, fully-populated document. Backend suite: 671 passed (was 666), 1
+  deselected; frontend `tsc -b` and `vitest run` clean (oxlint itself couldn't run in
+  this session — a local Windows Application Control policy blocks its native binding,
+  unrelated to this change).
+
+## 2026-08-07 - Calibration's anchor check hardcoded one person's resume; replaced with a per-workspace recorded baseline
+
+- **What:** Calibrating the `nina` workspace in Docker printed
+  `warning: anchor check failed (full master resume (39 bullets) rendered to 2 page(s),
+  expected 3)`. Not a rendering bug: `nina`'s master resume has 25 bullets, not 39;
+  "39 bullets" and "expected 3" were string/int literals in `calibrate.py` describing
+  the owner's own `default` workspace (57 bullets today — even that number was already
+  stale), and the 13-bullet subset check keyed on hardcoded ids (`aol_b1`, `vnpt_b1`,
+  …) that exist in exactly one resume. `verify_known_anchors()` loaded whichever
+  resume the *active* workspace's rebound `config.MASTER_RESUME_PATH` pointed at and
+  compared it to those fixed numbers — it could never pass for any workspace but the
+  one it was written against. The module's own docstring already called this out as
+  "owner-specific"; it just had no alternative until now. Calibration itself was fine:
+  `CHARS_PER_LINE=110`/`LINES_PER_PAGE=52` were both in-band and the resume-independent
+  boundary check passed — 25 bullets landing on 2 pages is simply correct.
+- **Why:** The anchor step's actual value is catching "the constants came out
+  plausible but the render changed underneath" — a real regression signal, just aimed
+  at the wrong target (one fixed resume) instead of the right one (whatever resume
+  this workspace actually has).
+- **Impact:** `calibrate.measure_anchors(resume)` renders the full resume and a
+  scale-free half-size subset (`resume.all_bullets()[: len // 2]`, not fixed ids) and
+  returns page counts plus two fingerprints — `resume_sha256` (content hash of the
+  whole resume) and `template_sha256` (content hash of the tagged template, since
+  `write_calibration`'s existing `template` field is only a filename and can't tell a
+  *rebuilt* template from the one a baseline was measured against). `check_render_
+  anchors(measured, previous, rebaseline)` is a pure decision function (no rendering,
+  unit-tested without a renderer) over that block and whatever was last recorded in
+  the calibration file's new `anchors` key: no previous baseline, or either
+  fingerprint changed → adopt `measured` silently (an ordinary resume edit or
+  template rebuild is not drift); fingerprints match and counts match → `anchor checks
+  OK`; fingerprints match but a count differs → real drift, a warning, and the *old*
+  baseline is kept on disk rather than silently overwritten. `scripts/calibrate.py
+  --rebaseline` is the deliberate acknowledgement that adopts the new measurement
+  anyway. `write_calibration`'s new `anchors` param is optional and additive — a file
+  written without it (or read by old code) is byte-identical to before this change,
+  confirmed with a direct test that `config._load_calibration` (which only ever reads
+  `chars_per_line`/`lines_per_page`) is unaffected by the new key. `run()` now also
+  preserves whatever baseline was already on disk when the anchor step is skipped
+  (`verify_anchors=False`) or itself fails to render — it never had a reason to erase
+  a recorded baseline on its own, and previously it silently would have (writing no
+  anchors block at all). Verified directly against the real file from the bug report:
+  `data/workspaces/nina/calibration/soffice.json` has no `anchors` key yet, so
+  `_load_previous_anchors` returns `None` and the next real run lands on "baseline
+  recorded", never the old hardcoded warning. Backend suite: 689 passed (was 671), 1
+  deselected — 18 new tests in `tests/test_calibrate.py`, all against
+  `check_render_anchors`/`measure_anchors`/`write_calibration`/`_load_previous_anchors`
+  directly, no Word/LibreOffice required.
+
+## 2026-08-08 - "Also import content" now merges into the master resume instead of silently discarding it
+
+- **What:** Checking "Also import content from this file" in the Template wizard
+  parsed the upload correctly (contact, entry locations, everything) but only called
+  `loadDraft(...)` — pure React state, never persisted, discarded by navigating away or
+  a page refresh. Fixing it as a straight `PUT` (full replace) would have been wrong:
+  `master_resume.json` is deliberately a *superset* (CLAUDE.md: "bigger than any one
+  resume, so an ops/support-flavoured posting can surface roles a tech-flavoured one
+  wouldn't"), and a single upload — especially an already-tailored export like
+  `Nina Dao - aug.docx` — is a subset. A full replace would have silently deleted every
+  entry not present in that one file.
+- **Why:** The fix is a merge: match incoming entries against existing ones by
+  company/school/project/skills-label/list-text identity; a match refreshes that entry
+  in place (its bullets are the whole point of re-importing); no match adds it; anything
+  in the existing resume with no counterpart in the upload is left completely
+  untouched. Validated by construction against the real `nina` workspace data before
+  writing any code — see the design's own "Validated against the real data" table —
+  which caught two real bugs in the first draft before they shipped:
+  1. **Section-scoped matching would have duplicated entries.** Nina's export titles a
+     section `LEADERSHIP`; the existing workspace's section is titled
+     `LEADERSHIP EXPERIENCE`. Those titles don't match, so if matching had been scoped
+     to a title-matched section first, *In the Green at UCI* and *Yellow Daisy
+     Organization* — both already present under `LEADERSHIP EXPERIENCE` — would have
+     been duplicated into a brand-new `LEADERSHIP` section instead of updated in place.
+     Fixed: `resume_import.merge_into` matches entries **globally across every
+     same-kind section**, never scoped to a title match; only *unmatched leftovers*
+     ever need a target section resolved (`_target_section_index`), and a section is
+     created only when it actually receives leftovers — so `LEADERSHIP` (all of whose
+     entries matched elsewhere) adds nothing and no duplicate section appears.
+  2. **`config.slugify` is unsafe as an equality key.** It caps output at 40 characters
+     (right for minting a short id, wrong for identity) — two distinct 50+ character
+     company names sharing a 40-char prefix slugify to the same string, and one would
+     silently overwrite the other. Confirmed with a concrete pair before writing the
+     fix. `resume_import._match_key` is a separate, uncapped normalizer used only for
+     merge-matching; `config.slugify` still mints ids as before.
+- **Impact:** New `resume_import.merge_into(existing, incoming) -> (MasterResume,
+  MergeStats)` — pure, no I/O, reuses `_fresh_id`/`_import_bullets`'s id scheme. A
+  matched entry keeps its *existing* id (nothing referencing it elsewhere breaks) with
+  bullets re-minted under that id; contact merges field-by-field and only overwrites
+  where the incoming value is non-empty (a blank LinkedIn field from a hyperlink-less
+  export must not erase a curated URL); `summary_variants`/`_comment` carry over from
+  `existing` untouched; `tag_vocabulary` is unioned. New `POST /api/master-resume/merge`
+  (takes an already-parsed `MasterResume` body, e.g. straight from `/import`'s
+  response — no re-upload) does the actual save: `_backup_master_resume` now returns
+  the backup `Path` instead of `None`, and a new `_write_master_resume` helper
+  (mkdir + backup + write) is shared with `put_master_resume` so the write path is
+  defined once. `POST /api/master-resume/import` itself is completely unchanged — still
+  parses and writes nothing; the existing
+  `test_import_master_resume_returns_a_draft_without_writing` pins that. Frontend:
+  `editorState` gained `syncFromDisk` (sets both `resume` and `savedSnapshot` together,
+  since the merge endpoint already wrote to disk — must never read as an unsaved
+  draft); the wizard checkbox is relabeled "Also merge…", confirms via `window.confirm`
+  before writing, and its success panel lists the actual updated/added entry names (not
+  just counts) from the response — a near-miss duplicate, like the education entry
+  below, is visible immediately rather than buried in a total.
+- **One accepted false split, by design, not a bug:** the existing `nina` workspace
+  stores education as `"University of California, Irvine"`; Nina's export says
+  `"University of California, Irvine --- Paul Merage School of Business"` — a different
+  string, so it's correctly treated as a *new* entry (reported in `added`), not merged.
+  Pinned directly in `tests/test_resume_import.py`. The user reconciles the duplicate by
+  hand on the Master Resume tab; silently fuzzy-matching schools was rejected as more
+  dangerous than an occasional visible duplicate.
+- Verified end to end through the real HTTP endpoint (FastAPI `TestClient`, not just
+  the pure function) against the actual `nina` workspace data + `Nina Dao - aug.docx`:
+  3 updated, 5 added, 0 new sections, all 7 untouched entries' ids preserved exactly,
+  a `.bak.json` holding the byte-identical pre-merge file, and a second merge of the
+  same file reporting 0 added (idempotent). Backend suite: 705 passed (was 689), 1
+  deselected — 19 new tests (`merge_into` matching/section-targeting/contact rules in
+  `test_resume_import.py`, endpoint write/backup/missing-file/invalid-body behavior in
+  `test_web.py`). Frontend `tsc -b` and `vitest run` clean.
+
+## 2026-08-07 - The import wizard's "suggest tags" pass silently billed Anthropic regardless of the Ollama default
+
+**What:** Checking "Suggest tags for untagged bullets" during import crashed with an
+Anthropic 400 (`credit balance too low`), even though the project's documented default
+backend is Ollama. Root cause: `config._ACTIVE` (what `backend_for` reads) is only ever
+populated by `web/jobs.py`'s tailoring-job runner — the sole `config.resolve()` call site
+under `src/`. Any LLM call reached from a route that is *not* a job (this one; also
+`generate_library_proposals`) falls through to `backend_for`'s hard-coded
+`resolve("claude")` fallback on a freshly started server, regardless of `JobSettings.model`'s
+own `"ollama"` default. Separately, the route's own promise that a failed tag pass "must
+never fail the import itself" was broken: the catch was `except (LLMError, RuntimeError)`,
+but `anthropic.BadRequestError` is neither, so the SDK error escaped as an unhandled 500.
+
+**Fix:** Added `config.pinned(profile)` — a `contextvars.ContextVar` overlay that
+`backend_for` checks ahead of `_ACTIVE` and its claude default. A `ContextVar` rather than
+a save/restore swap of `_ACTIVE` itself, specifically because a plain swap would still race
+against a concurrently running tailoring job (FastAPI runs a sync route in a threadpool
+with a *copied* context, so a `ContextVar` set inside one request is invisible elsewhere by
+construction — no lock needed). `resolve()` was split at its `_ACTIVE.clear()` line into a
+new `_backends_for(...)` (pure spec resolution) so `pinned()` reuses the exact same logic
+without duplicating it. The import route now wraps its `propose.propose_bullet_tags` call
+in `with config.pinned(config.ONE_OFF_PROFILE):` (`ONE_OFF_PROFILE` defaults to `"ollama"`,
+overridable via env). Both non-job routes' exception handling was broadened from
+`(LLMError, RuntimeError)` to bare `Exception`, since both already return a `warning=...`
+response rather than raising and are meant to survive any backend failure.
+
+**Scope (explicit user decision):** only this one call is pinned. `backend_for`'s global
+`resolve("claude")` fallback is untouched — it still guards importable library functions
+(`jd.extract`, `rewrite.score_table`) called by scripts/tests that never went through the
+CLI, and changing it would silently reroute those callers. `generate_library_proposals`
+keeps inheriting `_ACTIVE`/the claude fallback for its *routing*; only its error handling
+changed. Making non-job routes follow the Run tab's saved Model setting was considered and
+rejected as bigger than this fix warranted.
+
+**Verified:** 7 new tests (`test_config.py`: `pinned()` overrides every purpose-keyed
+accessor, never mutates `_ACTIVE`, restores cleanly, raises on a bad profile with no
+residue; `test_web.py`: the import route's LLM call is observed running under
+`origin="ollama"` even with `resolve("claude")` active, and a non-`RuntimeError` exception
+in both non-job routes comes back as a warning, not a 500). Full suite: 712 passed (was
+705), 1 deselected. Also verified live and unmocked against this machine's real `.env`
+(which points `OLLAMA_BASE_URL` at Ollama Cloud with a working key): the pinned call
+actually reached `gemma4:cloud` and tagged the bullet, never touching Anthropic; and with
+`OLLAMA_BASE_URL` pointed at a closed port, the import still returned 200 with the
+deterministic draft and a `"Tag suggestion pass failed: …"` warning instead of a 500.

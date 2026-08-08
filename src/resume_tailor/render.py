@@ -416,7 +416,7 @@ def build_context(
     skills = render_skills(resume.skills) if enabled.get("skills", True) else []
     education = render_education(resume.education) if enabled.get("education", True) else []
 
-    return {
+    context: dict = {
         "name": resume.contact.name,
         "contact": _contact_richtext(
             resume,
@@ -432,6 +432,22 @@ def build_context(
         "skills": skills,
         "sections": sections,
     }
+
+    # Table-layout contact block: one RichText per `ContactSlot`, keyed by index
+    # (`contact_slot_0`, …) — see `template_build.CONTACT_SLOT_TAG_FMT` for why a
+    # named key rather than a `contact_slots[i]` subscript. Empty `layout["contact_slots"]`
+    # (every profile without a table-layout contact block) adds nothing.
+    for i, slot in enumerate(layout.get("contact_slots") or []):
+        fields = slot.get("fields", [])
+        if contact_fields is not None:
+            fields = [f for f in fields if f in contact_fields]
+        context[f"contact_slot_{i}"] = (
+            _contact_richtext(resume, tpl, field_order=fields, separator=slot.get("separator"))
+            if fields
+            else RichText()
+        )
+
+    return context
 
 
 def render(

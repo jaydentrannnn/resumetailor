@@ -981,6 +981,73 @@ def test_import_master_resume_rejects_a_non_docx(client):
     assert res.status_code == 400
 
 
+def test_merge_master_resume_writes_and_backs_up(client):
+    """POST /api/master-resume/merge actually persists — unlike /import — and reports
+    the backup filename of the pre-merge content."""
+    c, _ = client
+    before = json.loads(config.MASTER_RESUME_PATH.read_text(encoding="utf-8"))
+    assert before["contact"]["name"] == "Jordan Rivera"
+
+    imported = c.post(
+        "/api/master-resume/import",
+        files={"file": ("resume.docx", _resume_docx_bytes(), _DOCX_MIME)},
+    ).json()
+
+    res = c.post("/api/master-resume/merge", json=imported["resume"])
+    assert res.status_code == 200
+    body = res.json()
+    assert body["resume"]["contact"]["name"] == "Ada Lovelace"  # incoming name overwrites
+    assert "Analytical Engines" in body["added"]  # Ada's company, absent from Jordan's resume
+    # Both fixtures happen to name their project "Note Engine" — a genuine match, updated in place.
+    assert body["updated"] == ["Note Engine"]
+    assert body["backup"] is not None
+
+    backup_path = config.MASTER_RESUME_PATH.parent / body["backup"]
+    assert backup_path.exists()
+    assert json.loads(backup_path.read_text(encoding="utf-8")) == before
+
+    on_disk = json.loads(config.MASTER_RESUME_PATH.read_text(encoding="utf-8"))
+    assert on_disk["contact"]["name"] == "Ada Lovelace"
+    # Jordan's original experience entry must still be present — merge, not replace.
+    companies = {
+        e["company"]
+        for s in on_disk["sections"]
+        if s["kind"] == "experience"
+        for e in s["entries"]
+    }
+    assert "Example Corp" in companies  # Jordan's own entry, from synthetic_resume()
+    assert "Analytical Engines" in companies  # Ada's newly-added entry
+
+    get_after = c.get("/api/master-resume").json()
+    assert get_after["contact"]["name"] == "Ada Lovelace"
+
+
+def test_merge_master_resume_creates_a_file_when_none_exists(client, monkeypatch):
+    """A workspace with no master resume yet merges against an empty one instead of
+    raising — the same tolerance `import_master_resume` already applies."""
+    c, _ = client
+    monkeypatch.setattr(config, "MASTER_RESUME_PATH", config.MASTER_RESUME_PATH.parent / "missing.json")
+    assert not config.MASTER_RESUME_PATH.exists()
+
+    imported = c.post(
+        "/api/master-resume/import",
+        files={"file": ("resume.docx", _resume_docx_bytes(), _DOCX_MIME)},
+    ).json()
+
+    res = c.post("/api/master-resume/merge", json=imported["resume"])
+    assert res.status_code == 200
+    body = res.json()
+    assert body["backup"] is None  # nothing existed to back up
+    assert config.MASTER_RESUME_PATH.exists()
+    assert body["resume"]["contact"]["name"] == "Ada Lovelace"
+
+
+def test_merge_master_resume_rejects_an_invalid_body(client):
+    c, _ = client
+    res = c.post("/api/master-resume/merge", json={"not": "a valid resume"})
+    assert res.status_code == 400
+
+
 def _resume_docx_bytes_with_an_untaggable_bullet() -> bytes:
     """`_resume_docx_bytes`'s own bullets ("Built numerical engines in Python.",
     "Indexed research notes with embeddings.") both match the default tag vocabulary
@@ -1051,6 +1118,88 @@ def test_import_master_resume_suggest_tags_failure_is_a_warning_not_a_500(client
     assert res.status_code == 200
     body = res.json()
     assert any("model unreachable" in w for w in body["warnings"])
+    assert body["resume"]["contact"]["name"] == "Ada Lovelace"
+
+
+def test_import_master_resume_suggest_tags_is_pinned_to_ollama_regardless_of__active(
+    client, monkeypatch
+):
+    """The import's tag-suggestion pass must not fall through to `backend_for`'s claude
+    default. Resolving a claude job first (as a prior tailoring run would leave `_ACTIVE`)
+    and then checking what backend the LLM call actually observes pins the fix: without
+    `config.pinned(config.ONE_OFF_PROFILE)` around the call, this would come back
+    provider='anthropic'."""
+    c, _ = client
+    config.resolve("claude")
+
+    from resume_tailor import propose as propose_mod
+
+    observed: dict[str, object] = {}
+
+    def fake_propose_bullet_tags(bullets, known_tags, **_kwargs):
+        backend = config.backend_for("extract")
+        observed["origin"] = backend.origin
+        observed["model"] = backend.model
+        observed["provider"] = backend.provider
+        return {}
+
+    monkeypatch.setattr(propose_mod, "propose_bullet_tags", fake_propose_bullet_tags)
+
+    res = c.post(
+        "/api/master-resume/import",
+        data={"suggest_tags": "true"},
+        files={
+            "file": (
+                "resume.docx",
+                _resume_docx_bytes_with_an_untaggable_bullet(),
+                _DOCX_MIME,
+            )
+        },
+    )
+    assert res.status_code == 200
+    assert observed == {
+        "origin": "ollama",
+        "model": config.OLLAMA_MODEL,
+        "provider": "openai",
+    }
+    # The pin must not leak into the ambient job routing.
+    assert config.backend_for("extract").provider == "anthropic"
+    config.resolve("claude")
+
+
+class _FakeSDKError(Exception):
+    """Stands in for `anthropic.BadRequestError` (an `Exception`, not a `RuntimeError`)
+    without pulling the real SDK's exception hierarchy into this hermetic suite."""
+
+
+def test_import_master_resume_suggest_tags_survives_a_non_runtimeerror_failure(
+    client, monkeypatch
+):
+    """Regression for the reported bug: a real backend SDK error (e.g.
+    `anthropic.BadRequestError`, which is neither `LLMError` nor `RuntimeError`) must
+    still become a warning, not an unhandled 500."""
+    c, _ = client
+    from resume_tailor import propose as propose_mod
+
+    def fake_propose_bullet_tags(bullets, known_tags, **_kwargs):
+        raise _FakeSDKError("Your credit balance is too low to access the Anthropic API.")
+
+    monkeypatch.setattr(propose_mod, "propose_bullet_tags", fake_propose_bullet_tags)
+
+    res = c.post(
+        "/api/master-resume/import",
+        data={"suggest_tags": "true"},
+        files={
+            "file": (
+                "resume.docx",
+                _resume_docx_bytes_with_an_untaggable_bullet(),
+                _DOCX_MIME,
+            )
+        },
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert any("credit balance" in w for w in body["warnings"])
     assert body["resume"]["contact"]["name"] == "Ada Lovelace"
 
 
@@ -1500,7 +1649,16 @@ def test_analyze_template_exposes_field_candidates(client, tmp_path, monkeypatch
     fields = {c["field"] for c in body["field_candidates"]}
     assert "dates" in fields or "date" in fields
     sample = body["field_candidates"][0]
-    assert {"field", "paragraph_id", "start", "end", "confidence", "preview"} <= sample.keys()
+    assert {
+        "field",
+        "paragraph_id",
+        "start",
+        "end",
+        "confidence",
+        "preview",
+        "section_heading_paragraph_id",
+    } <= sample.keys()
+    assert sample["section_heading_paragraph_id"] is not None
 
 
 def test_remap_template_forces_a_heading_kind(client, tmp_path, monkeypatch):
@@ -2193,6 +2351,30 @@ def test_generate_proposals_llm_error_is_not_fatal(client, tmp_path, monkeypatch
     body = res.json()
     assert body["proposals"] == []
     assert body["warning"] and "model unavailable" in body["warning"]
+
+
+def test_generate_proposals_non_runtimeerror_failure_is_not_fatal(client, tmp_path, monkeypatch):
+    """Same as `test_generate_proposals_llm_error_is_not_fatal`, but with an exception
+    type (like a real backend SDK error) that a narrower `except (LLMError, RuntimeError)`
+    would have let escape as a 500 — see `_FakeSDKError` above."""
+    from resume_tailor import propose as propose_mod
+
+    c, _ = client
+    _write_test_resume(
+        monkeypatch, tmp_path, bullet_text="Triaged 200 support tickets weekly.", bullet_tags=["python"]
+    )
+
+    def _raise(purpose):
+        raise _FakeSDKError("Your credit balance is too low to access the Anthropic API.")
+
+    monkeypatch.setattr(propose_mod.llm, "client_for", _raise)
+
+    res = c.post("/api/libraries/proposals", json={})
+
+    assert res.status_code == 200
+    body = res.json()
+    assert body["proposals"] == []
+    assert body["warning"] and "credit balance" in body["warning"]
 
 
 def test_approve_requires_acknowledgement_when_it_rewrites_an_existing_tag(

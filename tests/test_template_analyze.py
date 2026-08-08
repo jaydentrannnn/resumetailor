@@ -10,6 +10,7 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 
 from resume_tailor import template_analyze
+from tests.fixtures import _sidebar_table_resume, _table_resume
 
 
 def _add_bullet_numbering(document) -> str:
@@ -56,6 +57,21 @@ def _add_bullet_numbering(document) -> str:
 def _make_bullet(document, text: str, num_id: str):
     """Append a list paragraph with the given numId."""
     paragraph = document.add_paragraph(text)
+    pPr = paragraph._p.get_or_add_pPr()
+    numPr = OxmlElement("w:numPr")
+    ilvl = OxmlElement("w:ilvl")
+    ilvl.set(qn("w:val"), "0")
+    nid = OxmlElement("w:numId")
+    nid.set(qn("w:val"), num_id)
+    numPr.append(ilvl)
+    numPr.append(nid)
+    pPr.append(numPr)
+    return paragraph
+
+
+def _make_cell_bullet(cell, text: str, num_id: str):
+    """Append a list paragraph with the given numId inside a table cell."""
+    paragraph = cell.add_paragraph(text)
     pPr = paragraph._p.get_or_add_pPr()
     numPr = OxmlElement("w:numPr")
     ilvl = OxmlElement("w:ilvl")
@@ -447,18 +463,113 @@ def test_analyze_missing_experience_is_blocking():
     assert any(i.code == "missing_experience" and i.blocking for i in result.issues)
 
 
-def test_analyze_tables_are_blocking():
-    """Tables are rejected as unsupported layouts."""
+#: Every blocking issue code `classify_table_layout` can emit — used to assert a
+#: linear table isn't rejected by the table gate itself (whatever else may still be
+#: incomplete about its mapping).
+_TABLE_LAYOUT_BLOCKING_CODES = {
+    "nested_tables",
+    "multiple_tables",
+    "table_vertical_merge",
+    "table_parallel_columns",
+    "table_sidebar_bullets",
+    "table_sidebar_headings",
+    "table_no_headings",
+}
+
+
+def test_analyze_sidebar_table_is_blocking():
+    """A table with bulleted content in a second (sidebar) column is rejected — that
+    is the structural signature of two parallel reading columns, not an invisible
+    single-column layout grid."""
     def build(document):
         document.add_paragraph("Name")
         document.add_paragraph("email@example.com")
-        document.add_paragraph("WORK EXPERIENCES")
+        num_id = _add_bullet_numbering(document)
+        table = document.add_table(rows=1, cols=2)
+        table.cell(0, 0).text = "WORK EXPERIENCE"
+        _make_cell_bullet(table.cell(0, 1), "Python", num_id)
+
+    result = template_analyze.analyze_docx(raw=_docx_bytes(build))
+    assert any(i.code == "table_sidebar_bullets" and i.blocking for i in result.issues)
+    assert result.ready is False
+
+
+def test_analyze_linear_table_is_not_blocked_by_table_classification():
+    """A table used only as an invisible single-column layout grid — a heading alone
+    in its row, an ordinary two-cell entry-header row below it — passes the table
+    classifier itself. (Whether the rest of the mapping is complete enough for
+    `ready=True` is a separate, later concern.)"""
+    def build(document):
+        document.add_paragraph("Name")
+        document.add_paragraph("email@example.com")
+        table = document.add_table(rows=2, cols=2)
+        table.cell(0, 0).text = "WORK EXPERIENCE"
+        table.cell(0, 1).text = ""
+        table.cell(1, 0).text = "Acme"
+        table.cell(1, 1).text = "Engineer"
+
+    result = template_analyze.analyze_docx(raw=_docx_bytes(build))
+    assert not any(i.code in _TABLE_LAYOUT_BLOCKING_CODES for i in result.issues)
+
+
+def test_analyze_table_with_three_populated_cells_is_blocking():
+    """A row with three independently populated cells reads as more than two parallel
+    columns — never produced by a table used only to right-align dates."""
+    def build(document):
+        document.add_paragraph("Name")
+        document.add_paragraph("email@example.com")
+        table = document.add_table(rows=1, cols=3)
+        table.cell(0, 0).text = "Skills"
+        table.cell(0, 1).text = "Languages"
+        table.cell(0, 2).text = "Interests"
+
+    result = template_analyze.analyze_docx(raw=_docx_bytes(build))
+    assert any(i.code == "table_parallel_columns" and i.blocking for i in result.issues)
+
+
+def test_analyze_table_with_no_headings_is_blocking():
+    """A table with no recognizable section heading anywhere reads as a data table,
+    not a resume layout grid."""
+    def build(document):
+        document.add_paragraph("Name")
+        document.add_paragraph("email@example.com")
         table = document.add_table(rows=1, cols=2)
         table.cell(0, 0).text = "Acme"
         table.cell(0, 1).text = "Engineer"
 
     result = template_analyze.analyze_docx(raw=_docx_bytes(build))
-    assert any(i.code == "tables" and i.blocking for i in result.issues)
+    assert any(i.code == "table_no_headings" and i.blocking for i in result.issues)
+
+
+def test_analyze_table_vertical_merge_is_blocking():
+    """A vertically merged cell is how a sidebar column spans several rows — the
+    defining structural feature of a layout the table-classifier does not support."""
+    def build(document):
+        document.add_paragraph("Name")
+        document.add_paragraph("email@example.com")
+        table = document.add_table(rows=2, cols=2)
+        table.cell(0, 0).text = "EXPERIENCE"
+        table.cell(1, 0).text = "Acme"
+        table.cell(0, 1).merge(table.cell(1, 1))
+        table.cell(0, 1).text = "Sidebar spanning two rows"
+
+    result = template_analyze.analyze_docx(raw=_docx_bytes(build))
+    assert any(i.code == "table_vertical_merge" and i.blocking for i in result.issues)
+
+
+def test_analyze_multiple_tables_is_blocking():
+    """More than one top-level table has no well-defined single reading order."""
+    def build(document):
+        document.add_paragraph("Name")
+        document.add_paragraph("email@example.com")
+        t1 = document.add_table(rows=1, cols=1)
+        t1.cell(0, 0).text = "EXPERIENCE"
+        document.add_paragraph("")
+        t2 = document.add_table(rows=1, cols=1)
+        t2.cell(0, 0).text = "Acme"
+
+    result = template_analyze.analyze_docx(raw=_docx_bytes(build))
+    assert any(i.code == "multiple_tables" and i.blocking for i in result.issues)
 
 
 def test_validate_profile_hash_mismatch():
@@ -892,3 +1003,255 @@ def test_contact_field_order_does_not_read_a_date_range_as_a_phone_number():
 
     order_with_real_phone = template_analyze._contact_field_order("555-123-4567")
     assert order_with_real_phone[0] == "phone"
+
+
+# --------------------------------------------------------------------------------------
+# Table-layout resume: content lives inside one invisible layout table. See
+# `tests/fixtures.py::_table_resume` for the exact shape (mirrors the real-world
+# document that motivated this — gridSpan inconsistency between its two
+# experience-kind sections, a cross-cell skills grid, a multi-paragraph contact block).
+# --------------------------------------------------------------------------------------
+
+
+def test_analyze_table_resume_is_ready():
+    """The driving document's shape analyzes cleanly: `ready`, `layout == "table"`,
+    `section_mode == "generic"` (two experience-kind headings forces it), and all four
+    sections detected in document order with the right kind."""
+    result = template_analyze.analyze_docx(raw=_docx_bytes(_table_resume))
+    assert result.ready is True
+    profile = result.suggested_profile
+    assert profile is not None
+    assert profile.layout == "table"
+    assert profile.section_mode == "generic"
+    assert [(s.title, s.kind) for s in profile.sections] == [
+        ("EDUCATION", "education"),
+        ("WORK EXPERIENCE", "experience"),
+        ("LEADERSHIP", "experience"),
+        ("ADDITIONAL INFORMATION", "skills"),
+    ]
+
+
+def test_analyze_table_resume_cross_cell_dates_independent_of_gridspan():
+    """Experience dates are detected via the row's second cell regardless of whether
+    that row is a 3+1 split (WORK EXPERIENCE) or a 2+2 split (LEADERSHIP) — pins that
+    the cross-cell detector keys on "a second populated cell", never a fixed gridSpan."""
+    result = template_analyze.analyze_docx(raw=_docx_bytes(_table_resume))
+    profile = result.suggested_profile
+    assert profile is not None
+    header = profile.experience.header
+    dates = header.fields["dates"]
+    assert dates.present is True
+    assert header.date_alignment == "separate_paragraph"
+    assert dates.span.paragraph_id != header.header_paragraph_id
+
+
+def test_analyze_table_resume_contact_slots_and_unmapped_address():
+    """A multi-paragraph contact block (name row's second cell holds a street address
+    AND a city/state/zip line) splits into slots — location/email/phone recognized,
+    the street address left unmapped with a warning rather than silently guessed at or
+    silently dropped."""
+    result = template_analyze.analyze_docx(raw=_docx_bytes(_table_resume))
+    profile = result.suggested_profile
+    assert profile is not None
+    slot_fields = [s.fields for s in profile.contact.slots]
+    assert slot_fields == [["location"], ["email"], ["phone"]]
+    assert any(i.code == "contact_unmapped_paragraph" and not i.blocking for i in result.issues)
+
+
+def test_analyze_table_resume_skills_cross_cell_pairing():
+    """ADDITIONAL INFORMATION's label column ('Languages:'/'Skills:') and value column
+    live in different paragraphs — `label_span`/`body_span` must point at different
+    paragraph ids, unlike the single-paragraph 'Label: item, item' shape."""
+    result = template_analyze.analyze_docx(raw=_docx_bytes(_table_resume))
+    profile = result.suggested_profile
+    assert profile is not None
+    skills = profile.skills
+    assert skills is not None
+    assert skills.label_span.paragraph_id != skills.body_span.paragraph_id
+
+
+def test_table_resume_single_contact_paragraph_still_uses_slots_empty():
+    """A table-layout document whose contact block happens to be ONE paragraph (name
+    row's second cell holds just one line, not a multi-paragraph spread) must still
+    produce `slots == []` and the ordinary joined-line contract — a table layout does
+    not, by itself, force slot-based contact mapping.
+
+    Exercises `_detect_name_and_contact` directly rather than through the full
+    `analyze_docx` pipeline, since the point here is contact detection in isolation,
+    not a fully mappable resume (this minimal fixture has no title/dates line, which
+    would fail for unrelated reasons through the full pipeline)."""
+    from tests.fixtures import _add_bullet_numbering, _cell_text, _shape_row
+
+    def build(document):
+        _add_bullet_numbering(document)
+        table = document.add_table(rows=2, cols=4)
+        name_row = _shape_row(table, 0, [4])
+        _cell_text(name_row[0], "JORDAN RIVERA")
+        contact_row = _shape_row(table, 1, [4])
+        _cell_text(contact_row[0], "jordan@example.com • (555) 123-4567")
+
+    raw = _docx_bytes(build)
+    doc = docx.Document(io.BytesIO(raw))
+    paras = template_analyze._load_paras(doc)
+    name_id, contact_para, slots, unmapped = template_analyze._detect_name_and_contact(
+        paras, first_heading_id=None
+    )
+    assert slots == []
+    assert unmapped == []
+    assert contact_para is not None
+    assert "jordan@example.com" in contact_para.text
+
+
+def test_analyze_sidebar_table_resume_is_blocking():
+    """The negative-fixture sidebar table (bullets in the row's second cell) is
+    rejected by the table classifier itself."""
+    result = template_analyze.analyze_docx(raw=_docx_bytes(_sidebar_table_resume))
+    assert result.ready is False
+    assert any(i.code == "table_sidebar_bullets" and i.blocking for i in result.issues)
+
+
+def _candidates_for(result, heading_paragraph_id: int) -> dict[str, template_analyze.FieldCandidate]:
+    """Best (highest-confidence) candidate per field for one section, keyed by field
+    name — mirrors the wizard's own `SectionFieldRows` de-duplication."""
+    best: dict[str, template_analyze.FieldCandidate] = {}
+    for c in result.field_candidates:
+        if c.section_heading_paragraph_id != heading_paragraph_id:
+            continue
+        if c.field not in best or c.confidence > best[c.field].confidence:
+            best[c.field] = c
+    return best
+
+
+def test_every_experience_section_gets_its_own_field_candidates():
+    """Regression test for the reported bug: a second (or third) same-kind section must
+    not read as "not detected" merely because the kind's single installed prototype
+    came from a different section. `_multi_section_resume` has three experience-kind
+    sections (WORK EXPERIENCE, LEADERSHIP EXPERIENCE, OTHER ACTIVITIES); every one of
+    them has its own company and dates, and each must get its own candidates tagged
+    with its own `heading_paragraph_id` — not just whichever section the pooled
+    kind-wide prototype happened to come from."""
+    result = template_analyze.analyze_docx(raw=_docx_bytes(_multi_section_resume))
+    experience_sections = [s for s in result.sections if s.key == "experience"]
+    assert len(experience_sections) == 3
+    for sec in experience_sections:
+        cands = _candidates_for(result, sec.heading_paragraph_id)
+        assert "company" in cands, f"no company candidate for {sec.heading_text!r}"
+        assert "dates" in cands, f"no dates candidate for {sec.heading_text!r}"
+        assert cands["company"].confidence == 1.0
+        assert cands["dates"].confidence == 1.0
+
+    # Every candidate is attributed to some section — nothing falls through the old
+    # range-based fallback that motivated this fix in the first place.
+    assert all(c.section_heading_paragraph_id is not None for c in result.field_candidates)
+
+
+def test_table_resume_second_experience_section_has_candidates():
+    """The real driving document's shape: WORK EXPERIENCE (3+1 gridSpan header rows)
+    and LEADERSHIP (2+2 gridSpan header rows) are both experience-kind sections: the
+    second one (LEADERSHIP) must get its own company/dates/location candidates from
+    its own cross-cell entries, not the pooled kind-wide prototype's."""
+    result = template_analyze.analyze_docx(raw=_docx_bytes(_table_resume))
+    experience_sections = {s.heading_text: s for s in result.sections if s.key == "experience"}
+    assert set(experience_sections) == {"WORK EXPERIENCE", "LEADERSHIP"}
+
+    leadership = experience_sections["LEADERSHIP"]
+    cands = _candidates_for(result, leadership.heading_paragraph_id)
+    assert cands["company"].preview == "Campus Club"
+    assert cands["location"].preview == "Springfield, IL"
+    assert cands["dates"].preview == "2022 - 2023"
+
+    work = experience_sections["WORK EXPERIENCE"]
+    work_cands = _candidates_for(result, work.heading_paragraph_id)
+    assert work_cands["company"].preview == "Example Corp"
+    assert work_cands["dates"].preview == "Jan 2023 - Present"
+
+
+def test_single_section_field_candidates_unchanged():
+    """No-regression gate for the common case: a document with exactly one section per
+    kind gets the same fields, at the same confidences, as before this change — the
+    per-section helper degenerates to "one section" without altering behavior."""
+    result = template_analyze.analyze_docx(raw=_docx_bytes(_standard_resume))
+    exp = next(s for s in result.sections if s.key == "experience")
+    cands = _candidates_for(result, exp.heading_paragraph_id)
+    assert cands["company"].preview == "Analytical Engines"
+    assert cands["company"].confidence == 1.0
+    assert cands["dates"].preview == "2022 - Present"
+    assert cands["dates"].confidence == 1.0
+    assert cands["title"].preview == "Software Engineer"
+    assert cands["title"].confidence == 0.9
+
+    edu = next(s for s in result.sections if s.key == "education")
+    edu_cands = _candidates_for(result, edu.heading_paragraph_id)
+    assert edu_cands["school"].preview == "University of London"
+    assert edu_cands["dates"].preview == "2018 - 2022"
+
+
+def _two_education_sections_resume(document) -> None:
+    """Two education-kind headings, each with its own detectable entry — exercises
+    per-section field candidates for the `education` kind specifically, since
+    `_multi_section_resume` only ever has one. "ACADEMIC BACKGROUND" reaches
+    education-kind via `_classify_heading`'s "academic" keyword heuristic (0.6
+    confidence), not an exact alias — a second, differently-worded education-kind
+    heading, the same way a real resume's second section rarely repeats the first
+    section's exact title."""
+    num_id = _add_bullet_numbering(document)
+    document.add_paragraph("Nina Dao")
+    document.add_paragraph("nina@example.com")
+    document.add_paragraph("EDUCATION")
+    document.add_paragraph("UC Irvine\tExpected June 2027")
+    _make_bullet(document, "B.A. in Business Administration", num_id)
+    document.add_paragraph("ACADEMIC BACKGROUND")
+    document.add_paragraph("Coursera\tSummer 2024")
+    _make_bullet(document, "Data Analytics Certificate", num_id)
+    document.add_paragraph("WORK EXPERIENCE")
+    document.add_paragraph("Langmaster JSC\tAug 2025 - Present")
+    document.add_paragraph("Online Tutor")
+    _make_bullet(document, "Tutored students in English.", num_id)
+
+
+def test_education_sections_each_get_candidates():
+    """Two education-kind sections (a real "EDUCATION" plus an unaliased structural
+    match) must each surface their own school/dates candidates."""
+    result = template_analyze.analyze_docx(raw=_docx_bytes(_two_education_sections_resume))
+    education_sections = [s for s in result.sections if s.key == "education"]
+    assert len(education_sections) == 2
+    for sec in education_sections:
+        cands = _candidates_for(result, sec.heading_paragraph_id)
+        assert "school" in cands, f"no school candidate for {sec.heading_text!r}"
+        assert "dates" in cands, f"no dates candidate for {sec.heading_text!r}"
+
+
+def test_entry_header_fields_resolves_cross_cell_project_entry():
+    """`_entry_header_fields` (the dispatcher the `:2042` bonus fix now routes through
+    for the installed Projects prototype, same as experience/education already did)
+    correctly reads a table-layout project entry whose name sits in the main cell and
+    whose tech + date sit in the row's other cell (the same main/side shape experience
+    and education already use) — independent of `_table_resume`'s own paragraph ids,
+    which every other table test pins against."""
+    from tests.fixtures import _cell_para, _shape_row
+
+    document = docx.Document()
+    _add_bullet_numbering(document)
+    table = document.add_table(rows=1, cols=4)
+    row = _shape_row(table, 0, [3, 1])
+    _cell_para(row[0], 0, "Note Engine", bold=True)
+    _cell_para(row[1], 0, "Python, FastAPI", italic=True, align_right=True)
+    _cell_para(row[1], 1, "2024", italic=True, align_right=True)
+
+    buf = io.BytesIO()
+    document.save(buf)
+    doc = docx.Document(io.BytesIO(buf.getvalue()))
+    paras = template_analyze._load_paras(doc)
+    entry = [p for p in paras if p.text.strip()]
+
+    header, candidates = template_analyze._entry_header_fields(
+        entry, primary="name", secondary="tech", date_field="date"
+    )
+    assert header.fields["name"].present is True
+    assert header.fields["tech"].present is True
+    assert header.fields["date"].present is True
+    assert header.date_alignment == "separate_paragraph"
+    by_field = {c.field: c for c in candidates}
+    assert by_field["name"].preview == "Note Engine"
+    assert by_field["tech"].preview == "Python, FastAPI"
+    assert by_field["date"].preview == "2024"

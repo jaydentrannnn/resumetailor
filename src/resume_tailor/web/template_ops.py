@@ -787,6 +787,7 @@ def _analysis_to_response(result: template_analyze.AnalyzeResult) -> TemplateAna
                 end=c.span.end,
                 confidence=c.confidence,
                 preview=c.preview,
+                section_heading_paragraph_id=c.section_heading_paragraph_id,
             )
             for c in result.field_candidates
         ],
@@ -961,7 +962,9 @@ def _maybe_calibrate(log: str, *, do_calibrate: bool) -> str:
         return log
     with LOCK:
         try:
-            # Soft-fail owner anchors: a new layout may not hit the 39→3 / 13→1 checks.
+            # A fresh template install changes `template_sha256`, so the render-anchor
+            # check re-baselines against this workspace's own resume+template rather
+            # than warning — see `calibrate.check_render_anchors`.
             result = calibrate.run(verify_anchors=True)
             config.reload_calibration()
             combined = (log + "\n\n" + result.log).strip()

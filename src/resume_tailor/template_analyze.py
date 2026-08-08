@@ -10,6 +10,7 @@ from __future__ import annotations
 import hashlib
 import re
 from collections import Counter
+from collections.abc import Callable
 from dataclasses import dataclass, field
 
 import docx
@@ -22,6 +23,7 @@ from .template_profile import (
     CharSpan,
     ContactField,
     ContactMapping,
+    ContactSlot,
     DetectedSection,
     EducationMapping,
     EnabledSections,
@@ -66,6 +68,8 @@ _HEADING_ALIASES: dict[str, str] = {
     "SKILLS": "skills",
     "TECHNICAL SKILLS": "skills",
     "TECHNOLOGIES": "skills",
+    "ADDITIONAL INFORMATION": "skills",
+    "ADDITIONAL INFO": "skills",
 }
 
 _DATE_RE = re.compile(
@@ -105,6 +109,12 @@ class FieldCandidate(_Strict):
     span: CharSpan
     confidence: float = Field(ge=0.0, le=1.0)
     preview: str = ""
+    #: Which detected section (by `SectionCandidate.heading_paragraph_id`) this
+    #: candidate belongs to. `None` only for a candidate emitted outside the
+    #: per-section loop (there are none left after `_section_field_candidates`
+    #: replaced the old kind-wide emission — kept optional so a `FieldCandidate`
+    #: constructed elsewhere, e.g. in a test, still validates).
+    section_heading_paragraph_id: int | None = None
 
 
 class SectionCandidate(_Strict):
@@ -157,6 +167,11 @@ class _Para:
     has_tab: bool
     has_hyperlink: bool
     runs: list = field(default_factory=list)
+    #: `None` for a body-level paragraph; set when this paragraph lives inside a table
+    #: cell. See `docx_text.iter_document_paragraphs` — this is the additive sidecar
+    #: that lets table-layout detection reason about "does this row have a second
+    #: populated cell" without changing what a paragraph id *means*.
+    location: docx_text.ParaLocation | None = None
 
 
 def sha256_bytes(raw: bytes) -> str:
@@ -184,20 +199,213 @@ def has_hyperlink(paragraph: Paragraph) -> bool:
     return paragraph._p.find(qn("w:hyperlink")) is not None
 
 
+def _has_tab_like(p: _Para) -> bool:
+    """`p` is laid out as a two-part line: a real tab stop, or — in a table layout — a
+    paragraph whose row carries a second populated cell.
+
+    A section heading is never either; an entry header almost always is. This is the
+    exact structural role a literal tab plays in a paragraph-layout resume
+    ("Company | Location\\tDates"), generalised to a table layout where the same split
+    is expressed as two cells instead of text before/after a tab character.
+    """
+    if p.has_tab:
+        return True
+    loc = p.location
+    return loc is not None and loc.row_content_cells >= 2
+
+
 def _document_has_tables(doc) -> bool:
     """True when the body contains at least one table."""
     return bool(doc.tables)
 
 
 def _document_has_textboxes(doc) -> bool:
-    """True when any paragraph hosts a drawing/textbox (common multi-column cue)."""
-    for paragraph in doc.paragraphs:
+    """True when any paragraph hosts a drawing/textbox (common multi-column cue).
+
+    Checks paragraphs inside table cells too — a textbox parked in a cell is just as
+    strong a multi-column cue as one at body level.
+    """
+    for paragraph, _location in docx_text.iter_document_paragraphs(doc):
         p = paragraph._p
         if p.find(f".//{qn('w:txbxContent')}") is not None:
             return True
         if p.find(f".//{qn('w:drawing')}") is not None:
             return True
     return False
+
+
+@dataclass(frozen=True)
+class TableShape:
+    """The one top-level table a table-layout resume lives in."""
+
+    index: int
+    rows: int
+    grid_cols: int
+
+
+def classify_table_layout(
+    doc, paras: list[_Para], heading_fp_classes: frozenset[_Fingerprint] = frozenset()
+) -> tuple[TableShape | None, list[Issue]]:
+    """Decide whether this document's table forms ONE logical reading column (a
+    `layout="table"` resume: content laid out top-to-bottom, the table used only to
+    right-align dates/locations without tab stops) or a genuine multi-column/sidebar
+    layout, which stays unsupported.
+
+    Deliberately not width- or majority-based: a real single-column resume table puts
+    a narrow label column beside a wide value column in one row (e.g. "Languages:" at
+    1509 twips beside a 8859-twip value cell) and a wide main column beside a narrow
+    date column in another, so no monotone width rule holds, and a linear resume is
+    routinely *majority* two-cell rows (every entry header) against a minority of
+    full-width rows (headings, bullets) — a full-width-fraction rule rejects exactly
+    the documents it should accept. What actually holds for a linear table: it never
+    runs two content streams in parallel. Bullets and section headings always live in
+    the reading column (cell 0); nothing is vertically merged; no row holds three or
+    more independently-populated cells.
+
+    Returns `(None, issues)` with a single blocking issue on the first structural
+    failure (checked in a fixed order so the message is deterministic), or
+    `(TableShape, [])` for a linear table with no issues of its own — the caller still
+    runs every other detector afterward, since "this table is linear" says nothing yet
+    about whether a usable experience/contact mapping was actually found in it.
+    """
+    if docx_text.has_nested_tables(doc):
+        return None, [
+            Issue(
+                code="nested_tables",
+                message=(
+                    "A table inside this document contains another table nested in one "
+                    "of its cells. Only a single flat layout table is supported."
+                ),
+                blocking=True,
+            )
+        ]
+
+    tables = doc.tables
+    if not tables:
+        return None, []
+    if len(tables) > 1:
+        return None, [
+            Issue(
+                code="multiple_tables",
+                message=(
+                    f"Document contains {len(tables)} separate tables. Only a single "
+                    "table used as an invisible layout grid is supported — merge them "
+                    "into one table in Word/Google Docs, or remove the extra one."
+                ),
+                blocking=True,
+            )
+        ]
+
+    table = tables[0]
+    if table._tbl.find(f".//{qn('w:vMerge')}") is not None:
+        return None, [
+            Issue(
+                code="table_vertical_merge",
+                message=(
+                    "The document's table vertically merges cells, which is how a "
+                    "sidebar layout spans a column across several rows. Only a table "
+                    "used purely as an invisible single-column layout grid — no "
+                    "vertical merges — is supported."
+                ),
+                blocking=True,
+            )
+        ]
+
+    table_paras = [p for p in paras if p.location is not None and p.location.table == 0]
+    if not table_paras:
+        return None, []
+
+    rows_seen = sorted({p.location.row for p in table_paras})  # type: ignore[union-attr]
+    grid_cols = len(table.columns)
+
+    for row in rows_seen:
+        row_paras = [p for p in table_paras if p.location.row == row]  # type: ignore[union-attr]
+        content_cells = row_paras[0].location.row_content_cells  # type: ignore[union-attr]
+        if content_cells >= 3:
+            return None, [
+                Issue(
+                    code="table_parallel_columns",
+                    message=(
+                        f"Row {row} of the table has {content_cells} independently "
+                        "populated cells, so this document reads as more than two "
+                        "parallel columns. Only a table used as an invisible "
+                        "single-column layout grid is supported."
+                    ),
+                    blocking=True,
+                )
+            ]
+
+    for p in table_paras:
+        if p.is_bullet and p.location.cell != 0:  # type: ignore[union-attr]
+            return None, [
+                Issue(
+                    code="table_sidebar_bullets",
+                    message=(
+                        f"Row {p.location.row}'s second cell contains bulleted text, "  # type: ignore[union-attr]
+                        "so this document reads as two parallel columns. Only tables "
+                        "used as an invisible single-column layout grid are "
+                        "supported — a sidebar or two-column resume cannot be mapped."
+                    ),
+                    blocking=True,
+                )
+            ]
+
+    found_heading = False
+    for p in table_paras:
+        stripped = p.text.strip()
+        if not stripped or p.is_bullet or _is_chrome(p.text):
+            continue
+        key, conf, _alias = _classify_heading(stripped)
+        if key is None or conf < 1.0:
+            # Anything short of an exact alias match (a bare heuristic keyword hit —
+            # "Technologies" in a company name matching the "skills" heuristic — or an
+            # unaliased structural guess like "LEADERSHIP") needs the same structural
+            # corroboration `_analyze_document`'s own loop requires for a sub-1.0 match:
+            # not shaped like an entry header or the line right under one
+            # (`_has_tab_like`, which — row-based — happens to catch both at once,
+            # since a title paragraph shares its entry header's two-populated-cell
+            # row), not earlier than the name/contact block, and — when the document
+            # has a detectable heading-formatting class — a matching fingerprint.
+            # Without this, an entry header ("Kidod Science & Technologies") or a
+            # short all-caps field that merely looks heading-shaped by text alone (a
+            # state abbreviation like "CA" in a location cell) reads as a sidebar
+            # heading purely because it shares its row with the entry it belongs to.
+            if _has_tab_like(p):
+                continue
+            if key is None and (p.id < 2 or not _looks_like_heading(stripped)):
+                continue
+            if heading_fp_classes and _fingerprint(p) not in heading_fp_classes:
+                continue
+        found_heading = True
+        loc = p.location
+        assert loc is not None
+        if loc.cell != 0 or loc.row_content_cells != 1:
+            return None, [
+                Issue(
+                    code="table_sidebar_headings",
+                    message=(
+                        f"{stripped!r} (row {loc.row}) looks like a section heading "
+                        "but shares its row with other content, which is how a "
+                        "sidebar heading is laid out. Only tables used as an "
+                        "invisible single-column layout grid are supported."
+                    ),
+                    blocking=True,
+                )
+            ]
+
+    if not found_heading:
+        return None, [
+            Issue(
+                code="table_no_headings",
+                message=(
+                    "This document's table contains no recognizable section heading, "
+                    "so it reads as a data table rather than a resume layout grid."
+                ),
+                blocking=True,
+            )
+        ]
+
+    return TableShape(index=0, rows=len(rows_seen), grid_cols=grid_cols), []
 
 
 def _classify_heading(text: str) -> tuple[str | None, float, str]:
@@ -316,7 +524,7 @@ def _fingerprint(p: _Para) -> _Fingerprint:
         left_indent=pf.left_indent.emu if pf.left_indent is not None else None,
         space_before=pf.space_before.emu if pf.space_before is not None else None,
         space_after=pf.space_after.emu if pf.space_after is not None else None,
-        has_tab=p.has_tab,
+        has_tab=_has_tab_like(p),
         caps_bucket=_caps_bucket(p.text),
     )
 
@@ -357,7 +565,7 @@ def _introduces_content(
         stripped = q.text.strip()
         if not stripped:
             continue
-        if q.is_bullet or q.has_tab:
+        if q.is_bullet or _has_tab_like(q):
             return True
         if _classify_heading(stripped)[0] is not None:
             return False  # reached an unambiguous next heading with nothing found
@@ -385,7 +593,7 @@ def _heading_classes(paras: list[_Para]) -> set[_Fingerprint]:
         if p.is_bullet or _is_chrome(p.text):
             continue
         stripped = p.text.strip()
-        if not stripped or len(stripped) > 48 or "\t" in p.text or ":" in stripped:
+        if not stripped or len(stripped) > 48 or _has_tab_like(p) or ":" in stripped:
             continue
         if _DATE_RE.search(stripped):
             continue
@@ -414,7 +622,7 @@ def _immediately_follows_entry_header(p: _Para, paras: list[_Para]) -> bool:
     for q in reversed(paras[: p.id]):
         if _is_chrome(q.text):
             continue
-        return q.has_tab and not q.is_bullet
+        return _has_tab_like(q) and not q.is_bullet
     return False
 
 
@@ -637,6 +845,101 @@ def _contact_field_order(text: str) -> list[ContactField]:
     return order
 
 
+#: A location paragraph in a table's contact block reads as "City, ST" or "City, ST
+#: ZIP" — a comma followed by a two-letter state code. Deliberately narrow: unlike
+#: `_contact_field_order`'s single-line fallback (which claims *any* leftover text as
+#: `location` because there's nowhere else for it to go), a street-address paragraph
+#: ("23320 Arroyo Dr.") must NOT match this, so it can be reported as unmapped rather
+#: than guessed at — see `_detect_name_and_contact`.
+_LOCATION_LIKE_RE = re.compile(r",\s*[A-Z]{2}\b")
+
+
+def _contact_fields_present(text: str) -> list[ContactField]:
+    """Which contact fields one paragraph's own text plausibly names, in the order
+    they appear. Unlike `_contact_field_order`, this never pads out to the full
+    five-field set — an empty return means "this paragraph isn't a contact field at
+    all" (a street address, say), which is exactly what `_detect_name_and_contact`
+    needs to tell a mappable slot from one that must stay a literal.
+    """
+    finds: list[tuple[int, ContactField]] = []
+    email_m = _EMAIL_RE.search(text)
+    if email_m:
+        finds.append((email_m.start(), "email"))
+    phone_m = _PHONE_RE.search(text)
+    if phone_m and not _DATE_RE.search(phone_m.group(0)):
+        finds.append((phone_m.start(), "phone"))
+    lower = text.lower()
+    for label, field in (("linkedin", "linkedin"), ("github", "github")):
+        idx = lower.find(label)
+        if idx >= 0:
+            finds.append((idx, field))  # type: ignore[arg-type]
+    if not finds and _LOCATION_LIKE_RE.search(text):
+        finds.append((0, "location"))
+    return [f for _, f in sorted(finds, key=lambda t: t[0])]
+
+
+def _detect_name_and_contact(
+    paras: list[_Para], first_heading_id: int | None
+) -> tuple[int, _Para | None, list[ContactSlot], list[_Para]]:
+    """Name plus the paragraph(s) holding contact info, classified by regex.
+
+    "First two non-empty non-heading paragraphs" (the rule this replaces) is wrong the
+    moment a table layout spreads name/address/email/phone across four separate
+    paragraphs in four cells: the second paragraph is the street-address line, so a
+    joined contact line would be built from an address, and the email/phone would be
+    baked into the template as unchanging literals.
+
+    Scans every non-bullet, non-blank paragraph above the first detected section
+    heading (or, when none was found at all, falls back to today's exact
+    "non-heading-classified content paragraph" scan, so an unrecognizable document
+    still fails the same way it always has). Only attempts per-paragraph slot
+    classification when the block actually spans a table (at least one candidate
+    paragraph carries a `location`) — a paragraph-layout resume with a stray extra
+    line before its first heading keeps today's exact behaviour: the first remaining
+    paragraph is the whole contact line, verbatim.
+
+    Returns `(name_id, contact_paragraph, slots, unmapped)`. At most one of
+    `contact_paragraph` / `slots` is set — `slots` only when the contact block is
+    table-shaped *and* splits into two or more recognizable fields; `unmapped` lists
+    any table-cell paragraph in the block that named no contact field at all (an
+    address line, typically), reported so it's never silently dropped.
+    """
+    if first_heading_id is not None:
+        scope = [p for p in paras if p.id < first_heading_id and p.text.strip() and not p.is_bullet]
+    else:
+        scope = [
+            p
+            for p in paras
+            if p.text.strip() and not p.is_bullet and _classify_heading(p.text)[0] is None
+        ]
+
+    if not scope:
+        return 0, None, [], []
+
+    name = scope[0]
+    rest = scope[1:]
+    if not rest:
+        return name.id, None, [], []
+
+    is_table_shaped = any(p.location is not None for p in rest)
+    if len(rest) <= 1 or not is_table_shaped:
+        return name.id, rest[0], [], []
+
+    slots: list[ContactSlot] = []
+    unmapped: list[_Para] = []
+    for p in rest:
+        fields = _contact_fields_present(p.text)
+        if fields:
+            slots.append(ContactSlot(paragraph_id=p.id, fields=fields))
+        else:
+            unmapped.append(p)
+
+    if not slots:
+        return name.id, rest[0], [], []
+
+    return name.id, None, slots, unmapped
+
+
 def _span(paragraph_id: int, start: int, end: int) -> CharSpan:
     """Build a CharSpan."""
     return CharSpan(paragraph_id=paragraph_id, start=start, end=end)
@@ -794,6 +1097,146 @@ def _header_fields_from_text(
     return header, candidates
 
 
+_BARE_YEAR_RE = re.compile(r"\b(?:19|20)\d{2}\b")
+
+
+def _entry_main_paragraphs(entry: list[_Para]) -> list[_Para]:
+    """`entry` with its header's cross-cell siblings (location/dates in a table
+    layout's other cell, sharing the header's row) removed — every other paragraph
+    (title lines, bullets, later rows) is untouched.
+
+    Without this, `titles`/`detail_paras`-style scans over `entry[1:]` pick up a table
+    layout's location/date cell as if it were a job title or an education detail line,
+    since depth-first flattening puts the whole row — both cells — before the next
+    row's bullets.
+    """
+    head = entry[0]
+    loc = head.location
+    if loc is None:
+        return entry
+    return [
+        p
+        for p in entry
+        if not (p.location is not None and p.location.row == loc.row and p.location.cell != loc.cell)
+    ]
+
+
+def _header_fields_across_cells(
+    entry: list[_Para], *, primary: str, secondary: str | None, date_field: str
+) -> tuple[HeaderFieldMapping, list[FieldCandidate]] | None:
+    """Cross-cell counterpart to `_header_fields_from_text`, for a table layout where
+    an entry header's company/school/name sits in one cell and its location/dates sit
+    in the row's other cell (`Company | Location\\tDates` expressed as two cells
+    instead of text either side of a tab).
+
+    Returns `None` when the header paragraph isn't in a table row with a second
+    populated cell — the caller falls back to the ordinary single-paragraph split.
+
+    Location vs. dates in the side cell is resolved positionally, corroborated by
+    `_DATE_RE`, never by `_DATE_RE` alone: it requires a month name or a year range, so
+    a degree line's "Class of 2027" matches nothing, and a regex-first rule would wrongly
+    leave it unmapped. With two side paragraphs, the second is dates (mirroring
+    `Company | Location\\tDates`'s left-to-right order); with one, it's dates only when
+    it looks date-shaped, else location — the two swap if `_DATE_RE` disagrees with
+    that call for either paragraph.
+    """
+    head = entry[0]
+    loc = head.location
+    if loc is None or loc.row_content_cells < 2:
+        return None
+
+    main = [
+        p for p in entry if p.location is not None and p.location.row == loc.row and p.location.cell == loc.cell
+    ]
+    side = [
+        p
+        for p in entry
+        if p.location is not None
+        and p.location.row == loc.row
+        and p.location.cell != loc.cell
+        and p.text.strip()
+    ]
+    if not main or not side:
+        return None
+
+    def _looks_like_date(text: str) -> bool:
+        return bool(_DATE_RE.search(text)) or bool(_BARE_YEAR_RE.search(text))
+
+    secondary_para: _Para | None
+    date_para: _Para | None
+    if len(side) >= 2:
+        secondary_para, date_para = side[0], side[-1]
+    else:
+        p0 = side[0]
+        if _looks_like_date(p0.text):
+            secondary_para, date_para = None, p0
+        else:
+            secondary_para, date_para = p0, None
+
+    if (
+        secondary_para is not None
+        and date_para is not None
+        and _looks_like_date(secondary_para.text)
+        and not _looks_like_date(date_para.text)
+    ):
+        secondary_para, date_para = date_para, secondary_para
+
+    fields: dict[str, OptionalSpan] = {}
+    candidates: list[FieldCandidate] = []
+
+    def _field_span(name: str, para: _Para, confidence: float) -> None:
+        text = para.text
+        stripped = text.strip()
+        start = text.find(stripped)
+        span = _span(para.id, start, start + len(stripped))
+        fields[name] = OptionalSpan(present=True, span=span)
+        candidates.append(FieldCandidate(field=name, span=span, confidence=confidence, preview=stripped))
+
+    _field_span(primary, main[0], 0.85)
+    if secondary and secondary_para is not None:
+        _field_span(secondary, secondary_para, 0.8)
+    elif secondary:
+        fields[secondary] = OptionalSpan(present=False)
+    if date_para is not None:
+        _field_span(date_field, date_para, 0.9)
+    else:
+        fields[date_field] = OptionalSpan(present=False)
+
+    header = HeaderFieldMapping(
+        header_paragraph_id=main[0].id,
+        fields=fields,
+        date_alignment="separate_paragraph",
+        date_paragraph_id=date_para.id if date_para is not None else None,
+    )
+    return header, candidates
+
+
+def _entry_header_fields(
+    entry: list[_Para],
+    *,
+    primary: str,
+    secondary: str | None,
+    date_field: str,
+    exclude_after: int | None = None,
+) -> tuple[HeaderFieldMapping, list[FieldCandidate]]:
+    """Header fields for one entry, cross-cell aware.
+
+    Delegates to `_header_fields_from_text` (one paragraph, split on a tab or a
+    pipe-like separator) unless the entry's header paragraph sits in a table row with a
+    second populated cell, in which case `_header_fields_across_cells` reads
+    location/dates out of that other cell instead. Keyed on "the row has a second
+    physical cell", never on a fixed `gridSpan` — a document's WORK EXPERIENCE rows can
+    be a 3+1 split while its LEADERSHIP rows are 2+2, and both are the same shape
+    logically.
+    """
+    cross = _header_fields_across_cells(entry, primary=primary, secondary=secondary, date_field=date_field)
+    if cross is not None:
+        return cross
+    return _header_fields_from_text(
+        entry[0], primary=primary, secondary=secondary, date_field=date_field, exclude_after=exclude_after
+    )
+
+
 def _reconcile_header_fields(
     entries: list[list[_Para]],
     *,
@@ -835,8 +1278,8 @@ def _reconcile_header_fields(
     if not entries:
         return [], {}, {}
     if len(entries) == 1:
-        header, _ = _header_fields_from_text(
-            entries[0][0], primary=primary, secondary=secondary, date_field=date_field
+        header, _ = _entry_header_fields(
+            entries[0], primary=primary, secondary=secondary, date_field=date_field
         )
         names = [primary] + ([secondary] if secondary else []) + [date_field]
         presence = {
@@ -846,8 +1289,8 @@ def _reconcile_header_fields(
 
     per_entry: list[tuple[list[_Para], HeaderFieldMapping]] = []
     for entry in entries:
-        header, _ = _header_fields_from_text(
-            entry[0], primary=primary, secondary=secondary, date_field=date_field
+        header, _ = _entry_header_fields(
+            entry, primary=primary, secondary=secondary, date_field=date_field
         )
         per_entry.append((entry, header))
 
@@ -901,6 +1344,143 @@ def _prototype_consistency_issue(
     )
 
 
+def _exp_score(entry: list[_Para]) -> tuple:
+    """Prefer the experience entry with a tab-like header and a title + bullets — the
+    same tie-break `_analyze_document`'s installed-prototype selection uses, hoisted to
+    module level so `_section_field_candidates` can reuse it per section."""
+    header = entry[0]
+    bullets = [x for x in entry[1:] if x.is_bullet]
+    titles = [x for x in entry[1:] if not x.is_bullet and x.text.strip()]
+    return (
+        1 if _has_tab_like(header) else 0,
+        len(header.runs),
+        1 if titles else 0,
+        len(bullets),
+    )
+
+
+def _edu_score(entry: list[_Para]) -> tuple:
+    """Prefer the education entry with a tab-like header and more runs — mirrors
+    `_exp_score`'s role for education's prototype selection."""
+    return (1 if _has_tab_like(entry[0]) else 0, len(entry[0].runs))
+
+
+def _proj_score(entry: list[_Para]) -> int:
+    """Fewer header runs first — a project header without a tech/date suffix ("Note
+    Engine" alone) usually has fewer runs than one with a full "Name | Tech\\tDate"
+    line, and the plainer header is the safer prototype to build a template from."""
+    return len(entry[0].runs)
+
+
+def _detect_project_link(
+    proto: list[_Para],
+) -> tuple[OptionalSpan, int | None, FieldCandidate | None]:
+    """Hyperlink-based `link` field for a project entry's header line, detected before
+    name/tech splitting so `exclude_after` can keep the link label out of `tech`.
+
+    Returns `(link_span, exclude_after, candidate)` — `candidate` is `None` when the
+    header paragraph carries no hyperlink before its first tab, in which case the other
+    two values are the "absent" defaults.
+    """
+    header = proto[0]
+    if not header.has_hyperlink:
+        return OptionalSpan(present=False), None, None
+    text = header.text
+    tab = text.find("\t")
+    limit = len(text) if tab < 0 else tab
+    in_region = [
+        (s, e) for s, e in docx_text.hyperlink_char_spans(header.paragraph) if e <= limit
+    ]
+    if not in_region:
+        return OptionalSpan(present=False), None, None
+    start, end = in_region[-1]
+    span = _span(header.id, start, end)
+    return (
+        OptionalSpan(present=True, span=span),
+        start,
+        FieldCandidate(field="link", span=span, confidence=0.75, preview=text[start:end]),
+    )
+
+
+def _section_field_candidates(
+    paras: list[_Para],
+    sections: list[SectionCandidate],
+    *,
+    primary: str,
+    secondary: str | None,
+    date_field: str,
+    pick: Callable[[list[list[_Para]]], list[_Para]],
+    include_title: bool = False,
+    include_link: bool = False,
+) -> list[FieldCandidate]:
+    """Header-field candidates for *every* detected section of one kind, not just the
+    kind's single installed prototype.
+
+    The profile installs one prototype per kind (`section_by_key`, pooled across every
+    same-kind section via `combined_body`) — correct, and unchanged; that's what the
+    caller's own `header`/`*_mapping` construction still uses. But the wizard's
+    `AnalyzeReport` shows one field-detection row per *section*, so a kind-wide
+    candidate set left every section but the pooled prototype's own looking like nothing
+    was detected in it — a document with "WORK EXPERIENCE" and "LEADERSHIP" sections
+    showed a false "company/dates — not detected" under LEADERSHIP even though both
+    sections' entries have both fields. Confidence here is each section's own presence
+    rate across its own entries (via `_reconcile_header_fields` scoped to that section),
+    which is what the row claims to be reporting, rather than the kind-wide rate.
+    """
+    out: list[FieldCandidate] = []
+    for sec in sections:
+        entries = _split_entries(paras[sec.body_start : sec.body_end])
+        if not entries:
+            continue
+        candidate_entries, _field_majority, field_confidence = _reconcile_header_fields(
+            entries, primary=primary, secondary=secondary, date_field=date_field
+        )
+        proto = pick(candidate_entries)
+
+        exclude_after: int | None = None
+        if include_link:
+            _link, exclude_after, link_cand = _detect_project_link(proto)
+            if link_cand is not None:
+                out.append(
+                    link_cand.model_copy(
+                        update={"section_heading_paragraph_id": sec.heading_paragraph_id}
+                    )
+                )
+
+        _header, hcands = _entry_header_fields(
+            proto,
+            primary=primary,
+            secondary=secondary,
+            date_field=date_field,
+            exclude_after=exclude_after,
+        )
+        for cand in hcands:
+            out.append(
+                cand.model_copy(
+                    update={
+                        "confidence": field_confidence.get(cand.field, cand.confidence),
+                        "section_heading_paragraph_id": sec.heading_paragraph_id,
+                    }
+                )
+            )
+
+        if include_title:
+            proto_main = _entry_main_paragraphs(proto)
+            titles = [x for x in proto_main[1:] if not x.is_bullet and x.text.strip()]
+            if titles:
+                stripped = titles[0].text.strip()
+                out.append(
+                    FieldCandidate(
+                        field="title",
+                        span=_span(titles[0].id, 0, len(stripped)),
+                        confidence=0.9,
+                        preview=stripped[:80],
+                        section_heading_paragraph_id=sec.heading_paragraph_id,
+                    )
+                )
+    return out
+
+
 def _skills_spans(para: _Para) -> tuple[CharSpan, CharSpan, str] | None:
     """Split a skills line into label + body on the first colon."""
     text = para.text
@@ -923,10 +1503,89 @@ def _skills_spans(para: _Para) -> tuple[CharSpan, CharSpan, str] | None:
     )
 
 
+def _skills_rows_across_cells(body: list[_Para]) -> list[tuple[_Para, _Para]] | None:
+    """Every (label paragraph, value paragraph) pair in a table layout's skills grid,
+    row by row — the shared row-pairing logic behind both `_skills_pair_across_cells`
+    (one representative pair, for `SkillsMapping`) and `resume_import`'s own need for
+    *every* pair (to actually import each group's items, not just learn the format).
+
+    Depth-first flattening yields every label before every value within such a row
+    ("Languages:, Skills:, Interests:, <fluent…>, <pivot tables…>, <piano…>"), which
+    `_skills_spans` (one paragraph, split on a colon) cannot read at all — its
+    "Languages:" has nothing after the colon in the SAME paragraph and returns `None`.
+
+    Pairs cell *i* of the lower-indexed column with cell *i* of the higher-indexed one,
+    within each row `body` touches, requiring every row to have exactly two populated
+    cells with equal paragraph counts and non-empty label/value text on every pair —
+    any row that doesn't fit that shape (this is not a label/value grid after all)
+    makes the whole thing return `None` rather than a partial, unreliable pairing.
+    """
+    rows: dict[tuple[int, int], dict[int, list[_Para]]] = {}
+    order: list[tuple[int, int]] = []
+    for p in body:
+        if p.location is None:
+            return None
+        key = (p.location.table, p.location.row)
+        if key not in rows:
+            rows[key] = {}
+            order.append(key)
+        rows[key].setdefault(p.location.cell, []).append(p)
+
+    if not order:
+        return None
+
+    pairs: list[tuple[_Para, _Para]] = []
+    for key in order:
+        cells = rows[key]
+        cell_ids = sorted(cells)
+        if len(cell_ids) != 2:
+            return None
+        left, right = cells[cell_ids[0]], cells[cell_ids[1]]
+        if not left or len(left) != len(right):
+            return None
+        for lp, rp in zip(left, right):
+            if not lp.text.strip() or not rp.text.strip():
+                return None
+            pairs.append((lp, rp))
+    return pairs
+
+
+def _skills_pair_across_cells(body: list[_Para]) -> tuple[CharSpan, CharSpan, str] | None:
+    """Single representative `(label_span, body_span, separator)` pair — same contract
+    as `_skills_spans` — since that's all `SkillsMapping` needs: a single prototype
+    pair whose formatting the build step clones once per `SkillGroup` at render time.
+    See `_skills_rows_across_cells` for the row-pairing this is built on.
+    """
+    pairs = _skills_rows_across_cells(body)
+    if not pairs:
+        return None
+    lp, rp = pairs[0]
+    label = lp.text.strip()
+    if label.endswith(":"):
+        label = label[:-1].rstrip()
+    value = rp.text.strip()
+    if not label or not value:
+        return None
+    label_start = lp.text.find(label)
+    body_start = rp.text.find(value)
+    return (
+        _span(lp.id, label_start, label_start + len(label)),
+        _span(rp.id, body_start, body_start + len(value)),
+        ": ",
+    )
+    return first
+
+
 def _load_paras(doc) -> list[_Para]:
-    """Flatten document body paragraphs into indexed `_Para` records."""
+    """Flatten document body paragraphs — including any inside tables — into indexed
+    `_Para` records, via `docx_text.iter_document_paragraphs`.
+
+    THE id space: every `CharSpan.paragraph_id` and every bare `*_paragraph_id` field
+    in `template_profile.py` is an index into this exact sequence.
+    `template_build._para_by_id` must enumerate identically — see that function.
+    """
     out: list[_Para] = []
-    for i, paragraph in enumerate(doc.paragraphs):
+    for i, (paragraph, location) in enumerate(docx_text.iter_document_paragraphs(doc)):
         text = paragraph.text or ""
         out.append(
             _Para(
@@ -937,6 +1596,7 @@ def _load_paras(doc) -> list[_Para]:
                 has_tab=has_tab(paragraph),
                 has_hyperlink=has_hyperlink(paragraph),
                 runs=list(paragraph.runs),
+                location=location,
             )
         )
     return out
@@ -994,14 +1654,18 @@ def _analyze_document(
     paras = _load_paras(doc)
     overrides = overrides or {}
 
+    # Computed early (usually this sits right before the heading-detection loop below)
+    # specifically so `classify_table_layout` can use the same corroboration signal:
+    # a short all-caps paragraph that merely looks heading-shaped (a state abbreviation
+    # like "CA" in a location cell, say) must not be mistaken for a sidebar heading
+    # just because nothing else disqualifies it — the fingerprint check is what tells
+    # the two apart, since only real headings recur with matching formatting.
+    heading_fp_classes = _heading_classes(paras)
+
+    table_shape: TableShape | None = None
     if _document_has_tables(doc):
-        issues.append(
-            Issue(
-                code="tables",
-                message="Document contains tables; only single-column paragraph layouts are supported.",
-                blocking=True,
-            )
-        )
+        table_shape, table_issues = classify_table_layout(doc, paras, heading_fp_classes)
+        issues.extend(table_issues)
     if _document_has_textboxes(doc):
         issues.append(
             Issue(
@@ -1044,14 +1708,13 @@ def _analyze_document(
     # candidates together when picking that kind's prototype entry.
     # Structure-first corroboration (see `_heading_classes`'s docstring): a formatting
     # signature shared by several short, content-introducing paragraphs is what a
-    # resume's own section headings typically look like. Computed once, over the whole
-    # document, before the text classifier runs at all — the alias table below only
-    # *names* a heading's kind; this is what actually decides whether the structural
-    # fallback gets to guess at all, and downgrades a merely-plausible text match that
-    # nothing else in the document agrees with. Empty when nothing qualifies (too few
-    # candidates, or no repeated formatting) — every use below degrades to today's
-    # text-only behavior in that case, exactly as if this feature did not exist.
-    heading_fp_classes = _heading_classes(paras)
+    # resume's own section headings typically look like. `heading_fp_classes` was
+    # already computed above (`classify_table_layout` needs it too) — the alias table
+    # below only *names* a heading's kind; this is what actually decides whether the
+    # structural fallback gets to guess at all, and downgrades a merely-plausible text
+    # match that nothing else in the document agrees with. Empty when nothing qualifies
+    # (too few candidates, or no repeated formatting) — every use below degrades to
+    # today's text-only behavior in that case, exactly as if this feature did not exist.
 
     raw_headings: list[SectionCandidate] = []
     for p in paras:
@@ -1124,7 +1787,7 @@ def _analyze_document(
         # already assumes this), and never sits immediately after another entry's own
         # header line. Exact alias matches (conf == 1.0, e.g. literally "EDUCATION")
         # are trusted on text alone regardless of position or formatting.
-        if conf < 1.0 and (p.has_tab or _immediately_follows_entry_header(p, paras)):
+        if conf < 1.0 and (_has_tab_like(p) or _immediately_follows_entry_header(p, paras)):
             continue
         if conf < 1.0 and uncorroborated:
             conf = min(conf, 0.4)
@@ -1199,21 +1862,32 @@ def _analyze_document(
     field_candidates: list[FieldCandidate] = []
     suggested: TemplateProfile | None = None
 
-    # Name + contact heuristics: first two non-empty non-heading paragraphs.
-    content_paras = [
-        p
-        for p in paras
-        if p.text.strip() and not p.is_bullet and _classify_heading(p.text)[0] is None
-    ]
-    name_id = content_paras[0].id if content_paras else 0
-    contact_para = content_paras[1] if len(content_paras) > 1 else None
+    # Name + contact: everything above the first detected heading, classified by regex
+    # — see `_detect_name_and_contact` for why "first two non-heading paragraphs" isn't
+    # enough once a table layout spreads the contact block across several paragraphs.
+    first_heading_id = section_candidates[0].heading_paragraph_id if section_candidates else None
+    name_id, contact_para, contact_slots, unmapped_contact_paras = _detect_name_and_contact(
+        paras, first_heading_id
+    )
 
-    if contact_para is None:
+    if contact_para is None and not contact_slots:
         issues.append(
             Issue(
                 code="missing_contact",
                 message="Could not find a contact line after the name.",
                 blocking=True,
+            )
+        )
+    for p in unmapped_contact_paras:
+        issues.append(
+            Issue(
+                code="contact_unmapped_paragraph",
+                message=(
+                    f"{p.text.strip()!r} (paragraph {p.id}) is part of the contact "
+                    "block but doesn't look like an email, phone, location, or "
+                    "profile link. It will stay a literal in the template."
+                ),
+                blocking=False,
             )
         )
 
@@ -1269,26 +1943,21 @@ def _analyze_document(
                 entries, primary="company", secondary="location", date_field="dates"
             )
 
-            # Prefer entry with a tab in the header and a title + bullets.
-            def _exp_score(entry: list[_Para]) -> tuple:
-                header = entry[0]
-                bullets = [x for x in entry[1:] if x.is_bullet]
-                titles = [x for x in entry[1:] if not x.is_bullet and x.text.strip()]
-                return (
-                    1 if header.has_tab else 0,
-                    len(header.runs),
-                    1 if titles else 0,
-                    len(bullets),
-                )
-
             proto = max(candidate_entries, key=_exp_score)
             header_para = proto[0]
-            header, hcands = _header_fields_from_text(
-                header_para, primary="company", secondary="location", date_field="dates"
+            header, _hcands = _entry_header_fields(
+                proto, primary="company", secondary="location", date_field="dates"
             )
             field_candidates.extend(
-                cand.model_copy(update={"confidence": field_confidence.get(cand.field, cand.confidence)})
-                for cand in hcands
+                _section_field_candidates(
+                    paras,
+                    by_kind["experience"],
+                    primary="company",
+                    secondary="location",
+                    date_field="dates",
+                    pick=lambda entries: max(entries, key=_exp_score),
+                    include_title=True,
+                )
             )
             if not field_majority.get("dates", True):
                 issues.append(
@@ -1314,7 +1983,8 @@ def _analyze_document(
                         blocking=False,
                     )
                 )
-            titles = [x for x in proto[1:] if not x.is_bullet and x.text.strip()]
+            proto_main = _entry_main_paragraphs(proto)
+            titles = [x for x in proto_main[1:] if not x.is_bullet and x.text.strip()]
             bullets = [x for x in proto[1:] if x.is_bullet]
             if not bullets:
                 # Fall back to any bullet in the section.
@@ -1339,14 +2009,6 @@ def _analyze_document(
                         present=True, span=_span(t.id, 0, len(t.text.strip()))
                     )
                     title_pid = t.id
-                    field_candidates.append(
-                        FieldCandidate(
-                            field="title",
-                            span=title_span.span,  # type: ignore[arg-type]
-                            confidence=0.9,
-                            preview=t.text.strip()[:80],
-                        )
-                    )
                 else:
                     title_span = OptionalSpan(present=False)
                     title_pid = None
@@ -1382,19 +2044,36 @@ def _analyze_document(
         body = combined_body["education"]
         entries = _split_entries(body)
         if entries:
-            proto = max(
-                entries,
-                key=lambda e: (1 if e[0].has_tab else 0, len(e[0].runs)),
+            proto = max(entries, key=_edu_score)
+            header, _hcands = _entry_header_fields(
+                proto, primary="school", secondary="location", date_field="dates"
             )
-            header, hcands = _header_fields_from_text(
-                proto[0], primary="school", secondary="location", date_field="dates"
+            field_candidates.extend(
+                _section_field_candidates(
+                    paras,
+                    by_kind["education"],
+                    primary="school",
+                    secondary="location",
+                    date_field="dates",
+                    pick=lambda entries: max(entries, key=_edu_score),
+                )
             )
-            field_candidates.extend(hcands)
-            bullets = [x for x in proto[1:] if x.is_bullet] or [
+            proto_main = _entry_main_paragraphs(proto)
+            plain_lines = [x for x in proto_main[1:] if not x.is_bullet and x.text.strip()]
+            real_bullets = [x for x in proto[1:] if x.is_bullet] or [
                 x for x in body if x.is_bullet
             ]
-            plain_fallback = not bullets
-            if plain_fallback:
+            plain_fallback = not real_bullets
+            if plain_lines and real_bullets:
+                # A prose degree line right under the header ("Bachelor of Arts in...",
+                # not itself a Word bullet) followed by separately bulleted detail lines
+                # (GPA, Dean's List, coursework) — distinct from the shape below, where
+                # the degree line IS the first bullet. `edu.degree_line` is a single
+                # field, so the prose line is the only sound choice for it; the real
+                # bullets become the `edu.details` loop's prototype and, at render time,
+                # its actual items.
+                bullets = [plain_lines[0]] + real_bullets
+            elif plain_fallback:
                 # No real Word-list bullets under this entry. `retarget_bullet` (called
                 # at build time) creates a paragraph's numbering properties rather than
                 # requiring them to already exist, so a plain degree line still produces
@@ -1403,6 +2082,8 @@ def _analyze_document(
                 bullets = [x for x in proto[1:] if x.text.strip()] or [
                     x for x in body if x.text.strip()
                 ]
+            else:
+                bullets = real_bullets
             if not bullets:
                 issues.append(
                     Issue(
@@ -1463,7 +2144,7 @@ def _analyze_document(
                     entries, primary="name", secondary="tech", date_field="date"
                 )
             )
-            proto = min(proj_candidate_entries, key=lambda e: len(e[0].runs))
+            proto = min(proj_candidate_entries, key=_proj_score)
 
             # Detect the link BEFORE splitting name/tech: its own span (not a fixed word
             # list like "Github"/"Demo"/"Live") comes from the hyperlink itself, so any
@@ -1471,42 +2152,32 @@ def _analyze_document(
             # it, a project with a link but no tech ("Name | Github\tdate") reads the
             # label as tech and the two fields end up with the same span, which the
             # builder rejects as an overlap.
-            link = OptionalSpan(present=False)
-            exclude_after: int | None = None
-            if proto[0].has_hyperlink:
-                text = proto[0].text
-                tab = text.find("\t")
-                limit = len(text) if tab < 0 else tab
-                in_region = [
-                    (s, e)
-                    for s, e in docx_text.hyperlink_char_spans(proto[0].paragraph)
-                    if e <= limit
-                ]
-                if in_region:
-                    start, end = in_region[-1]
-                    link = OptionalSpan(present=True, span=_span(proto[0].id, start, end))
-                    exclude_after = start
-                    field_candidates.append(
-                        FieldCandidate(
-                            field="link",
-                            span=link.span,  # type: ignore[arg-type]
-                            confidence=0.75,
-                            preview=text[start:end],
-                        )
-                    )
+            link, exclude_after, link_cand = _detect_project_link(proto)
+            if link_cand is not None:
+                field_candidates.append(link_cand)
 
-            header, hcands = _header_fields_from_text(
-                proto[0],
+            # Cross-cell aware (`_entry_header_fields`, not the plain-text-only
+            # `_header_fields_from_text`) so a table-layout Projects section — name/tech
+            # in one cell, date in the row's other cell — reconciles and installs
+            # identically instead of reconciling fine and then losing the date on the
+            # actual installed prototype.
+            header, _hcands = _entry_header_fields(
+                proto,
                 primary="name",
                 secondary="tech",
                 date_field="date",
                 exclude_after=exclude_after,
             )
             field_candidates.extend(
-                cand.model_copy(
-                    update={"confidence": proj_field_confidence.get(cand.field, cand.confidence)}
+                _section_field_candidates(
+                    paras,
+                    by_kind["projects"],
+                    primary="name",
+                    secondary="tech",
+                    date_field="date",
+                    pick=lambda entries: min(entries, key=_proj_score),
+                    include_link=True,
                 )
-                for cand in hcands
             )
             if not proj_field_majority.get("date", True):
                 issues.append(
@@ -1568,6 +2239,14 @@ def _analyze_document(
         if body:
             proto = next((p for p in body if ":" in p.text), body[0])
             spans = _skills_spans(proto)
+            proto_id = proto.id
+            if spans is None:
+                # Not one paragraph split on a colon — try a table layout's label
+                # cell/value cell pairing before giving up.
+                cross = _skills_pair_across_cells(body)
+                if cross is not None:
+                    spans = cross
+                    proto_id = cross[0].paragraph_id
             if spans is None:
                 issues.append(
                     Issue(
@@ -1584,7 +2263,7 @@ def _analyze_document(
                 skills_mapping = SkillsMapping(
                     heading_paragraph_id=sec.heading_paragraph_id,
                     heading_text=sec.heading_text,
-                    prototype_paragraph_id=proto.id,
+                    prototype_paragraph_id=proto_id,
                     label_span=label_span,
                     body_span=body_span,
                     separator=sep,
@@ -1595,6 +2274,7 @@ def _analyze_document(
                         span=label_span,
                         confidence=0.9,
                         preview=proto.text[label_span.start : label_span.end],
+                        section_heading_paragraph_id=sec.heading_paragraph_id,
                     )
                 )
         else:
@@ -1627,22 +2307,33 @@ def _analyze_document(
     if (
         not blockers
         and experience_mapping is not None
-        and contact_para is not None
+        and (contact_para is not None or contact_slots)
         and enabled.experience
     ):
-        contact = ContactMapping(
-            paragraph_id=contact_para.id,
-            field_order=_contact_field_order(contact_para.text),
-            separator=_contact_separator(contact_para.text),
-        )
+        if contact_slots:
+            contact = ContactMapping(
+                paragraph_id=contact_slots[0].paragraph_id,
+                slots=contact_slots,
+            )
+        else:
+            assert contact_para is not None
+            contact = ContactMapping(
+                paragraph_id=contact_para.id,
+                field_order=_contact_field_order(contact_para.text),
+                separator=_contact_separator(contact_para.text),
+            )
 
         # Generic mode is needed the moment fixed mode could not represent what was
         # found: more than one heading of some kind (two experience-shaped sections
-        # cannot both keep their own title/position under one hard-coded heading), or a
-        # `list`-kind section (fixed mode has no such prototype at all). Otherwise
+        # cannot both keep their own title/position under one hard-coded heading), a
+        # `list`-kind section (fixed mode has no such prototype at all), or a table
+        # layout (always generic — see `TemplateProfile.layout`'s docstring). Otherwise
         # today's exact single-heading-per-kind case stays on fixed mode, byte-identical
         # to before this existed.
-        needs_generic = "list" in by_kind or any(len(v) > 1 for v in by_kind.values())
+        is_table_layout = table_shape is not None
+        needs_generic = (
+            is_table_layout or "list" in by_kind or any(len(v) > 1 for v in by_kind.values())
+        )
         detected_sections: list[DetectedSection] = []
         heading_prototype: HeadingPrototype | None = None
         spacing = SpacingProfile()
@@ -1667,7 +2358,11 @@ def _analyze_document(
             heading_prototype = HeadingPrototype(
                 paragraph_id=section_candidates[0].heading_paragraph_id
             )
-            spacing = _detect_spacing(paras, section_candidates)
+            # A table layout's inter-section gaps come from heading rows' own paragraph
+            # spacing and dedicated spacer rows, not counted blank paragraphs —
+            # `_detect_spacing`'s chrome-run model doesn't translate, and
+            # `TemplateProfile` rejects a table-layout profile carrying spacing donors.
+            spacing = SpacingProfile() if is_table_layout else _detect_spacing(paras, section_candidates)
 
         suggested = TemplateProfile(
             source_sha256=digest,
@@ -1685,6 +2380,8 @@ def _analyze_document(
             sections=detected_sections,
             heading_prototype=heading_prototype,
             spacing=spacing,
+            layout="table" if is_table_layout else "paragraph",
+            paragraph_count=len(paras),
         )
 
     ready = suggested is not None and not blockers

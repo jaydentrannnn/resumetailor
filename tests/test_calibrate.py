@@ -347,3 +347,313 @@ def test_run_never_writes_when_the_boundary_check_fails(tmp_path, monkeypatch):
 
     assert written == []
     assert not (tmp_path / "calibration").exists()
+
+
+# ----------------------------------------------------------------------------------
+# check_render_anchors — pure decision logic, no renderer: baseline / match / drift /
+# rebaseline / silent re-baseline on a legitimate resume or template change
+# ----------------------------------------------------------------------------------
+
+
+def _anchor_block(
+    *,
+    resume_sha: str = "resume-r1",
+    template_sha: str = "template-t1",
+    bullet_count: int = 25,
+    subset_bullet_count: int = 12,
+    full_pages: int = 2,
+    subset_pages: int = 1,
+) -> dict:
+    return {
+        "resume_sha256": resume_sha,
+        "template_sha256": template_sha,
+        "bullet_count": bullet_count,
+        "subset_bullet_count": subset_bullet_count,
+        "full_pages": full_pages,
+        "subset_pages": subset_pages,
+    }
+
+
+def test_first_run_records_a_baseline_without_warning():
+    measured = _anchor_block()
+    anchors, log_line, warning = calibrate.check_render_anchors(
+        measured, previous=None, rebaseline=False
+    )
+    assert anchors == measured
+    assert warning is None
+    assert "recorded" in log_line
+
+
+def test_matching_baseline_passes():
+    previous = _anchor_block()
+    measured = _anchor_block()
+    anchors, log_line, warning = calibrate.check_render_anchors(
+        measured, previous=previous, rebaseline=False
+    )
+    assert anchors == measured
+    assert warning is None
+    assert log_line.strip() == "anchor checks OK"
+
+
+def test_drift_warns_and_keeps_the_old_baseline():
+    """Same resume+template (matching fingerprints), but the page count changed — a
+    real regression. The old baseline must survive on disk, not be silently
+    overwritten by the drifted measurement."""
+    previous = _anchor_block(full_pages=2)
+    measured = _anchor_block(full_pages=3)
+    anchors, log_line, warning = calibrate.check_render_anchors(
+        measured, previous=previous, rebaseline=False
+    )
+    assert anchors == previous
+    assert warning is not None
+    assert "3" in warning and "2" in warning
+    assert "--rebaseline" in warning
+    assert "warning" in log_line
+
+
+def test_drift_warning_covers_subset_page_count_too():
+    previous = _anchor_block(subset_pages=1)
+    measured = _anchor_block(subset_pages=2)
+    _, _, warning = calibrate.check_render_anchors(
+        measured, previous=previous, rebaseline=False
+    )
+    assert warning is not None
+    assert "subset" in warning
+
+
+def test_rebaseline_adopts_the_new_measurement():
+    previous = _anchor_block(full_pages=2)
+    measured = _anchor_block(full_pages=3)
+    anchors, log_line, warning = calibrate.check_render_anchors(
+        measured, previous=previous, rebaseline=True
+    )
+    assert anchors == measured
+    assert warning is None
+    assert "updated" in log_line
+
+
+def test_a_resume_edit_rebaselines_silently():
+    """A different resume fingerprint legitimately changes the expected page count —
+    this must never look like drift, even though `full_pages` also differs."""
+    previous = _anchor_block(resume_sha="resume-r1", full_pages=2)
+    measured = _anchor_block(resume_sha="resume-r2", full_pages=3)
+    anchors, log_line, warning = calibrate.check_render_anchors(
+        measured, previous=previous, rebaseline=False
+    )
+    assert anchors == measured
+    assert warning is None
+    assert "recorded" in log_line
+
+
+def test_a_template_rebuild_rebaselines_silently():
+    previous = _anchor_block(template_sha="template-t1", full_pages=2)
+    measured = _anchor_block(template_sha="template-t2", full_pages=3)
+    anchors, log_line, warning = calibrate.check_render_anchors(
+        measured, previous=previous, rebaseline=False
+    )
+    assert anchors == measured
+    assert warning is None
+    assert "recorded" in log_line
+
+
+# ----------------------------------------------------------------------------------
+# measure_anchors — scale-free subset selection + fingerprints, renderer stubbed
+# ----------------------------------------------------------------------------------
+
+
+def _multi_bullet_resume() -> MasterResume:
+    return MasterResume(
+        contact={"name": "Test User", "email": "test@example.com"},
+        sections=[
+            ExperienceSection(
+                id="experience",
+                title="Experience",
+                entries=[
+                    Experience(
+                        id="acme",
+                        company="Acme",
+                        title="Engineer",
+                        start="2020-01",
+                        end="2020-02",
+                        bullets=[
+                            Bullet(id="b1", text="One.", tags=["x"]),
+                            Bullet(id="b2", text="Two.", tags=["x"]),
+                            Bullet(id="b3", text="Three.", tags=["x"]),
+                        ],
+                    )
+                ],
+            )
+        ],
+    )
+
+
+def test_measure_anchors_subset_is_half_the_bullets(tmp_path, monkeypatch):
+    template_path = tmp_path / "main_template.docx"
+    template_path.write_bytes(b"fake template bytes")
+    monkeypatch.setattr(config, "DEFAULT_TEMPLATE_PATH", template_path)
+    monkeypatch.setattr(config, "OUTPUT_DIR", tmp_path)
+    monkeypatch.setattr(calibrate, "_render_pages", lambda resume, stub: (tmp_path / "full.pdf", 2))
+
+    captured_bullets: dict[str, str] = {}
+
+    def fake_render(resume, *, bullets=None, out=None, **kw):
+        captured_bullets.update(bullets or {})
+        return out
+
+    monkeypatch.setattr(calibrate.render, "render", fake_render)
+    monkeypatch.setattr(calibrate.render, "to_pdf", lambda out: tmp_path / "subset.pdf")
+    monkeypatch.setattr(calibrate.render, "page_count", lambda pdf: 1)
+
+    result = calibrate.measure_anchors(_multi_bullet_resume())
+
+    assert result["bullet_count"] == 3
+    assert result["subset_bullet_count"] == 1  # max(1, 3 // 2)
+    assert set(captured_bullets) == {"b1"}
+    assert result["full_pages"] == 2
+    assert result["subset_pages"] == 1
+    assert len(result["resume_sha256"]) == 16
+    assert len(result["template_sha256"]) == 16
+
+
+def test_resume_fingerprint_changes_with_content():
+    a = calibrate._resume_fingerprint(_resume())
+    edited = _resume()
+    edited.contact.name = "Someone Else"
+    b = calibrate._resume_fingerprint(edited)
+    assert a != b
+
+
+def test_template_fingerprint_changes_with_bytes(tmp_path, monkeypatch):
+    path = tmp_path / "main_template.docx"
+    path.write_bytes(b"version one")
+    monkeypatch.setattr(config, "DEFAULT_TEMPLATE_PATH", path)
+    a = calibrate._template_fingerprint()
+    path.write_bytes(b"version two")
+    b = calibrate._template_fingerprint()
+    assert a != b
+
+
+# ----------------------------------------------------------------------------------
+# write_calibration / _load_previous_anchors — file shape, backwards compatible
+# ----------------------------------------------------------------------------------
+
+
+def test_write_calibration_without_anchors_matches_the_old_shape(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "CALIBRATION_DIR", tmp_path)
+    monkeypatch.setattr(config, "PDF_BACKEND", "word")
+    monkeypatch.setattr(config, "DEFAULT_TEMPLATE_PATH", tmp_path / "main_template.docx")
+    path = calibrate.write_calibration(101, 52)
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert set(payload.keys()) == {"backend", "chars_per_line", "lines_per_page", "measured_at", "template"}
+
+
+def test_write_calibration_with_anchors_includes_the_block(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "CALIBRATION_DIR", tmp_path)
+    monkeypatch.setattr(config, "PDF_BACKEND", "word")
+    monkeypatch.setattr(config, "DEFAULT_TEMPLATE_PATH", tmp_path / "main_template.docx")
+    anchors = _anchor_block()
+    path = calibrate.write_calibration(101, 52, anchors)
+    payload = json.loads(path.read_text(encoding="utf-8"))
+    assert payload["anchors"] == anchors
+
+
+def test_anchors_key_is_ignored_by_the_config_loader(tmp_path, monkeypatch):
+    """A calibration file carrying the new `anchors` block still loads through
+    `config._load_calibration` exactly as before — the loader only ever reads
+    `chars_per_line`/`lines_per_page`."""
+    monkeypatch.setattr(config, "CALIBRATION_DIR", tmp_path)
+    path = tmp_path / "word.json"
+    path.write_text(
+        json.dumps(
+            {
+                "chars_per_line": 101,
+                "lines_per_page": 52,
+                "anchors": _anchor_block(),
+            }
+        )
+    )
+    chars, lines, source, rejection = config._load_calibration("word")
+    assert (chars, lines) == (101, 52)
+    assert source == str(path)
+    assert rejection is None
+
+
+def test_load_previous_anchors_returns_none_when_no_file(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "CALIBRATION_DIR", tmp_path)
+    monkeypatch.setattr(config, "PDF_BACKEND", "word")
+    assert calibrate._load_previous_anchors() is None
+
+
+def test_load_previous_anchors_returns_none_for_a_pre_anchors_file(tmp_path, monkeypatch):
+    """The file shape from before this feature existed (no `anchors` key at all) must
+    read as "no baseline yet", not raise."""
+    monkeypatch.setattr(config, "CALIBRATION_DIR", tmp_path)
+    monkeypatch.setattr(config, "PDF_BACKEND", "word")
+    (tmp_path / "word.json").write_text(json.dumps({"chars_per_line": 101, "lines_per_page": 52}))
+    assert calibrate._load_previous_anchors() is None
+
+
+def test_load_previous_anchors_reads_the_anchors_block(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "CALIBRATION_DIR", tmp_path)
+    monkeypatch.setattr(config, "PDF_BACKEND", "word")
+    anchors = _anchor_block()
+    (tmp_path / "word.json").write_text(
+        json.dumps({"chars_per_line": 101, "lines_per_page": 52, "anchors": anchors})
+    )
+    assert calibrate._load_previous_anchors() == anchors
+
+
+# ----------------------------------------------------------------------------------
+# run() — the anchor step end to end: preserves an existing baseline when the step is
+# skipped, never lets a drift warning block the write
+# ----------------------------------------------------------------------------------
+
+
+def _stub_run_prerequisites(monkeypatch, tmp_path):
+    """Everything `run()` needs before the anchor step, stubbed so only the anchor
+    machinery is under test."""
+    monkeypatch.setattr(config, "DEFAULT_TEMPLATE_PATH", tmp_path / "main_template.docx")
+    (tmp_path / "main_template.docx").write_bytes(b"template bytes")
+    monkeypatch.setattr(config, "CALIBRATION_DIR", tmp_path / "calibration")
+    monkeypatch.setattr(calibrate.data, "load", lambda: _resume())
+    monkeypatch.setattr(calibrate, "calibrate_chars_per_line", lambda base: 101)
+    monkeypatch.setattr(calibrate, "verify_chars_per_line_boundary", lambda base, chars_per_line: None)
+    monkeypatch.setattr(calibrate, "calibrate_lines_per_page", lambda base, chars_per_line: 52)
+
+
+def test_run_skipping_the_anchor_step_preserves_the_existing_baseline(tmp_path, monkeypatch):
+    _stub_run_prerequisites(monkeypatch, tmp_path)
+    calibration_dir = tmp_path / "calibration"
+    calibration_dir.mkdir(parents=True)
+    existing_anchors = _anchor_block()
+    (calibration_dir / f"{config.PDF_BACKEND}.json").write_text(
+        json.dumps({"chars_per_line": 90, "lines_per_page": 40, "anchors": existing_anchors})
+    )
+
+    result = calibrate.run(verify_anchors=False)
+
+    payload = json.loads(result.path.read_text(encoding="utf-8"))
+    assert payload["anchors"] == existing_anchors
+    assert result.warnings is None
+
+
+def test_run_anchor_step_failure_preserves_the_existing_baseline_and_warns(tmp_path, monkeypatch):
+    _stub_run_prerequisites(monkeypatch, tmp_path)
+    calibration_dir = tmp_path / "calibration"
+    calibration_dir.mkdir(parents=True)
+    existing_anchors = _anchor_block()
+    (calibration_dir / f"{config.PDF_BACKEND}.json").write_text(
+        json.dumps({"chars_per_line": 90, "lines_per_page": 40, "anchors": existing_anchors})
+    )
+    monkeypatch.setattr(
+        calibrate,
+        "measure_anchors",
+        lambda base: (_ for _ in ()).throw(RuntimeError("PDF conversion failed")),
+    )
+
+    result = calibrate.run(verify_anchors=True)
+
+    payload = json.loads(result.path.read_text(encoding="utf-8"))
+    assert payload["anchors"] == existing_anchors
+    assert result.warnings is not None
+    assert any("PDF conversion failed" in w for w in result.warnings)
