@@ -9,6 +9,8 @@ transitive alias resolution).
 
 from __future__ import annotations
 
+import pytest
+
 from resume_tailor import config
 
 
@@ -70,3 +72,58 @@ def test_tag_alias_fingerprint_changes_when_a_key_is_added(monkeypatch):
     after = config.tag_alias_fingerprint()
 
     assert before != after
+
+
+# --------------------------------------------------------------------------------------
+# config.pinned() — the ContextVar overlay `backend_for` consults ahead of `_ACTIVE`.
+# --------------------------------------------------------------------------------------
+
+
+def test_pinned_overrides_active_for_every_purpose(monkeypatch):
+    """A `pinned()` block wins over whatever `resolve()` last set, for every stage."""
+    config.resolve("claude")
+    assert config.backend_for("extract").provider == "anthropic"
+
+    with config.pinned("ollama"):
+        for purpose in config.PURPOSES:
+            backend = config.backend_for(purpose)
+            assert backend.origin == "ollama"
+            assert backend.model == config.OLLAMA_MODEL
+            assert backend.provider == "openai"
+
+    # Restored exactly, once the block exits.
+    assert config.backend_for("extract").provider == "anthropic"
+
+
+def test_pinned_covers_every_purpose_keyed_accessor():
+    """Every `*_for(purpose)` helper funnels through `backend_for`, so the pin must be
+    visible from all of them, not just `backend_for` itself."""
+    config.resolve("claude")
+
+    with config.pinned("ollama"):
+        assert config.model_for("extract") == config.OLLAMA_MODEL
+        assert config.provider_for("extract") == "openai"
+        assert config.base_url_for("extract") == config.OLLAMA_BASE_URL
+        assert config.structured_mode_for("extract") == "prompt"
+
+
+def test_pinned_never_mutates_active():
+    """`pinned()` must leave `_ACTIVE` byte-identical — a job resolved separately must
+    never be repointed by an unrelated one-off web action."""
+    resolved = config.resolve("claude")
+
+    with config.pinned("ollama"):
+        assert config._ACTIVE == resolved
+
+    assert config._ACTIVE == resolved
+
+
+def test_pinned_invalid_profile_raises_and_leaves_no_residue():
+    config.resolve("claude")
+
+    with pytest.raises(ValueError):
+        with config.pinned("not-a-real-profile"):
+            pass
+
+    assert config._PINNED.get() is None
+    assert config.backend_for("extract").provider == "anthropic"

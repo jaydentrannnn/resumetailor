@@ -25,12 +25,14 @@ from pathlib import Path
 import docx
 from docx.oxml.ns import qn
 
+from . import docx_text
 from . import render as render_mod
 from . import template_profile
 from .data import MasterResume
 from .template_analyze import Issue
 from .template_build import (
     BULLET_TAG,
+    CONTACT_SLOT_TAG_FMT,
     CONTACT_TAG,
     EDUCATION_DEGREE_TAG,
     EDUCATION_DETAIL_TAG,
@@ -42,11 +44,15 @@ from .template_build import (
     PROJECT_HEADER_TAGS,
     PROJECT_LINK_TAG,
     SECTION_LOOP_OPEN,
+    SECTION_LOOP_OPEN_TR,
     SECTION_TITLE_TAG,
     SKILLS_BODY_TAG,
     SKILLS_LABEL_TAG,
 )
 from .template_profile import TemplateProfile
+
+_TC_TAG = qn("w:tc")
+_P_TAG = qn("w:p")
 
 
 def expected_tags(profile: TemplateProfile) -> set[str]:
@@ -60,7 +66,10 @@ def expected_tags(profile: TemplateProfile) -> set[str]:
     itself a bug is `template_analyze`'s job, not this module's. This module only holds
     tagging accountable to whatever mapping it was actually given.
     """
-    tags = {NAME_TAG, CONTACT_TAG}
+    if profile.contact.slots:
+        tags = {NAME_TAG} | {CONTACT_SLOT_TAG_FMT % i for i in range(len(profile.contact.slots))}
+    else:
+        tags = {NAME_TAG, CONTACT_TAG}
 
     exp = profile.experience
     for name, field in exp.header.fields.items():
@@ -102,21 +111,29 @@ def expected_tags(profile: TemplateProfile) -> set[str]:
 
 def _check_control_tags_balanced(texts: list[str]) -> list[Issue]:
     """Walk paragraph texts as one token stream and verify every `{%p for %}`/
-    `{%p if %}` closes before an ancestor's close does.
+    `{%p if %}` (and, under a table layout, `{%tr for %}`/`{%tr if %}`) closes before
+    an ancestor's close does.
 
     A plain open/close *count* match would still pass a misnested (as opposed to
     merely incomplete) structure; walking a stack catches both. An imbalance here means
     invalid Jinja that would fail at render time, or worse, silently mis-nest.
+
+    One stack for both `{%p %}` and `{%tr %}` levels is correct, not a simplification:
+    `texts` is already the flattened reading-order walk (rows in order, cells
+    left-to-right, paragraphs in order within a cell), so a `{%p for bullet %}` /
+    `{%p endfor %}` pair opens and closes entirely inside one cell — strictly between
+    its own row's `{%tr for job %}` and `{%tr endfor %}` markers. The two levels are
+    never actually interleaved in the token stream, only nested.
     """
     stack: list[tuple[str, str]] = []
     issues: list[Issue] = []
     for t in texts:
         stripped = t.strip()
-        if stripped.startswith("{%p for"):
+        if stripped.startswith(("{%p for", "{%tr for")):
             stack.append(("for", stripped))
-        elif stripped.startswith("{%p if"):
+        elif stripped.startswith(("{%p if", "{%tr if")):
             stack.append(("if", stripped))
-        elif stripped == "{%p endfor %}":
+        elif stripped in ("{%p endfor %}", "{%tr endfor %}"):
             if stack and stack[-1][0] == "for":
                 stack.pop()
             else:
@@ -124,13 +141,13 @@ def _check_control_tags_balanced(texts: list[str]) -> list[Issue]:
                     Issue(
                         code="unbalanced_control_tags",
                         message=(
-                            "Found {%p endfor %} with no matching open for-loop "
+                            f"Found {stripped!r} with no matching open for-loop "
                             f"(open stack: {[s[1] for s in stack]})."
                         ),
                         blocking=True,
                     )
                 )
-        elif stripped == "{%p endif %}":
+        elif stripped in ("{%p endif %}", "{%tr endif %}"):
             if stack and stack[-1][0] == "if":
                 stack.pop()
             else:
@@ -138,7 +155,7 @@ def _check_control_tags_balanced(texts: list[str]) -> list[Issue]:
                     Issue(
                         code="unbalanced_control_tags",
                         message=(
-                            "Found {%p endif %} with no matching open if-block "
+                            f"Found {stripped!r} with no matching open if-block "
                             f"(open stack: {[s[1] for s in stack]})."
                         ),
                         blocking=True,
@@ -152,6 +169,33 @@ def _check_control_tags_balanced(texts: list[str]) -> list[Issue]:
                 blocking=True,
             )
         )
+    return issues
+
+
+def _check_no_empty_cells(doc) -> list[Issue]:
+    """A `<w:tc>` with no `<w:p>` child is invalid OOXML — Word refuses such a file
+    with a generic "cannot open" error, but `python-docx` opens it happily, making this
+    exactly the class of bug that would otherwise reach a user unnoticed. The two ways
+    to produce one in a table-layout build: blanking a cloned row's cell by removing
+    its last paragraph instead of just its text, or a cell whose only content is a
+    `{%p for %}` loop that renders zero iterations.
+    """
+    issues: list[Issue] = []
+    for table in doc.tables:
+        for row_idx, row in enumerate(table.rows):
+            for tc in row._tr.findall(_TC_TAG):
+                if tc.find(_P_TAG) is None:
+                    issues.append(
+                        Issue(
+                            code="empty_table_cell",
+                            message=(
+                                f"A table cell in row {row_idx} has no paragraphs at "
+                                "all, which is invalid OOXML (Word will refuse to open "
+                                "the file)."
+                            ),
+                            blocking=True,
+                        )
+                    )
     return issues
 
 
@@ -170,7 +214,7 @@ def verify_tagged(tagged: Path, profile: TemplateProfile) -> list[Issue]:
     rendered document.
     """
     doc = docx.Document(str(tagged))
-    texts = [p.text for p in doc.paragraphs]
+    texts = [p.text for p, _location in docx_text.iter_document_paragraphs(doc)]
     joined = "\n".join(texts)
 
     issues: list[Issue] = []
@@ -190,13 +234,17 @@ def verify_tagged(tagged: Path, profile: TemplateProfile) -> list[Issue]:
 
     issues.extend(_check_control_tags_balanced(texts))
 
+    if profile.layout == "table":
+        issues.extend(_check_no_empty_cells(doc))
+
     if profile.section_mode == "generic":
-        loop_opens = sum(1 for t in texts if t.strip() == SECTION_LOOP_OPEN)
+        expected_loop_open = SECTION_LOOP_OPEN_TR if profile.layout == "table" else SECTION_LOOP_OPEN
+        loop_opens = sum(1 for t in texts if t.strip() == expected_loop_open)
         if loop_opens != 1:
             issues.append(
                 Issue(
                     code="section_loop_count",
-                    message=f"Expected exactly one {SECTION_LOOP_OPEN!r}, found {loop_opens}.",
+                    message=f"Expected exactly one {expected_loop_open!r}, found {loop_opens}.",
                     blocking=True,
                 )
             )
@@ -241,9 +289,11 @@ def verify_roundtrip(
         out = Path(tmp) / "roundtrip.docx"
         render_mod.render(resume, template=tagged, out=out, layout=layout)
         doc = docx.Document(str(out))
-        body_text = "\n".join(p.text for p in doc.paragraphs)
+        body_text = "\n".join(p.text for p, _location in docx_text.iter_document_paragraphs(doc))
 
     issues: list[Issue] = []
+    if profile.layout == "table":
+        issues.extend(_check_no_empty_cells(doc))
 
     def _check(value: str, label: str) -> None:
         if value and value not in body_text:

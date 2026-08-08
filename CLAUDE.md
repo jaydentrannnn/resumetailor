@@ -219,9 +219,18 @@ The whole suite runs **without an API key, network, or Word** — keep it that w
 - **The suite is hermetic — no developer's own `data/`/`templates/` is required.**
   `tests/fixtures.py` holds the shared synthetic-docx builders (`_add_bullet_numbering`,
   `_make_bullet`, `_docx_bytes`, `_add_hyperlink`, `_standard_resume`,
-  `_multi_section_resume`, `_full_featured_resume`) and `synthetic_resume()`, the
-  matching `MasterResume` — tests needing real content use these, not `data.load()`
-  against a personal `data/master_resume.json`. `tests/conftest.py`'s autouse fixtures
+  `_multi_section_resume`, `_full_featured_resume`, `_table_resume`,
+  `_sidebar_table_resume`) and `synthetic_resume()`, the matching `MasterResume` —
+  tests needing real content use these, not `data.load()` against a personal
+  `data/master_resume.json`. `_table_resume`/`_sidebar_table_resume` are
+  `layout="table"` fixtures — raw `w:gridSpan` via `_shape_row`, never `_Cell.merge`
+  (which operates on the logical grid and renumbers `Table.cell(r, c)`, so a fixture
+  needing an exact physical `<w:tc>` count cannot express itself through it) —
+  reproducing the real-world document that motivated table-layout support, including
+  its gridSpan inconsistency between same-kind sections (3+1 vs 2+2) and its cross-cell
+  skills grid; entry-header paragraphs need real bold/italic/alignment formatting, not
+  plain text, or `_split_entries`' fingerprint-based re-split (correct, load-bearing
+  behavior for real resumes) mis-splits every field into its own entry. `tests/conftest.py`'s autouse fixtures
   pin the rest of the machine-local state a bare run would otherwise pick up:
   `_pinned_calibration` (fixed `CHARS_PER_LINE`/`LINES_PER_PAGE` instead of whatever the
   local calibration file says), `_isolated_template_paths` (redirects
@@ -483,6 +492,33 @@ range in the upload.
   insertion, no deletion — shared by both modes. Fixed mode's `build_*_profile` wrap them in
   a single hard-coded loop; `build_generic` wraps them in the shared block instead.
 
+**Two layouts**, orthogonal to the two build modes above, recorded as
+`TemplateProfile.layout`:
+
+- **`"paragraph"`** (default) — content lives in body paragraphs, `doc.paragraphs`.
+  Every template before `layout` existed is this.
+- **`"table"`** — content lives inside one invisible layout table, used purely to
+  right-align dates/locations without tab stops (a common Word/Google Docs export
+  shape). Always implies `section_mode="generic"` — see the field's own docstring for
+  why. `template_build.build_generic_table` is the row-level counterpart of
+  `build_generic`: the shared block repeats table *rows* via `{%tr for/if %}` marker
+  rows (see the gotcha below), not paragraphs, while bullet/detail/skills-group
+  repetition inside one cell still uses ordinary `{%p for %}`. The whole system's
+  paragraph-id space — `CharSpan.paragraph_id`, every bare `*_paragraph_id` field —
+  is minted by exactly one function, `docx_text.iter_document_paragraphs(doc)` (a
+  depth-first walk: body children in order, descending into a table as rows → physical
+  cells → paragraphs), called identically by `template_analyze._load_paras` and
+  `template_build._para_by_id`. An entry header's location/dates can live in a
+  *different* paragraph than its company/school (the row's other cell) — `CharSpan`
+  already carries its own `paragraph_id` per field, and `_tag_mapped_header` already
+  resolves a field whose span isn't on the header's own paragraph, so this needed no
+  schema change, only `template_analyze._entry_header_fields`/
+  `_header_fields_across_cells` to detect it. A contact block spread across several
+  paragraphs (name/address/email/phone in different cells) uses
+  `ContactMapping.slots: list[ContactSlot]` instead of the ordinary single-paragraph
+  joined line; empty `slots` (every non-table profile, and any single-paragraph
+  contact block) is byte-identical to before this field existed.
+
 **One upload path**: `POST /api/template/analyze` proposes a mapping;
 `POST /api/template` (profile now *required* — the hard-coded-headings legacy path was
 retired once `templates/original_export.docx` was confirmed to analyze `ready: true`
@@ -638,6 +674,34 @@ yet was broken.
   `heading_paragraph_id`) — headings themselves are never moved or deleted mid-build
   (only the space between them is), so the reference stays valid regardless of build
   order, but an index re-derived later would not.
+- **A `{%p for %}` loop cannot repeat a table row — docxtpl consumes it instead.**
+  Verified by reading `docxtpl.DocxTemplate.patch_xml`: its row-tag pass (which runs
+  *before* the paragraph-tag pass) replaces the **entire** `<w:tr>` containing a
+  `{%tr %}` tag with the bare Jinja text — the row disappears, it is not repeated. A
+  row-level loop therefore needs its own disposable one-cell marker row per
+  `for`/`if`/`endfor`/`endif` (`template_build._marker_row`), with the rows meant to
+  actually repeat sitting between an open marker and a close marker — never a `{%tr %}`
+  tag placed inside a content row, which would delete that row's own content along
+  with the tag. The tagged intermediate template still opens fine in Word (every row
+  is individually well-formed OOXML) and looks structurally plausible; it just
+  silently renders nothing where the loop was.
+- **`Table.rows[i].cells` expands over `gridSpan` — it is not the row's physical
+  `<w:tc>` count.** A 3-span-plus-1 row reports as four `Cell` objects under
+  python-docx's own API, two of them the same underlying `_tc` returned twice. Any
+  code that needs "does this row have a second populated cell" (heading-vs-entry-header
+  detection, table-layout classification) must count `row._tr.findall(qn("w:tc"))`
+  directly — `docx_text.ParaLocation.row_cells`/`row_content_cells` do this so nothing
+  else has to re-derive it.
+- **A cell holding several stacked repeatable paragraphs (three bullets, three skill
+  labels) needs everything *after* the chosen loop prototype stripped, not just
+  wrapped.** `template_build._wrap_cell_loop` puts `{%p for/endfor %}` around one
+  paragraph and removes every later paragraph in that same cell — otherwise, since the
+  whole *row* gets cloned once as the loop's per-iteration template
+  (`build_generic_table`), an untouched sibling bullet renders verbatim on every
+  entry instead of being replaced by however many the loop actually produces. Never
+  strips a paragraph *before* the wrapped one — that is fixed content (a school/degree
+  line the education fallback's synthetic single-paragraph detail clone sits after),
+  not a repeatable sibling.
 
 ## Environment notes
 
@@ -647,6 +711,16 @@ yet was broken.
   `backend_for`'s resolve-if-unresolved still default to `"claude"` — they guard importable
   library functions called by scripts/tests that never went through the CLI, and flipping
   them would silently reroute callers that never asked for a backend.
+- **`config._ACTIVE` is only ever populated by `web/jobs.py`'s tailoring-job runner** — it
+  is the sole `config.resolve()` call site under `src/`. A web route reached outside a job
+  (the import wizard's "suggest tags" pass, vocabulary-proposal generation) that calls an
+  LLM stage therefore hits `backend_for`'s `"claude"` fallback on a freshly started server,
+  regardless of the saved Model setting. A route that must not do that — and must not call
+  `resolve()` either, since that would repoint a job's remaining stages mid-run — wraps its
+  call in `config.pinned(config.ONE_OFF_PROFILE)` (a `ContextVar` overlay `backend_for`
+  checks first, invisible to other requests/threads). Only the import route's tag-suggestion
+  pass is pinned today; `generate_library_proposals` still inherits `_ACTIVE`/the claude
+  fallback.
 - **Model routing**: per stage through `llm.client_for()`. Every call uses
   `client.messages.parse()` with a Pydantic model — schema-validated, never prose parsing.
   On the Anthropic path, non-streaming calls cap reasoning+output at 21,333 tokens (SDK
@@ -671,6 +745,18 @@ yet was broken.
   files Word used for the baseline PDFs (`docker/fonts/`), not metric-compatible
   substitutes. `CHARS_PER_LINE` doesn't move between backends (glyph advances are the
   same); `LINES_PER_PAGE` does.
+- **`calibrate.py`'s render-anchor check is a per-workspace recorded baseline, not
+  fixed numbers.** `calibrate.run(verify_anchors=True)` measures how many pages the
+  full master resume and a half-size subset render to, fingerprints the resume and
+  template that produced those counts (`measure_anchors`), and compares against
+  whatever was last recorded for *this* workspace+backend
+  (`check_render_anchors`, stored under the calibration file's own `anchors` key). A
+  resume edit or template rebuild changes a fingerprint and silently re-baselines; only
+  a page count changing under an *unchanged* fingerprint is real drift, and that stays
+  a warning (never blocks the write — `write_calibration` still runs) unless re-run
+  with `--rebaseline`, the deliberate acknowledgement step. There is no single
+  "expected page count" baked into the code — it was hardcoded to one person's resume
+  once (39 bullets → 3 pages) and broke for every other workspace.
 - **The character budget is a cliff, not a slope.** Every widowed bullet measured came back
   at 204–207 characters against a 202-character budget; every non-widowed run had bullets
   at 180–199. `_length_band` advertises a target *range* below the ceiling specifically so

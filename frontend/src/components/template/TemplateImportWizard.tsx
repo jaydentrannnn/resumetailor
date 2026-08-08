@@ -4,10 +4,28 @@ import { AnalyzeReport } from "./AnalyzeReport";
 import { PreviewCompare } from "./PreviewCompare";
 import { SectionMapStep } from "./SectionMapStep";
 import { UploadDropzone } from "./UploadDropzone";
-import { importMasterResumeContent } from "../../api";
+import { importMasterResumeContent, mergeMasterResume } from "../../api";
 import type { MasterResume } from "../../lib/resumeEdit";
 import { useEditorState } from "../../state/editorState";
 import { useTemplateState } from "../../state/templateState";
+
+type ImportOutcome =
+  | {
+      kind: "merged";
+      updated: string[];
+      added: string[];
+      addedSections: string[];
+      warnings: string[];
+      backup: string | null;
+    }
+  | { kind: "draft"; warnings: string[]; untagged: number }
+  | { kind: "error"; error: string };
+
+const MERGE_CONFIRM_MESSAGE =
+  "Merge this file's content into the master resume?\n\n" +
+  "Entries are matched by company/school/project name: matching entries are updated " +
+  "(their bullets refreshed), new ones are added, and everything else in your master " +
+  "resume is left as-is. The current file is backed up first.";
 
 /**
  * Multi-step template import: analyze → confirm mapping → install.
@@ -35,17 +53,15 @@ export function TemplateImportWizard() {
     installLabel,
     setInstallLabel,
   } = useTemplateState();
-  const { loadDraft } = useEditorState();
+  const { loadDraft, syncFromDisk } = useEditorState();
 
   // Content import is a separate action from the template install (it hits a
-  // different endpoint and writes nothing), but the wizard offers it as "one upload
-  // does both" — checked here, run right after a successful install below.
+  // different endpoint), but the wizard offers it as "one upload does both" — checked
+  // here, run right after a successful install below.
   const [alsoImportContent, setAlsoImportContent] = useState(false);
   const [suggestTags, setSuggestTags] = useState(false);
   const [importBusy, setImportBusy] = useState(false);
-  const [importOutcome, setImportOutcome] = useState<
-    { warnings: string[]; untagged: number } | { error: string } | null
-  >(null);
+  const [importOutcome, setImportOutcome] = useState<ImportOutcome | null>(null);
 
   const canInstall =
     Boolean(draftFile && profileDraft && analysis?.ready && installLabel.trim()) &&
@@ -60,13 +76,33 @@ export function TemplateImportWizard() {
     setImportBusy(true);
     try {
       const result = await importMasterResumeContent(draftFile, { suggestTags });
-      loadDraft(
-        result.resume as MasterResume,
-        "Imported from the template upload — review on the Master Resume tab and save to keep it.",
-      );
-      setImportOutcome({ warnings: result.warnings, untagged: result.untagged_bullet_count });
+      if (window.confirm(MERGE_CONFIRM_MESSAGE)) {
+        const merged = await mergeMasterResume(result.resume);
+        syncFromDisk(
+          merged.resume as MasterResume,
+          "Master resume merged from the template upload.",
+        );
+        setImportOutcome({
+          kind: "merged",
+          updated: merged.updated,
+          added: merged.added,
+          addedSections: merged.added_sections,
+          warnings: merged.warnings,
+          backup: merged.backup,
+        });
+      } else {
+        loadDraft(
+          result.resume as MasterResume,
+          "Imported from the template upload — review on the Master Resume tab and save to keep it.",
+        );
+        setImportOutcome({
+          kind: "draft",
+          warnings: result.warnings,
+          untagged: result.untagged_bullet_count,
+        });
+      }
     } catch (err) {
-      setImportOutcome({ error: err instanceof Error ? err.message : String(err) });
+      setImportOutcome({ kind: "error", error: err instanceof Error ? err.message : String(err) });
     } finally {
       setImportBusy(false);
     }
@@ -182,12 +218,13 @@ export function TemplateImportWizard() {
             />
             <span>
               <span className="font-medium text-ink">
-                Also import content from this file
+                Also merge this file's content into the master resume
               </span>
               <span className="block text-xs text-ink-muted">
-                Parses bullets, dates, and contact info into a Master Resume draft —
-                loaded as unsaved state on the Master Resume tab for you to review and
-                save. Writes nothing on its own.
+                Matches entries by company/school/project name: matching entries are
+                updated (their bullets refreshed), new ones are added, and everything
+                else in your master resume is left as-is. Backs up the current file
+                first, and asks for confirmation before writing.
               </span>
             </span>
           </label>
@@ -227,12 +264,12 @@ export function TemplateImportWizard() {
                     : "Confirm & install"}
             </button>
           </div>
-          {importOutcome && "error" in importOutcome ? (
+          {importOutcome?.kind === "error" ? (
             <p className="mt-4 rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">
               Content import failed: {importOutcome.error}
             </p>
           ) : null}
-          {importOutcome && "warnings" in importOutcome ? (
+          {importOutcome?.kind === "draft" ? (
             <div className="mt-4 rounded-md bg-accent-soft px-3 py-2 text-sm text-accent">
               <p>
                 Content imported — open the Master Resume tab to review and save it.
@@ -240,6 +277,38 @@ export function TemplateImportWizard() {
                   ? ` ${importOutcome.untagged} bullet(s) need a tag.`
                   : null}
               </p>
+              {importOutcome.warnings.length > 0 ? (
+                <ul className="mt-1 list-disc pl-5 text-xs text-ink-muted">
+                  {importOutcome.warnings.map((w) => (
+                    <li key={w}>{w}</li>
+                  ))}
+                </ul>
+              ) : null}
+            </div>
+          ) : null}
+          {importOutcome?.kind === "merged" ? (
+            <div className="mt-4 rounded-md bg-accent-soft px-3 py-2 text-sm text-accent">
+              <p>
+                Master resume merged — {importOutcome.updated.length} updated,{" "}
+                {importOutcome.added.length} added
+                {importOutcome.addedSections.length > 0
+                  ? ` (${importOutcome.addedSections.length} new section${
+                      importOutcome.addedSections.length === 1 ? "" : "s"
+                    })`
+                  : ""}
+                .
+                {importOutcome.backup ? ` Previous file backed up as ${importOutcome.backup}.` : ""}
+              </p>
+              {importOutcome.updated.length > 0 ? (
+                <p className="mt-1 text-xs text-ink-muted">
+                  Updated: {importOutcome.updated.join(", ")}
+                </p>
+              ) : null}
+              {importOutcome.added.length > 0 ? (
+                <p className="mt-1 text-xs text-ink-muted">
+                  Added: {importOutcome.added.join(", ")}
+                </p>
+              ) : null}
               {importOutcome.warnings.length > 0 ? (
                 <ul className="mt-1 list-disc pl-5 text-xs text-ink-muted">
                   {importOutcome.warnings.map((w) => (

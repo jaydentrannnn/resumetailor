@@ -413,3 +413,198 @@ def synthetic_resume() -> MasterResume:
             ),
         ],
     )
+
+
+# --------------------------------------------------------------------------------------
+# Table-layout DOCX builder — content lives inside one invisible layout table (used to
+# right-align dates/locations without tab stops), the shape the driving real-world
+# document ("Nina Dao - aug.docx") turned out to have. See CLAUDE.md's "Template
+# generation" section for `layout="table"` and its "Non-obvious gotchas" for the
+# `{%tr %}` marker-row idiom this shape requires at build time.
+# --------------------------------------------------------------------------------------
+
+
+def _make_cell_bullet(cell, text: str, num_id: str):
+    """Append a list paragraph with the given numId inside a table cell."""
+    paragraph = cell.add_paragraph(text)
+    pPr = paragraph._p.get_or_add_pPr()
+    numPr = OxmlElement("w:numPr")
+    ilvl = OxmlElement("w:ilvl")
+    ilvl.set(qn("w:val"), "0")
+    nid = OxmlElement("w:numId")
+    nid.set(qn("w:val"), num_id)
+    numPr.append(ilvl)
+    numPr.append(nid)
+    pPr.append(numPr)
+    return paragraph
+
+
+def _shape_row(table, row_idx: int, spans: list[int]) -> list:
+    """Reshape row `row_idx`'s physical `<w:tc>` cells into the given colspans
+    (summing to the table's declared column count), returning the resulting `_Cell`
+    objects in order.
+
+    Raw `w:gridSpan` rather than `_Cell.merge` — merge operates on the table's
+    *logical* grid and renumbers `Table.cell(r, c)`, so a fixture that needs an exact
+    physical `<w:tc>` count (3+1 vs 2+2 vs 1+3 vs 4 — the driving document uses all
+    four) cannot express itself through it.
+    """
+    from docx.table import _Cell
+
+    row = table.rows[row_idx]
+    tr = row._tr
+    tcs = tr.findall(qn("w:tc"))
+    if sum(spans) != len(tcs):
+        raise ValueError(f"spans {spans} must sum to {len(tcs)} physical cells, row {row_idx}")
+
+    kept: list = []
+    idx = 0
+    for span in spans:
+        keep_tc = tcs[idx]
+        for absorbed in tcs[idx + 1 : idx + span]:
+            tr.remove(absorbed)
+        if span > 1:
+            tcPr = keep_tc.find(qn("w:tcPr"))
+            if tcPr is None:
+                tcPr = OxmlElement("w:tcPr")
+                keep_tc.insert(0, tcPr)
+            grid_span_el = OxmlElement("w:gridSpan")
+            grid_span_el.set(qn("w:val"), str(span))
+            tcPr.append(grid_span_el)
+        kept.append(keep_tc)
+        idx += span
+    return [_Cell(tc, table) for tc in kept]
+
+
+def _cell_text(cell, first: str, *rest: str) -> None:
+    """Set a cell's first (already-existing) paragraph text, then append one
+    paragraph per remaining arg. Plain (no run formatting) — fine for content that
+    `_split_entries` never scans (contact block, skills grid); an entry's own header
+    fields must use `_cell_para` instead, see its docstring."""
+    cell.paragraphs[0].text = first
+    for text in rest:
+        cell.add_paragraph(text)
+
+
+def _cell_para(
+    cell, index: int, text: str, *, bold: bool = False, italic: bool = False, align_right: bool = False
+):
+    """Set text and run formatting on the cell's paragraph at `index` (0 is the
+    cell's already-existing first paragraph; higher indices are appended).
+
+    Formatting here is not cosmetic: `template_analyze._split_entries` re-splits a
+    bootstrapped entry list by formatting fingerprint when a majority of entries'
+    header paragraphs share one — real resumes naturally satisfy this (a bold company
+    name differs from an italic, right-aligned date), but an unformatted fixture
+    (every paragraph identically plain) makes EVERY paragraph share one fingerprint,
+    so each wrongly starts its own "entry". `align_right` matters here too, not just
+    `bold`/`italic`: the real driving document right-aligns location/dates exactly
+    this way, and `_Fingerprint` includes alignment — without it, a bold *location*
+    paragraph collides with a bold *company* paragraph's fingerprint (both simply
+    "bold"), which mis-splits the entry the same way unformatted text does.
+    """
+    para = cell.paragraphs[0] if index == 0 else cell.add_paragraph()
+    if align_right:
+        from docx.enum.text import WD_ALIGN_PARAGRAPH
+
+        para.alignment = WD_ALIGN_PARAGRAPH.RIGHT
+    run = para.add_run(text)
+    run.bold = bold
+    run.italic = italic
+    return para
+
+
+def _table_resume(document) -> None:
+    """Reproduces the driving real-world document's shape: name/address/email/phone
+    spread across paragraphs in a 4-column layout table; a `3+1` gridSpan for
+    EDUCATION/WORK EXPERIENCE's heading and entry-header rows; a `4`-span heading and
+    `2+2` entry-header rows for LEADERSHIP (the gridSpan inconsistency the real
+    document has between its two experience-kind sections); a `1+3` label/value grid
+    for ADDITIONAL INFORMATION's skills; full-width (`4`-span) bullet rows; no tabs
+    anywhere; no hyperlinks. Two experience-kind headings makes this `needs_generic`
+    on its own, matching the real document. Entry headers use bold company/school
+    names and italic titles/dates — see `_cell_para` for why that is load-bearing,
+    not decorative.
+    """
+    num_id = _add_bullet_numbering(document)
+    table = document.add_table(rows=14, cols=4)
+
+    name_row = _shape_row(table, 0, [3, 1])
+    _cell_text(name_row[0], "JORDAN RIVERA")
+    _cell_text(name_row[1], "123 Example St.", "Springfield, IL 60000")
+
+    contact_row = _shape_row(table, 1, [3, 1])
+    _cell_text(contact_row[0], "jordan@example.com")
+    _cell_text(contact_row[1], "(555) 123-4567")
+
+    _shape_row(table, 2, [3, 1])  # spacer row, both cells left blank
+
+    edu_heading = _shape_row(table, 3, [3, 1])
+    _cell_text(edu_heading[0], "EDUCATION")
+
+    edu_header = _shape_row(table, 4, [3, 1])
+    _cell_para(edu_header[0], 0, "State University", bold=True)
+    _cell_para(edu_header[0], 1, "BS Computer Science", italic=True)
+    _cell_para(edu_header[1], 0, "IL", bold=True, align_right=True)
+    _cell_para(edu_header[1], 1, "Class of 2024", italic=True, align_right=True)
+
+    edu_bullets = _shape_row(table, 5, [4])
+    _make_cell_bullet(edu_bullets[0], "Cumulative GPA: 3.8/4.0", num_id)
+    _make_cell_bullet(edu_bullets[0], "Relevant Coursework: Algorithms, Databases", num_id)
+
+    exp_heading = _shape_row(table, 6, [3, 1])
+    _cell_text(exp_heading[0], "WORK EXPERIENCE")
+
+    exp_header = _shape_row(table, 7, [3, 1])
+    _cell_para(exp_header[0], 0, "Example Corp", bold=True)
+    _cell_para(exp_header[0], 1, "Software Engineer", italic=True)
+    _cell_para(exp_header[1], 0, "Remote", bold=True, align_right=True)
+    _cell_para(exp_header[1], 1, "Jan 2023 - Present", italic=True, align_right=True)
+
+    exp_bullets = _shape_row(table, 8, [4])
+    _make_cell_bullet(
+        exp_bullets[0], "Improved reliability & throughput for production services.", num_id
+    )
+
+    lead_heading = _shape_row(table, 9, [4])
+    _cell_text(lead_heading[0], "LEADERSHIP")
+
+    lead_header = _shape_row(table, 10, [2, 2])
+    _cell_para(lead_header[0], 0, "Campus Club", bold=True)
+    _cell_para(lead_header[0], 1, "President", italic=True)
+    _cell_para(lead_header[1], 0, "Springfield, IL", bold=True, align_right=True)
+    _cell_para(lead_header[1], 1, "2022 - 2023", italic=True, align_right=True)
+
+    lead_bullets = _shape_row(table, 11, [4])
+    _make_cell_bullet(lead_bullets[0], "Grew membership by 30%.", num_id)
+
+    info_heading = _shape_row(table, 12, [4])
+    _cell_text(info_heading[0], "ADDITIONAL INFORMATION")
+
+    info_grid = _shape_row(table, 13, [1, 3])
+    _cell_text(info_grid[0], "Languages:", "Skills:")
+    _cell_text(info_grid[1], "Fluent in English and Spanish", "Python, SQL, Excel")
+
+
+def _sidebar_table_resume(document) -> None:
+    """Negative fixture: same table shape as `_table_resume`, but the work-experience
+    bullets sit in the row's SECOND cell alongside its own header text — the
+    structural signature of two parallel reading columns (a sidebar), which
+    `template_analyze.classify_table_layout` must reject via `table_sidebar_bullets`.
+    """
+    num_id = _add_bullet_numbering(document)
+    table = document.add_table(rows=8, cols=4)
+
+    name_row = _shape_row(table, 0, [3, 1])
+    _cell_text(name_row[0], "JORDAN RIVERA")
+    _cell_text(name_row[1], "jordan@example.com")
+
+    _shape_row(table, 1, [3, 1])  # spacer
+
+    exp_heading = _shape_row(table, 2, [3, 1])
+    _cell_text(exp_heading[0], "WORK EXPERIENCE")
+
+    exp_header = _shape_row(table, 3, [3, 1])
+    _cell_text(exp_header[0], "Example Corp", "Software Engineer")
+    exp_header[1].paragraphs[0].text = "Remote"
+    _make_cell_bullet(exp_header[1], "Improved reliability for production services.", num_id)

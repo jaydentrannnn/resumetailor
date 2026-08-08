@@ -14,8 +14,10 @@ import os
 import platform
 import re
 import shutil
+from contextlib import contextmanager
+from contextvars import ContextVar
 from pathlib import Path
-from typing import NamedTuple
+from typing import Iterator, NamedTuple
 
 from dotenv import load_dotenv
 
@@ -295,6 +297,12 @@ OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434/v1")
 #: colon in the tag — see `parse_spec`.
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "gemma4:cloud")
 
+#: Backend for one-off web-UI actions that are not part of a tailoring run (today: the
+#: import wizard's tag-suggestion pass). Deliberately independent of `_ACTIVE` and of
+#: `backend_for`'s claude fallback — a background convenience call must not bill a paid
+#: API by accident. See `pinned()`.
+ONE_OFF_PROFILE = os.environ.get("ONE_OFF_PROFILE", "ollama")
+
 #: LM Studio's local OpenAI-compatible server (Developer → Start Server). Default port 1234.
 LMSTUDIO_BASE_URL = os.environ.get("LMSTUDIO_BASE_URL", "http://localhost:1234/v1")
 
@@ -546,20 +554,18 @@ def _backend(spec: str, purpose: str, effort: str | None) -> Backend:
 _ACTIVE: dict[str, Backend] = {}
 
 
-def resolve(
-    profile: str | None = None,
+def _backends_for(
+    profile: str | None,
     *,
     overrides: dict[str, str] | None = None,
     effort: str | None = None,
 ) -> dict[str, Backend]:
-    """Decide which backend serves each stage, for the whole run.
+    """Shared spec-resolution logic behind both `resolve()` and `pinned()`.
 
     `profile` is a name from `MODEL_PROFILES` or a raw spec applied to every stage.
     `overrides` routes individual stages (`{"rewrite": "claude-sonnet-5"}`).
     A bare model id in an override keeps the profile stage's ollama/lmstudio backend
     (so `lmstudio` + `google/gemma-4-12b` does not silently call Ollama).
-
-    Called once, early, so a bad spec fails before any file is read or any token spent.
     """
     profile = (profile or "claude").strip()
 
@@ -579,21 +585,61 @@ def resolve(
             raise ValueError(f"Unknown stage {purpose!r}. Expected one of {PURPOSES}.")
         specs[purpose] = _bind_bare_override(spec, specs[purpose])
 
+    return {p: _backend(specs[p], p, effort) for p in PURPOSES}
+
+
+def resolve(
+    profile: str | None = None,
+    *,
+    overrides: dict[str, str] | None = None,
+    effort: str | None = None,
+) -> dict[str, Backend]:
+    """Decide which backend serves each stage, for the whole run.
+
+    Called once, early, so a bad spec fails before any file is read or any token spent.
+    See `_backends_for` for the spec-resolution rules.
+    """
     _ACTIVE.clear()
-    _ACTIVE.update(
-        {p: _backend(specs[p], p, effort) for p in PURPOSES}
-    )
+    _ACTIVE.update(_backends_for(profile, overrides=overrides, effort=effort))
     return dict(_ACTIVE)
+
+
+#: Overlay consulted by `backend_for` before `_ACTIVE` — see `pinned()`. A `ContextVar`
+#: rather than a module global: FastAPI runs a sync route in a threadpool with a *copied*
+#: context, so a pin set inside one request is invisible to a concurrently running job's
+#: own context and to other requests, with no manual save/restore needed.
+_PINNED: ContextVar[dict[str, Backend] | None] = ContextVar("_pinned_backends", default=None)
+
+
+@contextmanager
+def pinned(profile: str, *, effort: str | None = None) -> Iterator[dict[str, Backend]]:
+    """Route every stage through `profile` for this block only.
+
+    For a one-off web-UI action (e.g. the import wizard's tag-suggestion pass) that must
+    not ride on whatever `_ACTIVE` happens to hold — or fall through to `backend_for`'s
+    claude default — without repointing a tailoring job that may be mid-run. Unlike
+    `resolve()`, never touches `_ACTIVE`.
+    """
+    backends = _backends_for(profile, effort=effort)
+    token = _PINNED.set(backends)
+    try:
+        yield backends
+    finally:
+        _PINNED.reset(token)
 
 
 def backend_for(purpose: str) -> Backend:
     """The resolved backend for one stage, defaulting to Claude if `resolve` never ran.
 
     The default matters: `jd.extract` and `rewrite.score_table` are importable library
-    functions, and tests and scripts call them without going through the CLI.
+    functions, and tests and scripts call them without going through the CLI. A `pinned()`
+    block, if active in this context, wins over both `_ACTIVE` and that default.
     """
     if purpose not in PURPOSES:
         raise ValueError(f"Unknown stage {purpose!r}. Expected one of {PURPOSES}.")
+    override = _PINNED.get()
+    if override is not None:
+        return override[purpose]
     if not _ACTIVE:
         resolve("claude")
     return _ACTIVE[purpose]

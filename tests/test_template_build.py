@@ -31,6 +31,7 @@ from tests.test_template_analyze import (
     _make_bullet,
     _standard_resume,
 )
+from tests.fixtures import _table_resume
 
 
 def _run_bold(run) -> bool:
@@ -1170,3 +1171,117 @@ def test_entry_bullet_matching_another_headings_text_does_not_truncate_body(tmp_
     # still made it through untouched.
     assert "SKILLS" in texts
     assert any("{{ group.label }}" in t for t in texts)
+
+
+# --------------------------------------------------------------------------------------
+# Table-layout build (`build_generic_table`): the shared block repeats table ROWS, not
+# paragraphs, via `{%tr %}` marker rows. See `tests/fixtures.py::_table_resume`.
+# --------------------------------------------------------------------------------------
+
+
+def _build_table_resume(tmp_path: Path):
+    """Analyze + build `_table_resume`, returning `(profile, built_docx_path)`."""
+    raw = _docx_bytes(_table_resume)
+    analysis = template_analyze.analyze_docx(raw=raw)
+    assert analysis.suggested_profile is not None, analysis.issues
+    profile = analysis.suggested_profile
+    assert profile.layout == "table"
+
+    src = tmp_path / "baseline.docx"
+    dst = tmp_path / "main_template.docx"
+    src.write_bytes(raw)
+    template_build.build_from_profile(src, dst, profile)
+    return profile, dst
+
+
+def test_build_generic_table_produces_no_empty_cells(tmp_path: Path):
+    """A `<w:tc>` with zero `<w:p>` children is invalid OOXML — Word refuses to open
+    such a file, but `python-docx` opens it happily, so this must be checked
+    explicitly rather than relying on the build simply not raising."""
+    _profile, dst = _build_table_resume(tmp_path)
+    doc = docx.Document(str(dst))
+    assert len(doc.tables) == 1
+    for row in doc.tables[0].rows:
+        for tc in row._tr.findall(qn("w:tc")):
+            assert tc.find(qn("w:p")) is not None
+
+
+def test_build_generic_table_row_loop_structure(tmp_path: Path):
+    """Exactly one row-level section loop; per-kind row-level branches for the two
+    experience-kind sections' shared "experience" branch, education, and skills; no
+    paragraph-level `SECTION_LOOP_OPEN` (that's the non-table generic-mode tag)."""
+    _profile, dst = _build_table_resume(tmp_path)
+    doc = docx.Document(str(dst))
+    NS = qn("w:p")
+    texts = []
+    for table in doc.tables:
+        for row in table.rows:
+            for tc in row._tr.findall(qn("w:tc")):
+                texts.extend(p.text for p in tc.findall(NS))
+    joined = "\n".join(texts)
+
+    assert texts.count("{%tr for section in sections %}") == 1
+    assert "{{ section.title }}" in joined
+    assert "{%tr if section.kind == 'experience' %}" in joined
+    assert "{%tr if section.kind == 'education' %}" in joined
+    assert "{%tr if section.kind == 'skills' %}" in joined
+    assert "{%tr for job in section.entries %}" in joined
+    assert "{{ job.company }}" in joined
+    assert "{%p for bullet in job.bullets %}" in joined
+    assert "{%tr for edu in section.entries %}" in joined
+    assert "{{ edu.school }}" in joined
+    assert "{%p for detail in edu.details %}" in joined
+    assert "{%p for group in section.entries %}" in joined
+    assert "{{ group.label }}" in joined
+
+    # Paragraph-level generic-mode tags must not leak into a table-layout build.
+    assert "{%p for section in sections %}" not in joined
+
+
+def test_build_generic_table_no_leftover_sibling_bullets(tmp_path: Path):
+    """A row's OTHER bullets (siblings of the one chosen as the loop's tagged
+    prototype, stacked in the same cell) must not survive verbatim beside the
+    `{%p for bullet in job.bullets %}` loop — see `_wrap_cell_loop`. Only ONE bullet
+    paragraph should remain per bullet-loop cell in the tagged template."""
+    _profile, dst = _build_table_resume(tmp_path)
+    doc = docx.Document(str(dst))
+    for table in doc.tables:
+        for row in table.rows:
+            for tc in row._tr.findall(qn("w:tc")):
+                para_texts = [p.text for p in tc.findall(qn("w:p"))]
+                if "{%p for bullet in job.bullets %}" in para_texts:
+                    assert para_texts.count("{{ bullet }}") == 1
+                if "{%p for detail in edu.details %}" in para_texts:
+                    assert para_texts.count("{{ detail }}") == 1
+
+
+def test_build_generic_table_verify_tagged_clean(tmp_path: Path):
+    """The full `verify_tagged` check (flattened-walk aware, table-mode loop count,
+    balanced `{%tr %}`/`{%p %}` control tags, no empty cells) passes with zero issues."""
+    from resume_tailor import template_verify
+
+    profile, dst = _build_table_resume(tmp_path)
+    issues = template_verify.verify_tagged(dst, profile)
+    assert issues == []
+
+
+def test_build_generic_table_verify_roundtrip_clean(tmp_path: Path):
+    """A real render through the table-layout template reaches every mapped field's
+    actual value — the full round-trip signal, not just that tagging looks right."""
+    from resume_tailor import resume_import, template_verify
+
+    raw = _docx_bytes(_table_resume)
+    analysis = template_analyze.analyze_docx(raw=raw)
+    assert analysis.suggested_profile is not None
+    profile = analysis.suggested_profile
+
+    src = tmp_path / "baseline.docx"
+    dst = tmp_path / "main_template.docx"
+    src.write_bytes(raw)
+    template_build.build_from_profile(src, dst, profile)
+
+    doc = docx.Document(str(src))
+    imported = resume_import.import_from_analysis(analysis, doc)
+
+    issues = template_verify.verify_roundtrip(dst, profile, imported.resume)
+    assert issues == []

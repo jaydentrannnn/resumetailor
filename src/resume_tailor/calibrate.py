@@ -9,6 +9,7 @@ The CLI `scripts/calibrate.py` is a thin wrapper around `run()`.
 
 from __future__ import annotations
 
+import hashlib
 import json
 from dataclasses import dataclass
 from datetime import datetime, timezone
@@ -29,9 +30,11 @@ class CalibrationError(RuntimeError):
     - The self-consistency check (`verify_chars_per_line_boundary`) found the resulting
       constant does not actually predict what the renderer does.
 
-    `verify_known_anchors` stays a soft warning (it is owner-specific — hardcoded bullet
-    ids and page counts for one person's resume); these two are resume-independent and
-    therefore safe to hard-fail on.
+    `check_render_anchors` stays a soft warning: it compares against a *recorded*
+    baseline for this workspace's own resume+template rather than fixed numbers, but a
+    render can still legitimately change for reasons unrelated to a wrapping bug (a
+    font or margin change, say), so it is not safe to hard-fail on. These two are
+    resume-independent and therefore safe to hard-fail on.
     """
 
 
@@ -40,22 +43,6 @@ _WORDS = (
     "ship measurable improvements in latency accuracy and reliability for production "
     "workloads under real world constraints and deadlines "
 )
-
-_CURRENT_RESUME_BULLET_IDS = {
-    "aol_b1",
-    "aol_b2",
-    "aol_b3",
-    "vnpt_b1",
-    "vnpt_b2",
-    "uci_b1",
-    "uci_b2",
-    "aeth_b1",
-    "aeth_b2",
-    "aeth_b3",
-    "t2s_b1",
-    "t2s_b2",
-    "t2s_b3",
-}
 
 
 @dataclass
@@ -286,10 +273,11 @@ def verify_chars_per_line_boundary(base: MasterResume, chars_per_line: int) -> N
     characters must still render as one physical line, and one 15 characters longer
     must wrap to two.
 
-    Unlike `verify_known_anchors` (hardcoded bullet ids and page counts for one
-    person's resume, so a mismatch might just mean the resume changed), this holds for
-    any master resume — a failure here means `chars_per_line` does not actually predict
-    what the renderer does, so it is safe, and necessary, to hard-fail on.
+    Unlike `check_render_anchors` (compares against a recorded baseline for this
+    workspace's own resume+template, so a mismatch might just mean the resume or
+    template changed), this holds for any master resume — a failure here means
+    `chars_per_line` does not actually predict what the renderer does, so it is safe,
+    and necessary, to hard-fail on.
     """
     stop_titles = _static_heading_texts()
 
@@ -310,30 +298,140 @@ def verify_chars_per_line_boundary(base: MasterResume, chars_per_line: int) -> N
         )
 
 
-def verify_known_anchors() -> None:
-    """Owner-specific sanity checks for the current master resume + template."""
-    resume = data.load()
+def _resume_fingerprint(resume: MasterResume) -> str:
+    """Content hash of the master resume. Any edit legitimately changes the expected
+    page count, so it must invalidate a recorded render anchor rather than look like
+    drift — see `check_render_anchors`."""
+    payload = json.dumps(resume.model_dump(mode="json"), sort_keys=True)
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
 
+
+def _template_fingerprint() -> str:
+    """Content hash of the tagged template. `write_calibration`'s own `template` field
+    records only the filename, which cannot tell a *rebuilt* template (same name, new
+    bytes) from the one an anchor baseline was actually measured against."""
+    return hashlib.sha256(config.DEFAULT_TEMPLATE_PATH.read_bytes()).hexdigest()[:16]
+
+
+def measure_anchors(resume: MasterResume) -> dict:
+    """Render the full resume and a half-size subset; return the recordable anchor
+    block.
+
+    Scale-free by construction — the subset is always the first half of
+    `resume.all_bullets()`, in whatever order the resume actually has, rather than a
+    fixed set of bullet ids that only exist in one specific resume. Fingerprints
+    (`resume_sha256`/`template_sha256`) capture what could legitimately change the
+    expected page counts, so `check_render_anchors` can tell real drift apart from an
+    ordinary resume edit or template rebuild.
+    """
     _, full_pages = _render_pages(resume, "anchor_full")
-    if full_pages != 3:
-        raise AssertionError(
-            f"full master resume (39 bullets) rendered to {full_pages} page(s), expected 3"
-        )
 
-    subset_bullets = {
-        b.id: b.text for b in resume.all_bullets() if b.id in _CURRENT_RESUME_BULLET_IDS
-    }
+    all_bullets = resume.all_bullets()
+    subset_n = max(1, len(all_bullets) // 2)
+    subset_bullets = {b.id: b.text for b in all_bullets[:subset_n]}
     out = config.OUTPUT_DIR / "_calib_anchor_subset.docx"
     render.render(resume, bullets=subset_bullets, out=out)
     subset_pages = render.page_count(render.to_pdf(out))
-    if subset_pages != 1:
-        raise AssertionError(
-            f"13-bullet current-resume subset rendered to {subset_pages} page(s), expected 1"
+
+    return {
+        "resume_sha256": _resume_fingerprint(resume),
+        "template_sha256": _template_fingerprint(),
+        "bullet_count": len(all_bullets),
+        "subset_bullet_count": subset_n,
+        "full_pages": full_pages,
+        "subset_pages": subset_pages,
+    }
+
+
+def _pages_word(n: int) -> str:
+    return "page" if n == 1 else "pages"
+
+
+def _describe_anchors(measured: dict) -> str:
+    return (
+        f"full={measured['full_pages']} {_pages_word(measured['full_pages'])}, "
+        f"subset={measured['subset_pages']} {_pages_word(measured['subset_pages'])}, "
+        f"{measured['bullet_count']} bullets"
+    )
+
+
+def check_render_anchors(
+    measured: dict, *, previous: dict | None, rebaseline: bool
+) -> tuple[dict, str, str | None]:
+    """Decide whether `measured` render anchors match `previous`'s recorded baseline.
+
+    Pure comparison — no rendering here, `measure_anchors` already did that — so this
+    is unit-testable without a renderer. Returns `(anchors_to_write, log_line, warning)`:
+
+    - No previous baseline, or either fingerprint (`resume_sha256`/`template_sha256`)
+      differs from `measured`'s: the resume or template legitimately changed since the
+      last baseline, so `measured` becomes the new baseline — silently, not a warning.
+    - Fingerprints match and both page counts match: `measured` is written (refreshing
+      `measured_at` via `write_calibration`), no warning.
+    - Fingerprints match but a page count differs: real drift — the same inputs now
+      render differently. `rebaseline=False` keeps `previous` on disk (the regression
+      is not silently overwritten) and returns a warning describing exactly what
+      changed; `rebaseline=True` is the deliberate acknowledgement that adopts
+      `measured` instead, silently.
+    """
+    same_inputs = (
+        previous is not None
+        and previous.get("resume_sha256") == measured["resume_sha256"]
+        and previous.get("template_sha256") == measured["template_sha256"]
+    )
+    if not same_inputs:
+        return measured, f"  anchor baseline recorded ({_describe_anchors(measured)})", None
+
+    parts: list[str] = []
+    if previous.get("full_pages") != measured["full_pages"]:
+        parts.append(
+            f"full master resume ({measured['bullet_count']} bullets) rendered to "
+            f"{measured['full_pages']} {_pages_word(measured['full_pages'])}; baseline "
+            f"for this resume+template is {previous['full_pages']}"
+        )
+    if previous.get("subset_pages") != measured["subset_pages"]:
+        parts.append(
+            f"{measured['subset_bullet_count']}-bullet subset rendered to "
+            f"{measured['subset_pages']} {_pages_word(measured['subset_pages'])}; "
+            f"baseline is {previous['subset_pages']}"
         )
 
+    if not parts:
+        return measured, "  anchor checks OK", None
 
-def write_calibration(chars_per_line: int, lines_per_page: int) -> Path:
-    """Record the measurements as data, keyed by the PDF backend that produced them."""
+    if not rebaseline:
+        warning = (
+            "; ".join(parts) + ". Re-run with --rebaseline to accept this as the new baseline."
+        )
+        return previous, f"  warning: {warning}", warning
+
+    return measured, f"  anchor baseline updated ({_describe_anchors(measured)})", None
+
+
+def _load_previous_anchors() -> dict | None:
+    """The `anchors` block from this backend's existing calibration file, if any —
+    read *before* `write_calibration` overwrites it, so `check_render_anchors` has
+    something to compare against. `None` for a missing, unreadable, or anchor-less
+    file (the pre-anchors file shape), all of which mean "no baseline yet"."""
+    path = config.CALIBRATION_DIR / f"{config.PDF_BACKEND}.json"
+    if not path.exists():
+        return None
+    try:
+        payload = json.loads(path.read_text(encoding="utf-8"))
+    except (json.JSONDecodeError, OSError):
+        return None
+    return payload.get("anchors")
+
+
+def write_calibration(chars_per_line: int, lines_per_page: int, anchors: dict | None = None) -> Path:
+    """Record the measurements as data, keyed by the PDF backend that produced them.
+
+    `anchors`, when given, is the render-anchor baseline (`check_render_anchors`'s
+    `anchors_to_write`) — omitted entirely (not even a `null` key) when
+    `verify_anchors=False`, so a run that skips the anchor step doesn't clobber an
+    existing baseline with nothing, and so the file shape from before anchors existed
+    is reproduced exactly when the block is absent.
+    """
     config.CALIBRATION_DIR.mkdir(parents=True, exist_ok=True)
     path = config.CALIBRATION_DIR / f"{config.PDF_BACKEND}.json"
     payload = {
@@ -343,16 +441,27 @@ def write_calibration(chars_per_line: int, lines_per_page: int) -> Path:
         "measured_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
         "template": config.DEFAULT_TEMPLATE_PATH.name,
     }
+    if anchors is not None:
+        payload["anchors"] = anchors
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
     return path
 
 
-def run(*, verify_anchors: bool = True) -> CalibrationResult:
+def run(*, verify_anchors: bool = True, rebaseline: bool = False) -> CalibrationResult:
     """Measure fit constants against the active tagged template and write them to disk.
 
-    When `verify_anchors` is True, owner-specific page-count checks run; failures become
-    warnings (constants are still written) so a web install is not rolled back. This is
-    distinct from the resume-independent self-consistency check
+    When `verify_anchors` is True, this workspace's own render-anchor baseline
+    (`measure_anchors` + `check_render_anchors`) is checked; a genuine drift becomes a
+    warning, not a failure (constants are still written) so a web install is not
+    rolled back — see `check_render_anchors` for what counts as drift versus a silent
+    re-baseline. `rebaseline` forces a detected drift to be adopted as the new
+    baseline instead of warned about; irrelevant when there is no drift.
+
+    Skipping the anchor step (`verify_anchors=False`) or the step itself failing to
+    render both preserve whatever baseline was already on disk rather than dropping
+    it — this function never has a reason to erase a recorded baseline on its own.
+
+    This is distinct from the resume-independent self-consistency check
     (`verify_chars_per_line_boundary`), which always runs and always hard-fails —
     `CalibrationError` propagates out of this function, and `write_calibration` is never
     reached, so a bad measurement is never written regardless of `verify_anchors`.
@@ -379,16 +488,24 @@ def run(*, verify_anchors: bool = True) -> CalibrationResult:
     lines.append(f"  LINES_PER_PAGE = {lines_per_page}")
 
     warnings: list[str] = []
+    previous_anchors = _load_previous_anchors()
+    anchors: dict | None = previous_anchors
     if verify_anchors:
-        lines.append("Verifying known-good anchors…")
+        lines.append("Verifying render anchors…")
         try:
-            verify_known_anchors()
-            lines.append("  anchor checks OK")
-        except AssertionError as exc:
+            measured = measure_anchors(base)
+            anchors, log_line, warning = check_render_anchors(
+                measured, previous=previous_anchors, rebaseline=rebaseline
+            )
+            lines.append(log_line)
+            if warning:
+                warnings.append(warning)
+        except Exception as exc:
+            anchors = previous_anchors
             warnings.append(str(exc))
             lines.append(f"  warning: anchor check failed ({exc})")
 
-    path = write_calibration(chars_per_line, lines_per_page)
+    path = write_calibration(chars_per_line, lines_per_page, anchors)
     lines.append(
         f"Wrote CHARS_PER_LINE={chars_per_line}, LINES_PER_PAGE={lines_per_page} "
         f"for '{config.PDF_BACKEND}' to {path}"
@@ -415,6 +532,15 @@ def main(argv: list[str] | None = None) -> int:
         metavar="ID",
         help="Calibrate this profile instead of the active one (this invocation only).",
     )
+    parser.add_argument(
+        "--rebaseline",
+        action="store_true",
+        help=(
+            "Accept newly measured render anchors as the baseline even if they differ "
+            "from the recorded one — the deliberate acknowledgement step for a real, "
+            "expected change (see check_render_anchors)."
+        ),
+    )
     args = parser.parse_args(argv)
     try:
         workspace.bootstrap(workspace_id=args.workspace)
@@ -423,7 +549,7 @@ def main(argv: list[str] | None = None) -> int:
         return 1
 
     try:
-        result = run(verify_anchors=True)
+        result = run(verify_anchors=True, rebaseline=args.rebaseline)
     except Exception as exc:
         print(f"ERROR: {exc}")
         return 1

@@ -17,12 +17,18 @@ from __future__ import annotations
 
 import re
 from dataclasses import dataclass
+from typing import Iterator
 
 from docx.oxml.ns import qn
+from docx.table import Table, _Cell
 from docx.text.paragraph import Paragraph
 
 _R = qn("w:r")
 _HYPERLINK = qn("w:hyperlink")
+_P_TAG = qn("w:p")
+_TBL_TAG = qn("w:tbl")
+_TC_TAG = qn("w:tc")
+_TR_TAG = qn("w:tr")
 
 #: Blank, or a decorative rule made only of underscores/dashes/dots/middots.
 _CHROME_RE = re.compile(r"[\s_\-–—=·.]+")
@@ -174,3 +180,79 @@ def slice_at(
         return max(before, key=lambda s: s.start)
 
     return candidates[0]
+
+
+@dataclass(frozen=True)
+class ParaLocation:
+    """Where a paragraph sits inside a table, in *physical* cells.
+
+    `cell` indexes `<w:tc>` children of the row directly — NOT `Row.cells`, which
+    python-docx expands over `gridSpan` so a 3-span-plus-1 row reports as four cells,
+    two of them the same object. Every consumer of this dataclass asks "does this row
+    have a second populated cell", which only the physical count answers correctly.
+    """
+
+    table: int
+    row: int
+    cell: int
+    para: int
+    row_cells: int
+    row_content_cells: int
+
+
+def has_nested_tables(doc) -> bool:
+    """True when any top-level table contains a `w:tbl` inside one of its cells.
+
+    A resume built this way cannot be read as a single reading column with any
+    confidence, so callers use this to block rather than attempt to flatten it.
+    """
+    for table in doc.tables:
+        if table._tbl.find(f".//{_TC_TAG}/{_TBL_TAG}") is not None:
+            return True
+    return False
+
+
+def iter_document_paragraphs(
+    doc,
+) -> Iterator[tuple[Paragraph, ParaLocation | None]]:
+    """Every paragraph in the document body, in reading order.
+
+    Walks `w:body`'s direct children in document order; a `w:p` is yielded as-is
+    (`location=None`), a `w:tbl` is descended into as rows -> physical cells ->
+    paragraphs. This is THE invariant the whole template system rests on:
+    `template_analyze._load_paras` and `template_build._para_by_id` must both use this
+    walk and therefore enumerate identically, because a `CharSpan.paragraph_id` is an
+    index into this sequence and nothing else.
+
+    A nested table (a `w:tbl` inside a `w:tc`) is not descended into — callers must
+    check `has_nested_tables` first and block rather than silently skip its content.
+    """
+    body = doc.element.body
+    table_idx = 0
+    for child in body.iterchildren():
+        if child.tag == _P_TAG:
+            yield Paragraph(child, doc), None
+        elif child.tag == _TBL_TAG:
+            table = Table(child, doc)
+            rows = child.findall(_TR_TAG)
+            for row_idx, tr in enumerate(rows):
+                tc_list = tr.findall(_TC_TAG)
+                row_content_cells = sum(
+                    1
+                    for tc in tc_list
+                    if any(
+                        not is_chrome_text(p.text or "")
+                        for p in _Cell(tc, table).paragraphs
+                    )
+                )
+                for cell_idx, tc in enumerate(tc_list):
+                    for para_idx, paragraph in enumerate(_Cell(tc, table).paragraphs):
+                        yield paragraph, ParaLocation(
+                            table=table_idx,
+                            row=row_idx,
+                            cell=cell_idx,
+                            para=para_idx,
+                            row_cells=len(tc_list),
+                            row_content_cells=row_content_cells,
+                        )
+            table_idx += 1

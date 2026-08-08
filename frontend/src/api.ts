@@ -347,6 +347,7 @@ export type TemplateFieldCandidate = {
   end: number;
   confidence: number;
   preview: string;
+  section_heading_paragraph_id: number | null;
 };
 
 export type TemplateAnalyzeResponse = {
@@ -584,6 +585,26 @@ export async function importMasterResumeContent(
 export function saveMasterResume(body: Record<string, unknown>): Promise<ValidateResponse> {
   /** Validate and persist the master resume (with a backup of the previous file). */
   return request("/api/master-resume", { method: "PUT", body: JSON.stringify(body) });
+}
+
+export type MasterResumeMergeResponse = {
+  resume: Record<string, unknown>;
+  updated: string[];
+  added: string[];
+  added_sections: string[];
+  warnings: string[];
+  backup: string | null;
+};
+
+/**
+ * Fold an already-parsed draft (typically `MasterResumeImportResponse.resume`) into
+ * the current master resume and save the result — matching entries updated in place,
+ * new ones added, everything else left untouched. Unlike `saveMasterResume`, this
+ * writes unconditionally (no separate confirm step server-side); the caller is
+ * responsible for confirming with the user first.
+ */
+export function mergeMasterResume(resume: Record<string, unknown>): Promise<MasterResumeMergeResponse> {
+  return request("/api/master-resume/merge", { method: "POST", body: JSON.stringify(resume) });
 }
 
 export function validateMasterResume(body: Record<string, unknown>): Promise<ValidateResponse> {

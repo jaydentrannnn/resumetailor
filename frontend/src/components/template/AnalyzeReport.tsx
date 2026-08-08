@@ -87,8 +87,10 @@ export function AnalyzeReport({ analysis }: Props) {
                 </span>
                 <SectionFieldRows
                   sectionKey={s.key}
-                  candidates={(analysis.field_candidates ?? []).filter(
-                    (c) => c.paragraph_id >= s.body_start && c.paragraph_id < s.body_end,
+                  candidates={(analysis.field_candidates ?? []).filter((c) =>
+                    c.section_heading_paragraph_id != null
+                      ? c.section_heading_paragraph_id === s.heading_paragraph_id
+                      : c.paragraph_id >= s.body_start && c.paragraph_id < s.body_end,
                   )}
                 />
               </li>

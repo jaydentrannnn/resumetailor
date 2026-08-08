@@ -69,6 +69,17 @@ class OptionalSpan(_Strict):
         return self
 
 
+class ContactSlot(_Strict):
+    """One physical paragraph carrying part of a contact block that a table layout
+    spreads across several cells (name in one, address in another, email/phone in a
+    third and fourth). Each slot renders as its own `RichText`, so the layout survives
+    instead of collapsing onto one joined line the way `ContactMapping` alone would."""
+
+    paragraph_id: int
+    fields: list[ContactField]
+    separator: str = " • "
+
+
 class ContactMapping(_Strict):
     """How the contact line is rebuilt from master-resume fields."""
 
@@ -77,8 +88,29 @@ class ContactMapping(_Strict):
     field_order: list[ContactField] = Field(
         default_factory=lambda: ["location", "email", "phone", "linkedin", "github"]
     )
+    #: Empty (the default) is today's exact behaviour: one joined line at
+    #: `paragraph_id`, using `field_order`/`separator` below. Non-empty replaces that
+    #: entirely — `paragraph_id` then names slot 0's own paragraph, so
+    #: `validate_profile_against_doc`'s `bad_contact` existence check still means
+    #: something. Table layout only; every existing profile has `slots == []` and
+    #: renders byte-identically.
+    slots: list[ContactSlot] = Field(default_factory=list)
     #: Literal separator between contact parts (e.g. " • " or " | ").
     separator: str = " \u2022 "
+
+    @model_validator(mode="after")
+    def _slots_consistent(self) -> ContactMapping:
+        """A non-empty `slots` must agree with `paragraph_id` and never double-map a
+        field — two slots both claiming the same field would make rendering ambiguous
+        about which paragraph is authoritative."""
+        if not self.slots:
+            return self
+        if self.slots[0].paragraph_id != self.paragraph_id:
+            raise ValueError("contact.paragraph_id must equal slots[0].paragraph_id")
+        seen: list[ContactField] = [f for s in self.slots for f in s.fields]
+        if len(seen) != len(set(seen)):
+            raise ValueError(f"a contact field appears in more than one slot: {seen}")
+        return self
 
 
 class HeaderFieldMapping(_Strict):
@@ -269,6 +301,22 @@ class TemplateProfile(_Strict):
     heading_prototype: HeadingPrototype | None = None
     #: Blank-line spacers to reproduce. Generic-mode only; all-`None` under `"fixed"`.
     spacing: SpacingProfile = Field(default_factory=SpacingProfile)
+    #: `"paragraph"` (default) is every template before this field existed: content
+    #: lives in body paragraphs. `"table"` is a resume whose content lives inside one
+    #: invisible layout table (used purely to right-align dates/locations without tab
+    #: stops) — see `template_build.build_generic_table`. Always implies
+    #: `section_mode="generic"`: a table-layout resume needs at least two
+    #: experience-shaped headings' worth of generality (this document's own
+    #: WORK EXPERIENCE + LEADERSHIP) far more often than a paragraph one does, and
+    #: implementing table support only for generic mode halves the build surface.
+    layout: Literal["paragraph", "table"] = "paragraph"
+    #: Count of `docx_text.iter_document_paragraphs(doc)` at analysis time. Optional —
+    #: `None` (every profile before this field existed) skips the check. When set,
+    #: `template_build.build_from_profile` verifies the baseline still enumerates to
+    #: the same count before resolving any paragraph id, turning a silent off-by-one
+    #: span corruption (the flattened id space and the document having drifted apart)
+    #: into a named failure instead of a build that quietly tags the wrong paragraphs.
+    paragraph_count: int | None = None
 
     @model_validator(mode="after")
     def _optional_consistency(self) -> TemplateProfile:
@@ -292,6 +340,8 @@ class TemplateProfile(_Strict):
             raise ValueError("fixed section_mode must not carry a sections list")
         if self.section_mode == "fixed" and self.spacing != SpacingProfile():
             raise ValueError("fixed section_mode must not carry spacing donors")
+        if self.layout == "table" and self.section_mode != "generic":
+            raise ValueError("table layout requires section_mode='generic'")
         return self
 
 
@@ -336,6 +386,7 @@ def legacy_defaults() -> dict:
             "list_section": False,
         },
         "section_mode": "fixed",
+        "layout": "paragraph",
     }
 
 
@@ -352,7 +403,10 @@ def active_layout(profile: TemplateProfile | None = None) -> dict:
         "warnings": list(profile.warnings),
         "schema_version": profile.schema_version,
         "section_mode": profile.section_mode,
+        "layout": profile.layout,
     }
+    if profile.contact.slots:
+        layout["contact_slots"] = [s.model_dump() for s in profile.contact.slots]
     if profile.section_mode == "generic":
         layout["sections"] = [s.model_dump() for s in profile.sections]
         layout["spacing"] = profile.spacing.model_dump()

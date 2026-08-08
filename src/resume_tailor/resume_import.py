@@ -55,6 +55,7 @@ from .data import (
 )
 from .render import parse_range
 from .template_analyze import AnalyzeResult, HeaderFieldMapping, _Para
+from .template_profile import ContactSlot
 
 #: Sentinel tag for a bullet the deterministic pass matched nothing for — `Bullet.tags`
 #: requires at least one entry, so this stands in until the user (or an opt-in LLM
@@ -122,10 +123,20 @@ def _seed_tags(text: str, vocabulary: set[str]) -> list[str]:
     return sorted(found)
 
 
-def _field_text(para: _Para, header: HeaderFieldMapping, field: str) -> str:
-    """Slice `para`'s text at `header`'s span for `field`, or "" when absent."""
+def _field_text(entry: list[_Para], header: HeaderFieldMapping, field: str) -> str:
+    """Slice `header`'s span for `field` out of its own paragraph, or "" when absent.
+
+    Takes the whole entry, not just the header paragraph, because a table layout's
+    location/dates fields live on a *different* paragraph than the header (the row's
+    other cell) — `header.fields[field].span.paragraph_id` says which one; slicing the
+    header paragraph's text unconditionally would silently read the wrong string (or
+    the wrong offsets) the moment that's true.
+    """
     opt = header.fields.get(field)
     if opt is None or not opt.present or opt.span is None:
+        return ""
+    para = next((p for p in entry if p.id == opt.span.paragraph_id), None)
+    if para is None:
         return ""
     return para.text[opt.span.start : opt.span.end].strip()
 
@@ -182,12 +193,19 @@ def _import_bullets(bullet_paras: list[_Para], entry_id: str, vocabulary: set[st
     return bullets
 
 
-def _import_contact(paras: list[_Para]) -> Contact:
-    """Best-effort contact extraction from paragraphs 0 (name) and 1 (contact line) —
-    the same fixed convention `template_analyze`'s legacy path and `build_name`/
-    `build_contact` already assume for this codebase's resumes."""
-    name = paras[0].text.strip() if paras else ""
-    contact_para = paras[1] if len(paras) > 1 else None
+def _paragraph_hyperlink_url(para: _Para) -> str:
+    """First resolvable `w:hyperlink` target on `para`, or ""."""
+    for child in para.paragraph._p.xpath("w:hyperlink"):
+        target = docx_text.hyperlink_target(para.paragraph, child)
+        if target:
+            return target
+    return ""
+
+
+def _import_contact_from_paragraph(name: str, contact_para: _Para | None) -> Contact:
+    """One joined contact line, split on its own separator — today's exact contract,
+    used whenever the contact block is a single paragraph (every paragraph-layout
+    resume, and any table layout whose contact info still fits in one cell)."""
     text = contact_para.text if contact_para is not None else ""
 
     email_m = template_analyze._EMAIL_RE.search(text)
@@ -248,6 +266,57 @@ def _import_contact(paras: list[_Para]) -> Contact:
     return Contact(name=name, email=email, phone=phone, location=location, linkedin=linkedin, github=github)
 
 
+def _import_contact_from_slots(
+    name: str, slots: list[ContactSlot], by_id: dict[int, _Para]
+) -> Contact:
+    """One paragraph per contact field — a table layout's own cells, already
+    classified by `template_analyze._detect_name_and_contact` — so each slot's text
+    supplies exactly the field(s) it was classified as, with no further splitting."""
+    fields = {"email": "", "phone": "", "location": "", "linkedin": "", "github": ""}
+    for slot in slots:
+        para = by_id.get(slot.paragraph_id)
+        if para is None:
+            continue
+        text = para.text.strip()
+        for field in slot.fields:
+            if fields.get(field):
+                continue
+            if field == "email":
+                m = template_analyze._EMAIL_RE.search(text)
+                fields["email"] = m.group(0) if m else text
+            elif field in ("linkedin", "github"):
+                fields[field] = _paragraph_hyperlink_url(para) or text
+            elif field in fields:
+                fields[field] = text
+    return Contact(
+        name=name,
+        email=fields["email"],
+        phone=fields["phone"],
+        location=fields["location"],
+        linkedin=fields["linkedin"],
+        github=fields["github"],
+    )
+
+
+def _import_contact(paras: list[_Para], first_heading_id: int | None) -> Contact:
+    """Best-effort contact extraction using the same name/contact-block detection
+    `template_analyze` uses for template mapping (`_detect_name_and_contact`) rather
+    than a fixed `paras[0]`/`paras[1]` convention — which breaks the moment the
+    document opens with an empty body paragraph before its table (as this codebase's
+    own table-layout documents do: the name lands at paragraph 1, not 0) or spreads
+    name/address/email/phone across several paragraphs.
+    """
+    name_id, contact_para, slots, _unmapped = template_analyze._detect_name_and_contact(
+        paras, first_heading_id
+    )
+    by_id = {p.id: p for p in paras}
+    name = by_id[name_id].text.strip() if name_id in by_id else ""
+
+    if slots:
+        return _import_contact_from_slots(name, slots, by_id)
+    return _import_contact_from_paragraph(name, contact_para)
+
+
 def _import_experience_entries(
     body: list[_Para], vocabulary: set[str], taken_ids: set[str]
 ) -> tuple[list[Experience], list[str]]:
@@ -255,15 +324,16 @@ def _import_experience_entries(
     entries: list[Experience] = []
     for entry in template_analyze._split_entries(body):
         header_para = entry[0]
-        header, _candidates = template_analyze._header_fields_from_text(
-            header_para, primary="company", secondary="location", date_field="dates"
+        header, _candidates = template_analyze._entry_header_fields(
+            entry, primary="company", secondary="location", date_field="dates"
         )
-        company = _field_text(header_para, header, "company")
-        location = _field_text(header_para, header, "location")
-        dates_text = _field_text(header_para, header, "dates")
+        company = _field_text(entry, header, "company")
+        location = _field_text(entry, header, "location")
+        dates_text = _field_text(entry, header, "dates")
 
         rest = entry[1:]
-        titles = [p for p in rest if not p.is_bullet and p.text.strip()]
+        main_rest = template_analyze._entry_main_paragraphs(entry)[1:]
+        titles = [p for p in main_rest if not p.is_bullet and p.text.strip()]
         title = ""
         if titles:
             title_text = titles[0].text
@@ -318,17 +388,17 @@ def _import_project_entries(
             header_para, limit=None if tab < 0 else tab
         )
 
-        header, _candidates = template_analyze._header_fields_from_text(
-            header_para,
+        header, _candidates = template_analyze._entry_header_fields(
+            entry,
             primary="name",
             secondary="tech",
             date_field="date",
             exclude_after=exclude_after,
         )
-        name = _field_text(header_para, header, "name")
-        tech_text = _field_text(header_para, header, "tech")
+        name = _field_text(entry, header, "name")
+        tech_text = _field_text(entry, header, "tech")
         tech = [t.strip() for t in tech_text.split(",") if t.strip()]
-        date_text = _field_text(header_para, header, "date")
+        date_text = _field_text(entry, header, "date")
 
         bullet_paras = [p for p in entry[1:] if p.is_bullet]
 
@@ -358,14 +428,17 @@ def _import_education_entries(body: list[_Para]) -> tuple[list[Education], list[
     entries: list[Education] = []
     for entry in template_analyze._split_entries(body):
         header_para = entry[0]
-        header, _candidates = template_analyze._header_fields_from_text(
-            header_para, primary="school", secondary="location", date_field="dates"
+        header, _candidates = template_analyze._entry_header_fields(
+            entry, primary="school", secondary="location", date_field="dates"
         )
-        school = _field_text(header_para, header, "school")
-        location = _field_text(header_para, header, "location")
-        dates_text = _field_text(header_para, header, "dates")
+        school = _field_text(entry, header, "school")
+        location = _field_text(entry, header, "location")
+        dates_text = _field_text(entry, header, "dates")
 
-        detail_paras = [p for p in entry[1:] if p.text.strip()]
+        # Main-cell paragraphs only: a table layout's location/dates cell must not be
+        # read as a degree line or a detail — see `_entry_main_paragraphs`.
+        main_rest = template_analyze._entry_main_paragraphs(entry)[1:]
+        detail_paras = [p for p in main_rest if p.text.strip()]
         degree = ""
         gpa = ""
         show_gpa = False
@@ -412,9 +485,27 @@ def _import_education_entries(body: list[_Para]) -> tuple[list[Education], list[
 def _import_skill_groups(body: list[_Para]) -> tuple[list[SkillGroup], list[str]]:
     warnings: list[str] = []
     groups: list[SkillGroup] = []
-    for p in body:
-        if not p.text.strip():
-            continue
+
+    non_blank = [p for p in body if p.text.strip()]
+    cross_pairs = template_analyze._skills_rows_across_cells(non_blank)
+    if cross_pairs is not None:
+        # Table layout: a label cell and a value cell, side by side — every row is one
+        # group, unlike the single-paragraph path below where one line is one group.
+        for lp, rp in cross_pairs:
+            label = lp.text.strip()
+            if label.endswith(":"):
+                label = label[:-1].rstrip()
+            items = [i.strip() for i in rp.text.split(",") if i.strip()]
+            if label and items:
+                groups.append(SkillGroup(label=label, items=items))
+            else:
+                warnings.append(
+                    f"skills row at paragraph {lp.id} ({lp.text.strip()!r}) could not "
+                    "be read as a label/value pair and was skipped"
+                )
+        return groups, warnings
+
+    for p in non_blank:
         spans = template_analyze._skills_spans(p)
         if spans is None:
             warnings.append(
@@ -458,7 +549,8 @@ def import_from_analysis(
     paras = template_analyze._load_paras(doc)
     vocabulary = _default_vocabulary() if known_tags is None else set(known_tags)
 
-    contact = _import_contact(paras)
+    first_heading_id = result.sections[0].heading_paragraph_id if result.sections else None
+    contact = _import_contact(paras, first_heading_id)
 
     entry_ids: set[str] = set()
     section_ids: set[str] = set()
@@ -510,3 +602,352 @@ def import_from_analysis(
         )
 
     return ImportedResume(resume=resume, warnings=warnings, untagged_bullet_count=untagged)
+
+
+# --------------------------------------------------------------------------------------
+# Merging an imported draft into an existing master resume
+# --------------------------------------------------------------------------------------
+
+
+def _match_key(text: str) -> str:
+    """Case/punctuation-insensitive identity key for merge matching.
+
+    Deliberately not `config.slugify`: slugify caps its output at 40 characters, which
+    is fine for minting a short id but wrong for an equality key — two distinct
+    50-character company names sharing a 40-character prefix would slugify to the same
+    string and one would silently overwrite the other on merge. This has no length cap.
+    """
+    return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
+
+
+class MergeStats(BaseModel):
+    """What `merge_into` actually did, named rather than just counted — the caller
+    surfaces these names so a near-miss duplicate (two spellings of the same school,
+    say) is visible immediately instead of buried in a total."""
+
+    updated: list[str] = Field(default_factory=list)
+    added: list[str] = Field(default_factory=list)
+    added_sections: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
+def _remint_bullets(bullets: list[Bullet], entry_id: str) -> list[Bullet]:
+    """Bullets carry the id of the entry that owns them. On a merge match, the
+    incoming bullets were minted under the incoming entry's own id — which is
+    discarded, since the existing entry's id is what survives the merge — so they must
+    be re-numbered under that surviving id instead."""
+    return [b.model_copy(update={"id": f"{entry_id}_b{i}"}) for i, b in enumerate(bullets, start=1)]
+
+
+def _target_section_index(sections: list[Section], kind: str, title: str) -> int | None:
+    """Which existing section (by index) unmatched incoming entries of `kind` should
+    be appended to, or `None` if a brand-new section must be created. First rule that
+    applies:
+
+    1. An existing section of `kind` whose title matches `title` (via `_match_key`).
+    2. Else an existing *empty* section of `kind` — adopted, so a fresh workspace's
+       default-titled placeholder sections (see `workspace._STARTER_RESUME`) receive
+       the import instead of a same-kind duplicate being created beside them. The
+       caller is responsible for actually renaming it.
+    3. Else, if exactly one section of `kind` exists, use it — avoids splitting content
+       across an ambiguous second section (e.g. skills vs. "additional information")
+       when there is no real conflict to resolve.
+    4. Else `None` — the caller creates a new section.
+
+    By the time rule 3 is reached, rule 2 has already ruled out every same-kind section
+    being empty, so rule 3 never silently claims an empty section under a different
+    name than the caller would have picked via rule 2.
+    """
+    same_kind = [(i, s) for i, s in enumerate(sections) if s.kind == kind]
+    for i, s in same_kind:
+        if _match_key(s.title) == _match_key(title):
+            return i
+    for i, s in same_kind:
+        if not s.entries:
+            return i
+    if len(same_kind) == 1:
+        return same_kind[0][0]
+    return None
+
+
+def _place_leftovers(
+    sections: list[Section],
+    kind: str,
+    inc_title: str,
+    taken_section_ids: set[str],
+    stats: MergeStats,
+    section_cls: type,
+) -> int:
+    """Resolve (creating if needed) the section leftover incoming entries of `kind`
+    should be appended to, and return its index. Shared tail end of every per-kind
+    merge function once it has a non-empty `leftovers` list."""
+    target_idx = _target_section_index(sections, kind, inc_title)
+    if target_idx is None:
+        new_section = section_cls(id=_fresh_id(inc_title, taken_section_ids), title=inc_title, entries=[])
+        sections.append(new_section)
+        stats.added_sections.append(inc_title)
+        return len(sections) - 1
+    if not sections[target_idx].entries:
+        sections[target_idx] = sections[target_idx].model_copy(update={"title": inc_title})
+    return target_idx
+
+
+def _merge_experience(
+    sections: list[Section],
+    incoming_sections: list[Section],
+    taken_entry_ids: set[str],
+    taken_section_ids: set[str],
+    stats: MergeStats,
+) -> None:
+    existing_by_key: dict[str, list[tuple[int, int]]] = {}
+    for si, sec in enumerate(sections):
+        if sec.kind != "experience":
+            continue
+        for ei, e in enumerate(sec.entries):
+            existing_by_key.setdefault(_match_key(e.company), []).append((si, ei))
+
+    for inc_sec in incoming_sections:
+        if inc_sec.kind != "experience":
+            continue
+        leftovers: list[Experience] = []
+        for inc in inc_sec.entries:
+            queue = existing_by_key.get(_match_key(inc.company))
+            if queue:
+                si, ei = queue.pop(0)
+                existing = sections[si].entries[ei]
+                sections[si].entries[ei] = existing.model_copy(
+                    update={
+                        "company": inc.company,
+                        "title": inc.title,
+                        "location": inc.location,
+                        "start": inc.start,
+                        "end": inc.end,
+                        "bullets": _remint_bullets(inc.bullets, existing.id),
+                    }
+                )
+                stats.updated.append(inc.company)
+            else:
+                leftovers.append(inc)
+
+        if not leftovers:
+            continue
+        target_idx = _place_leftovers(
+            sections, "experience", inc_sec.title, taken_section_ids, stats, ExperienceSection
+        )
+        for inc in leftovers:
+            entry_id = _fresh_id(inc.company or "role", taken_entry_ids)
+            sections[target_idx].entries.append(
+                inc.model_copy(update={"id": entry_id, "bullets": _remint_bullets(inc.bullets, entry_id)})
+            )
+            stats.added.append(inc.company)
+
+
+def _merge_projects(
+    sections: list[Section],
+    incoming_sections: list[Section],
+    taken_entry_ids: set[str],
+    taken_section_ids: set[str],
+    stats: MergeStats,
+) -> None:
+    existing_by_key: dict[str, list[tuple[int, int]]] = {}
+    for si, sec in enumerate(sections):
+        if sec.kind != "project":
+            continue
+        for ei, e in enumerate(sec.entries):
+            existing_by_key.setdefault(_match_key(e.name), []).append((si, ei))
+
+    for inc_sec in incoming_sections:
+        if inc_sec.kind != "project":
+            continue
+        leftovers: list[Project] = []
+        for inc in inc_sec.entries:
+            queue = existing_by_key.get(_match_key(inc.name))
+            if queue:
+                si, ei = queue.pop(0)
+                existing = sections[si].entries[ei]
+                sections[si].entries[ei] = existing.model_copy(
+                    update={
+                        "name": inc.name,
+                        "tech": inc.tech,
+                        "date": inc.date,
+                        "link": inc.link,
+                        "url": inc.url,
+                        "bullets": _remint_bullets(inc.bullets, existing.id),
+                    }
+                )
+                stats.updated.append(inc.name)
+            else:
+                leftovers.append(inc)
+
+        if not leftovers:
+            continue
+        target_idx = _place_leftovers(
+            sections, "project", inc_sec.title, taken_section_ids, stats, ProjectSection
+        )
+        for inc in leftovers:
+            entry_id = _fresh_id(inc.name or "project", taken_entry_ids)
+            sections[target_idx].entries.append(
+                inc.model_copy(update={"id": entry_id, "bullets": _remint_bullets(inc.bullets, entry_id)})
+            )
+            stats.added.append(inc.name)
+
+
+def _merge_education(
+    sections: list[Section], incoming_sections: list[Section], taken_section_ids: set[str], stats: MergeStats
+) -> None:
+    existing_by_key: dict[str, list[tuple[int, int]]] = {}
+    for si, sec in enumerate(sections):
+        if sec.kind != "education":
+            continue
+        for ei, e in enumerate(sec.entries):
+            existing_by_key.setdefault(_match_key(e.school), []).append((si, ei))
+
+    for inc_sec in incoming_sections:
+        if inc_sec.kind != "education":
+            continue
+        leftovers: list[Education] = []
+        for inc in inc_sec.entries:
+            queue = existing_by_key.get(_match_key(inc.school))
+            if queue:
+                si, ei = queue.pop(0)
+                sections[si].entries[ei] = inc.model_copy()
+                stats.updated.append(inc.school)
+            else:
+                leftovers.append(inc)
+
+        if not leftovers:
+            continue
+        target_idx = _place_leftovers(
+            sections, "education", inc_sec.title, taken_section_ids, stats, EducationSection
+        )
+        for inc in leftovers:
+            sections[target_idx].entries.append(inc.model_copy())
+            stats.added.append(inc.school)
+
+
+def _merge_skills(
+    sections: list[Section], incoming_sections: list[Section], taken_section_ids: set[str], stats: MergeStats
+) -> None:
+    existing_by_key: dict[str, list[tuple[int, int]]] = {}
+    for si, sec in enumerate(sections):
+        if sec.kind != "skills":
+            continue
+        for ei, e in enumerate(sec.entries):
+            existing_by_key.setdefault(_match_key(e.label), []).append((si, ei))
+
+    for inc_sec in incoming_sections:
+        if inc_sec.kind != "skills":
+            continue
+        leftovers: list[SkillGroup] = []
+        for inc in inc_sec.entries:
+            queue = existing_by_key.get(_match_key(inc.label))
+            if queue:
+                si, ei = queue.pop(0)
+                existing = sections[si].entries[ei]
+                # Keep the existing label's own casing/wording — its match key already
+                # equals the incoming one, so only the items are actually "refreshed".
+                sections[si].entries[ei] = existing.model_copy(update={"items": inc.items})
+                stats.updated.append(existing.label)
+            else:
+                leftovers.append(inc)
+
+        if not leftovers:
+            continue
+        target_idx = _place_leftovers(
+            sections, "skills", inc_sec.title, taken_section_ids, stats, SkillsSection
+        )
+        for inc in leftovers:
+            sections[target_idx].entries.append(inc.model_copy())
+            stats.added.append(inc.label)
+
+
+def _merge_list_items(
+    sections: list[Section],
+    incoming_sections: list[Section],
+    taken_entry_ids: set[str],
+    taken_section_ids: set[str],
+    stats: MergeStats,
+) -> None:
+    existing_keys: set[str] = set()
+    for sec in sections:
+        if sec.kind != "list":
+            continue
+        for e in sec.entries:
+            existing_keys.add(_match_key(e.text))
+
+    for inc_sec in incoming_sections:
+        if inc_sec.kind != "list":
+            continue
+        leftovers: list[ListItem] = []
+        for inc in inc_sec.entries:
+            key = _match_key(inc.text)
+            if key in existing_keys:
+                continue
+            existing_keys.add(key)  # a repeat within this same incoming batch is still a dup
+            leftovers.append(inc)
+
+        if not leftovers:
+            continue
+        target_idx = _place_leftovers(
+            sections, "list", inc_sec.title, taken_section_ids, stats, ListSection
+        )
+        for inc in leftovers:
+            entry_id = _fresh_id(inc.text, taken_entry_ids)
+            sections[target_idx].entries.append(inc.model_copy(update={"id": entry_id}))
+            stats.added.append(inc.text)
+
+
+def _merge_contact(existing: Contact, incoming: Contact) -> Contact:
+    """Field-by-field merge, only overwriting where `incoming` actually has a value.
+
+    A blanket overwrite would blank a manually-curated LinkedIn URL the moment an
+    export loses its hyperlink (a documented gotcha in this codebase) even though
+    nothing about that field genuinely changed.
+    """
+    updates = {
+        field_name: value
+        for field_name in ("name", "email", "phone", "location", "linkedin", "github", "links")
+        if (value := getattr(incoming, field_name))
+    }
+    return existing.model_copy(update=updates)
+
+
+def merge_into(existing: MasterResume, incoming: MasterResume) -> tuple[MasterResume, MergeStats]:
+    """Fold `incoming` (typically the `.resume` of an `ImportedResume`) into `existing`
+    by matching entries on company/project name, school, skills label, or exact list
+    text — never by section. An incoming section whose title doesn't match an existing
+    one (e.g. "LEADERSHIP" vs. an existing "LEADERSHIP EXPERIENCE") must not cause an
+    entry that already lives in that differently-titled section to be duplicated.
+
+    A matched entry is updated *in place*, keeping its existing id (and, for
+    experience/project, its bullets re-minted under that id) so nothing referencing it
+    elsewhere breaks. An unmatched incoming entry is added — see
+    `_target_section_index` for where. Anything in `existing` with no counterpart in
+    `incoming` is left completely untouched, including its id, bullets, and tags.
+
+    Pure: no I/O, no LLM call. `MasterResume.tag_vocabulary` is the union of both
+    sides; `summary_variants` and `_comment` are carried over from `existing` verbatim,
+    since `incoming` (an import) never produces them.
+    """
+    sections: list[Section] = [s.model_copy(deep=True) for s in existing.sections]
+    stats = MergeStats()
+
+    taken_entry_ids: set[str] = {
+        e.id for s in sections if s.kind in ("experience", "project", "list") for e in s.entries
+    }
+    taken_section_ids: set[str] = {s.id for s in sections}
+
+    _merge_experience(sections, incoming.sections, taken_entry_ids, taken_section_ids, stats)
+    _merge_projects(sections, incoming.sections, taken_entry_ids, taken_section_ids, stats)
+    _merge_education(sections, incoming.sections, taken_section_ids, stats)
+    _merge_skills(sections, incoming.sections, taken_section_ids, stats)
+    _merge_list_items(sections, incoming.sections, taken_entry_ids, taken_section_ids, stats)
+
+    merged = MasterResume(
+        comment=existing.comment,
+        contact=_merge_contact(existing.contact, incoming.contact),
+        summary_variants=existing.summary_variants,
+        sections=sections,
+        tag_vocabulary=sorted(set(existing.tag_vocabulary) | set(incoming.tag_vocabulary)),
+    )
+    return merged, stats

@@ -342,6 +342,20 @@ class MasterResumeImportResponse(BaseModel):
     untagged_bullet_count: int = 0
 
 
+class MasterResumeMergeResponse(BaseModel):
+    """Result of `POST /api/master-resume/merge`: unlike `import`, this one writes —
+    `resume` is the merged, saved master resume. `updated`/`added`/`added_sections` are
+    entry/section names, not just counts, so the caller can show exactly what changed
+    (surfacing a near-miss duplicate immediately rather than burying it in a total)."""
+
+    resume: dict[str, Any]
+    updated: list[str] = Field(default_factory=list)
+    added: list[str] = Field(default_factory=list)
+    added_sections: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    backup: str | None = None
+
+
 class TemplateFileInfo(BaseModel):
     """Existence and metadata for one template .docx on disk."""
 
@@ -467,6 +481,7 @@ class TemplateFieldCandidateOut(BaseModel):
     end: int
     confidence: float = 0.0
     preview: str = ""
+    section_heading_paragraph_id: int | None = None
 
 
 class TemplateAnalyzeResponse(BaseModel):

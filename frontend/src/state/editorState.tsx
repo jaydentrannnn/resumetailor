@@ -36,6 +36,10 @@ type EditorStateValue = {
    * intentionally leaving the saved snapshot untouched so `dirty` immediately
    * reflects that this draft has not been saved to disk. */
   loadDraft: (resume: MasterResume, message?: string) => void;
+  /** Adopt `resume` as both the working draft AND the saved snapshot — for a resume
+   * that was already written to disk by the caller (e.g. the template wizard's
+   * merge-and-save action), so it must never read as an unsaved draft. */
+  syncFromDisk: (resume: MasterResume, message?: string) => void;
 };
 
 const EditorStateContext = createContext<EditorStateValue | null>(null);
@@ -167,6 +171,13 @@ export function EditorProvider({ children }: { children: ReactNode }) {
     setMessage(draftMessage ?? "Imported draft loaded — review and save to keep it.");
   }, []);
 
+  const syncFromDisk = useCallback((next: MasterResume, syncMessage?: string) => {
+    setResumeState(next);
+    setSavedSnapshot(JSON.stringify(next));
+    setErrors([]);
+    setMessage(syncMessage ?? "Master resume updated.");
+  }, []);
+
   const value = useMemo<EditorStateValue>(
     () => ({
       resume,
@@ -179,8 +190,9 @@ export function EditorProvider({ children }: { children: ReactNode }) {
       validate,
       save,
       loadDraft,
+      syncFromDisk,
     }),
-    [resume, setResume, config, errors, message, busy, dirty, validate, save, loadDraft],
+    [resume, setResume, config, errors, message, busy, dirty, validate, save, loadDraft, syncFromDisk],
   );
 
   return (
