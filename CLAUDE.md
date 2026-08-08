@@ -607,6 +607,17 @@ nothing; the editor loads the result as unsaved state via `editorState.loadDraft
   resolves a `w:hyperlink`'s actual target URL (every other caller in this codebase
   only ever needed the visible label text; this is the first that needs where a link
   actually points, to reconstruct `Project.url`).
+- **`POST /api/master-resume/merge` (`resume_import.merge_into`) folds an imported draft
+  into the existing master resume** — matched entries updated in place, unmatched ones
+  added, everything else untouched; never a full replace, since the master resume is
+  deliberately a superset. Matching is exact `_match_key` equality for every kind except
+  **education**, which also matches a boundary-anchored school-name suffix
+  (`_is_near_miss` — "University of X" vs. "University of X — Y School of Business"),
+  since one export commonly names a school's college where another doesn't. A matched
+  education entry merges field-by-field (`_merge_education_entry`, mirroring
+  `_merge_contact`) rather than replacing wholesale, specifically so a curated
+  `gpa`/`show_gpa` the incoming .docx has no way to express (GPA as free text, not the
+  `| GPA: …` form `_GPA_RE` requires) survives a merge.
 
 ## Non-obvious gotchas
 

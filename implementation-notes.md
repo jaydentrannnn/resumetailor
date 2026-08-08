@@ -2258,3 +2258,56 @@ in both non-job routes comes back as a warning, not a 500). Full suite: 712 pass
 actually reached `gemma4:cloud` and tagged the bullet, never touching Anthropic; and with
 `OLLAMA_BASE_URL` pointed at a closed port, the import still returned 200 with the
 deterministic draft and a `"Tag suggestion pass failed: …"` warning instead of a 500.
+
+## 2026-08-08 - Merge wasn't updating coursework because the education entry never matched, not because parsing failed
+
+**What:** Reported as "merge doesn't update relevant coursework." Coursework parsing was
+never broken (`_COURSEWORK_RE` reads `Relevant Coursework: …` correctly) — the bug was in
+`_merge_education`'s matching. `data/workspaces/nina/master_resume.json` had
+`school="University of California, Irvine"`; Nina's export said
+`"University of California, Irvine --- Paul Merage School of Business"`. Exact
+`_match_key` equality treated these as unrelated, so the merge *added* a second education
+entry (carrying the coursework) instead of updating the first — the coursework existed on
+disk, just on the wrong entry. This exact behavior — "an incoming school string that
+differs, even by an added suffix, does NOT match" — was the previous entry's own accepted
+design decision; the user has now rejected that trade-off in favor of matching it.
+
+**Second bug found while tracing the first:** `_merge_education` replaced a matched entry
+*wholesale* (`sections[si].entries[ei] = inc.model_copy()`), unlike `_merge_experience`/
+`_merge_projects`, which already update named fields only. Had the school strings matched,
+the curated `gpa="3.92"`/`show_gpa=True` would have been silently wiped — the .docx writes
+GPA as a free-text detail line (`Cumulative GPA: 3.9/4.0…`), which `_GPA_RE` correctly
+declines to parse (it requires the `| GPA: …` form), so `incoming.gpa` is empty. Fixing only
+the matching would have traded a visible duplicate for silent data loss.
+
+**Fix:** `_is_near_miss(a, b)` — boundary-anchored suffix match on `_match_key` (`long.
+startswith(short + "-")` or the mirror), scoped to `Education.school` only via a new
+`_MIN_NEAR_MISS_KEY = 4` floor. Deliberately not extended to company/project/skills/list
+matching: an institution's name legitimately grows a school/college suffix across two
+exports of the same resume; a company's generally does not, and the user chose to keep
+those exact. `_merge_education` now runs two passes — exact first (unchanged), then
+near-miss only over what exact left unclaimed — so a resume already holding both a short
+and a long spelling of one school resolves unambiguously rather than fuzzily contesting the
+same incoming entry. A near-miss match against >1 existing candidate is refused (added as
+new, with a warning) rather than guessed. `_merge_education_entry` replaces the wholesale
+copy with a `_merge_contact`-style field-by-field merge: empty incoming fields never blank
+a populated existing one; `show_gpa` (a bool, so truthiness can't distinguish "not found"
+from a deliberate `False`) is only adopted alongside a non-empty incoming `gpa`.
+
+**Data fixed too:** the two UCI entries already sitting in `data/workspaces/nina/
+master_resume.json` from the earlier (pre-fix) merge predated this change and would not
+merge themselves, so a one-time script applied the identical `_merge_education_entry` rule
+to collapse them — backed up first (`.bak.json`, the same convention `_write_master_resume`
+uses), then re-validated through the real `python -m resume_tailor.data --validate`. Result:
+one EDUCATION entry, coursework populated, `gpa="3.92"`/`show_gpa=True` intact. `data/` is
+gitignored, so this touched no repo state.
+
+**Verified:** 7 new/rewritten tests in `test_resume_import.py` (the reported case; GPA
+survives while coursework updates; empty-incoming-never-blanks; exact-beats-near-miss with
+both spellings present; ambiguous near-miss added-not-guessed with a warning; genuinely
+distinct schools stay distinct; near-miss scoping — a company differing by the same kind of
+suffix still does not match). Full suite: 717 passed (was 712), 1 deselected. Also verified
+live and unmocked, twice for idempotency, through the real `POST /api/master-resume/merge`
+against the actual reconciled `nina` data and the real `original_export.docx`: the UCI entry
+comes back `updated` (not `added`), still exactly one education entry, coursework and
+`gpa=3.92`/`show_gpa=True` both stable across both runs.
