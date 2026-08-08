@@ -792,10 +792,183 @@ def test_merge_preserves_summary_variants_and_comment_and_unions_tag_vocabulary(
     assert merged.tag_vocabulary == ["zzzexcel", "zzzpython", "zzzsql"]
 
 
-def test_merge_education_replaces_on_match_and_adds_a_distinct_school_string():
-    """Pins the real-world near-miss: an incoming school string that differs from the
-    existing one (even by an added suffix) does NOT match — it is reported as added,
-    not silently merged into the existing entry."""
+def test_merge_education_near_miss_school_updates_in_place_with_coursework():
+    """The real-world case that motivated near-miss matching: an incoming school string
+    that is the existing one plus a school/college suffix matches and updates in place —
+    coursework the existing entry lacked comes through, and the curated GPA the .docx
+    could not express survives (see `_merge_education_entry`)."""
+    existing = _resume(
+        sections=[
+            EducationSection(
+                id="edu",
+                title="EDUCATION",
+                entries=[
+                    Education(
+                        school="University of California, Irvine",
+                        degree="B.A. in Business Administration",
+                        dates="Expected graduation: June 2027",
+                        location="Irvine, CA",
+                        gpa="3.92",
+                        show_gpa=True,
+                        details=["Dean's List"],
+                    ),
+                ],
+            ),
+        ]
+    )
+    incoming = _resume(
+        sections=[
+            EducationSection(
+                id="edu2",
+                title="EDUCATION",
+                entries=[
+                    Education(
+                        school="University of California, Irvine --- Paul Merage School of Business",
+                        degree="Bachelor of Arts in Business Administration",
+                        dates="Class of 2027",
+                        location="CA",
+                        coursework=["Financial Accounting", "Management Science", "Intro to Consulting"],
+                        details=["Cumulative GPA: 3.9/4.0; Major GPA: 3.88/4.0"],
+                    ),
+                ],
+            ),
+        ]
+    )
+
+    merged, stats = resume_import.merge_into(existing, incoming)
+
+    assert stats.added == []
+    assert stats.updated == ["University of California, Irvine --- Paul Merage School of Business"]
+    assert len(merged.education) == 1
+    entry = merged.education[0]
+    assert entry.school == "University of California, Irvine --- Paul Merage School of Business"
+    assert entry.coursework == ["Financial Accounting", "Management Science", "Intro to Consulting"]
+    # Curated GPA survives: the incoming entry has no `gpa`, since the .docx wrote it as
+    # a free-text detail line, not the `| GPA: …` form `_GPA_RE` recognizes.
+    assert entry.gpa == "3.92"
+    assert entry.show_gpa is True
+    assert any("near-miss" in w for w in stats.warnings)
+
+
+def test_merge_education_empty_incoming_field_never_blanks_a_populated_one():
+    existing = _resume(
+        sections=[
+            EducationSection(
+                id="edu",
+                title="EDUCATION",
+                entries=[
+                    Education(
+                        school="Acme University",
+                        degree="B.S. Computer Science",
+                        dates="2020-2024",
+                        location="Springfield",
+                        details=["Honors"],
+                    ),
+                ],
+            ),
+        ]
+    )
+    incoming = _resume(
+        sections=[
+            EducationSection(
+                id="edu2",
+                title="EDUCATION",
+                entries=[Education(school="Acme University", degree="", dates="", location="")],
+            ),
+        ]
+    )
+
+    merged, stats = resume_import.merge_into(existing, incoming)
+
+    entry = merged.education[0]
+    assert entry.degree == "B.S. Computer Science"
+    assert entry.dates == "2020-2024"
+    assert entry.location == "Springfield"
+    assert entry.details == ["Honors"]
+
+
+def test_merge_education_exact_beats_near_miss():
+    """When the existing resume already holds both the short and the long spelling of
+    one school, an incoming long spelling must claim its exact twin — not fuzzily match
+    the short entry too, which would leave one of the two existing entries orphaned."""
+    existing = _resume(
+        sections=[
+            EducationSection(
+                id="edu",
+                title="EDUCATION",
+                entries=[
+                    Education(school="University of California, Irvine", degree="BA", dates="2024"),
+                    Education(
+                        school="University of California, Irvine --- Paul Merage School of Business",
+                        degree="Old Degree Text",
+                        dates="2024",
+                    ),
+                ],
+            ),
+        ]
+    )
+    incoming = _resume(
+        sections=[
+            EducationSection(
+                id="edu2",
+                title="EDUCATION",
+                entries=[
+                    Education(
+                        school="University of California, Irvine --- Paul Merage School of Business",
+                        degree="New Degree Text",
+                        dates="2027",
+                    ),
+                ],
+            ),
+        ]
+    )
+
+    merged, stats = resume_import.merge_into(existing, incoming)
+
+    assert stats.added == []
+    assert stats.updated == ["University of California, Irvine --- Paul Merage School of Business"]
+    assert not any("near-miss" in w for w in stats.warnings)
+    by_school = {e.school: e for e in merged.education}
+    assert by_school["University of California, Irvine"].degree == "BA"
+    assert by_school["University of California, Irvine --- Paul Merage School of Business"].degree == (
+        "New Degree Text"
+    )
+
+
+def test_merge_education_ambiguous_near_miss_is_added_not_guessed():
+    """Two existing entries both near-miss one incoming school — refuse to guess which
+    one it means; add it as new and warn, rather than silently picking one."""
+    existing = _resume(
+        sections=[
+            EducationSection(
+                id="edu",
+                title="EDUCATION",
+                entries=[
+                    Education(school="Acme University North Campus", degree="BA", dates="2020"),
+                    Education(school="Acme University South Campus", degree="BS", dates="2021"),
+                ],
+            ),
+        ]
+    )
+    incoming = _resume(
+        sections=[
+            EducationSection(
+                id="edu2",
+                title="EDUCATION",
+                entries=[Education(school="Acme University", degree="MS", dates="2027")],
+            ),
+        ]
+    )
+
+    merged, stats = resume_import.merge_into(existing, incoming)
+
+    assert stats.updated == []
+    assert stats.added == ["Acme University"]
+    assert len(merged.education) == 3
+    assert any("matched" in w.lower() and "existing entries" in w for w in stats.warnings)
+
+
+def test_merge_education_genuinely_distinct_schools_stay_two_entries():
     existing = _resume(
         sections=[
             EducationSection(
@@ -813,10 +986,55 @@ def test_merge_education_replaces_on_match_and_adds_a_distinct_school_string():
                 id="edu2",
                 title="EDUCATION",
                 entries=[
-                    Education(
-                        school="University of California, Irvine --- Paul Merage School of Business",
-                        degree="BA Business",
-                        dates="2027",
+                    Education(school="University of California, Los Angeles", degree="BS", dates="2027"),
+                ],
+            ),
+        ]
+    )
+
+    merged, stats = resume_import.merge_into(existing, incoming)
+
+    assert stats.updated == []
+    assert stats.added == ["University of California, Los Angeles"]
+    schools = {e.school for e in merged.education}
+    assert schools == {
+        "University of California, Irvine",
+        "University of California, Los Angeles",
+    }
+
+
+def test_merge_experience_near_miss_scoping_does_not_apply_to_companies():
+    """Near-miss matching is education-only — a company name differing by the same kind
+    of suffix must still be treated as a distinct entry, not fuzzily merged."""
+    existing = _resume(
+        sections=[
+            ExperienceSection(
+                id="exp",
+                title="EXPERIENCE",
+                entries=[
+                    Experience(
+                        id="acme-id",
+                        company="Acme Corp",
+                        title="Engineer",
+                        start="2020",
+                        end="2021",
+                    ),
+                ],
+            ),
+        ]
+    )
+    incoming = _resume(
+        sections=[
+            ExperienceSection(
+                id="exp2",
+                title="EXPERIENCE",
+                entries=[
+                    Experience(
+                        id="acme2-id",
+                        company="Acme Corp Consulting Division",
+                        title="Consultant",
+                        start="2022",
+                        end="2023",
                     ),
                 ],
             ),
@@ -825,10 +1043,7 @@ def test_merge_education_replaces_on_match_and_adds_a_distinct_school_string():
 
     merged, stats = resume_import.merge_into(existing, incoming)
 
-    assert stats.added == ["University of California, Irvine --- Paul Merage School of Business"]
     assert stats.updated == []
-    schools = {e.school for e in merged.education}
-    assert schools == {
-        "University of California, Irvine",
-        "University of California, Irvine --- Paul Merage School of Business",
-    }
+    assert stats.added == ["Acme Corp Consulting Division"]
+    companies = {e.company for e in merged.experience}
+    assert companies == {"Acme Corp", "Acme Corp Consulting Division"}

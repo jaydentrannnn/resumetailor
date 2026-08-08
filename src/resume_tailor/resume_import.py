@@ -620,6 +620,51 @@ def _match_key(text: str) -> str:
     return re.sub(r"[^a-z0-9]+", "-", text.lower()).strip("-")
 
 
+#: Below this, a `_match_key` is too short for a suffix match to be meaningful evidence
+#: (a single short word could coincidentally be a prefix/suffix of an unrelated one).
+_MIN_NEAR_MISS_KEY = 4
+
+
+def _is_near_miss(a: str, b: str) -> bool:
+    """True when two `_match_key`s differ only by a leading/trailing suffix at a hyphen
+    boundary — `university-of-california-irvine` vs `university-of-california-irvine-
+    paul-merage-school-of-business`. Boundary-anchored, not a bare substring test, so a
+    mid-word coincidence (`art` inside `martin`) can never match.
+
+    Scoped to education (`_merge_education`) only: an institution's name legitimately
+    grows a school/college suffix across two exports of the same resume; a company's
+    generally does not, so experience/project/skills/list matching stays exact.
+    """
+    ka, kb = _match_key(a), _match_key(b)
+    if ka == kb:
+        return False
+    short, long_ = (ka, kb) if len(ka) <= len(kb) else (kb, ka)
+    if len(short) < _MIN_NEAR_MISS_KEY:
+        return False
+    return long_.startswith(short + "-") or long_.endswith("-" + short)
+
+
+def _merge_education_entry(existing: Education, incoming: Education) -> Education:
+    """Field-by-field, only overwriting where `incoming` actually has a value — same
+    rule `_merge_contact` uses, for the same reason: replacing the entry wholesale
+    would silently wipe a curated field (e.g. `gpa`/`show_gpa`) the incoming .docx
+    simply has no way to express (GPA written as free text like "Cumulative GPA:
+    3.9/4.0" is read as a detail line, not the `gpa` field — see `_GPA_RE`).
+
+    `show_gpa` is a bool, so truthiness can't tell "not found" apart from a deliberate
+    `False`; it is only adopted alongside a non-empty incoming `gpa`.
+    """
+    updates: dict[str, object] = {
+        field_name: value
+        for field_name in ("school", "degree", "dates", "location", "coursework", "details")
+        if (value := getattr(incoming, field_name))
+    }
+    if incoming.gpa:
+        updates["gpa"] = incoming.gpa
+        updates["show_gpa"] = incoming.show_gpa
+    return existing.model_copy(update=updates)
+
+
 class MergeStats(BaseModel):
     """What `merge_into` actually did, named rather than just counted — the caller
     surfaces these names so a near-miss duplicate (two spellings of the same school,
@@ -795,32 +840,87 @@ def _merge_projects(
 def _merge_education(
     sections: list[Section], incoming_sections: list[Section], taken_section_ids: set[str], stats: MergeStats
 ) -> None:
+    """Two matching passes, exact before near-miss, so a resume already holding both a
+    short and a long spelling of one school (see `_is_near_miss`) resolves unambiguously:
+    the incoming long spelling claims its exact twin first, leaving the short entry alone
+    rather than both being fuzzily eligible for the same incoming entry.
+    """
     existing_by_key: dict[str, list[tuple[int, int]]] = {}
+    unclaimed: list[tuple[int, int]] = []
     for si, sec in enumerate(sections):
         if sec.kind != "education":
             continue
         for ei, e in enumerate(sec.entries):
             existing_by_key.setdefault(_match_key(e.school), []).append((si, ei))
+            unclaimed.append((si, ei))
 
-    for inc_sec in incoming_sections:
-        if inc_sec.kind != "education":
-            continue
-        leftovers: list[Education] = []
-        for inc in inc_sec.entries:
-            queue = existing_by_key.get(_match_key(inc.school))
-            if queue:
-                si, ei = queue.pop(0)
-                sections[si].entries[ei] = inc.model_copy()
-                stats.updated.append(inc.school)
-            else:
-                leftovers.append(inc)
+    # Flattened across incoming sections (matching must be global — see `merge_into`'s
+    # docstring), but each entry keeps its originating section so an unmatched leftover
+    # is still placed via that section's own title, exactly as before this pass split.
+    incoming_flat: list[tuple[Section, Education]] = [
+        (inc_sec, inc)
+        for inc_sec in incoming_sections
+        if inc_sec.kind == "education"
+        for inc in inc_sec.entries
+    ]
 
-        if not leftovers:
-            continue
+    exact_leftovers: list[tuple[Section, Education]] = []
+    for inc_sec, inc in incoming_flat:
+        queue = existing_by_key.get(_match_key(inc.school))
+        if queue:
+            si, ei = queue.pop(0)
+            unclaimed.remove((si, ei))
+            sections[si].entries[ei] = _merge_education_entry(sections[si].entries[ei], inc)
+            stats.updated.append(inc.school)
+        else:
+            exact_leftovers.append((inc_sec, inc))
+
+    leftovers: list[tuple[Section, Education]] = []
+    for inc_sec, inc in exact_leftovers:
+        candidates = [
+            (si, ei)
+            for si, ei in unclaimed
+            if _is_near_miss(sections[si].entries[ei].school, inc.school)
+        ]
+        if len(candidates) == 1:
+            si, ei = candidates[0]
+            unclaimed.remove((si, ei))
+            existing_school = sections[si].entries[ei].school
+            sections[si].entries[ei] = _merge_education_entry(sections[si].entries[ei], inc)
+            stats.updated.append(inc.school)
+            stats.warnings.append(
+                f'Matched education entry "{existing_school}" to incoming '
+                f'"{inc.school}" as a near-miss (school names differ by a suffix) — '
+                "verify this is the entry you meant."
+            )
+        else:
+            if len(candidates) > 1:
+                stats.warnings.append(
+                    f'Incoming education entry "{inc.school}" matched '
+                    f"{len(candidates)} existing entries as a near-miss; added as new "
+                    "rather than guessing which one to update — reconcile by hand."
+                )
+            leftovers.append((inc_sec, inc))
+
+    if not leftovers:
+        return
+
+    # Regroup by originating incoming section (dict keyed by identity, since Section is
+    # unhashable) so `_place_leftovers` still runs once per section, unchanged.
+    by_section: dict[int, list[Education]] = {}
+    section_order: list[Section] = []
+    for inc_sec, inc in leftovers:
+        key = id(inc_sec)
+        if key not in by_section:
+            by_section[key] = []
+            section_order.append(inc_sec)
+        by_section[key].append(inc)
+
+    for inc_sec in section_order:
         target_idx = _place_leftovers(
             sections, "education", inc_sec.title, taken_section_ids, stats, EducationSection
         )
-        for inc in leftovers:
+        for inc in by_section[id(inc_sec)]:
             sections[target_idx].entries.append(inc.model_copy())
             stats.added.append(inc.school)
 
@@ -918,12 +1018,18 @@ def merge_into(existing: MasterResume, incoming: MasterResume) -> tuple[MasterRe
     text — never by section. An incoming section whose title doesn't match an existing
     one (e.g. "LEADERSHIP" vs. an existing "LEADERSHIP EXPERIENCE") must not cause an
     entry that already lives in that differently-titled section to be duplicated.
+    Education additionally matches on a boundary-anchored suffix (`_is_near_miss`) after
+    exact matching fails, since one export commonly names a school's college/school where
+    another doesn't — every other kind matches exactly only.
 
     A matched entry is updated *in place*, keeping its existing id (and, for
     experience/project, its bullets re-minted under that id) so nothing referencing it
-    elsewhere breaks. An unmatched incoming entry is added — see
-    `_target_section_index` for where. Anything in `existing` with no counterpart in
-    `incoming` is left completely untouched, including its id, bullets, and tags.
+    elsewhere breaks; education additionally only overwrites fields the incoming entry
+    actually has a value for (`_merge_education_entry`), so a curated `gpa`/`show_gpa`
+    the incoming .docx has no way to express survives. An unmatched incoming entry is
+    added — see `_target_section_index` for where. Anything in `existing` with no
+    counterpart in `incoming` is left completely untouched, including its id, bullets,
+    and tags.
 
     Pure: no I/O, no LLM call. `MasterResume.tag_vocabulary` is the union of both
     sides; `summary_variants` and `_comment` are carried over from `existing` verbatim,
