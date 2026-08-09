@@ -22,16 +22,16 @@ Docker/Ollama-Gemini-LM Studio walkthrough; this file supersedes it wherever the
 **The LLM produces plain strings and nothing else. It never sees, receives, or emits XML,
 styling, template markup, or anything about layout.**
 
-- `jd.py`, `rewrite.py`, `facets.py`, `expand.py`, `propose.py` are the *only* modules that
-  call the API, and they exchange plain text/JSON with it. Five pipeline stages run on
-  every clean run: JD extraction, bullet relevance scoring, project-tech/coursework
-  selection, bullet rewriting, application-form experience expansion. `propose.py` is a
-  sixth, separate stage that drafts vocabulary-library additions — never part of the
-  pipeline itself, only an explicit Settings-tab action or the opt-in
-  `settings.suggest_vocabulary` flag. Rewriting may issue up to two bounded follow-up
-  calls: `rewrite._polish` (widow/verb repair) and `rewrite._retry_fabrications` (one
-  targeted retry on a fabrication). A clean run is five calls; `--merge` adds one more when
-  the page has measured over.
+- `jd.py`, `rewrite.py`, `facets.py`, `expand.py`, `skills.py`, `propose.py` are the *only*
+  modules that call the API, and they exchange plain text/JSON with it. Six pipeline stages
+  run on every clean run: JD extraction, bullet relevance scoring, project-tech/coursework
+  selection, bullet rewriting, application-form experience expansion, tailored skills-list
+  selection. `propose.py` is a seventh, separate stage that drafts vocabulary-library
+  additions — never part of the pipeline itself, only an explicit Settings-tab action or
+  the opt-in `settings.suggest_vocabulary` flag. Rewriting may issue up to two bounded
+  follow-up calls: `rewrite._polish` (widow/verb repair) and `rewrite._retry_fabrications`
+  (one targeted retry on a fabrication). A clean run is six calls; `--merge` adds one more
+  when the page has measured over.
 - `llm.py` routes *which* backend those calls use — plain strings and JSON in, nothing
   about the document.
 - `render.py` is the only module that touches the document, mechanically via `docxtpl` —
@@ -143,7 +143,7 @@ reachable via `host.docker.internal` (already set in `docker-compose.yml`).
 `tailor.py` takes `--out`, `--pages`, `--experience`, `--projects`, `--template`,
 `--no-cache`, `--no-semantic` (tag-overlap-only ranking, the control for an A/B on a
 surprising ranking), `--no-widow-repair` / `--no-verb-repair`, `--merge` (opt-in: propose
-merges only after a measured page overflow), `--no-expand`, `--no-facets`, `--fill-target`
+merges only after a measured page overflow), `--no-expand`, `--no-skills`, `--no-facets`, `--fill-target`
 (overrides `UNDERFLOW_THRESHOLD` for one run), `--initial-bullet-share` (caps the *first*
 draft's bullet count, default 1.0 — pair with a lower `--fill-target` to actually end
 sparser), `--experience-bullet-share` (fraction of selected bullets given to experience vs.
@@ -161,10 +161,11 @@ It also selects the backend, which is what makes bulk applying affordable:
 python tailor.py --jd jd.txt                     # ollama (default — no Anthropic key needed)
 python tailor.py --jd jd.txt --model claude      # all stages on Claude
 python tailor.py --jd jd.txt --model gemini      # all stages on Gemini (needs GEMINI_API_KEY)
-python tailor.py --jd jd.txt --model hybrid      # rank/expand/facets on Ollama, rewrite on Claude
+python tailor.py --jd jd.txt --model hybrid      # rank/expand/facets/skills on Ollama, rewrite on Claude
 python tailor.py --jd jd.txt --model ollama --rewrite-model claude-sonnet-5
 python tailor.py --jd jd.txt --expand-model ollama   # override expand only
-python tailor.py --jd jd.txt --effort medium     # per-stage default is low/low/medium/medium
+python tailor.py --jd jd.txt --skills-model ollama   # override skills selection only
+python tailor.py --jd jd.txt --effort medium     # per-stage default is low/low/medium/medium/low
 ```
 
 `--model` takes a profile (`config.MODEL_PROFILES`: `claude`, `ollama`, `lmstudio`,
@@ -203,9 +204,11 @@ The whole suite runs **without an API key, network, or Word** — keep it that w
   there, so one seam intercepts all of them. `tests/test_llm.py` goes one level lower and
   replaces `llm.httpx.post` to assert the wire payload directly.
 - **`tests/test_tailor_cli.py` has autouse fixtures stubbing `rewrite.score_table`,
-  `facets.select_facets`, `expand.expand_experience`.** Adding another API call to
-  `tailor.main` needs those fixtures extended or the CLI tests reach the network.
-  `tests/test_web.py` stubs the same seams on the job path.
+  `facets.select_facets`, `expand.expand_experience`, `skills.select_skills`.** Adding
+  another API call to `tailor.main` needs those fixtures extended or the CLI tests reach
+  the network. `tests/test_web.py` stubs the same seams on the job path (the `client`
+  fixture's default `skills.select_skills` stub in particular — a per-test stub still
+  wins by overriding it after fixture setup).
 - **A stage that can call twice needs a *shared* reply queue in its fake** — `llm.client_for`
   is invoked once per call, so a fake that copies its queue per client silently replays the
   first reply on a follow-up call. See the `rewrite_calls` fixture in `tests/test_rewrite.py`.
@@ -293,6 +296,7 @@ job description ────┘         │           canonicalised against the 
                               │
                               ▼
                     expand.expand_experience()  application-form paste text (LLM, optional)
+                    skills.select_skills()      tailored skills list        (LLM, optional)
                               │
                               ▼
                     report.format_report() ← tailor.py prints this and sets the exit code

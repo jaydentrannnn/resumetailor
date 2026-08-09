@@ -18,6 +18,7 @@ const CLEAN_RUN = [
   ev("measure"),
   ev("fit"),
   ev("expand"),
+  ev("skills"),
 ];
 
 describe("runProgress", () => {
@@ -40,8 +41,8 @@ describe("runProgress", () => {
     }
   });
 
-  it("never rewinds when a late render event follows expand", () => {
-    // jobs.py emits stage "render" (fit band) after "expand" when PDF preview fails.
+  it("never rewinds when a late render event follows expand and skills", () => {
+    // jobs.py emits stage "render" (fit band) after "expand"/"skills" when PDF preview fails.
     const during = runProgress([...CLEAN_RUN], "running", true).value;
     const after = runProgress([...CLEAN_RUN, ev("render", "PDF preview unavailable")], "running", true);
     expect(after.value).toBeGreaterThanOrEqual(during);
@@ -59,10 +60,14 @@ describe("runProgress", () => {
     expect(three).toBeLessThan(0.88);
   });
 
-  it("reads 100% on a finished run even when expansion was skipped", () => {
-    const noExpand = CLEAN_RUN.slice(0, -1);
-    expect(runProgress(noExpand, "succeeded", false).value).toBe(1);
-    expect(runProgress(noExpand, "failed", false)).toMatchObject({ value: 1, label: "Failed" });
+  it("reads 100% on a finished run even when the bonus stages were skipped", () => {
+    // expand and skills are both optional; a run that skipped both still completes.
+    const noBonusStages = CLEAN_RUN.slice(0, -2);
+    expect(runProgress(noBonusStages, "succeeded", false).value).toBe(1);
+    expect(runProgress(noBonusStages, "failed", false)).toMatchObject({
+      value: 1,
+      label: "Failed",
+    });
   });
 
   it("holds position on an unrecognised stage rather than rewinding", () => {

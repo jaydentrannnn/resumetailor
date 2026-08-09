@@ -79,6 +79,22 @@ def _stub_expand_api(cli, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _stub_skills_api(cli, monkeypatch):
+    """Keep every CLI test off the skills-selection API.
+
+    `tailor.main` selects a tailored skills list after a successful fit. Without this
+    stub, tests that only patch extract/fit would reach the network on this bonus stage.
+    """
+    from resume_tailor.skills import SkillsPlan
+
+    monkeypatch.setattr(
+        cli.skills,
+        "select_skills",
+        lambda *a, **k: SkillsPlan(skills=[], warnings=[], model="stub", pool_size=0),
+    )
+
+
+@pytest.fixture(autouse=True)
 def _stub_extract_consensus(cli, monkeypatch):
     """Route `extract_consensus` straight to `extract` for CLI wiring tests.
 
@@ -367,14 +383,18 @@ def test_default_model_is_ollama_for_every_stage(cli, jd_file, stubbed_run):
     would still demand a key on the one stage left behind.
     """
     assert cli.main(["--jd", str(jd_file)]) == 0
-    assert [config.provider_for(p) for p in config.PURPOSES] == ["openai"] * 5
+    assert [config.provider_for(p) for p in config.PURPOSES] == ["openai"] * len(
+        config.PURPOSES
+    )
     assert config.model_for("rewrite") == config.OLLAMA_MODEL
 
 
 def test_claude_profile_still_routes_every_stage_to_anthropic(cli, jd_file, stubbed_run):
     """`--model claude` remains the way to get the old default back, unchanged."""
     assert cli.main(["--jd", str(jd_file), "--model", "claude"]) == 0
-    assert [config.provider_for(p) for p in config.PURPOSES] == ["anthropic"] * 5
+    assert [config.provider_for(p) for p in config.PURPOSES] == ["anthropic"] * len(
+        config.PURPOSES
+    )
 
 
 def test_model_flag_routes_every_stage(cli, jd_file, stubbed_run):
@@ -408,9 +428,27 @@ def test_expand_model_overrides_only_that_stage(cli, jd_file, stubbed_run):
     assert config.provider_for("expand") == "openai"
 
 
+def test_skills_model_overrides_only_that_stage(cli, jd_file, stubbed_run):
+    assert cli.main(
+        ["--jd", str(jd_file), "--model", "claude", "--skills-model", "ollama"]
+    ) == 0
+    assert config.provider_for("rewrite") == "anthropic"
+    assert config.provider_for("skills") == "openai"
+
+
+def test_no_skills_makes_no_call(cli, jd_file, stubbed_run, monkeypatch):
+    """`--no-skills` skips the stage entirely rather than calling with an empty pool."""
+    called = []
+    monkeypatch.setattr(
+        cli.skills, "select_skills", lambda *a, **k: called.append(1)
+    )
+    assert cli.main(["--jd", str(jd_file), "--no-skills"]) == 0
+    assert called == []
+
+
 def test_effort_flag_applies_to_every_stage(cli, jd_file, stubbed_run):
     assert cli.main(["--jd", str(jd_file), "--effort", "high"]) == 0
-    assert [config.effort_for(p) for p in config.PURPOSES] == ["high"] * 5
+    assert [config.effort_for(p) for p in config.PURPOSES] == ["high"] * len(config.PURPOSES)
 
 
 def test_default_effort_is_lower_for_the_cheap_stages(cli, jd_file, stubbed_run):

@@ -15,6 +15,7 @@ import {
   type JobSettings,
   type ProgressEvent,
   type RunReport,
+  type SkillsPlan,
   createJob,
   fetchConfig,
   fetchJob,
@@ -59,6 +60,7 @@ export const DEFAULT_SETTINGS: JobSettings = {
   gemini_model: null,
   rewrite_model: null,
   expand_model: null,
+  skills_model: null,
   effort: null,
   no_semantic: false,
   no_widow_repair: false,
@@ -66,6 +68,7 @@ export const DEFAULT_SETTINGS: JobSettings = {
   merge: false,
   no_cache: false,
   no_expand: false,
+  no_skills: false,
   no_facets: false,
   no_project_links: false,
   fill_target: null,
@@ -121,6 +124,7 @@ type RunStateValue = {
   events: ProgressEvent[];
   report: RunReport | null;
   expansion: Expansion | null;
+  skills: SkillsPlan | null;
   error: string | null;
   busy: boolean;
   queuePosition: number | null;
@@ -146,6 +150,7 @@ export function RunProvider({ children }: { children: ReactNode }) {
   const [events, setEvents] = useState<ProgressEvent[]>([]);
   const [report, setReport] = useState<RunReport | null>(null);
   const [expansion, setExpansion] = useState<Expansion | null>(null);
+  const [skills, setSkills] = useState<SkillsPlan | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [queuePosition, setQueuePosition] = useState<number | null>(null);
@@ -264,6 +269,7 @@ export function RunProvider({ children }: { children: ReactNode }) {
         if (job.status === "succeeded" || job.status === "failed") {
           setReport(job.report);
           setExpansion(job.expansion);
+          setSkills(job.skills);
           setError(job.error);
           setBusy(false);
           return;
@@ -291,6 +297,7 @@ export function RunProvider({ children }: { children: ReactNode }) {
         setStatus(job.status);
         setReport(job.report);
         setExpansion(job.expansion);
+        setSkills(job.skills);
         setError(job.error);
         if (job.events.length) setEvents(job.events);
       } catch (err) {
@@ -320,6 +327,7 @@ export function RunProvider({ children }: { children: ReactNode }) {
     setError(null);
     setReport(null);
     setExpansion(null);
+    setSkills(null);
     setEvents([]);
     setQueuePosition(null);
     setStatus("queued");
@@ -353,6 +361,7 @@ export function RunProvider({ children }: { children: ReactNode }) {
       events,
       report,
       expansion,
+      skills,
       error,
       busy,
       queuePosition,
@@ -370,6 +379,7 @@ export function RunProvider({ children }: { children: ReactNode }) {
       events,
       report,
       expansion,
+      skills,
       error,
       busy,
       queuePosition,

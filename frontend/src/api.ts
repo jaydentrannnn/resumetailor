@@ -35,6 +35,7 @@ export type JobSettings = {
   gemini_model: string | null;
   rewrite_model: string | null;
   expand_model: string | null;
+  skills_model: string | null;
   effort: "low" | "medium" | "high" | null;
   no_semantic: boolean;
   no_widow_repair: boolean;
@@ -44,6 +45,8 @@ export type JobSettings = {
   no_cache: boolean;
   /** Skip generating expanded experience descriptions for application forms. */
   no_expand: boolean;
+  /** Skip generating the tailored skills list for application-form Skills fields. */
+  no_skills: boolean;
   /** Skip LLM selection of project tech tags and coursework (budget-only truncation). */
   no_facets: boolean;
   /** Render projects without their link label or hyperlink. */
@@ -132,6 +135,22 @@ export type Expansion = {
   char_limit: number;
 };
 
+export type SkillSuggestion = {
+  skill: string;
+  pool_label: string;
+  tier: "required" | "preferred" | "additional";
+  jd_phrase: string;
+  sources: string[];
+  reason: string;
+};
+
+export type SkillsPlan = {
+  skills: SkillSuggestion[];
+  warnings: string[];
+  model: string;
+  pool_size: number;
+};
+
 export type JobStatus = {
   job_id: string;
   status: "queued" | "running" | "succeeded" | "failed";
@@ -139,6 +158,7 @@ export type JobStatus = {
   error: string | null;
   report: RunReport | null;
   expansion: Expansion | null;
+  skills: SkillsPlan | null;
   events: ProgressEvent[];
 };
 
@@ -659,6 +679,11 @@ export async function triggerPdfDownload(jobId: string): Promise<void> {
 export function expansionUrl(jobId: string): string {
   /** URL of the plain-text expansion for a finished job. */
   return `/api/jobs/${jobId}/expansion.md`;
+}
+
+export function skillsUrl(jobId: string): string {
+  /** URL of the plain-text tailored skills list for a finished job. */
+  return `/api/jobs/${jobId}/skills.md`;
 }
 
 export function fetchTemplateInfo(): Promise<TemplateInfo> {

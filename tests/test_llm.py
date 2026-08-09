@@ -315,7 +315,13 @@ def test_profiles_route_stages_independently():
 def test_ollama_stages_excludes_hybrids_anthropic_rewrite():
     """The UI tag field must repoint Ollama stages only — never hybrid's Claude rewrite."""
     assert config.ollama_stages("ollama") == config.PURPOSES
-    assert set(config.ollama_stages("hybrid")) == {"extract", "score", "expand", "facets"}
+    assert set(config.ollama_stages("hybrid")) == {
+        "extract",
+        "score",
+        "expand",
+        "facets",
+        "skills",
+    }
     assert config.ollama_stages("claude") == ()
     assert config.ollama_stages("lmstudio") == ()
 
@@ -332,7 +338,7 @@ def test_ollama_tag_override_repoints_every_ollama_stage_under_hybrid():
     overrides = dict.fromkeys(config.ollama_stages("hybrid"), "gemma4")
     backends = config.resolve("hybrid", overrides=overrides)
     try:
-        for purpose in ("extract", "score", "expand", "facets"):
+        for purpose in ("extract", "score", "expand", "facets", "skills"):
             assert backends[purpose].model == "gemma4"
             assert backends[purpose].base_url == config.OLLAMA_BASE_URL
         # The stage the tag must not touch.

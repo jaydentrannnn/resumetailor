@@ -64,6 +64,16 @@ def client(tmp_path, monkeypatch):
     config.OUTPUT_DIR.mkdir()
     config.CACHE_DIR.mkdir()
     monkeypatch.setattr(jobs_mod.jd, "extract_consensus", _stub_extract_consensus)
+    # Default stub for every job test, set here (not per-test) so an unstubbed job never
+    # silently attempts a real network call — the same gap `expand.expand_experience`
+    # still has (it relies on each test's own `except Exception` swallow). A test that
+    # cares about the skills stage overrides this with its own `monkeypatch.setattr`,
+    # which still wins since it runs after fixture setup.
+    monkeypatch.setattr(
+        jobs_mod.skills,
+        "select_skills",
+        lambda *a, **k: jobs_mod.skills.SkillsPlan(skills=[], model="stub", pool_size=0),
+    )
 
     resume_path = tmp_path / "master_resume.json"
     resume_path.write_text(
@@ -302,6 +312,7 @@ def test_ollama_model_setting_repoints_only_the_ollama_stages(client, monkeypatc
         "score": "gemma4",
         "expand": "gemma4",
         "facets": "gemma4",
+        "skills": "gemma4",
     }
     config.resolve("claude")
 
@@ -394,6 +405,34 @@ def test_explicit_stage_override_beats_the_blanket_ollama_tag(client, monkeypatc
 
     assert seen["overrides"]["rewrite"] == "claude-sonnet-5"
     assert seen["overrides"]["extract"] == "gemma4"
+    config.resolve("claude")
+
+
+def test_skills_model_setting_reaches_resolve_as_a_per_stage_override(client, monkeypatch):
+    """`skills_model` must reach `config.resolve` as `overrides["skills"]`, same as
+    `rewrite_model`/`expand_model`."""
+    c, _q = client
+    seen: dict[str, object] = {}
+    real_resolve = config.resolve
+
+    def recording_resolve(profile=None, *, overrides=None, effort=None):
+        seen["overrides"] = dict(overrides or {})
+        return real_resolve(profile, overrides=overrides, effort=effort)
+
+    monkeypatch.setattr(jobs_mod.config, "resolve", recording_resolve)
+    monkeypatch.setattr(jobs_mod.jd, "extract", _stub_no_network_extract)
+
+    res = c.post(
+        "/api/jobs",
+        json={
+            "jd_text": "Some job description.",
+            "settings": {"model": "claude", "skills_model": "ollama:gemma4:cloud"},
+        },
+    )
+    assert res.status_code == 200
+    _drain(c, res.json()["job_id"])
+
+    assert seen["overrides"]["skills"] == "ollama:gemma4:cloud"
     config.resolve("claude")
 
 
@@ -813,6 +852,293 @@ def test_job_honours_exclusions_but_expansion_still_sees_the_excluded_job(
 
     assert excluded_id not in seen_fit_resume["ids"]
     assert excluded_id in seen_expand_resume["ids"]
+
+
+def test_skills_selection_resume_is_post_include_pre_facets(client, monkeypatch, tmp_path):
+    """The skills stage must see project tech before facets truncates it to
+    `MAX_PROJECT_TECH`, but must NOT see an entry the user excluded — pins both halves
+    of the resume-object decision documented at the skills call site in
+    `web/jobs.py::_execute` (see `master_resume` there)."""
+    c, _q = client
+    tech = ["Alpha", "Bravo", "Charlie", "Delta", "Echo", "Foxtrot"]
+    resume_path = tmp_path / "test_master_resume.json"
+    resume_path.write_text(
+        json.dumps(
+            {
+                "contact": {"name": "X", "email": "x@y.z"},
+                "experience": [
+                    {
+                        "id": "job-keep",
+                        "company": "Keep Co",
+                        "title": "Engineer",
+                        "start": "2020",
+                        "end": "2021",
+                        "bullets": [{"id": "b1", "text": "Did a thing.", "tags": ["python"]}],
+                    },
+                    {
+                        "id": "job-excl",
+                        "company": "Excl Co",
+                        "title": "Engineer",
+                        "start": "2019",
+                        "end": "2020",
+                        "bullets": [
+                            {"id": "b2", "text": "Did another thing.", "tags": ["excludedtag"]}
+                        ],
+                    },
+                ],
+                "projects": [
+                    {
+                        "id": "proj-a",
+                        "name": "Proj",
+                        "tech": tech,
+                        "bullets": [
+                            {"id": "b3", "text": "Built a project.", "tags": ["python"]}
+                        ],
+                    }
+                ],
+            }
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(config, "MASTER_RESUME_PATH", resume_path)
+
+    def fake_extract(text, *, known_tags=None, use_cache=True, on_event=None):
+        from resume_tailor.jd import JobRequirements, Keyword
+
+        return JobRequirements(
+            title="Stub Role",
+            seniority="intern",
+            keywords=[Keyword(phrase="Python", canonical="python", importance="must_have")],
+        )
+
+    monkeypatch.setattr(jobs_mod.jd, "extract", fake_extract)
+    monkeypatch.setattr(jobs_mod.jd, "verify_verbatim", lambda *a, **k: [])
+    monkeypatch.setattr(
+        jobs_mod.rewrite, "score_table", lambda bullets, *a, **k: {b.id: 5.0 for b in bullets}
+    )
+
+    def fake_fit(resume_arg, requirements, *, out=None, on_event=None, **kwargs):
+        out = Path(out)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(b"PK")
+        out.with_suffix(".pdf").write_bytes(b"%PDF-1.4 stub")
+        bullet = resume_arg.all_bullets()[0]
+        return FitResult(
+            out_path=out,
+            pages=1,
+            pages_are_estimated=False,
+            iterations=1,
+            bullets_selected=1,
+            bullets_total=1,
+            bullets={bullet.id: bullet.text},
+        )
+
+    monkeypatch.setattr(jobs_mod.fit, "fit", fake_fit)
+
+    def fake_facets(resume_arg, requirements, **kwargs):
+        from resume_tailor import facets as facets_mod
+
+        return facets_mod.budget_only(
+            resume_arg,
+            requirements,
+            include_project_links=kwargs.get("include_project_links", True),
+        )
+
+    monkeypatch.setattr(jobs_mod.facets, "select_facets", fake_facets)
+
+    seen_skills_resume: dict = {}
+
+    def fake_select_skills(resume_arg, requirements, **kwargs):
+        seen_skills_resume["experience_ids"] = {e.id for e in resume_arg.experience}
+        seen_skills_resume["project_tech"] = list(resume_arg.projects[0].tech)
+        from resume_tailor.skills import SkillsPlan
+
+        return SkillsPlan(skills=[], model="stub", pool_size=0)
+
+    monkeypatch.setattr(jobs_mod.skills, "select_skills", fake_select_skills)
+
+    res = c.post(
+        "/api/jobs",
+        json={
+            "jd_text": "Looking for a Python intern.",
+            "settings": {"include": {"exclude_experience": ["job-excl"]}},
+        },
+    )
+    assert res.status_code == 200
+    status = _drain(c, res.json()["job_id"])
+    assert status["status"] == "succeeded", status
+
+    # Pre-facets: skills sees all six tech labels, not the ≤4 facets.budget_only trims to.
+    assert seen_skills_resume["project_tech"] == tech
+    # Post-include: the excluded entry never reaches skills selection.
+    assert "job-keep" in seen_skills_resume["experience_ids"]
+    assert "job-excl" not in seen_skills_resume["experience_ids"]
+
+
+def test_skills_endpoint_and_status_field(client, monkeypatch):
+    """A successful job exposes `status["skills"]` and serves `skills.md`; the download
+    404s until the job is produced and 409s while it is still running."""
+    c, _q = client
+    resume = load()
+
+    def fake_extract(text, *, known_tags=None, use_cache=True, on_event=None):
+        from resume_tailor.jd import JobRequirements, Keyword
+
+        return JobRequirements(
+            title="Stub Role",
+            seniority="intern",
+            keywords=[Keyword(phrase="Python", canonical="python", importance="must_have")],
+        )
+
+    monkeypatch.setattr(jobs_mod.jd, "extract", fake_extract)
+    monkeypatch.setattr(jobs_mod.jd, "verify_verbatim", lambda *a, **k: [])
+    monkeypatch.setattr(
+        jobs_mod.rewrite, "score_table", lambda bullets, *a, **k: {b.id: 5.0 for b in bullets}
+    )
+
+    def fake_fit(resume_arg, requirements, *, out=None, on_event=None, **kwargs):
+        out = Path(out)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(b"PK")
+        out.with_suffix(".pdf").write_bytes(b"%PDF-1.4 stub")
+        bullet = resume_arg.all_bullets()[0]
+        return FitResult(
+            out_path=out,
+            pages=1,
+            pages_are_estimated=False,
+            iterations=1,
+            bullets_selected=1,
+            bullets_total=1,
+            bullets={bullet.id: bullet.text},
+        )
+
+    monkeypatch.setattr(jobs_mod.fit, "fit", fake_fit)
+
+    def fake_facets(resume_arg, requirements, **kwargs):
+        from resume_tailor import facets as facets_mod
+
+        return facets_mod.budget_only(
+            resume_arg,
+            requirements,
+            include_project_links=kwargs.get("include_project_links", True),
+        )
+
+    monkeypatch.setattr(jobs_mod.facets, "select_facets", fake_facets)
+
+    from resume_tailor.skills import SkillsPlan, SkillSuggestion
+
+    def fake_select_skills(*a, **k):
+        return SkillsPlan(
+            skills=[
+                SkillSuggestion(
+                    skill="Python", pool_label="python", tier="required", jd_phrase="Python"
+                )
+            ],
+            model="stub",
+            pool_size=1,
+        )
+
+    monkeypatch.setattr(jobs_mod.skills, "select_skills", fake_select_skills)
+
+    res = c.post("/api/jobs", json={"jd_text": "Looking for a Python intern."})
+    assert res.status_code == 200
+    job_id = res.json()["job_id"]
+
+    status = _drain(c, job_id)
+    assert status["status"] == "succeeded", status
+    assert status["skills"] is not None
+    assert status["skills"]["skills"][0]["tier"] == "required"
+    assert status["skills"]["skills"][0]["skill"] == "Python"
+
+    skills_md = c.get(f"/api/jobs/{job_id}/skills.md")
+    assert skills_md.status_code == 200
+    assert b"Python" in skills_md.content
+
+
+def test_skills_download_404s_for_unknown_job(client):
+    c, _q = client
+    res = c.get("/api/jobs/unknown-job/skills.md")
+    assert res.status_code == 404
+
+
+def test_skills_download_409s_while_job_is_running(client, monkeypatch):
+    """A still-queued/running job's skills.md is not ready yet."""
+    c, q = client
+    from resume_tailor.web.jobs import Job
+
+    job = Job(job_id="pending-job", jd_text="x", settings=JobSettings())
+    q._jobs["pending-job"] = job
+    res = c.get("/api/jobs/pending-job/skills.md")
+    assert res.status_code == 409
+
+
+def test_skills_download_404s_when_no_skills_produced(client, monkeypatch):
+    """`no_skills` leaves no `skills.md` on disk; the download 404s with a clear reason."""
+    c, _q = client
+
+    def fake_extract(text, *, known_tags=None, use_cache=True, on_event=None):
+        from resume_tailor.jd import JobRequirements, Keyword
+
+        return JobRequirements(
+            title="Stub Role",
+            seniority="intern",
+            keywords=[Keyword(phrase="Python", canonical="python", importance="must_have")],
+        )
+
+    monkeypatch.setattr(jobs_mod.jd, "extract", fake_extract)
+    monkeypatch.setattr(jobs_mod.jd, "verify_verbatim", lambda *a, **k: [])
+    monkeypatch.setattr(
+        jobs_mod.rewrite, "score_table", lambda bullets, *a, **k: {b.id: 5.0 for b in bullets}
+    )
+
+    def fake_fit(resume_arg, requirements, *, out=None, on_event=None, **kwargs):
+        out = Path(out)
+        out.parent.mkdir(parents=True, exist_ok=True)
+        out.write_bytes(b"PK")
+        out.with_suffix(".pdf").write_bytes(b"%PDF-1.4 stub")
+        bullet = resume_arg.all_bullets()[0]
+        return FitResult(
+            out_path=out,
+            pages=1,
+            pages_are_estimated=False,
+            iterations=1,
+            bullets_selected=1,
+            bullets_total=1,
+            bullets={bullet.id: bullet.text},
+        )
+
+    monkeypatch.setattr(jobs_mod.fit, "fit", fake_fit)
+
+    def fake_facets(resume_arg, requirements, **kwargs):
+        from resume_tailor import facets as facets_mod
+
+        return facets_mod.budget_only(
+            resume_arg,
+            requirements,
+            include_project_links=kwargs.get("include_project_links", True),
+        )
+
+    monkeypatch.setattr(jobs_mod.facets, "select_facets", fake_facets)
+
+    called = []
+    monkeypatch.setattr(
+        jobs_mod.skills, "select_skills", lambda *a, **k: called.append(1)
+    )
+
+    res = c.post(
+        "/api/jobs",
+        json={"jd_text": "Looking for a Python intern.", "settings": {"no_skills": True}},
+    )
+    assert res.status_code == 200
+    job_id = res.json()["job_id"]
+    status = _drain(c, job_id)
+    assert status["status"] == "succeeded", status
+    assert called == []
+    assert status["skills"] is None
+
+    res = c.get(f"/api/jobs/{job_id}/skills.md")
+    assert res.status_code == 404
+    assert "not produced" in res.json()["detail"]
 
 
 def test_master_resume_validate_rejects_bad_payload(client):

@@ -2311,3 +2311,37 @@ live and unmocked, twice for idempotency, through the real `POST /api/master-res
 against the actual reconciled `nina` data and the real `original_export.docx`: the UCI entry
 comes back `updated` (not `added`), still exactly one education entry, coursework and
 `gpa=3.92`/`show_gpa=True` both stable across both runs.
+
+## 2026-08-08 — Added a sixth pipeline stage, skills.py, for a tailored skills list
+
+**What:** New optional LLM stage `skills.py` selects and ranks a closed pool of the master
+resume's own skill evidence (skills-group items, `Project.tech`, coursework titles, bullet
+tags) against a posting, producing required/preferred/additional tiers with an optional
+JD-anchored display rename per skill. Surfaced as a new "Skills to list" tile below
+Application experience on the run page, backed by `GET /api/jobs/{id}/skills.md`,
+`--skills-model`/`--no-skills` CLI flags, and a sixth `config.PURPOSES` entry (`"skills"`)
+that inherits every model profile's routing (Ollama by default, same as the other five).
+
+**Why:** Application forms almost always ask for a flat Skills list alongside a Description
+field, and nothing in the existing pipeline answered that — `facets.py` only rewords
+skills-section items, it never selects, drops, or ranks them. Tier and JD evidence are
+computed in code rather than asked of the model, because `jd.Keyword.importance` is already
+a *voted* field (`jd.extract_consensus` runs 3 extractions and votes specifically because
+single-call importance classification was measured unstable). A second call re-deriving
+required-vs-preferred would reintroduce that same noise, and could let this tile disagree
+with `ReportCard`'s own coverage summary about the same posting.
+
+**Impact:** The stage is fed `master_resume` — post-`include.apply`, pre-`facets.apply` —
+deliberately: pre-facets so `Project.tech` isn't truncated to its ≤4-label render budget
+before the pool sees it (the same hazard `report.diagnose_gaps`'s own `master=` parameter
+exists for), and post-include so an excluded entry's skills are never suggested for the
+package actually being submitted — the opposite of `expand.py`, which deliberately gets the
+*unfiltered* resume. Pool membership is exact-key (`config.canonical_tag`), never
+`facets.labels_are_equivalent` — that matcher's containment branches would collapse
+"retrieval" into "hybrid retrieval & reranking" and silently drop half a claim, so it's used
+only for JD *matching* (tiering), never for pool *construction*. Several tests hardcoded
+`len(config.PURPOSES) == 5` or a 4-stage hybrid set and had to be updated for the sixth
+stage — worth grepping for literal stage counts if a seventh stage is ever added. The
+`expand.expand_experience` seam in `tests/test_web.py`'s job tests was already
+unstubbed-by-default (silently attempting and swallowing a real call); `skills.select_skills`
+got a proper default stub in the `client` fixture instead of repeating that gap.

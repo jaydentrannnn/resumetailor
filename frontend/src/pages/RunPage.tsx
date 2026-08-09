@@ -9,6 +9,7 @@ import { ExperienceCard } from "../components/ExperienceCard";
 import { Field, Toggle } from "../components/Field";
 import { IncludePanel } from "../components/IncludePanel";
 import { ModelSpecField } from "../components/ModelSpecField";
+import { SkillsCard } from "../components/SkillsCard";
 import { type RunProgress, runProgress } from "../lib/runProgress";
 import { DEFAULT_SETTINGS, useRunState } from "../state/runState";
 import { useEffect, useMemo, useRef, useState } from "react";
@@ -20,11 +21,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
  * lose the JD, settings, SSE stream, or results. PDF auto-download is also
  * owned there so a tab remount cannot re-fire it.
  *
- * Layout at `lg` is an explicit 2x4 grid rather than stacked columns: Settings
+ * Layout at `lg` is an explicit 2x5 grid rather than stacked columns: Settings
  * and What-to-include sit on row 1, Job description and Progress share row 2
  * (equal height — see the Progress cell below), the submit button spans both
- * columns on row 3, and Application experience / Report share row 4. Placement
- * is stated per tile (`col-start`/`row-start`) because several of the seven
+ * columns on row 3, Application experience / Report share row 4, and Skills
+ * to list sits alone on row 5 col 1, below Application experience. Placement
+ * is stated per tile (`col-start`/`row-start`) because several of the eight
  * tiles render conditionally — auto-flow would reshuffle the rest the moment
  * one of them disappeared.
  */
@@ -40,6 +42,7 @@ export function RunPage() {
     events,
     report,
     expansion,
+    skills,
     error,
     busy,
     queuePosition,
@@ -193,6 +196,12 @@ export function RunPage() {
       {report && jobId && (
         <div className="lg:col-start-2 lg:row-start-4">
           <ReportCard report={report} jobId={jobId} />
+        </div>
+      )}
+
+      {report && jobId && skills && (
+        <div className="lg:col-start-1 lg:row-start-5">
+          <SkillsCard plan={skills} gaps={report.gaps} jobId={jobId} />
         </div>
       )}
     </form>
@@ -415,6 +424,12 @@ function SettingsPanel({
             onChange={(v) => set("expand_model", v)}
             placeholder="e.g. ollama:gemma4:cloud"
           />
+          <ModelSpecField
+            label="Skills model (optional)"
+            value={settings.skills_model}
+            onChange={(v) => set("skills_model", v)}
+            placeholder="e.g. ollama:gemma4:cloud"
+          />
         </div>
       </fieldset>
 
@@ -538,6 +553,12 @@ function SettingsPanel({
               help="Do not generate application-form paste text after a successful fit."
               checked={settings.no_expand}
               onChange={(v) => set("no_expand", v)}
+            />
+            <Toggle
+              label="Skip skills list"
+              help="Do not generate the tailored skills list for application-form Skills fields."
+              checked={settings.no_skills}
+              onChange={(v) => set("no_skills", v)}
             />
             <Toggle
               label="Skip tech / coursework selection"

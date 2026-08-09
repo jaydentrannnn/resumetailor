@@ -277,6 +277,7 @@ def create_job(body: CreateJobRequest) -> CreateJobResponse:
         for k, v in (
             ("rewrite", settings.rewrite_model),
             ("expand", settings.expand_model),
+            ("skills", settings.skills_model),
         )
         if v
     }
@@ -390,6 +391,7 @@ def get_job(job_id: str) -> JobStatusResponse:
         error=job.error,
         report=job.report,
         expansion=job.expansion,
+        skills=job.skills,
         events=[_event_out(e) for e in job.events],
     )
 
@@ -519,6 +521,29 @@ def download_expansion(job_id: str) -> FileResponse:
         path,
         media_type="text/markdown; charset=utf-8",
         filename=_export_download_name(job_id, suffix=".expansion.md"),
+    )
+
+
+@app.get("/api/jobs/{job_id}/skills.md")
+def download_skills(job_id: str) -> FileResponse:
+    """Plain-text tailored skills list for a single copy-all paste."""
+    job = get_queue().get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail=f"Unknown job {job_id!r}.")
+    if job.status != "succeeded":
+        raise HTTPException(
+            status_code=409, detail=f"Job {job_id} is {job.status}, not ready for download."
+        )
+    path = (job.out_dir or config.OUTPUT_DIR / "jobs" / job_id) / "skills.md"
+    if not path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail="Skills selection was not produced for this job.",
+        )
+    return FileResponse(
+        path,
+        media_type="text/markdown; charset=utf-8",
+        filename=_export_download_name(job_id, suffix=".skills.md"),
     )
 
 

@@ -35,6 +35,7 @@ class JobSettings(BaseModel):
     gemini_model: str | None = None
     rewrite_model: str | None = None
     expand_model: str | None = None
+    skills_model: str | None = None
     effort: Literal["low", "medium", "high"] | None = None
     no_semantic: bool = False
     no_widow_repair: bool = False
@@ -45,6 +46,10 @@ class JobSettings(BaseModel):
     #: 1 restores a single call.
     extract_runs: int = Field(default_factory=lambda: config.EXTRACT_CONSENSUS_RUNS, ge=1, le=10)
     no_expand: bool = False
+    #: Skips the tailored skills-list stage. Defaults off (the stage runs): unlike
+    #: `suggest_vocabulary`, this is read-only advisory output and is the point of the
+    #: feature, not a workspace mutation the user must opt into.
+    no_skills: bool = False
     no_facets: bool = False
     no_project_links: bool = False
     #: Fraction of page capacity below which the fit loop grows (0.80–0.95).
@@ -208,6 +213,32 @@ class ExpansionOut(BaseModel):
     char_limit: int = 0
 
 
+class SkillSuggestionOut(BaseModel):
+    """One skill to enter, for the "Skills to list" copy-paste tile."""
+
+    skill: str = ""
+    pool_label: str = ""
+    tier: Literal["required", "preferred", "additional"] = "additional"
+    jd_phrase: str = ""
+    sources: list[str] = Field(default_factory=list)
+    reason: str = ""
+
+
+class SkillsPlanOut(BaseModel):
+    """Tailored skills-list artifact for one tailoring run.
+
+    Independent of `RunReportOut` and `ExpansionOut`: skills selection can succeed, fail,
+    or be skipped without changing the tailored resume outcome. Carries no gaps field —
+    the "you can't claim this" half of the tile reads `RunReportOut.gaps`, already computed
+    once by `report.diagnose_gaps`.
+    """
+
+    skills: list[SkillSuggestionOut] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    model: str = ""
+    pool_size: int = 0
+
+
 class JobStatusResponse(BaseModel):
     """Current state of one queued or finished run."""
 
@@ -217,6 +248,7 @@ class JobStatusResponse(BaseModel):
     error: str | None = None
     report: RunReportOut | None = None
     expansion: ExpansionOut | None = None
+    skills: SkillsPlanOut | None = None
     events: list[ProgressEventOut] = Field(default_factory=list)
 
 

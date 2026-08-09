@@ -59,8 +59,10 @@ Output lands in `output/` (`.docx` + `.pdf`). Useful flags:
 | `--model PROFILE` | Backend profile: `ollama` (default), `claude`, `gemini`, `lmstudio`, `hybrid` |
 | `--rewrite-model SPEC` | Override rewrite stage only |
 | `--expand-model SPEC` | Override expansion stage only |
+| `--skills-model SPEC` | Override skills-selection stage only |
 | `--no-cache` | Ignore cached JD / score artifacts |
 | `--no-expand` | Skip application-form experience text |
+| `--no-skills` | Skip the tailored skills list |
 | `--effort low\|medium\|high` | Reasoning depth for all stages |
 
 ### Web UI
@@ -273,12 +275,12 @@ Start the LM Studio server on the host, then use the `lmstudio` profile from the
 
 ## Model profiles at a glance
 
-| Profile | Extract / Score | Rewrite | Expand |
-|---------|-----------------|---------|--------|
-| `ollama` (default) | Ollama | Ollama | Ollama |
-| `claude` | Claude | Claude | Claude |
-| `gemini` | Gemini | Gemini | Gemini |
-| `lmstudio` | LM Studio | LM Studio | LM Studio |
-| `hybrid` | Ollama | Claude | Ollama |
+| Profile | Extract / Score | Rewrite | Expand | Skills |
+|---------|-----------------|---------|--------|--------|
+| `ollama` (default) | Ollama | Ollama | Ollama | Ollama |
+| `claude` | Claude | Claude | Claude | Claude |
+| `gemini` | Gemini | Gemini | Gemini | Gemini |
+| `lmstudio` | LM Studio | LM Studio | LM Studio | LM Studio |
+| `hybrid` | Ollama | Claude | Ollama | Ollama |
 
-Per-stage overrides (`--rewrite-model`, `--expand-model`, or the web UI fields) always win over the profile defaults.
+Per-stage overrides (`--rewrite-model`, `--expand-model`, `--skills-model`, or the web UI fields) always win over the profile defaults.

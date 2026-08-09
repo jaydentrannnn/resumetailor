@@ -26,6 +26,7 @@ from .rewrite import keyword_coverage
 
 if TYPE_CHECKING:
     from .expand import Expansion
+    from .skills import SkillsPlan
 
 #: Characters Windows (and most filesystems) reject in a filename.
 _UNSAFE_FILENAME = re.compile(r'[<>:"/\\|?*\x00-\x1f]')
@@ -530,4 +531,34 @@ def format_expansion(expansion: Expansion) -> str:
     if expansion.entries:
         lines.append("")
         lines.append(expand_mod.format_markdown(expansion))
+    return "\n".join(lines)
+
+
+def format_skills(plan: SkillsPlan) -> str:
+    """Render the tailored skills selection for the terminal.
+
+    Kept separate from `format_report` for the same reason `format_expansion` is: skills
+    selection succeeds or fails independently of the fit loop, and the CLI prints it only
+    when the call ran.
+    """
+    from . import skills as skills_mod
+
+    lines: list[str] = [
+        f"Skills to list ({len(plan.skills)} skill"
+        f"{'' if len(plan.skills) == 1 else 's'}, model={plan.model}, "
+        f"pool={plan.pool_size}):",
+    ]
+    for tier in ("required", "preferred", "additional"):
+        tier_items = [s for s in plan.skills if s.tier == tier]
+        if not tier_items:
+            continue
+        lines.append(f"  {tier.capitalize()}:")
+        for s in tier_items:
+            evidence = f" — {s.jd_phrase}" if s.jd_phrase else ""
+            lines.append(f"    {s.skill}{evidence}")
+    for warning in plan.warnings:
+        lines.append(f"  WARNING: {warning}")
+    if plan.skills:
+        lines.append("")
+        lines.append(skills_mod.paste_line(plan))
     return "\n".join(lines)

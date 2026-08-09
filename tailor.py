@@ -30,6 +30,7 @@ from resume_tailor import (  # noqa: E402
     jd,
     report,
     rewrite,
+    skills,
     workspace,
 )
 from resume_tailor.llm import LLMError  # noqa: E402
@@ -172,6 +173,23 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
         ),
     )
     parser.add_argument(
+        "--skills-model",
+        default=None,
+        metavar="MODEL",
+        help=(
+            "Override the skills-selection stage only. Selection is from a closed pool "
+            "with code enforcement and follows the profile by default."
+        ),
+    )
+    parser.add_argument(
+        "--no-skills",
+        action="store_true",
+        help=(
+            "Skip generating the tailored skills list for application-form Skills "
+            "fields. The tailored resume is still produced."
+        ),
+    )
+    parser.add_argument(
         "--no-facets",
         action="store_true",
         help=(
@@ -302,6 +320,8 @@ def main(argv: list[str] | None = None) -> int:
             overrides["rewrite"] = args.rewrite_model
         if args.expand_model:
             overrides["expand"] = args.expand_model
+        if args.skills_model:
+            overrides["skills"] = args.skills_model
         config.resolve(
             args.model,
             overrides=overrides or None,
@@ -507,6 +527,28 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Expansion: {expand_path}")
         except Exception as exc:  # noqa: BLE001 - bonus artifact; never fail the run
             print(f"warning: experience expansion skipped ({exc})", file=sys.stderr)
+
+    # Skills list is also advisory; also must never turn a successful run into a failure.
+    # `master_resume` (post-include, pre-facets) matches exactly what `report.diagnose_gaps`
+    # ran against above, so the skills tile and the gap section partition one evidence
+    # universe. Not `full_resume`: an excluded entry is the user saying "not part of this
+    # application", and a skill evidenced only there should not be suggested for the Skills
+    # box of the package actually being submitted. Not the post-facets `resume`: facets
+    # truncates Project.tech to its render budget, which would silently drop evidence.
+    if not args.no_skills:
+        try:
+            plan = skills.select_skills(
+                master_resume,
+                requirements,
+                use_cache=not args.no_cache,
+            )
+            print()
+            print(report.format_skills(plan))
+            skills_path = result.out_path.with_name(result.out_path.stem + ".skills.md")
+            skills_path.write_text(skills.format_markdown(plan), encoding="utf-8")
+            print(f"Skills: {skills_path}")
+        except Exception as exc:  # noqa: BLE001 - bonus artifact; never fail the run
+            print(f"warning: skills selection skipped ({exc})", file=sys.stderr)
 
     return 0
 

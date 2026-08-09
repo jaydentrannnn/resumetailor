@@ -272,13 +272,15 @@ EFFORT = "medium"
 #
 # `--model` then addresses the other 20% by routing stages at different backends entirely.
 
-#: The five stages that call a model. Each resolves independently, so the cheap, safe
-#: calls (extract, score, facets) can run on a free backend while rewriting — where the
-#: fabrication guard lives and where model quality actually shows — stays on Claude.
+#: The six stages that call a model. Each resolves independently, so the cheap, safe
+#: calls (extract, score, facets, skills) can run on a free backend while rewriting — where
+#: the fabrication guard lives and where model quality actually shows — stays on Claude.
 #: `expand` produces application-form experience descriptions; it follows the profile
 #: like the others (Ollama under `ollama`/`hybrid`, Claude under `claude`).
 #: `facets` picks project tech tags and coursework for the posting (same risk class as score).
-PURPOSES = ("extract", "score", "rewrite", "expand", "facets")
+#: `skills` selects/ranks a tailored skills list from a closed pool of the resume's own
+#: evidence (same "model selects, code enforces" risk class as facets).
+PURPOSES = ("extract", "score", "rewrite", "expand", "facets", "skills")
 
 #: Providers `parse_spec` recognises as a leading segment. Anything else is read as a bare
 #: model name, which matters more than it looks: `gemma4:cloud` contains a
@@ -358,6 +360,7 @@ DEFAULT_EFFORT: dict[str, str] = {
     "rewrite": os.environ.get("LLM_EFFORT_REWRITE", "medium"),
     "expand": os.environ.get("LLM_EFFORT_EXPAND", "medium"),
     "facets": os.environ.get("LLM_EFFORT_FACETS", "low"),
+    "skills": os.environ.get("LLM_EFFORT_SKILLS", "low"),
 }
 
 #: How many independent extractions `jd.extract_consensus` runs and votes over. Measured
@@ -398,6 +401,9 @@ MODEL_PROFILES: dict[str, dict[str, str]] = {
         # Facets is selection-only (pools supplied; code enforces budgets), same risk class
         # as score — keep it on the free backend under hybrid.
         "facets": _OLLAMA_DEFAULT,
+        # Skills is also selection-only from a supplied closed pool (code enforces
+        # membership) — same risk class as facets.
+        "skills": _OLLAMA_DEFAULT,
     },
 }
 
@@ -1303,3 +1309,11 @@ MAX_EXPANDED_ENTRIES = 5
 #: as a target band below this ceiling (see `expand._length_band`) so it does not optimise
 #: right up to the edge and truncate on paste.
 EXPAND_CHAR_LIMIT = 2000
+
+#: Cap on how many skills the tile ever shows, applied after tier-sorting so "additional"
+#: is what gets cut first — required/preferred skills should never be truncated away.
+MAX_SKILLS_SUGGESTED = 24
+
+#: Cap on how many candidates the skills pool sends to the model. JD-matched candidates are
+#: sorted first (see `skills.build_pool`), so truncation only ever drops unmatched evidence.
+SKILLS_POOL_LIMIT = 120

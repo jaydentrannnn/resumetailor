@@ -34,6 +34,7 @@ from resume_tailor import (
     propose,
     report,
     rewrite,
+    skills,
 )
 from resume_tailor.data import MasterResume
 from resume_tailor.events import ProgressCallback, ProgressEvent
@@ -48,6 +49,8 @@ from resume_tailor.web.schemas import (
     KeywordGapOut,
     RunReportOut,
     SectionSummaryOut,
+    SkillsPlanOut,
+    SkillSuggestionOut,
 )
 
 
@@ -68,6 +71,7 @@ class Job:
     error: str | None = None
     report: RunReportOut | None = None
     expansion: ExpansionOut | None = None
+    skills: SkillsPlanOut | None = None
     events: list[ProgressEvent] = field(default_factory=list)
     #: Signalled whenever a new event lands, so the SSE endpoint can wake up.
     event_notify: threading.Event = field(default_factory=threading.Event)
@@ -175,6 +179,8 @@ class JobQueue:
                 overrides["rewrite"] = settings.rewrite_model
             if settings.expand_model:
                 overrides["expand"] = settings.expand_model
+            if settings.skills_model:
+                overrides["skills"] = settings.skills_model
             config.resolve(
                 settings.model,
                 overrides=overrides or None,
@@ -356,6 +362,38 @@ class JobQueue:
                     )
                 )
 
+        if not settings.no_skills:
+            try:
+                # `master_resume` (post-include, pre-facets): exactly what
+                # `report.diagnose_gaps` above ran against, so the tile's "enter these"
+                # and "you can't claim these" halves partition one evidence universe. Not
+                # `full_resume` — an excluded entry is the user saying "not part of this
+                # application", and a skill evidenced only there should not be suggested
+                # for the Skills box of the package actually being submitted. Not the
+                # post-facets `resume` — facets truncates Project.tech to its render
+                # budget, which would silently drop evidence.
+                plan = skills.select_skills(
+                    master_resume,
+                    requirements,
+                    use_cache=not settings.no_cache,
+                    on_event=on_event,
+                )
+                job.skills = _to_skills_out(plan)
+                (out_dir / "skills.json").write_text(
+                    job.skills.model_dump_json(indent=2), encoding="utf-8"
+                )
+                (out_dir / "skills.md").write_text(
+                    skills.format_markdown(plan), encoding="utf-8"
+                )
+            except Exception as exc:  # noqa: BLE001 - bonus artifact; never fail the job
+                on_event(
+                    ProgressEvent(
+                        stage="skills",
+                        message=f"Skills selection skipped ({exc})",
+                        detail={},
+                    )
+                )
+
         if settings.suggest_vocabulary:
             try:
                 _draft_vocabulary_proposals(
@@ -461,6 +499,26 @@ def _to_expansion_out(expansion: expand.Expansion) -> ExpansionOut:
         warnings=list(expansion.warnings),
         model=expansion.model,
         char_limit=expansion.char_limit,
+    )
+
+
+def _to_skills_out(plan: skills.SkillsPlan) -> SkillsPlanOut:
+    """Convert the skills dataclass into the Pydantic shape the API serves."""
+    return SkillsPlanOut(
+        skills=[
+            SkillSuggestionOut(
+                skill=s.skill,
+                pool_label=s.pool_label,
+                tier=s.tier,
+                jd_phrase=s.jd_phrase,
+                sources=list(s.sources),
+                reason=s.reason,
+            )
+            for s in plan.skills
+        ],
+        warnings=list(plan.warnings),
+        model=plan.model,
+        pool_size=plan.pool_size,
     )
 
 
