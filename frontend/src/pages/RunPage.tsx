@@ -24,11 +24,13 @@ import { useEffect, useMemo, useRef, useState } from "react";
  * Layout at `lg` is an explicit 2x5 grid rather than stacked columns: Settings
  * and What-to-include sit on row 1, Job description and Progress share row 2
  * (equal height — see the Progress cell below), the submit button spans both
- * columns on row 3, Application experience / Report share row 4, and Skills
- * to list sits alone on row 5 col 1, below Application experience. Placement
- * is stated per tile (`col-start`/`row-start`) because several of the eight
- * tiles render conditionally — auto-flow would reshuffle the rest the moment
- * one of them disappeared.
+ * columns on row 3, Application experience spans both columns on row 4, and
+ * Skills to list / Report share row 5 — Report falls back to spanning both
+ * columns itself when there's no Skills tile beside it (`--no-skills`, or a
+ * skills stage that returned nothing). Placement is stated per tile
+ * (`col-start`/`row-start`) because several of the eight tiles render
+ * conditionally — auto-flow would reshuffle the rest the moment one of them
+ * disappeared.
  */
 export function RunPage() {
   const {
@@ -188,20 +190,26 @@ export function RunPage() {
       </button>
 
       {report && jobId && expansion && (
-        <div className="lg:col-start-1 lg:row-start-4">
+        <div className="lg:col-start-1 lg:col-span-2 lg:row-start-4">
           <ExperienceCard expansion={expansion} jobId={jobId} />
-        </div>
-      )}
-
-      {report && jobId && (
-        <div className="lg:col-start-2 lg:row-start-4">
-          <ReportCard report={report} jobId={jobId} />
         </div>
       )}
 
       {report && jobId && skills && (
         <div className="lg:col-start-1 lg:row-start-5">
           <SkillsCard plan={skills} gaps={report.gaps} jobId={jobId} />
+        </div>
+      )}
+
+      {report && jobId && (
+        <div
+          className={
+            skills
+              ? "lg:col-start-2 lg:row-start-5"
+              : "lg:col-start-1 lg:col-span-2 lg:row-start-5"
+          }
+        >
+          <ReportCard report={report} jobId={jobId} />
         </div>
       )}
     </form>

@@ -105,8 +105,8 @@ function EntryBlock({
 }
 
 /**
- * Copy-paste tile for expanded application-form experience descriptions, sitting
- * beside the report on the Tailor page's final row.
+ * Copy-paste tile for expanded application-form experience descriptions, spanning
+ * the full results width above Skills to list and the report on the Tailor page.
  *
  * Entries collapse into an accordion (first open) so a long list does not stretch the page.
  */

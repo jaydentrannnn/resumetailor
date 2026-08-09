@@ -36,8 +36,8 @@ function TierGroup({ tier, items }: { tier: SkillSuggestion["tier"]; items: Skil
 }
 
 /**
- * Copy-paste tile for a tailored skills list, sitting below Application experience on
- * the Tailor page's final row.
+ * Copy-paste tile for a tailored skills list, sitting below Application experience,
+ * beside the report, on the Tailor page's final row.
  *
  * Ranked required/preferred/additional in code (`skills.py`'s tiering), not by the
  * model. `gaps` is `RunReport.gaps`, already computed once by `report.diagnose_gaps` —
