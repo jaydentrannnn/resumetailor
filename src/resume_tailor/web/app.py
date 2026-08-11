@@ -13,6 +13,7 @@ import asyncio
 import json
 import os
 import tempfile
+import time
 from contextlib import asynccontextmanager
 from datetime import datetime, timezone
 from pathlib import Path
@@ -404,14 +405,22 @@ async def job_events(job_id: str) -> StreamingResponse:
         raise HTTPException(status_code=404, detail=f"Unknown job {job_id!r}.")
 
     async def generate():
-        """Yield SSE frames as new events arrive, until the job finishes."""
+        """Yield SSE frames as new events arrive, until the job finishes.
+
+        A comment frame goes out on any silent stretch >20s so a reverse proxy that
+        kills idle responses (e.g. Cloudflare's 100s cutoff) doesn't drop the stream
+        mid-stage — `EventSource` ignores comment frames, so this needs no frontend
+        change.
+        """
         sent = 0
+        last_frame = time.monotonic()
         while True:
             while sent < len(job.events):
                 event = job.events[sent]
                 sent += 1
                 payload = _event_out(event).model_dump()
                 yield f"data: {json.dumps(payload)}\n\n"
+                last_frame = time.monotonic()
 
             if job.status in ("succeeded", "failed"):
                 # Flush any final events that landed between the check and now.
@@ -430,6 +439,9 @@ async def job_events(job_id: str) -> StreamingResponse:
             if sent < len(job.events) or job.status in ("succeeded", "failed"):
                 continue
             await asyncio.get_event_loop().run_in_executor(None, job.event_notify.wait, 1.0)
+            if time.monotonic() - last_frame > 20:
+                yield ": keepalive\n\n"
+                last_frame = time.monotonic()
 
     return StreamingResponse(
         generate(),

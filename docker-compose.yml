@@ -6,6 +6,15 @@
 #
 #   docker compose up --build
 #   open http://localhost:8000
+#
+# Remote access via Cloudflare Tunnel is opt-in and gated behind a compose profile
+# (a plain `docker compose up` never starts it, token or no token):
+#
+#   docker compose --profile cloudflare up --build
+#
+# or set COMPOSE_PROFILES=cloudflare in .env to fold it into the plain command above.
+# Either way also needs CLOUDFLARE_TUNNEL_TOKEN set in .env (see .env.example). See
+# README.md's "Remote access" section for the one-time Cloudflare dashboard setup.
 
 services:
   app:
@@ -13,7 +22,9 @@ services:
       context: .
       dockerfile: Dockerfile
     ports:
-      - "8000:8000"
+      # Loopback-only: LAN/internet reach this only through the cloudflared tunnel
+      # below, never via a directly published port.
+      - "127.0.0.1:8000:8000"
     env_file:
       - .env
     environment:
@@ -30,3 +41,25 @@ services:
       - ./output:/app/output
     extra_hosts:
       - "host.docker.internal:host-gateway"
+
+  # Behind the "cloudflare" profile — excluded from a plain `docker compose up`
+  # entirely, not just skipped at runtime (see the top-of-file comment). See
+  # README.md's "Remote access" section for creating the tunnel + Access policy in the
+  # Cloudflare dashboard. Outbound-only connection to Cloudflare's edge, so it needs no
+  # published port of its own.
+  cloudflared:
+    image: cloudflare/cloudflared:latest
+    profiles: ["cloudflare"]
+    command: tunnel --no-autoupdate run
+    restart: unless-stopped
+    environment:
+      # cloudflared reads this natively; kept out of the command line so it never shows
+      # up in `docker inspect` / a process listing. No ":?" required-var guard here —
+      # that fails compose's variable interpolation for the *whole file*, even when
+      # this profile isn't active, breaking the plain `docker compose up` path for
+      # everyone. A missing token instead shows up as a connection failure in
+      # `docker compose logs cloudflared` (see README.md's verification steps).
+      TUNNEL_TOKEN: ${CLOUDFLARE_TUNNEL_TOKEN:-}
+    depends_on:
+      app:
+        condition: service_healthy

@@ -107,6 +107,49 @@ docker compose run --rm app python scripts/calibrate.py
 
 The container uses LibreOffice for PDF measurement. Host Ollama / LM Studio are reachable via `host.docker.internal` (already set in `docker-compose.yml`).
 
+### Remote access (Cloudflare Tunnel)
+
+Reach the web UI from outside your own machine — no port forwarding, no static IP, no
+TLS cert to manage — by routing a subdomain you own through Cloudflare's edge to the
+container. This app has no login of its own and `master_resume.json` plus every
+rendered resume hold real PII, so a **Cloudflare Access** policy sits in front and
+authenticates every request before it reaches the container.
+
+One-time setup, entirely in the Cloudflare dashboard:
+
+1. Add your domain to Cloudflare if it isn't already (Websites → Add a site).
+2. **Zero Trust → Networks → Tunnels → Create a tunnel** → connector type **Docker** →
+   name it (e.g. `resumetailor`) → copy the `--token <value>` from the run command it
+   shows you.
+3. In that tunnel, add a **Public Hostname**: subdomain of your choice (e.g. `resume`),
+   your domain, service type `HTTP`, URL `app:8000` (the compose service name).
+4. **Zero Trust → Access → Applications → Add an application → Self-hosted**: domain =
+   the hostname from step 3, a policy that includes your email, authentication method
+   **One-Time PIN** (built in, no external identity provider needed).
+
+Then locally:
+
+```powershell
+# In .env: CLOUDFLARE_TUNNEL_TOKEN=<the token from step 2>
+docker compose --profile cloudflare up --build
+```
+
+(Or set `COMPOSE_PROFILES=cloudflare` in `.env` so plain `docker compose up` picks it
+up automatically.) Without either, the `cloudflared` service never starts — it's opt-in
+by design. Check `docker compose logs cloudflared` for `Registered tunnel connection` to
+confirm it authenticated; a wrong/missing token or unrouted hostname shows up there, not
+in the browser.
+
+Two things to know once it's up:
+
+- **Don't calibrate through the tunnel.** Calibrating on template install/activate runs
+  several LibreOffice PDF renders inside one HTTP request, which can exceed Cloudflare's
+  fixed 100-second timeout and return a 524. Leave calibrate-on-install/activate
+  unchecked when working remotely and run it locally instead:
+  `docker compose run --rm app python scripts/calibrate.py`.
+- **Uploads are capped at 100 MB** on Cloudflare's free plan — well above any resume
+  `.docx`, noted only so a future failure is attributable.
+
 ---
 
 ## Using Ollama
