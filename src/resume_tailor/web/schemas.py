@@ -615,6 +615,7 @@ class LibraryPackSummaryOut(BaseModel):
     label: str
     description: str = ""
     builtin: bool = False
+    customized: bool = False
     tag_alias_count: int = 0
     verb_count: int = 0
     created_at: str = ""
@@ -628,6 +629,7 @@ class LibraryPackOut(BaseModel):
     label: str
     description: str = ""
     builtin: bool = False
+    customized: bool = False
     tag_aliases: dict[str, str] = Field(default_factory=dict)
     verb_families: dict[str, list[str]] = Field(default_factory=dict)
     created_at: str = ""

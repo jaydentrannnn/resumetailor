@@ -2345,3 +2345,21 @@ stage — worth grepping for literal stage counts if a seventh stage is ever add
 `expand.expand_experience` seam in `tests/test_web.py`'s job tests was already
 unstubbed-by-default (silently attempting and swallowing a real call); `skills.select_skills`
 got a proper default stub in the `client` fixture instead of repeating that gap.
+
+## 2026-08-23 — Editable shipped vocabulary packs
+
+- **Decision:** Move shipped pack tables from `library_seeds.py` Python constants into
+  packaged JSON under `src/resume_tailor/library_seeds/`. `read_pack` now prefers a store
+  file over the seed; the first edit writes a shadow to `data/libraries/packs/<id>.json`;
+  `POST /api/libraries/packs/{id}/reset` deletes it.
+- **Why:** User wanted full edit access to starter packs and a scrollable item viewer.
+  Seeds cannot live in gitignored `data/` — Docker/fresh clone would boot with no
+  vocabulary. `config.py` still imports `BUILTIN_PACKS["core-tech"]` at module load, so
+  the loader keeps the same symbol/path.
+- **Tradeoff:** Lazy shadow (not eager materialize on boot) — unedited installs pick up
+  future seed improvements automatically; edited ones stay frozen until reset.
+- **API/UI:** `builtin` now means "shipped, resettable"; new `customized` flag when a
+  shadow exists. Settings Packs list: Edit on every pack, inline filterable item viewer,
+  Reset to starter when edited, proposals can target shipped packs.
+- **Follow-up:** Rebuild frontend (`npm run build`) before testing the Settings tab in the
+  served SPA.

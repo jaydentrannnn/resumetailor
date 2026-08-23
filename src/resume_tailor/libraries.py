@@ -2,7 +2,7 @@
 
 `config.TAG_ALIASES` / `config.VERB_FAMILIES` used to be hardcoded literals — this module
 is what makes them data instead. A **pack** (`Pack`) is a named bundle of aliases and verb
-families, either built-in (`library_seeds.BUILTIN_PACKS`, code, zero I/O) or user-authored
+families, either shipped (`library_seeds/` JSON bundled in the package) or user-authored
 (`data/libraries/packs/<id>.json`, the central store — under `DATA_ROOT`, which
 `config.set_active_workspace` never rebinds, so it is shared across every profile and
 survives the Docker bind mount). Each workspace selects which packs are enabled and may
@@ -47,7 +47,7 @@ from . import config, data, library_seeds
 
 
 class LibraryError(ValueError):
-    """Raised for an unknown pack id, a refused write, or a built-in mutation attempt."""
+    """Raised for an unknown pack id, a refused write, or a shipped-pack delete attempt."""
 
 
 class LibraryValidationError(LibraryError):
@@ -160,7 +160,10 @@ class PackMeta:
     id: str
     label: str
     description: str = ""
+    #: True when the pack is shipped with the package (resettable, not deletable).
     builtin: bool = False
+    #: True when a store file shadows the shipped copy for this id.
+    customized: bool = False
     tag_alias_count: int = 0
     verb_count: int = 0
     created_at: str = ""
@@ -322,48 +325,49 @@ def _pack_from_seed(seed: library_seeds.Pack) -> Pack:
 
 
 def is_builtin_pack(pack_id: str) -> bool:
-    """Whether `pack_id` names a built-in (code-shipped) pack rather than a
+    """Whether `pack_id` names a shipped (package-bundled) pack rather than a
     user-authored one. Lets `web/app.py` report this without importing
     `library_seeds` itself."""
-    return pack_id in library_seeds.BUILTIN_PACKS
+    return pack_id in library_seeds.shipped_pack_ids()
+
+
+def is_customized_pack(pack_id: str) -> bool:
+    """Whether a store file shadows the shipped copy for `pack_id`."""
+    return _pack_path(pack_id).exists()
 
 
 def read_pack(pack_id: str) -> Pack:
-    """A built-in or user-authored pack by id. Raises `LibraryError` if neither exists."""
+    """A shipped or user-authored pack by id. Store file wins over the shipped seed.
+    Raises `LibraryError` if neither exists."""
+    path = _pack_path(pack_id)
+    if path.exists():
+        try:
+            raw = json.loads(path.read_text(encoding="utf-8"))
+            return Pack.model_validate(raw)
+        except (OSError, json.JSONDecodeError, ValidationError) as exc:
+            raise LibraryError(f"Pack {pack_id!r} is corrupt: {exc}") from exc
     seed = library_seeds.BUILTIN_PACKS.get(pack_id)
     if seed is not None:
         return _pack_from_seed(seed)
-    path = _pack_path(pack_id)
-    if not path.exists():
-        raise LibraryError(f"Unknown pack: {pack_id!r}")
-    try:
-        raw = json.loads(path.read_text(encoding="utf-8"))
-        return Pack.model_validate(raw)
-    except (OSError, json.JSONDecodeError, ValidationError) as exc:
-        raise LibraryError(f"Pack {pack_id!r} is corrupt: {exc}") from exc
+    raise LibraryError(f"Unknown pack: {pack_id!r}")
 
 
 def list_packs() -> list[PackMeta]:
-    """Built-in packs first, then user-authored packs from the registry.
+    """Shipped packs first (via `read_pack` so shadows show edited counts), then
+    user-authored packs from the registry not already listed.
 
     A registry entry whose pack file has since gone missing or corrupt is skipped
     rather than raised — a listing must not crash the whole Settings tab over one bad
     pack; `resolve_effective` is where a *selected* missing pack becomes a diagnostic.
     """
-    out: list[PackMeta] = [
-        PackMeta(
-            id=seed["id"],
-            label=seed["label"],
-            description=seed.get("description", ""),
-            builtin=True,
-            tag_alias_count=len(seed["tag_aliases"]),
-            verb_count=sum(len(v) for v in seed["verb_families"].values()),
-        )
-        for seed in library_seeds.BUILTIN_PACKS.values()
-    ]
-    for entry in _read_pack_index().packs:
+    out: list[PackMeta] = []
+    seen: set[str] = set()
+
+    for seed in library_seeds.BUILTIN_PACKS.values():
+        pack_id = seed["id"]
+        seen.add(pack_id)
         try:
-            pack = read_pack(entry.id)
+            pack = read_pack(pack_id)
         except LibraryError:
             continue
         out.append(
@@ -371,7 +375,30 @@ def list_packs() -> list[PackMeta]:
                 id=pack.id,
                 label=pack.label,
                 description=pack.description,
+                builtin=True,
+                customized=is_customized_pack(pack_id),
+                tag_alias_count=len(pack.tag_aliases),
+                verb_count=sum(len(v) for v in pack.verb_families.values()),
+                created_at=pack.created_at,
+                updated_at=pack.updated_at,
+            )
+        )
+
+    for entry in _read_pack_index().packs:
+        if entry.id in seen:
+            continue
+        try:
+            pack = read_pack(entry.id)
+        except LibraryError:
+            continue
+        seen.add(pack.id)
+        out.append(
+            PackMeta(
+                id=pack.id,
+                label=pack.label,
+                description=pack.description,
                 builtin=False,
+                customized=False,
                 tag_alias_count=len(pack.tag_aliases),
                 verb_count=sum(len(v) for v in pack.verb_families.values()),
                 created_at=pack.created_at,
@@ -382,14 +409,13 @@ def list_packs() -> list[PackMeta]:
 
 
 def write_pack(pack: Pack, *, force: bool = False) -> Pack:
-    """Validate and atomically write a user-authored pack. Refuses a built-in id.
+    """Validate and atomically write a pack to the store. Shipped ids are allowed —
+    the write creates or updates a shadow file that `read_pack` prefers over the seed.
 
     Preserves `created_at` across an update by reading the existing file first; sets
     both timestamps on a brand-new pack. Returns the pack actually written (with
     timestamps filled in), not the input.
     """
-    if pack.id in library_seeds.BUILTIN_PACKS:
-        raise LibraryError(f"{pack.id!r} is a built-in pack and cannot be modified.")
     if not _PACK_ID_RE.match(pack.id):
         raise LibraryError(
             f"Invalid pack id {pack.id!r}: must match {_PACK_ID_RE.pattern!r}."
@@ -437,17 +463,36 @@ def write_pack(pack: Pack, *, force: bool = False) -> Pack:
 
 
 def delete_pack(pack_id: str) -> None:
-    """Remove a user-authored pack. Refuses a built-in id.
+    """Remove a user-authored pack. Refuses a shipped id.
 
     A workspace that still lists `pack_id` in `enabled_packs` is left as-is —
     `resolve_effective` skips a missing pack with a diagnostic rather than erroring, so
     deleting a pack out from under an active selection degrades gracefully.
     """
-    if pack_id in library_seeds.BUILTIN_PACKS:
-        raise LibraryError(f"{pack_id!r} is a built-in pack and cannot be deleted.")
+    if is_builtin_pack(pack_id):
+        raise LibraryError(f"{pack_id!r} is a shipped pack and cannot be deleted.")
     path = _pack_path(pack_id)
     if not path.exists():
         raise LibraryError(f"Unknown pack: {pack_id!r}")
+    path.unlink()
+    index = _read_pack_index()
+    _write_pack_index(_PackIndex(packs=[e for e in index.packs if e.id != pack_id]))
+    _invalidate_memo()
+
+
+def reset_pack(pack_id: str) -> None:
+    """Delete a shipped pack's shadow file, restoring the bundled seed on next read.
+
+    Raises `LibraryError` when `pack_id` is not shipped, when no shadow exists, or
+    when the store file is missing/corrupt.
+    """
+    if not is_builtin_pack(pack_id):
+        raise LibraryError(f"{pack_id!r} is not a shipped pack and cannot be reset.")
+    path = _pack_path(pack_id)
+    if not path.exists():
+        raise LibraryError(
+            f"Pack {pack_id!r} has no customized copy to reset."
+        )
     path.unlink()
     index = _read_pack_index()
     _write_pack_index(_PackIndex(packs=[e for e in index.packs if e.id != pack_id]))

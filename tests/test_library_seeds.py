@@ -28,6 +28,14 @@ def _effective_for(pack: library_seeds.Pack) -> libraries.EffectiveLibrary:
     )
 
 
+def test_every_shipped_json_file_loads_and_is_valid():
+    empty = libraries.EffectiveLibrary(tag_aliases={}, verb_families={}, verb_index={}, diagnostics=[])
+    for pack_id in library_seeds.shipped_pack_ids():
+        pack = libraries.read_pack(pack_id)
+        errors = libraries.validate_pack(pack, against=empty)
+        assert errors == [], f"{pack_id}: {errors}"
+
+
 def test_every_builtin_pack_is_internally_valid():
     empty = libraries.EffectiveLibrary(tag_aliases={}, verb_families={}, verb_index={}, diagnostics=[])
     for pack_id, seed in library_seeds.BUILTIN_PACKS.items():

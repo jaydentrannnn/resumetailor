@@ -196,14 +196,70 @@ def test_resolver_drops_a_chain():
 # --------------------------------------------------------------------------------------
 
 
-def test_write_pack_refuses_a_builtin_id():
-    with pytest.raises(libraries.LibraryError):
-        libraries.write_pack(_pack("core-tech"))
+def test_write_pack_shadows_a_shipped_id():
+    seed = library_seeds.BUILTIN_PACKS["core-tech"]
+    customized = libraries.Pack(
+        id="core-tech",
+        label=seed["label"],
+        description=seed["description"],
+        tag_aliases={**seed["tag_aliases"], "custom-alias": "custom-target"},
+        verb_families={f: list(v) for f, v in seed["verb_families"].items()},
+    )
+    written = libraries.write_pack(customized)
+    assert written.tag_aliases["custom-alias"] == "custom-target"
+    assert libraries.is_customized_pack("core-tech")
+    reread = libraries.read_pack("core-tech")
+    assert reread.tag_aliases["custom-alias"] == "custom-target"
 
 
-def test_delete_pack_refuses_a_builtin_id():
+def test_delete_pack_refuses_a_shipped_id():
     with pytest.raises(libraries.LibraryError):
         libraries.delete_pack("core-tech")
+
+
+def test_reset_pack_restores_the_shipped_seed():
+    seed = library_seeds.BUILTIN_PACKS["core-tech"]
+    customized = libraries.Pack(
+        id="core-tech",
+        label=seed["label"],
+        description=seed["description"],
+        tag_aliases={**seed["tag_aliases"], "custom-alias": "custom-target"},
+        verb_families={f: list(v) for f, v in seed["verb_families"].items()},
+    )
+    libraries.write_pack(customized)
+    assert libraries.is_customized_pack("core-tech")
+
+    libraries.reset_pack("core-tech")
+
+    assert not libraries.is_customized_pack("core-tech")
+    assert "custom-alias" not in libraries.read_pack("core-tech").tag_aliases
+
+
+def test_reset_pack_refuses_a_non_shipped_id():
+    libraries.write_pack(_pack("a"))
+    with pytest.raises(libraries.LibraryError):
+        libraries.reset_pack("a")
+
+
+def test_reset_pack_refuses_when_no_shadow_exists():
+    with pytest.raises(libraries.LibraryError):
+        libraries.reset_pack("core-tech")
+
+
+def test_list_packs_marks_a_customized_shipped_pack():
+    seed = library_seeds.BUILTIN_PACKS["core-tech"]
+    libraries.write_pack(
+        libraries.Pack(
+            id="core-tech",
+            label=seed["label"],
+            description=seed["description"],
+            tag_aliases=dict(seed["tag_aliases"]),
+            verb_families={f: list(v) for f, v in seed["verb_families"].items()},
+        )
+    )
+    core = next(p for p in libraries.list_packs() if p.id == "core-tech")
+    assert core.builtin is True
+    assert core.customized is True
 
 
 def test_delete_pack_refuses_an_unknown_id():
@@ -216,7 +272,7 @@ def test_read_pack_raises_for_an_unknown_id():
         libraries.read_pack("nonexistent")
 
 
-def test_list_packs_includes_builtin_and_user_packs():
+def test_list_packs_includes_shipped_and_user_packs():
     libraries.write_pack(_pack("nursing", label="Nursing"))
 
     ids = {p.id for p in libraries.list_packs()}
@@ -225,8 +281,10 @@ def test_list_packs_includes_builtin_and_user_packs():
     assert "nursing" in ids
     core = next(p for p in libraries.list_packs() if p.id == "core-tech")
     assert core.builtin is True
+    assert core.customized is False
     nursing = next(p for p in libraries.list_packs() if p.id == "nursing")
     assert nursing.builtin is False
+    assert nursing.customized is False
 
 
 def test_write_pack_is_atomic():

@@ -398,6 +398,7 @@ export type LibraryPackSummary = {
   label: string;
   description: string;
   builtin: boolean;
+  customized: boolean;
   tag_alias_count: number;
   verb_count: number;
   created_at: string;
@@ -410,6 +411,7 @@ export type LibraryPack = {
   label: string;
   description: string;
   builtin: boolean;
+  customized: boolean;
   tag_aliases: Record<string, string>;
   verb_families: Record<string, string[]>;
   created_at: string;
@@ -928,10 +930,18 @@ export async function updateLibraryPack(
 }
 
 export function deleteLibraryPack(id: string): Promise<LibraryState> {
-  /** Delete a user-authored pack. Refuses a built-in id. */
+  /** Delete a user-authored pack. Refuses a shipped id. */
   return request<LibraryState>(`/api/libraries/packs/${encodeURIComponent(id)}`, {
     method: "DELETE",
   });
+}
+
+export function resetLibraryPack(id: string): Promise<LibraryState> {
+  /** Restore a shipped pack to its bundled seed by deleting its shadow file. */
+  return request<LibraryState>(
+    `/api/libraries/packs/${encodeURIComponent(id)}/reset`,
+    { method: "POST" },
+  );
 }
 
 export function setLibrarySelection(

@@ -1,5 +1,10 @@
 import { useEffect, useState } from "react";
-import { type LibraryAliasImpact, LibraryApprovalConflict } from "../api";
+import {
+  type LibraryAliasImpact,
+  type LibraryPack,
+  LibraryApprovalConflict,
+  fetchLibraryPack,
+} from "../api";
 import { ChipListField } from "../components/ChipListField";
 import { KeyValueListField } from "../components/KeyValueListField";
 import { PackEditor } from "../components/library/PackEditor";
@@ -22,13 +27,27 @@ export function SettingsPage() {
 }
 
 function PacksSection() {
-  const { packs, enabledPacks, diagnostics, loading, busy, error, setEnabled, deletePack } =
-    useLibraryState();
+  const {
+    packs,
+    enabledPacks,
+    diagnostics,
+    loading,
+    busy,
+    error,
+    setEnabled,
+    deletePack,
+    resetPack,
+  } = useLibraryState();
   const [editingPackId, setEditingPackId] = useState<string | null | "new">(null);
+  const [expandedPackId, setExpandedPackId] = useState<string | null>(null);
 
   function togglePack(id: string, on: boolean) {
     const next = on ? [...enabledPacks, id] : enabledPacks.filter((p) => p !== id);
     void setEnabled(next);
+  }
+
+  function toggleExpanded(id: string) {
+    setExpandedPackId((current) => (current === id ? null : id));
   }
 
   return (
@@ -64,51 +83,85 @@ function PacksSection() {
         <ul className="mt-4 divide-y divide-line">
           {packs.map((pack) => {
             const enabled = enabledPacks.includes(pack.id);
+            const expanded = expandedPackId === pack.id;
             return (
-              <li key={pack.id} className="flex items-start justify-between gap-3 py-3">
-                <label className="flex flex-1 cursor-pointer items-start gap-3">
-                  <input
-                    type="checkbox"
-                    checked={enabled}
-                    onChange={(e) => togglePack(pack.id, e.target.checked)}
-                    disabled={busy}
-                    className="mt-1 accent-[var(--color-accent)]"
-                  />
-                  <span>
-                    <span className="flex items-center gap-2">
-                      <span className="font-medium">{pack.label}</span>
-                      {pack.builtin && (
-                        <span className="rounded-full bg-accent-soft px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wide text-accent">
-                          Built-in
+              <li key={pack.id} className="py-3">
+                <div className="flex items-start justify-between gap-3">
+                  <label className="flex flex-1 cursor-pointer items-start gap-3">
+                    <input
+                      type="checkbox"
+                      checked={enabled}
+                      onChange={(e) => togglePack(pack.id, e.target.checked)}
+                      disabled={busy}
+                      className="mt-1 accent-[var(--color-accent)]"
+                    />
+                    <span>
+                      <span className="flex flex-wrap items-center gap-2">
+                        <span className="font-medium">{pack.label}</span>
+                        {pack.builtin && (
+                          <span className="rounded-full bg-accent-soft px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wide text-accent">
+                            Starter
+                          </span>
+                        )}
+                        {pack.customized && (
+                          <span className="rounded-full bg-paper px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wide text-ink-muted">
+                            Edited
+                          </span>
+                        )}
+                      </span>
+                      {pack.description && (
+                        <span className="mt-0.5 block text-xs text-ink-muted">
+                          {pack.description}
                         </span>
                       )}
-                    </span>
-                    {pack.description && (
                       <span className="mt-0.5 block text-xs text-ink-muted">
-                        {pack.description}
+                        {pack.tag_alias_count} aliases &middot; {pack.verb_count} verbs
                       </span>
-                    )}
-                    <span className="mt-0.5 block text-xs text-ink-muted">
-                      {pack.tag_alias_count} aliases &middot; {pack.verb_count} verbs
                     </span>
-                  </span>
-                </label>
-                <div className="flex flex-none items-center gap-2 text-xs">
-                  {!pack.builtin && (
-                    <>
+                  </label>
+                  <div className="flex flex-none flex-wrap items-center justify-end gap-2 text-xs">
+                    <button
+                      type="button"
+                      onClick={() => toggleExpanded(pack.id)}
+                      disabled={busy}
+                      className="text-ink-muted underline-offset-2 hover:text-accent hover:underline disabled:opacity-50"
+                    >
+                      {expanded ? "Hide items" : "View items"}
+                    </button>
+                    <button
+                      type="button"
+                      onClick={() => setEditingPackId(pack.id)}
+                      disabled={busy}
+                      className="text-ink-muted underline-offset-2 hover:text-accent hover:underline disabled:opacity-50"
+                    >
+                      Edit
+                    </button>
+                    {pack.builtin && pack.customized && (
                       <button
                         type="button"
-                        onClick={() => setEditingPackId(pack.id)}
+                        onClick={() => {
+                          if (
+                            window.confirm(
+                              `Reset "${pack.label}" to its starter contents? Your edits will be discarded.`,
+                            )
+                          ) {
+                            void resetPack(pack.id);
+                            if (expandedPackId === pack.id) setExpandedPackId(null);
+                          }
+                        }}
                         disabled={busy}
-                        className="text-ink-muted underline-offset-2 hover:text-accent hover:underline disabled:opacity-50"
+                        className="text-ink-muted underline-offset-2 hover:text-danger hover:underline disabled:opacity-50"
                       >
-                        Edit
+                        Reset to starter
                       </button>
+                    )}
+                    {!pack.builtin && (
                       <button
                         type="button"
                         onClick={() => {
                           if (window.confirm(`Delete the "${pack.label}" pack?`)) {
                             void deletePack(pack.id);
+                            if (expandedPackId === pack.id) setExpandedPackId(null);
                           }
                         }}
                         disabled={busy}
@@ -116,9 +169,10 @@ function PacksSection() {
                       >
                         Delete
                       </button>
-                    </>
-                  )}
+                    )}
+                  </div>
                 </div>
+                {expanded && <PackItemsViewer packId={pack.id} />}
               </li>
             );
           })}
@@ -142,6 +196,106 @@ function PacksSection() {
         />
       )}
     </section>
+  );
+}
+
+/**
+ * Read-only, scrollable list of one pack's aliases and verb families. Loaded lazily
+ * when the parent row expands.
+ */
+function PackItemsViewer({ packId }: { packId: string }) {
+  const [pack, setPack] = useState<LibraryPack | null>(null);
+  const [filter, setFilter] = useState("");
+  const [loading, setLoading] = useState(true);
+  const [error, setError] = useState<string | null>(null);
+
+  useEffect(() => {
+    let cancelled = false;
+    setLoading(true);
+    setError(null);
+    setPack(null);
+    fetchLibraryPack(packId)
+      .then((loaded) => {
+        if (!cancelled) setPack(loaded);
+      })
+      .catch((err) => {
+        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
+      })
+      .finally(() => {
+        if (!cancelled) setLoading(false);
+      });
+    return () => {
+      cancelled = true;
+    };
+  }, [packId]);
+
+  const needle = filter.trim().toLowerCase();
+  const aliasRows = pack
+    ? Object.entries(pack.tag_aliases).filter(
+        ([alias, canonical]) =>
+          !needle ||
+          alias.toLowerCase().includes(needle) ||
+          canonical.toLowerCase().includes(needle),
+      )
+    : [];
+  const verbRows = pack
+    ? Object.entries(pack.verb_families).filter(
+        ([family, verbs]) =>
+          !needle ||
+          family.toLowerCase().includes(needle) ||
+          verbs.some((verb) => verb.toLowerCase().includes(needle)),
+      )
+    : [];
+
+  return (
+    <div className="mt-3 ml-7 rounded-lg border border-line bg-paper/40 p-3">
+      {loading ? (
+        <p className="text-xs text-ink-muted">Loading items…</p>
+      ) : error ? (
+        <p className="text-xs text-danger">{error}</p>
+      ) : pack ? (
+        <>
+          <input
+            type="search"
+            value={filter}
+            onChange={(e) => setFilter(e.target.value)}
+            placeholder="Filter aliases and verbs…"
+            className="field mb-3 text-xs"
+          />
+          <div className="max-h-64 space-y-3 overflow-y-auto pr-1 text-xs">
+            {aliasRows.length > 0 && (
+              <div>
+                <p className="mb-1 font-medium text-ink-muted">Tag aliases</p>
+                <ul className="space-y-0.5">
+                  {aliasRows.map(([alias, canonical]) => (
+                    <li key={alias} className="font-mono text-[0.7rem]">
+                      {alias} → {canonical}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {verbRows.length > 0 && (
+              <div>
+                <p className="mb-1 font-medium text-ink-muted">Verb families</p>
+                <ul className="space-y-0.5">
+                  {verbRows.map(([family, verbs]) => (
+                    <li key={family} className="font-mono text-[0.7rem]">
+                      {family}: {verbs.join(", ")}
+                    </li>
+                  ))}
+                </ul>
+              </div>
+            )}
+            {aliasRows.length === 0 && verbRows.length === 0 && (
+              <p className="text-ink-muted">
+                {needle ? "No items match the filter." : "This pack has no items yet."}
+              </p>
+            )}
+          </div>
+        </>
+      ) : null}
+    </div>
   );
 }
 
@@ -216,12 +370,12 @@ function SuggestionsSection() {
     impact: LibraryAliasImpact[];
   } | null>(null);
 
-  const userPacks = packs.filter((p) => !p.builtin);
+  const targetPacks = packs;
   const [targetPackId, setTargetPackId] = useState("");
 
   useEffect(() => {
-    if (!targetPackId && userPacks.length > 0) setTargetPackId(userPacks[0].id);
-  }, [userPacks, targetPackId]);
+    if (!targetPackId && targetPacks.length > 0) setTargetPackId(targetPacks[0].id);
+  }, [targetPacks, targetPackId]);
 
   useEffect(() => {
     // Additive-vs-rewrite impact only applies to tag-alias proposals; verb-family
@@ -369,8 +523,8 @@ function SuggestionsSection() {
                 onChange={(e) => setTargetPackId(e.target.value)}
                 className="field inline-block w-auto"
               >
-                {userPacks.length === 0 && <option value="">No packs yet — create one above</option>}
-                {userPacks.map((p) => (
+                {targetPacks.length === 0 && <option value="">No packs available</option>}
+                {targetPacks.map((p) => (
                   <option key={p.id} value={p.id}>
                     {p.label}
                   </option>

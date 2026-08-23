@@ -1,0 +1,29 @@
+{
+  "schema_version": 1,
+  "id": "finance-consulting",
+  "label": "Finance & Consulting",
+  "description": "Financial analysis, audit, and client-consulting vocabulary, plus the fundraising/outreach terms common in early-career finance and nonprofit-adjacent work.",
+  "tag_aliases": {
+    "google workspace": "google drive suite",
+    "g suite": "google drive suite",
+    "ms office": "microsoft 365",
+    "office 365": "microsoft 365",
+    "ms 365": "microsoft 365",
+    "financial modelling": "financial modeling",
+    "kpis": "kpi",
+    "key performance indicators": "kpi",
+    "key performance indicator": "kpi",
+    "internal auditing": "internal audit",
+    "budget management": "budgeting",
+    "budget planning": "budgeting"
+  },
+  "verb_families": {
+    "collaborate": ["collaborated", "consulted", "liaised"],
+    "recruit": ["recruited", "sourced", "enlisted"],
+    "gained": ["received", "gained", "earned", "obtained"],
+    "track": ["tracked", "logged", "reconciled"],
+    "promote": ["promoted", "publicized", "marketed"]
+  },
+  "created_at": "",
+  "updated_at": ""
+}

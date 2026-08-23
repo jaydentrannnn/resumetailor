@@ -2419,18 +2419,20 @@ def test_library_cap_refuses_twenty_first(client, tmp_path, monkeypatch):
 # --------------------------------------------------------------------------------------
 
 
-def test_get_libraries_lists_builtin_pack_and_effective_counts(client):
+def test_get_libraries_lists_shipped_packs_and_effective_counts(client):
     c, _ = client
     res = c.get("/api/libraries")
     assert res.status_code == 200
     body = res.json()
-    # Every built-in pack is always listed, whether or not it is enabled — only
+    # Every shipped pack is always listed, whether or not it is enabled — only
     # "core-tech" is enabled by default in a fresh workspace's libraries.json.
     ids = [p["id"] for p in body["packs"]]
     assert "core-tech" in ids
-    assert all(p["builtin"] for p in body["packs"])
-    assert body["enabled_packs"] == ["core-tech"]
+    shipped = [p for p in body["packs"] if p["builtin"]]
+    assert {p["id"] for p in shipped} == {"core-tech", "finance-consulting"}
     core = next(p for p in body["packs"] if p["id"] == "core-tech")
+    assert core["customized"] is False
+    assert body["enabled_packs"] == ["core-tech"]
     assert body["effective"]["tag_alias_count"] == core["tag_alias_count"]
     assert body["diagnostics"] == []
 
@@ -2520,7 +2522,48 @@ def test_update_an_enabled_pack_does_not_conflict_with_its_own_prior_version(cli
     assert res.status_code == 200
 
 
-def test_delete_library_pack_refuses_a_builtin_id(client):
+def test_update_shipped_pack_writes_a_shadow(client):
+    c, _ = client
+    body = c.get("/api/libraries/packs/core-tech").json()
+    body["tag_aliases"] = {**body["tag_aliases"], "custom-alias": "custom-target"}
+    res = c.put(
+        "/api/libraries/packs/core-tech",
+        json={
+            "label": body["label"],
+            "description": body["description"],
+            "tag_aliases": body["tag_aliases"],
+            "verb_families": body["verb_families"],
+        },
+    )
+    assert res.status_code == 200
+    core = next(p for p in res.json()["packs"] if p["id"] == "core-tech")
+    assert core["customized"] is True
+    reread = c.get("/api/libraries/packs/core-tech").json()
+    assert reread["tag_aliases"]["custom-alias"] == "custom-target"
+
+
+def test_reset_shipped_pack_restores_the_seed(client):
+    c, _ = client
+    body = c.get("/api/libraries/packs/core-tech").json()
+    body["tag_aliases"] = {**body["tag_aliases"], "custom-alias": "custom-target"}
+    c.put(
+        "/api/libraries/packs/core-tech",
+        json={
+            "label": body["label"],
+            "description": body["description"],
+            "tag_aliases": body["tag_aliases"],
+            "verb_families": body["verb_families"],
+        },
+    )
+    res = c.post("/api/libraries/packs/core-tech/reset")
+    assert res.status_code == 200
+    core = next(p for p in res.json()["packs"] if p["id"] == "core-tech")
+    assert core["customized"] is False
+    reread = c.get("/api/libraries/packs/core-tech").json()
+    assert "custom-alias" not in reread["tag_aliases"]
+
+
+def test_delete_library_pack_refuses_a_shipped_id(client):
     c, _ = client
     res = c.delete("/api/libraries/packs/core-tech")
     assert res.status_code == 400
@@ -2742,15 +2785,30 @@ def test_approve_requires_acknowledgement_when_it_rewrites_an_existing_tag(
     assert list(tmp_path.glob("*.bak.json")) != []
 
 
-def test_approve_refuses_a_builtin_target_pack(client, tmp_path, monkeypatch):
+def test_approve_into_a_shipped_target_pack_writes_a_shadow(client, tmp_path, monkeypatch):
+    from resume_tailor import libraries as libraries_mod
+
     c, _ = client
     _write_test_resume(monkeypatch, tmp_path, bullet_text="Did a thing.", bullet_tags=["python"])
+
+    state = libraries_mod.read_workspace_state()
+    state.proposals = [
+        libraries_mod.LibraryProposal(
+            id="p-1", kind="tag_alias", alias="pg", canonical="postgresql", source="manual",
+            created_at="2026-01-01T00:00:00+00:00",
+        )
+    ]
+    libraries_mod.write_workspace_state(state)
 
     res = c.post(
         "/api/libraries/proposals/approve",
         json={"proposal_ids": ["p-1"], "target_pack_id": "core-tech"},
     )
-    assert res.status_code == 400
+    assert res.status_code == 200
+    core = next(p for p in res.json()["packs"] if p["id"] == "core-tech")
+    assert core["customized"] is True
+    pack_after = c.get("/api/libraries/packs/core-tech").json()
+    assert pack_after["tag_aliases"]["pg"] == "postgresql"
 
 
 def test_approve_404s_for_unknown_proposal_ids(client, tmp_path, monkeypatch):

@@ -22,6 +22,7 @@ import {
   generateLibraryProposals,
   previewLibraryImpact,
   rejectLibraryProposals,
+  resetLibraryPack,
   setLibrarySelection,
   updateLibraryPack,
 } from "../api";
@@ -64,6 +65,7 @@ type LibraryStateValue = {
   /** `id === null` creates a new pack; otherwise updates the existing one. */
   savePack: (id: string | null, draft: LibraryPackDraft) => Promise<void>;
   deletePack: (id: string) => Promise<void>;
+  resetPack: (id: string) => Promise<void>;
   previewImpact: (tagAliases: Record<string, string>) => Promise<LibraryAliasImpact[]>;
   generateProposals: (jdText?: string) => Promise<void>;
   /** Throws `LibraryApprovalConflict` (409) when the change would rewrite an existing
@@ -183,6 +185,21 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     [applyState],
   );
 
+  const resetPack = useCallback(
+    async (id: string) => {
+      setBusy(true);
+      setError(null);
+      try {
+        applyState(await resetLibraryPack(id));
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        setBusy(false);
+      }
+    },
+    [applyState],
+  );
+
   const previewImpact = useCallback(
     async (tagAliases: Record<string, string>) => {
       const res = await previewLibraryImpact(tagAliases);
@@ -259,6 +276,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       setOverrides,
       savePack,
       deletePack,
+      resetPack,
       previewImpact,
       generateProposals,
       approveProposals,
@@ -281,6 +299,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       setOverrides,
       savePack,
       deletePack,
+      resetPack,
       previewImpact,
       generateProposals,
       approveProposals,

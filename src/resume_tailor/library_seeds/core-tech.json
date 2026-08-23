@@ -1,0 +1,89 @@
+{
+  "schema_version": 1,
+  "id": "core-tech",
+  "label": "Software & Data",
+  "description": "Programming languages, web/cloud/ML tooling, and retrieval/LLM vocabulary.",
+  "tag_aliases": {
+    "py": "python",
+    "py3": "python",
+    "python3": "python",
+    "js": "javascript",
+    "ts": "typescript",
+    "node": "nodejs",
+    "node.js": "nodejs",
+    "postgres": "postgresql",
+    "k8s": "kubernetes",
+    "ml": "machine learning",
+    "nlp": "natural language processing",
+    "ci/cd": "cicd",
+    "ci / cd": "cicd",
+    "rest api": "rest",
+    "restful": "rest",
+    "retrieval-augmented generation": "rag",
+    "retrieval augmented generation": "rag",
+    "large language model": "llm",
+    "large language models": "llm",
+    "llms": "llm",
+    "vector databases": "vector database",
+    "vector store": "vector database",
+    "vector search": "semantic search",
+    "hybrid search": "hybrid retrieval",
+    "dense retrieval": "embeddings",
+    "dense embeddings": "embeddings",
+    "keyword matching": "information retrieval",
+    "keyword search": "information retrieval",
+    "reranker": "reranking",
+    "rerankers": "reranking",
+    "reranker tuning": "reranking",
+    "re-ranking": "reranking",
+    "cross-encoder": "reranking",
+    "llm as judge": "llm-as-judge",
+    "llm-as-judge evaluation": "llm-as-judge",
+    "latency optimization": "performance",
+    "performance measurement": "performance",
+    "model fine-tuning": "fine-tuning",
+    "recall@k": "retrieval eval",
+    "mrr": "retrieval eval",
+    "offline evaluation": "evaluation",
+    "fine tuning": "fine-tuning",
+    "finetuning": "fine-tuning",
+    "rl": "reinforcement learning",
+    "full-stack": "full stack",
+    "fullstack": "full stack"
+  },
+  "verb_families": {
+    "build": [
+      "architected", "assembled", "built", "composed", "constructed", "created",
+      "crafted", "designed", "developed", "engineered", "established", "founded",
+      "implemented", "initiated", "launched", "modelled", "modeled", "prototyped",
+      "shipped", "spearheaded"
+    ],
+    "improve": [
+      "accelerated", "boosted", "condensed", "cut", "enhanced", "expanded", "improved",
+      "increased", "optimised", "optimized", "reduced", "refactored", "refined",
+      "scaled", "simplified", "streamlined", "strengthened", "tightened", "tuned"
+    ],
+    "lead": [
+      "coordinated", "directed", "facilitated", "guided", "led", "managed", "mentored",
+      "onboarded", "organised", "organized", "oversaw", "partnered", "supervised",
+      "trained"
+    ],
+    "analyse": [
+      "analysed", "analyzed", "assessed", "audited", "benchmarked", "debugged",
+      "diagnosed", "evaluated", "examined", "identified", "investigated", "measured",
+      "profiled", "researched", "reviewed", "selected", "tested", "troubleshooted",
+      "validated"
+    ],
+    "write": [
+      "authored", "communicated", "documented", "drafted", "presented", "published",
+      "reported", "summarised", "summarized", "wrote"
+    ],
+    "operate": [
+      "addressed", "administered", "automated", "configured", "delivered", "deployed",
+      "enabled", "handled", "integrated", "maintained", "migrated", "monitored",
+      "operated", "processed", "provisioned", "resolved", "secured", "supported"
+    ]
+  },
+  "created_at": "",
+  "updated_at": ""
+}

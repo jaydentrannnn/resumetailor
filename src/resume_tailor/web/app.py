@@ -992,6 +992,7 @@ def _library_pack_summary_out(pack: libraries.PackMeta) -> LibraryPackSummaryOut
         label=pack.label,
         description=pack.description,
         builtin=pack.builtin,
+        customized=pack.customized,
         tag_alias_count=pack.tag_alias_count,
         verb_count=pack.verb_count,
         created_at=pack.created_at,
@@ -1041,6 +1042,7 @@ def _library_pack_out(pack: libraries.Pack) -> LibraryPackOut:
         label=pack.label,
         description=pack.description,
         builtin=libraries.is_builtin_pack(pack.id),
+        customized=libraries.is_customized_pack(pack.id),
         tag_aliases=pack.tag_aliases,
         verb_families=pack.verb_families,
         created_at=pack.created_at,
@@ -1098,7 +1100,7 @@ def create_library_pack(body: LibraryPackWriteRequest) -> LibraryStateResponse:
 
 @app.put("/api/libraries/packs/{pack_id}", response_model=LibraryStateResponse)
 def update_library_pack(pack_id: str, body: LibraryPackWriteRequest) -> LibraryStateResponse:
-    """Update a user-authored pack's contents. Refuses a built-in id."""
+    """Update a pack's contents. Shipped ids write a shadow file over the bundled seed."""
     if get_queue().busy():
         raise _library_write_conflict()
     with template_ops.LOCK:
@@ -1123,7 +1125,7 @@ def update_library_pack(pack_id: str, body: LibraryPackWriteRequest) -> LibraryS
 
 @app.delete("/api/libraries/packs/{pack_id}", response_model=LibraryStateResponse)
 def delete_library_pack(pack_id: str) -> LibraryStateResponse:
-    """Delete a user-authored pack. Refuses a built-in id.
+    """Delete a user-authored pack. Refuses a shipped id.
 
     A profile that still has `pack_id` in its selection is left as-is —
     `libraries.resolve_effective` skips a missing pack with a diagnostic rather than
@@ -1134,6 +1136,20 @@ def delete_library_pack(pack_id: str) -> LibraryStateResponse:
     with template_ops.LOCK:
         try:
             libraries.delete_pack(pack_id)
+        except libraries.LibraryError as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        libraries.reload()
+        return _library_state_response()
+
+
+@app.post("/api/libraries/packs/{pack_id}/reset", response_model=LibraryStateResponse)
+def reset_library_pack(pack_id: str) -> LibraryStateResponse:
+    """Restore a shipped pack to its bundled seed by deleting its shadow file."""
+    if get_queue().busy():
+        raise _library_write_conflict()
+    with template_ops.LOCK:
+        try:
+            libraries.reset_pack(pack_id)
         except libraries.LibraryError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         libraries.reload()
@@ -1248,7 +1264,7 @@ def generate_library_proposals(body: ProposalGenerateRequest) -> LibraryStateRes
 
 @app.post("/api/libraries/proposals/approve", response_model=LibraryStateResponse)
 def approve_library_proposals(body: ProposalApproveRequest) -> LibraryStateResponse:
-    """Fold selected pending proposals into an existing user-authored pack.
+    """Fold selected pending proposals into an existing pack (user-authored or shipped).
 
     `Bullet._normalise_tags` re-canonicalises every tag on every master-resume save, so
     approving an alias whose key is already used as a literal bullet tag would silently
@@ -1259,12 +1275,6 @@ def approve_library_proposals(body: ProposalApproveRequest) -> LibraryStateRespo
     if get_queue().busy():
         raise _library_write_conflict()
     with template_ops.LOCK:
-        if libraries.is_builtin_pack(body.target_pack_id):
-            raise HTTPException(
-                status_code=400,
-                detail=f"{body.target_pack_id!r} is a built-in pack and cannot be a target.",
-            )
-
         state = libraries.read_workspace_state()
         wanted_ids = set(body.proposal_ids)
         selected = [p for p in state.proposals if p.id in wanted_ids]

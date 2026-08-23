@@ -431,11 +431,14 @@ are process-wide; don't add `--workers` to the Dockerfile CMD or the dev command
 
 ## Vocabulary libraries
 
-`config.TAG_ALIASES`/`VERB_FAMILIES` are composed at runtime from **packs**: a built-in
-`core-tech` pack (unchanged original tables) plus user-authored ones, selected per
+`config.TAG_ALIASES`/`VERB_FAMILIES` are composed at runtime from **packs**: shipped
+`core-tech`/`finance-consulting` starter packs plus user-authored ones, selected per
 workspace.
 
-- **`library_seeds.py`** holds `BUILTIN_PACKS` as plain constants — zero I/O.
+- **`library_seeds/`** holds shipped packs as packaged JSON (`core-tech.json`,
+  `finance-consulting.json`), loaded via `importlib.resources` into `BUILTIN_PACKS`.
+  Edits write a shadow file under `data/libraries/packs/` that `read_pack` prefers;
+  `reset_pack` deletes the shadow to restore the starter. Shipped packs are not deletable.
 - **`libraries.py`** is the engine: pack storage/validation (central store at
   `data/libraries/packs/`, shared across profiles, never rebound per-workspace), composition
   (`resolve_effective`: enabled packs merge in list order, a workspace's own

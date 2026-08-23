@@ -15,6 +15,9 @@ dependencies = { file = ["requirements.txt"] }
 [tool.setuptools.packages.find]
 where = ["src"]
 
+[tool.setuptools.package-data]
+"resume_tailor.library_seeds" = ["*.json"]
+
 [tool.pytest.ini_options]
 testpaths = ["tests"]
 markers = [

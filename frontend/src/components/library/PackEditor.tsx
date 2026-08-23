@@ -36,9 +36,8 @@ function verbFamiliesFromRows(rows: VerbFamilyRow[]): Record<string, string[]> {
 }
 
 /**
- * Create or edit a user-authored pack. `packId === null` is create mode — the id is
- * derived server-side from the label. Editing a built-in pack is not offered; the
- * Settings page never renders this for one.
+ * Create or edit a vocabulary pack. `packId === null` is create mode — the id is
+ * derived server-side from the label. Shipped packs edit via a shadow file.
  */
 export function PackEditor({
   packId,
@@ -167,13 +166,15 @@ export function PackEditor({
             </label>
           </div>
 
-          <KeyValueListField
-            label="Tag aliases (spelling seen in a posting → your canonical tag)"
-            keyPlaceholder="e.g. bls"
-            valuePlaceholder="e.g. basic life support"
-            items={tagAliases}
-            onChange={setTagAliases}
-          />
+          <div className="max-h-64 overflow-y-auto pr-1">
+            <KeyValueListField
+              label="Tag aliases (spelling seen in a posting → your canonical tag)"
+              keyPlaceholder="e.g. bls"
+              valuePlaceholder="e.g. basic life support"
+              items={tagAliases}
+              onChange={setTagAliases}
+            />
+          </div>
 
           <div className="text-sm">
             <span className="mb-1 block text-ink-muted">
@@ -181,26 +182,32 @@ export function PackEditor({
             </span>
             <div className="space-y-2">
               {verbRows.map((row) => (
-                <div key={row.rowId} className="flex items-start gap-1.5">
-                  <input
-                    type="text"
-                    value={row.family}
-                    onChange={(e) => updateVerbRow(row.rowId, { family: e.target.value })}
-                    placeholder="family, e.g. care"
-                    className="field w-32 flex-none"
-                  />
+                <div key={row.rowId} className="flex items-center gap-1.5">
+                  {/* `.field` sets width:100%; Tailwind v4 utilities live in a cascade
+                   * layer, so an unlayered rule like `.field` always wins over a
+                   * conflicting `w-32` on the same element. Fix the column width on a
+                   * wrapper instead, and let `.field` fill it. */}
+                  <div className="w-32 flex-none">
+                    <input
+                      type="text"
+                      value={row.family}
+                      onChange={(e) => updateVerbRow(row.rowId, { family: e.target.value })}
+                      placeholder="family, e.g. care"
+                      className="field"
+                    />
+                  </div>
                   <input
                     type="text"
                     value={row.verbsText}
                     onChange={(e) => updateVerbRow(row.rowId, { verbsText: e.target.value })}
                     placeholder="verbs, comma-separated — e.g. administered, assessed, charted"
-                    className="field flex-1"
+                    className="field min-w-0 flex-1"
                   />
                   <button
                     type="button"
                     onClick={() => removeVerbRow(row.rowId)}
                     title="Remove family"
-                    className="mt-2 rounded-full px-1.5 text-ink-muted hover:text-danger"
+                    className="flex-none rounded-full px-1.5 text-ink-muted hover:text-danger"
                   >
                     ×
                   </button>
