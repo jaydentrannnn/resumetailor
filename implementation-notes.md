@@ -2363,3 +2363,23 @@ got a proper default stub in the `client` fixture instead of repeating that gap.
   Reset to starter when edited, proposals can target shipped packs.
 - **Follow-up:** Rebuild frontend (`npm run build`) before testing the Settings tab in the
   served SPA.
+
+## 2026-08-23 — Editable writing-style prompts
+
+- **Decision:** Split `rewrite._SYSTEM` and `expand._SYSTEM` into a locked core
+  (fabrication, numbers, ids, length cliff) plus an editable style block stored as
+  `JobSettings.rewrite_style` / `expand_style` in `settings.json` (`null` = shipped
+  default). New `style.py` holds defaults, per-run `activate()` state, and
+  `digest("expand")` for cache keys. `tailor.py` reads the active profile's saved style
+  after `workspace.bootstrap()` so CLI and UI share one voice.
+- **Why:** User wanted to edit the voice/tone instructions without touching safety rules.
+  Nullable fields (not seeding default text into JSON) let future default improvements reach
+  profiles that never customized.
+- **Tradeoff:** Module state (`style._ACTIVE`) rather than threading through `fit.fit` →
+  six function signatures — same pattern as `config._ACTIVE`.
+- **UI cleanup:** Tailor tab Models section collapsed four per-stage model fields into one
+  `model_name` blanket override (hidden under `hybrid`). Removed three skip toggles from
+  the UI (semantic/widow/verb — still always on; CLI flags unchanged). Style editors live
+  in the Advanced panel with locked-core preview and Reset to default.
+- **Follow-up:** Verb variety and length are still enforced in code by `_polish` and
+  `widowed()` even if the style text softens those instructions.

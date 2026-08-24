@@ -73,9 +73,18 @@ stop. That is the bug this project exists to avoid.
 - **Anything that changes what the model returns belongs in the cache key.**
   `config.fingerprint(purpose)` (`origin`, model, effort) is folded into `jd._slug` and
   `rewrite._score_cache_path`; `propose._cache_path` extends the same rule with
-  `libraries.effective_fingerprint()`. Keys on `Backend.origin`, not `.provider` — Ollama/
+  `libraries.effective_fingerprint()`. `expand._cache_path` also folds in
+  `style.digest("expand")` when a profile's expand-style override differs from the shipped
+  default. Keys on `Backend.origin`, not `.provider` — Ollama/
   LM Studio/Gemini all remap to `provider == "openai"` for the client shape, so without
   `origin` two of them sharing a model string would collide.
+- **Writing style is user-editable per profile, with a locked core.** `rewrite._SYSTEM`
+  and `expand._SYSTEM` split into non-editable fabrication/number/id/length rules plus an
+  editable style block (`style.py`'s defaults, overridable via `JobSettings.rewrite_style` /
+  `expand_style` in `settings.json`). When no override is set, `_system()` returns the
+  legacy prompt byte-for-byte; when overridden, the locked core is always prepended. Still
+  plain strings — the architectural invariant holds. `style.activate()` runs once per run
+  beside `config.resolve()` in both `web/jobs.py` and `tailor.py`.
 - **Approving a vocabulary-library proposal that would rewrite an existing bullet tag
   requires explicit acknowledgement.** The API 409s with the exact impact and backs up the
   master resume first — do not weaken that to make an approval succeed silently.

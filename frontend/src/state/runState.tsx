@@ -76,6 +76,9 @@ export const DEFAULT_SETTINGS: JobSettings = {
   experience_bullet_share: null,
   max_bullets_per_entry: null,
   include: DEFAULT_INCLUDE,
+  rewrite_style: null,
+  expand_style: null,
+  model_name: null,
 };
 
 /**

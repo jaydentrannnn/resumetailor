@@ -305,6 +305,33 @@ def test_format_markdown_includes_hard_facts():
     assert "Built things." in text
 
 
+def test_default_expand_system_prompt_is_byte_identical_to_the_legacy_string():
+    """Splitting core/style must not change output when no override is active."""
+    from resume_tailor import style as style_mod
+
+    style_mod.activate(rewrite=None, expand=None)
+    assert expand._system() == expand._SYSTEM
+
+
+def test_expand_cache_path_changes_when_style_overrides(tmp_path, monkeypatch):
+    """Style text is folded into the expansion cache key."""
+    from resume_tailor import style as style_mod
+    from resume_tailor.expand import _cache_path
+
+    monkeypatch.setattr(config, "CACHE_DIR", tmp_path)
+    resume = _tiny_resume()
+    keyed = [(expand.entry_key(resume.experience[0].id), resume.experience[0])]
+    reqs = _reqs("python")
+
+    style_mod.activate(rewrite=None, expand=None)
+    default_path = _cache_path(keyed, reqs, char_limit=2000)
+
+    style_mod.activate(rewrite=None, expand="- Write tersely.")
+    custom_path = _cache_path(keyed, reqs, char_limit=2000)
+
+    assert default_path != custom_path
+
+
 def test_hybrid_routes_expand_to_ollama():
     """Hybrid keeps rewrite on Claude and sends expand to the free backend."""
     try:

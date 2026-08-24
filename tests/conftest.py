@@ -52,7 +52,7 @@ from pathlib import Path
 
 import pytest
 
-from resume_tailor import config, libraries, template_analyze, template_build, workspace
+from resume_tailor import config, libraries, style, template_analyze, template_build, workspace
 from tests.fixtures import _docx_bytes, _full_featured_resume
 
 
@@ -77,6 +77,14 @@ def _isolated_libraries(tmp_path, monkeypatch):
     libraries.reset()
     yield
     libraries.reset()
+
+
+@pytest.fixture(autouse=True)
+def _reset_style():
+    """Clear per-run style overrides so one test cannot leak into the next."""
+    style.activate(rewrite=None, expand=None)
+    yield
+    style.activate(rewrite=None, expand=None)
 
 
 @pytest.fixture(autouse=True)

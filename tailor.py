@@ -31,6 +31,7 @@ from resume_tailor import (  # noqa: E402
     report,
     rewrite,
     skills,
+    style,
     workspace,
 )
 from resume_tailor.llm import LLMError  # noqa: E402
@@ -313,9 +314,15 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
+    saved = workspace.load_settings()["defaults"]
+
     # Resolved before anything is read or spent, so a bad spec costs nothing.
     try:
         overrides: dict[str, str] = {}
+        model_name = saved.get("model_name")
+        if model_name:
+            for purpose in config.PURPOSES:
+                overrides[purpose] = model_name
         if args.rewrite_model:
             overrides["rewrite"] = args.rewrite_model
         if args.expand_model:
@@ -326,6 +333,10 @@ def main(argv: list[str] | None = None) -> int:
             args.model,
             overrides=overrides or None,
             effort=args.effort,
+        )
+        style.activate(
+            rewrite=saved.get("rewrite_style"),
+            expand=saved.get("expand_style"),
         )
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)

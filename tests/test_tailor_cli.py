@@ -630,3 +630,39 @@ def test_max_bullets_per_entry_flag_reaches_the_fit_loop(cli, jd_file, tmp_path,
     assert cli.main(["--jd", str(jd_file), "--max-bullets-per-entry", "0"]) == 1
 
     assert cli.main(["--jd", str(jd_file), "--initial-bullet-share", "0.1"]) == 1
+
+
+def test_cli_loads_saved_style_from_settings(cli, jd_file, tmp_path, monkeypatch):
+    """`tailor.py` reads the active profile's saved style overrides before the pipeline runs."""
+    resume = synthetic_resume()
+    settings_path = tmp_path / "settings.json"
+    settings_path.write_text(
+        json.dumps(
+            {
+                "schema_version": 1,
+                "defaults": {"rewrite_style": "- Be terse.", "expand_style": "- Be chatty."},
+            },
+            indent=2,
+        ),
+        encoding="utf-8",
+    )
+    monkeypatch.setattr(config, "SETTINGS_PATH", settings_path)
+
+    seen: dict[str, object] = {}
+
+    def capture_style(*, rewrite=None, expand=None):
+        seen["rewrite"] = rewrite
+        seen["expand"] = expand
+
+    monkeypatch.setattr(cli.style, "activate", capture_style)
+    monkeypatch.setattr(cli.jd, "extract", lambda text, **kw: _requirements())
+    monkeypatch.setattr(cli.jd, "verify_verbatim", lambda reqs, text: [])
+    monkeypatch.setattr(
+        cli.fit,
+        "fit",
+        lambda *a, **k: _fit_result(resume, tmp_path / "tailored.docx"),
+    )
+
+    assert cli.main(["--jd", str(jd_file)]) == 0
+    assert seen["rewrite"] == "- Be terse."
+    assert seen["expand"] == "- Be chatty."

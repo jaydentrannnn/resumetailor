@@ -109,6 +109,11 @@ def test_get_config_returns_defaults(client):
     assert body["experience_bullet_share"] == config.EXPERIENCE_BULLET_SHARE
     assert "max_bullets_per_entry" in body
     assert body["max_bullets_per_entry"] == config.MAX_BULLETS_PER_ENTRY
+    assert "rewrite_style_default" in body
+    assert "expand_style_default" in body
+    assert "rewrite_core_rules" in body
+    assert "expand_core_rules" in body
+    assert "NEVER introduce a skill" in body["rewrite_core_rules"]
     # Stored vocabulary (or derived fallback) should be non-empty for a real master resume.
     assert len(body["tag_vocabulary"]) >= 1
 
@@ -231,6 +236,36 @@ def test_settings_round_trip_with_section_weighting(client, tmp_path, monkeypatc
     assert got["max_bullets_per_entry"] == 3
 
 
+def test_settings_round_trip_with_style_overrides(client, tmp_path, monkeypatch):
+    """Custom rewrite/expand style blocks persist through GET/PUT."""
+    c, _ = client
+    _point_settings_at(tmp_path, monkeypatch)
+
+    custom = "- Prefer past tense throughout."
+    res = c.put(
+        "/api/settings",
+        json={"settings": {"rewrite_style": custom, "expand_style": custom}},
+    )
+    assert res.status_code == 200
+    body = res.json()["settings"]
+    assert body["rewrite_style"] == custom
+    assert body["expand_style"] == custom
+
+    got = c.get("/api/settings").json()["settings"]
+    assert got["rewrite_style"] == custom
+    assert got["expand_style"] == custom
+
+
+def test_settings_round_trip_with_model_name(client, tmp_path, monkeypatch):
+    """The blanket model_name override round-trips through settings.json."""
+    c, _ = client
+    _point_settings_at(tmp_path, monkeypatch)
+
+    res = c.put("/api/settings", json={"settings": {"model_name": "gemma4:cloud"}})
+    assert res.status_code == 200
+    assert res.json()["settings"]["model_name"] == "gemma4:cloud"
+
+
 def test_create_job_without_settings_uses_saved_defaults(client, tmp_path, monkeypatch):
     """POST /api/jobs with no `settings` falls back to the active profile's saved ones."""
     c, q = client
@@ -314,6 +349,35 @@ def test_ollama_model_setting_repoints_only_the_ollama_stages(client, monkeypatc
         "facets": "gemma4",
         "skills": "gemma4",
     }
+    config.resolve("claude")
+
+
+def test_model_name_setting_repoints_every_stage(client, monkeypatch):
+    """The blanket model_name field overrides every stage of the chosen profile."""
+    c, _q = client
+    seen: dict[str, object] = {}
+    real_resolve = config.resolve
+
+    def recording_resolve(profile=None, *, overrides=None, effort=None):
+        seen["profile"] = profile
+        seen["overrides"] = dict(overrides or {})
+        return real_resolve(profile, overrides=overrides, effort=effort)
+
+    monkeypatch.setattr(jobs_mod.config, "resolve", recording_resolve)
+    monkeypatch.setattr(jobs_mod.jd, "extract", _stub_no_network_extract)
+
+    res = c.post(
+        "/api/jobs",
+        json={
+            "jd_text": "Some job description.",
+            "settings": {"model": "ollama", "model_name": "gemma4:cloud"},
+        },
+    )
+    assert res.status_code == 200
+    _drain(c, res.json()["job_id"])
+
+    assert seen["profile"] == "ollama"
+    assert seen["overrides"] == dict.fromkeys(config.PURPOSES, "gemma4:cloud")
     config.resolve("claude")
 
 

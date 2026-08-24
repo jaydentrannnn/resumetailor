@@ -824,22 +824,57 @@ def test_the_prompt_advertises_a_band_below_the_budget():
 
 
 def test_the_system_prompt_states_which_way_to_err():
-    assert "Err short, never long." in rewrite._SYSTEM
+    assert "Err short, never long." in rewrite._system()
 
 
 def test_the_system_prompt_forbids_moving_metrics_across_bullet_ids():
     """Regression pin for aeth_b3/zot_b3 cross-wiring of eval metrics."""
-    assert "Never move a number or metric from one bullet id to another" in rewrite._SYSTEM
+    assert "Never move a number or metric from one bullet id to another" in rewrite._system()
 
 
 def test_the_system_prompt_encourages_leadership_and_drive_verbs_without_forcing_them():
-    assert "a stretched \"led\"" in rewrite._SYSTEM
-    assert "do not imply managing people, owning a decision" in rewrite._SYSTEM
+    assert "a stretched \"led\"" in rewrite._system()
+    assert "do not imply managing people, owning a decision" in rewrite._system()
 
 
 def test_the_system_prompt_foregrounds_accomplishment_without_inventing_one():
-    assert "Foreground the accomplishment." in rewrite._SYSTEM
-    assert "never manufacture a result, number, or comparison" in rewrite._SYSTEM
+    assert "Foreground the accomplishment." in rewrite._system()
+    assert "never manufacture a result, number, or comparison" in rewrite._system()
+
+
+def test_default_rewrite_system_prompt_is_byte_identical_to_the_legacy_string():
+    """Splitting core/style must not change output when no override is active."""
+    from resume_tailor import style as style_mod
+
+    style_mod.activate(rewrite=None, expand=None)
+    assert rewrite._system() == rewrite._SYSTEM
+
+
+def test_a_custom_rewrite_style_reaches_the_llm_system_prompt(rewrite_calls):
+    """User overrides replace the editable block but keep locked core rules."""
+    from resume_tailor import style as style_mod
+
+    style_mod.activate(rewrite="- Write every bullet in ALL CAPS for emphasis.", expand=None)
+    calls = rewrite_calls(_reply(a="Built a Python service."))
+    rewrite.rewrite_bullets(
+        [bullet("a", "Built a Python service.", ["python"])],
+        _reqs(),
+        char_budget=202,
+    )
+    system = calls[0]["system"]
+    assert "Write every bullet in ALL CAPS for emphasis." in system
+    assert "NEVER introduce a skill, tool, technology, metric" in system
+    assert "Never move a number or metric from one bullet id to another" in system
+
+
+def test_a_custom_rewrite_style_cannot_drop_locked_core_rules(rewrite_calls):
+    """Fabrication guard rules stay in the system prompt even when the style omits them."""
+    from resume_tailor import style as style_mod
+
+    style_mod.activate(rewrite="- Be concise.", expand=None)
+    system = rewrite._system()
+    assert "NEVER introduce a skill, tool, technology, metric" in system
+    assert "Never bend a bullet toward a keyword to work it in" in system
 
 
 # --- the repair pass ------------------------------------------------------------------

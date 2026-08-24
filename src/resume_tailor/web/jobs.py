@@ -35,6 +35,7 @@ from resume_tailor import (
     report,
     rewrite,
     skills,
+    style,
 )
 from resume_tailor.data import MasterResume
 from resume_tailor.events import ProgressCallback, ProgressEvent
@@ -164,11 +165,11 @@ class JobQueue:
 
         try:
             overrides: dict[str, str] = {}
-            # Broadest first: the blanket Ollama/Gemini tags repoint every stage routed to
-            # that origin, then the two per-stage fields overwrite whichever of them they
-            # name. Reversing this would let a blanket tag clobber an explicit per-stage
-            # choice. Order between the two blanket loops is irrelevant — a stage is
-            # routed to at most one of them in the profile's own specs, never both.
+            # Broadest first: a blanket model name repoints every stage, then origin-specific
+            # tags, then per-stage fields overwrite whichever of them they name.
+            if settings.model_name:
+                for purpose in config.PURPOSES:
+                    overrides[purpose] = settings.model_name
             if settings.ollama_model:
                 for purpose in config.provider_stages(settings.model, "ollama"):
                     overrides[purpose] = settings.ollama_model
@@ -185,6 +186,10 @@ class JobQueue:
                 settings.model,
                 overrides=overrides or None,
                 effort=settings.effort,
+            )
+            style.activate(
+                rewrite=settings.rewrite_style,
+                expand=settings.expand_style,
             )
         except ValueError as exc:
             raise RuntimeError(str(exc)) from exc

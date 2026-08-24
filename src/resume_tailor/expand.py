@@ -22,7 +22,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from . import config, events, llm
+from . import config, events, llm, style
 from .data import Bullet, Experience, MasterResume
 from .fit import FitResult
 from .jd import JobRequirements
@@ -80,6 +80,50 @@ the entry is thin.
 Return one entry per input item, keyed by the exact entry_key you were given. Do not \
 return title, company, dates, or location — those are filled in by code.
 """
+
+#: Locked safety rules always included when a user overrides the editable style block.
+_CORE_RULES = """\
+- NEVER invent a skill, tool, technology, metric, employer, title, date, or claim that is \
+not already present in the source bullets (and their permitted_skills) for that entry. \
+You are expanding and rewording, not embellishing.
+- Preserve every number exactly as written. Do not round, restate, or infer new figures.
+- Each entry gives a `target` character range and a hard `max` for the *combined* text of \
+its bullets (joined with newlines). Err short of `max`, never long — some forms truncate \
+silently past the limit.
+"""
+
+_RETURN_SHAPE = """\
+Return one entry per input item, keyed by the exact entry_key you were given. Do not \
+return title, company, dates, or location — those are filled in by code.
+"""
+
+
+def locked_core_rules() -> str:
+    """Return the non-editable expand rules for display in the settings UI."""
+    return _CORE_RULES.strip()
+
+
+def _system() -> str:
+    """Assemble the expand system prompt, honoring any active style override."""
+    from . import style as style_mod
+
+    if not style_mod.is_overridden("expand"):
+        return _SYSTEM
+    style_block = style_mod.active("expand").strip()
+    if style_block and not style_block.endswith("\n"):
+        style_block += "\n"
+    return (
+        "You expand a candidate's work-experience entries into fuller descriptions for an "
+        'online application form\'s "Experience" / "Description" fields.\n\n'
+        "These fields are NOT a resume page. They usually allow 1,500–2,000 characters and "
+        "are read by recruiters and ATS keyword search. Expand beyond the compressed resume "
+        "bullets: decompose each source bullet into the distinct accomplishments it packs, "
+        "and write one action-verb-led bullet per accomplishment.\n\n"
+        "Absolute rules:\n"
+        f"{_CORE_RULES}"
+        f"{style_block}\n"
+        f"{_RETURN_SHAPE}"
+    )
 
 
 class ExpandedEntryLLM(BaseModel):
@@ -194,6 +238,7 @@ def _cache_path(
         [
             str(_EXPAND_PROMPT_VERSION),
             config.fingerprint("expand"),
+            style.digest("expand"),
             str(char_limit),
             requirements.model_dump_json(),
             *(
@@ -370,7 +415,7 @@ def expand_experience(
         response = client.messages.parse(
             model=config.model_for("expand"),
             max_tokens=config.max_tokens_for("expand"),
-            system=_SYSTEM,
+            system=_system(),
             messages=[{"role": "user", "content": user}],
             output_format=ExpansionLLMResult,
             output_config={"effort": config.effort_for("expand")},

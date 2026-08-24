@@ -74,6 +74,12 @@ class JobSettings(BaseModel):
     #: to every run's budget for a feature most runs have no use for, and would break
     #: every test whose fake LLM client is queued with a fixed number of replies.
     suggest_vocabulary: bool = False
+    #: Editable style block for resume bullet rewriting; ``None`` uses the shipped default.
+    rewrite_style: str | None = Field(default=None, max_length=4000)
+    #: Editable style block for application-form experience expansion; ``None`` uses default.
+    expand_style: str | None = Field(default=None, max_length=4000)
+    #: One blanket model override applied to every stage of the selected profile.
+    model_name: str | None = None
 
 
 class WorkspaceSettings(BaseModel):
@@ -295,6 +301,12 @@ class ConfigResponse(BaseModel):
     experience_bullet_share: float | None = None
     #: Default per-entry bullet cap (MAX_BULLETS_PER_ENTRY); `None` means uncapped.
     max_bullets_per_entry: int | None = None
+    #: Shipped default style blocks for the Tailor tab's prompt editors.
+    rewrite_style_default: str = ""
+    expand_style_default: str = ""
+    #: Locked safety rules shown read-only beside each style editor.
+    rewrite_core_rules: str = ""
+    expand_core_rules: str = ""
     active_workspace_id: str | None = None
     active_workspace_label: str | None = None
     #: True on the first response after the legacy single-slot layout was migrated

@@ -8,7 +8,7 @@ import {
 import { ExperienceCard } from "../components/ExperienceCard";
 import { Field, Toggle } from "../components/Field";
 import { IncludePanel } from "../components/IncludePanel";
-import { ModelSpecField } from "../components/ModelSpecField";
+import { StylePromptField } from "../components/StylePromptField";
 import { SkillsCard } from "../components/SkillsCard";
 import { type RunProgress, runProgress } from "../lib/runProgress";
 import { DEFAULT_SETTINGS, useRunState } from "../state/runState";
@@ -300,6 +300,17 @@ function SettingsPanel({
   // `provider_keys` holds booleans only, never the key itself — this just decides
   // whether to show the warning before a run fails deep in the job queue.
   const missingGeminiKey = usesGemini && config?.provider_keys.gemini === false;
+  const isHybrid = settings.model === "hybrid";
+
+  /** Placeholder for the blanket model override — mirrors the profile's default tag. */
+  function profileModelPlaceholder(): string {
+    if (!config) return "e.g. gemma4:cloud";
+    if (config.ollama_profiles.includes(settings.model)) return config.ollama_model;
+    if (config.gemini_profiles.includes(settings.model)) return config.gemini_model;
+    if (settings.model === "claude") return "claude-sonnet-5";
+    if (settings.model === "lmstudio") return "local-model";
+    return "provider:model";
+  }
 
   return (
     <section className="rounded-xl border border-line bg-panel p-5 shadow-sm">
@@ -404,69 +415,27 @@ function SettingsPanel({
               ))}
             </select>
           </Field>
-          {usesOllama && (
-            <ModelSpecField
-              label="Ollama model (optional)"
-              value={settings.ollama_model}
-              onChange={(v) => set("ollama_model", v)}
-              placeholder={config?.ollama_model ?? "e.g. gemma4"}
-            />
+          {!isHybrid && (
+            <Field
+              label="Model name (optional)"
+              help="Override the model for every stage of the selected profile. Leave blank to use the profile default."
+            >
+              <input
+                type="text"
+                value={settings.model_name ?? ""}
+                onChange={(e) => set("model_name", e.target.value || null)}
+                placeholder={profileModelPlaceholder()}
+                className="field"
+              />
+            </Field>
           )}
-          {usesGemini && (
-            <ModelSpecField
-              label="Gemini model (optional)"
-              value={settings.gemini_model}
-              onChange={(v) => set("gemini_model", v)}
-              placeholder={config?.gemini_model ?? "e.g. gemini-3.5-flash"}
-            />
+          {isHybrid && (
+            <p className="text-xs text-ink-muted sm:col-span-2">
+              Hybrid routes ranking and expansion to Ollama and rewriting to Claude — no
+              single model override applies.
+            </p>
           )}
-          <ModelSpecField
-            label="Rewrite model (optional)"
-            value={settings.rewrite_model}
-            onChange={(v) => set("rewrite_model", v)}
-            placeholder="e.g. claude-sonnet-5"
-          />
-          <ModelSpecField
-            label="Expand model (optional)"
-            value={settings.expand_model}
-            onChange={(v) => set("expand_model", v)}
-            placeholder="e.g. ollama:gemma4:cloud"
-          />
-          <ModelSpecField
-            label="Skills model (optional)"
-            value={settings.skills_model}
-            onChange={(v) => set("skills_model", v)}
-            placeholder="e.g. ollama:gemma4:cloud"
-          />
         </div>
-      </fieldset>
-
-      <fieldset className="mt-6 space-y-2">
-        <legend className="text-sm font-semibold text-ink">Rewriting quality</legend>
-        <Toggle
-          label="Skip semantic scoring"
-          help="Rank on keyword tags only (cheaper; useful for A/B ranking)."
-          checked={settings.no_semantic}
-          onChange={(v) => set("no_semantic", v)}
-        />
-        <Toggle
-          label="Skip widow repair"
-          help="Do not re-cut bullets that wrapped onto a near-empty final line."
-          checked={settings.no_widow_repair}
-          onChange={(v) => set("no_widow_repair", v)}
-        />
-        <Toggle
-          label="Skip verb variety repair"
-          help="Do not revoice colliding opening verbs across bullets."
-          checked={settings.no_verb_repair}
-          onChange={(v) => set("no_verb_repair", v)}
-        />
-        <Toggle
-          label="Merge redundant bullets"
-          help="Only after a measured page overflow; combines near-duplicate lines."
-          checked={settings.merge}
-          onChange={(v) => set("merge", v)}
-        />
       </fieldset>
 
       <div className="mt-6">
@@ -551,6 +520,12 @@ function SettingsPanel({
               </select>
             </Field>
             <Toggle
+              label="Merge redundant bullets"
+              help="Only after a measured page overflow; combines near-duplicate lines."
+              checked={settings.merge}
+              onChange={(v) => set("merge", v)}
+            />
+            <Toggle
               label="Bypass cache"
               help="Re-extract JD and re-score bullets instead of reusing cached files."
               checked={settings.no_cache}
@@ -573,6 +548,44 @@ function SettingsPanel({
               help="Do not ask the model which project tags and courses to show; truncate pools in listed order to fit the line budgets."
               checked={settings.no_facets}
               onChange={(v) => set("no_facets", v)}
+            />
+            <StylePromptField
+              label="Resume bullet style"
+              help="Voice and emphasis rules for resume bullet rewriting. Length and verb variety are also enforced in code by widow and verb repair passes."
+              value={settings.rewrite_style}
+              defaultText={config?.rewrite_style_default ?? ""}
+              lockedCoreRules={config?.rewrite_core_rules ?? ""}
+              onChange={(text) => {
+                if (text === null) {
+                  set("rewrite_style", null);
+                  return;
+                }
+                const trimmed = text.trim();
+                if (!trimmed || trimmed === config?.rewrite_style_default?.trim()) {
+                  set("rewrite_style", null);
+                } else {
+                  set("rewrite_style", text);
+                }
+              }}
+            />
+            <StylePromptField
+              label="Application-form expansion style"
+              help="Voice rules for the longer experience descriptions pasted into application forms."
+              value={settings.expand_style}
+              defaultText={config?.expand_style_default ?? ""}
+              lockedCoreRules={config?.expand_core_rules ?? ""}
+              onChange={(text) => {
+                if (text === null) {
+                  set("expand_style", null);
+                  return;
+                }
+                const trimmed = text.trim();
+                if (!trimmed || trimmed === config?.expand_style_default?.trim()) {
+                  set("expand_style", null);
+                } else {
+                  set("expand_style", text);
+                }
+              }}
             />
           </fieldset>
         )}

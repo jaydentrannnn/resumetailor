@@ -5,14 +5,16 @@
  * on lives in `index.css`, not here — it styles the input/select itself, which
  * callers apply directly rather than through this wrapper.
  */
+import type { ReactNode } from "react";
+
 export function Field({
   label,
   help,
   children,
 }: {
-  label: string;
+  label: ReactNode;
   help?: string;
-  children: React.ReactNode;
+  children: ReactNode;
 }) {
   return (
     <label className="block text-sm">

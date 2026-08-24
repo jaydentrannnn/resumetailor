@@ -62,6 +62,12 @@ export type JobSettings = {
   max_bullets_per_entry: number | null;
   /** What to leave out — contact fields/order, GPA, coursework, whole entries. */
   include: IncludeOptions;
+  /** Editable style block for resume bullet rewriting; null uses the shipped default. */
+  rewrite_style: string | null;
+  /** Editable style block for application-form expansion; null uses the shipped default. */
+  expand_style: string | null;
+  /** One blanket model override applied to every stage of the selected profile. */
+  model_name: string | null;
 };
 
 export type ProgressEvent = {
@@ -195,6 +201,12 @@ export type AppConfig = {
   experience_bullet_share: number | null;
   /** Server default per-entry cap; null means uncapped. */
   max_bullets_per_entry: number | null;
+  /** Shipped default style blocks for the Tailor tab's prompt editors. */
+  rewrite_style_default: string;
+  expand_style_default: string;
+  /** Locked safety rules shown read-only beside each style editor. */
+  rewrite_core_rules: string;
+  expand_core_rules: string;
   active_workspace_id: string | null;
   active_workspace_label: string | null;
   /** True once, on the first /api/config response after a legacy-layout migration. */

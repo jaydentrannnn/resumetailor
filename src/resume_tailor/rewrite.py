@@ -879,6 +879,57 @@ words waste a line and read as padding; distinguish them by what each one actual
 Return one entry per input item, keyed by the exact id you were given.
 """
 
+#: Locked safety rules always included when a user overrides the editable style block.
+_CORE_RULES = """\
+- NEVER introduce a skill, tool, technology, metric, employer, or claim that is not \
+already present in the bullet(s) you are given. You are rewording, not embellishing. A \
+rewrite that adds a technology the candidate never used is a serious error.
+- Never move a number or metric from one bullet id to another. Each figure belongs only \
+to the bullet that already contains it — a sibling's 0.88 or p95 must not appear under a \
+different id, even when both bullets describe evaluation work.
+- When combining multiple bullets into one, do not create new causal relationships \
+between them. Avoid "thereby", "resulting in", and similar phrasing unless the \
+relationship is already explicit in the provided bullets.
+- Preserve every number exactly as written. Do not round, restate, or infer new figures.
+- Never bend a bullet toward a keyword to work it in. A keyword the resume cannot honestly \
+claim is meant to go unused; a forced one reads as padding and costs a line.
+- Never upgrade the scope beyond what the bullet states: do not imply managing people, \
+owning a decision, or leading a team the source never mentions.
+- Do not manufacture a result, number, or comparison that is not already in the source \
+bullet.
+- Length is a cliff, not a limit. Each bullet gives a `target` range and a hard `max`. \
+Text runs to a fixed line width, so a bullet that ends even two characters past `max` \
+wraps onto an extra line holding a single word, wasting a whole line of the page. Landing \
+25 characters short of `target` wastes nothing. Err short, never long.
+"""
+
+_RETURN_SHAPE = """\
+Return one entry per input item, keyed by the exact id you were given.
+"""
+
+
+def locked_core_rules() -> str:
+    """Return the non-editable rewrite rules for display in the settings UI."""
+    return _CORE_RULES.strip()
+
+
+def _system() -> str:
+    """Assemble the rewrite system prompt, honoring any active style override."""
+    from . import style as style_mod
+
+    if not style_mod.is_overridden("rewrite"):
+        return _SYSTEM
+    style_block = style_mod.active("rewrite").strip()
+    if style_block and not style_block.endswith("\n"):
+        style_block += "\n"
+    return (
+        "You rewrite resume bullet points so they mirror the language of a specific job posting.\n\n"
+        "Absolute rules:\n"
+        f"{_CORE_RULES}"
+        f"{style_block}\n"
+        f"{_RETURN_SHAPE}"
+    )
+
 #: How far below `max` the advertised target range opens. Wide enough that hitting it
 #: leaves real headroom, narrow enough that the model does not aim at a half-empty line —
 #: it spans the 180-199 window both widow-free runs already occupied.
@@ -1122,7 +1173,7 @@ def _retry_fabrications(
     response = client.messages.parse(
         model=config.model_for("rewrite"),
         max_tokens=config.max_tokens_for("rewrite"),
-        system=_SYSTEM,
+        system=_system(),
         messages=[{"role": "user", "content": user}],
         output_format=RewriteResult,
         output_config={"effort": config.effort_for("rewrite")},
@@ -1242,7 +1293,7 @@ def _polish(
     response = client.messages.parse(
         model=config.model_for("rewrite"),
         max_tokens=config.max_tokens_for("rewrite"),
-        system=_SYSTEM,
+        system=_system(),
         messages=[{"role": "user", "content": user}],
         output_format=RewriteResult,
         output_config={"effort": config.effort_for("rewrite")},
@@ -1388,7 +1439,7 @@ def rewrite_bullets(
     response = client.messages.parse(
         model=config.model_for("rewrite"),
         max_tokens=config.max_tokens_for("rewrite"),
-        system=_SYSTEM,
+        system=_system(),
         messages=[{"role": "user", "content": user}],
         output_format=RewriteResult,
         # Raise this stage's effort if rewrites come back bland. The SDK merges `format`
@@ -1553,7 +1604,7 @@ def _merge_bullets(
     response = client.messages.parse(
         model=config.model_for("rewrite"),
         max_tokens=config.max_tokens_for("rewrite"),
-        system=_SYSTEM,
+        system=_system(),
         messages=[{"role": "user", "content": user}],
         output_format=RewriteResult,
         output_config={"effort": config.effort_for("rewrite")},
