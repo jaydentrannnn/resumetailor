@@ -247,7 +247,7 @@ def _import_contact_from_paragraph(name: str, contact_para: _Para | None) -> Con
 
     location = ""
     for seg in segments:
-        if not seg or seg == email or seg == phone or "@" in seg:
+        if not seg or seg in (email, phone) or "@" in seg:
             continue
         low = seg.lower()
         if "linkedin" in low:
@@ -263,7 +263,9 @@ def _import_contact_from_paragraph(name: str, contact_para: _Para | None) -> Con
         location = seg
         break
 
-    return Contact(name=name, email=email, phone=phone, location=location, linkedin=linkedin, github=github)
+    return Contact(
+        name=name, email=email, phone=phone, location=location, linkedin=linkedin, github=github
+    )
 
 
 def _import_contact_from_slots(
@@ -354,7 +356,9 @@ def _import_experience_entries(
 
         label = company or header_para.text.strip() or f"paragraph {header_para.id}"
         if not company:
-            warnings.append(f'experience entry at paragraph {header_para.id}: could not detect a company name')
+            warnings.append(
+                f"experience entry at paragraph {header_para.id}: could not detect a company name"
+            )
         if not dates_text:
             warnings.append(f"{label}: no dates detected")
         if not bullet_paras:
@@ -404,7 +408,9 @@ def _import_project_entries(
 
         label = name or header_para.text.strip() or f"paragraph {header_para.id}"
         if not name:
-            warnings.append(f'project entry at paragraph {header_para.id}: could not detect a project name')
+            warnings.append(
+                f"project entry at paragraph {header_para.id}: could not detect a project name"
+            )
         if not bullet_paras:
             warnings.append(f"{label}: no bullets detected")
 
@@ -463,7 +469,9 @@ def _import_education_entries(body: list[_Para]) -> tuple[list[Education], list[
 
         label = school or header_para.text.strip() or f"paragraph {header_para.id}"
         if not school:
-            warnings.append(f'education entry at paragraph {header_para.id}: could not detect a school name')
+            warnings.append(
+                f"education entry at paragraph {header_para.id}: could not detect a school name"
+            )
         if not degree:
             warnings.append(f"{label}: no degree line detected")
 
@@ -728,7 +736,9 @@ def _place_leftovers(
     merge function once it has a non-empty `leftovers` list."""
     target_idx = _target_section_index(sections, kind, inc_title)
     if target_idx is None:
-        new_section = section_cls(id=_fresh_id(inc_title, taken_section_ids), title=inc_title, entries=[])
+        new_section = section_cls(
+            id=_fresh_id(inc_title, taken_section_ids), title=inc_title, entries=[]
+        )
         sections.append(new_section)
         stats.added_sections.append(inc_title)
         return len(sections) - 1
@@ -782,7 +792,9 @@ def _merge_experience(
         for inc in leftovers:
             entry_id = _fresh_id(inc.company or "role", taken_entry_ids)
             sections[target_idx].entries.append(
-                inc.model_copy(update={"id": entry_id, "bullets": _remint_bullets(inc.bullets, entry_id)})
+                inc.model_copy(
+                    update={"id": entry_id, "bullets": _remint_bullets(inc.bullets, entry_id)}
+                )
             )
             stats.added.append(inc.company)
 
@@ -832,13 +844,18 @@ def _merge_projects(
         for inc in leftovers:
             entry_id = _fresh_id(inc.name or "project", taken_entry_ids)
             sections[target_idx].entries.append(
-                inc.model_copy(update={"id": entry_id, "bullets": _remint_bullets(inc.bullets, entry_id)})
+                inc.model_copy(
+                    update={"id": entry_id, "bullets": _remint_bullets(inc.bullets, entry_id)}
+                )
             )
             stats.added.append(inc.name)
 
 
 def _merge_education(
-    sections: list[Section], incoming_sections: list[Section], taken_section_ids: set[str], stats: MergeStats
+    sections: list[Section],
+    incoming_sections: list[Section],
+    taken_section_ids: set[str],
+    stats: MergeStats,
 ) -> None:
     """Two matching passes, exact before near-miss, so a resume already holding both a
     short and a long spelling of one school (see `_is_near_miss`) resolves unambiguously:
@@ -926,7 +943,10 @@ def _merge_education(
 
 
 def _merge_skills(
-    sections: list[Section], incoming_sections: list[Section], taken_section_ids: set[str], stats: MergeStats
+    sections: list[Section],
+    incoming_sections: list[Section],
+    taken_section_ids: set[str],
+    stats: MergeStats,
 ) -> None:
     existing_by_key: dict[str, list[tuple[int, int]]] = {}
     for si, sec in enumerate(sections):

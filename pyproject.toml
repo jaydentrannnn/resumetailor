@@ -24,3 +24,43 @@ markers = [
     "owner: needs the developer's own data/master_resume.json or templates/main_template.docx; excluded by default so the suite is reproducible on any machine.",
 ]
 addopts = "-m \"not owner\""
+
+[tool.ruff]
+target-version = "py313"
+line-length = 100
+extend-exclude = ["frontend"]
+
+[tool.ruff.lint]
+# Conservative starting set: pyflakes, pycodestyle, isort, bugbear, pyupgrade,
+# flake8-simplify. Not enabling anything stricter (docstrings, complexity, etc.) on
+# the first pass — this is meant to be actionable, not a wall of noise.
+select = ["E", "F", "I", "B", "UP", "SIM"]
+
+[tool.ruff.lint.flake8-bugbear]
+# B008 flags a function call as a mutable-default trap — but `File(...)`/`Form(...)`
+# as a parameter default is FastAPI's actual dependency-injection contract, not a bug.
+extend-immutable-calls = ["fastapi.File", "fastapi.Form"]
+
+# BLE001 (bare `except Exception`) isn't in the selected set above; the repo already
+# marks its few deliberate catch-alls with `# noqa: BLE001` for when it is enabled.
+
+[tool.ruff.lint.per-file-ignores]
+# Test files run long on descriptive assertion messages and inline fixture literals
+# more often than production code does, and wrapping those buys little readability —
+# unlike the same rule in src/, where every violation was reviewed and fixed rather
+# than exempted.
+"tests/*.py" = ["E501"]
+
+[tool.mypy]
+python_version = "3.13"
+mypy_path = "src"
+ignore_missing_imports = true
+# Non-strict start: report real errors in annotated code without demanding annotations
+# everywhere first. Tighten (disallow_untyped_defs, etc.) later per-module if useful.
+warn_redundant_casts = true
+warn_unused_ignores = true
+# Without this, every aliased/extra="forbid" Pydantic model (most of data.py and
+# web/schemas.py) produces spurious call-arg/arg-type errors mypy can't resolve on
+# its own — verified against MasterResume(comment=...), whose `comment` field aliases
+# `_comment` via `populate_by_name=True` and is valid at runtime.
+plugins = ["pydantic.mypy"]

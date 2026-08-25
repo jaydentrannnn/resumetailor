@@ -22,8 +22,9 @@ from resume_tailor.data import (
     ListSection,
     MasterResume,
 )
-from resume_tailor.template_profile import DetectedSection, HeadingPrototype
 from resume_tailor.render import build_context
+from resume_tailor.template_profile import HeadingPrototype
+from tests.fixtures import _table_resume
 from tests.test_template_analyze import (
     _add_bullet_numbering,
     _add_hyperlink,
@@ -31,7 +32,6 @@ from tests.test_template_analyze import (
     _make_bullet,
     _standard_resume,
 )
-from tests.fixtures import _table_resume
 
 
 def _run_bold(run) -> bool:
@@ -169,12 +169,13 @@ def test_build_omits_disabled_projects(tmp_path: Path):
 
 def test_build_project_header_with_github_link(tmp_path: Path):
     """Three-part project headers (name | tech | Github\\tdate) tag without overlap errors."""
+    from docx.oxml import OxmlElement
+
     from tests.test_template_analyze import (
         _add_bullet_numbering,
         _add_hyperlink,
         _make_bullet,
     )
-    from docx.oxml import OxmlElement
 
     def build(document):
         num_id = _add_bullet_numbering(document)

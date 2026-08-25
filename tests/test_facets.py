@@ -16,7 +16,6 @@ from resume_tailor.facets import (
     labels_are_equivalent,
     project_header_tech_budget,
     rename_is_jd_anchored,
-    rename_preserves_claim,
     select_facets,
 )
 from resume_tailor.jd import JobRequirements, Keyword

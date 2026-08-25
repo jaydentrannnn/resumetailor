@@ -13,6 +13,14 @@ from pydantic import BaseModel, Field
 from .. import config
 from ..include import IncludeOptions
 
+#: Every `source_sha256` request field below is interpolated straight into a filesystem
+#: path in `web/template_ops.py` (`_upload_cache_dir() / f"{sha}.docx"`, etc.). Since
+#: these arrive in a JSON body rather than a path param, nothing else stops a value
+#: like `"../../../etc/passwd"` from reaching `pathlib`, which does not normalise `..`.
+#: A real sha256 hex digest can never contain `/`; enforcing the shape here rejects a
+#: traversal attempt at the schema boundary, before any path is built.
+_SHA256_HEX_PATTERN = r"^[0-9a-f]{64}$"
+
 
 class JobSettings(BaseModel):
     """Per-run knobs, mirroring the CLI flags in `tailor.py`."""
@@ -119,7 +127,10 @@ class CreateJobRequest(BaseModel):
     panel always shows and sends the profile's current defaults explicitly.
     """
 
-    jd_text: str = Field(min_length=1)
+    # 50,000 chars comfortably covers any real posting (a few KB at most, even a
+    # verbose one with full benefits/legal boilerplate) while bounding what reaches
+    # `jd.extract_consensus` — which sends this text to the model up to 3 times.
+    jd_text: str = Field(min_length=1, max_length=50_000)
     settings: JobSettings | None = None
 
 
@@ -249,7 +260,7 @@ class JobStatusResponse(BaseModel):
     """Current state of one queued or finished run."""
 
     job_id: str
-    status: Literal["queued", "running", "succeeded", "failed"]
+    status: Literal["queued", "running", "succeeded", "failed", "cancelled"]
     queue_position: int | None = None
     error: str | None = None
     report: RunReportOut | None = None
@@ -550,7 +561,7 @@ class TemplateRemapRequest(BaseModel):
     not a section" regardless of what the heuristics concluded.
     """
 
-    source_sha256: str
+    source_sha256: str = Field(pattern=_SHA256_HEX_PATTERN)
     overrides: dict[int, str | None] = Field(default_factory=dict)
 
 
@@ -559,7 +570,7 @@ class TemplatePreviewDraftRequest(BaseModel):
     tagged template and render the master resume through it, without touching the live
     template slot."""
 
-    source_sha256: str
+    source_sha256: str = Field(pattern=_SHA256_HEX_PATTERN)
     profile: dict[str, Any]
 
 
@@ -742,7 +753,7 @@ class ProposalGenerateRequest(BaseModel):
     request's own gaps (near-miss tags, unclassified opening verbs) drive most of the
     prompt regardless."""
 
-    jd_text: str = ""
+    jd_text: str = Field(default="", max_length=50_000)
 
 
 class ProposalApproveRequest(BaseModel):

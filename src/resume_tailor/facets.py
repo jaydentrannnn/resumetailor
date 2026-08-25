@@ -306,20 +306,21 @@ def labels_are_equivalent(old: str, new: str) -> bool:
     # `"react"` both spuriously "start with" a single letter and `labels_are_equivalent`
     # would license "C++" -> "cloud computing" or "R" -> "React". 2 is the minimal floor
     # that still keeps legitimate short renames like Go/Golang and CI/CI-CD.
-    if old_acro and new_acro and min(len(old_acro), len(new_acro)) >= 2:
-        if old_acro.startswith(new_acro) or new_acro.startswith(old_acro):
-            return True
+    if (
+        old_acro
+        and new_acro
+        and min(len(old_acro), len(new_acro)) >= 2
+        and (old_acro.startswith(new_acro) or new_acro.startswith(old_acro))
+    ):
+        return True
 
     old_tokens, new_tokens = _token_set(old), _token_set(new)
-    if old_tokens and new_tokens:
-        if old_tokens <= new_tokens or new_tokens <= old_tokens:
-            return True
+    if old_tokens and new_tokens and (old_tokens <= new_tokens or new_tokens <= old_tokens):
+        return True
 
     # Whole-phrase alignment: an acronym embedded alongside other words, not just the
     # entire label (LLM fine-tuning <-> large language model fine-tuning).
-    if _aligns(old, new) or _aligns(new, old):
-        return True
-    return False
+    return bool(_aligns(old, new) or _aligns(new, old))
 
 
 #: Characters that join *distinct* claims inside one label. "." "-" "+" "#" are internal
@@ -561,7 +562,7 @@ def apply(
             # Secondary education blocks: clear so we do not duplicate the line.
             edu.coursework = []
 
-    for group, items in zip(copy.skills, result.skills):
+    for group, items in zip(copy.skills, result.skills, strict=False):
         group.items = list(items)
     return copy
 

@@ -164,6 +164,16 @@ matches any entry id in any experience/project section — one flat namespace). 
 after scoring and before facets. An excluded entry still appears in the application-form
 expansion output; only the tailored `.docx` omits it.
 
+- **The CLI is otherwise entirely flag-driven, on purpose** — every behavior above
+  traces to an explicit `--flag`, so a scripted/looped bulk-apply run behaves the same
+  regardless of what's saved in a profile's web UI. `model_name`, `rewrite_style`, and
+  `expand_style` are the sole exceptions: `tailor.py` picks those three up from the
+  active profile's saved `settings.json` (`tailor.py`'s `main`, right after
+  `workspace.bootstrap`), so a preference set once in the web UI doesn't need
+  retyping as a flag on every run. No other saved setting (`pages`, `experience`,
+  `include`, `fill_target`, …) is read from `settings.json` here — those always come
+  from argparse defaults.
+
 It also selects the backend, which is what makes bulk applying affordable:
 
 ```powershell

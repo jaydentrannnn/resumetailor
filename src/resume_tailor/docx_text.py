@@ -16,8 +16,8 @@ in the same space as `paragraph.text`, including hyperlink text.
 from __future__ import annotations
 
 import re
+from collections.abc import Iterator
 from dataclasses import dataclass
-from typing import Iterator
 
 from docx.oxml.ns import qn
 from docx.table import Table, _Cell
@@ -206,10 +206,7 @@ def has_nested_tables(doc) -> bool:
     A resume built this way cannot be read as a single reading column with any
     confidence, so callers use this to block rather than attempt to flatten it.
     """
-    for table in doc.tables:
-        if table._tbl.find(f".//{_TC_TAG}/{_TBL_TAG}") is not None:
-            return True
-    return False
+    return any(table._tbl.find(f".//{_TC_TAG}/{_TBL_TAG}") is not None for table in doc.tables)
 
 
 def iter_document_paragraphs(

@@ -20,7 +20,7 @@ import subprocess
 import sys
 import tempfile
 import threading
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 import docx
@@ -87,7 +87,7 @@ def _file_info(path: Path) -> TemplateFileInfo:
         exists=True,
         path=str(path),
         size_bytes=stat.st_size,
-        modified_at=datetime.fromtimestamp(stat.st_mtime, tz=timezone.utc).isoformat(
+        modified_at=datetime.fromtimestamp(stat.st_mtime, tz=UTC).isoformat(
             timespec="seconds"
         ),
     )
@@ -234,9 +234,7 @@ def info() -> TemplateInfoResponse:
 
 def _library_root() -> Path:
     """Return the library directory (creates it on demand)."""
-    root = getattr(config, "TEMPLATE_LIBRARY_DIR", None) or (
-        config.TEMPLATES_DIR / "library"
-    )
+    root = config.TEMPLATE_LIBRARY_DIR
     root.mkdir(parents=True, exist_ok=True)
     return root
 
@@ -304,7 +302,7 @@ def _sha256_file(path: Path) -> str | None:
 
 def _new_library_id() -> str:
     """Allocate a filesystem-safe unique library entry id."""
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     return f"{stamp}-{secrets.token_hex(2)}"
 
 
@@ -407,7 +405,7 @@ def _snapshot_live_to_library(
         meta = {
             "id": entry_id,
             "label": label,
-            "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "created_at": datetime.now(UTC).isoformat(timespec="seconds"),
             "source_filename": source_filename,
             "sha256": sha,
             "has_profile": has_profile,
@@ -479,7 +477,7 @@ def _library_preserve_orphan_live() -> None:
             "current live template is not saved. Delete one before replacing."
         )
     label = "Default" if not metas else (
-        f"Autosaved {datetime.now(timezone.utc).strftime('%Y-%m-%d %H:%M')} UTC"
+        f"Autosaved {datetime.now(UTC).strftime('%Y-%m-%d %H:%M')} UTC"
     )
     # Disambiguate if the autosaved label somehow collides.
     base = label
@@ -726,12 +724,18 @@ def _prune_upload_cache(*, max_age_seconds: float = 24 * 3600) -> None:
     install or reset) would otherwise leak its upload forever; this runs opportunistically
     whenever a new upload is cached, which is cheap and frequent enough that unbounded
     growth never accumulates.
+
+    Globs every file, not just `*.docx`: `preview_source`/`preview_draft` also cache
+    rendered `{sha}.source.pdf`/`{sha}.draft.pdf` alongside the upload in this same
+    directory, and a `*.docx`-only glob left those — the largest, most PII-dense
+    artifacts here — never aged out. `entry.unlink()` on something that isn't a
+    plain file (there shouldn't be any) raises `OSError`, already caught below.
     """
     directory = _upload_cache_dir()
     if not directory.exists():
         return
-    cutoff = datetime.now(timezone.utc).timestamp() - max_age_seconds
-    for entry in directory.glob("*.docx"):
+    cutoff = datetime.now(UTC).timestamp() - max_age_seconds
+    for entry in directory.glob("*"):
         try:
             if entry.stat().st_mtime < cutoff:
                 entry.unlink()
@@ -754,7 +758,18 @@ def _load_cached_upload(sha: str) -> bytes:
     the wizard is pointing at a sha that was never analyzed — both are "start over",
     the same class of problem as a bad upload.
     """
-    path = _upload_cache_dir() / f"{sha}.docx"
+    directory = _upload_cache_dir()
+    path = directory / f"{sha}.docx"
+    # Defense in depth: every caller today reaches `sha` through a schema field
+    # already pattern-constrained to a bare hex digest (`web/schemas.py`'s
+    # `_SHA256_HEX_PATTERN`), which cannot contain `/` or `..`. This second check
+    # means a future caller that skips that schema still cannot escape the cache
+    # directory, since `pathlib` itself does not normalise `..`.
+    if directory.resolve() not in path.resolve().parents:
+        raise TemplateValidationError(
+            "This upload is no longer available for preview/remap — analyze the file "
+            "again."
+        )
     if not path.exists():
         raise TemplateValidationError(
             "This upload is no longer available for preview/remap — analyze the file "
@@ -864,23 +879,32 @@ def preview_draft(source_sha256: str, profile: TemplateProfile | dict) -> Path:
 
     directory = _upload_cache_dir()
     directory.mkdir(parents=True, exist_ok=True)
-    with LOCK:
-        with tempfile.TemporaryDirectory() as stage_dir:
-            stage = Path(stage_dir)
-            staged_src = stage / "baseline.docx"
-            staged_tagged = stage / "main_template.docx"
-            staged_src.write_bytes(raw)
+    with LOCK, tempfile.TemporaryDirectory() as stage_dir:
+        stage = Path(stage_dir)
+        staged_src = stage / "baseline.docx"
+        staged_tagged = stage / "main_template.docx"
+        staged_src.write_bytes(raw)
+        # `build_from_profile` raises plain `RuntimeError` for every mapping problem
+        # (a missing field, a paragraph id out of range, …) — indistinguishable, to a
+        # bare `except RuntimeError`, from `render.to_pdf` below genuinely having no
+        # PDF backend available. Re-raising as `TemplateBuildError` (unlike
+        # `_install_with_profile`'s equivalent wrap, this one only wraps the build
+        # call, not the render/PDF steps) lets the route tell "your mapping is
+        # incomplete" from "install LibreOffice" apart.
+        try:
             template_build.build_from_profile(staged_src, staged_tagged, confirmed)
+        except Exception as exc:
+            raise TemplateBuildError(f"Draft build failed: {exc}", log=str(exc)) from exc
 
-            docx_path = directory / f"{source_sha256}.draft.docx"
-            pdf_path = directory / f"{source_sha256}.draft.pdf"
-            render.render(
-                data.load(),
-                template=staged_tagged,
-                out=docx_path,
-                layout=template_profile.active_layout(confirmed),
-            )
-            render.to_pdf(docx_path, pdf_path)
+        docx_path = directory / f"{source_sha256}.draft.docx"
+        pdf_path = directory / f"{source_sha256}.draft.pdf"
+        render.render(
+            data.load(),
+            template=staged_tagged,
+            out=docx_path,
+            layout=template_profile.active_layout(confirmed),
+        )
+        render.to_pdf(docx_path, pdf_path)
     return pdf_path
 
 
@@ -1009,13 +1033,11 @@ def install_baseline(
         _library_preserve_orphan_live()
         _library_ensure_room_for_new(label=resolved_label)
 
-    response = _install_with_profile(raw, filename, profile)
+    # `_install_with_profile` snapshots the library entry itself, inside the same
+    # `LOCK` hold as its commit — see its docstring. It is not done here, in a second
+    # separate acquisition, specifically to close that gap.
+    response = _install_with_profile(raw, filename, profile, label=resolved_label)
 
-    with LOCK:
-        _library_record_after_install(
-            label=resolved_label,
-            source_filename=Path(filename).name,
-        )
     # The wizard's cached upload (for remap/preview) has now become the live template;
     # nothing further needs it, and keeping it around would just be dead weight until
     # `_prune_upload_cache`'s 24h sweep got to it.
@@ -1031,8 +1053,18 @@ def _install_with_profile(
     raw: bytes,
     filename: str,
     profile: TemplateProfile | dict,
+    *,
+    label: str,
 ) -> TemplateBuildResponse:
-    """Staged profile install: build + smoke-render, then atomic commit."""
+    """Staged profile install: build + smoke-render, then atomic commit.
+
+    The library snapshot (`_library_record_after_install`) is taken inside this same
+    `with LOCK:` block, immediately after the commit — not by the caller in a second,
+    separate lock acquisition. Two concurrent installs interleaving between "commit"
+    and "record" would otherwise let the second commit's bytes already be live by the
+    time the first request's record step reads `config.BASELINE_TEMPLATE_PATH`, filing
+    the *second* install's content under the *first* request's label.
+    """
     confirmed = (
         profile
         if isinstance(profile, TemplateProfile)
@@ -1047,104 +1079,116 @@ def _install_with_profile(
         with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as tmp:
             tmp.write(raw)
             tmp_path = Path(tmp.name)
+        # Everything below is wrapped in `try`/`finally` on `tmp_path` alone (not two
+        # separate `tmp_path.unlink(missing_ok=True)` calls at the two points that used
+        # to be tmp_path's last use) — `baseline.parent.mkdir`, the three backup
+        # `read_bytes()`/`copy2()` calls, and entering `TemporaryDirectory()` all sit
+        # between those two points and could raise, which previously leaked the temp
+        # file into the system temp dir on any of those paths.
         try:
-            docx.Document(str(tmp_path))
-        except Exception as exc:
-            tmp_path.unlink(missing_ok=True)
-            raise TemplateValidationError(
-                f"File is not a readable .docx: {exc}"
-            ) from exc
+            try:
+                docx.Document(str(tmp_path))
+            except Exception as exc:
+                raise TemplateValidationError(
+                    f"File is not a readable .docx: {exc}"
+                ) from exc
 
-        baseline = config.BASELINE_TEMPLATE_PATH
-        tagged = config.DEFAULT_TEMPLATE_PATH
-        profile_file = template_profile.profile_path()
-        baseline.parent.mkdir(parents=True, exist_ok=True)
+            baseline = config.BASELINE_TEMPLATE_PATH
+            tagged = config.DEFAULT_TEMPLATE_PATH
+            profile_file = template_profile.profile_path()
+            baseline.parent.mkdir(parents=True, exist_ok=True)
 
-        previous_baseline: bytes | None = (
-            baseline.read_bytes() if baseline.exists() else None
-        )
-        previous_tagged: bytes | None = tagged.read_bytes() if tagged.exists() else None
-        previous_profile: bytes | None = (
-            profile_file.read_bytes() if profile_file.exists() else None
-        )
+            previous_baseline: bytes | None = (
+                baseline.read_bytes() if baseline.exists() else None
+            )
+            previous_tagged: bytes | None = (
+                tagged.read_bytes() if tagged.exists() else None
+            )
+            previous_profile: bytes | None = (
+                profile_file.read_bytes() if profile_file.exists() else None
+            )
 
-        if previous_baseline is not None:
-            stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
-            backup_dir = baseline.parent / "backups"
-            backup_dir.mkdir(parents=True, exist_ok=True)
-            shutil.copy2(baseline, backup_dir / f"original_export.{stamp}.docx")
-            if previous_profile is not None:
-                shutil.copy2(
-                    profile_file, backup_dir / f"template_profile.{stamp}.json"
-                )
-
-        def _restore() -> None:
-            """Roll baseline / tagged / profile back to their pre-install bytes."""
             if previous_baseline is not None:
-                baseline.write_bytes(previous_baseline)
-            elif baseline.exists():
-                baseline.unlink()
-            if previous_tagged is not None:
-                tagged.write_bytes(previous_tagged)
-            elif tagged.exists():
-                tagged.unlink()
-            if previous_profile is not None:
-                profile_file.write_bytes(previous_profile)
-            elif profile_file.exists():
-                profile_file.unlink()
+                stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+                backup_dir = baseline.parent / "backups"
+                backup_dir.mkdir(parents=True, exist_ok=True)
+                shutil.copy2(baseline, backup_dir / f"original_export.{stamp}.docx")
+                if previous_profile is not None:
+                    shutil.copy2(
+                        profile_file, backup_dir / f"template_profile.{stamp}.json"
+                    )
 
-        with tempfile.TemporaryDirectory() as stage_dir:
-            stage = Path(stage_dir)
-            staged_src = stage / "baseline.docx"
-            staged_out = stage / "main_template.docx"
-            staged_profile = stage / "template_profile.json"
-            shutil.copy2(tmp_path, staged_src)
+            def _restore() -> None:
+                """Roll baseline / tagged / profile back to their pre-install bytes."""
+                if previous_baseline is not None:
+                    baseline.write_bytes(previous_baseline)
+                elif baseline.exists():
+                    baseline.unlink()
+                if previous_tagged is not None:
+                    tagged.write_bytes(previous_tagged)
+                elif tagged.exists():
+                    tagged.unlink()
+                if previous_profile is not None:
+                    profile_file.write_bytes(previous_profile)
+                elif profile_file.exists():
+                    profile_file.unlink()
+
+            with tempfile.TemporaryDirectory() as stage_dir:
+                stage = Path(stage_dir)
+                staged_src = stage / "baseline.docx"
+                staged_out = stage / "main_template.docx"
+                staged_profile = stage / "template_profile.json"
+                shutil.copy2(tmp_path, staged_src)
+
+                log = ""
+                try:
+                    save_profile(confirmed, staged_profile)
+                    exit_code, log = _run_build(
+                        source=staged_src,
+                        output=staged_out,
+                        profile_path=staged_profile,
+                    )
+                    if exit_code != 0 or not staged_out.exists():
+                        # In-process fallback when the script seam fails or a test stub
+                        # does not write the staged output path.
+                        try:
+                            template_build.build_from_profile(
+                                staged_src, staged_out, confirmed
+                            )
+                            log = (
+                                log + "\n(in-process profile build OK)\n"
+                            ).strip()
+                        except Exception as exc:
+                            raise TemplateBuildError(
+                                "Profile build failed during staged install.",
+                                log=(log + f"\n{exc}").strip(),
+                            ) from exc
+
+                    _smoke_render(staged_out)
+                    _verify_staged_build(staged_out, confirmed)
+                except TemplateBuildError:
+                    raise
+                except Exception as exc:
+                    raise TemplateBuildError(
+                        f"Staged build or smoke render failed: {exc}",
+                        log=(log + f"\n{exc}").strip(),
+                    ) from exc
+
+                try:
+                    shutil.copy2(staged_src, baseline)
+                    shutil.copy2(staged_out, tagged)
+                    shutil.copy2(staged_profile, profile_file)
+                except Exception as exc:
+                    _restore()
+                    raise TemplateBuildError(
+                        f"Failed to commit staged template: {exc}",
+                        log=log.strip(),
+                    ) from exc
+
+            # Snapshotted here, still under `LOCK`, rather than by the caller after this
+            # function returns — see the docstring above for why the gap mattered.
+            _library_record_after_install(label=label, source_filename=Path(filename).name)
+            invalidate_preview()
+            return TemplateBuildResponse(ok=True, log=log.strip(), info=info())
+        finally:
             tmp_path.unlink(missing_ok=True)
-
-            log = ""
-            try:
-                save_profile(confirmed, staged_profile)
-                exit_code, log = _run_build(
-                    source=staged_src,
-                    output=staged_out,
-                    profile_path=staged_profile,
-                )
-                if exit_code != 0 or not staged_out.exists():
-                    # In-process fallback when the script seam fails or a test stub
-                    # does not write the staged output path.
-                    try:
-                        template_build.build_from_profile(
-                            staged_src, staged_out, confirmed
-                        )
-                        log = (
-                            log + "\n(in-process profile build OK)\n"
-                        ).strip()
-                    except Exception as exc:
-                        raise TemplateBuildError(
-                            "Profile build failed during staged install.",
-                            log=(log + f"\n{exc}").strip(),
-                        ) from exc
-
-                _smoke_render(staged_out)
-                _verify_staged_build(staged_out, confirmed)
-            except TemplateBuildError:
-                raise
-            except Exception as exc:
-                raise TemplateBuildError(
-                    f"Staged build or smoke render failed: {exc}",
-                    log=(log + f"\n{exc}").strip(),
-                ) from exc
-
-            try:
-                shutil.copy2(staged_src, baseline)
-                shutil.copy2(staged_out, tagged)
-                shutil.copy2(staged_profile, profile_file)
-            except Exception as exc:
-                _restore()
-                raise TemplateBuildError(
-                    f"Failed to commit staged template: {exc}",
-                    log=log.strip(),
-                ) from exc
-
-        invalidate_preview()
-        return TemplateBuildResponse(ok=True, log=log.strip(), info=info())

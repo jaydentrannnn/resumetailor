@@ -425,7 +425,7 @@ def test_empty_pool_returns_empty_plan_without_calling_model(skills_calls):
 
 
 def test_paste_line_and_format_markdown():
-    from resume_tailor.skills import SkillSuggestion, SkillsPlan
+    from resume_tailor.skills import SkillsPlan, SkillSuggestion
 
     plan = SkillsPlan(
         skills=[

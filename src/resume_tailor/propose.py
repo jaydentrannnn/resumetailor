@@ -22,7 +22,7 @@ from __future__ import annotations
 
 import hashlib
 import re
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import TYPE_CHECKING
 
@@ -109,7 +109,7 @@ _NEAR_MISS_TAG_RE = re.compile(r'bullet tag: "(.+)"')
 
 
 def near_miss_alias_candidates(
-    requirements: "JobRequirements", master: "MasterResume"
+    requirements: JobRequirements, master: MasterResume
 ) -> list[tuple[str, str]]:
     """(JD phrase, existing bullet tag) pairs — the exact spelling mismatches a tag
     alias exists to fix, drawn from `report.diagnose_gaps`'s "near_miss" gaps."""
@@ -123,7 +123,7 @@ def near_miss_alias_candidates(
     return pairs
 
 
-def unclassified_opening_verbs(master: "MasterResume") -> list[str]:
+def unclassified_opening_verbs(master: MasterResume) -> list[str]:
     """Opening verbs this resume's bullets actually use that no verb family claims.
 
     `config.VERB_FAMILIES`'s own docstring names an unlisted opener a silently missed
@@ -245,7 +245,7 @@ def propose_vocabulary(
 def _proposal_id(kind: str, key: str, value: str) -> str:
     """Stable id from (kind, key, value), so the same proposal from two separate runs
     dedupes into one queue entry instead of stacking."""
-    digest = hashlib.sha256(f"{kind}|{key}|{value}".encode("utf-8")).hexdigest()[:6]
+    digest = hashlib.sha256(f"{kind}|{key}|{value}".encode()).hexdigest()[:6]
     return f"p-{digest}"
 
 
@@ -267,7 +267,7 @@ def filter_proposals(
     rejected_aliases = {(r.alias or "").strip().lower() for r in rejected if r.kind == "tag_alias"}
     rejected_verbs = {(r.verb or "").strip().lower() for r in rejected if r.kind == "verb_family"}
 
-    now = datetime.now(timezone.utc).isoformat(timespec="seconds")
+    now = datetime.now(UTC).isoformat(timespec="seconds")
     out: list[libraries.LibraryProposal] = []
 
     for item in raw.tag_aliases:
@@ -390,7 +390,10 @@ def propose_bullet_tags(
 
     bullets_block = "\n".join(f"  {i}. {text}" for i, text in enumerate(bullets))
     known_tags_block = "\n".join(f"  - {t}" for t in sorted(known_tags))
-    user = f"<known_tags>\n{known_tags_block}\n</known_tags>\n\n<bullets>\n{bullets_block}\n</bullets>"
+    user = (
+        f"<known_tags>\n{known_tags_block}\n</known_tags>\n\n"
+        f"<bullets>\n{bullets_block}\n</bullets>"
+    )
 
     client = llm.client_for("extract")
     response = client.messages.parse(
@@ -413,7 +416,9 @@ def propose_bullet_tags(
     for item in raw.proposals:
         if not (0 <= item.bullet_index < len(bullets)):
             continue
-        tags = sorted({known_lower[t.strip().lower()] for t in item.tags if t.strip().lower() in known_lower})
+        tags = sorted(
+            {known_lower[t.strip().lower()] for t in item.tags if t.strip().lower() in known_lower}
+        )
         if tags:
             result[item.bullet_index] = tags
     return result

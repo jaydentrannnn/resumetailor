@@ -33,7 +33,7 @@ import re
 import secrets
 from collections.abc import Iterable
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
@@ -219,6 +219,18 @@ def _index_path() -> Path:
 
 
 def _pack_path(pack_id: str) -> Path:
+    """The on-disk path for `pack_id`'s shadow file.
+
+    Every read/write/delete/reset of a pack funnels through here, so this is the one
+    place `_PACK_ID_RE` needs enforcing to cover all of them — previously only
+    `write_pack`/`new_pack_id` checked it. Not just POSIX traversal (a `/`-containing
+    id can't reach a route param, and pack ids never arrive in a JSON body): on Windows,
+    `PureWindowsPath('.../packs') / 'C:foo'` discards the left side entirely and
+    resolves to `C:foo.json`, so an unvalidated id here is a drive-relative escape,
+    not merely a same-directory one.
+    """
+    if not _PACK_ID_RE.match(pack_id):
+        raise LibraryError(f"Invalid pack id: {pack_id!r}")
     return store_root() / "packs" / f"{pack_id}.json"
 
 
@@ -249,7 +261,7 @@ def new_pack_id(label: str, *, existing: Iterable[str]) -> str:
 
 
 def _now_iso() -> str:
-    return datetime.now(timezone.utc).isoformat(timespec="seconds")
+    return datetime.now(UTC).isoformat(timespec="seconds")
 
 
 # --------------------------------------------------------------------------------------
@@ -848,6 +860,8 @@ def alias_impact(
                     bullets.append((proj.name, bullet.id))
         affected = [k] if (bullets or k in resume.tag_vocabulary) else []
         out.append(
-            AliasImpact(alias=raw_k, canonical=raw_v, affected_tags=affected, affected_bullets=bullets)
+            AliasImpact(
+                alias=raw_k, canonical=raw_v, affected_tags=affected, affected_bullets=bullets
+            )
         )
     return out

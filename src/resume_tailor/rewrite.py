@@ -17,9 +17,9 @@ from __future__ import annotations
 
 import hashlib
 import re
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
-from typing import Sequence
 
 from pydantic import BaseModel, Field
 
@@ -340,7 +340,7 @@ def select_within_entries(
             pools, limit=limit, weights=resolved_weights, max_per_entry=max_per_entry
         )
         kept: set[int] = set()
-        for pool, pool_limit in zip(pools, allocations):
+        for pool, pool_limit in zip(pools, allocations, strict=True):
             kept |= _take_ranked(
                 pool, requirements, limit=pool_limit, semantic=semantic,
                 max_per_entry=max_per_entry,
@@ -923,7 +923,8 @@ def _system() -> str:
     if style_block and not style_block.endswith("\n"):
         style_block += "\n"
     return (
-        "You rewrite resume bullet points so they mirror the language of a specific job posting.\n\n"
+        "You rewrite resume bullet points so they mirror the language of a specific job "
+        "posting.\n\n"
         "Absolute rules:\n"
         f"{_CORE_RULES}"
         f"{style_block}\n"
@@ -1419,7 +1420,9 @@ def rewrite_bullets(
     user = (
         f"<role>{requirements.title} ({requirements.seniority})</role>\n\n"
         f"<keywords_to_mirror>\n{_format_keywords(requirements)}\n</keywords_to_mirror>\n\n"
-        f"<context>\n" + "\n".join(f"  - {n}" for n in requirements.domain_notes) + "\n</context>\n\n"
+        "<context>\n"
+        + "\n".join(f"  - {n}" for n in requirements.domain_notes)
+        + "\n</context>\n\n"
         f"<bullets_to_rewrite>\n{_format_bullets(bullets, budget)}\n</bullets_to_rewrite>"
         f"{instruction}"
     )
@@ -1595,7 +1598,9 @@ def _merge_bullets(
     user = (
         f"<role>{requirements.title} ({requirements.seniority})</role>\n\n"
         f"<keywords_to_mirror>\n{_format_keywords(requirements)}\n</keywords_to_mirror>\n\n"
-        f"<context>\n" + "\n".join(f"  - {n}" for n in requirements.domain_notes) + "\n</context>\n\n"
+        "<context>\n"
+        + "\n".join(f"  - {n}" for n in requirements.domain_notes)
+        + "\n</context>\n\n"
         f"<merges_to_combine>\n{_format_merge_groups(groups, texts, sources, budget)}\n"
         f"</merges_to_combine>\n\n{_MERGE_INSTRUCTION}"
     )

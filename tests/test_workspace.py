@@ -152,16 +152,16 @@ def test_set_active_workspace_rebinds_all_paths(isolated_roots):
 
     assert config.active_workspace_id() == "demo"
     ws_root = isolated_roots["data"] / "workspaces" / "demo"
-    assert config.DATA_DIR == ws_root
-    assert config.MASTER_RESUME_PATH == ws_root / "master_resume.json"
-    assert config.SETTINGS_PATH == ws_root / "settings.json"
-    assert config.CALIBRATION_DIR == ws_root / "calibration"
+    assert ws_root == config.DATA_DIR
+    assert ws_root / "master_resume.json" == config.MASTER_RESUME_PATH
+    assert ws_root / "settings.json" == config.SETTINGS_PATH
+    assert ws_root / "calibration" == config.CALIBRATION_DIR
     templates_root = isolated_roots["templates"] / "workspaces" / "demo"
-    assert config.DEFAULT_TEMPLATE_PATH == templates_root / "main_template.docx"
-    assert config.BASELINE_TEMPLATE_PATH == templates_root / "original_export.docx"
-    assert config.TEMPLATE_PROFILE_PATH == templates_root / "template_profile.json"
-    assert config.TEMPLATE_LIBRARY_DIR == templates_root / "library"
-    assert config.OUTPUT_DIR == isolated_roots["output"] / "workspaces" / "demo"
+    assert templates_root / "main_template.docx" == config.DEFAULT_TEMPLATE_PATH
+    assert templates_root / "original_export.docx" == config.BASELINE_TEMPLATE_PATH
+    assert templates_root / "template_profile.json" == config.TEMPLATE_PROFILE_PATH
+    assert templates_root / "library" == config.TEMPLATE_LIBRARY_DIR
+    assert isolated_roots["output"] / "workspaces" / "demo" == config.OUTPUT_DIR
 
 
 def test_create_duplicate_copies_resume_and_templates(isolated_roots):

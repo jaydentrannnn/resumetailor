@@ -5,7 +5,6 @@ from __future__ import annotations
 import io
 
 import docx
-import pytest
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 

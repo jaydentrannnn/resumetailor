@@ -18,9 +18,9 @@ import threading
 import traceback
 import uuid
 from dataclasses import dataclass, field
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Literal
+from typing import Literal
 
 from resume_tailor import (
     config,
@@ -43,6 +43,7 @@ from resume_tailor.fit import FitError
 from resume_tailor.llm import LLMError
 from resume_tailor.rewrite import FabricationError
 from resume_tailor.template_profile import active_layout
+from resume_tailor.web import template_ops
 from resume_tailor.web.schemas import (
     ExpandedEntryOut,
     ExpansionOut,
@@ -54,8 +55,14 @@ from resume_tailor.web.schemas import (
     SkillSuggestionOut,
 )
 
+JobStatus = Literal["queued", "running", "succeeded", "failed", "cancelled"]
 
-JobStatus = Literal["queued", "running", "succeeded", "failed"]
+
+class JobCancelled(Exception):
+    """Raised internally to unwind `JobQueue._execute` once a user cancels a running
+    job. Never escapes `_run_loop` — caught there and translated into the terminal
+    "cancelled" status, same as `FabricationError`/`FitError` are translated into
+    "failed"."""
 
 
 @dataclass
@@ -67,7 +74,7 @@ class Job:
     settings: JobSettings
     status: JobStatus = "queued"
     created_at: str = field(
-        default_factory=lambda: datetime.now(timezone.utc).isoformat(timespec="seconds")
+        default_factory=lambda: datetime.now(UTC).isoformat(timespec="seconds")
     )
     error: str | None = None
     report: RunReportOut | None = None
@@ -76,6 +83,9 @@ class Job:
     events: list[ProgressEvent] = field(default_factory=list)
     #: Signalled whenever a new event lands, so the SSE endpoint can wake up.
     event_notify: threading.Event = field(default_factory=threading.Event)
+    #: Set by `JobQueue.cancel` on a running job; `_execute` polls it at checkpoints
+    #: between pipeline stages (never mid-LLM-call) via `check_cancelled`.
+    cancel_requested: threading.Event = field(default_factory=threading.Event)
     out_dir: Path | None = None
 
     def emit(self, event: ProgressEvent) -> None:
@@ -83,9 +93,23 @@ class Job:
         self.events.append(event)
         self.event_notify.set()
 
+    def check_cancelled(self) -> None:
+        """Raise `JobCancelled` if this job's cancellation was requested."""
+        if self.cancel_requested.is_set():
+            raise JobCancelled()
+
 
 class JobQueue:
     """Process-wide queue that drains one job at a time on a background thread."""
+
+    #: Retained job records are never pruned by time — a long-running server process
+    #: (this is a `daemon` background thread with no natural end) would otherwise grow
+    #: `_jobs` without bound: every job keeps its full `jd_text` (up to 50k chars),
+    #: every progress event (including a full traceback on failure), and its final
+    #: report forever. Pruned opportunistically in `submit`, oldest terminal job first,
+    #: the same way `template_ops._prune_upload_cache` runs opportunistically rather
+    #: than on a timer.
+    _MAX_RETAINED_JOBS = 50
 
     def __init__(self) -> None:
         """Create an empty queue. The worker thread starts on the first `submit`."""
@@ -103,8 +127,25 @@ class JobQueue:
             self._jobs[job_id] = job
             self._order.append(job_id)
             self._ensure_worker()
+            self._prune_old_jobs()
         self._pending.put(job_id)
         return job, self.queue_position(job_id)
+
+    def _prune_old_jobs(self) -> None:
+        """Drop the oldest terminal jobs once retained history exceeds
+        `_MAX_RETAINED_JOBS`. Never touches a queued/running job. Caller must already
+        hold `self._lock`; `self._jobs` is a plain dict, so insertion order (Python
+        3.7+) already reflects submission order without a separate tracking list —
+        `job_id` is a fresh uuid every call, so no key is ever reinserted out of order.
+        """
+        excess = len(self._jobs) - self._MAX_RETAINED_JOBS
+        if excess <= 0:
+            return
+        terminal_ids = [
+            jid for jid, job in self._jobs.items() if job.status in ("succeeded", "failed")
+        ]
+        for jid in terminal_ids[:excess]:
+            del self._jobs[jid]
 
     def get(self, job_id: str) -> Job | None:
         """Look up a job by id, or None if it was never submitted."""
@@ -123,6 +164,37 @@ class JobQueue:
         with self._lock:
             return any(j.status in ("queued", "running") for j in self._jobs.values())
 
+    def cancel(self, job_id: str) -> Job | None:
+        """Request cancellation of a queued or running job.
+
+        A queued job is cancelled immediately — the worker thread hasn't touched it —
+        by pulling it out of `self._order` and marking it terminal directly here.
+        `_run_loop` still eventually dequeues its id from `self._pending` (a plain
+        `queue.Queue` has no way to remove an item early) but skips it once the status
+        is no longer "queued". A running job only has its `cancel_requested` flag set:
+        `_execute` notices it at the next checkpoint between pipeline stages, not
+        mid-LLM-call, so the job may keep running briefly after this returns. Returns
+        `None` (nothing to cancel) if the job doesn't exist or is already terminal.
+        """
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if job is None:
+                return None
+            if job.status == "queued":
+                if job_id in self._order:
+                    self._order.remove(job_id)
+                job.status = "cancelled"
+                job.emit(
+                    ProgressEvent(
+                        stage="cancel", message="Cancelled before it started.", detail={}
+                    )
+                )
+                return job
+            if job.status == "running":
+                job.cancel_requested.set()
+                return job
+            return None
+
     def _ensure_worker(self) -> None:
         """Start the background worker once, on first submit."""
         if self._worker is not None and self._worker.is_alive():
@@ -135,7 +207,10 @@ class JobQueue:
         while True:
             job_id = self._pending.get()
             job = self._jobs.get(job_id)
-            if job is None:
+            if job is None or job.status != "queued":
+                # Already cancelled while waiting — `cancel()` marks a queued job
+                # terminal immediately but can't pull its id back out of `self._pending`
+                # (a plain `queue.Queue`), so it still surfaces here once dequeued.
                 continue
             with self._lock:
                 if job_id in self._order:
@@ -147,7 +222,19 @@ class JobQueue:
             try:
                 self._execute(job)
                 job.status = "succeeded"
-            except Exception as exc:  # noqa: BLE001 - surface any failure to the UI
+            except JobCancelled:
+                job.status = "cancelled"
+                job.emit(ProgressEvent(stage="cancel", message="Run cancelled.", detail={}))
+            except BaseException as exc:  # noqa: BLE001 - surface any failure to the UI
+                # `Exception` alone left a `SystemExit`/`KeyboardInterrupt`/
+                # `RecursionError`-flavoured failure with the job frozen at "running"
+                # forever: `busy()` scans for exactly that status, so every mutating
+                # route (template upload, workspace switch, library writes) would 409
+                # permanently until the process restarted, with no way to clear it.
+                # Marking the job failed before re-raising un-wedges `busy()`
+                # immediately; re-raising still lets the worker thread die for a
+                # genuine `BaseException`, but `_ensure_worker` already respawns on
+                # the next `submit()` since it checks `is_alive()`.
                 job.status = "failed"
                 job.error = str(exc)
                 job.emit(
@@ -157,11 +244,14 @@ class JobQueue:
                         detail={"traceback": traceback.format_exc()},
                     )
                 )
+                if not isinstance(exc, Exception):
+                    raise
 
     def _execute(self, job: Job) -> None:
         """Run one job end-to-end. Mutates `job` with events and a final report."""
         settings = job.settings
         on_event: ProgressCallback = job.emit
+        job.check_cancelled()
 
         try:
             overrides: dict[str, str] = {}
@@ -196,6 +286,7 @@ class JobQueue:
 
         resume = data.load()
         known_tags = sorted({t for b in resume.all_bullets() for t in b.tags})
+        job.check_cancelled()
 
         try:
             requirements = jd.extract_consensus(
@@ -218,6 +309,7 @@ class JobQueue:
                 )
             )
 
+        job.check_cancelled()
         semantic: dict[str, float] | None = None
         if not settings.no_semantic:
             try:
@@ -245,6 +337,7 @@ class JobQueue:
         full_resume = resume
         resume = include.apply(resume, settings.include)
 
+        job.check_cancelled()
         include_links = not settings.no_project_links
         try:
             if settings.no_facets:
@@ -289,6 +382,7 @@ class JobQueue:
         job.out_dir = out_dir
         out_path = out_dir / "tailored.docx"
 
+        job.check_cancelled()
         try:
             result = fit.fit(
                 resume,
@@ -338,6 +432,7 @@ class JobQueue:
             report.report_data(resume, requirements, result, master=master_resume)
         )
 
+        job.check_cancelled()
         if not settings.no_expand:
             try:
                 # Unfiltered resume: an experience entry excluded from the tailored
@@ -367,6 +462,7 @@ class JobQueue:
                     )
                 )
 
+        job.check_cancelled()
         if not settings.no_skills:
             try:
                 # `master_resume` (post-include, pre-facets): exactly what
@@ -399,6 +495,7 @@ class JobQueue:
                     )
                 )
 
+        job.check_cancelled()
         if settings.suggest_vocabulary:
             try:
                 _draft_vocabulary_proposals(
@@ -465,15 +562,25 @@ def _draft_vocabulary_proposals(
     if not filtered:
         return
 
-    # filter_proposals already excludes anything in state.rejected; this only needs to
-    # dedupe against proposals already pending, which it has no visibility into.
-    existing_ids = {p.id for p in state.proposals}
-    new_ones = [p for p in filtered if p.id not in existing_ids]
-    if not new_ones:
-        return
-    state.proposals = [*state.proposals, *new_ones]
-    libraries.write_workspace_state(state)
-    libraries.reload()
+    # The read-modify-write of `state.proposals` is held under `template_ops.LOCK` —
+    # the Settings tab's approve/reject routes do the same wholesale
+    # read-modify-write of libraries.json with no lock of their own otherwise, so
+    # whichever side runs second silently loses the other's change. `state` itself
+    # (read above, before `propose_vocabulary`'s LLM call) is deliberately *not* what
+    # gets written: re-reading here means a concurrent approve/reject that landed
+    # while that call was in flight isn't clobbered by a write based on stale data.
+    with template_ops.LOCK:
+        fresh_state = libraries.read_workspace_state()
+        # filter_proposals already excludes anything in `state.rejected` as of the read
+        # above; this only needs to dedupe against proposals already pending, which it
+        # had no visibility into.
+        existing_ids = {p.id for p in fresh_state.proposals}
+        new_ones = [p for p in filtered if p.id not in existing_ids]
+        if not new_ones:
+            return
+        fresh_state.proposals = [*fresh_state.proposals, *new_ones]
+        libraries.write_workspace_state(fresh_state)
+        libraries.reload()
     on_event(
         ProgressEvent(
             stage="propose",

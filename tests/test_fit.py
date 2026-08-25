@@ -9,7 +9,8 @@ from __future__ import annotations
 
 import pytest
 
-from resume_tailor import config, fit as fit_mod
+from resume_tailor import config
+from resume_tailor import fit as fit_mod
 from resume_tailor.data import (
     Bullet,
     EducationSection,
@@ -316,7 +317,8 @@ def test_include_apply_clearing_coursework_shrinks_fixed_overhead():
     """`include.apply(coursework=False)` must free exactly the coursework wrap's lines
     from `_fixed_overhead_lines` — the mechanism the fit loop relies on to reclaim that
     space via the grow step, with no fit.py-side special case for it."""
-    from resume_tailor.include import IncludeOptions, apply as include_apply
+    from resume_tailor.include import IncludeOptions
+    from resume_tailor.include import apply as include_apply
 
     resume = _test_resume()
     assert resume.education

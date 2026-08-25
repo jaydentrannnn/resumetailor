@@ -14,15 +14,14 @@ import json
 import os
 import tempfile
 import time
-from contextlib import asynccontextmanager
-from datetime import datetime, timezone
+from contextlib import asynccontextmanager, suppress
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any
 
 import docx
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
-from fastapi.middleware.cors import CORSMiddleware
-from fastapi.responses import FileResponse, StreamingResponse
+from fastapi.responses import FileResponse, JSONResponse, StreamingResponse
 from fastapi.staticfiles import StaticFiles
 from pydantic import ValidationError
 from starlette.exceptions import HTTPException as StarletteHTTPException
@@ -44,7 +43,7 @@ from resume_tailor import (
 )
 from resume_tailor.data import MasterResume
 from resume_tailor.events import ProgressEvent
-from resume_tailor.template_profile import active_layout, TemplateProfile
+from resume_tailor.template_profile import TemplateProfile, active_layout
 from resume_tailor.web import template_ops
 from resume_tailor.web.jobs import get_queue
 from resume_tailor.web.schemas import (
@@ -109,15 +108,67 @@ async def lifespan(app: FastAPI):
 
 app = FastAPI(title="ResumeTailor", version="0.1.0", lifespan=lifespan)
 
-# The Vite dev server runs on a different origin; production serves the SPA from this
-# same process, so CORS is only needed in development. Allowing * is fine for a
-# single-user local tool.
-app.add_middleware(
-    CORSMiddleware,
-    allow_origins=["*"],
-    allow_methods=["*"],
-    allow_headers=["*"],
-)
+# No CORS middleware, deliberately: `frontend/vite.config.ts` proxies `/api` through
+# the Vite dev server itself, so the browser's own request is always same-origin
+# (to :5173) even in development — the :5173 -> :8000 hop is a plain server-to-server
+# call that CORS (a browser-only restriction) never applies to. Production serves the
+# built SPA from this same process on the same origin. An `allow_origins=["*"]`
+# middleware here would do nothing for the app to work, and everything to let any page
+# open in the user's browser read this app's data (master resume, real PII) or issue
+# writes to it — this app has no authentication of its own.
+
+
+class _RequestSizeLimitMiddleware:
+    """Reject an oversized request by its declared `Content-Length`, before FastAPI's
+    multipart/JSON parsing ever runs.
+
+    A check inside a route handler (e.g. `len(raw) > _MAX_UPLOAD_BYTES` after
+    `await file.read()`, as `template_ops._validate_upload_bytes` does) is too late to
+    bound memory use: `File(...)`/`Form(...)` dependency resolution fully consumes and
+    parses the body *before* any handler code runs, so the oversized payload is already
+    resident by the time a handler could reject it. This is a raw ASGI middleware
+    (not `BaseHTTPMiddleware`, which buffers the body itself) so the reject path never
+    touches the body at all — only the header.
+
+    A request with no `Content-Length` (chunked transfer-encoding) isn't covered by
+    this cheap check; acceptable for a local single-user tool.
+    """
+
+    #: Shared with `template_ops._MAX_UPLOAD_BYTES` (the per-file cap checked again,
+    #: redundantly but harmlessly, once a request does pass this gate) rather than a
+    #: separate constant, so the two limits can't quietly drift apart.
+    _MAX_BYTES = template_ops._MAX_UPLOAD_BYTES
+
+    def __init__(self, app: Any) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        if scope["type"] != "http":
+            await self.app(scope, receive, send)
+            return
+        headers = dict(scope.get("headers") or [])
+        raw_length = headers.get(b"content-length")
+        if raw_length is not None:
+            try:
+                length = int(raw_length)
+            except ValueError:
+                length = None
+            if length is not None and length > self._MAX_BYTES:
+                response = JSONResponse(
+                    {
+                        "detail": (
+                            f"Request body is {length} bytes; maximum is "
+                            f"{self._MAX_BYTES}."
+                        )
+                    },
+                    status_code=413,
+                )
+                await response(scope, receive, send)
+                return
+        await self.app(scope, receive, send)
+
+
+app.add_middleware(_RequestSizeLimitMiddleware)
 
 
 def _event_out(event: ProgressEvent) -> ProgressEventOut:
@@ -150,10 +201,8 @@ def _config_response(*, consume_migrated: bool = True) -> ConfigResponse:
     active_id = config.active_workspace_id()
     active_label: str | None = None
     if active_id is not None:
-        try:
+        with suppress(workspace.WorkspaceError):
             active_label = workspace.resolve(active_id).label
-        except workspace.WorkspaceError:
-            pass
 
     migrated = _migrated_from_legacy
     if consume_migrated:
@@ -256,8 +305,15 @@ def get_settings() -> SettingsResponse:
 
 @app.put("/api/settings", response_model=SettingsResponse)
 def put_settings(body: SettingsUpdateRequest) -> SettingsResponse:
-    """Persist new run defaults for the active profile."""
-    workspace.save_settings(body.settings.model_dump())
+    """Persist new run defaults for the active profile.
+
+    Held under `template_ops.LOCK`: `workspace.save_settings(None)` resolves
+    `config.SETTINGS_PATH` at call time, which `activate_workspace` rebinds under the
+    same lock — without it, a save racing a profile switch can land in the *new*
+    workspace's settings file.
+    """
+    with template_ops.LOCK:
+        workspace.save_settings(body.settings.model_dump())
     return SettingsResponse(
         workspace_id=config.active_workspace_id(),
         settings=body.settings,
@@ -267,7 +323,18 @@ def put_settings(body: SettingsUpdateRequest) -> SettingsResponse:
 
 @app.post("/api/jobs", response_model=CreateJobResponse)
 def create_job(body: CreateJobRequest) -> CreateJobResponse:
-    """Enqueue a tailoring run. Returns immediately with a job id."""
+    """Enqueue a tailoring run. Returns immediately with a job id.
+
+    Validates against — and submits against — the active workspace atomically under
+    `template_ops.LOCK`, the same lock `activate_workspace` holds while switching. Without
+    this, a job could be validated against workspace A, then executed by the worker
+    against workspace B if a switch landed in between: `submit()` only enqueues, so the
+    job's actual `data.load()`/path resolution happens later, on the worker thread,
+    against whatever `config` points to *then* — not what it pointed to when this route
+    ran. `activate_workspace`'s own `busy()` check has to run *inside* this same lock for
+    the same reason: checked-then-acquired, a job submitted in the gap would still slip
+    through to the worker under the new workspace.
+    """
     if not body.jd_text.strip():
         raise HTTPException(status_code=400, detail="Job description is empty.")
     settings = body.settings
@@ -292,17 +359,18 @@ def create_job(body: CreateJobRequest) -> CreateJobResponse:
     gaps = config.credential_gaps(settings.model, overrides=overrides or None)
     if gaps:
         raise HTTPException(status_code=400, detail="; ".join(gaps))
-    # Same reasoning as the credential check above: a resume where every entry is
-    # excluded is a broken run, and catching it here means the job never reaches the
-    # worker to fail several minutes and several LLM calls later.
-    try:
-        resume = data.load()
-    except (FileNotFoundError, ValueError) as exc:
-        raise HTTPException(status_code=400, detail=str(exc)) from exc
-    problems = include.validate(resume, settings.include)
-    if problems:
-        raise HTTPException(status_code=400, detail="; ".join(problems))
-    job, position = get_queue().submit(body.jd_text.strip(), settings)
+    with template_ops.LOCK:
+        # Same reasoning as the credential check above: a resume where every entry is
+        # excluded is a broken run, and catching it here means the job never reaches
+        # the worker to fail several minutes and several LLM calls later.
+        try:
+            resume = data.load()
+        except (FileNotFoundError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+        problems = include.validate(resume, settings.include)
+        if problems:
+            raise HTTPException(status_code=400, detail="; ".join(problems))
+        job, position = get_queue().submit(body.jd_text.strip(), settings)
     return CreateJobResponse(job_id=job.job_id, queue_position=position)
 
 
@@ -320,7 +388,11 @@ def get_resume_outline() -> ResumeOutlineResponse:
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        # A malformed master_resume.json (failed Pydantic validation) is bad user
+        # data, not a server fault — 400, matching `create_job`'s identical catch on
+        # the identical `data.load()` call. 500 is precisely where the editor most
+        # needs the real error surfaced, not hidden behind a generic failure.
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
     contact = resume.contact
     field_values = {
@@ -385,13 +457,9 @@ def get_resume_outline() -> ResumeOutlineResponse:
     )
 
 
-@app.get("/api/jobs/{job_id}", response_model=JobStatusResponse)
-def get_job(job_id: str) -> JobStatusResponse:
-    """Current state of one queued or finished run."""
-    job = get_queue().get(job_id)
-    if job is None:
-        raise HTTPException(status_code=404, detail=f"Unknown job {job_id!r}.")
-    position = get_queue().queue_position(job_id) or None
+def _job_status_response(job) -> JobStatusResponse:
+    """Build the wire shape shared by `get_job` and `cancel_job`."""
+    position = get_queue().queue_position(job.job_id) or None
     return JobStatusResponse(
         job_id=job.job_id,
         status=job.status,
@@ -402,6 +470,34 @@ def get_job(job_id: str) -> JobStatusResponse:
         skills=job.skills,
         events=[_event_out(e) for e in job.events],
     )
+
+
+@app.get("/api/jobs/{job_id}", response_model=JobStatusResponse)
+def get_job(job_id: str) -> JobStatusResponse:
+    """Current state of one queued or finished run."""
+    job = get_queue().get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail=f"Unknown job {job_id!r}.")
+    return _job_status_response(job)
+
+
+@app.delete("/api/jobs/{job_id}", response_model=JobStatusResponse)
+def cancel_job(job_id: str) -> JobStatusResponse:
+    """Cancel a queued or running run.
+
+    A queued job stops immediately. A running job only has its cancellation flag
+    set — the worker notices at the next checkpoint between pipeline stages
+    (`Job.check_cancelled`, threaded through `JobQueue._execute`), not mid-LLM-call,
+    so the returned status may still read "running" for a moment; poll or watch the
+    SSE stream for the eventual "cancelled" terminal state. 409s when the job is
+    already terminal — nothing left to cancel.
+    """
+    job = get_queue().get(job_id)
+    if job is None:
+        raise HTTPException(status_code=404, detail=f"Unknown job {job_id!r}.")
+    if get_queue().cancel(job_id) is None:
+        raise HTTPException(status_code=409, detail=f"Job {job_id} is already {job.status}.")
+    return _job_status_response(job)
 
 
 @app.get("/api/jobs/{job_id}/events")
@@ -429,7 +525,7 @@ async def job_events(job_id: str) -> StreamingResponse:
                 yield f"data: {json.dumps(payload)}\n\n"
                 last_frame = time.monotonic()
 
-            if job.status in ("succeeded", "failed"):
+            if job.status in ("succeeded", "failed", "cancelled"):
                 # Flush any final events that landed between the check and now.
                 while sent < len(job.events):
                     event = job.events[sent]
@@ -443,9 +539,9 @@ async def job_events(job_id: str) -> StreamingResponse:
             job.event_notify.clear()
             # Re-check after clearing: an event may have landed between the len() check
             # and clear(), which would leave us waiting forever for a signal already past.
-            if sent < len(job.events) or job.status in ("succeeded", "failed"):
+            if sent < len(job.events) or job.status in ("succeeded", "failed", "cancelled"):
                 continue
-            await asyncio.get_event_loop().run_in_executor(None, job.event_notify.wait, 1.0)
+            await asyncio.get_running_loop().run_in_executor(None, job.event_notify.wait, 1.0)
             if time.monotonic() - last_frame > 20:
                 yield ": keepalive\n\n"
                 last_frame = time.monotonic()
@@ -579,7 +675,9 @@ def get_master_resume() -> dict[str, Any]:
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except ValueError as exc:
-        raise HTTPException(status_code=500, detail=str(exc)) from exc
+        # See the matching comment on `get_resume_outline`: bad user data, not a
+        # server fault, and the editor is exactly where this needs to surface.
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
     return resume.model_dump(by_alias=True)
 
 
@@ -591,7 +689,7 @@ def _backup_master_resume(path: Path) -> Path | None:
     all three use the identical naming."""
     if not path.exists():
         return None
-    stamp = datetime.now(timezone.utc).strftime("%Y%m%dT%H%M%SZ")
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
     backup = path.with_suffix(f".{stamp}.bak.json")
     backup.write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
     return backup
@@ -615,16 +713,28 @@ def _write_master_resume(resume: MasterResume) -> Path | None:
 
 @app.put("/api/master-resume")
 def put_master_resume(body: dict[str, Any]) -> ValidateResponse:
-    """Validate and save a new master resume, keeping a timestamped backup of the old one."""
+    """Validate and save a new master resume, keeping a timestamped backup of the old one.
+
+    A rejected write is a 400, matching the sibling `merge_master_resume` route — a
+    mutating route reporting "wrote nothing" as HTTP 200 is exactly the case a caller
+    is least likely to check for. The write itself is held under `template_ops.LOCK`:
+    `_write_master_resume` resolves `config.MASTER_RESUME_PATH` at call time, which
+    `activate_workspace` rebinds under the same lock — without it, a save racing a
+    profile switch can land in the *new* workspace's file instead of the one the user
+    was actually editing.
+    """
     try:
         resume = MasterResume.model_validate(body)
     except ValidationError as exc:
-        return ValidateResponse(
-            ok=False,
-            errors=[f"{'.'.join(str(p) for p in e['loc'])}: {e['msg']}" for e in exc.errors()],
-        )
+        raise HTTPException(
+            status_code=400,
+            detail="; ".join(
+                f"{'.'.join(str(p) for p in e['loc'])}: {e['msg']}" for e in exc.errors()
+            ),
+        ) from exc
 
-    _write_master_resume(resume)
+    with template_ops.LOCK:
+        _write_master_resume(resume)
 
     bullets = resume.all_bullets()
     tags = sorted({t for b in bullets for t in b.tags})
@@ -667,7 +777,7 @@ def validate_master_resume(body: dict[str, Any]) -> ValidateResponse:
 
 
 @app.post("/api/master-resume/import", response_model=MasterResumeImportResponse)
-async def import_master_resume(
+def import_master_resume(
     file: UploadFile = File(...),
     suggest_tags: str | None = Form(None),
 ) -> MasterResumeImportResponse:
@@ -682,8 +792,13 @@ async def import_master_resume(
     `warnings` instead of raised. Not a tailoring job, so it never touches `config._ACTIVE`
     (which only a running job resolves); it is pinned to `config.ONE_OFF_PROFILE`
     (`config.pinned`) instead, so it never falls through to `backend_for`'s claude default.
+
+    A plain `def`, not `async def`: this does real work synchronously (docx parsing,
+    structural analysis, and — when `suggest_tags` is set — a live blocking LLM call),
+    so FastAPI must run it in its threadpool rather than on the event loop, or every
+    other request (including any open SSE stream) stalls for the duration.
     """
-    raw = await file.read()
+    raw = file.file.read()
     filename = file.filename or "upload.docx"
     try:
         template_ops._validate_upload_bytes(raw, filename)
@@ -700,10 +815,9 @@ async def import_master_resume(
             result = template_analyze.analyze_docx(raw=raw)
 
             known_tags = resume_import._default_vocabulary()
-            try:
+            # brand-new workspace with no master resume yet
+            with suppress(FileNotFoundError, ValueError):
                 known_tags |= set(data.load().tag_vocabulary)
-            except (FileNotFoundError, ValueError):
-                pass  # brand-new workspace with no master resume yet
 
             imported = resume_import.import_from_analysis(result, doc, known_tags=known_tags)
         finally:
@@ -756,6 +870,12 @@ def merge_master_resume(body: dict[str, Any]) -> MasterResumeMergeResponse:
     matching rules. A workspace with no master resume yet merges against an empty one
     (contact seeded from `body`), the same tolerance `import_master_resume` already
     applies to `data.load()` failing.
+
+    The read-merge-write sequence runs entirely under `template_ops.LOCK`, not just the
+    final write: `data.load()` and `_write_master_resume` both resolve `config`'s
+    rebindable path globals, and a workspace switch landing between the read and the
+    write would merge workspace A's existing content with the incoming draft and save
+    the result into workspace B's file.
     """
     try:
         incoming = MasterResume.model_validate(body)
@@ -767,13 +887,14 @@ def merge_master_resume(body: dict[str, Any]) -> MasterResumeMergeResponse:
             ),
         ) from exc
 
-    try:
-        existing = data.load()
-    except (FileNotFoundError, ValueError):
-        existing = MasterResume(contact=incoming.contact, sections=[])
+    with template_ops.LOCK:
+        try:
+            existing = data.load()
+        except (FileNotFoundError, ValueError):
+            existing = MasterResume(contact=incoming.contact, sections=[])
 
-    merged, stats = resume_import.merge_into(existing, incoming)
-    backup = _write_master_resume(merged)
+        merged, stats = resume_import.merge_into(existing, incoming)
+        backup = _write_master_resume(merged)
 
     return MasterResumeMergeResponse(
         resume=merged.model_dump(by_alias=True),
@@ -814,9 +935,14 @@ def template_preview_pdf() -> FileResponse:
 
 
 @app.post("/api/template/analyze", response_model=TemplateAnalyzeResponse)
-async def analyze_template(file: UploadFile = File(...)) -> TemplateAnalyzeResponse:
-    """Preflight an uploaded baseline without writing under templates/."""
-    raw = await file.read()
+def analyze_template(file: UploadFile = File(...)) -> TemplateAnalyzeResponse:
+    """Preflight an uploaded baseline without writing under templates/.
+
+    A plain `def`: `template_ops.analyze_upload` does real synchronous work (docx
+    parsing, full structural analysis), so this must run in FastAPI's threadpool
+    rather than block the event loop.
+    """
+    raw = file.file.read()
     filename = file.filename or "upload.docx"
     try:
         return template_ops.analyze_upload(raw, filename)
@@ -870,6 +996,14 @@ def preview_draft_template(body: TemplatePreviewDraftRequest) -> FileResponse:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except ValidationError as exc:
         raise HTTPException(status_code=400, detail=f"Invalid template profile: {exc}") from exc
+    except TemplateBuildError as exc:
+        # Must come before `except RuntimeError` — `TemplateBuildError` is a
+        # `RuntimeError` subclass, and a mapping problem (this) is a different failure
+        # from `render.to_pdf` genuinely having no PDF backend available (below).
+        raise HTTPException(
+            status_code=422,
+            detail={"message": str(exc), "log": exc.log},
+        ) from exc
     except RuntimeError as exc:
         raise HTTPException(status_code=503, detail=str(exc)) from exc
     return FileResponse(
@@ -881,7 +1015,7 @@ def preview_draft_template(body: TemplatePreviewDraftRequest) -> FileResponse:
 
 
 @app.post("/api/template", response_model=TemplateBuildResponse)
-async def upload_template(
+def upload_template(
     file: UploadFile = File(...),
     profile: str = Form(...),
     calibrate: str | None = Form(None),
@@ -901,6 +1035,11 @@ async def upload_template(
 
     Refuses while a tailoring job is queued or running so the fit loop never
     measures against a template that is mid-rebuild.
+
+    A plain `def`: `template_ops.install_baseline` shells out to a subprocess build,
+    smoke-renders, verifies, and optionally runs `calibrate.run` (Word/LibreOffice) —
+    minutes of blocking work that must run in FastAPI's threadpool, not the event
+    loop, or the SSE keepalive on every other open connection stalls with it.
     """
     if get_queue().busy():
         raise HTTPException(
@@ -909,7 +1048,7 @@ async def upload_template(
             "replacing the template.",
         )
 
-    raw = await file.read()
+    raw = file.file.read()
     filename = file.filename or "upload.docx"
     try:
         parsed_profile = TemplateProfile.model_validate_json(profile)
@@ -943,7 +1082,7 @@ def get_template_library() -> TemplateLibraryResponse:
 
 
 @app.post("/api/template/library/{entry_id}/activate", response_model=TemplateBuildResponse)
-async def activate_template_library_entry(
+def activate_template_library_entry(
     entry_id: str,
     calibrate: str | None = None,
 ) -> TemplateBuildResponse:
@@ -951,6 +1090,10 @@ async def activate_template_library_entry(
 
     Optional query `calibrate=true` measures fit constants after activation.
     Refuses while a tailoring job is busy.
+
+    A plain `def`: this had no `await` at all despite being declared `async def` —
+    `template_ops.activate_library_entry` (a file copy plus optional calibration) ran
+    fully synchronously on the event loop regardless.
     """
     if get_queue().busy():
         raise HTTPException(
@@ -1205,6 +1348,12 @@ def generate_library_proposals(body: ProposalGenerateRequest) -> LibraryStateRes
     a while and must not freeze the Template tab); the active workspace id is captured
     first and re-checked once `template_ops.LOCK` is held for the write, so a profile
     switch mid-call cannot land a draft in the wrong profile's queue.
+
+    Not a tailoring job, so `config._ACTIVE` is never populated for it (only the job
+    runner does that) — both LLM calls below are pinned to `config.ONE_OFF_PROFILE`
+    (same as the import route's tag-suggestion pass), so this never silently falls
+    through to `backend_for`'s claude default on a fresh server with no Anthropic key,
+    regardless of the user's saved Model setting.
     """
     workspace_id_at_start = config.active_workspace_id()
     try:
@@ -1218,7 +1367,8 @@ def generate_library_proposals(body: ProposalGenerateRequest) -> LibraryStateRes
     unmatched: list[tuple[str, str]] = []
     if jd_text:
         try:
-            requirements = jd.extract(jd_text, known_tags=known_tags)
+            with config.pinned(config.ONE_OFF_PROFILE):
+                requirements = jd.extract(jd_text, known_tags=known_tags)
             unmatched = propose.near_miss_alias_candidates(requirements, resume)
         except Exception as exc:
             # Broad on purpose — see the matching comment on the import route's tag
@@ -1235,13 +1385,14 @@ def generate_library_proposals(body: ProposalGenerateRequest) -> LibraryStateRes
     warning: str | None = None
     if unmatched or unknown_verbs:
         try:
-            raw = propose.propose_vocabulary(
-                known_tags=known_tags,
-                unmatched=unmatched,
-                unknown_verbs=unknown_verbs,
-                families=effective.verb_families,
-                jd_text=jd_text,
-            )
+            with config.pinned(config.ONE_OFF_PROFILE):
+                raw = propose.propose_vocabulary(
+                    known_tags=known_tags,
+                    unmatched=unmatched,
+                    unknown_verbs=unknown_verbs,
+                    families=effective.verb_families,
+                    jd_text=jd_text,
+                )
         except Exception as exc:
             return _library_state_response(warning=f"Could not draft suggestions: {exc}")
 
@@ -1349,28 +1500,42 @@ def approve_library_proposals(body: ProposalApproveRequest) -> LibraryStateRespo
 
 @app.post("/api/libraries/proposals/reject", response_model=LibraryStateResponse)
 def reject_library_proposals(body: ProposalRejectRequest) -> LibraryStateResponse:
-    """Decline selected pending proposals so they are never re-proposed."""
-    wanted_ids = set(body.proposal_ids)
-    state = libraries.read_workspace_state()
-    selected = [p for p in state.proposals if p.id in wanted_ids]
-    if not selected:
-        return _library_state_response()
+    """Decline selected pending proposals so they are never re-proposed.
 
-    existing_rejected = {
-        (r.kind, r.alias, r.canonical, r.verb, r.family) for r in state.rejected
-    }
-    for p in selected:
-        key = (p.kind, p.alias, p.canonical, p.verb, p.family)
-        if key not in existing_rejected:
-            state.rejected.append(
-                libraries.RejectedEntry(
-                    kind=p.kind, alias=p.alias, canonical=p.canonical, verb=p.verb, family=p.family
+    Deliberately does not check `busy()` — unlike approve, rejecting changes nothing
+    effective, so a running job must not block it (see
+    `test_generate_and_reject_proceed_even_when_queue_busy`). It does still take
+    `template_ops.LOCK` around the read-modify-write, matching every other route
+    touching this same per-workspace state (including the job worker's own
+    end-of-run proposal draft) — that's plain mutual exclusion, not a busy-based
+    rejection, so it doesn't reintroduce the 409 that test guards against.
+    """
+    wanted_ids = set(body.proposal_ids)
+    with template_ops.LOCK:
+        state = libraries.read_workspace_state()
+        selected = [p for p in state.proposals if p.id in wanted_ids]
+        if not selected:
+            return _library_state_response()
+
+        existing_rejected = {
+            (r.kind, r.alias, r.canonical, r.verb, r.family) for r in state.rejected
+        }
+        for p in selected:
+            key = (p.kind, p.alias, p.canonical, p.verb, p.family)
+            if key not in existing_rejected:
+                state.rejected.append(
+                    libraries.RejectedEntry(
+                        kind=p.kind,
+                        alias=p.alias,
+                        canonical=p.canonical,
+                        verb=p.verb,
+                        family=p.family,
+                    )
                 )
-            )
-            existing_rejected.add(key)
-    state.proposals = [p for p in state.proposals if p.id not in wanted_ids]
-    libraries.write_workspace_state(state)
-    return _library_state_response()
+                existing_rejected.add(key)
+        state.proposals = [p for p in state.proposals if p.id not in wanted_ids]
+        libraries.write_workspace_state(state)
+        return _library_state_response()
 
 
 def _workspace_list_response() -> WorkspaceListResponse:
@@ -1424,12 +1589,15 @@ def activate_workspace(workspace_id: str) -> WorkspaceActivateResponse:
     """Switch the active profile — master resume, template, calibration, and settings.
 
     Refuses while a tailoring job is busy: rebinding paths mid-job would silently mix
-    one profile's content with another's paths instead of failing loudly.
+    one profile's content with another's paths instead of failing loudly. The `busy()`
+    check runs *inside* `template_ops.LOCK`, not before it — `create_job` holds this
+    same lock across its own validate-then-submit, so a checked-then-acquired ordering
+    here would still let a job submitted in the gap slip through against the new
+    workspace.
     """
-    if get_queue().busy():
-        raise _busy_conflict("switching profiles")
-
     with template_ops.LOCK:
+        if get_queue().busy():
+            raise _busy_conflict("switching profiles")
         try:
             workspace.activate(workspace_id)
         except workspace.WorkspaceError as exc:

@@ -9,6 +9,9 @@ pypdf>=5.0
 pydantic>=2.9
 python-dotenv>=1.0
 pytest>=8.0
+# Dev tooling: lint/format + static typing. Config lives in pyproject.toml.
+ruff>=0.8
+mypy>=1.13
 # Web UI (src/resume_tailor/web). Not required for the CLI.
 fastapi>=0.115
 uvicorn[standard]>=0.32

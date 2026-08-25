@@ -8,6 +8,7 @@ single-worker queue behaviour without spending tokens.
 from __future__ import annotations
 
 import json
+import threading
 import time
 from pathlib import Path
 from urllib.parse import unquote
@@ -24,6 +25,7 @@ from resume_tailor.web import template_ops
 from resume_tailor.web.app import app
 from resume_tailor.web.jobs import JobQueue
 from resume_tailor.web.schemas import JobSettings
+
 # `bootstrap` is imported directly (not via `resume_tailor.workspace.bootstrap`) because
 # the autouse fixture in conftest.py stubs the module attribute to a no-op for every
 # other test in this file; these tests want the real implementation.
@@ -1043,7 +1045,7 @@ def test_skills_endpoint_and_status_field(client, monkeypatch):
     """A successful job exposes `status["skills"]` and serves `skills.md`; the download
     404s until the job is produced and 409s while it is still running."""
     c, _q = client
-    resume = load()
+    load()  # confirms the fixture's resume file is loadable before the job reads it
 
     def fake_extract(text, *, known_tags=None, use_cache=True, on_event=None):
         from resume_tailor.jd import JobRequirements, Keyword
@@ -1104,6 +1106,18 @@ def test_skills_endpoint_and_status_field(client, monkeypatch):
 
     monkeypatch.setattr(jobs_mod.skills, "select_skills", fake_select_skills)
 
+    from resume_tailor.expand import Expansion
+
+    # Was missing entirely — expansion is a real pipeline stage that runs after a
+    # successful fit (see CLAUDE.md's six-stage list). Without this stub the worker
+    # reached the real `expand.expand_experience`, an unstubbed network call left
+    # running in the background for the rest of the suite.
+    monkeypatch.setattr(
+        jobs_mod.expand,
+        "expand_experience",
+        lambda *a, **k: Expansion(entries=[], model="stub", char_limit=config.EXPAND_CHAR_LIMIT),
+    )
+
     res = c.post("/api/jobs", json={"jd_text": "Looking for a Python intern."})
     assert res.status_code == 200
     job_id = res.json()["job_id"]
@@ -1133,6 +1147,49 @@ def test_skills_download_409s_while_job_is_running(client, monkeypatch):
     job = Job(job_id="pending-job", jd_text="x", settings=JobSettings())
     q._jobs["pending-job"] = job
     res = c.get("/api/jobs/pending-job/skills.md")
+    assert res.status_code == 409
+
+
+def test_cancel_job_404s_for_unknown_job(client):
+    c, _q = client
+    res = c.delete("/api/jobs/unknown-job")
+    assert res.status_code == 404
+
+
+def test_cancel_job_cancels_a_queued_job(client):
+    """DELETE on a job the worker hasn't touched yet cancels it immediately."""
+    c, q = client
+    job = jobs_mod.Job(job_id="queued-job", jd_text="x", settings=JobSettings(), status="queued")
+    q._jobs[job.job_id] = job
+
+    res = c.delete("/api/jobs/queued-job")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["status"] == "cancelled"
+    assert any(e["stage"] == "cancel" for e in body["events"])
+    assert q.get("queued-job").status == "cancelled"
+
+
+def test_cancel_job_flags_a_running_job_without_finishing_it_immediately(client):
+    """A running job's cancellation is cooperative: DELETE only sets the flag —
+    `_execute` (with no worker thread running here) never gets a chance to notice it,
+    so the job legitimately still reads "running" right after the call."""
+    c, q = client
+    job = jobs_mod.Job(job_id="running-job", jd_text="x", settings=JobSettings(), status="running")
+    q._jobs[job.job_id] = job
+
+    res = c.delete("/api/jobs/running-job")
+    assert res.status_code == 200
+    assert res.json()["status"] == "running"
+    assert job.cancel_requested.is_set()
+
+
+def test_cancel_job_409s_when_already_terminal(client):
+    c, q = client
+    job = jobs_mod.Job(job_id="done-job", jd_text="x", settings=JobSettings(), status="succeeded")
+    q._jobs[job.job_id] = job
+
+    res = c.delete("/api/jobs/done-job")
     assert res.status_code == 409
 
 
@@ -1438,6 +1495,17 @@ def test_merge_master_resume_rejects_an_invalid_body(client):
     assert res.status_code == 400
 
 
+def test_put_master_resume_rejects_an_invalid_body(client):
+    """PUT must 400 on a rejected write, matching its sibling `/merge` route above —
+    previously this returned 200 with `{"ok": false, "errors": [...]}`, so a caller
+    checking only HTTP status (as `frontend/src/api.ts`'s generic `request()` helper
+    does) would see the write as having succeeded."""
+    c, _ = client
+    res = c.put("/api/master-resume", json={"not": "a valid resume"})
+    assert res.status_code == 400
+    assert "detail" in res.json()
+
+
 def _resume_docx_bytes_with_an_untaggable_bullet() -> bytes:
     """`_resume_docx_bytes`'s own bullets ("Built numerical engines in Python.",
     "Indexed research notes with embeddings.") both match the default tag vocabulary
@@ -1637,6 +1705,95 @@ def test_queue_serialises_jobs(monkeypatch, tmp_path):
     assert not concurrent, "jobs overlapped — queue is not serial"
 
 
+def test_cancel_removes_a_queued_job_before_the_worker_ever_executes_it(monkeypatch, tmp_path):
+    """Cancelling a job still waiting behind another one skips it outright — the
+    worker must never call `_execute` for it, not even once it's dequeued."""
+    monkeypatch.setattr(config, "OUTPUT_DIR", tmp_path / "output")
+    config.OUTPUT_DIR.mkdir()
+
+    q = JobQueue()
+    running = threading.Event()
+    release = threading.Event()
+    executed = []
+
+    def slow_execute(job):
+        executed.append(job.job_id)
+        running.set()
+        release.wait(timeout=2)
+
+    monkeypatch.setattr(q, "_execute", slow_execute)
+
+    j1, _ = q.submit("jd one", JobSettings())
+    j2, _ = q.submit("jd two", JobSettings())
+
+    assert running.wait(timeout=2)
+    assert q.get(j2.job_id).status == "queued"
+
+    assert q.cancel(j2.job_id) is not None
+    assert q.get(j2.job_id).status == "cancelled"
+
+    release.set()
+    deadline = time.time() + 5
+    while time.time() < deadline and q.get(j1.job_id).status == "running":
+        time.sleep(0.02)
+    assert q.get(j1.job_id).status == "succeeded"
+
+    # Give the worker a beat to dequeue j2's id off `_pending` and confirm it is
+    # skipped rather than executed now that it's already terminal.
+    deadline = time.time() + 2
+    while time.time() < deadline and not q._pending.empty():
+        time.sleep(0.02)
+    assert j2.job_id not in executed
+    assert q.get(j2.job_id).status == "cancelled"
+
+
+def test_cancel_stops_a_running_job_at_the_next_checkpoint(monkeypatch, tmp_path):
+    """A running job's `check_cancelled()` checkpoints actually stop it: the worker
+    catches `JobCancelled` and marks the job terminal without reaching later code."""
+    monkeypatch.setattr(config, "OUTPUT_DIR", tmp_path / "output")
+    config.OUTPUT_DIR.mkdir()
+
+    q = JobQueue()
+    reached_first_checkpoint = threading.Event()
+    reached_second_checkpoint = threading.Event()
+
+    def fake_execute(job):
+        reached_first_checkpoint.set()
+        job.check_cancelled()  # not yet cancelled — must not raise
+        deadline = time.time() + 2
+        while time.time() < deadline and not job.cancel_requested.is_set():
+            time.sleep(0.01)
+        job.check_cancelled()  # cancelled by now — must raise and unwind here
+        reached_second_checkpoint.set()  # must never run
+
+    monkeypatch.setattr(q, "_execute", fake_execute)
+
+    job, _ = q.submit("jd", JobSettings())
+    assert reached_first_checkpoint.wait(timeout=2)
+    assert q.cancel(job.job_id) is not None
+
+    deadline = time.time() + 2
+    while time.time() < deadline and q.get(job.job_id).status == "running":
+        time.sleep(0.02)
+
+    assert q.get(job.job_id).status == "cancelled"
+    assert not reached_second_checkpoint.is_set()
+    assert any(e.stage == "cancel" for e in q.get(job.job_id).events)
+
+
+def test_cancel_is_a_noop_for_an_unknown_or_already_terminal_job(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "OUTPUT_DIR", tmp_path / "output")
+    config.OUTPUT_DIR.mkdir()
+
+    q = JobQueue()
+    assert q.cancel("no-such-job") is None
+
+    job = jobs_mod.Job(job_id="done", jd_text="x", settings=JobSettings(), status="succeeded")
+    q._jobs[job.job_id] = job
+    assert q.cancel("done") is None
+    assert q.get("done").status == "succeeded"  # unchanged
+
+
 # ---------------------------------------------------------------------------
 # Template tab
 # ---------------------------------------------------------------------------
@@ -1806,9 +1963,15 @@ def test_upload_template_rejects_when_queue_busy(client, tmp_path, monkeypatch):
     c, q = client
     _point_templates_at(tmp_path, monkeypatch)
 
-    # Mark the queue busy without actually running the pipeline.
-    job, _ = q.submit("placeholder jd", JobSettings())
-    job.status = "running"
+    # Insert a "running" job directly rather than through submit(), which starts the
+    # real background worker regardless of reassigning `job.status` afterward — the
+    # worker would independently run the real (unstubbed) pipeline against
+    # "placeholder jd", reaching the network in the background for the rest of the
+    # suite. See test_activate_workspace_409_when_queue_busy for the same pattern.
+    job = jobs_mod.Job(
+        job_id="fake-busy", jd_text="placeholder jd", settings=JobSettings(), status="running"
+    )
+    q._jobs[job.job_id] = job
 
     res = c.post(
         "/api/template",
@@ -2092,6 +2255,54 @@ def test_remap_template_unknown_sha_is_400(client, tmp_path, monkeypatch):
     assert res.status_code == 400
 
 
+@pytest.mark.parametrize(
+    "sha",
+    [
+        "../../../../../../etc/passwd",
+        "..\\..\\..\\windows\\win.ini",
+        "0" * 63,  # one short of a real digest
+        "0" * 65,  # one over
+        # Uppercase hex is not what hexdigest() ever produces. Digits alone don't
+        # change under .upper(), unlike a real sha which mixes in a-f — this has to
+        # be spelled with a letter for the case to mean anything.
+        ("ab" * 32).upper(),
+        "not-hex-at-all-000000000000000000000000000000000000000000000000",
+    ],
+)
+def test_remap_template_rejects_non_hex_sha_before_touching_disk(
+    client, tmp_path, monkeypatch, sha
+):
+    """`source_sha256` is interpolated straight into a filesystem path in
+    `template_ops._load_cached_upload` (`_upload_cache_dir() / f"{sha}.docx"`), and
+    arrives in a JSON body rather than a path param, so nothing else stops a
+    traversal value from reaching it. The schema-level pattern constraint
+    (`web/schemas.py`'s `_SHA256_HEX_PATTERN`) must reject it with FastAPI's own 422,
+    before `template_ops.remap_upload` — and therefore any path/file access — ever
+    runs. Covers the traversal case the existing `"0" * 64` test above cannot: that
+    value is well-formed hex, so it only ever probes the "valid shape, unknown upload"
+    400 path, never the "malformed shape" 422 path."""
+    c, _ = client
+    _point_templates_at(tmp_path, monkeypatch)
+
+    res = c.post(
+        "/api/template/analyze/remap",
+        json={"source_sha256": sha, "overrides": {}},
+    )
+    assert res.status_code == 422
+
+    res2 = c.post(
+        "/api/template/preview/source",
+        json={"source_sha256": sha, "overrides": {}},
+    )
+    assert res2.status_code == 422
+
+    res3 = c.post(
+        "/api/template/preview/draft",
+        json={"source_sha256": sha, "profile": {}},
+    )
+    assert res3.status_code == 422
+
+
 def test_preview_source_returns_pdf(client, tmp_path, monkeypatch):
     """POST /api/template/preview/source serves the uploaded (not-yet-installed)
     baseline as a PDF for the wizard's side-by-side comparison, via the same
@@ -2156,6 +2367,73 @@ def test_preview_draft_returns_pdf(client, tmp_path, monkeypatch):
     assert after == before
 
 
+def test_preview_draft_reports_a_bad_mapping_as_422_not_503(client, tmp_path, monkeypatch):
+    """`template_build.build_from_profile` raises plain `RuntimeError` for every
+    mapping problem (a missing field, a paragraph id out of range, …) —
+    indistinguishable, to a bare `except RuntimeError`, from `render.to_pdf` genuinely
+    having no PDF backend available. `template_ops.preview_draft` re-raises the build
+    failure as `TemplateBuildError`, and the route must catch that ahead of its
+    `except RuntimeError` branch (it's a subclass), so a bad *mapping* reads as
+    "fix your profile" (422, with the build log) rather than "install LibreOffice"
+    (503) — that 503 branch stays reserved for `render.to_pdf` failing for real,
+    covered separately below.
+    """
+    c, _ = client
+    _point_templates_at(tmp_path, monkeypatch)
+
+    def failing_build(source, output, profile):
+        raise RuntimeError("Experience mapping is missing a job title.")
+
+    monkeypatch.setattr(template_ops.template_build, "build_from_profile", failing_build)
+
+    analyzed = c.post(
+        "/api/template/analyze",
+        files={"file": ("resume.docx", _resume_docx_bytes(), _DOCX_MIME)},
+    ).json()
+    assert analyzed["suggested_profile"], analyzed["issues"]
+
+    res = c.post(
+        "/api/template/preview/draft",
+        json={
+            "source_sha256": analyzed["source_sha256"],
+            "profile": analyzed["suggested_profile"],
+        },
+    )
+    assert res.status_code == 422
+    detail = res.json()["detail"]
+    assert "missing a job title" in detail["message"]
+    assert "log" in detail
+
+
+def test_preview_draft_reports_no_pdf_backend_as_503(client, tmp_path, monkeypatch):
+    """The build succeeds; `render.to_pdf` is what has no backend available here —
+    this is the genuine 503 case `preview_draft_template`'s `except RuntimeError`
+    branch exists for, kept passing alongside the 422 case above to prove the route
+    still tells the two apart."""
+    c, _ = client
+    _point_templates_at(tmp_path, monkeypatch)
+
+    def failing_to_pdf(docx_path, pdf_path=None, **_kwargs):
+        raise RuntimeError("No PDF backend is configured.")
+
+    monkeypatch.setattr(template_ops.render, "to_pdf", failing_to_pdf)
+
+    analyzed = c.post(
+        "/api/template/analyze",
+        files={"file": ("resume.docx", _resume_docx_bytes(), _DOCX_MIME)},
+    ).json()
+    assert analyzed["suggested_profile"], analyzed["issues"]
+
+    res = c.post(
+        "/api/template/preview/draft",
+        json={
+            "source_sha256": analyzed["source_sha256"],
+            "profile": analyzed["suggested_profile"],
+        },
+    )
+    assert res.status_code == 503
+
+
 def test_install_clears_the_upload_cache(client, tmp_path, monkeypatch):
     """A successful install clears the wizard's cached upload — remap/preview against
     that sha afterward must 400, not silently keep serving a now-stale draft."""
@@ -2188,6 +2466,40 @@ def test_install_clears_the_upload_cache(client, tmp_path, monkeypatch):
 
     res = c.post("/api/template/analyze/remap", json={"source_sha256": sha, "overrides": {}})
     assert res.status_code == 400
+
+
+def test_prune_upload_cache_deletes_preview_pdfs_too(client, tmp_path, monkeypatch):
+    """`_prune_upload_cache` used to glob only `*.docx`; `preview_source`/`preview_draft`
+    also cache rendered `{sha}.source.pdf`/`{sha}.draft.pdf` alongside the upload in the
+    same directory, and a `*.docx`-only glob left those — the largest, most PII-dense
+    artifacts in that directory — never aged out. Exercised directly against
+    `template_ops` rather than through the HTTP routes: this is a pure filesystem-age
+    behavior with nothing route-specific about it."""
+    _c, _q = client  # ensures config.OUTPUT_DIR is already redirected under tmp_path
+    _point_templates_at(tmp_path, monkeypatch)
+
+    cache_dir = template_ops._upload_cache_dir()
+    cache_dir.mkdir(parents=True, exist_ok=True)
+
+    old_docx = cache_dir / "aaaa.docx"
+    old_source_pdf = cache_dir / "aaaa.source.pdf"
+    old_draft_pdf = cache_dir / "aaaa.draft.pdf"
+    fresh_docx = cache_dir / "bbbb.docx"
+    for f in (old_docx, old_source_pdf, old_draft_pdf, fresh_docx):
+        f.write_bytes(b"x")
+
+    import os
+
+    day_and_a_half_ago = time.time() - 1.5 * 24 * 3600
+    for f in (old_docx, old_source_pdf, old_draft_pdf):
+        os.utime(f, (day_and_a_half_ago, day_and_a_half_ago))
+
+    template_ops._prune_upload_cache()
+
+    assert not old_docx.exists()
+    assert not old_source_pdf.exists(), "the .docx-only glob left this PDF behind"
+    assert not old_draft_pdf.exists(), "the .docx-only glob left this PDF behind"
+    assert fresh_docx.exists(), "prune must not delete anything under the age cutoff"
 
 
 def test_get_template_includes_profile_summary(client, tmp_path, monkeypatch):
@@ -2658,8 +2970,13 @@ def test_library_impact_distinguishes_additive_from_rewriting(client, tmp_path, 
 
 def test_library_routes_reject_when_queue_busy(client):
     c, q = client
-    job, _ = q.submit("placeholder jd", JobSettings())
-    job.status = "running"
+    # Direct insertion, not submit() — see test_upload_template_rejects_when_queue_busy
+    # for why: submit() starts a real background worker regardless of reassigning
+    # `job.status` afterward.
+    job = jobs_mod.Job(
+        job_id="fake-busy", jd_text="placeholder jd", settings=JobSettings(), status="running"
+    )
+    q._jobs[job.job_id] = job
 
     for res in (
         c.post("/api/libraries/packs", json={"label": "A"}),
@@ -2891,8 +3208,11 @@ def test_approve_404s_for_unknown_proposal_ids(client, tmp_path, monkeypatch):
 def test_approve_rejects_when_queue_busy(client, tmp_path, monkeypatch):
     c, q = client
     _write_test_resume(monkeypatch, tmp_path, bullet_text="Did a thing.", bullet_tags=["python"])
-    job, _ = q.submit("placeholder jd", JobSettings())
-    job.status = "running"
+    # Direct insertion, not submit() — see test_upload_template_rejects_when_queue_busy.
+    job = jobs_mod.Job(
+        job_id="fake-busy", jd_text="placeholder jd", settings=JobSettings(), status="running"
+    )
+    q._jobs[job.job_id] = job
 
     res = c.post(
         "/api/libraries/proposals/approve",
@@ -2906,8 +3226,11 @@ def test_generate_and_reject_proceed_even_when_queue_busy(client, tmp_path, monk
     not block them."""
     c, q = client
     _write_test_resume(monkeypatch, tmp_path, bullet_text="Did a thing.", bullet_tags=["python"])
-    job, _ = q.submit("placeholder jd", JobSettings())
-    job.status = "running"
+    # Direct insertion, not submit() — see test_upload_template_rejects_when_queue_busy.
+    job = jobs_mod.Job(
+        job_id="fake-busy", jd_text="placeholder jd", settings=JobSettings(), status="running"
+    )
+    q._jobs[job.job_id] = job
 
     assert c.post("/api/libraries/proposals", json={}).status_code == 200
     assert c.post("/api/libraries/proposals/reject", json={"proposal_ids": []}).status_code == 200
@@ -3052,6 +3375,96 @@ def test_activate_workspace_409_when_queue_busy(client, tmp_path, monkeypatch):
     assert config.active_workspace_id() == "default"
 
 
+def test_create_job_and_activate_workspace_share_one_lock(client, tmp_path, monkeypatch):
+    """`create_job` and `activate_workspace` both hold `template_ops.LOCK` across their
+    validate-then-submit / busy-check-then-activate sequences (see both routes'
+    docstrings). Without this, a job could be validated against workspace A, then
+    executed by the worker against workspace B if a switch landed in the gap between
+    validation and `submit()` — and `activate_workspace`'s own `busy()` check has to
+    run *inside* the same lock, not before acquiring it, or a job submitted in that
+    gap would still slip through.
+
+    Proven directly rather than by racing real timing: hold `template_ops.LOCK` from a
+    background thread and confirm `POST /api/jobs` cannot complete until it's
+    released, then confirm `POST /api/workspaces/{id}/activate` is blocked by it too.
+    A flaky sleep-based race would only sometimes catch a regression; this doesn't
+    depend on timing at all.
+    """
+    c, _q = client
+    _write_test_resume(monkeypatch, tmp_path, bullet_text="Did a thing.", bullet_tags=["python"])
+    # The route only needs to reach `submit()` and return — it doesn't matter that the
+    # job goes on to fail once the background worker picks it up, only that it never
+    # reaches the network doing so. Failing the very first pipeline stage, locally and
+    # immediately, is simpler than replicating a full success stub chain and is just
+    # as safe: nothing downstream ever runs.
+    def failing_extract_consensus(*a, **k):
+        raise RuntimeError("test stub — pipeline must not reach the network")
+
+    monkeypatch.setattr(jobs_mod.jd, "extract_consensus", failing_extract_consensus)
+
+    acquired = threading.Event()
+    release = threading.Event()
+
+    def hold_lock():
+        with template_ops.LOCK:
+            acquired.set()
+            release.wait(timeout=5)
+
+    holder = threading.Thread(target=hold_lock, daemon=True)
+    holder.start()
+    try:
+        assert acquired.wait(timeout=2), "background thread never acquired the lock"
+
+        result: dict = {}
+
+        def try_create_job():
+            result["response"] = c.post("/api/jobs", json={"jd_text": "placeholder jd"})
+
+        caller = threading.Thread(target=try_create_job, daemon=True)
+        caller.start()
+        caller.join(timeout=0.5)
+        assert caller.is_alive(), (
+            "create_job returned without waiting for template_ops.LOCK — the two "
+            "routes are no longer mutually exclusive"
+        )
+
+        release.set()
+        caller.join(timeout=5)
+        assert not caller.is_alive()
+        assert result["response"].status_code == 200
+    finally:
+        release.set()
+        holder.join(timeout=5)
+
+    # Same proof, for the other side of the pairing: activate_workspace must also
+    # block on the lock, not just create_job.
+    acquired.clear()
+    release.clear()
+    holder2 = threading.Thread(target=hold_lock, daemon=True)
+    holder2.start()
+    try:
+        assert acquired.wait(timeout=2), "background thread never acquired the lock"
+
+        result2: dict = {}
+
+        def try_activate():
+            result2["response"] = c.post("/api/workspaces/default/activate")
+
+        caller2 = threading.Thread(target=try_activate, daemon=True)
+        caller2.start()
+        caller2.join(timeout=0.5)
+        assert caller2.is_alive(), (
+            "activate_workspace returned without waiting for template_ops.LOCK"
+        )
+
+        release.set()
+        caller2.join(timeout=5)
+        assert not caller2.is_alive()
+    finally:
+        release.set()
+        holder2.join(timeout=5)
+
+
 def test_library_selection_is_per_profile_and_activate_reloads_it(client, tmp_path, monkeypatch):
     """Each profile has its own pack selection, and switching profiles must rebind
     config.TAG_ALIASES to the newly active one's — the web-layer companion to
@@ -3141,7 +3554,7 @@ def test_job_artifacts_land_under_active_workspace(client, tmp_path, monkeypatch
     config.MASTER_RESUME_PATH.parent.mkdir(parents=True, exist_ok=True)
     config.MASTER_RESUME_PATH.write_text(real_resume_json, encoding="utf-8")
 
-    resume = load()
+    load()  # confirms the copied-over resume file is loadable before the job reads it
 
     def fake_extract(text, *, known_tags=None, use_cache=True, on_event=None):
         from resume_tailor.jd import JobRequirements, Keyword

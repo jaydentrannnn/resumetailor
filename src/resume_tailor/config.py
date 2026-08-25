@@ -14,10 +14,11 @@ import os
 import platform
 import re
 import shutil
+from collections.abc import Iterator
 from contextlib import contextmanager
 from contextvars import ContextVar
 from pathlib import Path
-from typing import Iterator, NamedTuple
+from typing import NamedTuple
 
 from dotenv import load_dotenv
 
@@ -1039,7 +1040,9 @@ MAX_GROW_ATTEMPTS = 4
 #: `core-tech` pack (`library_seeds.py`) and reassigned wholesale by
 #: `libraries.apply_to_config()` once a workspace has its own pack selection — never
 #: mutated in place, since `verb_family`'s index cache below keys on object identity.
-VERB_FAMILIES: dict[str, tuple[str, ...]] = dict(library_seeds.BUILTIN_PACKS["core-tech"]["verb_families"])
+VERB_FAMILIES: dict[str, tuple[str, ...]] = dict(
+    library_seeds.BUILTIN_PACKS["core-tech"]["verb_families"]
+)
 
 #: How many bullets may open with verbs from the same family before it reads repetitive.
 #: Two is the point where a pattern becomes visible but is still plausibly incidental; a

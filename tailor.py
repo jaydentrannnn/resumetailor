@@ -305,8 +305,40 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     return parser.parse_args(argv)
 
 
+def _validate_argument_ranges(args: argparse.Namespace) -> str | None:
+    """Range-check the numeric flags argparse's own `type=` can't bound, returning the
+    first violation's message (or `None` if all pass).
+
+    Called at the very top of `main`, before anything is read or spent — these were
+    previously checked only just before `fit.fit`, after JD extraction (up to 3 LLM
+    calls), semantic scoring, and facet selection had already run, so
+    `--fill-target 1.5` used to cost several model calls before failing on a value
+    that only ever needed the parsed args to reject. The web path doesn't have this
+    problem: `web/schemas.py`'s `JobSettings` pins the same bounds declaratively via
+    Pydantic `Field(ge=..., le=...)`, rejected before a job is even queued.
+    """
+    if args.fill_target is not None and not (0.8 <= args.fill_target <= 0.95):
+        return "--fill-target must be between 0.80 and 0.95"
+    if args.initial_bullet_share is not None and not (
+        0.3 <= args.initial_bullet_share <= 1.0
+    ):
+        return "--initial-bullet-share must be between 0.30 and 1.00"
+    if args.experience_bullet_share is not None and not (
+        0.0 <= args.experience_bullet_share <= 1.0
+    ):
+        return "--experience-bullet-share must be between 0.00 and 1.00"
+    if args.max_bullets_per_entry is not None and args.max_bullets_per_entry < 1:
+        return "--max-bullets-per-entry must be at least 1"
+    return None
+
+
 def main(argv: list[str] | None = None) -> int:
     args = _parse_args(argv)
+
+    range_error = _validate_argument_ranges(args)
+    if range_error is not None:
+        print(f"error: {range_error}", file=sys.stderr)
+        return 1
 
     try:
         workspace.bootstrap(workspace_id=args.workspace)
@@ -314,6 +346,14 @@ def main(argv: list[str] | None = None) -> int:
         print(f"error: {exc}", file=sys.stderr)
         return 1
 
+    # The CLI is otherwise entirely flag-driven — every other behavior below traces to
+    # an explicit `--flag`, which is what keeps a scripted/looped bulk-apply run
+    # predictable regardless of what's saved in the web UI. `model_name`,
+    # `rewrite_style`, and `expand_style` are the sole, deliberate exceptions: picked
+    # up from the active profile's saved `settings.json` so a style/model preference
+    # set once in the web UI doesn't have to be retyped as a flag on every CLI run.
+    # No other saved setting (`pages`, `experience`, `include`, `fill_target`, …) is
+    # read here — those always come from argparse defaults, never from settings.json.
     saved = workspace.load_settings()["defaults"]
 
     # Resolved before anything is read or spent, so a bad spec costs nothing.
@@ -464,27 +504,9 @@ def main(argv: list[str] | None = None) -> int:
         / report.export_filename(resume.contact.name, requirements.title)
     )
 
+    # Range-validated by `_validate_argument_ranges` at the top of `main`, before
+    # anything was read or spent — not re-checked here.
     try:
-        if args.fill_target is not None and not (0.8 <= args.fill_target <= 0.95):
-            print("error: --fill-target must be between 0.80 and 0.95", file=sys.stderr)
-            return 1
-        if args.initial_bullet_share is not None and not (0.3 <= args.initial_bullet_share <= 1.0):
-            print(
-                "error: --initial-bullet-share must be between 0.30 and 1.00",
-                file=sys.stderr,
-            )
-            return 1
-        if args.experience_bullet_share is not None and not (
-            0.0 <= args.experience_bullet_share <= 1.0
-        ):
-            print(
-                "error: --experience-bullet-share must be between 0.00 and 1.00",
-                file=sys.stderr,
-            )
-            return 1
-        if args.max_bullets_per_entry is not None and args.max_bullets_per_entry < 1:
-            print("error: --max-bullets-per-entry must be at least 1", file=sys.stderr)
-            return 1
         result = fit.fit(
             resume,
             requirements,

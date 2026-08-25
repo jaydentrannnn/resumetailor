@@ -10,10 +10,7 @@ install has.
 
 from __future__ import annotations
 
-import json
-
 import pytest
-from pydantic import ValidationError
 
 from resume_tailor import config, data, libraries, library_seeds
 
@@ -464,7 +461,7 @@ def test_reset_restores_the_builtin_table_only():
 
     libraries.reset()
 
-    assert config.TAG_ALIASES == library_seeds.BUILTIN_PACKS["core-tech"]["tag_aliases"]
+    assert library_seeds.BUILTIN_PACKS["core-tech"]["tag_aliases"] == config.TAG_ALIASES
     assert "x" not in config.TAG_ALIASES
 
 

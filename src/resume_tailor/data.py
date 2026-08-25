@@ -15,7 +15,7 @@ import json
 import sys
 from collections import Counter
 from pathlib import Path
-from typing import Annotated, Any, Literal, Union
+from typing import Annotated, Any, Literal
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
@@ -196,13 +196,7 @@ class SkillsSection(_SectionBase):
 #: or misspelled kind fails validation with a clear message rather than silently matching
 #: the wrong branch.
 Section = Annotated[
-    Union[
-        ExperienceSection,
-        ProjectSection,
-        ListSection,
-        EducationSection,
-        SkillsSection,
-    ],
+    ExperienceSection | ProjectSection | ListSection | EducationSection | SkillsSection,
     Field(discriminator="kind"),
 ]
 
@@ -265,7 +259,7 @@ class MasterResume(_Strict):
         return sorted({config.canonical_tag(t) for t in tags if t.strip()})
 
     @model_validator(mode="after")
-    def _fill_entry_ids(self) -> "MasterResume":
+    def _fill_entry_ids(self) -> MasterResume:
         """Auto-fill blank `Experience.id`s from a company slug, deterministically.
 
         Runs before `_ids_unique` so a file predating this field (every id blank) still
@@ -292,7 +286,7 @@ class MasterResume(_Strict):
         return self
 
     @model_validator(mode="after")
-    def _ids_unique(self) -> "MasterResume":
+    def _ids_unique(self) -> MasterResume:
         """Bullet/entry/section ids address rewrites and exclusions; a duplicate would
         silently overwrite or misapply one."""
         ids = [b.id for b in self.all_bullets()]

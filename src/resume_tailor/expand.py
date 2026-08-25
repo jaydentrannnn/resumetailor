@@ -23,7 +23,7 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 
 from . import config, events, llm, style
-from .data import Bullet, Experience, MasterResume
+from .data import Experience, MasterResume
 from .fit import FitResult
 from .jd import JobRequirements
 from .rewrite import (
@@ -33,7 +33,6 @@ from .rewrite import (
     select_entries,
     verb_collisions,
 )
-
 
 #: Bumped when `_SYSTEM` or the expand request shape changes, so stored expansions
 #: invalidate on their own rather than relying on `--no-cache`.

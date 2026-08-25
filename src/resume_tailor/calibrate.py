@@ -12,7 +12,7 @@ from __future__ import annotations
 import hashlib
 import json
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from resume_tailor import config, data, render, template_profile
@@ -423,7 +423,9 @@ def _load_previous_anchors() -> dict | None:
     return payload.get("anchors")
 
 
-def write_calibration(chars_per_line: int, lines_per_page: int, anchors: dict | None = None) -> Path:
+def write_calibration(
+    chars_per_line: int, lines_per_page: int, anchors: dict | None = None
+) -> Path:
     """Record the measurements as data, keyed by the PDF backend that produced them.
 
     `anchors`, when given, is the render-anchor baseline (`check_render_anchors`'s
@@ -438,7 +440,7 @@ def write_calibration(chars_per_line: int, lines_per_page: int, anchors: dict | 
         "backend": config.PDF_BACKEND,
         "chars_per_line": chars_per_line,
         "lines_per_page": lines_per_page,
-        "measured_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+        "measured_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "template": config.DEFAULT_TEMPLATE_PATH.name,
     }
     if anchors is not None:

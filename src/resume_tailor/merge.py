@@ -14,7 +14,6 @@ from . import config
 from .data import Bullet, Experience, Project
 from .jd import JobRequirements
 
-
 #: Tokens that look like proper nouns but carry no factual claim, so they never need to
 #: be traceable to source material.
 _BENIGN = {
@@ -189,7 +188,7 @@ def propose(
     candidates.sort(key=lambda c: (-c[0], c[1], -len(c[2])))
     chosen: list[MergeGroup] = []
     used_member_ids: set[str] = set()
-    for affinity, survivor_order, group, tag_j, content_j in candidates:
+    for affinity, _survivor_order, group, tag_j, content_j in candidates:
         if len(chosen) >= config.MAX_MERGES_PER_RUN:
             break
         member_ids = tuple(b.id for b in group)

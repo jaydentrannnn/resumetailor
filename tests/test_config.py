@@ -113,17 +113,16 @@ def test_pinned_never_mutates_active():
     resolved = config.resolve("claude")
 
     with config.pinned("ollama"):
-        assert config._ACTIVE == resolved
+        assert resolved == config._ACTIVE
 
-    assert config._ACTIVE == resolved
+    assert resolved == config._ACTIVE
 
 
 def test_pinned_invalid_profile_raises_and_leaves_no_residue():
     config.resolve("claude")
 
-    with pytest.raises(ValueError):
-        with config.pinned("not-a-real-profile"):
-            pass
+    with pytest.raises(ValueError), config.pinned("not-a-real-profile"):
+        pass
 
     assert config._PINNED.get() is None
     assert config.backend_for("extract").provider == "anthropic"

@@ -822,10 +822,10 @@ def _contact_field_order(text: str) -> list[ContactField]:
     # that also looks like a date before trusting it as a phone.
     if phone and not _DATE_RE.search(phone.group(0)):
         finds.append((phone.start(), "phone"))
-    for label, field in (("linkedin", "linkedin"), ("github", "github")):
+    for label, kind in (("linkedin", "linkedin"), ("github", "github")):
         idx = lower.find(label)
         if idx >= 0:
-            finds.append((idx, field))  # type: ignore[arg-type]
+            finds.append((idx, kind))  # type: ignore[arg-type]
     # Location: leftover leading chunk before first known token, if any.
     if finds:
         first = min(p for p, _ in finds)
@@ -835,9 +835,9 @@ def _contact_field_order(text: str) -> list[ContactField]:
     elif text.strip():
         finds.append((0, "location"))
 
-    for _, field in sorted(finds, key=lambda t: t[0]):
-        if field not in order:
-            order.append(field)
+    for _, kind in sorted(finds, key=lambda t: t[0]):
+        if kind not in order:
+            order.append(kind)
     # Always allow the full set at render time; order is preference for present fields.
     for extra in ("location", "email", "phone", "linkedin", "github"):
         if extra not in order:
@@ -869,10 +869,10 @@ def _contact_fields_present(text: str) -> list[ContactField]:
     if phone_m and not _DATE_RE.search(phone_m.group(0)):
         finds.append((phone_m.start(), "phone"))
     lower = text.lower()
-    for label, field in (("linkedin", "linkedin"), ("github", "github")):
+    for label, kind in (("linkedin", "linkedin"), ("github", "github")):
         idx = lower.find(label)
         if idx >= 0:
-            finds.append((idx, field))  # type: ignore[arg-type]
+            finds.append((idx, kind))  # type: ignore[arg-type]
     if not finds and _LOCATION_LIKE_RE.search(text):
         finds.append((0, "location"))
     return [f for _, f in sorted(finds, key=lambda t: t[0])]
@@ -1117,7 +1117,9 @@ def _entry_main_paragraphs(entry: list[_Para]) -> list[_Para]:
     return [
         p
         for p in entry
-        if not (p.location is not None and p.location.row == loc.row and p.location.cell != loc.cell)
+        if not (
+            p.location is not None and p.location.row == loc.row and p.location.cell != loc.cell
+        )
     ]
 
 
@@ -1146,7 +1148,9 @@ def _header_fields_across_cells(
         return None
 
     main = [
-        p for p in entry if p.location is not None and p.location.row == loc.row and p.location.cell == loc.cell
+        p
+        for p in entry
+        if p.location is not None and p.location.row == loc.row and p.location.cell == loc.cell
     ]
     side = [
         p
@@ -1190,7 +1194,9 @@ def _header_fields_across_cells(
         start = text.find(stripped)
         span = _span(para.id, start, start + len(stripped))
         fields[name] = OptionalSpan(present=True, span=span)
-        candidates.append(FieldCandidate(field=name, span=span, confidence=confidence, preview=stripped))
+        candidates.append(
+            FieldCandidate(field=name, span=span, confidence=confidence, preview=stripped)
+        )
 
     _field_span(primary, main[0], 0.85)
     if secondary and secondary_para is not None:
@@ -1229,11 +1235,17 @@ def _entry_header_fields(
     be a 3+1 split while its LEADERSHIP rows are 2+2, and both are the same shape
     logically.
     """
-    cross = _header_fields_across_cells(entry, primary=primary, secondary=secondary, date_field=date_field)
+    cross = _header_fields_across_cells(
+        entry, primary=primary, secondary=secondary, date_field=date_field
+    )
     if cross is not None:
         return cross
     return _header_fields_from_text(
-        entry[0], primary=primary, secondary=secondary, date_field=date_field, exclude_after=exclude_after
+        entry[0],
+        primary=primary,
+        secondary=secondary,
+        date_field=date_field,
+        exclude_after=exclude_after,
     )
 
 
@@ -1543,7 +1555,7 @@ def _skills_rows_across_cells(body: list[_Para]) -> list[tuple[_Para, _Para]] | 
         left, right = cells[cell_ids[0]], cells[cell_ids[1]]
         if not left or len(left) != len(right):
             return None
-        for lp, rp in zip(left, right):
+        for lp, rp in zip(left, right, strict=True):
             if not lp.text.strip() or not rp.text.strip():
                 return None
             pairs.append((lp, rp))
@@ -1573,7 +1585,6 @@ def _skills_pair_across_cells(body: list[_Para]) -> tuple[CharSpan, CharSpan, st
         _span(rp.id, body_start, body_start + len(value)),
         ": ",
     )
-    return first
 
 
 def _load_paras(doc) -> list[_Para]:
@@ -2298,7 +2309,10 @@ def _analyze_document(
             issues.append(
                 Issue(
                     code=f"omit_{key}",
-                    message=f"No {key.title()} section detected; it will be omitted from the template.",
+                    message=(
+                        f"No {key.title()} section detected; it will be omitted from the "
+                        "template."
+                    ),
                     blocking=False,
                 )
             )
@@ -2362,7 +2376,9 @@ def _analyze_document(
             # spacing and dedicated spacer rows, not counted blank paragraphs —
             # `_detect_spacing`'s chrome-run model doesn't translate, and
             # `TemplateProfile` rejects a table-layout profile carrying spacing donors.
-            spacing = SpacingProfile() if is_table_layout else _detect_spacing(paras, section_candidates)
+            spacing = (
+                SpacingProfile() if is_table_layout else _detect_spacing(paras, section_candidates)
+            )
 
         suggested = TemplateProfile(
             source_sha256=digest,
@@ -2501,7 +2517,7 @@ def validate_profile_against_doc(
             by_paragraph.setdefault(span.paragraph_id, []).append((label, span))
         for paragraph_id, entries in by_paragraph.items():
             ordered = sorted(entries, key=lambda e: e[1].start)
-            for (label_a, span_a), (label_b, span_b) in zip(ordered, ordered[1:]):
+            for (label_a, span_a), (label_b, span_b) in zip(ordered, ordered[1:], strict=False):
                 if span_b.start < span_a.end:
                     issues.append(
                         Issue(

@@ -6,12 +6,10 @@ the house convention in `tests/test_rewrite.py`.
 
 from __future__ import annotations
 
-from pathlib import Path
-
 import pytest
 
 from resume_tailor import config, expand, llm
-from resume_tailor.data import Bullet, Experience, MasterResume, Contact, load
+from resume_tailor.data import Bullet, Contact, Experience, MasterResume
 from resume_tailor.expand import (
     ExpandedEntryLLM,
     ExpansionLLMResult,

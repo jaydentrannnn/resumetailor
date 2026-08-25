@@ -25,9 +25,8 @@ from pathlib import Path
 import docx
 from docx.oxml.ns import qn
 
-from . import docx_text
+from . import docx_text, template_profile
 from . import render as render_mod
-from . import template_profile
 from .data import MasterResume
 from .template_analyze import Issue
 from .template_build import (
@@ -238,7 +237,9 @@ def verify_tagged(tagged: Path, profile: TemplateProfile) -> list[Issue]:
         issues.extend(_check_no_empty_cells(doc))
 
     if profile.section_mode == "generic":
-        expected_loop_open = SECTION_LOOP_OPEN_TR if profile.layout == "table" else SECTION_LOOP_OPEN
+        expected_loop_open = (
+            SECTION_LOOP_OPEN_TR if profile.layout == "table" else SECTION_LOOP_OPEN
+        )
         loop_opens = sum(1 for t in texts if t.strip() == expected_loop_open)
         if loop_opens != 1:
             issues.append(

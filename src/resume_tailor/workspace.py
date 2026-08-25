@@ -24,7 +24,7 @@ import shutil
 import threading
 from collections.abc import Iterable
 from dataclasses import dataclass
-from datetime import datetime, timezone
+from datetime import UTC, datetime
 from pathlib import Path
 
 from resume_tailor import config, libraries
@@ -322,7 +322,7 @@ def create(label: str, *, copy_from: str | None = None) -> WorkspaceEntry:
         meta = {
             "id": workspace_id,
             "label": cleaned,
-            "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "created_at": datetime.now(UTC).isoformat(timespec="seconds"),
         }
         _write_meta(workspace_id, meta)
 
@@ -370,7 +370,9 @@ def delete(workspace_id: str) -> None:
         _find_entry(index, workspace_id)  # raises if unknown
         entries = index.get("entries", [])
         if index.get("active_id") == workspace_id:
-            raise WorkspaceError("Cannot delete the active profile. Switch to another profile first.")
+            raise WorkspaceError(
+                "Cannot delete the active profile. Switch to another profile first."
+            )
         if len(entries) <= 1:
             raise WorkspaceError("Cannot delete the only profile.")
         index["entries"] = [e for e in entries if e["id"] != workspace_id]
@@ -471,7 +473,7 @@ def _register_existing(workspace_id: str, label: str) -> WorkspaceEntry:
             meta = {}
     meta.setdefault("id", workspace_id)
     meta.setdefault("label", label)
-    meta.setdefault("created_at", datetime.now(timezone.utc).isoformat(timespec="seconds"))
+    meta.setdefault("created_at", datetime.now(UTC).isoformat(timespec="seconds"))
     _write_meta(workspace_id, meta)
 
     index = read_index()
@@ -543,7 +545,7 @@ def _migrate_legacy(default_id: str = _DEFAULT_ID) -> BootstrapResult:
         meta = {
             "id": default_id,
             "label": _DEFAULT_LABEL,
-            "created_at": datetime.now(timezone.utc).isoformat(timespec="seconds"),
+            "created_at": datetime.now(UTC).isoformat(timespec="seconds"),
         }
         _write_meta(default_id, meta)
         write_index({"active_id": default_id, "entries": [meta]})

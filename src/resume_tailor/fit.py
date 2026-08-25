@@ -20,7 +20,8 @@ from pathlib import Path
 from . import config, events, render
 from .data import Experience, MasterResume, Project
 from .jd import JobRequirements
-from .merge import MergeGroup, propose as propose_merges
+from .merge import MergeGroup
+from .merge import propose as propose_merges
 from .rewrite import rewrite_bullets, select_entries, select_within_entries, selectable_total
 from .template_profile import ContactField, active_layout
 
@@ -577,11 +578,14 @@ def fit(
         resume, entries, requirements, target_pages, semantic, share=initial_share,
         max_per_entry=entry_cap, pools=section_pools, weights=section_weights,
     )
-    share_note = f" (capped at {initial_share:.0%} of {total_bullets})" if initial_share < 1.0 else ""
+    share_note = (
+        f" (capped at {initial_share:.0%} of {total_bullets})" if initial_share < 1.0 else ""
+    )
     events.emit(
         on_event,
         "fit",
-        f"Selected {len(entries)} entries; starting at {limit} of {total_bullets} bullets{share_note}",
+        f"Selected {len(entries)} entries; starting at {limit} of {total_bullets} "
+        f"bullets{share_note}",
         entries=len(entries),
         limit=limit,
         total_bullets=total_bullets,
@@ -676,7 +680,9 @@ def fit(
                     f"rewrite attempt(s) (last measured at {pages} page(s)). "
                     f"{_overflow_report(resume, rewritten, target_pages)}"
                 )
-            shorten_pct = config.SHORTEN_SCHEDULE[min(attempt - 1, len(config.SHORTEN_SCHEDULE) - 1)]
+            shorten_pct = config.SHORTEN_SCHEDULE[
+                min(attempt - 1, len(config.SHORTEN_SCHEDULE) - 1)
+            ]
             events.emit(
                 on_event,
                 "fit",

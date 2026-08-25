@@ -748,7 +748,7 @@ def _split_literal(
     points = sorted(p for p in cut_points if start <= p <= end)
 
     segments: list[_Segment] = []
-    for a, b in zip(points, points[1:]):
+    for a, b in zip(points, points[1:], strict=False):
         if a == b:
             continue
         piece = text[a:b]
@@ -768,7 +768,7 @@ def build_segments(
     *,
     drop_hyperlink_literals: bool = True,
     render_owned_separator_before: frozenset[str] = frozenset(),
-) -> list["_Segment"]:
+) -> list[_Segment]:
     """Turn ordered field spans and the literal text between them into donor-tagged pieces.
 
     `items` is a list of ``(start, end, tag, field_name)``. Fails loudly rather than
@@ -862,7 +862,7 @@ def build_segments(
 
 
 def rebuild_paragraph(
-    paragraph: Paragraph, segments: list["_Segment"], slices: list[RunSlice]
+    paragraph: Paragraph, segments: list[_Segment], slices: list[RunSlice]
 ) -> None:
     """Rewrite a paragraph's inline content from `segments`, one run per segment.
 

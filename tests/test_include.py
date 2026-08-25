@@ -66,7 +66,7 @@ def test_apply_clears_coursework_when_disabled():
 def test_apply_keeps_coursework_when_enabled():
     resume = _resume()
     result = apply(resume, IncludeOptions(coursework=True))
-    for original, new in zip(resume.education, result.education):
+    for original, new in zip(resume.education, result.education, strict=True):
         assert new.coursework == original.coursework
 
 

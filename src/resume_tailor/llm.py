@@ -151,7 +151,7 @@ def _strictify(schema: dict[str, Any]) -> dict[str, Any]:
     return out
 
 
-def _response_format_ladder(
+def _response_format_ladder(  # noqa: UP047 - shares module-level `T` with 3 sibling functions
     structured_mode: str, output_format: type[T], schema: dict[str, Any]
 ) -> list[dict[str, Any] | None]:
     """Ordered `response_format` values to try on a 400/422, most-constrained first.
@@ -205,7 +205,7 @@ class _Response:
 
 
 class _Messages:
-    def __init__(self, client: "_OpenAICompatClient"):
+    def __init__(self, client: _OpenAICompatClient):
         self._client = client
 
     def parse(

@@ -10,14 +10,12 @@ no-network rewrite tests.
 
 from __future__ import annotations
 
-from dataclasses import dataclass
-
 import pytest
 
-from resume_tailor import config, merge, render, rewrite
+from resume_tailor import config, merge, render, report, rewrite
+from resume_tailor import fit as fit_mod
 from resume_tailor.data import Bullet, Contact, Experience, MasterResume
 from resume_tailor.jd import JobRequirements, Keyword
-from resume_tailor import fit as fit_mod, report
 
 
 def bullet(bid: str, text: str, tags: list[str], metric: bool = False) -> Bullet:
@@ -238,7 +236,7 @@ def test_merge_acceptance_collapses_ids_but_keeps_entry_renderable(monkeypatch, 
     # LLM call 1: rewrite each bullet -> keep text as-is.
     # LLM call 2: merge stage -> produce a shorter candidate that frees lines.
     candidate = _text(hard_max)  # still 2 lines; before_lines sums to 4 lines.
-    calls = rewrite_calls(_reply(**{a.id: a.text, b.id: b.text}), _reply(**{a.id: candidate}))
+    rewrite_calls(_reply(**{a.id: a.text, b.id: b.text}), _reply(**{a.id: candidate}))
 
     reqs = requirements(("python", "must_have"))
     outcome = rewrite.rewrite_bullets(

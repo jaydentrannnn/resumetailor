@@ -440,7 +440,9 @@ def format_report(
         for g in near_miss:
             lines.append(f"    {g.phrase} <- {'; '.join(g.evidence)}")
 
-    ranking = "keyword overlap + semantic relevance" if result.semantic_used else "keyword overlap only"
+    ranking = (
+        "keyword overlap + semantic relevance" if result.semantic_used else "keyword overlap only"
+    )
     lines += [
         "",
         f"Model: {backends_used()}",

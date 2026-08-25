@@ -12,7 +12,8 @@ from pathlib import Path
 
 import pytest
 
-from resume_tailor import config, fit as fit_mod
+from resume_tailor import config
+from resume_tailor import fit as fit_mod
 from resume_tailor.jd import JobRequirements, Keyword
 from resume_tailor.rewrite import FabricationError
 from tests.fixtures import synthetic_resume
@@ -537,11 +538,18 @@ def test_merge_flag_reaches_the_fit_loop(cli, jd_file, tmp_path, monkeypatch):
 
 
 def test_fill_target_flag_reaches_the_fit_loop(cli, jd_file, tmp_path, monkeypatch):
-    """--fill-target overrides UNDERFLOW_THRESHOLD for the run."""
+    """--fill-target overrides UNDERFLOW_THRESHOLD for the run, and an invalid value
+    is rejected before any LLM stage runs (`_validate_argument_ranges`, checked at the
+    top of `main` specifically so a bad flag costs zero JD-extraction/scoring calls)."""
     resume = synthetic_resume()
     seen: dict = {}
+    extract_calls: list[str] = []
 
-    monkeypatch.setattr(cli.jd, "extract", lambda text, **kw: _requirements())
+    def extract_stub(text, **kw):
+        extract_calls.append(text)
+        return _requirements()
+
+    monkeypatch.setattr(cli.jd, "extract", extract_stub)
     monkeypatch.setattr(cli.jd, "verify_verbatim", lambda reqs, text: [])
 
     def capture(*a, fill_target=None, **k):
@@ -553,11 +561,15 @@ def test_fill_target_flag_reaches_the_fit_loop(cli, jd_file, tmp_path, monkeypat
 
     cli.main(["--jd", str(jd_file)])
     assert seen["fill_target"] is None
+    assert len(extract_calls) == 1
 
     cli.main(["--jd", str(jd_file), "--fill-target", "0.88"])
     assert seen["fill_target"] == 0.88
+    assert len(extract_calls) == 2
 
     assert cli.main(["--jd", str(jd_file), "--fill-target", "0.5"]) == 1
+    # Rejected before extraction ever ran — the count stays at 2, not 3.
+    assert len(extract_calls) == 2
 
 
 def test_initial_bullet_share_flag_reaches_the_fit_loop(cli, jd_file, tmp_path, monkeypatch):

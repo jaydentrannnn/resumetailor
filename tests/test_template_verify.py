@@ -17,7 +17,12 @@ from pathlib import Path
 import docx
 
 from resume_tailor import template_analyze, template_build, template_verify
-from tests.fixtures import _docx_bytes, _full_featured_resume, _multi_section_resume, synthetic_resume
+from tests.fixtures import (
+    _docx_bytes,
+    _full_featured_resume,
+    _multi_section_resume,
+    synthetic_resume,
+)
 
 
 def _build(builder) -> tuple[Path, object]:
@@ -164,7 +169,6 @@ def test_verify_tagged_catches_a_leftover_hyperlink():
     tagged, profile = _build(_full_featured_resume)
     doc = docx.Document(str(tagged))
     from docx.oxml import OxmlElement
-    from docx.oxml.ns import qn
 
     hyperlink = OxmlElement("w:hyperlink")
     run = OxmlElement("w:r")
