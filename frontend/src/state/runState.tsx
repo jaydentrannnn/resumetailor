@@ -16,6 +16,7 @@ import {
   type ProgressEvent,
   type RunReport,
   type SkillsPlan,
+  cancelJob,
   createJob,
   fetchConfig,
   fetchJob,
@@ -67,6 +68,9 @@ export const DEFAULT_SETTINGS: JobSettings = {
   no_verb_repair: false,
   merge: false,
   no_cache: false,
+  // Matches `config.EXTRACT_CONSENSUS_RUNS` server-side. No UI control exposes this;
+  // it exists here only so "Reset to defaults" round-trips it instead of dropping it.
+  extract_runs: 3,
   no_expand: false,
   no_skills: false,
   no_facets: false,
@@ -76,6 +80,7 @@ export const DEFAULT_SETTINGS: JobSettings = {
   experience_bullet_share: null,
   max_bullets_per_entry: null,
   include: DEFAULT_INCLUDE,
+  suggest_vocabulary: false,
   rewrite_style: null,
   expand_style: null,
   model_name: null,
@@ -98,6 +103,38 @@ function loadJdText(workspaceId: string | null): string {
     return localStorage.getItem(jdStorageKey(workspaceId)) ?? "";
   } catch {
     return "";
+  }
+}
+
+const JOB_KEY_PREFIX = "resumeTailor.jobId";
+
+/** Storage key for the most recently started job's id, scoped per profile so a reload
+ * can re-attach to it — without this, a mid-run refresh orphans the job server-side
+ * with no UI attached to it. */
+function jobStorageKey(workspaceId: string | null): string {
+  return workspaceId ? `${JOB_KEY_PREFIX}:${workspaceId}` : JOB_KEY_PREFIX;
+}
+
+function loadStoredJobId(workspaceId: string | null): string | null {
+  try {
+    return localStorage.getItem(jobStorageKey(workspaceId));
+  } catch {
+    return null;
+  }
+}
+
+/** A run stops producing further status changes once it reaches one of these. */
+function isTerminalJobStatus(status: string): boolean {
+  return status === "succeeded" || status === "failed" || status === "cancelled";
+}
+
+/** Persist (or clear, when `jobId` is null) the last-started job id for this profile. */
+function storeJobId(workspaceId: string | null, jobId: string | null): void {
+  try {
+    if (jobId) localStorage.setItem(jobStorageKey(workspaceId), jobId);
+    else localStorage.removeItem(jobStorageKey(workspaceId));
+  } catch {
+    /* quota / private mode — in-memory state is still correct for this session */
   }
 }
 
@@ -132,6 +169,8 @@ type RunStateValue = {
   busy: boolean;
   queuePosition: number | null;
   startJob: () => Promise<void>;
+  cancelRun: () => Promise<void>;
+  cancelling: boolean;
 };
 
 const RunStateContext = createContext<RunStateValue | null>(null);
@@ -157,6 +196,7 @@ export function RunProvider({ children }: { children: ReactNode }) {
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [queuePosition, setQueuePosition] = useState<number | null>(null);
+  const [cancelling, setCancelling] = useState(false);
   // Lives here (not RunPage) so remounting on Tailor ↔ Master tab switches
   // does not reset and re-trigger the post-success PDF download.
   const autoDownloadedFor = useRef<string | null>(null);
@@ -261,6 +301,48 @@ export function RunProvider({ children }: { children: ReactNode }) {
     };
   }, []);
 
+  useEffect(() => {
+    /**
+     * Re-attach to whatever job this profile last started, if any — a page reload
+     * mid-run otherwise orphans the job server-side (it keeps executing with no UI
+     * attached) and, once finished, its report/downloads become unreachable. A
+     * restored *finished* job must not re-trigger the auto-download effect below,
+     * so `autoDownloadedFor` is seeded before `report` is ever set.
+     */
+    const storedId = loadStoredJobId(activeId);
+    if (!storedId) return;
+    let cancelled = false;
+    (async () => {
+      try {
+        const job = await fetchJob(storedId);
+        if (cancelled) return;
+        setJobId(storedId);
+        setStatus(job.status);
+        setEvents(job.events);
+        setQueuePosition(job.queue_position);
+        if (isTerminalJobStatus(job.status)) {
+          autoDownloadedFor.current = storedId;
+          setReport(job.report);
+          setExpansion(job.expansion);
+          setSkills(job.skills);
+          setError(job.error);
+        } else {
+          setBusy(true);
+        }
+      } catch {
+        // Job no longer exists server-side (process restarted, id stale) — drop it
+        // rather than retrying against an id that will never resolve.
+        storeJobId(activeId, null);
+      }
+    })();
+    return () => {
+      cancelled = true;
+    };
+    // `activeId` is fixed for the lifetime of any one mount of this provider (see
+    // App.tsx's keying), so listing it here changes nothing behaviorally — it just
+    // satisfies exhaustive-deps honestly instead of suppressing the warning.
+  }, [activeId]);
+
   const pollUntilDone = useCallback(async (id: string) => {
     /** Poll job status until the run finishes, used when SSE is unavailable. */
     try {
@@ -269,7 +351,7 @@ export function RunProvider({ children }: { children: ReactNode }) {
         setStatus(job.status);
         setEvents(job.events);
         setQueuePosition(job.queue_position);
-        if (job.status === "succeeded" || job.status === "failed") {
+        if (isTerminalJobStatus(job.status)) {
           setReport(job.report);
           setExpansion(job.expansion);
           setSkills(job.skills);
@@ -341,15 +423,38 @@ export function RunProvider({ children }: { children: ReactNode }) {
     // restores its report, and sets `busy` false — so the new job, once its id
     // arrives, is never subscribed to at all and runs invisibly.
     setJobId(null);
+    storeJobId(activeId, null);
     try {
       const { job_id, queue_position } = await createJob(jdText, settings);
       setJobId(job_id);
+      storeJobId(activeId, job_id);
       setQueuePosition(queue_position);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
       setBusy(false);
     }
-  }, [jdText, settings, busy]);
+  }, [jdText, settings, busy, activeId]);
+
+  useEffect(() => {
+    // A finished run (whichever way it ended) always clears the "Cancelling…" flag,
+    // including the case where cancellation itself is what finished it.
+    if (!busy) setCancelling(false);
+  }, [busy]);
+
+  const cancelRun = useCallback(async () => {
+    /** Ask the server to cancel the in-flight run. Cooperative: a queued job stops
+     * immediately, a running one at its next pipeline-stage checkpoint — either way
+     * the SSE stream (or the poll fallback) delivers the eventual "cancelled" status,
+     * so this only needs to fire the request and reflect that it's in flight. */
+    if (!jobId || !busy || cancelling) return;
+    setCancelling(true);
+    try {
+      await cancelJob(jobId);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+      setCancelling(false);
+    }
+  }, [jobId, busy, cancelling]);
 
   const value = useMemo<RunStateValue>(
     () => ({
@@ -369,6 +474,8 @@ export function RunProvider({ children }: { children: ReactNode }) {
       busy,
       queuePosition,
       startJob,
+      cancelRun,
+      cancelling,
     }),
     [
       config,
@@ -387,6 +494,8 @@ export function RunProvider({ children }: { children: ReactNode }) {
       busy,
       queuePosition,
       startJob,
+      cancelRun,
+      cancelling,
     ],
   );
 

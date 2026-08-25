@@ -43,6 +43,10 @@ export type JobSettings = {
   /** Combine near-duplicate bullets within an entry; only fires if the page overflows. */
   merge: boolean;
   no_cache: boolean;
+  /** How many independent JD extractions to vote over (1-10); server defaults this to
+   * `config.EXTRACT_CONSENSUS_RUNS` (3) when omitted. No UI control — carried on the
+   * type only so a settings save/reset never silently drops a value the server sent. */
+  extract_runs: number;
   /** Skip generating expanded experience descriptions for application forms. */
   no_expand: boolean;
   /** Skip generating the tailored skills list for application-form Skills fields. */
@@ -62,6 +66,12 @@ export type JobSettings = {
   max_bullets_per_entry: number | null;
   /** What to leave out — contact fields/order, GPA, coursework, whole entries. */
   include: IncludeOptions;
+  /** After a successful run, draft vocabulary-library proposals from its own
+   * near-miss keyword gaps and unclassified opening verbs, using the run's own
+   * backend — unlike the Settings tab's manual "Generate suggestions" button, which
+   * runs outside any job and so falls back to Claude on a fresh server with no
+   * Anthropic key, regardless of the saved Model setting. */
+  suggest_vocabulary: boolean;
   /** Editable style block for resume bullet rewriting; null uses the shipped default. */
   rewrite_style: string | null;
   /** Editable style block for application-form expansion; null uses the shipped default. */
@@ -159,7 +169,7 @@ export type SkillsPlan = {
 
 export type JobStatus = {
   job_id: string;
-  status: "queued" | "running" | "succeeded" | "failed";
+  status: "queued" | "running" | "succeeded" | "failed" | "cancelled";
   queue_position: number | null;
   error: string | null;
   report: RunReport | null;
@@ -581,6 +591,12 @@ export function createJob(
 export function fetchJob(jobId: string): Promise<JobStatus> {
   /** Poll current job state and accumulated events. */
   return request<JobStatus>(`/api/jobs/${jobId}`);
+}
+
+export function cancelJob(jobId: string): Promise<JobStatus> {
+  /** Cancel a queued or running job. A queued job stops immediately; a running one
+   * stops cooperatively at its next pipeline-stage checkpoint. */
+  return request<JobStatus>(`/api/jobs/${jobId}`, { method: "DELETE" });
 }
 
 export function fetchMasterResume(): Promise<Record<string, unknown>> {

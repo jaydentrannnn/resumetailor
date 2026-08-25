@@ -1,6 +1,12 @@
 // @vitest-environment jsdom
-import { fireEvent, render, screen, waitFor } from "@testing-library/react";
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
+
+// Vitest isn't configured with `test.globals`, so Testing Library's automatic
+// per-test cleanup (which relies on a global `afterEach`) never registers itself —
+// without this, a second `describe` block's `render()` finds the previous block's
+// still-mounted DOM and `getByText` starts throwing "multiple elements found".
+afterEach(() => cleanup());
 
 /**
  * Regression cover for starting a second run after one has finished.
@@ -14,10 +20,12 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const createJob = vi.fn();
 const fetchJob = vi.fn();
+const cancelJob = vi.fn();
 
 vi.mock("../api", () => ({
   createJob: (...args: unknown[]) => createJob(...args),
   fetchJob: (...args: unknown[]) => fetchJob(...args),
+  cancelJob: (...args: unknown[]) => cancelJob(...args),
   fetchConfig: vi.fn(async () => ({ pages: 1, experience: 3, projects: 2 })),
   fetchSettings: vi.fn(async () => ({ seeded: false, settings: { pages: 1 } })),
   saveSettings: vi.fn(async () => undefined),
@@ -30,6 +38,8 @@ vi.mock("./workspaceState", () => ({
 
 /** Job ids whose stream should replay-and-finish, as a terminal job's really does. */
 const finished = new Set<string>();
+/** Job ids that finished specifically via cancellation rather than success. */
+const cancelledIds = new Set<string>();
 
 class FakeEventSource {
   static opened: string[] = [];
@@ -42,7 +52,7 @@ class FakeEventSource {
     FakeEventSource.opened.push(url);
     const id = url.split("/")[3];
     // Mirror the server: subscribing to an already-terminal job yields `done` at once.
-    if (finished.has(id)) queueMicrotask(() => this.fire("done"));
+    if (finished.has(id) || cancelledIds.has(id)) queueMicrotask(() => this.fire("done"));
   }
   addEventListener(type: string, fn: (e: unknown) => void) {
     (this.listeners[type] ??= []).push(fn);
@@ -59,13 +69,15 @@ class FakeEventSource {
 import { RunProvider, useRunState } from "./runState";
 
 function Probe() {
-  const { setJdText, startJob, busy, jobId } = useRunState();
+  const { setJdText, startJob, cancelRun, busy, jobId, status } = useRunState();
   return (
     <div>
       <span data-testid="busy">{String(busy)}</span>
       <span data-testid="jobId">{jobId ?? "-"}</span>
+      <span data-testid="status">{status ?? "-"}</span>
       <button onClick={() => setJdText("a posting")}>set-jd</button>
       <button onClick={() => void startJob()}>start</button>
+      <button onClick={() => void cancelRun()}>cancel</button>
     </div>
   );
 }
@@ -81,11 +93,14 @@ async function finishRun(id: string) {
 describe("RunProvider: starting a second run", () => {
   beforeEach(() => {
     finished.clear();
+    cancelledIds.clear();
     FakeEventSource.opened = [];
     createJob.mockReset();
     fetchJob.mockReset();
+    cancelJob.mockReset();
+    cancelJob.mockResolvedValue({ status: "running" });
     fetchJob.mockImplementation(async (id: string) => ({
-      status: finished.has(id) ? "succeeded" : "running",
+      status: cancelledIds.has(id) ? "cancelled" : finished.has(id) ? "succeeded" : "running",
       report: finished.has(id) ? { title: "Some Role" } : null,
       expansion: null,
       error: null,
@@ -137,5 +152,60 @@ describe("RunProvider: starting a second run", () => {
     expect(
       FakeEventSource.opened.filter((u) => u === "/api/jobs/job-A/events"),
     ).toHaveLength(1);
+  });
+});
+
+describe("RunProvider: cancelling a run", () => {
+  beforeEach(() => {
+    finished.clear();
+    cancelledIds.clear();
+    FakeEventSource.opened = [];
+    createJob.mockReset();
+    fetchJob.mockReset();
+    cancelJob.mockReset();
+    cancelJob.mockResolvedValue({ status: "running" });
+    fetchJob.mockImplementation(async (id: string) => ({
+      status: cancelledIds.has(id) ? "cancelled" : finished.has(id) ? "succeeded" : "running",
+      report: null,
+      expansion: null,
+      error: null,
+      events: [],
+      queue_position: null,
+    }));
+    vi.stubGlobal(
+      "EventSource",
+      class extends FakeEventSource {
+        constructor(url: string) {
+          super(url);
+          (globalThis as never as { __last: FakeEventSource }).__last = this;
+        }
+      },
+    );
+  });
+
+  it("requests cancellation and reflects the eventual cancelled status", async () => {
+    createJob.mockResolvedValueOnce({ job_id: "job-C", queue_position: 1 });
+
+    render(
+      <RunProvider>
+        <Probe />
+      </RunProvider>,
+    );
+
+    fireEvent.click(screen.getByText("set-jd"));
+    fireEvent.click(screen.getByText("start"));
+    await waitFor(() => expect(screen.getByTestId("jobId").textContent).toBe("job-C"));
+    expect(screen.getByTestId("busy").textContent).toBe("true");
+
+    fireEvent.click(screen.getByText("cancel"));
+    await waitFor(() => expect(cancelJob).toHaveBeenCalledWith("job-C"));
+
+    // The server has now marked the job cancelled; the open SSE stream delivers `done`.
+    cancelledIds.add("job-C");
+    const source = (globalThis as never as { __last: FakeEventSource }).__last;
+    source.fire("done");
+
+    await waitFor(() => expect(screen.getByTestId("busy").textContent).toBe("false"));
+    expect(screen.getByTestId("status").textContent).toBe("cancelled");
   });
 });

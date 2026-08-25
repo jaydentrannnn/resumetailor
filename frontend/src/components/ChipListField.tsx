@@ -69,6 +69,7 @@ export function ChipListField({
             <button
               type="button"
               title={`Remove ${item}`}
+              aria-label={`Remove ${item}`}
               onClick={() => removeAt(i)}
               className="rounded-full px-0.5 text-accent/70 hover:bg-accent hover:text-white"
             >

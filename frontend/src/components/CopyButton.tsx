@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 
 /**
  * Copy `text` to the clipboard, with a hidden-textarea fallback for non-secure contexts.
@@ -34,13 +34,21 @@ export function CopyButton({
   text: string;
 }) {
   const [copied, setCopied] = useState(false);
+  const timerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
+
+  useEffect(() => {
+    return () => {
+      if (timerRef.current) window.clearTimeout(timerRef.current);
+    };
+  }, []);
 
   async function onCopy() {
     /** Copy `text` and briefly confirm success on the button. */
     const ok = await copyText(text);
     if (!ok) return;
+    if (timerRef.current) window.clearTimeout(timerRef.current);
     setCopied(true);
-    window.setTimeout(() => setCopied(false), 1500);
+    timerRef.current = window.setTimeout(() => setCopied(false), 1500);
   }
 
   return (

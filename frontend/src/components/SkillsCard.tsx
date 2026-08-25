@@ -13,6 +13,30 @@ function pasteLine(plan: SkillsPlan): string {
   return plan.skills.map((s) => s.skill).join(", ");
 }
 
+/** Human-friendly label for one `SkillSuggestion.sources` entry — these are internal
+ * evidence tags (`skills:<group label>`, `project:<entry id>`, `coursework`, `tag`),
+ * not something to show verbatim. */
+function friendlySource(source: string): string {
+  if (source.startsWith("skills:")) return `Skills: ${source.slice("skills:".length)}`;
+  if (source.startsWith("project:")) return "Project experience";
+  if (source === "coursework") return "Coursework";
+  if (source === "tag") return "Resume bullets";
+  return source;
+}
+
+/** Full hover detail for one skill chip: the posting phrase it matches, why it was
+ * picked, and where in the master resume it's evidenced — `jd_phrase`, `reason`, and
+ * `sources` all traced back to the run instead of being dropped after selection. */
+function chipTitle(s: SkillSuggestion): string | undefined {
+  const parts: string[] = [];
+  if (s.jd_phrase) parts.push(`Matches posting: "${s.jd_phrase}"`);
+  if (s.reason) parts.push(s.reason);
+  if (s.sources.length) {
+    parts.push(`From: ${[...new Set(s.sources.map(friendlySource))].join(", ")}`);
+  }
+  return parts.length ? parts.join(" — ") : undefined;
+}
+
 function TierGroup({ tier, items }: { tier: SkillSuggestion["tier"]; items: SkillSuggestion[] }) {
   if (!items.length) return null;
   return (
@@ -24,7 +48,7 @@ function TierGroup({ tier, items }: { tier: SkillSuggestion["tier"]; items: Skil
         {items.map((s) => (
           <li
             key={s.skill}
-            title={s.jd_phrase ? `Matches posting: "${s.jd_phrase}"` : undefined}
+            title={chipTitle(s)}
             className="rounded-full border border-line bg-paper/40 px-2.5 py-1 text-xs"
           >
             {s.skill}

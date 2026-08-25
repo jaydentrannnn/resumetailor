@@ -1,4 +1,4 @@
-import { useCallback, useRef, useState, type DragEvent } from "react";
+import { useRef, useState, type DragEvent } from "react";
 
 type Props = {
   disabled?: boolean;
@@ -6,29 +6,46 @@ type Props = {
   label?: string;
 };
 
+const DOCX_MIME =
+  "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+
+function isDocx(file: File): boolean {
+  return file.name.toLowerCase().endsWith(".docx") || file.type === DOCX_MIME;
+}
+
 /**
  * Drag/drop + file picker for a single .docx baseline export.
  */
 export function UploadDropzone({ disabled, onFile, label }: Props) {
   const inputRef = useRef<HTMLInputElement>(null);
   const [dragging, setDragging] = useState(false);
+  const [rejected, setRejected] = useState(false);
 
-  const onDrop = useCallback(
-    (e: DragEvent<HTMLDivElement>) => {
-      /** Accept a dropped .docx from the drag target. */
-      e.preventDefault();
-      setDragging(false);
-      const file = e.dataTransfer.files?.[0] ?? null;
-      if (file) onFile(file);
-    },
-    [onFile],
-  );
+  function accept(file: File | null) {
+    /** Forward a valid .docx to the caller; flag anything else instead of silently
+     * handing it to the analyzer, which would just fail deeper with a less clear error. */
+    if (!file) return;
+    if (!isDocx(file)) {
+      setRejected(true);
+      return;
+    }
+    setRejected(false);
+    onFile(file);
+  }
+
+  function onDrop(e: DragEvent<HTMLDivElement>) {
+    /** Accept a dropped .docx from the drag target. */
+    e.preventDefault();
+    setDragging(false);
+    if (disabled) return;
+    accept(e.dataTransfer.files?.[0] ?? null);
+  }
 
   return (
     <div
       onDragEnter={(e) => {
         e.preventDefault();
-        setDragging(true);
+        if (!disabled) setDragging(true);
       }}
       onDragOver={(e) => e.preventDefault()}
       onDragLeave={() => setDragging(false)}
@@ -50,14 +67,16 @@ export function UploadDropzone({ disabled, onFile, label }: Props) {
       >
         {disabled ? "Working…" : "Choose file"}
       </button>
+      {rejected && (
+        <p className="text-xs text-danger">That isn't a .docx file — try again.</p>
+      )}
       <input
         ref={inputRef}
         type="file"
         accept=".docx,application/vnd.openxmlformats-officedocument.wordprocessingml.document"
         className="hidden"
         onChange={(e) => {
-          const file = e.target.files?.[0] ?? null;
-          if (file) onFile(file);
+          accept(e.target.files?.[0] ?? null);
           e.target.value = "";
         }}
       />

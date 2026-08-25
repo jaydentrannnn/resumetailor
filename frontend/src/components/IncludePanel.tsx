@@ -160,6 +160,7 @@ export function IncludePanel({
               <button
                 type="button"
                 title="Move up"
+                aria-label={`Move ${CONTACT_FIELD_LABELS[field]} up`}
                 disabled={i === 0}
                 onClick={() => moveContactField(i, -1)}
                 className="rounded border border-line px-2 py-0.5 text-xs disabled:opacity-30"
@@ -169,6 +170,7 @@ export function IncludePanel({
               <button
                 type="button"
                 title="Move down"
+                aria-label={`Move ${CONTACT_FIELD_LABELS[field]} down`}
                 disabled={i >= includedOrder.length - 1}
                 onClick={() => moveContactField(i, 1)}
                 className="rounded border border-line px-2 py-0.5 text-xs disabled:opacity-30"
@@ -223,6 +225,7 @@ export function IncludePanel({
               <button
                 type="button"
                 title="Move up"
+                aria-label={`Move ${section.title} up`}
                 disabled={!isGeneric || i === 0}
                 onClick={() => moveSection(i, -1)}
                 className="rounded border border-line px-2 py-0.5 text-xs disabled:opacity-30"
@@ -232,6 +235,7 @@ export function IncludePanel({
               <button
                 type="button"
                 title="Move down"
+                aria-label={`Move ${section.title} down`}
                 disabled={!isGeneric || i >= orderedSections.length - 1}
                 onClick={() => moveSection(i, 1)}
                 className="rounded border border-line px-2 py-0.5 text-xs disabled:opacity-30"
@@ -267,9 +271,28 @@ export function IncludePanel({
         if (section.kind === "project" && !projectsEnabled) return null;
         if (section.entries.length === 0) return null;
         const excluded = new Set(settings.include.exclude_entries);
+        const excludedSections = new Set(settings.include.exclude_sections);
+        const sectionIncluded = !excludedSections.has(section.id);
         return (
           <fieldset key={section.id} className="mt-5 space-y-2">
-            <legend className="text-sm font-semibold text-ink">{section.title}</legend>
+            <legend className="flex w-full items-center justify-between gap-3">
+              <span className="text-sm font-semibold text-ink">{section.title}</span>
+              <label className="flex cursor-pointer items-center gap-1.5 text-xs font-normal text-ink-muted">
+                <input
+                  type="checkbox"
+                  checked={sectionIncluded}
+                  onChange={(e) =>
+                    setInclude({
+                      exclude_sections: e.target.checked
+                        ? settings.include.exclude_sections.filter((id) => id !== section.id)
+                        : [...settings.include.exclude_sections, section.id],
+                    })
+                  }
+                  className="accent-[var(--color-accent)]"
+                />
+                Include this section
+              </label>
+            </legend>
             {section.entries.map((entry) => (
               <Toggle
                 key={entry.id}

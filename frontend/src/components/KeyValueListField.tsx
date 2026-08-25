@@ -70,6 +70,7 @@ export function KeyValueListField({
               type="button"
               onClick={() => removeEntry(k)}
               title={`Remove ${k}`}
+              aria-label={`Remove ${k}`}
               className="rounded-full px-1.5 text-ink-muted hover:text-danger"
             >
               ×

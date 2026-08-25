@@ -207,6 +207,7 @@ export function PackEditor({
                     type="button"
                     onClick={() => removeVerbRow(row.rowId)}
                     title="Remove family"
+                    aria-label={`Remove verb family${row.family ? ` ${row.family}` : ""}`}
                     className="flex-none rounded-full px-1.5 text-ink-muted hover:text-danger"
                   >
                     ×

@@ -70,6 +70,14 @@ describe("runProgress", () => {
     });
   });
 
+  it("reads 100% with a distinct label on a cancelled run", () => {
+    expect(runProgress(CLEAN_RUN.slice(0, 4), "cancelled", false)).toMatchObject({
+      value: 1,
+      indeterminate: false,
+      label: "Cancelled",
+    });
+  });
+
   it("holds position on an unrecognised stage rather than rewinding", () => {
     const known = runProgress(CLEAN_RUN.slice(0, 4), "running", true).value;
     const withUnknown = runProgress(

@@ -8,10 +8,12 @@ import {
 import { ExperienceCard } from "../components/ExperienceCard";
 import { Field, Toggle } from "../components/Field";
 import { IncludePanel } from "../components/IncludePanel";
+import { ResultPreview } from "../components/ResultPreview";
 import { StylePromptField } from "../components/StylePromptField";
 import { SkillsCard } from "../components/SkillsCard";
 import { type RunProgress, runProgress } from "../lib/runProgress";
 import { DEFAULT_SETTINGS, useRunState } from "../state/runState";
+import { useWorkspaceState } from "../state/workspaceState";
 import { useEffect, useMemo, useRef, useState } from "react";
 
 /**
@@ -21,16 +23,16 @@ import { useEffect, useMemo, useRef, useState } from "react";
  * lose the JD, settings, SSE stream, or results. PDF auto-download is also
  * owned there so a tab remount cannot re-fire it.
  *
- * Layout at `lg` is an explicit 2x5 grid rather than stacked columns: Settings
+ * Layout at `lg` is an explicit 2x6 grid rather than stacked columns: Settings
  * and What-to-include sit on row 1, Job description and Progress share row 2
  * (equal height — see the Progress cell below), the submit button spans both
- * columns on row 3, Application experience spans both columns on row 4, and
+ * columns on row 3, Application experience spans both columns on row 4,
  * Skills to list / Report share row 5 — Report falls back to spanning both
  * columns itself when there's no Skills tile beside it (`--no-skills`, or a
- * skills stage that returned nothing). Placement is stated per tile
- * (`col-start`/`row-start`) because several of the eight tiles render
- * conditionally — auto-flow would reshuffle the rest the moment one of them
- * disappeared.
+ * skills stage that returned nothing) — and the tailored-resume preview spans
+ * both columns on row 6. Placement is stated per tile (`col-start`/`row-start`)
+ * because several of the nine tiles render conditionally — auto-flow would
+ * reshuffle the rest the moment one of them disappeared.
  */
 export function RunPage() {
   const {
@@ -48,14 +50,19 @@ export function RunPage() {
     error,
     busy,
     queuePosition,
+    settingsLoaded,
     startJob,
+    cancelRun,
+    cancelling,
   } = useRunState();
+  const { switching } = useWorkspaceState();
 
   const progressListRef = useRef<HTMLOListElement>(null);
   const progress = useMemo(
     () => runProgress(events, status, busy),
     [events, status, busy],
   );
+  const elapsed = useElapsedSeconds(busy);
 
   useEffect(() => {
     /** Keep the progress list pinned to its newest row as events stream in. */
@@ -67,6 +74,15 @@ export function RunPage() {
     /** Start a new job from the current JD text and settings. */
     e.preventDefault();
     await startJob();
+  }
+
+  function onFormKeyDown(e: React.KeyboardEvent<HTMLFormElement>) {
+    /** Enter in a text/number field must not implicitly submit the whole
+     * Run-options form (Pages, Experience entries, Model name, …). Textareas,
+     * selects, and buttons are unaffected. */
+    if (e.key === "Enter" && (e.target as HTMLElement).tagName === "INPUT") {
+      e.preventDefault();
+    }
   }
 
   function onFile(file: File | null) {
@@ -85,17 +101,31 @@ export function RunPage() {
   return (
     <form
       onSubmit={onSubmit}
+      onKeyDown={onFormKeyDown}
       className="grid gap-x-8 gap-y-5 lg:grid-cols-[1.1fr_0.9fr]"
     >
       <div className="lg:col-start-1 lg:row-start-1">
-        <SettingsPanel config={config} settings={settings} onChange={setSettings} />
+        {/* Native fieldset disabling: blocks every descendant control until
+            settings finish loading, so no edit can race the initial fetch and
+            get silently overwritten when it resolves. `display: contents` keeps
+            it out of the grid/flex layout. */}
+        <fieldset disabled={!settingsLoaded} className="contents">
+          <SettingsPanel config={config} settings={settings} onChange={setSettings} />
+        </fieldset>
       </div>
 
       <div className="lg:col-start-2 lg:row-start-1">
-        <IncludePanel settings={settings} onChange={setSettings} />
+        <fieldset disabled={!settingsLoaded} className="contents">
+          <IncludePanel settings={settings} onChange={setSettings} />
+        </fieldset>
       </div>
 
-      <section className="rounded-xl border border-line bg-panel p-5 shadow-sm lg:col-start-1 lg:row-start-2">
+      {/* `order-first` puts Job description ahead of Run options / What-to-include
+          below `lg` — that's the tab's primary action, and the settings panel is long
+          enough to bury it several screens down otherwise. `lg:order-none` restores
+          normal source order once explicit `col-start`/`row-start` grid placement
+          takes over. */}
+      <section className="order-first rounded-xl border border-line bg-panel p-5 shadow-sm lg:order-none lg:col-start-1 lg:row-start-2">
         <div className="mb-3 flex items-center justify-between gap-3">
           <h2 className="font-display text-xl font-semibold">Job description</h2>
           <label className="cursor-pointer rounded-md border border-line px-3 py-1.5 text-sm text-ink-muted hover:border-accent hover:text-accent">
@@ -131,7 +161,22 @@ export function RunPage() {
           <section className="rounded-xl border border-line bg-panel p-5 shadow-sm lg:absolute lg:inset-0 lg:flex lg:flex-col lg:overflow-hidden">
             <div className="flex items-baseline justify-between gap-3">
               <h2 className="font-display text-xl font-semibold">Progress</h2>
-              <span className="text-sm text-ink-muted">{progress.label}</span>
+              <div className="flex items-center gap-3">
+                <span className="text-sm text-ink-muted" role="status" aria-live="polite">
+                  {progress.label}
+                  {busy && elapsed > 0 ? ` · ${formatElapsed(elapsed)}` : ""}
+                </span>
+                {busy && (
+                  <button
+                    type="button"
+                    onClick={() => void cancelRun()}
+                    disabled={cancelling}
+                    className="rounded-md border border-line px-2.5 py-1 text-xs font-medium text-ink-muted hover:border-danger hover:text-danger disabled:cursor-not-allowed disabled:opacity-50"
+                  >
+                    {cancelling ? "Cancelling…" : "Cancel"}
+                  </button>
+                )}
+              </div>
             </div>
             <ProgressBar progress={progress} failed={status === "failed"} />
             {queuePosition != null && queuePosition > 1 && status === "queued" && (
@@ -153,7 +198,10 @@ export function RunPage() {
               ))}
             </ol>
             {error && (
-              <p className="mt-3 rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">
+              <p
+                role="alert"
+                className="mt-3 rounded-md bg-danger-soft px-3 py-2 text-sm text-danger"
+              >
                 {error}
               </p>
             )}
@@ -183,10 +231,16 @@ export function RunPage() {
 
       <button
         type="submit"
-        disabled={busy || !jdText.trim()}
+        disabled={busy || !jdText.trim() || !settingsLoaded || switching}
         className="w-full rounded-lg bg-accent px-4 py-3 text-sm font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50 lg:col-start-1 lg:col-span-2 lg:row-start-3"
       >
-        {busy ? "Tailoring…" : "Tailor resume"}
+        {busy
+          ? "Tailoring…"
+          : switching
+            ? "Switching profile…"
+            : !settingsLoaded
+              ? "Loading settings…"
+              : "Tailor resume"}
       </button>
 
       {report && jobId && expansion && (
@@ -212,8 +266,51 @@ export function RunPage() {
           <ReportCard report={report} jobId={jobId} />
         </div>
       )}
+
+      {report && jobId && (
+        <div className="lg:col-start-1 lg:col-span-2 lg:row-start-6">
+          <ResultPreview jobId={jobId} />
+        </div>
+      )}
     </form>
   );
+}
+
+/**
+ * Seconds elapsed since `active` last became true, ticking every second while it
+ * stays true and resetting to 0 once it goes false. A reload that re-attaches to an
+ * already-running job restarts this at 0 — it measures how long *this browser tab*
+ * has been watching the run, not the job's true server-side age (not tracked
+ * client-side today).
+ */
+function useElapsedSeconds(active: boolean): number {
+  const [elapsed, setElapsed] = useState(0);
+  const startRef = useRef<number | null>(null);
+
+  useEffect(() => {
+    if (!active) {
+      startRef.current = null;
+      setElapsed(0);
+      return;
+    }
+    startRef.current = Date.now();
+    setElapsed(0);
+    const id = window.setInterval(() => {
+      if (startRef.current != null) {
+        setElapsed(Math.floor((Date.now() - startRef.current) / 1000));
+      }
+    }, 1000);
+    return () => window.clearInterval(id);
+  }, [active]);
+
+  return elapsed;
+}
+
+/** e.g. 45 -> "45s", 125 -> "2m 05s". */
+function formatElapsed(seconds: number): string {
+  const m = Math.floor(seconds / 60);
+  const s = seconds % 60;
+  return m > 0 ? `${m}m ${String(s).padStart(2, "0")}s` : `${s}s`;
 }
 
 function ProgressBar({
@@ -274,6 +371,16 @@ function SettingsPanel({
     onChange({ ...settings, [key]: value });
   }
 
+  /** Parse a number-input's raw string, clamped to [min, max]. Returns `undefined`
+   * for an empty or unparseable value so the caller can skip the write entirely —
+   * `Number("")` is `0`, which would otherwise silently persist and 422 on save. */
+  function parseClamped(raw: string, min: number, max: number): number | undefined {
+    if (raw.trim() === "") return undefined;
+    const n = Number(raw);
+    if (!Number.isFinite(n)) return undefined;
+    return Math.min(max, Math.max(min, Math.round(n)));
+  }
+
   function resetDefaults() {
     onChange({
       ...DEFAULT_SETTINGS,
@@ -289,18 +396,23 @@ function SettingsPanel({
     settings.experience_bullet_share ?? config?.experience_bullet_share ?? 0.65;
 
   // Which profiles route a stage to Ollama comes from the server, not a hardcoded
-  // ["ollama", "hybrid"] — MODEL_PROFILES is free to change without this going stale.
-  // Fall back to a name check only while /api/config is still in flight.
+  // ["ollama"] — MODEL_PROFILES is free to change without this going stale. Fall back
+  // to a name check only while /api/config is still in flight.
   const usesOllama = config
     ? config.ollama_profiles.includes(settings.model)
-    : settings.model === "ollama" || settings.model === "hybrid";
+    : settings.model === "ollama";
   const usesGemini = config
     ? config.gemini_profiles.includes(settings.model)
     : settings.model === "gemini";
   // `provider_keys` holds booleans only, never the key itself — this just decides
   // whether to show the warning before a run fails deep in the job queue.
   const missingGeminiKey = usesGemini && config?.provider_keys.gemini === false;
-  const isHybrid = settings.model === "hybrid";
+  // `hybrid` is hidden from the dropdown below (one provider per run covers every
+  // real use case here) but kept selectable if a saved settings.json already has it,
+  // so the <select> doesn't render with no matching option.
+  const modelProfileOptions = (
+    config?.model_profiles ?? ["claude", "ollama", "lmstudio", "gemini"]
+  ).filter((p) => p !== "hybrid" || p === settings.model);
 
   /** Placeholder for the blanket model override — mirrors the profile's default tag. */
   function profileModelPlaceholder(): string {
@@ -334,7 +446,10 @@ function SettingsPanel({
               min={1}
               max={5}
               value={settings.pages}
-              onChange={(e) => set("pages", Number(e.target.value))}
+              onChange={(e) => {
+                const next = parseClamped(e.target.value, 1, 5);
+                if (next !== undefined) set("pages", next);
+              }}
               className="field"
             />
           </Field>
@@ -347,7 +462,10 @@ function SettingsPanel({
               min={1}
               max={10}
               value={settings.experience ?? config?.experience ?? 3}
-              onChange={(e) => set("experience", Number(e.target.value))}
+              onChange={(e) => {
+                const next = parseClamped(e.target.value, 1, 10);
+                if (next !== undefined) set("experience", next);
+              }}
               className="field"
             />
           </Field>
@@ -360,7 +478,10 @@ function SettingsPanel({
               min={1}
               max={10}
               value={settings.projects ?? config?.projects ?? 2}
-              onChange={(e) => set("projects", Number(e.target.value))}
+              onChange={(e) => {
+                const next = parseClamped(e.target.value, 1, 10);
+                if (next !== undefined) set("projects", next);
+              }}
               className="field"
             />
           </Field>
@@ -374,10 +495,10 @@ function SettingsPanel({
             label="Model profile"
             help={
               usesOllama && config
-                ? `Ollama stages use ${settings.ollama_model || config.ollama_model} at ${config.ollama_base_url}.`
+                ? `Ollama stages use ${config.ollama_model} at ${config.ollama_base_url}.`
                 : usesGemini && config
-                  ? `Gemini stages use ${settings.gemini_model || config.gemini_model} at ${config.gemini_base_url}.`
-                  : "claude, ollama, gemini, hybrid, or a custom provider:model spec."
+                  ? `Gemini stages use ${config.gemini_model} at ${config.gemini_base_url}.`
+                  : "claude, ollama, gemini, or a custom provider:model spec."
             }
           >
             <select
@@ -385,9 +506,7 @@ function SettingsPanel({
               onChange={(e) => set("model", e.target.value)}
               className="field"
             >
-              {(
-                config?.model_profiles ?? ["claude", "ollama", "lmstudio", "gemini", "hybrid"]
-              ).map((p) => (
+              {modelProfileOptions.map((p) => (
                 <option key={p} value={p}>
                   {p}
                 </option>
@@ -415,26 +534,18 @@ function SettingsPanel({
               ))}
             </select>
           </Field>
-          {!isHybrid && (
-            <Field
-              label="Model name (optional)"
-              help="Override the model for every stage of the selected profile. Leave blank to use the profile default."
-            >
-              <input
-                type="text"
-                value={settings.model_name ?? ""}
-                onChange={(e) => set("model_name", e.target.value || null)}
-                placeholder={profileModelPlaceholder()}
-                className="field"
-              />
-            </Field>
-          )}
-          {isHybrid && (
-            <p className="text-xs text-ink-muted sm:col-span-2">
-              Hybrid routes ranking and expansion to Ollama and rewriting to Claude — no
-              single model override applies.
-            </p>
-          )}
+          <Field
+            label="Model name (optional)"
+            help="Override the model for every stage of the selected profile. Leave blank to use the profile default."
+          >
+            <input
+              type="text"
+              value={settings.model_name ?? ""}
+              onChange={(e) => set("model_name", e.target.value || null)}
+              placeholder={profileModelPlaceholder()}
+              className="field"
+            />
+          </Field>
         </div>
       </fieldset>
 
@@ -548,6 +659,12 @@ function SettingsPanel({
               help="Do not ask the model which project tags and courses to show; truncate pools in listed order to fit the line budgets."
               checked={settings.no_facets}
               onChange={(v) => set("no_facets", v)}
+            />
+            <Toggle
+              label="Suggest vocabulary from this run"
+              help="One extra call after a successful run: drafts tag-alias/verb suggestions from this posting's own keyword gaps for review on the Settings tab. Uses this run's own backend."
+              checked={settings.suggest_vocabulary}
+              onChange={(v) => set("suggest_vocabulary", v)}
             />
             <StylePromptField
               label="Resume bullet style"

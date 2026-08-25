@@ -1,5 +1,6 @@
 import { useState } from "react";
 import { ChipListField } from "../components/ChipListField";
+import { ImportResumePanel } from "../components/ImportResumePanel";
 import { AddButton, EntryControls } from "../components/ListControls";
 import {
   type Bullet,
@@ -59,6 +60,7 @@ export function EditorPage() {
     errors,
     message,
     busy,
+    dirty,
     validate: onValidate,
     save: onSave,
   } = useEditorState();
@@ -115,7 +117,12 @@ export function EditorPage() {
             guard&apos;s whitelist.
           </p>
         </div>
-        <div className="flex gap-2">
+        <div className="flex items-center gap-2">
+          {dirty && (
+            <span className="rounded-full bg-warn-soft px-2.5 py-1 text-xs font-medium text-warn">
+              Unsaved changes
+            </span>
+          )}
           <button
             type="button"
             onClick={onValidate}
@@ -136,15 +143,23 @@ export function EditorPage() {
       </div>
 
       {message && (
-        <p className="rounded-md bg-accent-soft px-3 py-2 text-sm text-accent">{message}</p>
+        <p
+          role="status"
+          aria-live="polite"
+          className="rounded-md bg-accent-soft px-3 py-2 text-sm text-accent"
+        >
+          {message}
+        </p>
       )}
       {errors.length > 0 && (
-        <ul className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">
+        <ul role="alert" className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">
           {errors.map((e) => (
             <li key={e}>{e}</li>
           ))}
         </ul>
       )}
+
+      <ImportResumePanel />
 
       <TagVocabularyPanel resume={resume} onChange={setResume} />
 
@@ -423,7 +438,10 @@ function EducationEntries({
             (edu.details?.length ?? 0),
         );
         return (
-          <div key={i} className="rounded-lg border border-line/80 bg-paper/40 p-3">
+          <div
+            key={edu._key ?? i}
+            className="rounded-lg border border-line/80 bg-paper/40 p-3"
+          >
             <div className="mb-3 flex items-start justify-between gap-2">
               <p className="text-sm font-medium text-ink-muted">
                 {edu.school.trim() || `Entry #${i + 1}`}
@@ -530,6 +548,7 @@ function EducationEntries({
                   <button
                     type="button"
                     title="Remove detail"
+                    aria-label="Remove detail"
                     onClick={() => {
                       const details = (edu.details ?? []).filter((_, j) => j !== di);
                       const next = [...entries];
@@ -582,7 +601,7 @@ function ExperienceEntries({
         const hasContent =
           Boolean(job.company.trim() || job.title.trim() || job.bullets.length);
         return (
-          <div key={i} className="rounded-lg border border-line/80 bg-paper/40 p-3">
+          <div key={job.id} className="rounded-lg border border-line/80 bg-paper/40 p-3">
             <div className="mb-3 flex items-start justify-between gap-2">
               <div>
                 <p className="text-sm font-medium text-ink-muted">
@@ -704,7 +723,7 @@ function ProjectEntries({
         const urlLooksOdd = Boolean(url.trim()) && !looksLikeHttpUrl(url);
 
         return (
-          <div key={i} className="rounded-lg border border-line/80 bg-paper/40 p-3">
+          <div key={proj.id} className="rounded-lg border border-line/80 bg-paper/40 p-3">
             <div className="mb-3 flex items-start justify-between gap-2">
               <div>
                 <p className="text-sm font-medium text-ink-muted">
@@ -880,7 +899,10 @@ function SkillsEntries({
       {groups.map((g, i) => {
         const hasContent = Boolean(g.label.trim() || g.items.length);
         return (
-          <div key={i} className="rounded-lg border border-line/80 bg-paper/40 p-3">
+          <div
+            key={g._key ?? i}
+            className="rounded-lg border border-line/80 bg-paper/40 p-3"
+          >
             <div className="mb-2 flex items-start justify-between gap-2">
               <div className="min-w-0 flex-1">
                 <TextField

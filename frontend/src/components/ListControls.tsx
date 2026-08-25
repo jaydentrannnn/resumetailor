@@ -45,6 +45,7 @@ export function EntryControls({
           <button
             type="button"
             title="Move up"
+            aria-label="Move up"
             disabled={index === 0}
             onClick={() => onMove(index, index - 1)}
             className="rounded border border-line px-2 py-0.5 text-xs disabled:opacity-30"
@@ -54,6 +55,7 @@ export function EntryControls({
           <button
             type="button"
             title="Move down"
+            aria-label="Move down"
             disabled={index >= total - 1}
             onClick={() => onMove(index, index + 1)}
             className="rounded border border-line px-2 py-0.5 text-xs disabled:opacity-30"

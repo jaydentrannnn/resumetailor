@@ -17,6 +17,8 @@ import {
 import {
   type MasterResume,
   completenessErrors,
+  stripRowKeys,
+  withRowKeys,
 } from "../lib/resumeEdit";
 
 type EditorStateValue = {
@@ -90,8 +92,13 @@ export function EditorProvider({ children }: { children: ReactNode }) {
               "the frontend.",
           );
         }
-        setResumeState(raw as MasterResume);
-        setSavedSnapshot(JSON.stringify(raw));
+        // Backfill client-only React list keys for Education/SkillGroup rows (they
+        // have no server-assigned id at all) before the draft ever renders — see
+        // `withRowKeys`. `savedSnapshot` is computed from the *stripped* shape so
+        // this backfill alone never reads as an unsaved edit.
+        const withKeys = withRowKeys(raw as MasterResume);
+        setResumeState(withKeys);
+        setSavedSnapshot(JSON.stringify(stripRowKeys(withKeys)));
         setConfig(cfg);
         setLoaded(true);
       })
@@ -113,7 +120,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
         return;
       }
       const result = await validateMasterResume(
-        resume as unknown as Record<string, unknown>,
+        stripRowKeys(resume) as unknown as Record<string, unknown>,
       );
       setErrors(result.errors);
       if (result.ok && result.summary) {
@@ -140,16 +147,16 @@ export function EditorProvider({ children }: { children: ReactNode }) {
         return;
       }
       const result = await saveMasterResume(
-        resume as unknown as Record<string, unknown>,
+        stripRowKeys(resume) as unknown as Record<string, unknown>,
       );
       setErrors(result.errors);
       if (result.ok && result.summary) {
         setMessage(
           `Saved — ${result.summary.name}: ${result.summary.bullets} bullets (previous file backed up)`,
         );
-        const fresh = (await fetchMasterResume()) as MasterResume;
+        const fresh = withRowKeys((await fetchMasterResume()) as MasterResume);
         setResumeState(fresh);
-        setSavedSnapshot(JSON.stringify(fresh));
+        setSavedSnapshot(JSON.stringify(stripRowKeys(fresh)));
         const cfg = await fetchConfig();
         setConfig(cfg);
       }
@@ -161,19 +168,35 @@ export function EditorProvider({ children }: { children: ReactNode }) {
   }, [resume]);
 
   const dirty = useMemo(
-    () => resume != null && savedSnapshot != null && JSON.stringify(resume) !== savedSnapshot,
+    () =>
+      resume != null &&
+      savedSnapshot != null &&
+      JSON.stringify(stripRowKeys(resume)) !== savedSnapshot,
     [resume, savedSnapshot],
   );
 
+  useEffect(() => {
+    /** Warn on a hard refresh/close with unsaved master-resume edits — the profile
+     * switcher already warns on an in-app switch, but a browser-level navigation
+     * bypassed that entirely. */
+    if (!dirty) return;
+    const onBeforeUnload = (e: BeforeUnloadEvent) => {
+      e.preventDefault();
+    };
+    window.addEventListener("beforeunload", onBeforeUnload);
+    return () => window.removeEventListener("beforeunload", onBeforeUnload);
+  }, [dirty]);
+
   const loadDraft = useCallback((next: MasterResume, draftMessage?: string) => {
-    setResumeState(next);
+    setResumeState(withRowKeys(next));
     setErrors([]);
     setMessage(draftMessage ?? "Imported draft loaded — review and save to keep it.");
   }, []);
 
   const syncFromDisk = useCallback((next: MasterResume, syncMessage?: string) => {
-    setResumeState(next);
-    setSavedSnapshot(JSON.stringify(next));
+    const withKeys = withRowKeys(next);
+    setResumeState(withKeys);
+    setSavedSnapshot(JSON.stringify(stripRowKeys(withKeys)));
     setErrors([]);
     setMessage(syncMessage ?? "Master resume updated.");
   }, []);

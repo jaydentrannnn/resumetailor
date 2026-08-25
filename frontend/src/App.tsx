@@ -1,4 +1,5 @@
 import { BrowserRouter, NavLink, Route, Routes } from "react-router-dom";
+import { ErrorBoundary } from "./components/ErrorBoundary";
 import { ProfileSwitcher } from "./components/workspace/ProfileSwitcher";
 import { EditorPage } from "./pages/EditorPage";
 import { RunPage } from "./pages/RunPage";
@@ -21,11 +22,13 @@ const navLinkClassName = ({ isActive }: { isActive: boolean }) =>
  */
 export default function App() {
   return (
-    <BrowserRouter>
-      <WorkspaceProvider>
-        <WorkspaceScope />
-      </WorkspaceProvider>
-    </BrowserRouter>
+    <ErrorBoundary>
+      <BrowserRouter>
+        <WorkspaceProvider>
+          <WorkspaceScope />
+        </WorkspaceProvider>
+      </BrowserRouter>
+    </ErrorBoundary>
   );
 }
 
@@ -103,7 +106,7 @@ function Shell() {
                 Template
               </NavLink>
               <NavLink to="/settings" className={navLinkClassName}>
-                Settings
+                Vocabulary
               </NavLink>
             </nav>
           </div>

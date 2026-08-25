@@ -34,7 +34,13 @@ export type Project = {
   bullets: Bullet[];
 };
 
-export type SkillGroup = { label: string; items: string[] };
+export type SkillGroup = {
+  label: string;
+  items: string[];
+  /** Client-only React list key — never sent to the server (see `stripRowKeys`).
+   * Unlike a bullet or entry, a skill group has no server-assigned id at all. */
+  _key?: string;
+};
 
 export type Education = {
   school: string;
@@ -45,6 +51,9 @@ export type Education = {
   gpa?: string;
   show_gpa?: boolean;
   details?: string[];
+  /** Client-only React list key — never sent to the server (see `stripRowKeys`).
+   * Unlike a bullet or entry, an education row has no server-assigned id at all. */
+  _key?: string;
 };
 
 /** One line in a plain bulleted section — a certification, an award, a language. */
@@ -265,12 +274,13 @@ export function blankProject(id: string): Project {
 
 /** Empty skill-group row. */
 export function blankSkillGroup(): SkillGroup {
-  return { label: "", items: [] };
+  return { _key: makeRowKey(), label: "", items: [] };
 }
 
 /** Empty education row. */
 export function blankEducation(): Education {
   return {
+    _key: makeRowKey(),
     school: "",
     degree: "",
     dates: "",
@@ -279,6 +289,66 @@ export function blankEducation(): Education {
     gpa: "",
     show_gpa: false,
     details: [],
+  };
+}
+
+/** Small client-side id for React list identity on rows with no server-assigned id
+ * (Education, SkillGroup). Survives object spreads (`{ ...edu, school: v }`) since it
+ * is a real property, which is exactly what makes it a stable React `key` across
+ * edits — unlike `key={i}`, which reattaches to the wrong row on move/remove. */
+export function makeRowKey(): string {
+  return `k_${Date.now().toString(36)}_${Math.random().toString(36).slice(2, 8)}`;
+}
+
+/**
+ * Backfill `_key` onto every Education/SkillGroup entry that lacks one. A resume
+ * freshly fetched from the server never has it (the field is client-only); call this
+ * once right after any load so `EditorPage`'s row components get stable React keys.
+ */
+export function withRowKeys(resume: MasterResume): MasterResume {
+  return {
+    ...resume,
+    sections: resume.sections.map((section) => {
+      if (section.kind === "education") {
+        return {
+          ...section,
+          entries: section.entries.map((e) => (e._key ? e : { ...e, _key: makeRowKey() })),
+        };
+      }
+      if (section.kind === "skills") {
+        return {
+          ...section,
+          entries: section.entries.map((g) => (g._key ? g : { ...g, _key: makeRowKey() })),
+        };
+      }
+      return section;
+    }),
+  };
+}
+
+/**
+ * Inverse of `withRowKeys` — strips the client-only `_key` before the resume leaves
+ * the browser. The server's Pydantic models reject unknown fields (`extra="forbid"`),
+ * so every save/validate call must send this, not the raw editor state.
+ */
+export function stripRowKeys(resume: MasterResume): MasterResume {
+  return {
+    ...resume,
+    sections: resume.sections.map((section) => {
+      if (section.kind === "education") {
+        return {
+          ...section,
+          entries: section.entries.map(({ _key, ...rest }) => rest),
+        };
+      }
+      if (section.kind === "skills") {
+        return {
+          ...section,
+          entries: section.entries.map(({ _key, ...rest }) => rest),
+        };
+      }
+      return section;
+    }),
   };
 }
 

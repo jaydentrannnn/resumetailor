@@ -66,11 +66,11 @@ export function runProgress(
   status: string | null,
   busy: boolean,
 ): RunProgress {
-  if (status === "succeeded" || status === "failed") {
+  if (status === "succeeded" || status === "failed" || status === "cancelled") {
     return {
       value: 1,
       indeterminate: false,
-      label: status === "failed" ? "Failed" : "Done",
+      label: status === "failed" ? "Failed" : status === "cancelled" ? "Cancelled" : "Done",
     };
   }
 

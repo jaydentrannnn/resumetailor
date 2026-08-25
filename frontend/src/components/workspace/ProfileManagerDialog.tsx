@@ -1,6 +1,9 @@
-import { type FormEvent, useState } from "react";
+import { type FormEvent, useEffect, useId, useRef, useState } from "react";
 import { useEditorState } from "../../state/editorState";
 import { useWorkspaceState } from "../../state/workspaceState";
+
+const FOCUSABLE_SELECTOR =
+  'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])';
 
 /**
  * Modal: create, duplicate, rename, and delete profiles.
@@ -21,6 +24,40 @@ export function ProfileManagerDialog({ onClose }: { onClose: () => void }) {
   const [renameDraft, setRenameDraft] = useState("");
 
   const disabled = busy || switching;
+
+  const titleId = useId();
+  const dialogRef = useRef<HTMLDivElement>(null);
+
+  useEffect(() => {
+    /** Standard modal keyboard contract: focus moves in on open and back to the
+     * trigger on close, Escape closes, and Tab cannot leave the dialog. */
+    const previouslyFocused = document.activeElement as HTMLElement | null;
+    dialogRef.current?.focus();
+
+    function onKeyDown(e: KeyboardEvent) {
+      if (e.key === "Escape") {
+        onClose();
+        return;
+      }
+      if (e.key !== "Tab" || !dialogRef.current) return;
+      const focusables = dialogRef.current.querySelectorAll<HTMLElement>(FOCUSABLE_SELECTOR);
+      if (focusables.length === 0) return;
+      const first = focusables[0];
+      const last = focusables[focusables.length - 1];
+      if (e.shiftKey && document.activeElement === first) {
+        e.preventDefault();
+        last.focus();
+      } else if (!e.shiftKey && document.activeElement === last) {
+        e.preventDefault();
+        first.focus();
+      }
+    }
+    document.addEventListener("keydown", onKeyDown);
+    return () => {
+      document.removeEventListener("keydown", onKeyDown);
+      previouslyFocused?.focus();
+    };
+  }, [onClose]);
 
   async function handleCreate(e: FormEvent) {
     e.preventDefault();
@@ -94,11 +131,18 @@ export function ProfileManagerDialog({ onClose }: { onClose: () => void }) {
       onClick={onClose}
     >
       <div
-        className="w-full max-w-lg rounded-xl border border-line bg-panel p-5 shadow-lg"
+        ref={dialogRef}
+        role="dialog"
+        aria-modal="true"
+        aria-labelledby={titleId}
+        tabIndex={-1}
+        className="w-full max-w-lg rounded-xl border border-line bg-panel p-5 shadow-lg outline-none"
         onClick={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between gap-3">
-          <h2 className="font-display text-lg font-semibold">Profiles</h2>
+          <h2 id={titleId} className="font-display text-lg font-semibold">
+            Profiles
+          </h2>
           <button
             type="button"
             onClick={onClose}

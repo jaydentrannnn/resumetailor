@@ -127,8 +127,8 @@ export function AnalyzeReport({ analysis }: Props) {
         </p>
       ) : (
         <p className="rounded-md bg-danger-soft px-3 py-2 text-danger">
-          Cannot install until blocking issues are fixed in the source document (or use
-          the legacy path only for the original all-caps layout).
+          Cannot install until the blocking issues above are fixed in the source
+          document — fix it and upload again.
         </p>
       )}
     </div>

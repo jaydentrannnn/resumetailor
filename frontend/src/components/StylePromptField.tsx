@@ -1,5 +1,4 @@
-import { useState } from "react";
-import { Field } from "./Field";
+import { useId, useState } from "react";
 
 type StylePromptFieldProps = {
   label: string;
@@ -10,7 +9,14 @@ type StylePromptFieldProps = {
   onChange: (value: string | null) => void;
 };
 
-/** Editable style block for one LLM writing stage, with a read-only locked-core preview. */
+/**
+ * Editable style block for one LLM writing stage, with a read-only locked-core
+ * preview. Deliberately not built on the shared `Field` component: `Field` wraps its
+ * children in a single `<label>`, which is correct for a label+single-control pair
+ * but wrong here — with the "Locked safety rules" and "Reset to default" buttons also
+ * inside it, clicking either would implicitly re-target the textarea too. The label
+ * below is instead explicitly associated with just the textarea via `htmlFor`/`id`.
+ */
 export function StylePromptField({
   label,
   help,
@@ -20,6 +26,7 @@ export function StylePromptField({
   onChange,
 }: StylePromptFieldProps) {
   const [coreOpen, setCoreOpen] = useState(false);
+  const textareaId = useId();
   const customized = value !== null;
   const displayText = value ?? defaultText;
 
@@ -29,8 +36,8 @@ export function StylePromptField({
   }
 
   return (
-    <Field
-      label={
+    <div className="block text-sm">
+      <label htmlFor={textareaId} className="mb-1 block text-ink-muted">
         <span className="inline-flex items-center gap-2">
           {label}
           {customized && (
@@ -39,15 +46,15 @@ export function StylePromptField({
             </span>
           )}
         </span>
-      }
-      help={help}
-    >
+      </label>
       <textarea
+        id={textareaId}
         rows={12}
         value={displayText}
         onChange={(e) => onChange(e.target.value)}
         className="w-full resize-y rounded-lg border border-line bg-paper/40 px-3 py-2 font-mono text-xs leading-relaxed focus:border-accent focus:outline-none focus:ring-1 focus:ring-accent/30"
       />
+      {help && <span className="mt-1 block text-xs text-ink-muted">{help}</span>}
       <div className="mt-2 flex items-center justify-between gap-3">
         <button
           type="button"
@@ -71,6 +78,6 @@ export function StylePromptField({
           {lockedCoreRules}
         </pre>
       )}
-    </Field>
+    </div>
   );
 }
