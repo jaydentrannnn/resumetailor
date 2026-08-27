@@ -155,14 +155,15 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     async (id: string | null, draft: LibraryPackDraft) => {
       setBusy(true);
       setError(null);
+      // No catch here, deliberately: on failure this rethrows to the caller (the pack
+      // editor, which shows the failure itself and stays open) without also setting
+      // the provider-level `error` — that would print the same message twice, once in
+      // the Packs banner and once in the editor.
       try {
         const next = id === null
           ? await createLibraryPack(draft)
           : await updateLibraryPack(id, draft);
         applyState(next);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
-        throw err; // let the caller keep its edit form open on failure
       } finally {
         setBusy(false);
       }

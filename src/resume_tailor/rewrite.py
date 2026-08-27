@@ -937,15 +937,20 @@ def _system() -> str:
 _TARGET_BAND = 25
 
 
-def _length_band(budget: int) -> tuple[int, int]:
+def length_band(budget: int) -> tuple[int, int]:
     """The (soft minimum, hard maximum) character range advertised for `budget`.
 
     `max` sits `WIDOW_SAFETY` characters below the budget rather than on it, because the
     measured failure was a 2-to-5 character overshoot: a ceiling placed exactly on the line
-    boundary is simply crossed again.
+    boundary is simply crossed again. Public so the web config endpoint can surface the
+    same numbers the rewrite prompt uses, without the SPA re-deriving them.
     """
     hard_max = max(40, budget - config.WIDOW_SAFETY)
     return max(20, hard_max - _TARGET_BAND), hard_max
+
+
+#: Private alias kept for call sites that predate the public name.
+_length_band = length_band
 
 
 def _format_bullets(bullets: list[Bullet], budget: int) -> str:

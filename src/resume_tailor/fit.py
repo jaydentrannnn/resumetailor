@@ -30,6 +30,16 @@ from .template_profile import ContactField, active_layout
 _TARGET_LINES_PER_BULLET = 2
 
 
+def default_bullet_char_budget() -> int:
+    """Character budget the first rewrite pass targets for each bullet.
+
+    Exposed so the web config endpoint can tell the editor the same soft/hard length
+    band the rewrite prompt advertises, without duplicating `_TARGET_LINES_PER_BULLET`
+    or `CHARS_PER_LINE` on the SPA side.
+    """
+    return _TARGET_LINES_PER_BULLET * config.CHARS_PER_LINE
+
+
 class FitError(RuntimeError):
     """Raised when the fit loop exhausts its retries without reaching the page target."""
 

@@ -116,8 +116,137 @@ def test_get_config_returns_defaults(client):
     assert "rewrite_core_rules" in body
     assert "expand_core_rules" in body
     assert "NEVER introduce a skill" in body["rewrite_core_rules"]
+    assert body["bullet_char_max"] > body["bullet_char_soft_min"] > 0
     # Stored vocabulary (or derived fallback) should be non-empty for a real master resume.
     assert len(body["tag_vocabulary"]) >= 1
+
+
+def test_list_jobs_includes_persisted_run(client, tmp_path, monkeypatch):
+    """GET /api/jobs lists a run.json written under the active workspace's jobs dir."""
+    c, _ = client
+    jobs_dir = config.OUTPUT_DIR / "jobs" / "histtest01"
+    jobs_dir.mkdir(parents=True, exist_ok=True)
+    (jobs_dir / "run.json").write_text(
+        json.dumps(
+            {
+                "job_id": "histtest01",
+                "workspace_id": config.active_workspace_id(),
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "finished_at": "2026-01-01T00:01:00+00:00",
+                "status": "succeeded",
+                "title": "History Fixture Role",
+                "error": None,
+                "report": {
+                    "title": "History Fixture Role",
+                    "seniority": "intern",
+                    "coverage_matched": 1,
+                    "coverage_total": 2,
+                    "missing_must_haves": [],
+                    "unmatched_canonicals": [],
+                    "gaps": [],
+                    "model": "stub",
+                    "semantic_used": False,
+                    "bullets_selected": 1,
+                    "bullets_total": 1,
+                    "experience": [],
+                    "projects": [],
+                    "dropped": [],
+                    "pages": 1,
+                    "pages_are_estimated": True,
+                    "iterations": 1,
+                    "widows_repaired": 0,
+                    "widows_remaining": 0,
+                    "verbs_diversified": 0,
+                    "verb_collisions_remaining": 0,
+                    "warnings": [],
+                    "out_path": str(jobs_dir / "tailored.docx"),
+                    "pdf_backend": "soffice",
+                    "calibration_source": "fallback",
+                },
+            }
+        ),
+        encoding="utf-8",
+    )
+    (jobs_dir / "tailored.docx").write_bytes(b"PK\x03\x04stub")
+    res = c.get("/api/jobs")
+    assert res.status_code == 200
+    runs = res.json()["runs"]
+    match = next((r for r in runs if r["job_id"] == "histtest01"), None)
+    assert match is not None
+    assert match["title"] == "History Fixture Role"
+    assert match["has_docx"] is True
+    assert match["has_pdf"] is False
+
+
+def test_download_works_for_disk_only_job(client):
+    """A job id absent from memory but present on disk still serves its artifact."""
+    c, q = client
+    job_id = "diskonly001"
+    # Ensure it is not in the live queue.
+    assert q.get(job_id) is None
+    jobs_dir = config.OUTPUT_DIR / "jobs" / job_id
+    jobs_dir.mkdir(parents=True, exist_ok=True)
+    (jobs_dir / "run.json").write_text(
+        json.dumps(
+            {
+                "job_id": job_id,
+                "workspace_id": config.active_workspace_id(),
+                "created_at": "2026-01-02T00:00:00+00:00",
+                "finished_at": "2026-01-02T00:01:00+00:00",
+                "status": "succeeded",
+                "title": "Disk Only",
+                "error": None,
+                "report": {"title": "Disk Only", "seniority": "intern",
+                           "coverage_matched": 0, "coverage_total": 0,
+                           "missing_must_haves": [], "unmatched_canonicals": [],
+                           "gaps": [], "model": "stub", "semantic_used": False,
+                           "bullets_selected": 0, "bullets_total": 0,
+                           "experience": [], "projects": [], "dropped": [],
+                           "pages": 1, "pages_are_estimated": True, "iterations": 1,
+                           "widows_repaired": 0, "widows_remaining": 0,
+                           "verbs_diversified": 0, "verb_collisions_remaining": 0,
+                           "warnings": [], "out_path": str(jobs_dir / "tailored.docx"),
+                           "pdf_backend": "soffice", "calibration_source": "fallback"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    (jobs_dir / "tailored.docx").write_bytes(b"PK\x03\x04disk-only")
+    res = c.get(f"/api/jobs/{job_id}/download.docx")
+    assert res.status_code == 200
+    assert res.content == b"PK\x03\x04disk-only"
+    status = c.get(f"/api/jobs/{job_id}")
+    assert status.status_code == 200
+    assert status.json()["status"] == "succeeded"
+    assert status.json()["title"] == "Disk Only"
+
+
+def test_failed_run_writes_run_json(client, monkeypatch):
+    """A failed execute still persists run.json so history can show the error."""
+    c, q = client
+
+    def boom(job):
+        job.out_dir = config.OUTPUT_DIR / "jobs" / job.job_id
+        job.out_dir.mkdir(parents=True, exist_ok=True)
+        raise RuntimeError("forced failure for history test")
+
+    monkeypatch.setattr(q, "_execute", boom)
+    res = c.post("/api/jobs", json={"jd_text": "Looking for a Python intern.", "settings": {}})
+    assert res.status_code == 200
+    job_id = res.json()["job_id"]
+    # Wait briefly for the worker to mark it failed and persist.
+    for _ in range(50):
+        job = q.get(job_id)
+        if job and job.status == "failed":
+            break
+        time.sleep(0.05)
+    else:
+        raise AssertionError("job never reached failed")
+    run_path = config.OUTPUT_DIR / "jobs" / job_id / "run.json"
+    assert run_path.exists()
+    record = json.loads(run_path.read_text(encoding="utf-8"))
+    assert record["status"] == "failed"
+    assert "forced failure" in (record.get("error") or "")
 
 
 def test_create_job_rejects_empty_jd(client):

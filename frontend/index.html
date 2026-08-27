@@ -8,6 +8,21 @@
     <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
     <link href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,500;9..144,700&family=IBM+Plex+Sans:wght@400;500;600&display=swap" rel="stylesheet" />
     <title>ResumeTailor</title>
+    <!-- Apply data-theme before paint so a stored Light override doesn't flash OS-dark tokens. -->
+    <script>
+      (function () {
+        try {
+          var p = localStorage.getItem("resume-tailor-theme") || "system";
+          var dark =
+            p === "dark" ||
+            (p !== "light" &&
+              window.matchMedia("(prefers-color-scheme: dark)").matches);
+          var theme = dark ? "dark" : "light";
+          document.documentElement.setAttribute("data-theme", theme);
+          document.documentElement.style.colorScheme = theme;
+        } catch (e) {}
+      })();
+    </script>
   </head>
   <body>
     <div id="root"></div>

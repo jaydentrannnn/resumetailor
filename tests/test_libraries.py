@@ -367,6 +367,16 @@ def test_validate_rejects_a_verb_in_two_families_within_one_pack():
     assert any("led" in e and "both" in e for e in errors)
 
 
+def test_validate_treats_two_families_differing_only_by_case_as_distinct():
+    # The collision check (line ~763) compares family names raw and case-sensitively,
+    # so "Care" and "care" are two distinct families that still collide on a shared verb
+    # — the frontend's client-side mirror of this rule must match, not lowercase-compare.
+    errors = libraries.validate_pack(
+        _pack("a", verb_families={"Care": ["led"], "care": ["led"]})
+    )
+    assert any("Care" in e and "care" in e for e in errors)
+
+
 def test_validate_rejects_an_empty_alias_key():
     errors = libraries.validate_pack(_pack("a", tag_aliases={"": "python"}))
     assert any("non-empty" in e for e in errors)

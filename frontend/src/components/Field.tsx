@@ -1,6 +1,6 @@
 /**
  * Shared label+control primitives, extracted from RunPage's SettingsPanel so
- * SettingsPage's pack editor can reuse the same look without duplicating them.
+ * VocabularyPage's pack editor can reuse the same look without duplicating them.
  * The `.field` class both `Field`'s children and SettingsPanel's raw inputs rely
  * on lives in `index.css`, not here — it styles the input/select itself, which
  * callers apply directly rather than through this wrapper.
@@ -29,11 +29,16 @@ export function Toggle({
   label,
   help,
   checked,
+  disabled,
+  disabledHint,
   onChange,
 }: {
   label: string;
   help?: string;
   checked: boolean;
+  disabled?: boolean;
+  /** Shown instead of `help` when the control is disabled — explains why. */
+  disabledHint?: string;
   onChange: (v: boolean) => void;
 }) {
   return (
@@ -41,12 +46,17 @@ export function Toggle({
       <input
         type="checkbox"
         checked={checked}
+        disabled={disabled}
         onChange={(e) => onChange(e.target.checked)}
-        className="mt-0.5 accent-[var(--color-accent)]"
+        className="mt-0.5 accent-[var(--color-accent)] disabled:opacity-50"
       />
       <span>
         <span className="font-medium">{label}</span>
-        {help && <span className="mt-0.5 block text-xs text-ink-muted">{help}</span>}
+        {(disabled ? disabledHint : help) && (
+          <span className="mt-0.5 block text-xs text-ink-muted">
+            {disabled ? disabledHint : help}
+          </span>
+        )}
       </span>
     </label>
   );

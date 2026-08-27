@@ -42,6 +42,7 @@ import {
   removeTagFromResume,
   uniqueTags,
 } from "../lib/resumeEdit";
+import { useConfirm } from "../state/confirmState";
 import { useEditorState } from "../state/editorState";
 
 /**
@@ -109,55 +110,59 @@ export function EditorPage() {
 
   return (
     <div className="space-y-6">
-      <div className="flex flex-wrap items-center justify-between gap-3">
-        <div>
-          <h1 className="font-display text-2xl font-semibold">Master resume</h1>
-          <p className="text-sm text-ink-muted">
-            Every fact a tailored resume can use lives here. Tags double as the fabrication
-            guard&apos;s whitelist.
+      <div className="sticky top-0 z-20 -mx-6 border-b border-line/80 bg-paper/85 px-6 py-3 backdrop-blur-sm">
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <div>
+            <h1 className="font-display text-2xl font-semibold">Master resume</h1>
+            <p className="text-sm text-ink-muted">
+              Every fact a tailored resume can use lives here. Tags double as the fabrication
+              guard&apos;s whitelist.
+            </p>
+          </div>
+          <div className="flex items-center gap-2">
+            {dirty && (
+              <span className="rounded-full bg-warn-soft px-2.5 py-1 text-xs font-medium text-warn">
+                Unsaved changes
+              </span>
+            )}
+            <button
+              type="button"
+              onClick={onValidate}
+              disabled={busy}
+              className="rounded-md border border-line px-3 py-2 text-sm font-medium hover:border-accent disabled:opacity-50"
+            >
+              Validate
+            </button>
+            <button
+              type="button"
+              onClick={onSave}
+              disabled={busy}
+              className="rounded-md bg-accent px-3 py-2 text-sm font-medium text-on-accent disabled:opacity-50"
+            >
+              Save
+            </button>
+          </div>
+        </div>
+        {message && (
+          <p
+            role="status"
+            aria-live="polite"
+            className="mt-2 max-h-32 overflow-y-auto rounded-md bg-accent-soft px-3 py-2 text-sm text-accent"
+          >
+            {message}
           </p>
-        </div>
-        <div className="flex items-center gap-2">
-          {dirty && (
-            <span className="rounded-full bg-warn-soft px-2.5 py-1 text-xs font-medium text-warn">
-              Unsaved changes
-            </span>
-          )}
-          <button
-            type="button"
-            onClick={onValidate}
-            disabled={busy}
-            className="rounded-md border border-line px-3 py-2 text-sm font-medium hover:border-accent disabled:opacity-50"
+        )}
+        {errors.length > 0 && (
+          <ul
+            role="alert"
+            className="mt-2 max-h-32 overflow-y-auto rounded-md bg-danger-soft px-3 py-2 text-sm text-danger"
           >
-            Validate
-          </button>
-          <button
-            type="button"
-            onClick={onSave}
-            disabled={busy}
-            className="rounded-md bg-accent px-3 py-2 text-sm font-medium text-white disabled:opacity-50"
-          >
-            Save
-          </button>
-        </div>
+            {errors.map((e) => (
+              <li key={e}>{e}</li>
+            ))}
+          </ul>
+        )}
       </div>
-
-      {message && (
-        <p
-          role="status"
-          aria-live="polite"
-          className="rounded-md bg-accent-soft px-3 py-2 text-sm text-accent"
-        >
-          {message}
-        </p>
-      )}
-      {errors.length > 0 && (
-        <ul role="alert" className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">
-          {errors.map((e) => (
-            <li key={e}>{e}</li>
-          ))}
-        </ul>
-      )}
 
       <ImportResumePanel />
 
@@ -228,6 +233,7 @@ export function EditorPage() {
           key={section.id}
           section={section}
           index={i}
+          total={resume.sections.length}
           vocabList={vocabList}
           takenBulletIds={takenBulletIds}
           takenEntryIds={takenEntryIds}
@@ -235,9 +241,17 @@ export function EditorPage() {
           onRemove={(idx) =>
             setResume((prev) => ({ ...prev, sections: removeAt(prev.sections, idx) }))
           }
+          onMove={(from, to) =>
+            setResume((prev) => ({ ...prev, sections: moveItem(prev.sections, from, to) }))
+          }
           onChange={(next) => updateSection(i, next)}
         />
       ))}
+
+      <p className="text-xs text-ink-muted">
+        Reordering sections changes bullet scoring order — the next Tailor run will re-score
+        once (one extra LLM call) before using the new order.
+      </p>
 
       <AddSectionPanel onAdd={addSection} />
     </div>
@@ -255,7 +269,7 @@ function AddSectionPanel({ onAdd }: { onAdd: (kind: SectionKind) => void }) {
         <select
           value={kind}
           onChange={(e) => setKind(e.target.value as SectionKind)}
-          className="rounded-md border border-line bg-paper/40 px-2 py-1.5 text-sm outline-none focus:border-accent"
+          className="rounded-md border border-line bg-paper/40 px-2 py-1.5 text-sm focus:border-accent"
         >
           {kinds.map((k) => (
             <option key={k} value={k}>
@@ -272,20 +286,24 @@ function AddSectionPanel({ onAdd }: { onAdd: (kind: SectionKind) => void }) {
 function SectionShell({
   section,
   index,
+  total,
   vocabList,
   takenBulletIds,
   takenEntryIds,
   onEnsureVocab,
   onRemove,
+  onMove,
   onChange,
 }: {
   section: Section;
   index: number;
+  total: number;
   vocabList: string[];
   takenBulletIds: Set<string>;
   takenEntryIds: Set<string>;
   onEnsureVocab: (token: string) => void;
   onRemove: (index: number) => void;
+  onMove: (from: number, to: number) => void;
   onChange: (next: Section) => void;
 }) {
   const hasContent = section.entries.length > 0;
@@ -300,7 +318,7 @@ function SectionShell({
               value={section.title}
               onChange={(e) => onChange({ ...section, title: e.target.value } as Section)}
               placeholder="Section title"
-              className="w-full max-w-sm rounded-md border border-line bg-paper/40 px-2 py-1.5 font-display text-lg font-semibold outline-none focus:border-accent"
+              className="w-full max-w-sm rounded-md border border-line bg-paper/40 px-2 py-1.5 font-display text-lg font-semibold focus:border-accent"
             />
             <span className="shrink-0 rounded-full bg-accent-soft px-2 py-0.5 text-xs font-medium text-accent">
               {SECTION_KIND_LABELS[section.kind]}
@@ -310,11 +328,10 @@ function SectionShell({
         </div>
         <EntryControls
           index={index}
-          total={1}
+          total={total}
           hasContent={hasContent}
           label={section.title}
-          canMove={false}
-          onMove={() => {}}
+          onMove={onMove}
           onRemove={onRemove}
         />
       </div>
@@ -359,30 +376,32 @@ function TagVocabularyPanel({
    * Manage the shared tag option list. Removing an in-use option strips it from
    * every bullet after confirmation — tags are the fabrication guard's whitelist.
    */
+  const { confirm } = useConfirm();
   const vocab = resume.tag_vocabulary ?? [];
 
-  function applyVocabulary(next: string[]) {
+  async function applyVocabulary(next: string[]) {
     /** Diff against current vocab; removals strip the tag from every bullet. */
     const nextLower = new Set(next.map((t) => t.toLowerCase()));
     const removed = vocab.filter((t) => !nextLower.has(t.toLowerCase()));
+    const inUse = removed
+      .map((tag) => ({ tag, used: countTagUsage(resume, tag) }))
+      .filter((r) => r.used > 0);
+
+    if (inUse.length > 0) {
+      const lines = inUse.map((r) => `• "${r.tag}" on ${r.used} bullet(s)`).join("\n");
+      const ok = await confirm({
+        title: "Remove tags from bullets?",
+        message:
+          `These tags are in use and will be stripped from every bullet that uses them:\n\n${lines}`,
+        confirmLabel: "Remove from vocabulary and bullets",
+        tone: "danger",
+      });
+      if (!ok) return;
+    }
+
     let updated: MasterResume = { ...resume, tag_vocabulary: next };
     for (const tag of removed) {
-      const used = countTagUsage(resume, tag);
-      if (used > 0) {
-        const ok = window.confirm(
-          `"${tag}" is on ${used} bullet(s). Remove it from the vocabulary and those bullets?`,
-        );
-        if (!ok) {
-          // Keep the tag in the list; abort this removal only.
-          updated = {
-            ...updated,
-            tag_vocabulary: addToVocabulary(updated.tag_vocabulary ?? [], tag),
-          };
-          continue;
-        }
-      }
       updated = removeTagFromResume(updated, tag);
-      // removeTagFromResume also drops it from vocab; re-apply any newly added tokens.
       updated = {
         ...updated,
         tag_vocabulary: next.filter((t) => t.toLowerCase() !== tag.toLowerCase()),
@@ -402,7 +421,7 @@ function TagVocabularyPanel({
         <ChipListField
           label="Vocabulary"
           items={vocab}
-          onChange={applyVocabulary}
+          onChange={(items) => void applyVocabulary(items)}
           placeholder="Add a tag option"
         />
       </div>
@@ -543,7 +562,7 @@ function EducationEntries({
                       next[i] = { ...edu, details };
                       setEntries(next);
                     }}
-                    className="w-full rounded-md border border-line bg-white px-2 py-1.5 text-sm outline-none focus:border-accent"
+                    className="w-full rounded-md border border-line bg-panel px-2 py-1.5 text-sm focus:border-accent"
                   />
                   <button
                     type="button"
@@ -864,7 +883,7 @@ function ListEntries({
                 setEntries(next);
               }}
               placeholder="e.g. AWS Certified Cloud Practitioner"
-              className="w-full rounded-md border border-line bg-white px-2 py-1.5 text-sm outline-none focus:border-accent"
+              className="w-full rounded-md border border-line bg-panel px-2 py-1.5 text-sm focus:border-accent"
             />
             <EntryControls
               index={i}
@@ -956,6 +975,10 @@ function BulletList({
   onEnsureVocab: (token: string) => void;
   onChange: (b: Bullet[]) => void;
 }) {
+  const { config } = useEditorState();
+  const softMin = config?.bullet_char_soft_min ?? 172;
+  const charMax = config?.bullet_char_max ?? 197;
+
   function addBullet() {
     const prefix = entryPrefix(bullets, entryName);
     const id = nextBulletId(prefix, takenIds);
@@ -973,6 +996,8 @@ function BulletList({
       {bullets.map((b, i) => {
         const missing = suggestMissingTags(b.text, b.tags, vocabSet, vocabList);
         const hasContent = Boolean(b.text.trim() || b.tags.length);
+        const len = b.text.length;
+        const overMax = len >= charMax;
         return (
           <div key={b.id} className="rounded-lg border border-line/80 bg-paper/40 p-3">
             <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs text-ink-muted">
@@ -1008,8 +1033,20 @@ function BulletList({
                 next[i] = { ...b, text: e.target.value };
                 onChange(next);
               }}
-              className="w-full rounded-md border border-line bg-white px-2 py-1.5 text-sm outline-none focus:border-accent"
+              className="w-full rounded-md border border-line bg-panel px-2 py-1.5 text-sm focus:border-accent"
             />
+            <p
+              className={`mt-1 text-xs ${
+                overMax ? "text-warn" : len >= softMin ? "text-ink-muted" : "text-ink-muted"
+              }`}
+            >
+              {len} / {charMax}
+              {overMax
+                ? " — likely to wrap onto a near-empty line"
+                : len >= softMin
+                  ? " (in target band)"
+                  : ""}
+            </p>
             <div className="mt-2">
               <ChipListField
                 label="Tags"
@@ -1052,7 +1089,7 @@ function TextField({
         type="text"
         value={value}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full rounded-md border border-line bg-paper/40 px-2 py-1.5 text-sm outline-none focus:border-accent"
+        className="w-full rounded-md border border-line bg-paper/40 px-2 py-1.5 text-sm focus:border-accent"
       />
     </label>
   );

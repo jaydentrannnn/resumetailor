@@ -6,6 +6,12 @@ import { SectionMapStep } from "./SectionMapStep";
 import { UploadDropzone } from "./UploadDropzone";
 import { importMasterResumeContent, mergeMasterResume } from "../../api";
 import type { MasterResume } from "../../lib/resumeEdit";
+import {
+  MERGE_CHOICE_MESSAGE,
+  MERGE_CHOICE_OPTIONS,
+  MERGE_CHOICE_TITLE,
+} from "../../lib/mergeConfirm";
+import { useConfirm } from "../../state/confirmState";
 import { useEditorState } from "../../state/editorState";
 import { useTemplateState } from "../../state/templateState";
 
@@ -20,12 +26,6 @@ type ImportOutcome =
     }
   | { kind: "draft"; warnings: string[]; untagged: number }
   | { kind: "error"; error: string };
-
-const MERGE_CONFIRM_MESSAGE =
-  "Merge this file's content into the master resume?\n\n" +
-  "Entries are matched by company/school/project name: matching entries are updated " +
-  "(their bullets refreshed), new ones are added, and everything else in your master " +
-  "resume is left as-is. The current file is backed up first.";
 
 /**
  * Multi-step template import: analyze → confirm mapping → install.
@@ -54,6 +54,7 @@ export function TemplateImportWizard() {
     setInstallLabel,
   } = useTemplateState();
   const { loadDraft, syncFromDisk } = useEditorState();
+  const { choice } = useConfirm();
 
   // Content import is a separate action from the template install (it hits a
   // different endpoint), but the wizard offers it as "one upload does both" — checked
@@ -76,7 +77,12 @@ export function TemplateImportWizard() {
     setImportBusy(true);
     try {
       const result = await importMasterResumeContent(draftFile, { suggestTags });
-      if (window.confirm(MERGE_CONFIRM_MESSAGE)) {
+      const picked = await choice({
+        title: MERGE_CHOICE_TITLE,
+        message: MERGE_CHOICE_MESSAGE,
+        options: [...MERGE_CHOICE_OPTIONS],
+      });
+      if (picked === "merge") {
         const merged = await mergeMasterResume(result.resume);
         syncFromDisk(
           merged.resume as MasterResume,
@@ -90,7 +96,7 @@ export function TemplateImportWizard() {
           warnings: merged.warnings,
           backup: merged.backup,
         });
-      } else {
+      } else if (picked === "draft") {
         loadDraft(
           result.resume as MasterResume,
           "Imported from the template upload — review on the Master Resume tab and save to keep it.",
@@ -251,7 +257,7 @@ export function TemplateImportWizard() {
               type="button"
               disabled={!canInstall || importBusy}
               onClick={() => void runInstall()}
-              className="rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
+              className="rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-on-accent disabled:opacity-50"
             >
               {wizardStep === "installing"
                 ? calibrateAlso

@@ -33,6 +33,7 @@ export function TemplatePage() {
 
   return (
     <div className="space-y-6">
+      <h1 className="sr-only">Template</h1>
       <section className="rounded-xl border border-line bg-panel p-5 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -114,12 +115,35 @@ export function TemplatePage() {
 
             {info.tagged.exists ? (
               <div className="mt-4 overflow-hidden rounded-lg border border-line bg-paper/40">
+                <div className="flex justify-end border-b border-line px-3 py-1.5">
+                  <a
+                    href={`${templatePreviewUrl()}?v=${previewKey}`}
+                    target="_blank"
+                    rel="noreferrer"
+                    className="text-xs text-ink-muted underline-offset-2 hover:text-accent hover:underline"
+                  >
+                    Open in new tab
+                  </a>
+                </div>
                 <iframe
                   key={previewKey}
                   title="Template preview"
                   src={`${templatePreviewUrl()}?v=${previewKey}`}
                   className="h-[70vh] w-full bg-white"
-                />
+                >
+                  <p className="p-4 text-sm text-ink-muted">
+                    PDF preview is not available in this browser.{" "}
+                    <a
+                      href={`${templatePreviewUrl()}?v=${previewKey}`}
+                      target="_blank"
+                      rel="noreferrer"
+                      className="text-accent underline"
+                    >
+                      Open the PDF in a new tab
+                    </a>
+                    .
+                  </p>
+                </iframe>
               </div>
             ) : (
               <p className="mt-4 rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">

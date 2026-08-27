@@ -110,24 +110,54 @@ export function PreviewCompare({ sourceSha256, profile }: Props) {
 
       <div className="grid gap-3 sm:grid-cols-2">
         <div className="overflow-hidden rounded-lg border border-line/80 bg-paper/40">
-          <p className="border-b border-line/80 bg-paper/60 px-3 py-1.5 text-xs font-medium text-ink-muted">
-            Original upload
+          <p className="flex items-center justify-between border-b border-line/80 bg-paper/60 px-3 py-1.5 text-xs font-medium text-ink-muted">
+            <span>Original upload</span>
+            {sourceUrl ? (
+              <a
+                href={sourceUrl}
+                target="_blank"
+                rel="noreferrer"
+                className="underline-offset-2 hover:text-accent hover:underline"
+              >
+                Open in new tab
+              </a>
+            ) : null}
           </p>
           {sourceLoading ? (
             <p className="p-3 text-xs text-ink-muted">Converting…</p>
           ) : sourceError ? (
             <p className="p-3 text-xs text-danger">{sourceError}</p>
           ) : sourceUrl ? (
-            <iframe title="Original upload preview" src={sourceUrl} className="h-[55vh] w-full bg-white" />
+            <iframe title="Original upload preview" src={sourceUrl} className="h-[55vh] w-full bg-white">
+              <p className="p-3 text-xs text-ink-muted">
+                PDF preview unavailable.{" "}
+                <a href={sourceUrl} target="_blank" rel="noreferrer" className="text-accent underline">
+                  Open in new tab
+                </a>
+                .
+              </p>
+            </iframe>
           ) : null}
         </div>
 
         <div className="overflow-hidden rounded-lg border border-line/80 bg-paper/40">
           <p className="flex items-center justify-between border-b border-line/80 bg-paper/60 px-3 py-1.5 text-xs font-medium text-ink-muted">
             <span>Draft with this mapping</span>
-            {draftUrl && draftStale ? (
-              <span className="text-warn">Mapping changed — refresh to update</span>
-            ) : null}
+            <span className="flex items-center gap-2">
+              {draftUrl && draftStale ? (
+                <span className="text-warn">Mapping changed — refresh to update</span>
+              ) : null}
+              {draftUrl ? (
+                <a
+                  href={draftUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="underline-offset-2 hover:text-accent hover:underline"
+                >
+                  Open in new tab
+                </a>
+              ) : null}
+            </span>
           </p>
           {draftError ? (
             <p className="p-3 text-xs text-danger">{draftError}</p>
@@ -136,7 +166,15 @@ export function PreviewCompare({ sourceSha256, profile }: Props) {
               title="Draft mapping preview"
               src={draftUrl}
               className={`h-[55vh] w-full bg-white ${draftStale ? "opacity-60" : ""}`}
-            />
+            >
+              <p className="p-3 text-xs text-ink-muted">
+                PDF preview unavailable.{" "}
+                <a href={draftUrl} target="_blank" rel="noreferrer" className="text-accent underline">
+                  Open in new tab
+                </a>
+                .
+              </p>
+            </iframe>
           ) : (
             <p className="p-3 text-xs text-ink-muted">
               Not generated yet — click “Generate draft preview” above.

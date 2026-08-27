@@ -63,7 +63,7 @@ export function UploadDropzone({ disabled, onFile, label }: Props) {
         type="button"
         disabled={disabled}
         onClick={() => inputRef.current?.click()}
-        className="rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-white disabled:opacity-50"
+        className="rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-on-accent disabled:opacity-50"
       >
         {disabled ? "Working…" : "Choose file"}
       </button>

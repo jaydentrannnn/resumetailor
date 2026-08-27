@@ -13,6 +13,7 @@ other's `.docx` / `.pdf`. JD and score caches stay in the shared `config.CACHE_D
 
 from __future__ import annotations
 
+import json
 import queue
 import threading
 import traceback
@@ -76,6 +77,9 @@ class Job:
     created_at: str = field(
         default_factory=lambda: datetime.now(UTC).isoformat(timespec="seconds")
     )
+    #: Profile that owned this run when it was submitted — needed so `GET /api/jobs`
+    #: after a profile switch does not list another workspace's in-memory jobs.
+    workspace_id: str | None = None
     error: str | None = None
     report: RunReportOut | None = None
     expansion: ExpansionOut | None = None
@@ -97,6 +101,46 @@ class Job:
         """Raise `JobCancelled` if this job's cancellation was requested."""
         if self.cancel_requested.is_set():
             raise JobCancelled()
+
+
+def _jd_title_fallback(jd_text: str) -> str:
+    """First non-empty line of the JD, truncated — used when there is no report yet."""
+    for line in jd_text.splitlines():
+        stripped = line.strip()
+        if stripped:
+            return stripped[:80]
+    return "Untitled run"
+
+
+def _persist_run_record(job: Job) -> None:
+    """Write `out_dir/run.json` so history and downloads survive a process restart.
+
+    Called after every terminal status assignment (succeeded / failed / cancelled).
+    No-op when `out_dir` was never created (cancel-while-queued before `_execute`).
+    """
+    if job.out_dir is None:
+        return
+    title = job.report.title if job.report else _jd_title_fallback(job.jd_text)
+    record = {
+        "job_id": job.job_id,
+        "workspace_id": job.workspace_id,
+        "created_at": job.created_at,
+        "finished_at": datetime.now(UTC).isoformat(timespec="seconds"),
+        "status": job.status,
+        "title": title,
+        "error": job.error,
+        "report": job.report.model_dump() if job.report else None,
+    }
+    try:
+        job.out_dir.mkdir(parents=True, exist_ok=True)
+        (job.out_dir / "run.json").write_text(
+            json.dumps(record, indent=2),
+            encoding="utf-8",
+        )
+    except OSError:
+        # Persistence is best-effort — a full disk must not turn a successful run into
+        # a failed one after the .docx is already written.
+        pass
 
 
 class JobQueue:
@@ -122,7 +166,12 @@ class JobQueue:
     def submit(self, jd_text: str, settings: JobSettings) -> tuple[Job, int]:
         """Enqueue a run. Returns `(job, 1-based queue position)`."""
         job_id = uuid.uuid4().hex[:12]
-        job = Job(job_id=job_id, jd_text=jd_text, settings=settings)
+        job = Job(
+            job_id=job_id,
+            jd_text=jd_text,
+            settings=settings,
+            workspace_id=config.active_workspace_id(),
+        )
         with self._lock:
             self._jobs[job_id] = job
             self._order.append(job_id)
@@ -150,6 +199,11 @@ class JobQueue:
     def get(self, job_id: str) -> Job | None:
         """Look up a job by id, or None if it was never submitted."""
         return self._jobs.get(job_id)
+
+    def iter_jobs(self) -> list[Job]:
+        """Snapshot of every retained in-memory job (for history overlay)."""
+        with self._lock:
+            return list(self._jobs.values())
 
     def queue_position(self, job_id: str) -> int:
         """1-based position among still-waiting jobs, or 0 if already running/done."""
@@ -222,9 +276,11 @@ class JobQueue:
             try:
                 self._execute(job)
                 job.status = "succeeded"
+                _persist_run_record(job)
             except JobCancelled:
                 job.status = "cancelled"
                 job.emit(ProgressEvent(stage="cancel", message="Run cancelled.", detail={}))
+                _persist_run_record(job)
             except BaseException as exc:  # noqa: BLE001 - surface any failure to the UI
                 # `Exception` alone left a `SystemExit`/`KeyboardInterrupt`/
                 # `RecursionError`-flavoured failure with the job frozen at "running"
@@ -244,6 +300,7 @@ class JobQueue:
                         detail={"traceback": traceback.format_exc()},
                     )
                 )
+                _persist_run_record(job)
                 if not isinstance(exc, Exception):
                     raise
 
@@ -251,6 +308,11 @@ class JobQueue:
         """Run one job end-to-end. Mutates `job` with events and a final report."""
         settings = job.settings
         on_event: ProgressCallback = job.emit
+        # Create the job directory first so a failure during extract/score still leaves
+        # a place for `run.json` — history needs something on disk even for failed runs.
+        out_dir = config.OUTPUT_DIR / "jobs" / job.job_id
+        out_dir.mkdir(parents=True, exist_ok=True)
+        job.out_dir = out_dir
         job.check_cancelled()
 
         try:
@@ -377,9 +439,6 @@ class JobQueue:
         master_resume = resume
         resume = facets.apply(resume, facet_result)
 
-        out_dir = config.OUTPUT_DIR / "jobs" / job.job_id
-        out_dir.mkdir(parents=True, exist_ok=True)
-        job.out_dir = out_dir
         out_path = out_dir / "tailored.docx"
 
         job.check_cancelled()

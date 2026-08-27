@@ -1,6 +1,12 @@
 import { useState } from "react";
 import { importMasterResumeContent, mergeMasterResume } from "../api";
 import type { MasterResume } from "../lib/resumeEdit";
+import {
+  MERGE_CHOICE_MESSAGE,
+  MERGE_CHOICE_OPTIONS,
+  MERGE_CHOICE_TITLE,
+} from "../lib/mergeConfirm";
+import { useConfirm } from "../state/confirmState";
 import { useEditorState } from "../state/editorState";
 import { UploadDropzone } from "./template/UploadDropzone";
 
@@ -16,12 +22,6 @@ type Outcome =
   | { kind: "draft"; warnings: string[]; untagged: number }
   | { kind: "error"; error: string };
 
-const MERGE_CONFIRM_MESSAGE =
-  "Merge this file's content into the master resume?\n\n" +
-  "Entries are matched by company/school/project name: matching entries are updated " +
-  "(their bullets refreshed), new ones are added, and everything else in your master " +
-  "resume is left as-is. The current file is backed up first.";
-
 /**
  * Standalone import entry point for the Master resume tab. Previously the only path
  * to `POST /api/master-resume/import` was a checkbox buried inside the Template tab's
@@ -32,6 +32,7 @@ const MERGE_CONFIRM_MESSAGE =
  */
 export function ImportResumePanel() {
   const { loadDraft, syncFromDisk } = useEditorState();
+  const { choice } = useConfirm();
   const [suggestTags, setSuggestTags] = useState(false);
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
@@ -41,7 +42,12 @@ export function ImportResumePanel() {
     setOutcome(null);
     try {
       const result = await importMasterResumeContent(file, { suggestTags });
-      if (window.confirm(MERGE_CONFIRM_MESSAGE)) {
+      const picked = await choice({
+        title: MERGE_CHOICE_TITLE,
+        message: MERGE_CHOICE_MESSAGE,
+        options: [...MERGE_CHOICE_OPTIONS],
+      });
+      if (picked === "merge") {
         const merged = await mergeMasterResume(result.resume);
         syncFromDisk(
           merged.resume as MasterResume,
@@ -55,7 +61,7 @@ export function ImportResumePanel() {
           warnings: merged.warnings,
           backup: merged.backup,
         });
-      } else {
+      } else if (picked === "draft") {
         loadDraft(
           result.resume as MasterResume,
           "Imported from the uploaded document — review below and save to keep it.",
@@ -66,6 +72,7 @@ export function ImportResumePanel() {
           untagged: result.untagged_bullet_count,
         });
       }
+      // picked === null → user cancelled; leave the editor unchanged.
     } catch (err) {
       setOutcome({ kind: "error", error: err instanceof Error ? err.message : String(err) });
     } finally {

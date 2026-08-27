@@ -267,6 +267,32 @@ class JobStatusResponse(BaseModel):
     expansion: ExpansionOut | None = None
     skills: SkillsPlanOut | None = None
     events: list[ProgressEventOut] = Field(default_factory=list)
+    #: ISO timestamp when the run was submitted — present for disk-backed history rows.
+    created_at: str | None = None
+    #: Short title for history list rows (report title, or JD first line).
+    title: str | None = None
+
+
+class RunHistoryEntryOut(BaseModel):
+    """One row in the Tailor tab's recent-runs list."""
+
+    job_id: str
+    status: Literal["queued", "running", "succeeded", "failed", "cancelled"]
+    created_at: str
+    finished_at: str | None = None
+    title: str
+    error: str | None = None
+    pages: int | None = None
+    coverage_matched: int | None = None
+    coverage_total: int | None = None
+    has_pdf: bool = False
+    has_docx: bool = False
+
+
+class RunHistoryResponse(BaseModel):
+    """Newest-first recent runs for the active profile."""
+
+    runs: list[RunHistoryEntryOut] = Field(default_factory=list)
 
 
 class ConfigResponse(BaseModel):
@@ -301,6 +327,12 @@ class ConfigResponse(BaseModel):
     calibration_rejection: str | None = None
     chars_per_line: int
     lines_per_page: int
+    #: Soft min / hard max character band the rewrite prompt advertises for a two-line
+    #: bullet — same numbers `rewrite.length_band(fit.default_bullet_char_budget())`
+    #: returns. Surfaced so the master-resume editor can warn before a bullet is past
+    #: the cliff the fit loop will later fight.
+    bullet_char_soft_min: int = 0
+    bullet_char_max: int = 0
     tag_vocabulary: list[str]
     contact_name: str | None = None
     #: Default page-fill target (UNDERFLOW_THRESHOLD) for the settings slider.

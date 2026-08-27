@@ -21,6 +21,7 @@ afterEach(() => cleanup());
 const createJob = vi.fn();
 const fetchJob = vi.fn();
 const cancelJob = vi.fn();
+const pdfDownload = vi.fn(async () => undefined);
 
 vi.mock("../api", () => ({
   createJob: (...args: unknown[]) => createJob(...args),
@@ -29,7 +30,18 @@ vi.mock("../api", () => ({
   fetchConfig: vi.fn(async () => ({ pages: 1, experience: 3, projects: 2 })),
   fetchSettings: vi.fn(async () => ({ seeded: false, settings: { pages: 1 } })),
   saveSettings: vi.fn(async () => undefined),
-  triggerPdfDownload: vi.fn(async () => undefined),
+  triggerPdfDownload: (...args: unknown[]) => pdfDownload(...args),
+  fetchRunHistory: vi.fn(async () => []),
+  fetchResumeOutline: vi.fn(async () => ({
+    sections: [],
+    available_contact_fields: [],
+    default_contact_order: [],
+    has_gpa: false,
+    has_coursework: false,
+    gpa_currently_shown: true,
+    sections_enabled: {},
+    section_mode: "fixed",
+  })),
 }));
 
 vi.mock("./workspaceState", () => ({
@@ -207,5 +219,86 @@ describe("RunProvider: cancelling a run", () => {
 
     await waitFor(() => expect(screen.getByTestId("busy").textContent).toBe("false"));
     expect(screen.getByTestId("status").textContent).toBe("cancelled");
+  });
+});
+
+describe("loadRun", () => {
+  beforeEach(() => {
+    finished.clear();
+    cancelledIds.clear();
+    FakeEventSource.opened = [];
+    createJob.mockReset();
+    fetchJob.mockReset();
+    cancelJob.mockReset();
+    pdfDownload.mockReset();
+    vi.stubGlobal("localStorage", {
+      getItem: () => null,
+      setItem: () => undefined,
+      removeItem: () => undefined,
+    });
+  });
+
+  it("does not re-trigger PDF download when opening a past succeeded run", async () => {
+    fetchJob.mockResolvedValueOnce({
+      job_id: "past-1",
+      status: "succeeded",
+      queue_position: null,
+      error: null,
+      report: {
+        title: "Past Role",
+        seniority: "intern",
+        coverage_matched: 1,
+        coverage_total: 1,
+        missing_must_haves: [],
+        unmatched_canonicals: [],
+        gaps: [],
+        model: "stub",
+        semantic_used: false,
+        bullets_selected: 1,
+        bullets_total: 1,
+        experience: [],
+        projects: [],
+        dropped: [],
+        pages: 1,
+        pages_are_estimated: true,
+        iterations: 1,
+        widows_repaired: 0,
+        widows_remaining: 0,
+        verbs_diversified: 0,
+        verb_collisions_remaining: 0,
+        warnings: [],
+        out_path: "",
+        pdf_backend: "soffice",
+        calibration_source: "fallback",
+      },
+      expansion: null,
+      skills: null,
+      events: [],
+    });
+
+    function LoadProbe() {
+      const { loadRun, report, jobId } = useRunState();
+      return (
+        <div>
+          <span data-testid="jobId">{jobId ?? "-"}</span>
+          <span data-testid="title">{report?.title ?? "-"}</span>
+          <button onClick={() => void loadRun("past-1")}>load</button>
+        </div>
+      );
+    }
+
+    render(
+      <RunProvider>
+        <LoadProbe />
+      </RunProvider>,
+    );
+
+    fireEvent.click(screen.getByText("load"));
+    await waitFor(() => expect(screen.getByTestId("jobId").textContent).toBe("past-1"));
+    expect(screen.getByTestId("title").textContent).toBe("Past Role");
+    // Give the auto-download effect a tick — it must stay silent because
+    // loadRun seeded autoDownloadedFor before setting report.
+    await new Promise((r) => setTimeout(r, 30));
+    expect(pdfDownload).not.toHaveBeenCalled();
   });
 });

@@ -1,33 +1,45 @@
-import { BrowserRouter, NavLink, Route, Routes } from "react-router-dom";
+import { BrowserRouter, Navigate, NavLink, Route, Routes } from "react-router-dom";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { ProfileSwitcher } from "./components/workspace/ProfileSwitcher";
 import { EditorPage } from "./pages/EditorPage";
 import { RunPage } from "./pages/RunPage";
-import { SettingsPage } from "./pages/SettingsPage";
 import { TemplatePage } from "./pages/TemplatePage";
+import { VocabularyPage } from "./pages/VocabularyPage";
+import { ThemeToggle } from "./components/ThemeToggle";
+import { ConfirmProvider } from "./state/confirmState";
 import { EditorProvider } from "./state/editorState";
 import { LibraryProvider } from "./state/libraryState";
 import { RunProvider } from "./state/runState";
 import { TemplateProvider } from "./state/templateState";
+import { ThemeProvider } from "./state/themeState";
 import { WorkspaceProvider, useWorkspaceState } from "./state/workspaceState";
 
 const navLinkClassName = ({ isActive }: { isActive: boolean }) =>
   `rounded-md px-3 py-1.5 text-sm font-medium transition ${
-    isActive ? "bg-accent text-white" : "text-ink-muted hover:bg-accent-soft hover:text-ink"
+    isActive
+      ? "bg-accent text-on-accent"
+      : "text-ink-muted hover:bg-accent-soft hover:text-ink"
   }`;
 
 /**
- * Root: `WorkspaceProvider` sits above the router and never remounts — it owns the
+ * Root: `ThemeProvider` owns light/dark/system preference (localStorage).
+ * `WorkspaceProvider` sits above the router and never remounts — it owns the
  * profile registry itself, independent of which profile is active.
+ * `ConfirmProvider` wraps `WorkspaceScope` (not the keyed Run/Editor providers) so a
+ * profile switch cannot unmount a dialog the user is mid-decision on.
  */
 export default function App() {
   return (
     <ErrorBoundary>
-      <BrowserRouter>
-        <WorkspaceProvider>
-          <WorkspaceScope />
-        </WorkspaceProvider>
-      </BrowserRouter>
+      <ThemeProvider>
+        <BrowserRouter>
+          <WorkspaceProvider>
+            <ConfirmProvider>
+              <WorkspaceScope />
+            </ConfirmProvider>
+          </WorkspaceProvider>
+        </BrowserRouter>
+      </ThemeProvider>
     </ErrorBoundary>
   );
 }
@@ -94,6 +106,7 @@ function Shell() {
             </p>
           </div>
           <div className="flex flex-wrap items-end gap-4">
+            <ThemeToggle />
             <ProfileSwitcher />
             <nav className="flex gap-1 pb-1">
               <NavLink to="/" end className={navLinkClassName}>
@@ -105,7 +118,7 @@ function Shell() {
               <NavLink to="/template" className={navLinkClassName}>
                 Template
               </NavLink>
-              <NavLink to="/settings" className={navLinkClassName}>
+              <NavLink to="/vocabulary" className={navLinkClassName}>
                 Vocabulary
               </NavLink>
             </nav>
@@ -117,7 +130,8 @@ function Shell() {
           <Route path="/" element={<RunPage />} />
           <Route path="/editor" element={<EditorPage />} />
           <Route path="/template" element={<TemplatePage />} />
-          <Route path="/settings" element={<SettingsPage />} />
+          <Route path="/vocabulary" element={<VocabularyPage />} />
+          <Route path="/settings" element={<Navigate to="/vocabulary" replace />} />
         </Routes>
       </main>
     </div>

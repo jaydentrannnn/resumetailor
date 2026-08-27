@@ -176,6 +176,23 @@ export type JobStatus = {
   expansion: Expansion | null;
   skills: SkillsPlan | null;
   events: ProgressEvent[];
+  created_at?: string | null;
+  title?: string | null;
+};
+
+/** One row from `GET /api/jobs` — recent-runs list for the Tailor tab. */
+export type RunHistoryEntry = {
+  job_id: string;
+  status: "queued" | "running" | "succeeded" | "failed" | "cancelled";
+  created_at: string;
+  finished_at: string | null;
+  title: string;
+  error: string | null;
+  pages: number | null;
+  coverage_matched: number | null;
+  coverage_total: number | null;
+  has_pdf: boolean;
+  has_docx: boolean;
 };
 
 export type AppConfig = {
@@ -203,6 +220,9 @@ export type AppConfig = {
   calibration_rejection: string | null;
   chars_per_line: number;
   lines_per_page: number;
+  /** Soft min / hard max character band the rewrite prompt targets for a two-line bullet. */
+  bullet_char_soft_min: number;
+  bullet_char_max: number;
   tag_vocabulary: string[];
   contact_name: string | null;
   fill_target: number;
@@ -593,6 +613,13 @@ export function fetchJob(jobId: string): Promise<JobStatus> {
   return request<JobStatus>(`/api/jobs/${jobId}`);
 }
 
+/**
+ * Newest-first recent runs for the active profile (disk + in-memory overlay).
+ */
+export function fetchRunHistory(): Promise<RunHistoryEntry[]> {
+  return request<{ runs: RunHistoryEntry[] }>("/api/jobs").then((r) => r.runs);
+}
+
 export function cancelJob(jobId: string): Promise<JobStatus> {
   /** Cancel a queued or running job. A queued job stops immediately; a running one
    * stops cooperatively at its next pipeline-stage checkpoint. */
@@ -911,6 +938,12 @@ export function fetchLibraryPack(id: string): Promise<LibraryPack> {
 /**
  * Parse a `{message, errors}` validation-error body from a pack write, joining every
  * message rather than showing only the first — mirrors `templateErrorDetail`.
+ *
+ * `message` is itself `"; ".join(errors)` (`LibraryValidationError.__init__`,
+ * libraries.py) — a summary derived from `errors`, not a distinct piece of information.
+ * Appending `errors.join("\n")` after it would print the same text twice (obviously so
+ * when there's exactly one error); `errors` alone is the complete, better-formatted
+ * version, so it wins whenever present.
  */
 async function libraryErrorDetail(res: Response): Promise<string> {
   let detail = res.statusText;
@@ -920,9 +953,8 @@ async function libraryErrorDetail(res: Response): Promise<string> {
     if (typeof d === "string") {
       detail = d;
     } else if (d && typeof d === "object" && "message" in d) {
-      const msg = String((d as { message: string }).message);
       const errors = (d as { errors?: string[] }).errors ?? [];
-      detail = errors.length ? `${msg}\n${errors.join("\n")}` : msg;
+      detail = errors.length ? errors.join("\n") : String((d as { message: string }).message);
     } else {
       detail = JSON.stringify(d ?? body);
     }

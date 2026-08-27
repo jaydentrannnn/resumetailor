@@ -9,6 +9,7 @@ import { ExperienceCard } from "../components/ExperienceCard";
 import { Field, Toggle } from "../components/Field";
 import { IncludePanel } from "../components/IncludePanel";
 import { ResultPreview } from "../components/ResultPreview";
+import { RunHistoryPanel } from "../components/RunHistoryPanel";
 import { StylePromptField } from "../components/StylePromptField";
 import { SkillsCard } from "../components/SkillsCard";
 import { type RunProgress, runProgress } from "../lib/runProgress";
@@ -23,16 +24,12 @@ import { useEffect, useMemo, useRef, useState } from "react";
  * lose the JD, settings, SSE stream, or results. PDF auto-download is also
  * owned there so a tab remount cannot re-fire it.
  *
- * Layout at `lg` is an explicit 2x6 grid rather than stacked columns: Settings
- * and What-to-include sit on row 1, Job description and Progress share row 2
- * (equal height — see the Progress cell below), the submit button spans both
- * columns on row 3, Application experience spans both columns on row 4,
- * Skills to list / Report share row 5 — Report falls back to spanning both
- * columns itself when there's no Skills tile beside it (`--no-skills`, or a
- * skills stage that returned nothing) — and the tailored-resume preview spans
- * both columns on row 6. Placement is stated per tile (`col-start`/`row-start`)
- * because several of the nine tiles render conditionally — auto-flow would
- * reshuffle the rest the moment one of them disappeared.
+ * Layout at `lg` is an explicit grid: Settings and What-to-include sit on row 1
+ * (set once, then left alone), Job description and Progress share row 2, the
+ * submit button spans both columns on row 3, then results / preview / history.
+ * Placement is stated per tile (`col-start`/`row-start`) because several tiles
+ * render conditionally — auto-flow would reshuffle the rest the moment one
+ * disappeared.
  */
 export function RunPage() {
   const {
@@ -104,6 +101,7 @@ export function RunPage() {
       onKeyDown={onFormKeyDown}
       className="grid gap-x-8 gap-y-5 lg:grid-cols-[1.1fr_0.9fr]"
     >
+      <h1 className="sr-only">Tailor resume</h1>
       <div className="lg:col-start-1 lg:row-start-1">
         {/* Native fieldset disabling: blocks every descendant control until
             settings finish loading, so no edit can race the initial fetch and
@@ -120,12 +118,8 @@ export function RunPage() {
         </fieldset>
       </div>
 
-      {/* `order-first` puts Job description ahead of Run options / What-to-include
-          below `lg` — that's the tab's primary action, and the settings panel is long
-          enough to bury it several screens down otherwise. `lg:order-none` restores
-          normal source order once explicit `col-start`/`row-start` grid placement
-          takes over. */}
-      <section className="order-first rounded-xl border border-line bg-panel p-5 shadow-sm lg:order-none lg:col-start-1 lg:row-start-2">
+      {/* Settings stay above the JD at every width — set once, then focus below. */}
+      <section className="rounded-xl border border-line bg-panel p-5 shadow-sm lg:col-start-1 lg:row-start-2">
         <div className="mb-3 flex items-center justify-between gap-3">
           <h2 className="font-display text-xl font-semibold">Job description</h2>
           <label className="cursor-pointer rounded-md border border-line px-3 py-1.5 text-sm text-ink-muted hover:border-accent hover:text-accent">
@@ -143,7 +137,7 @@ export function RunPage() {
           onChange={(e) => setJdText(e.target.value)}
           rows={14}
           placeholder="Paste the posting here…"
-          className="w-full resize-y rounded-lg border border-line bg-paper/40 px-3 py-2 text-sm leading-relaxed outline-none focus:border-accent"
+          className="w-full resize-y rounded-lg border border-line bg-paper/40 px-3 py-2 text-sm leading-relaxed focus:border-accent"
           required
         />
       </section>
@@ -164,7 +158,11 @@ export function RunPage() {
               <div className="flex items-center gap-3">
                 <span className="text-sm text-ink-muted" role="status" aria-live="polite">
                   {progress.label}
-                  {busy && elapsed > 0 ? ` · ${formatElapsed(elapsed)}` : ""}
+                  {busy && elapsed > 0
+                    ? ` · watching ${formatElapsed(elapsed)}`
+                    : busy
+                      ? " · watching…"
+                      : ""}
                 </span>
                 {busy && (
                   <button
@@ -232,7 +230,7 @@ export function RunPage() {
       <button
         type="submit"
         disabled={busy || !jdText.trim() || !settingsLoaded || switching}
-        className="w-full rounded-lg bg-accent px-4 py-3 text-sm font-semibold text-white transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50 lg:col-start-1 lg:col-span-2 lg:row-start-3"
+        className="w-full rounded-lg bg-accent px-4 py-3 text-sm font-semibold text-on-accent transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50 lg:col-start-1 lg:col-span-2 lg:row-start-3"
       >
         {busy
           ? "Tailoring…"
@@ -272,6 +270,8 @@ export function RunPage() {
           <ResultPreview jobId={jobId} />
         </div>
       )}
+
+      <RunHistoryPanel />
     </form>
   );
 }
@@ -340,17 +340,11 @@ function ProgressBar({
           failed
             ? "h-full rounded-full bg-danger"
             : progress.indeterminate
-              ? "h-full w-1/3 rounded-full bg-accent [animation:rt-progress-slide_1.2s_ease-in-out_infinite]"
+              ? "rt-progress-indeterminate h-full w-1/3 rounded-full bg-accent [animation:rt-progress-slide_1.2s_ease-in-out_infinite]"
               : "h-full rounded-full bg-accent transition-[width] duration-500 ease-out"
         }
         style={progress.indeterminate ? undefined : { width: `${pct}%` }}
       />
-      <style>{`
-        @keyframes rt-progress-slide {
-          0%   { transform: translateX(-100%); }
-          100% { transform: translateX(300%); }
-        }
-      `}</style>
     </div>
   );
 }
@@ -729,7 +723,7 @@ function ReportCard({ report, jobId }: { report: RunReport; jobId: string }) {
         <div className="flex shrink-0 gap-2">
           <a
             href={downloadPdfUrl(jobId)}
-            className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white"
+            className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-on-accent"
           >
             .pdf
           </a>
@@ -774,70 +768,83 @@ function ReportCard({ report, jobId }: { report: RunReport; jobId: string }) {
         />
       </dl>
 
-      {report.missing_must_haves.length > 0 && (
-        <p className="mt-3 rounded-md bg-warn-soft px-3 py-2 text-sm text-warn">
-          Not supported by master resume: {report.missing_must_haves.join(", ")}
-        </p>
-      )}
-
-      {report.unmatched_canonicals.length > 0 && (
-        <p className="mt-2 text-sm text-ink-muted">
-          Matched no tag: {report.unmatched_canonicals.map(([c]) => c).join(", ")}
-        </p>
-      )}
-
-      {report.gaps.some((g) => g.reason === "no_evidence") && (
-        <p className="mt-2 rounded-md bg-warn-soft px-3 py-2 text-sm text-warn">
-          No evidence in the master resume:{" "}
-          {report.gaps
-            .filter((g) => g.reason === "no_evidence")
-            .map((g) => g.phrase)
-            .join(", ")}
-        </p>
-      )}
-
-      {report.gaps.some((g) => g.reason !== "no_evidence") && (
-        <div className="mt-2 text-sm text-ink-muted">
-          {report.gaps
-            .filter((g) => g.reason === "untagged_evidence")
-            .map((g) => (
-              <p key={g.canonical}>
-                {g.phrase}: evidence exists but no bullet is tagged for it (
-                {g.evidence.join("; ")})
-              </p>
-            ))}
-          {report.gaps
-            .filter((g) => g.reason === "near_miss")
-            .map((g) => (
-              <p key={g.canonical}>
-                {g.phrase}: tagged under a different name ({g.evidence.join("; ")})
-              </p>
-            ))}
-        </div>
-      )}
+      {(() => {
+        const noEvidence = report.gaps.filter((g) => g.reason === "no_evidence");
+        const otherGaps = report.gaps.filter((g) => g.reason !== "no_evidence");
+        const gapCount =
+          (report.missing_must_haves.length > 0 ? 1 : 0) +
+          (report.unmatched_canonicals.length > 0 ? 1 : 0) +
+          noEvidence.length +
+          otherGaps.length;
+        if (gapCount === 0) return null;
+        return (
+          <details className="mt-3 rounded-md border border-line/80 bg-paper/40 open:pb-2">
+            <summary className="cursor-pointer px-3 py-2 text-sm font-medium text-ink">
+              Coverage gaps ({gapCount})
+            </summary>
+            <div className="space-y-2 px-3 pb-1 text-sm">
+              {report.missing_must_haves.length > 0 && (
+                <p className="rounded-md bg-warn-soft px-3 py-2 text-warn">
+                  Not supported by master resume: {report.missing_must_haves.join(", ")}
+                </p>
+              )}
+              {report.unmatched_canonicals.length > 0 && (
+                <p className="text-ink-muted">
+                  Matched no tag: {report.unmatched_canonicals.map(([c]) => c).join(", ")}
+                </p>
+              )}
+              {noEvidence.length > 0 && (
+                <p className="rounded-md bg-warn-soft px-3 py-2 text-warn">
+                  No evidence in the master resume:{" "}
+                  {noEvidence.map((g) => g.phrase).join(", ")}
+                </p>
+              )}
+              {otherGaps.map((g) => (
+                <p key={g.canonical} className="text-ink-muted">
+                  {g.reason === "untagged_evidence"
+                    ? `${g.phrase}: evidence exists but no bullet is tagged for it (${g.evidence.join("; ")})`
+                    : `${g.phrase}: tagged under a different name (${g.evidence.join("; ")})`}
+                </p>
+              ))}
+            </div>
+          </details>
+        );
+      })()}
 
       <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
         <EntryList title="Experience" entries={report.experience} />
         <EntryList title="Projects" entries={report.projects} />
       </div>
 
-      {report.dropped.length > 0 && (
-        <p className="mt-3 text-sm text-ink-muted">
-          Dropped: {report.dropped.join(", ")}
-        </p>
-      )}
-
-      {report.warnings.map((w) => (
-        <p key={w} className="mt-2 rounded-md bg-warn-soft px-3 py-2 text-sm text-warn">
-          {w}
-        </p>
-      ))}
-
-      {report.calibration_rejection && (
-        <p className="mt-2 rounded-md bg-warn-soft px-3 py-2 text-sm text-warn">
-          {report.calibration_rejection}
-        </p>
-      )}
+      {(() => {
+        const warnCount =
+          report.dropped.length +
+          report.warnings.length +
+          (report.calibration_rejection ? 1 : 0);
+        if (warnCount === 0) return null;
+        return (
+          <details className="mt-3 rounded-md border border-line/80 bg-paper/40 open:pb-2">
+            <summary className="cursor-pointer px-3 py-2 text-sm font-medium text-ink">
+              Run warnings ({warnCount})
+            </summary>
+            <div className="space-y-2 px-3 pb-1 text-sm">
+              {report.dropped.length > 0 && (
+                <p className="text-ink-muted">Dropped: {report.dropped.join(", ")}</p>
+              )}
+              {report.warnings.map((w) => (
+                <p key={w} className="rounded-md bg-warn-soft px-3 py-2 text-warn">
+                  {w}
+                </p>
+              ))}
+              {report.calibration_rejection && (
+                <p className="rounded-md bg-warn-soft px-3 py-2 text-warn">
+                  {report.calibration_rejection}
+                </p>
+              )}
+            </div>
+          </details>
+        );
+      })()}
 
       <p className="mt-3 text-xs text-ink-muted">
         Model: {report.model} · ranking:{" "}

@@ -5,7 +5,8 @@ import {
   type ResumeOutline,
   fetchResumeOutline,
 } from "../api";
-import { moveItem } from "../lib/resumeEdit";
+import { Toggle } from "./Field";
+import { type SectionKind, SECTION_KIND_LABELS, moveItem } from "../lib/resumeEdit";
 
 const ALL_CONTACT_FIELDS: ContactField[] = [
   "location",
@@ -21,14 +22,6 @@ const CONTACT_FIELD_LABELS: Record<ContactField, string> = {
   phone: "Phone",
   linkedin: "LinkedIn",
   github: "GitHub",
-};
-
-const SECTION_KIND_LABELS: Record<string, string> = {
-  experience: "Experience-like",
-  project: "Project-like",
-  list: "Simple list",
-  education: "Education",
-  skills: "Skills",
 };
 
 /**
@@ -209,8 +202,15 @@ export function IncludePanel({
         {!isGeneric && (
           <p className="text-xs text-warn">
             This template renders sections in a fixed order baked into the file — reordering
-            here has no effect until it&apos;s re-imported through the Template tab in
-            multi-section (&quot;generic&quot;) mode.
+            here is a per-run override and has no effect until the template is re-imported
+            through the Template tab in multi-section (&quot;generic&quot;) mode. Stored section
+            order lives on the Master resume tab.
+          </p>
+        )}
+        {isGeneric && (
+          <p className="text-xs text-ink-muted">
+            Per-run override of the master resume&apos;s section order. Changes here do not
+            edit the master resume itself.
           </p>
         )}
         <ul className="space-y-1">
@@ -219,7 +219,7 @@ export function IncludePanel({
               <span className="flex-1">
                 {section.title}
                 <span className="ml-2 text-xs text-ink-muted">
-                  {SECTION_KIND_LABELS[section.kind] ?? section.kind}
+                  {SECTION_KIND_LABELS[section.kind as SectionKind] ?? section.kind}
                 </span>
               </span>
               <button
@@ -324,41 +324,5 @@ export function IncludePanel({
         </fieldset>
       )}
     </section>
-  );
-}
-
-function Toggle({
-  label,
-  help,
-  checked,
-  disabled,
-  disabledHint,
-  onChange,
-}: {
-  label: string;
-  help?: string;
-  checked: boolean;
-  disabled?: boolean;
-  disabledHint?: string;
-  onChange: (v: boolean) => void;
-}) {
-  return (
-    <label className="flex cursor-pointer gap-2 text-sm">
-      <input
-        type="checkbox"
-        checked={checked}
-        disabled={disabled}
-        onChange={(e) => onChange(e.target.checked)}
-        className="mt-0.5 accent-[var(--color-accent)] disabled:opacity-50"
-      />
-      <span>
-        <span className="font-medium">{label}</span>
-        {(disabled ? disabledHint : help) && (
-          <span className="mt-0.5 block text-xs text-ink-muted">
-            {disabled ? disabledHint : help}
-          </span>
-        )}
-      </span>
-    </label>
   );
 }

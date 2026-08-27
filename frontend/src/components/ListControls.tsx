@@ -2,6 +2,8 @@
  * Shared move / remove / add controls for master-resume editor lists.
  */
 
+import { useConfirm } from "../state/confirmState";
+
 type EntryControlsProps = {
   index: number;
   total: number;
@@ -11,9 +13,9 @@ type EntryControlsProps = {
   onRemove: (index: number) => void;
   /** Optional short label for the confirm dialog, e.g. company name. */
   label?: string;
-  /** When false, the move buttons are omitted entirely — used where reordering lives
-   * elsewhere (e.g. sections, whose order is a per-run choice on the Tailor tab, not a
-   * master-resume edit). Defaults to true. */
+  /** When false, the move buttons are omitted entirely — used for fixed-order lists
+   * that cannot be reordered. Defaults to true. Section order is editable here on the
+   * Master resume tab; the Tailor tab's include panel is only a per-run override. */
   canMove?: boolean;
 };
 
@@ -30,10 +32,18 @@ export function EntryControls({
   label,
   canMove = true,
 }: EntryControlsProps) {
-  function handleRemove() {
+  const { confirm } = useConfirm();
+
+  async function handleRemove() {
     if (hasContent) {
       const what = label?.trim() || "this entry";
-      if (!window.confirm(`Remove ${what}?`)) return;
+      const ok = await confirm({
+        title: "Remove entry",
+        message: `Remove ${what}?`,
+        confirmLabel: "Remove",
+        tone: "danger",
+      });
+      if (!ok) return;
     }
     onRemove(index);
   }
@@ -67,7 +77,7 @@ export function EntryControls({
       <button
         type="button"
         title="Remove"
-        onClick={handleRemove}
+        onClick={() => void handleRemove()}
         className="rounded border border-line px-2 py-0.5 text-xs text-danger hover:border-danger"
       >
         Remove

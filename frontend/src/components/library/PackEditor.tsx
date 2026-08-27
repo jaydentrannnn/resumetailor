@@ -1,7 +1,10 @@
-import { useEffect, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
 import { type LibraryPackDraft, fetchLibraryPack } from "../../api";
-import { useLibraryState } from "../../state/libraryState";
+import { errorsFor, validatePackDraft } from "../../lib/packValidation";
+import { Modal } from "../Modal";
 import { KeyValueListField } from "../KeyValueListField";
+import { VerbFamilyCard } from "./VerbFamilyEditor";
+import { useLibraryState } from "../../state/libraryState";
 
 type VerbFamilyRow = {
   /** Stable per-row key so React doesn't remount an input the user is mid-edit of
@@ -10,14 +13,14 @@ type VerbFamilyRow = {
    * save). */
   rowId: string;
   family: string;
-  verbsText: string;
+  verbs: string[];
 };
 
 function rowsFromVerbFamilies(verbFamilies: Record<string, string[]>): VerbFamilyRow[] {
   return Object.entries(verbFamilies).map(([family, verbs], i) => ({
     rowId: `${family}-${i}`,
     family,
-    verbsText: verbs.join(", "),
+    verbs,
   }));
 }
 
@@ -25,19 +28,23 @@ function verbFamiliesFromRows(rows: VerbFamilyRow[]): Record<string, string[]> {
   const out: Record<string, string[]> = {};
   for (const row of rows) {
     const family = row.family.trim();
+    // A fully blank row (no name, no verbs) is an inert placeholder from "Add family" —
+    // drop it silently. A *named* family with zero verbs is kept (even as an empty
+    // array) so `validatePackDraft` can see and flag it, rather than losing it here.
     if (!family) continue;
-    const verbs = row.verbsText
-      .split(/[,\n]/)
-      .map((v) => v.trim().toLowerCase())
-      .filter(Boolean);
-    if (verbs.length) out[family] = [...(out[family] ?? []), ...verbs];
+    out[family] = [...(out[family] ?? []), ...row.verbs];
   }
   return out;
 }
 
+/** Matches the exact wording `write_pack` appends when a `force=true` retry would
+ * resolve the conflict (libraries.py:738-742) — narrow coupling to our own backend,
+ * kept as a named constant so a wording change there is easy to find here too. */
+const FORCE_HINT_SUFFIX = "pass force=true to override it.";
+
 /**
- * Create or edit a vocabulary pack. `packId === null` is create mode — the id is
- * derived server-side from the label. Shipped packs edit via a shadow file.
+ * Create or edit a vocabulary pack, in a wide modal. `packId === null` is create mode —
+ * the id is derived server-side from the label. Shipped packs edit via a shadow file.
  */
 export function PackEditor({
   packId,
@@ -53,6 +60,7 @@ export function PackEditor({
   const [description, setDescription] = useState("");
   const [tagAliases, setTagAliases] = useState<Record<string, string>>({});
   const [verbRows, setVerbRows] = useState<VerbFamilyRow[]>([]);
+  const [filter, setFilter] = useState("");
   const [force, setForce] = useState(false);
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -83,7 +91,7 @@ export function PackEditor({
   function addVerbRow() {
     setVerbRows((rows) => [
       ...rows,
-      { rowId: `new-${rows.length}-${Date.now()}`, family: "", verbsText: "" },
+      { rowId: `new-${rows.length}-${Date.now()}`, family: "", verbs: [] },
     ]);
   }
 
@@ -95,12 +103,23 @@ export function PackEditor({
     setVerbRows((rows) => rows.filter((r) => r.rowId !== rowId));
   }
 
+  const validationErrors = useMemo(
+    () =>
+      validatePackDraft({
+        label,
+        tag_aliases: tagAliases,
+        verb_families: verbFamiliesFromRows(verbRows),
+      }),
+    [label, tagAliases, verbRows],
+  );
+
+  const needle = filter.trim().toLowerCase();
+  const aliasCount = Object.keys(tagAliases).length;
+  const verbCount = verbRows.reduce((n, r) => n + r.verbs.length, 0);
+
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
-    if (!label.trim()) {
-      setError("Label is required.");
-      return;
-    }
+    if (validationErrors.length > 0) return;
     setSaving(true);
     setError(null);
     const draft: LibraryPackDraft = {
@@ -120,28 +139,14 @@ export function PackEditor({
     }
   }
 
-  return (
-    <form
-      onSubmit={onSubmit}
-      className="mt-4 space-y-4 rounded-lg border border-line bg-paper/40 p-4"
-    >
-      <div className="flex items-center justify-between gap-3">
-        <h3 className="font-display text-lg font-semibold">
-          {packId === null ? "New pack" : `Edit ${label || packId}`}
-        </h3>
-        <button
-          type="button"
-          onClick={onClose}
-          className="text-xs text-ink-muted underline-offset-2 hover:text-accent hover:underline"
-        >
-          Cancel
-        </button>
-      </div>
+  const canForce = error?.includes(FORCE_HINT_SUFFIX) ?? false;
 
+  return (
+    <Modal title={packId === null ? "New pack" : `Edit ${label || packId}`} onClose={onClose} wide>
       {loading ? (
-        <p className="text-sm text-ink-muted">Loading pack…</p>
+        <p className="mt-4 text-sm text-ink-muted">Loading pack…</p>
       ) : (
-        <>
+        <form onSubmit={onSubmit} className="mt-4 space-y-4">
           <div className="grid gap-4 sm:grid-cols-2">
             <label className="block text-sm">
               <span className="mb-1 block text-ink-muted">Label</span>
@@ -153,6 +158,11 @@ export function PackEditor({
                 className="field"
                 required
               />
+              {errorsFor(validationErrors, { kind: "label" }).map((m) => (
+                <span key={m} className="mt-1 block text-xs text-danger">
+                  {m}
+                </span>
+              ))}
             </label>
             <label className="block text-sm">
               <span className="mb-1 block text-ink-muted">Description (optional)</span>
@@ -166,76 +176,90 @@ export function PackEditor({
             </label>
           </div>
 
+          <p className="text-xs text-ink-muted">
+            {aliasCount} alias{aliasCount === 1 ? "" : "es"} &middot; {verbCount} verb
+            {verbCount === 1 ? "" : "s"} in {verbRows.length} famil
+            {verbRows.length === 1 ? "y" : "ies"}
+          </p>
+
+          <label className="block text-sm">
+            <span className="mb-1 block text-ink-muted">Filter aliases and verbs</span>
+            <input
+              type="search"
+              value={filter}
+              onChange={(e) => setFilter(e.target.value)}
+              placeholder="Type to narrow the lists below…"
+              className="field"
+            />
+          </label>
+
           <div className="max-h-64 overflow-y-auto pr-1">
             <KeyValueListField
-              label="Tag aliases (spelling seen in a posting → your canonical tag)"
+              label={`Tag aliases (${aliasCount}) — spelling seen in a posting → your canonical tag`}
               keyPlaceholder="e.g. bls"
               valuePlaceholder="e.g. basic life support"
               items={tagAliases}
               onChange={setTagAliases}
+              errorFor={(key) => errorsFor(validationErrors, { kind: "alias", key })[0]}
+              filterText={needle}
             />
           </div>
 
           <div className="text-sm">
             <span className="mb-1 block text-ink-muted">
-              Verb families (near-synonym opening verbs, grouped by the claim they make)
+              Verb families ({verbRows.length}) — near-synonym opening verbs, grouped by
+              the claim they make
             </span>
             <div className="space-y-2">
-              {verbRows.map((row) => (
-                <div key={row.rowId} className="flex items-center gap-1.5">
-                  {/* `.field` sets width:100%; Tailwind v4 utilities live in a cascade
-                   * layer, so an unlayered rule like `.field` always wins over a
-                   * conflicting `w-32` on the same element. Fix the column width on a
-                   * wrapper instead, and let `.field` fill it. */}
-                  <div className="w-32 flex-none">
-                    <input
-                      type="text"
-                      value={row.family}
-                      onChange={(e) => updateVerbRow(row.rowId, { family: e.target.value })}
-                      placeholder="family, e.g. care"
-                      className="field"
-                    />
-                  </div>
-                  <input
-                    type="text"
-                    value={row.verbsText}
-                    onChange={(e) => updateVerbRow(row.rowId, { verbsText: e.target.value })}
-                    placeholder="verbs, comma-separated — e.g. administered, assessed, charted"
-                    className="field min-w-0 flex-1"
+              {verbRows.map((row) => {
+                if (
+                  needle &&
+                  !row.family.toLowerCase().includes(needle) &&
+                  !row.verbs.some((v) => v.toLowerCase().includes(needle))
+                ) {
+                  return null;
+                }
+                const cardErrors = [
+                  ...errorsFor(validationErrors, { kind: "family", family: row.family }),
+                  ...row.verbs.flatMap((v) =>
+                    errorsFor(validationErrors, { kind: "verb", family: row.family, verb: v }),
+                  ),
+                ];
+                return (
+                  <VerbFamilyCard
+                    key={row.rowId}
+                    family={row.family}
+                    verbs={row.verbs}
+                    onFamilyChange={(family) => updateVerbRow(row.rowId, { family })}
+                    onVerbsChange={(verbs) => updateVerbRow(row.rowId, { verbs })}
+                    onRemove={() => removeVerbRow(row.rowId)}
+                    error={cardErrors[0] ?? null}
                   />
-                  <button
-                    type="button"
-                    onClick={() => removeVerbRow(row.rowId)}
-                    title="Remove family"
-                    aria-label={`Remove verb family${row.family ? ` ${row.family}` : ""}`}
-                    className="flex-none rounded-full px-1.5 text-ink-muted hover:text-danger"
-                  >
-                    ×
-                  </button>
-                </div>
-              ))}
+                );
+              })}
               <button
                 type="button"
                 onClick={addVerbRow}
-                className="rounded-md border border-line px-2 py-1 text-xs text-ink-muted hover:border-accent hover:text-accent"
+                className="rounded-md border border-dashed border-line px-2 py-1 text-xs text-ink-muted hover:border-accent hover:text-accent"
               >
-                Add family
+                + Add family
               </button>
             </div>
           </div>
 
-          <label className="flex cursor-pointer items-start gap-2 text-xs text-ink-muted">
-            <input
-              type="checkbox"
-              checked={force}
-              onChange={(e) => setForce(e.target.checked)}
-              className="mt-0.5 accent-[var(--color-accent)]"
-            />
-            <span>
-              Overwrite a target another enabled pack already claims for the same alias,
-              instead of failing with a conflict.
-            </span>
-          </label>
+          {canForce && (
+            <label className="flex cursor-pointer items-start gap-2 text-xs text-ink-muted">
+              <input
+                type="checkbox"
+                checked={force}
+                onChange={(e) => setForce(e.target.checked)}
+                className="mt-0.5 accent-[var(--color-accent)]"
+              />
+              <span>
+                Overwrite the conflicting target and save anyway.
+              </span>
+            </label>
+          )}
 
           {error && (
             <p className="whitespace-pre-line rounded-md bg-danger-soft px-3 py-2 text-xs text-danger">
@@ -245,15 +269,27 @@ export function PackEditor({
 
           <div className="flex items-center gap-3">
             <button
-              type="submit"
-              disabled={saving}
-              className="rounded-md bg-accent px-4 py-1.5 text-sm font-medium text-white hover:bg-accent/90 disabled:opacity-50"
+              type="button"
+              onClick={onClose}
+              className="rounded-md border border-line px-3 py-1.5 text-sm font-medium text-ink hover:border-accent hover:text-accent"
             >
-              {saving ? "Saving…" : "Save pack"}
+              Cancel
             </button>
+            <button
+              type="submit"
+              disabled={saving || validationErrors.length > 0}
+              className="rounded-md bg-accent px-4 py-1.5 text-sm font-medium text-on-accent hover:bg-accent/90 disabled:opacity-50"
+            >
+              {saving ? "Saving…" : canForce ? "Overwrite and save" : "Save pack"}
+            </button>
+            {!saving && validationErrors.length > 0 && (
+              <span className="text-xs text-ink-muted">
+                Fix {validationErrors.length} issue{validationErrors.length === 1 ? "" : "s"} to save.
+              </span>
+            )}
           </div>
-        </>
+        </form>
       )}
-    </form>
+    </Modal>
   );
 }

@@ -14,6 +14,7 @@ import {
   type IncludeOptions,
   type JobSettings,
   type ProgressEvent,
+  type RunHistoryEntry,
   type RunReport,
   type SkillsPlan,
   cancelJob,
@@ -21,6 +22,7 @@ import {
   fetchConfig,
   fetchJob,
   fetchResumeOutline,
+  fetchRunHistory,
   fetchSettings,
   saveSettings,
   triggerPdfDownload,
@@ -168,9 +170,13 @@ type RunStateValue = {
   error: string | null;
   busy: boolean;
   queuePosition: number | null;
+  history: RunHistoryEntry[];
   startJob: () => Promise<void>;
   cancelRun: () => Promise<void>;
   cancelling: boolean;
+  refreshHistory: () => Promise<void>;
+  /** Load a past (or still-running) job into the results tiles without re-downloading. */
+  loadRun: (jobId: string) => Promise<void>;
 };
 
 const RunStateContext = createContext<RunStateValue | null>(null);
@@ -197,10 +203,23 @@ export function RunProvider({ children }: { children: ReactNode }) {
   const [busy, setBusy] = useState(false);
   const [queuePosition, setQueuePosition] = useState<number | null>(null);
   const [cancelling, setCancelling] = useState(false);
+  const [history, setHistory] = useState<RunHistoryEntry[]>([]);
   // Lives here (not RunPage) so remounting on Tailor ↔ Master tab switches
   // does not reset and re-trigger the post-success PDF download.
   const autoDownloadedFor = useRef<string | null>(null);
   const saveSettingsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  const refreshHistory = useCallback(async () => {
+    try {
+      setHistory(await fetchRunHistory());
+    } catch {
+      /* history is advisory — a failed fetch must not block the Tailor tab */
+    }
+  }, []);
+
+  useEffect(() => {
+    void refreshHistory();
+  }, [refreshHistory]);
 
   const setJdText = useCallback(
     (text: string) => {
@@ -403,7 +422,38 @@ export function RunProvider({ children }: { children: ReactNode }) {
     if (autoDownloadedFor.current === jobId) return;
     autoDownloadedFor.current = jobId;
     void triggerPdfDownload(jobId);
-  }, [jobId, report, status]);
+    void refreshHistory();
+  }, [jobId, report, status, refreshHistory]);
+
+  useEffect(() => {
+    if (status === "failed" || status === "cancelled") {
+      void refreshHistory();
+    }
+  }, [status, refreshHistory]);
+
+  const loadRun = useCallback(
+    async (id: string) => {
+      /** Surface a past run's report/preview without re-firing the auto-download. */
+      try {
+        const job = await fetchJob(id);
+        // Seed before setting report — same guard the reload-reattach path uses.
+        autoDownloadedFor.current = id;
+        setJobId(id);
+        storeJobId(activeId, id);
+        setStatus(job.status);
+        setEvents(job.events);
+        setQueuePosition(job.queue_position);
+        setReport(job.report);
+        setExpansion(job.expansion);
+        setSkills(job.skills);
+        setError(job.error);
+        setBusy(!isTerminalJobStatus(job.status));
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
+    },
+    [activeId],
+  );
 
   const startJob = useCallback(async () => {
     /** Enqueue a new run from the current JD text and settings. */
@@ -473,9 +523,12 @@ export function RunProvider({ children }: { children: ReactNode }) {
       error,
       busy,
       queuePosition,
+      history,
       startJob,
       cancelRun,
       cancelling,
+      refreshHistory,
+      loadRun,
     }),
     [
       config,
@@ -493,9 +546,12 @@ export function RunProvider({ children }: { children: ReactNode }) {
       error,
       busy,
       queuePosition,
+      history,
       startJob,
       cancelRun,
       cancelling,
+      refreshHistory,
+      loadRun,
     ],
   );
 

@@ -1,24 +1,34 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import {
   type LibraryAliasImpact,
-  type LibraryPack,
+  type LibraryOverrides,
   LibraryApprovalConflict,
-  fetchLibraryPack,
 } from "../api";
 import { ChipListField } from "../components/ChipListField";
 import { KeyValueListField } from "../components/KeyValueListField";
 import { PackEditor } from "../components/library/PackEditor";
+import { useConfirm } from "../state/confirmState";
 import { useLibraryState } from "../state/libraryState";
 
 /**
- * Settings tab: manage the tag-alias and verb-family vocabulary that JD matching and
- * opening-verb variety checking draw on. Three sections: Packs (select which
- * built-in/user-authored vocabulary bundles are active), Your additions (per-profile
- * overrides layered on top), and Suggestions (LLM-drafted additions awaiting approval).
+ * Vocabulary tab: manage the tag-alias and verb-family vocabulary that JD matching and
+ * opening-verb variety checking draw on. Three layers, composed top to bottom: Packs
+ * (which built-in/user-authored bundles are active, and in what order), Your additions
+ * (per-profile overrides that always win over a pack), and Suggestions (LLM-drafted
+ * additions awaiting approval into a pack, i.e. feeding back into layer one).
  */
-export function SettingsPage() {
+export function VocabularyPage() {
+  const { effective } = useLibraryState();
   return (
     <div className="space-y-6">
+      <h1 className="sr-only">Vocabulary</h1>
+      <p className="text-sm text-ink-muted">
+        Active vocabulary:{" "}
+        <span className="font-medium text-ink">
+          {effective.tag_alias_count} alias{effective.tag_alias_count === 1 ? "" : "es"} &middot;{" "}
+          {effective.verb_count} verb{effective.verb_count === 1 ? "" : "s"}
+        </span>
+      </p>
       <PacksSection />
       <OverridesSection />
       <SuggestionsSection />
@@ -38,27 +48,44 @@ function PacksSection() {
     deletePack,
     resetPack,
   } = useLibraryState();
+  const { confirm } = useConfirm();
   const [editingPackId, setEditingPackId] = useState<string | null | "new">(null);
-  const [expandedPackId, setExpandedPackId] = useState<string | null>(null);
 
   function togglePack(id: string, on: boolean) {
     const next = on ? [...enabledPacks, id] : enabledPacks.filter((p) => p !== id);
     void setEnabled(next);
   }
 
-  function toggleExpanded(id: string) {
-    setExpandedPackId((current) => (current === id ? null : id));
+  async function handleReset(packId: string, packLabel: string) {
+    const ok = await confirm({
+      title: "Reset pack",
+      message: `Reset "${packLabel}" to its starter contents? Your edits will be discarded.`,
+      confirmLabel: "Reset to starter",
+      tone: "danger",
+    });
+    if (!ok) return;
+    void resetPack(packId);
+  }
+
+  async function handleDelete(packId: string, packLabel: string) {
+    const ok = await confirm({
+      title: "Delete pack",
+      message: `Delete the "${packLabel}" pack?`,
+      confirmLabel: "Delete",
+      tone: "danger",
+    });
+    if (!ok) return;
+    void deletePack(packId);
   }
 
   return (
     <section className="rounded-xl border border-line bg-panel p-5 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="font-display text-xl font-semibold">Packs</h2>
+          <h2 className="font-display text-xl font-semibold">1. Packs</h2>
           <p className="mt-1 text-sm text-ink-muted">
-            Vocabulary bundles for tag-spelling matches and opening-verb variety.
-            Composed in the order enabled below — a later pack wins a conflicting
-            alias or verb.
+            The base layers, composed in the order enabled below — a later pack wins a
+            conflicting alias or verb.
           </p>
         </div>
         <button
@@ -83,7 +110,6 @@ function PacksSection() {
         <ul className="mt-4 divide-y divide-line">
           {packs.map((pack) => {
             const enabled = enabledPacks.includes(pack.id);
-            const expanded = expandedPackId === pack.id;
             return (
               <li key={pack.id} className="py-3">
                 <div className="flex items-start justify-between gap-3">
@@ -122,14 +148,6 @@ function PacksSection() {
                   <div className="flex flex-none flex-wrap items-center justify-end gap-2 text-xs">
                     <button
                       type="button"
-                      onClick={() => toggleExpanded(pack.id)}
-                      disabled={busy}
-                      className="text-ink-muted underline-offset-2 hover:text-accent hover:underline disabled:opacity-50"
-                    >
-                      {expanded ? "Hide items" : "View items"}
-                    </button>
-                    <button
-                      type="button"
                       onClick={() => setEditingPackId(pack.id)}
                       disabled={busy}
                       className="text-ink-muted underline-offset-2 hover:text-accent hover:underline disabled:opacity-50"
@@ -139,16 +157,7 @@ function PacksSection() {
                     {pack.builtin && pack.customized && (
                       <button
                         type="button"
-                        onClick={() => {
-                          if (
-                            window.confirm(
-                              `Reset "${pack.label}" to its starter contents? Your edits will be discarded.`,
-                            )
-                          ) {
-                            void resetPack(pack.id);
-                            if (expandedPackId === pack.id) setExpandedPackId(null);
-                          }
-                        }}
+                        onClick={() => void handleReset(pack.id, pack.label)}
                         disabled={busy}
                         className="text-ink-muted underline-offset-2 hover:text-danger hover:underline disabled:opacity-50"
                       >
@@ -158,12 +167,7 @@ function PacksSection() {
                     {!pack.builtin && (
                       <button
                         type="button"
-                        onClick={() => {
-                          if (window.confirm(`Delete the "${pack.label}" pack?`)) {
-                            void deletePack(pack.id);
-                            if (expandedPackId === pack.id) setExpandedPackId(null);
-                          }
-                        }}
+                        onClick={() => void handleDelete(pack.id, pack.label)}
                         disabled={busy}
                         className="text-ink-muted underline-offset-2 hover:text-danger hover:underline disabled:opacity-50"
                       >
@@ -172,7 +176,6 @@ function PacksSection() {
                     )}
                   </div>
                 </div>
-                {expanded && <PackItemsViewer packId={pack.id} />}
               </li>
             );
           })}
@@ -199,146 +202,106 @@ function PacksSection() {
   );
 }
 
-/**
- * Read-only, scrollable list of one pack's aliases and verb families. Loaded lazily
- * when the parent row expands.
- */
-function PackItemsViewer({ packId }: { packId: string }) {
-  const [pack, setPack] = useState<LibraryPack | null>(null);
-  const [filter, setFilter] = useState("");
-  const [loading, setLoading] = useState(true);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    setLoading(true);
-    setError(null);
-    setPack(null);
-    fetchLibraryPack(packId)
-      .then((loaded) => {
-        if (!cancelled) setPack(loaded);
-      })
-      .catch((err) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
-      })
-      .finally(() => {
-        if (!cancelled) setLoading(false);
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, [packId]);
-
-  const needle = filter.trim().toLowerCase();
-  const aliasRows = pack
-    ? Object.entries(pack.tag_aliases).filter(
-        ([alias, canonical]) =>
-          !needle ||
-          alias.toLowerCase().includes(needle) ||
-          canonical.toLowerCase().includes(needle),
-      )
-    : [];
-  const verbRows = pack
-    ? Object.entries(pack.verb_families).filter(
-        ([family, verbs]) =>
-          !needle ||
-          family.toLowerCase().includes(needle) ||
-          verbs.some((verb) => verb.toLowerCase().includes(needle)),
-      )
-    : [];
-
-  return (
-    <div className="mt-3 ml-7 rounded-lg border border-line bg-paper/40 p-3">
-      {loading ? (
-        <p className="text-xs text-ink-muted">Loading items…</p>
-      ) : error ? (
-        <p className="text-xs text-danger">{error}</p>
-      ) : pack ? (
-        <>
-          <input
-            type="search"
-            value={filter}
-            onChange={(e) => setFilter(e.target.value)}
-            placeholder="Filter aliases and verbs…"
-            className="field mb-3 text-xs"
-          />
-          <div className="max-h-64 space-y-3 overflow-y-auto pr-1 text-xs">
-            {aliasRows.length > 0 && (
-              <div>
-                <p className="mb-1 font-medium text-ink-muted">Tag aliases</p>
-                <ul className="space-y-0.5">
-                  {aliasRows.map(([alias, canonical]) => (
-                    <li key={alias} className="font-mono text-[0.7rem]">
-                      {alias} → {canonical}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            {verbRows.length > 0 && (
-              <div>
-                <p className="mb-1 font-medium text-ink-muted">Verb families</p>
-                <ul className="space-y-0.5">
-                  {verbRows.map(([family, verbs]) => (
-                    <li key={family} className="font-mono text-[0.7rem]">
-                      {family}: {verbs.join(", ")}
-                    </li>
-                  ))}
-                </ul>
-              </div>
-            )}
-            {aliasRows.length === 0 && verbRows.length === 0 && (
-              <p className="text-ink-muted">
-                {needle ? "No items match the filter." : "This pack has no items yet."}
-              </p>
-            )}
-          </div>
-        </>
-      ) : null}
-    </div>
-  );
+function sameOverrides(a: LibraryOverrides, b: LibraryOverrides): boolean {
+  return JSON.stringify(a) === JSON.stringify(b);
 }
 
+/** Debounce between a keystroke/chip edit and the `PUT` it triggers — long enough that
+ * a burst of edits (typing a value, then tabbing to add a chip) collapses into one
+ * write, short enough that "did my edit save" never feels uncertain. */
+const SAVE_DEBOUNCE_MS = 600;
+
 function OverridesSection() {
-  const { overrides, busy, setOverrides } = useLibraryState();
+  const { overrides, setOverrides } = useLibraryState();
+
+  // Local draft + a synchronous ref mirror: two edits made in the same tick (e.g. a
+  // value blur immediately followed by a chip add, before React re-renders) must both
+  // land on the debounced write, not have the second overwrite the first from a stale
+  // closure over `draft` state.
+  const draftRef = useRef<LibraryOverrides>(overrides);
+  const lastSynced = useRef<LibraryOverrides>(overrides);
+  const [draft, setDraft] = useState<LibraryOverrides>(overrides);
+  const [saveState, setSaveState] = useState<"idle" | "pending" | "saving">("idle");
+  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+
+  // Render-phase adjustment (not an effect, which would paint one stale frame first):
+  // re-seed only when the context's value has genuinely changed from what this section
+  // itself last sent — a PUT response that echoes back a deep-equal-but-new object must
+  // not clobber an edit still mid-debounce.
+  if (!sameOverrides(overrides, lastSynced.current)) {
+    lastSynced.current = overrides;
+    draftRef.current = overrides;
+    setDraft(overrides);
+  }
+
+  useEffect(
+    () => () => {
+      if (timerRef.current) clearTimeout(timerRef.current);
+    },
+    [],
+  );
+
+  function updateDraft(patch: Partial<LibraryOverrides>) {
+    const next = { ...draftRef.current, ...patch };
+    draftRef.current = next;
+    setDraft(next);
+    setSaveState("pending");
+    if (timerRef.current) clearTimeout(timerRef.current);
+    timerRef.current = setTimeout(() => {
+      const toSend = draftRef.current;
+      setSaveState("saving");
+      lastSynced.current = toSend;
+      void setOverrides(toSend).finally(() => setSaveState("idle"));
+    }, SAVE_DEBOUNCE_MS);
+  }
 
   return (
     <section className="rounded-xl border border-line bg-panel p-5 shadow-sm">
-      <h2 className="font-display text-xl font-semibold">Your additions</h2>
-      <p className="mt-1 text-sm text-ink-muted">
-        Per-profile edits layered on top of whichever packs are enabled above — these
-        always win over a pack, and a removal always wins over an addition.
-      </p>
+      <div className="flex flex-wrap items-baseline justify-between gap-2">
+        <div>
+          <h2 className="font-display text-xl font-semibold">2. Your additions</h2>
+          <p className="mt-1 text-sm text-ink-muted">
+            Per-profile edits layered on top of whichever packs are enabled above — these
+            always win over a pack, and a removal always wins over an addition.
+          </p>
+        </div>
+        {saveState !== "idle" && (
+          <span className="text-xs text-ink-muted">
+            {saveState === "pending" ? "Unsaved…" : "Saving…"}
+          </span>
+        )}
+      </div>
 
-      <fieldset disabled={busy} className="mt-4 space-y-5">
+      <fieldset className="mt-4 space-y-5">
         <KeyValueListField
           label="Added aliases (spelling → your canonical tag)"
           keyPlaceholder="e.g. pg"
           valuePlaceholder="e.g. postgresql"
-          items={overrides.tag_aliases}
-          onChange={(next) => void setOverrides({ ...overrides, tag_aliases: next })}
+          items={draft.tag_aliases}
+          onChange={(next) => updateDraft({ tag_aliases: next })}
         />
         <ChipListField
           label="Removed aliases (suppress one from an enabled pack)"
-          items={overrides.tag_aliases_removed}
-          onChange={(next) =>
-            void setOverrides({ ...overrides, tag_aliases_removed: next })
-          }
+          items={draft.tag_aliases_removed}
+          onChange={(next) => updateDraft({ tag_aliases_removed: next })}
           placeholder="Type an alias key and press Enter"
         />
-        <KeyValueListField
-          label="Added verb overrides (verb → family)"
-          keyPlaceholder="e.g. triaged"
-          valuePlaceholder="e.g. analyse"
-          items={overrides.verb_families}
-          onChange={(next) => void setOverrides({ ...overrides, verb_families: next })}
-        />
+        <div>
+          <KeyValueListField
+            label="Added verb overrides (verb → family)"
+            keyPlaceholder="e.g. triaged"
+            valuePlaceholder="e.g. analyse"
+            items={draft.verb_families}
+            onChange={(next) => updateDraft({ verb_families: next })}
+          />
+          <p className="mt-1 text-xs text-ink-muted">
+            One family per verb — the inverse of a pack's own family &rarr; verbs list.
+          </p>
+        </div>
         <ChipListField
           label="Removed verbs (suppress one from an enabled pack)"
-          items={overrides.verb_families_removed}
-          onChange={(next) =>
-            void setOverrides({ ...overrides, verb_families_removed: next })
-          }
+          items={draft.verb_families_removed}
+          onChange={(next) => updateDraft({ verb_families_removed: next })}
           placeholder="Type a verb and press Enter"
         />
       </fieldset>
@@ -423,10 +386,11 @@ function SuggestionsSection() {
     <section className="rounded-xl border border-line bg-panel p-5 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="font-display text-xl font-semibold">Suggestions</h2>
+          <h2 className="font-display text-xl font-semibold">3. Suggestions</h2>
           <p className="mt-1 text-sm text-ink-muted">
             Drafted from your resume's own near-miss keyword gaps and opening verbs no
-            family claims. Nothing here takes effect until you approve it into a pack.
+            family claims. Nothing here takes effect until you approve it into a pack
+            above.
           </p>
         </div>
       </div>
@@ -535,7 +499,7 @@ function SuggestionsSection() {
               type="button"
               onClick={() => void doApprove([...selected], false)}
               disabled={busy || selected.size === 0 || !targetPackId}
-              className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-white hover:bg-accent/90 disabled:opacity-50"
+              className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-on-accent disabled:opacity-50"
             >
               Approve selected
             </button>
@@ -570,7 +534,7 @@ function SuggestionsSection() {
             <button
               type="button"
               onClick={() => void doApprove(conflict.ids, true)}
-              className="rounded-md bg-warn px-3 py-1.5 text-sm font-medium text-white hover:opacity-90"
+              className="rounded-md bg-warn px-3 py-1.5 text-sm font-medium text-on-accent hover:opacity-90"
             >
               Approve anyway
             </button>

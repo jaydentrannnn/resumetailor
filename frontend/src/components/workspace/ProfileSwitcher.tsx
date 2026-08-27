@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useConfirm } from "../../state/confirmState";
 import { useEditorState } from "../../state/editorState";
 import { useWorkspaceState } from "../../state/workspaceState";
 import { ProfileManagerDialog } from "./ProfileManagerDialog";
@@ -15,14 +16,19 @@ import { ProfileManagerDialog } from "./ProfileManagerDialog";
 export function ProfileSwitcher() {
   const { workspaces, activeId, switching, error, activate } = useWorkspaceState();
   const { dirty } = useEditorState();
+  const { confirm } = useConfirm();
   const [managerOpen, setManagerOpen] = useState(false);
 
-  function handleSwitch(id: string) {
+  async function handleSwitch(id: string) {
     if (!id || id === activeId) return;
     if (dirty) {
-      const ok = window.confirm(
-        "You have unsaved master-resume edits. Switching profiles discards them. Continue?",
-      );
+      const ok = await confirm({
+        title: "Unsaved edits",
+        message:
+          "You have unsaved master-resume edits. Switching profiles discards them. Continue?",
+        confirmLabel: "Switch anyway",
+        tone: "danger",
+      });
       if (!ok) return;
     }
     void activate(id);
@@ -35,7 +41,7 @@ export function ProfileSwitcher() {
         <select
           value={activeId ?? ""}
           disabled={switching || workspaces.length === 0}
-          onChange={(e) => handleSwitch(e.target.value)}
+          onChange={(e) => void handleSwitch(e.target.value)}
           className="rounded-md border border-line bg-paper px-2 py-1.5 text-ink disabled:opacity-50"
           aria-label="Active profile"
         >

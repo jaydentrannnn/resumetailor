@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { useConfirm } from "../../state/confirmState";
 import { useTemplateState } from "../../state/templateState";
 
 /**
@@ -38,10 +39,22 @@ export function SavedTemplatesPanel() {
     deleteLibraryEntry,
     error,
   } = useTemplateState();
+  const { confirm } = useConfirm();
   const [renamingId, setRenamingId] = useState<string | null>(null);
   const [renameDraft, setRenameDraft] = useState("");
 
   const busy = libraryBusy || uploading;
+
+  async function handleDelete(id: string, label: string) {
+    const ok = await confirm({
+      title: "Delete template",
+      message: `Delete saved template “${label}”? This cannot be undone.`,
+      confirmLabel: "Delete",
+      tone: "danger",
+    });
+    if (!ok) return;
+    void deleteLibraryEntry(id);
+  }
 
   return (
     <section className="rounded-xl border border-line bg-panel p-5 shadow-sm">
@@ -162,15 +175,7 @@ export function SavedTemplatesPanel() {
                   <button
                     type="button"
                     disabled={busy || entry.is_active}
-                    onClick={() => {
-                      if (
-                        window.confirm(
-                          `Delete saved template “${entry.label}”? This cannot be undone.`,
-                        )
-                      ) {
-                        void deleteLibraryEntry(entry.id);
-                      }
-                    }}
+                    onClick={() => void handleDelete(entry.id, entry.label)}
                     className="rounded-md border border-line px-2.5 py-1 text-xs font-medium text-danger hover:border-danger disabled:opacity-50"
                   >
                     Delete

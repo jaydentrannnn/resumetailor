@@ -2383,3 +2383,16 @@ got a proper default stub in the `client` fixture instead of repeating that gap.
   in the Advanced panel with locked-core preview and Reset to default.
 - **Follow-up:** Verb variety and length are still enforced in code by `_polish` and
   `widowed()` even if the style text softens those instructions.
+
+## 2026-08-25 � UI polish pass (dark mode, confirms, run history)
+
+- **Decision:** Ship a broad SPA ergonomics pass without reflowing the Tailor page's settings-first layout: dark mode via `prefers-color-scheme` token overrides + `--color-on-accent`, shared `Modal` / promise-based `confirm`+`choice` dialogs, sticky master-resume action bar, section reordering in the editor, bullet length counters from server `bullet_char_*`, disk-backed run history (`run.json` + `GET /api/jobs` + `_resolve_run`), ReportCard grouped into Coverage gaps / Run warnings, Vocabulary route rename with `/settings` redirect.
+- **Why:** Critique items 1/3�7 plus smaller a11y/theme fixes; Tailor settings stay on top at every width (user preference � dropped `order-first`).
+- **Tradeoff:** Dark mode has no manual toggle; history is per active workspace via `Job.workspace_id`; section reorder invalidates the score cache once (surfaced as a hint). Download/preview routes now fall back to disk so history survives restart.
+- **Follow-up:** Manual check dark mode OS preference across tabs; keyboard-only confirm dialogs; section reorder Save/reload.
+
+## 2026-08-25 � In-app theme toggle
+
+- **Decision:** Add System / Light / Dark preference (cycle button in the header), persisted as `resume-tailor-theme` in localStorage; resolve to `data-theme` on `<html>`. Dark CSS tokens key off `:root[data-theme="dark"]` only (no longer raw `prefers-color-scheme`). FOUC script in `index.html` applies the stored override before paint.
+- **Why:** Users with a dark OS preference need Light without changing Windows settings; the polish pass had deferred a manual control.
+- **Tradeoff:** Three-state cycle vs a dedicated picker � one control, no extra chrome. `System` still tracks OS changes live.
