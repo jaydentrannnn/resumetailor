@@ -1189,6 +1189,9 @@ def _install_with_profile(
             # function returns — see the docstring above for why the gap mattered.
             _library_record_after_install(label=label, source_filename=Path(filename).name)
             invalidate_preview()
+            from resume_tailor.cover_template import ensure_cover_template
+
+            ensure_cover_template(src=baseline, profile=confirmed)
             return TemplateBuildResponse(ok=True, log=log.strip(), info=info())
         finally:
             tmp_path.unlink(missing_ok=True)

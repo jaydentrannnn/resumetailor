@@ -44,6 +44,7 @@ class JobSettings(BaseModel):
     rewrite_model: str | None = None
     expand_model: str | None = None
     skills_model: str | None = None
+    cover_model: str | None = None
     effort: Literal["low", "medium", "high"] | None = None
     no_semantic: bool = False
     no_widow_repair: bool = False
@@ -58,6 +59,9 @@ class JobSettings(BaseModel):
     #: `suggest_vocabulary`, this is read-only advisory output and is the point of the
     #: feature, not a workspace mutation the user must opt into.
     no_skills: bool = False
+    #: Opt-in: draft and render a cover letter after the tailored resume succeeds.
+    cover_letter: bool = False
+    no_cover_letter: bool = False
     no_facets: bool = False
     no_project_links: bool = False
     #: Fraction of page capacity below which the fit loop grows (0.80–0.95).
@@ -86,6 +90,8 @@ class JobSettings(BaseModel):
     rewrite_style: str | None = Field(default=None, max_length=4000)
     #: Editable style block for application-form experience expansion; ``None`` uses default.
     expand_style: str | None = Field(default=None, max_length=4000)
+    #: Editable style block for cover-letter drafting; ``None`` uses default.
+    cover_style: str | None = Field(default=None, max_length=4000)
     #: One blanket model override applied to every stage of the selected profile.
     model_name: str | None = None
 
@@ -256,6 +262,31 @@ class SkillsPlanOut(BaseModel):
     pool_size: int = 0
 
 
+class CoverLetterOut(BaseModel):
+    """Cover-letter artifact for one tailoring run."""
+
+    company: str = ""
+    company_location: str = ""
+    addressee: str = ""
+    paragraphs: list[str] = Field(default_factory=list)
+    salutation: str = ""
+    closing: str = ""
+    signature: str = ""
+    inside_address: list[str] = Field(default_factory=list)
+    date: str = ""
+    warnings: list[str] = Field(default_factory=list)
+    model: str = ""
+    word_count: int = 0
+    has_docx: bool = False
+    has_pdf: bool = False
+
+
+class CoverLetterRegenerateRequest(BaseModel):
+    """Optional one-off instruction for cover-letter regeneration."""
+
+    instruction: str = ""
+
+
 class JobStatusResponse(BaseModel):
     """Current state of one queued or finished run."""
 
@@ -266,6 +297,7 @@ class JobStatusResponse(BaseModel):
     report: RunReportOut | None = None
     expansion: ExpansionOut | None = None
     skills: SkillsPlanOut | None = None
+    cover_letter: CoverLetterOut | None = None
     events: list[ProgressEventOut] = Field(default_factory=list)
     #: ISO timestamp when the run was submitted — present for disk-backed history rows.
     created_at: str | None = None
@@ -347,9 +379,11 @@ class ConfigResponse(BaseModel):
     #: Shipped default style blocks for the Tailor tab's prompt editors.
     rewrite_style_default: str = ""
     expand_style_default: str = ""
+    cover_style_default: str = ""
     #: Locked safety rules shown read-only beside each style editor.
     rewrite_core_rules: str = ""
     expand_core_rules: str = ""
+    cover_core_rules: str = ""
     active_workspace_id: str | None = None
     active_workspace_label: str | None = None
     #: True on the first response after the legacy single-slot layout was migrated

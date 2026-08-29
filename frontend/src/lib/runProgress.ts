@@ -15,16 +15,17 @@ import type { ProgressEvent } from "../api";
  * when PDF preview fails, which would otherwise drag the bar back out of `expand`.
  */
 
-/** Pipeline order, matching `web/jobs.py`: extract → score → facets → fit → expand → skills. */
+/** Pipeline order, matching `web/jobs.py`: extract → score → facets → fit → expand → skills → cover. */
 const BANDS: { stages: string[]; from: number; to: number }[] = [
   { stages: ["extract"], from: 0.04, to: 0.16 },
   { stages: ["score"], from: 0.16, to: 0.3 },
   { stages: ["facets"], from: 0.3, to: 0.42 },
   // One band for the whole loop — its four stages interleave and repeat, so they
   // cannot be ordered against each other the way the single-shot stages can.
-  { stages: ["fit", "rewrite", "render", "measure"], from: 0.42, to: 0.88 },
-  { stages: ["expand"], from: 0.88, to: 0.93 },
-  { stages: ["skills"], from: 0.93, to: 0.97 },
+  { stages: ["fit", "rewrite", "render", "measure"], from: 0.42, to: 0.86 },
+  { stages: ["expand"], from: 0.86, to: 0.9 },
+  { stages: ["skills"], from: 0.9, to: 0.94 },
+  { stages: ["cover"], from: 0.94, to: 0.97 },
 ];
 
 /** Share of the fit band's remainder each completed iteration closes (asymptotic). */
@@ -40,6 +41,7 @@ const LABELS: Record<string, string> = {
   measure: "Measuring pages",
   expand: "Expanding experience",
   skills: "Choosing skills to list",
+  cover: "Drafting cover letter",
 };
 
 export type RunProgress = {

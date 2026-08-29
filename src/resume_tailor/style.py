@@ -1,9 +1,15 @@
 """Per-run writing-style overrides for LLM system prompts.
 
-The rewrite and expand stages split their system prompts into a locked core (fabrication,
-numbers, ids, length cliff) and an editable style block. This module holds the default
-style text, the per-run active override, and a digest for cache keys — module state rather
-than a threaded parameter, for the same reason ``config._ACTIVE`` is module state.
+The rewrite, expand, and cover stages split their system prompts into a locked core
+(fabrication, numbers, ids, length cliff) and an editable style block. This module holds the
+default style text, the per-run active override, and a digest for cache keys — module state
+rather than a threaded parameter, for the same reason ``config._ACTIVE`` is module state.
+
+One punctuation trap, specific to ``DEFAULT_COVER_STYLE``: a model mimics the punctuation of
+its own instructions, so a style block written with em dashes produces output full of them.
+The cover style is deliberately written without a single long dash, and must stay that way.
+The rewrite and expand defaults above it predate that rule and are left as they are, since
+their output is resume bullets rather than prose.
 """
 
 from __future__ import annotations
@@ -58,16 +64,64 @@ the same verb, and no more than two may open with near-synonyms.
 the entry is thin.
 """
 
-_STAGES = ("rewrite", "expand")
-_DEFAULTS = {"rewrite": DEFAULT_REWRITE_STYLE, "expand": DEFAULT_EXPAND_STYLE}
+#: Default style block for the cover letter's body paragraphs.
+#:
+#: Written with no em dash or en dash anywhere, on purpose — see this module's docstring.
+#: The "Candidate positioning" section is the one place persona facts live that the resume
+#: schema has no field for (what the candidate goes by, what roles they are targeting, which
+#: strengths to lead with). Everything else the letter says about the candidate is generated
+#: from ``master_resume.json`` at run time and never restated here.
+DEFAULT_COVER_STYLE = """\
+Voice
+- Lead with what was done, not how it felt. Reach for a number, percentage, or concrete \
+outcome before any general claim.
+- Plain, direct sentences. Use technical vocabulary naturally, without over-explaining it \
+and without reaching for jargon that adds nothing.
+- Confident and matter-of-fact. No hedging such as "I believe" or "I think I could", and no \
+inflated enthusiasm.
+- Do not claim unearned traits such as passionate, hardworking, or team player. If a trait \
+matters, prove it with a result.
+- Mostly short declarative sentences, with one longer sentence per paragraph for rhythm. \
+Never more than one subordinate clause deep.
+- Frame everything around what the employer needs rather than what the candidate wants.
+
+Structure, four paragraphs, about 350 words
+- Opening: name the role and open on something concrete. Never "I am writing to apply for".
+- Body 1: connect the single most relevant experience to the employer's top stated need.
+- Body 2: one quantified accomplishment addressing a second need, in two or three tight \
+sentences.
+- Close: a confident, specific call to action. Not "I hope to hear from you".
+- Select two or three experiences in total. Never recap the whole resume.
+- Mirror the posting's own verbs and vocabulary only where the source honestly supports it.
+
+Candidate positioning
+- Goes by Jayden Tran professionally.
+- Targeting AI and ML internships across research, engineering, product, and ops.
+- Lead with depth in ML, RAG, and retrieval systems; hands-on Python and data work; \
+cross-functional thinking from the business minor; a record of shipping independent \
+technical projects.
+"""
+
+_STAGES = ("rewrite", "expand", "cover")
+_DEFAULTS = {
+    "rewrite": DEFAULT_REWRITE_STYLE,
+    "expand": DEFAULT_EXPAND_STYLE,
+    "cover": DEFAULT_COVER_STYLE,
+}
 #: ``None`` means use the shipped default assembly; a string is a user override.
 _ACTIVE: dict[str, str | None] = {stage: None for stage in _STAGES}
 
 
-def activate(*, rewrite: str | None = None, expand: str | None = None) -> None:
+def activate(
+    *,
+    rewrite: str | None = None,
+    expand: str | None = None,
+    cover: str | None = None,
+) -> None:
     """Bind style overrides for one tailoring run. Clears any prior activation."""
     _ACTIVE["rewrite"] = rewrite
     _ACTIVE["expand"] = expand
+    _ACTIVE["cover"] = cover
 
 
 def is_overridden(stage: str) -> bool:

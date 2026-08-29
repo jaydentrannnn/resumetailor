@@ -2,13 +2,11 @@ import {
   type AppConfig,
   type JobSettings,
   type RunReport,
-  downloadPdfUrl,
-  downloadUrl,
 } from "../api";
+import { DocumentsCard } from "../components/DocumentsCard";
 import { ExperienceCard } from "../components/ExperienceCard";
 import { Field, Toggle } from "../components/Field";
 import { IncludePanel } from "../components/IncludePanel";
-import { ResultPreview } from "../components/ResultPreview";
 import { RunHistoryPanel } from "../components/RunHistoryPanel";
 import { StylePromptField } from "../components/StylePromptField";
 import { SkillsCard } from "../components/SkillsCard";
@@ -44,6 +42,8 @@ export function RunPage() {
     report,
     expansion,
     skills,
+    coverLetter,
+    setCoverLetter,
     error,
     busy,
     queuePosition,
@@ -261,13 +261,17 @@ export function RunPage() {
               : "lg:col-start-1 lg:col-span-2 lg:row-start-5"
           }
         >
-          <ReportCard report={report} jobId={jobId} />
+          <ReportCard report={report} />
         </div>
       )}
 
       {report && jobId && (
         <div className="lg:col-start-1 lg:col-span-2 lg:row-start-6">
-          <ResultPreview jobId={jobId} />
+          <DocumentsCard
+            jobId={jobId}
+            coverLetter={coverLetter}
+            onCoverRegenerated={setCoverLetter}
+          />
         </div>
       )}
 
@@ -480,6 +484,12 @@ function SettingsPanel({
             />
           </Field>
         </div>
+        <Toggle
+          label="Generate cover letter"
+          help="Off by default. Drafts a cover letter from the tailored resume and this posting, then renders it as .docx and .pdf beside the resume."
+          checked={settings.cover_letter}
+          onChange={(v) => set("cover_letter", v)}
+        />
       </fieldset>
 
       <fieldset className="mt-6 space-y-3">
@@ -698,6 +708,25 @@ function SettingsPanel({
                 }
               }}
             />
+            <StylePromptField
+              label="Cover letter style"
+              help="Voice and structure rules for the cover letter body paragraphs."
+              value={settings.cover_style}
+              defaultText={config?.cover_style_default ?? ""}
+              lockedCoreRules={config?.cover_core_rules ?? ""}
+              onChange={(text) => {
+                if (text === null) {
+                  set("cover_style", null);
+                  return;
+                }
+                const trimmed = text.trim();
+                if (!trimmed || trimmed === config?.cover_style_default?.trim()) {
+                  set("cover_style", null);
+                } else {
+                  set("cover_style", text);
+                }
+              }}
+            />
           </fieldset>
         )}
       </div>
@@ -706,7 +735,7 @@ function SettingsPanel({
   );
 }
 
-function ReportCard({ report, jobId }: { report: RunReport; jobId: string }) {
+function ReportCard({ report }: { report: RunReport }) {
   /** End-of-run summary cards mirroring the CLI report. */
   const pct =
     report.coverage_total > 0
@@ -715,25 +744,9 @@ function ReportCard({ report, jobId }: { report: RunReport; jobId: string }) {
 
   return (
     <section className="rounded-xl border border-line bg-panel p-5 shadow-sm">
-      <div className="flex items-start justify-between gap-3">
-        <div>
-          <h2 className="font-display text-xl font-semibold">{report.title}</h2>
-          <p className="text-sm text-ink-muted">{report.seniority}</p>
-        </div>
-        <div className="flex shrink-0 gap-2">
-          <a
-            href={downloadPdfUrl(jobId)}
-            className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-on-accent"
-          >
-            .pdf
-          </a>
-          <a
-            href={downloadUrl(jobId)}
-            className="rounded-md border border-line px-3 py-1.5 text-sm font-medium text-ink hover:border-accent hover:text-accent"
-          >
-            .docx
-          </a>
-        </div>
+      <div>
+        <h2 className="font-display text-xl font-semibold">{report.title}</h2>
+        <p className="text-sm text-ink-muted">{report.seniority}</p>
       </div>
 
       <dl className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-5">

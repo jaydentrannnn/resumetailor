@@ -76,6 +76,16 @@ def client(tmp_path, monkeypatch):
         "select_skills",
         lambda *a, **k: jobs_mod.skills.SkillsPlan(skills=[], model="stub", pool_size=0),
     )
+    monkeypatch.setattr(
+        jobs_mod.coverletter,
+        "draft_letter",
+        lambda *a, **k: jobs_mod.coverletter.CoverLetter(model="stub"),
+    )
+    monkeypatch.setattr(
+        jobs_mod.coverletter,
+        "render_cover_letter",
+        lambda _resume, letter, **k: letter,
+    )
 
     resume_path = tmp_path / "master_resume.json"
     resume_path.write_text(
@@ -115,6 +125,8 @@ def test_get_config_returns_defaults(client):
     assert "expand_style_default" in body
     assert "rewrite_core_rules" in body
     assert "expand_core_rules" in body
+    assert "cover_style_default" in body
+    assert "cover_core_rules" in body
     assert "NEVER introduce a skill" in body["rewrite_core_rules"]
     assert body["bullet_char_max"] > body["bullet_char_soft_min"] > 0
     # Stored vocabulary (or derived fallback) should be non-empty for a real master resume.
@@ -479,6 +491,7 @@ def test_ollama_model_setting_repoints_only_the_ollama_stages(client, monkeypatc
         "expand": "gemma4",
         "facets": "gemma4",
         "skills": "gemma4",
+        "cover": "gemma4",
     }
     config.resolve("claude")
 

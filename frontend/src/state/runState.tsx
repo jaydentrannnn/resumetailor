@@ -10,6 +10,7 @@ import {
 } from "react";
 import {
   type AppConfig,
+  type CoverLetter,
   type Expansion,
   type IncludeOptions,
   type JobSettings,
@@ -64,6 +65,7 @@ export const DEFAULT_SETTINGS: JobSettings = {
   rewrite_model: null,
   expand_model: null,
   skills_model: null,
+  cover_model: null,
   effort: null,
   no_semantic: false,
   no_widow_repair: false,
@@ -75,6 +77,8 @@ export const DEFAULT_SETTINGS: JobSettings = {
   extract_runs: 3,
   no_expand: false,
   no_skills: false,
+  cover_letter: false,
+  no_cover_letter: false,
   no_facets: false,
   no_project_links: false,
   fill_target: null,
@@ -85,6 +89,7 @@ export const DEFAULT_SETTINGS: JobSettings = {
   suggest_vocabulary: false,
   rewrite_style: null,
   expand_style: null,
+  cover_style: null,
   model_name: null,
 };
 
@@ -167,6 +172,8 @@ type RunStateValue = {
   report: RunReport | null;
   expansion: Expansion | null;
   skills: SkillsPlan | null;
+  coverLetter: CoverLetter | null;
+  setCoverLetter: (letter: CoverLetter | null) => void;
   error: string | null;
   busy: boolean;
   queuePosition: number | null;
@@ -199,6 +206,7 @@ export function RunProvider({ children }: { children: ReactNode }) {
   const [report, setReport] = useState<RunReport | null>(null);
   const [expansion, setExpansion] = useState<Expansion | null>(null);
   const [skills, setSkills] = useState<SkillsPlan | null>(null);
+  const [coverLetter, setCoverLetter] = useState<CoverLetter | null>(null);
   const [error, setError] = useState<string | null>(null);
   const [busy, setBusy] = useState(false);
   const [queuePosition, setQueuePosition] = useState<number | null>(null);
@@ -344,6 +352,7 @@ export function RunProvider({ children }: { children: ReactNode }) {
           setReport(job.report);
           setExpansion(job.expansion);
           setSkills(job.skills);
+          setCoverLetter(job.cover_letter);
           setError(job.error);
         } else {
           setBusy(true);
@@ -374,6 +383,7 @@ export function RunProvider({ children }: { children: ReactNode }) {
           setReport(job.report);
           setExpansion(job.expansion);
           setSkills(job.skills);
+          setCoverLetter(job.cover_letter);
           setError(job.error);
           setBusy(false);
           return;
@@ -402,6 +412,7 @@ export function RunProvider({ children }: { children: ReactNode }) {
         setReport(job.report);
         setExpansion(job.expansion);
         setSkills(job.skills);
+        setCoverLetter(job.cover_letter);
         setError(job.error);
         if (job.events.length) setEvents(job.events);
       } catch (err) {
@@ -446,6 +457,7 @@ export function RunProvider({ children }: { children: ReactNode }) {
         setReport(job.report);
         setExpansion(job.expansion);
         setSkills(job.skills);
+        setCoverLetter(job.cover_letter);
         setError(job.error);
         setBusy(!isTerminalJobStatus(job.status));
       } catch (err) {
@@ -463,6 +475,7 @@ export function RunProvider({ children }: { children: ReactNode }) {
     setReport(null);
     setExpansion(null);
     setSkills(null);
+    setCoverLetter(null);
     setEvents([]);
     setQueuePosition(null);
     setStatus("queued");
@@ -520,6 +533,8 @@ export function RunProvider({ children }: { children: ReactNode }) {
       report,
       expansion,
       skills,
+      coverLetter,
+      setCoverLetter,
       error,
       busy,
       queuePosition,
@@ -543,6 +558,8 @@ export function RunProvider({ children }: { children: ReactNode }) {
       report,
       expansion,
       skills,
+      coverLetter,
+      setCoverLetter,
       error,
       busy,
       queuePosition,

@@ -29,6 +29,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from resume_tailor import (
     config,
+    coverletter,
     data,
     expand,
     fit,
@@ -47,9 +48,11 @@ from resume_tailor.data import MasterResume
 from resume_tailor.events import ProgressEvent
 from resume_tailor.template_profile import TemplateProfile, active_layout
 from resume_tailor.web import template_ops
-from resume_tailor.web.jobs import Job, get_queue
+from resume_tailor.web.jobs import Job, get_queue, regenerate_cover_letter
 from resume_tailor.web.schemas import (
     ConfigResponse,
+    CoverLetterOut,
+    CoverLetterRegenerateRequest,
     CreateJobRequest,
     CreateJobResponse,
     ExpansionOut,
@@ -255,8 +258,10 @@ def _config_response(*, consume_migrated: bool = True) -> ConfigResponse:
         max_bullets_per_entry=config.MAX_BULLETS_PER_ENTRY,
         rewrite_style_default=style.DEFAULT_REWRITE_STYLE.strip(),
         expand_style_default=style.DEFAULT_EXPAND_STYLE.strip(),
+        cover_style_default=style.DEFAULT_COVER_STYLE.strip(),
         rewrite_core_rules=rewrite.locked_core_rules(),
         expand_core_rules=expand.locked_core_rules(),
+        cover_core_rules=coverletter.locked_core_rules(),
         active_workspace_id=active_id,
         active_workspace_label=active_label,
         migrated_from_legacy=migrated,
@@ -480,6 +485,7 @@ def _job_status_response(job: Job) -> JobStatusResponse:
         report=job.report,
         expansion=job.expansion,
         skills=job.skills,
+        cover_letter=job.cover_letter,
         events=[_event_out(e) for e in job.events],
         created_at=job.created_at,
         title=title,
@@ -497,6 +503,7 @@ class _ResolvedRun:
     report: RunReportOut | None = None
     expansion: ExpansionOut | None = None
     skills: SkillsPlanOut | None = None
+    cover_letter: CoverLetterOut | None = None
     events: list[ProgressEvent] = field(default_factory=list)
     created_at: str | None = None
     title: str | None = None
@@ -532,6 +539,7 @@ def _resolve_run(job_id: str) -> _ResolvedRun | None:
             report=live.report,
             expansion=live.expansion,
             skills=live.skills,
+            cover_letter=live.cover_letter,
             events=list(live.events),
             created_at=live.created_at,
             title=live.report.title if live.report else None,
@@ -559,6 +567,13 @@ def _resolve_run(job_id: str) -> _ResolvedRun | None:
             skills_out = SkillsPlanOut.model_validate(
                 json.loads(skills_path.read_text(encoding="utf-8"))
             )
+    cover_out: CoverLetterOut | None = None
+    cover_path = out_dir / "cover.json"
+    if cover_path.exists():
+        with suppress(OSError, ValidationError, json.JSONDecodeError):
+            cover_out = CoverLetterOut.model_validate(
+                json.loads(cover_path.read_text(encoding="utf-8"))
+            )
     return _ResolvedRun(
         job_id=str(raw.get("job_id") or job_id),
         status=str(raw.get("status") or "failed"),
@@ -567,6 +582,7 @@ def _resolve_run(job_id: str) -> _ResolvedRun | None:
         report=report_out,
         expansion=expansion_out,
         skills=skills_out,
+        cover_letter=cover_out,
         created_at=raw.get("created_at"),
         title=raw.get("title") or (report_out.title if report_out else None),
     )
@@ -583,6 +599,7 @@ def _resolved_status_response(resolved: _ResolvedRun) -> JobStatusResponse:
         report=resolved.report,
         expansion=resolved.expansion,
         skills=resolved.skills,
+        cover_letter=resolved.cover_letter,
         events=[_event_out(e) for e in resolved.events],
         created_at=resolved.created_at,
         title=resolved.title,
@@ -860,6 +877,129 @@ def download_skills(job_id: str) -> FileResponse:
         media_type="text/markdown; charset=utf-8",
         filename=_export_download_name(job_id, suffix=".skills.md"),
     )
+
+
+@app.get("/api/jobs/{job_id}/cover-letter.md")
+def download_cover_letter_md(job_id: str) -> FileResponse:
+    """Plain-text cover letter for a single copy-all paste."""
+    resolved = _resolve_run(job_id)
+    if resolved is None:
+        raise HTTPException(status_code=404, detail=f"Unknown job {job_id!r}.")
+    if resolved.status != "succeeded":
+        raise HTTPException(
+            status_code=409, detail=f"Job {job_id} is {resolved.status}, not ready for download."
+        )
+    path = resolved.out_dir / "cover.md"
+    if not path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail="Cover letter was not produced for this job.",
+        )
+    return FileResponse(
+        path,
+        media_type="text/markdown; charset=utf-8",
+        filename=_export_download_name(job_id, suffix=".cover.md"),
+    )
+
+
+@app.get("/api/jobs/{job_id}/cover-letter.docx")
+def download_cover_letter_docx(job_id: str) -> FileResponse:
+    """Download the rendered cover-letter ``.docx``."""
+    resolved = _resolve_run(job_id)
+    if resolved is None:
+        raise HTTPException(status_code=404, detail=f"Unknown job {job_id!r}.")
+    if resolved.status != "succeeded":
+        raise HTTPException(
+            status_code=409, detail=f"Job {job_id} is {resolved.status}, not ready for download."
+        )
+    path = resolved.out_dir / "cover.docx"
+    if not path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail="Cover letter was not produced for this job.",
+        )
+    return FileResponse(
+        path,
+        media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        filename=_export_download_name(job_id, suffix=" Cover Letter.docx"),
+    )
+
+
+@app.get("/api/jobs/{job_id}/cover-letter.pdf")
+def download_cover_letter_pdf(job_id: str) -> FileResponse:
+    """Download the rendered cover-letter PDF."""
+    resolved = _resolve_run(job_id)
+    if resolved is None:
+        raise HTTPException(status_code=404, detail=f"Unknown job {job_id!r}.")
+    if resolved.status != "succeeded":
+        raise HTTPException(
+            status_code=409, detail=f"Job {job_id} is {resolved.status}, not ready for download."
+        )
+    path = resolved.out_dir / "cover.pdf"
+    if not path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail="Cover letter PDF was not produced for this job.",
+        )
+    return FileResponse(
+        path,
+        media_type="application/pdf",
+        filename=_export_download_name(job_id, suffix=" Cover Letter.pdf"),
+        content_disposition_type="attachment",
+    )
+
+
+@app.get("/api/jobs/{job_id}/cover-letter/preview.pdf")
+def preview_cover_letter_pdf(job_id: str) -> FileResponse:
+    """Inline cover-letter PDF for embedding in the results card."""
+    resolved = _resolve_run(job_id)
+    if resolved is None:
+        raise HTTPException(status_code=404, detail=f"Unknown job {job_id!r}.")
+    if resolved.status != "succeeded":
+        raise HTTPException(
+            status_code=409, detail=f"Job {job_id} is {resolved.status}, not ready for download."
+        )
+    path = resolved.out_dir / "cover.pdf"
+    if not path.exists():
+        raise HTTPException(
+            status_code=404,
+            detail="Cover letter PDF was not produced for this job.",
+        )
+    return FileResponse(
+        path,
+        media_type="application/pdf",
+        filename=_export_download_name(job_id, suffix=" Cover Letter.pdf"),
+        content_disposition_type="inline",
+    )
+
+
+@app.post("/api/jobs/{job_id}/cover-letter", response_model=CoverLetterOut)
+def regenerate_job_cover_letter(
+    job_id: str,
+    body: CoverLetterRegenerateRequest,
+) -> CoverLetterOut:
+    """Re-draft and overwrite this job's cover letter using saved run inputs."""
+    resolved = _resolve_run(job_id)
+    if resolved is None:
+        raise HTTPException(status_code=404, detail=f"Unknown job {job_id!r}.")
+    if resolved.status != "succeeded":
+        raise HTTPException(
+            status_code=409, detail=f"Job {job_id} is {resolved.status}, not ready to regenerate."
+        )
+    if get_queue().busy():
+        raise HTTPException(
+            status_code=409,
+            detail="Cannot regenerate while another tailoring run is in progress.",
+        )
+    try:
+        out = regenerate_cover_letter(job_id, instruction=body.instruction)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    if resolved.live is not None:
+        resolved.live.cover_letter = out
+    return out
 
 
 @app.get("/api/master-resume")

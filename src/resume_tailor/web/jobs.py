@@ -25,6 +25,7 @@ from typing import Literal
 
 from resume_tailor import (
     config,
+    coverletter,
     data,
     expand,
     facets,
@@ -46,6 +47,7 @@ from resume_tailor.rewrite import FabricationError
 from resume_tailor.template_profile import active_layout
 from resume_tailor.web import template_ops
 from resume_tailor.web.schemas import (
+    CoverLetterOut,
     ExpandedEntryOut,
     ExpansionOut,
     JobSettings,
@@ -84,6 +86,7 @@ class Job:
     report: RunReportOut | None = None
     expansion: ExpansionOut | None = None
     skills: SkillsPlanOut | None = None
+    cover_letter: CoverLetterOut | None = None
     events: list[ProgressEvent] = field(default_factory=list)
     #: Signalled whenever a new event lands, so the SSE endpoint can wake up.
     event_notify: threading.Event = field(default_factory=threading.Event)
@@ -334,6 +337,8 @@ class JobQueue:
                 overrides["expand"] = settings.expand_model
             if settings.skills_model:
                 overrides["skills"] = settings.skills_model
+            if settings.cover_model:
+                overrides["cover"] = settings.cover_model
             config.resolve(
                 settings.model,
                 overrides=overrides or None,
@@ -342,6 +347,7 @@ class JobQueue:
             style.activate(
                 rewrite=settings.rewrite_style,
                 expand=settings.expand_style,
+                cover=settings.cover_style,
             )
         except ValueError as exc:
             raise RuntimeError(str(exc)) from exc
@@ -360,6 +366,12 @@ class JobQueue:
             )
         except (ValueError, RuntimeError, LLMError) as exc:
             raise RuntimeError(str(exc)) from exc
+
+        (out_dir / "jd.txt").write_text(job.jd_text, encoding="utf-8")
+        (out_dir / "requirements.json").write_text(
+            requirements.model_dump_json(indent=2),
+            encoding="utf-8",
+        )
 
         paraphrased = jd.verify_verbatim(requirements, job.jd_text)
         if paraphrased:
@@ -491,6 +503,15 @@ class JobQueue:
             report.report_data(resume, requirements, result, master=master_resume)
         )
 
+        (out_dir / "bullets.json").write_text(
+            json.dumps(result.bullets, indent=2),
+            encoding="utf-8",
+        )
+        (out_dir / "backends.json").write_text(
+            json.dumps(config.backend_specs_snapshot(), indent=2),
+            encoding="utf-8",
+        )
+
         job.check_cancelled()
         if not settings.no_expand:
             try:
@@ -553,6 +574,41 @@ class JobQueue:
                         detail={},
                     )
                 )
+
+        job.check_cancelled()
+        if settings.cover_letter and not settings.no_cover_letter:
+            try:
+                letter = coverletter.draft_letter(
+                    master_resume,
+                    requirements,
+                    result.bullets,
+                    job.jd_text,
+                    use_cache=not settings.no_cache,
+                    on_event=on_event,
+                )
+                cover_path = out_dir / "cover.docx"
+                coverletter.render_cover_letter(
+                    master_resume,
+                    letter,
+                    out=cover_path,
+                )
+                job.cover_letter = _to_cover_out(letter, out_dir=out_dir)
+                (out_dir / "cover.json").write_text(
+                    job.cover_letter.model_dump_json(indent=2),
+                    encoding="utf-8",
+                )
+                (out_dir / "cover.md").write_text(
+                    coverletter.format_markdown(letter),
+                    encoding="utf-8",
+                )
+            except Exception as exc:  # noqa: BLE001 - bonus artifact; never fail the job
+                message = f"Cover letter skipped ({exc})"
+                on_event(ProgressEvent(stage="cover", message=message, detail={}))
+                # Also a run warning, not just a progress event: a failed cover stage
+                # renders no card at all, so an event alone leaves the user with a
+                # silently missing artifact and nowhere showing why.
+                if job.report is not None:
+                    job.report.warnings.append(message)
 
         job.check_cancelled()
         if settings.suggest_vocabulary:
@@ -691,6 +747,82 @@ def _to_skills_out(plan: skills.SkillsPlan) -> SkillsPlanOut:
         model=plan.model,
         pool_size=plan.pool_size,
     )
+
+
+def _to_cover_out(
+    letter: coverletter.CoverLetter,
+    *,
+    out_dir: Path | None = None,
+) -> CoverLetterOut:
+    """Convert the cover-letter dataclass into the Pydantic shape the API serves."""
+    has_docx = False
+    has_pdf = False
+    if out_dir is not None:
+        has_docx = (out_dir / "cover.docx").exists()
+        has_pdf = (out_dir / "cover.pdf").exists()
+    return CoverLetterOut(
+        company=letter.company,
+        company_location=letter.company_location,
+        addressee=letter.addressee,
+        paragraphs=list(letter.paragraphs),
+        salutation=letter.salutation,
+        closing=letter.closing,
+        signature=letter.signature,
+        inside_address=list(letter.inside_address),
+        date=letter.date,
+        warnings=list(letter.warnings),
+        model=letter.model,
+        word_count=letter.word_count,
+        has_docx=has_docx,
+        has_pdf=has_pdf,
+    )
+
+
+def regenerate_cover_letter(
+    job_id: str,
+    *,
+    instruction: str = "",
+) -> CoverLetterOut:
+    """Re-draft and re-render a job's cover letter, overwriting artifacts in place."""
+    out_dir = config.OUTPUT_DIR / "jobs" / job_id
+    bullets_path = out_dir / "bullets.json"
+    backends_path = out_dir / "backends.json"
+    if not bullets_path.exists():
+        raise FileNotFoundError("This job has no saved tailored bullets for regeneration.")
+
+    bullets = json.loads(bullets_path.read_text(encoding="utf-8"))
+    backend_specs = json.loads(backends_path.read_text(encoding="utf-8"))
+    jd_path = out_dir / "jd.txt"
+    if not jd_path.exists():
+        raise FileNotFoundError("This job has no saved job description.")
+    jd_text = jd_path.read_text(encoding="utf-8")
+
+    requirements_path = out_dir / "requirements.json"
+    if not requirements_path.exists():
+        raise FileNotFoundError("This job has no saved requirements.")
+    requirements = jd.JobRequirements.model_validate_json(
+        requirements_path.read_text(encoding="utf-8")
+    )
+
+    resume = data.load()
+    with config.pinned_specs(backend_specs, effort=None):
+        letter = coverletter.draft_letter(
+            resume,
+            requirements,
+            bullets,
+            jd_text,
+            use_cache=False,
+            instruction=instruction,
+        )
+        coverletter.render_cover_letter(resume, letter, out=out_dir / "cover.docx")
+
+    out = _to_cover_out(letter, out_dir=out_dir)
+    (out_dir / "cover.json").write_text(out.model_dump_json(indent=2), encoding="utf-8")
+    (out_dir / "cover.md").write_text(
+        coverletter.format_markdown(letter),
+        encoding="utf-8",
+    )
+    return out
 
 
 def _to_report_out(data: report.RunReport) -> RunReportOut:

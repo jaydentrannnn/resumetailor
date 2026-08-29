@@ -509,6 +509,71 @@ def render(
     return out
 
 
+def build_letter_context(
+    resume: MasterResume,
+    letter,
+    tpl: DocxTemplate,
+    *,
+    contact_fields: list[ContactField] | None = None,
+    layout: dict | None = None,
+) -> dict:
+    """Assemble the Jinja context for a cover-letter template.
+
+    ``letter`` is a ``coverletter.CoverLetter`` instance. Letterhead fields come from
+    ``resume.contact``; body fields come from the drafted letter.
+    """
+    layout = layout if layout is not None else active_layout()
+    return {
+        "name": resume.contact.name,
+        "contact": _contact_richtext(
+            resume,
+            tpl,
+            field_order=contact_fields if contact_fields is not None else layout.get(
+                "contact_field_order"
+            ),
+            separator=layout.get("contact_separator"),
+        ),
+        "date": letter.date,
+        "inside_address": list(letter.inside_address),
+        "salutation": letter.salutation,
+        "paragraphs": list(letter.paragraphs),
+        "closing": letter.closing,
+        "signature": letter.signature,
+    }
+
+
+def render_letter(
+    resume: MasterResume,
+    letter,
+    *,
+    template: Path | None = None,
+    out: Path | None = None,
+    contact_fields: list[ContactField] | None = None,
+    layout: dict | None = None,
+) -> Path:
+    """Render a drafted cover letter to a ``.docx`` using the derived cover template."""
+    template = template or config.COVER_TEMPLATE_PATH
+    if not template.exists():
+        raise FileNotFoundError(
+            f"Cover letter template not found: {template}\n"
+            "Generate it with: python scripts/build_cover_template.py"
+        )
+    tpl = DocxTemplate(template)
+    context = build_letter_context(
+        resume,
+        letter,
+        tpl,
+        contact_fields=contact_fields,
+        layout=layout,
+    )
+    tpl.render(context, autoescape=True)
+    out = out or config.OUTPUT_DIR / "cover_letter.docx"
+    out.parent.mkdir(parents=True, exist_ok=True)
+    tpl.save(out)
+    _ensure_pdf_hyperlink_styles(out)
+    return out
+
+
 def to_pdf(docx_path: Path, pdf_path: Path | None = None, *, keep_active: bool = False) -> Path:
     """Convert a .docx to PDF using the configured engine (Word or LibreOffice).
 

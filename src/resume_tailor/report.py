@@ -564,3 +564,22 @@ def format_skills(plan: SkillsPlan) -> str:
         lines.append("")
         lines.append(skills_mod.paste_line(plan))
     return "\n".join(lines)
+
+
+def format_cover_letter(letter) -> str:
+    """Render the cover letter for the terminal.
+
+    Kept separate from ``format_report`` because the cover letter succeeds or fails
+    independently of the fit loop, and the CLI prints it only when the call ran.
+    """
+    from . import coverletter as coverletter_mod
+
+    lines: list[str] = [
+        f"Cover letter ({letter.word_count} words, model={letter.model}):",
+    ]
+    for warning in letter.warnings:
+        lines.append(f"  WARNING: {warning}")
+    if letter.paragraphs:
+        lines.append("")
+        lines.append(coverletter_mod.format_markdown(letter))
+    return "\n".join(lines)

@@ -36,6 +36,7 @@ export type JobSettings = {
   rewrite_model: string | null;
   expand_model: string | null;
   skills_model: string | null;
+  cover_model: string | null;
   effort: "low" | "medium" | "high" | null;
   no_semantic: boolean;
   no_widow_repair: boolean;
@@ -51,6 +52,9 @@ export type JobSettings = {
   no_expand: boolean;
   /** Skip generating the tailored skills list for application-form Skills fields. */
   no_skills: boolean;
+  /** Generate a cover letter after the tailored resume succeeds. */
+  cover_letter: boolean;
+  no_cover_letter: boolean;
   /** Skip LLM selection of project tech tags and coursework (budget-only truncation). */
   no_facets: boolean;
   /** Render projects without their link label or hyperlink. */
@@ -76,6 +80,8 @@ export type JobSettings = {
   rewrite_style: string | null;
   /** Editable style block for application-form expansion; null uses the shipped default. */
   expand_style: string | null;
+  /** Editable style block for cover-letter drafting; null uses the shipped default. */
+  cover_style: string | null;
   /** One blanket model override applied to every stage of the selected profile. */
   model_name: string | null;
 };
@@ -167,6 +173,23 @@ export type SkillsPlan = {
   pool_size: number;
 };
 
+export type CoverLetter = {
+  company: string;
+  company_location: string;
+  addressee: string;
+  paragraphs: string[];
+  salutation: string;
+  closing: string;
+  signature: string;
+  inside_address: string[];
+  date: string;
+  warnings: string[];
+  model: string;
+  word_count: number;
+  has_docx: boolean;
+  has_pdf: boolean;
+};
+
 export type JobStatus = {
   job_id: string;
   status: "queued" | "running" | "succeeded" | "failed" | "cancelled";
@@ -175,6 +198,7 @@ export type JobStatus = {
   report: RunReport | null;
   expansion: Expansion | null;
   skills: SkillsPlan | null;
+  cover_letter: CoverLetter | null;
   events: ProgressEvent[];
   created_at?: string | null;
   title?: string | null;
@@ -234,9 +258,11 @@ export type AppConfig = {
   /** Shipped default style blocks for the Tailor tab's prompt editors. */
   rewrite_style_default: string;
   expand_style_default: string;
+  cover_style_default: string;
   /** Locked safety rules shown read-only beside each style editor. */
   rewrite_core_rules: string;
   expand_core_rules: string;
+  cover_core_rules: string;
   active_workspace_id: string | null;
   active_workspace_label: string | null;
   /** True once, on the first /api/config response after a legacy-layout migration. */
@@ -741,6 +767,35 @@ export function expansionUrl(jobId: string): string {
 export function skillsUrl(jobId: string): string {
   /** URL of the plain-text tailored skills list for a finished job. */
   return `/api/jobs/${jobId}/skills.md`;
+}
+
+export function coverLetterMdUrl(jobId: string): string {
+  return `/api/jobs/${jobId}/cover-letter.md`;
+}
+
+export function coverLetterDocxUrl(jobId: string): string {
+  return `/api/jobs/${jobId}/cover-letter.docx`;
+}
+
+export function coverLetterPdfUrl(jobId: string): string {
+  return `/api/jobs/${jobId}/cover-letter.pdf`;
+}
+
+export function coverLetterPreviewUrl(jobId: string, cacheBuster?: number): string {
+  /** Inline cover-letter PDF for the results card; optional ``?v=`` busts regenerate cache. */
+  const base = `/api/jobs/${jobId}/cover-letter/preview.pdf`;
+  return cacheBuster === undefined ? base : `${base}?v=${cacheBuster}`;
+}
+
+export function regenerateCoverLetter(
+  jobId: string,
+  instruction: string,
+): Promise<CoverLetter> {
+  return request<CoverLetter>(`/api/jobs/${jobId}/cover-letter`, {
+    method: "POST",
+    headers: { "Content-Type": "application/json" },
+    body: JSON.stringify({ instruction }),
+  });
 }
 
 export function fetchTemplateInfo(): Promise<TemplateInfo> {

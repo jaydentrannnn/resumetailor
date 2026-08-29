@@ -22,6 +22,7 @@ sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 
 from resume_tailor import (  # noqa: E402
     config,
+    coverletter,
     data,
     expand,
     facets,
@@ -189,6 +190,25 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "Skip generating the tailored skills list for application-form Skills "
             "fields. The tailored resume is still produced."
         ),
+    )
+    parser.add_argument(
+        "--cover-letter",
+        action="store_true",
+        help=(
+            "Generate a cover letter from the tailored resume and job posting. "
+            "Off by default; produces a .docx and PDF sidecar when enabled."
+        ),
+    )
+    parser.add_argument(
+        "--no-cover-letter",
+        action="store_true",
+        help="Skip cover letter generation even when enabled in saved profile settings.",
+    )
+    parser.add_argument(
+        "--cover-model",
+        default=None,
+        metavar="MODEL",
+        help="Override the cover-letter stage only.",
     )
     parser.add_argument(
         "--no-facets",
@@ -369,6 +389,8 @@ def main(argv: list[str] | None = None) -> int:
             overrides["expand"] = args.expand_model
         if args.skills_model:
             overrides["skills"] = args.skills_model
+        if args.cover_model:
+            overrides["cover"] = args.cover_model
         config.resolve(
             args.model,
             overrides=overrides or None,
@@ -377,6 +399,7 @@ def main(argv: list[str] | None = None) -> int:
         style.activate(
             rewrite=saved.get("rewrite_style"),
             expand=saved.get("expand_style"),
+            cover=saved.get("cover_style"),
         )
     except ValueError as exc:
         print(f"error: {exc}", file=sys.stderr)
@@ -582,6 +605,28 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Skills: {skills_path}")
         except Exception as exc:  # noqa: BLE001 - bonus artifact; never fail the run
             print(f"warning: skills selection skipped ({exc})", file=sys.stderr)
+
+    # Cover letter is advisory; must never turn a successful run into a failure.
+    if args.cover_letter and not args.no_cover_letter:
+        try:
+            letter = coverletter.draft_letter(
+                master_resume,
+                requirements,
+                result.bullets,
+                jd_text,
+                use_cache=not args.no_cache,
+            )
+            cover_path = result.out_path.with_name(
+                result.out_path.stem + " Cover Letter.docx"
+            )
+            coverletter.render_cover_letter(master_resume, letter, out=cover_path)
+            print()
+            print(report.format_cover_letter(letter))
+            cover_md = result.out_path.with_name(result.out_path.stem + ".cover.md")
+            cover_md.write_text(coverletter.format_markdown(letter), encoding="utf-8")
+            print(f"Cover letter: {cover_path}")
+        except Exception as exc:  # noqa: BLE001 - bonus artifact; never fail the run
+            print(f"warning: cover letter skipped ({exc})", file=sys.stderr)
 
     return 0
 

@@ -115,6 +115,27 @@ def _stub_extract_consensus(cli, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _stub_cover_api(cli, monkeypatch):
+    """Keep every CLI test off the cover-letter API.
+
+    ``tailor.main`` can draft a cover letter after a successful fit when
+    ``--cover-letter`` is passed. Without this stub, that path would reach the network.
+    """
+    from resume_tailor.coverletter import CoverLetter
+
+    monkeypatch.setattr(
+        cli.coverletter,
+        "draft_letter",
+        lambda *a, **k: CoverLetter(model="stub"),
+    )
+    monkeypatch.setattr(
+        cli.coverletter,
+        "render_cover_letter",
+        lambda _resume, letter, **k: letter,
+    )
+
+
+@pytest.fixture(autouse=True)
 def _stub_facets_api(cli, monkeypatch):
     """Keep every CLI test off the facets API.
 
@@ -662,9 +683,10 @@ def test_cli_loads_saved_style_from_settings(cli, jd_file, tmp_path, monkeypatch
 
     seen: dict[str, object] = {}
 
-    def capture_style(*, rewrite=None, expand=None):
+    def capture_style(*, rewrite=None, expand=None, cover=None):
         seen["rewrite"] = rewrite
         seen["expand"] = expand
+        seen["cover"] = cover
 
     monkeypatch.setattr(cli.style, "activate", capture_style)
     monkeypatch.setattr(cli.jd, "extract", lambda text, **kw: _requirements())

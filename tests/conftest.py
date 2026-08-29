@@ -107,6 +107,8 @@ def _isolated_template_paths(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "TEMPLATE_PROFILE_PATH", tmp_path / "no-such-profile.json")
     monkeypatch.setattr(config, "DEFAULT_TEMPLATE_PATH", tmp_path / "no-such-template.docx")
     monkeypatch.setattr(config, "BASELINE_TEMPLATE_PATH", tmp_path / "no-such-baseline.docx")
+    monkeypatch.setattr(config, "COVER_TEMPLATE_PATH", tmp_path / "no-such-cover-template.docx")
+    monkeypatch.setattr(config, "COVER_TEMPLATE_META_PATH", tmp_path / "no-such-cover-meta.json")
 
 
 @pytest.fixture(scope="session")
