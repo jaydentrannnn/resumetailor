@@ -652,6 +652,19 @@ export function cancelJob(jobId: string): Promise<JobStatus> {
   return request<JobStatus>(`/api/jobs/${jobId}`, { method: "DELETE" });
 }
 
+export type DeleteRunHistoryResult = {
+  deleted: string[];
+  errors: Record<string, string>;
+};
+
+export function deleteRunHistory(jobIds: string[]): Promise<DeleteRunHistoryResult> {
+  /** Remove finished runs from disk-backed history for the active profile. */
+  return request<DeleteRunHistoryResult>("/api/jobs/history/delete", {
+    method: "POST",
+    body: JSON.stringify({ job_ids: jobIds }),
+  });
+}
+
 export function fetchMasterResume(): Promise<Record<string, unknown>> {
   /** Load the master resume for the editor. */
   return request("/api/master-resume");

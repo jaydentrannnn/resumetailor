@@ -327,6 +327,19 @@ class RunHistoryResponse(BaseModel):
     runs: list[RunHistoryEntryOut] = Field(default_factory=list)
 
 
+class DeleteRunHistoryRequest(BaseModel):
+    """Remove one or more finished runs from disk-backed history."""
+
+    job_ids: list[str] = Field(min_length=1)
+
+
+class DeleteRunHistoryResponse(BaseModel):
+    """Per-id outcome of a history delete request."""
+
+    deleted: list[str] = Field(default_factory=list)
+    errors: dict[str, str] = Field(default_factory=dict)
+
+
 class ConfigResponse(BaseModel):
     """Defaults and vocabulary the UI needs before a run starts."""
 

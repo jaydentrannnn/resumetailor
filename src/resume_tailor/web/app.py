@@ -55,6 +55,8 @@ from resume_tailor.web.schemas import (
     CoverLetterRegenerateRequest,
     CreateJobRequest,
     CreateJobResponse,
+    DeleteRunHistoryRequest,
+    DeleteRunHistoryResponse,
     ExpansionOut,
     JobSettings,
     JobStatusResponse,
@@ -683,6 +685,24 @@ def _scan_run_history() -> list[RunHistoryEntryOut]:
 def list_jobs() -> RunHistoryResponse:
     """Newest-first recent runs for the active profile (disk + in-memory)."""
     return RunHistoryResponse(runs=_scan_run_history())
+
+
+@app.post("/api/jobs/history/delete", response_model=DeleteRunHistoryResponse)
+def delete_run_history(body: DeleteRunHistoryRequest) -> DeleteRunHistoryResponse:
+    """Remove finished runs from disk-backed history.
+
+    Queued and running jobs are rejected per id — use ``DELETE /api/jobs/{id}`` to
+    cancel those instead.
+    """
+    deleted: list[str] = []
+    errors: dict[str, str] = {}
+    for job_id in body.job_ids:
+        reason = get_queue().remove_from_history(job_id)
+        if reason is None:
+            deleted.append(job_id)
+        else:
+            errors[job_id] = reason
+    return DeleteRunHistoryResponse(deleted=deleted, errors=errors)
 
 
 @app.get("/api/jobs/{job_id}", response_model=JobStatusResponse)

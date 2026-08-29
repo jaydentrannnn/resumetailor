@@ -20,6 +20,7 @@ import {
   type SkillsPlan,
   cancelJob,
   createJob,
+  deleteRunHistory,
   fetchConfig,
   fetchJob,
   fetchResumeOutline,
@@ -182,6 +183,8 @@ type RunStateValue = {
   cancelRun: () => Promise<void>;
   cancelling: boolean;
   refreshHistory: () => Promise<void>;
+  /** Remove finished runs from history and clear results if the active view was deleted. */
+  deleteHistoryRuns: (jobIds: string[]) => Promise<Record<string, string>>;
   /** Load a past (or still-running) job into the results tiles without re-downloading. */
   loadRun: (jobId: string) => Promise<void>;
 };
@@ -467,6 +470,33 @@ export function RunProvider({ children }: { children: ReactNode }) {
     [activeId],
   );
 
+  const clearDisplayedRun = useCallback(() => {
+    /** Drop the results tiles when the run being viewed was removed from history. */
+    setJobId(null);
+    storeJobId(activeId, null);
+    setStatus(null);
+    setEvents([]);
+    setReport(null);
+    setExpansion(null);
+    setSkills(null);
+    setCoverLetter(null);
+    setQueuePosition(null);
+    setBusy(false);
+    setError(null);
+  }, [activeId]);
+
+  const deleteHistoryRuns = useCallback(
+    async (ids: string[]) => {
+      const result = await deleteRunHistory(ids);
+      if (jobId && result.deleted.includes(jobId) && !busy) {
+        clearDisplayedRun();
+      }
+      await refreshHistory();
+      return result.errors;
+    },
+    [jobId, busy, clearDisplayedRun, refreshHistory],
+  );
+
   const startJob = useCallback(async () => {
     /** Enqueue a new run from the current JD text and settings. */
     if (!jdText.trim() || busy) return;
@@ -543,6 +573,7 @@ export function RunProvider({ children }: { children: ReactNode }) {
       cancelRun,
       cancelling,
       refreshHistory,
+      deleteHistoryRuns,
       loadRun,
     }),
     [
@@ -568,6 +599,7 @@ export function RunProvider({ children }: { children: ReactNode }) {
       cancelRun,
       cancelling,
       refreshHistory,
+      deleteHistoryRuns,
       loadRun,
     ],
   );

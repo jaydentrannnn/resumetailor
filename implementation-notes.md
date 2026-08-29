@@ -2446,3 +2446,9 @@ got a proper default stub in the `client` fixture instead of repeating that gap.
 
 - **Bug:** `DocumentsCard` and `RunHistoryPanel` both used `lg:row-start-7`, so in two-column layout they occupied the same grid cell; history painted on top and hid the documents preview. Single-column mode ignores explicit row pins, so both stacked visibly.
 - **Fix:** Renumbered results rows after removing the cover-letter card from row 5: skills/report → row 5, documents → row 6, history → row 7 (unchanged).
+
+## 2026-08-29 — Delete selected runs from history
+
+- **Decision:** `POST /api/jobs/history/delete` removes finished runs' `output/.../jobs/<id>/` directories and drops them from the in-memory queue; the Recent runs panel gets per-row checkboxes, Select all (deletable runs only), and Delete selected with a confirm dialog. Queued/running jobs are skipped (`still active`).
+- **Why:** Users need to clear old runs without hunting files on disk; `DELETE /api/jobs/{id}` remains cancel-only and 409s on terminal jobs.
+- **Tradeoff:** Deleting the run currently on screen clears the results tiles when not busy; active runs cannot be bulk-deleted (use Cancel instead).

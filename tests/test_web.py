@@ -190,6 +190,51 @@ def test_list_jobs_includes_persisted_run(client, tmp_path, monkeypatch):
     assert match["has_pdf"] is False
 
 
+def test_delete_run_history_removes_disk_artifacts(client):
+    """POST /api/jobs/history/delete removes a finished run's directory."""
+    c, _q = client
+    job_id = "histdelete01"
+    jobs_dir = config.OUTPUT_DIR / "jobs" / job_id
+    jobs_dir.mkdir(parents=True, exist_ok=True)
+    (jobs_dir / "run.json").write_text(
+        json.dumps(
+            {
+                "job_id": job_id,
+                "workspace_id": config.active_workspace_id(),
+                "created_at": "2026-01-01T00:00:00+00:00",
+                "status": "succeeded",
+                "title": "Delete Me",
+            }
+        ),
+        encoding="utf-8",
+    )
+
+    res = c.post("/api/jobs/history/delete", json={"job_ids": [job_id]})
+    assert res.status_code == 200
+    body = res.json()
+    assert body["deleted"] == [job_id]
+    assert body["errors"] == {}
+    assert not jobs_dir.exists()
+    runs = c.get("/api/jobs").json()["runs"]
+    assert all(r["job_id"] != job_id for r in runs)
+
+
+def test_delete_run_history_rejects_active_job(client):
+    """Queued and running jobs cannot be deleted from history."""
+    c, q = client
+    job = jobs_mod.Job(job_id="activehist", jd_text="x", settings=JobSettings(), status="running")
+    q._jobs[job.job_id] = job
+    out_dir = config.OUTPUT_DIR / "jobs" / job.job_id
+    out_dir.mkdir(parents=True, exist_ok=True)
+    (out_dir / "run.json").write_text("{}", encoding="utf-8")
+
+    res = c.post("/api/jobs/history/delete", json={"job_ids": [job.job_id]})
+    assert res.status_code == 200
+    assert res.json()["deleted"] == []
+    assert res.json()["errors"][job.job_id] == "still active"
+    assert out_dir.exists()
+
+
 def test_download_works_for_disk_only_job(client):
     """A job id absent from memory but present on disk still serves its artifact."""
     c, q = client

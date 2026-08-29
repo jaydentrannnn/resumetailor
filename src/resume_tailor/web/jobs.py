@@ -15,6 +15,7 @@ from __future__ import annotations
 
 import json
 import queue
+import shutil
 import threading
 import traceback
 import uuid
@@ -251,6 +252,29 @@ class JobQueue:
                 job.cancel_requested.set()
                 return job
             return None
+
+    def remove_from_history(self, job_id: str) -> str | None:
+        """Delete a finished run's artifacts and drop it from memory.
+
+        Returns ``None`` on success, or a short reason when the run cannot be removed.
+        """
+        with self._lock:
+            job = self._jobs.get(job_id)
+            if job is not None and job.status in ("queued", "running"):
+                return "still active"
+            if job_id in self._jobs:
+                del self._jobs[job_id]
+            if job_id in self._order:
+                self._order.remove(job_id)
+
+        out_dir = config.OUTPUT_DIR / "jobs" / job_id
+        if not out_dir.exists():
+            return "not found"
+        try:
+            shutil.rmtree(out_dir)
+        except OSError as exc:
+            return str(exc)
+        return None
 
     def _ensure_worker(self) -> None:
         """Start the background worker once, on first submit."""
