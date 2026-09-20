@@ -1249,8 +1249,12 @@ def _polish(
     *,
     repair_widows: bool = True,
     repair_verbs: bool = True,
-) -> tuple[dict[str, str], int, int]:
-    """Re-request only the defective bullets. Returns (texts, widows fixed, verbs changed).
+) -> tuple[dict[str, str], int, int, dict[str, list[str]]]:
+    """Re-request only the defective bullets.
+
+    Returns ``(texts, widows fixed, verbs changed, widow repairs rejected)`` where the
+    last mapping is bullet id to offending terms for shorten candidates discarded by the
+    fabrication guard.
 
     One round trip, never more, and shared between both defects: the same reasoning as
     `llm._repair`, that a model which cannot hit an explicit ceiling once will not hit it
@@ -1266,9 +1270,11 @@ def _polish(
     text exactly as it was. It can improve a run or do nothing, but it cannot make one
     worse.
 
-    Fabrication remains a hard failure for widow repair — shortening under pressure is
-    precisely when a model compresses a claim into something the source never said — and a
-    discard for verb swaps, per `_accept_verb_swap`.
+    A fabricating widow-repair candidate is discarded like a bad verb swap: the pre-polish
+    text is already guard-clean, so the document stays correct and the surviving widow is
+    reported upstream rather than aborting the run. Shortening under pressure is precisely
+    when a model compresses a claim into something the source never said — the guard still
+    binds — but a cosmetic pass must not kill an otherwise-good run.
     """
     ceilings = widowed(texts) if repair_widows else {}
     collisions = (
@@ -1277,7 +1283,7 @@ def _polish(
         else {}
     )
     if not ceilings and not collisions:
-        return texts, 0, 0
+        return texts, 0, 0, {}
 
     sections = [
         f"<role>{requirements.title} ({requirements.seniority})</role>",
@@ -1309,10 +1315,10 @@ def _polish(
     if result is None:
         # Not fatal: the first draft is still valid output, just wasteful. Report it as a
         # surviving widow rather than failing a run over a cosmetic pass.
-        return texts, 0, 0
+        return texts, 0, 0, {}
 
     repaired = dict(texts)
-    violations: list[str] = []
+    rejected: dict[str, list[str]] = {}
     tightened = 0
     revoiced = 0
     # An accepted swap claims its new opener, so two colliding bullets cannot both be
@@ -1328,9 +1334,7 @@ def _polish(
         if item.id in ceilings:
             offenders = check_fabrication(source, candidate)
             if offenders:
-                violations.append(
-                    f"  {item.id}: introduced {', '.join(offenders)}\n    -> {candidate}"
-                )
+                rejected[item.id] = offenders
                 continue
             if len(candidate) < len(texts[item.id]) and not widowed({item.id: candidate}):
                 repaired[item.id] = candidate
@@ -1344,15 +1348,7 @@ def _polish(
                 if verb is not None:
                     claimed.add(verb)
 
-    if violations:
-        raise FabricationError(
-            "Shortening a widowed bullet introduced content absent from the master "
-            "resume:\n" + "\n".join(violations)
-            + "\n\nThis is a hard failure. Re-run with --no-widow-repair to skip this pass, "
-            "or shorten the source bullet in master_resume.json so the rewrite has room."
-        )
-
-    return repaired, tightened, revoiced
+    return repaired, tightened, revoiced, rejected
 
 
 # --------------------------------------------------------------------------------------
@@ -1368,6 +1364,10 @@ class RewriteOutcome:
     widows_repaired: int = 0
     verbs_diversified: int = 0
     merges: list[MergeGroup] = field(default_factory=list)
+    #: Bullets whose widow-repair candidate was discarded for fabricating, id -> offending
+    #: terms. Reported rather than raised: the original text is kept, so the document is
+    #: correct — but a run that silently declined to fix a widow should say why.
+    widow_repairs_rejected: dict[str, list[str]] = field(default_factory=dict)
 
     @property
     def widows_remaining(self) -> int:
@@ -1523,7 +1523,7 @@ def rewrite_bullets(
             widowed=stranded,
             verb_collisions=colliding,
         )
-    out, improved, revoiced = _polish(
+    out, improved, revoiced, rejected_repairs = _polish(
         out,
         by_id,
         requirements,
@@ -1535,6 +1535,7 @@ def rewrite_bullets(
         widows_repaired=improved,
         verbs_diversified=revoiced,
         merges=accepted_merges,
+        widow_repairs_rejected=rejected_repairs,
     )
 
 

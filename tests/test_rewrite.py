@@ -701,6 +701,17 @@ def test_fabricated_thousands_separated_number_is_caught():
     assert check_fabrication(src, "Reviewed 2,500 daily conversations.") == ["2,500"]
 
 
+def test_trailing_plus_on_a_permitted_number_is_still_rejected():
+    """"at least 9,000" does not license "9,000+" — same class as "over 1,000" vs "1,000+"."""
+    src = bullet(
+        "a",
+        "Fine-tuned models on at least 9,000 data points from Spider.",
+        ["fine-tuning", "llm"],
+    )
+    assert check_fabrication(src, "Fine-tuned on 9,000 Spider points.") == []
+    assert check_fabrication(src, "Fine-tuned on 9,000+ Spider points.") == ["9,000+"]
+
+
 def test_comma_splitting_does_not_license_a_new_figure():
     """Splitting on "," must not do what splitting on "." was already forbidden from doing."""
     src = bullet("a", "Cut latency to 96.3 ms across 1,200 requests.", ["performance"])
@@ -952,16 +963,21 @@ def test_a_repair_the_model_ignored_leaves_the_original(rewrite_calls):
     assert outcome.widows_repaired == 0
 
 
-def test_the_repair_pass_cannot_smuggle_in_a_fabrication(rewrite_calls):
-    """Shortening under pressure is exactly when a model invents. The guard still binds."""
+def test_a_fabricating_widow_repair_is_discarded_not_fatal(rewrite_calls):
+    """Shortening under pressure is when a model invents; the guard discards, not aborts."""
     src = [bullet("a", "Built a Python service.", ["python"])]
+    widowed_draft = "Built a Python service. " + _text(180)
     rewrite_calls(
-        _reply(a="Built a Python service. " + _text(180)),
+        _reply(a=widowed_draft),
         _reply(a="Built a Kubernetes service in Python."),
     )
 
-    with pytest.raises(rewrite.FabricationError, match="Kubernetes"):
-        rewrite.rewrite_bullets(src, _reqs(), char_budget=202)
+    outcome = rewrite.rewrite_bullets(src, _reqs(), char_budget=202)
+
+    assert outcome.texts["a"] == widowed_draft
+    assert outcome.widows_repaired == 0
+    assert outcome.widows_remaining == 1
+    assert outcome.widow_repairs_rejected == {"a": ["Kubernetes"]}
 
 
 # --------------------------------------------------------------------------------------

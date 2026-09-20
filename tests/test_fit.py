@@ -529,6 +529,43 @@ def test_fit_stops_growing_after_max_attempts_and_warns(monkeypatch, tmp_path):
     assert any("full" in w for w in result.warnings)
 
 
+def test_fit_warns_when_widow_repair_fabrication_is_discarded(monkeypatch, tmp_path):
+    """A discarded widow-repair candidate completes the run and names the bullet in warnings."""
+    resume = _test_resume()
+    requirements = _requirements()
+
+    def fake_rewrite(
+        bullets,
+        requirements,
+        *,
+        char_budget,
+        shorten_pct=0,
+        repair_widows=True,
+        repair_verbs=True,
+        merge_groups=None,
+        on_event=None,
+    ):
+        """Return one bullet plus a rejected widow repair for the fit warning path."""
+        texts = {b.id: b.text for b in bullets}
+        return RewriteOutcome(
+            texts=texts,
+            widow_repairs_rejected={"exp1_b1": ["Kubernetes"]},
+        )
+
+    monkeypatch.setattr(fit_mod, "rewrite_bullets", fake_rewrite)
+    monkeypatch.setattr(fit_mod.render, "render", lambda *a, **k: tmp_path / "out.docx")
+    monkeypatch.setattr(fit_mod.render, "measure_detail", lambda *a, **k: (1, _FULL_LINES))
+    monkeypatch.setattr(fit_mod.render, "to_pdf", lambda *a, **k: tmp_path / "out.pdf")
+
+    result = fit_mod.fit(resume, requirements, target_pages=1)
+
+    assert result.pages == 1
+    assert any(
+        "Widow repair was discarded" in w and "exp1_b1: Kubernetes" in w
+        for w in result.warnings
+    )
+
+
 def test_fit_growth_ceiling_stops_early_when_entries_are_capped(monkeypatch, tmp_path):
     """A per-entry cap can saturate the achievable selection below the raw bullet pool;
     growth must stop there instead of burning `MAX_GROW_ATTEMPTS` retrying a selection

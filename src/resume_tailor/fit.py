@@ -717,6 +717,16 @@ def fit(
                     f"{'reached the selectable bullet cap' if limit >= growth_ceiling
                        else f'stopped growing after {grow_attempts} attempt(s)'}."
                 )
+            if outcome.widow_repairs_rejected:
+                detail = "; ".join(
+                    f"{bid}: {', '.join(terms)}"
+                    for bid, terms in outcome.widow_repairs_rejected.items()
+                )
+                warnings.append(
+                    f"Widow repair was discarded for {len(outcome.widow_repairs_rejected)} "
+                    f"bullet(s) whose shortened text introduced content absent from the "
+                    f"master resume ({detail}); the original wording was kept."
+                )
             if outcome.widows_remaining:
                 warnings.append(
                     f"{outcome.widows_remaining} bullet(s) still end on a near-empty line, "
