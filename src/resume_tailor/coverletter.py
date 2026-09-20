@@ -294,13 +294,22 @@ def _numbers_not_in_source(
 def _claim_fabrication_offenders(
     paragraphs: list[str],
     source_bullets: list[Bullet],
+    *,
+    first_person_only: bool = True,
 ) -> list[str]:
-    """Run the fabrication guard on sentences that look like first-person claims."""
+    """Run the fabrication guard on claim sentences in ``paragraphs``.
+
+    When ``first_person_only`` is True (the cover-letter default), only sentences that
+    match ``_FIRST_PERSON_VERB`` are checked — company-description prose is exempt.
+    When False (application-answer verification), every sentence is checked, because
+    resume-voice answers ("Led a team of three…") have no first-person pronoun and would
+    otherwise sail through.
+    """
     offenders: list[str] = []
     for para in paragraphs:
         sentences = [s.strip() for s in _SENTENCE_SPLIT.split(para.strip()) if s.strip()]
         for sentence in sentences:
-            if not _FIRST_PERSON_VERB.search(sentence):
+            if first_person_only and not _FIRST_PERSON_VERB.search(sentence):
                 continue
             offenders.extend(_check_fabrication(source_bullets, sentence))
     return list(dict.fromkeys(offenders))
@@ -313,9 +322,9 @@ def _resume_context_bullet(resume: MasterResume) -> Bullet:
     """Pack resume-level proper nouns into one synthetic bullet for the claim guard.
 
     Employer names, titles, schools, and project names live on entry headers, not in
-    bullet text, so ``rewrite._check_fabrication`` would otherwise reject them in cover
-    letters. This stays cover-letter-local — per-bullet rewrite guards keep their narrow
-    contract.
+    bullet text, so ``rewrite._check_fabrication`` would otherwise reject them. Used by
+    cover-letter drafting and by ``check_claims`` (application-answer verification).
+    Per-bullet rewrite guards keep their narrow contract — they do not use this.
     """
     parts: list[str] = []
     for section in resume.sections:
@@ -349,6 +358,40 @@ def _source_bullets(resume: MasterResume, bullets: dict[str, str]) -> list[Bulle
         out.append(bullet.model_copy(update={"text": rewritten}))
     out.append(_resume_context_bullet(resume))
     return out
+
+
+@dataclass(frozen=True)
+class ClaimCheck:
+    """Result of checking free-text application prose against a run's tailored bullets."""
+
+    ok: bool
+    unsupported_terms: list[str] = field(default_factory=list)
+    unsupported_numbers: list[str] = field(default_factory=list)
+
+
+def check_claims(
+    resume: MasterResume,
+    bullets: dict[str, str],
+    jd_text: str,
+    text: str,
+) -> ClaimCheck:
+    """Check application-answer prose against tailored bullets and the posting.
+
+    Unlike the cover-letter path (which only inspects first-person claim sentences),
+    every sentence is checked — application answers are often written in resume voice
+    without "I". Numbers are allowed when present in the tailored bullets or the JD.
+    Pure: no LLM, no disk writes.
+    """
+    source = _source_bullets(resume, bullets)
+    terms = _claim_fabrication_offenders(
+        [text], source, first_person_only=False
+    )
+    numbers = _numbers_not_in_source(text, source, jd_text)
+    return ClaimCheck(
+        ok=not terms and not numbers,
+        unsupported_terms=terms,
+        unsupported_numbers=numbers,
+    )
 
 
 def _validate_posting_fields(

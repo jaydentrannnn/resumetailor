@@ -2447,8 +2447,65 @@ got a proper default stub in the `client` fixture instead of repeating that gap.
 - **Bug:** `DocumentsCard` and `RunHistoryPanel` both used `lg:row-start-7`, so in two-column layout they occupied the same grid cell; history painted on top and hid the documents preview. Single-column mode ignores explicit row pins, so both stacked visibly.
 - **Fix:** Renumbered results rows after removing the cover-letter card from row 5: skills/report → row 5, documents → row 6, history → row 7 (unchanged).
 
+## 2026-09-01 — Widow repair: discard fabricating shortenings instead of aborting
+
+- **Decision:** `_polish`'s widow branch records a fabricating shorten candidate in
+  `RewriteOutcome.widow_repairs_rejected` and keeps the pre-polish text; `fit.fit` emits a
+  `FitResult.warnings` entry naming the bullet id and offending terms. The fabrication guard
+  is unchanged — `9,000+` against "at least 9,000" still fails, same class as `1,000+` vs
+  "over 1,000" in `docs/PLAN.md`.
+- **Why:** The pass already discarded the bad candidate (`continue`) while holding clean text;
+  raising `FabricationError` afterward killed otherwise-good runs (live trigger: `t2s_b1`).
+  Verb swaps and merge already discard on guard failure; widow repair was the lone outlier.
+- **Impact:** Supersedes `docs/PLAN.md` Phase 12 note that "widow fabrication remains a hard
+  failure" — PLAN.md stays append-only; this entry is the current behavior. `--no-widow-repair`
+  remains a CLI/API control but is no longer required to unblock a run over this case.
+
 ## 2026-08-29 — Delete selected runs from history
 
 - **Decision:** `POST /api/jobs/history/delete` removes finished runs' `output/.../jobs/<id>/` directories and drops them from the in-memory queue; the Recent runs panel gets per-row checkboxes, Select all (deletable runs only), and Delete selected with a confirm dialog. Queued/running jobs are skipped (`still active`).
 - **Why:** Users need to clear old runs without hunting files on disk; `DELETE /api/jobs/{id}` remains cancel-only and 409s on terminal jobs.
 - **Tradeoff:** Deleting the run currently on screen clears the results tiles when not busy; active runs cannot be bulk-deleted (use Cancel instead).
+
+## 2026-09-19 — MCP server over HTTP (Claude Desktop front door)
+
+- **Decision:** Add `src/resume_tailor/mcp_server/` as a thin stdio MCP client of the existing
+  FastAPI app, not an in-process mount. Package named `mcp_server` (not `mcp`) to avoid
+  shadowing the third-party SDK. Pin `mcp>=1.2,<2` because mcp 2.x renamed FastMCP.
+- **Why:** Keeps a single owner of `config._ACTIVE` / path rebinding / the job queue. An
+  in-process `/mcp` mount would need a remote bridge for Claude Desktop and would expose a
+  second unauthenticated PII surface — against the deliberate no-CORS choice in `web/app.py`.
+- **Tradeoff:** uvicorn must already be running; the MCP process probes `/api/config` on
+  startup and never spawns the backend itself.
+- **Scope (read plus starting runs):** list/activate profiles, start/wait on runs, read
+  artifacts and application answers, regenerate cover letter, resume facts, verify claim.
+  **Not wrapped:** `PUT /api/master-resume`, merge/import writes, `/api/template/*`,
+  `/api/libraries/*`, `DELETE /api/workspaces/{id}`, history delete.
+- **Follow-up:** Copy `docs/claude_desktop_config.example.json` into
+  `%APPDATA%\Claude\claude_desktop_config.json`, restart Claude Desktop, run one real JD
+  via `tailor_application`, confirm the run appears in the Tailor tab, then `verify_claim`
+  on a fabricated sentence.
+
+## 2026-09-19 — `check_claims` / `POST /api/verify-claim` for application answers
+
+- **Decision:** Add `coverletter.check_claims` (public façade over `_source_bullets`,
+  `_claim_fabrication_offenders(first_person_only=False)`, `_numbers_not_in_source`) and
+  `POST /api/verify-claim`. Keyword-only `first_person_only: bool = True` on
+  `_claim_fabrication_offenders` keeps the cover-letter path byte-identical.
+- **Why:** Application answers are often resume-voice ("Led a team…") with no first-person
+  pronoun; the cover-letter filter would skip them and let invented tech sail through.
+  Extends the fabrication-guard property to agent-written free text outside the pipeline.
+- **Spec delta:** `_resume_context_bullet` is no longer cover-letter-only — also used by
+  `check_claims`. Helpers stay private; one new public symbol.
+- **Tradeoff:** Checking every sentence is stricter than cover letters (company-description
+  prose would also be checked) — correct for `verify_claim`'s input contract.
+
+## 2026-09-19 — `read_artifact` skips base64 for large binaries
+
+- **Decision:** `read_artifact` only inlines base64 when raw size ≤ 200KB; `.docx`/`.pdf`
+  return `disk_path` + `download_url` instead. Markdown returns `text`. `get_artifact_paths`
+  now includes absolute `download_urls` and a hint to prefer paths over `read_artifact`.
+- **Why:** Claude Desktop rejects tool results over 1MB; a tailored resume `.docx` as
+  base64 routinely exceeds that (`resume_docx` for job `e9945b273bee`).
+- **Tradeoff:** The agent cannot embed the binary in-chat — it must point the user at the
+  file path or `http://127.0.0.1:8000/api/jobs/.../download.docx`.

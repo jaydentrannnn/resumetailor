@@ -287,6 +287,23 @@ class CoverLetterRegenerateRequest(BaseModel):
     instruction: str = ""
 
 
+class VerifyClaimRequest(BaseModel):
+    """Body for `POST /api/verify-claim`: check free-text against a finished run."""
+
+    job_id: str = Field(min_length=1, max_length=64)
+    #: Application-answer or similar prose. Bounded so a runaway paste cannot flood
+    #: the fabrication tokeniser; 10k covers any real form field.
+    text: str = Field(min_length=1, max_length=10_000)
+
+
+class VerifyClaimResponse(BaseModel):
+    """Whether ``text`` is supported by the run's tailored bullets and JD numbers."""
+
+    ok: bool
+    unsupported_terms: list[str] = Field(default_factory=list)
+    unsupported_numbers: list[str] = Field(default_factory=list)
+
+
 class JobStatusResponse(BaseModel):
     """Current state of one queued or finished run."""
 

@@ -849,6 +849,30 @@ def regenerate_cover_letter(
     return out
 
 
+def verify_claim(job_id: str, text: str) -> coverletter.ClaimCheck:
+    """Check free-text application prose against a finished run's tailored bullets.
+
+    Reloads ``bullets.json`` and ``jd.txt`` from the job directory (same artifacts
+    ``regenerate_cover_letter`` uses) and runs ``coverletter.check_claims``. Pure —
+    no LLM, no disk writes. Raises ``FileNotFoundError`` when the run has no saved
+    bullets or JD.
+    """
+    out_dir = config.OUTPUT_DIR / "jobs" / job_id
+    bullets_path = out_dir / "bullets.json"
+    if not bullets_path.exists():
+        raise FileNotFoundError(
+            "This job has no saved tailored bullets for claim verification."
+        )
+    jd_path = out_dir / "jd.txt"
+    if not jd_path.exists():
+        raise FileNotFoundError("This job has no saved job description.")
+
+    bullets = json.loads(bullets_path.read_text(encoding="utf-8"))
+    jd_text = jd_path.read_text(encoding="utf-8")
+    resume = data.load()
+    return coverletter.check_claims(resume, bullets, jd_text, text)
+
+
 def _to_report_out(data: report.RunReport) -> RunReportOut:
     """Convert the dataclass report into the Pydantic shape the API serves."""
     return RunReportOut(

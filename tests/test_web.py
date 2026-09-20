@@ -3860,3 +3860,62 @@ def test_profile_template_install_works_on_a_freshly_created_profile(
     )
     assert res.status_code == 200, res.json()
     assert res.json()["ok"] is True
+
+
+def _seed_run_for_verify(job_id: str = "verify01") -> Path:
+    """Write bullets.json + jd.txt under OUTPUT_DIR/jobs/<id> for verify-claim tests."""
+    out_dir = config.OUTPUT_DIR / "jobs" / job_id
+    out_dir.mkdir(parents=True, exist_ok=True)
+    resume = synthetic_resume()
+    bullets = {b.id: b.text for b in resume.all_bullets()}
+    (out_dir / "bullets.json").write_text(json.dumps(bullets), encoding="utf-8")
+    (out_dir / "jd.txt").write_text(
+        "Software Engineer role requiring Python and FastAPI.",
+        encoding="utf-8",
+    )
+    return out_dir
+
+
+def test_verify_claim_flags_unsupported_term(client):
+    """POST /api/verify-claim returns ok=false when prose invents a technology."""
+    c, _ = client
+    _seed_run_for_verify()
+    res = c.post(
+        "/api/verify-claim",
+        json={
+            "job_id": "verify01",
+            "text": "Led a Kubernetes migration for production services.",
+        },
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["ok"] is False
+    assert any(t.lower() == "kubernetes" for t in body["unsupported_terms"])
+
+
+def test_verify_claim_ok_for_supported_prose(client):
+    """POST /api/verify-claim returns ok=true when prose stays within source material."""
+    c, _ = client
+    _seed_run_for_verify()
+    res = c.post(
+        "/api/verify-claim",
+        json={
+            "job_id": "verify01",
+            "text": "Improved reliability and throughput for production services at Example Corp.",
+        },
+    )
+    assert res.status_code == 200
+    body = res.json()
+    assert body["ok"] is True
+    assert body["unsupported_terms"] == []
+    assert body["unsupported_numbers"] == []
+
+
+def test_verify_claim_404_when_job_missing_artifacts(client):
+    """POST /api/verify-claim 404s when the job has no saved bullets."""
+    c, _ = client
+    res = c.post(
+        "/api/verify-claim",
+        json={"job_id": "no-such-job", "text": "Anything at all."},
+    )
+    assert res.status_code == 404

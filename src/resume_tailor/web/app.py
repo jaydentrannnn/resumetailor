@@ -48,7 +48,7 @@ from resume_tailor.data import MasterResume
 from resume_tailor.events import ProgressEvent
 from resume_tailor.template_profile import TemplateProfile, active_layout
 from resume_tailor.web import template_ops
-from resume_tailor.web.jobs import Job, get_queue, regenerate_cover_letter
+from resume_tailor.web.jobs import Job, get_queue, regenerate_cover_letter, verify_claim
 from resume_tailor.web.schemas import (
     ConfigResponse,
     CoverLetterOut,
@@ -94,6 +94,8 @@ from resume_tailor.web.schemas import (
     TemplatePreviewDraftRequest,
     TemplateRemapRequest,
     ValidateResponse,
+    VerifyClaimRequest,
+    VerifyClaimResponse,
     WorkspaceActivateResponse,
     WorkspaceCreateRequest,
     WorkspaceEntryOut,
@@ -1020,6 +1022,24 @@ def regenerate_job_cover_letter(
     if resolved.live is not None:
         resolved.live.cover_letter = out
     return out
+
+
+@app.post("/api/verify-claim", response_model=VerifyClaimResponse)
+def post_verify_claim(body: VerifyClaimRequest) -> VerifyClaimResponse:
+    """Check free-text application prose against a finished run's tailored bullets.
+
+    Pure and read-only — deliberately does not check ``busy()``, so an agent can
+    verify draft answers while another job is running.
+    """
+    try:
+        result = verify_claim(body.job_id, body.text)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return VerifyClaimResponse(
+        ok=result.ok,
+        unsupported_terms=list(result.unsupported_terms),
+        unsupported_numbers=list(result.unsupported_numbers),
+    )
 
 
 @app.get("/api/master-resume")

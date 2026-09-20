@@ -68,8 +68,11 @@ stop. That is the bug this project exists to avoid.
   It decomposes compounds on both sides (`Python/FastAPI`, `Recall@k/MRR`) and matches
   plurals; only letter-bearing parts license a match (`96.3` never licenses a `3`), and
   numbers are checked whole (`99%`/`GPT-4.1` still fail if fabricated) — both pinned by
-  tests. A fabricating draft gets **one** targeted retry naming the offending bullet ids;
-  a second fabrication, or a dropped id, raises `FabricationError`. Cover letters use a
+  tests. A fabricating first draft gets **one** targeted retry naming the offending bullet
+  ids; a second fabrication, or a dropped id, raises `FabricationError`. A fabricating
+  widow-repair candidate is discarded and reported as a run warning instead — the
+  pre-polish text is already guard-clean — while the main rewrite path still raises after
+  its one retry. Cover letters use a
   **narrower** guard in `coverletter.py`: numbers and first-person claim sentences are
   checked against the tailored bullets plus resume entry headers (employer/title/school/
   project names packed into a synthetic context bullet — not the JD's vocabulary) and the
@@ -132,6 +135,7 @@ python -m resume_tailor.data --validate   # validate master_resume.json
 pytest                                    # full suite (no Word or API required)
 uvicorn resume_tailor.web.app:app --reload --app-dir src   # API + SPA (build frontend first)
 docker compose up --build                 # one-click: UI at http://localhost:8000
+python -m resume_tailor.mcp_server        # Claude Desktop MCP (uvicorn must already be up)
 ```
 
 `tailor.py`, `build_template.py`, and `calibrate.py` all take `--workspace <id>` to run
@@ -426,6 +430,15 @@ fixed overhead the fit loop never trims.
   queues jobs into the same pipeline. Jobs run **one at a time** because `config._ACTIVE` is
   process-wide. `events.py`'s one-way `ProgressEvent` callback is optional everywhere, which
   is what keeps it out of the callback-free CLI test suite.
+- **MCP is a third front door, also not a second pipeline** — `src/resume_tailor/mcp_server/`
+  is a stdio MCP server for Claude Desktop that talks plain HTTP to the running uvicorn
+  process (`RESUME_TAILOR_API`, default `http://127.0.0.1:8000`). It never owns
+  `config._ACTIVE`, never starts uvicorn, and never wraps write routes for master resume /
+  template / vocabulary libraries / workspace delete. Scope is read-plus-starting-runs:
+  list/activate profiles, `tailor_application`, read runs/artifacts, regenerate cover
+  letter, `get_resume_facts`, `verify_claim`. Example Claude Desktop entry:
+  `docs/claude_desktop_config.example.json`. Run with
+  `python -m resume_tailor.mcp_server` (stderr only — stdout is JSON-RPC).
 
 ## Profiles (workspaces)
 

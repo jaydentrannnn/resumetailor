@@ -9,6 +9,7 @@ pypdf>=5.0
 pydantic>=2.9
 python-dotenv>=1.0
 pytest>=8.0
+pytest-asyncio>=0.24
 # Dev tooling: lint/format + static typing. Config lives in pyproject.toml.
 ruff>=0.8
 mypy>=1.13
@@ -16,3 +17,7 @@ mypy>=1.13
 fastapi>=0.115
 uvicorn[standard]>=0.32
 python-multipart>=0.0.12
+# Claude Desktop / MCP front door (src/resume_tailor/mcp_server). Thin HTTP client
+# over the web API — not required for the CLI or SPA. Pin <2: mcp 2.x renamed
+# FastMCP to MCPServer and changed the stdio entry surface.
+mcp>=1.2,<2

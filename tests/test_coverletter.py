@@ -240,3 +240,57 @@ def test_invented_tool_still_rejected():
         source,
     )
     assert any(term.lower() == "kubernetes" for term in offenders)
+
+
+def test_check_claims_flags_resume_voice_invention():
+    """Resume-voice sentences (no 'I') are checked — the gap the cover-letter filter leaves."""
+    resume = synthetic_resume()
+    result = coverletter.check_claims(
+        resume,
+        _bullets(resume),
+        jd_text="Software Engineer role requiring Python.",
+        text="Led a team of three engineers on a Kubernetes migration.",
+    )
+    assert result.ok is False
+    assert any(term.lower() == "kubernetes" for term in result.unsupported_terms)
+
+
+def test_check_claims_flags_first_person_invention():
+    """First-person claim sentences are still flagged under check_claims."""
+    resume = synthetic_resume()
+    result = coverletter.check_claims(
+        resume,
+        _bullets(resume),
+        jd_text="Software Engineer role requiring Python.",
+        text="I built Kubernetes clusters for production workloads.",
+    )
+    assert result.ok is False
+    assert any(term.lower() == "kubernetes" for term in result.unsupported_terms)
+
+
+def test_check_claims_flags_invented_percentage():
+    """A percentage absent from bullets and JD lands in unsupported_numbers."""
+    resume = synthetic_resume()
+    result = coverletter.check_claims(
+        resume,
+        _bullets(resume),
+        jd_text="Software Engineer role requiring Python.",
+        text="Improved reliability of production services by 47%.",
+    )
+    assert result.ok is False
+    assert any("47" in n for n in result.unsupported_numbers)
+
+
+def test_check_claims_allows_number_from_jd():
+    """A number present only in the JD is allowed (same rule as cover-letter numbers)."""
+    resume = synthetic_resume()
+    result = coverletter.check_claims(
+        resume,
+        _bullets(resume),
+        jd_text="We process 10,000 requests per second with Python.",
+        text="Improved reliability for production services handling 10,000 requests.",
+    )
+    assert result.unsupported_numbers == []
+    # "requests" / "handling" may or may not be in source; focus on the number rule.
+    assert "10,000" not in result.unsupported_numbers
+    assert "10000" not in {n.replace(",", "") for n in result.unsupported_numbers}
