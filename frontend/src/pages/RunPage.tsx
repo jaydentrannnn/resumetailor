@@ -13,7 +13,7 @@ import { SkillsCard } from "../components/SkillsCard";
 import { type RunProgress, runProgress } from "../lib/runProgress";
 import { DEFAULT_SETTINGS, useRunState } from "../state/runState";
 import { useWorkspaceState } from "../state/workspaceState";
-import { useEffect, useMemo, useRef, useState } from "react";
+import { useEffect, useId, useMemo, useRef, useState } from "react";
 
 /**
  * Main run page: paste a JD, adjust settings, watch progress, download results.
@@ -22,12 +22,14 @@ import { useEffect, useMemo, useRef, useState } from "react";
  * lose the JD, settings, SSE stream, or results. PDF auto-download is also
  * owned there so a tab remount cannot re-fire it.
  *
- * Layout at `lg` is an explicit grid: Settings and What-to-include sit on row 1
- * (set once, then left alone), Job description and Progress share row 2, the
- * submit button spans both columns on row 3, then results / preview / history.
- * Placement is stated per tile (`col-start`/`row-start`) because several tiles
- * render conditionally — auto-flow would reshuffle the rest the moment one
- * disappeared.
+ * Layout at `lg` is an explicit grid: Run options and What-to-include share
+ * row 1 (set once, then left alone), Job description and Progress sit on row 2
+ * — the primary input and its feedback — the submit button spans both columns
+ * on row 3, then results / preview / history. Source order matches this on
+ * mobile too, where the grid collapses to one column and row-start has no
+ * effect. Placement is stated per tile (`col-start`/`row-start`) because
+ * several tiles render conditionally — auto-flow would reshuffle the rest the
+ * moment one disappeared.
  */
 export function RunPage() {
   const {
@@ -99,9 +101,10 @@ export function RunPage() {
     <form
       onSubmit={onSubmit}
       onKeyDown={onFormKeyDown}
-      className="grid gap-x-8 gap-y-5 lg:grid-cols-[1.1fr_0.9fr]"
+      className="grid grid-cols-1 gap-x-8 gap-y-5 lg:grid-cols-[1.1fr_0.9fr]"
     >
       <h1 className="sr-only">Tailor resume</h1>
+
       <div className="lg:col-start-1 lg:row-start-1">
         {/* Native fieldset disabling: blocks every descendant control until
             settings finish loading, so no edit can race the initial fetch and
@@ -118,7 +121,8 @@ export function RunPage() {
         </fieldset>
       </div>
 
-      {/* Settings stay above the JD at every width — set once, then focus below. */}
+      {/* Job description is the primary input — it and its Progress feedback sit
+          on row 2 at `lg`, after the settings panels. */}
       <section className="rounded-xl border border-line bg-panel p-5 shadow-sm lg:col-start-1 lg:row-start-2">
         <div className="mb-3 flex items-center justify-between gap-3">
           <h2 className="font-display text-xl font-semibold">Job description</h2>
@@ -156,7 +160,11 @@ export function RunPage() {
             <div className="flex items-baseline justify-between gap-3">
               <h2 className="font-display text-xl font-semibold">Progress</h2>
               <div className="flex items-center gap-3">
-                <span className="text-sm text-ink-muted" role="status" aria-live="polite">
+                <span
+                  className="text-sm text-ink-muted tabular-nums"
+                  role="status"
+                  aria-live="polite"
+                >
                   {progress.label}
                   {busy && elapsed > 0
                     ? ` · watching ${formatElapsed(elapsed)}`
@@ -188,7 +196,7 @@ export function RunPage() {
             >
               {events.map((ev, i) => (
                 <li key={`${ev.stage}-${i}`} className="flex gap-2">
-                  <span className="mt-0.5 shrink-0 rounded bg-accent-soft px-1.5 py-0.5 text-[10px] font-semibold uppercase tracking-wide text-accent">
+                  <span className="mt-0.5 shrink-0 rounded bg-accent-soft px-1.5 py-0.5 text-micro font-semibold uppercase tracking-wide text-accent">
                     {ev.stage}
                   </span>
                   <span>{ev.message}</span>
@@ -206,7 +214,7 @@ export function RunPage() {
           </section>
         ) : (
           config && (
-            <section className="rounded-xl border border-dashed border-line bg-panel/60 p-5 text-sm text-ink-muted">
+            <section className="rounded-xl border border-dashed border-line bg-panel/60 p-4 text-sm text-ink-muted">
               <p>
                 Measuring with <strong className="text-ink">{config.pdf_backend}</strong>
                 {config.calibration_source === "fallback"
@@ -230,7 +238,7 @@ export function RunPage() {
       <button
         type="submit"
         disabled={busy || !jdText.trim() || !settingsLoaded || switching}
-        className="w-full rounded-lg bg-accent px-4 py-3 text-sm font-semibold text-on-accent transition hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50 lg:col-start-1 lg:col-span-2 lg:row-start-3"
+        className="w-full rounded-lg bg-accent px-4 py-3 text-sm font-semibold text-on-accent transition-[filter] duration-[var(--dur-short)] ease-out hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50 lg:col-start-1 lg:col-span-2 lg:row-start-3"
       >
         {busy
           ? "Tailoring…"
@@ -344,7 +352,7 @@ function ProgressBar({
           failed
             ? "h-full rounded-full bg-danger"
             : progress.indeterminate
-              ? "rt-progress-indeterminate h-full w-1/3 rounded-full bg-accent [animation:rt-progress-slide_1.2s_ease-in-out_infinite]"
+              ? "rt-progress-indeterminate h-full w-1/3 rounded-full bg-accent [animation:rt-progress-slide_1.2s_var(--ease-in-out)_infinite]"
               : "h-full rounded-full bg-accent transition-[width] duration-500 ease-out"
         }
         style={progress.indeterminate ? undefined : { width: `${pct}%` }}
@@ -364,6 +372,7 @@ function SettingsPanel({
 }) {
   /** Grouped run knobs mirroring the CLI flags, with short help under each control. */
   const [advancedOpen, setAdvancedOpen] = useState(false);
+  const advancedId = useId();
 
   function set<K extends keyof JobSettings>(key: K, value: JobSettings[K]) {
     onChange({ ...settings, [key]: value });
@@ -437,7 +446,7 @@ function SettingsPanel({
 
       <fieldset className="mt-4 space-y-3">
         <legend className="text-sm font-semibold text-ink">Output</legend>
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field label="Pages" help="Target page count for the tailored resume.">
             <input
               type="number"
@@ -494,7 +503,7 @@ function SettingsPanel({
 
       <fieldset className="mt-6 space-y-3">
         <legend className="text-sm font-semibold text-ink">Models</legend>
-        <div className="grid gap-4 sm:grid-cols-2">
+        <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
           <Field
             label="Model profile"
             help={
@@ -557,12 +566,14 @@ function SettingsPanel({
         <button
           type="button"
           onClick={() => setAdvancedOpen((o) => !o)}
+          aria-expanded={advancedOpen}
+          aria-controls={advancedId}
           className="text-sm font-semibold text-ink hover:text-accent"
         >
           Advanced {advancedOpen ? "▾" : "▸"}
         </button>
         {advancedOpen && (
-          <fieldset className="mt-3 space-y-3">
+          <fieldset id={advancedId} className="mt-3 space-y-3">
             <Field
               label={`Page fill target (${Math.round(fillValue * 100)}%)`}
               help="Grow when measured fill is below this. Lower = sparser page, fewer rewrites."
@@ -749,7 +760,7 @@ function ReportCard({ report }: { report: RunReport }) {
         <p className="text-sm text-ink-muted">{report.seniority}</p>
       </div>
 
-      <dl className="mt-4 grid grid-cols-2 gap-3 text-sm sm:grid-cols-5">
+      <dl className="mt-4 grid grid-cols-2 gap-3 text-sm tabular-nums sm:grid-cols-5">
         <Stat
           label="Must-haves"
           value={pct != null ? `${pct}%` : "n/a"}
@@ -824,7 +835,7 @@ function ReportCard({ report }: { report: RunReport }) {
         );
       })()}
 
-      <div className="mt-4 grid gap-3 text-sm sm:grid-cols-2">
+      <div className="mt-4 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2">
         <EntryList title="Experience" entries={report.experience} />
         <EntryList title="Projects" entries={report.projects} />
       </div>

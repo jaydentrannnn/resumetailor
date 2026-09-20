@@ -185,12 +185,12 @@ function HistoryRow({
             <span className="truncate font-medium text-ink">{run.title}</span>
             <StatusPill status={run.status} />
             {active && (
-              <span className="rounded bg-accent-soft px-1.5 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wide text-accent">
+              <span className="rounded bg-accent-soft px-1.5 py-0.5 text-micro font-semibold uppercase tracking-wide text-accent">
                 Showing
               </span>
             )}
           </div>
-          <p className="mt-0.5 text-xs text-ink-muted">
+          <p className="mt-0.5 text-xs tabular-nums text-ink-muted">
             {when}
             {run.pages != null ? ` · ${run.pages} page${run.pages === 1 ? "" : "s"}` : ""}
             {coverage ? ` · must-haves ${coverage}` : ""}
@@ -239,7 +239,7 @@ function StatusPill({ status }: { status: RunHistoryEntry["status"] }) {
           : "bg-warn-soft text-warn";
   return (
     <span
-      className={`rounded-full px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wide ${tone}`}
+      className={`rounded-full px-2 py-0.5 text-micro font-semibold uppercase tracking-wide ${tone}`}
     >
       {status}
     </span>

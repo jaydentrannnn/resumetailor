@@ -55,9 +55,20 @@ export function CopyButton({
     <button
       type="button"
       onClick={() => void onCopy()}
-      className="shrink-0 rounded-md border border-line px-2.5 py-1 text-xs font-medium text-ink-muted hover:border-accent hover:text-accent"
+      className="inline-grid shrink-0 place-items-center whitespace-nowrap rounded-md border border-line px-2.5 py-1 text-xs font-medium text-ink-muted hover:border-accent hover:text-accent"
     >
-      {copied ? "Copied" : label}
+      {/* Both labels occupy the same grid cell so the track sizes to the wider of
+          the two — visibility, not display, so the button never reflows its
+          neighbours when the label swaps. */}
+      <span className={`col-start-1 row-start-1 ${copied ? "invisible" : ""}`} aria-hidden>
+        {label}
+      </span>
+      <span className={`col-start-1 row-start-1 ${copied ? "" : "invisible"}`} aria-hidden>
+        Copied
+      </span>
+      <span role="status" aria-live="polite" className="sr-only">
+        {copied ? "Copied to clipboard" : ""}
+      </span>
     </button>
   );
 }

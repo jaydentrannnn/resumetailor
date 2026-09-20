@@ -57,7 +57,7 @@ export function TemplatePage() {
           <p className="mt-4 text-sm text-ink-muted">Loading template info…</p>
         ) : info ? (
           <>
-            <dl className="mt-4 grid gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
+            <dl className="mt-4 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
               <MetaItem label="Active label" value={info.active_label || "—"} />
               <MetaItem
                 label="Tagged template"
@@ -128,8 +128,8 @@ export function TemplatePage() {
                 <iframe
                   key={previewKey}
                   title="Template preview"
-                  src={`${templatePreviewUrl()}?v=${previewKey}`}
-                  className="h-[70vh] w-full bg-white"
+                  src={`${templatePreviewUrl()}?v=${previewKey}#toolbar=0&navpanes=0`}
+                  className="h-[70vh] w-full bg-doc-preview"
                 >
                   <p className="p-4 text-sm text-ink-muted">
                     PDF preview is not available in this browser.{" "}

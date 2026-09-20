@@ -173,7 +173,7 @@ export function SectionMapStep({
         <p className="text-xs font-medium uppercase tracking-wide text-ink-muted">
           Sections to include
         </p>
-        <div className="mt-2 grid gap-2 sm:grid-cols-2">
+        <div className="mt-2 grid grid-cols-1 gap-2 sm:grid-cols-2">
           {SECTION_ROWS.map(([key, label]) => {
             const detected = sectionsByKey.get(key) ?? [];
             const checked = enabled[key];

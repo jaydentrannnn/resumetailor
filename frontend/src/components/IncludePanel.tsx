@@ -156,7 +156,7 @@ export function IncludePanel({
                 aria-label={`Move ${CONTACT_FIELD_LABELS[field]} up`}
                 disabled={i === 0}
                 onClick={() => moveContactField(i, -1)}
-                className="rounded border border-line px-2 py-0.5 text-xs disabled:opacity-30"
+                className="flex min-h-6 min-w-6 items-center justify-center rounded border border-line text-xs disabled:opacity-30"
               >
                 ↑
               </button>
@@ -166,7 +166,7 @@ export function IncludePanel({
                 aria-label={`Move ${CONTACT_FIELD_LABELS[field]} down`}
                 disabled={i >= includedOrder.length - 1}
                 onClick={() => moveContactField(i, 1)}
-                className="rounded border border-line px-2 py-0.5 text-xs disabled:opacity-30"
+                className="flex min-h-6 min-w-6 items-center justify-center rounded border border-line text-xs disabled:opacity-30"
               >
                 ↓
               </button>
@@ -200,12 +200,21 @@ export function IncludePanel({
       <fieldset className="mt-5 space-y-2">
         <legend className="text-sm font-semibold text-ink">Section order</legend>
         {!isGeneric && (
-          <p className="text-xs text-warn">
-            This template renders sections in a fixed order baked into the file — reordering
-            here is a per-run override and has no effect until the template is re-imported
-            through the Template tab in multi-section (&quot;generic&quot;) mode. Stored section
-            order lives on the Master resume tab.
-          </p>
+          <details className="group text-xs">
+            <summary className="flex cursor-pointer list-none items-center gap-1.5 text-warn">
+              <span>Reordering here has no effect on this template.</span>
+              <span className="text-ink-muted underline-offset-2 group-open:hidden">Why?</span>
+              <span className="hidden text-ink-muted underline-offset-2 group-open:inline">
+                Hide
+              </span>
+            </summary>
+            <p className="mt-1.5 text-ink-muted">
+              This template renders sections in a fixed order baked into the file — reordering
+              here is a per-run override and has no effect until the template is re-imported
+              through the Template tab in multi-section (&quot;generic&quot;) mode. Stored section
+              order lives on the Master resume tab.
+            </p>
+          </details>
         )}
         {isGeneric && (
           <p className="text-xs text-ink-muted">
@@ -228,7 +237,7 @@ export function IncludePanel({
                 aria-label={`Move ${section.title} up`}
                 disabled={!isGeneric || i === 0}
                 onClick={() => moveSection(i, -1)}
-                className="rounded border border-line px-2 py-0.5 text-xs disabled:opacity-30"
+                className="flex min-h-6 min-w-6 items-center justify-center rounded border border-line text-xs disabled:opacity-30"
               >
                 ↑
               </button>
@@ -238,7 +247,7 @@ export function IncludePanel({
                 aria-label={`Move ${section.title} down`}
                 disabled={!isGeneric || i >= orderedSections.length - 1}
                 onClick={() => moveSection(i, 1)}
-                className="rounded border border-line px-2 py-0.5 text-xs disabled:opacity-30"
+                className="flex min-h-6 min-w-6 items-center justify-center rounded border border-line text-xs disabled:opacity-30"
               >
                 ↓
               </button>

@@ -15,7 +15,7 @@ import { ThemeProvider } from "./state/themeState";
 import { WorkspaceProvider, useWorkspaceState } from "./state/workspaceState";
 
 const navLinkClassName = ({ isActive }: { isActive: boolean }) =>
-  `rounded-md px-3 py-1.5 text-sm font-medium transition ${
+  `whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-colors duration-[var(--dur-short)] ease-out ${
     isActive
       ? "bg-accent text-on-accent"
       : "text-ink-muted hover:bg-accent-soft hover:text-ink"
@@ -97,29 +97,36 @@ function Shell() {
     <div className="min-h-screen">
       <header className="border-b border-line/80 bg-panel/80 backdrop-blur-sm">
         <div className="mx-auto flex max-w-6xl flex-wrap items-end justify-between gap-4 px-6 py-5">
-          <div>
-            <p className="font-display text-3xl font-bold tracking-tight text-ink">
+          {/* min-w-0 lets this flex item shrink below its text's max-content width —
+              without it, a flex child's default min-width:auto refuses to shrink past
+              the longest unwrapped line, which silently overflowed the 320px viewport
+              once overflow-x:clip stopped it from being visible via horizontal scroll. */}
+          <div className="min-w-0">
+            <p className="font-display text-3xl font-bold tracking-tight text-ink [overflow-wrap:anywhere]">
               ResumeTailor
             </p>
             <p className="mt-1 text-sm text-ink-muted">
               Tailor your resume to a posting without changing its look.
             </p>
           </div>
-          <div className="flex flex-wrap items-end gap-4">
+          <div className="flex min-w-0 flex-wrap items-end gap-4">
             <ThemeToggle />
             <ProfileSwitcher />
-            <nav className="flex gap-1 pb-1">
+            {/* flex-wrap so four nav pills + two utility controls never force the
+                header wider than a 320px viewport — the prior unwrapped row was
+                the app's one real horizontal-scroll bug. */}
+            <nav className="flex flex-wrap gap-1 pb-1">
               <NavLink to="/" end className={navLinkClassName}>
                 Tailor
               </NavLink>
               <NavLink to="/editor" className={navLinkClassName}>
-                Master resume
+                Resume
               </NavLink>
               <NavLink to="/template" className={navLinkClassName}>
                 Template
               </NavLink>
               <NavLink to="/vocabulary" className={navLinkClassName}>
-                Vocabulary
+                Vocab
               </NavLink>
             </nav>
           </div>

@@ -55,6 +55,18 @@ export function DocumentsCard({ jobId, coverLetter, onCoverRegenerated }: Props)
             role="tablist"
             aria-label="Documents"
             className="flex flex-wrap gap-2"
+            onKeyDown={(e) => {
+              /** Roving-tabindex arrow navigation, as `role="tablist"` promises. */
+              if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
+              e.preventDefault();
+              const next = tab === "resume" ? "cover" : "resume";
+              setTab(next);
+              (
+                e.currentTarget.querySelector(
+                  `#documents-tab-${next}`,
+                ) as HTMLElement | null
+              )?.focus();
+            }}
           >
             <PreviewTabButton
               id="documents-tab-resume"
@@ -157,10 +169,24 @@ function PdfFrame({
   title: string;
   src: string;
 }) {
-  /** Single embedded PDF viewer for the active document tab. */
+  /**
+   * Single embedded PDF viewer for the active document tab.
+   *
+   * `#toolbar=0&navpanes=0` hides Chrome's own PDF chrome (dark toolbar +
+   * thumbnail rail) inside the embed — it's the viewer's UI, not this page's,
+   * and at full chrome it was the single darkest, most alien element on an
+   * otherwise cream/editorial page. "Open in new tab" (elsewhere on this card)
+   * still points at the bare URL, so a real full viewer with its own
+   * download/print controls is one click away.
+   */
   return (
     <div className="overflow-hidden rounded-lg border border-line bg-paper/40">
-      <iframe key={iframeKey} title={title} src={src} className="h-[70vh] w-full bg-white">
+      <iframe
+        key={iframeKey}
+        title={title}
+        src={`${src}#toolbar=0&navpanes=0`}
+        className="h-[70vh] w-full bg-doc-preview"
+      >
         <p className="p-4 text-sm text-ink-muted">
           PDF preview is not available in this browser.{" "}
           <a href={src} target="_blank" rel="noreferrer" className="text-accent underline">
@@ -194,6 +220,7 @@ function PreviewTabButton({
       id={id}
       aria-selected={selected}
       aria-controls={panelId}
+      tabIndex={selected ? 0 : -1}
       onClick={onSelect}
       className={
         selected

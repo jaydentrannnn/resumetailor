@@ -147,7 +147,7 @@ export function PackEditor({
         <p className="mt-4 text-sm text-ink-muted">Loading pack…</p>
       ) : (
         <form onSubmit={onSubmit} className="mt-4 space-y-4">
-          <div className="grid gap-4 sm:grid-cols-2">
+          <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
             <label className="block text-sm">
               <span className="mb-1 block text-ink-muted">Label</span>
               <input

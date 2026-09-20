@@ -22,7 +22,7 @@ export function ThemeToggle() {
       title={`Theme: ${label}. Click to cycle System → Light → Dark.`}
       aria-label={`Theme ${label}. Click to change.`}
     >
-      {label}
+      <span className="text-ink-muted">Theme</span> {label}
     </button>
   );
 }

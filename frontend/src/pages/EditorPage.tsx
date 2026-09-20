@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { ChipListField } from "../components/ChipListField";
 import { ImportResumePanel } from "../components/ImportResumePanel";
 import { AddButton, EntryControls } from "../components/ListControls";
@@ -45,6 +45,8 @@ import {
 import { useConfirm } from "../state/confirmState";
 import { useEditorState } from "../state/editorState";
 
+type UndoToast = { id: number; message: string; snapshot: MasterResume };
+
 /**
  * Structured editor for data/master_resume.json — validates through the real Pydantic models.
  *
@@ -76,6 +78,59 @@ export function EditorPage() {
 
   const takenBulletIds = resume ? collectBulletIds(resume) : new Set<string>();
   const takenEntryIds = resume ? collectEntryIds(resume) : new Set<string>();
+
+  const [toasts, setToasts] = useState<UndoToast[]>([]);
+  const nextToastId = useRef(0);
+  const timersRef = useRef(new Map<number, ReturnType<typeof setTimeout>>());
+  // Mirrors `resume` between renders so a removal handler several components deep
+  // (which only has its own section, not the full document) can still snapshot the
+  // whole resume for Undo without every list component threading `resume` itself.
+  const resumeRef = useRef(resume);
+  useEffect(() => {
+    resumeRef.current = resume;
+  }, [resume]);
+
+  useEffect(
+    () => () => {
+      for (const timer of timersRef.current.values()) clearTimeout(timer);
+    },
+    [],
+  );
+
+  function dismissToast(id: number) {
+    setToasts((prev) => prev.filter((t) => t.id !== id));
+    const timer = timersRef.current.get(id);
+    if (timer) {
+      clearTimeout(timer);
+      timersRef.current.delete(id);
+    }
+  }
+
+  /**
+   * Register an already-applied removal for Undo. Nothing in this editor persists
+   * until the explicit Save button, so a confirmation modal on every row delete was
+   * asking the user to confirm an edit to their own draft — this replaces that with
+   * optimistic delete + a 6s Undo, restoring the exact pre-removal resume snapshot.
+   * Callers invoke this *before* applying their own removal, in the same synchronous
+   * click handler — `resumeRef` only updates via the effect above, which runs after
+   * this handler returns, so it still holds the pre-removal value at capture time.
+   */
+  function pushUndo(message: string) {
+    if (!resumeRef.current) return;
+    const snapshot = resumeRef.current;
+    const id = nextToastId.current++;
+    setToasts((prev) => [...prev, { id, message, snapshot }]);
+    timersRef.current.set(
+      id,
+      setTimeout(() => dismissToast(id), 6000),
+    );
+  }
+
+  function undoToast(id: number) {
+    const toast = toasts.find((t) => t.id === id);
+    if (toast) setResume(toast.snapshot);
+    dismissToast(id);
+  }
 
   if (!resume) {
     return (
@@ -109,8 +164,13 @@ export function EditorPage() {
   }
 
   return (
-    <div className="space-y-6">
-      <div className="sticky top-0 z-20 -mx-6 border-b border-line/80 bg-paper/85 px-6 py-3 backdrop-blur-sm">
+    <>
+      <div className="space-y-6">
+      {/* bg-panel (not bg-paper/85) so the sticky bar reads as a toolbar sitting
+          above the page, not a translucent cream-on-cream band that only shows
+          up as a faint seam. shadow-sm carries the same "this is elevated"
+          signal the rest of the app's panels use. */}
+      <div className="sticky top-0 z-20 -mx-6 border-b border-line bg-panel px-6 py-3 shadow-sm">
         <div className="flex flex-wrap items-center justify-between gap-3">
           <div>
             <h1 className="font-display text-2xl font-semibold">Master resume</h1>
@@ -170,7 +230,7 @@ export function EditorPage() {
 
       <section className="rounded-xl border border-line bg-panel p-5 shadow-sm">
         <h2 className="font-display text-lg font-semibold">Contact</h2>
-        <div className="mt-3 grid gap-3 sm:grid-cols-2">
+        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
           <TextField
             label="Name"
             value={resume.contact.name}
@@ -238,9 +298,12 @@ export function EditorPage() {
           takenBulletIds={takenBulletIds}
           takenEntryIds={takenEntryIds}
           onEnsureVocab={ensureVocab}
-          onRemove={(idx) =>
-            setResume((prev) => ({ ...prev, sections: removeAt(prev.sections, idx) }))
-          }
+          pushUndo={pushUndo}
+          onRemove={(idx) => {
+            const removedTitle = resume.sections[idx]?.title || "section";
+            pushUndo(`Removed “${removedTitle}”`);
+            setResume((prev) => ({ ...prev, sections: removeAt(prev.sections, idx) }));
+          }}
           onMove={(from, to) =>
             setResume((prev) => ({ ...prev, sections: moveItem(prev.sections, from, to) }))
           }
@@ -254,7 +317,28 @@ export function EditorPage() {
       </p>
 
       <AddSectionPanel onAdd={addSection} />
-    </div>
+      </div>
+      {toasts.length > 0 && (
+        <div className="fixed inset-x-0 bottom-4 z-30 flex flex-col items-center gap-2 px-4 sm:items-end sm:pr-6">
+          {toasts.map((t) => (
+            <div
+              key={t.id}
+              role="status"
+              className="flex items-center gap-3 rounded-lg border border-line bg-panel px-4 py-2.5 text-sm text-ink shadow-lg"
+            >
+              <span>{t.message}</span>
+              <button
+                type="button"
+                onClick={() => undoToast(t.id)}
+                className="font-semibold text-accent underline-offset-2 hover:underline"
+              >
+                Undo
+              </button>
+            </div>
+          ))}
+        </div>
+      )}
+    </>
   );
 }
 
@@ -291,6 +375,7 @@ function SectionShell({
   takenBulletIds,
   takenEntryIds,
   onEnsureVocab,
+  pushUndo,
   onRemove,
   onMove,
   onChange,
@@ -302,12 +387,11 @@ function SectionShell({
   takenBulletIds: Set<string>;
   takenEntryIds: Set<string>;
   onEnsureVocab: (token: string) => void;
+  pushUndo: (message: string) => void;
   onRemove: (index: number) => void;
   onMove: (from: number, to: number) => void;
   onChange: (next: Section) => void;
 }) {
-  const hasContent = section.entries.length > 0;
-
   return (
     <section className="space-y-4 rounded-xl border border-line bg-panel p-5 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-2">
@@ -326,14 +410,7 @@ function SectionShell({
           </div>
           <code className="mt-1 block text-xs text-ink-muted">{section.id}</code>
         </div>
-        <EntryControls
-          index={index}
-          total={total}
-          hasContent={hasContent}
-          label={section.title}
-          onMove={onMove}
-          onRemove={onRemove}
-        />
+        <EntryControls index={index} total={total} onMove={onMove} onRemove={onRemove} />
       </div>
 
       {section.kind === "experience" && (
@@ -343,6 +420,7 @@ function SectionShell({
           takenBulletIds={takenBulletIds}
           takenEntryIds={takenEntryIds}
           onEnsureVocab={onEnsureVocab}
+          pushUndo={pushUndo}
           onChange={onChange}
         />
       )}
@@ -353,14 +431,19 @@ function SectionShell({
           takenBulletIds={takenBulletIds}
           takenEntryIds={takenEntryIds}
           onEnsureVocab={onEnsureVocab}
+          pushUndo={pushUndo}
           onChange={onChange}
         />
       )}
-      {section.kind === "list" && <ListEntries section={section} onChange={onChange} />}
-      {section.kind === "education" && (
-        <EducationEntries section={section} onChange={onChange} />
+      {section.kind === "list" && (
+        <ListEntries section={section} pushUndo={pushUndo} onChange={onChange} />
       )}
-      {section.kind === "skills" && <SkillsEntries section={section} onChange={onChange} />}
+      {section.kind === "education" && (
+        <EducationEntries section={section} pushUndo={pushUndo} onChange={onChange} />
+      )}
+      {section.kind === "skills" && (
+        <SkillsEntries section={section} pushUndo={pushUndo} onChange={onChange} />
+      )}
     </section>
   );
 }
@@ -411,9 +494,24 @@ function TagVocabularyPanel({
   }
 
   return (
-    <section className="rounded-xl border border-line bg-panel p-5 shadow-sm">
-      <h2 className="font-display text-lg font-semibold">Tag options</h2>
-      <p className="mt-1 text-sm text-ink-muted">
+    <details className="group rounded-xl border border-line bg-panel p-5 shadow-sm">
+      {/* Closed by default — this is a shared option list (settings), not resume
+          content, and at ~150 tags it would otherwise dominate the page above
+          Contact and every actual section. `list-none` + a manual marker keeps
+          the disclosure triangle in the design system's own voice instead of the
+          browser default. */}
+      <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
+        <span>
+          <span className="font-display text-lg font-semibold">Tag options</span>
+          <span className="ml-2 text-sm text-ink-muted">
+            {vocab.length} tag{vocab.length === 1 ? "" : "s"}
+          </span>
+        </span>
+        <span className="text-ink-muted transition-transform duration-[var(--dur-short)] ease-out group-open:rotate-180">
+          ▾
+        </span>
+      </summary>
+      <p className="mt-2 text-sm text-ink-muted">
         Shared list for bullet tags. Adding a tag on a bullet also adds it here; removing
         an option strips it from every bullet that uses it.
       </p>
@@ -425,20 +523,26 @@ function TagVocabularyPanel({
           placeholder="Add a tag option"
         />
       </div>
-    </section>
+    </details>
   );
 }
 
 function EducationEntries({
   section,
+  pushUndo,
   onChange,
 }: {
   section: EducationSectionData;
+  pushUndo: (message: string) => void;
   onChange: (next: Section) => void;
 }) {
   const entries = section.entries;
   function setEntries(next: Education[]) {
     onChange({ ...section, entries: next });
+  }
+  function removeEntry(idx: number) {
+    pushUndo(`Removed ${entries[idx]?.school.trim() || "entry"}`);
+    setEntries(removeAt(entries, idx));
   }
 
   return (
@@ -449,18 +553,10 @@ function EducationEntries({
           onClick={() => setEntries([blankEducation(), ...entries])}
         />
       </div>
+      <div className="divide-y divide-line">
       {entries.map((edu, i) => {
-        const hasContent = Boolean(
-          edu.school.trim() ||
-            edu.degree.trim() ||
-            (edu.coursework?.length ?? 0) ||
-            (edu.details?.length ?? 0),
-        );
         return (
-          <div
-            key={edu._key ?? i}
-            className="rounded-lg border border-line/80 bg-paper/40 p-3"
-          >
+          <div key={edu._key ?? i} className="py-4 first:pt-0 last:pb-0">
             <div className="mb-3 flex items-start justify-between gap-2">
               <p className="text-sm font-medium text-ink-muted">
                 {edu.school.trim() || `Entry #${i + 1}`}
@@ -468,13 +564,11 @@ function EducationEntries({
               <EntryControls
                 index={i}
                 total={entries.length}
-                hasContent={hasContent}
-                label={edu.school}
                 onMove={(from, to) => setEntries(moveItem(entries, from, to))}
-                onRemove={(idx) => setEntries(removeAt(entries, idx))}
+                onRemove={removeEntry}
               />
             </div>
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <TextField
                 label="School"
                 value={edu.school}
@@ -574,7 +668,7 @@ function EducationEntries({
                       next[i] = { ...edu, details };
                       setEntries(next);
                     }}
-                    className="shrink-0 rounded border border-line px-2 py-0.5 text-xs text-danger hover:border-danger"
+                    className="flex min-h-6 min-w-6 shrink-0 items-center justify-center rounded border border-line text-xs text-danger hover:border-danger"
                   >
                     ×
                   </button>
@@ -584,6 +678,7 @@ function EducationEntries({
           </div>
         );
       })}
+      </div>
     </div>
   );
 }
@@ -594,6 +689,7 @@ function ExperienceEntries({
   takenBulletIds,
   takenEntryIds,
   onEnsureVocab,
+  pushUndo,
   onChange,
 }: {
   section: ExperienceSectionData;
@@ -601,6 +697,7 @@ function ExperienceEntries({
   takenBulletIds: Set<string>;
   takenEntryIds: Set<string>;
   onEnsureVocab: (token: string) => void;
+  pushUndo: (message: string) => void;
   onChange: (next: Section) => void;
 }) {
   const entries = section.entries;
@@ -613,14 +710,18 @@ function ExperienceEntries({
     setEntries(insertAt(entries, 0, blankExperience(id)));
   }
 
+  function removeEntry(idx: number) {
+    pushUndo(`Removed ${entries[idx]?.company.trim() || "entry"}`);
+    setEntries(removeAt(entries, idx));
+  }
+
   return (
     <div className="space-y-4">
       <AddButton label="Add entry" onClick={addEntry} />
+      <div className="divide-y divide-line">
       {entries.map((job, i) => {
-        const hasContent =
-          Boolean(job.company.trim() || job.title.trim() || job.bullets.length);
         return (
-          <div key={job.id} className="rounded-lg border border-line/80 bg-paper/40 p-3">
+          <div key={job.id} className="py-4 first:pt-0 last:pb-0">
             <div className="mb-3 flex items-start justify-between gap-2">
               <div>
                 <p className="text-sm font-medium text-ink-muted">
@@ -631,13 +732,11 @@ function ExperienceEntries({
               <EntryControls
                 index={i}
                 total={entries.length}
-                hasContent={hasContent}
-                label={job.company}
                 onMove={(from, to) => setEntries(moveItem(entries, from, to))}
-                onRemove={(idx) => setEntries(removeAt(entries, idx))}
+                onRemove={removeEntry}
               />
             </div>
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <TextField
                 label="Company"
                 value={job.company}
@@ -692,6 +791,7 @@ function ExperienceEntries({
               takenIds={takenBulletIds}
               entryName={job.company}
               onEnsureVocab={onEnsureVocab}
+              pushUndo={pushUndo}
               onChange={(bullets) => {
                 const next = [...entries];
                 next[i] = { ...job, bullets };
@@ -701,6 +801,7 @@ function ExperienceEntries({
           </div>
         );
       })}
+      </div>
     </div>
   );
 }
@@ -711,6 +812,7 @@ function ProjectEntries({
   takenBulletIds,
   takenEntryIds,
   onEnsureVocab,
+  pushUndo,
   onChange,
 }: {
   section: ProjectSectionData;
@@ -718,6 +820,7 @@ function ProjectEntries({
   takenBulletIds: Set<string>;
   takenEntryIds: Set<string>;
   onEnsureVocab: (token: string) => void;
+  pushUndo: (message: string) => void;
   onChange: (next: Section) => void;
 }) {
   const entries = section.entries;
@@ -730,19 +833,23 @@ function ProjectEntries({
     setEntries(insertAt(entries, 0, blankProject(id)));
   }
 
+  function removeEntry(idx: number) {
+    pushUndo(`Removed ${entries[idx]?.name.trim() || "entry"}`);
+    setEntries(removeAt(entries, idx));
+  }
+
   return (
     <div className="space-y-4">
       <AddButton label="Add entry" onClick={addEntry} />
+      <div className="divide-y divide-line">
       {entries.map((proj, i) => {
-        const hasContent =
-          Boolean(proj.name.trim() || proj.url?.trim() || proj.bullets.length);
         const link = proj.link ?? "";
         const url = proj.url ?? "";
         const linkWithoutUrl = Boolean(link.trim()) && !url.trim();
         const urlLooksOdd = Boolean(url.trim()) && !looksLikeHttpUrl(url);
 
         return (
-          <div key={proj.id} className="rounded-lg border border-line/80 bg-paper/40 p-3">
+          <div key={proj.id} className="py-4 first:pt-0 last:pb-0">
             <div className="mb-3 flex items-start justify-between gap-2">
               <div>
                 <p className="text-sm font-medium text-ink-muted">
@@ -753,13 +860,11 @@ function ProjectEntries({
               <EntryControls
                 index={i}
                 total={entries.length}
-                hasContent={hasContent}
-                label={proj.name}
                 onMove={(from, to) => setEntries(moveItem(entries, from, to))}
-                onRemove={(idx) => setEntries(removeAt(entries, idx))}
+                onRemove={removeEntry}
               />
             </div>
-            <div className="grid gap-3 sm:grid-cols-2">
+            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
               <TextField
                 label="Name"
                 value={proj.name}
@@ -826,6 +931,7 @@ function ProjectEntries({
               takenIds={takenBulletIds}
               entryName={proj.name}
               onEnsureVocab={onEnsureVocab}
+              pushUndo={pushUndo}
               onChange={(bullets) => {
                 const next = [...entries];
                 next[i] = { ...proj, bullets };
@@ -835,15 +941,18 @@ function ProjectEntries({
           </div>
         );
       })}
+      </div>
     </div>
   );
 }
 
 function ListEntries({
   section,
+  pushUndo,
   onChange,
 }: {
   section: ListSectionData;
+  pushUndo: (message: string) => void;
   onChange: (next: Section) => void;
 }) {
   const entries = section.entries;
@@ -862,6 +971,11 @@ function ListEntries({
     setEntries(insertAt(entries, 0, blankListItem(id)));
   }
 
+  function removeItem(idx: number) {
+    pushUndo(`Removed “${entries[idx]?.text.trim() || "line"}”`);
+    setEntries(removeAt(entries, idx));
+  }
+
   return (
     <div className="space-y-3">
       <div className="flex items-center justify-between gap-2">
@@ -871,7 +985,6 @@ function ListEntries({
         <AddButton label="Add line" onClick={addItem} />
       </div>
       {entries.map((item, i) => {
-        const hasContent = Boolean(item.text.trim());
         return (
           <div key={item.id} className="flex items-start gap-2">
             <input
@@ -888,10 +1001,8 @@ function ListEntries({
             <EntryControls
               index={i}
               total={entries.length}
-              hasContent={hasContent}
-              label={item.text || "this line"}
               onMove={(from, to) => setEntries(moveItem(entries, from, to))}
-              onRemove={(idx) => setEntries(removeAt(entries, idx))}
+              onRemove={removeItem}
             />
           </div>
         );
@@ -902,9 +1013,11 @@ function ListEntries({
 
 function SkillsEntries({
   section,
+  pushUndo,
   onChange,
 }: {
   section: SkillsSectionData;
+  pushUndo: (message: string) => void;
   onChange: (next: Section) => void;
 }) {
   const groups = section.entries;
@@ -912,16 +1025,18 @@ function SkillsEntries({
     onChange({ ...section, entries: next });
   }
 
+  function removeGroup(idx: number) {
+    pushUndo(`Removed “${groups[idx]?.label.trim() || "skill group"}”`);
+    setGroups(removeAt(groups, idx));
+  }
+
   return (
     <div className="space-y-4">
       <AddButton label="Add group" onClick={() => setGroups([blankSkillGroup(), ...groups])} />
+      <div className="divide-y divide-line">
       {groups.map((g, i) => {
-        const hasContent = Boolean(g.label.trim() || g.items.length);
         return (
-          <div
-            key={g._key ?? i}
-            className="rounded-lg border border-line/80 bg-paper/40 p-3"
-          >
+          <div key={g._key ?? i} className="py-4 first:pt-0 last:pb-0">
             <div className="mb-2 flex items-start justify-between gap-2">
               <div className="min-w-0 flex-1">
                 <TextField
@@ -937,10 +1052,8 @@ function SkillsEntries({
               <EntryControls
                 index={i}
                 total={groups.length}
-                hasContent={hasContent}
-                label={g.label || "skill group"}
                 onMove={(from, to) => setGroups(moveItem(groups, from, to))}
-                onRemove={(idx) => setGroups(removeAt(groups, idx))}
+                onRemove={removeGroup}
               />
             </div>
             <ChipListField
@@ -956,6 +1069,7 @@ function SkillsEntries({
           </div>
         );
       })}
+      </div>
     </div>
   );
 }
@@ -966,6 +1080,7 @@ function BulletList({
   takenIds,
   entryName,
   onEnsureVocab,
+  pushUndo,
   onChange,
 }: {
   bullets: Bullet[];
@@ -973,6 +1088,7 @@ function BulletList({
   takenIds: Set<string>;
   entryName: string;
   onEnsureVocab: (token: string) => void;
+  pushUndo: (message: string) => void;
   onChange: (b: Bullet[]) => void;
 }) {
   const { config } = useEditorState();
@@ -985,6 +1101,12 @@ function BulletList({
     onChange(insertAt(bullets, 0, blankBullet(id)));
   }
 
+  function removeBullet(idx: number) {
+    const text = bullets[idx]?.text.trim();
+    pushUndo(`Removed bullet${text ? ` “${text.slice(0, 40)}${text.length > 40 ? "…" : ""}”` : ""}`);
+    onChange(removeAt(bullets, idx));
+  }
+
   const vocabSet = new Set(vocabList.map((t) => t.toLowerCase()));
 
   return (
@@ -995,11 +1117,10 @@ function BulletList({
       </div>
       {bullets.map((b, i) => {
         const missing = suggestMissingTags(b.text, b.tags, vocabSet, vocabList);
-        const hasContent = Boolean(b.text.trim() || b.tags.length);
         const len = b.text.length;
         const overMax = len >= charMax;
         return (
-          <div key={b.id} className="rounded-lg border border-line/80 bg-paper/40 p-3">
+          <div key={b.id} className="border-l-2 border-line/60 pl-4">
             <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs text-ink-muted">
               <code>{b.id}</code>
               <div className="flex items-center gap-2">
@@ -1018,10 +1139,8 @@ function BulletList({
                 <EntryControls
                   index={i}
                   total={bullets.length}
-                  hasContent={hasContent}
-                  label={`bullet ${b.id}`}
                   onMove={(from, to) => onChange(moveItem(bullets, from, to))}
-                  onRemove={(idx) => onChange(removeAt(bullets, idx))}
+                  onRemove={removeBullet}
                 />
               </div>
             </div>
@@ -1036,8 +1155,8 @@ function BulletList({
               className="w-full rounded-md border border-line bg-panel px-2 py-1.5 text-sm focus:border-accent"
             />
             <p
-              className={`mt-1 text-xs ${
-                overMax ? "text-warn" : len >= softMin ? "text-ink-muted" : "text-ink-muted"
+              className={`mt-1 text-xs tabular-nums ${
+                overMax ? "text-warn" : len >= softMin ? "text-accent" : "text-ink-muted"
               }`}
             >
               {len} / {charMax}

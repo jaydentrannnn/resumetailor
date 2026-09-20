@@ -2,52 +2,30 @@
  * Shared move / remove / add controls for master-resume editor lists.
  */
 
-import { useConfirm } from "../state/confirmState";
-
 type EntryControlsProps = {
   index: number;
   total: number;
-  /** When true, removing asks for confirmation. */
-  hasContent: boolean;
   onMove: (from: number, to: number) => void;
+  /**
+   * Removes row `index` immediately — nothing in this editor persists until the
+   * explicit Save button, so this is optimistic; the caller is responsible for
+   * registering an Undo toast (`pushUndo`) before applying the removal.
+   */
   onRemove: (index: number) => void;
-  /** Optional short label for the confirm dialog, e.g. company name. */
-  label?: string;
   /** When false, the move buttons are omitted entirely — used for fixed-order lists
    * that cannot be reordered. Defaults to true. Section order is editable here on the
    * Master resume tab; the Tailor tab's include panel is only a per-run override. */
   canMove?: boolean;
 };
 
-/**
- * Move-up, move-down, and remove buttons for one list row.
- * Blank rows delete silently; rows with content ask first.
- */
+/** Move-up, move-down, and remove buttons for one list row. */
 export function EntryControls({
   index,
   total,
-  hasContent,
   onMove,
   onRemove,
-  label,
   canMove = true,
 }: EntryControlsProps) {
-  const { confirm } = useConfirm();
-
-  async function handleRemove() {
-    if (hasContent) {
-      const what = label?.trim() || "this entry";
-      const ok = await confirm({
-        title: "Remove entry",
-        message: `Remove ${what}?`,
-        confirmLabel: "Remove",
-        tone: "danger",
-      });
-      if (!ok) return;
-    }
-    onRemove(index);
-  }
-
   return (
     <div className="flex shrink-0 items-center gap-1">
       {canMove && (
@@ -58,7 +36,7 @@ export function EntryControls({
             aria-label="Move up"
             disabled={index === 0}
             onClick={() => onMove(index, index - 1)}
-            className="rounded border border-line px-2 py-0.5 text-xs disabled:opacity-30"
+            className="flex min-h-6 min-w-6 items-center justify-center rounded border border-line text-xs disabled:opacity-30"
           >
             ↑
           </button>
@@ -68,7 +46,7 @@ export function EntryControls({
             aria-label="Move down"
             disabled={index >= total - 1}
             onClick={() => onMove(index, index + 1)}
-            className="rounded border border-line px-2 py-0.5 text-xs disabled:opacity-30"
+            className="flex min-h-6 min-w-6 items-center justify-center rounded border border-line text-xs disabled:opacity-30"
           >
             ↓
           </button>
@@ -77,7 +55,7 @@ export function EntryControls({
       <button
         type="button"
         title="Remove"
-        onClick={() => void handleRemove()}
+        onClick={() => onRemove(index)}
         className="rounded border border-line px-2 py-0.5 text-xs text-danger hover:border-danger"
       >
         Remove

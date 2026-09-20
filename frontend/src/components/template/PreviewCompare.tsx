@@ -108,7 +108,7 @@ export function PreviewCompare({ sourceSha256, profile }: Props) {
         </button>
       </div>
 
-      <div className="grid gap-3 sm:grid-cols-2">
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
         <div className="overflow-hidden rounded-lg border border-line/80 bg-paper/40">
           <p className="flex items-center justify-between border-b border-line/80 bg-paper/60 px-3 py-1.5 text-xs font-medium text-ink-muted">
             <span>Original upload</span>
@@ -128,7 +128,11 @@ export function PreviewCompare({ sourceSha256, profile }: Props) {
           ) : sourceError ? (
             <p className="p-3 text-xs text-danger">{sourceError}</p>
           ) : sourceUrl ? (
-            <iframe title="Original upload preview" src={sourceUrl} className="h-[55vh] w-full bg-white">
+            <iframe
+              title="Original upload preview"
+              src={`${sourceUrl}#toolbar=0&navpanes=0`}
+              className="h-[55vh] w-full bg-doc-preview"
+            >
               <p className="p-3 text-xs text-ink-muted">
                 PDF preview unavailable.{" "}
                 <a href={sourceUrl} target="_blank" rel="noreferrer" className="text-accent underline">
@@ -164,8 +168,8 @@ export function PreviewCompare({ sourceSha256, profile }: Props) {
           ) : draftUrl ? (
             <iframe
               title="Draft mapping preview"
-              src={draftUrl}
-              className={`h-[55vh] w-full bg-white ${draftStale ? "opacity-60" : ""}`}
+              src={`${draftUrl}#toolbar=0&navpanes=0`}
+              className={`h-[55vh] w-full bg-doc-preview ${draftStale ? "opacity-60" : ""}`}
             >
               <p className="p-3 text-xs text-ink-muted">
                 PDF preview unavailable.{" "}

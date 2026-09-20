@@ -1,8 +1,12 @@
+/* Hallmark · genre: editorial · macrostructure: n/a — functional app shell
+ * theme: Studio-derived (light · high-contrast-serif · chromatic-green) · design-system: design.md · designed-as-app
+ */
 @import "tailwindcss";
 
 @theme {
   --font-display: "Fraunces", Georgia, serif;
   --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", monospace;
   --color-ink: #1a2332;
   --color-ink-muted: #5a6578;
   --color-paper: #f3f0e8;
@@ -16,6 +20,17 @@
   --color-warn-soft: #ffedd5;
   --color-danger: #9f1239;
   --color-danger-soft: #ffe4e6;
+  /* Same value in both themes — represents an actual white document/PDF page
+     behind a preview iframe, not a UI surface, so it does not follow data-theme. */
+  --color-doc-preview: #ffffff;
+  /* Shared size for uppercase micro-labels (status pills, "Customized" tags) —
+     was five different arbitrary text-[…] values before this token existed. */
+  --text-micro: 0.6875rem;
+  --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
+  --ease-in: cubic-bezier(0.7, 0, 0.84, 0);
+  --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
+  --dur-short: 150ms;
+  --dur-base: 220ms;
 }
 
 /* Resolved theme is always set on <html data-theme="light|dark"> by themeState
@@ -92,6 +107,14 @@ body {
   100% {
     transform: translateX(300%);
   }
+}
+
+/* Root overflow guard — the nav utility cluster used to push the page wider
+   than the viewport below ~340px; this is the floor, the nav fix below is the
+   actual cause fix. */
+html,
+body {
+  overflow-x: clip;
 }
 
 @media (prefers-reduced-motion: reduce) {

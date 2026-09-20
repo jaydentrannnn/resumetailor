@@ -50,7 +50,7 @@ export function UploadDropzone({ disabled, onFile, label }: Props) {
       onDragOver={(e) => e.preventDefault()}
       onDragLeave={() => setDragging(false)}
       onDrop={onDrop}
-      className={`mt-4 flex flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed px-6 py-10 transition ${
+      className={`mt-4 flex flex-col items-center justify-center gap-3 rounded-lg border-2 border-dashed px-6 py-10 transition-colors duration-[var(--dur-short)] ease-out ${
         dragging
           ? "border-accent bg-accent-soft/60"
           : "border-line bg-paper/40 hover:border-accent/60"

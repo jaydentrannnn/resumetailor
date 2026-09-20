@@ -118,6 +118,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
             <button
               type="button"
               onClick={() => closeWith(false)}
+              autoFocus={active.opts.tone === "danger"}
               className="rounded-md border border-line px-3 py-1.5 text-sm font-medium text-ink-muted hover:border-accent hover:text-accent"
             >
               {active.opts.cancelLabel ?? "Cancel"}
@@ -125,10 +126,10 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
             <button
               type="button"
               onClick={() => closeWith(true)}
-              autoFocus
+              autoFocus={active.opts.tone !== "danger"}
               className={
                 active.opts.tone === "danger"
-                  ? "rounded-md bg-danger px-3 py-1.5 text-sm font-medium text-on-accent hover:opacity-90"
+                  ? "rounded-md bg-danger px-3 py-1.5 text-sm font-medium text-on-accent hover:bg-danger/85"
                   : "rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-on-accent hover:bg-accent/90"
               }
             >
@@ -155,7 +156,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
                 onClick={() => closeWith(opt.id)}
                 className={
                   opt.tone === "danger"
-                    ? "rounded-md bg-danger px-3 py-1.5 text-sm font-medium text-on-accent hover:opacity-90"
+                    ? "rounded-md bg-danger px-3 py-1.5 text-sm font-medium text-on-accent hover:bg-danger/85"
                     : "rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-on-accent hover:bg-accent/90"
                 }
               >

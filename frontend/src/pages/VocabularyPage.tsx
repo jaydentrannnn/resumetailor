@@ -121,16 +121,19 @@ function PacksSection() {
                       disabled={busy}
                       className="mt-1 accent-[var(--color-accent)]"
                     />
-                    <span>
+                    {/* max-w-xl keeps the text column from stretching edge-to-edge on a
+                        wide screen — at full width a long description pushed "Edit"
+                        ~900px away from the name it acts on. */}
+                    <span className="max-w-xl">
                       <span className="flex flex-wrap items-center gap-2">
                         <span className="font-medium">{pack.label}</span>
                         {pack.builtin && (
-                          <span className="rounded-full bg-accent-soft px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wide text-accent">
+                          <span className="rounded-full bg-accent-soft px-2 py-0.5 text-micro font-semibold uppercase tracking-wide text-accent">
                             Starter
                           </span>
                         )}
                         {pack.customized && (
-                          <span className="rounded-full bg-paper px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wide text-ink-muted">
+                          <span className="rounded-full bg-paper px-2 py-0.5 text-micro font-semibold uppercase tracking-wide text-ink-muted">
                             Edited
                           </span>
                         )}
@@ -455,12 +458,12 @@ function SuggestionsSection() {
                       )}
                       {p.kind === "tag_alias" &&
                         (rewrites ? (
-                          <span className="rounded-full bg-warn-soft px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wide text-warn">
+                          <span className="rounded-full bg-warn-soft px-2 py-0.5 text-micro font-semibold uppercase tracking-wide text-warn">
                             Rewrites {impact!.affected_tags.length} tag
                             {impact!.affected_tags.length === 1 ? "" : "s"}
                           </span>
                         ) : (
-                          <span className="rounded-full bg-accent-soft px-2 py-0.5 text-[0.65rem] font-semibold uppercase tracking-wide text-accent">
+                          <span className="rounded-full bg-accent-soft px-2 py-0.5 text-micro font-semibold uppercase tracking-wide text-accent">
                             Additive
                           </span>
                         ))}
@@ -534,7 +537,7 @@ function SuggestionsSection() {
             <button
               type="button"
               onClick={() => void doApprove(conflict.ids, true)}
-              className="rounded-md bg-warn px-3 py-1.5 text-sm font-medium text-on-accent hover:opacity-90"
+              className="rounded-md bg-warn px-3 py-1.5 text-sm font-medium text-on-accent hover:brightness-95"
             >
               Approve anyway
             </button>
