@@ -107,6 +107,65 @@ docker compose run --rm app python scripts/calibrate.py
 
 The container uses LibreOffice for PDF measurement. Host Ollama / LM Studio are reachable via `host.docker.internal` (already set in `docker-compose.yml`).
 
+## Automation (daily apply)
+
+ResumeTailor can discover new internship and new-grad postings overnight, tailor them,
+and fill simple ATS forms from a browser on your host. You still click **Submit** until
+you opt into per-ATS auto-submit.
+
+Default sources (edit `settings.apply.sources[]` to add/disable):
+
+| id | kind | repo |
+| --- | --- | --- |
+| `simplify-internships` | HTML table | SimplifyJobs/Summer2027-Internships |
+| `simplify-newgrad` | HTML table | SimplifyJobs/New-Grad-Positions |
+| `speedyapply` | pipe table | speedyapply/2027-SWE-College-Jobs |
+
+Inspect a README's section headings before enabling categories:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\apply_daily.py --list-sections https://raw.githubusercontent.com/speedyapply/2027-SWE-College-Jobs/main/README.md
+```
+
+1. **Microsoft Edge with remote debugging** (dedicated profile). Chrome refuses to open
+   its remote-debugging port whenever *any* other Chrome window — any profile — is
+   already running under your account, which would mean closing your normal browsing
+   session every time. Edge is a separate process from Chrome, so it sidesteps that
+   entirely and can sit in the background without touching your regular Chrome. (If you
+   also use Edge as a daily browser, the same restriction applies there instead — pick
+   whichever of the two you use less.) Create a Task Scheduler "At log on" action, or a
+   shortcut:
+
+```text
+"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --remote-debugging-port=9222 --remote-allow-origins=* --user-data-dir="%LOCALAPPDATA%\ResumeTailorEdge"
+```
+
+   Log into Workday / other ATS accounts once in that profile. `--remote-debugging-port`
+   exposes that profile to any local process; keep it on localhost and use only job-site
+   logins there.
+
+2. `docker compose up -d` (sets `CHROME_CDP_URL=http://host.docker.internal:9222`).
+
+3. Open **Apply** in the UI. Confirm the Browser CDP pill is green. Fill **Applicant
+   profile** (or use the seeded `data/workspaces/default/applicant_profile.json`).
+
+4. In Tailor settings (saved with the profile), set `apply.enabled` true and optionally
+   `schedule_time` (local `HH:MM`). Or run once:
+
+```powershell
+docker compose exec app python scripts/apply_daily.py --limit 5
+```
+
+5. Morning: filter **ready**, click **Open & fill**, review in Edge, click Submit,
+   mark **Submitted**. After a week of clean Greenhouse fills, add `"greenhouse"` to
+   `apply.auto_submit_ats`.
+
+Host-only CLI (when Docker is not running — do not run both against the same workspace):
+
+```powershell
+.\.venv\Scripts\python.exe scripts\apply_daily.py --dry-run
+```
+
 ### Remote access (Cloudflare Tunnel)
 
 Reach the web UI from outside your own machine — no port forwarding, no static IP, no

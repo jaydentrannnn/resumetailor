@@ -11,12 +11,14 @@ from __future__ import annotations
 
 import asyncio
 import json
+import logging
 import os
 import tempfile
+import threading
 import time
 from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, date, datetime
 from pathlib import Path
 from typing import Any
 
@@ -48,13 +50,30 @@ from resume_tailor.data import MasterResume
 from resume_tailor.events import ProgressEvent
 from resume_tailor.template_profile import TemplateProfile, active_layout
 from resume_tailor.web import template_ops
+from resume_tailor.apply import browser as apply_browser
+from resume_tailor.apply import daily as apply_daily
+from resume_tailor.apply import fill as apply_fill
+from resume_tailor.apply import packet as apply_packet
+from resume_tailor.apply import profile as apply_profile
+from resume_tailor.apply import store as apply_store
+from resume_tailor.apply.answer import answer_question
 from resume_tailor.web.jobs import Job, get_queue, regenerate_cover_letter, verify_claim
 from resume_tailor.web.schemas import (
+    AnswerRequest,
+    AnswerResponse,
+    ApplicantProfileResponse,
+    ApplicantProfileUpdateRequest,
+    ApplicationDetailResponse,
+    ApplicationOut,
+    ApplicationStatusRequest,
+    ApplicationsListResponse,
+    BrowserStatusResponse,
     ConfigResponse,
     CoverLetterOut,
     CoverLetterRegenerateRequest,
     CreateJobRequest,
     CreateJobResponse,
+    DailyStatusResponse,
     DeleteRunHistoryRequest,
     DeleteRunHistoryResponse,
     ExpansionOut,
@@ -81,7 +100,10 @@ from resume_tailor.web.schemas import (
     ResumeOutlineResponse,
     ResumeOutlineSectionOut,
     RunHistoryEntryOut,
+    RunDailyRequest,
+    RunDailyResponse,
     RunHistoryResponse,
+    RunMetadata,
     RunReportOut,
     SettingsResponse,
     SettingsUpdateRequest,
@@ -108,6 +130,42 @@ from resume_tailor.web.template_ops import TemplateBuildError, TemplateValidatio
 #: layout was migrated into a "Default" workspace. Surfaced once by `GET /api/config`
 #: so the UI can tell the user where their files went.
 _migrated_from_legacy = False
+_log = logging.getLogger(__name__)
+_scheduler_stop = threading.Event()
+_last_daily_run_date: date | None = None
+
+
+def _apply_scheduler_loop(stop: threading.Event) -> None:
+    """Wake every 60s and start ``run_daily`` once per local day at schedule_time."""
+    global _last_daily_run_date
+    while not stop.wait(60.0):
+        try:
+            raw = workspace.load_settings()
+            settings = JobSettings.model_validate(raw["defaults"])
+            if not settings.apply.enabled:
+                continue
+            now = datetime.now()
+            try:
+                hour_str, minute_str = settings.apply.schedule_time.split(":", 1)
+                scheduled_hour = int(hour_str)
+                scheduled_minute = int(minute_str)
+            except (ValueError, AttributeError):
+                continue
+            if now.hour != scheduled_hour or now.minute != scheduled_minute:
+                continue
+            today = now.date()
+            if _last_daily_run_date == today:
+                continue
+            if apply_daily.daily_busy():
+                continue
+            _last_daily_run_date = today
+            threading.Thread(
+                target=apply_daily.run_daily,
+                name="apply-daily-scheduled",
+                daemon=True,
+            ).start()
+        except Exception:  # noqa: BLE001 - scheduler must never crash the process
+            _log.exception("apply scheduler tick failed")
 
 
 @asynccontextmanager
@@ -117,7 +175,17 @@ async def lifespan(app: FastAPI):
     result = workspace.bootstrap()
     if result is not None:
         _migrated_from_legacy = result.migrated
+    _scheduler_stop.clear()
+    scheduler = threading.Thread(
+        target=_apply_scheduler_loop,
+        args=(_scheduler_stop,),
+        name="apply-scheduler",
+        daemon=True,
+    )
+    scheduler.start()
     yield
+    _scheduler_stop.set()
+    scheduler.join(timeout=2.0)
 
 
 app = FastAPI(title="ResumeTailor", version="0.1.0", lifespan=lifespan)
@@ -390,7 +458,9 @@ def create_job(body: CreateJobRequest) -> CreateJobResponse:
         problems = include.validate(resume, settings.include)
         if problems:
             raise HTTPException(status_code=400, detail="; ".join(problems))
-        job, position = get_queue().submit(body.jd_text.strip(), settings)
+        job, position = get_queue().submit(
+            body.jd_text.strip(), settings, metadata=body.metadata
+        )
     return CreateJobResponse(job_id=job.job_id, queue_position=position)
 
 
@@ -493,6 +563,7 @@ def _job_status_response(job: Job) -> JobStatusResponse:
         events=[_event_out(e) for e in job.events],
         created_at=job.created_at,
         title=title,
+        metadata=job.metadata,
     )
 
 
@@ -513,6 +584,7 @@ class _ResolvedRun:
     title: str | None = None
     #: Present only for in-memory jobs — cancel/SSE still need the live object.
     live: Job | None = None
+    metadata: RunMetadata | None = None
 
 
 def _load_run_json(job_id: str) -> dict[str, Any] | None:
@@ -548,6 +620,7 @@ def _resolve_run(job_id: str) -> _ResolvedRun | None:
             created_at=live.created_at,
             title=live.report.title if live.report else None,
             live=live,
+            metadata=live.metadata,
         )
     raw = _load_run_json(job_id)
     if raw is None:
@@ -578,6 +651,10 @@ def _resolve_run(job_id: str) -> _ResolvedRun | None:
             cover_out = CoverLetterOut.model_validate(
                 json.loads(cover_path.read_text(encoding="utf-8"))
             )
+    meta_out: RunMetadata | None = None
+    if raw.get("metadata"):
+        with suppress(ValidationError):
+            meta_out = RunMetadata.model_validate(raw["metadata"])
     return _ResolvedRun(
         job_id=str(raw.get("job_id") or job_id),
         status=str(raw.get("status") or "failed"),
@@ -589,6 +666,7 @@ def _resolve_run(job_id: str) -> _ResolvedRun | None:
         cover_letter=cover_out,
         created_at=raw.get("created_at"),
         title=raw.get("title") or (report_out.title if report_out else None),
+        metadata=meta_out,
     )
 
 
@@ -607,6 +685,7 @@ def _resolved_status_response(resolved: _ResolvedRun) -> JobStatusResponse:
         events=[_event_out(e) for e in resolved.events],
         created_at=resolved.created_at,
         title=resolved.title,
+        metadata=resolved.metadata,
     )
 
 
@@ -1014,7 +1093,11 @@ def regenerate_job_cover_letter(
             detail="Cannot regenerate while another tailoring run is in progress.",
         )
     try:
-        out = regenerate_cover_letter(job_id, instruction=body.instruction)
+        out = regenerate_cover_letter(
+            job_id,
+            instruction=body.instruction,
+            cover_angles=body.cover_angles,
+        )
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except Exception as exc:  # noqa: BLE001
@@ -1026,10 +1109,11 @@ def regenerate_job_cover_letter(
 
 @app.post("/api/verify-claim", response_model=VerifyClaimResponse)
 def post_verify_claim(body: VerifyClaimRequest) -> VerifyClaimResponse:
-    """Check free-text application prose against a finished run's tailored bullets.
+    """Check free-text application prose against tailored or master-resume bullets.
 
     Pure and read-only — deliberately does not check ``busy()``, so an agent can
-    verify draft answers while another job is running.
+    verify draft answers while another job is running. When ``job_id`` is omitted,
+    every master-resume bullet is used as the evidence set.
     """
     try:
         result = verify_claim(body.job_id, body.text)
@@ -1040,6 +1124,306 @@ def post_verify_claim(body: VerifyClaimRequest) -> VerifyClaimResponse:
         unsupported_terms=list(result.unsupported_terms),
         unsupported_numbers=list(result.unsupported_numbers),
     )
+
+
+def _application_out(
+    app: apply_store.Application,
+    *,
+    group_size: int = 1,
+) -> ApplicationOut:
+    """Convert a store row into the API response model with computed fields."""
+    payload = app.model_dump()
+    payload["sources"] = (
+        [ref.source for ref in app.source_refs] if app.source_refs else [app.source]
+    )
+    payload["group_size"] = group_size
+    return ApplicationOut.model_validate(payload)
+
+
+@app.get("/api/applicant-profile", response_model=ApplicantProfileResponse)
+def get_applicant_profile() -> ApplicantProfileResponse:
+    """Return the active workspace's form-filling profile."""
+    profile, seeded = apply_profile.load_profile()
+    return ApplicantProfileResponse(
+        workspace_id=config.active_workspace_id(),
+        profile=profile,
+        seeded=seeded,
+    )
+
+
+@app.put("/api/applicant-profile", response_model=ApplicantProfileResponse)
+def put_applicant_profile(body: ApplicantProfileUpdateRequest) -> ApplicantProfileResponse:
+    """Persist ``applicant_profile.json`` for the active workspace."""
+    with template_ops.LOCK:
+        saved = apply_profile.save_profile(body.profile)
+    return ApplicantProfileResponse(
+        workspace_id=config.active_workspace_id(),
+        profile=saved,
+        seeded=False,
+    )
+
+
+@app.get("/api/jobs/{job_id}/packet.json", response_model=None)
+def get_job_packet(job_id: str) -> JSONResponse:
+    """Return ``packet.json`` for a finished tailoring run."""
+    path = config.OUTPUT_DIR / "jobs" / job_id / "packet.json"
+    if not path.is_file():
+        raise HTTPException(status_code=404, detail=f"No packet for job {job_id!r}.")
+    return JSONResponse(content=json.loads(path.read_text(encoding="utf-8")))
+
+
+@app.post("/api/jobs/{job_id}/packet/rebuild", response_model=None)
+def rebuild_job_packet(job_id: str) -> JSONResponse:
+    """Rebuild and persist ``packet.json`` from on-disk run artifacts."""
+    resolved = _resolve_run(job_id)
+    if resolved is None:
+        raise HTTPException(status_code=404, detail=f"Unknown job {job_id!r}.")
+    if resolved.status != "succeeded":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Job {job_id} is {resolved.status}, not ready for packet rebuild.",
+        )
+    try:
+        packet = apply_packet.write_packet(job_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return JSONResponse(content=json.loads(packet.model_dump_json()))
+
+
+@app.post("/api/jobs/{job_id}/answer", response_model=AnswerResponse)
+def answer_job_question(job_id: str, body: AnswerRequest) -> AnswerResponse:
+    """Draft a guarded free-text ATS answer using saved run artifacts."""
+    resolved = _resolve_run(job_id)
+    if resolved is None:
+        raise HTTPException(status_code=404, detail=f"Unknown job {job_id!r}.")
+    if resolved.status != "succeeded":
+        raise HTTPException(
+            status_code=409,
+            detail=f"Job {job_id} is {resolved.status}, not ready for answers.",
+        )
+
+    out_dir = config.OUTPUT_DIR / "jobs" / job_id
+    bullets_path = out_dir / "bullets.json"
+    if not bullets_path.is_file():
+        raise HTTPException(status_code=404, detail="This job has no saved tailored bullets.")
+    requirements_path = out_dir / "requirements.json"
+    if not requirements_path.is_file():
+        raise HTTPException(status_code=404, detail="This job has no saved requirements.")
+    jd_path = out_dir / "jd.txt"
+    if not jd_path.is_file():
+        raise HTTPException(status_code=404, detail="This job has no saved job description.")
+
+    bullets = json.loads(bullets_path.read_text(encoding="utf-8"))
+    requirements = jd.JobRequirements.model_validate_json(
+        requirements_path.read_text(encoding="utf-8")
+    )
+    jd_text = jd_path.read_text(encoding="utf-8")
+    resume = data.load()
+    profile, _seeded = apply_profile.load_profile()
+
+    backends_path = out_dir / "backends.json"
+    if backends_path.is_file():
+        backend_specs = json.loads(backends_path.read_text(encoding="utf-8"))
+        with config.pinned_specs(backend_specs, effort=None):
+            result = answer_question(
+                body.question,
+                resume=resume,
+                bullets=bullets,
+                requirements=requirements,
+                profile=profile,
+                max_chars=body.max_chars,
+                jd_text=jd_text,
+            )
+    else:
+        result = answer_question(
+            body.question,
+            resume=resume,
+            bullets=bullets,
+            requirements=requirements,
+            profile=profile,
+            max_chars=body.max_chars,
+            jd_text=jd_text,
+        )
+
+    return AnswerResponse(
+        answer=result.answer,
+        offenders=list(result.offenders),
+        warnings=list(result.warnings),
+        source=result.source,
+        model=result.model,
+    )
+
+
+@app.get("/api/browser/status", response_model=BrowserStatusResponse)
+def get_browser_status() -> BrowserStatusResponse:
+    """Probe host browser CDP reachability for JD fetch and form fill."""
+    status = apply_browser.browser_status()
+    return BrowserStatusResponse(
+        reachable=status.reachable,
+        browser=status.browser,
+        user_agent=status.user_agent,
+        error=status.error,
+        cdp_url=status.cdp_url,
+    )
+
+
+@app.get("/api/applications", response_model=ApplicationsListResponse)
+def list_applications(
+    status: apply_store.ApplicationStatus | None = None,
+    limit: int = 50,
+) -> ApplicationsListResponse:
+    """List tracked applications newest-first with per-status counts."""
+    rows = apply_store.list_applications(
+        status=status,
+        limit=max(1, min(limit, 500)),
+    )
+    index = apply_store.build_index()
+    outs: list[ApplicationOut] = []
+    for row in rows:
+        gkey = row.group_key
+        group_size = len(index.by_group.get(gkey, [])) if gkey else 1
+        outs.append(_application_out(row, group_size=max(1, group_size)))
+    return ApplicationsListResponse(
+        applications=outs,
+        counts=apply_store.status_counts(),
+    )
+
+
+#: Declared before `/api/applications/{source_job_id}` — a literal path must be
+#: registered ahead of the parameterised one or Starlette matches "daily-status"
+#: as an application id and 404s.
+@app.get("/api/applications/daily-status", response_model=DailyStatusResponse)
+def get_daily_status() -> DailyStatusResponse:
+    """Return live progress for the in-flight (or last finished) daily pass."""
+    progress = apply_daily.daily_status()
+    return DailyStatusResponse(
+        running=progress.running,
+        phase=progress.phase,
+        source_id=progress.source_id,
+        current=progress.current,
+        processed=progress.processed,
+        total=progress.total,
+        dry_run=progress.dry_run,
+        started_at=progress.started_at,
+        finished_at=progress.finished_at,
+        date=progress.date,
+        summary=progress.summary.model_dump() if progress.summary else None,
+    )
+
+
+@app.get("/api/applications/export.csv")
+def export_applications_csv() -> StreamingResponse:
+    """Download the application tracker as CSV."""
+    csv_text = apply_store.export_csv()
+    return StreamingResponse(
+        iter([csv_text]),
+        media_type="text/csv; charset=utf-8",
+        headers={"Content-Disposition": 'attachment; filename="applications.csv"'},
+    )
+
+
+@app.get("/api/applications/{source_job_id}", response_model=ApplicationDetailResponse)
+def get_application(source_job_id: str) -> ApplicationDetailResponse:
+    """Return one application plus packet and JD text when available."""
+    app = apply_store.get(source_job_id)
+    if app is None:
+        raise HTTPException(status_code=404, detail=f"Unknown application {source_job_id!r}.")
+
+    packet: dict[str, Any] | None = None
+    if app.job_id:
+        packet_path = config.OUTPUT_DIR / "jobs" / app.job_id / "packet.json"
+        if packet_path.is_file():
+            packet = json.loads(packet_path.read_text(encoding="utf-8"))
+
+    jd_text: str | None = None
+    if app.jd_text_path and Path(app.jd_text_path).is_file():
+        jd_text = Path(app.jd_text_path).read_text(encoding="utf-8")
+
+    return ApplicationDetailResponse(
+        application=_application_out(app),
+        packet=packet,
+        jd_text=jd_text,
+    )
+
+
+@app.post("/api/applications/{source_job_id}/status", response_model=ApplicationOut)
+def set_application_status(
+    source_job_id: str,
+    body: ApplicationStatusRequest,
+) -> ApplicationOut:
+    """Update one application's status and append a timeline entry."""
+    app = apply_store.get(source_job_id)
+    if app is None:
+        raise HTTPException(status_code=404, detail=f"Unknown application {source_job_id!r}.")
+    try:
+        apply_store.set_status(app, body.status, note=body.note)
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return _application_out(apply_store.upsert(app))
+
+
+@app.post("/api/applications/{source_job_id}/retry", response_model=ApplicationOut)
+def retry_application_route(source_job_id: str) -> ApplicationOut:
+    """Re-run the failed fetch or tailor step for one application."""
+    try:
+        app = apply_daily.retry_application(source_job_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (RuntimeError, ValueError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return _application_out(app)
+
+
+@app.post("/api/applications/{source_job_id}/fill", response_model=ApplicationOut)
+def start_application_fill(source_job_id: str) -> ApplicationOut:
+    """Start an async ATS fill when the host browser's CDP is reachable."""
+    status = apply_browser.browser_status()
+    if not status.reachable:
+        raise HTTPException(
+            status_code=409,
+            detail=status.error or "Browser CDP unreachable",
+        )
+    if apply_fill.fill_busy():
+        raise HTTPException(status_code=409, detail="Another fill is already running.")
+    try:
+        apply_fill.start_fill_async(source_job_id)
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except apply_fill.FillBusyError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001 - CDP unreachable surfaces as RuntimeError
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    app = apply_store.get(source_job_id)
+    assert app is not None
+    return _application_out(app)
+
+
+@app.get("/api/applications/{source_job_id}/fill")
+def get_application_fill(source_job_id: str) -> dict[str, Any]:
+    """Return the persisted fill outcome for one application."""
+    app = apply_store.get(source_job_id)
+    if app is None:
+        raise HTTPException(status_code=404, detail=f"Unknown application {source_job_id!r}.")
+    result = apply_fill.get_fill_result(source_job_id)
+    if result is None:
+        raise HTTPException(status_code=404, detail="No fill result for this application.")
+    if hasattr(result, "model_dump"):
+        return result.model_dump()
+    return dict(result)
+
+
+@app.post("/api/applications/run-daily", response_model=RunDailyResponse)
+def run_daily_applications(body: RunDailyRequest | None = None) -> RunDailyResponse:
+    """Start the daily discover/screen/tailor cycle on a background thread when idle."""
+    options = body or RunDailyRequest()
+    started, summary = apply_daily.try_start_daily(
+        limit=options.limit,
+        dry_run=options.dry_run,
+        max_submissions=options.max_submissions,
+    )
+    return RunDailyResponse(started=started, summary=summary if summary else None)
 
 
 @app.get("/api/master-resume")
@@ -1978,6 +2362,11 @@ def activate_workspace(workspace_id: str) -> WorkspaceActivateResponse:
     with template_ops.LOCK:
         if get_queue().busy():
             raise _busy_conflict("switching profiles")
+        if apply_daily.daily_busy():
+            raise HTTPException(
+                status_code=409,
+                detail="Cannot switch profiles while the daily apply funnel is running.",
+            )
         try:
             workspace.activate(workspace_id)
         except workspace.WorkspaceError as exc:

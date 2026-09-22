@@ -48,10 +48,12 @@ from resume_tailor.rewrite import FabricationError
 from resume_tailor.template_profile import active_layout
 from resume_tailor.web import template_ops
 from resume_tailor.web.schemas import (
+    CoverAnglesIn,
     CoverLetterOut,
     ExpandedEntryOut,
     ExpansionOut,
     JobSettings,
+    RunMetadata,
     KeywordGapOut,
     RunReportOut,
     SectionSummaryOut,
@@ -83,6 +85,8 @@ class Job:
     #: Profile that owned this run when it was submitted — needed so `GET /api/jobs`
     #: after a profile switch does not list another workspace's in-memory jobs.
     workspace_id: str | None = None
+    #: Optional posting provenance for the apply funnel (URL, company, Simplify id).
+    metadata: RunMetadata | None = None
     error: str | None = None
     report: RunReportOut | None = None
     expansion: ExpansionOut | None = None
@@ -134,6 +138,7 @@ def _persist_run_record(job: Job) -> None:
         "title": title,
         "error": job.error,
         "report": job.report.model_dump() if job.report else None,
+        "metadata": job.metadata.model_dump() if job.metadata else None,
     }
     try:
         job.out_dir.mkdir(parents=True, exist_ok=True)
@@ -167,7 +172,12 @@ class JobQueue:
         self._worker: threading.Thread | None = None
         self._order: list[str] = []  # job ids still waiting, in queue order
 
-    def submit(self, jd_text: str, settings: JobSettings) -> tuple[Job, int]:
+    def submit(
+        self,
+        jd_text: str,
+        settings: JobSettings,
+        metadata: RunMetadata | None = None,
+    ) -> tuple[Job, int]:
         """Enqueue a run. Returns `(job, 1-based queue position)`."""
         job_id = uuid.uuid4().hex[:12]
         job = Job(
@@ -175,6 +185,7 @@ class JobQueue:
             jd_text=jd_text,
             settings=settings,
             workspace_id=config.active_workspace_id(),
+            metadata=metadata,
         )
         with self._lock:
             self._jobs[job_id] = job
@@ -304,6 +315,18 @@ class JobQueue:
                 self._execute(job)
                 job.status = "succeeded"
                 _persist_run_record(job)
+                try:
+                    from resume_tailor.apply import packet as apply_packet
+
+                    apply_packet.write_packet(job.job_id)
+                except Exception as exc:  # noqa: BLE001 - never fail a finished run
+                    job.emit(
+                        ProgressEvent(
+                            stage="packet",
+                            message=f"Packet build failed: {exc}",
+                            detail={},
+                        )
+                    )
             except JobCancelled:
                 job.status = "cancelled"
                 job.emit(ProgressEvent(stage="cancel", message="Run cancelled.", detail={}))
@@ -363,6 +386,10 @@ class JobQueue:
                 overrides["skills"] = settings.skills_model
             if settings.cover_model:
                 overrides["cover"] = settings.cover_model
+            if settings.review_model:
+                overrides["review"] = settings.review_model
+            if settings.answer_model:
+                overrides["answer"] = settings.answer_model
             config.resolve(
                 settings.model,
                 overrides=overrides or None,
@@ -608,6 +635,12 @@ class JobQueue:
                     result.bullets,
                     job.jd_text,
                     use_cache=not settings.no_cache,
+                    angles=coverletter.CoverAngles(
+                        why_company=settings.cover_angles.why_company,
+                        problem=settings.cover_angles.problem,
+                        approach=settings.cover_angles.approach,
+                        tone=settings.cover_angles.tone,
+                    ),
                     on_event=on_event,
                 )
                 cover_path = out_dir / "cover.docx"
@@ -806,6 +839,7 @@ def regenerate_cover_letter(
     job_id: str,
     *,
     instruction: str = "",
+    cover_angles: CoverAnglesIn | None = None,
 ) -> CoverLetterOut:
     """Re-draft and re-render a job's cover letter, overwriting artifacts in place."""
     out_dir = config.OUTPUT_DIR / "jobs" / job_id
@@ -828,6 +862,15 @@ def regenerate_cover_letter(
         requirements_path.read_text(encoding="utf-8")
     )
 
+    angles = None
+    if cover_angles is not None:
+        angles = coverletter.CoverAngles(
+            why_company=cover_angles.why_company,
+            problem=cover_angles.problem,
+            approach=cover_angles.approach,
+            tone=cover_angles.tone,
+        )
+
     resume = data.load()
     with config.pinned_specs(backend_specs, effort=None):
         letter = coverletter.draft_letter(
@@ -837,6 +880,7 @@ def regenerate_cover_letter(
             jd_text,
             use_cache=False,
             instruction=instruction,
+            angles=angles,
         )
         coverletter.render_cover_letter(resume, letter, out=out_dir / "cover.docx")
 
@@ -849,14 +893,20 @@ def regenerate_cover_letter(
     return out
 
 
-def verify_claim(job_id: str, text: str) -> coverletter.ClaimCheck:
-    """Check free-text application prose against a finished run's tailored bullets.
+def verify_claim(job_id: str | None, text: str) -> coverletter.ClaimCheck:
+    """Check free-text application prose against tailored or master-resume bullets.
 
-    Reloads ``bullets.json`` and ``jd.txt`` from the job directory (same artifacts
-    ``regenerate_cover_letter`` uses) and runs ``coverletter.check_claims``. Pure —
-    no LLM, no disk writes. Raises ``FileNotFoundError`` when the run has no saved
-    bullets or JD.
+    When ``job_id`` is set, reloads ``bullets.json`` and ``jd.txt`` from the job
+    directory (same artifacts ``regenerate_cover_letter`` uses). When omitted,
+    checks against every bullet in the master resume with an empty JD context.
+    Pure — no LLM, no disk writes. Raises ``FileNotFoundError`` when a job-scoped
+    run has no saved bullets or JD.
     """
+    resume = data.load()
+    if job_id is None:
+        bullets = {bullet.id: bullet.text for bullet in resume.all_bullets()}
+        return coverletter.check_claims(resume, bullets, "", text)
+
     out_dir = config.OUTPUT_DIR / "jobs" / job_id
     bullets_path = out_dir / "bullets.json"
     if not bullets_path.exists():
@@ -869,7 +919,6 @@ def verify_claim(job_id: str, text: str) -> coverletter.ClaimCheck:
 
     bullets = json.loads(bullets_path.read_text(encoding="utf-8"))
     jd_text = jd_path.read_text(encoding="utf-8")
-    resume = data.load()
     return coverletter.check_claims(resume, bullets, jd_text, text)
 
 
@@ -880,6 +929,7 @@ def _to_report_out(data: report.RunReport) -> RunReportOut:
         seniority=data.seniority,
         coverage_matched=data.coverage_matched,
         coverage_total=data.coverage_total,
+        extraction_diagnosis=data.extraction_diagnosis,
         missing_must_haves=data.missing_must_haves,
         unmatched_canonicals=[[c, p] for c, p in data.unmatched_canonicals],
         gaps=[
@@ -889,6 +939,8 @@ def _to_report_out(data: report.RunReport) -> RunReportOut:
                 importance=g.importance,
                 reason=g.reason,
                 evidence=g.evidence,
+                band=g.band,
+                evidence_tier=g.evidence_tier,
             )
             for g in data.gaps
         ],

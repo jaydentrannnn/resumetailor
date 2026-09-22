@@ -16,6 +16,9 @@ from resume_tailor.rewrite import (
     BulletScore,
     ScoreTable,
     check_fabrication,
+    delegated_authorship,
+    guard_offenders,
+    rebound_numbers,
     score,
     score_entry,
     select,
@@ -566,6 +569,139 @@ def test_preserved_numbers_pass():
     assert check_fabrication(src, "Indexed 55k+ documents, 92% accuracy.") == []
 
 
+def test_magnitude_suffix_does_not_license_bare_digits():
+    """A source `50k` must not license a bare `50` — magnitude folding stays whole-token."""
+    src = bullet("a", "Supported 50k monthly users.", ["support"], metric=True)
+    assert "50" in check_fabrication(src, "Supported 50 monthly users.")
+
+
+def test_rebound_numbers_flags_reattached_metric():
+    """'40 engineers' in the source must not license '40 hours' in the rewrite."""
+    src = bullet(
+        "a",
+        "Spent 8 years supporting 40 engineers on the platform.",
+        ["support"],
+        metric=True,
+    )
+    assert rebound_numbers([src], "Spent 8 years logging 40 hours on the platform.") == [
+        "40 hours"
+    ]
+    assert any(
+        o.startswith("rebound:")
+        for o in guard_offenders(
+            [src], "Spent 8 years logging 40 hours on the platform."
+        )
+    )
+
+
+def test_rebound_numbers_passes_faithful_restatement():
+    """Extra modifiers around the same number-noun binding are fine."""
+    src = bullet(
+        "a",
+        "Spent 8 years supporting 40 engineers on the platform.",
+        ["support"],
+        metric=True,
+    )
+    assert (
+        rebound_numbers(
+            [src], "Spent 8 years supporting 40 remote engineers across the platform."
+        )
+        == []
+    )
+
+
+def test_rebound_numbers_accepts_an_aliased_noun(monkeypatch):
+    """A vocabulary-pack alias makes two spellings of one subject the same binding."""
+    src = bullet("a", "Tutored 130 students.", ["teaching"], metric=True)
+    assert rebound_numbers([src], "Tutored 130 undergraduates.") == ["130 undergraduates"]
+
+    monkeypatch.setitem(config.TAG_ALIASES, "undergraduate", "student")
+    assert rebound_numbers([src], "Tutored 130 undergraduates.") == []
+
+
+def test_rebound_numbers_reports_one_claim_per_number():
+    """A rebinding names the nearest noun only — not every adjective in the window."""
+    src = bullet("a", "Tutored 130 students.", ["teaching"], metric=True)
+    assert rebound_numbers([src], "Logged 130 hours clarifying Python semantics.") == [
+        "130 hours"
+    ]
+
+
+def test_rebound_numbers_silent_when_source_never_binds_noun():
+    """If the source mentions a number with no noun neighbour, the guard cannot judge."""
+    src = bullet("a", "Improved latency by 40.", ["latency"], metric=True)
+    assert rebound_numbers([src], "Improved latency by 40 hours.") == []
+
+
+def test_delegated_authorship_flags_escalation():
+    """Coordinating a vendor must not become 'built the ingestion layer'."""
+    src = bullet(
+        "a",
+        "Coordinated a vendor to deliver the ingestion layer for the billing pipeline.",
+        ["ingestion"],
+    )
+    rewrite = "Built the ingestion layer for the billing pipeline."
+    claims = delegated_authorship([src], rewrite)
+    assert claims and "built" in claims[0]
+    assert any(o.startswith("authorship:") for o in guard_offenders([src], rewrite))
+
+
+def test_delegated_authorship_silent_without_delegation_verb():
+    src = bullet("a", "Reviewed a vendor proposal for the ingestion layer.", ["ingestion"])
+    assert (
+        delegated_authorship([src], "Built the ingestion layer for billing.") == []
+    )
+
+
+def test_delegated_authorship_silent_without_external_party():
+    """'Led a team that built X' — an internal team is not an external party."""
+    src = bullet(
+        "a",
+        "Led a team that delivered the ingestion layer for billing.",
+        ["ingestion"],
+    )
+    assert (
+        delegated_authorship([src], "Built the ingestion layer for billing.") == []
+    )
+
+
+def test_delegated_authorship_silent_when_source_also_claims_direct():
+    """Whole-bullet: 'managed a vendor and wrote the loader' already asserts authorship."""
+    src = bullet(
+        "a",
+        "Managed a vendor and wrote the loader for the billing pipeline.",
+        ["ingestion"],
+    )
+    assert (
+        delegated_authorship([src], "Built the loader for the billing pipeline.") == []
+    )
+
+
+def test_delegated_authorship_silent_when_rewrite_keeps_external_party():
+    src = bullet(
+        "a",
+        "Coordinated a vendor to deliver the ingestion layer.",
+        ["ingestion"],
+    )
+    assert (
+        delegated_authorship(
+            [src], "Built the ingestion layer with the vendor for billing."
+        )
+        == []
+    )
+
+
+def test_delegated_authorship_silent_without_shared_tokens():
+    src = bullet(
+        "a",
+        "Coordinated a vendor to deliver the ingestion layer.",
+        ["ingestion"],
+    )
+    # Rewrite invents unrelated work — fabrication guard catches new terms; authorship
+    # stays silent because shared significant tokens < 2.
+    assert delegated_authorship([src], "Built a mobile app for consumers.") == []
+
+
 @pytest.mark.parametrize("term", ["Elasticsearch", "GRPO", "GPT-4"])
 def test_various_unsourced_terms_are_caught(term):
     src = bullet("a", "Trained a model on public data.", ["machine learning"])
@@ -1029,21 +1165,24 @@ def test_fabrication_retry_is_scoped_to_offending_ids(rewrite_calls):
     assert outcome.texts["b"] == "Shipped a Python tool for teams."
 
 
-def test_fabrication_retry_still_fabricating_is_fatal(rewrite_calls):
-    """One retry only — a second invention remains a hard failure."""
+def test_fabrication_retry_still_fabricating_falls_back_to_source(rewrite_calls):
+    """One retry only — a second invention keeps the original text and warns instead."""
     src = [bullet("a", "Built a Python service.", ["python"])]
     rewrite_calls(
         _reply(a="Built a Kubernetes service in Python."),
         _reply(a="Built a PyTorch service in Python."),
     )
 
-    with pytest.raises(rewrite.FabricationError, match="PyTorch"):
-        rewrite.rewrite_bullets(
-            src, _reqs(), char_budget=202, repair_widows=False, repair_verbs=False
-        )
+    outcome = rewrite.rewrite_bullets(
+        src, _reqs(), char_budget=202, repair_widows=False, repair_verbs=False
+    )
+
+    assert outcome.texts["a"] == "Built a Python service."
+    assert "a" in outcome.fabrications_rejected
+    assert any("PyTorch" in t for t in outcome.fabrications_rejected["a"])
 
 
-def test_fabrication_retry_missing_id_is_fatal(rewrite_calls):
+def test_fabrication_retry_missing_id_falls_back_to_source(rewrite_calls):
     """Omitting the offender on retry must not silently pass the first draft."""
     src = [bullet("a", "Built a Python service.", ["python"])]
     rewrite_calls(
@@ -1051,10 +1190,88 @@ def test_fabrication_retry_missing_id_is_fatal(rewrite_calls):
         _reply(ghost="Built a Python service."),
     )
 
-    with pytest.raises(rewrite.FabricationError, match="Kubernetes"):
-        rewrite.rewrite_bullets(
-            src, _reqs(), char_budget=202, repair_widows=False, repair_verbs=False
+    outcome = rewrite.rewrite_bullets(
+        src, _reqs(), char_budget=202, repair_widows=False, repair_verbs=False
+    )
+
+    assert outcome.texts["a"] == "Built a Python service."
+    assert "a" in outcome.fabrications_rejected
+    assert any("Kubernetes" in t for t in outcome.fabrications_rejected["a"])
+
+
+def test_rebound_falls_back_to_source_after_one_retry(rewrite_calls):
+    """A number rebinding is a fabrication: one retry, then fall back and warn."""
+    src = [
+        bullet(
+            "a",
+            "Spent 8 years supporting 40 engineers on the platform.",
+            ["support"],
+            metric=True,
         )
+    ]
+    rewrite_calls(
+        _reply(a="Spent 8 years logging 40 hours on the platform."),
+        _reply(a="Spent 8 years logging 40 hours on support work."),
+    )
+
+    outcome = rewrite.rewrite_bullets(
+        src, _reqs(), char_budget=202, repair_widows=False, repair_verbs=False
+    )
+
+    assert outcome.texts["a"] == "Spent 8 years supporting 40 engineers on the platform."
+    assert "a" in outcome.fabrications_rejected
+    assert any("rebound" in t for t in outcome.fabrications_rejected["a"])
+
+
+def test_rebound_retry_prompt_names_rebound_claims(rewrite_calls):
+    """The retry prompt must distinguish a rebound from a fabricated term."""
+    src = [
+        bullet(
+            "a",
+            "Spent 8 years supporting 40 engineers on the platform.",
+            ["support"],
+            metric=True,
+        )
+    ]
+    calls = rewrite_calls(
+        _reply(a="Spent 8 years logging 40 hours on the platform."),
+        _reply(a="Spent 8 years supporting 40 engineers on the platform."),
+    )
+
+    outcome = rewrite.rewrite_bullets(
+        src, _reqs(), char_budget=202, repair_widows=False, repair_verbs=False
+    )
+
+    follow_up = calls[1]["messages"][0]["content"]
+    assert "rebound_claims=" in follow_up
+    assert "40 hours" in follow_up
+    assert outcome.texts["a"] == "Spent 8 years supporting 40 engineers on the platform."
+
+
+def test_rebounding_widow_repair_is_discarded_not_fatal(rewrite_calls):
+    """A polish pass that rebinds a number is discarded as a warning, not raised."""
+    src = [
+        bullet(
+            "a",
+            "Spent 8 years supporting 40 engineers.",
+            ["support"],
+            metric=True,
+        )
+    ]
+    # Same widowing pattern as test_a_fabricating_widow_repair_is_discarded_not_fatal.
+    widowed_draft = "Spent 8 years supporting 40 engineers. " + _text(180)
+    rewrite_calls(
+        _reply(a=widowed_draft),
+        _reply(a="Spent 8 years logging 40 hours."),
+    )
+
+    outcome = rewrite.rewrite_bullets(src, _reqs(), char_budget=202)
+
+    assert outcome.texts["a"] == widowed_draft
+    assert outcome.widows_repaired == 0
+    assert any(
+        o.startswith("rebound:") for o in outcome.widow_repairs_rejected.get("a", [])
+    )
 
 
 def test_no_widow_repair_holds_the_run_to_one_call(rewrite_calls):

@@ -117,12 +117,18 @@ class BackendClient:
         return await self._request("POST", f"/api/workspaces/{workspace_id}/activate")
 
     async def create_job(
-        self, jd_text: str, settings: dict[str, Any] | None = None
+        self,
+        jd_text: str,
+        settings: dict[str, Any] | None = None,
+        *,
+        metadata: dict[str, Any] | None = None,
     ) -> dict[str, Any]:
         """POST /api/jobs."""
         body: dict[str, Any] = {"jd_text": jd_text}
         if settings is not None:
             body["settings"] = settings
+        if metadata is not None:
+            body["metadata"] = metadata
         return await self._request("POST", "/api/jobs", json=body)
 
     async def get_job(self, job_id: str) -> dict[str, Any]:
@@ -147,10 +153,64 @@ class BackendClient:
             json={"instruction": instruction},
         )
 
-    async def verify_claim(self, job_id: str, text: str) -> dict[str, Any]:
+    async def verify_claim(
+        self,
+        text: str,
+        *,
+        job_id: str | None = None,
+    ) -> dict[str, Any]:
         """POST /api/verify-claim."""
+        body: dict[str, Any] = {"text": text}
+        if job_id is not None:
+            body["job_id"] = job_id
+        return await self._request("POST", "/api/verify-claim", json=body)
+
+    async def get_job_packet(self, job_id: str) -> dict[str, Any]:
+        """GET /api/jobs/{id}/packet.json."""
+        return await self._request("GET", f"/api/jobs/{job_id}/packet.json")
+
+    async def answer_application_question(
+        self,
+        job_id: str,
+        question: str,
+        *,
+        max_chars: int = 1500,
+    ) -> dict[str, Any]:
+        """POST /api/jobs/{id}/answer."""
         return await self._request(
-            "POST", "/api/verify-claim", json={"job_id": job_id, "text": text}
+            "POST",
+            f"/api/jobs/{job_id}/answer",
+            json={"question": question, "max_chars": max_chars},
+        )
+
+    async def list_applications(
+        self,
+        *,
+        status: str | None = None,
+        limit: int = 20,
+    ) -> dict[str, Any]:
+        """GET /api/applications."""
+        params: dict[str, Any] = {"limit": limit}
+        if status is not None:
+            params["status"] = status
+        return await self._request("GET", "/api/applications", params=params)
+
+    async def get_application(self, source_job_id: str) -> dict[str, Any]:
+        """GET /api/applications/{source_job_id}."""
+        return await self._request("GET", f"/api/applications/{source_job_id}")
+
+    async def mark_application(
+        self,
+        source_job_id: str,
+        status: str,
+        *,
+        note: str = "",
+    ) -> dict[str, Any]:
+        """POST /api/applications/{source_job_id}/status."""
+        return await self._request(
+            "POST",
+            f"/api/applications/{source_job_id}/status",
+            json={"status": status, "note": note},
         )
 
     async def download_bytes(self, path: str) -> bytes:

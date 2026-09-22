@@ -86,6 +86,16 @@ def client(tmp_path, monkeypatch):
         "render_cover_letter",
         lambda _resume, letter, **k: letter,
     )
+    # Review is CLI-only today, but stub the module so a future jobs-path wire-up
+    # cannot reach the network from an unstubbed test (same pattern as skills/cover).
+    from resume_tailor import review as review_mod
+    from resume_tailor.review import ReviewResult
+
+    monkeypatch.setattr(
+        review_mod,
+        "review_bullets",
+        lambda *a, **k: ReviewResult(model="stub"),
+    )
 
     resume_path = tmp_path / "master_resume.json"
     resume_path.write_text(
@@ -424,6 +434,35 @@ def test_settings_round_trip_with_section_weighting(client, tmp_path, monkeypatc
     assert got["max_bullets_per_entry"] == 3
 
 
+def test_settings_round_trip_with_cover_angles(client, tmp_path, monkeypatch):
+    """CoverAngles nested on JobSettings survive a settings PUT/GET."""
+    c, _ = client
+    _point_settings_at(tmp_path, monkeypatch)
+
+    res = c.put(
+        "/api/settings",
+        json={
+            "settings": {
+                "cover_letter": True,
+                "cover_angles": {
+                    "why_company": "Their RAG stack",
+                    "problem": "Retrieval latency",
+                    "approach": "Measure first",
+                    "tone": "direct",
+                },
+            }
+        },
+    )
+    assert res.status_code == 200
+    angles = res.json()["settings"]["cover_angles"]
+    assert angles["why_company"] == "Their RAG stack"
+    assert angles["tone"] == "direct"
+
+    got = c.get("/api/settings").json()["settings"]["cover_angles"]
+    assert got["problem"] == "Retrieval latency"
+    assert got["approach"] == "Measure first"
+
+
 def test_settings_round_trip_with_style_overrides(client, tmp_path, monkeypatch):
     """Custom rewrite/expand style blocks persist through GET/PUT."""
     c, _ = client
@@ -537,6 +576,8 @@ def test_ollama_model_setting_repoints_only_the_ollama_stages(client, monkeypatc
         "facets": "gemma4",
         "skills": "gemma4",
         "cover": "gemma4",
+        "review": "gemma4",
+        "answer": "gemma4",
     }
     config.resolve("claude")
 

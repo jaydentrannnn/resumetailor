@@ -21,3 +21,9 @@ python-multipart>=0.0.12
 # over the web API — not required for the CLI or SPA. Pin <2: mcp 2.x renamed
 # FastMCP to MCPServer and changed the stdio entry surface.
 mcp>=1.2,<2
+# Application automation (src/resume_tailor/apply). Client-only Playwright connects
+# over CDP to the host browser (Edge recommended) — do NOT run `playwright install`
+# in Docker.
+playwright>=1.47
+# SimplifyJobs README HTML table parsing in apply/sources.py.
+beautifulsoup4>=4.12

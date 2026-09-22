@@ -17,6 +17,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "resume_tailor.library_seeds" = ["*.json"]
+"resume_tailor.apply" = ["*.js"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]
@@ -24,8 +25,9 @@ asyncio_mode = "auto"
 asyncio_default_fixture_loop_scope = "function"
 markers = [
     "owner: needs the developer's own data/master_resume.json or templates/main_template.docx; excluded by default so the suite is reproducible on any machine.",
+    "browser: needs a local Chromium via `playwright install chromium`; excluded by default.",
 ]
-addopts = "-m \"not owner\""
+addopts = "-m \"not owner and not browser\""
 
 [tool.ruff]
 target-version = "py313"

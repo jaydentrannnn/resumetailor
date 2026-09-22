@@ -1,0 +1,14 @@
+{
+  "scannedAt": "2026-09-01",
+  "fontStack": {
+    "display": "Fraunces (Google Fonts link, index.html:9)",
+    "sans": "IBM Plex Sans (Google Fonts link, index.html:9)",
+    "mono": null
+  },
+  "palette": "Hex custom properties inside a Tailwind v4 @theme block, frontend/src/index.css:3-19, with a data-theme=\"dark\" override block at :22-36",
+  "motionLibrary": null,
+  "spacingScale": "Tailwind default numeric scale, used directly — no custom --space-* tokens",
+  "framework": "Vite + React 19 + react-router-dom 7, Tailwind v4 via @tailwindcss/vite",
+  "preserved": ["font stack", "palette hues/values", "spacing approach", "route structure"],
+  "introduced": ["design.md", "motion tokens", "font-mono token", "micro-label token", "single-containment-layer rule"]
+}

@@ -1,0 +1,12 @@
+{
+  "jobAd": {
+    "sections": {
+      "jobDescription": {
+        "text": "<p>Software engineering internship building Python APIs.</p> <p>Work with Python and distributed systems across product squads.</p> <p>Work with Python and distributed systems across product squads.</p> <p>Work with Python and distributed systems across product squads.</p> <p>Work with Python and distributed systems across product squads.</p> <p>Work with Python and distributed systems across product squads.</p> <p>Work with Python and distributed systems across product squads.</p> <p>Work with Python and distributed systems across product squads.</p> <p>Work with Python and distributed systems across product squads.</p> <p>Work with Python and distributed systems across product squads.</p> <p>Work with Python and distributed systems across product squads.</p>"
+      },
+      "qualifications": {
+        "text": "<p>Bachelor's degree in Computer Science or related field.</p>"
+      }
+    }
+  }
+}

@@ -294,3 +294,120 @@ def test_check_claims_allows_number_from_jd():
     # "requests" / "handling" may or may not be in source; focus on the number rule.
     assert "10,000" not in result.unsupported_numbers
     assert "10000" not in {n.replace(",", "") for n in result.unsupported_numbers}
+
+
+def test_angles_reach_the_prompt(cover_calls):
+    """CoverAngles appear in a distinct <angles> block, not <extra_instruction>."""
+    resume = synthetic_resume()
+    reqs = _reqs()
+    bullets = _bullets(resume)
+    jd = "Python role at Example Corp in Austin."
+    calls = cover_calls(
+        CoverLetterLLM(
+            company="Example Corp",
+            company_location="Austin",
+            paragraphs=[
+                "I built Python services at Example Corp scale for ranking systems.",
+                "The Austin team needs retrieval depth I already shipped.",
+                "I would welcome a conversation about the Python role.",
+            ],
+        )
+    )
+    draft_letter(
+        resume,
+        reqs,
+        bullets,
+        jd,
+        use_cache=False,
+        angles=coverletter.CoverAngles(
+            why_company="Their retrieval work",
+            problem="Latency at scale",
+            approach="Measure first",
+            tone="direct",
+        ),
+    )
+    content = calls[0]["messages"][0]["content"]
+    assert "<angles>" in content
+    assert "Their retrieval work" in content
+    assert "<extra_instruction>" not in content
+
+
+def test_cache_key_changes_with_each_angle_field():
+    """Changing any angle field must invalidate the cover cache."""
+    resume = synthetic_resume()
+    reqs = _reqs()
+    bullets = _bullets(resume)
+    jd = "Python role."
+    base = _cache_path(bullets, reqs, jd_text=jd, word_band=config.COVER_WORD_BAND)
+    for field, value in (
+        ("why_company", "why"),
+        ("problem", "prob"),
+        ("approach", "app"),
+        ("tone", "direct"),
+    ):
+        other = _cache_path(
+            bullets,
+            reqs,
+            jd_text=jd,
+            word_band=config.COVER_WORD_BAND,
+            angles=coverletter.CoverAngles(**{field: value}),
+        )
+        assert other != base, field
+
+
+def test_angles_do_not_disable_caching_or_guard_retry(cover_calls, tmp_path, monkeypatch):
+    """Unlike instruction, angles keep cache writes and the hard-offender retry."""
+    monkeypatch.setattr(config, "CACHE_DIR", tmp_path)
+    resume = synthetic_resume()
+    reqs = _reqs()
+    bullets = _bullets(resume)
+    jd = "Python role at Example Corp requiring semantic search."
+    # First reply: em dash (hard) — forces retry. Second: clean.
+    bad = CoverLetterLLM(
+        company="Example Corp",
+        paragraphs=[
+            "I built Python services \u2014 and semantic search systems at Example Corp.",
+            "Their semantic search needs match work I already shipped.",
+            "I would welcome a conversation about the Python role.",
+        ],
+    )
+    good = CoverLetterLLM(
+        company="Example Corp",
+        paragraphs=[
+            "I built Python services and semantic search systems at Example Corp.",
+            "Their semantic search needs match work I already shipped.",
+            "I would welcome a conversation about the Python role.",
+        ],
+    )
+    calls = cover_calls(bad, good)
+    angles = coverletter.CoverAngles(why_company="retrieval focus")
+    letter = draft_letter(
+        resume, reqs, bullets, jd, use_cache=True, angles=angles
+    )
+    assert len(calls) == 2, "angles must not skip the guard retry"
+    cache = _cache_path(
+        bullets, reqs, jd_text=jd, word_band=config.COVER_WORD_BAND, angles=angles
+    )
+    assert cache.exists(), "angles must not skip the cache write"
+    assert letter.paragraphs == good.paragraphs
+
+
+def test_genericness_warns_without_raising():
+    """A letter naming neither company nor JD phrase is a soft AI-tell warning."""
+    resume = synthetic_resume()
+    llm_result = CoverLetterLLM(
+        company="",
+        paragraphs=[
+            "I am a strong candidate for this opportunity.",
+            "My background prepares me well for challenging work.",
+            "I look forward to discussing next steps.",
+        ],
+    )
+    accepted = _accept_letter(
+        llm_result,
+        source_bullets=coverletter._source_bullets(resume, _bullets(resume)),
+        jd_text="Python FastAPI RAG engineer at Acme.",
+        word_band=(1, 500),
+    )
+    assert any(o.startswith("generic:") for o in accepted.soft_offenders)
+    assert not any(o.startswith("generic:") for o in accepted.hard_offenders)

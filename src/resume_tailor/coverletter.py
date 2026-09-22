@@ -32,8 +32,9 @@ from .rewrite import (
     _format_keywords,
 )
 
-#: Bumped when ``_SYSTEM`` or the cover request shape changes.
-_COVER_PROMPT_VERSION = 1
+#: Bumped when ``_SYSTEM`` or the cover request shape changes. Version 2 added
+#: ATS/trust keyword split, anti-generic self-check, and optional CoverAngles.
+_COVER_PROMPT_VERSION = 2
 
 #: Long dashes the model must never emit. Mechanical replacement is safe when one slips
 #: through after a retry.
@@ -104,6 +105,9 @@ semicolon, or two sentences.
 - Return body paragraphs only. Letterhead, date, inside address, salutation, closing, and \
 signature are filled in by code.
 - Stay inside the given word band.
+- A sentence that could appear unchanged in any cover letter for any company must be \
+rewritten until it names this employer, this role, or a concrete fact from the posting \
+or the tailored resume.
 
 Voice
 - Lead with what was done, not how it felt. Reach for a number, percentage, or concrete \
@@ -117,6 +121,12 @@ trait matters, prove it with a result.
 - Mostly short declarative sentences, with one longer sentence per paragraph for rhythm. \
 Never more than one subordinate clause deep.
 - Frame everything around what the employer needs rather than what the candidate wants.
+
+Keywords
+- Treat must-have technical keywords as ATS-critical: when the tailored resume honestly \
+supports one, mirror the posting's own wording for it in the body.
+- Treat soft skills and nice-to-haves as trust signals for a human reader: show them \
+through the work rather than naming them as traits.
 
 Structure, four paragraphs, about 350 words
 - Opening: name the role and open on something concrete. Never "I am writing to apply for".
@@ -151,6 +161,9 @@ semicolon, or two sentences.
 - Return body paragraphs only. Letterhead, date, inside address, salutation, closing, and \
 signature are filled in by code.
 - Stay inside the given word band.
+- A sentence that could appear unchanged in any cover letter for any company must be \
+rewritten until it names this employer, this role, or a concrete fact from the posting \
+or the tailored resume.
 """
 
 _RETURN_SHAPE = """\
@@ -196,6 +209,85 @@ class CoverLetterLLM(BaseModel):
     company_location: str = ""
     addressee: str = ""
     paragraphs: list[str] = Field(default_factory=list)
+
+
+@dataclass(frozen=True)
+class CoverAngles:
+    """Optional per-application angle inputs for the cover letter.
+
+    Separate from ``instruction`` on purpose: a non-empty instruction skips cache
+    read, cache write, and the guard retry. Angles are durable per-application
+    inputs that must stay cacheable and guarded. All fields optional — absent,
+    behaviour is byte-identical to a run without angles (aside from the prompt
+    version bump).
+    """
+
+    why_company: str = ""
+    problem: str = ""
+    approach: str = ""
+    tone: str = ""
+
+    def is_empty(self) -> bool:
+        """True when every field is blank."""
+        return not any(
+            (
+                self.why_company.strip(),
+                self.problem.strip(),
+                self.approach.strip(),
+                self.tone.strip(),
+            )
+        )
+
+    def cache_payload(self) -> str:
+        """Stable string folded into the cover-letter cache key."""
+        return "\n".join(
+            [
+                self.why_company.strip(),
+                self.problem.strip(),
+                self.approach.strip(),
+                self.tone.strip(),
+            ]
+        )
+
+    def prompt_block(self) -> str:
+        """XML block for the user message, or empty string when nothing is set."""
+        if self.is_empty():
+            return ""
+        parts: list[str] = ["<angles>"]
+        if self.why_company.strip():
+            parts.append(f"  <why_company>{self.why_company.strip()}</why_company>")
+        if self.problem.strip():
+            parts.append(f"  <problem>{self.problem.strip()}</problem>")
+        if self.approach.strip():
+            parts.append(f"  <approach>{self.approach.strip()}</approach>")
+        if self.tone.strip():
+            parts.append(f"  <tone>{self.tone.strip()}</tone>")
+        parts.append("</angles>")
+        return "\n".join(parts)
+
+
+def _genericness_offenders(
+    paragraphs: list[str],
+    *,
+    company: str,
+    jd_text: str,
+) -> list[str]:
+    """Soft offenders when no body paragraph names the company or a JD phrase.
+
+    Soft (not hard): surfaces as a warning without triggering a retry, matching
+    phrase-level AI tells.
+    """
+    body = "\n".join(paragraphs).lower()
+    if company.strip() and company.strip().lower() in body:
+        return []
+    # A short distinctive phrase from the posting — first 4+ letter token sequence
+    # of length >= 2 that appears in both. Cheap proxy for "mentions the JD".
+    jd_tokens = [t.lower() for t in _TOKEN.findall(jd_text) if len(t) >= 4]
+    for i in range(len(jd_tokens) - 1):
+        phrase = f"{jd_tokens[i]} {jd_tokens[i + 1]}"
+        if phrase in body:
+            return []
+    return ["generic: no body paragraph names the company or a posting phrase"]
 
 
 @dataclass
@@ -454,6 +546,9 @@ def _accept_letter(
             soft.append(tell)
 
     hard.extend(consecutive_first_person(paragraphs))
+    soft.extend(
+        _genericness_offenders(paragraphs, company=company, jd_text=jd_text)
+    )
 
     count = _word_count(paragraphs)
     lo, hi = word_band
@@ -535,8 +630,10 @@ def _cache_path(
     jd_text: str,
     word_band: tuple[int, int],
     instruction: str = "",
+    angles: CoverAngles | None = None,
 ) -> Path:
     """Cache key covering everything the cover letter depends on."""
+    angles = angles or CoverAngles()
     payload = "\n".join(
         [
             str(_COVER_PROMPT_VERSION),
@@ -544,6 +641,7 @@ def _cache_path(
             style.digest("cover"),
             f"{word_band[0]}-{word_band[1]}",
             instruction,
+            angles.cache_payload(),
             requirements.model_dump_json(),
             jd_text,
             *(f"{bid}:{text}" for bid, text in sorted(bullets.items())),
@@ -603,6 +701,7 @@ def _call_model(
     jd_text: str,
     word_band: tuple[int, int],
     instruction: str = "",
+    angles: CoverAngles | None = None,
     retry_offenders: list[str] | None = None,
     previous_paragraphs: list[str] | None = None,
 ) -> CoverLetterLLM:
@@ -619,6 +718,10 @@ def _call_model(
         f"<tailored_resume>\n{_format_tailored_entries(resume, bullets)}\n</tailored_resume>\n\n",
         f"<job_posting>\n{jd_text.strip()}\n</job_posting>",
     ]
+    angles_block = (angles or CoverAngles()).prompt_block()
+    if angles_block:
+        # Distinct from <extra_instruction>: angles are durable and cacheable.
+        user_parts.append(f"\n\n{angles_block}")
     if instruction.strip():
         user_parts.append(f"\n\n<extra_instruction>\n{instruction.strip()}\n</extra_instruction>")
     if retry_offenders:
@@ -656,6 +759,7 @@ def draft_letter(
     *,
     use_cache: bool = True,
     instruction: str = "",
+    angles: CoverAngles | None = None,
     on_event: events.ProgressCallback | None = None,
 ) -> CoverLetter:
     """Draft a cover letter from the tailored bullets and job posting.
@@ -664,10 +768,14 @@ def draft_letter(
     salutation, inside address, date, closing, and signature. One targeted retry runs when
     the guard finds hard offenders. Surviving soft offenders (phrase-level AI tells) become
     warnings rather than failing the stage.
+
+    ``angles`` is a separate, cacheable parameter — do not route durable per-application
+    inputs through ``instruction``, which deliberately bypasses cache and the guard retry.
     """
     word_band = config.COVER_WORD_BAND
     model_label = config.backend_for("cover").label()
     source_bullets = _source_bullets(resume, bullets)
+    angles = angles or CoverAngles()
 
     if not bullets:
         events.emit(on_event, "cover", "No tailored bullets for cover letter")
@@ -680,6 +788,7 @@ def draft_letter(
         jd_text=jd_text,
         word_band=word_band,
         instruction=instruction,
+        angles=angles,
     )
 
     llm_result: CoverLetterLLM | None = None
@@ -703,6 +812,7 @@ def draft_letter(
             jd_text=jd_text,
             word_band=word_band,
             instruction=instruction,
+            angles=angles,
         )
         if not instruction.strip():
             cache_path.write_text(llm_result.model_dump_json(indent=2), encoding="utf-8")
@@ -727,6 +837,7 @@ def draft_letter(
             bullets=bullets,
             jd_text=jd_text,
             word_band=word_band,
+            angles=angles,
             retry_offenders=accepted.hard_offenders,
             previous_paragraphs=accepted.paragraphs,
         )

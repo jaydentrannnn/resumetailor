@@ -91,8 +91,27 @@ export function SkillsCard({
   const required = plan.skills.filter((s) => s.tier === "required");
   const preferred = plan.skills.filter((s) => s.tier === "preferred");
   const additional = plan.skills.filter((s) => s.tier === "additional");
-  const noEvidence = gaps.filter((g) => g.reason === "no_evidence");
-  const claimableGaps = gaps.filter((g) => g.reason !== "no_evidence");
+  const bandRank: Record<string, number> = {
+    critical: 4,
+    high: 3,
+    meaningful: 2,
+    preferred: 1,
+    low_signal: 0,
+  };
+  const byBand = (a: KeywordGap, b: KeywordGap) =>
+    (bandRank[b.band ?? "meaningful"] ?? 0) - (bandRank[a.band ?? "meaningful"] ?? 0);
+  const annotate = (g: KeywordGap) =>
+    g.band
+      ? `${g.phrase} (${g.band}${g.evidence_tier ? `, ${g.evidence_tier}` : ""})`
+      : g.phrase;
+  const noEvidence = gaps
+    .filter((g) => g.reason === "no_evidence")
+    .slice()
+    .sort(byBand);
+  const claimableGaps = gaps
+    .filter((g) => g.reason !== "no_evidence")
+    .slice()
+    .sort(byBand);
 
   return (
     <section className="rounded-xl border border-line bg-panel p-5 shadow-sm">
@@ -123,7 +142,7 @@ export function SkillsCard({
 
       {noEvidence.length > 0 && (
         <p className="mt-3 rounded-md bg-warn-soft px-3 py-2 text-sm text-warn">
-          The posting also asks for: {noEvidence.map((g) => g.phrase).join(", ")} — not
+          The posting also asks for: {noEvidence.map(annotate).join(", ")} — not
           supported by the master resume, so not suggested above.
         </p>
       )}
@@ -132,7 +151,7 @@ export function SkillsCard({
         <div className="mt-2 text-sm text-ink-muted">
           {claimableGaps.map((g) => (
             <p key={g.canonical}>
-              {g.phrase}: claimable but untagged — consider adding the tag (
+              {annotate(g)}: claimable but untagged — consider adding the tag (
               {g.evidence.join("; ")})
             </p>
           ))}

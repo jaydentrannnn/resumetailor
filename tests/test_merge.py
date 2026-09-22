@@ -314,6 +314,62 @@ def test_merge_rejects_when_numbers_are_dropped(monkeypatch, rewrite_calls):
     assert len(ctx["experience"][0]["bullets"]) == 2
 
 
+def test_merge_rejects_when_number_is_rebound(monkeypatch, rewrite_calls):
+    """A merge that rebinds a source number to a different noun is silently skipped."""
+    CPL = config.CHARS_PER_LINE
+    char_budget = 2 * CPL
+    _, hard_max = rewrite._length_band(char_budget)
+
+    a = bullet(
+        "aol_b1",
+        "Spent 8 years supporting 40 engineers on the shared platform.",
+        ["support"],
+        metric=True,
+    )
+    b = bullet(
+        "aol_b2",
+        "Mentored junior developers across the same platform tooling.",
+        ["mentoring"],
+    )
+    e = Experience(company="ACME", title="t", start="2020-01", end="2020-02", bullets=[a, b])
+    resume = MasterResume(
+        comment=None,
+        contact=Contact(name="Test", email="test@example.com", phone=""),
+        education=[],
+        summary_variants=[],
+        experience=[e],
+        projects=[],
+        skills=[],
+    )
+
+    groups = [
+        merge.MergeGroup(
+            survivor_id=a.id,
+            member_ids=(a.id, b.id),
+            affinity=1.0,
+            reason="test",
+        )
+    ]
+
+    # Short enough to free lines, preserves digits, but rebinds 40 -> hours.
+    candidate = "Spent 8 years logging 40 hours mentoring juniors."
+    assert len(candidate) <= hard_max
+    rewrite_calls(_reply(**{a.id: a.text, b.id: b.text}), _reply(**{a.id: candidate}))
+
+    reqs = requirements(("python", "must_have"))
+    outcome = rewrite.rewrite_bullets(
+        [a, b],
+        reqs,
+        char_budget=char_budget,
+        shorten_pct=0,
+        repair_widows=False,
+        merge_groups=groups,
+    )
+
+    assert outcome.merges == []
+    assert set(outcome.texts.keys()) == {a.id, b.id}
+
+
 def test_report_prints_merge_section_and_counts_absorbed_members_as_kept():
     """Merging should not be reported as dropping bullets entirely."""
     resume = MasterResume(

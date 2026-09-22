@@ -1,6 +1,7 @@
 import { BrowserRouter, Navigate, NavLink, Route, Routes } from "react-router-dom";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { ProfileSwitcher } from "./components/workspace/ProfileSwitcher";
+import { ApplicationsPage } from "./pages/ApplicationsPage";
 import { EditorPage } from "./pages/EditorPage";
 import { RunPage } from "./pages/RunPage";
 import { TemplatePage } from "./pages/TemplatePage";
@@ -119,6 +120,9 @@ function Shell() {
               <NavLink to="/" end className={navLinkClassName}>
                 Tailor
               </NavLink>
+              <NavLink to="/applications" className={navLinkClassName}>
+                Apply
+              </NavLink>
               <NavLink to="/editor" className={navLinkClassName}>
                 Resume
               </NavLink>
@@ -135,6 +139,7 @@ function Shell() {
       <main className="mx-auto max-w-6xl px-6 py-8">
         <Routes>
           <Route path="/" element={<RunPage />} />
+          <Route path="/applications" element={<ApplicationsPage />} />
           <Route path="/editor" element={<EditorPage />} />
           <Route path="/template" element={<TemplatePage />} />
           <Route path="/vocabulary" element={<VocabularyPage />} />

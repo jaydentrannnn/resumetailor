@@ -35,6 +35,9 @@ services:
       LLM_TIMEOUT: ${LLM_TIMEOUT:-900}
       RESUME_TAILOR_PDF_BACKEND: soffice
       RESUME_TAILOR_CACHE_DIR: /app/output/cache
+      # Host browser (Edge recommended — see README) with --remote-debugging-port;
+      # Playwright connects over CDP.
+      CHROME_CDP_URL: ${CHROME_CDP_URL:-http://host.docker.internal:9222}
     volumes:
       - ./data:/app/data
       - ./templates:/app/templates

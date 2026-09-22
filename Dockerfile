@@ -38,8 +38,13 @@ RUN fc-cache -f > /dev/null
 WORKDIR /app
 
 COPY requirements.txt pyproject.toml ./
+RUN pip install --no-cache-dir -r requirements.txt
+
+# Dependency install is its own layer, cached as long as requirements.txt/pyproject.toml
+# don't change — src/ changes on nearly every rebuild, so it's copied and installed
+# (editable, no new downloads) only after, not before, the expensive resolve above.
 COPY src ./src
-RUN pip install --no-cache-dir -r requirements.txt && pip install --no-cache-dir -e .
+RUN pip install --no-cache-dir -e .
 
 COPY --from=frontend /frontend/dist ./frontend/dist
 COPY scripts ./scripts

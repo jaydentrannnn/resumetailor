@@ -136,6 +136,22 @@ def _stub_cover_api(cli, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _stub_review_api(cli, monkeypatch):
+    """Keep every CLI test off the review API.
+
+    ``tailor.main`` can run a hiring-manager review after a successful fit when
+    ``--review`` is passed. Without this stub, that path would reach the network.
+    """
+    from resume_tailor.review import ReviewResult
+
+    monkeypatch.setattr(
+        cli.review,
+        "review_bullets",
+        lambda *a, **k: ReviewResult(model="stub"),
+    )
+
+
+@pytest.fixture(autouse=True)
 def _stub_facets_api(cli, monkeypatch):
     """Keep every CLI test off the facets API.
 

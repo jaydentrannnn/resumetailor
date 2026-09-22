@@ -8,9 +8,13 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from .. import config
+from ..apply.profile import ApplicantProfile
+from ..apply.screen import ScreenSettings, ScreenResult
+from ..apply.eligibility import EligibilitySettings
+from ..apply.store import AtsKind, ApplicationStatus, FillResult, StatusChange
 from ..include import IncludeOptions
 
 #: Every `source_sha256` request field below is interpolated straight into a filesystem
@@ -20,6 +24,136 @@ from ..include import IncludeOptions
 #: A real sha256 hex digest can never contain `/`; enforcing the shape here rejects a
 #: traversal attempt at the schema boundary, before any path is built.
 _SHA256_HEX_PATTERN = r"^[0-9a-f]{64}$"
+
+
+class CoverAnglesIn(BaseModel):
+    """Optional per-application cover-letter angle inputs.
+
+    Nested on `JobSettings` with defaults so an existing `settings.json` loads
+    unchanged. Separate from regeneration `instruction` — see `coverletter.CoverAngles`.
+    """
+
+    why_company: str = Field(default="", max_length=1000)
+    problem: str = Field(default="", max_length=1000)
+    approach: str = Field(default="", max_length=1000)
+    tone: Literal["", "formal", "direct", "conversational", "mirror"] = ""
+
+
+class SourceConfig(BaseModel):
+    """One discoverable README source for the daily apply funnel."""
+
+    id: str
+    kind: Literal["simplify_html", "pipe_table"]
+    url: str
+    categories: list[str] = Field(default_factory=list)
+    enabled: bool = True
+
+
+def _default_apply_sources() -> list[SourceConfig]:
+    """Built-in Simplify internship + new-grad sources; speedyapply filled in Phase D."""
+    return [
+        SourceConfig(
+            id="simplify-internships",
+            kind="simplify_html",
+            url=(
+                "https://raw.githubusercontent.com/SimplifyJobs/"
+                "Summer2027-Internships/dev/README.md"
+            ),
+            categories=[
+                "Software Engineering Internship Roles",
+                "Data Science, AI & Machine Learning Internship Roles",
+            ],
+        ),
+        SourceConfig(
+            id="simplify-newgrad",
+            kind="simplify_html",
+            url=(
+                "https://raw.githubusercontent.com/SimplifyJobs/"
+                "New-Grad-Positions/dev/README.md"
+            ),
+            categories=[
+                "Software Engineering New Grad Roles",
+                "Data Science, AI & Machine Learning New Grad Roles",
+            ],
+        ),
+        SourceConfig(
+            id="speedyapply",
+            kind="pipe_table",
+            url=(
+                "https://raw.githubusercontent.com/speedyapply/"
+                "2027-SWE-College-Jobs/main/README.md"
+            ),
+            categories=[
+                "2027 USA SWE Internships",
+                "USA Positions",
+            ],
+            enabled=True,
+        ),
+    ]
+
+
+class ApplySettings(BaseModel):
+    """Daily apply-funnel knobs nested on ``JobSettings`` so they persist with settings."""
+
+    enabled: bool = False
+    schedule_time: str = "02:00"
+    #: Legacy single-source fields — kept so existing settings.json still loads.
+    #: When ``sources`` is empty the validator synthesizes one entry from these.
+    readme_url: str = (
+        "https://raw.githubusercontent.com/SimplifyJobs/Summer2027-Internships/dev/README.md"
+    )
+    categories: list[str] = Field(
+        default_factory=lambda: [
+            "Software Engineering Internship Roles",
+            "Data Science, AI & Machine Learning Internship Roles",
+        ]
+    )
+    sources: list[SourceConfig] = Field(default_factory=_default_apply_sources)
+    max_age_days: int = 1
+    exclude_advanced_degree: bool = True
+    exclude_citizenship_required: bool = True
+    exclude_no_sponsorship: bool = False
+    max_new_per_day: int = 40
+    screen: ScreenSettings = Field(default_factory=ScreenSettings)
+    eligibility: EligibilitySettings = Field(default_factory=EligibilitySettings)
+    auto_submit_ats: list[str] = Field(default_factory=list)
+    #: Cap on how many `ready` applications the unattended batch-submit stage
+    #: (`daily._run_batch_submit`) will fill+submit per `run_daily` invocation. `0`
+    #: (default) disables the stage entirely — existing workspaces see no behavior
+    #: change until this is explicitly raised. Only ever considers ATSes already
+    #: listed in `auto_submit_ats`; Workday is excluded in code regardless (see
+    #: `fill.decide_submit_action`).
+    auto_submit_max_per_run: int = Field(default=0, ge=0)
+    reuse_threshold: float = 0.72
+    cover_letter: bool = True
+    #: Provider + model for the funnel's own LLM calls (JD-requirement extraction during
+    #: screening, free-text answer drafting during fill). Independent of `JobSettings.model`
+    #: — the actual resume-tailoring stage the funnel submits still uses that setting via
+    #: the job queue. Exists because `extract`/`answer` run outside the job queue, so without
+    #: an explicit pin they fall through to `config.backend_for`'s hardcoded Claude default
+    #: whenever `_ACTIVE` is empty (e.g. right after a fresh restart) — see CLAUDE.md.
+    model_provider: Literal["ollama", "lmstudio", "gemini", "anthropic"] = "ollama"
+    model_name: str = "nemotron-3-super:cloud"
+
+    @property
+    def model_spec(self) -> str:
+        """``provider:model`` spec for `config.pinned`, covering this funnel's own calls."""
+        return f"{self.model_provider}:{self.model_name}"
+
+    @model_validator(mode="after")
+    def _ensure_sources(self) -> ApplySettings:
+        """Synthesize a simplify_html source from legacy fields when ``sources`` is empty."""
+        if self.sources:
+            return self
+        self.sources = [
+            SourceConfig(
+                id="simplify-internships",
+                kind="simplify_html",
+                url=self.readme_url,
+                categories=list(self.categories),
+            )
+        ]
+        return self
 
 
 class JobSettings(BaseModel):
@@ -45,6 +179,10 @@ class JobSettings(BaseModel):
     expand_model: str | None = None
     skills_model: str | None = None
     cover_model: str | None = None
+    #: Override for the opt-in hiring-manager review stage (`--review` / CLI only today).
+    review_model: str | None = None
+    #: Override for application-form free-text answers (`apply.answer`).
+    answer_model: str | None = None
     effort: Literal["low", "medium", "high"] | None = None
     no_semantic: bool = False
     no_widow_repair: bool = False
@@ -92,8 +230,23 @@ class JobSettings(BaseModel):
     expand_style: str | None = Field(default=None, max_length=4000)
     #: Editable style block for cover-letter drafting; ``None`` uses default.
     cover_style: str | None = Field(default=None, max_length=4000)
+    #: Optional cover-letter angle inputs (why this company, problem, approach, tone).
+    cover_angles: CoverAnglesIn = Field(default_factory=CoverAnglesIn)
     #: One blanket model override applied to every stage of the selected profile.
     model_name: str | None = None
+    #: Daily discover/screen/fill funnel settings (persisted with profile defaults).
+    apply: ApplySettings = Field(default_factory=ApplySettings)
+
+
+class RunMetadata(BaseModel):
+    """Optional posting provenance attached to a tailor job for the apply funnel."""
+
+    posting_url: str = ""
+    company: str = ""
+    role: str = ""
+    source: str = ""
+    source_job_id: str = ""
+    ats: str = "unknown"
 
 
 class WorkspaceSettings(BaseModel):
@@ -138,6 +291,7 @@ class CreateJobRequest(BaseModel):
     # `jd.extract_consensus` — which sends this text to the model up to 3 times.
     jd_text: str = Field(min_length=1, max_length=50_000)
     settings: JobSettings | None = None
+    metadata: RunMetadata | None = None
 
 
 class CreateJobResponse(BaseModel):
@@ -172,6 +326,12 @@ class KeywordGapOut(BaseModel):
     importance: str
     reason: Literal["no_evidence", "untagged_evidence", "near_miss"]
     evidence: list[str]
+    #: Score-neutral posting weight; defaulted so a run.json written before this
+    #: field existed still validates.
+    band: str = "meaningful"
+    #: Where the band came from (`jd.Keyword.evidence`). Named `evidence_tier` to
+    #: avoid colliding with the diagnostic `evidence` list above.
+    evidence_tier: str = "inferred"
 
 
 class RunReportOut(BaseModel):
@@ -185,6 +345,8 @@ class RunReportOut(BaseModel):
     unmatched_canonicals: list[list[str]]
     #: Defaulted so a job payload cached before this field existed still validates.
     gaps: list[KeywordGapOut] = Field(default_factory=list)
+    #: Why coverage is unmeasurable; None when the ratio is real. See `jd.extraction_diagnosis`.
+    extraction_diagnosis: str | None = None
     model: str
     semantic_used: bool
     bullets_selected: int
@@ -282,15 +444,16 @@ class CoverLetterOut(BaseModel):
 
 
 class CoverLetterRegenerateRequest(BaseModel):
-    """Optional one-off instruction for cover-letter regeneration."""
+    """Optional one-off instruction and angles for cover-letter regeneration."""
 
     instruction: str = ""
+    cover_angles: CoverAnglesIn | None = None
 
 
 class VerifyClaimRequest(BaseModel):
     """Body for `POST /api/verify-claim`: check free-text against a finished run."""
 
-    job_id: str = Field(min_length=1, max_length=64)
+    job_id: str | None = Field(default=None, max_length=64)
     #: Application-answer or similar prose. Bounded so a runaway paste cannot flood
     #: the fabrication tokeniser; 10k covers any real form field.
     text: str = Field(min_length=1, max_length=10_000)
@@ -320,6 +483,8 @@ class JobStatusResponse(BaseModel):
     created_at: str | None = None
     #: Short title for history list rows (report title, or JD first line).
     title: str | None = None
+    #: Optional posting provenance for the apply funnel.
+    metadata: RunMetadata | None = None
 
 
 class RunHistoryEntryOut(BaseModel):
@@ -870,3 +1035,135 @@ class ProposalRejectRequest(BaseModel):
     workspace's `rejected` list so they are never re-proposed."""
 
     proposal_ids: list[str]
+
+
+class ApplicantProfileResponse(BaseModel):
+    """Response for ``GET /api/applicant-profile``."""
+
+    workspace_id: str | None = None
+    profile: ApplicantProfile
+    seeded: bool = False
+
+
+class ApplicantProfileUpdateRequest(BaseModel):
+    """Body for ``PUT /api/applicant-profile``."""
+
+    profile: ApplicantProfile
+
+
+class ApplicationOut(BaseModel):
+    """API view of one tracked application from ``applications.json``."""
+
+    source: str
+    source_job_id: str
+    company: str
+    role: str
+    location: str = ""
+    posting_url: str = ""
+    final_url: str = ""
+    ats: AtsKind = "unknown"
+    sponsorship_ok: str = "Unknown"
+    citizenship_required: str = "No"
+    notes: str = ""
+    status: ApplicationStatus = "discovered"
+    status_history: list[StatusChange] = Field(default_factory=list)
+    discovered_at: str = ""
+    jd_text_path: str | None = None
+    screen: ScreenResult | None = None
+    job_id: str | None = None
+    reused_from_job_id: str | None = None
+    fill: FillResult | dict[str, Any] | None = None
+    error: str | None = None
+    canonical_key: str = ""
+    group_key: str = ""
+    salary: str = ""
+    duplicate_of: str | None = None
+    eligibility_flags: list[str] = Field(default_factory=list)
+    sources: list[str] = Field(default_factory=list)
+    group_size: int = 1
+
+
+class ApplicationsListResponse(BaseModel):
+    """Newest-first application rows plus per-status counts."""
+
+    applications: list[ApplicationOut] = Field(default_factory=list)
+    counts: dict[str, int] = Field(default_factory=dict)
+
+
+class ApplicationDetailResponse(BaseModel):
+    """One application with optional packet and JD text when available."""
+
+    application: ApplicationOut
+    packet: dict[str, Any] | None = None
+    jd_text: str | None = None
+
+
+class ApplicationStatusRequest(BaseModel):
+    """Body for ``POST /api/applications/{source_job_id}/status``."""
+
+    status: ApplicationStatus
+    note: str = ""
+
+
+class AnswerRequest(BaseModel):
+    """Body for ``POST /api/jobs/{job_id}/answer``."""
+
+    question: str = Field(min_length=1, max_length=4000)
+    max_chars: int = Field(default=1500, ge=50, le=10_000)
+
+
+class AnswerResponse(BaseModel):
+    """Guarded free-text answer for one ATS question."""
+
+    answer: str
+    offenders: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+    source: str
+    model: str
+
+
+class BrowserStatusResponse(BaseModel):
+    """Reachability of the configured host browser's CDP endpoint."""
+
+    reachable: bool
+    browser: str = ""
+    user_agent: str = ""
+    error: str = ""
+    cdp_url: str = ""
+
+
+class RunDailyRequest(BaseModel):
+    """Optional body for ``POST /api/applications/run-daily``.
+
+    Mirrors `scripts/apply_daily.py`'s `--limit` / `--dry-run` so the UI and CLI
+    start the same run. Omitting the body keeps the previous behavior (profile's
+    `max_new_per_day`, real run).
+    """
+
+    limit: int | None = Field(default=None, ge=1, le=500)
+    dry_run: bool = False
+    #: Overrides `ApplySettings.auto_submit_max_per_run` for this call only.
+    max_submissions: int | None = Field(default=None, ge=0, le=500)
+
+
+class RunDailyResponse(BaseModel):
+    """Outcome of ``POST /api/applications/run-daily``."""
+
+    started: bool
+    summary: dict[str, Any] | None = None
+
+
+class DailyStatusResponse(BaseModel):
+    """Progress snapshot for ``GET /api/applications/daily-status``."""
+
+    running: bool = False
+    phase: str = "idle"
+    source_id: str = ""
+    current: str = ""
+    processed: int = 0
+    total: int = 0
+    dry_run: bool = False
+    started_at: str = ""
+    finished_at: str = ""
+    date: str = ""
+    summary: dict[str, Any] | None = None

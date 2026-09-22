@@ -15,6 +15,7 @@ Exit codes:
 from __future__ import annotations
 
 import argparse
+import json
 import sys
 from pathlib import Path
 
@@ -30,7 +31,9 @@ from resume_tailor import (  # noqa: E402
     include,
     jd,
     report,
+    review,
     rewrite,
+    runs,
     skills,
     style,
     workspace,
@@ -322,6 +325,54 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
             "profile the web UI (or a running server) has active."
         ),
     )
+    parser.add_argument(
+        "--suggest-reuse",
+        action="store_true",
+        help=(
+            "Advisory: after extraction, print the closest prior archived run and a "
+            "reuse/reuse_with_edits/regenerate recommendation, then continue normally. "
+            "Does not feed prior bullets into the fit loop."
+        ),
+    )
+    parser.add_argument(
+        "--cover-why",
+        default="",
+        metavar="TEXT",
+        help="Cover-letter angle: why this company (optional; requires --cover-letter).",
+    )
+    parser.add_argument(
+        "--cover-problem",
+        default="",
+        metavar="TEXT",
+        help="Cover-letter angle: the problem you want to solve there.",
+    )
+    parser.add_argument(
+        "--cover-approach",
+        default="",
+        metavar="TEXT",
+        help="Cover-letter angle: your approach or how you work.",
+    )
+    parser.add_argument(
+        "--cover-tone",
+        default="",
+        choices=("", "formal", "direct", "conversational", "mirror"),
+        help="Cover-letter tone preference.",
+    )
+    parser.add_argument(
+        "--review",
+        action="store_true",
+        help=(
+            "Opt-in: after the tailored resume succeeds, synthesise a hiring-manager "
+            "review from the JD and write <out>.review.md. Verdicts are advisory — "
+            "nothing is auto-applied."
+        ),
+    )
+    parser.add_argument(
+        "--review-model",
+        default=None,
+        metavar="MODEL",
+        help="Override the review stage only.",
+    )
     return parser.parse_args(argv)
 
 
@@ -391,6 +442,8 @@ def main(argv: list[str] | None = None) -> int:
             overrides["skills"] = args.skills_model
         if args.cover_model:
             overrides["cover"] = args.cover_model
+        if args.review_model:
+            overrides["review"] = args.review_model
         config.resolve(
             args.model,
             overrides=overrides or None,
@@ -456,6 +509,31 @@ def main(argv: list[str] | None = None) -> int:
             "mirroring them may not help:\n  " + "\n  ".join(paraphrased),
             file=sys.stderr,
         )
+
+    diagnosis = jd.extraction_diagnosis(requirements)
+    if diagnosis is not None:
+        print(
+            f"warning: JD extraction is inconclusive ({diagnosis}) — keyword coverage "
+            "will not be measurable for this run",
+            file=sys.stderr,
+        )
+
+    if args.suggest_reuse:
+        match = runs.closest_run(jd_text, requirements)
+        if match is None:
+            print(
+                "reuse: no prior archived runs under "
+                f"{config.OUTPUT_DIR / 'jobs'} (need jd.txt + requirements.json + "
+                "bullets.json)",
+                file=sys.stderr,
+            )
+        else:
+            prior, recommendation, score = match
+            print(
+                f"reuse: closest prior run {prior.job_id!r} "
+                f"jaccard={score:.2f} → {recommendation}",
+                file=sys.stderr,
+            )
 
     # Scored once, before the loop, and held fixed for the run — see `rewrite.score_table`
     # for why it must not be recomputed per iteration.
@@ -561,6 +639,25 @@ def main(argv: list[str] | None = None) -> int:
 
     print(report.format_report(resume, requirements, result, master=master_resume))
 
+    # Archive JD + requirements + bullets so CLI runs join the same corpus the web
+    # UI already writes under output/jobs/<id>/. The human-facing `.jd.txt` sidecar
+    # sits next to the .docx; the job directory is what `runs.iter_runs` reads.
+    try:
+        jd_sidecar = result.out_path.with_name(result.out_path.stem + ".jd.txt")
+        jd_sidecar.write_text(jd_text, encoding="utf-8")
+        archive_dir = config.OUTPUT_DIR / "jobs" / f"cli-{result.out_path.stem}"
+        archive_dir.mkdir(parents=True, exist_ok=True)
+        (archive_dir / "jd.txt").write_text(jd_text, encoding="utf-8")
+        (archive_dir / "requirements.json").write_text(
+            requirements.model_dump_json(indent=2), encoding="utf-8"
+        )
+        (archive_dir / "bullets.json").write_text(
+            json.dumps(result.bullets, indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+    except OSError as exc:
+        print(f"warning: could not archive run for reuse ({exc})", file=sys.stderr)
+
     # Expansion is advisory paste text for application forms. It must never turn a
     # successful resume run into a failure — the .docx is already on disk.
     if not args.no_expand:
@@ -615,6 +712,12 @@ def main(argv: list[str] | None = None) -> int:
                 result.bullets,
                 jd_text,
                 use_cache=not args.no_cache,
+                angles=coverletter.CoverAngles(
+                    why_company=args.cover_why,
+                    problem=args.cover_problem,
+                    approach=args.cover_approach,
+                    tone=args.cover_tone,
+                ),
             )
             cover_path = result.out_path.with_name(
                 result.out_path.stem + " Cover Letter.docx"
@@ -627,6 +730,21 @@ def main(argv: list[str] | None = None) -> int:
             print(f"Cover letter: {cover_path}")
         except Exception as exc:  # noqa: BLE001 - bonus artifact; never fail the run
             print(f"warning: cover letter skipped ({exc})", file=sys.stderr)
+
+    if args.review:
+        try:
+            review_result = review.review_bullets(
+                master_resume,
+                requirements,
+                result.bullets,
+            )
+            print()
+            print(report.format_review(review_result))
+            review_path = result.out_path.with_name(result.out_path.stem + ".review.md")
+            review_path.write_text(report.format_review(review_result), encoding="utf-8")
+            print(f"Review: {review_path}")
+        except Exception as exc:  # noqa: BLE001 - bonus artifact; never fail the run
+            print(f"warning: review skipped ({exc})", file=sys.stderr)
 
     return 0
 

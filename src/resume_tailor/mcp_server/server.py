@@ -109,6 +109,9 @@ async def tailor_application(
     profile: str | None = None,
     cover_letter: bool = True,
     pages: int | None = None,
+    posting_url: str = "",
+    company: str = "",
+    role: str = "",
     wait_seconds: float = 600.0,
     ctx: Context | None = None,
 ) -> dict[str, Any]:
@@ -117,7 +120,8 @@ async def tailor_application(
     Starts a run on the ResumeTailor backend, waits up to wait_seconds (polling),
     and returns the finished job status including report, expansion, skills, and
     cover letter. If still running when the wait expires, returns job_id so you
-    can call get_run to continue.
+    can call get_run to continue. Optional posting_url/company/role attach apply
+    funnel metadata to the run record.
     """
     progress = _ContextProgress(ctx) if ctx is not None else None
     try:
@@ -127,6 +131,9 @@ async def tailor_application(
             profile=profile,
             cover_letter=cover_letter,
             pages=pages,
+            posting_url=posting_url,
+            company=company,
+            role=role,
             wait_seconds=wait_seconds,
             on_progress=progress,
         )
@@ -168,8 +175,8 @@ async def get_application_answers(job_id: str) -> dict[str, Any]:
 async def get_artifact_paths(job_id: str) -> dict[str, Any]:
     """Download URLs and disk paths for a finished run's files.
 
-    Prefer this over read_artifact for resume/cover .docx/.pdf — those exceed
-    Claude Desktop's 1MB tool-result limit when base64-encoded.
+    Use this to enumerate everything a run produced; read_artifact returns the
+    same pointers for a single artifact.
     """
     try:
         return await tools.get_artifact_paths(_get_client(), job_id)
@@ -179,13 +186,13 @@ async def get_artifact_paths(job_id: str) -> dict[str, Any]:
 
 @mcp.tool()
 async def read_artifact(job_id: str, kind: str) -> dict[str, Any]:
-    """Read one artifact. Markdown returns text; large binaries return paths only.
+    """Read one artifact. Markdown returns text; .docx/.pdf return paths only.
 
     kind is one of: resume_docx, resume_pdf, cover_docx, cover_pdf,
-    expansion_md, skills_md, cover_md.
+    expansion_md, skills_md, cover_md, packet_json.
 
-    For resume_docx / resume_pdf / cover_*, use get_artifact_paths instead —
-    inlining those files as base64 exceeds the 1MB tool-result limit.
+    For resume_docx / resume_pdf / cover_docx / cover_pdf, hand the user the
+    returned disk_path or download_url — file contents are never inlined.
     """
     try:
         return await tools.read_artifact(_get_client(), job_id, kind)
@@ -217,14 +224,85 @@ async def get_resume_facts() -> dict[str, Any]:
 
 
 @mcp.tool()
-async def verify_claim(job_id: str, text: str) -> dict[str, Any]:
-    """Check free-text application prose against a finished run's tailored bullets.
+async def verify_claim(text: str, job_id: str | None = None) -> dict[str, Any]:
+    """Check free-text application prose against tailored or master-resume bullets.
 
     Returns ok=false with unsupported_terms / unsupported_numbers when the text
-    invents facts not present in the tailored resume or the job posting's numbers.
+    invents facts not present in the evidence bullets or the job posting's numbers.
+    Omit job_id to check against the full master resume instead of one run.
     """
     try:
-        return await tools.verify_claim(_get_client(), job_id, text)
+        return await tools.verify_claim(_get_client(), text, job_id=job_id)
+    except Exception as exc:
+        return {"error": _tool_error(exc)}
+
+
+@mcp.tool()
+async def get_application_packet(job_id: str) -> dict[str, Any]:
+    """Return packet.json for a finished tailoring run (form-fill bundle)."""
+    try:
+        return await tools.get_application_packet(_get_client(), job_id)
+    except Exception as exc:
+        return {"error": _tool_error(exc)}
+
+
+@mcp.tool()
+async def answer_application_question(
+    job_id: str,
+    question: str,
+    max_chars: int = 1500,
+) -> dict[str, Any]:
+    """Draft a guarded ATS free-text answer for one finished run."""
+    try:
+        return await tools.answer_application_question(
+            _get_client(),
+            job_id,
+            question,
+            max_chars=max_chars,
+        )
+    except Exception as exc:
+        return {"error": _tool_error(exc)}
+
+
+@mcp.tool()
+async def list_applications(
+    status: str | None = None,
+    limit: int = 20,
+) -> dict[str, Any]:
+    """List tracked applications newest-first with per-status counts."""
+    try:
+        return await tools.list_applications(
+            _get_client(),
+            status=status,
+            limit=limit,
+        )
+    except Exception as exc:
+        return {"error": _tool_error(exc)}
+
+
+@mcp.tool()
+async def get_application(source_job_id: str) -> dict[str, Any]:
+    """Return one application row plus packet and JD text when available."""
+    try:
+        return await tools.get_application(_get_client(), source_job_id)
+    except Exception as exc:
+        return {"error": _tool_error(exc)}
+
+
+@mcp.tool()
+async def mark_application(
+    source_job_id: str,
+    status: str,
+    note: str = "",
+) -> dict[str, Any]:
+    """Update one application's funnel status (discovered through submitted)."""
+    try:
+        return await tools.mark_application(
+            _get_client(),
+            source_job_id,
+            status,
+            note=note,
+        )
     except Exception as exc:
         return {"error": _tool_error(exc)}
 

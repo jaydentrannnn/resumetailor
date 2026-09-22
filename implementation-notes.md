@@ -2500,12 +2500,307 @@ got a proper default stub in the `client` fixture instead of repeating that gap.
 - **Tradeoff:** Checking every sentence is stricter than cover letters (company-description
   prose would also be checked) — correct for `verify_claim`'s input contract.
 
-## 2026-09-19 — `read_artifact` skips base64 for large binaries
+## 2026-09-21 — career-ops adoption (bands, guards, jdsim, cover angles, review)
 
-- **Decision:** `read_artifact` only inlines base64 when raw size ≤ 200KB; `.docx`/`.pdf`
-  return `disk_path` + `download_url` instead. Markdown returns `text`. `get_artifact_paths`
-  now includes absolute `download_urls` and a hint to prefer paths over `read_artifact`.
-- **Why:** Claude Desktop rejects tool results over 1MB; a tailored resume `.docx` as
-  base64 routinely exceeds that (`resume_docx` for job `e9945b273bee`).
-- **Tradeoff:** The agent cannot embed the binary in-chat — it must point the user at the
-  file path or `http://127.0.0.1:8000/api/jobs/.../download.docx`.
+- **Decision (bands score-neutral):** Added `Keyword.band` / `Keyword.evidence` orthogonal
+  to `importance`. Nothing in ranking, selection, or the fit loop reads them — report and
+  gap ordering only. Inferred evidence cannot reach critical/high (`_apply_evidence_cap`
+  after extract and after vote). `jd._PROMPT_VERSION` bumped to 3 (deliberate cache bust
+  of every extraction and, via `requirements.model_dump_json()` in the cover cache key,
+  every cached cover letter).
+- **Decision (`KeywordGap.evidence_tier`):** Plan asked for `evidence: str` on gaps, but
+  `KeywordGap.evidence` already holds diagnostic snippets (`list[str]`). Named the new
+  field `evidence_tier` to avoid a breaking rename across the API/SPA.
+- **Decision (number rebinding, conservative):** `rebound_numbers` flags only when the
+  source already binds the same number to a *different* noun. An unbound source number
+  stays silent — a false positive that blocks a truthful rewrite is worse than a miss.
+  Collects all significant nouns in a 3-token window so "40 remote engineers" still shares
+  the source noun. Routed through new `guard_offenders` composite at the four rewrite
+  call sites; `check_fabrication` unchanged for coverletter/expand.
+- **Decision (authorship):** Whole-bullet `delegated_authorship` with closed verb/noun
+  lists; joins the same composite. Internal "led a team that built X" never fires.
+- **Decision (inconclusive coverage):** `extraction_diagnosis` replaces `0/0 (n/a)` with an
+  explicit inconclusive line. `_vote` returns `consensus_dropped_all` via a PrivateAttr so
+  the LLM output schema is untouched.
+- **Decision (jdsim advisory-only):** `--suggest-reuse` prints the closest prior run; does
+  not feed prior bullets into the fit loop. CLI archives under `output/jobs/cli-<stem>/`
+  plus a `.jd.txt` sidecar so CLI runs join the web corpus.
+- **Decision (cover angles ≠ instruction):** `CoverAngles` is its own parameter — routing
+  through `instruction` would skip cache read/write and the guard retry. Soft genericness
+  check warns without retry. `_COVER_PROMPT_VERSION` → 2.
+- **Decision (review CLI-only first pass):** New `"review"` purpose in PURPOSES /
+  DEFAULT_EFFORT / hybrid profile (missing hybrid entry is a KeyError, not a fallback).
+  Suggested rewrites run through `check_fabrication`; nothing auto-applied. Web UI not
+  wired yet (runProgress stage bands untouched).
+- **Tradeoff:** Two importance axes can contradict (`nice_to_have` + `critical` band);
+  report presents both without implying scoring disagreed. If that reads badly, clamp
+  later.
+- **Follow-up:** Tune rebound window against live runs; consider web exposure for review.
+
+## 2026-09-21 — MCP: binary artifacts return paths only, never base64
+
+- **Decision:** Removed the `base64` branch (and `_MAX_INLINE_BYTES = 200_000`) from
+  `mcp_server/tools.read_artifact`. `.docx` / `.pdf` now always return
+  `disk_path` + `download_url` with `inline: False`; the three `.md` kinds still
+  inline `text` and now set `inline: True` for symmetry.
+- **Why:** The 200KB cap was sized against Claude Desktop's 1MB hard limit, not against
+  token cost. Every `tailored.pdf` in `output/jobs` (46/46, median 47KB) fell *under* it,
+  so every `read_artifact(kind="resume_pdf")` inlined ~64k base64 chars ≈ 20k tokens.
+  A base64 zip/PDF is also unreadable to the model, and FastMCP serializes the returned
+  dict as JSON text — not an MCP blob — so the host can't render it as a file either.
+  The payload was pure cost with no consumer (nothing in the repo read the field).
+- **Tradeoff:** No way to hand a small binary to a host that can't see the filesystem.
+  `_artifact_disk_path` already returns `None` off-filesystem, leaving `download_url`
+  as the only pointer. If a real need appears, return a proper MCP blob content type
+  rather than reinstating the dict key.
+- **Spec delta:** Extends the existing "prefer paths for large files" intent to *all*
+  binaries. Tool docstrings in `server.py` and the `get_artifact_paths` hint no longer
+  warn about the 1MB limit, since `read_artifact` can no longer trip it.
+- **Note:** `read_artifact` still GETs the full bytes to populate `size_bytes` and to
+  reuse the client's 404/409 error translation. `get_artifact_paths` likewise still
+  downloads all seven artifacts (~1.5MB) purely as an existence check — costs latency,
+  not tokens; deliberately left alone.
+
+## 2026-09-21 — Rebound-number guard: alias-aware nouns, one offender per number
+
+- **Decision:** `rewrite._noun_key` now normalises a bound noun through
+  `config.canonical_tag` on top of `_significant`, and `rebound_numbers` reports a single
+  claim per rebound number (the nearest bound noun) instead of one per window token.
+- **Why:** A live `uci_b1` rejection surfaced as three offenders — `130 students`,
+  `130 clarifying`, `130 python` — which read as three unrelated fabrications and got
+  misdiagnosed as a missing `python` tag. It was one rebinding; the extra strings were
+  just the other tokens in the 3-token bind window. Separately, a truthful rewrite that
+  renames the same subject ("students" -> "undergraduates") had no way to pass short of
+  editing the master resume text.
+- **Tradeoff:** Equivalence now depends on the active vocabulary packs, so the guard's
+  verdict can differ per workspace; that is the same "aliases generalise, code enforces"
+  split `facets`/`jd` already use. Reporting only the nearest noun loses the adjective
+  detail in the retry prompt — nothing about *what is rejected* changed, only its name.
+- **Spec delta:** No weakening of the guard. `40 engineers` -> `40 hours` still fails,
+  and a number with no source noun binding is still unjudgeable and silent.
+- **Follow-up:** If `uci_b1` still trips after this, the source text binds `130` to a
+  noun the packs don't alias — add the alias in a pack rather than editing the guard.
+  Also fixed `tests/test_web.py::test_ollama_model_setting_repoints_only_the_ollama_stages`,
+  which predated the `review` stage override.
+
+## 2026-09-21 — Apply Phase 1: packet, ats_hints, answer
+
+- **Decision:** Added `apply/packet.py`, `apply/ats_hints.py`, and `apply/answer.py` as pure
+  disk assembly plus one guarded `"answer"` LLM stage. Packet booleans serialise as `"Yes"` /
+  `"No"` with `None` omitted; `confirmation_text` hint rows carry page text, not field keys;
+  F-1/OPT/CPT synonyms precede generic sponsorship in `SYNONYMS`.
+- **Why:** Phase 4's deterministic filler needs a stable packet and per-ATS selector map
+  before any CDP runner exists; free-text leftovers reuse `coverletter.check_claims` rather
+  than a new guard.
+- **Tradeoff:** `build_packet` reads optional artifacts only — missing cover/skills never fail
+  assembly; guard failures return `answer=""` instead of raising.
+- **Follow-up:** Wire `write_packet` into `web/jobs.py` on success, add API/MCP routes per
+  plan Phase 1 todos `p1-packet` / `p1-answer`.
+
+## 2026-09-21 — Apply Phase 2: store and sources
+
+- **Decision:** Added `apply/store.py` (`applications.json` keyed by `source_job_id`, atomic
+  `.json.tmp` writes) and `apply/sources.py` (SimplifyJobs README parse/filter ported from
+  the internship-tracker script). `ApplySettings` nests on `JobSettings` with
+  `exclude_citizenship_required` mapped to `filter_rows(..., exclude_citizenship=...)`.
+- **Why:** Discovery needs a durable funnel registry and deterministic README ingestion
+  before orchestration or the UI can schedule daily runs.
+- **Tradeoff:** `set_status` blocks terminal → pre-ready transitions only (not terminal →
+  `ready`/`filling`); `FillResult` is a stub until Phase 4. Rows without a Simplify job id
+  are dropped at dedupe time.
+- **Follow-up:** Wire store upserts into the discover job; expose apply settings in the SPA.
+
+## 2026-09-21 — Apply Phase 4–5: filler, fill, daily pipeline
+
+- **Decision:** Added packaged `filler.js` / `filler_readiness.js`, `apply/fill.py` (CDP
+  runner with `decide_submit_action` policy A/B), `apply/daily.py` (discover → fetch →
+  screen → reuse or queue tailor), and `scripts/apply_daily.py`. `FillResult.filled` /
+  `leftovers` are now `list[Any]` for structured dict rows.
+- **Why:** Deterministic fill must stay in injected JS; Python only orchestrates packet
+  fields, guarded long-text answers, submit policy, and persistence. Daily holds
+  `template_ops.LOCK` only around `get_queue().submit`.
+- **Tradeoff:** `run_daily` skips when `apply.enabled` is false unless the caller passes an
+  explicit `ApplySettings` (CLI forces `enabled=True`). Reuse links `job_id` to the prior
+  run rather than copying artifacts. Fill iterates all Playwright frames — cross-origin
+  frames increment `frames_skipped`.
+- **Follow-up:** Browser-marked integration test against `tests/fixtures/forms/greenhouse.html`;
+  wire scheduled `run_daily` from the SPA when apply is enabled.
+
+## 2026-09-21 — Apply funnel SPA and docs close-out
+
+- **Decision:** Added `/applications` SPA page (queue table, CDP status pill, packet
+  drawer, applicant-profile editor), nav link **Apply**, README Automation section
+  (Chrome CDP launch flags + `scripts/apply_daily.py`), CLAUDE.md Application
+  automation section (fourteen path globals, `"answer"` purpose), and Cowork fallback
+  skill at `docs/skills/apply-from-queue/SKILL.md`. Autouse fixture isolates
+  `APPLICATIONS_PATH` / `APPLICANT_PROFILE_PATH` / `APPLICATIONS_OUTPUT_DIR`.
+- **Why:** Policy A (review-all) needs a review queue in the UI; host Chrome over CDP
+  keeps Docker as the only long-running process.
+- **Tradeoff:** Profile editor on the Apply page is a short field list; full EEO/custom
+  answers still edit via JSON or PUT API. `auto_submit_ats` starts empty.
+- **Follow-up:** After a week of clean Greenhouse fills, add `"greenhouse"` to
+  `apply.auto_submit_ats`; expand synonym table from leftovers logs.
+
+## 2026-09-21 — Apply funnel HTTP API, MCP, and scheduler
+
+- **Decision:** Added `/api/applicant-profile`, job packet/answer routes, applications CRUD
+  (list/get/status/retry/fill/export/run-daily), optional `job_id` on verify-claim, MCP
+  mirrors (`get_application_packet`, `answer_application_question`, `list_applications`,
+  `get_application`, `mark_application`), `packet_json` artifact kind, and a 60s lifespan
+  daemon that fires `run_daily` once per local day at `settings.apply.schedule_time`.
+- **Why:** Agents and the SPA need the same apply surface as tailoring without a second
+  pipeline; scheduler matches the CLI's scheduled discover intent while staying
+  non-blocking on shutdown (`join(timeout=2)`).
+- **Tradeoff:** `POST .../fill` returns immediately after starting the async CDP worker;
+  `GET .../fill` reads persisted `FillResult`. Retry only covers fetch-JD and tailor-failed
+  paths. Scheduled daily uses process-local `_last_daily_run_date` (resets on restart).
+- **Spec delta:** Extends Phase 4–5 orchestration with read/write HTTP + MCP.
+
+## 2026-09-21 — Multi-source discovery, ATS dedupe, bachelor-only eligibility
+
+- **Decision / change:** Extended the apply funnel with (A) `age_days` + multi-`SourceConfig`
+  defaults (Simplify internships, New-Grad-Positions, speedyapply), (B) `identity.py`
+  canonical/group keys and schema-v2 `applications.json` keyed by ATS requisition,
+  (C) `eligibility.py` bachelor-rescue prefilter before `extract_consensus`, (D) depth-aware
+  pipe-table parser + `--list-sections`, (E) ETag README cache + Greenhouse/Lever/SR/Ashby
+  JSON JD fetch, (F) SPA badges for sources/group size/salary/flags.
+- **Why:** Cut LLM spend by filtering/deduping on plain text and ATS identity; cover
+  internship + new-grad without inventing content; hard-reject advanced-degree-only posts
+  while keeping inclusive "Bachelor's, Master's, or PhD" wording.
+- **Tradeoffs:** Regex eligibility will need tuning from `screened_out` notes; Workday
+  still needs CDP; zapply skipped (noisy). Canonical fallback is `other:{host}:{sha1[:12]}`.
+- **Spec delta:** Extends the single-Simplify apply funnel from the earlier Automation work.
+- **Follow-up:** Confirm live speedyapply section names with `--list-sections` if headings
+  drift; tune `EligibilitySettings.hard_reject_years` after a week of notes.
+
+## 2026-09-21 — Docker CDP Host header vs Chrome DevTools
+
+- **Decision:** `apply/browser.effective_cdp_url` resolves `host.docker.internal` to an
+  IP before `/json/version` probes and Playwright `connect_over_cdp`.
+- **Why:** Chrome DevTools returns HTTP 500 when `Host` is a non-localhost hostname
+  ("Host header is specified and is not an IP address or localhost"). That made the
+  Apply page show CDP offline even with Chrome correctly launched on the host.
+- **Tradeoff:** Relies on `gethostbyname` for the gateway; fine on Docker Desktop.
+- **Follow-up:** Rebuild the app image so the container picks up the fix (`src/` is not bind-mounted).
+
+## 2026-09-21 — Live daily-run progress on the Apply page
+
+- **Decision:** `run_daily` publishes a `DailyProgress` snapshot (`phase`,
+  `source_id`, `current`, `processed`/`total`, `dry_run`, live `summary`) guarded by a
+  dedicated `_PROGRESS_LOCK`; `GET /api/applications/daily-status` returns a deep copy,
+  and `POST /api/applications/run-daily` now accepts `{limit, dry_run}` mirroring
+  `scripts/apply_daily.py`. The Apply page polls every 2s, shows phase + progress bar +
+  counters, and gains Dry-run/Limit controls next to the button.
+- **Why:** "Run daily now" previously gave no feedback — the run is a bare daemon thread,
+  and a `--dry-run` CLI pass (the user's first test) writes nothing, so the empty queue
+  looked like a broken button.
+- **Tradeoffs:** Polling (user-chosen over SSE) costs one cheap JSON request per 2s; the
+  progress bar is indeterminate during discovery because the row count is unknown until
+  every source has been fetched. `daily_status.running` is derived from `_DAILY_LOCK`,
+  not a stored flag, so a crashed run can't wedge the UI into "running".
+- **Spec delta:** Manual "Run daily now" now ignores `apply.enabled` (passes the profile's
+  apply settings explicitly), matching the CLI; that flag still gates only the nightly
+  scheduler. `/api/applications/daily-status` is declared before the
+  `/{source_job_id}` route — route order matters in Starlette.
+- **Follow-up:** A Stop/cancel control was considered and deferred; killing a run
+  mid-tailor would leave `JobQueue` jobs orphaned.
+
+## 2026-09-21 — Recommend Edge, not Chrome, for the apply-automation debug profile
+
+- **Decision:** Docs (`README.md`, `CLAUDE.md`) and in-app copy
+  (`ApplicationsPage.tsx`'s pill/instructions, `docker-compose.yml`/`requirements.txt`
+  comments, docstrings in `apply/browser.py`/`fill.py`/`__init__.py`/`fetch_jd.py`,
+  `config.py`) now recommend launching **Microsoft Edge** with
+  `--remote-debugging-port=9222` instead of Chrome. `CHROME_CDP_URL`'s name is
+  unchanged — it has no `.env.example` entry, so there was nothing to migrate, and the
+  value was always browser-agnostic (Playwright's CDP connection and the
+  `/json/version` probe never inspected which browser answered).
+- **Why:** Live-diagnosed this session: Chrome refuses to open its remote-debugging
+  port whenever *any* other Chrome window — any profile — is already running under the
+  same account (confirmed directly: Chrome running, port 9222 never bound, no second
+  Chrome process anywhere). For a user whose daily browser is Chrome, that meant fully
+  quitting Chrome every time before using the apply feature. Edge is a separate
+  binary/process, so it isn't subject to Chrome's singleton-while-debugging check and
+  can run the automation profile in the background indefinitely without touching normal
+  Chrome browsing.
+- **Tradeoff:** If a user's daily browser is Edge instead of Chrome, the identical
+  restriction applies there — this swaps which browser needs to stay free, it doesn't
+  eliminate the underlying restriction. The dedicated profile directory also had to move
+  (`%LOCALAPPDATA%\ResumeTailorEdge`, was `...\ResumeTailorChrome`) since Edge and Chrome
+  profile directories aren't interchangeable.
+- **Follow-up:** None of `browser.py`/`fill.py`'s runtime logic changed — only
+  docstrings/error-message wording — so this shipped with zero test changes required.
+
+## 2026-09-21 — Pin the apply funnel's own LLM calls to a configurable model
+
+- **Decision:** Added `ApplySettings.model_provider`/`model_name` (default
+  `ollama`/`nemotron-3-super:cloud`, exposed via a provider dropdown + model-name field
+  on the Applications page, mirroring `RunPage.tsx`'s Tailor model control) and a
+  `model_spec` property building the `provider:model` string `config.pinned()` expects.
+  `daily.py::_process_one` now wraps its `jd.extract_consensus` call, and
+  `fill.py::fill_application` wraps its `answer.answer_question` call, each in
+  `with config.pinned(settings.model_spec):`.
+- **Why:** A fresh test run's first two postings failed with a real Anthropic billing
+  error even though this workspace's Tailor model is `ollama`. Root cause:
+  `daily.py`/`fill.py` call `jd.extract_consensus`/`answer.answer_question` directly,
+  outside `web/jobs.py`'s job queue — the only place `config.resolve()` runs. Per
+  `config.backend_for()`'s documented fallback, an empty `_ACTIVE` (true on every cold
+  process, before the first tailor job) silently resolves to `resolve("claude")`,
+  regardless of the saved model setting. Also fixed in the same pass: two `_process_one`
+  branches (`no application link`, an `extract_consensus` exception) updated
+  `status_history` but never called `_append_log`, so a failing posting just vanished
+  from the visible daily log instead of showing why.
+- **Tradeoff:** Deliberately narrow scope — this setting governs only the funnel's own
+  pre-tailor screening extraction and free-text answer drafting. The actual
+  resume-tailoring stage the funnel submits via `get_queue().submit(...)` keeps using
+  the workspace's existing Tailor model settings unchanged, since that path already
+  resolves correctly through the job queue.
+- **Follow-up:** `test_daily_status_reflects_progress` had to gain a `time.sleep(0.2)`
+  inside its own stubbed `fetch_jd.fetch_jd` — once `extract_consensus` was properly
+  stubbed (it wasn't before, and silently made a real, slow, un-hermetic Ollama call
+  under the old fallback-to-Claude-then-fail-fast behavior), the whole run finished
+  faster than the test's 0.1s poll interval could reliably observe an in-flight phase.
+
+## 2026-09-21 — Fabrication guard falls back and warns instead of hard-failing; screening's must-have coverage is informational only; fixed a years-regex false positive
+
+- **What:** Three changes from evaluating a fresh apply-funnel run where every one of
+  15 discovered postings failed for a different reason:
+  1. `rewrite.rewrite_bullets`: a bullet that still fabricates after its one targeted
+     retry (`_retry_fabrications`) no longer raises `FabricationError`. It falls back to
+     that bullet's original, guard-clean master-resume text and is recorded in the new
+     `RewriteOutcome.fabrications_rejected: dict[id -> offending terms]` — same shape and
+     rationale as the existing `widow_repairs_rejected`. Applies everywhere
+     `rewrite_bullets` is called (CLI, web tailoring, apply funnel), per explicit user
+     choice over scoping it to the apply funnel only. `FabricationError` itself still
+     exists (still importable/catchable by `tailor.py`/`web/jobs.py`) but is no longer
+     raised anywhere in `rewrite.py`.
+  2. `apply/screen.py`'s `screen()`: removed both must-have gates
+     (`min_must_have_coverage`, `max_no_evidence_must_haves`) — coverage is still
+     computed and surfaced on `ScreenResult`/the application record, but never rejects a
+     posting. Both fields dropped from `ScreenSettings` and the frontend's mirrored type/
+     defaults (`api.ts`, `runState.tsx`) since nothing else read them.
+  3. `apply/eligibility.py`'s `_YEARS` regex: `\d{1,2}` had no boundary against starting
+     mid-number, so "over **175** years" (company-history boilerplate) matched as "17"
+     followed by "5 years", producing a false `requires_17_years` hard-reject. Added
+     `(?<!\d)`/`(?!\d)` guards around both digit groups.
+- **Why:** All three came out of reading `log-2026-09-21.txt`/`applications.json` from a
+  run where zero of 15 postings reached `ready`: 2 Lazard postings hard-rejected on the
+  regex bug, 1 AutoZone posting screened out purely on coverage (a heuristic the user
+  decided shouldn't gate at all — tailoring exists to bridge exactly this gap), and 1
+  AutoZone posting hard-failed the whole run over one bullet's fabrication rather than
+  degrading gracefully.
+- **Tradeoff:** The fabrication guard's *detection* is unchanged and still runs every
+  time (CLAUDE.md's "do not weaken it" refers to `check_fabrication`/`guard_offenders`
+  themselves, both untouched) — only the *consequence* of an unresolved fabrication
+  changed, from "fail the whole tailoring run" to "keep the one bullet untailored and
+  say so." The fallback text is always the verbatim master-resume source, so the
+  documented invariant ("never invent resume content") still holds byte-for-byte; a
+  run can no longer be blocked by one stubborn bullet, at the cost of that bullet
+  possibly reading less tailored to the JD than its neighbors.
+- **Follow-up:** Updated `tests/test_rewrite.py`'s three fabrication tests
+  (`test_fabrication_retry_still_fabricating_*`, `test_fabrication_retry_missing_id_*`,
+  `test_rebound_*`) from `pytest.raises(FabricationError)` to asserting the fallback text
+  plus `fabrications_rejected`. Added
+  `test_company_history_number_does_not_read_as_years_requirement` to
+  `tests/test_eligibility.py`. Full suite green (983 passed), frontend `tsc -b`/lint/
+  vitest green.

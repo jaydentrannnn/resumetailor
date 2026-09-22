@@ -222,8 +222,8 @@ async def test_verify_claim_flags_fabricated_term(mcp_client):
     job_id = run["job_id"]
     result = await tools.verify_claim(
         mcp_client,
-        job_id,
         "Led a Kubernetes migration for production services.",
+        job_id=job_id,
     )
     assert result["ok"] is False
     assert any(t.lower() == "kubernetes" for t in result["unsupported_terms"])
@@ -248,8 +248,8 @@ async def test_get_resume_facts_projects_headers(mcp_client):
 
 
 @pytest.mark.asyncio
-async def test_read_artifact_large_docx_skips_base64(mcp_client):
-    """Large binaries must not return base64 (Claude Desktop 1MB tool-result cap)."""
+async def test_read_artifact_docx_returns_paths_not_base64(mcp_client):
+    """Binary artifacts return pointers only, regardless of how small they are."""
     run = await tools.tailor_application(
         mcp_client,
         "Looking for a Python engineer.",
@@ -258,12 +258,11 @@ async def test_read_artifact_large_docx_skips_base64(mcp_client):
     )
     job_id = run["job_id"]
     docx_path = config.OUTPUT_DIR / "jobs" / job_id / "tailored.docx"
-    docx_path.write_bytes(b"PK" + b"x" * (tools._MAX_INLINE_BYTES + 1))
+    docx_path.write_bytes(b"PK" + b"x" * 64)  # tiny: would have been inlined before
 
     result = await tools.read_artifact(mcp_client, job_id, "resume_docx")
     assert "base64" not in result
     assert result["inline"] is False
-    assert result["size_bytes"] > tools._MAX_INLINE_BYTES
     assert "download.docx" in result["download_url"]
     assert result.get("disk_path")  # MCP process shares OUTPUT_DIR with the app
 
@@ -282,3 +281,30 @@ async def test_read_artifact_markdown_returns_text(mcp_client):
     assert "text" in result
     assert "base64" not in result
     assert "Expanded bullet" in result["text"]
+
+
+@pytest.mark.asyncio
+async def test_list_applications_empty(mcp_client, tmp_path, monkeypatch):
+    """list_applications returns an empty tracker on a fresh workspace."""
+    monkeypatch.setattr(config, "APPLICATIONS_PATH", tmp_path / "applications.json")
+    result = await tools.list_applications(mcp_client, limit=10)
+    assert result["applications"] == []
+    assert result["counts"] == {}
+
+
+@pytest.mark.asyncio
+async def test_get_application_packet_after_run(mcp_client):
+    """get_application_packet returns JSON for a finished run (rebuild if needed)."""
+    run = await tools.tailor_application(
+        mcp_client,
+        "Looking for a Python engineer.",
+        cover_letter=False,
+        wait_seconds=30,
+    )
+    job_id = run["job_id"]
+    packet_path = config.OUTPUT_DIR / "jobs" / job_id / "packet.json"
+    if not packet_path.is_file():
+        await mcp_client._request("POST", f"/api/jobs/{job_id}/packet/rebuild")
+    packet = await tools.get_application_packet(mcp_client, job_id)
+    assert packet["job_id"] == job_id
+    assert "fields" in packet

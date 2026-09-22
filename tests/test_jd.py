@@ -368,6 +368,260 @@ def test_kind_defaults_to_technical_when_absent():
     assert reqs.keywords[0].kind == "technical"
 
 
+def test_band_and_evidence_default_when_absent():
+    """Extractions cached before band/evidence existed must still load unchanged."""
+    raw = json.dumps(
+        {
+            "title": "ML Engineer",
+            "seniority": "entry",
+            "keywords": [
+                {"phrase": "Python", "canonical": "python", "importance": "must_have"}
+            ],
+            "domain_notes": [],
+        }
+    )
+    reqs = JobRequirements.model_validate_json(raw)
+    assert reqs.keywords[0].band == "meaningful"
+    assert reqs.keywords[0].evidence == "inferred"
+
+
+def test_apply_evidence_cap_downgrades_inferred_critical():
+    """An inferred guess must not manufacture critical urgency in the report."""
+    kw = Keyword(
+        phrase="Python",
+        canonical="python",
+        importance="must_have",
+        band="critical",
+        evidence="inferred",
+    )
+    jd._apply_evidence_cap(kw)
+    assert kw.band == "meaningful"
+    assert kw.evidence == "inferred"
+
+
+def test_apply_evidence_cap_leaves_stated_critical_alone():
+    """Stated critical is allowed — the posting itself used must-have wording."""
+    kw = Keyword(
+        phrase="Python",
+        canonical="python",
+        importance="must_have",
+        band="critical",
+        evidence="stated",
+    )
+    jd._apply_evidence_cap(kw)
+    assert kw.band == "critical"
+
+
+def test_extract_applies_evidence_cap(calls, monkeypatch):
+    """Single-sample extraction caps inferred+critical before caching."""
+    parsed = JobRequirements(
+        title="T",
+        seniority="intern",
+        keywords=[
+            Keyword(
+                phrase="Python",
+                canonical="python",
+                importance="must_have",
+                band="critical",
+                evidence="inferred",
+            )
+        ],
+    )
+    monkeypatch.setattr(
+        jd.llm, "client_for", lambda purpose: _FakeClient(parsed, calls)
+    )
+    reqs = jd.extract("Need Python.", use_cache=False)
+    assert reqs.keywords[0].band == "meaningful"
+    assert reqs.keywords[0].evidence == "inferred"
+
+
+def test_vote_band_tie_resolves_upward():
+    """A 50/50 band split prefers the higher-significance band."""
+    samples = [
+        JobRequirements(
+            title="T",
+            seniority="entry",
+            keywords=[
+                Keyword(
+                    phrase="Python",
+                    canonical="python",
+                    importance="must_have",
+                    band="high",
+                    evidence="stated",
+                )
+            ],
+        ),
+        JobRequirements(
+            title="T",
+            seniority="entry",
+            keywords=[
+                Keyword(
+                    phrase="Python",
+                    canonical="python",
+                    importance="must_have",
+                    band="meaningful",
+                    evidence="stated",
+                )
+            ],
+        ),
+    ]
+    merged, _dropped = jd._vote(samples, known_tags=["python"])
+    assert merged.keywords[0].band == "high"
+
+
+def test_vote_evidence_tie_resolves_to_inferred():
+    """An ambiguous evidence vote must not invent a stated must-have."""
+    samples = [
+        JobRequirements(
+            title="T",
+            seniority="entry",
+            keywords=[
+                Keyword(
+                    phrase="Python",
+                    canonical="python",
+                    importance="must_have",
+                    band="meaningful",
+                    evidence="stated",
+                )
+            ],
+        ),
+        JobRequirements(
+            title="T",
+            seniority="entry",
+            keywords=[
+                Keyword(
+                    phrase="Python",
+                    canonical="python",
+                    importance="must_have",
+                    band="meaningful",
+                    evidence="inferred",
+                )
+            ],
+        ),
+    ]
+    merged, _dropped = jd._vote(samples, known_tags=["python"])
+    assert merged.keywords[0].evidence == "inferred"
+
+
+def test_vote_reapplies_evidence_cap_across_samples():
+    """Majority critical + majority inferred from different samples still caps."""
+    samples = [
+        JobRequirements(
+            title="T",
+            seniority="entry",
+            keywords=[
+                Keyword(
+                    phrase="Python",
+                    canonical="python",
+                    importance="must_have",
+                    band="critical",
+                    evidence="stated",
+                )
+            ],
+        ),
+        JobRequirements(
+            title="T",
+            seniority="entry",
+            keywords=[
+                Keyword(
+                    phrase="Python",
+                    canonical="python",
+                    importance="must_have",
+                    band="critical",
+                    evidence="inferred",
+                )
+            ],
+        ),
+        JobRequirements(
+            title="T",
+            seniority="entry",
+            keywords=[
+                Keyword(
+                    phrase="Python",
+                    canonical="python",
+                    importance="must_have",
+                    band="meaningful",
+                    evidence="inferred",
+                )
+            ],
+        ),
+    ]
+    # band majority: critical (2/3); evidence majority: inferred (2/3) → capped
+    merged, _dropped = jd._vote(samples, known_tags=["python"])
+    assert merged.keywords[0].band == "meaningful"
+    assert merged.keywords[0].evidence == "inferred"
+
+
+def test_vote_reports_consensus_dropped_all():
+    """Every phrase below majority threshold surfaces as consensus_dropped_all."""
+    samples = [
+        JobRequirements(
+            title="T",
+            seniority="entry",
+            keywords=[
+                Keyword(phrase="Python", canonical="python", importance="must_have")
+            ],
+        ),
+        JobRequirements(
+            title="T",
+            seniority="entry",
+            keywords=[
+                Keyword(phrase="Java", canonical="java", importance="must_have")
+            ],
+        ),
+        JobRequirements(
+            title="T",
+            seniority="entry",
+            keywords=[
+                Keyword(phrase="Go", canonical="go", importance="must_have")
+            ],
+        ),
+    ]
+    merged, dropped = jd._vote(samples, known_tags=None)
+    assert dropped is True
+    assert merged.keywords == []
+    assert jd.extraction_diagnosis(merged) == "consensus_dropped_all"
+
+
+def test_extraction_diagnosis_no_keywords():
+    reqs = JobRequirements(title="T", seniority="entry", keywords=[])
+    assert jd.extraction_diagnosis(reqs) == "no_keywords"
+
+
+def test_extraction_diagnosis_no_must_haves():
+    reqs = JobRequirements(
+        title="T",
+        seniority="entry",
+        keywords=[
+            Keyword(phrase="Python", canonical="python", importance="nice_to_have")
+        ],
+    )
+    assert jd.extraction_diagnosis(reqs) == "no_must_haves"
+
+
+def test_extraction_diagnosis_clean():
+    reqs = JobRequirements(
+        title="T",
+        seniority="entry",
+        keywords=[
+            Keyword(phrase="Python", canonical="python", importance="must_have")
+        ],
+    )
+    assert jd.extraction_diagnosis(reqs) is None
+
+
+def test_prompt_version_is_three():
+    """Version 3 is the deliberate cache-bust for band/evidence + untrusted-input."""
+    assert jd._PROMPT_VERSION == 3
+
+
+def test_system_prompt_names_bands_and_untrusted_input():
+    """Band definitions and the untrusted-JD rule must both reach the model."""
+    assert "critical" in jd._SYSTEM
+    assert "evidence" in jd._SYSTEM
+    assert "untrusted" in jd._SYSTEM.lower()
+
+
 def test_kind_round_trips():
     reqs = JobRequirements(
         title="T",

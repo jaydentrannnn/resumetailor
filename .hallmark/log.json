@@ -1,0 +1,18 @@
+[
+  {
+    "date": "2026-09-01",
+    "scope": "app",
+    "macrostructure": "n/a — functional app shell (see design.md § Scope note)",
+    "theme": "Studio-derived (custom values, see design.md)",
+    "enrichment": "none",
+    "brief": "ResumeTailor frontend · visible-design audit fix pass (row-1 priority swap, neutral chips, PDF chrome hidden, settings disclosure, sticky header, warning collapse)"
+  },
+  {
+    "date": "2026-09-01",
+    "scope": "app",
+    "macrostructure": "n/a — functional app shell (see design.md § Scope note)",
+    "theme": "Studio-derived (custom values, see design.md)",
+    "enrichment": "none",
+    "brief": "ResumeTailor frontend · redesign --mood utilitarian · audit fix pass (4 critical, 10 major, 8 minor)"
+  }
+]

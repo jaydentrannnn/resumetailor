@@ -67,6 +67,8 @@ export const DEFAULT_SETTINGS: JobSettings = {
   expand_model: null,
   skills_model: null,
   cover_model: null,
+  review_model: null,
+  answer_model: null,
   effort: null,
   no_semantic: false,
   no_widow_repair: false,
@@ -80,6 +82,12 @@ export const DEFAULT_SETTINGS: JobSettings = {
   no_skills: false,
   cover_letter: false,
   no_cover_letter: false,
+  cover_angles: {
+    why_company: "",
+    problem: "",
+    approach: "",
+    tone: "",
+  },
   no_facets: false,
   no_project_links: false,
   fill_target: null,
@@ -92,6 +100,69 @@ export const DEFAULT_SETTINGS: JobSettings = {
   expand_style: null,
   cover_style: null,
   model_name: null,
+  apply: {
+    enabled: false,
+    schedule_time: "02:00",
+    readme_url:
+      "https://raw.githubusercontent.com/SimplifyJobs/Summer2027-Internships/dev/README.md",
+    categories: [
+      "Software Engineering Internship Roles",
+      "Data Science, AI & Machine Learning Internship Roles",
+    ],
+    sources: [
+      {
+        id: "simplify-internships",
+        kind: "simplify_html",
+        url: "https://raw.githubusercontent.com/SimplifyJobs/Summer2027-Internships/dev/README.md",
+        categories: [
+          "Software Engineering Internship Roles",
+          "Data Science, AI & Machine Learning Internship Roles",
+        ],
+        enabled: true,
+      },
+      {
+        id: "simplify-newgrad",
+        kind: "simplify_html",
+        url: "https://raw.githubusercontent.com/SimplifyJobs/New-Grad-Positions/dev/README.md",
+        categories: [
+          "Software Engineering New Grad Roles",
+          "Data Science, AI & Machine Learning New Grad Roles",
+        ],
+        enabled: true,
+      },
+      {
+        id: "speedyapply",
+        kind: "pipe_table",
+        url: "https://raw.githubusercontent.com/speedyapply/2027-SWE-College-Jobs/main/README.md",
+        categories: ["2027 USA SWE Internships", "USA Positions"],
+        enabled: true,
+      },
+    ],
+    max_age_days: 1,
+    exclude_advanced_degree: true,
+    exclude_citizenship_required: true,
+    exclude_no_sponsorship: false,
+    max_new_per_day: 40,
+    screen: {
+      allowed_seniority: ["intern", "entry"],
+      block_patterns: [
+        "\\bU\\.?S\\.? citizen",
+        "security clearance",
+      ],
+    },
+    eligibility: {
+      hard_reject_years: 4,
+      flag_years: 2,
+      extra_title_block: [],
+      extra_text_block: [],
+    },
+    auto_submit_ats: [],
+    auto_submit_max_per_run: 0,
+    reuse_threshold: 0.72,
+    cover_letter: true,
+    model_provider: "ollama",
+    model_name: "nemotron-3-super:cloud",
+  },
 };
 
 /**

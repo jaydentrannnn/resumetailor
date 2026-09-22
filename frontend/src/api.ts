@@ -24,6 +24,13 @@ export type IncludeOptions = {
   section_order: string[] | null;
 };
 
+export type CoverAngles = {
+  why_company: string;
+  problem: string;
+  approach: string;
+  tone: "" | "formal" | "direct" | "conversational" | "mirror";
+};
+
 export type JobSettings = {
   pages: number;
   experience: number | null;
@@ -37,6 +44,10 @@ export type JobSettings = {
   expand_model: string | null;
   skills_model: string | null;
   cover_model: string | null;
+  /** Override for the opt-in hiring-manager review stage (CLI `--review` today). */
+  review_model: string | null;
+  /** Override for application-form free-text answers (`apply.answer`). */
+  answer_model: string | null;
   effort: "low" | "medium" | "high" | null;
   no_semantic: boolean;
   no_widow_repair: boolean;
@@ -55,6 +66,8 @@ export type JobSettings = {
   /** Generate a cover letter after the tailored resume succeeds. */
   cover_letter: boolean;
   no_cover_letter: boolean;
+  /** Optional cover-letter angle inputs (why company / problem / approach / tone). */
+  cover_angles: CoverAngles;
   /** Skip LLM selection of project tech tags and coursework (budget-only truncation). */
   no_facets: boolean;
   /** Render projects without their link label or hyperlink. */
@@ -84,6 +97,147 @@ export type JobSettings = {
   cover_style: string | null;
   /** One blanket model override applied to every stage of the selected profile. */
   model_name: string | null;
+  /** Daily discover/screen/fill funnel settings. */
+  apply: ApplySettings;
+};
+
+export type ScreenSettings = {
+  allowed_seniority: string[];
+  block_patterns: string[];
+};
+
+export type SourceConfig = {
+  id: string;
+  kind: "simplify_html" | "pipe_table";
+  url: string;
+  categories: string[];
+  enabled: boolean;
+};
+
+export type EligibilitySettings = {
+  hard_reject_years: number;
+  flag_years: number;
+  extra_title_block: string[];
+  extra_text_block: string[];
+};
+
+export type ApplySettings = {
+  enabled: boolean;
+  schedule_time: string;
+  readme_url: string;
+  categories: string[];
+  sources: SourceConfig[];
+  max_age_days: number;
+  exclude_advanced_degree: boolean;
+  exclude_citizenship_required: boolean;
+  exclude_no_sponsorship: boolean;
+  max_new_per_day: number;
+  screen: ScreenSettings;
+  eligibility: EligibilitySettings;
+  auto_submit_ats: string[];
+  auto_submit_max_per_run: number;
+  reuse_threshold: number;
+  cover_letter: boolean;
+  // Provider + model for the funnel's own extract/answer calls — separate from the
+  // Tailor model setting. See `ApplySettings.model_spec` on the backend.
+  model_provider: "ollama" | "lmstudio" | "gemini" | "anthropic";
+  model_name: string;
+};
+
+export type ApplicantProfile = {
+  first_name: string;
+  last_name: string;
+  preferred_name: string;
+  pronouns: string;
+  email: string;
+  phone: string;
+  phone_country_code: string;
+  address_line1: string;
+  address_line2: string;
+  city: string;
+  state: string;
+  postal_code: string;
+  country: string;
+  linkedin_url: string;
+  github_url: string;
+  portfolio_url: string;
+  portfolio_only_when_asked: boolean;
+  work_authorization: string;
+  requires_sponsorship_now: boolean | null;
+  requires_sponsorship_future: boolean | null;
+  f1_opt_eligible: boolean | null;
+  earliest_start: string;
+  graduation_month: string;
+  degree_level: string;
+  major: string;
+  school: string;
+  gpa: string;
+  highest_education_obtained: string;
+  salary_expectation: string;
+  willing_to_relocate: boolean | null;
+  location_preference: string;
+  over_18: boolean | null;
+  relatives_at_company: boolean | null;
+  referred_by: string;
+  how_heard: string;
+  eeo: { gender: string; race: string; veteran: string; disability: string };
+  custom_answers: Record<string, string>;
+};
+
+export type ApplicationRow = {
+  source_job_id: string;
+  company: string;
+  role: string;
+  location: string;
+  posting_url: string;
+  final_url: string;
+  ats: string;
+  status: string;
+  discovered_at: string;
+  job_id: string | null;
+  screen: {
+    passed: boolean;
+    coverage: number;
+    coverage_matched: number;
+    coverage_total: number;
+    reasons: string[];
+    flags: string[];
+  } | null;
+  error: string | null;
+  notes: string;
+  sources: string[];
+  group_size: number;
+  salary: string;
+  eligibility_flags: string[];
+  duplicate_of: string | null;
+};
+
+export type ApplicationsList = {
+  applications: ApplicationRow[];
+  counts: Record<string, number>;
+};
+
+export type BrowserStatus = {
+  reachable: boolean;
+  browser: string;
+  user_agent: string;
+  error: string;
+  cdp_url: string;
+};
+
+export type Packet = {
+  job_id: string;
+  company: string;
+  role: string;
+  ats: string;
+  posting_url: string;
+  fields: Record<string, string>;
+  education: Array<Record<string, string>>;
+  experience: Array<Record<string, unknown>>;
+  skills: string[];
+  cover_letter: string;
+  artifacts: Record<string, string>;
+  gaps: Array<Record<string, unknown>>;
 };
 
 export type ProgressEvent = {
@@ -105,6 +259,10 @@ export type KeywordGap = {
   importance: string;
   reason: "no_evidence" | "untagged_evidence" | "near_miss";
   evidence: string[];
+  /** Score-neutral posting weight from JD extraction. */
+  band?: string;
+  /** Where the band came from (`stated` / `structural` / `inferred`). */
+  evidence_tier?: string;
 };
 
 export type RunReport = {
@@ -115,6 +273,8 @@ export type RunReport = {
   missing_must_haves: string[];
   unmatched_canonicals: string[][];
   gaps: KeywordGap[];
+  /** Why coverage is unmeasurable; null/absent when the ratio is real. */
+  extraction_diagnosis?: string | null;
   model: string;
   semantic_used: boolean;
   bullets_selected: number;
@@ -1151,4 +1311,122 @@ export function rejectLibraryProposals(proposalIds: string[]): Promise<LibrarySt
     method: "POST",
     body: JSON.stringify({ proposal_ids: proposalIds }),
   });
+}
+
+/** Load the applicant form-filling profile for the active workspace. */
+export function getApplicantProfile(): Promise<{
+  workspace_id: string | null;
+  profile: ApplicantProfile;
+  seeded: boolean;
+}> {
+  return request("/api/applicant-profile");
+}
+
+/** Persist the applicant form-filling profile. */
+export function putApplicantProfile(profile: ApplicantProfile): Promise<{
+  workspace_id: string | null;
+  profile: ApplicantProfile;
+  seeded: boolean;
+}> {
+  return request("/api/applicant-profile", {
+    method: "PUT",
+    body: JSON.stringify({ profile }),
+  });
+}
+
+/** List tracked applications, newest first. */
+export function listApplications(status?: string, limit = 50): Promise<ApplicationsList> {
+  const params = new URLSearchParams();
+  if (status) params.set("status", status);
+  params.set("limit", String(limit));
+  return request(`/api/applications?${params}`);
+}
+
+/** Load one application plus packet and JD when available. */
+export function getApplication(sourceJobId: string): Promise<{
+  application: ApplicationRow;
+  packet: Packet | null;
+  jd_text: string | null;
+}> {
+  return request(`/api/applications/${encodeURIComponent(sourceJobId)}`);
+}
+
+/** Update an application's funnel status. */
+export function setApplicationStatus(
+  sourceJobId: string,
+  status: string,
+  note = "",
+): Promise<ApplicationRow> {
+  return request(`/api/applications/${encodeURIComponent(sourceJobId)}/status`, {
+    method: "POST",
+    body: JSON.stringify({ status, note }),
+  });
+}
+
+/** Re-run the failed step for one application (fetch JD, re-screen, or re-tailor). */
+export function retryApplication(sourceJobId: string): Promise<ApplicationRow> {
+  return request(`/api/applications/${encodeURIComponent(sourceJobId)}/retry`, {
+    method: "POST",
+  });
+}
+
+/** Start CDP fill for one ready application. */
+export function startApplicationFill(sourceJobId: string): Promise<ApplicationRow> {
+  return request(`/api/applications/${encodeURIComponent(sourceJobId)}/fill`, {
+    method: "POST",
+  });
+}
+
+/** Poll fill outcome for one application. */
+export function getApplicationFill(sourceJobId: string): Promise<Record<string, unknown>> {
+  return request(`/api/applications/${encodeURIComponent(sourceJobId)}/fill`);
+}
+
+/** Options mirroring `scripts/apply_daily.py`'s `--limit` / `--dry-run`. */
+export type RunDailyOptions = {
+  limit?: number | null;
+  dry_run?: boolean;
+};
+
+/** Live progress of the in-flight (or last finished) daily pass. */
+export type DailyStatus = {
+  running: boolean;
+  phase: string;
+  source_id: string;
+  current: string;
+  processed: number;
+  total: number;
+  dry_run: boolean;
+  started_at: string;
+  finished_at: string;
+  date: string;
+  summary: Record<string, unknown> | null;
+};
+
+/** Trigger one daily discover/screen/tailor pass. */
+export function runDailyApply(
+  options: RunDailyOptions = {},
+): Promise<{ started: boolean; summary?: Record<string, unknown> }> {
+  return request("/api/applications/run-daily", {
+    method: "POST",
+    body: JSON.stringify({
+      limit: options.limit ?? null,
+      dry_run: options.dry_run ?? false,
+    }),
+  });
+}
+
+/** Poll phase/counters for the daily funnel. */
+export function getDailyStatus(): Promise<DailyStatus> {
+  return request("/api/applications/daily-status");
+}
+
+/** Probe host browser CDP reachability (Edge recommended — see README). */
+export function getBrowserStatus(): Promise<BrowserStatus> {
+  return request("/api/browser/status");
+}
+
+/** CSV download URL for the applications tracker export. */
+export function applicationsExportUrl(): string {
+  return "/api/applications/export.csv";
 }

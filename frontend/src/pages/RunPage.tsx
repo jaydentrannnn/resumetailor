@@ -499,6 +499,71 @@ function SettingsPanel({
           checked={settings.cover_letter}
           onChange={(v) => set("cover_letter", v)}
         />
+        {settings.cover_letter && (
+          <div className="space-y-3 rounded-md border border-line/80 bg-paper/40 p-3">
+            <p className="text-xs text-ink-muted">
+              Optional angles — durable per-application inputs (cached and guarded). Leave
+              blank for the default letter.
+            </p>
+            <Field label="Why this company">
+              <textarea
+                value={settings.cover_angles.why_company}
+                onChange={(e) =>
+                  set("cover_angles", {
+                    ...settings.cover_angles,
+                    why_company: e.target.value,
+                  })
+                }
+                rows={2}
+                className="field"
+              />
+            </Field>
+            <Field label="Problem to solve">
+              <textarea
+                value={settings.cover_angles.problem}
+                onChange={(e) =>
+                  set("cover_angles", {
+                    ...settings.cover_angles,
+                    problem: e.target.value,
+                  })
+                }
+                rows={2}
+                className="field"
+              />
+            </Field>
+            <Field label="Your approach">
+              <textarea
+                value={settings.cover_angles.approach}
+                onChange={(e) =>
+                  set("cover_angles", {
+                    ...settings.cover_angles,
+                    approach: e.target.value,
+                  })
+                }
+                rows={2}
+                className="field"
+              />
+            </Field>
+            <Field label="Tone">
+              <select
+                value={settings.cover_angles.tone}
+                onChange={(e) =>
+                  set("cover_angles", {
+                    ...settings.cover_angles,
+                    tone: e.target.value as JobSettings["cover_angles"]["tone"],
+                  })
+                }
+                className="field"
+              >
+                <option value="">Default</option>
+                <option value="formal">Formal</option>
+                <option value="direct">Direct</option>
+                <option value="conversational">Conversational</option>
+                <option value="mirror">Mirror the posting</option>
+              </select>
+            </Field>
+          </div>
+        )}
       </fieldset>
 
       <fieldset className="mt-6 space-y-3">
@@ -748,10 +813,19 @@ function SettingsPanel({
 
 function ReportCard({ report }: { report: RunReport }) {
   /** End-of-run summary cards mirroring the CLI report. */
+  const diagnosis = report.extraction_diagnosis;
   const pct =
-    report.coverage_total > 0
+    diagnosis == null && report.coverage_total > 0
       ? Math.round((100 * report.coverage_matched) / report.coverage_total)
       : null;
+  const mustHaveValue = diagnosis
+    ? "inconclusive"
+    : pct != null
+      ? `${pct}%`
+      : "n/a";
+  const mustHaveSub = diagnosis
+    ? diagnosis.replaceAll("_", " ")
+    : `${report.coverage_matched}/${report.coverage_total}`;
 
   return (
     <section className="rounded-xl border border-line bg-panel p-5 shadow-sm">
@@ -763,8 +837,8 @@ function ReportCard({ report }: { report: RunReport }) {
       <dl className="mt-4 grid grid-cols-2 gap-3 text-sm tabular-nums sm:grid-cols-5">
         <Stat
           label="Must-haves"
-          value={pct != null ? `${pct}%` : "n/a"}
-          sub={`${report.coverage_matched}/${report.coverage_total}`}
+          value={mustHaveValue}
+          sub={mustHaveSub}
         />
         <Stat
           label="Pages"
@@ -793,8 +867,27 @@ function ReportCard({ report }: { report: RunReport }) {
       </dl>
 
       {(() => {
-        const noEvidence = report.gaps.filter((g) => g.reason === "no_evidence");
-        const otherGaps = report.gaps.filter((g) => g.reason !== "no_evidence");
+        const bandRank: Record<string, number> = {
+          critical: 4,
+          high: 3,
+          meaningful: 2,
+          preferred: 1,
+          low_signal: 0,
+        };
+        const byBand = (a: (typeof report.gaps)[number], b: (typeof report.gaps)[number]) =>
+          (bandRank[b.band ?? "meaningful"] ?? 0) - (bandRank[a.band ?? "meaningful"] ?? 0);
+        const annotate = (g: (typeof report.gaps)[number]) =>
+          g.band
+            ? `${g.phrase} (${g.band}${g.evidence_tier ? `, ${g.evidence_tier}` : ""})`
+            : g.phrase;
+        const noEvidence = report.gaps
+          .filter((g) => g.reason === "no_evidence")
+          .slice()
+          .sort(byBand);
+        const otherGaps = report.gaps
+          .filter((g) => g.reason !== "no_evidence")
+          .slice()
+          .sort(byBand);
         const gapCount =
           (report.missing_must_haves.length > 0 ? 1 : 0) +
           (report.unmatched_canonicals.length > 0 ? 1 : 0) +
@@ -820,14 +913,14 @@ function ReportCard({ report }: { report: RunReport }) {
               {noEvidence.length > 0 && (
                 <p className="rounded-md bg-warn-soft px-3 py-2 text-warn">
                   No evidence in the master resume:{" "}
-                  {noEvidence.map((g) => g.phrase).join(", ")}
+                  {noEvidence.map(annotate).join(", ")}
                 </p>
               )}
               {otherGaps.map((g) => (
                 <p key={g.canonical} className="text-ink-muted">
                   {g.reason === "untagged_evidence"
-                    ? `${g.phrase}: evidence exists but no bullet is tagged for it (${g.evidence.join("; ")})`
-                    : `${g.phrase}: tagged under a different name (${g.evidence.join("; ")})`}
+                    ? `${annotate(g)}: evidence exists but no bullet is tagged for it (${g.evidence.join("; ")})`
+                    : `${annotate(g)}: tagged under a different name (${g.evidence.join("; ")})`}
                 </p>
               ))}
             </div>

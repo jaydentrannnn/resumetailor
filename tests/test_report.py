@@ -191,6 +191,81 @@ def test_gap_reports_no_evidence_when_nothing_matches():
     assert len(gaps) == 1
     assert gaps[0].reason == "no_evidence"
     assert gaps[0].evidence == []
+    assert gaps[0].band == "meaningful"
+    assert gaps[0].evidence_tier == "inferred"
+
+
+def test_gap_carries_band_and_evidence_tier():
+    """diagnose_gaps copies the score-neutral band/tier from the keyword."""
+    resume = _synthetic_resume(bullet_tags=("python",))
+    reqs = JobRequirements(
+        title="T",
+        seniority="entry",
+        keywords=[
+            Keyword(
+                phrase="TensorFlow",
+                canonical="tensorflow",
+                importance="must_have",
+                band="critical",
+                evidence="stated",
+            )
+        ],
+    )
+    gaps = report.diagnose_gaps(reqs, resume)
+    assert gaps[0].band == "critical"
+    assert gaps[0].evidence_tier == "stated"
+
+
+def test_format_report_orders_gaps_by_band_and_annotates():
+    """Within a reason group, critical gaps render first with (band, tier)."""
+    resume = _synthetic_resume(bullet_tags=("python",))
+    reqs = JobRequirements(
+        title="T",
+        seniority="entry",
+        keywords=[
+            Keyword(
+                phrase="Kafka",
+                canonical="kafka",
+                importance="must_have",
+                band="meaningful",
+                evidence="inferred",
+            ),
+            Keyword(
+                phrase="TensorFlow",
+                canonical="tensorflow",
+                importance="must_have",
+                band="critical",
+                evidence="stated",
+            ),
+        ],
+    )
+    result = _result(resume, {b.id: b.text for b in resume.all_bullets()})
+    text = report.format_report(resume, reqs, result)
+    # critical first, then meaningful; both annotated
+    no_ev_line = next(
+        line for line in text.splitlines() if "No evidence in the master resume" in line
+    )
+    assert no_ev_line.index("TensorFlow (critical, stated)") < no_ev_line.index(
+        "Kafka (meaningful, inferred)"
+    )
+
+
+def test_format_report_inconclusive_when_no_must_haves():
+    """Zero must-haves must not print a misleading 0/0 (n/a) coverage claim."""
+    resume = _synthetic_resume(bullet_tags=("python",))
+    reqs = JobRequirements(
+        title="T",
+        seniority="entry",
+        keywords=[
+            Keyword(phrase="Python", canonical="python", importance="nice_to_have")
+        ],
+    )
+    result = _result(resume, {b.id: b.text for b in resume.all_bullets()})
+    text = report.format_report(resume, reqs, result)
+    assert "coverage inconclusive" in text
+    assert "0/0" not in text
+    data = report.report_data(resume, reqs, result)
+    assert data.extraction_diagnosis == "no_must_haves"
 
 
 def test_gap_reports_untagged_evidence_from_project_tech():

@@ -8,7 +8,6 @@ without coupling this module to the SDK.
 from __future__ import annotations
 
 import asyncio
-import base64
 import time
 from pathlib import Path
 from typing import Any, Protocol
@@ -36,6 +35,7 @@ _ARTIFACT_KINDS: dict[str, tuple[str, str]] = {
     "expansion_md": ("expansion.md", "expansion.md"),
     "skills_md": ("skills.md", "skills.md"),
     "cover_md": ("cover-letter.md", "cover.md"),
+    "packet_json": ("packet.json", "packet.json"),
 }
 
 
@@ -56,6 +56,9 @@ async def tailor_application(
     profile: str | None = None,
     cover_letter: bool = True,
     pages: int | None = None,
+    posting_url: str = "",
+    company: str = "",
+    role: str = "",
     wait_seconds: float = 600.0,
     on_progress: ProgressSink | None = None,
 ) -> dict[str, Any]:
@@ -80,7 +83,14 @@ async def tailor_application(
     if pages is not None:
         settings["pages"] = pages
 
-    created = await client.create_job(jd_text, settings=settings)
+    metadata = None
+    if any((posting_url, company, role)):
+        metadata = {
+            "posting_url": posting_url,
+            "company": company,
+            "role": role,
+        }
+    created = await client.create_job(jd_text, settings=settings, metadata=metadata)
     job_id = created["job_id"]
     progress("fit", f"Job {job_id} queued", queue_position=created.get("queue_position"))
 
@@ -164,11 +174,6 @@ async def get_application_answers(client: BackendClient, job_id: str) -> dict[st
     }
 
 
-#: Claude Desktop rejects tool results over 1MB; base64 expands ~4/3, and the
-#: JSON envelope adds more. Keep inline payloads well under that ceiling.
-_MAX_INLINE_BYTES = 200_000
-
-
 def _artifact_disk_path(job_id: str, filename: str) -> str | None:
     """Host filesystem path when the MCP process shares a volume with the backend."""
     try:
@@ -190,11 +195,10 @@ def _absolute_download_url(client: BackendClient, api_path: str) -> str:
 
 
 async def get_artifact_paths(client: BackendClient, job_id: str) -> dict[str, Any]:
-    """Return download URLs and (when same-filesystem) disk paths for a run.
+    """Return download URLs and (when same-filesystem) disk paths for every artifact.
 
-    Prefer ``disk_paths`` / ``download_urls`` over ``read_artifact`` for ``.docx`` /
-    ``.pdf`` — those files routinely exceed Claude Desktop's 1MB tool-result limit
-    when base64-encoded.
+    Use this to enumerate what a run produced. ``read_artifact`` returns the same
+    pointers for one kind, plus inline text for the markdown kinds.
     """
     status = await client.get_job(job_id)
     if status.get("status") != "succeeded":
@@ -222,8 +226,8 @@ async def get_artifact_paths(client: BackendClient, job_id: str) -> dict[str, An
         "download_urls": download_urls,
         "disk_paths": disk,
         "hint": (
-            "For resume/cover .docx/.pdf, give the user disk_paths or download_urls — "
-            "do not call read_artifact (base64 exceeds the 1MB tool-result limit)."
+            "For resume/cover .docx/.pdf, give the user a disk_path or download_url — "
+            "the file contents are never inlined."
         ),
     }
 
@@ -235,9 +239,9 @@ async def read_artifact(
 ) -> dict[str, Any]:
     """Read one artifact for the agent.
 
-    Markdown returns inline ``text``. Binary files prefer ``disk_path`` / ``download_url``
-    and only include ``base64`` when the raw size is under ``_MAX_INLINE_BYTES`` —
-    Claude Desktop rejects tool results over 1MB, and a tailored ``.docx`` usually is.
+    Markdown returns inline ``text``. Binary artifacts (``.docx`` / ``.pdf``) return
+    ``disk_path`` / ``download_url`` only: a base64 blob of a zip or PDF carries no
+    information the model can read, and a single tailored PDF costs ~20k tokens.
     """
     if kind not in _ARTIFACT_KINDS:
         raise BackendError(
@@ -260,23 +264,18 @@ async def read_artifact(
     if disk_path:
         out["disk_path"] = disk_path
 
-    # Text artifacts: inline the content (skills/expansion/cover markdown are tiny).
-    if filename.endswith(".md"):
+    # Text artifacts: inline the content (markdown/json application bundles are tiny).
+    if filename.endswith(".md") or filename.endswith(".json"):
+        out["inline"] = True
         out["text"] = raw.decode("utf-8", errors="replace")
         return out
 
-    # Binary: never blow the MCP host's 1MB tool-result cap.
-    if len(raw) > _MAX_INLINE_BYTES:
-        out["inline"] = False
-        out["message"] = (
-            f"{filename} is {len(raw)} bytes — too large to inline. "
-            "Open disk_path on the host, or download_url in a browser "
-            "(http://127.0.0.1:8000/... while the backend is running)."
-        )
-        return out
-
-    out["inline"] = True
-    out["base64"] = base64.b64encode(raw).decode("ascii")
+    out["inline"] = False
+    out["message"] = (
+        f"{filename} is a binary artifact ({len(raw)} bytes) and is never inlined. "
+        "Open disk_path on the host, or download_url in a browser "
+        "(http://127.0.0.1:8000/... while the backend is running)."
+    )
     return out
 
 
@@ -359,8 +358,54 @@ async def get_resume_facts(client: BackendClient) -> dict[str, Any]:
 
 async def verify_claim(
     client: BackendClient,
-    job_id: str,
     text: str,
+    job_id: str | None = None,
 ) -> dict[str, Any]:
-    """Check free-text application prose against a finished run's tailored bullets."""
-    return await client.verify_claim(job_id, text)
+    """Check free-text application prose against tailored or master-resume bullets."""
+    return await client.verify_claim(text, job_id=job_id)
+
+
+async def get_application_packet(client: BackendClient, job_id: str) -> dict[str, Any]:
+    """Return ``packet.json`` for a finished tailoring run."""
+    return await client.get_job_packet(job_id)
+
+
+async def answer_application_question(
+    client: BackendClient,
+    job_id: str,
+    question: str,
+    *,
+    max_chars: int = 1500,
+) -> dict[str, Any]:
+    """Draft a guarded ATS free-text answer for one job run."""
+    return await client.answer_application_question(
+        job_id,
+        question,
+        max_chars=max_chars,
+    )
+
+
+async def list_applications(
+    client: BackendClient,
+    *,
+    status: str | None = None,
+    limit: int = 20,
+) -> dict[str, Any]:
+    """List tracked applications newest-first with per-status counts."""
+    return await client.list_applications(status=status, limit=limit)
+
+
+async def get_application(client: BackendClient, source_job_id: str) -> dict[str, Any]:
+    """Return one application with packet and JD text when available."""
+    return await client.get_application(source_job_id)
+
+
+async def mark_application(
+    client: BackendClient,
+    source_job_id: str,
+    status: str,
+    *,
+    note: str = "",
+) -> dict[str, Any]:
+    """Update one application's funnel status."""
+    return await client.mark_application(source_job_id, status, note=note)

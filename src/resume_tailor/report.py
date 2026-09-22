@@ -21,7 +21,7 @@ from . import config
 from .data import Experience, MasterResume, Project
 from .facets import labels_are_equivalent
 from .fit import FitResult
-from .jd import JobRequirements
+from .jd import JobRequirements, extraction_diagnosis
 from .rewrite import keyword_coverage
 
 if TYPE_CHECKING:
@@ -164,6 +164,28 @@ class KeywordGap:
     #: "no_evidence": nothing in the master resume supports it.
     reason: Literal["no_evidence", "untagged_evidence", "near_miss"]
     evidence: list[str]
+    #: How much this requirement weighs in THIS posting (`jd.Keyword.band`). Score-
+    #: neutral; used only for gap ordering and display. Defaults keep callers that
+    #: construct KeywordGap without the new fields working.
+    band: str = "meaningful"
+    #: Where the band's weight came from (`jd.Keyword.evidence`). Named `evidence_tier`
+    #: here because `evidence` above already holds the diagnostic snippets.
+    evidence_tier: str = "inferred"
+
+
+#: Descending significance for sorting gaps — mirrors `jd._BAND_RANK`.
+_BAND_RANK: dict[str, int] = {
+    "low_signal": 0,
+    "preferred": 1,
+    "meaningful": 2,
+    "high": 3,
+    "critical": 4,
+}
+
+
+def _gap_sort_key(gap: KeywordGap) -> tuple[int, str]:
+    """Sort gaps by band descending, then phrase, within a reason group."""
+    return (-_BAND_RANK.get(gap.band, 0), gap.phrase.lower())
 
 
 def diagnose_gaps(requirements: JobRequirements, master: MasterResume) -> list[KeywordGap]:
@@ -194,11 +216,15 @@ def diagnose_gaps(requirements: JobRequirements, master: MasterResume) -> list[K
 
     phrase_by_canonical = {kw.canonical: kw.phrase for kw in requirements.keywords}
     importance_by_canonical = {kw.canonical: kw.importance for kw in requirements.keywords}
+    band_by_canonical = {kw.canonical: kw.band for kw in requirements.keywords}
+    tier_by_canonical = {kw.canonical: kw.evidence for kw in requirements.keywords}
 
     gaps: list[KeywordGap] = []
     for canonical, _phrase in unmatched:
         phrase = phrase_by_canonical.get(canonical, canonical)
         importance = importance_by_canonical.get(canonical, "nice_to_have")
+        band = band_by_canonical.get(canonical, "meaningful")
+        evidence_tier = tier_by_canonical.get(canonical, "inferred")
 
         near_miss = next(
             (tag for tag in bullet_tags if labels_are_equivalent(canonical, tag)), None
@@ -209,6 +235,8 @@ def diagnose_gaps(requirements: JobRequirements, master: MasterResume) -> list[K
                     canonical=canonical,
                     phrase=phrase,
                     importance=importance,
+                    band=band,
+                    evidence_tier=evidence_tier,
                     reason="near_miss",
                     evidence=[f'bullet tag: "{near_miss}"'],
                 )
@@ -235,6 +263,8 @@ def diagnose_gaps(requirements: JobRequirements, master: MasterResume) -> list[K
                     canonical=canonical,
                     phrase=phrase,
                     importance=importance,
+                    band=band,
+                    evidence_tier=evidence_tier,
                     reason="untagged_evidence",
                     evidence=evidence,
                 )
@@ -245,6 +275,8 @@ def diagnose_gaps(requirements: JobRequirements, master: MasterResume) -> list[K
                     canonical=canonical,
                     phrase=phrase,
                     importance=importance,
+                    band=band,
+                    evidence_tier=evidence_tier,
                     reason="no_evidence",
                     evidence=[],
                 )
@@ -328,6 +360,9 @@ class RunReport:
     #: `config.PLAUSIBLE_CHARS_PER_LINE`) rather than simply absent — both cases leave
     #: `calibration_source == "fallback"`, so this is the only way to tell them apart.
     calibration_rejection: str | None = None
+    #: Why coverage is unmeasurable, when extraction produced nothing usable.
+    #: See `jd.extraction_diagnosis`. None when coverage is a real ratio.
+    extraction_diagnosis: str | None = None
 
 
 def report_data(
@@ -350,6 +385,7 @@ def report_data(
         seniority=requirements.seniority,
         coverage_matched=matched,
         coverage_total=total,
+        extraction_diagnosis=extraction_diagnosis(requirements),
         missing_must_haves=missing_must_haves(requirements, resume),
         unmatched_canonicals=unmatched_canonicals(requirements, resume),
         gaps=diagnose_gaps(requirements, master),
@@ -403,12 +439,24 @@ def format_report(
     """
     master = master or resume
     matched, total = keyword_coverage(requirements, resume)
-    pct = f"{matched / total:.0%}" if total else "n/a"
+    diagnosis = extraction_diagnosis(requirements)
+    if diagnosis is None:
+        pct = f"{matched / total:.0%}" if total else "n/a"
+        coverage_line = f"Must-have keyword coverage: {matched}/{total} ({pct})"
+    else:
+        labels = {
+            "no_keywords": "no keywords extracted — coverage inconclusive",
+            "no_must_haves": "no must-have keywords — coverage inconclusive",
+            "consensus_dropped_all": (
+                "consensus voting dropped every phrase — coverage inconclusive"
+            ),
+        }
+        coverage_line = f"Must-have keyword coverage: {labels.get(diagnosis, diagnosis)}"
 
     lines: list[str] = [
         f"Tailored for: {requirements.title} ({requirements.seniority})",
         "",
-        f"Must-have keyword coverage: {matched}/{total} ({pct})",
+        coverage_line,
     ]
 
     missing = missing_must_haves(requirements, resume)
@@ -423,22 +471,33 @@ def format_report(
         )
 
     gaps = diagnose_gaps(requirements, master)
-    no_evidence = [g for g in gaps if g.reason == "no_evidence"]
-    untagged = [g for g in gaps if g.reason == "untagged_evidence"]
-    near_miss = [g for g in gaps if g.reason == "near_miss"]
+    no_evidence = sorted(
+        [g for g in gaps if g.reason == "no_evidence"], key=_gap_sort_key
+    )
+    untagged = sorted(
+        [g for g in gaps if g.reason == "untagged_evidence"], key=_gap_sort_key
+    )
+    near_miss = sorted(
+        [g for g in gaps if g.reason == "near_miss"], key=_gap_sort_key
+    )
+
+    def _annotate(g: KeywordGap) -> str:
+        """Render a gap phrase with its score-neutral band and evidence tier."""
+        return f"{g.phrase} ({g.band}, {g.evidence_tier})"
+
     if no_evidence:
         lines.append(
             "  No evidence in the master resume: "
-            + ", ".join(g.phrase for g in no_evidence)
+            + ", ".join(_annotate(g) for g in no_evidence)
         )
     if untagged:
         lines.append("  Evidence exists but no bullet is tagged for it:")
         for g in untagged:
-            lines.append(f"    {g.phrase} <- {'; '.join(g.evidence)}")
+            lines.append(f"    {_annotate(g)} <- {'; '.join(g.evidence)}")
     if near_miss:
         lines.append("  Tagged under a different name:")
         for g in near_miss:
-            lines.append(f"    {g.phrase} <- {'; '.join(g.evidence)}")
+            lines.append(f"    {_annotate(g)} <- {'; '.join(g.evidence)}")
 
     ranking = (
         "keyword overlap + semantic relevance" if result.semantic_used else "keyword overlap only"
@@ -582,4 +641,25 @@ def format_cover_letter(letter) -> str:
     if letter.paragraphs:
         lines.append("")
         lines.append(coverletter_mod.format_markdown(letter))
+    return "\n".join(lines)
+
+
+def format_review(result) -> str:
+    """Render an opt-in hiring-manager review for the terminal and `.review.md`.
+
+    Advisory only — verdicts are never applied to the tailored resume automatically.
+    """
+    lines: list[str] = [
+        f"Hiring-manager review ({result.model}):",
+    ]
+    if result.scope_read:
+        lines.append(f"  Scope: {result.scope_read}")
+    for item in result.bullets:
+        lines.append(f"  [{item.verdict}] {item.id}: {item.reason}")
+        if item.replacement:
+            lines.append(f"    → {item.replacement}")
+        if item.dropped_note:
+            lines.append(f"    ({item.dropped_note})")
+    for warning in result.warnings:
+        lines.append(f"  WARNING: {warning}")
     return "\n".join(lines)
