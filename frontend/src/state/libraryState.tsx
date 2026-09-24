@@ -4,6 +4,7 @@ import {
   useContext,
   useEffect,
   useMemo,
+  useRef,
   useState,
   type ReactNode,
 } from "react";
@@ -44,6 +45,11 @@ type LibraryStateValue = {
   packs: LibraryPackSummary[];
   enabledPacks: string[];
   overrides: LibraryOverrides;
+  overridesDraft: LibraryOverrides;
+  overridesSaveState: "saved" | "unsaved" | "saving" | "failed";
+  editOverrides: (patch: Partial<LibraryOverrides>) => void;
+  flushOverrides: () => Promise<boolean>;
+  discardOverrides: () => Promise<void>;
   effective: LibraryEffective;
   diagnostics: string[];
   proposals: LibraryProposal[];
@@ -91,6 +97,14 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
   const [packs, setPacks] = useState<LibraryPackSummary[]>([]);
   const [enabledPacks, setEnabledPacks] = useState<string[]>([]);
   const [overrides, setOverridesState] = useState<LibraryOverrides>(EMPTY_OVERRIDES);
+  const [overridesDraft, setOverridesDraft] = useState<LibraryOverrides>(EMPTY_OVERRIDES);
+  const [overridesSaveState, setOverridesSaveState] = useState<"saved" | "unsaved" | "saving" | "failed">("saved");
+  const overridesDraftRef = useRef<LibraryOverrides>(EMPTY_OVERRIDES);
+  const savedOverridesRef = useRef<LibraryOverrides>(EMPTY_OVERRIDES);
+  const overridesRevision = useRef(0);
+  const overridesTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const overridesWrite = useRef<Promise<void>>(Promise.resolve());
+  const overridesDirty = useRef(false);
   const [effective, setEffective] = useState<LibraryEffective>(EMPTY_EFFECTIVE);
   const [diagnostics, setDiagnostics] = useState<string[]>([]);
   const [proposals, setProposals] = useState<LibraryProposal[]>([]);
@@ -99,11 +113,18 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
   const [busy, setBusy] = useState(false);
   const [generating, setGenerating] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const selectionRevision = useRef(0);
+  const selectionWrites = useRef<Promise<void>>(Promise.resolve());
 
   const applyState = useCallback((next: LibraryState) => {
     setPacks(next.packs);
     setEnabledPacks(next.enabled_packs);
     setOverridesState(next.overrides);
+    savedOverridesRef.current = next.overrides;
+    if (!overridesDirty.current) {
+      overridesDraftRef.current = next.overrides;
+      setOverridesDraft(next.overrides);
+    }
     setEffective(next.effective);
     setDiagnostics(next.diagnostics);
     setProposals(next.proposals);
@@ -128,14 +149,19 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
 
   const updateSelection = useCallback(
     async (nextEnabled: string[], nextOverrides: LibraryOverrides) => {
+      const revision = ++selectionRevision.current;
       setBusy(true);
       setError(null);
       try {
-        applyState(await setLibrarySelection(nextEnabled, nextOverrides));
+        const write = selectionWrites.current.then(() => setLibrarySelection(nextEnabled, nextOverrides));
+        selectionWrites.current = write.then(() => {}, () => {});
+        const result = await write;
+        if (revision === selectionRevision.current) applyState(result);
       } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
+        if (revision === selectionRevision.current) setError(err instanceof Error ? err.message : String(err));
+        throw err;
       } finally {
-        setBusy(false);
+        if (revision === selectionRevision.current) setBusy(false);
       }
     },
     [applyState],
@@ -150,6 +176,53 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     (next: LibraryOverrides) => updateSelection(enabledPacks, next),
     [updateSelection, enabledPacks],
   );
+
+  const flushOverrides = useCallback(async (): Promise<boolean> => {
+    if (overridesTimer.current) clearTimeout(overridesTimer.current);
+    overridesTimer.current = null;
+    try { await overridesWrite.current; } catch { /* retry the current draft */ }
+    if (!overridesDirty.current) return true;
+    const revision = overridesRevision.current;
+    const draft = overridesDraftRef.current;
+    setOverridesSaveState("saving");
+    const write = setOverrides(draft);
+    overridesWrite.current = write;
+    try {
+      await write;
+      if (revision === overridesRevision.current) {
+        overridesDirty.current = false;
+        setOverridesSaveState("saved");
+      }
+      return revision === overridesRevision.current;
+    } catch {
+      if (revision === overridesRevision.current) setOverridesSaveState("failed");
+      return false;
+    }
+  }, [setOverrides]);
+
+  const editOverrides = useCallback((patch: Partial<LibraryOverrides>) => {
+    const next = { ...overridesDraftRef.current, ...patch };
+    overridesDraftRef.current = next;
+    overridesDirty.current = true;
+    ++overridesRevision.current;
+    setOverridesDraft(next);
+    setOverridesSaveState("unsaved");
+    if (overridesTimer.current) clearTimeout(overridesTimer.current);
+    overridesTimer.current = setTimeout(() => { overridesTimer.current = null; void flushOverrides(); }, 600);
+  }, [flushOverrides]);
+
+  const discardOverrides = useCallback(async () => {
+    if (overridesTimer.current) clearTimeout(overridesTimer.current);
+    overridesTimer.current = null;
+    ++overridesRevision.current;
+    try { await overridesWrite.current; } catch { /* keep last server state */ }
+    overridesDirty.current = false;
+    overridesDraftRef.current = savedOverridesRef.current;
+    setOverridesDraft(savedOverridesRef.current);
+    setOverridesSaveState("saved");
+  }, []);
+
+  useEffect(() => () => { if (overridesTimer.current) clearTimeout(overridesTimer.current); }, []);
 
   const savePack = useCallback(
     async (id: string | null, draft: LibraryPackDraft) => {
@@ -264,6 +337,11 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       packs,
       enabledPacks,
       overrides,
+      overridesDraft,
+      overridesSaveState,
+      editOverrides,
+      flushOverrides,
+      discardOverrides,
       effective,
       diagnostics,
       proposals,
@@ -287,6 +365,11 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       packs,
       enabledPacks,
       overrides,
+      overridesDraft,
+      overridesSaveState,
+      editOverrides,
+      flushOverrides,
+      discardOverrides,
       effective,
       diagnostics,
       proposals,

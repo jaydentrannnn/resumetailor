@@ -4,6 +4,7 @@ import {
   type RunReport,
 } from "../api";
 import { DocumentsCard } from "../components/DocumentsCard";
+import { Tabs } from "../components/Tabs";
 import { ExperienceCard } from "../components/ExperienceCard";
 import { Field, Toggle } from "../components/Field";
 import { IncludePanel } from "../components/IncludePanel";
@@ -12,8 +13,10 @@ import { StylePromptField } from "../components/StylePromptField";
 import { SkillsCard } from "../components/SkillsCard";
 import { type RunProgress, runProgress } from "../lib/runProgress";
 import { DEFAULT_SETTINGS, useRunState } from "../state/runState";
+import { profileDefaultModel } from "../lib/modelLabel";
 import { useWorkspaceState } from "../state/workspaceState";
 import { useEffect, useId, useMemo, useRef, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 
 /**
  * Main run page: paste a JD, adjust settings, watch progress, download results.
@@ -50,11 +53,17 @@ export function RunPage() {
     busy,
     queuePosition,
     settingsLoaded,
+    settingsSaveState,
+    settingsSaveError,
+    flushSettings,
     startJob,
     cancelRun,
     cancelling,
   } = useRunState();
   const { switching } = useWorkspaceState();
+  const [resultParams, setResultParams] = useSearchParams();
+  const resultTab = ["overview", "documents", "content"].includes(resultParams.get("result_tab") ?? "") ? resultParams.get("result_tab")! : "overview";
+  const setResultTab = (tab: string) => setResultParams(previous => { const next = new URLSearchParams(previous); next.set("result_tab", tab); return next; }, { replace: true });
 
   const progressListRef = useRef<HTMLOListElement>(null);
   const progress = useMemo(
@@ -62,6 +71,16 @@ export function RunPage() {
     [events, status, busy],
   );
   const elapsed = useElapsedSeconds(busy);
+
+  // `setSearchParams` changes identity on every URL change (react-router memoises it
+  // over the current params), so this effect must key on an actual jobId change —
+  // otherwise each tab click re-ran it and deleted the tab it had just set.
+  const resetForJob = useRef(jobId);
+  useEffect(() => {
+    if (!jobId || resetForJob.current === jobId) return;
+    resetForJob.current = jobId;
+    setResultParams(previous => { const next = new URLSearchParams(previous); next.delete("result_tab"); return next; }, { replace: true });
+  }, [jobId, setResultParams]);
 
   useEffect(() => {
     /** Keep the progress list pinned to its newest row as events stream in. */
@@ -105,21 +124,15 @@ export function RunPage() {
     >
       <h1 className="sr-only">Tailor resume</h1>
 
-      <div className="lg:col-start-1 lg:row-start-1">
-        {/* Native fieldset disabling: blocks every descendant control until
-            settings finish loading, so no edit can race the initial fetch and
-            get silently overwritten when it resolves. `display: contents` keeps
-            it out of the grid/flex layout. */}
-        <fieldset disabled={!settingsLoaded} className="contents">
-          <SettingsPanel config={config} settings={settings} onChange={setSettings} />
-        </fieldset>
-      </div>
-
-      <div className="lg:col-start-2 lg:row-start-1">
-        <fieldset disabled={!settingsLoaded} className="contents">
-          <IncludePanel settings={settings} onChange={setSettings} />
-        </fieldset>
-      </div>
+      <section className="rounded-lg border border-line bg-panel p-4 lg:col-span-2 lg:row-start-1">
+        <h2 className="text-lg font-semibold">Tailor settings</h2>
+        <p className="mt-1 text-sm text-ink-muted">Model: {settings.model || "Default"} · {settings.pages} pages · {settings.experience ?? config?.experience ?? 3} experience entries · {settings.projects ?? config?.projects ?? 3} projects · Cover letter {settings.cover_letter && !settings.no_cover_letter ? "on" : "off"}</p>
+        {settingsLoaded && settingsSaveState !== "saved" && <p className={`mt-2 text-xs ${settingsSaveState === "failed" ? "text-danger" : "text-ink-muted"}`} role={settingsSaveState === "failed" ? "alert" : "status"}>
+          {settingsSaveState === "saving" ? "Saving settings…" : settingsSaveState === "unsaved" ? "Unsaved settings" : `Settings save failed: ${settingsSaveError ?? "Please retry."}`}
+          {settingsSaveState === "failed" && <button type="button" onClick={() => void flushSettings()} className="ml-2 font-medium text-accent underline">Retry</button>}
+        </p>}
+        <details className="mt-3"><summary className="cursor-pointer text-sm font-medium text-accent">Edit output, model, writing style, and included content</summary><div className="mt-4 grid gap-4 lg:grid-cols-2"><fieldset disabled={!settingsLoaded} className="contents"><SettingsPanel config={config} settings={settings} onChange={setSettings} /><IncludePanel settings={settings} onChange={setSettings} /></fieldset></div></details>
+      </section>
 
       {/* Job description is the primary input — it and its Progress feedback sit
           on row 2 at `lg`, after the settings panels. */}
@@ -249,38 +262,14 @@ export function RunPage() {
               : "Tailor resume"}
       </button>
 
-      {report && jobId && expansion && (
-        <div className="lg:col-start-1 lg:col-span-2 lg:row-start-4">
-          <ExperienceCard expansion={expansion} jobId={jobId} />
-        </div>
-      )}
-
-      {report && jobId && skills && (
-        <div className="lg:col-start-1 lg:row-start-5">
-          <SkillsCard plan={skills} gaps={report.gaps} jobId={jobId} />
-        </div>
-      )}
-
-      {report && jobId && (
-        <div
-          className={
-            skills
-              ? "lg:col-start-2 lg:row-start-5"
-              : "lg:col-start-1 lg:col-span-2 lg:row-start-5"
-          }
-        >
-          <ReportCard report={report} />
-        </div>
-      )}
-
-      {report && jobId && (
-        <div className="lg:col-start-1 lg:col-span-2 lg:row-start-6">
-          <DocumentsCard
-            jobId={jobId}
-            coverLetter={coverLetter}
-            onCoverRegenerated={setCoverLetter}
-          />
-        </div>
+      {jobId && (
+        <section id="tailored-results" className="space-y-4 lg:col-span-2 lg:row-start-4">
+          <h2 className="text-lg font-semibold">Tailored results</h2>
+          <Tabs label="Tailored results" items={[{ id: "overview", label: "Overview" }, { id: "documents", label: "Documents" }, { id: "content", label: "Application content" }]} value={resultTab} onChange={setResultTab} />
+          {resultTab === "overview" && <div role="tabpanel">{report ? <ReportCard report={report} /> : <p className="rounded-lg border border-line bg-panel p-5 text-sm text-ink-muted">A report has not been saved for this run.</p>}</div>}
+          {resultTab === "documents" && <div role="tabpanel"><DocumentsCard jobId={jobId} coverLetter={coverLetter} onCoverRegenerated={setCoverLetter} /></div>}
+          {resultTab === "content" && <div role="tabpanel" className="space-y-4">{skills && <SkillsCard plan={skills} gaps={report?.gaps ?? []} jobId={jobId} />}{expansion && <ExperienceCard expansion={expansion} jobId={jobId} />}{!skills && !expansion && <p className="rounded-lg border border-line bg-panel p-5 text-sm text-ink-muted">No skills or experience expansion was saved for this run.</p>}</div>}
+        </section>
       )}
 
       <RunHistoryPanel />
@@ -423,12 +412,7 @@ function SettingsPanel({
 
   /** Placeholder for the blanket model override — mirrors the profile's default tag. */
   function profileModelPlaceholder(): string {
-    if (!config) return "e.g. gemma4:cloud";
-    if (config.ollama_profiles.includes(settings.model)) return config.ollama_model;
-    if (config.gemini_profiles.includes(settings.model)) return config.gemini_model;
-    if (settings.model === "claude") return "claude-sonnet-5";
-    if (settings.model === "lmstudio") return "local-model";
-    return "provider:model";
+    return profileDefaultModel(settings, config);
   }
 
   return (
@@ -811,7 +795,7 @@ function SettingsPanel({
   );
 }
 
-function ReportCard({ report }: { report: RunReport }) {
+export function ReportCard({ report }: { report: RunReport }) {
   /** End-of-run summary cards mirroring the CLI report. */
   const diagnosis = report.extraction_diagnosis;
   const pct =

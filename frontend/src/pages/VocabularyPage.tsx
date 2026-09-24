@@ -1,4 +1,5 @@
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useMemo, useState } from "react";
+import { useSearchParams } from "react-router-dom";
 import {
   type LibraryAliasImpact,
   type LibraryOverrides,
@@ -7,6 +8,8 @@ import {
 import { ChipListField } from "../components/ChipListField";
 import { KeyValueListField } from "../components/KeyValueListField";
 import { PackEditor } from "../components/library/PackEditor";
+import { Pagination } from "../components/TableControls";
+import { Tabs } from "../components/Tabs";
 import { useConfirm } from "../state/confirmState";
 import { useLibraryState } from "../state/libraryState";
 
@@ -19,9 +22,11 @@ import { useLibraryState } from "../state/libraryState";
  */
 export function VocabularyPage() {
   const { effective } = useLibraryState();
+  const [params, setParams] = useSearchParams();
+  const tab = ["packs", "additions", "suggestions"].includes(params.get("tab") ?? "") ? params.get("tab")! : "packs";
   return (
     <div className="space-y-6">
-      <h1 className="sr-only">Vocabulary</h1>
+      <h1 className="font-display text-[28px] font-semibold">Vocabulary</h1>
       <p className="text-sm text-ink-muted">
         Active vocabulary:{" "}
         <span className="font-medium text-ink">
@@ -29,9 +34,10 @@ export function VocabularyPage() {
           {effective.verb_count} verb{effective.verb_count === 1 ? "" : "s"}
         </span>
       </p>
-      <PacksSection />
-      <OverridesSection />
-      <SuggestionsSection />
+      <Tabs label="Vocabulary sections" items={[{ id: "packs", label: "Packs" }, { id: "additions", label: "Additions" }, { id: "suggestions", label: "Suggestions" }]} value={tab} onChange={value => setParams({ tab: value })} />
+      <div role="tabpanel" hidden={tab !== "packs"}><PacksSection /></div>
+      <div role="tabpanel" hidden={tab !== "additions"}><OverridesSection /></div>
+      <div role="tabpanel" hidden={tab !== "suggestions"}><SuggestionsSection /></div>
     </div>
   );
 }
@@ -53,7 +59,7 @@ function PacksSection() {
 
   function togglePack(id: string, on: boolean) {
     const next = on ? [...enabledPacks, id] : enabledPacks.filter((p) => p !== id);
-    void setEnabled(next);
+    void setEnabled(next).catch(() => {});
   }
 
   async function handleReset(packId: string, packLabel: string) {
@@ -205,57 +211,11 @@ function PacksSection() {
   );
 }
 
-function sameOverrides(a: LibraryOverrides, b: LibraryOverrides): boolean {
-  return JSON.stringify(a) === JSON.stringify(b);
-}
-
-/** Debounce between a keystroke/chip edit and the `PUT` it triggers — long enough that
- * a burst of edits (typing a value, then tabbing to add a chip) collapses into one
- * write, short enough that "did my edit save" never feels uncertain. */
-const SAVE_DEBOUNCE_MS = 600;
-
 function OverridesSection() {
-  const { overrides, setOverrides } = useLibraryState();
-
-  // Local draft + a synchronous ref mirror: two edits made in the same tick (e.g. a
-  // value blur immediately followed by a chip add, before React re-renders) must both
-  // land on the debounced write, not have the second overwrite the first from a stale
-  // closure over `draft` state.
-  const draftRef = useRef<LibraryOverrides>(overrides);
-  const lastSynced = useRef<LibraryOverrides>(overrides);
-  const [draft, setDraft] = useState<LibraryOverrides>(overrides);
-  const [saveState, setSaveState] = useState<"idle" | "pending" | "saving">("idle");
-  const timerRef = useRef<ReturnType<typeof setTimeout> | null>(null);
-
-  // Render-phase adjustment (not an effect, which would paint one stale frame first):
-  // re-seed only when the context's value has genuinely changed from what this section
-  // itself last sent — a PUT response that echoes back a deep-equal-but-new object must
-  // not clobber an edit still mid-debounce.
-  if (!sameOverrides(overrides, lastSynced.current)) {
-    lastSynced.current = overrides;
-    draftRef.current = overrides;
-    setDraft(overrides);
-  }
-
-  useEffect(
-    () => () => {
-      if (timerRef.current) clearTimeout(timerRef.current);
-    },
-    [],
-  );
+  const { overridesDraft: draft, overridesSaveState: saveState, editOverrides, flushOverrides } = useLibraryState();
 
   function updateDraft(patch: Partial<LibraryOverrides>) {
-    const next = { ...draftRef.current, ...patch };
-    draftRef.current = next;
-    setDraft(next);
-    setSaveState("pending");
-    if (timerRef.current) clearTimeout(timerRef.current);
-    timerRef.current = setTimeout(() => {
-      const toSend = draftRef.current;
-      setSaveState("saving");
-      lastSynced.current = toSend;
-      void setOverrides(toSend).finally(() => setSaveState("idle"));
-    }, SAVE_DEBOUNCE_MS);
+    editOverrides(patch);
   }
 
   return (
@@ -268,11 +228,8 @@ function OverridesSection() {
             always win over a pack, and a removal always wins over an addition.
           </p>
         </div>
-        {saveState !== "idle" && (
-          <span className="text-xs text-ink-muted">
-            {saveState === "pending" ? "Unsaved…" : "Saving…"}
-          </span>
-        )}
+        {saveState !== "saved" && <span className={`text-xs ${saveState === "failed" ? "text-danger" : "text-ink-muted"}`}>{saveState === "unsaved" ? "Unsaved…" : saveState === "saving" ? "Saving…" : "Save failed"}</span>}
+        {saveState === "failed" && <button className="text-xs text-accent underline" onClick={() => void flushOverrides()}>Retry</button>}
       </div>
 
       <fieldset className="mt-4 space-y-5">
@@ -328,6 +285,9 @@ function SuggestionsSection() {
 
   const [jdText, setJdText] = useState("");
   const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [page, setPage] = useState(0);
+  const [size, setSize] = useState(25);
+  const [sort, setSort] = useState("server");
   const [impactByAlias, setImpactByAlias] = useState<Record<string, LibraryAliasImpact>>({});
   const [conflict, setConflict] = useState<{
     ids: string[];
@@ -338,6 +298,15 @@ function SuggestionsSection() {
 
   const targetPacks = packs;
   const [targetPackId, setTargetPackId] = useState("");
+  const sortedProposals = useMemo(() => [...proposals].sort((a, b) => {
+    if (sort === "server") return 0;
+    if (sort === "kind") return a.kind.localeCompare(b.kind);
+    if (sort === "impact") return (impactByAlias[b.alias ?? ""]?.affected_tags.length ?? 0) - (impactByAlias[a.alias ?? ""]?.affected_tags.length ?? 0);
+    return (a.alias || a.verb || "").localeCompare(b.alias || b.verb || "");
+  }), [proposals, sort, impactByAlias]);
+  const pageProposals = useMemo(() => sortedProposals.slice(page * size, (page + 1) * size), [sortedProposals, page, size]);
+  useEffect(() => { if (page > 0 && page >= Math.ceil(proposals.length / size)) setPage(Math.max(0, Math.ceil(proposals.length / size) - 1)); }, [page, size, proposals.length]);
+  useEffect(() => { const visible = new Set(pageProposals.map(proposal => proposal.id)); setSelected(previous => { const next = new Set([...previous].filter(id => visible.has(id))); return next.size === previous.size && [...previous].every(id => next.has(id)) ? previous : next; }); }, [pageProposals]);
 
   useEffect(() => {
     if (!targetPackId && targetPacks.length > 0) setTargetPackId(targetPacks[0].id);
@@ -432,8 +401,10 @@ function SuggestionsSection() {
 
       {proposals.length > 0 && (
         <>
+          <div className="mt-4 flex flex-wrap items-center gap-3 text-sm"><label>Sort suggestions <select className="ml-2 rounded border border-line bg-panel px-2" value={sort} onChange={e => { setSort(e.target.value); setPage(0); setSelected(new Set()); }}><option value="server">Server order</option><option value="suggestion">Suggestion</option><option value="kind">Kind</option><option value="impact">Impact</option></select></label><button onClick={() => { const next = new Set(selected); pageProposals.forEach(proposal => next.add(proposal.id)); setSelected(next); }}>Select this page</button><button onClick={() => setSelected(new Set())}>Clear selection</button></div>
+          <Pagination page={page} size={size} total={proposals.length} onPage={value => { setPage(value); setSelected(new Set()); }} onSize={value => { setSize(value); setPage(0); setSelected(new Set()); }} />
           <ul className="mt-4 divide-y divide-line">
-            {proposals.map((p) => {
+            {pageProposals.map((p) => {
               const impact = p.alias ? impactByAlias[p.alias] : undefined;
               const rewrites = impact && impact.affected_tags.length > 0;
               return (
@@ -481,6 +452,7 @@ function SuggestionsSection() {
               );
             })}
           </ul>
+          <Pagination page={page} size={size} total={proposals.length} onPage={value => { setPage(value); setSelected(new Set()); }} onSize={value => { setSize(value); setPage(0); setSelected(new Set()); }} />
 
           <div className="mt-4 flex flex-wrap items-center gap-3">
             <label className="text-sm">

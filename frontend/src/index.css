@@ -1,25 +1,32 @@
-/* Hallmark · genre: editorial · macrostructure: n/a — functional app shell
- * theme: Studio-derived (light · high-contrast-serif · chromatic-green) · design-system: design.md · designed-as-app
- */
+/* Shared light and charcoal interface tokens; see design.md. */
 @import "tailwindcss";
 
 @theme {
-  --font-display: "Fraunces", Georgia, serif;
+  --font-display: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
   --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
   --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", monospace;
-  --color-ink: #1a2332;
-  --color-ink-muted: #5a6578;
-  --color-paper: #f3f0e8;
+  --color-ink: #202725;
+  --color-ink-muted: #626a65;
+  --color-paper: #f7f6f2;
   --color-panel: #ffffff;
-  --color-line: #d8d2c4;
-  --color-accent: #0f6e56;
-  --color-accent-soft: #d8f0e6;
+  --color-line: #dedcd4;
+  --color-accent: #087f73;
+  --color-accent-soft: #e2f0eb;
+  --color-bg: #f7f6f2;
+  --color-warning: #9a3412;
+  --color-line-hover: #bcbab2;
   /* Foreground on accent/warn solid buttons — white in light, near-black in dark. */
   --color-on-accent: #ffffff;
   --color-warn: #9a3412;
   --color-warn-soft: #ffedd5;
   --color-danger: #9f1239;
   --color-danger-soft: #ffe4e6;
+  /* Status tones for application pills and the browser-connection dot; always
+     paired with a text label, never color alone. */
+  --color-success: #166534;
+  --color-success-soft: #dcfce7;
+  --color-info: #1d4ed8;
+  --color-info-soft: #dbeafe;
   /* Same value in both themes — represents an actual white document/PDF page
      behind a preview iframe, not a UI surface, so it does not follow data-theme. */
   --color-doc-preview: #ffffff;
@@ -41,6 +48,9 @@
   --color-paper: #1a1c1e;
   --color-panel: #242628;
   --color-line: #3d4145;
+  --color-bg: #1a1c1e;
+  --color-warning: #fb923c;
+  --color-line-hover: #73777b;
   --color-accent: #3dba95;
   --color-accent-soft: #1a3d32;
   --color-on-accent: #0a1a14;
@@ -48,6 +58,10 @@
   --color-warn-soft: #3d2a1a;
   --color-danger: #fb7185;
   --color-danger-soft: #3d1a22;
+  --color-success: #4ade80;
+  --color-success-soft: #173d25;
+  --color-info: #93c5fd;
+  --color-info-soft: #1c2c4a;
 }
 
 html,
@@ -60,19 +74,19 @@ body {
   margin: 0;
   font-family: var(--font-sans);
   color: var(--color-ink);
-  /* Gradients use tokens so they follow data-theme with the rest of the palette. */
-  background:
-    radial-gradient(
-      ellipse 80% 50% at 10% -10%,
-      color-mix(in srgb, var(--color-accent-soft) 80%, transparent) 0%,
-      transparent 55%
-    ),
-    radial-gradient(
-      ellipse 60% 40% at 100% 0%,
-      color-mix(in srgb, var(--color-line) 50%, transparent) 0%,
-      transparent 50%
-    ),
-    var(--color-paper);
+  background: var(--color-paper);
+}
+
+button, input, select, textarea { font: inherit; }
+button, select, input:not([type="checkbox"]):not([type="radio"]), .rt-control { min-height: 36px; }
+@media (pointer: coarse) {
+  button, select, input:not([type="checkbox"]):not([type="radio"]), .rt-control { min-height: 44px; }
+}
+/* Compact per-row table actions. Unlayered like the rule above so it can undercut the
+   36px control floor (a Tailwind h-/min-h- utility cannot); touch keeps 36px. */
+.rt-row-action { min-height: 28px; height: 28px; }
+@media (pointer: coarse) {
+  .rt-row-action { min-height: 36px; height: 36px; }
 }
 
 * {

@@ -6,6 +6,7 @@ import {
 } from "../api";
 import { useConfirm } from "../state/confirmState";
 import { useRunState } from "../state/runState";
+import { Pagination } from "./TableControls";
 
 /** Runs that can be removed from disk-backed history (not queued or running). */
 function isDeletable(run: RunHistoryEntry): boolean {
@@ -22,10 +23,21 @@ export function RunHistoryPanel() {
   const [selected, setSelected] = useState<Set<string>>(() => new Set());
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
+  const [page, setPage] = useState(0);
+  const [size, setSize] = useState(25);
+  const [sort, setSort] = useState<"started" | "title" | "status" | "coverage" | "pages">("started");
+  const ordered = useMemo(() => [...history].sort((a, b) => {
+    if (sort === "title") return a.title.localeCompare(b.title);
+    if (sort === "status") return a.status.localeCompare(b.status);
+    if (sort === "coverage") return (b.coverage_total ? (b.coverage_matched ?? 0) / b.coverage_total : -1) - (a.coverage_total ? (a.coverage_matched ?? 0) / a.coverage_total : -1);
+    if (sort === "pages") return (b.pages ?? -1) - (a.pages ?? -1);
+    return b.created_at.localeCompare(a.created_at);
+  }), [history, sort]);
+  const visible = ordered.slice(page * size, (page + 1) * size);
 
   const deletableIds = useMemo(
-    () => history.filter(isDeletable).map((run) => run.job_id),
-    [history],
+    () => visible.filter(isDeletable).map((run) => run.job_id),
+    [visible],
   );
 
   useEffect(() => {
@@ -34,6 +46,7 @@ export function RunHistoryPanel() {
       return next.size === prev.size ? prev : next;
     });
   }, [deletableIds]);
+  useEffect(() => { if (page > 0 && page >= Math.ceil(history.length / size)) setPage(Math.max(0, Math.ceil(history.length / size) - 1)); }, [history.length, page, size]);
 
   if (history.length === 0) return null;
 
@@ -127,8 +140,10 @@ export function RunHistoryPanel() {
         </p>
       )}
 
+      <div className="mt-4 flex flex-wrap gap-2 text-sm"><label>Sort runs <select className="ml-2 rounded border border-line bg-panel px-2" value={sort} onChange={event => { setSort(event.target.value as typeof sort); setPage(0); setSelected(new Set()); }}><option value="started">Started</option><option value="title">Title</option><option value="status">Status</option><option value="coverage">Coverage</option><option value="pages">Pages</option></select></label></div>
+      <Pagination page={page} size={size} total={history.length} onPage={value => { setPage(value); setSelected(new Set()); }} onSize={value => { setSize(value); setPage(0); setSelected(new Set()); }} />
       <ul className="mt-4 divide-y divide-line">
-        {history.map((run) => (
+        {visible.map((run) => (
           <HistoryRow
             key={run.job_id}
             run={run}
@@ -137,10 +152,11 @@ export function RunHistoryPanel() {
             selectable={isDeletable(run)}
             selected={selected.has(run.job_id)}
             onToggleSelect={() => toggleOne(run.job_id)}
-            onView={() => void loadRun(run.job_id)}
+            onView={() => void loadRun(run.job_id).then(() => document.getElementById("tailored-results")?.scrollIntoView())}
           />
         ))}
       </ul>
+      <Pagination page={page} size={size} total={history.length} onPage={value => { setPage(value); setSelected(new Set()); }} onSize={value => { setSize(value); setPage(0); setSelected(new Set()); }} />
     </section>
   );
 }

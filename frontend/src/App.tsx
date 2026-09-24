@@ -1,19 +1,24 @@
-import { BrowserRouter, Navigate, NavLink, Route, Routes } from "react-router-dom";
+import { createBrowserRouter, Navigate, NavLink, Route, RouterProvider, Routes, useBlocker, useLocation } from "react-router-dom";
+import { useEffect, useRef } from "react";
 import { ErrorBoundary } from "./components/ErrorBoundary";
-import { ProfileSwitcher } from "./components/workspace/ProfileSwitcher";
-import { ApplicationsPage } from "./pages/ApplicationsPage";
-import { EditorPage } from "./pages/EditorPage";
+import { SettingsMenu } from "./components/SettingsMenu";
+import { ApplicationsDashboard } from "./pages/ApplicationsDashboard";
+import { ApplicationDetailPage } from "./pages/ApplicationDetailPage";
+import { ProfilePage } from "./pages/ProfilePage";
 import { RunPage } from "./pages/RunPage";
 import { TemplatePage } from "./pages/TemplatePage";
 import { VocabularyPage } from "./pages/VocabularyPage";
-import { ThemeToggle } from "./components/ThemeToggle";
 import { ConfirmProvider } from "./state/confirmState";
 import { EditorProvider } from "./state/editorState";
-import { LibraryProvider } from "./state/libraryState";
-import { RunProvider } from "./state/runState";
+import { LibraryProvider, useLibraryState } from "./state/libraryState";
+import { RunProvider, useRunState } from "./state/runState";
 import { TemplateProvider } from "./state/templateState";
 import { ThemeProvider } from "./state/themeState";
 import { WorkspaceProvider, useWorkspaceState } from "./state/workspaceState";
+import { ApplicantProfileProvider } from "./state/applicantProfileState";
+import { useApplicantProfile } from "./state/applicantProfileState";
+import { useEditorState } from "./state/editorState";
+import { useConfirm } from "./state/confirmState";
 
 const navLinkClassName = ({ isActive }: { isActive: boolean }) =>
   `whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-colors duration-[var(--dur-short)] ease-out ${
@@ -30,16 +35,20 @@ const navLinkClassName = ({ isActive }: { isActive: boolean }) =>
  * profile switch cannot unmount a dialog the user is mid-decision on.
  */
 export default function App() {
+  return <RouterProvider router={router} />;
+}
+
+const router = createBrowserRouter([{ path: "/*", element: <AppFrame /> }]);
+
+function AppFrame() {
   return (
     <ErrorBoundary>
       <ThemeProvider>
-        <BrowserRouter>
           <WorkspaceProvider>
             <ConfirmProvider>
               <WorkspaceScope />
             </ConfirmProvider>
           </WorkspaceProvider>
-        </BrowserRouter>
       </ThemeProvider>
     </ErrorBoundary>
   );
@@ -78,7 +87,7 @@ function WorkspaceScope() {
       <EditorProvider key={activeId}>
         <TemplateProvider key={activeId}>
           <LibraryProvider key={activeId}>
-            <Shell />
+            <ApplicantProfileProvider key={activeId}><Shell /></ApplicantProfileProvider>
           </LibraryProvider>
         </TemplateProvider>
       </EditorProvider>
@@ -96,51 +105,53 @@ function WorkspaceScope() {
 function Shell() {
   return (
     <div className="min-h-screen">
+      <NavigationGuard />
       <header className="border-b border-line/80 bg-panel/80 backdrop-blur-sm">
-        <div className="mx-auto flex max-w-6xl flex-wrap items-end justify-between gap-4 px-6 py-5">
-          {/* min-w-0 lets this flex item shrink below its text's max-content width —
-              without it, a flex child's default min-width:auto refuses to shrink past
-              the longest unwrapped line, which silently overflowed the 320px viewport
-              once overflow-x:clip stopped it from being visible via horizontal scroll. */}
-          <div className="min-w-0">
-            <p className="font-display text-3xl font-bold tracking-tight text-ink [overflow-wrap:anywhere]">
+        <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-x-6 gap-y-3 px-6 py-4">
+          {/* Brand and nav read left-to-right as one group; profile and theme
+              utilities sit on the right. min-w-0 lets each group shrink below its
+              max-content width, and flex-wrap keeps a 320px viewport from scrolling
+              sideways — the old unwrapped row was the app's one real horizontal-scroll bug. */}
+          <div className="flex min-w-0 flex-wrap items-center gap-x-6 gap-y-2">
+            <p className="font-display text-2xl font-bold tracking-tight text-ink [overflow-wrap:anywhere]">
               ResumeTailor
             </p>
-            <p className="mt-1 text-sm text-ink-muted">
-              Tailor your resume to a posting without changing its look.
-            </p>
-          </div>
-          <div className="flex min-w-0 flex-wrap items-end gap-4">
-            <ThemeToggle />
-            <ProfileSwitcher />
-            {/* flex-wrap so four nav pills + two utility controls never force the
-                header wider than a 320px viewport — the prior unwrapped row was
-                the app's one real horizontal-scroll bug. */}
-            <nav className="flex flex-wrap gap-1 pb-1">
+            <nav className="flex flex-wrap gap-1">
               <NavLink to="/" end className={navLinkClassName}>
                 Tailor
               </NavLink>
               <NavLink to="/applications" className={navLinkClassName}>
                 Apply
               </NavLink>
-              <NavLink to="/editor" className={navLinkClassName}>
-                Resume
+              {/* "/profile", not "/profile/personal": a non-`end` NavLink matches every
+                  /profile/* sub-tab, so Profile stays highlighted on Resume content and
+                  Application details. The route redirects to the personal tab. */}
+              <NavLink to="/profile" className={navLinkClassName}>
+                Profile
               </NavLink>
               <NavLink to="/template" className={navLinkClassName}>
                 Template
               </NavLink>
               <NavLink to="/vocabulary" className={navLinkClassName}>
-                Vocab
+                Vocabulary
               </NavLink>
             </nav>
+          </div>
+          <div className="flex min-w-0 flex-wrap items-end gap-4">
+            <SettingsMenu />
           </div>
         </div>
       </header>
       <main className="mx-auto max-w-6xl px-6 py-8">
         <Routes>
           <Route path="/" element={<RunPage />} />
-          <Route path="/applications" element={<ApplicationsPage />} />
-          <Route path="/editor" element={<EditorPage />} />
+          <Route path="/applications" element={<ApplicationsDashboard />} />
+          <Route path="/applications/:applicationId" element={<ApplicationDetailPage />} />
+          <Route path="/profile" element={<Navigate to="/profile/personal" replace />} />
+          <Route path="/profile/personal" element={<ProfilePage />} />
+          <Route path="/profile/resume" element={<ProfilePage />} />
+          <Route path="/profile/application" element={<ProfilePage />} />
+          <Route path="/editor" element={<Navigate to="/profile/resume" replace />} />
           <Route path="/template" element={<TemplatePage />} />
           <Route path="/vocabulary" element={<VocabularyPage />} />
           <Route path="/settings" element={<Navigate to="/vocabulary" replace />} />
@@ -148,4 +159,31 @@ function Shell() {
       </main>
     </div>
   );
+}
+
+function NavigationGuard() {
+  const { dirty: resumeDirty, discard: discardResume } = useEditorState();
+  const applicant = useApplicantProfile();
+  const { settingsSaveState } = useRunState();
+  const { overridesSaveState } = useLibraryState();
+  const { confirm } = useConfirm();
+  const location = useLocation();
+  const prompted = useRef(false);
+  const blocker = useBlocker(({ nextLocation }) => location.pathname.startsWith("/profile/") && !nextLocation.pathname.startsWith("/profile/") && (resumeDirty || applicant.dirty));
+  useEffect(() => {
+    if (!resumeDirty && !applicant.dirty && !applicant.saving && settingsSaveState === "saved" && overridesSaveState === "saved") return;
+    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
+    window.addEventListener("beforeunload", warn);
+    return () => window.removeEventListener("beforeunload", warn);
+  }, [resumeDirty, applicant.dirty, applicant.saving, settingsSaveState, overridesSaveState]);
+  useEffect(() => {
+    if (blocker.state !== "blocked") { prompted.current = false; return; }
+    if (prompted.current) return;
+    prompted.current = true;
+    void confirm({ title: "Unsaved profile edits", message: "Leaving Profile will discard unsaved resume and application changes.", confirmLabel: "Discard changes", cancelLabel: "Stay", tone: "danger" }).then(discard => {
+      if (discard) { discardResume(); applicant.discard(); blocker.proceed(); }
+      else blocker.reset();
+    });
+  }, [blocker, confirm, discardResume, applicant]);
+  return null;
 }

@@ -136,6 +136,8 @@ export type ApplySettings = {
   eligibility: EligibilitySettings;
   auto_submit_ats: string[];
   auto_submit_max_per_run: number;
+  auto_submit_enabled: boolean;
+  blocker_mode: "pause" | "continue";
   reuse_threshold: number;
   cover_letter: boolean;
   // Provider + model for the funnel's own extract/answer calls — separate from the
@@ -146,12 +148,15 @@ export type ApplySettings = {
 
 export type ApplicantProfile = {
   first_name: string;
+  middle_name?: string;
   last_name: string;
   preferred_name: string;
   pronouns: string;
   email: string;
   phone: string;
+  phone_device_type?: string;
   phone_country_code: string;
+  phone_country_region: string;
   address_line1: string;
   address_line2: string;
   city: string;
@@ -163,10 +168,14 @@ export type ApplicantProfile = {
   portfolio_url: string;
   portfolio_only_when_asked: boolean;
   work_authorization: string;
+  authorized_to_work?: boolean | null;
+  authorization_country?: string;
   requires_sponsorship_now: boolean | null;
   requires_sponsorship_future: boolean | null;
   f1_opt_eligible: boolean | null;
   earliest_start: string;
+  notice_period?: string;
+  education_start_month: string;
   graduation_month: string;
   degree_level: string;
   major: string;
@@ -174,14 +183,65 @@ export type ApplicantProfile = {
   gpa: string;
   highest_education_obtained: string;
   salary_expectation: string;
+  /** Structured range behind salary answers; seeded from `salary_expectation`. */
+  salary_hourly_min: number | null;
+  salary_hourly_max: number | null;
+  salary_yearly_min: number | null;
+  salary_yearly_max: number | null;
   willing_to_relocate: boolean | null;
   location_preference: string;
   over_18: boolean | null;
   relatives_at_company: boolean | null;
   referred_by: string;
   how_heard: string;
-  eeo: { gender: string; race: string; veteran: string; disability: string };
+  workday_email?: string;
+  workday_password?: string;
+  eeo: { gender: string; race: string; race_detail?: string; hispanic_latino?: boolean | null; veteran: string; disability: string };
   custom_answers: Record<string, string>;
+};
+
+export type ApplyFieldOutcome = {
+  field_id?: string;
+  frame_id?: string;
+  step_id?: string;
+  label?: string;
+  canonical_key?: string;
+  state?: "verified_filled" | "preserved" | "unanswered" | "ambiguous" | "invalid_existing" | "manual_review" | "failed";
+  required?: boolean;
+  observed_value?: string;
+  answer_source?: string;
+  reason_code?: string;
+  reason_text?: string;
+  // Retained for application records written by the legacy engine.
+  value?: string;
+  preserved?: boolean;
+};
+
+export type ApplyReviewField = {
+  field_id: string;
+  frame_id?: string;
+  document_generation?: string;
+  canonical_key?: string;
+  label: string;
+  control_kind: string;
+  current_value: string;
+  selection_state?: string;
+  enabled?: boolean;
+  required: boolean;
+  expected_state_hash: string;
+  constraints?: { maxlength?: number; max_length?: number; type?: string; input_type?: string; min?: string; max?: string };
+  options: Array<{ option_id: string; label: string; value?: string; enabled: boolean; placeholder: boolean; selected?: boolean }>;
+};
+
+export type ApplyAttachment = {
+  purpose?: string;
+  filename?: string;
+  verified?: boolean;
+  error?: string;
+  state?: "not_requested" | "preserved" | "uploading" | "verified" | "missing_artifact" | "rejected" | "unverifiable";
+  expected_filename?: string;
+  observed_filename?: string;
+  reason?: string;
 };
 
 export type ApplicationRow = {
@@ -193,8 +253,18 @@ export type ApplicationRow = {
   final_url: string;
   ats: string;
   status: string;
+  status_history?: Array<{ status: string; at: string; note?: string }>;
   discovered_at: string;
+  archived_at?: string | null;
   job_id: string | null;
+  preparation_eligible?: boolean;
+  preparation_reasons?: string[];
+  /** Which retry the server would run (`daily.retry_kind`); null when there is none. */
+  retry_kind?: "fetch" | "prefilter" | "tailor" | null;
+  /** Short "why screened out" label (`screen.screen_label`); null otherwise. */
+  screen_label?: string | null;
+  /** What a "Needs your review" row is waiting on (`store.review_summary`). */
+  review_summary?: string | null;
   screen: {
     passed: boolean;
     coverage: number;
@@ -202,6 +272,9 @@ export type ApplicationRow = {
     coverage_total: number;
     reasons: string[];
     flags: string[];
+    /** JD sentence behind each work-restriction reason. */
+    evidence?: string[];
+    seniority?: string;
   } | null;
   error: string | null;
   notes: string;
@@ -210,12 +283,125 @@ export type ApplicationRow = {
   salary: string;
   eligibility_flags: string[];
   duplicate_of: string | null;
+  otp_prompt?: string | null;
+  fill?: {
+    status?: string;
+    ready_to_submit?: boolean;
+    required_empty?: string[];
+    leftovers?: Array<{ label?: string; reason?: string; required?: boolean }>;
+    uploads?: ApplyAttachment[];
+    error?: string | null;
+    browser_target_id?: string;
+    browser_url?: string;
+    handoff_reason?: string;
+    final_step_reached?: boolean;
+    field_outcomes?: ApplyFieldOutcome[];
+    review_snapshot_id?: string;
+    review_fields?: ApplyReviewField[];
+  } | null;
 };
 
 export type ApplicationsList = {
   applications: ApplicationRow[];
   counts: Record<string, number>;
+  total: number;
 };
+
+export type ApplyOperation = {
+  operation_id: string;
+  action: "find" | "prepare" | "fill" | "inspect" | "correct";
+  state: string;
+  application_ids: string[];
+  current_application_id: string;
+  current_label: string;
+  stage: string;
+  message: string;
+  processed: number;
+  total: number;
+  completed: number;
+  blocked: number;
+  failed: number;
+  submitted: number;
+  started_at: string;
+  updated_at: string;
+  heartbeat_at: string;
+  current_step: number;
+  current_step_id?: string;
+  current_step_number?: number;
+  current_action_id?: string;
+  current_action_label?: string;
+  current_field_label?: string;
+  action_started_at?: string;
+  last_activity_at?: string;
+  application_started_at: string;
+  application_deadline_at?: string;
+  ready_for_review?: number;
+  needs_input?: number;
+  finished_at: string;
+  effective_model: string;
+  auto_submit: boolean;
+  blocker_mode: "pause" | "continue";
+  events: Array<{ at?: string; stage?: string; message?: string; application_id?: string }>;
+  excluded?: Record<string, string[]>;
+};
+
+export function startApplyOperation(options: {
+  action: "find" | "prepare" | "fill";
+  fill_mode?: "initial" | "continue" | "reopen";
+  force_prepare?: boolean;
+  application_ids?: string[];
+  limit?: number | null;
+  dry_run?: boolean;
+  auto_submit: boolean;
+  blocker_mode: "pause" | "continue";
+  model_provider: ApplySettings["model_provider"];
+  model_name: string;
+}): Promise<ApplyOperation> {
+  return request("/api/applications/operations", {
+    method: "POST",
+    body: JSON.stringify({
+      ...options,
+      application_ids: options.application_ids ?? [],
+      limit: options.limit ?? null,
+      dry_run: options.dry_run ?? false,
+    }),
+  });
+}
+
+export function listApplyOperations(): Promise<ApplyOperation[]> {
+  return request("/api/applications/operations");
+}
+
+export function getApplyOperation(operationId: string): Promise<ApplyOperation> {
+  return request(`/api/applications/operations/${encodeURIComponent(operationId)}`);
+}
+
+export function focusApplicationReviewTab(sourceJobId: string): Promise<{ url: string }> {
+  return request(`/api/applications/${encodeURIComponent(sourceJobId)}/review-tab`, { method: "POST" });
+}
+
+export function refreshApplicationReview(sourceJobId: string): Promise<ApplyOperation> {
+  return request(`/api/applications/${encodeURIComponent(sourceJobId)}/review/refresh`, { method: "POST" });
+}
+
+export function correctApplicationField(sourceJobId: string, body: {
+  snapshot_id: string; field_id: string; expected_state_hash: string;
+  value?: string | null; option_ids?: string[]; idempotency_key: string;
+}): Promise<ApplyOperation> {
+  return request(`/api/applications/${encodeURIComponent(sourceJobId)}/corrections`, {
+    method: "POST", body: JSON.stringify(body),
+  });
+}
+
+export function controlApplyOperation(
+  operationId: string,
+  action: "resume" | "skip" | "cancel",
+): Promise<ApplyOperation> {
+  return request(`/api/applications/operations/${encodeURIComponent(operationId)}/control`, {
+    method: "POST",
+    body: JSON.stringify({ action }),
+  });
+}
 
 export type BrowserStatus = {
   reachable: boolean;
@@ -917,7 +1103,7 @@ export async function triggerPdfDownload(jobId: string): Promise<void> {
   if (!res.ok) return;
   const blob = await res.blob();
   const url = URL.createObjectURL(blob);
-  const match = /filename\*?=(?:UTF-8''|")?([^\";]+)/i.exec(
+  const match = /filename\*?=(?:UTF-8''|")?([^";]+)/i.exec(
     res.headers.get("Content-Disposition") ?? "",
   );
   const filename = match
@@ -1318,6 +1504,7 @@ export function getApplicantProfile(): Promise<{
   workspace_id: string | null;
   profile: ApplicantProfile;
   seeded: boolean;
+  workday_password_set: boolean;
 }> {
   return request("/api/applicant-profile");
 }
@@ -1327,6 +1514,7 @@ export function putApplicantProfile(profile: ApplicantProfile): Promise<{
   workspace_id: string | null;
   profile: ApplicantProfile;
   seeded: boolean;
+  workday_password_set: boolean;
 }> {
   return request("/api/applicant-profile", {
     method: "PUT",
@@ -1334,12 +1522,37 @@ export function putApplicantProfile(profile: ApplicantProfile): Promise<{
   });
 }
 
-/** List tracked applications, newest first. */
-export function listApplications(status?: string, limit = 50): Promise<ApplicationsList> {
+export type ApplicationListOptions = {
+  status?: string;
+  q?: string;
+  archive?: "active" | "archived" | "all";
+  /** "review" = rows waiting on the applicant; "working" = everything else. */
+  group?: "review" | "working";
+  sort?: string;
+  direction?: "asc" | "desc";
+  limit?: number;
+  offset?: number;
+};
+
+/** List tracked applications with server-side search, sort, and pagination. */
+export function listApplications(options: ApplicationListOptions = {}): Promise<ApplicationsList> {
   const params = new URLSearchParams();
-  if (status) params.set("status", status);
-  params.set("limit", String(limit));
+  if (options.status) params.set("status", options.status);
+  if (options.q) params.set("q", options.q);
+  if (options.archive) params.set("archive", options.archive);
+  if (options.group) params.set("group", options.group);
+  if (options.sort) params.set("sort", options.sort);
+  if (options.direction) params.set("direction", options.direction);
+  params.set("limit", String(options.limit ?? 25));
+  params.set("offset", String(options.offset ?? 0));
   return request(`/api/applications?${params}`);
+}
+
+export function archiveApplications(applicationIds: string[], archived: boolean): Promise<{ updated: string[]; errors: Record<string, string> }> {
+  return request("/api/applications/archive", {
+    method: "POST",
+    body: JSON.stringify({ application_ids: applicationIds, archived }),
+  });
 }
 
 /** Load one application plus packet and JD when available. */
@@ -1363,30 +1576,13 @@ export function setApplicationStatus(
   });
 }
 
-/** Re-run the failed step for one application (fetch JD, re-screen, or re-tailor). */
+/** Re-run the failed step for one application (fetch JD, re-check the eligibility
+ * prefilter, or re-queue tailoring). A tailor retry returns as soon as it is queued. */
 export function retryApplication(sourceJobId: string): Promise<ApplicationRow> {
   return request(`/api/applications/${encodeURIComponent(sourceJobId)}/retry`, {
     method: "POST",
   });
 }
-
-/** Start CDP fill for one ready application. */
-export function startApplicationFill(sourceJobId: string): Promise<ApplicationRow> {
-  return request(`/api/applications/${encodeURIComponent(sourceJobId)}/fill`, {
-    method: "POST",
-  });
-}
-
-/** Poll fill outcome for one application. */
-export function getApplicationFill(sourceJobId: string): Promise<Record<string, unknown>> {
-  return request(`/api/applications/${encodeURIComponent(sourceJobId)}/fill`);
-}
-
-/** Options mirroring `scripts/apply_daily.py`'s `--limit` / `--dry-run`. */
-export type RunDailyOptions = {
-  limit?: number | null;
-  dry_run?: boolean;
-};
 
 /** Live progress of the in-flight (or last finished) daily pass. */
 export type DailyStatus = {
@@ -1397,24 +1593,12 @@ export type DailyStatus = {
   processed: number;
   total: number;
   dry_run: boolean;
+  fetch_only?: boolean;
   started_at: string;
   finished_at: string;
   date: string;
   summary: Record<string, unknown> | null;
 };
-
-/** Trigger one daily discover/screen/tailor pass. */
-export function runDailyApply(
-  options: RunDailyOptions = {},
-): Promise<{ started: boolean; summary?: Record<string, unknown> }> {
-  return request("/api/applications/run-daily", {
-    method: "POST",
-    body: JSON.stringify({
-      limit: options.limit ?? null,
-      dry_run: options.dry_run ?? false,
-    }),
-  });
-}
 
 /** Poll phase/counters for the daily funnel. */
 export function getDailyStatus(): Promise<DailyStatus> {

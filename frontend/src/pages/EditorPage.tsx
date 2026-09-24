@@ -55,7 +55,7 @@ type UndoToast = { id: number; message: string; snapshot: MasterResume };
  * experience-like, project-like, plain-list, education, or skills sections, in any order,
  * under any title. This page never assumes exactly one of each kind.
  */
-export function EditorPage() {
+export function EditorPage({ showContact = true }: { showContact?: boolean }) {
   const {
     resume,
     setResume,
@@ -224,11 +224,11 @@ export function EditorPage() {
         )}
       </div>
 
-      <ImportResumePanel />
+      <details className="rounded-lg border border-line bg-panel p-4"><summary className="cursor-pointer text-sm font-medium text-accent">Import resume content</summary><div className="mt-3"><ImportResumePanel /></div></details>
 
       <TagVocabularyPanel resume={resume} onChange={setResume} />
 
-      <section className="rounded-xl border border-line bg-panel p-5 shadow-sm">
+      {showContact && <section className="rounded-xl border border-line bg-panel p-5 shadow-sm">
         <h2 className="font-display text-lg font-semibold">Contact</h2>
         <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
           <TextField
@@ -286,10 +286,21 @@ export function EditorPage() {
               GitHub URL should start with http:// or https://.
             </p>
           )}
-      </section>
+      </section>}
 
+      <div className="lg:grid lg:grid-cols-[11rem_minmax(0,1fr)] lg:items-start lg:gap-5">
+        <label className="mb-3 block text-sm lg:hidden">Jump to section
+          <select className="field mt-1" defaultValue="" onChange={event => document.getElementById(`resume-section-${event.target.value}`)?.scrollIntoView({ behavior: "smooth", block: "start" })}>
+            <option value="" disabled>Choose a section</option>
+            {resume.sections.map(section => <option key={section.id} value={section.id}>{section.title || SECTION_KIND_LABELS[section.kind]}</option>)}
+          </select>
+        </label>
+        <nav aria-label="Resume sections" className="sticky top-4 hidden space-y-1 lg:block">
+          {resume.sections.map(section => <a key={section.id} href={`#resume-section-${section.id}`} className="block rounded-md px-2 py-1.5 text-sm text-ink-muted hover:bg-accent-soft hover:text-accent">{section.title || SECTION_KIND_LABELS[section.kind]}</a>)}
+        </nav>
+        <div className="space-y-5">
       {resume.sections.map((section, i) => (
-        <SectionShell
+        <div key={section.id} id={`resume-section-${section.id}`} className="scroll-mt-4"><SectionShell
           key={section.id}
           section={section}
           index={i}
@@ -308,8 +319,10 @@ export function EditorPage() {
             setResume((prev) => ({ ...prev, sections: moveItem(prev.sections, from, to) }))
           }
           onChange={(next) => updateSection(i, next)}
-        />
+        /></div>
       ))}
+        </div>
+      </div>
 
       <p className="text-xs text-ink-muted">
         Reordering sections changes bullet scoring order — the next Tailor run will re-score

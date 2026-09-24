@@ -1,7 +1,6 @@
 import { type FormEvent, useState } from "react";
 import { Modal } from "../Modal";
 import { useConfirm } from "../../state/confirmState";
-import { useEditorState } from "../../state/editorState";
 import { useWorkspaceState } from "../../state/workspaceState";
 
 /**
@@ -11,10 +10,9 @@ import { useWorkspaceState } from "../../state/workspaceState";
  * with inline rename forms and a confirm delete guard) so the two lists of
  * saved things in this app feel the same.
  */
-export function ProfileManagerDialog({ onClose }: { onClose: () => void }) {
-  const { workspaces, activeId, switching, activate, create, rename, remove } =
+export function ProfileManagerDialog({ onClose, onActivate }: { onClose: () => void; onActivate: (id: string) => Promise<void> }) {
+  const { workspaces, activeId, switching, create, rename, remove } =
     useWorkspaceState();
-  const { dirty } = useEditorState();
   const { confirm } = useConfirm();
   const [newLabel, setNewLabel] = useState("");
   const [duplicate, setDuplicate] = useState(true);
@@ -43,20 +41,10 @@ export function ProfileManagerDialog({ onClose }: { onClose: () => void }) {
 
   async function handleActivate(id: string) {
     if (id === activeId) return;
-    if (dirty) {
-      const ok = await confirm({
-        title: "Unsaved edits",
-        message:
-          "You have unsaved master-resume edits. Switching profiles discards them. Continue?",
-        confirmLabel: "Switch anyway",
-        tone: "danger",
-      });
-      if (!ok) return;
-    }
     setBusy(true);
     setLocalError(null);
     try {
-      await activate(id);
+      await onActivate(id);
     } catch (err) {
       setLocalError(err instanceof Error ? err.message : String(err));
     } finally {

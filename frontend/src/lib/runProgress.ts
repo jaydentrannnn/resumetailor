@@ -15,7 +15,7 @@ import type { ProgressEvent } from "../api";
  * when PDF preview fails, which would otherwise drag the bar back out of `expand`.
  */
 
-/** Pipeline order, matching `web/jobs.py`: extract → score → facets → fit → expand → skills → cover. */
+/** Pipeline order, matching `web/jobs.py`: extract → score → facets → fit → expand → skills → cover → propose. */
 const BANDS: { stages: string[]; from: number; to: number }[] = [
   { stages: ["extract"], from: 0.04, to: 0.16 },
   { stages: ["score"], from: 0.16, to: 0.3 },
@@ -26,6 +26,8 @@ const BANDS: { stages: string[]; from: number; to: number }[] = [
   { stages: ["expand"], from: 0.86, to: 0.9 },
   { stages: ["skills"], from: 0.9, to: 0.94 },
   { stages: ["cover"], from: 0.94, to: 0.97 },
+  // Opt-in (`suggest_vocabulary`): drafts vocabulary proposals after a successful run.
+  { stages: ["propose"], from: 0.97, to: 0.99 },
 ];
 
 /** Share of the fit band's remainder each completed iteration closes (asymptotic). */
@@ -42,6 +44,7 @@ const LABELS: Record<string, string> = {
   expand: "Expanding experience",
   skills: "Choosing skills to list",
   cover: "Drafting cover letter",
+  propose: "Suggesting vocabulary",
 };
 
 export type RunProgress = {

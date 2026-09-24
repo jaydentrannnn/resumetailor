@@ -22,6 +22,7 @@ const createJob = vi.fn();
 const fetchJob = vi.fn();
 const cancelJob = vi.fn();
 const pdfDownload = vi.fn(async () => undefined);
+const saveSettings = vi.fn(async () => undefined);
 
 vi.mock("../api", () => ({
   createJob: (...args: unknown[]) => createJob(...args),
@@ -29,7 +30,7 @@ vi.mock("../api", () => ({
   cancelJob: (...args: unknown[]) => cancelJob(...args),
   fetchConfig: vi.fn(async () => ({ pages: 1, experience: 3, projects: 2 })),
   fetchSettings: vi.fn(async () => ({ seeded: false, settings: { pages: 1 } })),
-  saveSettings: vi.fn(async () => undefined),
+  saveSettings: (...args: unknown[]) => saveSettings(...args),
   triggerPdfDownload: (...args: unknown[]) => pdfDownload(...args),
   fetchRunHistory: vi.fn(async () => []),
   fetchResumeOutline: vi.fn(async () => ({
@@ -79,6 +80,32 @@ class FakeEventSource {
 }
 
 import { RunProvider, useRunState } from "./runState";
+
+function SettingsProbe() {
+  const { settings, setSettings, settingsLoaded, settingsSaveState, flushSettings } = useRunState();
+  return <div>
+    <span data-testid="loaded">{String(settingsLoaded)}</span>
+    <span data-testid="save-state">{settingsSaveState}</span>
+    <button onClick={() => setSettings({ ...settings, pages: 2 })}>change settings</button>
+    <button onClick={() => void flushSettings()}>flush settings</button>
+  </div>;
+}
+
+describe("RunProvider: settings persistence", () => {
+  it("keeps a failed save visible and retries the current draft before switching", async () => {
+    saveSettings.mockReset();
+    saveSettings.mockRejectedValueOnce(new Error("disk unavailable")).mockResolvedValue(undefined);
+    render(<RunProvider><SettingsProbe /></RunProvider>);
+    await waitFor(() => expect(screen.getByTestId("loaded").textContent).toBe("true"));
+    fireEvent.click(screen.getByText("change settings"));
+    fireEvent.click(screen.getByText("flush settings"));
+    await waitFor(() => expect(screen.getByTestId("save-state").textContent).toBe("failed"));
+    fireEvent.click(screen.getByText("flush settings"));
+    await waitFor(() => expect(screen.getByTestId("save-state").textContent).toBe("saved"));
+    expect(saveSettings).toHaveBeenCalledTimes(2);
+    expect(saveSettings).toHaveBeenLastCalledWith(expect.objectContaining({ pages: 2 }));
+  });
+});
 
 function Probe() {
   const { setJdText, startJob, cancelRun, busy, jobId, status } = useRunState();

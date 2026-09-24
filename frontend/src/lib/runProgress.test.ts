@@ -60,6 +60,14 @@ describe("runProgress", () => {
     expect(three).toBeLessThan(0.88);
   });
 
+  it("labels the opt-in vocabulary pass instead of sticking on the cover letter", () => {
+    const beforePropose = runProgress([...CLEAN_RUN, ev("cover")], "running", true);
+    const p = runProgress([...CLEAN_RUN, ev("cover"), ev("propose")], "running", true);
+    expect(p.label).toBe("Suggesting vocabulary");
+    expect(p.value).toBeGreaterThan(beforePropose.value);
+    expect(p.value).toBeLessThan(1);
+  });
+
   it("reads 100% on a finished run even when the bonus stages were skipped", () => {
     // expand and skills are both optional; a run that skipped both still completes.
     const noBonusStages = CLEAN_RUN.slice(0, -2);

@@ -67,9 +67,10 @@ export function CoverLetterActionBar({ letter, jobId }: ActionProps) {
 type DetailsProps = {
   letter: CoverLetter;
   onRegenerate: (instruction: string) => Promise<void>;
+  readOnly?: boolean;
 };
 
-export function CoverLetterDetails({ letter, onRegenerate }: DetailsProps) {
+export function CoverLetterDetails({ letter, onRegenerate, readOnly = false }: DetailsProps) {
   /** Warnings, letter text, and regenerate controls below the PDF preview. */
   const [instruction, setInstruction] = useState("");
   const [busy, setBusy] = useState(false);
@@ -103,7 +104,7 @@ export function CoverLetterDetails({ letter, onRegenerate }: DetailsProps) {
         ))}
       </div>
 
-      <div className="space-y-2">
+      {!readOnly && <div className="space-y-2">
         <label className="block text-sm font-medium" htmlFor="cover-regen-instruction">
           Regenerate with instruction (optional)
         </label>
@@ -124,7 +125,7 @@ export function CoverLetterDetails({ letter, onRegenerate }: DetailsProps) {
         >
           {busy ? "Regenerating…" : "Regenerate cover letter"}
         </button>
-      </div>
+      </div>}
     </div>
   );
 }

@@ -85,11 +85,29 @@ describe("describePhase", () => {
         processed: 0,
         total: 0,
         dry_run: false,
+        fetch_only: true,
         started_at: "",
         finished_at: "",
         date: "",
-        summary: { reason: "apply disabled" },
+        summary: null,
       }),
-    ).toBe("Last run skipped: apply disabled");
+    ).toBe("Last run finished (fetch only)");
+
+    expect(
+      describePhase({
+        running: true,
+        phase: "processing",
+        source_id: "simplify-internships",
+        current: "Acme — Software Intern",
+        processed: 0,
+        total: 2,
+        dry_run: false,
+        fetch_only: true,
+        started_at: "",
+        finished_at: "",
+        date: "",
+        summary: null,
+      }),
+    ).toBe("Recording 1/2: Acme — Software Intern");
   });
 });

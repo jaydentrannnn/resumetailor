@@ -33,11 +33,11 @@ export function TemplatePage() {
 
   return (
     <div className="space-y-6">
-      <h1 className="sr-only">Template</h1>
+      <h1 className="font-display text-[28px] font-semibold">Template</h1>
       <section className="rounded-xl border border-line bg-panel p-5 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
-            <h2 className="font-display text-xl font-semibold">Current template</h2>
+            <h2 className="font-display text-lg font-semibold">{info?.active_label || "Current template"}</h2>
             <p className="mt-1 text-sm text-ink-muted">
               Tagged template filled with your full master resume. Formatting comes from
               your uploaded single-column export; only the words change when you tailor.
@@ -57,7 +57,8 @@ export function TemplatePage() {
           <p className="mt-4 text-sm text-ink-muted">Loading template info…</p>
         ) : info ? (
           <>
-            <dl className="mt-4 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
+          <div className="flex flex-col">
+            <details className="order-2 mt-4 border-t border-line pt-3"><summary className="cursor-pointer text-sm font-semibold">Technical details</summary><dl className="mt-3 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
               <MetaItem label="Active label" value={info.active_label || "—"} />
               <MetaItem
                 label="Tagged template"
@@ -96,25 +97,20 @@ export function TemplatePage() {
                     : "Legacy (no profile file)"
                 }
               />
-            </dl>
+            </dl></details>
 
             {info.profile?.warnings?.length ? (
-              <p className="mt-4 rounded-md bg-warn-soft px-3 py-2 text-sm text-warn">
-                {info.profile.warnings[0]}
-                {info.profile.warnings.length > 1
-                  ? ` (+${info.profile.warnings.length - 1} more)`
-                  : ""}
-              </p>
+              <details className="order-3 mt-4 rounded-md bg-warn-soft px-3 py-2 text-sm text-warn"><summary className="cursor-pointer">Warnings ({info.profile.warnings.length})</summary>{info.profile.warnings.map((warning, index) => <p key={index} className="mt-2">{warning}</p>)}</details>
             ) : null}
 
             {info.calibration.stale && info.calibration.message ? (
-              <p className="mt-4 rounded-md bg-warn-soft px-3 py-2 text-sm text-warn">
+              <p className="order-3 mt-4 rounded-md bg-warn-soft px-3 py-2 text-sm text-warn">
                 {info.calibration.message}
               </p>
             ) : null}
 
             {info.tagged.exists ? (
-              <div className="mt-4 overflow-hidden rounded-lg border border-line bg-paper/40">
+              <div className="order-1 mt-4 overflow-hidden rounded-lg border border-line bg-paper/40">
                 <div className="flex justify-end border-b border-line px-3 py-1.5">
                   <a
                     href={`${templatePreviewUrl()}?v=${previewKey}`}
@@ -146,11 +142,12 @@ export function TemplatePage() {
                 </iframe>
               </div>
             ) : (
-              <p className="mt-4 rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">
+              <p className="order-1 mt-4 rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">
                 No tagged template on disk. Upload a single-column .docx export below to
                 generate one.
               </p>
             )}
+          </div>
           </>
         ) : null}
       </section>

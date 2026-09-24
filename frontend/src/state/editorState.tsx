@@ -34,6 +34,7 @@ type EditorStateValue = {
   dirty: boolean;
   validate: () => Promise<void>;
   save: () => Promise<void>;
+  discard: () => void;
   /** Replace the working draft with `resume` (e.g. a template-wizard import),
    * intentionally leaving the saved snapshot untouched so `dirty` immediately
    * reflects that this draft has not been saved to disk. */
@@ -174,6 +175,11 @@ export function EditorProvider({ children }: { children: ReactNode }) {
       JSON.stringify(stripRowKeys(resume)) !== savedSnapshot,
     [resume, savedSnapshot],
   );
+  const discard = useCallback(() => {
+    if (savedSnapshot) setResumeState(withRowKeys(JSON.parse(savedSnapshot) as MasterResume));
+    setErrors([]);
+    setMessage(null);
+  }, [savedSnapshot]);
 
   useEffect(() => {
     /** Warn on a hard refresh/close with unsaved master-resume edits — the profile
@@ -210,12 +216,13 @@ export function EditorProvider({ children }: { children: ReactNode }) {
       message,
       busy,
       dirty,
+      discard,
       validate,
       save,
       loadDraft,
       syncFromDisk,
     }),
-    [resume, setResume, config, errors, message, busy, dirty, validate, save, loadDraft, syncFromDisk],
+    [resume, setResume, config, errors, message, busy, dirty, discard, validate, save, loadDraft, syncFromDisk],
   );
 
   return (

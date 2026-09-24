@@ -15,6 +15,7 @@ type Props = {
   jobId: string;
   coverLetter?: CoverLetter | null;
   onCoverRegenerated: (letter: CoverLetter) => void;
+  readOnly?: boolean;
 };
 
 /**
@@ -23,7 +24,7 @@ type Props = {
  * Only one PDF iframe mounts at a time — Chrome/Edge on Windows use a singleton PDF
  * plugin, so two embedded previews on one page often leaves one blank.
  */
-export function DocumentsCard({ jobId, coverLetter, onCoverRegenerated }: Props) {
+export function DocumentsCard({ jobId, coverLetter, onCoverRegenerated, readOnly = false }: Props) {
   const hasCoverLetter = Boolean(coverLetter);
   const hasCoverPdf = Boolean(coverLetter?.has_pdf);
   const [tab, setTab] = useState<PreviewTab>("resume");
@@ -152,6 +153,7 @@ export function DocumentsCard({ jobId, coverLetter, onCoverRegenerated }: Props)
             <CoverLetterDetails
               letter={coverLetter}
               onRegenerate={handleCoverRegenerate}
+              readOnly={readOnly}
             />
           </>
         )}

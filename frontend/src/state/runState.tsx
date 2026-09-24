@@ -158,6 +158,8 @@ export const DEFAULT_SETTINGS: JobSettings = {
     },
     auto_submit_ats: [],
     auto_submit_max_per_run: 0,
+    auto_submit_enabled: false,
+    blocker_mode: "continue",
     reuse_threshold: 0.72,
     cover_letter: true,
     model_provider: "ollama",
@@ -238,6 +240,10 @@ type RunStateValue = {
   settings: JobSettings;
   setSettings: (settings: JobSettings) => void;
   settingsLoaded: boolean;
+  settingsSaveState: "saved" | "unsaved" | "saving" | "failed";
+  settingsSaveError: string | null;
+  flushSettings: () => Promise<boolean>;
+  discardSettings: () => Promise<void>;
   jobId: string | null;
   status: string | null;
   events: ProgressEvent[];
@@ -274,6 +280,8 @@ export function RunProvider({ children }: { children: ReactNode }) {
   const [jdText, setJdTextState] = useState(() => loadJdText(activeId));
   const [settings, setSettingsState] = useState<JobSettings>(DEFAULT_SETTINGS);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
+  const [settingsSaveState, setSettingsSaveState] = useState<"saved" | "unsaved" | "saving" | "failed">("saved");
+  const [settingsSaveError, setSettingsSaveError] = useState<string | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
   const [events, setEvents] = useState<ProgressEvent[]>([]);
@@ -290,6 +298,11 @@ export function RunProvider({ children }: { children: ReactNode }) {
   // does not reset and re-trigger the post-success PDF download.
   const autoDownloadedFor = useRef<string | null>(null);
   const saveSettingsTimer = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const settingsRevision = useRef(0);
+  const savedSettings = useRef<JobSettings>(DEFAULT_SETTINGS);
+  const latestSettings = useRef<JobSettings>(DEFAULT_SETTINGS);
+  const settingsWrite = useRef<Promise<void>>(Promise.resolve());
+  const lastWriteFailed = useRef(false);
 
   const refreshHistory = useCallback(async () => {
     try {
@@ -315,16 +328,67 @@ export function RunProvider({ children }: { children: ReactNode }) {
     [activeId],
   );
 
+  const persistSettings = useCallback((next: JobSettings, revision: number): Promise<void> => {
+    const write = settingsWrite.current.catch(() => undefined).then(async () => {
+      if (revision !== settingsRevision.current) return;
+      setSettingsSaveState("saving");
+      try {
+        await saveSettings(next);
+        savedSettings.current = next;
+        lastWriteFailed.current = false;
+        if (revision === settingsRevision.current) {
+          setSettingsSaveState("saved");
+          setSettingsSaveError(null);
+        }
+      } catch (err) {
+        lastWriteFailed.current = true;
+        if (revision === settingsRevision.current) {
+          setSettingsSaveState("failed");
+          setSettingsSaveError(err instanceof Error ? err.message : String(err));
+        }
+        throw err;
+      }
+    });
+    settingsWrite.current = write;
+    return write;
+  }, []);
+
   const setSettings = useCallback((next: JobSettings) => {
+    latestSettings.current = next;
     setSettingsState(next);
+    setSettingsSaveState("unsaved");
+    setSettingsSaveError(null);
+    const revision = ++settingsRevision.current;
     if (saveSettingsTimer.current) clearTimeout(saveSettingsTimer.current);
-    // Debounced so dragging the fill-target slider or ticking several toggles in a
-    // row does not fire a PUT per change — only once settings stop changing.
     saveSettingsTimer.current = setTimeout(() => {
-      void saveSettings(next).catch(() => {
-        /* best-effort persistence; the in-memory value is still correct for this run */
-      });
+      saveSettingsTimer.current = null;
+      void persistSettings(next, revision).catch(() => undefined);
     }, SETTINGS_SAVE_DEBOUNCE_MS);
+  }, [persistSettings]);
+
+  const flushSettings = useCallback(async (): Promise<boolean> => {
+    if (saveSettingsTimer.current) {
+      clearTimeout(saveSettingsTimer.current);
+      saveSettingsTimer.current = null;
+    }
+    try { await settingsWrite.current; } catch { /* retry the latest draft below */ }
+    if (latestSettings.current === savedSettings.current && !lastWriteFailed.current) return true;
+    try {
+      await persistSettings(latestSettings.current, settingsRevision.current);
+      return true;
+    } catch { return false; }
+  }, [persistSettings]);
+
+  const discardSettings = useCallback(async () => {
+    if (saveSettingsTimer.current) clearTimeout(saveSettingsTimer.current);
+    saveSettingsTimer.current = null;
+    ++settingsRevision.current;
+    try { await settingsWrite.current; } catch { /* failed write leaves the last saved value intact */ }
+    latestSettings.current = savedSettings.current;
+    setSettingsState(savedSettings.current);
+    lastWriteFailed.current = false;
+    setSettingsSaveError(null);
+    setSettingsSaveState("saved");
   }, []);
 
   useEffect(() => {
@@ -380,9 +444,12 @@ export function RunProvider({ children }: { children: ReactNode }) {
         }
 
         setSettingsState(next);
+        latestSettings.current = next;
+        savedSettings.current = next;
         if (res.seeded) {
           // Persist the seeded/imported value so the next load already has it saved.
-          void saveSettings(next).catch(() => undefined);
+          lastWriteFailed.current = true;
+          void persistSettings(next, settingsRevision.current).catch(() => undefined);
         }
         try {
           localStorage.removeItem(LEGACY_SETTINGS_KEY);
@@ -400,7 +467,7 @@ export function RunProvider({ children }: { children: ReactNode }) {
     return () => {
       cancelled = true;
     };
-  }, []);
+  }, [persistSettings]);
 
   useEffect(() => {
     /**
@@ -628,6 +695,10 @@ export function RunProvider({ children }: { children: ReactNode }) {
       settings,
       setSettings,
       settingsLoaded,
+      settingsSaveState,
+      settingsSaveError,
+      flushSettings,
+      discardSettings,
       jobId,
       status,
       events,
@@ -654,6 +725,10 @@ export function RunProvider({ children }: { children: ReactNode }) {
       settings,
       setSettings,
       settingsLoaded,
+      settingsSaveState,
+      settingsSaveError,
+      flushSettings,
+      discardSettings,
       jobId,
       status,
       events,
