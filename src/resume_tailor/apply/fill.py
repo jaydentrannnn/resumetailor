@@ -663,8 +663,14 @@ def fill_application(
                 store.upsert(app)
             progress("application form opened")
 
-            # Handle Workday login / account creation if prompted
+            # Select an explicit email route before any site-specific credential flow.
             ats_name = (app.ats or pkt.ats or "").lower()
+            from resume_tailor.apply import form_routes  # noqa: PLC0415
+            route = form_routes.choose_email_sync(page, deadline=deadline)
+            if route in {"ambiguous", "unchanged", "unavailable"}:
+                return _workday_handoff(app, context, page, f"Email sign-in route {route}; choose it in this tab, then Continue fill.")
+            if route == "selected" and not is_workday:
+                return _workday_handoff(app, context, page, "Email sign-in route selected; complete authentication in this tab, then Continue fill.")
             if is_workday:
                 auth_result = workday_auth.handle_workday_auth(
                     page, source_job_id, profile, on_progress=progress, deadline=deadline,
@@ -1051,6 +1057,18 @@ def fill_application(
                     merged["filled"].extend({**item, "key": "workday_row", "frame_index": 0} for item in rows_filled)
                     needs_review.extend(label for label in rows_review if label not in needs_review)
 
+                if is_workday:
+                    consent_filled, consent_review = form_routes.accept_workday_sync(page)
+                    merged["filled"].extend({**item, "frame_index": 0} for item in consent_filled)
+                    accepted_labels = {item["label"] for item in consent_filled}
+                    merged["required_empty"] = [label for label in merged["required_empty"] if label not in accepted_labels]
+                    merged["leftovers"] = [item for item in merged["leftovers"] if item.get("label") not in accepted_labels]
+                    needs_review[:] = [label for label in needs_review if label not in accepted_labels]
+                    needs_review.extend(label for label in consent_review if label not in needs_review)
+                    if consent_review:
+                        progress("Required Workday consent needs review; leaving this step open")
+                        break
+
                 # Check if there is an advance/next button for multi-step wizard
                 advance_btn = _find_advance_button(page)
                 if (not advance_btn or merged.get("required_empty")) and step < MAX_WIZARD_STEPS - 1:
@@ -1123,7 +1141,10 @@ def fill_application(
                             progress("wizard is unchanged; handing this tab over for review")
                             break
                 else:
-                    final_step_reached = advance_btn is None and _find_submit_button(page, hints) is not None
+                    final_step_reached = advance_btn is None and (
+                        _find_submit_button(page, hints) is not None or
+                        (is_workday and workday_flow.is_review_step(workday_flow.snapshot(page)))
+                    )
                     break
 
             required_empty: list[str] = []

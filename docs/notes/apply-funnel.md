@@ -653,3 +653,11 @@ was an "Analytics Intern" rejected because the model labelled seniority `mid`.
   answers with Playwright `fill` + blur on Workday (text inputs accept the JS value). After
   that the run passed both Application Questions steps and stopped only at the legal consent
   checkbox, which stays the applicant's.
+
+## 2026-09-24 — Preferred name, education year, Workday consent, and email route
+
+- Apply packet assembly now inherits a missing university start date from a unique matching master-resume education row. Explicit profile dates win; ambiguous resume rows do not supply a date. The active default workspace resolves to 2023-09 from its master resume without changing its profile file.
+- The legacy filler and verified field catalog identify preferred first name from control identity, explicit label, or local Preferred Name group. Continue fill corrects a preferred field containing the configured legal first name and preserves other entries. Legacy year selects use the year from a YYYY-MM answer. Workday repeaters handle split dates and ordinary year controls; the verified engine also handles Workday's hidden year spinbuttons.
+- Shared browser actions select an explicit email sign-in or registration route, with social-only and ambiguous choosers handed to the applicant. Both engines check visible required Workday application consent and accuracy declarations, verify the checked state, and proceed to the Review step. Optional marketing consent is untouched; Workday submission remains manual.
+- Focused DOM tests ran in installed Edge. Full suite: 1249 passed, 1 skipped, 18 deselected. The configured local CDP endpoint timed out, so no live Workday draft was resumed during this change.
+- Final regression run after the year-select and consent-record adjustments: 1251 passed, 1 skipped, 18 deselected (Starlette deprecation warning only).

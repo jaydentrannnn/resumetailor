@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Literal
 
 from resume_tailor import config, data
-from resume_tailor.apply import adapters, answer, attachments, browser, controls, field_catalog, model_resolver, packet, preparation, profile, salary, scanner, store, workday_auth
+from resume_tailor.apply import adapters, answer, attachments, browser, controls, field_catalog, form_routes, model_resolver, packet, preparation, profile, salary, scanner, store, workday_auth, workday_flow, workday_repeaters
 from resume_tailor.apply.field_types import FieldObservation, FieldOutcome
 from resume_tailor.jd import JobRequirements
 from resume_tailor.web.schemas import ApplySettings
@@ -197,6 +197,17 @@ async def fill_application(
                     result.browser_target_id = await browser.async_target_id(context, page)
                     result.browser_url = str(page.url)
                     checkpoint(force=True)
+                route = await form_routes.choose_email_async(page, deadline=deadline)
+                if route in {"ambiguous", "unchanged", "unavailable"} or route == "selected" and not isinstance(adapter, adapters.WorkdayAdapter):
+                    result.status = "awaiting_review"
+                    result.handoff_reason = (
+                        "Email sign-in route selected; complete authentication in this tab, then Continue fill."
+                        if route == "selected" else
+                        f"Email sign-in route {route}; choose it in this tab, then Continue fill."
+                    )
+                    checkpoint(force=True)
+                    return result
+                if isinstance(adapter, adapters.WorkdayAdapter):
                     progress("Checking Workday authentication")
                     auth = await workday_auth.handle_workday_auth_async(page, applicant, deadline=deadline)
                     if auth != "authenticated":
@@ -263,7 +274,13 @@ async def fill_application(
                         has_committed_value = bool(field.current_value) and (
                             field.control_kind != "combobox" or field.selection_state == "committed"
                         )
-                        if has_committed_value:
+                        correct_preferred = (
+                            key == "preferred_name" and fields.get("preferred_name")
+                            and fields.get("first_name")
+                            and field.current_value.strip().casefold() == fields["first_name"].strip().casefold()
+                            and fields["preferred_name"].strip().casefold() != fields["first_name"].strip().casefold()
+                        )
+                        if has_committed_value and not correct_preferred:
                             record(step_id, FieldOutcome(
                                 field_id=field.field_id, frame_id=field.frame_id,
                                 label=field.label, canonical_key=key,
@@ -331,6 +348,7 @@ async def fill_application(
                         outcome = await controls.apply_value(
                             page, field_snapshot, field, value,
                             phone_region=fields.get("phone_country_region", ""),
+                            replace_existing=bool(correct_preferred),
                         )
                         if (
                             key == "race" and value == fields.get("race_detail")
@@ -383,14 +401,50 @@ async def fill_application(
                             result_field = await controls.apply_value(page, latest, field, value)
                             result_field.answer_source = "model_mapped_profile_fact"
                             record(step_id, result_field)
+                    if isinstance(adapter, adapters.WorkdayAdapter):
+                        workday_step = workday_flow.active_step(await page.evaluate(workday_flow.SNAPSHOT_JS)).casefold()
+                        if "experience" in workday_step:
+                            years_filled, years_review = await workday_repeaters.fill_education_years_async(page, pkt)
+                            inspection_errors.extend(years_review)
+                            for year in years_filled:
+                                record(step_id, FieldOutcome(
+                                    field_id=year["label"], frame_id="main", label=year["label"],
+                                    canonical_key="education_start_year" if "firstYear" in year["label"] else "education_end_year",
+                                    state="verified_filled", observed_value=year["value"], answer_source="resume",
+                                ))
                     result.browser_url = str(page.url)
                     checkpoint(force=True)
                     settled = await scanner.scan(page)
                     inspection_errors.extend(settled.errors)
+                    if isinstance(adapter, adapters.WorkdayAdapter):
+                        accepted, unresolved = await form_routes.accept_workday_async(page)
+                        for item in accepted:
+                            matched = [field for field in settled.fields if field.control_kind == "checkbox" and
+                                       (field.label == item["label"] or item["id"] and field.constraints.get("id") == item["id"])]
+                            if len(matched) == 1:
+                                field = matched[0]
+                                record(step_id, FieldOutcome(
+                                    field_id=field.field_id, frame_id=field.frame_id, label=field.label,
+                                    canonical_key="workday_consent", state="verified_filled",
+                                    required=True, observed_value="checked", answer_source="required_consent",
+                                ))
+                            else:
+                                record(step_id, FieldOutcome(
+                                    field_id=f"workday-consent:{item['id'] or item['label']}",
+                                    frame_id="main", label=item["label"], canonical_key="workday_consent",
+                                    state="verified_filled", required=True, observed_value="checked",
+                                    answer_source="required_consent",
+                                ))
+                        if unresolved:
+                            inspection_errors.extend(f"Required consent: {label}" for label in unresolved)
+                            break
                     settled_step_id = await adapter.step_id(page, settled.fields)
                     next_button = await adapter.advance(page)
                     if next_button is None:
-                        final_step = await adapter.final_submit(page) is not None
+                        review_step = False
+                        if isinstance(adapter, adapters.WorkdayAdapter):
+                            review_step = workday_flow.is_review_step(await page.evaluate(workday_flow.SNAPSHOT_JS))
+                        final_step = await adapter.final_submit(page) is not None or review_step
                         break
                     check_budget()
                     progress(f"Advancing from form step {step_number}")

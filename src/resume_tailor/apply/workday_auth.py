@@ -553,6 +553,14 @@ async def handle_workday_auth_async(
 
     state = await detect_auth_state_async(page)
     if state == "none":
+        # The email chooser can disappear before Workday paints the password form.
+        auth_ready_deadline = min(deadline, time.monotonic() + 8)
+        while state == "none" and time.monotonic() < auth_ready_deadline:
+            if await _authenticated_evidence_async(page):
+                return "authenticated"
+            await page.wait_for_timeout(250)
+            state = await detect_auth_state_async(page)
+    if state == "none":
         return "authenticated" if await _authenticated_evidence_async(page) else "failed"
     if state == "otp":
         return "verification_needed"

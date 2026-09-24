@@ -103,6 +103,11 @@ def active_step(snap: dict[str, Any]) -> str:
     return re.sub(r"^(?:current\s+)?step\s+\d+\s+of\s+\d+\s*", "", raw, flags=re.I).strip()
 
 
+def is_review_step(snap: dict[str, Any]) -> bool:
+    """Recognize the final Review or Review and Submit progress step."""
+    return bool(re.match(r"^review(?:\s|$)", active_step(snap), re.I))
+
+
 def snapshot(page: Any) -> dict[str, Any]:
     try:
         snap = page.evaluate(SNAPSHOT_JS)

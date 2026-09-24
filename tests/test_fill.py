@@ -327,6 +327,8 @@ def test_fill_application_awaiting_review(fill_paths, monkeypatch):
         yield browser
 
     monkeypatch.setattr(browser, "cdp_browser", _fake_browser)
+    from resume_tailor.apply import form_routes
+    monkeypatch.setattr(form_routes, "choose_email_sync", lambda page, *, deadline: "absent")
     submit_called = {"value": False}
     original_click = MagicMock()
 
@@ -391,6 +393,8 @@ def test_fill_application_answer_stage_pinned_to_apply_settings_model(fill_paths
         yield browser
 
     monkeypatch.setattr(browser, "cdp_browser", _fake_browser)
+    from resume_tailor.apply import form_routes
+    monkeypatch.setattr(form_routes, "choose_email_sync", lambda page, *, deadline: "absent")
 
     seen: dict[str, str] = {}
 
