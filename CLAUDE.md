@@ -10,7 +10,7 @@ original** — only the words change.
 `docs/REFERENCE.md` is the subsystem reference — CLI flags §1, workspaces §2, apply
 automation §3, vocabulary §4, templates §5, fit tuning §6, backend routing §7, gotchas
 §8, sections detail §9, guard mechanics §10, testing detail §11. The decision log ("why
-it was built this way") is split by topic under `docs/notes/`; `implementation-notes.md`
+it was built this way") is split by topic under `docs/notes/`; `docs/implementation-notes.md`
 is its index. **Grep the notes, never Read a notes file whole; add entries by shell
 append (`>>`), not Read+Edit** (later entries supersede earlier ones; cross-check numbers
 against code). `docs/PLAN.md` is the original phase-by-phase build history — open it only

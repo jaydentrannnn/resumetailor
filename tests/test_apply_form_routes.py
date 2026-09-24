@@ -13,11 +13,30 @@ from resume_tailor.apply.packet import Packet, PacketEducation
 from resume_tailor.apply.workday_repeaters import fill_education_years_async
 
 
+def _launch_sync(playwright):
+    """Local Edge when present (the dev machine), else Playwright's own Chromium."""
+    try:
+        return playwright.chromium.launch(headless=True, channel="msedge")
+    except Exception:  # noqa: BLE001 - fall back to the bundled/configured Chromium
+        return playwright.chromium.launch(headless=True)
+
+
+async def _launch_async(playwright):
+    """Async twin of `_launch_sync`; skips the test when no Chromium exists at all."""
+    try:
+        return await playwright.chromium.launch(headless=True, channel="msedge")
+    except Exception:  # noqa: BLE001
+        try:
+            return await playwright.chromium.launch(headless=True)
+        except Exception as exc:  # noqa: BLE001
+            pytest.skip(f"Local Chromium unavailable: {exc}")
+
+
 @pytest.fixture
 def page():
     try:
         with sync_playwright() as playwright:
-            browser = playwright.chromium.launch(headless=True, channel="msedge")
+            browser = _launch_sync(playwright)
             try:
                 yield browser.new_page()
             finally:
@@ -28,13 +47,13 @@ def page():
 
 def test_preferred_name_context_and_correction(page):
     page.set_content("""
-      <fieldset><legend>Legal Name</legend><label for="legal">First Name</label><input id="legal" value="Alex Jordan Lee"></fieldset>
-      <fieldset><legend>Preferred Name</legend><label for="preferred">First Name</label><input id="preferred" value="Alex Jordan Lee"></fieldset>
+      <fieldset><legend>Legal Name</legend><label for="legal">First Name</label><input id="legal" value="Alex Jordan"></fieldset>
+      <fieldset><legend>Preferred Name</legend><label for="preferred">First Name</label><input id="preferred" value="Alex Jordan"></fieldset>
     """)
     js = (Path(__file__).parents[1] / "src/resume_tailor/apply/filler.js").read_text(encoding="utf-8")
-    result = page.evaluate(js, {"fields": {"first_name": "Alex Jordan Lee", "preferred_name": "Jayden"}, "hints": {}, "synonyms": []})
-    assert page.locator("#legal").input_value() == "Alex Jordan Lee"
-    assert page.locator("#preferred").input_value() == "Jayden"
+    result = page.evaluate(js, {"fields": {"first_name": "Alex Jordan", "preferred_name": "AJ"}, "hints": {}, "synonyms": []})
+    assert page.locator("#legal").input_value() == "Alex Jordan"
+    assert page.locator("#preferred").input_value() == "AJ"
     assert any(item.get("corrected") for item in result["filled"])
 
 
@@ -102,7 +121,7 @@ def test_verified_workday_hidden_year_control_uses_matched_education_row():
 
     async def exercise():
         async with async_playwright() as playwright:
-            browser = await playwright.chromium.launch(headless=True, channel="msedge")
+            browser = await _launch_async(playwright)
             try:
                 page = await browser.new_page()
                 await page.set_content("""

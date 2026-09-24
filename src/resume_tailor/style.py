@@ -95,11 +95,8 @@ sentences.
 - Mirror the posting's own verbs and vocabulary only where the source honestly supports it.
 
 Candidate positioning
-- Goes by Jayden Tran professionally.
-- Targeting AI and ML internships across research, engineering, product, and ops.
-- Lead with depth in ML, RAG, and retrieval systems; hands-on Python and data work; \
-cross-functional thinking from the business minor; a record of shipping independent \
-technical projects.
+- Derive the candidate's focus from the tailored resume and the posting. Do not invent a \
+specialty, a career goal, or a name the resume does not state.
 """
 
 _STAGES = ("rewrite", "expand", "cover")

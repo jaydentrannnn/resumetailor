@@ -405,8 +405,8 @@ for Phase 9; the highest-value next change to extraction.
   spare; raising `EFFORT` beyond that means **switching to streaming**, not raising the
   number. At the old 16k, `"medium"` spent the whole allowance thinking and returned
   `stop_reason='max_tokens'`.
-- Contact email in master data is `alex@example.com`, taken from the resume; the
-  account email is `alex@example.edu`. Confirm which is intended.
+- Contact email in master data is the one taken from the resume; the
+  account email differs. Confirm which is intended.
 - One bullet (`uci_b2`) has a trailing period the source resume lacks — deliberate
   punctuation consistency, revert if exact fidelity matters more.
 - **Repo has no commits yet** (branch `master`, everything untracked), and `.gitignore`

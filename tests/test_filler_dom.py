@@ -63,14 +63,14 @@ _EPIC = """
 def test_epic_form_fills_names_from_bare_text_labels(page):
     page.set_content(_EPIC)
     result = _fill(page, {
-        "first_name": "Alex Jordan Lee", "last_name": "Tran", "preferred_name": "Jayden",
+        "first_name": "Alex Jordan", "last_name": "Doe", "preferred_name": "AJ",
         "email": "a@example.com", "how_heard": "LinkedIn",
         "education_start_month": "2023-09", "graduation_month": "2027-06",
         "gender": "I don't wish to answer",
     })
-    assert page.locator("input[name='questions.first_name']").input_value() == "Alex Jordan Lee"
-    assert page.locator("input[name='questions.last_name']").input_value() == "Tran"
-    assert page.locator("input[name='questions.preferred_name']").input_value() == "Jayden"
+    assert page.locator("input[name='questions.first_name']").input_value() == "Alex Jordan"
+    assert page.locator("input[name='questions.last_name']").input_value() == "Doe"
+    assert page.locator("input[name='questions.preferred_name']").input_value() == "AJ"
     assert page.locator("input[name='questions.email']").input_value() == "a@example.com"
     # Education dates split into year/month boxes, never the availability answer.
     assert page.locator("input[name='educations[0].start_date.year']").input_value() == "2023"

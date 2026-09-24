@@ -611,6 +611,11 @@ def test_extract_consensus_pinned_to_tailor_routing(apply_paths, monkeypatch):
     vote, so the tailor job — on different routing, asking for `extract_runs` votes —
     cache-missed and re-read the JD `extract_runs` more times.
     """
+    from tests.fixtures import synthetic_resume
+
+    resume_path = apply_paths / "master_resume.json"
+    resume_path.write_text(synthetic_resume().model_dump_json(), encoding="utf-8")
+    monkeypatch.setattr(config, "MASTER_RESUME_PATH", resume_path)
     row = _sample_row()
     monkeypatch.setattr(sources, "fetch_readme", lambda url: "x")
     monkeypatch.setattr(sources, "parse_readme", lambda text, categories: [row])

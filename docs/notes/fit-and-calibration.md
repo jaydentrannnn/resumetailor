@@ -289,7 +289,7 @@ the first measure and skips an extra rewrite pass.
   explicitly (constants are not portable between Word and LibreOffice — silently
   reusing one for the other was another way this class of bug could hide).
 - **Regenerated for real**, not just fixed in code: `scripts/calibrate.py` against the
-  active (default/Jayden) workspace via Word COM landed `chars_per_line=101,
+  active (default/owner) workspace via Word COM landed `chars_per_line=101,
   lines_per_page=55` — matching that workspace's existing LibreOffice measurement
   (101/55) exactly. `--workspace nina` landed `121/58` against her `soffice.json`'s
   `122/58` — a 1-char difference consistent with normal Word/LibreOffice glyph-metric

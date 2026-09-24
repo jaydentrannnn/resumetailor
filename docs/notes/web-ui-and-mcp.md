@@ -63,7 +63,7 @@ blank entry headers before the Pydantic path; server validation remains authorit
 
 **What:** Downloads and CLI default output now use `<contact.name> Resume - <JD title>.docx` via `report.export_filename`. Web job dirs still store `tailored.docx` internally; only the `Content-Disposition` filename (and CLI `--out` default) changed.
 
-**Why:** Owner wants application-ready names like `Alex Jordan Lee Doe Resume - Software Engineer Intern`.
+**Why:** Owner wants application-ready names like `Alex Jordan Doe Resume - Software Engineer Intern`.
 
 **Impact:** Characters illegal on Windows (`<>:"/\|?*`) are replaced with spaces in the stem. Restart the API / Docker container to pick up the download-name change.
 

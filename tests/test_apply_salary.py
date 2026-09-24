@@ -81,8 +81,8 @@ def test_format_keeps_cents_only_when_needed():
 
 def test_packet_flags_a_preferred_name_that_differs_from_the_first_name():
     resume = synthetic_resume()
-    fields = packet.build_fields(ApplicantProfile(first_name="Vu", preferred_name="Jayden"), resume)
+    fields = packet.build_fields(ApplicantProfile(first_name="Alexander", preferred_name="Alex"), resume)
     assert fields["has_preferred_name"] == "Yes"
-    same = packet.build_fields(ApplicantProfile(first_name="Jayden", preferred_name="jayden"), resume)
+    same = packet.build_fields(ApplicantProfile(first_name="Alex", preferred_name="alex"), resume)
     assert "has_preferred_name" not in same
     assert "salary_expectation" not in fields  # added per posting by the fill runner

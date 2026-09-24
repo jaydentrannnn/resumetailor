@@ -6,7 +6,7 @@ import { SettingsMenu } from "./SettingsMenu";
 
 vi.mock("./workspace/ProfileSwitcher", () => ({ ProfileSwitcher: () => <p>profile switcher</p> }));
 vi.mock("../state/workspaceState", () => ({
-  useWorkspaceState: () => ({ workspaces: [{ id: "w1", label: "Jayden" }], activeId: "w1", switching: false }),
+  useWorkspaceState: () => ({ workspaces: [{ id: "w1", label: "Alex" }], activeId: "w1", switching: false }),
 }));
 
 afterEach(() => cleanup());
@@ -20,7 +20,7 @@ function renderMenu() {
 describe("SettingsMenu", () => {
   it("names the active profile and opens the profile and theme settings", () => {
     renderMenu();
-    const button = screen.getByRole("button", { name: /Jayden/ });
+    const button = screen.getByRole("button", { name: /Alex/ });
     expect(screen.queryByText("profile switcher")).toBeNull();
     fireEvent.click(button);
     expect(button.getAttribute("aria-expanded")).toBe("true");
@@ -31,10 +31,10 @@ describe("SettingsMenu", () => {
 
   it("closes on Escape and on a click outside, but not while a modal is open", () => {
     renderMenu();
-    fireEvent.click(screen.getByRole("button", { name: /Jayden/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Alex/ }));
     fireEvent.keyDown(document, { key: "Escape" });
     expect(screen.queryByText("profile switcher")).toBeNull();
-    fireEvent.click(screen.getByRole("button", { name: /Jayden/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Alex/ }));
     const modal = document.createElement("div");
     modal.setAttribute("aria-modal", "true");
     document.body.append(modal);

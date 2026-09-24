@@ -7,7 +7,7 @@ import re
 from datetime import datetime
 from typing import Any
 
-from resume_tailor.apply.field_matcher import match_option, normalize
+from resume_tailor.apply.field_matcher import match_option, normalize, school_short_term
 from resume_tailor.apply.field_types import FieldObservation, FieldOutcome, ObservedOption
 from resume_tailor.apply.scanner import ScanSnapshot, scan
 
@@ -102,8 +102,8 @@ async def observe_options(
 def _search_term(key: str, target: str) -> str:
     if key == "degree_level" and normalize(target).startswith("bachelor"):
         return "bachelor"
-    if key == "school" and normalize(target) in {"uc irvine", "university of california irvine"}:
-        return "Irvine"
+    if key == "school":
+        return school_short_term(target) or target
     return target
 
 

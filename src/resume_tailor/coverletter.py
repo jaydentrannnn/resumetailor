@@ -34,7 +34,7 @@ from .rewrite import (
 
 #: Bumped when ``_SYSTEM`` or the cover request shape changes. Version 2 added
 #: ATS/trust keyword split, anti-generic self-check, and optional CoverAngles.
-_COVER_PROMPT_VERSION = 2
+_COVER_PROMPT_VERSION = 3
 
 #: Long dashes the model must never emit. Mechanical replacement is safe when one slips
 #: through after a retry.
@@ -138,11 +138,8 @@ sentences.
 - Mirror the posting's own verbs and vocabulary only where the source honestly supports it.
 
 Candidate positioning
-- Goes by Jayden Tran professionally.
-- Targeting AI and ML internships across research, engineering, product, and ops.
-- Lead with depth in ML, RAG, and retrieval systems; hands-on Python and data work; \
-cross-functional thinking from the business minor; a record of shipping independent \
-technical projects.
+- Derive the candidate's focus from the tailored resume and the posting. Do not invent a \
+specialty, a career goal, or a name the resume does not state.
 
 Return a JSON object with company, company_location, addressee, and paragraphs (a list of \
 body paragraph strings). Do not return salutation, closing, or signature.

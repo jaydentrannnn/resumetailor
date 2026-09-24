@@ -2,8 +2,10 @@
 
 from __future__ import annotations
 
+import json
 import re
 import unicodedata
+from pathlib import Path
 from typing import Literal
 
 from pydantic import BaseModel
@@ -23,11 +25,36 @@ def normalize(value: str) -> str:
     return " ".join(re.sub(r"[^\w+]+", " ", plain).split())
 
 
+_SCHOOL_DATA = Path(__file__).with_name("school_aliases.json")
+
+
+def _load_schools() -> tuple[dict[str, set[str]], dict[str, list[str]]]:
+    """Read ``school_aliases.json`` into symmetric alias groups and extra search terms.
+
+    Every name in an entry (canonical plus aliases) maps to all the others, so a profile
+    saying "UCI" matches an option "University of California, Irvine" and vice versa.
+    """
+    aliases: dict[str, set[str]] = {}
+    search: dict[str, list[str]] = {}
+    try:
+        data = json.loads(_SCHOOL_DATA.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return aliases, search
+    for entry in data.get("schools", []):
+        names = {normalize(name) for name in [entry["canonical"], *entry.get("aliases", [])]}
+        names.discard("")
+        for name in names:
+            aliases.setdefault(name, set()).update(names - {name})
+            if entry.get("search"):
+                search[name] = list(entry["search"])
+    return aliases, search
+
+
+_SCHOOL_ALIASES, _SCHOOL_SEARCH = _load_schools()
+
 _ALIASES: dict[str, dict[str, set[str]]] = {
     "country": {"united states": {"us", "usa", "united states of america"}},
-    "school": {
-        "university of california irvine": {"uc irvine", "uci"},
-    },
+    "school": _SCHOOL_ALIASES,
     "degree_level": {
         "bachelors": {"bachelor", "bachelors degree", "bachelor s degree"},
         "bachelor": {"bachelors", "bachelors degree", "bachelor s degree"},
@@ -293,6 +320,12 @@ _SCHOOL_GENERIC = frozenset({
 _CAMPUS = re.compile(r"(?:\s[-–—]\s|,\s*|\sat\s)([^,\-–—]+)$", re.I)
 
 
+def school_short_term(value: str) -> str | None:
+    """The narrowest known search string for a school ("UC Irvine" -> "Irvine"), if any."""
+    terms = _SCHOOL_SEARCH.get(normalize(value))
+    return terms[-1] if terms else None
+
+
 def search_terms(key: str, value: str) -> list[str]:
     """Ordered search strings for a searchable prompt, most specific first.
 
@@ -311,8 +344,7 @@ def search_terms(key: str, value: str) -> list[str]:
         distinctive = [word for word in re.findall(r"[\w']+", value) if word.casefold() not in _SCHOOL_GENERIC]
         if distinctive:
             terms.append(" ".join(distinctive))
-        if normalize(value) == "university of california irvine":
-            terms.append("UC Irvine")
+        terms.extend(_SCHOOL_SEARCH.get(normalize(value), []))
     elif key == "degree_level":
         if normalize(value).startswith("bachelor"):
             terms.insert(0, "bachelor")

@@ -62,8 +62,8 @@ def test_report_shows_coverage_and_output_path():
 def test_export_filename_uses_name_and_title():
     """Downloads and CLI defaults share '<name> Resume - <title>'."""
     assert (
-        report.export_filename("Alex Jordan Lee Doe", "Software Engineer Intern")
-        == "Alex Jordan Lee Doe Resume - Software Engineer Intern.docx"
+        report.export_filename("Alex Jordan Doe", "Software Engineer Intern")
+        == "Alex Jordan Doe Resume - Software Engineer Intern.docx"
     )
     assert (
         report.export_filename("Ada Lovelace", "SWE / Intern", suffix=".pdf")

@@ -25,10 +25,10 @@ describe("Apply form filler", () => {
     document.body.innerHTML = `
       <fieldset><label for="country">Country</label><select id="country"><option value="">Select</option><option value="us">United States (+1)</option><option value="ca">Canada (+1)</option><option value="gb">United Kingdom (+44)</option></select><input type="tel" name="phone" aria-label="Phone"></fieldset>
       <label for="address-country">Country</label><select id="address-country"><option value="">Select</option><option value="us">United States</option><option value="ca">Canada</option></select>`;
-    const ambiguous = run({ phone_country_code: "+1", country: "United States", phone: "555 010 0000" });
+    const ambiguous = run({ phone_country_code: "+1", country: "United States", phone: "555 010 0199" });
     expect((document.querySelector("#country") as HTMLSelectElement).value).toBe("");
     expect(ambiguous.leftovers.some(item => item.label === "Country")).toBe(true);
-    const resolved = run({ phone_country_code: "+1", phone_country_region: "United States", country: "United States", phone: "555 010 0000" });
+    const resolved = run({ phone_country_code: "+1", phone_country_region: "United States", country: "United States", phone: "555 010 0199" });
     expect((document.querySelector("#country") as HTMLSelectElement).value).toBe("us");
     expect((document.querySelector("#address-country") as HTMLSelectElement).value).toBe("us");
     expect(resolved.filled.some(item => item.key === "phone_country_code")).toBe(true);
@@ -36,9 +36,9 @@ describe("Apply form filler", () => {
 
   it("chooses a country identifier only with a matching region and strips a duplicate phone prefix", () => {
     document.body.innerHTML = `<fieldset><label for="code">Calling code</label><select id="code"><option value="">Select</option><option value="US">US</option><option value="CA">CA</option></select><input type="tel" aria-label="Phone"></fieldset>`;
-    run({ phone_country_code: "+1", phone_country_region: "United States", phone: "+1 555 010 0000" });
+    run({ phone_country_code: "+1", phone_country_region: "United States", phone: "+1 555 010 0199" });
     expect((document.querySelector("#code") as HTMLSelectElement).value).toBe("US");
-    expect((document.querySelector("input") as HTMLInputElement).value).toBe("555 010 0000");
+    expect((document.querySelector("input") as HTMLInputElement).value).toBe("555 010 0199");
   });
 
   it("classifies Greenhouse's custom Country control inside the phone group as a calling code", () => {
@@ -52,7 +52,7 @@ describe("Apply form filler", () => {
 
   it("does not treat misleading substrings as a choice or overwrite existing answers", () => {
     document.body.innerHTML = `<label for="answer">Country</label><select id="answer"><option value="">Select</option><option value="other">United States territories</option></select><input aria-label="Phone" value="5551234567">`;
-    const report = run({ country: "United States", phone: "555 010 0000" });
+    const report = run({ country: "United States", phone: "555 010 0199" });
     expect((document.querySelector("#answer") as HTMLSelectElement).value).toBe("");
     expect((document.querySelector("input") as HTMLInputElement).value).toBe("5551234567");
     expect(report.filled.some(item => item.value === "5551234567" && item.preserved)).toBe(true);
@@ -123,13 +123,13 @@ describe("Apply form filler", () => {
 
   it("ticks Workday's lone preferred-name checkbox and reports that fields may have appeared", () => {
     document.body.innerHTML = `<input type="checkbox" id="name--preferredCheck"><label for="name--preferredCheck">I have a preferred name</label>`;
-    const report = run({ has_preferred_name: "Yes", preferred_name: "Jayden" }) as FillReport & { revealed?: boolean };
+    const report = run({ has_preferred_name: "Yes", preferred_name: "Alex" }) as FillReport & { revealed?: boolean };
     expect((document.querySelector("#name--preferredCheck") as HTMLInputElement).checked).toBe(true);
     expect(report.revealed).toBe(true);
     expect(report.leftovers).toHaveLength(0);
     document.body.insertAdjacentHTML("beforeend", `<label for="name--preferredName--firstName">First Name</label><input id="name--preferredName--firstName">`);
-    const again = run({ has_preferred_name: "Yes", preferred_name: "Jayden", first_name: "Legal" }, {}, [["first name", "first_name"]]) as FillReport & { revealed?: boolean };
-    expect((document.querySelector("#name--preferredName--firstName") as HTMLInputElement).value).toBe("Jayden");
+    const again = run({ has_preferred_name: "Yes", preferred_name: "Alex", first_name: "Legal" }, {}, [["first name", "first_name"]]) as FillReport & { revealed?: boolean };
+    expect((document.querySelector("#name--preferredName--firstName") as HTMLInputElement).value).toBe("Alex");
     expect(again.revealed).toBe(false);
   });
 
@@ -140,12 +140,12 @@ describe("Apply form filler", () => {
       <label for="start">When can you start?</label><input id="start">
     `;
     const report = run(
-      { first_name: "Legal", preferred_name: "Jayden", earliest_start: "2027-06-14" },
+      { first_name: "Legal", preferred_name: "Alex", earliest_start: "2027-06-14" },
       {},
       [["preferred first name|preferred name", "preferred_name"], ["first name", "first_name"], ["when can you start|start date", "earliest_start"]],
     );
     expect((document.querySelector("#first_name") as HTMLInputElement).value).toBe("Legal");
-    expect((document.querySelector("#preferred") as HTMLInputElement).value).toBe("Jayden");
+    expect((document.querySelector("#preferred") as HTMLInputElement).value).toBe("Alex");
     expect((document.querySelector("#start") as HTMLInputElement).value).toBe("June 14, 2027");
     expect(report.filled).toHaveLength(3);
   });

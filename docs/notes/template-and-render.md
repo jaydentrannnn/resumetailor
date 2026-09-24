@@ -164,7 +164,7 @@ unbuilt, so a bolding assertion there would only run on a machine that has `temp
   owns a render-supplied separator, via a punctuation character class rather than a
   fixed string) instead of being emitted into the template at all.
 - **Why:** Three live bugs, confirmed against the user's own uploaded template
-  (`templates/library/.../ALEX JORDAN LEE DOE Resume.docx`): project dates lost their
+  (`templates/library/.../<owner> Resume.docx`): project dates lost their
   right alignment, the whole skills line rendered bold, and project tech tags rendered
   bold with a phantom/doubled `|` before the GitHub link. Bold bleed: `_tag_mapped_header`
   and `build_skills_profile` both wrote the whole reconstructed line into run 0 and
@@ -284,7 +284,7 @@ unbuilt, so a bolding assertion there would only run on a machine that has `temp
   check catches something real without depending on Phase 4's not-yet-written
   analyzer fixes.
 - **Verified against both real, live templates**, not just synthetic fixtures:
-  `python scripts/build_template.py` (default/Jayden workspace, fixed mode) and
+  `python scripts/build_template.py` (default/owner workspace, fixed mode) and
   `python scripts/build_template.py --workspace nina` (generic mode) both rebuild and
   verify clean with the mechanical tag-hoisting in place — confirms the refactor
   changed nothing about what either real template produces.

@@ -1100,7 +1100,7 @@ def _bullet_resume_with_glyph(document, glyph: str):
 
 
 def test_shrink_bullet_marker_leaves_a_dash_at_body_size(tmp_path: Path):
-    """A `-` glyph (Jayden's export uses this in every list definition) is already
+    """A `-` glyph (the owner's export uses this in every list definition) is already
     small and thin at body size — shrinking it the same ~53% that tames a large round
     dot renders it as a near-invisible hairline, so it must be left alone."""
     doc = docx.Document()

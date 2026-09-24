@@ -121,14 +121,6 @@ class ApplicantProfile(BaseModel):
         if "year" in ranges:
             seeded["salary_yearly_min"], seeded["salary_yearly_max"] = ranges["year"]
         return seeded
-        from resume_tailor.apply.salary import profile_ranges
-
-        ranges = profile_ranges(self.salary_expectation)
-        if "hour" in ranges:
-            self.salary_hourly_min, self.salary_hourly_max = ranges["hour"]
-        if "year" in ranges:
-            self.salary_yearly_min, self.salary_yearly_max = ranges["year"]
-        return self
 
 
 def _path() -> Path:
@@ -204,68 +196,3 @@ def save_profile(profile: ApplicantProfile) -> ApplicantProfile:
     )
     tmp.replace(path)
     return profile
-
-
-def seed_default_profile(path: Path | None = None) -> ApplicantProfile:
-    """Write the owner's seeded answers from application-answers.md if missing.
-
-    Only creates the file when absent — never overwrites a user edit.
-    """
-    target = path if path is not None else _path()
-    if target.is_file():
-        return ApplicantProfile.model_validate_json(target.read_text(encoding="utf-8"))
-    seeded = ApplicantProfile(
-        first_name="Alex Jordan Lee",
-        last_name="Tran",
-        preferred_name="Jayden",
-        pronouns="He/Him",
-        email="alex@example.com",
-        phone="555 010 0000",
-        phone_country_code="+1",
-        address_line1="123 Main St",
-        city="Springfield",
-        state="California",
-        postal_code="12345",
-        country="United States",
-        linkedin_url="https://www.linkedin.com/in/alex-jordan-lee-doe/",
-        github_url="https://github.com/jaydentrannnn",
-        portfolio_url="https://jaydentrannnn.github.io/jaydentran-portfolio/",
-        portfolio_only_when_asked=True,
-        work_authorization="visa_holder",
-        requires_sponsorship_now=False,
-        requires_sponsorship_future=False,
-        f1_opt_eligible=True,
-        earliest_start="2027-06-14",
-        highest_education_obtained=(
-            "High school diploma; currently pursuing a Bachelor of Science degree."
-        ),
-        salary_expectation=(
-            "Open to discussing; otherwise $60k-80k/yr or $40-$45/hour depending on the role."
-        ),
-        willing_to_relocate=True,
-        location_preference=(
-            "Open to any location; if forced to pick, Orange County/LA or the Bay Area."
-        ),
-        over_18=True,
-        relatives_at_company=False,
-        how_heard="Found through a job postings aggregator.",
-        eeo=EEOAnswers(gender="Male", race="Asian", race_detail="Southeast Asian", hispanic_latino=False, veteran="No", disability="No"),
-        custom_answers={
-            "are you at least 18 years of age": "Yes",
-            "what is the highest level of education you have obtained": (
-                "High school diploma; currently pursuing a Bachelor of Science degree."
-            ),
-            "do you have relatives employed at": "No",
-            "were you referred": "No",
-            "how did you hear about us": "Found through a job postings aggregator.",
-            "availability": "June 14, 2027",
-            "start date": "June 14, 2027",
-            "expected graduation": "June 11, 2027",
-        },
-    )
-    target.parent.mkdir(parents=True, exist_ok=True)
-    target.write_text(
-        json.dumps(seeded.model_dump(), indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
-    return seeded

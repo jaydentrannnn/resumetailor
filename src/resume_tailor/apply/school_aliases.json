@@ -1,0 +1,758 @@
+{
+ "schema_version": 1,
+ "schools": [
+  {
+   "canonical": "University of California Berkeley",
+   "aliases": [
+    "ucb",
+    "uc berkeley"
+   ],
+   "search": [
+    "UC Berkeley",
+    "Berkeley"
+   ]
+  },
+  {
+   "canonical": "University of California Davis",
+   "aliases": [
+    "ucd",
+    "uc davis"
+   ],
+   "search": [
+    "UC Davis",
+    "Davis"
+   ]
+  },
+  {
+   "canonical": "University of California Irvine",
+   "aliases": [
+    "uci",
+    "uc irvine"
+   ],
+   "search": [
+    "UC Irvine",
+    "Irvine"
+   ]
+  },
+  {
+   "canonical": "University of California Los Angeles",
+   "aliases": [
+    "ucla"
+   ],
+   "search": [
+    "UC Los Angeles",
+    "Los Angeles"
+   ]
+  },
+  {
+   "canonical": "University of California Merced",
+   "aliases": [
+    "ucm",
+    "uc merced"
+   ],
+   "search": [
+    "UC Merced",
+    "Merced"
+   ]
+  },
+  {
+   "canonical": "University of California Riverside",
+   "aliases": [
+    "ucr",
+    "uc riverside"
+   ],
+   "search": [
+    "UC Riverside",
+    "Riverside"
+   ]
+  },
+  {
+   "canonical": "University of California San Diego",
+   "aliases": [
+    "ucsd",
+    "uc san diego"
+   ],
+   "search": [
+    "UC San Diego",
+    "San Diego"
+   ]
+  },
+  {
+   "canonical": "University of California Santa Barbara",
+   "aliases": [
+    "ucsb",
+    "uc santa barbara"
+   ],
+   "search": [
+    "UC Santa Barbara",
+    "Santa Barbara"
+   ]
+  },
+  {
+   "canonical": "University of California Santa Cruz",
+   "aliases": [
+    "ucsc",
+    "uc santa cruz"
+   ],
+   "search": [
+    "UC Santa Cruz",
+    "Santa Cruz"
+   ]
+  },
+  {
+   "canonical": "University of California San Francisco",
+   "aliases": [
+    "ucsf"
+   ],
+   "search": [
+    "UC San Francisco",
+    "San Francisco"
+   ]
+  },
+  {
+   "canonical": "California State University Long Beach",
+   "aliases": [
+    "csulb",
+    "cal state long beach"
+   ],
+   "search": [
+    "Cal State Long Beach",
+    "Long Beach"
+   ]
+  },
+  {
+   "canonical": "California State University Fullerton",
+   "aliases": [
+    "csuf",
+    "cal state fullerton"
+   ],
+   "search": [
+    "Cal State Fullerton",
+    "Fullerton"
+   ]
+  },
+  {
+   "canonical": "California State University Northridge",
+   "aliases": [
+    "csun",
+    "cal state northridge"
+   ],
+   "search": [
+    "Cal State Northridge",
+    "Northridge"
+   ]
+  },
+  {
+   "canonical": "California State University Los Angeles",
+   "aliases": [
+    "csula",
+    "cal state la"
+   ],
+   "search": [
+    "Cal State Los Angeles",
+    "Los Angeles"
+   ]
+  },
+  {
+   "canonical": "California State University Sacramento",
+   "aliases": [
+    "csus",
+    "sac state"
+   ],
+   "search": [
+    "Cal State Sacramento",
+    "Sacramento"
+   ]
+  },
+  {
+   "canonical": "California State University San Bernardino",
+   "aliases": [
+    "csusb"
+   ],
+   "search": [
+    "Cal State San Bernardino",
+    "San Bernardino"
+   ]
+  },
+  {
+   "canonical": "California State University East Bay",
+   "aliases": [
+    "csueb"
+   ],
+   "search": [
+    "Cal State East Bay",
+    "East Bay"
+   ]
+  },
+  {
+   "canonical": "California State University Fresno",
+   "aliases": [
+    "fresno state"
+   ],
+   "search": [
+    "Cal State Fresno",
+    "Fresno"
+   ]
+  },
+  {
+   "canonical": "California State University Chico",
+   "aliases": [
+    "chico state"
+   ],
+   "search": [
+    "Cal State Chico",
+    "Chico"
+   ]
+  },
+  {
+   "canonical": "California State University Dominguez Hills",
+   "aliases": [
+    "csudh"
+   ],
+   "search": [
+    "Cal State Dominguez Hills",
+    "Dominguez Hills"
+   ]
+  },
+  {
+   "canonical": "California State University Monterey Bay",
+   "aliases": [
+    "csumb"
+   ],
+   "search": [
+    "Cal State Monterey Bay",
+    "Monterey Bay"
+   ]
+  },
+  {
+   "canonical": "California State University San Marcos",
+   "aliases": [
+    "csusm"
+   ],
+   "search": [
+    "Cal State San Marcos",
+    "San Marcos"
+   ]
+  },
+  {
+   "canonical": "California State University Stanislaus",
+   "aliases": [
+    "stan state"
+   ],
+   "search": [
+    "Cal State Stanislaus",
+    "Stanislaus"
+   ]
+  },
+  {
+   "canonical": "California State University Bakersfield",
+   "aliases": [
+    "csub"
+   ],
+   "search": [
+    "Cal State Bakersfield",
+    "Bakersfield"
+   ]
+  },
+  {
+   "canonical": "San Diego State University",
+   "aliases": [
+    "sdsu"
+   ],
+   "search": [
+    "San Diego State"
+   ]
+  },
+  {
+   "canonical": "San Jose State University",
+   "aliases": [
+    "sjsu"
+   ],
+   "search": [
+    "San Jose State"
+   ]
+  },
+  {
+   "canonical": "San Francisco State University",
+   "aliases": [
+    "sfsu"
+   ],
+   "search": [
+    "San Francisco State"
+   ]
+  },
+  {
+   "canonical": "California Polytechnic State University San Luis Obispo",
+   "aliases": [
+    "cal poly",
+    "cal poly slo"
+   ],
+   "search": [
+    "Cal Poly",
+    "San Luis Obispo"
+   ]
+  },
+  {
+   "canonical": "California State Polytechnic University Pomona",
+   "aliases": [
+    "cal poly pomona"
+   ],
+   "search": [
+    "Cal Poly Pomona",
+    "Pomona"
+   ]
+  },
+  {
+   "canonical": "University of Southern California",
+   "aliases": [
+    "usc"
+   ],
+   "search": [
+    "Southern California"
+   ]
+  },
+  {
+   "canonical": "Massachusetts Institute of Technology",
+   "aliases": [
+    "mit"
+   ],
+   "search": [
+    "Massachusetts Institute"
+   ]
+  },
+  {
+   "canonical": "California Institute of Technology",
+   "aliases": [
+    "caltech"
+   ],
+   "search": [
+    "Caltech"
+   ]
+  },
+  {
+   "canonical": "Georgia Institute of Technology",
+   "aliases": [
+    "georgia tech",
+    "gatech"
+   ],
+   "search": [
+    "Georgia Tech"
+   ]
+  },
+  {
+   "canonical": "Carnegie Mellon University",
+   "aliases": [
+    "cmu"
+   ],
+   "search": [
+    "Carnegie Mellon"
+   ]
+  },
+  {
+   "canonical": "University of Michigan",
+   "aliases": [
+    "umich"
+   ],
+   "search": [
+    "Michigan"
+   ]
+  },
+  {
+   "canonical": "University of Texas at Austin",
+   "aliases": [
+    "ut austin"
+   ],
+   "search": [
+    "UT Austin",
+    "Austin"
+   ]
+  },
+  {
+   "canonical": "University of Illinois Urbana-Champaign",
+   "aliases": [
+    "uiuc"
+   ],
+   "search": [
+    "Urbana"
+   ]
+  },
+  {
+   "canonical": "University of Washington",
+   "aliases": [],
+   "search": [
+    "Washington"
+   ]
+  },
+  {
+   "canonical": "University of Wisconsin Madison",
+   "aliases": [
+    "uw madison"
+   ],
+   "search": [
+    "Madison"
+   ]
+  },
+  {
+   "canonical": "University of Pennsylvania",
+   "aliases": [
+    "upenn"
+   ],
+   "search": [
+    "Pennsylvania"
+   ]
+  },
+  {
+   "canonical": "Pennsylvania State University",
+   "aliases": [
+    "penn state",
+    "psu"
+   ],
+   "search": [
+    "Penn State"
+   ]
+  },
+  {
+   "canonical": "New York University",
+   "aliases": [
+    "nyu"
+   ],
+   "search": [
+    "New York University"
+   ]
+  },
+  {
+   "canonical": "Columbia University",
+   "aliases": [],
+   "search": [
+    "Columbia"
+   ]
+  },
+  {
+   "canonical": "Cornell University",
+   "aliases": [
+    "cornell"
+   ],
+   "search": [
+    "Cornell"
+   ]
+  },
+  {
+   "canonical": "Harvard University",
+   "aliases": [
+    "harvard"
+   ],
+   "search": [
+    "Harvard"
+   ]
+  },
+  {
+   "canonical": "Yale University",
+   "aliases": [
+    "yale"
+   ],
+   "search": [
+    "Yale"
+   ]
+  },
+  {
+   "canonical": "Princeton University",
+   "aliases": [
+    "princeton"
+   ],
+   "search": [
+    "Princeton"
+   ]
+  },
+  {
+   "canonical": "Brown University",
+   "aliases": [],
+   "search": [
+    "Brown"
+   ]
+  },
+  {
+   "canonical": "Dartmouth College",
+   "aliases": [
+    "dartmouth"
+   ],
+   "search": [
+    "Dartmouth"
+   ]
+  },
+  {
+   "canonical": "Stanford University",
+   "aliases": [
+    "stanford"
+   ],
+   "search": [
+    "Stanford"
+   ]
+  },
+  {
+   "canonical": "Duke University",
+   "aliases": [],
+   "search": [
+    "Duke"
+   ]
+  },
+  {
+   "canonical": "Northwestern University",
+   "aliases": [
+    "northwestern"
+   ],
+   "search": [
+    "Northwestern"
+   ]
+  },
+  {
+   "canonical": "University of Chicago",
+   "aliases": [
+    "uchicago"
+   ],
+   "search": [
+    "Chicago"
+   ]
+  },
+  {
+   "canonical": "Rice University",
+   "aliases": [],
+   "search": [
+    "Rice"
+   ]
+  },
+  {
+   "canonical": "Purdue University",
+   "aliases": [
+    "purdue"
+   ],
+   "search": [
+    "Purdue"
+   ]
+  },
+  {
+   "canonical": "University of Maryland College Park",
+   "aliases": [
+    "umcp"
+   ],
+   "search": [
+    "Maryland"
+   ]
+  },
+  {
+   "canonical": "University of Virginia",
+   "aliases": [
+    "uva"
+   ],
+   "search": [
+    "Virginia"
+   ]
+  },
+  {
+   "canonical": "Virginia Polytechnic Institute and State University",
+   "aliases": [
+    "virginia tech"
+   ],
+   "search": [
+    "Virginia Tech"
+   ]
+  },
+  {
+   "canonical": "University of North Carolina at Chapel Hill",
+   "aliases": [
+    "unc",
+    "unc chapel hill"
+   ],
+   "search": [
+    "Chapel Hill"
+   ]
+  },
+  {
+   "canonical": "University of Florida",
+   "aliases": [],
+   "search": [
+    "Florida"
+   ]
+  },
+  {
+   "canonical": "Texas A&M University",
+   "aliases": [
+    "tamu",
+    "texas a&m"
+   ],
+   "search": [
+    "Texas A&M"
+   ]
+  },
+  {
+   "canonical": "Arizona State University",
+   "aliases": [
+    "asu"
+   ],
+   "search": [
+    "Arizona State"
+   ]
+  },
+  {
+   "canonical": "Ohio State University",
+   "aliases": [
+    "the ohio state university"
+   ],
+   "search": [
+    "Ohio State"
+   ]
+  },
+  {
+   "canonical": "University of Minnesota Twin Cities",
+   "aliases": [
+    "umn"
+   ],
+   "search": [
+    "Minnesota"
+   ]
+  },
+  {
+   "canonical": "Boston University",
+   "aliases": [],
+   "search": [
+    "Boston University"
+   ]
+  },
+  {
+   "canonical": "Northeastern University",
+   "aliases": [
+    "neu"
+   ],
+   "search": [
+    "Northeastern"
+   ]
+  },
+  {
+   "canonical": "Rutgers University New Brunswick",
+   "aliases": [
+    "rutgers"
+   ],
+   "search": [
+    "Rutgers"
+   ]
+  },
+  {
+   "canonical": "University at Buffalo",
+   "aliases": [
+    "suny buffalo"
+   ],
+   "search": [
+    "Buffalo"
+   ]
+  },
+  {
+   "canonical": "Stony Brook University",
+   "aliases": [
+    "sbu",
+    "suny stony brook"
+   ],
+   "search": [
+    "Stony Brook"
+   ]
+  },
+  {
+   "canonical": "University of Massachusetts Amherst",
+   "aliases": [
+    "umass",
+    "umass amherst"
+   ],
+   "search": [
+    "Amherst"
+   ]
+  },
+  {
+   "canonical": "Johns Hopkins University",
+   "aliases": [
+    "jhu"
+   ],
+   "search": [
+    "Johns Hopkins"
+   ]
+  },
+  {
+   "canonical": "Georgetown University",
+   "aliases": [
+    "georgetown"
+   ],
+   "search": [
+    "Georgetown"
+   ]
+  },
+  {
+   "canonical": "Vanderbilt University",
+   "aliases": [
+    "vanderbilt"
+   ],
+   "search": [
+    "Vanderbilt"
+   ]
+  },
+  {
+   "canonical": "Emory University",
+   "aliases": [
+    "emory"
+   ],
+   "search": [
+    "Emory"
+   ]
+  },
+  {
+   "canonical": "University of Notre Dame",
+   "aliases": [
+    "notre dame"
+   ],
+   "search": [
+    "Notre Dame"
+   ]
+  },
+  {
+   "canonical": "Washington University in St. Louis",
+   "aliases": [
+    "washu",
+    "wustl"
+   ],
+   "search": [
+    "St. Louis"
+   ]
+  },
+  {
+   "canonical": "Indiana University Bloomington",
+   "aliases": [],
+   "search": [
+    "Indiana"
+   ]
+  },
+  {
+   "canonical": "Babson College",
+   "aliases": [
+    "babson"
+   ],
+   "search": [
+    "Babson"
+   ]
+  },
+  {
+   "canonical": "Bentley University",
+   "aliases": [
+    "bentley"
+   ],
+   "search": [
+    "Bentley"
+   ]
+  },
+  {
+   "canonical": "Baruch College",
+   "aliases": [
+    "baruch",
+    "cuny baruch"
+   ],
+   "search": [
+    "Baruch"
+   ]
+  }
+ ]
+}

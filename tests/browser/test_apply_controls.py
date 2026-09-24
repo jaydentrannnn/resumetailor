@@ -37,9 +37,9 @@ def test_reacquires_field_after_sibling_is_inserted():
             observed = await scanner.scan(page)
             field = next(item for item in observed.fields if item.label == "Preferred First Name")
             await page.evaluate("document.querySelector('form').insertAdjacentHTML('afterbegin', '<input aria-label=Other>')")
-            result = await controls.apply_value(page, observed, field, "Jayden")
+            result = await controls.apply_value(page, observed, field, "Alex")
             assert result.state == "verified_filled"
-            assert await page.get_by_label("Preferred First Name").input_value() == "Jayden"
+            assert await page.get_by_label("Preferred First Name").input_value() == "Alex"
             assert await page.get_by_label("Other").input_value() == ""
         finally:
             await browser.close()
