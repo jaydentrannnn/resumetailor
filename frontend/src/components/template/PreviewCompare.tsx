@@ -135,7 +135,12 @@ export function PreviewCompare({ sourceSha256, profile }: Props) {
             >
               <p className="p-3 text-xs text-ink-muted">
                 PDF preview unavailable.{" "}
-                <a href={sourceUrl} target="_blank" rel="noreferrer" className="text-accent underline">
+                <a
+                  href={sourceUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-accent underline"
+                >
                   Open in new tab
                 </a>
                 .
@@ -173,7 +178,12 @@ export function PreviewCompare({ sourceSha256, profile }: Props) {
             >
               <p className="p-3 text-xs text-ink-muted">
                 PDF preview unavailable.{" "}
-                <a href={draftUrl} target="_blank" rel="noreferrer" className="text-accent underline">
+                <a
+                  href={draftUrl}
+                  target="_blank"
+                  rel="noreferrer"
+                  className="text-accent underline"
+                >
                   Open in new tab
                 </a>
                 .

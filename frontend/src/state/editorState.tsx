@@ -23,9 +23,7 @@ import {
 
 type EditorStateValue = {
   resume: MasterResume | null;
-  setResume: (
-    resume: MasterResume | ((prev: MasterResume) => MasterResume),
-  ) => void;
+  setResume: (resume: MasterResume | ((prev: MasterResume) => MasterResume)) => void;
   config: AppConfig | null;
   errors: string[];
   message: string | null;
@@ -63,19 +61,16 @@ export function EditorProvider({ children }: { children: ReactNode }) {
   // unsaved edits rather than "a resume is loaded at all".
   const [savedSnapshot, setSavedSnapshot] = useState<string | null>(null);
 
-  const setResume = useCallback(
-    (next: MasterResume | ((prev: MasterResume) => MasterResume)) => {
-      /**
-       * Support functional updates so chained edits in one event (e.g. bullet
-       * tags + vocabulary) do not clobber each other with a stale snapshot.
-       */
-      setResumeState((prev) => {
-        if (!prev) return prev;
-        return typeof next === "function" ? next(prev) : next;
-      });
-    },
-    [],
-  );
+  const setResume = useCallback((next: MasterResume | ((prev: MasterResume) => MasterResume)) => {
+    /**
+     * Support functional updates so chained edits in one event (e.g. bullet
+     * tags + vocabulary) do not clobber each other with a stale snapshot.
+     */
+    setResumeState((prev) => {
+      if (!prev) return prev;
+      return typeof next === "function" ? next(prev) : next;
+    });
+  }, []);
 
   useEffect(() => {
     if (loaded) return;
@@ -125,9 +120,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
       );
       setErrors(result.errors);
       if (result.ok && result.summary) {
-        setMessage(
-          `Valid — ${result.summary.bullets} bullets, ${result.summary.tags} tags`,
-        );
+        setMessage(`Valid — ${result.summary.bullets} bullets, ${result.summary.tags} tags`);
       }
     } catch (err) {
       setErrors([err instanceof Error ? err.message : String(err)]);
@@ -222,14 +215,23 @@ export function EditorProvider({ children }: { children: ReactNode }) {
       loadDraft,
       syncFromDisk,
     }),
-    [resume, setResume, config, errors, message, busy, dirty, discard, validate, save, loadDraft, syncFromDisk],
+    [
+      resume,
+      setResume,
+      config,
+      errors,
+      message,
+      busy,
+      dirty,
+      discard,
+      validate,
+      save,
+      loadDraft,
+      syncFromDisk,
+    ],
   );
 
-  return (
-    <EditorStateContext.Provider value={value}>
-      {children}
-    </EditorStateContext.Provider>
-  );
+  return <EditorStateContext.Provider value={value}>{children}</EditorStateContext.Provider>;
 }
 
 /**

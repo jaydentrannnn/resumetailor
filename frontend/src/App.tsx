@@ -1,4 +1,13 @@
-import { createBrowserRouter, Navigate, NavLink, Route, RouterProvider, Routes, useBlocker, useLocation } from "react-router-dom";
+import {
+  createBrowserRouter,
+  Navigate,
+  NavLink,
+  Route,
+  RouterProvider,
+  Routes,
+  useBlocker,
+  useLocation,
+} from "react-router-dom";
 import { useEffect, useRef } from "react";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { SettingsMenu } from "./components/SettingsMenu";
@@ -22,9 +31,7 @@ import { useConfirm } from "./state/confirmState";
 
 const navLinkClassName = ({ isActive }: { isActive: boolean }) =>
   `whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-colors duration-[var(--dur-short)] ease-out ${
-    isActive
-      ? "bg-accent text-on-accent"
-      : "text-ink-muted hover:bg-accent-soft hover:text-ink"
+    isActive ? "bg-accent text-on-accent" : "text-ink-muted hover:bg-accent-soft hover:text-ink"
   }`;
 
 /**
@@ -44,11 +51,11 @@ function AppFrame() {
   return (
     <ErrorBoundary>
       <ThemeProvider>
-          <WorkspaceProvider>
-            <ConfirmProvider>
-              <WorkspaceScope />
-            </ConfirmProvider>
-          </WorkspaceProvider>
+        <WorkspaceProvider>
+          <ConfirmProvider>
+            <WorkspaceScope />
+          </ConfirmProvider>
+        </WorkspaceProvider>
       </ThemeProvider>
     </ErrorBoundary>
   );
@@ -87,7 +94,9 @@ function WorkspaceScope() {
       <EditorProvider key={activeId}>
         <TemplateProvider key={activeId}>
           <LibraryProvider key={activeId}>
-            <ApplicantProfileProvider key={activeId}><Shell /></ApplicantProfileProvider>
+            <ApplicantProfileProvider key={activeId}>
+              <Shell />
+            </ApplicantProfileProvider>
           </LibraryProvider>
         </TemplateProvider>
       </EditorProvider>
@@ -169,20 +178,47 @@ function NavigationGuard() {
   const { confirm } = useConfirm();
   const location = useLocation();
   const prompted = useRef(false);
-  const blocker = useBlocker(({ nextLocation }) => location.pathname.startsWith("/profile/") && !nextLocation.pathname.startsWith("/profile/") && (resumeDirty || applicant.dirty));
+  const blocker = useBlocker(
+    ({ nextLocation }) =>
+      location.pathname.startsWith("/profile/") &&
+      !nextLocation.pathname.startsWith("/profile/") &&
+      (resumeDirty || applicant.dirty),
+  );
   useEffect(() => {
-    if (!resumeDirty && !applicant.dirty && !applicant.saving && settingsSaveState === "saved" && overridesSaveState === "saved") return;
-    const warn = (event: BeforeUnloadEvent) => { event.preventDefault(); event.returnValue = ""; };
+    if (
+      !resumeDirty &&
+      !applicant.dirty &&
+      !applicant.saving &&
+      settingsSaveState === "saved" &&
+      overridesSaveState === "saved"
+    )
+      return;
+    const warn = (event: BeforeUnloadEvent) => {
+      event.preventDefault();
+      event.returnValue = "";
+    };
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
   }, [resumeDirty, applicant.dirty, applicant.saving, settingsSaveState, overridesSaveState]);
   useEffect(() => {
-    if (blocker.state !== "blocked") { prompted.current = false; return; }
+    if (blocker.state !== "blocked") {
+      prompted.current = false;
+      return;
+    }
     if (prompted.current) return;
     prompted.current = true;
-    void confirm({ title: "Unsaved profile edits", message: "Leaving Profile will discard unsaved resume and application changes.", confirmLabel: "Discard changes", cancelLabel: "Stay", tone: "danger" }).then(discard => {
-      if (discard) { discardResume(); applicant.discard(); blocker.proceed(); }
-      else blocker.reset();
+    void confirm({
+      title: "Unsaved profile edits",
+      message: "Leaving Profile will discard unsaved resume and application changes.",
+      confirmLabel: "Discard changes",
+      cancelLabel: "Stay",
+      tone: "danger",
+    }).then((discard) => {
+      if (discard) {
+        discardResume();
+        applicant.discard();
+        blocker.proceed();
+      } else blocker.reset();
     });
   }, [blocker, confirm, discardResume, applicant]);
   return null;

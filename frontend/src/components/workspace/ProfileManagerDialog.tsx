@@ -10,9 +10,14 @@ import { useWorkspaceState } from "../../state/workspaceState";
  * with inline rename forms and a confirm delete guard) so the two lists of
  * saved things in this app feel the same.
  */
-export function ProfileManagerDialog({ onClose, onActivate }: { onClose: () => void; onActivate: (id: string) => Promise<void> }) {
-  const { workspaces, activeId, switching, create, rename, remove } =
-    useWorkspaceState();
+export function ProfileManagerDialog({
+  onClose,
+  onActivate,
+}: {
+  onClose: () => void;
+  onActivate: (id: string) => Promise<void>;
+}) {
+  const { workspaces, activeId, switching, create, rename, remove } = useWorkspaceState();
   const { confirm } = useConfirm();
   const [newLabel, setNewLabel] = useState("");
   const [duplicate, setDuplicate] = useState(true);
@@ -89,8 +94,8 @@ export function ProfileManagerDialog({ onClose, onActivate }: { onClose: () => v
   return (
     <Modal title="Profiles" onClose={onClose}>
       <p className="mt-1 text-sm text-ink-muted">
-        Each profile has its own master resume, template, and settings — switching swaps all
-        of it at once.
+        Each profile has its own master resume, template, and settings — switching swaps all of it
+        at once.
       </p>
 
       <ul className="mt-4 max-h-64 divide-y divide-line/80 overflow-y-auto rounded-lg border border-line">

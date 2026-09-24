@@ -44,7 +44,8 @@ export function ProfileSwitcher({ stacked = false }: { stacked?: boolean }) {
       while (!saved) {
         const decision = await choice({
           title: "Tailor settings could not be saved",
-          message: "Retry saving before switching profiles, stay here, or discard these settings changes.",
+          message:
+            "Retry saving before switching profiles, stay here, or discard these settings changes.",
           options: [
             { id: "retry", label: "Retry save" },
             { id: "discard", label: "Discard changes", tone: "danger" },
@@ -52,8 +53,10 @@ export function ProfileSwitcher({ stacked = false }: { stacked?: boolean }) {
           cancelLabel: "Stay",
         });
         if (decision === "retry") saved = await flushSettings();
-        else if (decision === "discard") { await discardSettings(); break; }
-        else return;
+        else if (decision === "discard") {
+          await discardSettings();
+          break;
+        } else return;
       }
     }
     if (overridesSaveState !== "saved") {
@@ -61,7 +64,8 @@ export function ProfileSwitcher({ stacked = false }: { stacked?: boolean }) {
       while (!saved) {
         const decision = await choice({
           title: "Vocabulary additions could not be saved",
-          message: "Retry saving before switching profiles, stay here, or discard these vocabulary changes.",
+          message:
+            "Retry saving before switching profiles, stay here, or discard these vocabulary changes.",
           options: [
             { id: "retry", label: "Retry save" },
             { id: "discard", label: "Discard changes", tone: "danger" },
@@ -69,11 +73,17 @@ export function ProfileSwitcher({ stacked = false }: { stacked?: boolean }) {
           cancelLabel: "Stay",
         });
         if (decision === "retry") saved = await flushOverrides();
-        else if (decision === "discard") { await discardOverrides(); break; }
-        else return;
+        else if (decision === "discard") {
+          await discardOverrides();
+          break;
+        } else return;
       }
     }
-    try { await activate(id); } catch { /* workspace state displays the error */ }
+    try {
+      await activate(id);
+    } catch {
+      /* workspace state displays the error */
+    }
   }
 
   return (
@@ -107,7 +117,15 @@ export function ProfileSwitcher({ stacked = false }: { stacked?: boolean }) {
       {error ? <span className="text-xs text-danger">{error.split("\n")[0]}</span> : null}
       {/* Portaled: a fixed overlay inside the blurred header would be laid out against
           the header box (backdrop-filter makes it the containing block), not the viewport. */}
-      {managerOpen ? createPortal(<ProfileManagerDialog onClose={() => setManagerOpen(false)} onActivate={handleSwitch} />, document.body) : null}
+      {managerOpen
+        ? createPortal(
+            <ProfileManagerDialog
+              onClose={() => setManagerOpen(false)}
+              onActivate={handleSwitch}
+            />,
+            document.body,
+          )
+        : null}
     </div>
   );
 }

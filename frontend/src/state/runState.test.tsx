@@ -83,19 +83,25 @@ import { RunProvider, useRunState } from "./runState";
 
 function SettingsProbe() {
   const { settings, setSettings, settingsLoaded, settingsSaveState, flushSettings } = useRunState();
-  return <div>
-    <span data-testid="loaded">{String(settingsLoaded)}</span>
-    <span data-testid="save-state">{settingsSaveState}</span>
-    <button onClick={() => setSettings({ ...settings, pages: 2 })}>change settings</button>
-    <button onClick={() => void flushSettings()}>flush settings</button>
-  </div>;
+  return (
+    <div>
+      <span data-testid="loaded">{String(settingsLoaded)}</span>
+      <span data-testid="save-state">{settingsSaveState}</span>
+      <button onClick={() => setSettings({ ...settings, pages: 2 })}>change settings</button>
+      <button onClick={() => void flushSettings()}>flush settings</button>
+    </div>
+  );
 }
 
 describe("RunProvider: settings persistence", () => {
   it("keeps a failed save visible and retries the current draft before switching", async () => {
     saveSettings.mockReset();
     saveSettings.mockRejectedValueOnce(new Error("disk unavailable")).mockResolvedValue(undefined);
-    render(<RunProvider><SettingsProbe /></RunProvider>);
+    render(
+      <RunProvider>
+        <SettingsProbe />
+      </RunProvider>,
+    );
     await waitFor(() => expect(screen.getByTestId("loaded").textContent).toBe("true"));
     fireEvent.click(screen.getByText("change settings"));
     fireEvent.click(screen.getByText("flush settings"));
@@ -171,9 +177,7 @@ describe("RunProvider: starting a second run", () => {
     fireEvent.click(screen.getByText("set-jd"));
     fireEvent.click(screen.getByText("start"));
     await waitFor(() => expect(screen.getByTestId("jobId").textContent).toBe("job-A"));
-    await waitFor(() =>
-      expect(FakeEventSource.opened).toContain("/api/jobs/job-A/events"),
-    );
+    await waitFor(() => expect(FakeEventSource.opened).toContain("/api/jobs/job-A/events"));
 
     await finishRun("job-A");
 
@@ -184,13 +188,9 @@ describe("RunProvider: starting a second run", () => {
     await waitFor(() => expect(screen.getByTestId("jobId").textContent).toBe("job-B"));
     expect(createJob).toHaveBeenCalledTimes(1 + 1);
     expect(screen.getByTestId("busy").textContent).toBe("true");
-    await waitFor(() =>
-      expect(FakeEventSource.opened).toContain("/api/jobs/job-B/events"),
-    );
+    await waitFor(() => expect(FakeEventSource.opened).toContain("/api/jobs/job-B/events"));
     // The finished job is never re-subscribed to.
-    expect(
-      FakeEventSource.opened.filter((u) => u === "/api/jobs/job-A/events"),
-    ).toHaveLength(1);
+    expect(FakeEventSource.opened.filter((u) => u === "/api/jobs/job-A/events")).toHaveLength(1);
   });
 });
 

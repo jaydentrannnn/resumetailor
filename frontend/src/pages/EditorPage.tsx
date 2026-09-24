@@ -68,13 +68,8 @@ export function EditorPage({ showContact = true }: { showContact?: boolean }) {
     save: onSave,
   } = useEditorState();
 
-  const tagVocab = new Set([
-    ...(resume?.tag_vocabulary ?? []),
-    ...(config?.tag_vocabulary ?? []),
-  ]);
-  const vocabList = [...tagVocab].sort((a, b) =>
-    a.toLowerCase().localeCompare(b.toLowerCase()),
-  );
+  const tagVocab = new Set([...(resume?.tag_vocabulary ?? []), ...(config?.tag_vocabulary ?? [])]);
+  const vocabList = [...tagVocab].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
 
   const takenBulletIds = resume ? collectBulletIds(resume) : new Set<string>();
   const takenEntryIds = resume ? collectEntryIds(resume) : new Set<string>();
@@ -166,170 +161,198 @@ export function EditorPage({ showContact = true }: { showContact?: boolean }) {
   return (
     <>
       <div className="space-y-6">
-      {/* bg-panel (not bg-paper/85) so the sticky bar reads as a toolbar sitting
+        {/* bg-panel (not bg-paper/85) so the sticky bar reads as a toolbar sitting
           above the page, not a translucent cream-on-cream band that only shows
           up as a faint seam. shadow-sm carries the same "this is elevated"
           signal the rest of the app's panels use. */}
-      <div className="sticky top-0 z-20 -mx-6 border-b border-line bg-panel px-6 py-3 shadow-sm">
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <div>
-            <h1 className="font-display text-2xl font-semibold">Master resume</h1>
-            <p className="text-sm text-ink-muted">
-              Every fact a tailored resume can use lives here. Tags double as the fabrication
-              guard&apos;s whitelist.
+        <div className="sticky top-0 z-20 -mx-6 border-b border-line bg-panel px-6 py-3 shadow-sm">
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <div>
+              <h1 className="font-display text-2xl font-semibold">Master resume</h1>
+              <p className="text-sm text-ink-muted">
+                Every fact a tailored resume can use lives here. Tags double as the fabrication
+                guard&apos;s whitelist.
+              </p>
+            </div>
+            <div className="flex items-center gap-2">
+              {dirty && (
+                <span className="rounded-full bg-warn-soft px-2.5 py-1 text-xs font-medium text-warn">
+                  Unsaved changes
+                </span>
+              )}
+              <button
+                type="button"
+                onClick={onValidate}
+                disabled={busy}
+                className="rounded-md border border-line px-3 py-2 text-sm font-medium hover:border-accent disabled:opacity-50"
+              >
+                Validate
+              </button>
+              <button
+                type="button"
+                onClick={onSave}
+                disabled={busy}
+                className="rounded-md bg-accent px-3 py-2 text-sm font-medium text-on-accent disabled:opacity-50"
+              >
+                Save
+              </button>
+            </div>
+          </div>
+          {message && (
+            <p
+              role="status"
+              aria-live="polite"
+              className="mt-2 max-h-32 overflow-y-auto rounded-md bg-accent-soft px-3 py-2 text-sm text-accent"
+            >
+              {message}
             </p>
-          </div>
-          <div className="flex items-center gap-2">
-            {dirty && (
-              <span className="rounded-full bg-warn-soft px-2.5 py-1 text-xs font-medium text-warn">
-                Unsaved changes
-              </span>
-            )}
-            <button
-              type="button"
-              onClick={onValidate}
-              disabled={busy}
-              className="rounded-md border border-line px-3 py-2 text-sm font-medium hover:border-accent disabled:opacity-50"
+          )}
+          {errors.length > 0 && (
+            <ul
+              role="alert"
+              className="mt-2 max-h-32 overflow-y-auto rounded-md bg-danger-soft px-3 py-2 text-sm text-danger"
             >
-              Validate
-            </button>
-            <button
-              type="button"
-              onClick={onSave}
-              disabled={busy}
-              className="rounded-md bg-accent px-3 py-2 text-sm font-medium text-on-accent disabled:opacity-50"
-            >
-              Save
-            </button>
-          </div>
+              {errors.map((e) => (
+                <li key={e}>{e}</li>
+              ))}
+            </ul>
+          )}
         </div>
-        {message && (
-          <p
-            role="status"
-            aria-live="polite"
-            className="mt-2 max-h-32 overflow-y-auto rounded-md bg-accent-soft px-3 py-2 text-sm text-accent"
-          >
-            {message}
-          </p>
+
+        <details className="rounded-lg border border-line bg-panel p-4">
+          <summary className="cursor-pointer text-sm font-medium text-accent">
+            Import resume content
+          </summary>
+          <div className="mt-3">
+            <ImportResumePanel />
+          </div>
+        </details>
+
+        <TagVocabularyPanel resume={resume} onChange={setResume} />
+
+        {showContact && (
+          <section className="rounded-xl border border-line bg-panel p-5 shadow-sm">
+            <h2 className="font-display text-lg font-semibold">Contact</h2>
+            <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
+              <TextField
+                label="Name"
+                value={resume.contact.name}
+                onChange={(v) => setResume({ ...resume, contact: { ...resume.contact, name: v } })}
+              />
+              <TextField
+                label="Email"
+                value={resume.contact.email}
+                onChange={(v) => setResume({ ...resume, contact: { ...resume.contact, email: v } })}
+              />
+              <TextField
+                label="Phone"
+                value={resume.contact.phone ?? ""}
+                onChange={(v) => setResume({ ...resume, contact: { ...resume.contact, phone: v } })}
+              />
+              <TextField
+                label="Location"
+                value={resume.contact.location ?? ""}
+                onChange={(v) =>
+                  setResume({ ...resume, contact: { ...resume.contact, location: v } })
+                }
+              />
+              <TextField
+                label="LinkedIn URL"
+                value={resume.contact.linkedin ?? ""}
+                onChange={(v) =>
+                  setResume({ ...resume, contact: { ...resume.contact, linkedin: v } })
+                }
+              />
+              <TextField
+                label="GitHub URL"
+                value={resume.contact.github ?? ""}
+                onChange={(v) =>
+                  setResume({ ...resume, contact: { ...resume.contact, github: v } })
+                }
+              />
+            </div>
+            {(resume.contact.linkedin ?? "").trim() &&
+              !looksLikeHttpUrl(resume.contact.linkedin ?? "") && (
+                <p className="mt-2 text-xs text-warn">
+                  LinkedIn URL should start with http:// or https://.
+                </p>
+              )}
+            {(resume.contact.github ?? "").trim() &&
+              !looksLikeHttpUrl(resume.contact.github ?? "") && (
+                <p className="mt-2 text-xs text-warn">
+                  GitHub URL should start with http:// or https://.
+                </p>
+              )}
+          </section>
         )}
-        {errors.length > 0 && (
-          <ul
-            role="alert"
-            className="mt-2 max-h-32 overflow-y-auto rounded-md bg-danger-soft px-3 py-2 text-sm text-danger"
-          >
-            {errors.map((e) => (
-              <li key={e}>{e}</li>
+
+        <div className="lg:grid lg:grid-cols-[11rem_minmax(0,1fr)] lg:items-start lg:gap-5">
+          <label className="mb-3 block text-sm lg:hidden">
+            Jump to section
+            <select
+              className="field mt-1"
+              defaultValue=""
+              onChange={(event) =>
+                document
+                  .getElementById(`resume-section-${event.target.value}`)
+                  ?.scrollIntoView({ behavior: "smooth", block: "start" })
+              }
+            >
+              <option value="" disabled>
+                Choose a section
+              </option>
+              {resume.sections.map((section) => (
+                <option key={section.id} value={section.id}>
+                  {section.title || SECTION_KIND_LABELS[section.kind]}
+                </option>
+              ))}
+            </select>
+          </label>
+          <nav aria-label="Resume sections" className="sticky top-4 hidden space-y-1 lg:block">
+            {resume.sections.map((section) => (
+              <a
+                key={section.id}
+                href={`#resume-section-${section.id}`}
+                className="block rounded-md px-2 py-1.5 text-sm text-ink-muted hover:bg-accent-soft hover:text-accent"
+              >
+                {section.title || SECTION_KIND_LABELS[section.kind]}
+              </a>
             ))}
-          </ul>
-        )}
-      </div>
-
-      <details className="rounded-lg border border-line bg-panel p-4"><summary className="cursor-pointer text-sm font-medium text-accent">Import resume content</summary><div className="mt-3"><ImportResumePanel /></div></details>
-
-      <TagVocabularyPanel resume={resume} onChange={setResume} />
-
-      {showContact && <section className="rounded-xl border border-line bg-panel p-5 shadow-sm">
-        <h2 className="font-display text-lg font-semibold">Contact</h2>
-        <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-          <TextField
-            label="Name"
-            value={resume.contact.name}
-            onChange={(v) =>
-              setResume({ ...resume, contact: { ...resume.contact, name: v } })
-            }
-          />
-          <TextField
-            label="Email"
-            value={resume.contact.email}
-            onChange={(v) =>
-              setResume({ ...resume, contact: { ...resume.contact, email: v } })
-            }
-          />
-          <TextField
-            label="Phone"
-            value={resume.contact.phone ?? ""}
-            onChange={(v) =>
-              setResume({ ...resume, contact: { ...resume.contact, phone: v } })
-            }
-          />
-          <TextField
-            label="Location"
-            value={resume.contact.location ?? ""}
-            onChange={(v) =>
-              setResume({ ...resume, contact: { ...resume.contact, location: v } })
-            }
-          />
-          <TextField
-            label="LinkedIn URL"
-            value={resume.contact.linkedin ?? ""}
-            onChange={(v) =>
-              setResume({ ...resume, contact: { ...resume.contact, linkedin: v } })
-            }
-          />
-          <TextField
-            label="GitHub URL"
-            value={resume.contact.github ?? ""}
-            onChange={(v) =>
-              setResume({ ...resume, contact: { ...resume.contact, github: v } })
-            }
-          />
+          </nav>
+          <div className="space-y-5">
+            {resume.sections.map((section, i) => (
+              <div key={section.id} id={`resume-section-${section.id}`} className="scroll-mt-4">
+                <SectionShell
+                  key={section.id}
+                  section={section}
+                  index={i}
+                  total={resume.sections.length}
+                  vocabList={vocabList}
+                  takenBulletIds={takenBulletIds}
+                  takenEntryIds={takenEntryIds}
+                  onEnsureVocab={ensureVocab}
+                  pushUndo={pushUndo}
+                  onRemove={(idx) => {
+                    const removedTitle = resume.sections[idx]?.title || "section";
+                    pushUndo(`Removed “${removedTitle}”`);
+                    setResume((prev) => ({ ...prev, sections: removeAt(prev.sections, idx) }));
+                  }}
+                  onMove={(from, to) =>
+                    setResume((prev) => ({ ...prev, sections: moveItem(prev.sections, from, to) }))
+                  }
+                  onChange={(next) => updateSection(i, next)}
+                />
+              </div>
+            ))}
+          </div>
         </div>
-        {(resume.contact.linkedin ?? "").trim() &&
-          !looksLikeHttpUrl(resume.contact.linkedin ?? "") && (
-            <p className="mt-2 text-xs text-warn">
-              LinkedIn URL should start with http:// or https://.
-            </p>
-          )}
-        {(resume.contact.github ?? "").trim() &&
-          !looksLikeHttpUrl(resume.contact.github ?? "") && (
-            <p className="mt-2 text-xs text-warn">
-              GitHub URL should start with http:// or https://.
-            </p>
-          )}
-      </section>}
 
-      <div className="lg:grid lg:grid-cols-[11rem_minmax(0,1fr)] lg:items-start lg:gap-5">
-        <label className="mb-3 block text-sm lg:hidden">Jump to section
-          <select className="field mt-1" defaultValue="" onChange={event => document.getElementById(`resume-section-${event.target.value}`)?.scrollIntoView({ behavior: "smooth", block: "start" })}>
-            <option value="" disabled>Choose a section</option>
-            {resume.sections.map(section => <option key={section.id} value={section.id}>{section.title || SECTION_KIND_LABELS[section.kind]}</option>)}
-          </select>
-        </label>
-        <nav aria-label="Resume sections" className="sticky top-4 hidden space-y-1 lg:block">
-          {resume.sections.map(section => <a key={section.id} href={`#resume-section-${section.id}`} className="block rounded-md px-2 py-1.5 text-sm text-ink-muted hover:bg-accent-soft hover:text-accent">{section.title || SECTION_KIND_LABELS[section.kind]}</a>)}
-        </nav>
-        <div className="space-y-5">
-      {resume.sections.map((section, i) => (
-        <div key={section.id} id={`resume-section-${section.id}`} className="scroll-mt-4"><SectionShell
-          key={section.id}
-          section={section}
-          index={i}
-          total={resume.sections.length}
-          vocabList={vocabList}
-          takenBulletIds={takenBulletIds}
-          takenEntryIds={takenEntryIds}
-          onEnsureVocab={ensureVocab}
-          pushUndo={pushUndo}
-          onRemove={(idx) => {
-            const removedTitle = resume.sections[idx]?.title || "section";
-            pushUndo(`Removed “${removedTitle}”`);
-            setResume((prev) => ({ ...prev, sections: removeAt(prev.sections, idx) }));
-          }}
-          onMove={(from, to) =>
-            setResume((prev) => ({ ...prev, sections: moveItem(prev.sections, from, to) }))
-          }
-          onChange={(next) => updateSection(i, next)}
-        /></div>
-      ))}
-        </div>
-      </div>
+        <p className="text-xs text-ink-muted">
+          Reordering sections changes bullet scoring order — the next Tailor run will re-score once
+          (one extra LLM call) before using the new order.
+        </p>
 
-      <p className="text-xs text-ink-muted">
-        Reordering sections changes bullet scoring order — the next Tailor run will re-score
-        once (one extra LLM call) before using the new order.
-      </p>
-
-      <AddSectionPanel onAdd={addSection} />
+        <AddSectionPanel onAdd={addSection} />
       </div>
       {toasts.length > 0 && (
         <div className="fixed inset-x-0 bottom-4 z-30 flex flex-col items-center gap-2 px-4 sm:items-end sm:pr-6">
@@ -487,8 +510,7 @@ function TagVocabularyPanel({
       const lines = inUse.map((r) => `• "${r.tag}" on ${r.used} bullet(s)`).join("\n");
       const ok = await confirm({
         title: "Remove tags from bullets?",
-        message:
-          `These tags are in use and will be stripped from every bullet that uses them:\n\n${lines}`,
+        message: `These tags are in use and will be stripped from every bullet that uses them:\n\n${lines}`,
         confirmLabel: "Remove from vocabulary and bullets",
         tone: "danger",
       });
@@ -525,8 +547,8 @@ function TagVocabularyPanel({
         </span>
       </summary>
       <p className="mt-2 text-sm text-ink-muted">
-        Shared list for bullet tags. Adding a tag on a bullet also adds it here; removing
-        an option strips it from every bullet that uses it.
+        Shared list for bullet tags. Adding a tag on a bullet also adds it here; removing an option
+        strips it from every bullet that uses it.
       </p>
       <div className="mt-3">
         <ChipListField
@@ -561,150 +583,147 @@ function EducationEntries({
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <AddButton
-          label="Add entry"
-          onClick={() => setEntries([blankEducation(), ...entries])}
-        />
+        <AddButton label="Add entry" onClick={() => setEntries([blankEducation(), ...entries])} />
       </div>
       <div className="divide-y divide-line">
-      {entries.map((edu, i) => {
-        return (
-          <div key={edu._key ?? i} className="py-4 first:pt-0 last:pb-0">
-            <div className="mb-3 flex items-start justify-between gap-2">
-              <p className="text-sm font-medium text-ink-muted">
-                {edu.school.trim() || `Entry #${i + 1}`}
-              </p>
-              <EntryControls
-                index={i}
-                total={entries.length}
-                onMove={(from, to) => setEntries(moveItem(entries, from, to))}
-                onRemove={removeEntry}
-              />
-            </div>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <TextField
-                label="School"
-                value={edu.school}
-                onChange={(v) => {
-                  const next = [...entries];
-                  next[i] = { ...edu, school: v };
-                  setEntries(next);
-                }}
-              />
-              <TextField
-                label="Location"
-                value={edu.location ?? ""}
-                onChange={(v) => {
-                  const next = [...entries];
-                  next[i] = { ...edu, location: v };
-                  setEntries(next);
-                }}
-              />
-              <TextField
-                label="Degree"
-                value={edu.degree}
-                onChange={(v) => {
-                  const next = [...entries];
-                  next[i] = { ...edu, degree: v };
-                  setEntries(next);
-                }}
-              />
-              <TextField
-                label="Dates"
-                value={edu.dates}
-                onChange={(v) => {
-                  const next = [...entries];
-                  next[i] = { ...edu, dates: v };
-                  setEntries(next);
-                }}
-              />
-              <div className="sm:col-span-2">
+        {entries.map((edu, i) => {
+          return (
+            <div key={edu._key ?? i} className="py-4 first:pt-0 last:pb-0">
+              <div className="mb-3 flex items-start justify-between gap-2">
+                <p className="text-sm font-medium text-ink-muted">
+                  {edu.school.trim() || `Entry #${i + 1}`}
+                </p>
+                <EntryControls
+                  index={i}
+                  total={entries.length}
+                  onMove={(from, to) => setEntries(moveItem(entries, from, to))}
+                  onRemove={removeEntry}
+                />
+              </div>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <TextField
-                  label="Major (field of study)"
-                  value={edu.major ?? ""}
+                  label="School"
+                  value={edu.school}
                   onChange={(v) => {
                     const next = [...entries];
-                    next[i] = { ...edu, major: v };
+                    next[i] = { ...edu, school: v };
                     setEntries(next);
                   }}
                 />
-                <p className="mt-1 text-xs text-ink-muted">
-                  Used to answer application forms; never printed on the resume.
-                </p>
-              </div>
-              <div className="sm:col-span-2">
                 <TextField
-                  label="GPA"
-                  value={edu.gpa ?? ""}
+                  label="Location"
+                  value={edu.location ?? ""}
                   onChange={(v) => {
                     const next = [...entries];
-                    next[i] = { ...edu, gpa: v };
+                    next[i] = { ...edu, location: v };
                     setEntries(next);
                   }}
                 />
-                <p className="mt-1 text-xs text-ink-muted">
-                  Whether GPA appears on the resume is set per run on the Tailor tab.
-                </p>
-              </div>
-            </div>
-            <div className="mt-3">
-              <ChipListField
-                label="Relevant coursework"
-                items={edu.coursework ?? []}
-                onChange={(coursework) => {
-                  const next = [...entries];
-                  next[i] = { ...edu, coursework };
-                  setEntries(next);
-                }}
-                placeholder="Add a course"
-              />
-            </div>
-            <div className="mt-3 space-y-2">
-              <div className="flex items-center justify-between gap-2">
-                <span className="text-sm text-ink-muted">Other detail lines</span>
-                <AddButton
-                  label="Add detail"
-                  onClick={() => {
+                <TextField
+                  label="Degree"
+                  value={edu.degree}
+                  onChange={(v) => {
                     const next = [...entries];
-                    next[i] = { ...edu, details: ["", ...(edu.details ?? [])] };
+                    next[i] = { ...edu, degree: v };
                     setEntries(next);
                   }}
                 />
-              </div>
-              {(edu.details ?? []).map((detail, di) => (
-                <div key={di} className="flex gap-2">
-                  <input
-                    type="text"
-                    value={detail}
-                    onChange={(e) => {
-                      const details = [...(edu.details ?? [])];
-                      details[di] = e.target.value;
+                <TextField
+                  label="Dates"
+                  value={edu.dates}
+                  onChange={(v) => {
+                    const next = [...entries];
+                    next[i] = { ...edu, dates: v };
+                    setEntries(next);
+                  }}
+                />
+                <div className="sm:col-span-2">
+                  <TextField
+                    label="Major (field of study)"
+                    value={edu.major ?? ""}
+                    onChange={(v) => {
                       const next = [...entries];
-                      next[i] = { ...edu, details };
+                      next[i] = { ...edu, major: v };
                       setEntries(next);
                     }}
-                    className="w-full rounded-md border border-line bg-panel px-2 py-1.5 text-sm focus:border-accent"
                   />
-                  <button
-                    type="button"
-                    title="Remove detail"
-                    aria-label="Remove detail"
-                    onClick={() => {
-                      const details = (edu.details ?? []).filter((_, j) => j !== di);
+                  <p className="mt-1 text-xs text-ink-muted">
+                    Used to answer application forms; never printed on the resume.
+                  </p>
+                </div>
+                <div className="sm:col-span-2">
+                  <TextField
+                    label="GPA"
+                    value={edu.gpa ?? ""}
+                    onChange={(v) => {
                       const next = [...entries];
-                      next[i] = { ...edu, details };
+                      next[i] = { ...edu, gpa: v };
                       setEntries(next);
                     }}
-                    className="flex min-h-6 min-w-6 shrink-0 items-center justify-center rounded border border-line text-xs text-danger hover:border-danger"
-                  >
-                    ×
-                  </button>
+                  />
+                  <p className="mt-1 text-xs text-ink-muted">
+                    Whether GPA appears on the resume is set per run on the Tailor tab.
+                  </p>
                 </div>
-              ))}
+              </div>
+              <div className="mt-3">
+                <ChipListField
+                  label="Relevant coursework"
+                  items={edu.coursework ?? []}
+                  onChange={(coursework) => {
+                    const next = [...entries];
+                    next[i] = { ...edu, coursework };
+                    setEntries(next);
+                  }}
+                  placeholder="Add a course"
+                />
+              </div>
+              <div className="mt-3 space-y-2">
+                <div className="flex items-center justify-between gap-2">
+                  <span className="text-sm text-ink-muted">Other detail lines</span>
+                  <AddButton
+                    label="Add detail"
+                    onClick={() => {
+                      const next = [...entries];
+                      next[i] = { ...edu, details: ["", ...(edu.details ?? [])] };
+                      setEntries(next);
+                    }}
+                  />
+                </div>
+                {(edu.details ?? []).map((detail, di) => (
+                  <div key={di} className="flex gap-2">
+                    <input
+                      type="text"
+                      value={detail}
+                      onChange={(e) => {
+                        const details = [...(edu.details ?? [])];
+                        details[di] = e.target.value;
+                        const next = [...entries];
+                        next[i] = { ...edu, details };
+                        setEntries(next);
+                      }}
+                      className="w-full rounded-md border border-line bg-panel px-2 py-1.5 text-sm focus:border-accent"
+                    />
+                    <button
+                      type="button"
+                      title="Remove detail"
+                      aria-label="Remove detail"
+                      onClick={() => {
+                        const details = (edu.details ?? []).filter((_, j) => j !== di);
+                        const next = [...entries];
+                        next[i] = { ...edu, details };
+                        setEntries(next);
+                      }}
+                      className="flex min-h-6 min-w-6 shrink-0 items-center justify-center rounded border border-line text-xs text-danger hover:border-danger"
+                    >
+                      ×
+                    </button>
+                  </div>
+                ))}
+              </div>
             </div>
-          </div>
-        );
-      })}
+          );
+        })}
       </div>
     </div>
   );
@@ -746,88 +765,88 @@ function ExperienceEntries({
     <div className="space-y-4">
       <AddButton label="Add entry" onClick={addEntry} />
       <div className="divide-y divide-line">
-      {entries.map((job, i) => {
-        return (
-          <div key={job.id} className="py-4 first:pt-0 last:pb-0">
-            <div className="mb-3 flex items-start justify-between gap-2">
-              <div>
-                <p className="text-sm font-medium text-ink-muted">
-                  {job.company.trim() || `Entry #${i + 1}`}
-                </p>
-                <code className="text-xs text-ink-muted">{job.id}</code>
+        {entries.map((job, i) => {
+          return (
+            <div key={job.id} className="py-4 first:pt-0 last:pb-0">
+              <div className="mb-3 flex items-start justify-between gap-2">
+                <div>
+                  <p className="text-sm font-medium text-ink-muted">
+                    {job.company.trim() || `Entry #${i + 1}`}
+                  </p>
+                  <code className="text-xs text-ink-muted">{job.id}</code>
+                </div>
+                <EntryControls
+                  index={i}
+                  total={entries.length}
+                  onMove={(from, to) => setEntries(moveItem(entries, from, to))}
+                  onRemove={removeEntry}
+                />
               </div>
-              <EntryControls
-                index={i}
-                total={entries.length}
-                onMove={(from, to) => setEntries(moveItem(entries, from, to))}
-                onRemove={removeEntry}
-              />
-            </div>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <TextField
-                label="Company"
-                value={job.company}
-                onChange={(v) => {
-                  const next = [...entries];
-                  next[i] = { ...job, company: v };
-                  setEntries(next);
-                }}
-              />
-              <TextField
-                label="Title"
-                value={job.title}
-                onChange={(v) => {
-                  const next = [...entries];
-                  next[i] = { ...job, title: v };
-                  setEntries(next);
-                }}
-              />
-              <div className="grid grid-cols-2 gap-3">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <TextField
-                  label="Start (YYYY-MM)"
-                  value={job.start}
+                  label="Company"
+                  value={job.company}
                   onChange={(v) => {
                     const next = [...entries];
-                    next[i] = { ...job, start: v };
+                    next[i] = { ...job, company: v };
                     setEntries(next);
                   }}
                 />
                 <TextField
-                  label="End"
-                  value={job.end}
+                  label="Title"
+                  value={job.title}
                   onChange={(v) => {
                     const next = [...entries];
-                    next[i] = { ...job, end: v };
+                    next[i] = { ...job, title: v };
+                    setEntries(next);
+                  }}
+                />
+                <div className="grid grid-cols-2 gap-3">
+                  <TextField
+                    label="Start (YYYY-MM)"
+                    value={job.start}
+                    onChange={(v) => {
+                      const next = [...entries];
+                      next[i] = { ...job, start: v };
+                      setEntries(next);
+                    }}
+                  />
+                  <TextField
+                    label="End"
+                    value={job.end}
+                    onChange={(v) => {
+                      const next = [...entries];
+                      next[i] = { ...job, end: v };
+                      setEntries(next);
+                    }}
+                  />
+                </div>
+                <TextField
+                  label="Location"
+                  value={job.location ?? ""}
+                  onChange={(v) => {
+                    const next = [...entries];
+                    next[i] = { ...job, location: v };
                     setEntries(next);
                   }}
                 />
               </div>
-              <TextField
-                label="Location"
-                value={job.location ?? ""}
-                onChange={(v) => {
+              <BulletList
+                bullets={job.bullets}
+                vocabList={vocabList}
+                takenIds={takenBulletIds}
+                entryName={job.company}
+                onEnsureVocab={onEnsureVocab}
+                pushUndo={pushUndo}
+                onChange={(bullets) => {
                   const next = [...entries];
-                  next[i] = { ...job, location: v };
+                  next[i] = { ...job, bullets };
                   setEntries(next);
                 }}
               />
             </div>
-            <BulletList
-              bullets={job.bullets}
-              vocabList={vocabList}
-              takenIds={takenBulletIds}
-              entryName={job.company}
-              onEnsureVocab={onEnsureVocab}
-              pushUndo={pushUndo}
-              onChange={(bullets) => {
-                const next = [...entries];
-                next[i] = { ...job, bullets };
-                setEntries(next);
-              }}
-            />
-          </div>
-        );
-      })}
+          );
+        })}
       </div>
     </div>
   );
@@ -869,105 +888,105 @@ function ProjectEntries({
     <div className="space-y-4">
       <AddButton label="Add entry" onClick={addEntry} />
       <div className="divide-y divide-line">
-      {entries.map((proj, i) => {
-        const link = proj.link ?? "";
-        const url = proj.url ?? "";
-        const linkWithoutUrl = Boolean(link.trim()) && !url.trim();
-        const urlLooksOdd = Boolean(url.trim()) && !looksLikeHttpUrl(url);
+        {entries.map((proj, i) => {
+          const link = proj.link ?? "";
+          const url = proj.url ?? "";
+          const linkWithoutUrl = Boolean(link.trim()) && !url.trim();
+          const urlLooksOdd = Boolean(url.trim()) && !looksLikeHttpUrl(url);
 
-        return (
-          <div key={proj.id} className="py-4 first:pt-0 last:pb-0">
-            <div className="mb-3 flex items-start justify-between gap-2">
-              <div>
-                <p className="text-sm font-medium text-ink-muted">
-                  {proj.name.trim() || `Entry #${i + 1}`}
-                </p>
-                <code className="text-xs text-ink-muted">{proj.id}</code>
-              </div>
-              <EntryControls
-                index={i}
-                total={entries.length}
-                onMove={(from, to) => setEntries(moveItem(entries, from, to))}
-                onRemove={removeEntry}
-              />
-            </div>
-            <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <TextField
-                label="Name"
-                value={proj.name}
-                onChange={(v) => {
-                  const next = [...entries];
-                  next[i] = { ...proj, name: v };
-                  setEntries(next);
-                }}
-              />
-              <TextField
-                label="Date"
-                value={proj.date ?? ""}
-                onChange={(v) => {
-                  const next = [...entries];
-                  next[i] = { ...proj, date: v };
-                  setEntries(next);
-                }}
-              />
-              <div className="sm:col-span-2">
-                <ChipListField
-                  label="Tech"
-                  items={proj.tech ?? []}
-                  onChange={(tech) => {
-                    const next = [...entries];
-                    next[i] = { ...proj, tech };
-                    setEntries(next);
-                  }}
-                  placeholder="Add a technology"
+          return (
+            <div key={proj.id} className="py-4 first:pt-0 last:pb-0">
+              <div className="mb-3 flex items-start justify-between gap-2">
+                <div>
+                  <p className="text-sm font-medium text-ink-muted">
+                    {proj.name.trim() || `Entry #${i + 1}`}
+                  </p>
+                  <code className="text-xs text-ink-muted">{proj.id}</code>
+                </div>
+                <EntryControls
+                  index={i}
+                  total={entries.length}
+                  onMove={(from, to) => setEntries(moveItem(entries, from, to))}
+                  onRemove={removeEntry}
                 />
               </div>
-              <TextField
-                label="Link label"
-                value={link}
-                onChange={(v) => {
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <TextField
+                  label="Name"
+                  value={proj.name}
+                  onChange={(v) => {
+                    const next = [...entries];
+                    next[i] = { ...proj, name: v };
+                    setEntries(next);
+                  }}
+                />
+                <TextField
+                  label="Date"
+                  value={proj.date ?? ""}
+                  onChange={(v) => {
+                    const next = [...entries];
+                    next[i] = { ...proj, date: v };
+                    setEntries(next);
+                  }}
+                />
+                <div className="sm:col-span-2">
+                  <ChipListField
+                    label="Tech"
+                    items={proj.tech ?? []}
+                    onChange={(tech) => {
+                      const next = [...entries];
+                      next[i] = { ...proj, tech };
+                      setEntries(next);
+                    }}
+                    placeholder="Add a technology"
+                  />
+                </div>
+                <TextField
+                  label="Link label"
+                  value={link}
+                  onChange={(v) => {
+                    const next = [...entries];
+                    next[i] = { ...proj, link: v };
+                    setEntries(next);
+                  }}
+                />
+                <TextField
+                  label="GitHub URL"
+                  value={url}
+                  onChange={(v) => {
+                    const next = [...entries];
+                    const nextLink = v.trim() && !link.trim() ? "Github" : proj.link;
+                    next[i] = { ...proj, url: v, link: nextLink };
+                    setEntries(next);
+                  }}
+                />
+              </div>
+              {linkWithoutUrl && (
+                <p className="mt-2 text-xs text-warn">
+                  Label renders as plain text with no hyperlink — add a GitHub URL.
+                </p>
+              )}
+              {urlLooksOdd && (
+                <p className="mt-2 text-xs text-warn">
+                  URL should start with http:// or https:// for a working link.
+                </p>
+              )}
+              <BulletList
+                bullets={proj.bullets}
+                vocabList={vocabList}
+                takenIds={takenBulletIds}
+                entryName={proj.name}
+                onEnsureVocab={onEnsureVocab}
+                pushUndo={pushUndo}
+                onChange={(bullets) => {
                   const next = [...entries];
-                  next[i] = { ...proj, link: v };
-                  setEntries(next);
-                }}
-              />
-              <TextField
-                label="GitHub URL"
-                value={url}
-                onChange={(v) => {
-                  const next = [...entries];
-                  const nextLink = v.trim() && !link.trim() ? "Github" : proj.link;
-                  next[i] = { ...proj, url: v, link: nextLink };
+                  next[i] = { ...proj, bullets };
                   setEntries(next);
                 }}
               />
             </div>
-            {linkWithoutUrl && (
-              <p className="mt-2 text-xs text-warn">
-                Label renders as plain text with no hyperlink — add a GitHub URL.
-              </p>
-            )}
-            {urlLooksOdd && (
-              <p className="mt-2 text-xs text-warn">
-                URL should start with http:// or https:// for a working link.
-              </p>
-            )}
-            <BulletList
-              bullets={proj.bullets}
-              vocabList={vocabList}
-              takenIds={takenBulletIds}
-              entryName={proj.name}
-              onEnsureVocab={onEnsureVocab}
-              pushUndo={pushUndo}
-              onChange={(bullets) => {
-                const next = [...entries];
-                next[i] = { ...proj, bullets };
-                setEntries(next);
-              }}
-            />
-          </div>
-        );
-      })}
+          );
+        })}
       </div>
     </div>
   );
@@ -1061,41 +1080,41 @@ function SkillsEntries({
     <div className="space-y-4">
       <AddButton label="Add group" onClick={() => setGroups([blankSkillGroup(), ...groups])} />
       <div className="divide-y divide-line">
-      {groups.map((g, i) => {
-        return (
-          <div key={g._key ?? i} className="py-4 first:pt-0 last:pb-0">
-            <div className="mb-2 flex items-start justify-between gap-2">
-              <div className="min-w-0 flex-1">
-                <TextField
-                  label="Label"
-                  value={g.label}
-                  onChange={(v) => {
-                    const next = [...groups];
-                    next[i] = { ...g, label: v };
-                    setGroups(next);
-                  }}
+        {groups.map((g, i) => {
+          return (
+            <div key={g._key ?? i} className="py-4 first:pt-0 last:pb-0">
+              <div className="mb-2 flex items-start justify-between gap-2">
+                <div className="min-w-0 flex-1">
+                  <TextField
+                    label="Label"
+                    value={g.label}
+                    onChange={(v) => {
+                      const next = [...groups];
+                      next[i] = { ...g, label: v };
+                      setGroups(next);
+                    }}
+                  />
+                </div>
+                <EntryControls
+                  index={i}
+                  total={groups.length}
+                  onMove={(from, to) => setGroups(moveItem(groups, from, to))}
+                  onRemove={removeGroup}
                 />
               </div>
-              <EntryControls
-                index={i}
-                total={groups.length}
-                onMove={(from, to) => setGroups(moveItem(groups, from, to))}
-                onRemove={removeGroup}
+              <ChipListField
+                label="Items"
+                items={g.items}
+                onChange={(items) => {
+                  const next = [...groups];
+                  next[i] = { ...g, items };
+                  setGroups(next);
+                }}
+                placeholder="Add a skill"
               />
             </div>
-            <ChipListField
-              label="Items"
-              items={g.items}
-              onChange={(items) => {
-                const next = [...groups];
-                next[i] = { ...g, items };
-                setGroups(next);
-              }}
-              placeholder="Add a skill"
-            />
-          </div>
-        );
-      })}
+          );
+        })}
       </div>
     </div>
   );
@@ -1130,7 +1149,9 @@ function BulletList({
 
   function removeBullet(idx: number) {
     const text = bullets[idx]?.text.trim();
-    pushUndo(`Removed bullet${text ? ` “${text.slice(0, 40)}${text.length > 40 ? "…" : ""}”` : ""}`);
+    pushUndo(
+      `Removed bullet${text ? ` “${text.slice(0, 40)}${text.length > 40 ? "…" : ""}”` : ""}`,
+    );
     onChange(removeAt(bullets, idx));
   }
 
@@ -1258,9 +1279,7 @@ function suggestMissingTags(
     if (!vocabLower.has(tag.toLowerCase())) continue;
     if (have.has(tag.toLowerCase())) continue;
     // Whole-word-ish match: avoid flagging "go" inside "google".
-    const re = new RegExp(
-      `(?:^|[^a-z0-9])${escapeReg(tag.toLowerCase())}(?:[^a-z0-9]|$)`,
-    );
+    const re = new RegExp(`(?:^|[^a-z0-9])${escapeReg(tag.toLowerCase())}(?:[^a-z0-9]|$)`);
     if (re.test(lower)) hits.push(tag);
   }
   return hits.slice(0, 8);

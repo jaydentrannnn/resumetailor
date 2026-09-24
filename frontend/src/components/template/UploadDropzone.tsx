@@ -6,8 +6,7 @@ type Props = {
   label?: string;
 };
 
-const DOCX_MIME =
-  "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
+const DOCX_MIME = "application/vnd.openxmlformats-officedocument.wordprocessingml.document";
 
 function isDocx(file: File): boolean {
   return file.name.toLowerCase().endsWith(".docx") || file.type === DOCX_MIME;
@@ -67,9 +66,7 @@ export function UploadDropzone({ disabled, onFile, label }: Props) {
       >
         {disabled ? "Working…" : "Choose file"}
       </button>
-      {rejected && (
-        <p className="text-xs text-danger">That isn't a .docx file — try again.</p>
-      )}
+      {rejected && <p className="text-xs text-danger">That isn't a .docx file — try again.</p>}
       <input
         ref={inputRef}
         type="file"

@@ -145,10 +145,7 @@ export const DEFAULT_SETTINGS: JobSettings = {
     max_new_per_day: 40,
     screen: {
       allowed_seniority: ["intern", "entry"],
-      block_patterns: [
-        "\\bU\\.?S\\.? citizen",
-        "security clearance",
-      ],
+      block_patterns: ["\\bU\\.?S\\.? citizen", "security clearance"],
     },
     eligibility: {
       hard_reject_years: 4,
@@ -280,7 +277,9 @@ export function RunProvider({ children }: { children: ReactNode }) {
   const [jdText, setJdTextState] = useState(() => loadJdText(activeId));
   const [settings, setSettingsState] = useState<JobSettings>(DEFAULT_SETTINGS);
   const [settingsLoaded, setSettingsLoaded] = useState(false);
-  const [settingsSaveState, setSettingsSaveState] = useState<"saved" | "unsaved" | "saving" | "failed">("saved");
+  const [settingsSaveState, setSettingsSaveState] = useState<
+    "saved" | "unsaved" | "saving" | "failed"
+  >("saved");
   const [settingsSaveError, setSettingsSaveError] = useState<string | null>(null);
   const [jobId, setJobId] = useState<string | null>(null);
   const [status, setStatus] = useState<string | null>(null);
@@ -329,61 +328,76 @@ export function RunProvider({ children }: { children: ReactNode }) {
   );
 
   const persistSettings = useCallback((next: JobSettings, revision: number): Promise<void> => {
-    const write = settingsWrite.current.catch(() => undefined).then(async () => {
-      if (revision !== settingsRevision.current) return;
-      setSettingsSaveState("saving");
-      try {
-        await saveSettings(next);
-        savedSettings.current = next;
-        lastWriteFailed.current = false;
-        if (revision === settingsRevision.current) {
-          setSettingsSaveState("saved");
-          setSettingsSaveError(null);
+    const write = settingsWrite.current
+      .catch(() => undefined)
+      .then(async () => {
+        if (revision !== settingsRevision.current) return;
+        setSettingsSaveState("saving");
+        try {
+          await saveSettings(next);
+          savedSettings.current = next;
+          lastWriteFailed.current = false;
+          if (revision === settingsRevision.current) {
+            setSettingsSaveState("saved");
+            setSettingsSaveError(null);
+          }
+        } catch (err) {
+          lastWriteFailed.current = true;
+          if (revision === settingsRevision.current) {
+            setSettingsSaveState("failed");
+            setSettingsSaveError(err instanceof Error ? err.message : String(err));
+          }
+          throw err;
         }
-      } catch (err) {
-        lastWriteFailed.current = true;
-        if (revision === settingsRevision.current) {
-          setSettingsSaveState("failed");
-          setSettingsSaveError(err instanceof Error ? err.message : String(err));
-        }
-        throw err;
-      }
-    });
+      });
     settingsWrite.current = write;
     return write;
   }, []);
 
-  const setSettings = useCallback((next: JobSettings) => {
-    latestSettings.current = next;
-    setSettingsState(next);
-    setSettingsSaveState("unsaved");
-    setSettingsSaveError(null);
-    const revision = ++settingsRevision.current;
-    if (saveSettingsTimer.current) clearTimeout(saveSettingsTimer.current);
-    saveSettingsTimer.current = setTimeout(() => {
-      saveSettingsTimer.current = null;
-      void persistSettings(next, revision).catch(() => undefined);
-    }, SETTINGS_SAVE_DEBOUNCE_MS);
-  }, [persistSettings]);
+  const setSettings = useCallback(
+    (next: JobSettings) => {
+      latestSettings.current = next;
+      setSettingsState(next);
+      setSettingsSaveState("unsaved");
+      setSettingsSaveError(null);
+      const revision = ++settingsRevision.current;
+      if (saveSettingsTimer.current) clearTimeout(saveSettingsTimer.current);
+      saveSettingsTimer.current = setTimeout(() => {
+        saveSettingsTimer.current = null;
+        void persistSettings(next, revision).catch(() => undefined);
+      }, SETTINGS_SAVE_DEBOUNCE_MS);
+    },
+    [persistSettings],
+  );
 
   const flushSettings = useCallback(async (): Promise<boolean> => {
     if (saveSettingsTimer.current) {
       clearTimeout(saveSettingsTimer.current);
       saveSettingsTimer.current = null;
     }
-    try { await settingsWrite.current; } catch { /* retry the latest draft below */ }
+    try {
+      await settingsWrite.current;
+    } catch {
+      /* retry the latest draft below */
+    }
     if (latestSettings.current === savedSettings.current && !lastWriteFailed.current) return true;
     try {
       await persistSettings(latestSettings.current, settingsRevision.current);
       return true;
-    } catch { return false; }
+    } catch {
+      return false;
+    }
   }, [persistSettings]);
 
   const discardSettings = useCallback(async () => {
     if (saveSettingsTimer.current) clearTimeout(saveSettingsTimer.current);
     saveSettingsTimer.current = null;
     ++settingsRevision.current;
-    try { await settingsWrite.current; } catch { /* failed write leaves the last saved value intact */ }
+    try {
+      await settingsWrite.current;
+    } catch {
+      /* failed write leaves the last saved value intact */
+    }
     latestSettings.current = savedSettings.current;
     setSettingsState(savedSettings.current);
     lastWriteFailed.current = false;
@@ -750,9 +764,7 @@ export function RunProvider({ children }: { children: ReactNode }) {
     ],
   );
 
-  return (
-    <RunStateContext.Provider value={value}>{children}</RunStateContext.Provider>
-  );
+  return <RunStateContext.Provider value={value}>{children}</RunStateContext.Provider>;
 }
 
 /**

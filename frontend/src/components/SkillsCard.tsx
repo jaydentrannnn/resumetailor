@@ -81,9 +81,7 @@ export function SkillsCard({
     return (
       <section className="rounded-xl border border-line bg-panel p-5 shadow-sm">
         <h2 className="font-display text-xl font-semibold">Skills to list</h2>
-        <p className="mt-2 text-sm text-ink-muted">
-          No skills were selected for this run.
-        </p>
+        <p className="mt-2 text-sm text-ink-muted">No skills were selected for this run.</p>
       </section>
     );
   }
@@ -101,9 +99,7 @@ export function SkillsCard({
   const byBand = (a: KeywordGap, b: KeywordGap) =>
     (bandRank[b.band ?? "meaningful"] ?? 0) - (bandRank[a.band ?? "meaningful"] ?? 0);
   const annotate = (g: KeywordGap) =>
-    g.band
-      ? `${g.phrase} (${g.band}${g.evidence_tier ? `, ${g.evidence_tier}` : ""})`
-      : g.phrase;
+    g.band ? `${g.phrase} (${g.band}${g.evidence_tier ? `, ${g.evidence_tier}` : ""})` : g.phrase;
   const noEvidence = gaps
     .filter((g) => g.reason === "no_evidence")
     .slice()
@@ -119,8 +115,8 @@ export function SkillsCard({
         <div>
           <h2 className="font-display text-xl font-semibold">Skills to list</h2>
           <p className="mt-1 text-sm text-ink-muted">
-            Ranked for application-form Skills fields. Every entry traces to the master
-            resume — hover a chip for the posting's wording it matches.
+            Ranked for application-form Skills fields. Every entry traces to the master resume —
+            hover a chip for the posting's wording it matches.
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
@@ -142,8 +138,8 @@ export function SkillsCard({
 
       {noEvidence.length > 0 && (
         <p className="mt-3 rounded-md bg-warn-soft px-3 py-2 text-sm text-warn">
-          The posting also asks for: {noEvidence.map(annotate).join(", ")} — not
-          supported by the master resume, so not suggested above.
+          The posting also asks for: {noEvidence.map(annotate).join(", ")} — not supported by the
+          master resume, so not suggested above.
         </p>
       )}
 

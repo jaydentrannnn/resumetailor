@@ -90,14 +90,7 @@ describe("ChipListField — validate", () => {
 describe("ChipListField — separators", () => {
   it("splits on whitespace as well as commas when configured", () => {
     const onChange = vi.fn();
-    render(
-      <ChipListField
-        label="Verbs"
-        items={[]}
-        onChange={onChange}
-        separators={/[,\s]+/}
-      />,
-    );
+    render(<ChipListField label="Verbs" items={[]} onChange={onChange} separators={/[,\s]+/} />);
     const input = screen.getByLabelText("Verbs");
     fireEvent.change(input, { target: { value: "administered assessed charted" } });
     fireEvent.keyDown(input, { key: "Enter" });

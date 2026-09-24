@@ -1,10 +1,6 @@
 import { useState } from "react";
 import type { CoverLetter } from "../api";
-import {
-  coverLetterDocxUrl,
-  coverLetterMdUrl,
-  coverLetterPdfUrl,
-} from "../api";
+import { coverLetterDocxUrl, coverLetterMdUrl, coverLetterPdfUrl } from "../api";
 import { CopyButton } from "./CopyButton";
 
 export function letterText(letter: CoverLetter): string {
@@ -104,28 +100,30 @@ export function CoverLetterDetails({ letter, onRegenerate, readOnly = false }: D
         ))}
       </div>
 
-      {!readOnly && <div className="space-y-2">
-        <label className="block text-sm font-medium" htmlFor="cover-regen-instruction">
-          Regenerate with instruction (optional)
-        </label>
-        <textarea
-          id="cover-regen-instruction"
-          value={instruction}
-          onChange={(e) => setInstruction(e.target.value)}
-          rows={3}
-          className="field w-full font-mono text-sm"
-          placeholder="e.g. Lead with the RAG project and shorten the close."
-        />
-        {error && <p className="text-sm text-danger">{error}</p>}
-        <button
-          type="button"
-          disabled={busy}
-          onClick={() => void handleRegenerate()}
-          className="rounded-lg border border-line px-3 py-2 text-sm font-medium hover:bg-paper disabled:opacity-50"
-        >
-          {busy ? "Regenerating…" : "Regenerate cover letter"}
-        </button>
-      </div>}
+      {!readOnly && (
+        <div className="space-y-2">
+          <label className="block text-sm font-medium" htmlFor="cover-regen-instruction">
+            Regenerate with instruction (optional)
+          </label>
+          <textarea
+            id="cover-regen-instruction"
+            value={instruction}
+            onChange={(e) => setInstruction(e.target.value)}
+            rows={3}
+            className="field w-full font-mono text-sm"
+            placeholder="e.g. Lead with the RAG project and shorten the close."
+          />
+          {error && <p className="text-sm text-danger">{error}</p>}
+          <button
+            type="button"
+            disabled={busy}
+            onClick={() => void handleRegenerate()}
+            className="rounded-lg border border-line px-3 py-2 text-sm font-medium hover:bg-paper disabled:opacity-50"
+          >
+            {busy ? "Regenerating…" : "Regenerate cover letter"}
+          </button>
+        </div>
+      )}
     </div>
   );
 }

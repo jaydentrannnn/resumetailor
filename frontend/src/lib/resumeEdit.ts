@@ -95,11 +95,7 @@ export type SkillsSection = {
 };
 
 export type Section =
-  | ExperienceSection
-  | ProjectSection
-  | ListSection
-  | EducationSection
-  | SkillsSection;
+  ExperienceSection | ProjectSection | ListSection | EducationSection | SkillsSection;
 
 export type MasterResume = {
   _comment?: string | null;
@@ -161,9 +157,7 @@ export function sectionsOfKind<K extends SectionKind>(
   resume: MasterResume,
   kind: K,
 ): Extract<Section, { kind: K }>[] {
-  return resume.sections.filter(
-    (s): s is Extract<Section, { kind: K }> => s.kind === kind,
-  );
+  return resume.sections.filter((s): s is Extract<Section, { kind: K }> => s.kind === kind);
 }
 
 /** Every experience entry, flattened across all experience-kind sections. */

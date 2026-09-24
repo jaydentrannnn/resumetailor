@@ -17,9 +17,7 @@ function getRowInputs(key: string): { keyInput: HTMLInputElement; valueInput: HT
 describe("KeyValueListField — emit cadence", () => {
   it("does not call onChange while typing, only on blur", () => {
     const onChange = vi.fn();
-    render(
-      <KeyValueListField label="Aliases" items={{ py: "python" }} onChange={onChange} />,
-    );
+    render(<KeyValueListField label="Aliases" items={{ py: "python" }} onChange={onChange} />);
     const { valueInput } = getRowInputs("py");
     fireEvent.change(valueInput, { target: { value: "pyt" } });
     fireEvent.change(valueInput, { target: { value: "pyth" } });
@@ -31,9 +29,7 @@ describe("KeyValueListField — emit cadence", () => {
 
   it("does not call onChange on a blur with no actual change", () => {
     const onChange = vi.fn();
-    render(
-      <KeyValueListField label="Aliases" items={{ py: "python" }} onChange={onChange} />,
-    );
+    render(<KeyValueListField label="Aliases" items={{ py: "python" }} onChange={onChange} />);
     const { valueInput } = getRowInputs("py");
     fireEvent.blur(valueInput);
     expect(onChange).not.toHaveBeenCalled();
@@ -44,11 +40,7 @@ describe("KeyValueListField — renaming a key", () => {
   it("preserves row position instead of moving the row to the end", () => {
     const onChange = vi.fn();
     render(
-      <KeyValueListField
-        label="Aliases"
-        items={{ a: "1", b: "2", c: "3" }}
-        onChange={onChange}
-      />,
+      <KeyValueListField label="Aliases" items={{ a: "1", b: "2", c: "3" }} onChange={onChange} />,
     );
     const { keyInput } = getRowInputs("a");
     fireEvent.change(keyInput, { target: { value: "z" } });
@@ -101,9 +93,7 @@ describe("KeyValueListField — re-sync from an external items prop", () => {
 describe("KeyValueListField — invalid transient states", () => {
   it("does not emit and marks both rows when two rows share a key", () => {
     const onChange = vi.fn();
-    render(
-      <KeyValueListField label="Aliases" items={{ a: "1", b: "2" }} onChange={onChange} />,
-    );
+    render(<KeyValueListField label="Aliases" items={{ a: "1", b: "2" }} onChange={onChange} />);
     const { keyInput } = getRowInputs("b");
     fireEvent.change(keyInput, { target: { value: "a" } });
     fireEvent.blur(keyInput);
@@ -134,9 +124,7 @@ describe("KeyValueListField — add/remove", () => {
 
   it("Remove emits immediately with the row excluded", () => {
     const onChange = vi.fn();
-    render(
-      <KeyValueListField label="Aliases" items={{ a: "1", b: "2" }} onChange={onChange} />,
-    );
+    render(<KeyValueListField label="Aliases" items={{ a: "1", b: "2" }} onChange={onChange} />);
     const { keyInput } = getRowInputs("a");
     const removeButton = keyInput.closest("div")!.querySelector("button")!;
     fireEvent.click(removeButton);

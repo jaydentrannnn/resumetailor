@@ -3,9 +3,20 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { beforeEach, expect, it } from "vitest";
 
-const script = readFileSync(resolve(process.cwd(), "../src/resume_tailor/apply/dom_scan.js"), "utf8");
+const script = readFileSync(
+  resolve(process.cwd(), "../src/resume_tailor/apply/dom_scan.js"),
+  "utf8",
+);
 
-function scan(): { fields: Array<{ label: string; control_kind: string; current_value: string; section_id: string; options: Array<{ label: string }> }> } {
+function scan(): {
+  fields: Array<{
+    label: string;
+    control_kind: string;
+    current_value: string;
+    section_id: string;
+    options: Array<{ label: string }>;
+  }>;
+} {
   const inspect = window.eval(script) as () => ReturnType<typeof scan>;
   return inspect();
 }
@@ -13,7 +24,8 @@ function scan(): { fields: Array<{ label: string; control_kind: string; current_
 beforeEach(() => {
   document.body.innerHTML = "";
   Object.defineProperty(HTMLElement.prototype, "getBoundingClientRect", {
-    configurable: true, value: () => ({ width: 100, height: 20 }),
+    configurable: true,
+    value: () => ({ width: 100, height: 20 }),
   });
 });
 
@@ -32,13 +44,21 @@ it("observes labelled controls and radio groups without changing the form", () =
   const before = document.body.innerHTML;
   const result = scan();
   expect(document.body.innerHTML).toBe(before);
-  expect(result.fields.find(field => field.label === "Preferred First Name")?.current_value).toBe("Jay");
-  expect(result.fields.find(field => field.label === "Country")?.current_value).toBe("United States +1");
-  expect(result.fields.find(field => field.control_kind === "radio_group")?.options).toHaveLength(2);
-  expect(result.fields.find(field => field.control_kind === "radio_group")?.current_value).toContain("No");
+  expect(result.fields.find((field) => field.label === "Preferred First Name")?.current_value).toBe(
+    "Jay",
+  );
+  expect(result.fields.find((field) => field.label === "Country")?.current_value).toBe(
+    "United States +1",
+  );
+  expect(result.fields.find((field) => field.control_kind === "radio_group")?.options).toHaveLength(
+    2,
+  );
+  expect(
+    result.fields.find((field) => field.control_kind === "radio_group")?.current_value,
+  ).toContain("No");
 });
 
 it("does not report typed autocomplete search text as a committed selection", () => {
   document.body.innerHTML = `<label for="degree">Degree</label><div class="select__control"><input id="degree" role="combobox" value="bachelor"></div>`;
-  expect(scan().fields.find(field => field.label === "Degree")?.current_value).toBe("");
+  expect(scan().fields.find((field) => field.label === "Degree")?.current_value).toBe("");
 });

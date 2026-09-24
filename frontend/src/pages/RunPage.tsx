@@ -1,8 +1,4 @@
-import {
-  type AppConfig,
-  type JobSettings,
-  type RunReport,
-} from "../api";
+import { type AppConfig, type JobSettings, type RunReport } from "../api";
 import { DocumentsCard } from "../components/DocumentsCard";
 import { Tabs } from "../components/Tabs";
 import { ExperienceCard } from "../components/ExperienceCard";
@@ -62,14 +58,23 @@ export function RunPage() {
   } = useRunState();
   const { switching } = useWorkspaceState();
   const [resultParams, setResultParams] = useSearchParams();
-  const resultTab = ["overview", "documents", "content"].includes(resultParams.get("result_tab") ?? "") ? resultParams.get("result_tab")! : "overview";
-  const setResultTab = (tab: string) => setResultParams(previous => { const next = new URLSearchParams(previous); next.set("result_tab", tab); return next; }, { replace: true });
+  const resultTab = ["overview", "documents", "content"].includes(
+    resultParams.get("result_tab") ?? "",
+  )
+    ? resultParams.get("result_tab")!
+    : "overview";
+  const setResultTab = (tab: string) =>
+    setResultParams(
+      (previous) => {
+        const next = new URLSearchParams(previous);
+        next.set("result_tab", tab);
+        return next;
+      },
+      { replace: true },
+    );
 
   const progressListRef = useRef<HTMLOListElement>(null);
-  const progress = useMemo(
-    () => runProgress(events, status, busy),
-    [events, status, busy],
-  );
+  const progress = useMemo(() => runProgress(events, status, busy), [events, status, busy]);
   const elapsed = useElapsedSeconds(busy);
 
   // `setSearchParams` changes identity on every URL change (react-router memoises it
@@ -79,7 +84,14 @@ export function RunPage() {
   useEffect(() => {
     if (!jobId || resetForJob.current === jobId) return;
     resetForJob.current = jobId;
-    setResultParams(previous => { const next = new URLSearchParams(previous); next.delete("result_tab"); return next; }, { replace: true });
+    setResultParams(
+      (previous) => {
+        const next = new URLSearchParams(previous);
+        next.delete("result_tab");
+        return next;
+      },
+      { replace: true },
+    );
   }, [jobId, setResultParams]);
 
   useEffect(() => {
@@ -126,12 +138,44 @@ export function RunPage() {
 
       <section className="rounded-lg border border-line bg-panel p-4 lg:col-span-2 lg:row-start-1">
         <h2 className="text-lg font-semibold">Tailor settings</h2>
-        <p className="mt-1 text-sm text-ink-muted">Model: {settings.model || "Default"} · {settings.pages} pages · {settings.experience ?? config?.experience ?? 3} experience entries · {settings.projects ?? config?.projects ?? 3} projects · Cover letter {settings.cover_letter && !settings.no_cover_letter ? "on" : "off"}</p>
-        {settingsLoaded && settingsSaveState !== "saved" && <p className={`mt-2 text-xs ${settingsSaveState === "failed" ? "text-danger" : "text-ink-muted"}`} role={settingsSaveState === "failed" ? "alert" : "status"}>
-          {settingsSaveState === "saving" ? "Saving settings…" : settingsSaveState === "unsaved" ? "Unsaved settings" : `Settings save failed: ${settingsSaveError ?? "Please retry."}`}
-          {settingsSaveState === "failed" && <button type="button" onClick={() => void flushSettings()} className="ml-2 font-medium text-accent underline">Retry</button>}
-        </p>}
-        <details className="mt-3"><summary className="cursor-pointer text-sm font-medium text-accent">Edit output, model, writing style, and included content</summary><div className="mt-4 grid gap-4 lg:grid-cols-2"><fieldset disabled={!settingsLoaded} className="contents"><SettingsPanel config={config} settings={settings} onChange={setSettings} /><IncludePanel settings={settings} onChange={setSettings} /></fieldset></div></details>
+        <p className="mt-1 text-sm text-ink-muted">
+          Model: {settings.model || "Default"} · {settings.pages} pages ·{" "}
+          {settings.experience ?? config?.experience ?? 3} experience entries ·{" "}
+          {settings.projects ?? config?.projects ?? 3} projects · Cover letter{" "}
+          {settings.cover_letter && !settings.no_cover_letter ? "on" : "off"}
+        </p>
+        {settingsLoaded && settingsSaveState !== "saved" && (
+          <p
+            className={`mt-2 text-xs ${settingsSaveState === "failed" ? "text-danger" : "text-ink-muted"}`}
+            role={settingsSaveState === "failed" ? "alert" : "status"}
+          >
+            {settingsSaveState === "saving"
+              ? "Saving settings…"
+              : settingsSaveState === "unsaved"
+                ? "Unsaved settings"
+                : `Settings save failed: ${settingsSaveError ?? "Please retry."}`}
+            {settingsSaveState === "failed" && (
+              <button
+                type="button"
+                onClick={() => void flushSettings()}
+                className="ml-2 font-medium text-accent underline"
+              >
+                Retry
+              </button>
+            )}
+          </p>
+        )}
+        <details className="mt-3">
+          <summary className="cursor-pointer text-sm font-medium text-accent">
+            Edit output, model, writing style, and included content
+          </summary>
+          <div className="mt-4 grid gap-4 lg:grid-cols-2">
+            <fieldset disabled={!settingsLoaded} className="contents">
+              <SettingsPanel config={config} settings={settings} onChange={setSettings} />
+              <IncludePanel settings={settings} onChange={setSettings} />
+            </fieldset>
+          </div>
+        </details>
       </section>
 
       {/* Job description is the primary input — it and its Progress feedback sit
@@ -199,9 +243,7 @@ export function RunPage() {
             </div>
             <ProgressBar progress={progress} failed={status === "failed"} />
             {queuePosition != null && queuePosition > 1 && status === "queued" && (
-              <p className="mt-2 text-sm text-ink-muted">
-                Queued — position {queuePosition}
-              </p>
+              <p className="mt-2 text-sm text-ink-muted">Queued — position {queuePosition}</p>
             )}
             <ol
               ref={progressListRef}
@@ -240,9 +282,7 @@ export function RunPage() {
                   {config.calibration_rejection}
                 </p>
               )}
-              {config.contact_name && (
-                <p className="mt-2">Master resume: {config.contact_name}</p>
-              )}
+              {config.contact_name && <p className="mt-2">Master resume: {config.contact_name}</p>}
             </section>
           )
         )}
@@ -265,10 +305,47 @@ export function RunPage() {
       {jobId && (
         <section id="tailored-results" className="space-y-4 lg:col-span-2 lg:row-start-4">
           <h2 className="text-lg font-semibold">Tailored results</h2>
-          <Tabs label="Tailored results" items={[{ id: "overview", label: "Overview" }, { id: "documents", label: "Documents" }, { id: "content", label: "Application content" }]} value={resultTab} onChange={setResultTab} />
-          {resultTab === "overview" && <div role="tabpanel">{report ? <ReportCard report={report} /> : <p className="rounded-lg border border-line bg-panel p-5 text-sm text-ink-muted">A report has not been saved for this run.</p>}</div>}
-          {resultTab === "documents" && <div role="tabpanel"><DocumentsCard jobId={jobId} coverLetter={coverLetter} onCoverRegenerated={setCoverLetter} /></div>}
-          {resultTab === "content" && <div role="tabpanel" className="space-y-4">{skills && <SkillsCard plan={skills} gaps={report?.gaps ?? []} jobId={jobId} />}{expansion && <ExperienceCard expansion={expansion} jobId={jobId} />}{!skills && !expansion && <p className="rounded-lg border border-line bg-panel p-5 text-sm text-ink-muted">No skills or experience expansion was saved for this run.</p>}</div>}
+          <Tabs
+            label="Tailored results"
+            items={[
+              { id: "overview", label: "Overview" },
+              { id: "documents", label: "Documents" },
+              { id: "content", label: "Application content" },
+            ]}
+            value={resultTab}
+            onChange={setResultTab}
+          />
+          {resultTab === "overview" && (
+            <div role="tabpanel">
+              {report ? (
+                <ReportCard report={report} />
+              ) : (
+                <p className="rounded-lg border border-line bg-panel p-5 text-sm text-ink-muted">
+                  A report has not been saved for this run.
+                </p>
+              )}
+            </div>
+          )}
+          {resultTab === "documents" && (
+            <div role="tabpanel">
+              <DocumentsCard
+                jobId={jobId}
+                coverLetter={coverLetter}
+                onCoverRegenerated={setCoverLetter}
+              />
+            </div>
+          )}
+          {resultTab === "content" && (
+            <div role="tabpanel" className="space-y-4">
+              {skills && <SkillsCard plan={skills} gaps={report?.gaps ?? []} jobId={jobId} />}
+              {expansion && <ExperienceCard expansion={expansion} jobId={jobId} />}
+              {!skills && !expansion && (
+                <p className="rounded-lg border border-line bg-panel p-5 text-sm text-ink-muted">
+                  No skills or experience expansion was saved for this run.
+                </p>
+              )}
+            </div>
+          )}
         </section>
       )}
 
@@ -314,13 +391,7 @@ function formatElapsed(seconds: number): string {
   return m > 0 ? `${m}m ${String(s).padStart(2, "0")}s` : `${s}s`;
 }
 
-function ProgressBar({
-  progress,
-  failed,
-}: {
-  progress: RunProgress;
-  failed: boolean;
-}) {
+function ProgressBar({ progress, failed }: { progress: RunProgress; failed: boolean }) {
   /**
    * The run's position in the pipeline. Indeterminate only before the first stage
    * event lands — after that `runProgress` always has a band to sit in.
@@ -486,8 +557,8 @@ function SettingsPanel({
         {settings.cover_letter && (
           <div className="space-y-3 rounded-md border border-line/80 bg-paper/40 p-3">
             <p className="text-xs text-ink-muted">
-              Optional angles — durable per-application inputs (cached and guarded). Leave
-              blank for the default letter.
+              Optional angles — durable per-application inputs (cached and guarded). Leave blank for
+              the default letter.
             </p>
             <Field label="Why this company">
               <textarea
@@ -580,12 +651,13 @@ function SettingsPanel({
               </p>
             )}
           </Field>
-          <Field label="Effort" help="Reasoning depth for every stage. Blank uses per-stage defaults.">
+          <Field
+            label="Effort"
+            help="Reasoning depth for every stage. Blank uses per-stage defaults."
+          >
             <select
               value={settings.effort ?? ""}
-              onChange={(e) =>
-                set("effort", (e.target.value || null) as JobSettings["effort"])
-              }
+              onChange={(e) => set("effort", (e.target.value || null) as JobSettings["effort"])}
               className="field"
             >
               <option value="">Per-stage defaults</option>
@@ -790,7 +862,6 @@ function SettingsPanel({
           </fieldset>
         )}
       </div>
-
     </section>
   );
 }
@@ -802,11 +873,7 @@ export function ReportCard({ report }: { report: RunReport }) {
     diagnosis == null && report.coverage_total > 0
       ? Math.round((100 * report.coverage_matched) / report.coverage_total)
       : null;
-  const mustHaveValue = diagnosis
-    ? "inconclusive"
-    : pct != null
-      ? `${pct}%`
-      : "n/a";
+  const mustHaveValue = diagnosis ? "inconclusive" : pct != null ? `${pct}%` : "n/a";
   const mustHaveSub = diagnosis
     ? diagnosis.replaceAll("_", " ")
     : `${report.coverage_matched}/${report.coverage_total}`;
@@ -819,11 +886,7 @@ export function ReportCard({ report }: { report: RunReport }) {
       </div>
 
       <dl className="mt-4 grid grid-cols-2 gap-3 text-sm tabular-nums sm:grid-cols-5">
-        <Stat
-          label="Must-haves"
-          value={mustHaveValue}
-          sub={mustHaveSub}
-        />
+        <Stat label="Must-haves" value={mustHaveValue} sub={mustHaveSub} />
         <Stat
           label="Pages"
           value={String(report.pages)}
@@ -842,11 +905,7 @@ export function ReportCard({ report }: { report: RunReport }) {
         <Stat
           label="Verb repeats"
           value={String(report.verb_collisions_remaining)}
-          sub={
-            report.verbs_diversified
-              ? `${report.verbs_diversified} fixed`
-              : "none fixed"
-          }
+          sub={report.verbs_diversified ? `${report.verbs_diversified} fixed` : "none fixed"}
         />
       </dl>
 
@@ -896,8 +955,7 @@ export function ReportCard({ report }: { report: RunReport }) {
               )}
               {noEvidence.length > 0 && (
                 <p className="rounded-md bg-warn-soft px-3 py-2 text-warn">
-                  No evidence in the master resume:{" "}
-                  {noEvidence.map(annotate).join(", ")}
+                  No evidence in the master resume: {noEvidence.map(annotate).join(", ")}
                 </p>
               )}
               {otherGaps.map((g) => (
@@ -919,9 +977,7 @@ export function ReportCard({ report }: { report: RunReport }) {
 
       {(() => {
         const warnCount =
-          report.dropped.length +
-          report.warnings.length +
-          (report.calibration_rejection ? 1 : 0);
+          report.dropped.length + report.warnings.length + (report.calibration_rejection ? 1 : 0);
         if (warnCount === 0) return null;
         return (
           <details className="mt-3 rounded-md border border-line/80 bg-paper/40 open:pb-2">
@@ -949,8 +1005,7 @@ export function ReportCard({ report }: { report: RunReport }) {
 
       <p className="mt-3 text-xs text-ink-muted">
         Model: {report.model} · ranking:{" "}
-        {report.semantic_used ? "keyword + semantic" : "keyword only"} · PDF:{" "}
-        {report.pdf_backend}
+        {report.semantic_used ? "keyword + semantic" : "keyword only"} · PDF: {report.pdf_backend}
         {report.calibration_source === "fallback" ? " (fallback calibration)" : ""}
       </p>
     </section>

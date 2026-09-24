@@ -120,10 +120,9 @@ export function TemplateImportWizard() {
         <div>
           <h2 className="font-display text-xl font-semibold">Replace template</h2>
           <p className="mt-1 text-sm text-ink-muted">
-            Upload a single-column Word/Google Docs export. The importer detects
-            section headings and field separators, then you confirm before it rebuilds
-            the tagged template. Experience is required; Education, Projects, and Skills
-            can be omitted when absent.
+            Upload a single-column Word/Google Docs export. The importer detects section headings
+            and field separators, then you confirm before it rebuilds the tagged template.
+            Experience is required; Education, Projects, and Skills can be omitted when absent.
           </p>
         </div>
         {wizardStep !== "idle" ? (
@@ -171,23 +170,19 @@ export function TemplateImportWizard() {
                 onChange={setProfileDraft}
                 headingOverrides={headingOverrides}
                 remapBusy={remapBusy}
-                onRemapHeading={(paragraphId, kind) =>
-                  void remapHeading(paragraphId, kind)
-                }
+                onRemapHeading={(paragraphId, kind) => void remapHeading(paragraphId, kind)}
               />
               <PreviewCompare sourceSha256={analysis.source_sha256} profile={profileDraft} />
             </>
           ) : (
             <p className="mt-4 rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">
-              No suggested mapping — see the issues above for what the analyzer could
-              not map, fix the source document, and upload again.
+              No suggested mapping — see the issues above for what the analyzer could not map, fix
+              the source document, and upload again.
             </p>
           )}
           <label className="mt-4 block text-sm">
             <span className="font-medium text-ink">Save as</span>
-            <span className="ml-1 text-xs text-ink-muted">
-              (library label; must be unique)
-            </span>
+            <span className="ml-1 text-xs text-ink-muted">(library label; must be unique)</span>
             <input
               type="text"
               value={installLabel}
@@ -209,8 +204,8 @@ export function TemplateImportWizard() {
             <span>
               <span className="font-medium text-ink">Also calibrate fit constants</span>
               <span className="block text-xs text-ink-muted">
-                Runs build + measure (Word/LibreOffice) so page packing matches the new
-                template. Slower; constants reload without restarting the server.
+                Runs build + measure (Word/LibreOffice) so page packing matches the new template.
+                Slower; constants reload without restarting the server.
               </span>
             </span>
           </label>
@@ -227,10 +222,10 @@ export function TemplateImportWizard() {
                 Also merge this file's content into the master resume
               </span>
               <span className="block text-xs text-ink-muted">
-                Matches entries by company/school/project name: matching entries are
-                updated (their bullets refreshed), new ones are added, and everything
-                else in your master resume is left as-is. Backs up the current file
-                first, and asks for confirmation before writing.
+                Matches entries by company/school/project name: matching entries are updated (their
+                bullets refreshed), new ones are added, and everything else in your master resume is
+                left as-is. Backs up the current file first, and asks for confirmation before
+                writing.
               </span>
             </span>
           </label>
@@ -246,8 +241,8 @@ export function TemplateImportWizard() {
               <span>
                 <span className="font-medium text-ink">Suggest tags for untagged bullets</span>
                 <span className="block text-xs text-ink-muted">
-                  Uses an LLM call to propose tags for bullets the deterministic import
-                  could not match on its own. Never blocks the import if it fails.
+                  Uses an LLM call to propose tags for bullets the deterministic import could not
+                  match on its own. Never blocks the import if it fails.
                 </span>
               </span>
             </label>

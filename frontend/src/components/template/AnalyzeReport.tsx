@@ -37,18 +37,13 @@ function SectionFieldRows({
         const candidate = byField.get(field);
         const missing = !candidate && required.includes(field);
         return (
-          <li
-            key={field}
-            className={missing ? "text-danger" : "text-ink-muted"}
-          >
+          <li key={field} className={missing ? "text-danger" : "text-ink-muted"}>
             <span className="font-medium">{field}</span>
             {candidate ? (
               <>
                 {": "}
-                <span className="font-mono">
-                  “{candidate.preview || "(empty)"}”
-                </span>{" "}
-                ({(candidate.confidence * 100).toFixed(0)}% conf.)
+                <span className="font-mono">“{candidate.preview || "(empty)"}”</span> (
+                {(candidate.confidence * 100).toFixed(0)}% conf.)
               </>
             ) : (
               " — not detected"
@@ -82,8 +77,8 @@ export function AnalyzeReport({ analysis }: Props) {
                 <span className="font-medium text-ink">{s.key}</span>
                 <span className="text-ink-muted">
                   {" "}
-                  ← “{s.heading_text}” ({s.entry_count} entries, {s.bullet_count}{" "}
-                  bullets, {(s.confidence * 100).toFixed(0)}% conf.)
+                  ← “{s.heading_text}” ({s.entry_count} entries, {s.bullet_count} bullets,{" "}
+                  {(s.confidence * 100).toFixed(0)}% conf.)
                 </span>
                 <SectionFieldRows
                   sectionKey={s.key}
@@ -127,8 +122,8 @@ export function AnalyzeReport({ analysis }: Props) {
         </p>
       ) : (
         <p className="rounded-md bg-danger-soft px-3 py-2 text-danger">
-          Cannot install until the blocking issues above are fixed in the source
-          document — fix it and upload again.
+          Cannot install until the blocking issues above are fixed in the source document — fix it
+          and upload again.
         </p>
       )}
     </div>

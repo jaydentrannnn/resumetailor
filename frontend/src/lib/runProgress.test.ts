@@ -44,7 +44,11 @@ describe("runProgress", () => {
   it("never rewinds when a late render event follows expand and skills", () => {
     // jobs.py emits stage "render" (fit band) after "expand"/"skills" when PDF preview fails.
     const during = runProgress([...CLEAN_RUN], "running", true).value;
-    const after = runProgress([...CLEAN_RUN, ev("render", "PDF preview unavailable")], "running", true);
+    const after = runProgress(
+      [...CLEAN_RUN, ev("render", "PDF preview unavailable")],
+      "running",
+      true,
+    );
     expect(after.value).toBeGreaterThanOrEqual(during);
   });
 

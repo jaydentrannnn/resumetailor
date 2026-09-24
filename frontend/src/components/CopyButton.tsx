@@ -26,13 +26,7 @@ async function copyText(text: string): Promise<boolean> {
   }
 }
 
-export function CopyButton({
-  label,
-  text,
-}: {
-  label: string;
-  text: string;
-}) {
+export function CopyButton({ label, text }: { label: string; text: string }) {
   const [copied, setCopied] = useState(false);
   const timerRef = useRef<ReturnType<typeof window.setTimeout> | null>(null);
 

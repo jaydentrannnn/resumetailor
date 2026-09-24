@@ -62,8 +62,8 @@ export function SavedTemplatesPanel() {
         <div>
           <h2 className="font-display text-xl font-semibold">Saved templates</h2>
           <p className="mt-1 text-sm text-ink-muted">
-            Switch among named snapshots without re-uploading. Activate copies the
-            saved baseline and tagged template into the live slot.
+            Switch among named snapshots without re-uploading. Activate copies the saved baseline
+            and tagged template into the live slot.
           </p>
         </div>
         <label className="flex items-center gap-2 text-xs text-ink-muted">
@@ -79,8 +79,8 @@ export function SavedTemplatesPanel() {
 
       {library.length === 0 ? (
         <p className="mt-4 text-sm text-ink-muted">
-          No saved templates yet. Install one below — it will appear here under the
-          label you choose.
+          No saved templates yet. Install one below — it will appear here under the label you
+          choose.
         </p>
       ) : (
         <ul className="mt-4 divide-y divide-line/80 rounded-lg border border-line">
@@ -144,9 +144,7 @@ export function SavedTemplatesPanel() {
                     </div>
                     <p className="mt-0.5 text-xs text-ink-muted">
                       {formatBytes(entry.size_bytes)} · {formatWhen(entry.created_at)}
-                      {entry.source_filename
-                        ? ` · ${entry.source_filename}`
-                        : null}
+                      {entry.source_filename ? ` · ${entry.source_filename}` : null}
                     </p>
                   </>
                 )}

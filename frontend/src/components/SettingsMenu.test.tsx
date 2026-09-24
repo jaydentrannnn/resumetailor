@@ -6,15 +6,29 @@ import { SettingsMenu } from "./SettingsMenu";
 
 vi.mock("./workspace/ProfileSwitcher", () => ({ ProfileSwitcher: () => <p>profile switcher</p> }));
 vi.mock("../state/workspaceState", () => ({
-  useWorkspaceState: () => ({ workspaces: [{ id: "w1", label: "Alex" }], activeId: "w1", switching: false }),
+  useWorkspaceState: () => ({
+    workspaces: [{ id: "w1", label: "Alex" }],
+    activeId: "w1",
+    switching: false,
+  }),
 }));
 
 afterEach(() => cleanup());
 // jsdom has no matchMedia; ThemeProvider reads the OS colour scheme through it.
-window.matchMedia ??= ((query: string) => ({ matches: false, media: query, addEventListener() {}, removeEventListener() {} })) as unknown as typeof window.matchMedia;
+window.matchMedia ??= ((query: string) => ({
+  matches: false,
+  media: query,
+  addEventListener() {},
+  removeEventListener() {},
+})) as unknown as typeof window.matchMedia;
 
 function renderMenu() {
-  return render(<ThemeProvider><SettingsMenu /><p>outside</p></ThemeProvider>);
+  return render(
+    <ThemeProvider>
+      <SettingsMenu />
+      <p>outside</p>
+    </ThemeProvider>,
+  );
 }
 
 describe("SettingsMenu", () => {

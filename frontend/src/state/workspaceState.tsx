@@ -146,12 +146,22 @@ export function WorkspaceProvider({ children }: { children: ReactNode }) {
       rename,
       remove,
     }),
-    [workspaces, activeId, activeLabel, loading, switching, error, refresh, activate, create, rename, remove],
+    [
+      workspaces,
+      activeId,
+      activeLabel,
+      loading,
+      switching,
+      error,
+      refresh,
+      activate,
+      create,
+      rename,
+      remove,
+    ],
   );
 
-  return (
-    <WorkspaceStateContext.Provider value={value}>{children}</WorkspaceStateContext.Provider>
-  );
+  return <WorkspaceStateContext.Provider value={value}>{children}</WorkspaceStateContext.Provider>;
 }
 
 /**

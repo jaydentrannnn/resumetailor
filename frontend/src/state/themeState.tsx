@@ -61,7 +61,9 @@ function applyResolved(resolved: ResolvedTheme): void {
  */
 export function ThemeProvider({ children }: { children: ReactNode }) {
   const [preference, setPreferenceState] = useState<ThemePreference>(readStoredPreference);
-  const [resolved, setResolved] = useState<ResolvedTheme>(() => resolveTheme(readStoredPreference()));
+  const [resolved, setResolved] = useState<ResolvedTheme>(() =>
+    resolveTheme(readStoredPreference()),
+  );
 
   const setPreference = useCallback((next: ThemePreference) => {
     setPreferenceState(next);

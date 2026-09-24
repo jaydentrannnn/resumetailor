@@ -1,10 +1,20 @@
 import { describe, expect, it } from "vitest";
-import { canContinueFill, canReopenFill, isTabClosed, isTerminalRow, retryLabel, retryShortLabel } from "./applicationRows";
+import {
+  canContinueFill,
+  canReopenFill,
+  isTabClosed,
+  isTerminalRow,
+  retryLabel,
+  retryShortLabel,
+} from "./applicationRows";
 
 describe("isTerminalRow", () => {
   it("trusts the server's terminal_application reason for every closed status", () => {
     // skipped / interview / ghosted were missing from the old client-side copy.
-    for (const reasons of [["terminal_application"], ["terminal_application", "missing_tailor_job"]]) {
+    for (const reasons of [
+      ["terminal_application"],
+      ["terminal_application", "missing_tailor_job"],
+    ]) {
       expect(isTerminalRow({ preparation_reasons: reasons })).toBe(true);
     }
   });
@@ -27,7 +37,12 @@ describe("retryLabel", () => {
 
 describe("retryShortLabel", () => {
   it("fits the fixed-width table action as one short word or pair", () => {
-    for (const [kind, status] of [["fetch", "discovered"], ["fetch", "needs_browser"], ["prefilter", "screened_out"], ["tailor", "tailor_failed"]] as const) {
+    for (const [kind, status] of [
+      ["fetch", "discovered"],
+      ["fetch", "needs_browser"],
+      ["prefilter", "screened_out"],
+      ["tailor", "tailor_failed"],
+    ] as const) {
       expect(retryShortLabel(kind, status).length).toBeLessThanOrEqual(8);
     }
     expect(retryShortLabel("fetch", "discovered")).toBe("Fetch JD");
@@ -35,7 +50,12 @@ describe("retryShortLabel", () => {
 });
 
 describe("canContinueFill", () => {
-  const row = { status: "awaiting_review", archived_at: null, preparation_eligible: true, fill: { browser_target_id: "T1" } } as Parameters<typeof canContinueFill>[0];
+  const row = {
+    status: "awaiting_review",
+    archived_at: null,
+    preparation_eligible: true,
+    fill: { browser_target_id: "T1" },
+  } as Parameters<typeof canContinueFill>[0];
 
   it("resumes a fill that stopped for input in its retained tab", () => {
     expect(canContinueFill(row)).toBe(true);
@@ -65,14 +85,18 @@ describe("canContinueFill", () => {
 describe("isTabClosed", () => {
   it("is closed only for a recorded tab missing from a known tab list", () => {
     expect(isTabClosed({ fill: { browser_target_id: "T1" } } as never, new Set(["T2"]))).toBe(true);
-    expect(isTabClosed({ fill: { browser_target_id: "T1" } } as never, new Set(["T1"]))).toBe(false);
+    expect(isTabClosed({ fill: { browser_target_id: "T1" } } as never, new Set(["T1"]))).toBe(
+      false,
+    );
     expect(isTabClosed({ fill: { browser_target_id: "T1" } } as never, null)).toBe(false);
     expect(isTabClosed({ fill: undefined }, new Set())).toBe(false);
   });
 });
 
 describe("canReopenFill", () => {
-  const row = { status: "awaiting_review", archived_at: null, job_id: "job-1" } as Parameters<typeof canReopenFill>[0];
+  const row = { status: "awaiting_review", archived_at: null, job_id: "job-1" } as Parameters<
+    typeof canReopenFill
+  >[0];
 
   it("reopens a prepared row whose fill stopped for the applicant", () => {
     expect(canReopenFill(row)).toBe(true);

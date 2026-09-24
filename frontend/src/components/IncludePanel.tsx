@@ -8,13 +8,7 @@ import {
 import { Toggle } from "./Field";
 import { type SectionKind, SECTION_KIND_LABELS, moveItem } from "../lib/resumeEdit";
 
-const ALL_CONTACT_FIELDS: ContactField[] = [
-  "location",
-  "email",
-  "phone",
-  "linkedin",
-  "github",
-];
+const ALL_CONTACT_FIELDS: ContactField[] = ["location", "email", "phone", "linkedin", "github"];
 
 const CONTACT_FIELD_LABELS: Record<ContactField, string> = {
   location: "Location",
@@ -209,17 +203,17 @@ export function IncludePanel({
               </span>
             </summary>
             <p className="mt-1.5 text-ink-muted">
-              This template renders sections in a fixed order baked into the file — reordering
-              here is a per-run override and has no effect until the template is re-imported
-              through the Template tab in multi-section (&quot;generic&quot;) mode. Stored section
-              order lives on the Master resume tab.
+              This template renders sections in a fixed order baked into the file — reordering here
+              is a per-run override and has no effect until the template is re-imported through the
+              Template tab in multi-section (&quot;generic&quot;) mode. Stored section order lives
+              on the Master resume tab.
             </p>
           </details>
         )}
         {isGeneric && (
           <p className="text-xs text-ink-muted">
-            Per-run override of the master resume&apos;s section order. Changes here do not
-            edit the master resume itself.
+            Per-run override of the master resume&apos;s section order. Changes here do not edit the
+            master resume itself.
           </p>
         )}
         <ul className="space-y-1">
@@ -321,17 +315,18 @@ export function IncludePanel({
         );
       })}
 
-      {projectsEnabled && outline.sections.some((s) => s.kind === "project" && s.entries.length) && (
-        <fieldset className="mt-5 space-y-2">
-          <legend className="text-sm font-semibold text-ink">Project links</legend>
-          <Toggle
-            label="Show project links"
-            help="Github label and hyperlink in each project's header line."
-            checked={!settings.no_project_links}
-            onChange={(v) => onChange({ ...settings, no_project_links: !v })}
-          />
-        </fieldset>
-      )}
+      {projectsEnabled &&
+        outline.sections.some((s) => s.kind === "project" && s.entries.length) && (
+          <fieldset className="mt-5 space-y-2">
+            <legend className="text-sm font-semibold text-ink">Project links</legend>
+            <Toggle
+              label="Show project links"
+              help="Github label and hyperlink in each project's header line."
+              checked={!settings.no_project_links}
+              onChange={(v) => onChange({ ...settings, no_project_links: !v })}
+            />
+          </fieldset>
+        )}
     </section>
   );
 }

@@ -20,7 +20,9 @@ function draft(overrides: Partial<PackDraftForValidation> = {}): PackDraftForVal
 describe("validatePackDraft — parity with libraries.py::validate_pack", () => {
   it("returns no errors for a clean draft", () => {
     expect(
-      validatePackDraft(draft({ tag_aliases: { py: "python" }, verb_families: { build: ["led"] } })),
+      validatePackDraft(
+        draft({ tag_aliases: { py: "python" }, verb_families: { build: ["led"] } }),
+      ),
     ).toEqual([]);
   });
 
@@ -96,7 +98,9 @@ describe("validatePackDraft — parity with libraries.py::validate_pack", () => 
   it("rejects a family name that slugifies to empty (libraries.py:749)", () => {
     for (const bad of ["★★", "護理", "   "]) {
       const errors = validatePackDraft(draft({ verb_families: { [bad]: ["led"] } }));
-      expect(errors.some((e) => e.field.kind === "family" && e.message.includes("Invalid family"))).toBe(true);
+      expect(
+        errors.some((e) => e.field.kind === "family" && e.message.includes("Invalid family")),
+      ).toBe(true);
     }
   });
 
@@ -124,13 +128,17 @@ describe("validatePackDraft — parity with libraries.py::validate_pack", () => 
   it("caps verbs per family at 500, counted before dedupe (libraries.py:751)", () => {
     const verbs = Array.from({ length: 501 }, () => "led");
     const errors = validatePackDraft(draft({ verb_families: { build: verbs } }));
-    expect(errors.some((e) => e.field.kind === "family" && e.message.includes("too many verbs"))).toBe(true);
+    expect(
+      errors.some((e) => e.field.kind === "family" && e.message.includes("too many verbs")),
+    ).toBe(true);
   });
 
   it("exactly 500 verbs in a family is fine", () => {
     const verbs = Array.from({ length: 500 }, (_, i) => `verb${i}`);
     const errors = validatePackDraft(draft({ verb_families: { build: verbs } }));
-    expect(errors.some((e) => e.field.kind === "family" && e.message.includes("too many verbs"))).toBe(false);
+    expect(
+      errors.some((e) => e.field.kind === "family" && e.message.includes("too many verbs")),
+    ).toBe(false);
   });
 
   it("rejects non-alphabetic verbs (libraries.py:758)", () => {

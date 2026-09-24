@@ -11,7 +11,9 @@ describe("review grouping", () => {
     expect(reviewGroup(undefined, { state: "unanswered", required: false })).toBe("optional");
   });
   it("preserves generated and retained outcomes", () => {
-    expect(reviewGroup(undefined, { state: "verified_filled", answer_source: "generated" })).toBe("generated");
+    expect(reviewGroup(undefined, { state: "verified_filled", answer_source: "generated" })).toBe(
+      "generated",
+    );
     expect(reviewGroup(undefined, { state: "preserved" })).toBe("verified");
     expect(reviewGroup(undefined, { state: "manual_review" })).toBe("attention");
   });

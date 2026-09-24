@@ -1,8 +1,4 @@
-import type {
-  TemplateAnalyzeResponse,
-  TemplateHeadingKind,
-  TemplateSection,
-} from "../../api";
+import type { TemplateAnalyzeResponse, TemplateHeadingKind, TemplateSection } from "../../api";
 
 type Enabled = {
   education: boolean;
@@ -120,8 +116,8 @@ export function SectionMapStep({
           Detected headings
         </p>
         <p className="mt-1 text-xs text-ink-muted">
-          Confirm what each heading is, or correct it — reassigning one re-runs
-          detection for the rest of the document.
+          Confirm what each heading is, or correct it — reassigning one re-runs detection for the
+          rest of the document.
         </p>
         <div className="mt-2 space-y-1.5">
           {analysis.sections.length === 0 ? (
@@ -141,8 +137,7 @@ export function SectionMapStep({
                   <div className="min-w-0">
                     <span className="font-medium text-ink">“{s.heading_text}”</span>
                     <span className="ml-2 text-xs text-ink-muted">
-                      paragraph {s.heading_paragraph_id} · {(s.confidence * 100).toFixed(0)}%
-                      conf.
+                      paragraph {s.heading_paragraph_id} · {(s.confidence * 100).toFixed(0)}% conf.
                     </span>
                   </div>
                   <select
@@ -213,11 +208,10 @@ export function SectionMapStep({
             This template will support multiple &amp; custom sections.
           </p>
           <p className="mt-1 text-ink-muted">
-            Detection found more sections than a fixed layout can represent (either two
-            headings of the same kind, or a plain-list section), so the tagged template
-            will render whatever sections exist on the Master Resume tab — in their own
-            order, under their own titles — with no rebuild needed to add, rename, or
-            reorder one there later.
+            Detection found more sections than a fixed layout can represent (either two headings of
+            the same kind, or a plain-list section), so the tagged template will render whatever
+            sections exist on the Master Resume tab — in their own order, under their own titles —
+            with no rebuild needed to add, rename, or reorder one there later.
           </p>
         </div>
       )}
@@ -242,16 +236,12 @@ export function SectionMapStep({
           Name &amp; contact paragraphs
         </p>
         <p className="mt-1 text-ink">
-          Name → paragraph {String(profile.name_paragraph_id ?? "—")}; contact →{" "}
-          paragraph{" "}
-          {String(
-            (profile.contact as { paragraph_id?: number } | undefined)?.paragraph_id ??
-              "—",
-          )}
+          Name → paragraph {String(profile.name_paragraph_id ?? "—")}; contact → paragraph{" "}
+          {String((profile.contact as { paragraph_id?: number } | undefined)?.paragraph_id ?? "—")}
         </p>
         <p className="mt-1 text-xs text-ink-muted">
-          Auto-detected from the first content lines. Field spans for headers were
-          suggested from separators and tab stops in the prototype rows.
+          Auto-detected from the first content lines. Field spans for headers were suggested from
+          separators and tab stops in the prototype rows.
         </p>
       </div>
     </div>

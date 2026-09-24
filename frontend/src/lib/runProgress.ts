@@ -86,7 +86,11 @@ export function runProgress(
     return {
       value: busy ? 0.02 : 0,
       indeterminate: busy,
-      label: events.length ? events[events.length - 1].stage : status === "queued" ? "Queued" : "Starting",
+      label: events.length
+        ? events[events.length - 1].stage
+        : status === "queued"
+          ? "Queued"
+          : "Starting",
     };
   }
 

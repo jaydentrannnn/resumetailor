@@ -12,9 +12,7 @@ export function describePhase(status: DailyStatus | null): string {
   if (!status) return "";
   if (status.running) {
     if (status.phase === "discovering") {
-      return status.source_id
-        ? `Fetching source ${status.source_id}…`
-        : "Fetching sources…";
+      return status.source_id ? `Fetching source ${status.source_id}…` : "Fetching sources…";
     }
     if (status.phase === "processing") {
       const position = Math.min(status.processed + 1, Math.max(status.total, 1));

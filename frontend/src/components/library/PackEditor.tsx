@@ -46,13 +46,7 @@ const FORCE_HINT_SUFFIX = "pass force=true to override it.";
  * Create or edit a vocabulary pack, in a wide modal. `packId === null` is create mode —
  * the id is derived server-side from the label. Shipped packs edit via a shadow file.
  */
-export function PackEditor({
-  packId,
-  onClose,
-}: {
-  packId: string | null;
-  onClose: () => void;
-}) {
+export function PackEditor({ packId, onClose }: { packId: string | null; onClose: () => void }) {
   const { savePack } = useLibraryState();
 
   const [loading, setLoading] = useState(packId !== null);
@@ -207,8 +201,8 @@ export function PackEditor({
 
           <div className="text-sm">
             <span className="mb-1 block text-ink-muted">
-              Verb families ({verbRows.length}) — near-synonym opening verbs, grouped by
-              the claim they make
+              Verb families ({verbRows.length}) — near-synonym opening verbs, grouped by the claim
+              they make
             </span>
             <div className="space-y-2">
               {verbRows.map((row) => {
@@ -255,9 +249,7 @@ export function PackEditor({
                 onChange={(e) => setForce(e.target.checked)}
                 className="mt-0.5 accent-[var(--color-accent)]"
               />
-              <span>
-                Overwrite the conflicting target and save anyway.
-              </span>
+              <span>Overwrite the conflicting target and save anyway.</span>
             </label>
           )}
 
@@ -284,7 +276,8 @@ export function PackEditor({
             </button>
             {!saving && validationErrors.length > 0 && (
               <span className="text-xs text-ink-muted">
-                Fix {validationErrors.length} issue{validationErrors.length === 1 ? "" : "s"} to save.
+                Fix {validationErrors.length} issue{validationErrors.length === 1 ? "" : "s"} to
+                save.
               </span>
             )}
           </div>

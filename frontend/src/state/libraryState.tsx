@@ -98,7 +98,9 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
   const [enabledPacks, setEnabledPacks] = useState<string[]>([]);
   const [overrides, setOverridesState] = useState<LibraryOverrides>(EMPTY_OVERRIDES);
   const [overridesDraft, setOverridesDraft] = useState<LibraryOverrides>(EMPTY_OVERRIDES);
-  const [overridesSaveState, setOverridesSaveState] = useState<"saved" | "unsaved" | "saving" | "failed">("saved");
+  const [overridesSaveState, setOverridesSaveState] = useState<
+    "saved" | "unsaved" | "saving" | "failed"
+  >("saved");
   const overridesDraftRef = useRef<LibraryOverrides>(EMPTY_OVERRIDES);
   const savedOverridesRef = useRef<LibraryOverrides>(EMPTY_OVERRIDES);
   const overridesRevision = useRef(0);
@@ -153,12 +155,18 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       setBusy(true);
       setError(null);
       try {
-        const write = selectionWrites.current.then(() => setLibrarySelection(nextEnabled, nextOverrides));
-        selectionWrites.current = write.then(() => {}, () => {});
+        const write = selectionWrites.current.then(() =>
+          setLibrarySelection(nextEnabled, nextOverrides),
+        );
+        selectionWrites.current = write.then(
+          () => {},
+          () => {},
+        );
         const result = await write;
         if (revision === selectionRevision.current) applyState(result);
       } catch (err) {
-        if (revision === selectionRevision.current) setError(err instanceof Error ? err.message : String(err));
+        if (revision === selectionRevision.current)
+          setError(err instanceof Error ? err.message : String(err));
         throw err;
       } finally {
         if (revision === selectionRevision.current) setBusy(false);
@@ -180,7 +188,11 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
   const flushOverrides = useCallback(async (): Promise<boolean> => {
     if (overridesTimer.current) clearTimeout(overridesTimer.current);
     overridesTimer.current = null;
-    try { await overridesWrite.current; } catch { /* retry the current draft */ }
+    try {
+      await overridesWrite.current;
+    } catch {
+      /* retry the current draft */
+    }
     if (!overridesDirty.current) return true;
     const revision = overridesRevision.current;
     const draft = overridesDraftRef.current;
@@ -200,29 +212,44 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     }
   }, [setOverrides]);
 
-  const editOverrides = useCallback((patch: Partial<LibraryOverrides>) => {
-    const next = { ...overridesDraftRef.current, ...patch };
-    overridesDraftRef.current = next;
-    overridesDirty.current = true;
-    ++overridesRevision.current;
-    setOverridesDraft(next);
-    setOverridesSaveState("unsaved");
-    if (overridesTimer.current) clearTimeout(overridesTimer.current);
-    overridesTimer.current = setTimeout(() => { overridesTimer.current = null; void flushOverrides(); }, 600);
-  }, [flushOverrides]);
+  const editOverrides = useCallback(
+    (patch: Partial<LibraryOverrides>) => {
+      const next = { ...overridesDraftRef.current, ...patch };
+      overridesDraftRef.current = next;
+      overridesDirty.current = true;
+      ++overridesRevision.current;
+      setOverridesDraft(next);
+      setOverridesSaveState("unsaved");
+      if (overridesTimer.current) clearTimeout(overridesTimer.current);
+      overridesTimer.current = setTimeout(() => {
+        overridesTimer.current = null;
+        void flushOverrides();
+      }, 600);
+    },
+    [flushOverrides],
+  );
 
   const discardOverrides = useCallback(async () => {
     if (overridesTimer.current) clearTimeout(overridesTimer.current);
     overridesTimer.current = null;
     ++overridesRevision.current;
-    try { await overridesWrite.current; } catch { /* keep last server state */ }
+    try {
+      await overridesWrite.current;
+    } catch {
+      /* keep last server state */
+    }
     overridesDirty.current = false;
     overridesDraftRef.current = savedOverridesRef.current;
     setOverridesDraft(savedOverridesRef.current);
     setOverridesSaveState("saved");
   }, []);
 
-  useEffect(() => () => { if (overridesTimer.current) clearTimeout(overridesTimer.current); }, []);
+  useEffect(
+    () => () => {
+      if (overridesTimer.current) clearTimeout(overridesTimer.current);
+    },
+    [],
+  );
 
   const savePack = useCallback(
     async (id: string | null, draft: LibraryPackDraft) => {
@@ -233,9 +260,8 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
       // the provider-level `error` — that would print the same message twice, once in
       // the Packs banner and once in the editor.
       try {
-        const next = id === null
-          ? await createLibraryPack(draft)
-          : await updateLibraryPack(id, draft);
+        const next =
+          id === null ? await createLibraryPack(draft) : await updateLibraryPack(id, draft);
         applyState(next);
       } finally {
         setBusy(false);
@@ -274,13 +300,10 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     [applyState],
   );
 
-  const previewImpact = useCallback(
-    async (tagAliases: Record<string, string>) => {
-      const res = await previewLibraryImpact(tagAliases);
-      return res.impacts;
-    },
-    [],
-  );
+  const previewImpact = useCallback(async (tagAliases: Record<string, string>) => {
+    const res = await previewLibraryImpact(tagAliases);
+    return res.impacts;
+  }, []);
 
   const generateProposals = useCallback(
     async (jdText?: string) => {
@@ -391,9 +414,7 @@ export function LibraryProvider({ children }: { children: ReactNode }) {
     ],
   );
 
-  return (
-    <LibraryStateContext.Provider value={value}>{children}</LibraryStateContext.Provider>
-  );
+  return <LibraryStateContext.Provider value={value}>{children}</LibraryStateContext.Provider>;
 }
 
 /**

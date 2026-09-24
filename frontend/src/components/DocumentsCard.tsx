@@ -37,8 +37,7 @@ export function DocumentsCard({ jobId, coverLetter, onCoverRegenerated, readOnly
 
   const resumeSrc = previewUrl(jobId);
   const coverSrc = coverLetterPreviewUrl(jobId, coverPreviewKey);
-  const activeSrc =
-    tab === "cover" && hasCoverPdf ? coverSrc : tab === "resume" ? resumeSrc : null;
+  const activeSrc = tab === "cover" && hasCoverPdf ? coverSrc : tab === "resume" ? resumeSrc : null;
   const activeTitle =
     tab === "cover" && hasCoverPdf ? "Cover letter preview" : "Tailored resume preview";
 
@@ -63,9 +62,7 @@ export function DocumentsCard({ jobId, coverLetter, onCoverRegenerated, readOnly
               const next = tab === "resume" ? "cover" : "resume";
               setTab(next);
               (
-                e.currentTarget.querySelector(
-                  `#documents-tab-${next}`,
-                ) as HTMLElement | null
+                e.currentTarget.querySelector(`#documents-tab-${next}`) as HTMLElement | null
               )?.focus();
             }}
           >
@@ -125,11 +122,7 @@ export function DocumentsCard({ jobId, coverLetter, onCoverRegenerated, readOnly
                 Download .docx
               </a>
             </div>
-            <PdfFrame
-              iframeKey={`resume-${jobId}`}
-              title={activeTitle}
-              src={resumeSrc}
-            />
+            <PdfFrame iframeKey={`resume-${jobId}`} title={activeTitle} src={resumeSrc} />
           </>
         )}
 
@@ -139,15 +132,11 @@ export function DocumentsCard({ jobId, coverLetter, onCoverRegenerated, readOnly
               <CoverLetterActionBar letter={coverLetter} jobId={jobId} />
             </div>
             {hasCoverPdf ? (
-              <PdfFrame
-                iframeKey={`cover-${coverPreviewKey}`}
-                title={activeTitle}
-                src={coverSrc}
-              />
+              <PdfFrame iframeKey={`cover-${coverPreviewKey}`} title={activeTitle} src={coverSrc} />
             ) : (
               <p className="rounded-lg border border-line bg-paper/40 px-4 py-6 text-sm text-ink-muted">
-                PDF preview is not available for this cover letter. Use the downloads above
-                or the letter text below.
+                PDF preview is not available for this cover letter. Use the downloads above or the
+                letter text below.
               </p>
             )}
             <CoverLetterDetails
@@ -162,15 +151,7 @@ export function DocumentsCard({ jobId, coverLetter, onCoverRegenerated, readOnly
   );
 }
 
-function PdfFrame({
-  iframeKey,
-  title,
-  src,
-}: {
-  iframeKey: string;
-  title: string;
-  src: string;
-}) {
+function PdfFrame({ iframeKey, title, src }: { iframeKey: string; title: string; src: string }) {
   /**
    * Single embedded PDF viewer for the active document tab.
    *

@@ -84,8 +84,8 @@ export function ImportResumePanel() {
     <section className="rounded-xl border border-line bg-panel p-5 shadow-sm">
       <h2 className="font-display text-lg font-semibold">Import from a document</h2>
       <p className="mt-1 text-sm text-ink-muted">
-        Upload a .docx resume to fold its content into the master resume below —
-        matching entries are updated, new ones are added, nothing else changes.
+        Upload a .docx resume to fold its content into the master resume below — matching entries
+        are updated, new ones are added, nothing else changes.
       </p>
 
       <UploadDropzone disabled={busy} onFile={(file) => void handleFile(file)} />
@@ -101,8 +101,8 @@ export function ImportResumePanel() {
         <span>
           <span className="font-medium text-ink">Suggest tags for untagged bullets</span>
           <span className="block text-xs text-ink-muted">
-            Uses an LLM call to propose tags for bullets the deterministic import
-            could not match on its own. Never blocks the import if it fails.
+            Uses an LLM call to propose tags for bullets the deterministic import could not match on
+            its own. Never blocks the import if it fails.
           </span>
         </span>
       </label>
@@ -130,8 +130,7 @@ export function ImportResumePanel() {
       {outcome?.kind === "merged" && (
         <div className="mt-4 rounded-md bg-accent-soft px-3 py-2 text-sm text-accent">
           <p>
-            Master resume merged — {outcome.updated.length} updated, {outcome.added.length}{" "}
-            added
+            Master resume merged — {outcome.updated.length} updated, {outcome.added.length} added
             {outcome.addedSections.length > 0
               ? ` (${outcome.addedSections.length} new section${
                   outcome.addedSections.length === 1 ? "" : "s"

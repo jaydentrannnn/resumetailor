@@ -190,13 +190,24 @@ export type ApplicantProfile = {
   how_heard: string;
   workday_email?: string;
   workday_password?: string;
-  eeo: { gender: string; race: string; race_detail?: string; hispanic_latino?: boolean | null; veteran: string; disability: string };
+  eeo: {
+    gender: string;
+    race: string;
+    race_detail?: string;
+    hispanic_latino?: boolean | null;
+    veteran: string;
+    disability: string;
+  };
   /** Spoken languages (`profile.LanguageEntry`); absent on profiles saved before it existed. */
   languages?: ApplicantLanguage[];
   custom_answers: Record<string, string>;
 };
 
-export type ApplicantLanguage = { language: string; fluent: boolean; levels: Record<string, string> };
+export type ApplicantLanguage = {
+  language: string;
+  fluent: boolean;
+  levels: Record<string, string>;
+};
 
 export type ApplyFieldOutcome = {
   field_id?: string;
@@ -204,7 +215,14 @@ export type ApplyFieldOutcome = {
   step_id?: string;
   label?: string;
   canonical_key?: string;
-  state?: "verified_filled" | "preserved" | "unanswered" | "ambiguous" | "invalid_existing" | "manual_review" | "failed";
+  state?:
+    | "verified_filled"
+    | "preserved"
+    | "unanswered"
+    | "ambiguous"
+    | "invalid_existing"
+    | "manual_review"
+    | "failed";
   required?: boolean;
   observed_value?: string;
   answer_source?: string;
@@ -227,8 +245,22 @@ export type ApplyReviewField = {
   enabled?: boolean;
   required: boolean;
   expected_state_hash: string;
-  constraints?: { maxlength?: number; max_length?: number; type?: string; input_type?: string; min?: string; max?: string };
-  options: Array<{ option_id: string; label: string; value?: string; enabled: boolean; placeholder: boolean; selected?: boolean }>;
+  constraints?: {
+    maxlength?: number;
+    max_length?: number;
+    type?: string;
+    input_type?: string;
+    min?: string;
+    max?: string;
+  };
+  options: Array<{
+    option_id: string;
+    label: string;
+    value?: string;
+    enabled: boolean;
+    placeholder: boolean;
+    selected?: boolean;
+  }>;
 };
 
 export type ApplyAttachment = {
@@ -236,7 +268,14 @@ export type ApplyAttachment = {
   filename?: string;
   verified?: boolean;
   error?: string;
-  state?: "not_requested" | "preserved" | "uploading" | "verified" | "missing_artifact" | "rejected" | "unverifiable";
+  state?:
+    | "not_requested"
+    | "preserved"
+    | "uploading"
+    | "verified"
+    | "missing_artifact"
+    | "rejected"
+    | "unverifiable";
   expected_filename?: string;
   observed_filename?: string;
   reason?: string;
@@ -387,19 +426,31 @@ export function getApplyOperation(operationId: string): Promise<ApplyOperation> 
 }
 
 export function focusApplicationReviewTab(sourceJobId: string): Promise<{ url: string }> {
-  return request(`/api/applications/${encodeURIComponent(sourceJobId)}/review-tab`, { method: "POST" });
+  return request(`/api/applications/${encodeURIComponent(sourceJobId)}/review-tab`, {
+    method: "POST",
+  });
 }
 
 export function refreshApplicationReview(sourceJobId: string): Promise<ApplyOperation> {
-  return request(`/api/applications/${encodeURIComponent(sourceJobId)}/review/refresh`, { method: "POST" });
+  return request(`/api/applications/${encodeURIComponent(sourceJobId)}/review/refresh`, {
+    method: "POST",
+  });
 }
 
-export function correctApplicationField(sourceJobId: string, body: {
-  snapshot_id: string; field_id: string; expected_state_hash: string;
-  value?: string | null; option_ids?: string[]; idempotency_key: string;
-}): Promise<ApplyOperation> {
+export function correctApplicationField(
+  sourceJobId: string,
+  body: {
+    snapshot_id: string;
+    field_id: string;
+    expected_state_hash: string;
+    value?: string | null;
+    option_ids?: string[];
+    idempotency_key: string;
+  },
+): Promise<ApplyOperation> {
   return request(`/api/applications/${encodeURIComponent(sourceJobId)}/corrections`, {
-    method: "POST", body: JSON.stringify(body),
+    method: "POST",
+    body: JSON.stringify(body),
   });
 }
 
@@ -805,7 +856,8 @@ export type TemplateAnalyzeResponse = {
 };
 
 /** A heading kind the wizard's remap step can assign, or `null` for "not a section". */
-export type TemplateHeadingKind = "experience" | "education" | "projects" | "skills" | "list" | null;
+export type TemplateHeadingKind =
+  "experience" | "education" | "projects" | "skills" | "list" | null;
 
 /** A workspace's own additions and removals, layered on top of its enabled packs. */
 export type LibraryOverrides = {
@@ -958,10 +1010,9 @@ export function createWorkspace(
 
 export function activateWorkspace(id: string): Promise<WorkspaceActivateResponse> {
   /** Switch the active profile; returns fresh config/settings/template in one call. */
-  return request<WorkspaceActivateResponse>(
-    `/api/workspaces/${encodeURIComponent(id)}/activate`,
-    { method: "POST" },
-  );
+  return request<WorkspaceActivateResponse>(`/api/workspaces/${encodeURIComponent(id)}/activate`, {
+    method: "POST",
+  });
 }
 
 export function renameWorkspace(id: string, label: string): Promise<WorkspaceListResponse> {
@@ -1075,7 +1126,9 @@ export type MasterResumeMergeResponse = {
  * writes unconditionally (no separate confirm step server-side); the caller is
  * responsible for confirming with the user first.
  */
-export function mergeMasterResume(resume: Record<string, unknown>): Promise<MasterResumeMergeResponse> {
+export function mergeMasterResume(
+  resume: Record<string, unknown>,
+): Promise<MasterResumeMergeResponse> {
   return request("/api/master-resume/merge", { method: "POST", body: JSON.stringify(resume) });
 }
 
@@ -1116,9 +1169,7 @@ export async function triggerPdfDownload(jobId: string): Promise<void> {
   const match = /filename\*?=(?:UTF-8''|")?([^";]+)/i.exec(
     res.headers.get("Content-Disposition") ?? "",
   );
-  const filename = match
-    ? decodeURIComponent(match[1].replace(/["']/g, ""))
-    : "resume.pdf";
+  const filename = match ? decodeURIComponent(match[1].replace(/["']/g, "")) : "resume.pdf";
   const anchor = document.createElement("a");
   anchor.href = url;
   anchor.download = filename;
@@ -1156,10 +1207,7 @@ export function coverLetterPreviewUrl(jobId: string, cacheBuster?: number): stri
   return cacheBuster === undefined ? base : `${base}?v=${cacheBuster}`;
 }
 
-export function regenerateCoverLetter(
-  jobId: string,
-  instruction: string,
-): Promise<CoverLetter> {
+export function regenerateCoverLetter(jobId: string, instruction: string): Promise<CoverLetter> {
   return request<CoverLetter>(`/api/jobs/${jobId}/cover-letter`, {
     method: "POST",
     headers: { "Content-Type": "application/json" },
@@ -1330,22 +1378,19 @@ export function renameTemplateLibrary(
   entryId: string,
   label: string,
 ): Promise<TemplateLibraryResponse> {
-  return request<TemplateLibraryResponse>(
-    `/api/template/library/${encodeURIComponent(entryId)}`,
-    { method: "PATCH", body: JSON.stringify({ label }) },
-  );
+  return request<TemplateLibraryResponse>(`/api/template/library/${encodeURIComponent(entryId)}`, {
+    method: "PATCH",
+    body: JSON.stringify({ label }),
+  });
 }
 
 /**
  * Delete a non-active library entry.
  */
-export function deleteTemplateLibrary(
-  entryId: string,
-): Promise<TemplateLibraryResponse> {
-  return request<TemplateLibraryResponse>(
-    `/api/template/library/${encodeURIComponent(entryId)}`,
-    { method: "DELETE" },
-  );
+export function deleteTemplateLibrary(entryId: string): Promise<TemplateLibraryResponse> {
+  return request<TemplateLibraryResponse>(`/api/template/library/${encodeURIComponent(entryId)}`, {
+    method: "DELETE",
+  });
 }
 
 export function fetchLibraries(): Promise<LibraryState> {
@@ -1422,10 +1467,9 @@ export function deleteLibraryPack(id: string): Promise<LibraryState> {
 
 export function resetLibraryPack(id: string): Promise<LibraryState> {
   /** Restore a shipped pack to its bundled seed by deleting its shadow file. */
-  return request<LibraryState>(
-    `/api/libraries/packs/${encodeURIComponent(id)}/reset`,
-    { method: "POST" },
-  );
+  return request<LibraryState>(`/api/libraries/packs/${encodeURIComponent(id)}/reset`, {
+    method: "POST",
+  });
 }
 
 export function setLibrarySelection(
@@ -1569,7 +1613,10 @@ export function listApplications(options: ApplicationListOptions = {}): Promise<
   return request(`/api/applications?${params}`);
 }
 
-export function archiveApplications(applicationIds: string[], archived: boolean): Promise<{ updated: string[]; errors: Record<string, string> }> {
+export function archiveApplications(
+  applicationIds: string[],
+  archived: boolean,
+): Promise<{ updated: string[]; errors: Record<string, string> }> {
   return request("/api/applications/archive", {
     method: "POST",
     body: JSON.stringify({ application_ids: applicationIds, archived }),

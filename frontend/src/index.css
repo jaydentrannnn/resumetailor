@@ -77,16 +77,37 @@ body {
   background: var(--color-paper);
 }
 
-button, input, select, textarea { font: inherit; }
-button, select, input:not([type="checkbox"]):not([type="radio"]), .rt-control { min-height: 36px; }
+button,
+input,
+select,
+textarea {
+  font: inherit;
+}
+button,
+select,
+input:not([type="checkbox"]):not([type="radio"]),
+.rt-control {
+  min-height: 36px;
+}
 @media (pointer: coarse) {
-  button, select, input:not([type="checkbox"]):not([type="radio"]), .rt-control { min-height: 44px; }
+  button,
+  select,
+  input:not([type="checkbox"]):not([type="radio"]),
+  .rt-control {
+    min-height: 44px;
+  }
 }
 /* Compact per-row table actions. Unlayered like the rule above so it can undercut the
    36px control floor (a Tailwind h-/min-h- utility cannot); touch keeps 36px. */
-.rt-row-action { min-height: 28px; height: 28px; }
+.rt-row-action {
+  min-height: 28px;
+  height: 28px;
+}
 @media (pointer: coarse) {
-  .rt-row-action { min-height: 36px; height: 36px; }
+  .rt-row-action {
+    min-height: 36px;
+    height: 36px;
+  }
 }
 
 * {

@@ -24,7 +24,9 @@ describe("LanguagesEditor", () => {
     fireEvent.click(screen.getByLabelText("I am fluent in this language"));
     expect(onChange).toHaveBeenLastCalledWith([{ ...english, fluent: false }]);
     fireEvent.change(screen.getByLabelText("Reading"), { target: { value: "Advanced" } });
-    expect(onChange).toHaveBeenLastCalledWith([{ ...english, levels: { Overall: "Native", Reading: "Advanced" } }]);
+    expect(onChange).toHaveBeenLastCalledWith([
+      { ...english, levels: { Overall: "Native", Reading: "Advanced" } },
+    ]);
   });
 
   it("clears a level set back to Not set, and removes a row", () => {

@@ -3,11 +3,24 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { beforeEach, describe, expect, it } from "vitest";
 
-type FillReport = { filled: Array<{ key: string; value: string; preserved?: boolean }>; leftovers: Array<{ label: string; reason?: string }> };
+type FillReport = {
+  filled: Array<{ key: string; value: string; preserved?: boolean }>;
+  leftovers: Array<{ label: string; reason?: string }>;
+};
 const script = readFileSync(resolve(process.cwd(), "../src/resume_tailor/apply/filler.js"), "utf8");
-const readinessScript = readFileSync(resolve(process.cwd(), "../src/resume_tailor/apply/filler_readiness.js"), "utf8");
+const readinessScript = readFileSync(
+  resolve(process.cwd(), "../src/resume_tailor/apply/filler_readiness.js"),
+  "utf8",
+);
 
-function run(fields: Record<string, string>, hints: Record<string, string> = {}, synonyms: string[][] = [["phone", "phone"], ["country", "country"]]): FillReport {
+function run(
+  fields: Record<string, string>,
+  hints: Record<string, string> = {},
+  synonyms: string[][] = [
+    ["phone", "phone"],
+    ["country", "country"],
+  ],
+): FillReport {
   const filler = window.eval(script) as (input: unknown) => FillReport;
   return filler({ fields, hints, synonyms });
 }
@@ -25,18 +38,31 @@ describe("Apply form filler", () => {
     document.body.innerHTML = `
       <fieldset><label for="country">Country</label><select id="country"><option value="">Select</option><option value="us">United States (+1)</option><option value="ca">Canada (+1)</option><option value="gb">United Kingdom (+44)</option></select><input type="tel" name="phone" aria-label="Phone"></fieldset>
       <label for="address-country">Country</label><select id="address-country"><option value="">Select</option><option value="us">United States</option><option value="ca">Canada</option></select>`;
-    const ambiguous = run({ phone_country_code: "+1", country: "United States", phone: "555 010 0199" });
+    const ambiguous = run({
+      phone_country_code: "+1",
+      country: "United States",
+      phone: "555 010 0199",
+    });
     expect((document.querySelector("#country") as HTMLSelectElement).value).toBe("");
-    expect(ambiguous.leftovers.some(item => item.label === "Country")).toBe(true);
-    const resolved = run({ phone_country_code: "+1", phone_country_region: "United States", country: "United States", phone: "555 010 0199" });
+    expect(ambiguous.leftovers.some((item) => item.label === "Country")).toBe(true);
+    const resolved = run({
+      phone_country_code: "+1",
+      phone_country_region: "United States",
+      country: "United States",
+      phone: "555 010 0199",
+    });
     expect((document.querySelector("#country") as HTMLSelectElement).value).toBe("us");
     expect((document.querySelector("#address-country") as HTMLSelectElement).value).toBe("us");
-    expect(resolved.filled.some(item => item.key === "phone_country_code")).toBe(true);
+    expect(resolved.filled.some((item) => item.key === "phone_country_code")).toBe(true);
   });
 
   it("chooses a country identifier only with a matching region and strips a duplicate phone prefix", () => {
     document.body.innerHTML = `<fieldset><label for="code">Calling code</label><select id="code"><option value="">Select</option><option value="US">US</option><option value="CA">CA</option></select><input type="tel" aria-label="Phone"></fieldset>`;
-    run({ phone_country_code: "+1", phone_country_region: "United States", phone: "+1 555 010 0199" });
+    run({
+      phone_country_code: "+1",
+      phone_country_region: "United States",
+      phone: "+1 555 010 0199",
+    });
     expect((document.querySelector("#code") as HTMLSelectElement).value).toBe("US");
     expect((document.querySelector("input") as HTMLInputElement).value).toBe("555 010 0199");
   });
@@ -45,9 +71,26 @@ describe("Apply form filler", () => {
     document.body.innerHTML = `
       <fieldset class="phone-input"><legend>Phone</legend><label for="country">Country</label><input id="country" role="combobox" aria-required="true"><input id="phone" type="tel" aria-label="Phone"></fieldset>
       <label for="address-country">Country</label><input id="address-country" role="combobox">`;
-    const report = run({ phone_country_code: "+1", phone_country_region: "United States", country: "United States" });
-    expect((report.leftovers.find(item => item.label === "Country" && (item as { key?: string }).key === "phone_country_code") as { key?: string } | undefined)?.key).toBe("phone_country_code");
-    expect((report.leftovers.find(item => item.label === "Country" && (item as { key?: string }).key === "country") as { key?: string } | undefined)?.key).toBe("country");
+    const report = run({
+      phone_country_code: "+1",
+      phone_country_region: "United States",
+      country: "United States",
+    });
+    expect(
+      (
+        report.leftovers.find(
+          (item) =>
+            item.label === "Country" && (item as { key?: string }).key === "phone_country_code",
+        ) as { key?: string } | undefined
+      )?.key,
+    ).toBe("phone_country_code");
+    expect(
+      (
+        report.leftovers.find(
+          (item) => item.label === "Country" && (item as { key?: string }).key === "country",
+        ) as { key?: string } | undefined
+      )?.key,
+    ).toBe("country");
   });
 
   it("does not treat misleading substrings as a choice or overwrite existing answers", () => {
@@ -55,7 +98,7 @@ describe("Apply form filler", () => {
     const report = run({ country: "United States", phone: "555 010 0199" });
     expect((document.querySelector("#answer") as HTMLSelectElement).value).toBe("");
     expect((document.querySelector("input") as HTMLInputElement).value).toBe("5551234567");
-    expect(report.filled.some(item => item.value === "5551234567" && item.preserved)).toBe(true);
+    expect(report.filled.some((item) => item.value === "5551234567" && item.preserved)).toBe(true);
   });
 
   it("does not count text typed into a custom combobox as a selected option", () => {
@@ -81,13 +124,23 @@ describe("Apply form filler", () => {
       <label for="salary">What is your desired salary?</label><input id="salary" value="">
     `;
     const report = run(
-      { school: "University of California - Irvine", degree_level: "Bachelors", major: "Computer Science", graduation_month: "2027-06", salary_expectation: "$45/hour" },
+      {
+        school: "University of California - Irvine",
+        degree_level: "Bachelors",
+        major: "Computer Science",
+        graduation_month: "2027-06",
+        salary_expectation: "$45/hour",
+      },
       { "#school--0": "school", "#degree--0": "degree_level", "#discipline--0": "major" },
     );
-    expect(report.leftovers.filter(item => ["School", "Degree", "Discipline"].includes(item.label)).map(item => (item as { key?: string }).key)).toEqual(["school", "degree_level", "major"]);
+    expect(
+      report.leftovers
+        .filter((item) => ["School", "Degree", "Discipline"].includes(item.label))
+        .map((item) => (item as { key?: string }).key),
+    ).toEqual(["school", "degree_level", "major"]);
     expect((document.querySelector("#end-year--0") as HTMLInputElement).value).toBe("2027");
     expect((document.querySelector("#salary") as HTMLInputElement).value).toBe("$45/hour");
-    expect(report.filled.find(item => item.key === "salary_expectation")?.value).toBe("$45/hour");
+    expect(report.filled.find((item) => item.key === "salary_expectation")?.value).toBe("$45/hour");
   });
 
   it("answers salary in the unit and format the question asks for, and leaves it open without a range", () => {
@@ -95,7 +148,13 @@ describe("Apply form filler", () => {
       <label for="hourly">Desired hourly pay rate</label><input id="hourly" type="number">
       <label for="annual">Expected annual salary</label><input id="annual">
     `;
-    run({ salary_expectation: "$45/hour", salary_hourly: "$45/hour", salary_hourly_number: "45", salary_yearly: "$80,000/year", salary_yearly_number: "80000" });
+    run({
+      salary_expectation: "$45/hour",
+      salary_hourly: "$45/hour",
+      salary_hourly_number: "45",
+      salary_yearly: "$80,000/year",
+      salary_yearly_number: "80000",
+    });
     expect((document.querySelector("#hourly") as HTMLInputElement).value).toBe("45");
     expect((document.querySelector("#annual") as HTMLInputElement).value).toBe("$80,000/year");
     document.body.innerHTML = `<label for="salary">Salary expectations</label><input id="salary" required>`;
@@ -109,27 +168,46 @@ describe("Apply form filler", () => {
         <textarea id="primaryQuestionnaire--q1" rows="4" aria-labelledby="q1-label q1-error"></textarea><span id="q1-error">Required</span></div>
       <div data-automation-id="formField-q2"><label>What are your salary expectations?</label><textarea id="primaryQuestionnaire--q2" rows="4"></textarea></div>`;
     const report = run({ salary_expectation: "$45/hour" });
-    expect((document.querySelector("#primaryQuestionnaire--q1") as HTMLTextAreaElement).value).toBe("$45/hour");
-    expect((document.querySelector("#primaryQuestionnaire--q2") as HTMLTextAreaElement).value).toBe("$45/hour");
+    expect((document.querySelector("#primaryQuestionnaire--q1") as HTMLTextAreaElement).value).toBe(
+      "$45/hour",
+    );
+    expect((document.querySelector("#primaryQuestionnaire--q2") as HTMLTextAreaElement).value).toBe(
+      "$45/hour",
+    );
     expect(report.leftovers).toHaveLength(0);
   });
 
   it("does not answer a long question from a short-field synonym it happens to mention", () => {
     document.body.innerHTML = `<label for="other">Indicate any other names under which your school or employment records may be identified.</label><textarea id="other"></textarea>`;
-    const report = run({ school: "University of California - Irvine" }, {}, [["school|university|college", "school"]]);
+    const report = run({ school: "University of California - Irvine" }, {}, [
+      ["school|university|college", "school"],
+    ]);
     expect((document.querySelector("#other") as HTMLTextAreaElement).value).toBe("");
     expect(report.leftovers[0].reason).toBe("Unrecognized field");
   });
 
   it("ticks Workday's lone preferred-name checkbox and reports that fields may have appeared", () => {
     document.body.innerHTML = `<input type="checkbox" id="name--preferredCheck"><label for="name--preferredCheck">I have a preferred name</label>`;
-    const report = run({ has_preferred_name: "Yes", preferred_name: "Alex" }) as FillReport & { revealed?: boolean };
-    expect((document.querySelector("#name--preferredCheck") as HTMLInputElement).checked).toBe(true);
+    const report = run({ has_preferred_name: "Yes", preferred_name: "Alex" }) as FillReport & {
+      revealed?: boolean;
+    };
+    expect((document.querySelector("#name--preferredCheck") as HTMLInputElement).checked).toBe(
+      true,
+    );
     expect(report.revealed).toBe(true);
     expect(report.leftovers).toHaveLength(0);
-    document.body.insertAdjacentHTML("beforeend", `<label for="name--preferredName--firstName">First Name</label><input id="name--preferredName--firstName">`);
-    const again = run({ has_preferred_name: "Yes", preferred_name: "Alex", first_name: "Legal" }, {}, [["first name", "first_name"]]) as FillReport & { revealed?: boolean };
-    expect((document.querySelector("#name--preferredName--firstName") as HTMLInputElement).value).toBe("Alex");
+    document.body.insertAdjacentHTML(
+      "beforeend",
+      `<label for="name--preferredName--firstName">First Name</label><input id="name--preferredName--firstName">`,
+    );
+    const again = run(
+      { has_preferred_name: "Yes", preferred_name: "Alex", first_name: "Legal" },
+      {},
+      [["first name", "first_name"]],
+    ) as FillReport & { revealed?: boolean };
+    expect(
+      (document.querySelector("#name--preferredName--firstName") as HTMLInputElement).value,
+    ).toBe("Alex");
     expect(again.revealed).toBe(false);
   });
 
@@ -142,7 +220,11 @@ describe("Apply form filler", () => {
     const report = run(
       { first_name: "Legal", preferred_name: "Alex", earliest_start: "2027-06-14" },
       {},
-      [["preferred first name|preferred name", "preferred_name"], ["first name", "first_name"], ["when can you start|start date", "earliest_start"]],
+      [
+        ["preferred first name|preferred name", "preferred_name"],
+        ["first name", "first_name"],
+        ["when can you start|start date", "earliest_start"],
+      ],
     );
     expect((document.querySelector("#first_name") as HTMLInputElement).value).toBe("Legal");
     expect((document.querySelector("#preferred") as HTMLInputElement).value).toBe("Alex");
@@ -158,8 +240,14 @@ describe("Apply form filler", () => {
     const report = run(
       { hispanic_latino: "No", race: "Asian", race_detail: "Southeast Asian" },
       {},
-      [["hispanic|latino", "hispanic_latino"], ["race|ethnicity", "race"]],
+      [
+        ["hispanic|latino", "hispanic_latino"],
+        ["race|ethnicity", "race"],
+      ],
     );
-    expect(report.leftovers.map(item => (item as { key?: string }).key)).toEqual(["hispanic_latino", "race"]);
+    expect(report.leftovers.map((item) => (item as { key?: string }).key)).toEqual([
+      "hispanic_latino",
+      "race",
+    ]);
   });
 });

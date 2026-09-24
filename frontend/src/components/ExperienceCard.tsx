@@ -38,9 +38,7 @@ function EntryBlock({
 }) {
   /** One experience entry as an accordion row; copy actions stay on the header. */
   const over = entry.char_count > charLimit;
-  const meta = [entry.location, `${entry.start} – ${entry.end}`]
-    .filter(Boolean)
-    .join(" · ");
+  const meta = [entry.location, `${entry.start} – ${entry.end}`].filter(Boolean).join(" · ");
 
   return (
     <article className="rounded-lg border border-line bg-paper/40">
@@ -110,13 +108,7 @@ function EntryBlock({
  *
  * Entries collapse into an accordion (first open) so a long list does not stretch the page.
  */
-export function ExperienceCard({
-  expansion,
-  jobId,
-}: {
-  expansion: Expansion;
-  jobId: string;
-}) {
+export function ExperienceCard({ expansion, jobId }: { expansion: Expansion; jobId: string }) {
   const firstKey = expansion.entries[0]?.entry_key ?? null;
   const [openKey, setOpenKey] = useState<string | null>(firstKey);
 
@@ -144,8 +136,8 @@ export function ExperienceCard({
         <div>
           <h2 className="font-display text-xl font-semibold">Application experience</h2>
           <p className="mt-1 text-sm text-ink-muted">
-            Expanded descriptions for application-form paste fields. Hard facts match
-            the master resume; bullets are longer than the one-pager allows.
+            Expanded descriptions for application-form paste fields. Hard facts match the master
+            resume; bullets are longer than the one-pager allows.
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
@@ -167,9 +159,7 @@ export function ExperienceCard({
             charLimit={expansion.char_limit}
             open={openKey === entry.entry_key}
             onToggle={() =>
-              setOpenKey((prev) =>
-                prev === entry.entry_key ? null : entry.entry_key,
-              )
+              setOpenKey((prev) => (prev === entry.entry_key ? null : entry.entry_key))
             }
           />
         ))}

@@ -105,7 +105,10 @@ export function validatePackDraft(draft: PackDraftForValidation): PackValidation
     const v = rawV.trim().toLowerCase();
     const ref: PackFieldRef = { kind: "alias", key: rawK };
     if (!k || !v) {
-      errors.push({ field: ref, message: `"${rawK}" → "${rawV}": key and value must be non-empty.` });
+      errors.push({
+        field: ref,
+        message: `"${rawK}" → "${rawV}": key and value must be non-empty.`,
+      });
       continue;
     }
     if (k.length > PACK_LIMITS.maxAliasLen || v.length > PACK_LIMITS.maxAliasLen) {
@@ -158,7 +161,10 @@ export function validatePackDraft(draft: PackDraftForValidation): PackValidation
       const verbRef: PackFieldRef = { kind: "verb", family, verb: rawVerb };
       const alphaError = verbTokenError(verb);
       if (alphaError) {
-        errors.push({ field: verbRef, message: `Verb "${rawVerb}" in family "${family}" must be alphabetic.` });
+        errors.push({
+          field: verbRef,
+          message: `Verb "${rawVerb}" in family "${family}" must be alphabetic.`,
+        });
         continue;
       }
       const seenFamily = seenVerbs.get(verb);

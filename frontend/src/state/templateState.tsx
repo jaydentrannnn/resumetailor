@@ -23,13 +23,7 @@ import {
   uploadTemplate,
 } from "../api";
 
-export type WizardStep =
-  | "idle"
-  | "analyzing"
-  | "mapping"
-  | "installing"
-  | "done"
-  | "error";
+export type WizardStep = "idle" | "analyzing" | "mapping" | "installing" | "done" | "error";
 
 type TemplateStateValue = {
   info: TemplateInfo | null;
@@ -76,7 +70,10 @@ const TemplateStateContext = createContext<TemplateStateValue | null>(null);
  */
 function labelFromFilename(name: string): string {
   const stem = name.replace(/\.docx$/i, "").trim() || "Untitled";
-  return stem.replace(/[\s_]+/g, " ").trim().slice(0, 80);
+  return stem
+    .replace(/[\s_]+/g, " ")
+    .trim()
+    .slice(0, 80);
 }
 
 /**
@@ -94,12 +91,8 @@ export function TemplateProvider({ children }: { children: ReactNode }) {
   const [wizardStep, setWizardStep] = useState<WizardStep>("idle");
   const [draftFile, setDraftFile] = useState<File | null>(null);
   const [analysis, setAnalysis] = useState<TemplateAnalyzeResponse | null>(null);
-  const [profileDraft, setProfileDraft] = useState<Record<string, unknown> | null>(
-    null,
-  );
-  const [headingOverrides, setHeadingOverrides] = useState<
-    Record<number, TemplateHeadingKind>
-  >({});
+  const [profileDraft, setProfileDraft] = useState<Record<string, unknown> | null>(null);
+  const [headingOverrides, setHeadingOverrides] = useState<Record<number, TemplateHeadingKind>>({});
   const [remapBusy, setRemapBusy] = useState(false);
   const [calibrateAlso, setCalibrateAlso] = useState(true);
   const [installLabel, setInstallLabel] = useState("");
@@ -219,11 +212,10 @@ export function TemplateProvider({ children }: { children: ReactNode }) {
     setLastBuildOk(null);
     setWizardStep("installing");
     try {
-      const result: TemplateBuildResponse = await uploadTemplate(
-        draftFile,
-        profileDraft,
-        { calibrate: calibrateAlso, label: installLabel.trim() || undefined },
-      );
+      const result: TemplateBuildResponse = await uploadTemplate(draftFile, profileDraft, {
+        calibrate: calibrateAlso,
+        label: installLabel.trim() || undefined,
+      });
       setBuildLog(result.log || null);
       setLastBuildOk(true);
       if (result.info) {
@@ -292,23 +284,20 @@ export function TemplateProvider({ children }: { children: ReactNode }) {
     [refresh],
   );
 
-  const deleteLibraryEntry = useCallback(
-    async (id: string) => {
-      /** Remove a non-active library entry. */
-      setLibraryBusy(true);
-      setError(null);
-      try {
-        const next = await deleteTemplateLibrary(id);
-        setLibrary(next.entries);
-        setLibraryActiveId(next.active_id);
-      } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
-      } finally {
-        setLibraryBusy(false);
-      }
-    },
-    [],
-  );
+  const deleteLibraryEntry = useCallback(async (id: string) => {
+    /** Remove a non-active library entry. */
+    setLibraryBusy(true);
+    setError(null);
+    try {
+      const next = await deleteTemplateLibrary(id);
+      setLibrary(next.entries);
+      setLibraryActiveId(next.active_id);
+    } catch (err) {
+      setError(err instanceof Error ? err.message : String(err));
+    } finally {
+      setLibraryBusy(false);
+    }
+  }, []);
 
   const value = useMemo(
     () => ({
@@ -374,9 +363,7 @@ export function TemplateProvider({ children }: { children: ReactNode }) {
     ],
   );
 
-  return (
-    <TemplateStateContext.Provider value={value}>{children}</TemplateStateContext.Provider>
-  );
+  return <TemplateStateContext.Provider value={value}>{children}</TemplateStateContext.Provider>;
 }
 
 /**
