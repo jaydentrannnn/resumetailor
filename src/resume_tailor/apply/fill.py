@@ -536,6 +536,7 @@ def _workday_handoff(
     error: str | None = None,
 ) -> FillResult:
     """Leave the Workday tab open for the applicant with a readable reason."""
+    workday_flow.close_stray_popups(page)
     result = FillResult(
         error=error,
         status=status,
@@ -668,6 +669,9 @@ def fill_application(
                 if page is None:
                     raise RuntimeError("Review tab was closed. Use Reopen and fill to start a new tab; unsaved answers may be lost.")
                 progress("continuing the existing application tab")
+                if is_workday:
+                    # A popup left open by the last fill or by the applicant blocks this one.
+                    workday_flow.close_stray_popups(page)
             else:
                 page = context.new_page()
                 target_id = browser.target_id(context, page)
@@ -1322,6 +1326,8 @@ def fill_application(
                 needs_review.append("Filled values could not be verified on the current form")
             merged["filled"] = list(observed.values())
 
+            if is_workday:
+                workday_flow.close_stray_popups(page)
             out_dir.mkdir(parents=True, exist_ok=True)
             shot = out_dir / "fill.png"
             try:

@@ -420,6 +420,63 @@ def test_workday_entry_goes_through_apply_manually_only():
             browser.close()
 
 
+_STRAY_POPUP_PAGE = '''
+    <div data-automation-id="applyFlowPage" style="height:3000px">
+      <button id="trigger" aria-haspopup="listbox" aria-expanded="true">Select One</button>
+    </div>
+    <div id="filter" data-automation-id="click_filter" style="position:fixed;inset:0;z-index:5"></div>
+    <ul id="list" role="listbox" style="position:fixed;top:40px;left:40px;z-index:6">
+      <li role="option">Yes</li><li role="option">No</li></ul>
+    <script>
+      function closeList() {
+        document.getElementById('list').remove();
+        document.getElementById('filter').remove();
+        document.getElementById('trigger').setAttribute('aria-expanded', 'false');
+      }
+      document.getElementById('filter').onclick = closeList;
+      if (ESCAPE_CLOSES) document.addEventListener('keydown', e => { if (e.key === 'Escape') closeList(); });
+    </script>'''
+
+
+@pytest.mark.parametrize("escape_closes", [True, False])
+def test_workday_stray_popup_is_closed_before_handoff(escape_closes):
+    """A dropdown left open keeps Workday's full-viewport click_filter up, which swallows
+    the applicant's mouse wheel; Escape closes it, else a click on the dismiss layer."""
+    from resume_tailor.apply import workday_flow
+
+    html = _STRAY_POPUP_PAGE.replace("ESCAPE_CLOSES", "true" if escape_closes else "false")
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=str(_EDGE), headless=True)
+        try:
+            page = browser.new_page()
+            page.set_content(html)
+            assert workday_flow.close_stray_popups(page) is True
+            assert page.locator("[role='listbox']").count() == 0
+            assert page.locator("[data-automation-id='click_filter']").count() == 0
+        finally:
+            browser.close()
+
+
+def test_workday_stray_popup_cleanup_leaves_a_real_dialog_open():
+    """The Start Your Application / OTP / terms dialogs are the applicant's to act on."""
+    from resume_tailor.apply import workday_flow
+
+    html = '''
+        <div role="dialog" aria-label="Start Your Application"><a href="#">Apply Manually</a></div>
+        <ul role="listbox"><li role="option">stale</li></ul>
+        <script>document.addEventListener('keydown', e => {
+          if (e.key === 'Escape') document.querySelector('[role=dialog]').remove(); });</script>'''
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=str(_EDGE), headless=True)
+        try:
+            page = browser.new_page()
+            page.set_content(html)
+            assert workday_flow.close_stray_popups(page) is False
+            assert page.locator("[role='dialog']").count() == 1
+        finally:
+            browser.close()
+
+
 def test_workday_sign_in_overlay_found_by_position_not_label(tmp_path, monkeypatch):
     """AmFam's Sign In overlay is labelled "Submit" while the button says "Sign In"."""
     monkeypatch.setattr(config, "APPLICATIONS_OUTPUT_DIR", tmp_path)

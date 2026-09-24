@@ -854,6 +854,19 @@ against max_retries). Also packet.authorization_mismatch: a posting whose locati
 another country drops uthorized_to_work (fill + engine), with a review line, not a blank.
 Not chosen: a second model pass. It would still have no fact to answer from.
 
+### 2026-09-25 — Stray popup cleanup at Workday handoff and Continue start
+Handed-off Workday tabs (most often after Continue fill) sometimes would not scroll with the
+mouse wheel. Likely cause (not confirmed in DevTools on a live tab): fill steps close
+dropdown/prompt popups with a best-effort Escape on the trigger that can miss (and
+`select_prompt`'s exception path presses none), leaving the popup plus Workday's
+full-viewport `click_filter` dismiss layer up. Continue reattaches to the existing tab
+without a reload, so it inherits leftovers and re-opens popups on already-answered fields.
+`workday_flow.close_stray_popups` now runs at every `_workday_handoff`, at the start of a
+Workday Continue fill, and before the final evidence screenshot: page-level Escape, then a
+click on the dismiss layer's corner only if a `click_filter` is on top there. It never acts
+while a real dialog is up (start dialog / OTP / terms handoffs need it open). A reload at
+Continue start was rejected: it drops unsaved answers on the current step.
+
 ## 2026-09-25 — Education has one source: the master resume
 
 - Workday filled education twice (second row missing Field of Study). The packet carried a

@@ -223,6 +223,54 @@ def click_control(
 #: How long an auth submit waits for Workday's click overlay before using the bare button.
 _OVERLAY_GRACE_MS = 2000
 
+#: Whether a dropdown/prompt popup is left open, whether a real dialog is up, and a
+#: corner point where a full-viewport ``click_filter`` (the popup's dismiss layer) sits.
+_STRAY_POPUP_JS = r"""() => {
+  const vis = e => !!(e && (e.offsetWidth || e.offsetHeight || e.getClientRects().length));
+  const POPUP = "[role='listbox'], [data-automation-id='activeListContainer'], "
+    + "[data-automation-id='promptOption']:not([data-automation-id='selectedItem'] *)";
+  const popup = [...document.querySelectorAll(POPUP)].some(vis)
+    || [...document.querySelectorAll("[aria-haspopup='listbox'][aria-expanded='true']")].some(vis);
+  const dialog = [...document.querySelectorAll("[role='dialog'], [aria-modal='true']")]
+    .some(d => vis(d) && !d.querySelector(POPUP));
+  const top = document.elementFromPoint(2, innerHeight - 2);
+  const filter = top && top.closest("[data-automation-id='click_filter']");
+  return {popup, dialog, filter: filter ? {x: 2, y: innerHeight - 2} : null};
+}"""
+
+
+def close_stray_popups(page: Any, *, attempts: int = 3) -> bool:
+    """Close a dropdown or prompt popup the fill left open; True when none is left.
+
+    Fill steps close their popups with a best-effort Escape on the trigger, which can
+    miss; an open popup keeps Workday's full-viewport ``click_filter`` up, and that layer
+    swallows the applicant's mouse wheel after handoff. Escape goes to the page, and when
+    it does not land a click on the dismiss layer's corner closes the popup the way a
+    click outside would. A real dialog (Start Your Application, OTP, terms) is left alone.
+    """
+    for _ in range(attempts):
+        try:
+            probe = page.evaluate(_STRAY_POPUP_JS)
+        except Exception:  # noqa: BLE001 - a navigating page has nothing to close
+            return False
+        if not isinstance(probe, dict) or not probe.get("popup"):
+            return True
+        if probe.get("dialog"):
+            return False
+        with contextlib.suppress(Exception):
+            page.keyboard.press("Escape")
+            page.wait_for_timeout(200)
+            again = page.evaluate(_STRAY_POPUP_JS)
+            point = isinstance(again, dict) and again.get("popup") and again.get("filter")
+            if point:
+                page.mouse.click(point["x"], point["y"])
+                page.wait_for_timeout(200)
+    try:
+        probe = page.evaluate(_STRAY_POPUP_JS)
+    except Exception:  # noqa: BLE001
+        return False
+    return not (isinstance(probe, dict) and probe.get("popup"))
+
 #: Whether an auth form is fully painted: its inputs, its submit, and what sits on the submit.
 AUTH_FORM_JS = r"""(ids) => {
   const vis = e => !!(e && (e.offsetWidth || e.offsetHeight || e.getClientRects().length));
