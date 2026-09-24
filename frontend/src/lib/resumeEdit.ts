@@ -51,6 +51,8 @@ export type Education = {
   gpa?: string;
   show_gpa?: boolean;
   details?: string[];
+  /** Field of study for application forms; never printed on the resume. */
+  major?: string;
   /** Client-only React list key — never sent to the server (see `stripRowKeys`).
    * Unlike a bullet or entry, an education row has no server-assigned id at all. */
   _key?: string;

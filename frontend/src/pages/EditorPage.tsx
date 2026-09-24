@@ -620,6 +620,20 @@ function EducationEntries({
               />
               <div className="sm:col-span-2">
                 <TextField
+                  label="Major (field of study)"
+                  value={edu.major ?? ""}
+                  onChange={(v) => {
+                    const next = [...entries];
+                    next[i] = { ...edu, major: v };
+                    setEntries(next);
+                  }}
+                />
+                <p className="mt-1 text-xs text-ink-muted">
+                  Used to answer application forms; never printed on the resume.
+                </p>
+              </div>
+              <div className="sm:col-span-2">
+                <TextField
                   label="GPA"
                   value={edu.gpa ?? ""}
                   onChange={(v) => {

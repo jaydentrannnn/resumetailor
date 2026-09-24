@@ -7,12 +7,16 @@ Lives beside ``settings.json`` as ``applicant_profile.json`` so
 from __future__ import annotations
 
 import json
+import logging
+from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
 from resume_tailor import config
+
+_log = logging.getLogger(__name__)
 
 WorkAuthorization = Literal["", "citizen", "permanent_resident", "visa_holder", "other"]
 
@@ -75,12 +79,8 @@ class ApplicantProfile(BaseModel):
     f1_opt_eligible: bool | None = None
     earliest_start: str = ""
     notice_period: str = ""
-    education_start_month: str = ""
-    graduation_month: str = ""
-    degree_level: str = ""
-    major: str = ""
-    school: str = ""
-    gpa: str = ""
+    #: Free-text answer; school, major, degree, GPA and dates come from the master
+    #: resume's education entries (`packet._build_education`).
     highest_education_obtained: str = ""
     salary_expectation: str = ""
     #: Structured range behind salary answers (`apply/salary.py`); seeded once from
@@ -136,12 +136,60 @@ def _path() -> Path:
     return config.APPLICANT_PROFILE_PATH
 
 
+#: Education facts a profile held before the master resume became their only source.
+_LEGACY_EDUCATION = ("school", "degree_level", "major", "gpa", "education_start_month", "graduation_month")
+
+
+def _backup(path: Path) -> None:
+    """Timestamped ``.bak.json`` sibling, the naming the master-resume saves use."""
+    stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+    path.with_suffix(f".{stamp}.bak.json").write_text(path.read_text(encoding="utf-8"), encoding="utf-8")
+
+
+def _migrate_education(path: Path, raw: dict[str, Any]) -> None:
+    """Move a legacy profile's major and GPA into its master-resume entry, once.
+
+    Only blanks on the resume entry whose school matches are filled; both files are backed
+    up first, and the profile is rewritten without the legacy keys. When the resume cannot
+    be read, nothing is touched and the next load tries again.
+    """
+    from resume_tailor import data
+    from resume_tailor.apply import field_matcher
+
+    try:
+        resume = data.load()
+    except Exception:  # noqa: BLE001 - no readable resume yet: retry on a later load
+        return
+    school = str(raw.get("school") or "").strip()
+    schools = [edu.school for edu in resume.education]
+    match = field_matcher.closest_option(schools, school, key="school") if school else None
+    entries = [edu for edu in resume.education if match is not None and edu.school == match]
+    if len(entries) == 1:
+        entry = entries[0]
+        major, gpa = str(raw.get("major") or "").strip(), str(raw.get("gpa") or "").strip()
+        if (major and not entry.major) or (gpa and not entry.gpa):
+            entry.major = entry.major or major
+            entry.gpa = entry.gpa or gpa
+            resume_path = config.MASTER_RESUME_PATH
+            _backup(resume_path)
+            resume_path.write_text(
+                json.dumps(resume.model_dump(by_alias=True), indent=2, ensure_ascii=False) + "\n",
+                encoding="utf-8",
+            )
+    elif school:
+        _log.warning("profile education for %r matched no single resume entry; not migrated", school)
+    _backup(path)
+    save_profile(ApplicantProfile.model_validate(raw))
+
+
 def load_profile() -> tuple[ApplicantProfile, bool]:
     """Load the profile; return ``(profile, seeded)`` where seeded means file was missing."""
     path = _path()
     if not path.is_file():
         return ApplicantProfile(), True
     raw = json.loads(path.read_text(encoding="utf-8"))
+    if isinstance(raw, dict) and any(key in raw for key in _LEGACY_EDUCATION):
+        _migrate_education(path, raw)
     return ApplicantProfile.model_validate(raw), False
 
 
@@ -188,11 +236,6 @@ def seed_default_profile(path: Path | None = None) -> ApplicantProfile:
         requires_sponsorship_future=False,
         f1_opt_eligible=True,
         earliest_start="2027-06-14",
-        graduation_month="2027-06",
-        degree_level="Bachelors",
-        major="Computer Science",
-        school="University of California - Irvine",
-        gpa="3.643",
         highest_education_obtained=(
             "High school diploma; currently pursuing a Bachelor of Science degree."
         ),

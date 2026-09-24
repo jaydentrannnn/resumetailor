@@ -268,7 +268,7 @@ by itself is verified by its chip. "How did you hear" falls back to "Other"
 (`fallback_values`), and a "please specify" field right after it gets `how_heard_detail`.
 Degrees: `field_matcher.degree_of` reads "BS"/"B.S."/"BSc"/"Bachelor of Science (B.S)" as one
 named degree and "Bachelor's Degree" as the bare level. The packet's `degree_name` (the one
-named degree in the resume rows at the profile's level) is tried before `degree_level`
+named degree in the resume rows at the first entry's level) is tried before `degree_level`
 (`choice_values`); it picks its own name or abbreviation, else the bare-level option, and a
 bare level never picks a named degree. `filler.js` mirrors this for native selects.
 Country is re-checked just before a step advances (a saved "Vietnam" re-labels the form);

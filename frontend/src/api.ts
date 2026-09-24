@@ -175,12 +175,6 @@ export type ApplicantProfile = {
   f1_opt_eligible: boolean | null;
   earliest_start: string;
   notice_period?: string;
-  education_start_month: string;
-  graduation_month: string;
-  degree_level: string;
-  major: string;
-  school: string;
-  gpa: string;
   highest_education_obtained: string;
   salary_expectation: string;
   /** Structured range behind salary answers; seeded from `salary_expectation`. */

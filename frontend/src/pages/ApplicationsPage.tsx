@@ -1219,11 +1219,6 @@ export function ApplicationsPage() {
                 ["earliest_start", "Earliest start (YYYY-MM-DD; full date for application questions)"],
                 ["notice_period", "Notice period (separate from start date)"],
                 ["authorization_country", "Work authorization country"],
-                ["graduation_month", "Graduation (YYYY-MM)"],
-                ["degree_level", "Degree level"],
-                ["major", "Major"],
-                ["school", "School"],
-                ["gpa", "GPA"],
                 ["salary_expectation", "Saved salary expectation (manual review only; never auto-filled)"],
                 ["how_heard", "How heard"],
               ] as const

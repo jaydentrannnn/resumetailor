@@ -113,6 +113,9 @@ class Education(_Strict):
     show_gpa: bool = False
     #: Extra education bullets (not coursework). Coursework has its own field.
     details: list[str] = Field(default_factory=list)
+    #: Field of study for application forms ("Computer Science"). Never rendered: the
+    #: printed degree line is `degree`. The apply packet's only source of a major.
+    major: str = ""
 
 
 class Project(_Strict):

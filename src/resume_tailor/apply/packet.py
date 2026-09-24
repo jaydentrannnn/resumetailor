@@ -194,6 +194,8 @@ DEFAULTS: dict[str, str] = {"phone_device_type": "Mobile"}
 
 def profile_path(section: str) -> str:
     """The Profile page tab that holds ``section``."""
+    if section == _EDUCATION:
+        return "/profile/resume"  # education lives on the resume, not the profile
     return "/profile/personal" if section == _CONTACT else "/profile/application"
 
 
@@ -432,12 +434,17 @@ def build_fields(profile: ApplicantProfile, resume: MasterResume) -> dict[str, s
         fields["requires_sponsorship_any"] = "Yes"
     elif profile.requires_sponsorship_now is False and profile.requires_sponsorship_future is False:
         fields["requires_sponsorship_any"] = "No"
-    _maybe_set(fields, "education_start_month", profile.education_start_month or None)
-    _maybe_set(fields, "graduation_month", profile.graduation_month or None)
-    _maybe_set(fields, "degree_level", profile.degree_level or None)
-    _maybe_set(fields, "major", profile.major or None)
-    _maybe_set(fields, "school", profile.school or None)
-    _maybe_set(fields, "gpa", profile.gpa or None)
+    # Single-field forms ("School", "Major", "Graduation date") answer from the first
+    # resume education entry, the same row the repeaters fill first.
+    education = _build_education(resume)
+    if education:
+        primary = education[0]
+        _maybe_set(fields, "education_start_month", primary.start or None)
+        _maybe_set(fields, "graduation_month", primary.end or None)
+        _maybe_set(fields, "degree_level", primary.degree_level or None)
+        _maybe_set(fields, "major", primary.major or None)
+        _maybe_set(fields, "school", primary.school or None)
+        _maybe_set(fields, "gpa", primary.gpa or None)
     # Salary depends on the posting (`apply/salary.py`); the fill runner adds it.
     _maybe_set(fields, "willing_to_relocate", _yes_no(profile.willing_to_relocate))
     _maybe_set(fields, "how_heard", profile.how_heard or None)
@@ -455,35 +462,17 @@ def build_fields(profile: ApplicantProfile, resume: MasterResume) -> dict[str, s
     return fields
 
 
-def _education_from_profile(profile: ApplicantProfile) -> PacketEducation | None:
-    """Build one education row when any profile education field is set."""
-    if not any(
-        (
-            profile.school,
-            profile.degree_level,
-            profile.major,
-            profile.gpa,
-            profile.education_start_month,
-            profile.graduation_month,
-        )
-    ):
-        return None
-    return PacketEducation(
-        school=profile.school,
-        degree=profile.degree_level,
-        major=profile.major,
-        start=profile.education_start_month,
-        end=profile.graduation_month,
-        gpa=profile.gpa,
-        entry_key="profile:education",
-        degree_level=profile.degree_level,
-        degree_name=profile.degree_level,
-        source="profile",
-    )
+def _degree_label(degree: str) -> str:
+    """The named degree a resume degree line states ("Bachelor of Science" from
+    "Bachelor of Science in Computer Science & Minor in ..."), else the line itself."""
+    parsed = field_matcher.degree_of(degree)
+    if not parsed or not parsed[1]:
+        return degree.strip()
+    return " ".join(word if word in {"of", "in"} else word.capitalize() for word in parsed[1].split())
 
 
-def _education_from_resume(resume: MasterResume) -> list[PacketEducation]:
-    """Convert resume education entries into packet rows."""
+def _build_education(resume: MasterResume) -> list[PacketEducation]:
+    """One packet row per resume education entry: the resume is the only education source."""
     rows: list[PacketEducation] = []
     for index, edu in enumerate(resume.education):
         start, end = parse_range(edu.dates)
@@ -491,65 +480,16 @@ def _education_from_resume(resume: MasterResume) -> list[PacketEducation]:
             PacketEducation(
                 school=edu.school,
                 degree=edu.degree,
+                major=edu.major,
                 start=start,
                 end=end,
-                gpa=edu.gpa if edu.gpa else "",
+                gpa=edu.gpa,
                 entry_key=f"resume:education:{index}",
+                degree_level=_degree_label(edu.degree),
                 degree_name=edu.degree,
                 source="resume",
             )
         )
-    return rows
-
-
-def _build_education(profile: ApplicantProfile, resume: MasterResume) -> list[PacketEducation]:
-    """Merge profile-first education with resume entries."""
-    rows: list[PacketEducation] = []
-    profile_row = _education_from_profile(profile)
-    if profile_row is not None:
-        rows.append(profile_row)
-    def school_key(value: str) -> str:
-        normalized = " ".join(value.casefold().replace("-", " ").replace(",", " ").split())
-        if normalized in {"university of california irvine", "uc irvine", "uci"}:
-            return "university of california irvine"
-        return normalized
-
-    resume_rows = _education_from_resume(resume)
-    for row in resume_rows:
-        def same_degree(existing: PacketEducation, candidate: PacketEducation) -> bool:
-            left = existing.degree.casefold().strip()
-            right = candidate.degree.casefold().strip()
-            generic_bachelor = {"bachelor", "bachelors", "bachelor's", "bachelors degree"}
-            specific_bachelor = lambda value: value.startswith(("bachelor of ", "bs ", "ba "))
-            return (
-                left == right or not left or not right
-                or (existing.source == "profile" and left in generic_bachelor and specific_bachelor(right))
-            )
-
-        matches = [
-            existing for existing in rows
-            if school_key(existing.school) and school_key(existing.school) == school_key(row.school)
-            and same_degree(existing, row)
-            and (not existing.end or not row.end or existing.end[:4] == row.end[:4])
-        ]
-        if len(matches) != 1:
-            rows.append(row)
-        else:
-            match = matches[0]
-            # A single matching resume entry can supply a missing profile date.
-            # Multiple entries for the same school/degree do not establish one date.
-            candidates = [candidate for candidate in resume_rows
-                          if school_key(candidate.school) == school_key(row.school)
-                          and same_degree(match, candidate)
-                          and (not match.end or not candidate.end or match.end[:4] == candidate.end[:4])]
-            if len(candidates) == 1:
-                match.start = match.start or row.start
-                match.end = match.end or row.end
-            match.gpa = match.gpa or row.gpa
-            if match.source == "profile" and match.degree.casefold().strip() in {
-                "bachelor", "bachelors", "bachelor's", "bachelors degree",
-            } and row.degree_name.casefold().startswith(("bachelor of ", "bs ", "ba ")):
-                match.degree_name = row.degree_name
     return rows
 
 
@@ -731,14 +671,8 @@ def build_packet(
     )
 
     ats = str(metadata.get("ats") or "unknown")
-    education = _build_education(applicant_profile, resume)
+    education = _build_education(resume)
     fields = build_fields(applicant_profile, resume)
-    if not fields.get("education_start_month"):
-        matching = [row for row in education if row.start and row.school
-                    and row.school.casefold().replace(",", "").replace("-", " ").split()
-                    == applicant_profile.school.casefold().replace(",", "").replace("-", " ").split()]
-        if len(matching) == 1:
-            fields["education_start_month"] = matching[0].start
     named = degree_name(education, fields.get("degree_level", ""))
     _maybe_set(fields, "degree_name", named or None)
     return Packet(

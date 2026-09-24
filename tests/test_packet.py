@@ -240,14 +240,42 @@ def test_languages_reach_the_packet_and_a_free_text_answer(job_dir):
     assert packet.fields["languages"] == "English (Native), Vietnamese"
     assert "languages" not in build_fields(ApplicantProfile(), synthetic_resume())
 
-def test_uc_irvine_school_alias_deduplicates_only_that_school():
+def test_education_comes_only_from_the_resume_so_a_school_is_never_listed_twice():
+    """One packet row per resume entry: no profile row to duplicate it (the Workday bug
+    was a profile "University of California - Irvine" beside the resume's comma form)."""
     resume = synthetic_resume()
-    resume.education[0].school = "University of California, Irvine"
-    profile = ApplicantProfile(school="University of California - Irvine", degree_level="Bachelors")
-    rows = _build_education(profile, resume)
-    assert len(rows) == 1
-    assert rows[0].degree == "Bachelors"
-    assert rows[0].degree_name == resume.education[0].degree
+    edu = resume.education[0]
+    edu.school = "University of California, Irvine"
+    edu.degree = "Bachelor of Science in Computer Science & Minor in Business Management"
+    edu.dates = "Sep 2023 - Jun 2027"
+    edu.major = "Computer Science"
+    rows = _build_education(resume)
+    assert [(row.school, row.major, row.degree_level, row.start, row.end) for row in rows] == [
+        ("University of California, Irvine", "Computer Science", "Bachelor of Science", "2023-09", "2027-06"),
+    ]
+    fields = build_fields(ApplicantProfile(), resume)
+    assert (fields["school"], fields["major"], fields["degree_level"]) == (
+        "University of California, Irvine", "Computer Science", "Bachelor of Science",
+    )
+    assert (fields["education_start_month"], fields["graduation_month"]) == ("2023-09", "2027-06")
+
+
+def test_two_degrees_at_one_school_stay_two_rows():
+    raw = synthetic_resume().model_dump()
+    education = next(section for section in raw["sections"] if section["kind"] == "education")
+    education["entries"].append({**education["entries"][0], "degree": "BA Economics", "major": "Economics"})
+    from resume_tailor.data import MasterResume
+
+    rows = _build_education(MasterResume.model_validate(raw))
+    assert [(row.degree_level, row.major) for row in rows] == [("Bachelor of Science", ""), ("Bachelor of Arts", "Economics")]
+
+
+def test_blank_resume_education_is_a_gap_that_links_to_the_resume_editor():
+    resume = synthetic_resume()
+    resume.education[0].major = ""
+    assert "major" in profile_gaps(build_fields(ApplicantProfile(), resume))
+    entry = missing_profile([{"key": "major", "label": "Field of study"}], filled_labels=set())[0]
+    assert entry["path"] == "/profile/resume"
 
 
 def test_degree_name_names_the_one_resume_degree_at_the_profile_level():
@@ -262,9 +290,8 @@ def test_degree_name_names_the_one_resume_degree_at_the_profile_level():
 
 
 def test_build_packet_adds_the_named_degree(job_dir):
-    profile = ApplicantProfile(school="State University", degree_level="Bachelors")
-    pkt = build_packet("test-job", applicant_profile=profile)
-    assert pkt.fields["degree_level"] == "Bachelors"
+    pkt = build_packet("test-job", applicant_profile=ApplicantProfile())
+    assert pkt.fields["degree_level"] == "Bachelor of Science"
     assert pkt.fields["degree_name"] == "Bachelor of Science"
 
 
@@ -309,37 +336,37 @@ def test_write_packet_persists_json(job_dir):
     assert saved["fields"]["email"] == "jordan@example.com"
 
 
-def test_profile_education_start_month_reaches_fields_and_education_row():
-    profile = ApplicantProfile(school="Test University", education_start_month="2023-09", graduation_month="2027-06")
-    resume = synthetic_resume()
-    assert build_fields(profile, resume)["education_start_month"] == "2023-09"
-    row = _build_education(profile, resume)[0]
-    assert (row.start, row.end) == ("2023-09", "2027-06")
+def _legacy_profile(job_dir, **education):
+    """A profile file saved before education moved to the resume."""
+    config.APPLICANT_PROFILE_PATH.write_text(json.dumps({"first_name": "Jordan", **education}), encoding="utf-8")
 
 
-def test_missing_profile_start_date_is_inherited_from_unique_resume_row(job_dir):
-    profile = ApplicantProfile(school="State University", degree_level="Bachelors", graduation_month="2023")
-    pkt = build_packet("test-job", applicant_profile=profile)
-    assert pkt.education[0].start == "2019"
-    assert pkt.fields["education_start_month"] == "2019"
+def test_legacy_profile_education_moves_into_the_matching_resume_entry_once(job_dir):
+    from resume_tailor.apply.profile import load_profile
+    from resume_tailor.data import load
+
+    _legacy_profile(job_dir, school="State University", major="Computer Science", gpa="4.0",
+                    degree_level="Bachelors", graduation_month="2023")
+    profile, _seeded = load_profile()
+    assert profile.first_name == "Jordan"
+    edu = load().education[0]
+    # Blanks are filled; the resume's own GPA is kept.
+    assert (edu.major, edu.gpa) == ("Computer Science", "3.8")
+    saved = json.loads(config.APPLICANT_PROFILE_PATH.read_text(encoding="utf-8"))
+    assert not {"school", "major", "gpa", "degree_level", "graduation_month"} & set(saved)
+    folder = config.APPLICANT_PROFILE_PATH.parent
+    assert list(folder.glob("master_resume.*.bak.json")) and list(folder.glob("applicant_profile.*.bak.json"))
+    # Once migrated, a later load touches nothing.
+    before = config.MASTER_RESUME_PATH.read_text(encoding="utf-8")
+    load_profile()
+    assert config.MASTER_RESUME_PATH.read_text(encoding="utf-8") == before
 
 
-def test_explicit_profile_start_date_overrides_resume_row(job_dir):
-    profile = ApplicantProfile(school="State University", degree_level="Bachelors", education_start_month="2020-09")
-    pkt = build_packet("test-job", applicant_profile=profile)
-    assert pkt.education[0].start == "2020-09"
-    assert pkt.fields["education_start_month"] == "2020-09"
+def test_legacy_profile_education_for_another_school_leaves_the_resume_alone(job_dir):
+    from resume_tailor.apply.profile import load_profile
 
-
-def test_ambiguous_resume_dates_do_not_fill_profile_start():
-    raw = synthetic_resume().model_dump()
-    education = next(section for section in raw["sections"] if section["kind"] == "education")
-    duplicate = dict(education["entries"][0])
-    duplicate["dates"] = "2020 - 2024"
-    education["entries"].append(duplicate)
-    from resume_tailor.data import MasterResume
-
-    resume = MasterResume.model_validate(raw)
-    profile = ApplicantProfile(school="State University", degree_level="Bachelors")
-    rows = _build_education(profile, resume)
-    assert rows[0].start == ""
+    before = config.MASTER_RESUME_PATH.read_text(encoding="utf-8")
+    _legacy_profile(job_dir, school="Elsewhere College", major="History")
+    load_profile()
+    assert config.MASTER_RESUME_PATH.read_text(encoding="utf-8") == before
+    assert "major" not in json.loads(config.APPLICANT_PROFILE_PATH.read_text(encoding="utf-8"))

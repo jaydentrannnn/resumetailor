@@ -853,3 +853,25 @@ the resolver runs up to 2 extra rounds on controls revealed after its actions (n
 against max_retries). Also packet.authorization_mismatch: a posting whose location names
 another country drops uthorized_to_work (fill + engine), with a review line, not a blank.
 Not chosen: a second model pass. It would still have no fact to answer from.
+
+## 2026-09-25 — Education has one source: the master resume
+
+- Workday filled education twice (second row missing Field of Study). The packet carried a
+  profile row ("University of California - Irvine", "Bachelor of Science", major) and a
+  resume row (comma form, "Bachelor of Science in ... & Minor ...", no major); the fuzzy
+  merge in `_build_education` only collapsed a *generic* profile "Bachelors", so a named
+  profile degree kept both. The repeater correctly added a row per packet entry.
+- Fix is structural, not a better matcher: the profile's `school`, `major`, `degree_level`,
+  `gpa`, `education_start_month`, `graduation_month` are gone. `Education.major` (never
+  rendered) is new; `_build_education(resume)` is one row per resume entry, degree level
+  from `degree_of` on the degree line, dates from `parse_range`. Single-field forms answer
+  from the first entry. The merge heuristics, UCI alias table and start-month backfill
+  are deleted. `highest_education_obtained` stays on the profile (free text).
+- `profile.load_profile` migrates a legacy profile once: blank `major`/`gpa` on the
+  uniquely matching resume entry (`closest_option(key="school")`) are filled, both files
+  backed up as `.<stamp>.bak.json`, profile rewritten without the keys. No readable resume
+  → untouched, retried next load. Owner's default workspace migrated 2026-09-25 (major
+  added; GPA already present).
+- Education gaps now link to `/profile/resume` (`packet.profile_path`), where a banner
+  lists them; the resume editor has a "Major (field of study)" input. Fills rebuild the
+  packet every run, so already-prepared applications need no re-prepare.
