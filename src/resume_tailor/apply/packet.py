@@ -291,7 +291,8 @@ def _build_education(profile: ApplicantProfile, resume: MasterResume) -> list[Pa
             return "university of california irvine"
         return normalized
 
-    for row in _education_from_resume(resume):
+    resume_rows = _education_from_resume(resume)
+    for row in resume_rows:
         def same_degree(existing: PacketEducation, candidate: PacketEducation) -> bool:
             left = existing.degree.casefold().strip()
             right = candidate.degree.casefold().strip()
@@ -302,17 +303,25 @@ def _build_education(profile: ApplicantProfile, resume: MasterResume) -> list[Pa
                 or (existing.source == "profile" and left in generic_bachelor and specific_bachelor(right))
             )
 
-        match = next((
+        matches = [
             existing for existing in rows
             if school_key(existing.school) and school_key(existing.school) == school_key(row.school)
             and same_degree(existing, row)
             and (not existing.end or not row.end or existing.end[:4] == row.end[:4])
-        ), None)
-        if match is None:
+        ]
+        if len(matches) != 1:
             rows.append(row)
         else:
-            match.start = match.start or row.start
-            match.end = match.end or row.end
+            match = matches[0]
+            # A single matching resume entry can supply a missing profile date.
+            # Multiple entries for the same school/degree do not establish one date.
+            candidates = [candidate for candidate in resume_rows
+                          if school_key(candidate.school) == school_key(row.school)
+                          and same_degree(match, candidate)
+                          and (not match.end or not candidate.end or match.end[:4] == candidate.end[:4])]
+            if len(candidates) == 1:
+                match.start = match.start or row.start
+                match.end = match.end or row.end
             match.gpa = match.gpa or row.gpa
             if match.source == "profile" and match.degree.casefold().strip() in {
                 "bachelor", "bachelors", "bachelor's", "bachelors degree",
@@ -483,6 +492,14 @@ def build_packet(
     )
 
     ats = str(metadata.get("ats") or "unknown")
+    education = _build_education(applicant_profile, resume)
+    fields = build_fields(applicant_profile, resume)
+    if not fields.get("education_start_month"):
+        matching = [row for row in education if row.start and row.school
+                    and row.school.casefold().replace(",", "").replace("-", " ").split()
+                    == applicant_profile.school.casefold().replace(",", "").replace("-", " ").split()]
+        if len(matching) == 1:
+            fields["education_start_month"] = matching[0].start
     return Packet(
         job_id=job_id,
         built_at=datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
@@ -490,8 +507,8 @@ def build_packet(
         company=str(metadata.get("company") or ""),
         role=str(metadata.get("role") or report.get("title") or ""),
         ats=ats,
-        fields=build_fields(applicant_profile, resume),
-        education=_build_education(applicant_profile, resume),
+        fields=fields,
+        education=education,
         experience=experience,
         skills=_load_skills(job_dir / "skills.json"),
         cover_letter=_load_cover_letter(job_dir / "cover.json"),

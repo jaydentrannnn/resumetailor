@@ -55,12 +55,14 @@ class GreenhouseAdapter(FormAdapter):
 
     def classify(self, field: FieldObservation) -> tuple[str, str]:
         field_id = str(field.constraints.get("id") or "")
+        if re.fullmatch(r"start-year--\d+", field_id):
+            return "known", "education_start_year"
         if re.fullmatch(r"end-year--\d+", field_id):
             return "known", "education_end_year"
         return classify(field)
 
     def value_for(self, field: FieldObservation, key: str, packet: Packet, fields: dict[str, str]) -> str:
-        if key not in {"school", "degree_level", "major", "education_end_year"}:
+        if key not in {"school", "degree_level", "major", "education_start_year", "education_end_year"}:
             return fields.get(key, "")
         row_id = field.repeater_row_id
         if not row_id.isdigit():
@@ -84,13 +86,23 @@ class GreenhouseAdapter(FormAdapter):
             return degree
         if key == "major":
             return education.major
-        match = re.fullmatch(r"(\d{4})(?:-\d{2})?", education.end)
+        match = re.fullmatch(r"(\d{4})(?:-\d{2})?", education.start if key == "education_start_year" else education.end)
         return match.group(1) if match else ""
 
 
 class WorkdayAdapter(FormAdapter):
     def __init__(self):
         super().__init__("workday")
+
+    def value_for(self, field: FieldObservation, key: str, packet: Packet, fields: dict[str, str]) -> str:
+        if key not in {"education_start_year", "education_end_year"}:
+            return fields.get(key, "")
+        row = re.fullmatch(r"education-(\d+)--.*", str(field.constraints.get("id") or ""))
+        if row is None or len(packet.education) != 1:
+            return ""
+        date = packet.education[0].start if key == "education_start_year" else packet.education[0].end
+        match = re.fullmatch(r"(\d{4})(?:-\d{2})?", date)
+        return match.group(1) if match else ""
 
     async def enter_application(self, page: Any, *, timeout_ms: int) -> Any:
         """Cross only Workday's posting/application entry controls."""

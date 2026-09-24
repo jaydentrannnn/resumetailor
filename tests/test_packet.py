@@ -200,3 +200,31 @@ def test_profile_education_start_month_reaches_fields_and_education_row():
     assert build_fields(profile, resume)["education_start_month"] == "2023-09"
     row = _build_education(profile, resume)[0]
     assert (row.start, row.end) == ("2023-09", "2027-06")
+
+
+def test_missing_profile_start_date_is_inherited_from_unique_resume_row(job_dir):
+    profile = ApplicantProfile(school="State University", degree_level="Bachelors", graduation_month="2023")
+    pkt = build_packet("test-job", applicant_profile=profile)
+    assert pkt.education[0].start == "2019"
+    assert pkt.fields["education_start_month"] == "2019"
+
+
+def test_explicit_profile_start_date_overrides_resume_row(job_dir):
+    profile = ApplicantProfile(school="State University", degree_level="Bachelors", education_start_month="2020-09")
+    pkt = build_packet("test-job", applicant_profile=profile)
+    assert pkt.education[0].start == "2020-09"
+    assert pkt.fields["education_start_month"] == "2020-09"
+
+
+def test_ambiguous_resume_dates_do_not_fill_profile_start():
+    raw = synthetic_resume().model_dump()
+    education = next(section for section in raw["sections"] if section["kind"] == "education")
+    duplicate = dict(education["entries"][0])
+    duplicate["dates"] = "2020 - 2024"
+    education["entries"].append(duplicate)
+    from resume_tailor.data import MasterResume
+
+    resume = MasterResume.model_validate(raw)
+    profile = ApplicantProfile(school="State University", degree_level="Bachelors")
+    rows = _build_education(profile, resume)
+    assert rows[0].start == ""

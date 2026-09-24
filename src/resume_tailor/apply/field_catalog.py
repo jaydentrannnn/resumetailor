@@ -19,6 +19,7 @@ def classify(field: FieldObservation) -> tuple[Classification, str]:
     auto = normalize(str(attrs.get("autocomplete") or ""))
     name = normalize(str(attrs.get("name") or ""))
     input_type = normalize(str(attrs.get("input_type") or ""))
+    identity = f"{name} {normalize(str(attrs.get('id') or ''))} {normalize(str(attrs.get('automation_id') or ''))}"
     if input_type == "password" or auto in {"current password", "new password", "one time code"} or re.search(r"\b(password|passcode|verification code|one time code)\b", label):
         return "manual_review", "credential_or_verification"
     if re.search(r"\b(salary|compensation|pay expectation|desired pay|pay rate|wages?)\b", label):
@@ -37,6 +38,17 @@ def classify(field: FieldObservation) -> tuple[Classification, str]:
         return "known", "country"
     if field.control_kind == "checkbox" and "have a preferred name" in label:
         return "known", "has_preferred_name"
+    if "preferred" in identity:
+        if "first" in identity:
+            return "known", "preferred_name"
+        if "last" in identity:
+            return "known", "last_name"
+    if "preferred name" in section and label == "first name":
+        return "known", "preferred_name"
+    if "preferred name" in section and label == "last name":
+        return "known", "last_name"
+    if "preferred last name" in label:
+        return "known", "last_name"
     if "preferred first name" in label or "preferred name" in label:
         return "known", "preferred_name"
     if "first name" in label or auto == "given name":
@@ -45,6 +57,10 @@ def classify(field: FieldObservation) -> tuple[Classification, str]:
         return "known", "middle_name"
     if "last name" in label or "family name" in label:
         return "known", "last_name"
+    if re.search(r"\b(?:first year attended|start year|year started)\b", label) and re.search(r"education|school|university", section + " " + identity):
+        return "known", "education_start_year"
+    if re.search(r"\b(?:last year attended|end year|graduation year)\b", label) and re.search(r"education|school|university", section + " " + identity):
+        return "known", "education_end_year"
     if "hispanic" in label or "latino" in label:
         return "known", "hispanic_latino"
     if "race" in label or "ethnicity" in label:

@@ -174,6 +174,27 @@ def _fill_date(page: Any, prefix: str, field: str, value: str, *, with_month: bo
     month, year = _date_parts(value)
     if not year:
         return not value  # nothing to write is fine; an unparseable date needs review
+    year_control = _ctl(page, prefix, field)
+    if year_control.count() == 1 and year_control.first.is_visible():
+        target = year_control.first
+        tag = str(target.evaluate("el => el.tagName") or "").upper()
+        if tag == "SELECT":
+            current = str(target.input_value() or "").strip()
+            if current:
+                return current == year
+            target.select_option(label=year, timeout=3000)
+            return str(target.input_value() or "").strip() == year
+        if tag == "INPUT" and (target.get_attribute("role") or "") != "combobox":
+            current = str(target.input_value() or "").strip()
+            if current:
+                return current == year
+            target.fill(year, timeout=3000)
+            target.press("Tab", timeout=3000)
+            return str(target.input_value() or "").strip() == year
+        if target.get_attribute("aria-haspopup") == "listbox":
+            from resume_tailor.apply import workday_flow  # noqa: PLC0415
+            current = _value(page, prefix, field)
+            return current == year if current else workday_flow.select_listbox(page, f"[id='{prefix}{field}']", year)
     parts = ([("dateSectionMonth", month)] if with_month else []) + [("dateSectionYear", year)]
     for section, text in parts:
         if not text:
@@ -299,4 +320,49 @@ def fill(
         except Exception as exc:  # noqa: BLE001
             progress(f"Workday education row needs review: {edu.school} ({type(exc).__name__})")
             review.append(label)
+    return filled, review
+
+
+async def fill_education_years_async(page: Any, packet: Packet) -> tuple[list[dict[str, str]], list[str]]:
+    """Fill split Workday education year controls in the verified engine.
+
+    The ordinary scanner handles visible inputs and selectors. This covers Workday's
+    zero-width year spinbuttons, which the scanner intentionally cannot observe.
+    """
+    rows = await page.evaluate(r"""() => [...document.querySelectorAll('[id$="--schoolName"]')]
+      .map(el => ({prefix: el.id.slice(0, -'schoolName'.length), school: el.value || '',
+        major: document.getElementById(el.id.replace('schoolName', 'fieldOfStudy'))?.value || ''}))""")
+    filled: list[dict[str, str]] = []
+    review: list[str] = []
+    for row in rows or []:
+        matches = [edu for edu in packet.education if edu.school.strip().casefold() == str(row["school"]).strip().casefold()
+                   and (not row["major"] or edu.major.strip().casefold() == str(row["major"]).strip().casefold())]
+        if len(matches) != 1:
+            continue
+        edu = matches[0]
+        for field, date in (("firstYearAttended", edu.start), ("lastYearAttended", edu.end)):
+            _month, year = _date_parts(date)
+            if not year:
+                continue
+            prefix = str(row["prefix"])
+            year_input = page.locator(f"[id='{prefix}{field}-dateSectionYear-input']")
+            if await year_input.count() != 1:
+                continue  # ordinary visible controls belong to the scanner
+            current = str(await year_input.input_value() or "").strip()
+            label = f"Education: {edu.school} {field}"
+            if current and current != year:
+                review.append(label)
+                continue
+            if not current:
+                display = page.locator(f"[id='{prefix}{field}-dateSectionYear-display']")
+                if await display.count() != 1:
+                    review.append(label)
+                    continue
+                await display.click(timeout=3000)
+                await page.keyboard.type(year, delay=40)
+                await page.keyboard.press("Tab")
+            if str(await year_input.input_value() or "").strip() == year:
+                filled.append({"label": label, "value": year})
+            else:
+                review.append(label)
     return filled, review

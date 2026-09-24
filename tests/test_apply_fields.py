@@ -10,6 +10,8 @@ from resume_tailor.apply.field_types import FieldObservation, FieldOutcome, Obse
 from resume_tailor.apply.preparation import PreparedExpansion
 from resume_tailor.apply.engine import _availability_for_field, _current_outcome, _national_phone_value
 from resume_tailor.apply.controls import _phone_match
+from resume_tailor.apply.adapters import GreenhouseAdapter, WorkdayAdapter
+from resume_tailor.apply.packet import Packet, PacketEducation
 
 
 def option(label: str, *, value: str = "", disabled: bool = False) -> ObservedOption:
@@ -41,6 +43,10 @@ def test_manual_and_contextual_field_classification():
     assert classify(observation("Country", section="Phone", kind="combobox", phone_sibling=True)) == ("known", "phone_country_code")
     assert classify(observation("Country", section="Address", kind="combobox")) == ("known", "country")
     assert classify(observation("Are you Hispanic/Latino?")) == ("known", "hispanic_latino")
+    assert classify(observation("First Name", section="Preferred Name")) == ("known", "preferred_name")
+    assert classify(observation("Last Name", section="Preferred Name")) == ("known", "last_name")
+    assert classify(observation("First Name", section="Legal Name")) == ("known", "first_name")
+    assert classify(observation("First Year Attended", section="Education")) == ("known", "education_start_year")
 
 
 def test_combined_sponsorship_and_current_are_distinct():
@@ -56,6 +62,19 @@ def test_empty_prepared_experience_requires_durable_source_evidence():
 def test_authentication_controls_are_not_profile_fields():
     assert classify(observation("Password", input_type="password")) == ("manual_review", "credential_or_verification")
     assert classify(observation("Verification code", autocomplete="one-time-code")) == ("manual_review", "credential_or_verification")
+
+
+def test_education_year_is_scoped_to_its_row():
+    packet = Packet(job_id="test", built_at="2026-01-01T00:00:00Z", education=[
+        PacketEducation(school="Test University", start="2023-09", end="2027-06"),
+    ])
+    field = observation("Start Year", section="Education", id="start-year--0")
+    field.repeater_row_id = "0"
+    adapter = GreenhouseAdapter()
+    assert adapter.classify(field) == ("known", "education_start_year")
+    assert adapter.value_for(field, "education_start_year", packet, {}) == "2023"
+    field.constraints["id"] = "education-1--firstYearAttended"
+    assert WorkdayAdapter().value_for(field, "education_start_year", packet, {}) == "2023"
 
 
 def test_phone_prefix_is_removed_only_with_a_committed_same_group_code():

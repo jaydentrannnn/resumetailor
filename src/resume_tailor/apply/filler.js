@@ -129,14 +129,30 @@
   function matchKey(el, label) {
     if (/^end[-_ ]?year(?:--\d+)?$/i.test(el.id || "")) return "graduation_month";
     if (/^start[-_ ]?year(?:--\d+)?$/i.test(el.id || "")) return "education_start_month";
+    const educationContext = `${el.id || ""} ${el.closest("fieldset, [data-automation-id*='education' i]")?.textContent?.slice(0, 100) || ""}`;
+    if (/education|university|school/i.test(educationContext)) {
+      if (/first year attended|education start year|university start year|start year/i.test(label)) return "education_start_month";
+      if (/last year attended|education end year|graduation year|end year/i.test(label)) return "graduation_month";
+    }
     if (phoneCodeControl(el, label)) return "phone_country_code";
     // Workday's preferred-name block: the checkbox that reveals it, then its inputs,
     // whose own labels read plain "First Name" / "Last Name".
     const elId = el.id || "";
-    if (/preferred/i.test(elId)) {
+    const automation = `${el.getAttribute("data-automation-id") || ""} ${el.getAttribute("name") || ""}`;
+    if (/preferred/i.test(`${elId} ${automation}`)) {
       if (el.type === "checkbox") return "has_preferred_name";
-      if (/first/i.test(elId)) return "preferred_name";
-      if (/last/i.test(elId)) return "last_name";
+      if (/first/i.test(`${elId} ${automation}`)) return "preferred_name";
+      if (/last/i.test(`${elId} ${automation}`)) return "last_name";
+    }
+    if (/preferred first name/i.test(label)) return "preferred_name";
+    if (/preferred last name/i.test(label)) return "last_name";
+    if (/^first name$/i.test(label.trim())) {
+      let node = el.parentElement;
+      for (let depth = 0; node && depth < 5; depth++, node = node.parentElement) {
+        const heading = node.querySelector(":scope > legend, :scope > h2, :scope > h3, :scope > h4, :scope > [role='heading']");
+        if (heading && /preferred name/i.test(heading.textContent || "")) return "preferred_name";
+        if (heading && /legal name/i.test(heading.textContent || "")) break;
+      }
     }
     const sel = selectorFor(el);
     if (hints && hints[sel]) return hints[sel];
@@ -330,6 +346,17 @@
     const existingAnswer = el.tagName === "SELECT"
       ? (selected && selected.value && !/^(select|choose|please select)/i.test(selected.text.trim()) ? selected.text.trim() : "")
       : ((type === "checkbox" || type === "radio") ? "" : String(el.value || "").trim());
+    if (existingAnswer && key === "preferred_name" && fields.preferred_name && fields.first_name &&
+        norm(existingAnswer) === norm(fields.first_name) && norm(fields.preferred_name) !== norm(fields.first_name)) {
+      setNativeValue(el, fields.preferred_name);
+      el.blur();
+      if (norm(el.value) === norm(fields.preferred_name)) {
+        filled.push({ key, label, value: el.value, selector: sel, corrected: true });
+      } else {
+        leftovers.push({ key, label, type, required, selector: sel, reason: "Preferred name correction did not commit" });
+      }
+      continue;
+    }
     if (existingAnswer) {
       filled.push({ key: "existing", label, value: existingAnswer, selector: sel, preserved: true });
       continue;
@@ -406,7 +433,9 @@
 
     let written = "";
     if (el.tagName === "SELECT") {
-      written = selectByText(el, value, key) || "";
+      const yearOnly = (key === "education_start_month" || key === "graduation_month") &&
+        /(?:start|end|graduation|attended).{0,12}year|year.{0,12}(?:start|end|graduation)|(?:first|last) year attended/i.test(`${el.id} ${label}`);
+      written = selectByText(el, yearOnly ? String(value).slice(0, 4) : value, key) || "";
       if (!written) {
         leftovers.push({ label, type, options: Array.from(el.options).map((o) => o.text.trim()), required, selector: sel, reason: "No unique matching option" });
         if (required) required_empty.push(label || sel);

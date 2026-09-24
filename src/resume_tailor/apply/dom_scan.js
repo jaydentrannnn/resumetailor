@@ -34,6 +34,11 @@
   const group = (el) => el.closest("fieldset, [role='radiogroup'], [class*='question' i], [data-automation-id*='formField' i], .form-group");
   const section = (el) => {
     const parent = group(el);
+    let node = el.parentElement;
+    for (let depth = 0; node && depth < 5; depth++, node = node.parentElement) {
+      const heading = node.querySelector(":scope > legend, :scope > h2, :scope > h3, :scope > h4, :scope > [role='heading']");
+      if (heading && /preferred name|legal name/i.test(text(heading))) return text(heading);
+    }
     return text(parent?.querySelector("legend, h2, h3, [class*='label' i]")) || parent?.getAttribute("class") || "";
   };
   const placeholder = (option) => !String(option.value || "").trim() || /^(select|choose|please select)\b/i.test(text(option));
