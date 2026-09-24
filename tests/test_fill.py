@@ -94,6 +94,18 @@ def test_greenhouse_cover_letter_input_is_classified_by_name():
     )
 
 
+def test_workday_generic_upload_is_the_resume_by_hint_or_section():
+    # Philips/Upbound: "Upload a file (5MB max)" under a "Resume/CV" heading. The hint
+    # selector is written with single quotes, filler.js with double quotes.
+    selector = 'input[data-automation-id="file-upload-input-ref"]'
+    hints = {"input[data-automation-id='file-upload-input-ref']": "resume_upload"}
+    label = "Upload a file (5MB max)*"
+    assert fill._attachment_purpose(label, selector, hints) is None  # noqa: SLF001
+    assert fill._attachment_purpose(label, selector, hints, hint_key="resume_upload") == "resume"  # noqa: SLF001
+    assert fill._attachment_purpose(label, selector, {}, section="Resume/CV") == "resume"  # noqa: SLF001
+    assert fill._attachment_purpose(label, selector, {}, section="Cover Letter") == "cover_letter"  # noqa: SLF001
+
+
 def test_upload_verified_when_react_replaces_file_input(tmp_path):
     """Greenhouse removes an input after upload but renders the selected filename."""
     file_path = tmp_path / "Ada Resume.pdf"
@@ -451,6 +463,32 @@ def test_fill_application_failure_sets_fill_failed(fill_paths, monkeypatch):
     assert store.get("src-1").status == "fill_failed"
 
 
+def test_a_posting_in_another_country_withholds_the_work_authorization_answer(fill_paths, monkeypatch):
+    """"Authorized to work" answers for the profile's country; a Canadian posting leaves
+    its eligibility questions to the applicant, the resolver model included."""
+    store.upsert(_ready_app(location="Toronto, ON, Canada"))
+    sample_packet = Packet(
+        job_id="job-1", built_at="2026-01-01T00:00:00+00:00",
+        fields={"authorized_to_work": "Yes", "country": "United States"}, field_hints={},
+    )
+    monkeypatch.setattr(packet, "build_packet", lambda job_id: sample_packet)
+    monkeypatch.setattr(profile_mod, "load_profile", lambda: (
+        ApplicantProfile(country="United States", authorized_to_work=True), False,
+    ))
+    monkeypatch.setattr(data, "load", lambda: MagicMock(all_bullets=lambda: []))
+
+    @contextmanager
+    def _broken_browser():
+        raise RuntimeError("CDP unreachable")
+        yield  # pragma: no cover
+
+    monkeypatch.setattr(browser, "cdp_browser", _broken_browser)
+    messages: list[str] = []
+    fill.fill_application("src-1", on_progress=messages.append)
+    assert "authorized_to_work" not in sample_packet.fields
+    assert any("Job is in Canada; your work authorization is for United States" in m for m in messages)
+
+
 def test_fill_application_readiness_guard_fails_when_zero_controls(fill_paths, monkeypatch):
     """When 0 controls are found on the page, fill must fail instead of falsely claiming awaiting_review."""
     app = _ready_app(ats="other")
@@ -502,6 +540,60 @@ def test_fill_application_readiness_guard_fails_when_zero_controls(fill_paths, m
     assert "No application form controls detected" in (result.error or "")
     assert result.browser_target_id == "target-no-form"
     assert store.get("src-1").status == "fill_failed"
+
+
+def test_workday_error_page_that_survives_refreshes_is_handed_over(fill_paths, monkeypatch):
+    """Workday's "Something went wrong ... Error Code: VPS|" page is refreshed; if it keeps
+    coming back, the tab is handed over for review, not failed as "no form controls"."""
+    from resume_tailor.apply import form_routes, workday_auth, workday_flow  # noqa: PLC0415
+
+    store.upsert(_ready_app(ats="workday"))
+    monkeypatch.setattr(packet, "build_packet", lambda job_id: Packet(
+        job_id="job-1", built_at="2026-01-01T00:00:00+00:00", ats="workday", fields={}, field_hints={},
+    ))
+    monkeypatch.setattr(profile_mod, "load_profile", lambda: (ApplicantProfile(), False))
+    monkeypatch.setattr(data, "load", lambda: MagicMock(all_bullets=lambda: []))
+    page = MagicMock()
+    page.url = "https://tenant.wd1.myworkdayjobs.com/en-US/site/job/City/R1/apply/applyManually"
+    page.frames = [page]
+
+    @contextmanager
+    def _fake_browser():
+        cdp = MagicMock()
+        cdp.contexts = [MagicMock()]
+        cdp.contexts[0].new_page.return_value = page
+        yield cdp
+
+    refreshes: list[int] = []
+
+    def _still_broken(_page, *, deadline, progress, attempts):
+        refreshes.append(attempts)
+        return False, attempts
+
+    monkeypatch.setattr(browser, "cdp_browser", _fake_browser)
+    monkeypatch.setattr(browser, "target_id", lambda _context, _page: "target-wd")
+    monkeypatch.setattr(workday_flow, "enter_application", lambda page, _context, **_kw: (page, "apply_form"))
+    monkeypatch.setattr(workday_flow, "wait_for_state", lambda *_a, **_kw: "apply_form")
+    monkeypatch.setattr(workday_flow, "recover_site_error", _still_broken)
+    monkeypatch.setattr(form_routes, "choose_email_sync", lambda page, *, deadline: "absent")
+    monkeypatch.setattr(workday_auth, "handle_workday_auth", lambda *_a, **_kw: "authenticated")
+
+    result = fill.fill_application("src-1")
+    assert result.status == "awaiting_review"
+    assert "kept showing 'Something went wrong'" in (result.handoff_reason or "")
+    assert result.browser_target_id == "target-wd"
+    assert refreshes and all(attempts == workday_flow.SITE_ERROR_RELOADS for attempts in refreshes)
+    assert store.get("src-1").status == "awaiting_review"
+
+
+def test_a_step_is_blank_only_when_its_passes_saw_no_control_at_all():
+    """Philips re-renders My Information for the saved country: a scan in that gap sees
+    nothing, and that step is rescanned rather than advanced."""
+    empty = {"filled": [{"key": "email"}], "leftovers": [], "long_text": [], "file_inputs": [], "required_empty": []}
+    assert fill._scanned_nothing(empty, filled_start=1)
+    assert not fill._scanned_nothing({**empty, "filled": [{"key": "email"}, {"key": "phone"}]}, filled_start=1)
+    for key in ("leftovers", "long_text", "file_inputs", "required_empty"):
+        assert not fill._scanned_nothing({**empty, key: [{"label": "x"}]}, filled_start=1)
 
 
 def test_decide_submit_action_submit_mode_override():
@@ -640,3 +732,46 @@ def test_workday_textareas_are_recommitted_with_real_input_events():
     assert ("#salary", "fill:$20/hour") in calls
     assert ("#salary", "el => el.blur()") in calls
     assert not any(value.startswith("fill:") for selector, value in calls if selector != "#salary")
+
+
+class _FooterButton:
+    """A visible Workday footer button with the given text."""
+
+    def __init__(self, text: str, *, visible: bool = True) -> None:
+        self.text, self.visible = text, visible
+
+    @property
+    def first(self) -> "_FooterButton":
+        return self
+
+    def count(self) -> int:
+        return 1 if self.visible else 0
+
+    def is_visible(self) -> bool:
+        return self.visible
+
+    def inner_text(self, timeout: int | None = None) -> str:
+        return self.text
+
+    def get_attribute(self, _name: str) -> str | None:
+        return None
+
+
+class _FooterPage:
+    def __init__(self, footer_text: str) -> None:
+        self.footer_text = footer_text
+
+    def get_by_role(self, _role: str, name=None) -> _FooterButton:
+        return _FooterButton("", visible=False)
+
+    def locator(self, selector: str) -> _FooterButton:
+        if "pageFooterNextButton" in selector:
+            return _FooterButton(self.footer_text)
+        return _FooterButton("", visible=False)
+
+
+def test_workday_review_submit_is_never_an_advance_button():
+    # Philips (2026-09-24): Review's Submit shares Next's `pageFooterNextButton` id, and
+    # clicking it as "advance" submitted the application.
+    assert fill._find_advance_button(_FooterPage("Submit")) is None  # noqa: SLF001
+    assert fill._find_advance_button(_FooterPage("Save and Continue")) is not None  # noqa: SLF001

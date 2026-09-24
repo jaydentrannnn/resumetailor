@@ -179,7 +179,9 @@ AuthResult = Literal[
 
 #: Human handoff text for every non-authenticated outcome (shown on the Applications row).
 AUTH_HANDOFF: dict[str, str] = {
-    "verification_needed": "Workday sent a verification email or code. Verify it in this tab, then Continue fill.",
+    "verification_needed": "Workday needs your email verified: enter the code in this tab, or "
+    "click the link in Workday's verification email (check spam; Sign In can resend it), "
+    "then Continue fill.",
     "credentials_needed": "Add an applicant email before continuing Workday authentication.",
     "sign_in_failed": "Workday did not accept the saved email and password on this site. "
     "Sign in in this tab (or update your Workday password in the applicant profile), then Continue fill.",
@@ -348,8 +350,15 @@ def _submit(
         if callable(listen) and callable(unlisten):
             with contextlib.suppress(Exception):
                 unlisten("request", _seen)
-    state = workday_flow.wait_for_state(page, done, timeout_s=30, deadline=stop)
-    return state, workday_flow.snapshot(page)
+    # Settle on the next screen, or on the form's own error (a rejection needs no 30s wait).
+    settle = min(stop, time.monotonic() + 30)
+    snap = workday_flow.snapshot(page)
+    state = workday_flow.classify(snap)
+    while state not in done and not (state == form_state and snap.get("alerts")) and time.monotonic() < settle:
+        page.wait_for_timeout(250)
+        snap = workday_flow.snapshot(page)
+        state = workday_flow.classify(snap)
+    return state, snap
 
 
 def _await_verification(source_job_id: str) -> None:
@@ -371,12 +380,16 @@ def handle_workday_auth(
 ) -> AuthResult:
     """Get a Workday tab past Create Account / Sign In, or hand it over with a reason.
 
-    An existing browser session wins outright (no credentials touched). A site this tool
-    has used before signs in. A new site creates an account first (with the profile
-    password, else a generated one kept in the vault): Workday accounts are per site, and
-    creating never spends a wrong-password attempt toward the lockout. When the account
-    already exists, the profile password gets exactly one Sign In; a generated password is
-    never tried against an account it did not create.
+    An existing browser session wins outright (no credentials touched). Otherwise Sign In
+    comes first whenever an account could have the password: a site this tool used before,
+    or the applicant's own profile password. It gets exactly one attempt; a rejection on a
+    site the tool never used falls through to Create Account (Workday rejects a missing
+    account and a wrong password alike), and "already exists" there hands over without a
+    second attempt. With no profile password a new site creates straight away, with a
+    generated password kept in the vault, which is never tried against an account it did
+    not create. "Verify your account" is never a wrong password: it hands over for the
+    email link. A new account that lands back on the login page signs in once with its own
+    password, unless this run already spent its Sign In attempt.
     """
     from resume_tailor.apply import workday_flow
 
@@ -421,86 +434,143 @@ def handle_workday_auth(
     known = _known_site(tenant)
     profile_password = bool((profile.workday_password or "").strip())
     email, password = get_tenant_credentials(url, profile)
-    exists = False
 
+    def _switch(link: str, target: str) -> str:
+        workday_flow.click_control(page, link)
+        return workday_flow.wait_for_state(page, {target}, timeout_s=8, deadline=stop)
+
+    def _unverified(snap: dict[str, Any]) -> bool:
+        # Live Jabil 2026-09-24: "Verify your account before you sign in or request a
+        # verification email." The account exists, so Create Account is never the answer.
+        if not workday_flow.VERIFY_EMAIL.search(_alerts(snap)):
+            return False
+        log("the account exists but its email is not verified yet")
+        _mark_created(tenant)
+        _await_verification(source_job_id)
+        return True
+
+    signed_in_once = False
     try:
-        if state == "sign_in" and not known:
-            log("first visit to this Workday site; switching to Create Account")
-            workday_flow.click_control(page, "createAccountLink")
-            state = workday_flow.wait_for_state(page, {"create_account"}, timeout_s=8, deadline=stop)
-        elif state == "create_account" and known:
-            log("this Workday site was used before; switching to Sign In")
-            workday_flow.click_control(page, "signInLink")
-            state = workday_flow.wait_for_state(page, {"sign_in"}, timeout_s=8, deadline=stop)
-
-        if state == "create_account":
-            inputs = ("email", "password", "verifyPassword")
-            top = workday_flow.wait_for_auth_form_ready(page, "createAccountSubmitButton", inputs, deadline=stop)
-            log(f"filling Create Account (submit covered by: {top or 'not ready'})")
-            _fill(page, "email", email)
-            _fill(page, "password", password)
-            _fill(page, "verifyPassword", password)
-            accepted = _accept_account_terms(page)
-            if accepted is False:
-                log("Account terms could not be ticked; they need manual acceptance in the Workday tab")
-                return "terms_needed"
-            if accepted:
-                log("accepted the Workday account terms")
-            state, snap = _submit(
-                page, "createAccountSubmitButton", inputs, "create_account",
-                {"apply_form", "otp", "verify_email", "sign_in"}, stop=stop, log=log,
-            )
-            if _EXISTS.search(_alerts(snap)):
-                log("an account already exists for this email on this site")
-                if not profile_password:
-                    return "account_exists_other_password"
-                exists = True
-                workday_flow.click_control(page, "signInLink")
-                state = workday_flow.wait_for_state(page, {"sign_in"}, timeout_s=8, deadline=stop)
-            elif state in {"apply_form", "otp", "verify_email", "sign_in"}:
-                _mark_created(tenant)
-                have_password = True
-            if state in {"otp", "verify_email"}:
-                _await_verification(source_job_id)
-                return "verification_needed"
-            if state == "apply_form" or workday_flow.signed_in(snap):
-                return "authenticated"
+        # Sign In first whenever there is a password an account could have: one the tool
+        # used on this site before, or the applicant's own. A generated password on a new
+        # site cannot belong to any account, so that case goes straight to Create Account.
+        if known or profile_password:
             if state == "create_account":
-                if not _alerts(snap):
-                    log("Create Account did not respond")
-                    return "no_response"
-                log(f"Create Account did not complete: {_alerts(snap)}")
+                log("trying Sign In before creating an account")
+                state = _switch("signInLink", "sign_in")
+            if state != "sign_in":
+                log(f"Sign In form did not open (screen: {state})")
                 return "failed"
-
-        if state == "sign_in":
-            if not (known or profile_password):
-                return "sign_in_failed"
-            inputs = ("email", "password")
-            top = workday_flow.wait_for_auth_form_ready(page, "signInSubmitButton", inputs, deadline=stop)
-            log(f"filling Sign In (submit covered by: {top or 'not ready'})")
-            _fill(page, "email", email)
-            _fill(page, "password", password)
-            state, snap = _submit(
-                page, "signInSubmitButton", inputs, "sign_in",
-                {"apply_form", "otp", "verify_email"}, stop=stop, log=log,
-            )
+            state, snap = _sign_in(page, email, password, stop=stop, log=log)
+            signed_in_once = True
             if state in {"otp", "verify_email"}:
                 _await_verification(source_job_id)
                 return "verification_needed"
             if state == "apply_form" or workday_flow.signed_in(snap):
                 _mark_signed_in(tenant)
                 return "authenticated"
+            if _unverified(snap):
+                return "verification_needed"
             if not _alerts(snap):
                 # Still on the form with no error: the click never reached Workday. That is
                 # not evidence about the password.
                 log(f"Sign In did not respond (screen: {state})")
                 return "no_response"
             log(f"Sign In was rejected: {_alerts(snap)}")
-            return "account_exists_other_password" if exists else "sign_in_failed"
+            if known:
+                return "sign_in_failed"
+            # Workday answers "wrong email or password" both for a wrong password and for
+            # no account at all; Create Account tells them apart without a second attempt.
+            log("no account confirmed on this site; switching to Create Account")
+            state = _switch("createAccountLink", "create_account")
+        elif state == "sign_in":
+            log("first visit to this Workday site; switching to Create Account")
+            state = _switch("createAccountLink", "create_account")
+
+        if state != "create_account":
+            log(f"Create Account form did not open (screen: {state})")
+            return "failed"
+        inputs = ("email", "password", "verifyPassword")
+        top = workday_flow.wait_for_auth_form_ready(page, "createAccountSubmitButton", inputs, deadline=stop)
+        log(f"filling Create Account (submit covered by: {top or 'not ready'})")
+        _fill(page, "email", email)
+        _fill(page, "password", password)
+        _fill(page, "verifyPassword", password)
+        accepted = _accept_account_terms(page)
+        if accepted is False:
+            log("Account terms could not be ticked; they need manual acceptance in the Workday tab")
+            return "terms_needed"
+        if accepted:
+            log("accepted the Workday account terms")
+        state, snap = _submit(
+            page, "createAccountSubmitButton", inputs, "create_account",
+            {"apply_form", "otp", "verify_email", "sign_in", "auth_chooser"}, stop=stop, log=log,
+        )
+        if _EXISTS.search(_alerts(snap)):
+            # Never a second Sign In: the one attempt (if any) is already spent.
+            log("an account already exists for this email on this site")
+            return "account_exists_other_password"
+        if _unverified(snap):
+            return "verification_needed"
+        if state in {"apply_form", "otp", "verify_email", "sign_in", "auth_chooser"}:
+            _mark_created(tenant)
+        if state in {"otp", "verify_email"}:
+            _await_verification(source_job_id)
+            return "verification_needed"
+        if state == "apply_form" or workday_flow.signed_in(snap):
+            return "authenticated"
+        if state in {"sign_in", "auth_chooser"}:
+            # Live Jabil 2026-09-24: a created account lands back on its login page (and
+            # emails a verification link). Its own new password is the one to sign in with.
+            log(f"account created; Workday returned to {state}")
+            if signed_in_once:
+                # Two attempts in one run is never worth the lockout risk; verification is
+                # the likely reason Workday did not sign the new account in.
+                _await_verification(source_job_id)
+                return "verification_needed"
+            if state == "auth_chooser":
+                workday_flow.click_control(page, "SignInWithEmailButton")
+                state = workday_flow.wait_for_state(page, {"sign_in"}, timeout_s=10, deadline=stop)
+            if state != "sign_in":
+                log(f"Sign In form did not open (screen: {state})")
+                return "failed"
+            state, snap = _sign_in(page, email, password, stop=stop, log=log)
+            if state in {"otp", "verify_email"} or _unverified(snap):
+                _await_verification(source_job_id)
+                return "verification_needed"
+            if state == "apply_form" or workday_flow.signed_in(snap):
+                _mark_signed_in(tenant)
+                return "authenticated"
+            log(f"Sign In after Create Account did not complete: {_alerts(snap) or state}")
+            return "sign_in_failed" if _alerts(snap) else "no_response"
+        if state == "create_account":
+            if not _alerts(snap):
+                log("Create Account did not respond")
+                return "no_response"
+            log(f"Create Account did not complete: {_alerts(snap)}")
+        else:
+            log(f"Create Account ended on an unrecognised screen ({state})")
+        return "failed"
     except Exception as exc:  # noqa: BLE001 - a broken control becomes a handoff, not a crash
         log(f"authentication error: {type(exc).__name__}: {exc}")
         return "failed"
-    return "failed"
+
+
+def _sign_in(
+    page: Any, email: str, password: str, *, stop: float, log: Callable[[str], None],
+) -> tuple[str, dict[str, Any]]:
+    """Fill and submit Sign In once; returns the settled state and its snapshot."""
+    from resume_tailor.apply import workday_flow
+
+    inputs = ("email", "password")
+    top = workday_flow.wait_for_auth_form_ready(page, "signInSubmitButton", inputs, deadline=stop)
+    log(f"filling Sign In (submit covered by: {top or 'not ready'})")
+    _fill(page, "email", email)
+    _fill(page, "password", password)
+    return _submit(
+        page, "signInSubmitButton", inputs, "sign_in",
+        {"apply_form", "otp", "verify_email"}, stop=stop, log=log,
+    )
 
 
 async def _async_visible(page: Any, selectors: tuple[str, ...]) -> bool:

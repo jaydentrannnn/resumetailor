@@ -9,13 +9,14 @@ from __future__ import annotations
 
 import hashlib
 import json
+import re
 from datetime import datetime, timezone
 from pathlib import Path
 
 from pydantic import BaseModel, Field
 
 from resume_tailor import config
-from resume_tailor.apply import ats_hints, profile as profile_mod
+from resume_tailor.apply import ats_hints, field_matcher, profile as profile_mod
 from resume_tailor.apply.profile import ApplicantProfile
 from resume_tailor.data import MasterResume, load
 from resume_tailor.expand import Expansion, ExpandedEntry
@@ -74,6 +75,14 @@ class PreparationManifest(BaseModel):
     preparation_warnings: list[str] = Field(default_factory=list)
 
 
+class PacketLanguage(BaseModel):
+    """One profile language for Workday's Languages rows."""
+
+    language: str
+    fluent: bool = False
+    levels: dict[str, str] = Field(default_factory=dict)
+
+
 class Packet(BaseModel):
     """Everything the deterministic filler needs for one tailoring run."""
 
@@ -87,6 +96,7 @@ class Packet(BaseModel):
     education: list[PacketEducation] = Field(default_factory=list)
     experience: list[PacketExperience] = Field(default_factory=list)
     skills: list[str] = Field(default_factory=list)
+    languages: list[PacketLanguage] = Field(default_factory=list)
     cover_letter: str = ""
     artifacts: dict[str, str] = Field(default_factory=dict)
     field_hints: dict[str, str] = Field(default_factory=dict)
@@ -100,6 +110,198 @@ _WORK_AUTH_LABELS: dict[str, str] = {
     "visa_holder": "Authorized to work in the U.S. with visa sponsorship",
     "other": "Other",
 }
+
+
+class ProfileFieldInfo(BaseModel):
+    """Where a canonical field's answer lives on the Profile page."""
+
+    label: str
+    section: str
+    common: bool = False
+
+
+_CONTACT = "Application contact"
+_ADDRESS = "Address and phone details"
+_WORK_AUTH = "Work authorization and sponsorship"
+_AVAILABILITY = "Availability and location preferences"
+_EDUCATION = "Education"
+_VOLUNTARY = "Voluntary information"
+_SAVED = "Saved answers and other preferences"
+
+#: Canonical keys with a profile source, keyed as ``build_fields`` emits them. ``common``
+#: marks the facts application forms routinely ask for: a blank one is a known skip.
+PROFILE_FIELDS: dict[str, ProfileFieldInfo] = {
+    "first_name": ProfileFieldInfo(label="Legal first name", section=_CONTACT, common=True),
+    "middle_name": ProfileFieldInfo(label="Middle name", section=_CONTACT),
+    "last_name": ProfileFieldInfo(label="Legal last name", section=_CONTACT, common=True),
+    "full_name": ProfileFieldInfo(label="Legal first and last name", section=_CONTACT),
+    "preferred_name": ProfileFieldInfo(label="Preferred name", section=_CONTACT),
+    "email": ProfileFieldInfo(label="Email", section=_CONTACT, common=True),
+    "phone": ProfileFieldInfo(label="Phone", section=_CONTACT, common=True),
+    "linkedin_url": ProfileFieldInfo(label="LinkedIn URL", section=_CONTACT),
+    "github_url": ProfileFieldInfo(label="GitHub URL", section=_CONTACT),
+    "address_line1": ProfileFieldInfo(label="Address line 1", section=_ADDRESS, common=True),
+    "address_line2": ProfileFieldInfo(label="Address line 2", section=_ADDRESS),
+    "city": ProfileFieldInfo(label="City", section=_ADDRESS, common=True),
+    "state": ProfileFieldInfo(label="State or province", section=_ADDRESS, common=True),
+    "postal_code": ProfileFieldInfo(label="Postal code", section=_ADDRESS, common=True),
+    "country": ProfileFieldInfo(label="Country", section=_ADDRESS, common=True),
+    "phone_country_code": ProfileFieldInfo(label="Phone country code", section=_ADDRESS),
+    "phone_country_region": ProfileFieldInfo(label="Phone country or region", section=_ADDRESS),
+    "phone_device_type": ProfileFieldInfo(label="Phone device type", section=_ADDRESS, common=True),
+    "work_authorization": ProfileFieldInfo(label="Work authorization", section=_WORK_AUTH),
+    "authorization_country": ProfileFieldInfo(label="Authorization country", section=_WORK_AUTH),
+    "authorized_to_work": ProfileFieldInfo(
+        label="Authorized to work", section=_WORK_AUTH, common=True
+    ),
+    "requires_sponsorship": ProfileFieldInfo(
+        label="Requires sponsorship now", section=_WORK_AUTH, common=True
+    ),
+    "requires_sponsorship_future": ProfileFieldInfo(
+        label="Requires sponsorship future", section=_WORK_AUTH, common=True
+    ),
+    "requires_sponsorship_any": ProfileFieldInfo(
+        label="Requires sponsorship now and future", section=_WORK_AUTH
+    ),
+    "f1_opt_eligible": ProfileFieldInfo(label="F1 opt eligible", section=_WORK_AUTH),
+    "earliest_start": ProfileFieldInfo(label="Earliest start", section=_AVAILABILITY, common=True),
+    "notice_period": ProfileFieldInfo(label="Notice period", section=_AVAILABILITY),
+    "willing_to_relocate": ProfileFieldInfo(label="Willing to relocate", section=_AVAILABILITY),
+    "school": ProfileFieldInfo(label="School", section=_EDUCATION, common=True),
+    "gpa": ProfileFieldInfo(label="GPA", section=_EDUCATION),
+    "degree_level": ProfileFieldInfo(label="Degree level", section=_EDUCATION, common=True),
+    "major": ProfileFieldInfo(label="Major", section=_EDUCATION, common=True),
+    "education_start_month": ProfileFieldInfo(label="Education start month", section=_EDUCATION),
+    "graduation_month": ProfileFieldInfo(label="Graduation month", section=_EDUCATION, common=True),
+    "gender": ProfileFieldInfo(label="Gender", section=_VOLUNTARY, common=True),
+    "race": ProfileFieldInfo(label="Race", section=_VOLUNTARY, common=True),
+    "hispanic_latino": ProfileFieldInfo(
+        label="Hispanic or Latino", section=_VOLUNTARY, common=True
+    ),
+    "veteran_status": ProfileFieldInfo(label="Veteran", section=_VOLUNTARY, common=True),
+    "disability_status": ProfileFieldInfo(label="Disability", section=_VOLUNTARY, common=True),
+    "over_18": ProfileFieldInfo(label="Over 18", section=_VOLUNTARY, common=True),
+    "languages": ProfileFieldInfo(label="Languages", section="Languages"),
+    "how_heard": ProfileFieldInfo(label="How heard", section=_SAVED, common=True),
+    "how_heard_detail": ProfileFieldInfo(label="How heard", section=_SAVED),
+    "portfolio_url": ProfileFieldInfo(label="Portfolio URL", section=_SAVED),
+}
+
+#: Harmless facts with an answer that is right for almost everyone, used only when the
+#: profile leaves them blank. Never a legal or self-identification answer.
+DEFAULTS: dict[str, str] = {"phone_device_type": "Mobile"}
+
+
+def profile_path(section: str) -> str:
+    """The Profile page tab that holds ``section``."""
+    return "/profile/personal" if section == _CONTACT else "/profile/application"
+
+
+_US_STATES = frozenset({
+    "alabama", "alaska", "arizona", "arkansas", "california", "colorado", "connecticut",
+    "delaware", "florida", "georgia", "hawaii", "idaho", "illinois", "indiana", "iowa",
+    "kansas", "kentucky", "louisiana", "maine", "maryland", "massachusetts", "michigan",
+    "minnesota", "mississippi", "missouri", "montana", "nebraska", "nevada",
+    "new hampshire", "new jersey", "new mexico", "new york", "north carolina",
+    "north dakota", "ohio", "oklahoma", "oregon", "pennsylvania", "rhode island",
+    "south carolina", "south dakota", "tennessee", "texas", "utah", "vermont", "virginia",
+    "washington", "west virginia", "wisconsin", "wyoming", "district of columbia",
+})
+_US_STATE_CODES = frozenset({
+    "AL", "AK", "AZ", "AR", "CA", "CO", "CT", "DE", "FL", "GA", "HI", "ID", "IL", "IN", "IA",
+    "KS", "KY", "LA", "ME", "MD", "MA", "MI", "MN", "MS", "MO", "MT", "NE", "NV", "NH", "NJ",
+    "NM", "NY", "NC", "ND", "OH", "OK", "OR", "PA", "RI", "SC", "SD", "TN", "TX", "UT", "VT",
+    "VA", "WA", "WV", "WI", "WY", "DC",
+})
+#: Countries a posting location names outright (alias -> name). Deliberately short: an
+#: unrecognised location is "unknown", and unknown trusts the profile as before.
+_COUNTRY_ALIASES: dict[str, str] = {
+    "united states of america": "United States", "united states": "United States",
+    "usa": "United States", "u.s.": "United States", "us": "United States",
+    "canada": "Canada", "united kingdom": "United Kingdom", "uk": "United Kingdom",
+    "england": "United Kingdom", "scotland": "United Kingdom", "india": "India",
+    "germany": "Germany", "mexico": "Mexico", "france": "France", "ireland": "Ireland",
+    "netherlands": "Netherlands", "poland": "Poland", "spain": "Spain", "italy": "Italy",
+    "singapore": "Singapore", "japan": "Japan", "china": "China", "australia": "Australia",
+    "brazil": "Brazil", "israel": "Israel", "philippines": "Philippines",
+    "vietnam": "Vietnam", "costa rica": "Costa Rica", "romania": "Romania",
+    "switzerland": "Switzerland", "sweden": "Sweden", "portugal": "Portugal",
+}
+
+
+def job_country(location: str) -> str | None:
+    """The one country a location names ("Plymouth, Minnesota, United States" -> United
+    States), or None when it names none or several. US states count as United States."""
+    found: set[str] = set()
+    for part in re.split(r"[,;/|()\-–—]+|\s+(?:or|and|&)\s+", location or ""):
+        raw = part.strip()
+        text = raw.casefold()
+        if not text:
+            continue
+        if raw in _US_STATE_CODES or text in _US_STATES:
+            found.add("United States")
+            continue
+        for alias, country in _COUNTRY_ALIASES.items():
+            # Two-letter aliases ("us", "uk") only as the whole part: "us" is a word too.
+            if (text == alias) if len(alias) <= 4 else re.search(rf"\b{re.escape(alias)}\b", text):
+                found.add(country)
+    return found.pop() if len(found) == 1 else None
+
+
+def authorization_mismatch(profile: ApplicantProfile, location: str) -> tuple[str, str] | None:
+    """``(job country, authorised country)`` when the posting is clearly elsewhere.
+
+    The profile's "Authorized to work" answer is for its authorization country (or its
+    home country); a posting in another country must not reuse it.
+    """
+    job = job_country(location)
+    authorised = job_country(profile.authorization_country or profile.country)
+    if job and authorised and job != authorised:
+        return job, authorised
+    return None
+
+
+def field_info(key: str) -> ProfileFieldInfo:
+    """Profile-page wording for ``key``; an unregistered key gets its own name."""
+    return PROFILE_FIELDS.get(key) or ProfileFieldInfo(
+        label=key.replace("_", " ").capitalize(), section="Application details"
+    )
+
+
+def profile_gaps(fields: dict[str, str]) -> list[str]:
+    """Common profile-backed keys ``fields`` has no answer for, in registry order."""
+    return [key for key, info in PROFILE_FIELDS.items() if info.common and not fields.get(key)]
+
+
+#: filler.js's leftover reason for a recognised question whose profile fact is blank.
+BLANK_PROFILE_REASON = "Profile field is blank"
+
+
+def missing_profile(blank: list[dict], filled_labels: set[str]) -> list[dict]:
+    """Group recognised-but-blank questions by profile fact for ``FillResult``.
+
+    ``answered`` is true when every such question was filled anyway (a saved answer or
+    the Autofill model): it still belongs to the profile, so the next fill is certain.
+    """
+    grouped: dict[str, list[str]] = {}
+    for item in blank:
+        key = str(item.get("key") or "")
+        if key not in PROFILE_FIELDS:
+            # Not a profile field: the preferred-name tick, resume-derived employer, ...
+            continue
+        labels = grouped.setdefault(key, [])
+        label = str(item.get("label") or "").strip()
+        if label and label not in labels:
+            labels.append(label)
+    entries = []
+    for key, questions in grouped.items():
+        info = field_info(key)
+        entries.append({
+            "key": key, "field_label": info.label, "section": info.section,
+            "path": profile_path(info.section), "questions": questions,
+            "answered": bool(questions) and all(q in filled_labels for q in questions),
+        })
+    return entries
 
 
 def _yes_no(value: bool | None) -> str | None:
@@ -128,10 +330,27 @@ def _pick(*values: str) -> str:
 
 
 def _eeo_value(raw: str) -> str | None:
-    """Omit EEO answers left at ``decline`` or blank."""
-    if not raw or raw.strip().lower() == "decline":
+    """A self-identification answer; ``decline`` stays the literal sentinel "decline".
+
+    Choice controls resolve it to the form's own decline option
+    (`field_matcher.eeo_pattern`: "I do not want to answer", "Decline to Self Identify");
+    it is never typed into a text box. Blank omits the field.
+    """
+    if not raw or not raw.strip():
         return None
-    return raw.strip()
+    return "decline" if raw.strip().lower() == "decline" else raw.strip()
+
+
+def languages_text(profile: ApplicantProfile) -> str:
+    """"English (Native), Vietnamese (Intermediate)" for a free-text languages question."""
+    parts = []
+    for entry in profile.languages:
+        name = entry.language.strip()
+        if not name:
+            continue
+        level = (entry.levels.get("Overall") or "").strip() or ("Fluent" if entry.fluent else "")
+        parts.append(f"{name} ({level})" if level else name)
+    return ", ".join(parts)
 
 
 def _work_authorization_label(code: str) -> str | None:
@@ -174,7 +393,7 @@ def build_fields(profile: ApplicantProfile, resume: MasterResume) -> dict[str, s
         fields["has_preferred_name"] = "Yes"
     _maybe_set(fields, "email", _pick(profile.email, contact.email) or None)
     _maybe_set(fields, "phone", _pick(profile.phone, contact.phone) or None)
-    _maybe_set(fields, "phone_device_type", profile.phone_device_type or None)
+    _maybe_set(fields, "phone_device_type", profile.phone_device_type or DEFAULTS["phone_device_type"])
     _maybe_set(fields, "phone_country_code", profile.phone_country_code or None)
     _maybe_set(fields, "phone_country_region", profile.phone_country_region or None)
     _maybe_set(fields, "address_line1", profile.address_line1 or None)
@@ -206,6 +425,7 @@ def build_fields(profile: ApplicantProfile, resume: MasterResume) -> dict[str, s
         _yes_no(profile.requires_sponsorship_future),
     )
     _maybe_set(fields, "f1_opt_eligible", _yes_no(profile.f1_opt_eligible))
+    _maybe_set(fields, "over_18", _yes_no(profile.over_18))
     _maybe_set(fields, "earliest_start", profile.earliest_start or None)
     _maybe_set(fields, "notice_period", profile.notice_period or None)
     if profile.requires_sponsorship_now is True or profile.requires_sponsorship_future is True:
@@ -221,12 +441,15 @@ def build_fields(profile: ApplicantProfile, resume: MasterResume) -> dict[str, s
     # Salary depends on the posting (`apply/salary.py`); the fill runner adds it.
     _maybe_set(fields, "willing_to_relocate", _yes_no(profile.willing_to_relocate))
     _maybe_set(fields, "how_heard", profile.how_heard or None)
+    # Typed into "If other, please specify" when the source list has no such option.
+    _maybe_set(fields, "how_heard_detail", profile.how_heard or None)
     _maybe_set(fields, "gender", _eeo_value(profile.eeo.gender))
     _maybe_set(fields, "race", _eeo_value(profile.eeo.race))
     _maybe_set(fields, "race_detail", profile.eeo.race_detail or None)
     _maybe_set(fields, "hispanic_latino", _yes_no(profile.eeo.hispanic_latino))
     _maybe_set(fields, "veteran_status", _eeo_value(profile.eeo.veteran))
     _maybe_set(fields, "disability_status", _eeo_value(profile.eeo.disability))
+    _maybe_set(fields, "languages", languages_text(profile) or None)
     _maybe_set(fields, "current_company", current_company or None)
     _maybe_set(fields, "current_title", current_title or None)
     return fields
@@ -328,6 +551,22 @@ def _build_education(profile: ApplicantProfile, resume: MasterResume) -> list[Pa
             } and row.degree_name.casefold().startswith(("bachelor of ", "bs ", "ba ")):
                 match.degree_name = row.degree_name
     return rows
+
+
+def degree_name(education: list[PacketEducation], level: str) -> str:
+    """The one named degree at the profile's level ("Bachelor of Science" from "Bachelor
+    of Science in Computer Science & Minor in ..."), so a choice list of "BS"/"BA" is
+    answered without the model; "" when the rows disagree or name none."""
+    wanted = field_matcher.degree_of(level) if level else None
+    names = {
+        degree[1] for row in education
+        for degree in [field_matcher.degree_of(row.degree_name or row.degree)]
+        if degree and degree[1] and (wanted is None or degree[0] == wanted[0])
+    }
+    if len(names) != 1:
+        return ""
+    words = names.pop().split()
+    return " ".join(word if word in {"of", "in"} else word.capitalize() for word in words)
 
 
 def _experience_from_expansion(entries: list[ExpandedEntry]) -> list[PacketExperience]:
@@ -500,6 +739,8 @@ def build_packet(
                     == applicant_profile.school.casefold().replace(",", "").replace("-", " ").split()]
         if len(matching) == 1:
             fields["education_start_month"] = matching[0].start
+    named = degree_name(education, fields.get("degree_level", ""))
+    _maybe_set(fields, "degree_name", named or None)
     return Packet(
         job_id=job_id,
         built_at=datetime.now(timezone.utc).replace(microsecond=0).isoformat(),
@@ -511,6 +752,11 @@ def build_packet(
         education=education,
         experience=experience,
         skills=_load_skills(job_dir / "skills.json"),
+        languages=[
+            PacketLanguage(language=entry.language.strip(), fluent=entry.fluent,
+                           levels={k: v for k, v in entry.levels.items() if v.strip()})
+            for entry in applicant_profile.languages if entry.language.strip()
+        ],
         cover_letter=_load_cover_letter(job_dir / "cover.json"),
         artifacts=artifacts,
         field_hints=ats_hints.hints_for(ats),

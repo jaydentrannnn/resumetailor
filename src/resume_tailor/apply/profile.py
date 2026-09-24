@@ -18,7 +18,7 @@ WorkAuthorization = Literal["", "citizen", "permanent_resident", "visa_holder", 
 
 
 class EEOAnswers(BaseModel):
-    """Voluntary self-identification answers; blank/"decline" leave the field empty."""
+    """Voluntary self-identification answers; "decline" picks the form's decline option."""
 
     gender: str = "decline"
     race: str = "decline"
@@ -26,6 +26,20 @@ class EEOAnswers(BaseModel):
     hispanic_latino: bool | None = None
     veteran: str = "decline"
     disability: str = "decline"
+
+
+#: Proficiency categories and levels a language row may carry; forms word their own
+#: options, matched by rank (`field_matcher.level_option`).
+LANGUAGE_CATEGORIES = ("Overall", "Reading", "Speaking", "Writing", "Comprehension")
+LANGUAGE_LEVELS = ("Beginner", "Intermediate", "Advanced", "Fluent", "Native")
+
+
+class LanguageEntry(BaseModel):
+    """One spoken language: fluency flag and a level per category (blank = not asked)."""
+
+    language: str = ""
+    fluent: bool = False
+    levels: dict[str, str] = Field(default_factory=dict)
 
 
 class ApplicantProfile(BaseModel):
@@ -84,6 +98,7 @@ class ApplicantProfile(BaseModel):
     workday_email: str = ""
     workday_password: str = ""
     eeo: EEOAnswers = Field(default_factory=EEOAnswers)
+    languages: list[LanguageEntry] = Field(default_factory=list)
     custom_answers: dict[str, str] = Field(default_factory=dict)
 
     @model_validator(mode="before")

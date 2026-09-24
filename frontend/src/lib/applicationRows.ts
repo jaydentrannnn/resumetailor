@@ -36,13 +36,35 @@ export function retryTitle(kind: NonNullable<ApplicationRow["retry_kind"]>): str
 /** Statuses where a fill stopped for the applicant and left its tab open. */
 const CONTINUABLE = new Set(["awaiting_review", "awaiting_otp", "fill_failed"]);
 
+/** Statuses whose tab can be replaced by a fresh one ("Reopen and fill"). */
+const REOPENABLE = new Set(["awaiting_review", "awaiting_otp", "fill_failed"]);
+
+/**
+ * Open tab ids from `/api/applications/open-tabs`; `null` when the browser is
+ * unreachable — tab state unknown, not "every tab closed".
+ */
+export type OpenTabs = ReadonlySet<string> | null;
+
+/** True only when the browser was reached and the row's recorded tab is gone. */
+export function isTabClosed(row: Pick<ApplicationRow, "fill">, openTabs: OpenTabs = null): boolean {
+  const id = row.fill?.browser_target_id;
+  return !!id && openTabs != null && !openTabs.has(id);
+}
+
 /**
  * Whether Fill can resume in the row's retained browser tab: the fill stopped for input
- * (or failed mid-way) and the server kept that tab's target id.
+ * (or failed mid-way), the server kept that tab's target id, and — when the browser was
+ * reachable — that tab is still open.
  */
 export function canContinueFill(
   row: Pick<ApplicationRow, "status" | "archived_at" | "preparation_eligible" | "fill">,
+  openTabs: OpenTabs = null,
 ): boolean {
   return !!row.fill?.browser_target_id && !row.archived_at && row.preparation_eligible !== false
-    && CONTINUABLE.has(row.status);
+    && CONTINUABLE.has(row.status) && !isTabClosed(row, openTabs);
+}
+
+/** Whether "Reopen and fill" applies: a prepared row whose fill stopped for the applicant. */
+export function canReopenFill(row: Pick<ApplicationRow, "status" | "archived_at" | "job_id">): boolean {
+  return !!row.job_id && !row.archived_at && REOPENABLE.has(row.status);
 }

@@ -207,11 +207,16 @@ Staying on the form with no error is `no_response`, not a rejected password; nev
 `beecatcher` honeypot, ticks the Create Account terms box (`createAccountCheckbox`, account
 creation only — a box that will not report checked is `terms_needed`), and hands over (never
 guesses) when an account exists under an unknown password; each outcome has readable text in
-`AUTH_HANDOFF`. Workday accounts are per site, so the choice between Create Account and Sign
-In keys on whether the vault has used the site before (`created`/`signed_in`), never on a
-saved profile password: a new site creates first (the profile password, else a generated one),
-and "already exists" gets exactly one Sign In with the profile password before handing over as
-`account_exists_other_password`. A successful sign-in marks the site `signed_in`. Per step, `fill.py` waits for the step to render stably, then fills Workday
+`AUTH_HANDOFF`. Sign In comes first whenever an account could hold the password (a site the
+vault has used, `created`/`signed_in`, or the applicant's profile password) and gets exactly one
+attempt. A rejection on a site the tool never used falls through to Create Account, because
+Workday says "wrong email or password" for a missing account too. There, "already exists"
+hands over as `account_exists_other_password` without a second attempt. With no profile
+password, a new site creates straight away with a generated password. A rejection ends the
+submit wait as soon as the form shows its error. A successful sign-in marks the site
+`signed_in`. `classify` calls a progress-bar shell `apply_form` only once a footer or a
+`formField-*` shows; below ~800px the bar has no step names, and a bare shell is the
+Create Account step still loading. Per step, `fill.py` waits for the step to render stably, then fills Workday
 listbox dropdowns (`select_listbox`, Country first since it re-renders the form), Yes/No
 radios (previous-employer answered from the resume's own employers), empty prompts whose
 label maps to a profile fact ("How Did You Hear About Us?", `fill_prompts`), the Skills
@@ -222,9 +227,60 @@ to ONE `hybrid_resolver.choose_skill_options` call with the options each search 
 a pick outside those options is dropped; unmatched skills are one review line), the
 phone-code prompt, and on My Experience (only the sections the tenant actually shows) the `workExperience-N--*` / `education-N--*` rows
 (`workday_repeaters.py`: exact or partial-agreeing row reuse, split MM/YYYY dates via their
-display divs, existing answers never replaced). Legal consent checkboxes on the application
-itself are always left for the applicant; Workday's "Something went wrong" page gets one
-reload before handoff.
+display divs, existing answers never replaced; the school control is `schoolName` or a
+`school` prompt, and each row field is attempted on its own so one failure names only that
+field), plus `language-N--*` rows from the profile's Languages list (language, the
+fluent checkbox, and each proficiency listbox by its label; levels match by rank via
+`field_matcher.level_rank`, never upward). Self-identification answers match the form's long
+wording (`field_matcher.eeo_pattern`: "No" → "No, I do not have a disability…", "I am not a
+protected veteran"; "decline" is sent as a literal sentinel that picks the decline option and
+is never typed); checkbox groups (the CC-305 disability form) go through
+`workday_flow.fill_choice_checkboxes`, and the Self Identify step signs Name with the full
+name and Date with today, leaving Employee ID blank (`fill_self_identify`). **Blank profile
+facts are reported, never skipped silently**: a question whose label maps to a profile field
+the profile leaves blank is recorded (filler.js leftover reason "Profile field is blank";
+`workday_flow.fill_dropdowns`/`fill_radios` `blank=`; the engine's `unsupported_fact`) and
+grouped by `packet.missing_profile` into `FillResult.missing_profile`. `packet.PROFILE_FIELDS`
+is the one registry of profile-backed keys (label, Profile page section, `common`);
+`GET/PUT /api/applicant-profile` return `gaps` (common blanks plus any a stored fill met,
+most-met first) for the Profile page banner and the Applications notice. `packet.DEFAULTS`
+fills harmless blanks only (phone device type → "Mobile"); legal and self-identification
+answers never get one. **Eligibility questions come from the profile**:
+`ats_hints.AUTHORIZED_TO_WORK` (authorized/permitted/eligible to work, "can you provide proof
+of eligibility") and `ats_hints.OVER_18` (never "under 18") sit before the Country rule, so
+"…work in the country where this job is located" is not the Country field; `field_catalog`
+reuses them. A follow-up revealed by an answer is picked up by `fill_dropdowns`' rescan, or,
+after a model answer, by `resolve_step_blockers`' reveal rounds (≤2, only the new controls).
+`packet.authorization_mismatch` withholds "Authorized to work" when the posting's location
+clearly names another country than the profile's authorization country. Required Workday application consent/accuracy boxes are ticked and verified
+(`form_routes.accept_workday_sync`); optional marketing consent is untouched. Workday's
+"Something went wrong ... Error Code: VPS|" page (`workday_flow.recover_site_error`) is
+refreshed up to 3 times per occurrence, 6 per fill, wherever it appears (entering the form,
+after sign-in, at each step, after Save and Continue) before handoff. **The Review step is never
+advanced**: its footer Submit shares Next's `pageFooterNextButton` id, so the step loop stops
+on `is_review_step` and `_find_advance_button` rejects any submit-worded button.
+
+**Searchable choices.** `field_matcher.search_terms` orders prompt searches (a school also
+by campus: "University of California - Irvine" → "Irvine"); `closest_option` accepts
+exact/alias, else — for school/major/how_heard/degree only — the one option containing every
+word of the answer (ties go to review). A Workday prompt whose Enter commits a single result
+by itself is verified by its chip. "How did you hear" falls back to "Other"
+(`fallback_values`), and a "please specify" field right after it gets `how_heard_detail`.
+Degrees: `field_matcher.degree_of` reads "BS"/"B.S."/"BSc"/"Bachelor of Science (B.S)" as one
+named degree and "Bachelor's Degree" as the bare level. The packet's `degree_name` (the one
+named degree in the resume rows at the profile's level) is tried before `degree_level`
+(`choice_values`); it picks its own name or abbreviation, else the bare-level option, and a
+bare level never picks a named degree. `filler.js` mirrors this for native selects.
+Country is re-checked just before a step advances (a saved "Vietnam" re-labels the form);
+the phone code must name the whole region (`_phone_option`), not merely contain it.
+
+**Label reading (`filler.js`).** Beyond `for`/aria/Workday labels, a control's question is
+the bare text of the ancestors holding only that control (Epic Games: placeholder "Enter",
+no label element), minus widget, validation and live-region text. Field `name`s are read
+with separators as spaces (`questions.first_name`); `educations[N].start_date.year|month`
+are education dates; React Select inputs without `role=combobox` are dropdowns; a long
+question never takes a short-field key (school, city, …). Workday's generic "Upload a file"
+input reports its hint key and section heading, so it is attached as the resume.
 
 **Salary and revealed fields.** Salary questions are answered deterministically (no LLM) by
 `apply/salary.py`: `min(posted top, applicant top)` in the posting's unit, hourly ↔ yearly at
@@ -245,7 +301,12 @@ failed, submit unconfirmed) sit in a separate "Needs your review" table (`GET
 over the whole filtered list before paging; ties fall back to newest-discovered then company,
 and Status sorts in pipeline order. The page's 2s poll refreshes the tables while an operation
 runs, while a visible row is `tailoring`/`filling`, and once whenever the latest operation or its
-state changes (`lib/applyPoll.ts`).
+state changes (`lib/applyPoll.ts`). All three tables collapse (URL params `review_closed`,
+`queue_closed`, `archive_open`). Continue/Reopen bulk actions sit on the review table, where
+every stopped fill lands. `GET /api/applications/open-tabs` (`browser.open_target_ids`, one CDP
+`/json/list` call, lock-free) is polled every ~4s and on focus: a row whose recorded tab is gone
+shows "Tab closed" and Reopen instead of Continue, and a reopen with no live tab skips the
+confirm. An unreachable browser means "unknown" and keeps Continue offered.
 
 **Resolver scope.** `hybrid_resolver`'s scan treats only real popup triggers
 (`[role=combobox]`, `[aria-haspopup=listbox]`) as dropdowns, one per `formField-*`, and never

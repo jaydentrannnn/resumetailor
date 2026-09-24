@@ -109,6 +109,9 @@ class FillResult(BaseModel):
     current_step_id: str = ""
     review_snapshot_id: str = ""
     review_fields: list[dict[str, Any]] = Field(default_factory=list)
+    #: Questions recognised as a profile fact the profile leaves blank, one entry per
+    #: key: {key, field_label, section, path, questions, answered}.
+    missing_profile: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class SourceRef(BaseModel):

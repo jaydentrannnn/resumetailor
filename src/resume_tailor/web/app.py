@@ -64,6 +64,7 @@ from resume_tailor.web.schemas import (
     ApplicantProfileResponse,
     ApplicantProfileUpdateRequest,
     ApplicationDetailResponse,
+    ProfileGap,
     ApplicationOut,
     ApplicationsListResponse,
     ApplicationStatusRequest,
@@ -1163,17 +1164,55 @@ def _application_out(
     return ApplicationOut.model_validate(payload)
 
 
-@app.get("/api/applicant-profile", response_model=ApplicantProfileResponse)
-def get_applicant_profile() -> ApplicantProfileResponse:
-    """Return the active workspace's form-filling profile."""
-    profile, seeded = apply_profile.load_profile()
-    password_set = bool(profile.workday_password)
+def _profile_gaps(profile: apply_profile.ApplicantProfile) -> list[ProfileGap]:
+    """Blank profile fields forms ask for: the common ones, plus any a stored fill met.
+
+    Resume-contact fallbacks and ``packet.DEFAULTS`` count as answered, exactly as the
+    fill sees them. Most-often-met first, then Profile page order.
+    """
+    try:
+        fields = apply_packet.build_fields(profile, data.load())
+    except Exception:  # noqa: BLE001 - no resume yet: the profile alone decides
+        fields = apply_packet.build_fields(
+            profile, MasterResume.model_construct(contact=data.Contact.model_construct(name="", email="", phone="")),
+        )
+    seen: dict[str, int] = {}
+    with suppress(Exception):
+        for application in apply_store.load_all().values():
+            fill = application.fill
+            entries = (fill.get("missing_profile") if isinstance(fill, dict) else getattr(fill, "missing_profile", None)) or []
+            for key in {str(entry.get("key") or "") for entry in entries if isinstance(entry, dict)}:
+                seen[key] = seen.get(key, 0) + 1
+    keys = list(apply_packet.profile_gaps(fields))
+    keys += [key for key in seen if key in apply_packet.PROFILE_FIELDS and key not in keys and not fields.get(key)]
+    order = list(apply_packet.PROFILE_FIELDS)
+    keys.sort(key=lambda key: (-seen.get(key, 0), order.index(key)))
+    gaps = []
+    for key in keys:
+        info = apply_packet.field_info(key)
+        gaps.append(ProfileGap(
+            key=key, label=info.label, section=info.section,
+            path=apply_packet.profile_path(info.section), seen_in=seen.get(key, 0),
+        ))
+    return gaps
+
+
+def _profile_response(profile: apply_profile.ApplicantProfile, *, seeded: bool, password_set: bool) -> ApplicantProfileResponse:
     return ApplicantProfileResponse(
         workspace_id=config.active_workspace_id(),
         profile=profile.model_copy(update={"workday_password": ""}),
         seeded=seeded,
         workday_password_set=password_set,
+        gaps=_profile_gaps(profile),
+        defaults=dict(apply_packet.DEFAULTS),
     )
+
+
+@app.get("/api/applicant-profile", response_model=ApplicantProfileResponse)
+def get_applicant_profile() -> ApplicantProfileResponse:
+    """Return the active workspace's form-filling profile."""
+    profile, seeded = apply_profile.load_profile()
+    return _profile_response(profile, seeded=seeded, password_set=bool(profile.workday_password))
 
 
 @app.put("/api/applicant-profile", response_model=ApplicantProfileResponse)
@@ -1187,12 +1226,7 @@ def put_applicant_profile(body: ApplicantProfileUpdateRequest) -> ApplicantProfi
                 update={"workday_password": current.workday_password}
             )
         saved = apply_profile.save_profile(profile)
-    return ApplicantProfileResponse(
-        workspace_id=config.active_workspace_id(),
-        profile=saved.model_copy(update={"workday_password": ""}),
-        seeded=False,
-        workday_password_set=bool(saved.workday_password),
-    )
+    return _profile_response(saved, seeded=False, password_set=bool(saved.workday_password))
 
 
 @app.get("/api/jobs/{job_id}/packet.json", response_model=None)
@@ -1297,6 +1331,17 @@ def get_browser_status() -> BrowserStatusResponse:
         error=status.error,
         cdp_url=status.cdp_url,
     )
+
+
+@app.get("/api/applications/open-tabs")
+def get_open_application_tabs() -> dict[str, Any]:
+    """List the browser's open tab ids so the UI offers Continue only for live tabs.
+
+    Read-only and lock-free (one CDP HTTP call); ``reachable: false`` means the
+    tab state is unknown, not that every tab is closed.
+    """
+    ids = apply_browser.open_target_ids()
+    return {"reachable": ids is not None, "target_ids": sorted(ids or ())}
 
 
 @app.get("/api/applications", response_model=ApplicationsListResponse)

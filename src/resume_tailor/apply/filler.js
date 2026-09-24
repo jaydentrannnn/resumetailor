@@ -1,8 +1,10 @@
 /**
  * Deterministic ATS form filler — injected via Playwright page.evaluate.
- * Receives { fields, hints, synonyms } and returns fill diagnostics.
+ * Receives { fields, hints, synonyms, eeo } and returns fill diagnostics; ``eeo`` maps
+ * a self-identification key to the regex (over ``norm``ed option text) that picks its
+ * answer (`field_matcher.eeo_patterns`).
  */
-({ fields, hints, synonyms }) => {
+({ fields, hints, synonyms, eeo = {} }) => {
   const filled = [];
   const leftovers = [];
   const long_text = [];
@@ -88,11 +90,74 @@
       const text = title ? (title.innerText || title.textContent || "").trim() : "";
       if (text) return text;
     }
+    const container = containerLabel(el);
+    if (container) return container;
     const placeholder = el.getAttribute("placeholder");
-    if (placeholder) return placeholder.trim();
+    if (placeholder && !GENERIC_PLACEHOLDER.test(placeholder.trim())) return placeholder.trim();
     const name = el.getAttribute("name");
     if (name) return name.trim();
     return "";
+  }
+
+  /** Keys of short identity/address/education fields, never of a long question. */
+  const SHORT_FIELD_KEYS = new Set([
+    "first_name", "middle_name", "last_name", "preferred_name", "email", "phone", "address_line1",
+    "address_line2", "city", "state", "postal_code", "country", "school", "major", "degree_level", "gpa",
+    "website", "current_company", "current_title", "linkedin_url", "github_url", "portfolio_url",
+  ]);
+
+  /** "Enter" / "Select" / "YYYY" say how to type, not what the field is. */
+  const GENERIC_PLACEHOLDER = /^(enter|select|select\.\.\.|choose|type here|search|yyyy|mm|dd)$/i;
+
+  /**
+   * Question text that sits as bare text in the ancestors holding only this control (a
+   * radio/checkbox group counts as one control) — Epic Games' form has no <label for>,
+   * no aria, and placeholder "Enter". The widget's own text (option labels, a React
+   * Select placeholder, an upload drop zone) is removed, then "*" / ":" markers.
+   */
+  function containerLabel(el) {
+    const group = (el.type === "radio" || el.type === "checkbox") && el.name ? el.name : "";
+    const sameControl = (other) => other === el || (group && other.name === group && other.type === el.type);
+    let node = el.parentElement;
+    let best = "";
+    for (let depth = 0; node && node !== document.body && depth < 12; depth++, node = node.parentElement) {
+      const controls = node.querySelectorAll("input:not([type='hidden']), select, textarea");
+      if (Array.from(controls).some((other) => !sameControl(other))) break;
+      const clone = node.cloneNode(true);
+      // An option's own label (wrapping a group member, or `for` one) is not the question.
+      const memberIds = new Set(Array.from(controls).map((c) => c.id).filter(Boolean));
+      clone.querySelectorAll("label").forEach((n) => {
+        if (n.querySelector("input") || memberIds.has(n.getAttribute("for") || "")) n.remove();
+      });
+      // Widgets, validation messages ("This section is required") and screen-reader
+      // live regions ("0 results available") are not part of the question.
+      clone.querySelectorAll(
+        "input, select, textarea, option, [class*='-control'], [class*='-menu'], [aria-live], [role='alert'], " +
+        "[class*='error' i], [id*='error' i], [class*='a11yText' i]"
+      ).forEach((n) => n.remove());
+      const text = (clone.textContent || "").replace(/[⁠​]/g, "").replace(/\s+/g, " ").trim();
+      if (text && !GENERIC_PLACEHOLDER.test(text)) best = text;
+    }
+    return best.replace(/\s*\*?\s*:?\s*$/, "").trim();
+  }
+
+  /** The visible text of one radio/checkbox option (not its question). */
+  function optionText(input) {
+    if (input.id) {
+      const lbl = document.querySelector(`label[for="${CSS.escape(input.id)}"]`);
+      if (lbl) return (lbl.innerText || lbl.textContent || "").trim();
+    }
+    const wrap = input.closest("label");
+    if (wrap) return (wrap.innerText || wrap.textContent || "").trim();
+    return (input.getAttribute("aria-label") || input.value || "").trim();
+  }
+
+  /** React Select: an input inside a "-control" box with a placeholder/value sibling. */
+  function isReactSelect(el) {
+    if (el.tagName !== "INPUT") return false;
+    if (/^react-select-.*-input$/.test(el.id || "")) return true;
+    const control = el.closest("[class*='-control']");
+    return Boolean(control && control.querySelector("[class*='-placeholder'], [class*='-singleValue'], [class*='single-value']"));
   }
 
   /** Normalise synonym entries to [pattern, key] pairs. */
@@ -129,6 +194,10 @@
   function matchKey(el, label) {
     if (/^end[-_ ]?year(?:--\d+)?$/i.test(el.id || "")) return "graduation_month";
     if (/^start[-_ ]?year(?:--\d+)?$/i.test(el.id || "")) return "education_start_month";
+    // Epic Games / Greenhouse-style education rows: educations[0].start_date.year. Decided
+    // here so "start date" never reaches the availability synonym (earliest_start).
+    const eduDate = /educations?\[\d+\]\.(start|end)_date\.(?:year|month)$/i.exec(el.getAttribute("name") || "");
+    if (eduDate) return eduDate[1].toLowerCase() === "start" ? "education_start_month" : "graduation_month";
     const educationContext = `${el.id || ""} ${el.closest("fieldset, [data-automation-id*='education' i]")?.textContent?.slice(0, 100) || ""}`;
     if (/education|university|school/i.test(educationContext)) {
       if (/first year attended|education start year|university start year|start year/i.test(label)) return "education_start_month";
@@ -174,11 +243,18 @@
     // A long free-text question ("Indicate any other names under which your school or
     // employment records may be identified") is not the School field just because it
     // says "school": short-field synonyms only apply to short text labels.
-    const textLike = el.tagName === "TEXTAREA" || (el.tagName === "INPUT" && !["checkbox", "radio"].includes(el.type));
+    // A dropdown's question is a choice, however long it is worded.
+    const choiceWidget = el.getAttribute("role") === "combobox" || isReactSelect(el);
+    const textLike = !choiceWidget && (el.tagName === "TEXTAREA" || (el.tagName === "INPUT" && !["checkbox", "radio"].includes(el.type)));
     if (textLike && label.length > 60) return null;
-    const haystack = `${label} ${auto} ${el.getAttribute("name") || ""}`.toLowerCase();
-    if (/future/.test(haystack) && /sponsor/.test(haystack)) return "requires_sponsorship_future";
+    // `questions.first_name` reads as "questions first name" to the synonyms.
+    const name = el.getAttribute("name") || "";
+    const haystack = `${label} ${auto} ${name} ${name.replace(/[._\-\[\]]+/g, " ")}`.toLowerCase();
+    if (/future/.test(haystack) && /sponsor/.test(haystack) && !/\bnow\b|\bcurrent/.test(haystack)) return "requires_sponsorship_future";
     for (const [pattern, key] of synonymList) {
+      // A long question that merely mentions "school" or "capacity" is a choice about
+      // something else, not the School/City field.
+      if (label.length > 60 && SHORT_FIELD_KEYS.has(key)) continue;
       try {
         if (new RegExp(pattern, "i").test(haystack)) return key;
       } catch (_) {
@@ -210,6 +286,63 @@
   function norm(value) {
     return String(value || "").toLowerCase().normalize("NFKD")
       .replace(/[\u0300-\u036f]/g, "").replace(/[^a-z0-9+]+/g, " ").trim().replace(/\s+/g, " ");
+  }
+
+  // Mirrors field_matcher.degree_of: "BS", "B.S.", "BSc" and "Bachelor of Science (B.S.)"
+  // are one degree; "Bachelor's Degree" is the level alone.
+  const DEGREES = {
+    "bachelor of science": ["bs", "b s", "bsc", "b sc"],
+    "bachelor of arts": ["ba", "b a"],
+    "bachelor of science in engineering": ["bse", "b s e"],
+    "bachelor of engineering": ["be", "b e", "beng", "b eng"],
+    "bachelor of fine arts": ["bfa", "b f a"],
+    "bachelor of business administration": ["bba", "b b a"],
+    "master of science": ["ms", "m s", "msc", "m sc"],
+    "master of arts": ["ma", "m a"],
+    "master of engineering": ["meng", "m eng"],
+    "master of business administration": ["mba", "m b a"],
+    "doctor of philosophy": ["phd", "ph d"],
+    "associate of science": ["as", "a s"],
+    "associate of arts": ["aa", "a a"],
+  };
+  const DEGREE_LEVELS = {
+    bachelor: "bachelor", bachelors: "bachelor", "bachelor s": "bachelor",
+    master: "master", masters: "master", "master s": "master",
+    associate: "associate", associates: "associate", "associate s": "associate",
+    doctorate: "doctor", doctoral: "doctor",
+  };
+  function degreePart(text) {
+    const wanted = norm(text).replace(/\s+degree$/, "");
+    if (DEGREES[wanted]) return [wanted.split(" ")[0], wanted];
+    for (const [name, abbrs] of Object.entries(DEGREES)) {
+      if (abbrs.includes(wanted)) return [name.split(" ")[0], name];
+    }
+    const subject = /^(\w+ of [\w ]+?) in \w/.exec(wanted);
+    if (subject && DEGREES[subject[1]]) return [subject[1].split(" ")[0], subject[1]];
+    const prefixes = Object.entries(DEGREES).flatMap(([name, abbrs]) => abbrs.map(a => [a, name]))
+      .sort((a, b) => b[0].length - a[0].length);
+    for (const [abbr, name] of prefixes) {
+      if (!wanted.startsWith(abbr + " ")) continue;
+      // "BA/BS" names two degrees.
+      if (wanted.slice(abbr.length).split(" ").some(word => prefixes.some(([a]) => a === word))) return null;
+      return [name.split(" ")[0], name];
+    }
+    if (DEGREE_LEVELS[wanted]) return [DEGREE_LEVELS[wanted], ""];
+    return null;
+  }
+  function degreeOf(text) {
+    const decorated = /^(.*?)\s*\(([^()]+)\)\s*$/.exec(String(text || "").trim());
+    const found = (decorated ? [decorated[1], decorated[2]] : [text]).map(degreePart).filter(Boolean);
+    return found.find(d => d[1]) || found[0] || null;
+  }
+  /** Options naming the wanted degree, else (for a named degree) the bare level. */
+  function degreeMatches(options, value) {
+    const wanted = degreeOf(value);
+    if (!wanted) return [];
+    const parsed = options.map(o => [o, degreeOf(o.text) || degreeOf(o.value)]);
+    const same = parsed.filter(([, d]) => d && d[0] === wanted[0] && d[1] === wanted[1]).map(([o]) => o);
+    if (same.length || !wanted[1]) return same;
+    return parsed.filter(([, d]) => d && d[0] === wanted[0] && !d[1]).map(([o]) => o);
   }
 
   function selectByText(selectEl, value, key) {
@@ -244,8 +377,22 @@
         const alternatives = aliases[target] || [];
         matches = options.filter(o => alternatives.includes(norm(o.text)) || alternatives.includes(norm(o.value)));
       }
+      if (!matches.length && eeo[key]) {
+        const rule = new RegExp(eeo[key]);
+        matches = options.filter(o => rule.test(norm(o.text)));
+      }
+      if (!matches.length && key === "degree_level") matches = degreeMatches(options, value);
     }
-    if (matches.length !== 1) return null;
+    if (matches.length !== 1) {
+      // No "LinkedIn" in the source list: "Other", and the source goes into the
+      // "please specify" field the choice usually reveals.
+      if (key === "how_heard" && target !== "other") {
+        const chosen = selectByText(selectEl, "Other", "how_heard_other");
+        if (chosen) revealed = true;
+        return chosen;
+      }
+      return null;
+    }
     const opt = matches[0];
     selectEl.value = opt.value;
     selectEl.dispatchEvent(new Event("input", { bubbles: true }));
@@ -253,12 +400,33 @@
     return selectEl.value === opt.value ? opt.text.trim() : null;
   }
 
-  /** Click a radio/checkbox whose label matches the desired value. */
-  function fillChoiceGroup(el, value, label) {
+  /** Tick a checkbox; a styled one takes the click on its label. */
+  function tick(input) {
+    if (input.checked) return true;
+    input.click();
+    if (!input.checked && input.id) document.querySelector(`label[for="${CSS.escape(input.id)}"]`)?.click();
+    return input.checked;
+  }
+
+  /**
+   * Click a radio/checkbox whose label matches the desired value. Returns true when
+   * answered, false when not, and "skip" for a self-identification checkbox that is some
+   * other answer's option (its sibling carries the answer).
+   */
+  function fillChoiceGroup(el, value, label, key) {
     const val = norm(value);
     const name = el.name;
+    const rule = eeo[key] ? new RegExp(eeo[key]) : null;
     const single = el.type === "checkbox" &&
       (!name || document.querySelectorAll(`input[type="checkbox"][name="${CSS.escape(name)}"]`).length === 1);
+    if (rule && el.type === "checkbox" && single) {
+      // Workday's disability form: one unnamed checkbox per answer ("No, I do not have a
+      // disability..."), not a yes/no switch.
+      const text = norm(optionText(el) || labelFor(el));
+      if (!rule.test(text)) return "skip";
+      if (tick(el)) revealed = true;
+      return el.checked;
+    }
     if (single) {
       // A lone checkbox is a yes/no switch ("I have a preferred name").
       if (!["yes", "true", "1", "no", "false", "0"].includes(val)) return false;
@@ -274,23 +442,22 @@
     const group = document.querySelectorAll(
       `input[type="${el.type}"][name="${name.replace(/"/g, '\\"')}"]`
     );
-    for (const input of group) {
-      const inputLabel = labelFor(input);
-      const id = input.id;
-      let text = inputLabel;
-      if (id) {
-        const lbl = document.querySelector(`label[for="${CSS.escape(id)}"]`);
-        if (lbl) text = (lbl.innerText || lbl.textContent || "").trim();
-      }
-      const candidates = [norm(text), norm(input.value)];
+    const texts = Array.from(group, input => norm(optionText(input) || labelFor(input)));
+    for (const [index, input] of Array.from(group).entries()) {
+      const candidates = [texts[index], norm(input.value)];
       if (candidates.includes(val) || (val === "yes" && candidates.includes("1")) || (val === "no" && candidates.includes("0"))) {
-        if (el.type === "checkbox") {
-          const shouldCheck = val === "yes" || val === "true" || val === "1";
-          if (input.checked !== shouldCheck) input.click();
-        } else if (!input.checked) {
-          input.click();
-        }
+        // A group's checkbox is an option like a radio: the matching one is ticked.
+        if (el.type === "checkbox") return tick(input);
+        if (!input.checked) input.click();
         return true;
+      }
+    }
+    if (rule) {
+      const hits = Array.from(group).filter((_input, index) => rule.test(texts[index]));
+      if (hits.length === 1) {
+        if (el.type === "checkbox") return tick(hits[0]);
+        if (!hits[0].checked) hits[0].click();
+        return hits[0].checked;
       }
     }
     return false;
@@ -308,18 +475,46 @@
     return "";
   }
 
+  /** The hint key a control matches by selector (quote style never matters here). */
+  function hintKeyFor(el) {
+    for (const [hintSel, key] of Object.entries(hints || {})) {
+      if (hintSel === "confirmation_text" || hintSel === "submit") continue;
+      try {
+        if (el.matches(hintSel)) return key;
+      } catch (_) {
+        /* invalid selector — skip */
+      }
+    }
+    return "";
+  }
+
   for (const fileEl of document.querySelectorAll('input[type="file"]')) {
     const fileSel = selectorFor(fileEl);
-    const fileLbl = labelFor(fileEl) || sectionHeading(fileEl);
+    const section = sectionHeading(fileEl);
+    const fileLbl = labelFor(fileEl) || section;
     if (!file_inputs.some((f) => f.selector === fileSel)) {
-      file_inputs.push({ selector: fileSel, label: fileLbl });
+      // Workday labels its resume input "Upload a file (5MB max)"; the hint and the
+      // "Resume/CV" heading say what it is for.
+      file_inputs.push({ selector: fileSel, label: fileLbl, section, hint_key: hintKeyFor(fileEl) });
     }
+  }
+
+  /** Date inputs split into year and month boxes (educations[0].start_date.year). */
+  function datePart(el, label) {
+    const name = el.getAttribute("name") || "";
+    const placeholder = el.getAttribute("placeholder") || "";
+    if (/\.year$/i.test(name) || /^yyyy$/i.test(placeholder) || /\(year\)/i.test(label)) return "year";
+    if (/\.month$/i.test(name) || /^mm$/i.test(placeholder) || /\(month\)/i.test(label)) return "month";
+    return "";
   }
 
   const controls = Array.from(
     document.querySelectorAll("input, select, textarea")
   ).filter(isVisible);
 
+  // The previous control's key, in document order: "If other, please specify" right
+  // after "How did you hear" is the source detail.
+  let previousKey = null;
   for (const el of controls) {
     const type = (el.getAttribute("type") || el.tagName.toLowerCase()).toLowerCase();
     const label = labelFor(el);
@@ -330,9 +525,19 @@
     // Workday: a honeypot "for robots only" input, and the search box of a multiselect
     // prompt (typing there does not commit a choice; the fill runner owns those).
     if (el.getAttribute("data-automation-id") === "beecatcher") continue;
-    if (el.closest("[data-automation-id='multiselectInputContainer']")) continue;
-    const key = matchKey(el, label);
-    if (el.getAttribute("role") === "combobox") {
+    // The options of an open prompt popup (Skills search results) are not questions.
+    if (el.closest("[data-automation-id='promptOption'], [data-automation-id='promptLeafNode'], [data-automation-id='activeListContainer'], [role='listbox']")) continue;
+    if (el.closest("[data-automation-id='multiselectInputContainer']")) {
+      previousKey = matchKey(el, label);
+      continue;
+    }
+    let key = matchKey(el, label);
+    if ((!key || key === "how_heard") && previousKey === "how_heard" && el.tagName !== "SELECT" &&
+        !["radio", "checkbox"].includes(type) && /specify|if other|please explain/i.test(label)) {
+      key = "how_heard_detail";
+    }
+    previousKey = key;
+    if (el.getAttribute("role") === "combobox" || isReactSelect(el)) {
       const selectedText = (el.closest(".select__control, [class*='-control']")?.querySelector(".select__single-value, [class*='-singleValue']")?.textContent || "").trim();
       if (selectedText) {
         filled.push({ key: "existing", label, value: selectedText, selector: sel, preserved: true });
@@ -382,7 +587,7 @@
       continue;
     }
 
-    if (el.tagName === "TEXTAREA") {
+    if (el.tagName === "TEXTAREA" && key !== "how_heard_detail") {
       const maxLen = el.maxLength > 0 ? el.maxLength : null;
       const rows = parseInt(el.getAttribute("rows") || "2", 10);
       if ((maxLen !== null && maxLen > 200) || (maxLen === null && rows >= 3)) {
@@ -416,7 +621,10 @@
 
     const value = fields[key];
     if (value === undefined || value === null || String(value).trim() === "") {
+      // A recognised question whose profile fact is blank: the fill result names the
+      // profile field to set (`packet.missing_profile`).
       leftovers.push({
+        key,
         label,
         type,
         options:
@@ -425,7 +633,7 @@
             : [],
         required,
         selector: sel,
-        reason: "No supported profile answer",
+        reason: "Profile field is blank",
       });
       if (required) required_empty.push(label || sel);
       continue;
@@ -435,23 +643,45 @@
     if (el.tagName === "SELECT") {
       const yearOnly = (key === "education_start_month" || key === "graduation_month") &&
         /(?:start|end|graduation|attended).{0,12}year|year.{0,12}(?:start|end|graduation)|(?:first|last) year attended/i.test(`${el.id} ${label}`);
-      written = selectByText(el, yearOnly ? String(value).slice(0, 4) : value, key) || "";
+      // The named degree ("Bachelor of Science") also answers a "BS"/"BA" list.
+      if (key === "degree_level" && fields.degree_name) written = selectByText(el, fields.degree_name, key) || "";
+      if (!written) written = selectByText(el, yearOnly ? String(value).slice(0, 4) : value, key) || "";
       if (!written) {
         leftovers.push({ label, type, options: Array.from(el.options).map((o) => o.text.trim()), required, selector: sel, reason: "No unique matching option" });
         if (required) required_empty.push(label || sel);
         continue;
       }
     } else if (type === "radio" || type === "checkbox") {
-      if (!fillChoiceGroup(el, value, label)) {
+      const chosen = fillChoiceGroup(el, value, label, key);
+      if (chosen === "skip") continue;
+      if (!chosen) {
         leftovers.push({ label, type, options: [], required, selector: sel, reason: "No exact matching choice" });
         if (required) required_empty.push(label || sel);
         continue;
       }
       written = String(value);
+    } else if (value === "decline" && eeo[key]) {
+      // Declining picks a choice; it is never typed into a text box.
+      leftovers.push({ key, label, type, options: [], required, selector: sel, reason: "Declined to self-identify" });
+      if (required) required_empty.push(label || sel);
+      continue;
     } else {
       let textValue = String(value);
       if (key === "graduation_month" && /end[-_ ]?year/i.test(el.id || label)) textValue = textValue.slice(0, 4);
       if (key === "education_start_month" && /start[-_ ]?year/i.test(el.id || label)) textValue = textValue.slice(0, 4);
+      if (key === "education_start_month" || key === "graduation_month") {
+        const part = datePart(el, label);
+        const date = /^(\d{4})(?:-(\d{2}))?/.exec(String(value));
+        if (part && date) {
+          if (part === "year") textValue = date[1];
+          else if (date[2]) textValue = String(Number(date[2]));
+          else {
+            leftovers.push({ key, label, type, options: [], required, selector: sel, reason: "No month in the profile date" });
+            if (required) required_empty.push(label || sel);
+            continue;
+          }
+        }
+      }
       if (key === "earliest_start" && /^\d{4}-\d{2}-\d{2}$/.test(textValue) && type !== "date") {
         const [year, month, day] = textValue.split("-").map(Number);
         textValue = `${new Intl.DateTimeFormat("en-US", { month: "long" }).format(new Date(Date.UTC(year, month - 1, day)))} ${day}, ${year}`;

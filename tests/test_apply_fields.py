@@ -5,7 +5,10 @@ from __future__ import annotations
 import pytest
 
 from resume_tailor.apply.field_catalog import classify
-from resume_tailor.apply.field_matcher import match_option, match_skill_option
+from resume_tailor.apply.field_matcher import (
+    choice_values, closest_option, degree_of, eeo_patterns, fallback_values, match_option,
+    match_skill_option, search_terms,
+)
 from resume_tailor.apply.field_types import FieldObservation, FieldOutcome, ObservedOption
 from resume_tailor.apply.preparation import PreparedExpansion
 from resume_tailor.apply.engine import _availability_for_field, _current_outcome, _national_phone_value
@@ -47,6 +50,16 @@ def test_manual_and_contextual_field_classification():
     assert classify(observation("Last Name", section="Preferred Name")) == ("known", "last_name")
     assert classify(observation("First Name", section="Legal Name")) == ("known", "first_name")
     assert classify(observation("First Year Attended", section="Education")) == ("known", "education_start_year")
+
+
+def test_eligibility_questions_are_not_the_country_field():
+    permitted = "Are you legally permitted to work in the country where this job is located?"
+    assert classify(observation(permitted, kind="combobox")) == ("known", "authorized_to_work")
+    assert classify(observation("If hired, can you provide proof of eligibility?", kind="combobox")) == ("known", "authorized_to_work")
+    assert classify(observation("Are you over the age of 18?", kind="combobox")) == ("known", "over_18")
+    assert classify(observation("Are you under 18?", kind="combobox"))[1] != "over_18"
+    # Sponsorship wording keeps its own key.
+    assert classify(observation("Are you authorized to work without sponsorship?")) == ("known", "requires_sponsorship")
 
 
 def test_combined_sponsorship_and_current_are_distinct():
@@ -136,3 +149,132 @@ def test_handoff_rechecks_retained_values_and_manual_policy():
 )
 def test_match_skill_option(options, skill, expected):
     assert match_skill_option(options, skill) == expected
+
+
+def test_school_search_terms_fall_back_to_the_campus():
+    # Workday's school search finds nothing for the full name typed with its dash.
+    terms = search_terms("school", "University of California - Irvine")
+    assert terms[0] == "University of California - Irvine"
+    assert "Irvine" in terms
+    assert search_terms("school", "California State University, Long Beach")[1] == "Long Beach"
+    assert search_terms("school", "University of Wisconsin at Madison")[1] == "Madison"
+    assert search_terms("major", "Computer Science") == ["Computer Science"]
+    assert search_terms("degree_level", "Bachelors")[0] == "bachelor"
+    assert search_terms("school", "  ") == []
+
+
+def test_closest_option_accepts_one_decorated_option_and_rejects_ties():
+    options = ["University of California, Irvine", "Irvine Valley College"]
+    assert closest_option(options, "University of California - Irvine", key="school") == options[0]
+    decorated = ["University of California Irvine (UCI)", "Irvine Valley College"]
+    assert closest_option(decorated, "University of California - Irvine", key="school") == decorated[0]
+    tie = ["University of California Irvine (UCI)", "University of California Irvine Extension"]
+    assert closest_option(tie, "University of California - Irvine", key="school") is None
+    # Containment is only for decorated-answer keys: a country is never a "closest" guess.
+    countries = ["United States Minor Outlying Islands", "Canada"]
+    assert closest_option(countries, "United States", key="country") is None
+
+
+@pytest.mark.parametrize(("text", "expected"), [
+    ("BS", ("bachelor", "bachelor of science")),
+    ("B.S.", ("bachelor", "bachelor of science")),
+    ("BSc", ("bachelor", "bachelor of science")),
+    ("Bachelor of Science (B.S)", ("bachelor", "bachelor of science")),
+    ("Bachelor's Degree (BS)", ("bachelor", "bachelor of science")),
+    ("BS Computer Science", ("bachelor", "bachelor of science")),
+    ("Bachelor of Science in Computer Science & Minor in Business Management",
+     ("bachelor", "bachelor of science")),
+    ("B.S.E.", ("bachelor", "bachelor of science in engineering")),
+    ("Bachelor of Science in Engineering", ("bachelor", "bachelor of science in engineering")),
+    ("BA", ("bachelor", "bachelor of arts")),
+    ("M.S.", ("master", "master of science")),
+    ("Ph.D.", ("doctor", "doctor of philosophy")),
+    ("Bachelor's Degree", ("bachelor", "")),
+    ("Bachelors", ("bachelor", "")),
+    ("Bachelor's Degree (BA/BS)", ("bachelor", "")),
+    ("High School Diploma", None),
+    ("Business", None),
+])
+def test_degree_of_reads_names_and_abbreviations(text, expected):
+    assert degree_of(text) == expected
+
+
+def test_a_named_degree_matches_its_abbreviation_then_the_bare_level():
+    abbreviations = [option("Select One"), option("HS"), option("BA"), option("BS"), option("MS")]
+    assert match_option(abbreviations, "Bachelor of Science", key="degree_level").option_id == "BS"
+    assert match_option(abbreviations, "BS Computer Science", key="degree_level").option_id == "BS"
+    dotted = [option("B.A."), option("B.S."), option("M.S.")]
+    assert match_option(dotted, "Bachelor of Science", key="degree_level").option_id == "B.S."
+    levels = [option("Associate's Degree"), option("Bachelor's Degree"), option("Master's Degree")]
+    assert match_option(levels, "Bachelor of Science", key="degree_level").option_id == "Bachelor's Degree"
+    # A bare level cannot choose between the BS and the BA; the key gates the rule.
+    assert match_option(abbreviations, "Bachelors", key="degree_level").status == "no_match"
+    assert match_option(abbreviations, "Bachelor of Science", key="major").status == "no_match"
+    both = [option("BS"), option("Bachelor of Science")]
+    assert match_option(both, "B.Sc.", key="degree_level").status == "ambiguous"
+
+
+def test_choice_values_try_the_named_degree_before_the_level():
+    fields = {"degree_level": "Bachelors", "degree_name": "Bachelor of Science"}
+    assert choice_values("degree_level", fields) == ["Bachelor of Science", "Bachelors"]
+    assert choice_values("degree_level", {"degree_level": "Bachelors"}) == ["Bachelors"]
+    assert choice_values("race", {"race": "Asian", "race_detail": "Southeast Asian"}) == ["Southeast Asian", "Asian"]
+    assert choice_values("how_heard", {"how_heard": "LinkedIn"}) == ["LinkedIn", "Other"]
+    assert "BS" in search_terms("degree_level", "Bachelor of Science")
+
+
+def test_how_heard_falls_back_to_other():
+    assert fallback_values("how_heard", "LinkedIn") == ["LinkedIn", "Other"]
+    assert fallback_values("how_heard", "Other") == ["Other"]
+    assert fallback_values("gender", "Decline") == ["Decline"]
+    assert fallback_values("how_heard", "") == []
+
+
+_DISABILITY = ["Yes, I have a disability, or have had one in the past",
+               "No, I do not have a disability and have not had one in the past", "I do not want to answer"]
+_VETERAN = ["I am not a protected veteran",
+            "I identify as one or more of the classifications of protected veteran", "I don't wish to answer"]
+
+_CACI_VETERAN = ["I IDENTIFY AS ONE OR MORE OF THE CLASSIFICATIONS OF PROTECTED VETERANS",
+                 "I IDENTIFY AS A VETERAN, JUST NOT A PROTECTED VETERAN", "I AM NOT A VETERAN",
+                 "I DO NOT WISH TO SELF-IDENTIFY"]
+
+
+@pytest.mark.parametrize(("key", "options", "answer", "expected"), [
+    ("disability_status", _DISABILITY, "Yes", 0),
+    ("disability_status", _DISABILITY, "No", 1),
+    ("disability_status", _DISABILITY, "decline", 2),
+    ("veteran_status", _VETERAN, "No", 0),
+    ("veteran_status", _VETERAN, "Yes", 1),
+    ("veteran_status", _VETERAN, "decline", 2),
+    # CACI (2026-09): "No" is the non-veteran, not the veteran who is not protected.
+    ("veteran_status", _CACI_VETERAN, "No", 2),
+    ("veteran_status", _CACI_VETERAN, "Yes", 0),
+    ("veteran_status", _CACI_VETERAN, "decline", 3),
+    ("gender", ["Male", "Female", "Decline to Self Identify"], "decline", 2),
+    ("race", ["Asian (United States of America)", "White (United States of America)"], "Asian", 0),
+    ("hispanic_latino", ["Hispanic or Latino", "Not Hispanic or Latino"], "No", 1),
+    ("hispanic_latino", ["Hispanic or Latino", "Not Hispanic or Latino"], "Yes", 0),
+])
+def test_self_identification_answers_pick_the_long_form_option(key, options, answer, expected):
+    assert closest_option(options, answer, key=key) == options[expected]
+
+
+def test_self_identification_never_guesses():
+    # No decline option, a prefix shared by two options, and a key that is not EEO.
+    assert closest_option(_DISABILITY[:2], "decline", key="disability_status") is None
+    assert closest_option(["Asian", "Asian Indian"], "Asia", key="race") is None
+    assert closest_option(_DISABILITY, "No", key="city") is None
+    assert eeo_patterns({"gender": "", "veteran_status": "No", "city": "Irvine"}).keys() == {"veteran_status"}
+
+
+@pytest.mark.parametrize(("options", "answer", "expected"), [
+    (["Beginner", "Intermediate", "Advanced", "Fluent"], "Advanced", "Advanced"),
+    # No native rank on this scale: the highest rank below it, never above.
+    (["Beginner", "Intermediate", "Advanced", "Fluent"], "Native", "Fluent"),
+    (["Elementary proficiency", "Limited working proficiency", "Professional working proficiency",
+      "Full professional proficiency", "Native or bilingual proficiency"], "Intermediate", "Limited working proficiency"),
+    (["Intermediate", "Advanced"], "Beginner", None),
+])
+def test_language_levels_match_by_rank(options, answer, expected):
+    assert closest_option(options, answer, key="language_level") == expected

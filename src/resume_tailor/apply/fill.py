@@ -20,7 +20,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from resume_tailor import config, data, report
-from resume_tailor.apply import answer, ats_hints, browser, hybrid_resolver, store, workday_auth, workday_flow
+from resume_tailor.apply import answer, ats_hints, browser, field_matcher, hybrid_resolver, store, workday_auth, workday_flow
 from resume_tailor.apply import packet as apply_packet
 from resume_tailor.apply import profile as profile_mod
 from resume_tailor.apply import salary as salary_mod
@@ -166,15 +166,32 @@ def _detect_barriers(page: Any) -> str | None:
     return None
 
 
+#: A button that finishes the application is never a wizard "advance". Workday's Review
+#: step labels its Submit button with the same `pageFooterNextButton` automation id as
+#: Next, and clicking it submitted a Philips application (2026-09-24).
+_SUBMIT_TEXT = re.compile(r"\b(submit|send application|finish|complete application)\b", re.IGNORECASE)
+
+
+def _is_submit_like(loc: Any) -> bool:
+    try:
+        text = f"{loc.inner_text(timeout=1000) or ''} {loc.get_attribute('aria-label') or ''}"
+    except Exception:  # noqa: BLE001 - unreadable: never treat as a safe advance
+        return True
+    return bool(_SUBMIT_TEXT.search(text))
+
+
 def _find_advance_button(page: Any) -> Any | None:
-    """Find wizard 'Next' / 'Continue' / 'Save & Continue' button if present."""
+    """Find wizard 'Next' / 'Continue' / 'Save & Continue' button if present.
+
+    Never returns a button whose text reads as submitting the application.
+    """
     patterns = [
         re.compile(r"^\s*(next|continue|save\s*(?:&|and)\s*continue|proceed)\s*$", re.IGNORECASE),
     ]
     for pat in patterns:
         try:
             btn = page.get_by_role("button", name=pat).first
-            if _is_locator_present_and_visible(btn):
+            if _is_locator_present_and_visible(btn) and not _is_submit_like(btn):
                 return btn
         except Exception:  # noqa: BLE001
             pass
@@ -190,7 +207,7 @@ def _find_advance_button(page: Any) -> Any | None:
     for sel in advance_selectors:
         try:
             loc = page.locator(sel).first
-            if _is_locator_present_and_visible(loc):
+            if _is_locator_present_and_visible(loc) and not _is_submit_like(loc):
                 return loc
         except Exception:  # noqa: BLE001
             pass
@@ -260,6 +277,13 @@ def _load_readiness_js() -> str:
         return "( ) => ({ required_empty: [] })"
 
 
+def _scanned_nothing(merged: dict[str, Any], filled_start: int) -> bool:
+    """True when this step's passes neither filled nor even saw a single control."""
+    return len(merged.get("filled") or []) == filled_start and not any(
+        merged.get(key) for key in ("leftovers", "long_text", "file_inputs", "required_empty")
+    )
+
+
 def _synonym_payload() -> list[list[str]]:
     """Serialise ``SYNONYMS`` for the page evaluate argument."""
     return [[pat, key] for pat, key in ats_hints.SYNONYMS]
@@ -315,12 +339,19 @@ def _submission_confirmed(
     return marker_is_new
 
 
-def _attachment_purpose(label: str, selector: str, hints: dict[str, str]) -> str | None:
-    """Classify one file control without relying on its position in the DOM."""
-    text = f"{label} {selector}".casefold()
+def _attachment_purpose(
+    label: str, selector: str, hints: dict[str, str], *, hint_key: str = "", section: str = "",
+) -> str | None:
+    """Classify one file control without relying on its position in the DOM.
+
+    ``hint_key`` is what ``filler.js`` found by ``el.matches(hint)`` (Workday's generic
+    "Upload a file (5MB max)" input is the resume by hint); ``section`` is the enclosing
+    heading ("Resume/CV") for labels that name neither document.
+    """
+    text = f"{label} {section} {selector}".casefold()
     if "cover" in text or "letter" in text:
         return "cover_letter"
-    if "resume" in text or "cv" in text:
+    if hint_key == "resume_upload" or "resume" in text or "cv" in text:
         return "resume"
     for hint_selector, key in hints.items():
         if key == "resume_upload" and hint_selector == selector:
@@ -352,10 +383,7 @@ def _fill_declared_combobox(target: Any, item: dict[str, Any], fields: dict[str,
     selector = str(item.get("selector") or "")
     if not selector or key in {"salary_expectation", ""}:
         return None
-    candidates = [fields.get(key, "")]
-    if key == "race":
-        candidates = [fields.get("race_detail", ""), fields.get("race", "")]
-    for value in candidates:
+    for value in field_matcher.choice_values(key, fields):
         if value and hybrid_resolver._select_combobox_option(  # noqa: SLF001
             target, selector, value, key=key, phone_region=fields.get("phone_country_region", ""),
         ):
@@ -587,6 +615,9 @@ def fill_application(
     readiness_js = _load_readiness_js()
     hints = dict(pkt.field_hints) or ats_hints.hints_for(app.ats)
     fields = dict(pkt.fields)
+    if fields.get("degree_level") and not fields.get("degree_name"):
+        # Packets prepared before ``degree_name`` existed.
+        fields["degree_name"] = apply_packet.degree_name(pkt.education, fields["degree_level"])
     fields.update(salary_mod.salary_fields(
         role=app.role or pkt.role or "", listing_salary=app.salary or "", jd_text=jd_text or "",
         hourly_max=profile.salary_hourly_max, yearly_max=profile.salary_yearly_max,
@@ -604,6 +635,19 @@ def fill_application(
         fields["f1_opt_eligible"] = "Yes" if profile.f1_opt_eligible else "No"
     if profile.pronouns:
         fields["pronouns"] = profile.pronouns
+    # "Authorized to work" answers for the profile's country; a posting clearly in another
+    # country leaves eligibility questions to the applicant, the model included.
+    authorization_note = ""
+    mismatch = apply_packet.authorization_mismatch(profile, app.location or "")
+    if mismatch:
+        fields.pop("authorized_to_work", None)
+        pkt.fields.pop("authorized_to_work", None)
+        profile = profile.model_copy(update={"authorized_to_work": None})
+        authorization_note = (
+            f"Job is in {mismatch[0]}; your work authorization is for {mismatch[1]}. "
+            "Answer eligibility questions yourself"
+        )
+        progress(authorization_note)
     url = app.final_url or app.posting_url
     is_workday = (app.ats or pkt.ats or "").lower() == "workday" or workday_auth.is_workday_url(url or "")
     out_dir = config.APPLICATIONS_OUTPUT_DIR / source_job_id
@@ -663,6 +707,22 @@ def fill_application(
                 store.upsert(app)
             progress("application form opened")
 
+            #: Refreshes of Workday's "Something went wrong" page this fill may still spend.
+            site_error_left = 2 * workday_flow.SITE_ERROR_RELOADS
+            site_error_msg = (
+                "Workday kept showing 'Something went wrong' after refreshing. Close other tabs "
+                "open on this application, refresh this tab, then Continue fill."
+            )
+
+            def recover_site_error() -> bool:
+                nonlocal site_error_left
+                recovered, used = workday_flow.recover_site_error(
+                    page, deadline=deadline, progress=progress,
+                    attempts=min(workday_flow.SITE_ERROR_RELOADS, max(0, site_error_left)),
+                )
+                site_error_left -= used
+                return recovered
+
             # Select an explicit email route before any site-specific credential flow.
             ats_name = (app.ats or pkt.ats or "").lower()
             from resume_tailor.apply import form_routes  # noqa: PLC0415
@@ -681,6 +741,7 @@ def fill_application(
                         status="awaiting_otp" if auth_result == "verification_needed" else "awaiting_review",
                         error="Workday authentication failed" if auth_result == "failed" else None,
                     )
+                recover_site_error()  # the apply_form wait below decides
                 if workday_flow.wait_for_state(page, {"apply_form"}, timeout_s=15, deadline=deadline) != "apply_form":
                     return _workday_handoff(
                         app, context, page,
@@ -700,7 +761,9 @@ def fill_application(
             completed_step_outcomes: dict[tuple[int, str], dict[str, Any]] = {}
             uploaded_controls: set[tuple[str, str]] = set()
             long_text_answers: dict[str, str] = {}
-            needs_review: list[str] = []
+            needs_review: list[str] = [authorization_note] if authorization_note else []
+            # Questions recognised as a profile fact the profile leaves blank (every step).
+            blank_facts: list[dict[str, Any]] = []
             posting_text = jd_text
             with contextlib.suppress(Exception):
                 posting_text += "\n" + page.locator("body").inner_text(timeout=2000)[:50000]
@@ -709,8 +772,11 @@ def fill_application(
                 needs_review.append(availability_note)
             barrier_hit: str | None = None
 
-            MAX_WIZARD_STEPS = 8
+            # One pass more than the steps it may advance: a blank Workday step is rescanned once.
+            MAX_WIZARD_STEPS = 9
             final_step_reached = False
+            country_rechecked = False
+            blank_step_rescanned = False
             for step in range(MAX_WIZARD_STEPS):
                 if should_cancel and should_cancel():
                     needs_review.append("Fill cancelled")
@@ -724,34 +790,53 @@ def fill_application(
                 ledgers: dict[int, hybrid_resolver.StepLedger] = {}
                 verified_purposes: set[tuple[str, int]] = set()
                 attempted_purposes: set[tuple[str, int]] = set()
+                other_chosen = False
                 for key in ("leftovers", "long_text", "file_inputs", "required_empty"):
                     merged[key] = []
+                step_filled_start = len(merged["filled"])
                 if is_workday:
+                    # Workday's own error page ("Error Code: VPS|..."), whether it is showing
+                    # already or replaces the step while it loads: refresh, which restores the
+                    # saved draft.
+                    if not recover_site_error():
+                        return _workday_handoff(app, context, page, site_error_msg)
                     if not workday_flow.wait_for_step_ready(page, deadline=deadline):
-                        if workday_flow.SITE_ERROR.search(str(workday_flow.snapshot(page).get("text") or "")):
-                            # Workday's own error page; one reload usually recovers the saved draft.
-                            progress("Workday showed 'Something went wrong'; reloading once")
-                            page.reload(wait_until="domcontentloaded")
+                        if workday_flow.is_site_error(workday_flow.snapshot(page)):
+                            if not recover_site_error():
+                                return _workday_handoff(app, context, page, site_error_msg)
                             page, _state = workday_flow.enter_application(page, context, deadline=deadline, progress=progress)
                             _guard_file_chooser(page, progress)
                             if not workday_flow.wait_for_step_ready(page, deadline=deadline):
-                                return _workday_handoff(
-                                    app, context, page,
-                                    "Workday returned its 'Something went wrong' page. Close other tabs "
-                                    "open on this application, refresh this tab, then Continue fill.",
-                                )
+                                return _workday_handoff(app, context, page, site_error_msg)
                         else:
                             progress("Workday step did not finish loading; scanning what is visible")
                     progress(f"Workday step: {workday_flow.active_step(workday_flow.snapshot(page)) or 'unknown'}")
+                    dropdown_review: list[str] = []
                     wd_filled = workday_flow.fill_dropdowns(
                         page, fields, synonyms=ats_hints.SYNONYMS, progress=progress, deadline=deadline,
-                        select=workday_flow.select_listbox,
+                        select=workday_flow.select_listbox, review=dropdown_review, blank=blank_facts,
                     )
+                    if any(item.get("key") == "country" for item in wd_filled):
+                        needs_review[:] = [label for label in needs_review if not label.startswith("Country is ")]
+                    needs_review.extend(label for label in dropdown_review if label not in needs_review)
                     wd_filled += workday_flow.fill_radios(
                         page, fields, synonyms=ats_hints.SYNONYMS, progress=progress,
                         company=app.company or pkt.company or "",
                         employers=[entry.company for entry in getattr(resume, "experience", []) or []],
+                        blank=blank_facts,
                     )
+                    # Self-identification answers rendered as checkboxes (the disability
+                    # form), then the Self Identify step's signature Name and Date.
+                    self_id_review: list[str] = []
+                    ticked = workday_flow.fill_choice_checkboxes(
+                        page, fields, synonyms=ats_hints.SYNONYMS, progress=progress, review=self_id_review,
+                    )
+                    wd_filled += ticked
+                    if ticked or workday_flow.is_self_identify_step(workday_flow.snapshot(page)):
+                        wd_filled += workday_flow.fill_self_identify(
+                            page, fields, today=date.today(), progress=progress, review=self_id_review,
+                        )
+                    needs_review.extend(label for label in self_id_review if label not in needs_review)
                     wd_filled += workday_flow.fill_prompts(
                         page, fields, synonyms=ats_hints.SYNONYMS, progress=progress,
                     )
@@ -797,10 +882,14 @@ def fill_application(
                                 "fields": fields,
                                 "hints": hints,
                                 "synonyms": _synonym_payload(),
+                                "eeo": field_matcher.eeo_patterns(fields),
                             },
                         )
-                    except Exception:  # noqa: BLE001 - cross-origin frames fail evaluate
+                    except Exception as exc:  # noqa: BLE001 - cross-origin frames fail evaluate
                         merged["frames_skipped"] = int(merged["frames_skipped"]) + 1
+                        if frame_index == 0:
+                            reason = str(exc).splitlines()[0][:200] if str(exc) else type(exc).__name__
+                            progress(f"form scan failed on the page: {reason}")
                         continue
                     if not isinstance(partial, dict):
                         continue
@@ -811,7 +900,8 @@ def fill_application(
                         with contextlib.suppress(Exception):
                             again = frame.evaluate(
                                 filler_js,
-                                {"fields": fields, "hints": hints, "synonyms": _synonym_payload()},
+                                {"fields": fields, "hints": hints, "synonyms": _synonym_payload(),
+                                 "eeo": field_matcher.eeo_patterns(fields)},
                             )
                             if isinstance(again, dict):
                                 first = [item for item in partial.get("filled") or [] if isinstance(item, dict)]
@@ -829,9 +919,25 @@ def fill_application(
                             items = [{**item, "frame_index": frame_index} for item in items if isinstance(item, dict)]
                         merged[key].extend(items)
                     merged["frames_skipped"] += int(partial.get("frames_skipped") or 0)
+                    blank_facts.extend(
+                        item for item in partial.get("leftovers") or []
+                        if isinstance(item, dict) and item.get("reason") == apply_packet.BLANK_PROFILE_REASON
+                    )
 
                 if is_workday:
                     _commit_workday_textareas(frames, merged["filled"][pass_start:])
+                    # Philips (2026-09) paints My Information, then re-renders it for the
+                    # account's saved country: a scan in between finds no controls at all,
+                    # and pressing Next then leaves the whole step blank. Wait and rescan once.
+                    if (
+                        not blank_step_rescanned
+                        and _scanned_nothing(merged, step_filled_start)
+                        and not workday_flow.is_review_step(workday_flow.snapshot(page))
+                    ):
+                        blank_step_rescanned = True
+                        progress("Workday step showed no fields to fill yet; rescanning once it settles")
+                        page.wait_for_timeout(1500)
+                        continue
 
                 # File uploads via Playwright (cannot set from page JS).
                 resume_path = pkt.artifacts.get("resume_pdf") or pkt.artifacts.get("resume_docx")
@@ -866,7 +972,11 @@ def fill_application(
                         break
                     sel = fin.get("selector") if isinstance(fin, dict) else None
                     label = str(fin.get("label") or "") if isinstance(fin, dict) else ""
-                    purpose = _attachment_purpose(label, str(sel or ""), hints)
+                    purpose = _attachment_purpose(
+                        label, str(sel or ""), hints,
+                        hint_key=str(fin.get("hint_key") or "") if isinstance(fin, dict) else "",
+                        section=str(fin.get("section") or "") if isinstance(fin, dict) else "",
+                    )
                     frame_index = int(fin.get("frame_index") or 0) if isinstance(fin, dict) else 0
                     upload_target = frames[frame_index] if 0 <= frame_index < len(frames) else page
                     if not sel or not purpose:
@@ -999,6 +1109,8 @@ def fill_application(
                         selected = _fill_declared_combobox(target, leftover, fields)
                         if selected:
                             merged["filled"].append({"key": leftover["key"], "label": label, "value": selected, "selector": leftover["selector"], "frame_index": leftover.get("frame_index", 0)})
+                            if leftover["key"] == "how_heard" and selected != fields.get("how_heard"):
+                                other_chosen = True
                             continue
                     canned = answer._profile_answer(label, profile)  # noqa: SLF001
                     if canned and leftover.get("selector"):
@@ -1029,13 +1141,22 @@ def fill_application(
                     elif leftover.get("required"):
                         needs_review.append(label)
 
-                # A Greenhouse choice can reveal another EEO control. Scan once more
-                # after declared choices, without repeating unresolved model guesses.
-                if ats_name == "greenhouse":
+                # A Greenhouse choice can reveal another EEO control, and a "How did you
+                # hear" answer of "Other" reveals "please specify" (filled by the rescan).
+                # Scan once more after declared choices, without repeating unresolved
+                # model guesses.
+                if ats_name == "greenhouse" or other_chosen:
                     known = {(item.get("frame_index", 0), item.get("selector")) for item in merged["leftovers"] if isinstance(item, dict)}
+                    known_filled = {(item.get("frame_index", 0), item.get("selector")) for item in merged["filled"] if isinstance(item, dict)}
                     for frame_index, frame in enumerate(frames):
                         with contextlib.suppress(Exception):
-                            revealed = frame.evaluate(filler_js, {"fields": fields, "hints": hints, "synonyms": _synonym_payload()})
+                            revealed = frame.evaluate(filler_js, {"fields": fields, "hints": hints, "synonyms": _synonym_payload(),
+                                 "eeo": field_matcher.eeo_patterns(fields)})
+                            merged["filled"].extend(
+                                {**item, "frame_index": frame_index} for item in revealed.get("filled") or []
+                                if isinstance(item, dict) and item.get("key") != "existing"
+                                and (frame_index, item.get("selector")) not in known_filled
+                            )
                             for item in revealed.get("leftovers") or []:
                                 identity = (frame_index, item.get("selector"))
                                 if identity in known or item.get("type") != "combobox":
@@ -1068,6 +1189,23 @@ def fill_application(
                     if consent_review:
                         progress("Required Workday consent needs review; leaving this step open")
                         break
+
+                # A wrong Country (the account's saved "Vietnam") re-labels the name and
+                # address fields and empties the phone code; correct it and fill the
+                # re-rendered step again, once.
+                if is_workday and not country_rechecked:
+                    wrong_country = workday_flow.country_mismatch(page, fields, synonyms=ats_hints.SYNONYMS)
+                    if wrong_country:
+                        country_rechecked = True
+                        progress(f"Workday: Country reads {wrong_country} after filling; correcting it and rescanning this step")
+                        continue
+
+                # Workday's Review step is the end: its footer button submits. Stop here
+                # whatever the button is called; submission is always the applicant's.
+                if is_workday and workday_flow.is_review_step(workday_flow.snapshot(page)):
+                    final_step_reached = True
+                    progress("Workday Review step reached; leaving it for the applicant to submit")
+                    break
 
                 # Check if there is an advance/next button for multi-step wizard
                 advance_btn = _find_advance_button(page)
@@ -1105,6 +1243,12 @@ def fill_application(
                         settle_after_advance(1000)
                         with contextlib.suppress(Exception):
                             page.wait_for_load_state("networkidle", timeout=min(5000, max(1000, int((deadline - time.monotonic()) * 1000))))
+                        if is_workday and workday_flow.is_site_error(workday_flow.snapshot(page)):
+                            # Save and Continue hit Workday's error page; after a refresh the
+                            # draft reopens on whichever step it saved, so scan that one afresh.
+                            if not recover_site_error():
+                                return _workday_handoff(app, context, page, site_error_msg)
+                            continue
                     except Exception:  # noqa: BLE001
                         retried_advance = True
                         progress("wizard advance was blocked; resolving visible blockers once")
@@ -1188,6 +1332,8 @@ def fill_application(
 
             # Readiness guard: if 0 controls detected & no barrier, fail
             total_controls = attempted_count
+            if total_controls == 0 and not barrier_hit and is_workday and workday_flow.is_site_error(workday_flow.snapshot(page)):
+                return _workday_handoff(app, context, page, site_error_msg)
             if total_controls == 0 and not barrier_hit:
                 guard_msg = "No application form controls detected on page"
                 with contextlib.suppress(Exception):
@@ -1330,6 +1476,14 @@ def fill_application(
                 handoff_reason=barrier_hit or ("missing answers" if required_empty or needs_review else "ready for review"),
                 final_step_reached=final_step_reached,
                 field_outcomes=list(outcomes.values()),
+                missing_profile=apply_packet.missing_profile(
+                    # Withheld for another country's posting, not blank in the profile.
+                    [
+                        item for item in blank_facts
+                        if not (mismatch and item.get("key") == "authorized_to_work")
+                    ],
+                    {str(item.get("label") or "") for item in merged.get("filled") or [] if isinstance(item, dict)},
+                ),
             )
             (out_dir / "fill.json").write_text(
                 result.model_dump_json(indent=2), encoding="utf-8"

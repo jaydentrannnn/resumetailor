@@ -72,7 +72,8 @@ class _Page:
             return -1
         assert script == repeaters._ROWS_JS  # noqa: SLF001
         suffix = f"--{arg}"
-        return [key[: -len(arg)] for key in self.values if key.endswith(suffix)]
+        prefixes = [key[: -len(arg)] for key in self.values if key.endswith(suffix)]
+        return [prefix for prefix in prefixes if re.fullmatch(r"[A-Za-z]+-\d+--", prefix)]
 
     def wait_for_timeout(self, _ms: int) -> None:
         pass
@@ -163,3 +164,57 @@ def test_a_step_without_experience_sections_flags_nothing():
     assert (filled, review) == ([], [])
     assert any("no Work Experience section" in m for m in messages)
     assert page.writes == []
+
+
+def test_a_failed_school_search_still_fills_the_rest_of_the_education_row(monkeypatch):
+    from resume_tailor.apply.packet import PacketEducation
+
+    written: list[str] = []
+
+    def text_or_prompt(_page, _row, field, value, *, key):
+        if key == "school":
+            raise TimeoutError("school search timed out")
+        written.append(field)
+        return True
+
+    monkeypatch.setattr(repeaters, "_section_present", lambda *_a: True)
+    monkeypatch.setattr(repeaters, "_rows", lambda *_a: ["education-1--"])
+    monkeypatch.setattr(repeaters, "_choose_row", lambda *_a: "education-1--")
+    monkeypatch.setattr(repeaters, "_text_or_prompt", text_or_prompt)
+    monkeypatch.setattr(repeaters, "_blank_fill", lambda *_a: True)
+    monkeypatch.setattr(repeaters, "_value", lambda *_a: "")
+    monkeypatch.setattr(repeaters, "_school_field", lambda *_a: "schoolName")
+    monkeypatch.setattr(repeaters, "_ctl", lambda *_a: SimpleNamespace(count=lambda: 1))
+    monkeypatch.setattr(repeaters, "_fill_date", lambda _p, _r, field, _v, **_k: written.append(field) or True)
+    packet = SimpleNamespace(experience=[], education=[PacketEducation(
+        school="University of California - Irvine", major="Computer Science", degree_level="Bachelors",
+        start="2023-09", end="2027-06",
+    )])
+    selected: list[str] = []
+    # The page is never touched directly: every row helper is stubbed.
+    filled, review = repeaters.fill(
+        SimpleNamespace(), packet, lambda _m: None,
+        select=lambda _p, _s, value, *, key: selected.append(value) or True,
+    )
+    assert written == ["fieldOfStudy", "firstYearAttended", "lastYearAttended"]
+    assert selected == ["Bachelors"]
+    assert filled == []
+    assert review == ["Education: University of California - Irvine (School)"]
+
+
+def test_rows_ignore_error_elements_and_accept_a_school_prompt():
+    # Upbound: the school control is `education-N--school` (a prompt), and Workday's
+    # `error1-education-N--school` shares the suffix.
+    page = _Page({"education-235--school": "", "error1-education-235--school": "", "education-235--fieldOfStudy": ""})
+    assert repeaters._rows(page, "schoolName") == []  # noqa: SLF001
+    assert repeaters._school_field(page) == "school"  # noqa: SLF001
+    assert repeaters._school_field(page, "education-235--") == "school"  # noqa: SLF001
+
+
+def test_a_committed_school_chip_identifies_its_row():
+    page = _Page({"education-1--schoolName": "University of California, Irvine", "education-1--fieldOfStudy": ""})
+    row = repeaters._choose_row(  # noqa: SLF001
+        page, ["education-1--"], ("University of California - Irvine", "Computer Science"),
+        ("schoolName", "fieldOfStudy"),
+    )
+    assert row == "education-1--"

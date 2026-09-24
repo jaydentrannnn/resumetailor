@@ -30,3 +30,4 @@ data/
 # templates/ are already covered by the rules above; this is root-only.
 /*.docx
 /*.pdf
+/.playwright-mcp

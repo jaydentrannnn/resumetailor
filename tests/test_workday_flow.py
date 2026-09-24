@@ -30,11 +30,29 @@ _SCREENS["create_account_exists"] = {
     "alerts": ["An account with this email address already exists."],
 }
 _SCREENS["sign_in_rejected"] = {**_SCREENS["sign_in"], "alerts": ["Wrong email address or password."]}
+# Live 2026-09-24 (Jabil): an account created earlier whose verification link was never clicked.
+_SCREENS["sign_in_unverified"] = {
+    **_SCREENS["sign_in"],
+    "alerts": ["Verify your account before you sign in or request a verification email."],
+}
 _SCREENS["create_account_terms"] = {
     **_SCREENS["create_account"],
     "ids": [*_SCREENS["create_account"]["ids"], "createAccountCheckbox"],
 }
 _SCREENS["blank"] = {"ids": ["header"], "text": ""}
+# Live 2026-09-24 (CACI): Workday's error page inside the apply flow. The progress bar
+# stays, the form and its footer are gone.
+_SCREENS["site_error"] = {
+    "ids": ["header", "utilityButtonAccountTasksMenu", "applyFlowPage", "backToJobPosting",
+            "jobTitleHeading", "progressBar", "progressBarActiveStep", "progressBarInactiveStep"],
+    "active_step": "current step 1 of 6 My Information",
+    "text": "Software Engineering Intern - Summer 2027\nMy Information\nSomething went wrong\n"
+            "Please refresh the page and then try again.\n"
+            "Error Code: VPS|3c46db7c-2f27-4611-9115-06007c7d5e6b",
+}
+# Live 2026-09-24 (Excellus, window under ~800px): the progress bar drops its step names,
+# so the Create Account step's shell has no label for ~3s before its form paints.
+_SCREENS["auth_step_shell_unlabelled"] = {**_SCREENS["auth_step_loading"], "active_step": ""}
 
 _LABELS = {
     "createAccountSubmitButton": "Create Account",
@@ -118,6 +136,14 @@ class _FakePage:
         self.stuck_checkboxes: set[str] = set()
         #: Fake time at which Workday paints the submit's click overlay (it can lag the form).
         self.overlay_at = 0.0
+        #: Screens shown by successive reloads; an empty queue reloads the same screen.
+        self.after_reload: list[str] = []
+        self.reloads = 0
+
+    def reload(self, **_kwargs: object) -> None:
+        self.reloads += 1
+        if self.after_reload:
+            self.screen = self.after_reload.pop(0)
 
     @property
     def url(self) -> str:
@@ -191,6 +217,8 @@ def _known_site() -> None:
         ("auth_chooser", "auth_chooser"),
         # The sign-in step's progress bar paints before its form: not an application form.
         ("auth_step_loading", "unknown"),
+        # Nor is a bare shell with no step name, no field and no footer.
+        ("auth_step_shell_unlabelled", "unknown"),
         ("blank", "unknown"),
     ],
 )
@@ -202,6 +230,12 @@ def test_classify_special_pages():
     assert workday_flow.classify({"ids": ["header"], "text": "The page you are looking for doesn't exist."}) == "unavailable"
     assert workday_flow.classify({"ids": ["jobPostingPage"], "text": "You've already applied for this job"}) == "already_applied"
     assert workday_flow.classify({"ids": ["header"], "otp_input": True}) == "otp"
+
+
+def test_a_verify_message_in_the_auth_step_is_verify_email():
+    shell = {**_SCREENS["auth_step_loading"], "text": "Please verify your account. Check your inbox."}
+    assert workday_flow.classify(shell) == "verify_email"
+    assert workday_flow.classify(_SCREENS["sign_in_unverified"]) == "sign_in"
 
 
 def test_signed_in_needs_account_menu_and_no_auth_form():
@@ -250,6 +284,60 @@ def test_enter_application_leaves_a_form_alone(clock):
     page = _FakePage("my_information", clock=clock)
     assert workday_flow.enter_application(page, None, deadline=clock.now + 60)[1] == "apply_form"
     assert page.clicks == []
+
+
+# -- Workday's "Something went wrong" page ---------------------------------------------
+
+
+@pytest.mark.parametrize("text", [
+    _SCREENS["site_error"]["text"],
+    "Something went wrong\n\nPlease refresh the page and then try again.",
+    "Oops\nError Code: VPS|0000-1111",
+])
+def test_site_error_page_is_recognised(text):
+    assert workday_flow.is_site_error({"text": text})
+
+
+def test_a_form_is_not_a_site_error():
+    assert not workday_flow.is_site_error(_SCREENS["my_information"])
+
+
+def test_site_error_is_refreshed_until_the_form_returns(clock):
+    page = _FakePage("site_error", clock=clock)
+    page.after_reload = ["site_error", "my_information"]
+    messages: list[str] = []
+    assert workday_flow.recover_site_error(page, deadline=clock.now + 120, progress=messages.append) == (True, 2)
+    assert page.reloads == 2
+    assert page.screen == "my_information"
+    assert messages[-1] == "Workday page recovered after refreshing"
+
+
+def test_site_error_stops_refreshing_after_its_attempts(clock):
+    page = _FakePage("site_error", clock=clock)
+    assert workday_flow.recover_site_error(page, deadline=clock.now + 600, attempts=3) == (False, 3)
+    assert page.reloads == 3
+
+
+def test_site_error_recovery_leaves_a_healthy_page_alone(clock):
+    page = _FakePage("my_information", clock=clock)
+    assert workday_flow.recover_site_error(page, deadline=clock.now + 60) == (True, 0)
+    assert page.reloads == 0
+
+
+def test_enter_application_refreshes_a_site_error_tab(clock):
+    """Continue fill on a tab left on the error page reloads it instead of stalling."""
+    page = _FakePage("site_error", clock=clock)
+    page.after_reload = ["my_information"]
+    assert workday_flow.enter_application(page, None, deadline=clock.now + 60)[1] == "apply_form"
+    assert page.reloads == 1
+    assert page.clicks == []
+
+
+def test_enter_application_refreshes_an_error_after_apply_manually(clock):
+    page = _FakePage("start_dialog", {("start_dialog", "applyManually"): "site_error"}, clock=clock)
+    page.after_reload = ["my_information"]
+    assert workday_flow.enter_application(page, None, deadline=clock.now + 120)[1] == "apply_form"
+    assert page.reloads == 1
 
 
 # -- authentication --------------------------------------------------------------------
@@ -400,43 +488,113 @@ def test_profile_password_is_used_for_a_manually_created_account(clock):
     assert page.fills["password"] == "Mine!Pass9"
 
 
-def test_a_new_site_creates_the_account_even_with_a_profile_password(clock):
-    # Live 2026-09-24 (Excellus, lthc): a saved profile password sent a first visit
-    # straight to Sign In, where no account existed yet.
-    page = _FakePage("sign_in", {
-        ("sign_in", "createAccountLink"): "create_account",
+def test_a_profile_password_signs_in_first_and_creates_the_account_when_rejected(clock):
+    # Workday answers "wrong email or password" when no account exists yet; that one
+    # rejection on a site the tool never used leads to Create Account, not a handoff.
+    page = _FakePage("create_account", {
+        ("create_account", "signInLink"): "sign_in",
+        ("sign_in", "click_filter:Sign In"): "sign_in_rejected",
+        ("sign_in_rejected", "createAccountLink"): "create_account",
         ("create_account", "click_filter:Create Account"): "my_information",
     }, clock=clock)
     profile = _profile(workday_password="Mine!Pass9")
+    started = clock.now
     assert workday_auth.handle_workday_auth(page, "app-1", profile) == "authenticated"
-    assert page.clicks == ["createAccountLink", "click_filter:Create Account"]
+    assert page.clicks == [
+        "signInLink", "click_filter:Sign In", "createAccountLink", "click_filter:Create Account",
+    ]
     assert page.fills["verifyPassword"] == "Mine!Pass9"
     assert _tenant_vault().get("created")
+    # The rejection is read from the form's error, not waited out for 30s.
+    assert clock.now - started < 20
 
 
-def test_an_existing_account_gets_one_sign_in_with_the_profile_password(clock):
+def test_an_existing_account_signs_in_with_the_profile_password(clock):
     page = _FakePage("create_account", {
-        ("create_account", "click_filter:Create Account"): "create_account_exists",
-        ("create_account_exists", "signInLink"): "sign_in",
+        ("create_account", "signInLink"): "sign_in",
         ("sign_in", "click_filter:Sign In"): "my_information",
     }, clock=clock)
     profile = _profile(workday_password="Mine!Pass9")
     assert workday_auth.handle_workday_auth(page, "app-1", profile) == "authenticated"
-    assert page.clicks == ["click_filter:Create Account", "signInLink", "click_filter:Sign In"]
+    assert page.clicks == ["signInLink", "click_filter:Sign In"]
     assert _tenant_vault().get("signed_in")
 
 
 def test_an_existing_account_under_another_password_is_handed_over_after_one_try(clock):
-    page = _FakePage("create_account", {
-        ("create_account", "click_filter:Create Account"): "create_account_exists",
-        ("create_account_exists", "signInLink"): "sign_in",
+    page = _FakePage("sign_in", {
         ("sign_in", "click_filter:Sign In"): "sign_in_rejected",
+        ("sign_in_rejected", "createAccountLink"): "create_account",
+        ("create_account", "click_filter:Create Account"): "create_account_exists",
     }, clock=clock)
     profile = _profile(workday_password="Mine!Pass9")
     result = workday_auth.handle_workday_auth(page, "app-1", profile)
     assert result == "account_exists_other_password"
     assert page.clicks.count("click_filter:Sign In") == 1
     assert "Forgot Password" in workday_auth.AUTH_HANDOFF[result]
+
+
+def test_an_unverified_account_hands_over_for_the_email_link_without_creating_again(clock):
+    # Live Jabil 2026-09-24: this read as a wrong password, so the run tried Create Account
+    # for an account that already existed and waited it out.
+    store.upsert(store.Application(source="simplify", source_job_id="app-1", company="Jabil", role="Intern", status="ready"))
+    page = _FakePage("auth_chooser", {
+        ("auth_chooser", "SignInWithEmailButton"): "sign_in",
+        ("sign_in", "click_filter:Sign In"): "sign_in_unverified",
+        ("sign_in_unverified", "createAccountLink"): "create_account",
+    }, clock=clock)
+    profile = _profile(workday_password="Mine!Pass9")
+    assert workday_auth.handle_workday_auth(page, "app-1", profile) == "verification_needed"
+    assert "createAccountLink" not in page.clicks
+    assert _tenant_vault().get("created")
+    app = store.get("app-1")
+    assert app is not None and app.status == "awaiting_otp"
+    assert "verification email" in (app.otp_prompt or "")
+
+
+@pytest.mark.parametrize(("after_sign_in", "result"), [
+    ("my_information", "authenticated"),
+    ("sign_in_unverified", "verification_needed"),
+])
+def test_create_account_back_on_the_login_chooser_signs_the_new_account_in(clock, after_sign_in, result):
+    # Live Jabil 2026-09-24: Create Account returned to the chooser, which was not a screen
+    # the run waited for; it waited 30s and gave up without recording the account.
+    page = _FakePage("create_account", {
+        ("create_account", "click_filter:Create Account"): "auth_chooser",
+        ("auth_chooser", "SignInWithEmailButton"): "sign_in",
+        ("sign_in", "click_filter:Sign In"): after_sign_in,
+    }, clock=clock)
+    started = clock.now
+    assert workday_auth.handle_workday_auth(page, "app-1", _profile()) == result
+    assert page.clicks == ["click_filter:Create Account", "SignInWithEmailButton", "click_filter:Sign In"]
+    assert page.fills["password"] == page.fills["verifyPassword"]
+    assert _tenant_vault().get("created")
+    assert clock.now - started < 20
+
+
+def test_create_account_after_a_spent_sign_in_never_signs_in_twice(clock):
+    page = _FakePage("sign_in", {
+        ("sign_in", "click_filter:Sign In"): "sign_in_rejected",
+        ("sign_in_rejected", "createAccountLink"): "create_account",
+        ("create_account", "click_filter:Create Account"): "auth_chooser",
+    }, clock=clock)
+    profile = _profile(workday_password="Mine!Pass9")
+    assert workday_auth.handle_workday_auth(page, "app-1", profile) == "verification_needed"
+    assert page.clicks.count("click_filter:Sign In") == 1
+
+
+def test_an_unlabelled_auth_shell_waits_for_the_create_account_form(clock):
+    # Live 2026-09-24 (Excellus): the unlabelled shell read as the application form, so
+    # sign-in was skipped and the generic filler typed only the email into Create Account.
+    page = _FakePage("start_dialog", {("start_dialog", "applyManually"): "auth_step_shell_unlabelled"}, clock=clock)
+    original = page.wait_for_timeout
+
+    def paint_form_later(ms):
+        original(ms)
+        if page.screen == "auth_step_shell_unlabelled" and clock.now >= 1003:
+            page.screen = "create_account"
+
+    page.wait_for_timeout = paint_form_later
+    assert workday_flow.enter_application(page, None, deadline=clock.now + 60)[1] == "create_account"
 
 
 def test_account_terms_are_ticked_then_the_account_is_created(clock):
@@ -514,6 +672,56 @@ def test_fill_dropdowns_corrects_country_first_and_leaves_unknowns():
     assert ("#source--source", "LinkedIn", "how_heard") in calls
     assert not any(selector in {"#q1", "#q2", "#phoneNumber--phoneType"} for selector, _v, _k in calls)
     assert {item["key"] for item in committed} == {"country", "state", "how_heard"}
+
+
+def test_fill_dropdowns_records_a_blank_profile_fact_instead_of_skipping_silently():
+    from resume_tailor.apply import ats_hints
+
+    page = _DropdownPage([
+        {"selector": "#phoneNumber--phoneType", "label": "Phone Device Type", "current": "Select One"},
+        {"selector": "#address--countryRegion", "label": "State", "current": "Texas"},
+        {"selector": "#q2", "label": "Desired salary", "current": "Select One"},
+        {"selector": "#q1", "label": "Favourite colour", "current": "Select One"},
+    ])
+    blank: list[dict] = []
+    workday_flow.fill_dropdowns(
+        page, {}, synonyms=ats_hints.SYNONYMS, select=lambda *a, **k: True, blank=blank,
+    )
+    # An already-answered State and the per-posting salary are not blanks to report.
+    assert blank == [{"key": "phone_device_type", "label": "Phone Device Type"}]
+
+
+def test_an_answer_that_reveals_a_follow_up_is_followed_in_the_same_call():
+    """"Legally permitted to work" = Yes reveals "proof of eligibility" (a live Workday
+    step, 2026-09); both come from the profile, and neither is read as the Country."""
+    from resume_tailor.apply import ats_hints
+
+    permitted = "Are you legally permitted to work in the country where this job is located?"
+    proof = {"selector": "#proof", "label": "If hired, can you provide proof of eligibility?", "current": "Select One"}
+    page = _DropdownPage([
+        {"selector": "#age", "label": "Are you over the age of 18?", "current": "Select One"},
+        {"selector": "#permitted", "label": permitted, "current": "Select One"},
+    ])
+    calls: list[tuple[str, str, str]] = []
+
+    def select(_page, selector, value, *, key):
+        calls.append((selector, value, key))
+        for item in page.items:
+            if item["selector"] == selector:
+                item["current"] = value
+        if selector == "#permitted":
+            page.items.append(dict(proof))
+        return True
+
+    fields = {"country": "United States", "authorized_to_work": "Yes", "over_18": "Yes"}
+    workday_flow.fill_dropdowns(page, fields, synonyms=ats_hints.SYNONYMS, select=select)
+    assert calls == [
+        ("#age", "Yes", "over_18"),
+        ("#permitted", "Yes", "authorized_to_work"),
+        ("#proof", "Yes", "authorized_to_work"),
+    ]
+    # Answered "Yes", the question is not a Country that reads wrong.
+    assert workday_flow.country_mismatch(page, fields, synonyms=ats_hints.SYNONYMS) is None
 
 
 def test_fill_dropdowns_keeps_an_existing_choice():
@@ -641,3 +849,160 @@ def test_fill_prompts_leaves_the_skills_prompt_to_fill_skills():
         select=lambda *a, **k: calls.append(a) or True,
     )
     assert calls == []
+
+
+class _TermSearchPage:
+    """A Workday prompt whose results depend on the typed term (school search)."""
+
+    def __init__(self, results_by_term: dict[str, list[str]]) -> None:
+        self.results_by_term = results_by_term
+        self.term = ""
+        self.typed: list[str] = []
+        self.chips: list[str] = []
+
+    def evaluate(self, script: str, arg: object = None) -> object:
+        return list(self.chips)
+
+    def wait_for_timeout(self, _ms: int) -> None:
+        pass
+
+    def _results(self) -> list[str]:
+        return list(self.results_by_term.get(self.term, []))
+
+    def locator(self, selector: str) -> SimpleNamespace:
+        page = self
+        if "promptOption" in selector:
+            return SimpleNamespace(
+                all_inner_texts=page._results,
+                nth=lambda i: SimpleNamespace(click=lambda timeout=None: page.chips.append(page._results()[i])),
+            )
+
+        def fill(value: str, timeout: int | None = None) -> None:
+            page.term = value
+            if value:
+                page.typed.append(value)
+
+        return SimpleNamespace(first=SimpleNamespace(fill=fill, press=lambda key: None))
+
+
+def test_select_prompt_searches_the_campus_when_the_full_school_name_finds_nothing():
+    page = _TermSearchPage({
+        "University of California - Irvine": ["No Items."],
+        "Irvine": ["Irvine Valley College", "University of California, Irvine"],
+    })
+    assert workday_flow.select_prompt(page, "education-1--schoolName", "University of California - Irvine", key="school")
+    assert page.typed[:2] == ["University of California - Irvine", "Irvine"]
+    assert page.chips == ["University of California, Irvine"]
+
+
+def test_select_prompt_leaves_a_tie_for_review():
+    page = _TermSearchPage({
+        "Irvine": ["University of California Irvine (UCI)", "University of California Irvine Extension"],
+    })
+    assert not workday_flow.select_prompt(page, "education-1--schoolName", "University of California - Irvine", key="school")
+    assert page.chips == []
+
+
+def test_fill_prompts_falls_back_to_other_when_the_source_is_not_listed():
+    from resume_tailor.apply import ats_hints
+
+    page = _PromptPage([{"input_id": "source--source", "label": "How Did You Hear About Us?", "chips": 0}])
+    tried: list[str] = []
+
+    def select(_page, _input_id, value, *, key):
+        tried.append(value)
+        return value == "Other"
+
+    committed = workday_flow.fill_prompts(
+        page, {"how_heard": "LinkedIn"}, synonyms=ats_hints.SYNONYMS, select=select,
+    )
+    assert tried == ["LinkedIn", "Other"]
+    assert [item["value"] for item in committed] == ["Other"]
+
+
+def test_country_mismatch_reads_a_wrong_saved_country():
+    from resume_tailor.apply import ats_hints
+
+    def page_with(current: str) -> SimpleNamespace:
+        items = [{"selector": "#country--country", "label": "Country", "current": current, "required": True}]
+        return SimpleNamespace(evaluate=lambda script, arg=None: [dict(i) for i in items])
+
+    fields = {"country": "United States"}
+    assert workday_flow.country_mismatch(page_with("Vietnam"), fields, synonyms=ats_hints.SYNONYMS) == "Vietnam"
+    assert workday_flow.country_mismatch(page_with("United States of America"), fields, synonyms=ats_hints.SYNONYMS) is None
+    assert workday_flow.country_mismatch(page_with("Select One"), fields, synonyms=ats_hints.SYNONYMS) is None
+    assert workday_flow.country_mismatch(page_with("Vietnam"), {}, synonyms=ats_hints.SYNONYMS) is None
+
+
+def test_fill_dropdowns_reports_a_country_it_could_not_change():
+    from resume_tailor.apply import ats_hints
+
+    class _Page:
+        def evaluate(self, script, arg=None):
+            assert script == workday_flow.DROPDOWNS_JS
+            return [{"selector": "#country", "label": "Country", "current": "Vietnam", "required": True}]
+
+        def wait_for_timeout(self, _ms):
+            pass
+
+    review: list[str] = []
+    committed = workday_flow.fill_dropdowns(
+        _Page(), {"country": "United States"}, synonyms=ats_hints.SYNONYMS,
+        select=lambda *a, **k: False, review=review,
+    )
+    assert committed == []
+    assert review == ["Country is Vietnam; profile says United States"]
+
+
+class _PhoneCodePage:
+    def __init__(self, results: list[str]) -> None:
+        self.results = results
+        self.chips: list[str] = []
+
+    def evaluate(self, script: str, arg: object = None) -> object:
+        assert script == workday_flow.PHONE_CODE_JS
+        return {"chips": list(self.chips), "input_id": "phoneNumber--countryPhoneCode"}
+
+    def wait_for_timeout(self, _ms: int) -> None:
+        pass
+
+    def locator(self, selector: str) -> SimpleNamespace:
+        page = self
+        if "promptOption" in selector:
+            return SimpleNamespace(
+                all_inner_texts=lambda: list(page.results),
+                nth=lambda i: SimpleNamespace(click=lambda timeout=None: page.chips.append(page.results[i])),
+            )
+        return SimpleNamespace(fill=lambda value, timeout=None: None, press=lambda key: None)
+
+
+def test_phone_code_is_the_whole_region_not_any_region_containing_it():
+    # Live Oak: "United States" + "+1" also matched the Minor Outlying Islands, so the
+    # choice was ambiguous and the required phone code stayed empty.
+    page = _PhoneCodePage([
+        "United States Minor Outlying Islands (+1)",
+        "United States of America (+1)",
+    ])
+    assert workday_flow.ensure_phone_code(page, "United States", "+1") is True
+    assert page.chips == ["United States of America (+1)"]
+
+
+def test_select_prompt_accepts_the_option_enter_committed_itself():
+    # Upbound's Field of Study: Enter on a one-result search commits it with no list.
+    page = _TermSearchPage({})
+    original = page.locator
+
+    def locator(selector: str) -> SimpleNamespace:
+        found = original(selector)
+        if "promptOption" in selector:
+            return found
+
+        def press(key: str) -> None:
+            if key == "Enter" and page.term == "Computer Science":
+                page.chips.append("Computer and Information Science")
+
+        return SimpleNamespace(first=SimpleNamespace(fill=found.first.fill, press=press))
+
+    page.locator = locator
+    assert workday_flow.select_prompt(page, "education-1--fieldOfStudy", "Computer Science", key="major")
+    assert page.chips == ["Computer and Information Science"]

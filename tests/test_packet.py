@@ -8,8 +8,11 @@ from pathlib import Path
 import pytest
 
 from resume_tailor import config
-from resume_tailor.apply.packet import _build_education, build_fields, build_packet, write_packet
-from resume_tailor.apply.profile import ApplicantProfile, EEOAnswers
+from resume_tailor.apply.packet import (
+    DEFAULTS, PacketEducation, _build_education, authorization_mismatch, build_fields,
+    build_packet, degree_name, job_country, missing_profile, profile_gaps, write_packet,
+)
+from resume_tailor.apply.profile import ApplicantProfile, EEOAnswers, LanguageEntry
 from tests.fixtures import synthetic_resume
 
 
@@ -99,7 +102,7 @@ def job_dir(tmp_path, monkeypatch):
 
 
 def test_build_fields_yes_no_and_omit_none():
-    """Booleans become Yes/No; None and declined EEO values are omitted."""
+    """Booleans become Yes/No; None is omitted; a declined EEO answer stays "decline"."""
     resume = synthetic_resume()
     profile = ApplicantProfile(
         first_name="Jordan",
@@ -116,8 +119,16 @@ def test_build_fields_yes_no_and_omit_none():
     assert fields["work_authorization"] == "U.S. Citizen"
     assert fields["full_name"] == "Jordan Rivera"
     assert "requires_sponsorship_future" not in fields
-    assert "gender" not in fields
+    assert fields["gender"] == "decline"
+    assert "race_detail" not in fields
     assert fields["veteran_status"] == "No"
+
+
+def test_build_fields_carries_the_source_for_a_please_specify_follow_up():
+    fields = build_fields(ApplicantProfile(how_heard="LinkedIn"), synthetic_resume())
+    assert fields["how_heard"] == "LinkedIn"
+    assert fields["how_heard_detail"] == "LinkedIn"
+    assert "how_heard_detail" not in build_fields(ApplicantProfile(how_heard=""), synthetic_resume())
 
 
 def test_build_fields_falls_back_to_contact():
@@ -129,6 +140,78 @@ def test_build_fields_falls_back_to_contact():
     assert fields["phone"] == "(555) 123-4567"
     assert fields["linkedin_url"] == "https://linkedin.com/in/jordanrivera"
     assert fields["full_name"] == "Jordan Rivera"
+
+
+def test_phone_device_type_defaults_to_mobile_only_when_blank():
+    assert build_fields(ApplicantProfile(), synthetic_resume())["phone_device_type"] == "Mobile"
+    assert build_fields(ApplicantProfile(phone_device_type="Home"), synthetic_resume())["phone_device_type"] == "Home"
+
+
+def test_profile_gaps_skip_resume_fallbacks_and_defaults_but_list_a_blank_legal_fact():
+    gaps = profile_gaps(build_fields(ApplicantProfile(), synthetic_resume()))
+    assert "authorized_to_work" in gaps
+    # Email and phone come from the resume contact; phone device type from DEFAULTS.
+    assert not {"email", "phone", "phone_device_type"} & set(gaps)
+    # Legal and self-identification answers never get a default.
+    assert not {"authorized_to_work", "veteran_status", "disability_status"} & set(DEFAULTS)
+    answered = build_fields(ApplicantProfile(authorized_to_work=True), synthetic_resume())
+    assert "authorized_to_work" not in profile_gaps(answered)
+
+
+def test_over_18_comes_from_the_profile_and_is_a_gap_when_blank():
+    assert build_fields(ApplicantProfile(over_18=True), synthetic_resume())["over_18"] == "Yes"
+    assert build_fields(ApplicantProfile(over_18=False), synthetic_resume())["over_18"] == "No"
+    blank = build_fields(ApplicantProfile(), synthetic_resume())
+    assert "over_18" not in blank
+    assert "over_18" in profile_gaps(blank)
+
+
+@pytest.mark.parametrize(
+    ("location", "country"),
+    [
+        ("Plymouth, Minnesota, United States", "United States"),
+        ("Remote - US", "United States"),
+        ("USA - CA - San Jose", "United States"),
+        ("San Jose, CA", "United States"),
+        ("Toronto, ON, Canada", "Canada"),
+        ("London, United Kingdom", "United Kingdom"),
+        ("Remote", None),
+        ("", None),
+        ("Austin, TX or Toronto, Canada", None),  # two countries: unsure
+        ("Tell us about yourself", None),  # "us" only counts as a whole part
+    ],
+)
+def test_job_country_reads_only_a_clearly_named_country(location, country):
+    assert job_country(location) == country
+
+
+def test_authorization_mismatch_only_for_a_posting_clearly_elsewhere():
+    profile = ApplicantProfile(country="United States", authorized_to_work=True)
+    assert authorization_mismatch(profile, "Toronto, ON, Canada") == ("Canada", "United States")
+    assert authorization_mismatch(profile, "Plymouth, Minnesota, United States") is None
+    assert authorization_mismatch(profile, "Remote") is None
+    # The authorization country, when set, wins over the home country.
+    abroad = ApplicantProfile(country="United States", authorization_country="Canada")
+    assert authorization_mismatch(abroad, "Toronto, ON, Canada") is None
+
+
+def test_missing_profile_groups_questions_by_fact_and_marks_the_ones_answered_anyway():
+    blank = [
+        {"key": "authorized_to_work", "label": "Are you legally authorized to work in the US?"},
+        {"key": "authorized_to_work", "label": "Are you legally authorized to work in the US?"},
+        {"key": "phone_device_type", "label": "Phone Device Type"},
+        {"key": "has_preferred_name", "label": "I have a preferred name"},
+        {"key": "", "label": "Favourite colour"},
+    ]
+    entries = missing_profile(blank, filled_labels={"Phone Device Type"})
+    by_key = {entry["key"]: entry for entry in entries}
+    assert set(by_key) == {"authorized_to_work", "phone_device_type"}
+    work = by_key["authorized_to_work"]
+    assert work["questions"] == ["Are you legally authorized to work in the US?"]
+    assert work["field_label"] == "Authorized to work"
+    assert work["path"] == "/profile/application"
+    assert work["answered"] is False
+    assert by_key["phone_device_type"]["answered"] is True
 
 
 def test_salary_is_manual_and_declared_eeo_answers_are_distinct():
@@ -143,6 +226,20 @@ def test_salary_is_manual_and_declared_eeo_answers_are_distinct():
     assert fields["hispanic_latino"] == "No"
 
 
+
+def test_languages_reach_the_packet_and_a_free_text_answer(job_dir):
+    profile = ApplicantProfile(languages=[
+        LanguageEntry(language="English", fluent=True, levels={"Overall": "Native"}),
+        LanguageEntry(language="Vietnamese", levels={"Reading": "Intermediate", "Writing": ""}),
+        LanguageEntry(language="  "),
+    ])
+    packet = build_packet("test-job", applicant_profile=profile)
+    assert [(row.language, row.fluent, row.levels) for row in packet.languages] == [
+        ("English", True, {"Overall": "Native"}), ("Vietnamese", False, {"Reading": "Intermediate"}),
+    ]
+    assert packet.fields["languages"] == "English (Native), Vietnamese"
+    assert "languages" not in build_fields(ApplicantProfile(), synthetic_resume())
+
 def test_uc_irvine_school_alias_deduplicates_only_that_school():
     resume = synthetic_resume()
     resume.education[0].school = "University of California, Irvine"
@@ -151,6 +248,24 @@ def test_uc_irvine_school_alias_deduplicates_only_that_school():
     assert len(rows) == 1
     assert rows[0].degree == "Bachelors"
     assert rows[0].degree_name == resume.education[0].degree
+
+
+def test_degree_name_names_the_one_resume_degree_at_the_profile_level():
+    rows = [PacketEducation(degree="Bachelors", degree_name="Bachelor of Science in Computer Science & Minor in X")]
+    assert degree_name(rows, "Bachelors") == "Bachelor of Science"
+    assert degree_name([PacketEducation(degree="BS Computer Science")], "Bachelors") == "Bachelor of Science"
+    # A different level, two different degrees, or no name: nothing to add.
+    assert degree_name(rows, "Masters") == ""
+    two = [*rows, PacketEducation(degree="BA Economics")]
+    assert degree_name(two, "Bachelors") == ""
+    assert degree_name([PacketEducation(degree="Bachelors")], "Bachelors") == ""
+
+
+def test_build_packet_adds_the_named_degree(job_dir):
+    profile = ApplicantProfile(school="State University", degree_level="Bachelors")
+    pkt = build_packet("test-job", applicant_profile=profile)
+    assert pkt.fields["degree_level"] == "Bachelors"
+    assert pkt.fields["degree_name"] == "Bachelor of Science"
 
 
 def test_new_eeo_profile_fields_default_for_old_records():

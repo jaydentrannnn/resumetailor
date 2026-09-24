@@ -1044,6 +1044,17 @@ class ProposalRejectRequest(BaseModel):
     proposal_ids: list[str]
 
 
+class ProfileGap(BaseModel):
+    """One blank profile field that application forms ask for."""
+
+    key: str
+    label: str
+    section: str
+    path: str
+    #: Stored applications whose last fill met this question with the field blank.
+    seen_in: int = 0
+
+
 class ApplicantProfileResponse(BaseModel):
     """Response for ``GET /api/applicant-profile``."""
 
@@ -1051,6 +1062,10 @@ class ApplicantProfileResponse(BaseModel):
     profile: ApplicantProfile
     seeded: bool = False
     workday_password_set: bool = False
+    #: Profile fields forms ask for that this profile leaves blank (`packet.profile_gaps`).
+    gaps: list[ProfileGap] = Field(default_factory=list)
+    #: Harmless answers used when the profile field is blank (`packet.DEFAULTS`).
+    defaults: dict[str, str] = Field(default_factory=dict)
 
 
 class ApplicantProfileUpdateRequest(BaseModel):

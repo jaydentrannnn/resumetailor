@@ -23,6 +23,7 @@ from pydantic import BaseModel, Field
 from resume_tailor import config, llm
 from resume_tailor.apply.packet import Packet
 from resume_tailor.apply.profile import ApplicantProfile
+from resume_tailor.apply import field_matcher
 from resume_tailor.apply.field_matcher import match_option
 from resume_tailor.apply.field_types import ObservedOption
 
@@ -94,6 +95,17 @@ _INSPECT_PAGE_JS = """
       const title = prompt.querySelector('label, [data-automation-id*="label"], legend, .field-label');
       if (title) return title.innerText.trim();
     }
+    // Custom forms (Epic Games) put the question as bare text in an ancestor that holds
+    // only this control; the widget's own "Select" placeholder is not part of it.
+    let node = el.parentElement, text = '';
+    for (let depth = 0; node && depth < 12; depth++, node = node.parentElement) {
+      if (node.querySelectorAll('input:not([type="hidden"]), select, textarea').length > 1) break;
+      const own = (node.innerText || '').replace(/[\\u2060\\u200b]/g, '').trim();
+      const widget = (el.closest('[class*="-control"]')?.innerText || '').trim();
+      const stripped = (widget && own.endsWith(widget) ? own.slice(0, -widget.length) : own).trim();
+      if (stripped && !/^(select|enter)$/i.test(stripped)) text = stripped;
+    }
+    if (text) return text.replace(/\\s*\\*?\\s*:?\\s*$/, '').trim();
     return el.getAttribute('placeholder') || el.getAttribute('name') || '';
   };
 
@@ -136,7 +148,8 @@ _INSPECT_PAGE_JS = """
   const seenFields = new Set();
 
   // 1. Custom comboboxes / dropdown buttons (real popup triggers only)
-  document.querySelectorAll('[role="combobox"], [aria-haspopup="listbox"]').forEach(el => {
+  // React Select inputs do not always carry role=combobox (Epic Games' form).
+  document.querySelectorAll('[role="combobox"], [aria-haspopup="listbox"], input[id^="react-select-"][id$="-input"]').forEach(el => {
     if (isVisible(el) && !notADropdown(el)) {
       // One question per Workday form field, however many triggers it renders.
       const key = fieldKey(el);
@@ -262,14 +275,10 @@ def _select_combobox_option(
             return True
         trigger.click(timeout=3000)
         search_terms = [""]
-        if key == "school" and _norm(target_value) == "university of california irvine":
-            search_terms.extend(["Irvine", "UC Irvine"])
-        elif key == "degree_level" and _norm(target_value).startswith("bachelor"):
-            search_terms.extend(["bachelor", target_value])
-        elif key == "phone_country_code" and phone_region:
+        if key == "phone_country_code" and phone_region:
             search_terms.extend([phone_region, target_value])
         else:
-            search_terms.append(target_value)
+            search_terms.extend(field_matcher.search_terms(key, target_value))
         match = None
         for term in search_terms:
             if term:
@@ -287,7 +296,7 @@ def _select_combobox_option(
                     if not chosen_text:
                         chosen_text = _option_match(option_texts, target_value, key=key)
                 else:
-                    chosen_text = _option_match(option_texts, target_value, key=key)
+                    chosen_text = field_matcher.closest_option(option_texts, target_value, key=key)
                 if chosen_text:
                     match = next(choice for choice in choices if choice.inner_text().strip() == chosen_text)
                     break
@@ -355,7 +364,10 @@ def _selected_combobox_text(trigger: Any) -> str:
 
 def _phone_option(options: list[str], code: str, region: str) -> str | None:
     """Resolve a calling-code menu only when the declared phone region disambiguates it."""
-    region_aliases = {"us": "united states", "usa": "united states", "ca": "canada", "gb": "united kingdom", "uk": "united kingdom"}
+    region_aliases = {
+        "us": "united states", "usa": "united states", "united states of america": "united states",
+        "ca": "canada", "gb": "united kingdom", "uk": "united kingdom",
+    }
     region_key = region_aliases.get(_norm(region), _norm(region))
     if not region_key or not re.fullmatch(r"\+\d{1,4}", code):
         return None
@@ -468,6 +480,11 @@ def choose_skill_options(
     return chosen
 
 
+#: Extra model rounds per call for questions the model's own answers revealed; they do
+#: not count against ``max_retries``.
+_MAX_REVEAL_ROUNDS = 2
+
+
 @dataclass
 class StepLedger:
     """What one form step has already been through, so a retry touches only the gaps.
@@ -506,20 +523,31 @@ def resolve_step_blockers(
             on_progress(f"[hybrid-resolver] {msg}")
 
     ledger = ledger if ledger is not None else StepLedger()
-    for attempt in range(max_retries):
+    attempt = 0
+    reveal_rounds = 0
+    # Set after an answer reveals follow-up questions: the next round covers only those.
+    revealed: set[str] | None = None
+    while revealed is not None or attempt < max_retries:
         if deadline is not None and time.monotonic() >= deadline:
             return False
+        if revealed is None:
+            attempt += 1
         info = extract_page_blockers(page)
         errors = info.get("errors") or []
         unresolved = info.get("unresolved") or []
         advance_disabled = bool(info.get("advance_disabled"))
+        present = {str(f.get("selector")) for f in unresolved}
 
         if not errors and not unresolved and not advance_disabled:
             return True
 
         seen_before = [f for f in unresolved if str(f.get("selector")) in ledger.asked | ledger.done]
         unresolved = [f for f in unresolved if str(f.get("selector")) not in ledger.asked | ledger.done]
-        if only_invalid and any(f.get("invalid") for f in unresolved):
+        if revealed is not None:
+            # Not marked invalid yet: the form validates them only on Save and Continue.
+            unresolved = [f for f in unresolved if str(f.get("selector")) in revealed]
+            revealed = None
+        elif only_invalid and any(f.get("invalid") for f in unresolved):
             unresolved = [f for f in unresolved if f.get("invalid")]
         if seen_before and unresolved:
             log(
@@ -582,7 +610,7 @@ def resolve_step_blockers(
             # Validation errors alone give the model nothing it may act on.
             return not errors and not advance_disabled
 
-        log(f"attempt {attempt + 1}: found {len(unresolved)} unresolved controls, {len(errors)} errors")
+        log(f"attempt {attempt}: found {len(unresolved)} unresolved controls, {len(errors)} errors")
 
         safe_profile = profile.model_dump(
             exclude={"workday_password", "workday_email"},
@@ -643,8 +671,20 @@ def resolve_step_blockers(
         log(f"successfully applied {executed}/{len(resolution.actions)} actions")
         page.wait_for_timeout(1000)
 
-        # Check if advance button is now enabled
         updated = extract_page_blockers(page)
+        # An answer can reveal a follow-up ("If hired, can you provide proof of
+        # eligibility?" after "legally permitted to work" = Yes). Workday shows no error
+        # for it until Save and Continue, so look for it here rather than stop early.
+        known = present | ledger.asked | ledger.done
+        new = {
+            str(f.get("selector")) for f in updated.get("unresolved") or []
+            if f.get("selector") and str(f.get("selector")) not in known
+        }
+        if executed and new and reveal_rounds < _MAX_REVEAL_ROUNDS:
+            reveal_rounds += 1
+            revealed = new
+            log(f"answer revealed {len(new)} new question(s)")
+            continue
         if not updated.get("advance_disabled") and not updated.get("errors"):
             log("validation blockers cleared!")
             return True

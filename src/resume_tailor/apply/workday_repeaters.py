@@ -1,4 +1,4 @@
-"""Conservative, row-scoped filling of Workday employment and education lists.
+"""Conservative, row-scoped filling of Workday employment, education and language lists.
 
 Current Workday renders each row's controls with ids ``workExperience-<n>--<field>`` /
 ``education-<n>--<field>`` (captured live 2026-09), and a per-section "Add" / "Add
@@ -13,16 +13,43 @@ import re
 from collections.abc import Callable
 from typing import Any
 
+from resume_tailor.apply import field_matcher
 from resume_tailor.apply.packet import Packet
 
 #: Field names (the part after ``--``) inside one row.
 _WORK = {"title": "jobTitle", "company": "companyName", "location": "location",
          "description": "roleDescription", "current": "currentlyWorkHere"}
 _EDU = {"school": "schoolName", "degree": "degree", "major": "fieldOfStudy", "gpa": "gradeAverage"}
+#: Tenants name the school control ``schoolName`` (text) or ``school`` (a searchable
+#: prompt, Upbound 2026-09).
+_SCHOOL_FIELDS = ("schoolName", "school")
+#: A Languages row's language control (``language-<n>--language``).
+_LANGUAGE = "language"
+#: Row identity fields whose committed option may be worded differently from the profile.
+_MATCH_KEYS = {"schoolName": "school", "school": "school", "fieldOfStudy": "major", _LANGUAGE: "language"}
 
+#: One row's visible controls, each with its form-field label (a checkbox: its own label).
+_ROW_CONTROLS_JS = r"""(prefix) => {
+  const vis = e => !!(e && (e.offsetWidth || e.offsetHeight || e.getClientRects().length));
+  return [...document.querySelectorAll(`[id^="${prefix}"]`)].filter(e => {
+    const own = e.type === 'checkbox' && document.querySelector(`label[for="${CSS.escape(e.id)}"]`);
+    return vis(e) || vis(own);
+  }).map(e => {
+    const own = e.type === 'checkbox' && document.querySelector(`label[for="${CSS.escape(e.id)}"]`);
+    const field = e.closest("[data-automation-id^='formField-']");
+    const label = own || (field && field.querySelector('label, legend'));
+    return {id: e.id, checkbox: e.type === 'checkbox', checked: !!e.checked,
+            listbox: e.getAttribute('aria-haspopup') === 'listbox',
+            label: label ? (label.innerText || '').replace(/\*\s*$/, '').trim() : ''};
+  });
+}"""
+
+#: Row prefixes only (``education-235--``): Workday's error/help elements end with the
+#: same field name (``error1-education-235--school``) and are not rows.
 _ROWS_JS = r"""(anchor) => [...document.querySelectorAll(`[id$="--${anchor}"]`)]
   .filter(e => e.offsetWidth || e.offsetHeight || e.getClientRects().length)
-  .map(e => e.id.slice(0, e.id.length - anchor.length))"""
+  .map(e => e.id.slice(0, e.id.length - anchor.length))
+  .filter(prefix => /^[A-Za-z]+-\d+--$/.test(prefix))"""
 
 #: Index (among all add buttons) of the one under the section whose heading is given.
 _ADD_BUTTON_JS = r"""(heading) => {
@@ -84,13 +111,23 @@ def _choose_row(page: Any, rows: list[str], identity: tuple[str, ...], fields: t
     """
     expected = tuple(part.strip().casefold() for part in identity)
     values = {row: tuple(_value(page, row, field).casefold() for field in fields) for row in rows}
-    exact = [row for row in rows if values[row] == expected]
+    keys = tuple(_MATCH_KEYS.get(field, "") for field in fields)
+
+    def same(value: str, wanted: str, key: str) -> bool:
+        # A committed school chip reads "University of California, Irvine" for the
+        # profile's "University of California - Irvine".
+        return value == wanted or bool(key and value and field_matcher.closest_option([value], wanted, key=key))
+
+    def agrees(row: str, *, allow_blank: bool) -> bool:
+        return all(
+            (allow_blank and not v) or same(v, e, k)
+            for v, e, k in zip(values[row], expected, keys, strict=True)
+        )
+
+    exact = [row for row in rows if agrees(row, allow_blank=False)]
     if exact:
         return exact[0] if len(exact) == 1 else None
-    partial = [
-        row for row in rows
-        if any(values[row]) and all(v in {"", e} for v, e in zip(values[row], expected, strict=True))
-    ]
+    partial = [row for row in rows if any(values[row]) and agrees(row, allow_blank=True)]
     if partial:
         return partial[0] if len(partial) == 1 else None
     blank = [row for row in rows if not any(values[row])]
@@ -108,8 +145,13 @@ def _section_present(page: Any, heading: str, anchor: str) -> bool:
     return isinstance(index, int) and index >= 0
 
 
-def _add_row(page: Any, heading: str, anchor: str) -> str | None:
-    before = set(_rows(page, anchor))
+def _add_row(page: Any, heading: str, anchor: str | tuple[str, ...]) -> str | None:
+    anchors = (anchor,) if isinstance(anchor, str) else anchor
+
+    def all_rows() -> list[str]:
+        return list(dict.fromkeys(row for name in anchors for row in _rows(page, name)))
+
+    before = set(all_rows())
     try:
         index = page.evaluate(_ADD_BUTTON_JS, heading)
     except Exception:  # noqa: BLE001
@@ -119,10 +161,21 @@ def _add_row(page: Any, heading: str, anchor: str) -> str | None:
     page.locator("[data-automation-id='add-button']").nth(index).click(timeout=5000)
     for _ in range(12):
         page.wait_for_timeout(250)
-        added = [row for row in _rows(page, anchor) if row not in before]
+        added = [row for row in all_rows() if row not in before]
         if len(added) == 1:
             return added[0]
     return None
+
+
+def _school_field(page: Any, row: str | None = None) -> str:
+    """This tenant's school control name, for one row or for the page."""
+    for name in _SCHOOL_FIELDS:
+        if row is not None:
+            if _ctl(page, row, name).count() == 1:
+                return name
+        elif _rows(page, name):
+            return name
+    return _EDU["school"]
 
 
 def _blank_fill(page: Any, prefix: str, field: str, value: str) -> bool:
@@ -196,10 +249,18 @@ def _fill_date(page: Any, prefix: str, field: str, value: str, *, with_month: bo
             current = _value(page, prefix, field)
             return current == year if current else workday_flow.select_listbox(page, f"[id='{prefix}{field}']", year)
     parts = ([("dateSectionMonth", month)] if with_month else []) + [("dateSectionYear", year)]
+    return fill_date_sections(page, f"{prefix}{field}", parts)
+
+
+def fill_date_sections(page: Any, control: str, parts: list[tuple[str, str]]) -> bool:
+    """Type Workday's split date sections (``<control>-dateSectionMonth/Day/Year``).
+
+    An existing section is kept (ok only when equal); the result is read back.
+    """
     for section, text in parts:
         if not text:
             return False
-        box = page.locator(f"[id='{prefix}{field}-{section}-input']")
+        box = page.locator(f"[id='{control}-{section}-input']")
         if box.count() != 1:
             return False
         current = str(box.first.input_value() or "").strip()
@@ -207,16 +268,83 @@ def _fill_date(page: Any, prefix: str, field: str, value: str, *, with_month: bo
             if current.lstrip("0") != text.lstrip("0"):
                 return False
             continue
-        # The real spinbutton input is a 0px overlay; its visible "MM"/"YYYY" display
-        # div takes the click and focuses it.
-        page.locator(f"[id='{prefix}{field}-{section}-display']").first.click(timeout=3000)
+        # The real spinbutton input is a 0px overlay; its visible "MM"/"DD"/"YYYY"
+        # display div takes the click and focuses it.
+        page.locator(f"[id='{control}-{section}-display']").first.click(timeout=3000)
         page.keyboard.type(text, delay=40)
     page.wait_for_timeout(150)
     return all(
-        str(page.locator(f"[id='{prefix}{field}-{section}-input']").first.input_value() or "").strip().lstrip("0")
+        str(page.locator(f"[id='{control}-{section}-input']").first.input_value() or "").strip().lstrip("0")
         == text.lstrip("0")
         for section, text in parts
     )
+
+
+def _attempt(action: Callable[[], bool]) -> bool:
+    """One row field: an exception is that field's failure, not the whole row's."""
+    try:
+        return bool(action())
+    except Exception:  # noqa: BLE001 - reported per field for review
+        return False
+
+
+def _tick(page: Any, prefix: str, field: str) -> bool:
+    box = _ctl(page, prefix, field)
+    if box.count() == 1 and not box.first.is_checked():
+        try:
+            box.first.check(timeout=2000)
+        except Exception:  # noqa: BLE001 - styled checkbox: its label takes the click
+            page.locator(f"label[for='{prefix}{field}']").first.click(timeout=3000)
+    return box.count() == 1 and box.first.is_checked()
+
+
+def _tick_current(page: Any, prefix: str) -> bool:
+    return _tick(page, prefix, _WORK["current"])
+
+
+def _choose(page: Any, prefix: str, field: str, value: str, *, key: str, select: Callable[..., bool] | None) -> bool:
+    """A listbox button or a prompt; an existing answer is kept (ok only if it means ``value``)."""
+    current = _value(page, prefix, field)
+    if current:
+        return current.casefold() == value.casefold() or bool(field_matcher.closest_option([current], value, key=key))
+    control = _ctl(page, prefix, field)
+    if control.count() == 1 and control.first.get_attribute("aria-haspopup") == "listbox":
+        return bool(select and select(page, f"[id='{prefix}{field}']", value, key=key))
+    return _text_or_prompt(page, prefix, field, value, key=key)
+
+
+def _fill_language(page: Any, row: str, entry: Any, select: Callable[..., bool] | None) -> dict[str, bool]:
+    """Language, the fluent checkbox, and one level per proficiency control of one row.
+
+    Levels are matched by the control's label ("Reading", "Speaking", ...); a lone
+    unlabelled level control takes the "Overall" level. A level the profile does not give
+    is a gap for the applicant, not a guess.
+    """
+    from resume_tailor.apply.profile import LANGUAGE_CATEGORIES  # noqa: PLC0415
+
+    results = {"Language": _attempt(lambda: _choose(page, row, _LANGUAGE, entry.language, key="language", select=select))}
+    try:
+        controls = page.evaluate(_ROW_CONTROLS_JS, row) or []
+    except Exception:  # noqa: BLE001
+        controls = []
+    for control in controls:
+        field = str(control["id"])[len(row):]
+        if control.get("checkbox"):
+            if re.search(r"fluent|native", str(control.get("label") or ""), re.I) and entry.fluent:
+                results["Fluent"] = _attempt(lambda f=field: _tick(page, row, f))
+            continue
+        if not control.get("listbox") or field == _LANGUAGE:
+            continue
+        label = str(control.get("label") or "")
+        category = next((name for name in LANGUAGE_CATEGORIES if name.casefold() in label.casefold()), "Overall")
+        level = entry.levels.get(category, "")
+        if _value(page, row, field):
+            continue
+        name = label or category
+        results[name] = bool(level) and _attempt(
+            lambda f=field, v=level: bool(select and select(page, f"[id='{row}{f}']", v, key="language_level")),
+        )
+    return results
 
 
 def fill(
@@ -252,34 +380,30 @@ def fill(
             if row is None:
                 review.append(label)
                 continue
-            results = [
-                _blank_fill(page, row, _WORK["title"], exp.title),
-                _blank_fill(page, row, _WORK["company"], exp.employer),
-                _blank_fill(page, row, _WORK["location"], exp.location),
-                _blank_fill(page, row, _WORK["description"], exp.description),
-            ]
+            results = {
+                "Job Title": _attempt(lambda: _blank_fill(page, row, _WORK["title"], exp.title)),
+                "Company": _attempt(lambda: _blank_fill(page, row, _WORK["company"], exp.employer)),
+                "Location": _attempt(lambda: _blank_fill(page, row, _WORK["location"], exp.location)),
+                "Role Description": _attempt(lambda: _blank_fill(page, row, _WORK["description"], exp.description)),
+            }
             if exp.current:
-                box = _ctl(page, row, _WORK["current"])
-                if box.count() == 1 and not box.first.is_checked():
-                    try:
-                        box.first.check(timeout=2000)
-                    except Exception:  # noqa: BLE001 - styled checkbox: its label takes the click
-                        page.locator(f"label[for='{row}{_WORK['current']}']").first.click(timeout=3000)
-                results.append(box.count() == 1 and box.first.is_checked())
-            results.append(_fill_date(page, row, "startDate", exp.start, with_month=True))
+                results["I currently work here"] = _attempt(lambda: _tick_current(page, row))
+            results["From"] = _attempt(lambda: _fill_date(page, row, "startDate", exp.start, with_month=True))
             if not exp.current:
-                results.append(_fill_date(page, row, "endDate", exp.end, with_month=True))
-            if all(results):
+                results["To"] = _attempt(lambda: _fill_date(page, row, "endDate", exp.end, with_month=True))
+            failed = [name for name, ok in results.items() if not ok]
+            if not failed:
                 progress(f"Workday: filled {label}")
                 filled.append({"label": label, "value": f"{exp.start} - {exp.end or 'present'}"})
             else:
-                review.append(label)
+                review.append(f"{label} ({', '.join(failed)})")
         except Exception as exc:  # noqa: BLE001 - preserve the rest of the batch
             progress(f"Workday employment row needs review: {exp.title} at {exp.employer} ({type(exc).__name__})")
             review.append(label)
 
     education = packet.education
-    if education and not _section_present(page, "Education", _EDU["school"]):
+    school = _school_field(page)
+    if education and not _section_present(page, "Education", school):
         progress("This Workday step has no Education section; skipping education rows")
         education = []
     if education:
@@ -287,20 +411,25 @@ def fill(
     for edu in education:
         label = f"Education: {edu.school}"
         try:
-            row = _choose_row(page, _rows(page, _EDU["school"]), (edu.school, edu.major),
-                              (_EDU["school"], _EDU["major"]))
+            row = _choose_row(page, _rows(page, school), (edu.school, edu.major), (school, _EDU["major"]))
             if row is None:
-                row = _add_row(page, "Education", _EDU["school"])
+                row = _add_row(page, "Education", _SCHOOL_FIELDS)
             if row is None:
+                progress(f"Workday: no education row available for {edu.school}")
                 review.append(label)
                 continue
-            results = [
-                _text_or_prompt(page, row, _EDU["school"], edu.school, key="school"),
-                _text_or_prompt(page, row, _EDU["major"], edu.major, key="major"),
-                _blank_fill(page, row, _EDU["gpa"], edu.gpa),
-                _fill_date(page, row, "firstYearAttended", edu.start, with_month=False),
-                _fill_date(page, row, "lastYearAttended", edu.end, with_month=False),
-            ]
+            school = _school_field(page, row)
+            # Each field on its own: a school search that fails (Upbound, 2026-09) must
+            # not leave the major, years, and degree unfilled.
+            results = {
+                "School": _attempt(lambda: _text_or_prompt(page, row, school, edu.school, key="school")),
+                "Field of Study": _attempt(lambda: _text_or_prompt(page, row, _EDU["major"], edu.major, key="major")),
+                # Most tenants do not ask for a GPA; an absent control is not a gap.
+                "GPA": _attempt(lambda: _ctl(page, row, _EDU["gpa"]).count() == 0
+                                or _blank_fill(page, row, _EDU["gpa"], edu.gpa)),
+                "From": _attempt(lambda: _fill_date(page, row, "firstYearAttended", edu.start, with_month=False)),
+                "To": _attempt(lambda: _fill_date(page, row, "lastYearAttended", edu.end, with_month=False)),
+            }
             degree = edu.degree_name or edu.degree_level or edu.degree
             if degree and not _value(page, row, _EDU["degree"]):
                 # Most specific first: "Bachelor of Science in X" -> "Bachelor of Science" -> "Bachelors".
@@ -308,17 +437,46 @@ def fill(
                               edu.degree_level, edu.degree]
                 chosen = False
                 for candidate in dict.fromkeys(c for c in candidates if c):
-                    if select and select(page, f"[id='{row}{_EDU['degree']}']", candidate, key="degree_level"):
+                    if select and _attempt(lambda c=candidate: select(page, f"[id='{row}{_EDU['degree']}']", c, key="degree_level")):
                         chosen = True
                         break
-                results.append(chosen)
-            if all(results):
+                results["Degree"] = chosen
+            failed = [name for name, ok in results.items() if not ok]
+            if not failed:
                 progress(f"Workday: filled {label}")
                 filled.append({"label": label, "value": degree})
             else:
-                review.append(label)
+                progress(f"Workday: {label} needs review ({', '.join(failed)})")
+                review.append(f"{label} ({', '.join(failed)})")
         except Exception as exc:  # noqa: BLE001
             progress(f"Workday education row needs review: {edu.school} ({type(exc).__name__})")
+            review.append(label)
+
+    languages = getattr(packet, "languages", [])
+    if languages and not _section_present(page, "Languages", _LANGUAGE):
+        languages = []
+    if languages:
+        progress("Inspecting Workday language rows")
+    for entry in languages:
+        label = f"Language: {entry.language}"
+        try:
+            row = _choose_row(page, _rows(page, _LANGUAGE), (entry.language,), (_LANGUAGE,))
+            if row is None:
+                row = _add_row(page, "Languages", _LANGUAGE)
+            if row is None:
+                progress(f"Workday: no language row available for {entry.language}")
+                review.append(label)
+                continue
+            results = _fill_language(page, row, entry, select)
+            failed = [name for name, ok in results.items() if not ok]
+            if not failed:
+                progress(f"Workday: filled {label}")
+                filled.append({"label": label, "value": entry.language})
+            else:
+                progress(f"Workday: {label} needs review ({', '.join(failed)})")
+                review.append(f"{label} ({', '.join(failed)})")
+        except Exception as exc:  # noqa: BLE001
+            progress(f"Workday language row needs review: {entry.language} ({type(exc).__name__})")
             review.append(label)
     return filled, review
 

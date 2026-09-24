@@ -661,3 +661,195 @@ was an "Analytics Intern" rejected because the model labelled seniority `mid`.
 - Shared browser actions select an explicit email sign-in or registration route, with social-only and ambiguous choosers handed to the applicant. Both engines check visible required Workday application consent and accuracy declarations, verify the checked state, and proceed to the Review step. Optional marketing consent is untouched; Workday submission remains manual.
 - Focused DOM tests ran in installed Edge. Full suite: 1249 passed, 1 skipped, 18 deselected. The configured local CDP endpoint timed out, so no live Workday draft was resumed during this change.
 - Final regression run after the year-select and consent-record adjustments: 1251 passed, 1 skipped, 18 deselected (Starlette deprecation warning only).
+
+## 2026-09-24 (evening) — How-heard "Other", Workday Country/phone code, Epic labels, upload purpose, school search; Review never advanced
+
+- **Workday Review Submit was clicked as "advance" (incident).** Review's footer Submit carries
+  the same `pageFooterNextButton` automation id as Next; `_find_advance_button`'s selector
+  fallback returned it and a verification fill **submitted the Philips application**
+  (`b298f4dc…`, final URL `?Job_Application_ID=ce8f71f8cc62900191ee0e6ac43c0000`, fill.png shows
+  "Congratulations! Thank you for applying"). The record still says `awaiting_review`. Pre-existing
+  bug, reached for the first time once the earlier steps filled. Fix: the step loop stops on
+  `workday_flow.is_review_step` before looking for an advance button, and `_find_advance_button`
+  rejects any button whose text/aria reads submit/finish. The verified engine's `advance` already
+  matched exact Next/Continue names only.
+- **Country "Vietnam" (Live Oak, Upbound).** Not a virtualised listbox as first guessed (all 250
+  options render; `select_listbox` corrects it live). The saved value re-appears after the fill, so
+  Country is re-checked (`country_mismatch`) just before a step advances and the step is rescanned
+  once. A failed correction is a review line.
+- **Phone code.** `ensure_phone_code` matched "United States" + "+1" by substring, so "United States
+  Minor Outlying Islands (+1)" made it ambiguous; it now uses `_phone_option` (whole region name;
+  "united states of america" aliased).
+- **Resume upload "Upload a file (5MB max)".** The Workday hint `input[data-automation-id='file-upload-input-ref']`
+  never equalled filler's double-quoted selector string. `filler.js` now reports `hint_key`
+  (`el.matches`) and `section` ("Resume/CV"); `_attachment_purpose` uses both.
+- **Upbound school.** The tenant's control is `education-N--school` (a prompt), not `--schoolName`,
+  so no row was found at all; `error1-education-N--school` also shares the suffix. Rows now accept
+  either name and only `<kind>-<n>--` prefixes. `select_prompt` searches `field_matcher.search_terms`
+  (full name, then campus "Irvine"), picks by `closest_option`, accepts a chip that Enter committed
+  itself (Field of Study "Computer Science" → "Computer and Information Science"), and closes a
+  single-select list before verifying. Row fields are attempted individually; absent GPA is not a gap.
+- **Epic Games.** Labels are bare ancestor text (placeholder "Enter"); names are `questions.*`;
+  React Select lacks `role=combobox`; radios are wrapped by `<label>`; education dates are
+  `educations[0].start_date.year`. `containerLabel`, name normalisation, React Select detection,
+  `optionText`, and an education-date name rule cover them. A long question never takes a
+  short-field key; `\bcity\b`/`\bstate\b`/`\bf-?1\b|\bopt\b|\bcpt\b` stop "capacity"/"optionID"
+  false matches (the F-1 rule was keying Epic's gender radios).
+- **How did you hear.** `fallback_values` tries "Other" after LinkedIn (Workday prompts, native
+  selects, React Select); `how_heard_detail` (= profile source) fills a "please specify" field that
+  follows it; Greenhouse-style rescans also run after an "Other" pick.
+- **Verified live:** Upbound Digital Commerce — Country Vietnam → United States of America, step
+  advanced (phone code OK), resume verified; education row (school chip "University of
+  California-Irvine", Field of Study, years 2023/2027, degree) filled by the repeater on the live
+  tab. Epic — names, email, phone, title, employer, LinkedIn, portfolio, education dates filled;
+  resume + cover verified; dropdown questions now carry clean labels. Not yet re-run end-to-end
+  after the Review guard and the last label fixes.
+
+## 2026-09-24 (night) — Workday: an unlabelled auth shell read as the form; Sign In first
+
+- **Excellus (`lthc`) filled only the email into Create Account.** Below ~800px wide
+  Workday's progress bar drops its step names, and for ~3s after Apply Manually the
+  page is just the shell (`applyFlowPage` and `progressBar`, no `signInContent`, no
+  label). `classify` called that `apply_form`, so `enter_application` stopped waiting and
+  auth said "authenticated" without signing in. `wait_for_step_ready` then spent its 20s
+  timeout on a screen with no footer, and filler.js typed the email. Reproduced in
+  headless Edge at 768/695px (not at 900px and up). `apply_form` now needs a footer
+  (`pageFooter*`) or a `formField-*`; a bare shell is `unknown`.
+- **Sign In first (applicant's request).** This reverses the earlier "new site creates
+  first" rule. With a vault entry or a profile password, Sign In gets one attempt.
+  A rejection on a never-used site goes to Create Account, which answers the question
+  the rejection can't: "already exists" means a wrong password, and that is handed
+  over with no second attempt. The earlier false "account exists" handoff came from
+  treating that first rejection as final. With no profile password, a new site still
+  creates first.
+- `_submit` stops waiting as soon as the form shows an error. It used to wait out 30s on
+  a rejection, which would have made Sign-In-first slow.
+
+## 2026-09-24 (late) — Degree abbreviations answered without the model
+
+- Profile `degree_level` is the bare level ("Bachelors"), so a "BS / BA / MS" list had no
+  deterministic answer and went to the resolver LLM. The packet now carries `degree_name`
+  ("Bachelor of Science", from the one resume degree at that level; "" when rows disagree),
+  tried first by `field_matcher.choice_values` (also the race_detail → race order, replacing
+  three inline copies). `match_option(key="degree_level")` falls back to `_match_degree`:
+  named degree → same name/abbreviation, else the unique bare-level option; a bare level
+  never picks a named degree. "BA/BS" is the level, not BA. `filler.js` mirrors the table
+  (`degreeOf`); `fill.py` backfills `degree_name` for packets prepared before it existed.
+
+### 2026-09-24 (late) — Workday "verify your account" is not a wrong password (Jabil)
+
+Jabil's Workday sends a verification link after Create Account and returns to its `/login`
+chooser. `_submit` never waited for `auth_chooser`, so the first run sat out the 30s settle
+and returned `failed` silently without recording the account. The next run's Sign In got
+"Verify your account before you sign in…", which read as a rejection and led to a second
+Create Account. Now, in `workday_auth.handle_workday_auth`:
+- a Sign In or Create Account alert matching `workday_flow.VERIFY_EMAIL` marks the site
+  `created` and hands over as `verification_needed` (the handoff text now covers the email link);
+- Create Account landing on `sign_in`/`auth_chooser` marks `created` and signs the new
+  account in once with its own password, unless this run already spent its Sign In attempt
+  (then it hands over as `verification_needed`, never a second attempt);
+- `classify` reads verify text inside the auth step shell as `verify_email`.
+An unrecognised end screen is now logged. Tests: `tests/test_workday_flow.py`.
+
+### 2026-09-24 — Applications page: tab liveness, review-table bulk actions
+"Continue" used to be offered whenever `fill.browser_target_id` was recorded, so a closed tab
+only failed at run time ("Review tab was closed…"). CDP's HTTP `/json/list` ids are the same
+targetIds `Target.getTargetInfo` returns, so `browser.open_target_ids()` checks liveness with one
+lock-free HTTP call (safe while a fill owns the browser). `None` (unreachable) is kept distinct
+from an empty set: unknown must not hide Continue. The stored target id is never cleared — a live
+check is cheap and a stale id is harmless. "Continue fill selected" moved from the working table
+to "Needs your review", since every stopped fill is in `REVIEW_STATUSES`; that table also gained
+"Reopen and fill selected", which confirms once and only if some selected tab may still be open.
+
+### 2026-09-24 — Workday error page: refresh everywhere, not once
+CACI fill ended `fill_failed` "No application form controls detected" with the tab on
+Workday's "Something went wrong / Please refresh the page / Error Code: VPS|…" page. The
+old single reload only ran when `wait_for_step_ready` failed, so an error that replaced the
+form at entry (Continue fill on a broken tab), after sign-in, or after Save and Continue
+fell through to the zero-controls guard. Now `workday_flow.recover_site_error` reloads
+(up to `SITE_ERROR_RELOADS`=3, backing off, waiting for a recognisable screen or the
+error again) at: `enter_application` start and after Apply/Apply Manually, after auth, the
+top of every step, and after each advance (then re-scans that step, since the draft reopens
+on whichever step it saved). A fill spends at most 6 refreshes; if the error persists it
+hands over (`awaiting_review`, tab kept) instead of `fill_failed`. `SITE_ERROR` also
+matches "Error Code: VPS|" alone.
+
+### 2026-09-24 — Self Identify, Voluntary Disclosures, Languages
+
+Self-identification answers were exact-match only, so the profile's "No" never matched
+Workday's "No, I do not have a disability and have not had one in the past" or "I am not a
+protected veteran", and `packet._eeo_value` dropped "decline" entirely. Now
+`field_matcher.eeo_pattern` maps Yes/No/decline (and race/gender prefixes) to deterministic
+regexes over normalized option text, used by `match_option` (so listboxes, radios and
+filler.js via its `eeo` payload all share it); more than one hit is no answer. "decline" is
+sent as a literal sentinel and never typed into a text box (filler.js and engine guard).
+The CC-305 disability form's unnamed per-answer checkboxes were read by filler.js as yes/no
+switches (a "No" answer left every box unticked but reported filled);
+`workday_flow.fill_choice_checkboxes` ticks the one matching option per group, and
+`fill_self_identify` signs Name (full name) and Date (today, MM/DD/YYYY via
+`workday_repeaters.fill_date_sections`), leaving Employee ID blank. Languages:
+`ApplicantProfile.languages` (language, fluent, level per Overall/Reading/Speaking/Writing/
+Comprehension) → `Packet.languages` → `workday_repeaters` `language-N--*` rows; levels match by
+rank, falling to the highest lower rank, never higher. The row/field ids were not captured
+live (no tab was open); the code finds controls by label with `language-N--language` as the
+row anchor, so a tenant that names it differently lands in review, not a wrong fill.
+
+CACI's veteran listbox (2026-09-24) offers both "I identify as a veteran, just not a
+protected veteran" and "I am not a veteran"; the "No" rule matched both, so the required
+question was left unanswered. "No" now excludes options that say the applicant is a veteran.
+
+## 2026-09-24 — Philips: a Workday step scanned in its re-render gap is left blank
+
+Philips (591991) My Information: the account's saved country (Vietnam) is applied after
+the step first paints, and Workday re-renders the whole step for it ("Family Name -
+Vietnamese", "District or Town"). `wait_for_step_ready` saw stable fields, but every pass
+(dropdowns, radios, filler.js, `country_mismatch`) ran in the re-render gap and found
+nothing; the loop then pressed Next and handed over "No application form controls
+detected". Offline, filler.js on a saved copy of the DOM with the real packet fields fills
+name/address/email/phone, and the read-only helpers on the live tab see Country=Vietnam.
+Fix (`fill.py`): a Workday step whose passes saw no control at all (`_scanned_nothing`)
+is rescanned once after 1.5 s instead of advanced (`MAX_WIZARD_STEPS` 8 -> 9 to keep the
+advance budget), and a main-frame filler.js exception is now reported in progress instead
+of silently counted as a skipped frame.
+
+## 2026-09-24 (night) — Blank profile facts: warn before a fill, report after it
+
+- **Problem.** "Are you currently legally authorized to work in the United States?" and
+  "Phone Device Type" were recognised correctly (`authorized_to_work`, `phone_device_type`),
+  but the profile left both blank, so every pass skipped them silently and Workday rejected
+  the step. The only fallback was the Autofill model, which is told never to guess work
+  authorization and can time out.
+- **Registry.** `packet.PROFILE_FIELDS` maps each profile-backed canonical key to its Profile
+  page label and section, with `common` for facts forms routinely ask. Keys outside it
+  (preferred-name tick, resume-derived employer) are never reported as blank.
+- **After a fill.** filler.js's blank-fact leftover now carries `key` and reason "Profile field
+  is blank"; `fill_dropdowns`/`fill_radios` take `blank=` (salary and phone code exempt; an
+  already-answered dropdown is not a blank); the engine uses `unsupported_fact`.
+  `packet.missing_profile` groups them per key into `FillResult.missing_profile`, `answered`
+  when the model or a saved answer filled every such question anyway.
+- **Before a fill.** `/api/applicant-profile` returns `gaps` from `build_fields` (so resume
+  contact fallbacks and defaults count as answered) plus keys stored fills met blank, ranked
+  by `seen_in`. Shown as a Profile page banner (opens the group) and an Applications notice.
+- **Defaults.** Only `phone_device_type` → "Mobile" (`packet.DEFAULTS`), with option
+  fallbacks Mobile/Cell/Mobile Phone/Cell Phone. Legal and EEO answers never default.
+- **Rejected.** Saving manual review answers back as `custom_answers` only helps oddly worded
+  questions; synonym-mapped questions are fixed once at the profile field instead.
+
+## 2026-09-25 — Eligibility questions answered from the profile; resolver follows reveals
+
+A Workday step asked "Are you over the age of 18?", "Are you legally permitted to work in the
+country where this job is located?", then (only after Yes) "If hired, can you provide proof of
+eligibility?". The model answered the first two and missed the third. Causes: no synonym for
+"permitted"/"proof of eligibility"/"over 18"; the permitted question matched the country rule
+(first match wins), so ill_dropdowns tried "United States" in a Yes/No list and
+country_mismatch read the later "Yes" as a wrong Country; profile.over_18 was never emitted;
+and esolve_step_blockers returned as soon as the page showed no errors, which on Workday is
+always true before Save and Continue, so a question revealed by the model's own answer was
+never seen. Fix: ts_hints.AUTHORIZED_TO_WORK/OVER_18 before the Country rule (proof of
+eligibility reads the same fact as authorization: provable follows from authorised; exclusions
+for veteran/degree/licence/clearance proof and "under 18"); uild_fields emits over_18
+(registered, common); ield_catalog reuses the patterns but leaves "sponsor" wording alone;
+the resolver runs up to 2 extra rounds on controls revealed after its actions (not counted
+against max_retries). Also packet.authorization_mismatch: a posting whose location names
+another country drops uthorized_to_work (fill + engine), with a review line, not a blank.
+Not chosen: a second model pass. It would still have no fact to answer from.

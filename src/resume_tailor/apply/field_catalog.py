@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from typing import Literal
 
+from resume_tailor.apply import ats_hints
 from resume_tailor.apply.field_matcher import normalize
 from resume_tailor.apply.field_types import FieldObservation
 
@@ -32,6 +33,13 @@ def classify(field: FieldObservation) -> tuple[Classification, str]:
         return "known", field.canonical_key
     if auto == "tel country code" or re.search(r"\b(calling|dialing|dialling) code\b", label):
         return "known", "phone_country_code"
+    # Before Country: "Are you legally permitted to work in the country where this job
+    # is located?" is a Yes/No question, not the Country field.
+    # Sponsorship wording keeps its own classification below.
+    if "sponsor" not in label and re.search(ats_hints.AUTHORIZED_TO_WORK, label):
+        return "known", "authorized_to_work"
+    if re.search(ats_hints.OVER_18, label):
+        return "known", "over_18"
     if "country" in label and field.control_kind in {"combobox", "native_select"}:
         if "phone" in section and bool(attrs.get("phone_sibling")):
             return "known", "phone_country_code"
@@ -109,8 +117,6 @@ def classify(field: FieldObservation) -> tuple[Classification, str]:
         return "known", "gpa"
     if "graduation" in label and "year" in label:
         return "known", "graduation_month"
-    if "legally authorized" in label or "authorized to work" in label:
-        return "known", "authorized_to_work"
     return "unknown", ""
 
 

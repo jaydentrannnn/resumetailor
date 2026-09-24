@@ -101,6 +101,11 @@ async def fill_application(
         applicant, _seeded = profile.load_profile()
     resume = data.load()
     fields = dict(pkt.fields)
+    # A posting clearly in another country than the profile's authorization: its
+    # eligibility questions are the applicant's (`packet.authorization_mismatch`).
+    authorization_elsewhere = packet.authorization_mismatch(applicant, app.location or "")
+    if authorization_elsewhere:
+        fields.pop("authorized_to_work", None)
     job_dir = config.OUTPUT_DIR / "jobs" / app.job_id
     bullets_path = job_dir / "bullets.json"
     bullets = json.loads(bullets_path.read_text(encoding="utf-8")) if bullets_path.is_file() else {}
@@ -153,6 +158,11 @@ async def fill_application(
             item.label for item in outcomes.values()
             if item.required and item.state not in {"verified_filled", "preserved"}
         ]
+        result.missing_profile = packet.missing_profile(
+            [{"key": item.canonical_key, "label": item.label} for item in outcomes.values()
+             if item.reason_code == "unsupported_fact"],
+            {item.label for item in outcomes.values() if item.state == "verified_filled"},
+        )
         app.fill = result
         store.upsert(app)
         last_checkpoint = time.monotonic()
@@ -294,6 +304,9 @@ async def fill_application(
                         value = adapter.value_for(field, key, pkt, fields) if policy == "known" else ""
                         if key == "race" and fields.get("race_detail"):
                             value = fields["race_detail"]
+                        # "decline" picks a decline option; it is never typed into a text box.
+                        if value == "decline" and field.control_kind in {"text", "textarea"}:
+                            value = ""
                         generated = False
                         if not value and not field.current_value and field_catalog.may_generate_written_answer(field):
                             progress(f"Step {step_number}: drafting {field.label}")
@@ -318,7 +331,12 @@ async def fill_application(
                                 label=field.label, canonical_key=key,
                                 state="unanswered", required=field.required,
                                 observed_value=field.current_value,
-                                reason_code="unsupported_fact" if policy == "known" else "unknown_field",
+                                reason_code=(
+                                    "authorization_elsewhere"
+                                    if authorization_elsewhere and key == "authorized_to_work"
+                                    else "unsupported_fact" if policy == "known"
+                                    else "unknown_field"
+                                ),
                             ))
                             continue
                         if key == "phone":

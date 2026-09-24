@@ -197,8 +197,12 @@ export type ApplicantProfile = {
   workday_email?: string;
   workday_password?: string;
   eeo: { gender: string; race: string; race_detail?: string; hispanic_latino?: boolean | null; veteran: string; disability: string };
+  /** Spoken languages (`profile.LanguageEntry`); absent on profiles saved before it existed. */
+  languages?: ApplicantLanguage[];
   custom_answers: Record<string, string>;
 };
+
+export type ApplicantLanguage = { language: string; fluent: boolean; levels: Record<string, string> };
 
 export type ApplyFieldOutcome = {
   field_id?: string;
@@ -298,7 +302,19 @@ export type ApplicationRow = {
     field_outcomes?: ApplyFieldOutcome[];
     review_snapshot_id?: string;
     review_fields?: ApplyReviewField[];
+    missing_profile?: MissingProfileField[];
   } | null;
+};
+
+/** Questions a fill recognised as a profile fact the profile leaves blank. */
+export type MissingProfileField = {
+  key: string;
+  field_label: string;
+  section: string;
+  path: string;
+  questions: string[];
+  /** Filled anyway this time (a saved answer or the Autofill model). */
+  answered: boolean;
 };
 
 export type ApplicationsList = {
@@ -1499,23 +1515,34 @@ export function rejectLibraryProposals(proposalIds: string[]): Promise<LibrarySt
   });
 }
 
-/** Load the applicant form-filling profile for the active workspace. */
-export function getApplicantProfile(): Promise<{
+/** A blank profile field that application forms ask for. */
+export type ProfileGap = {
+  key: string;
+  label: string;
+  section: string;
+  /** Profile page tab holding the field. */
+  path: string;
+  /** Stored applications whose last fill met this question with the field blank. */
+  seen_in: number;
+};
+
+export type ApplicantProfileResponse = {
   workspace_id: string | null;
   profile: ApplicantProfile;
   seeded: boolean;
   workday_password_set: boolean;
-}> {
+  gaps?: ProfileGap[];
+  /** Answers used when a harmless field is blank, keyed by canonical field. */
+  defaults?: Record<string, string>;
+};
+
+/** Load the applicant form-filling profile for the active workspace. */
+export function getApplicantProfile(): Promise<ApplicantProfileResponse> {
   return request("/api/applicant-profile");
 }
 
 /** Persist the applicant form-filling profile. */
-export function putApplicantProfile(profile: ApplicantProfile): Promise<{
-  workspace_id: string | null;
-  profile: ApplicantProfile;
-  seeded: boolean;
-  workday_password_set: boolean;
-}> {
+export function putApplicantProfile(profile: ApplicantProfile): Promise<ApplicantProfileResponse> {
   return request("/api/applicant-profile", {
     method: "PUT",
     body: JSON.stringify({ profile }),
@@ -1608,6 +1635,11 @@ export function getDailyStatus(): Promise<DailyStatus> {
 /** Probe host browser CDP reachability (Edge recommended — see README). */
 export function getBrowserStatus(): Promise<BrowserStatus> {
   return request("/api/browser/status");
+}
+
+/** Open browser tab ids; `reachable: false` means tab state is unknown. */
+export function getOpenTabs(): Promise<{ reachable: boolean; target_ids: string[] }> {
+  return request("/api/applications/open-tabs");
 }
 
 /** CSV download URL for the applications tracker export. */

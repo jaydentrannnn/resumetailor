@@ -56,6 +56,7 @@ CANONICAL_FIELD_KEYS: frozenset[str] = frozenset(
         "salary_yearly_number",
         "willing_to_relocate",
         "how_heard",
+        "how_heard_detail",
         "gender",
         "race",
         "race_detail",
@@ -64,6 +65,8 @@ CANONICAL_FIELD_KEYS: frozenset[str] = frozenset(
         "disability_status",
         "current_company",
         "current_title",
+        "languages",
+        "over_18",
     }
 )
 
@@ -72,14 +75,40 @@ _SPECIAL_HINT_KEYS: frozenset[str] = frozenset(
     {"submit", "confirmation_text", "resume_upload"}
 )
 
+#: "Authorized / permitted / eligible to work", and "can you provide proof of
+#: eligibility" (Workday reveals it after a Yes): proving eligibility follows from being
+#: authorised, so both read the same profile fact. Proof of a degree, a licence or
+#: veteran status is not work authorization. Also used by ``field_catalog.classify``.
+AUTHORIZED_TO_WORK = (
+    r"^(?![\s\S]*(?:veteran|degree|enrol|vaccin|licen[sc]e|clearance))"
+    r"[\s\S]*(?:(?:authori[sz]ed|permitted|eligible|allowed)\s*to\s*(?:legally\s*)?work"
+    r"|right\s*to\s*work|(?:employment|work)\s*eligibility"
+    r"|(?:proof|evidence|documentation|documents?)\s*(?:of|for|showing|verifying)\s*"
+    r"(?:your\s*)?(?:employment\s*|work\s*)?(?:eligibility|authori[sz]ation|right\s*to\s*work"
+    r"|identity\s*and\s*(?:employment\s*)?eligibility))"
+)
+
+#: "Are you over the age of 18?" and its variants; never "under 18", whose Yes/No is
+#: the inverse of the profile answer.
+OVER_18 = (
+    r"^(?![\s\S]*\bunder\b)[\s\S]*(?:\b(?:over|at\s*least|older\s*than)\s*(?:the\s*age\s*of\s*)?18\b"
+    r"|\b18\s*(?:years?|yrs?)\s*(?:of\s*age|old|or\s*older)|\bage\s*of\s*(?:18|majority)\b"
+    r"|legal\s*(?:working\s*)?age)"
+)
+
 #: Ordered (regex, canonical_key) pairs for label matching in ``filler.js``.
 #: F-1/OPT/CPT must win before the generic sponsorship rule (plan section 3.2).
 SYNONYMS: list[tuple[str, str]] = [
-    (r"f-1|opt|cpt", "f1_opt_eligible"),
-    (r"current(?:ly)?\s*(?:or|and|/)\s*future.*sponsor|now\s*or\s*in\s*the\s*future.*sponsor", "requires_sponsorship_any"),
+    # Whole words: "opt" inside "optionID" / "optional" is not OPT.
+    (r"\bf-?1\b|\bopt\b|\bcpt\b", "f1_opt_eligible"),
+    (r"current(?:ly)?\s*(?:or|and|/)\s*future.*sponsor|now,?\s*or\s*(?:will\s*you\s*)?in\s*the\s*future.*sponsor", "requires_sponsorship_any"),
+    # A free-text "What languages do you speak?"; not Workday's per-row "Language"
+    # dropdown (`workday_repeaters`) and never programming languages.
+    (r"^(?!.*programming).*(?:languages?\b.{0,30}\b(?:speak|spoken|fluent)|\bspoken languages?\b|\bspeak\b.{0,30}\blanguages\b)", "languages"),
     (r"phone\s*(?:device\s*)?type", "phone_device_type"),
     (r"notice\s*period|weeks\s*of\s*notice", "notice_period"),
-    (r"(?:legally\s*)?authorized\s*to\s*work|right\s*to\s*work", "authorized_to_work"),
+    (AUTHORIZED_TO_WORK, "authorized_to_work"),
+    (OVER_18, "over_18"),
     (r"country\s*(?:/|or)?\s*(?:dial(?:ling|ing)?\s*)?code|dial(?:ling|ing)?\s*code|calling\s*code|tel-country-code", "phone_country_code"),
     # "Phone Extension" is its own (optional) field; no profile fact feeds it.
     (r"\bextension\b|\bext\.?$", "phone_extension"),
@@ -91,6 +120,8 @@ SYNONYMS: list[tuple[str, str]] = [
     (r"sponsorship", "requires_sponsorship"),
     (r"when can you start|start date|available to start|availability", "earliest_start"),
     (r"graduation|expected graduation", "graduation_month"),
+    # "If other, how did you hear about us? Please specify" is the free-text follow-up.
+    (r"(?:hear|source|referr).{0,40}specify|specify.{0,40}(?:hear|source|referr)", "how_heard_detail"),
     (r"how did you hear", "how_heard"),
     (r"gender", "gender"),
     (r"hispanic|latino", "hispanic_latino"),
@@ -112,13 +143,14 @@ SYNONYMS: list[tuple[str, str]] = [
     (r"email", "email"),
     (r"address line 1|street address", "address_line1"),
     (r"address line 2|apt|suite", "address_line2"),
-    (r"city", "city"),
-    (r"state|province", "state"),
+    # Whole words: "capacity" is not a city, "statement" is not a state.
+    (r"\bcity\b", "city"),
+    (r"\bstate\b|province", "state"),
     (r"zip|postal", "postal_code"),
     (r"country", "country"),
     (r"website|url", "website"),
     (r"degree", "degree_level"),
-    (r"major|field of study", "major"),
+    (r"major|field of study|discipline", "major"),
     (r"school|university|college", "school"),
     (r"gpa", "gpa"),
 ]

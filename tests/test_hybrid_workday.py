@@ -284,6 +284,46 @@ def test_after_a_rejected_advance_only_invalid_fields_are_retried(resolver_page)
     assert "#b" in sent and "#a" not in sent
 
 
+def test_a_question_revealed_by_the_models_answer_is_asked_next(resolver_page, monkeypatch):
+    """Workday shows no error for a follow-up until Save and Continue: the resolver must
+    look for it after its own answer instead of stopping when the page reads clean."""
+    state = resolver_page
+    state.unresolved = [_field("#permitted", "Legally permitted to work?"), _field("#other", "Optional pick")]
+    proof = _field("#proof", "If hired, can you provide proof of eligibility?")
+
+    def execute(_page, action):
+        state.unresolved = [f for f in state.unresolved if f["selector"] != action.selector]
+        if action.selector == "#permitted":
+            state.unresolved.append(dict(proof))
+        return True
+
+    monkeypatch.setattr(hybrid_resolver, "execute_action", execute)
+    ledger = hybrid_resolver.StepLedger(options={
+        "#permitted": ["Yes", "No"], "#proof": ["Yes", "No"], "#other": ["A", "B"],
+    })
+    state.replies.append(hybrid_resolver.StepResolution(actions=[hybrid_resolver.FieldAction(
+        label="Legally permitted to work?", selector="#permitted", action="select_combobox", value="Yes")]))
+    state.replies.append(hybrid_resolver.StepResolution(actions=[hybrid_resolver.FieldAction(
+        label="Proof", selector="#proof", action="select_combobox", value="Yes")]))
+    messages: list[str] = []
+    _resolve(state, ledger, messages)  # max_retries=1: the reveal round is extra
+    assert len(state.calls) == 2
+    second = state.calls[1]["messages"][0]["content"]
+    # Only the revealed question; not the field the model already declined.
+    assert "#proof" in second and "#other" not in second and "#permitted" not in second
+    assert any("revealed 1 new question" in m for m in messages)
+    assert "#proof" in ledger.done
+
+
+def test_no_reveal_means_no_extra_model_call(resolver_page):
+    state = resolver_page
+    state.unresolved = [_field("#state", "State")]
+    state.replies.append(hybrid_resolver.StepResolution(actions=[hybrid_resolver.FieldAction(
+        label="State", selector="#state", action="select_combobox", value="California")]))
+    _resolve(state, hybrid_resolver.StepLedger(options={"#state": ["California"]}))
+    assert len(state.calls) == 1
+
+
 def test_errors_with_nothing_actionable_do_not_call_the_model(resolver_page, monkeypatch):
     state = resolver_page
     monkeypatch.setattr(

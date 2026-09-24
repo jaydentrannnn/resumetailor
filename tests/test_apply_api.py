@@ -65,6 +65,38 @@ def test_applicant_profile_round_trip(client, tmp_path, monkeypatch):
 
     again = c.get("/api/applicant-profile")
     assert again.json()["profile"]["first_name"] == "Ada"
+    assert again.json()["profile"]["languages"] == []
+
+    body["profile"]["languages"] = [{"language": "Vietnamese", "fluent": True, "levels": {"Speaking": "Native"}}]
+    c.put("/api/applicant-profile", json={"profile": body["profile"]})
+    assert c.get("/api/applicant-profile").json()["profile"]["languages"] == body["profile"]["languages"]
+
+
+def test_applicant_profile_lists_blank_fields_forms_ask_for(client, tmp_path, monkeypatch):
+    """Gaps rank what stored fills actually met first; answered or defaulted fields drop out."""
+    c, _q = client
+    path = tmp_path / "applicant_profile.json"
+    monkeypatch.setattr(profile_mod.config, "APPLICANT_PROFILE_PATH", path)
+    met = {"key": "notice_period", "field_label": "Notice period", "questions": ["Notice period"]}
+    apply_store.save_all({
+        "a": apply_store.Application(source="t", source_job_id="a", company="A", role="R",
+                                     fill=apply_store.FillResult(missing_profile=[met])),
+        "b": apply_store.Application(source="t", source_job_id="b", company="B", role="R"),
+    })
+
+    body = c.get("/api/applicant-profile").json()
+    keys = [gap["key"] for gap in body["gaps"]]
+    assert keys[0] == "notice_period"  # not a common field, but a fill met it blank
+    assert body["gaps"][0]["seen_in"] == 1
+    assert "authorized_to_work" in keys
+    assert "phone_device_type" not in keys
+    assert body["defaults"] == {"phone_device_type": "Mobile"}
+    assert next(gap for gap in body["gaps"] if gap["key"] == "authorized_to_work")["path"] == "/profile/application"
+
+    body["profile"]["authorized_to_work"] = True
+    body["profile"]["notice_period"] = "Two weeks"
+    saved = c.put("/api/applicant-profile", json={"profile": body["profile"]}).json()
+    assert not {"authorized_to_work", "notice_period"} & {gap["key"] for gap in saved["gaps"]}
 
 
 def test_applicant_profile_redacts_and_preserves_workday_password(client, tmp_path, monkeypatch):
@@ -188,6 +220,21 @@ def test_browser_status_shape(client):
     body = res.json()
     assert "reachable" in body
     assert "cdp_url" in body
+
+
+@pytest.mark.parametrize(("ids", "expected"), [
+    ({"tab-b", "tab-a"}, {"reachable": True, "target_ids": ["tab-a", "tab-b"]}),
+    (set(), {"reachable": True, "target_ids": []}),
+    (None, {"reachable": False, "target_ids": []}),
+])
+def test_open_tabs_route_separates_no_tabs_from_unknown(client, monkeypatch, ids, expected):
+    """An unreachable browser is "unknown", never "every tab closed"."""
+    from resume_tailor.apply import browser as browser_mod
+    c, _q = client
+    monkeypatch.setattr(browser_mod, "open_target_ids", lambda: ids)
+    res = c.get("/api/applications/open-tabs")
+    assert res.status_code == 200
+    assert res.json() == expected
 
 
 def test_start_apply_operation_route(client, monkeypatch):

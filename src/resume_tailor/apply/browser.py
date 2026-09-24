@@ -89,6 +89,27 @@ def browser_status() -> BrowserStatus:
         return BrowserStatus(reachable=False, error=str(exc), cdp_url=configured)
 
 
+def open_target_ids() -> set[str] | None:
+    """Target ids of the browser's open tabs, or ``None`` when it is unreachable.
+
+    ``/json/list`` ids are the same targetIds ``target_id`` records, so this tells
+    whether a retained application tab still exists — one HTTP call, no Playwright,
+    safe while a fill owns the browser. ``None`` means unknown, not "no tabs".
+    """
+    try:
+        resp = httpx.get(f"{effective_cdp_url()}/json/list", timeout=1.0)
+        resp.raise_for_status()
+        targets = resp.json()
+    except Exception:  # noqa: BLE001 - unreachable browser is an expected state
+        return None
+    if not isinstance(targets, list):
+        return None
+    return {
+        str(target["id"]) for target in targets
+        if isinstance(target, dict) and target.get("type") == "page" and target.get("id")
+    }
+
+
 @contextmanager
 def cdp_browser() -> Iterator[Any]:
     """Connect to the host browser over CDP; yield a Playwright ``Browser``.

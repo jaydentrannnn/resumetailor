@@ -2,6 +2,7 @@ import { useState } from "react";
 import type { ApplicationRow, ApplyFieldOutcome, ApplyReviewField } from "../api";
 import { AttachmentResults } from "./AttachmentResults";
 import { FieldCorrectionRow } from "./FieldCorrectionRow";
+import { MissingProfileFields } from "./MissingProfileFields";
 import { Pagination } from "./TableControls";
 import { reviewGroup, type ReviewGroup } from "../lib/reviewGroups";
 
@@ -14,9 +15,11 @@ export function reviewErrorMessage(message: string): string {
   return message;
 }
 
-export function ApplicationReview({ application, disabled, error, onRefresh, onCorrect }: {
+export function ApplicationReview({ application, disabled, error, onRefresh, onCorrect, tabClosed = false }: {
   application: ApplicationRow;
   disabled: boolean;
+  /** The recorded tab is known to be closed: nothing left to refresh. */
+  tabClosed?: boolean;
   error?: string | null;
   onRefresh: () => void;
   onCorrect: (field: ApplyReviewField, value: string | null, optionIds: string[]) => void;
@@ -57,12 +60,13 @@ export function ApplicationReview({ application, disabled, error, onRefresh, onC
   return <div className="rounded-md border border-line bg-bg p-3">
     <div className="flex flex-wrap items-center justify-between gap-2">
       <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-muted">Observed Fill Result</h3>
-      {fill.browser_target_id && <button type="button" className="rounded border border-line px-2 py-1 text-xs disabled:opacity-50" disabled={disabled} onClick={onRefresh}>Refresh fields</button>}
+      {fill.browser_target_id && !tabClosed && <button type="button" className="rounded border border-line px-2 py-1 text-xs disabled:opacity-50" disabled={disabled} onClick={onRefresh}>Refresh fields</button>}
     </div>
     {disabled && <p className="mt-2 text-xs text-ink-muted">Refresh fields and corrections are available when the current Apply operation finishes. You can still use Review tab for completed applications.</p>}
     {error && <p role="alert" className="mt-2 text-xs text-danger">{reviewErrorMessage(error)}</p>}
     <p className="mt-2 text-sm font-medium text-ink">{summary}</p>
     {(fill.error || fill.handoff_reason) && <details className="mt-1 text-xs text-ink-muted"><summary>Recorded attempt notes</summary><p>{fill.error || fill.handoff_reason}</p></details>}
+    <MissingProfileFields items={fill.missing_profile ?? []} />
     {entries.length > 0 ? <div className="mt-3 space-y-3"><div className="flex flex-wrap gap-2 text-xs"><button className={activeFilter === "all" ? "font-semibold text-accent" : ""} onClick={() => { setFilter("all"); setPage(0); }}>All recorded fields ({entries.length})</button>{(Object.keys(groupLabels) as ReviewGroup[]).map(group => { const count = entries.filter(entry => reviewGroup(entry.field, entry.outcome) === group).length; return count ? <button key={group} className={activeFilter === group ? "font-semibold text-accent" : ""} onClick={() => { setFilter(group); setPage(0); }}>{groupLabels[group]} ({count})</button> : null; })}</div><Pagination page={page} size={size} total={visible.length} onPage={setPage} onSize={value => { setSize(value); setPage(0); }} /><ul className="space-y-2">{pageRows.map(renderEntry)}</ul><Pagination page={page} size={size} total={visible.length} onPage={setPage} onSize={value => { setSize(value); setPage(0); }} /></div> : <div className="mt-2 space-y-1 text-xs text-ink-muted">
       {(fill.required_empty?.length ?? 0) > 0 && <p className="text-danger">Missing: {fill.required_empty?.join(", ")}</p>}
       {fill.leftovers?.map((item, index) => <p key={`${item.label}-${index}`}>{item.required ? "Required" : "Optional"}: {item.label || "Unlabeled field"} — {item.reason || "Needs review"}</p>)}

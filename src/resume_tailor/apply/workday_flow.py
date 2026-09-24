@@ -12,7 +12,10 @@ import contextlib
 import re
 import time
 from collections.abc import Callable, Iterable
+from datetime import date
 from typing import Any, Literal
+
+from resume_tailor.apply import field_matcher
 
 WorkdayState = Literal[
     "posting", "start_dialog", "auth_chooser", "sign_in", "create_account", "otp", "verify_email",
@@ -46,13 +49,15 @@ _UNAVAILABLE = re.compile(
     re.I,
 )
 _ALREADY_APPLIED = re.compile(r"you(?:'ve| have) already applied", re.I)
-_VERIFY_EMAIL = re.compile(
+VERIFY_EMAIL = re.compile(
     r"verify your (?:account|email)|verification (?:email|link) (?:has been|was) sent|"
     r"check your email to (?:verify|activate)",
     re.I,
 )
 #: Workday's own failure page ("Something went wrong ... Error Code: VPS|...").
-SITE_ERROR = re.compile(r"something went wrong\s+please refresh the page", re.I)
+SITE_ERROR = re.compile(r"something went wrong\s+please refresh the page|error code:\s*vps\|", re.I)
+#: Reloads one ``recover_site_error`` call may spend before handing the tab over.
+SITE_ERROR_RELOADS = 3
 _AUTH_IDS = {
     "SignInWithEmailButton", "password", "verifyPassword", "signInSubmitButton",
     "createAccountSubmitButton",
@@ -78,9 +83,17 @@ def classify(snap: dict[str, Any]) -> WorkdayState:
         # The Create Account/Sign In step paints its progress bar before its form; until
         # the form shows, this is not an application form.
         if "signInContent" in ids or re.search(r"create account|sign in", active_step(snap), re.I):
-            return "unknown"
-        return "apply_form"
-    if _VERIFY_EMAIL.search(text):
+            return "verify_email" if VERIFY_EMAIL.search(text) else "unknown"
+        # Below ~800px wide the progress bar drops its step names, so an empty shell cannot
+        # be told from a loading Create Account step by its label. A form step has a footer
+        # or a field; the bare shell is still loading.
+        if ids & {"pageFooter", "pageFooterNextButton", "pageFooterSubmitButton"} or any(
+            item.startswith("formField-") for item in ids
+        ):
+            return "apply_form"
+        # Create Account can leave the auth step with only "verify your account" in it.
+        return "verify_email" if VERIFY_EMAIL.search(text) else "unknown"
+    if VERIFY_EMAIL.search(text):
         return "verify_email"
     if _ALREADY_APPLIED.search(text):
         return "already_applied"
@@ -262,6 +275,45 @@ def _remaining_ms(deadline: float, cap: int) -> int:
     return max(500, min(cap, int((deadline - time.monotonic()) * 1000)))
 
 
+def is_site_error(snap: dict[str, Any]) -> bool:
+    """Workday's "Something went wrong ... Error Code: VPS|..." page."""
+    return bool(SITE_ERROR.search(str(snap.get("text") or "")))
+
+
+def recover_site_error(
+    page: Any,
+    *,
+    deadline: float,
+    progress: Callable[[str], None] = lambda _msg: None,
+    attempts: int = SITE_ERROR_RELOADS,
+) -> tuple[bool, int]:
+    """Reload while Workday shows its error page, as the page itself asks.
+
+    The error is usually transient and a reload restores the saved draft. After each
+    reload, waits until the page is either a recognisable screen or the error again, so a
+    half-painted shell is not mistaken for recovery. Returns ``(recovered, reloads)``;
+    ``recovered`` is True as soon as the error page is gone (at once when it never showed).
+    """
+    reloads = 0
+    while is_site_error(snapshot(page)):
+        if reloads >= attempts or time.monotonic() >= deadline:
+            return False, reloads
+        reloads += 1
+        progress(f"Workday showed 'Something went wrong' (error code); refreshing the page ({reloads}/{attempts})")
+        with contextlib.suppress(Exception):  # the snapshot below decides
+            page.reload(wait_until="domcontentloaded", timeout=_remaining_ms(deadline, 30000))
+        page.wait_for_timeout(500 * reloads)  # back off a little more each time
+        stop = min(deadline, time.monotonic() + 15)
+        while time.monotonic() < stop:
+            snap = snapshot(page)
+            if is_site_error(snap) or classify(snap) != "unknown":
+                break
+            page.wait_for_timeout(250)
+    if reloads:
+        progress("Workday page recovered after refreshing")
+    return True, reloads
+
+
 def _new_tab(page: Any, context: Any, before: list[Any], deadline: float) -> Any:
     """Follow Apply into a new tab when a tenant opens one; otherwise stay put."""
     try:
@@ -289,6 +341,7 @@ def enter_application(
     """
     past_entry = {"auth_chooser", "sign_in", "create_account", "otp", "verify_email", "apply_form"}
     terminal = past_entry | {"already_applied", "unavailable"}
+    recover_site_error(page, deadline=deadline, progress=progress)
     state = wait_for_state(
         page, terminal | {"posting", "start_dialog"}, timeout_s=15, deadline=deadline,
     )
@@ -315,6 +368,11 @@ def enter_application(
             return page, state
         manual.first.click(timeout=_remaining_ms(deadline, 5000))
         state = wait_for_state(page, terminal, timeout_s=20, deadline=deadline)
+    if state not in terminal:
+        # The error page can also replace the form right after Apply / Apply Manually.
+        recovered, reloads = recover_site_error(page, deadline=deadline, progress=progress)
+        if recovered and reloads:
+            state = wait_for_state(page, terminal, timeout_s=20, deadline=deadline)
     return page, state
 
 
@@ -414,16 +472,31 @@ _OPTIONS_JS = r"""(id) => {
 }"""
 
 
+def _pick_listbox_option(options: list[dict[str, Any]], value: str, key: str) -> tuple[str, str] | None:
+    """(label, id) of the one option meaning ``value``, or None."""
+    from resume_tailor.apply.hybrid_resolver import _option_match  # noqa: PLC0415
+
+    usable = [o for o in options if not o["disabled"] and not _PLACEHOLDER.match(o["label"])]
+    # "Bachelor of Science (B.S)" is matched on its name; the abbreviation is decoration.
+    bare = [re.sub(r"\s*\([^)]*\)\s*$", "", o["label"]) for o in usable]
+    chosen = _option_match([o["label"] for o in usable], value, key=key)
+    if not chosen:
+        by_bare = _option_match(bare, value, key=key)
+        if by_bare and bare.count(by_bare) == 1:
+            chosen = usable[bare.index(by_bare)]["label"]
+    if not chosen:
+        return None
+    return chosen, next(o["id"] for o in usable if o["label"] == chosen)
+
+
 def select_listbox(page: Any, selector: str, value: str, *, key: str = "") -> bool:
     """Commit one option of a Workday listbox button, verified by the button's new text.
 
-    Options are read in a single evaluate (country lists have ~250 entries) and matched
-    with the same exact/alias rules as every other choice (`field_matcher.match_option`).
-    Workday updates the button text a few hundred ms after the click, so the result is
-    polled rather than read once.
+    Options are read in a single evaluate (country lists have ~250 entries, all rendered)
+    and matched with the same exact/alias rules as every other choice
+    (`field_matcher.match_option`). Workday updates the button text a few hundred ms
+    after the click, so the result is polled rather than read once.
     """
-    from resume_tailor.apply.hybrid_resolver import _option_match  # noqa: PLC0415
-
     trigger = page.locator(selector).first
     try:
         trigger.click(timeout=3000)
@@ -435,18 +508,11 @@ def select_listbox(page: Any, selector: str, value: str, *, key: str = "") -> bo
             if options:
                 break
             page.wait_for_timeout(250)
-        usable = [o for o in options or [] if not o["disabled"] and not _PLACEHOLDER.match(o["label"])]
-        # "Bachelor of Science (B.S)" is matched on its name; the abbreviation is decoration.
-        bare = [re.sub(r"\s*\([^)]*\)\s*$", "", o["label"]) for o in usable]
-        chosen = _option_match([o["label"] for o in usable], value, key=key)
-        if not chosen:
-            by_bare = _option_match(bare, value, key=key)
-            if by_bare and bare.count(by_bare) == 1:
-                chosen = usable[bare.index(by_bare)]["label"]
-        if not chosen:
+        picked = _pick_listbox_option(options or [], value, key)
+        if picked is None:
             trigger.press("Escape")
             return False
-        option_id = next(o["id"] for o in usable if o["label"] == chosen)
+        chosen, option_id = picked
         page.locator(f"[id='{option_id}']").first.click(timeout=3000)
         for _ in range(12):
             if (trigger.inner_text() or "").strip() == chosen:
@@ -468,12 +534,42 @@ def _same_option(current: str, value: str, key: str) -> bool:
 
 def key_for_label(label: str, synonyms: list[tuple[str, str]]) -> str | None:
     low = label.casefold()
-    if "future" in low and "sponsor" in low:
+    if "future" in low and "sponsor" in low and not re.search(r"\bnow\b|\bcurrent", low):
         return "requires_sponsorship_future"
     for pattern, key in synonyms:
         if re.search(pattern, low, re.I):
             return key
     return None
+
+
+def country_mismatch(page: Any, fields: dict[str, str], *, synonyms: list[tuple[str, str]]) -> str | None:
+    """The Country dropdown's current text when it disagrees with the profile, else None.
+
+    Checked again just before a step advances: Live Oak's and Upbound's Country read
+    "Vietnam" (the account's saved address, 2026-09) after the fill, although the choice
+    commits correctly when made — so the step is re-checked, not trusted.
+    """
+    value = fields.get("country", "")
+    if not value:
+        return None
+    for item in dropdowns(page):
+        if key_for_label(item["label"], synonyms) != "country":
+            continue
+        current = str(item.get("current") or "")
+        if current and not _PLACEHOLDER.match(current) and not _same_option(current, value, "country"):
+            return current
+    return None
+
+
+#: Keys these passes leave alone on purpose: salary is a per-posting answer, and the
+#: phone code has its own step (`ensure_phone_code`).
+_BLANK_EXEMPT = frozenset({"salary_expectation", "phone_country_code"})
+
+
+def _note_blank(blank: list[dict[str, str]] | None, key: str, label: str, unanswered: bool) -> None:
+    """Record an unanswered control whose profile fact is empty."""
+    if blank is not None and unanswered:
+        blank.append({"key": key, "label": label})
 
 
 def fill_dropdowns(
@@ -484,8 +580,13 @@ def fill_dropdowns(
     select: Callable[..., bool],
     progress: Callable[[str], None] = lambda _msg: None,
     deadline: float | None = None,
+    review: list[str] | None = None,
+    blank: list[dict[str, str]] | None = None,
 ) -> list[dict[str, Any]]:
     """Select known profile facts in Workday dropdowns; return what was committed.
+
+    A blank dropdown whose label maps to a profile fact the profile leaves empty is
+    recorded in ``blank`` (`fill._missing_profile`), not skipped silently.
 
     Blank ("Select One") dropdowns only — except Country, which Workday pre-fills from
     the browser locale rather than from the applicant, and which re-renders the whole
@@ -506,15 +607,17 @@ def fill_dropdowns(
                 continue
             key = key_for_label(item["label"], synonyms)
             value = fields.get(key or "", "")
-            if not key or not value or key in {"salary_expectation", "phone_country_code"}:
-                continue
             current = str(item.get("current") or "")
             is_blank = not current or bool(_PLACEHOLDER.match(current))
+            if not key or key in _BLANK_EXEMPT:
+                continue
+            if not value:
+                _note_blank(blank, key, item["label"], is_blank)
+                continue
             if not is_blank and not (key == "country" and not _same_option(current, value, key)):
                 continue
             tried.add(selector)
-            candidates = [fields.get("race_detail", ""), value] if key == "race" else [value]
-            for candidate in [c for c in candidates if c]:
+            for candidate in field_matcher.choice_values(key, fields):
                 if select(page, selector, candidate, key=key):
                     progress(f"Workday: selected {item['label']} = {candidate}")
                     committed.append(
@@ -522,6 +625,14 @@ def fill_dropdowns(
                     )
                     progressed = True
                     break
+            if key == "country" and not progressed and review is not None:
+                # A wrong country re-labels every name/address field and empties the
+                # phone code; it must not pass silently.
+                review.append(
+                    f"Country: no option matching {value}" if is_blank
+                    else f"Country is {current}; profile says {value}"
+                )
+                progress(f"Workday: could not change Country from {current or 'blank'} to {value}")
             if progressed and key == "country":
                 page.wait_for_timeout(800)  # the form re-renders under the new country
                 break
@@ -584,12 +695,14 @@ def fill_radios(
     company: str,
     employers: Iterable[str],
     progress: Callable[[str], None] = lambda _msg: None,
+    blank: list[dict[str, str]] | None = None,
 ) -> list[dict[str, Any]]:
     """Answer unanswered Yes/No radio questions from profile facts, and only those.
 
     "Have you ever been employed by <company>?" is answered from the applicant's own
-    experience entries; every other question needs a profile fact whose value equals one
-    option label exactly. Anything else stays for the resolver or the applicant.
+    experience entries; every other question needs a profile fact whose value names one
+    option (exactly, or a self-identification answer's long form). Anything else stays
+    for the resolver or the applicant.
     """
     try:
         groups = page.evaluate(RADIOS_JS) or []
@@ -605,9 +718,16 @@ def fill_radios(
         else:
             key = key_for_label(question, synonyms) or ""
             value = fields.get(key, "")
-        if not key or not value or key in {"salary_expectation"}:
+        if not key or key in _BLANK_EXEMPT:
             continue
-        matches = [opt for opt in options if str(opt.get("label", "")).casefold() == value.casefold()]
+        if not value:
+            _note_blank(blank, key, question, True)
+            continue
+        labels = [str(opt.get("label", "")) for opt in options]
+        # Exact text, or a self-identification answer's long form ("No" -> "I am not a
+        # protected veteran", `field_matcher.eeo_pattern`).
+        chosen = field_matcher.closest_option(labels, value, key=key)
+        matches = [opt for opt in options if str(opt.get("label", "")) == chosen] if chosen else []
         if len(matches) != 1:
             continue
         try:
@@ -620,6 +740,187 @@ def fill_radios(
             committed.append({"key": key, "label": question, "value": matches[0]["label"],
                               "selector": f"[id='{matches[0]['id']}']"})
     return committed
+
+
+# -- Self-identification: checkbox answers, Self Identify step ---------------------------
+
+#: Groups of visible checkboxes inside one Workday form field (or fieldset), with the
+#: question and each option's label: the disability form ("Yes, I have a disability" /
+#: "No, I do not have a disability" / "I do not want to answer") and tenants that render
+#: race or veteran status as checkboxes.
+CHECKBOX_GROUPS_JS = r"""() => {
+  const vis = e => !!(e && (e.offsetWidth || e.offsetHeight || e.getClientRects().length));
+  const root = document.querySelector("[data-automation-id='applyFlowPage']") || document;
+  const groups = new Map();
+  for (const box of root.querySelectorAll("input[type='checkbox']")) {
+    const label = box.id && document.querySelector(`label[for="${CSS.escape(box.id)}"]`);
+    if (!box.id || !(vis(box) || vis(label))) continue;
+    const container = box.closest("[data-automation-id^='formField-'], fieldset, [role='group']") || box.parentElement;
+    if (!groups.has(container)) groups.set(container, []);
+    groups.get(container).push({id: box.id, label: label ? (label.innerText || '').trim() : '', checked: box.checked});
+  }
+  return [...groups].filter(([, options]) => options.length > 1).map(([container, options]) => {
+    const legend = container.querySelector("legend, label:not([for])");
+    return {question: (legend ? legend.innerText : '').replace(/\*\s*$/, '').trim(), options};
+  });
+}"""
+
+#: Text and split-date controls of the Self Identify step, by their field label.
+SELF_ID_JS = r"""() => {
+  const vis = e => !!(e && (e.offsetWidth || e.offsetHeight || e.getClientRects().length));
+  const root = document.querySelector("[data-automation-id='applyFlowPage']") || document;
+  const out = [];
+  for (const field of root.querySelectorAll("[data-automation-id^='formField-']")) {
+    const label = field.querySelector('label, legend');
+    const text = (label ? label.innerText : '').replace(/\*\s*$/, '').trim();
+    const month = field.querySelector("input[id$='-dateSectionMonth-input']");
+    if (month) {
+      const control = month.id.slice(0, -'-dateSectionMonth-input'.length);
+      out.push({kind: 'date', label: text, control,
+                day: !!field.querySelector("input[id$='-dateSectionDay-input']")});
+      continue;
+    }
+    const input = [...field.querySelectorAll("input[type='text'], input:not([type])")].filter(vis)[0];
+    if (input && input.id && !input.closest("[data-automation-id='multiselectInputContainer']")) {
+      out.push({kind: 'text', label: text, id: input.id, value: (input.value || '').trim()});
+    }
+  }
+  return out;
+}"""
+
+#: The disability form's answers are its own options; its question rarely says so.
+_DISABILITY_OPTION = re.compile(r"\bdisabilit", re.I)
+_SELF_ID_STEP = re.compile(r"self[\s-]*identif", re.I)
+_NAME_LABEL = re.compile(r"^(?:your |full |legal )*name$|^signature$", re.I)
+_EMPLOYEE_ID = re.compile(r"employee\s*(?:id|number)", re.I)
+_DATE_LABEL = re.compile(r"^(?:today'?s )?date(?: signed)?$", re.I)
+
+
+def _group_key(group: dict[str, Any], synonyms: list[tuple[str, str]]) -> str | None:
+    labels = [str(option.get("label") or "") for option in group.get("options") or []]
+    if sum(bool(_DISABILITY_OPTION.search(label)) for label in labels) >= 2:
+        return "disability_status"
+    key = key_for_label(str(group.get("question") or ""), synonyms)
+    return key if key in field_matcher.EEO_KEYS else None
+
+
+def _tick(page: Any, box_id: str) -> bool:
+    box = page.locator(f"[id='{box_id}']").first
+    if not box.is_checked():
+        try:
+            page.locator(f"label[for='{box_id}']").first.click(timeout=3000)
+        except Exception:  # noqa: BLE001 - an unlabelled box takes the click itself
+            box.check(timeout=2000)
+    return bool(box.is_checked())
+
+
+def fill_choice_checkboxes(
+    page: Any,
+    fields: dict[str, str],
+    *,
+    synonyms: list[tuple[str, str]],
+    progress: Callable[[str], None] = lambda _msg: None,
+    review: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    """Tick the one option of each self-identification checkbox group that means the
+    profile's answer (`field_matcher.eeo_pattern`: "No" -> "No, I do not have a
+    disability..."). A group with a ticked box is the applicant's answer and is kept; no
+    unique option is left for review, never guessed.
+    """
+    try:
+        groups = page.evaluate(CHECKBOX_GROUPS_JS) or []
+    except Exception:  # noqa: BLE001
+        return []
+    committed: list[dict[str, Any]] = []
+    for group in groups:
+        key = _group_key(group, synonyms)
+        options = group.get("options") or []
+        if not key or any(option.get("checked") for option in options):
+            continue
+        question = str(group.get("question") or "") or key.replace("_", " ").capitalize()
+        labels = [str(option.get("label") or "") for option in options]
+        chosen = None
+        for candidate in field_matcher.choice_values(key, fields):
+            chosen = field_matcher.closest_option(labels, candidate, key=key)
+            if chosen:
+                break
+        if chosen is None:
+            if fields.get(key) and review is not None:
+                review.append(f"{question}: no option matching {fields[key]}")
+            continue
+        box_id = next(str(option["id"]) for option in options if option.get("label") == chosen)
+        try:
+            ticked = _tick(page, box_id)
+        except Exception:  # noqa: BLE001
+            ticked = False
+        if ticked:
+            progress(f"Workday: ticked {chosen[:70]}")
+            committed.append({"key": key, "label": question, "value": chosen, "selector": f"[id='{box_id}']"})
+        elif review is not None:
+            review.append(f"{question}: could not tick {chosen}")
+    return committed
+
+
+def fill_self_identify(
+    page: Any,
+    fields: dict[str, str],
+    *,
+    today: date,
+    progress: Callable[[str], None] = lambda _msg: None,
+    review: list[str] | None = None,
+) -> list[dict[str, Any]]:
+    """The Self Identify step's signature: Name (the applicant's full name) and today's
+    Date; Employee ID stays blank (applicants are not employees). Existing answers are
+    kept. The disability answer is `fill_choice_checkboxes`'s.
+    """
+    from resume_tailor.apply import workday_repeaters  # noqa: PLC0415
+
+    try:
+        controls = page.evaluate(SELF_ID_JS) or []
+    except Exception:  # noqa: BLE001
+        return []
+    committed: list[dict[str, Any]] = []
+    name = fields.get("full_name", "")
+    for control in controls:
+        label = str(control.get("label") or "")
+        if control.get("kind") == "text" and _EMPLOYEE_ID.search(label):
+            progress("Workday: leaving Employee ID blank")
+        elif control.get("kind") == "text" and _NAME_LABEL.match(label) and name:
+            if control.get("value"):
+                continue
+            box = page.locator(f"[id='{control['id']}']").first
+            try:
+                box.fill(name, timeout=3000)
+                ok = str(box.input_value() or "").strip() == name
+            except Exception:  # noqa: BLE001
+                ok = False
+            if ok:
+                progress(f"Workday: signed {label} = {name}")
+                committed.append({"key": "full_name", "label": label, "value": name,
+                                  "selector": f"[id='{control['id']}']"})
+            elif review is not None:
+                review.append(label)
+        elif control.get("kind") == "date" and _DATE_LABEL.match(label):
+            parts = [("dateSectionMonth", f"{today.month:02d}")]
+            if control.get("day"):
+                parts.append(("dateSectionDay", f"{today.day:02d}"))
+            parts.append(("dateSectionYear", str(today.year)))
+            try:
+                ok = workday_repeaters.fill_date_sections(page, str(control["control"]), parts)
+            except Exception:  # noqa: BLE001
+                ok = False
+            if ok:
+                progress(f"Workday: dated {label} {today.isoformat()}")
+                committed.append({"key": "signature_date", "label": label, "value": today.isoformat(),
+                                  "selector": f"[id='{control['control']}-dateSectionMonth-input']"})
+            elif review is not None:
+                review.append(label)
+    return committed
+
+
+def is_self_identify_step(snap: dict[str, Any]) -> bool:
+    """Workday's disability self-identification (CC-305) step."""
+    return bool(_SELF_ID_STEP.search(active_step(snap)))
 
 
 # -- Multiselect prompts (Field of Study, School, ...) -----------------------------------
@@ -641,41 +942,80 @@ _OPEN_PROMPT_OPTIONS = (
 
 
 def select_prompt(page: Any, input_id: str, value: str, *, key: str = "") -> bool:
-    """Commit ``value`` in a Workday prompt: search, then click one exactly matching option.
+    """Commit ``value`` in a Workday prompt: search, then click the one matching option.
 
-    An existing chip is the applicant's answer: it counts only if it already matches.
+    Searches run from the full value to shorter terms (`field_matcher.search_terms`:
+    Workday finds "University of California, Irvine" from "Irvine", not from the full
+    name), and the option is chosen by `field_matcher.closest_option`. A clicked option
+    that opens a category ("Other" under a hierarchical source list) gets one drill-down
+    pick. An existing chip is the applicant's answer: it counts only if it already matches.
     """
-    from resume_tailor.apply.hybrid_resolver import _option_match  # noqa: PLC0415
+    def _means(chip: str, chosen: str) -> bool:
+        return chip.strip() == chosen.strip() or field_matcher.closest_option([chip], value, key=key) is not None
+
+    def _open_options() -> tuple[Any, list[str]]:
+        options = page.locator(_OPEN_PROMPT_OPTIONS)
+        return options, [str(text).strip() for text in options.all_inner_texts()]
+
+    def _choose(texts: list[str]) -> str | None:
+        # One leaf can sit under two categories ("LinkedIn" under Job Board and under
+        # Social Media); identical labels are the same answer, not an ambiguity.
+        unique = list(dict.fromkeys(text for text in texts if text and not _NO_ITEMS.match(text)))
+        return field_matcher.closest_option(unique, value, key=key) if unique else None
 
     try:
         chips = page.evaluate(_PROMPT_STATE_JS, input_id)
         if chips is None:
             return False
         if chips:
-            return len(chips) == 1 and _option_match(chips, value, key=key) is not None
+            return len(chips) == 1 and field_matcher.closest_option(chips, value, key=key) is not None
         box = page.locator(f"[id='{input_id}']").first
-        box.fill(value, timeout=3000)
-        box.press("Enter")
-        options = page.locator(_OPEN_PROMPT_OPTIONS)
-        for _ in range(16):
-            page.wait_for_timeout(250)
-            texts = [str(text).strip() for text in options.all_inner_texts()]
-            # One leaf can sit under two categories ("LinkedIn" under Job Board and under
-            # Social Media); identical labels are the same answer, not an ambiguity.
-            unique = list(dict.fromkeys(texts))
-            chosen = _option_match(unique, value, key=key) if unique else None
+        chosen = None
+        for term in field_matcher.search_terms(key, value):
+            box.fill("", timeout=3000)
+            box.fill(term, timeout=3000)
+            box.press("Enter")
+            for _ in range(16):
+                page.wait_for_timeout(250)
+                # Enter on a search with a single result commits it without listing it
+                # (Upbound's Field of Study: "Computer Science" -> "Computer and
+                # Information Science"); the chip is then the answer to check.
+                auto = page.evaluate(_PROMPT_STATE_JS, input_id) or []
+                if auto:
+                    return len(auto) == 1 and field_matcher.closest_option(auto, value, key=key) is not None
+                options, texts = _open_options()
+                chosen = _choose(texts)
+                if chosen:
+                    options.nth(texts.index(chosen)).click(timeout=3000)
+                    break
             if chosen:
-                options.nth(texts.index(chosen)).click(timeout=3000)
                 break
-        else:
+        if not chosen:
             box.press("Escape")
             return False
-        for _ in range(8):
-            page.wait_for_timeout(250)
-            chips = page.evaluate(_PROMPT_STATE_JS, input_id) or []
-            if len(chips) == 1:
-                return _option_match(chips, value, key=key) is not None
-        return False
+
+        def committed() -> bool | None:
+            for _ in range(8):
+                page.wait_for_timeout(250)
+                chips = page.evaluate(_PROMPT_STATE_JS, input_id) or []
+                if len(chips) == 1:
+                    return _means(chips[0], chosen)
+            return None
+
+        verdict = committed()
+        if verdict is not None:
+            return verdict
+        options, after = _open_options()
+        leaf = _choose(after)
+        if leaf and leaf != chosen:
+            # The click opened a category ("Other" in a hierarchical source list).
+            options.nth(after.index(leaf)).click(timeout=3000)
+            chosen = leaf
+        else:
+            # A single-select prompt (Field of Study) paints its chip once the list closes.
+            with contextlib.suppress(Exception):
+                box.press("Escape")
+        return bool(committed())
     except Exception:  # noqa: BLE001 - an unverified prompt is left for review
         return False
 
@@ -698,7 +1038,7 @@ PROMPTS_JS = r"""() => {
         chips: f.querySelectorAll("[data-automation-id='selectedItem']").length,
       };
     })
-    .filter(p => p.input_id && !/^(workExperience|education)-/.test(p.input_id));
+    .filter(p => p.input_id && !/^(workExperience|education|language)-/.test(p.input_id));
 }"""
 
 
@@ -729,12 +1069,14 @@ def fill_prompts(
         value = fields.get(key or "", "")
         if not key or not value:
             continue
-        if choose(page, item["input_id"], value, key=key):
-            progress(f"Workday: selected {item['label']} = {value}")
-            committed.append({
-                "key": key, "label": item["label"], "value": value,
-                "selector": f"[id='{item['input_id']}']",
-            })
+        for candidate in field_matcher.choice_values(key, fields):
+            if choose(page, item["input_id"], candidate, key=key):
+                progress(f"Workday: selected {item['label']} = {candidate}")
+                committed.append({
+                    "key": key, "label": item["label"], "value": candidate,
+                    "selector": f"[id='{item['input_id']}']",
+                })
+                break
         else:
             progress(f"Workday: no exact option for {item['label']} = {value}; left for review")
     return committed
@@ -909,18 +1251,19 @@ def ensure_phone_code(
     Returns None when the step has no such prompt, True when the committed chip matches,
     False when it could not be verified (left for review).
     """
+    from resume_tailor.apply.hybrid_resolver import _phone_option  # noqa: PLC0415
+
     try:
         state = page.evaluate(PHONE_CODE_JS)
     except Exception:  # noqa: BLE001
         return None
     if not state:
         return None
-    region_aliases = {"united states": ("united states of america", "united states")}
-    wanted = region_aliases.get(region.casefold(), (region.casefold(),))
 
     def _matches(chip: str) -> bool:
-        low = chip.casefold()
-        return code in chip and any(name in low for name in wanted)
+        # The whole region name must agree: "United States Minor Outlying Islands (+1)"
+        # also contains "United States" and "+1", and made the choice ambiguous.
+        return _phone_option([chip], code, region) is not None
 
     chips = state.get("chips") or []
     if len(chips) == 1 and _matches(chips[0]):

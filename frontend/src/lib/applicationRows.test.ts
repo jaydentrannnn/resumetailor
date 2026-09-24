@@ -1,5 +1,5 @@
 import { describe, expect, it } from "vitest";
-import { canContinueFill, isTerminalRow, retryLabel, retryShortLabel } from "./applicationRows";
+import { canContinueFill, canReopenFill, isTabClosed, isTerminalRow, retryLabel, retryShortLabel } from "./applicationRows";
 
 describe("isTerminalRow", () => {
   it("trusts the server's terminal_application reason for every closed status", () => {
@@ -51,5 +51,35 @@ describe("canContinueFill", () => {
     expect(canContinueFill({ ...row, status: "ready" })).toBe(false);
     expect(canContinueFill({ ...row, archived_at: "2026-09-24T00:00:00Z" })).toBe(false);
     expect(canContinueFill({ ...row, preparation_eligible: false })).toBe(false);
+  });
+
+  it("hides Continue only when the browser was reached and the tab is gone", () => {
+    expect(canContinueFill(row, new Set(["T1", "T2"]))).toBe(true);
+    expect(canContinueFill(row, new Set(["T2"]))).toBe(false);
+    expect(canContinueFill(row, new Set())).toBe(false);
+    // Unreachable browser: unknown, so keep offering Continue.
+    expect(canContinueFill(row, null)).toBe(true);
+  });
+});
+
+describe("isTabClosed", () => {
+  it("is closed only for a recorded tab missing from a known tab list", () => {
+    expect(isTabClosed({ fill: { browser_target_id: "T1" } } as never, new Set(["T2"]))).toBe(true);
+    expect(isTabClosed({ fill: { browser_target_id: "T1" } } as never, new Set(["T1"]))).toBe(false);
+    expect(isTabClosed({ fill: { browser_target_id: "T1" } } as never, null)).toBe(false);
+    expect(isTabClosed({ fill: undefined }, new Set())).toBe(false);
+  });
+});
+
+describe("canReopenFill", () => {
+  const row = { status: "awaiting_review", archived_at: null, job_id: "job-1" } as Parameters<typeof canReopenFill>[0];
+
+  it("reopens a prepared row whose fill stopped for the applicant", () => {
+    expect(canReopenFill(row)).toBe(true);
+    expect(canReopenFill({ ...row, status: "awaiting_otp" })).toBe(true);
+    expect(canReopenFill({ ...row, status: "fill_failed" })).toBe(true);
+    expect(canReopenFill({ ...row, status: "submit_unconfirmed" })).toBe(false);
+    expect(canReopenFill({ ...row, job_id: null })).toBe(false);
+    expect(canReopenFill({ ...row, archived_at: "2026-09-24T00:00:00Z" })).toBe(false);
   });
 });
