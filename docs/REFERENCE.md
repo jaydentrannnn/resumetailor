@@ -2,7 +2,7 @@
 
 Detail relocated from `CLAUDE.md`, which stays a distilled core (invariant, hard rules,
 commands, testing seams, gotcha index). Start there; come here for the full subsystem
-picture. Like `implementation-notes.md`, cross-check any number against the code — this
+picture. Like the decision log (`docs/notes/`), cross-check any number against the code — this
 file describes the code as of its last update (2026-09-21).
 
 Sections: CLI flags (§1), workspaces (§2), apply automation (§3), vocabulary libraries
@@ -137,18 +137,13 @@ process-wide; don't add `--workers` to the Dockerfile CMD or the dev command.
 ## 3. Application automation
 
 `src/resume_tailor/apply/` owns the daily discover → screen → tailor → packet → fill
-funnel. Deterministic orchestration apart from two LLM calls, both explicitly pinned to
-`ApplySettings.model_provider`/`model_name` (default `ollama`/`nemotron-3-super:cloud`) via
-`config.pinned(settings.model_spec)` around each call site — `daily.py`'s screening stage
-calls `jd.extract_consensus` (purpose `"extract"`) and `fill.py`'s long-text stage calls
-`answer.py`'s `answer_question` (purpose `"answer"`, exchanges plain strings, guarded by
-`coverletter.check_claims`). Both run outside the job queue (`web/jobs.py`'s runner is the
-only other `config.resolve()` call site under `src/`), so without an explicit pin they would
-silently fall through to `config.backend_for`'s hardcoded Claude default whenever `_ACTIVE`
-is empty — e.g. right after a fresh restart, before any tailoring job has run. This is
-independent of the workspace's own Tailor model setting (`JobSettings.model`/`model_name`),
-which still governs the actual resume-tailoring stage the funnel submits via
-`get_queue().submit(...)`, unaffected.
+funnel. Prepare tailors and screens with the **Tailor tab's** model settings (profile,
+model name, effort, per-stage overrides): `daily._job_settings` leaves them untouched, and
+the screening `jd.extract_consensus` call is pinned to the same `web.jobs.model_routing` with
+the same `extract_runs`, so the tailor job's own extraction is a cache hit.
+`ApplySettings.model_provider`/`model_name` (default `ollama`/`nemotron-3-super:cloud`, the
+Apply page's "Autofill model") covers only Fill's LLM calls — prepared long answers and
+hybrid/model resolver assistance — which run under `config.pinned(settings.model_spec)`.
 
 Form filling injects `filler.js` into the user's host browser (Edge recommended — see
 README; Chrome refuses remote debugging while another Chrome window is already running,
@@ -165,22 +160,124 @@ key, with `source_refs` listing every sighting.
 Eligibility (`eligibility.py`) hard-rejects graduate-degree-only postings (master's/PhD
 without a bachelor's alternative), senior titles, and high year floors — before
 `jd.extract_consensus`. Ambiguous signals become `eligibility_flags`, never silent drops.
+The work-restriction block patterns (`screen.check_blocks`: citizenship, security clearance,
+user extras) run in the same no-LLM stage (`daily.prefilter_screen`) and record a named
+reason (`citizenship_required` / `clearance_required`) plus the matching JD sentence in
+`ScreenResult.evidence`. After extraction, `screen()` rejects on seniority only — an
+intern/new-grad/entry title overrides the model's label (`seniority_mismatch` flag).
+`screen.screen_label` turns any stored reason (legacy regex-source strings included) into
+the 2–3 word `screen_label` the Status column shows. Every screened-out row with saved JD
+text offers "Re-check eligibility", which re-runs `prefilter_screen` with the stored
+seniority, so rule fixes reach old rows without a model call.
 `ats_api.py` tries Greenhouse/Lever/SmartRecruiters/Ashby JSON first (`method="api"`); README
 fetches use ETag caching under `applications/readme_cache/`.
 
 Per-workspace state:
 
-- `data/workspaces/<id>/applications.json` — funnel records (schema v2)
+- `data/workspaces/<id>/applications.json` — funnel records (schema v3)
 - `data/workspaces/<id>/applicant_profile.json` — form answers (work auth, address, EEO)
 - `output/workspaces/<id>/applications/` — JD text, fill screenshots, nightly logs,
   `url_resolve_cache.json`, `readme_cache/`
 
-Submit policy is `JobSettings.apply.auto_submit_ats` (default `[]` = review everything).
-Add `"greenhouse"` / `"lever"` / `"ashby"` later; Workday never auto-submits.
+The SPA starts persistent `find`, `prepare`, and `fill` operations through
+`apply/operations.py`; operation state and a bounded event history live in
+`output/.../applications/operations.json`, so progress survives page refreshes. Fill verifies
+required fields and each intended attachment before submission. Auto-submit additionally
+requires `auto_submit_enabled`, ATS membership in `auto_submit_ats`, and remaining room under
+`auto_submit_max_per_run`. Workday is never auto-submitted (`fill.decide_submit_action`
+returns `awaiting_review` for it whatever the settings). The Apply page sends
+`blocker_mode="continue"` for Fill selected; older API callers may still request pause.
+Fill results persist a CDP tab target ID for same-tab Continue and Review actions, and
+Workday verification returns a handoff instead of waiting in the worker. Applicant-profile API
+responses redact the stored Workday password, and a blank password on update preserves the
+existing secret.
+
+**Workday (legacy engine).** `apply/workday_flow.py` recognises each Workday screen from its
+visible `data-automation-id` markers (`classify` is pure; captured screens live in
+`tests/fixtures/workday/screens.json`) and waits for screen changes instead of sleeping:
+posting (`adventureButton`, or `continueButton` for a saved draft) → Start dialog (only
+`applyManually` is ever clicked) → Create Account / Sign In → apply steps (progress bar).
+`workday_auth.handle_workday_auth` treats an existing session (`utilityButtonAccountTasksMenu`)
+as signed in, waits for an auth form to be fully painted (`wait_for_auth_form_ready`: inputs,
+submit, and the `click_filter` overlay — which paints last and alone carries the click
+handler — stable on the submit) before filling, clicks auth submits through that overlay, and
+re-clicks once only when the first click sent no request and changed nothing (a click that
+reached Workday is never repeated: a second wrong-password attempt counts toward lockout).
+Staying on the form with no error is `no_response`, not a rejected password; never fills the
+`beecatcher` honeypot, ticks the Create Account terms box (`createAccountCheckbox`, account
+creation only — a box that will not report checked is `terms_needed`), and hands over (never
+guesses) when an account exists under an unknown password; each outcome has readable text in
+`AUTH_HANDOFF`. Workday accounts are per site, so the choice between Create Account and Sign
+In keys on whether the vault has used the site before (`created`/`signed_in`), never on a
+saved profile password: a new site creates first (the profile password, else a generated one),
+and "already exists" gets exactly one Sign In with the profile password before handing over as
+`account_exists_other_password`. A successful sign-in marks the site `signed_in`. Per step, `fill.py` waits for the step to render stably, then fills Workday
+listbox dropdowns (`select_listbox`, Country first since it re-renders the form), Yes/No
+radios (previous-employer answered from the resume's own employers), empty prompts whose
+label maps to a profile fact ("How Did You Hear About Us?", `fill_prompts`), the Skills
+prompt (`fill_skills`: the packet's tailored `skills` typed one search at a time; an option
+naming the skill exactly or by its abbreviation — `field_matcher.match_skill_option`, RAG →
+"Retrieval-Augmented Generation (RAG)" — is committed and verified by a new chip; the rest go
+to ONE `hybrid_resolver.choose_skill_options` call with the options each search showed, and
+a pick outside those options is dropped; unmatched skills are one review line), the
+phone-code prompt, and on My Experience (only the sections the tenant actually shows) the `workExperience-N--*` / `education-N--*` rows
+(`workday_repeaters.py`: exact or partial-agreeing row reuse, split MM/YYYY dates via their
+display divs, existing answers never replaced). Legal consent checkboxes on the application
+itself are always left for the applicant; Workday's "Something went wrong" page gets one
+reload before handoff.
+
+**Salary and revealed fields.** Salary questions are answered deterministically (no LLM) by
+`apply/salary.py`: `min(posted top, applicant top)` in the posting's unit, hourly ↔ yearly at
+2,080 h. Posted pay comes from the listing's salary column, else the saved JD text; with none,
+the applicant's top (hourly for intern/co-op titles, yearly otherwise) unless the question
+names a unit. The range is `ApplicantProfile.salary_{hourly,yearly}_{min,max}`, seeded once
+from the free-text `salary_expectation`; empty maximums leave salary for the applicant. The
+fill runner adds `salary_expectation`/`salary_hourly`/`salary_yearly` (and `_number` forms
+for number inputs) to the packet fields. `filler.js` reads a Workday question's label from a
+multi-id `aria-labelledby` or its `formField-*` container, ticks a lone yes/no checkbox ("I have
+a preferred name", `has_preferred_name`), and reports `revealed`, after which `fill.py` scans
+the frame once more so the fields the tick revealed are filled.
+
+**Applications page.** Rows in `store.REVIEW_STATUSES` (awaiting review/verification, fill
+failed, submit unconfirmed) sit in a separate "Needs your review" table (`GET
+/api/applications?group=review`, the working table uses `group=working`), each with
+`review_summary` (the first field waiting on the applicant, or the kind of hand-off). Sorting is
+over the whole filtered list before paging; ties fall back to newest-discovered then company,
+and Status sorts in pipeline order. The page's 2s poll refreshes the tables while an operation
+runs, while a visible row is `tailoring`/`filling`, and once whenever the latest operation or its
+state changes (`lib/applyPoll.ts`).
+
+**Resolver scope.** `hybrid_resolver`'s scan treats only real popup triggers
+(`[role=combobox]`, `[aria-haspopup=listbox]`) as dropdowns, one per `formField-*`, and never
+anything inside an upload widget (`select-files`, `file-upload-*`, drop zones) or a multiselect
+prompt's containers — it opens each candidate to read its options, and opening "Select files"
+raised the OS file picker. A `filechooser` listener on the fill tab swallows any picker a stray
+click still opens (uploads use `set_input_files`). Each wizard step has a `StepLedger` per
+frame shared by every resolver pass on that step: controls already resolved or already put to
+the model are not reopened or re-asked, and passes after a rejected advance retry only fields
+the form marks invalid (when it marks any) — a stuck field is retried alone, not the page.
+
+The replacement async observation/action engine is under the internal
+`APPLY_FILL_ENGINE=verified` switch; the default remains `legacy` until its Greenhouse,
+Workday, submission, and live acceptance gates are complete. `dom_scan.js` is packaged as
+Apply data and observes fields without writing. Python owns matching and policy, while
+`controls.py` performs frame-scoped writes and re-observation. Review refresh and explicit
+one-field corrections share the Apply operation lock; a correction requires a fresh
+snapshot and state hash. Prepare records the source employment count with expansion output
+so an empty expansion is accepted only when no source employment existed at preparation.
 
 Nightly: enable `apply.enabled` in settings, or run `python scripts/apply_daily.py`. List
 README section names with `python scripts/apply_daily.py --list-sections <url>`. SPA route
-`/applications` (source badges, location-group size, salary, flags). MCP tools:
+`/applications` (working and archived tables) and `/applications/:applicationId`
+(saved overview, documents, application content, and form review). The list API accepts
+`archive=active|archived|all`, case-insensitive `q` over company/role/location, status,
+sort/direction, limit, and offset. Its default archive scope is `all` for existing clients.
+`POST /api/applications/archive` accepts 1–500 IDs and a boolean `archived`, returning
+successful IDs and per-record errors. Archive is manual and independent of status;
+restoring a submitted record leaves it submitted. Archived rows remain readable and in CSV
+but cannot be prepared, filled, retried, or corrected until restored. The registry edit
+uses nonblocking Apply/daily worker gates plus the workspace lock and returns 409 if busy.
+MCP tools:
 `list_applications`, `get_application_packet`, `answer_application_question`,
 `mark_application`.
 

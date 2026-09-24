@@ -24,7 +24,7 @@ Use when ResumeTailor's Applications tab shows postings with status `needs_brows
    - When the run succeeds, `mark_application(source_job_id, status="ready")` if the
      daily funnel did not already link the job — otherwise leave status to the app
 3. Do **not** fill form fields or click Submit. Tell the user to open the Applications
-   tab and use **Open & fill**.
+   tab and use **⚡ Fill** (or **Prepare again** if the row says it needs preparing).
 
 ## Out of scope
 

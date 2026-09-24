@@ -1,0 +1,655 @@
+# Apply funnel — implementation notes
+
+Covers: discovery sources, screening, packet, ATS hints, browser/filler, Workday/Greenhouse, daily run, Apply page.
+
+Entries are in original log order (roughly chronological); later entries supersede
+earlier ones. Cross-check any number against the code.
+
+## 2026-09-21 — Apply Phase 1: packet, ats_hints, answer
+
+- **Decision:** Added `apply/packet.py`, `apply/ats_hints.py`, and `apply/answer.py` as pure
+  disk assembly plus one guarded `"answer"` LLM stage. Packet booleans serialise as `"Yes"` /
+  `"No"` with `None` omitted; `confirmation_text` hint rows carry page text, not field keys;
+  F-1/OPT/CPT synonyms precede generic sponsorship in `SYNONYMS`.
+- **Why:** Phase 4's deterministic filler needs a stable packet and per-ATS selector map
+  before any CDP runner exists; free-text leftovers reuse `coverletter.check_claims` rather
+  than a new guard.
+- **Tradeoff:** `build_packet` reads optional artifacts only — missing cover/skills never fail
+  assembly; guard failures return `answer=""` instead of raising.
+- **Follow-up:** Wire `write_packet` into `web/jobs.py` on success, add API/MCP routes per
+  plan Phase 1 todos `p1-packet` / `p1-answer`.
+
+## 2026-09-21 — Apply Phase 2: store and sources
+
+- **Decision:** Added `apply/store.py` (`applications.json` keyed by `source_job_id`, atomic
+  `.json.tmp` writes) and `apply/sources.py` (SimplifyJobs README parse/filter ported from
+  the internship-tracker script). `ApplySettings` nests on `JobSettings` with
+  `exclude_citizenship_required` mapped to `filter_rows(..., exclude_citizenship=...)`.
+- **Why:** Discovery needs a durable funnel registry and deterministic README ingestion
+  before orchestration or the UI can schedule daily runs.
+- **Tradeoff:** `set_status` blocks terminal → pre-ready transitions only (not terminal →
+  `ready`/`filling`); `FillResult` is a stub until Phase 4. Rows without a Simplify job id
+  are dropped at dedupe time.
+- **Follow-up:** Wire store upserts into the discover job; expose apply settings in the SPA.
+
+## 2026-09-21 — Apply Phase 4–5: filler, fill, daily pipeline
+
+- **Decision:** Added packaged `filler.js` / `filler_readiness.js`, `apply/fill.py` (CDP
+  runner with `decide_submit_action` policy A/B), `apply/daily.py` (discover → fetch →
+  screen → reuse or queue tailor), and `scripts/apply_daily.py`. `FillResult.filled` /
+  `leftovers` are now `list[Any]` for structured dict rows.
+- **Why:** Deterministic fill must stay in injected JS; Python only orchestrates packet
+  fields, guarded long-text answers, submit policy, and persistence. Daily holds
+  `template_ops.LOCK` only around `get_queue().submit`.
+- **Tradeoff:** `run_daily` skips when `apply.enabled` is false unless the caller passes an
+  explicit `ApplySettings` (CLI forces `enabled=True`). Reuse links `job_id` to the prior
+  run rather than copying artifacts. Fill iterates all Playwright frames — cross-origin
+  frames increment `frames_skipped`.
+- **Follow-up:** Browser-marked integration test against `tests/fixtures/forms/greenhouse.html`;
+  wire scheduled `run_daily` from the SPA when apply is enabled.
+
+## 2026-09-21 — Apply funnel SPA and docs close-out
+
+- **Decision:** Added `/applications` SPA page (queue table, CDP status pill, packet
+  drawer, applicant-profile editor), nav link **Apply**, README Automation section
+  (Chrome CDP launch flags + `scripts/apply_daily.py`), CLAUDE.md Application
+  automation section (fourteen path globals, `"answer"` purpose), and Cowork fallback
+  skill at `docs/skills/apply-from-queue/SKILL.md`. Autouse fixture isolates
+  `APPLICATIONS_PATH` / `APPLICANT_PROFILE_PATH` / `APPLICATIONS_OUTPUT_DIR`.
+- **Why:** Policy A (review-all) needs a review queue in the UI; host Chrome over CDP
+  keeps Docker as the only long-running process.
+- **Tradeoff:** Profile editor on the Apply page is a short field list; full EEO/custom
+  answers still edit via JSON or PUT API. `auto_submit_ats` starts empty.
+- **Follow-up:** After a week of clean Greenhouse fills, add `"greenhouse"` to
+  `apply.auto_submit_ats`; expand synonym table from leftovers logs.
+
+## 2026-09-21 — Apply funnel HTTP API, MCP, and scheduler
+
+- **Decision:** Added `/api/applicant-profile`, job packet/answer routes, applications CRUD
+  (list/get/status/retry/fill/export/run-daily), optional `job_id` on verify-claim, MCP
+  mirrors (`get_application_packet`, `answer_application_question`, `list_applications`,
+  `get_application`, `mark_application`), `packet_json` artifact kind, and a 60s lifespan
+  daemon that fires `run_daily` once per local day at `settings.apply.schedule_time`.
+- **Why:** Agents and the SPA need the same apply surface as tailoring without a second
+  pipeline; scheduler matches the CLI's scheduled discover intent while staying
+  non-blocking on shutdown (`join(timeout=2)`).
+- **Tradeoff:** `POST .../fill` returns immediately after starting the async CDP worker;
+  `GET .../fill` reads persisted `FillResult`. Retry only covers fetch-JD and tailor-failed
+  paths. Scheduled daily uses process-local `_last_daily_run_date` (resets on restart).
+- **Spec delta:** Extends Phase 4–5 orchestration with read/write HTTP + MCP.
+
+## 2026-09-21 — Multi-source discovery, ATS dedupe, bachelor-only eligibility
+
+- **Decision / change:** Extended the apply funnel with (A) `age_days` + multi-`SourceConfig`
+  defaults (Simplify internships, New-Grad-Positions, speedyapply), (B) `identity.py`
+  canonical/group keys and schema-v2 `applications.json` keyed by ATS requisition,
+  (C) `eligibility.py` bachelor-rescue prefilter before `extract_consensus`, (D) depth-aware
+  pipe-table parser + `--list-sections`, (E) ETag README cache + Greenhouse/Lever/SR/Ashby
+  JSON JD fetch, (F) SPA badges for sources/group size/salary/flags.
+- **Why:** Cut LLM spend by filtering/deduping on plain text and ATS identity; cover
+  internship + new-grad without inventing content; hard-reject advanced-degree-only posts
+  while keeping inclusive "Bachelor's, Master's, or PhD" wording.
+- **Tradeoffs:** Regex eligibility will need tuning from `screened_out` notes; Workday
+  still needs CDP; zapply skipped (noisy). Canonical fallback is `other:{host}:{sha1[:12]}`.
+- **Spec delta:** Extends the single-Simplify apply funnel from the earlier Automation work.
+- **Follow-up:** Confirm live speedyapply section names with `--list-sections` if headings
+  drift; tune `EligibilitySettings.hard_reject_years` after a week of notes.
+
+## 2026-09-21 — Docker CDP Host header vs Chrome DevTools
+
+- **Decision:** `apply/browser.effective_cdp_url` resolves `host.docker.internal` to an
+  IP before `/json/version` probes and Playwright `connect_over_cdp`.
+- **Why:** Chrome DevTools returns HTTP 500 when `Host` is a non-localhost hostname
+  ("Host header is specified and is not an IP address or localhost"). That made the
+  Apply page show CDP offline even with Chrome correctly launched on the host.
+- **Tradeoff:** Relies on `gethostbyname` for the gateway; fine on Docker Desktop.
+- **Follow-up:** Rebuild the app image so the container picks up the fix (`src/` is not bind-mounted).
+
+## 2026-09-21 — Live daily-run progress on the Apply page
+
+- **Decision:** `run_daily` publishes a `DailyProgress` snapshot (`phase`,
+  `source_id`, `current`, `processed`/`total`, `dry_run`, live `summary`) guarded by a
+  dedicated `_PROGRESS_LOCK`; `GET /api/applications/daily-status` returns a deep copy,
+  and `POST /api/applications/run-daily` now accepts `{limit, dry_run}` mirroring
+  `scripts/apply_daily.py`. The Apply page polls every 2s, shows phase + progress bar +
+  counters, and gains Dry-run/Limit controls next to the button.
+- **Why:** "Run daily now" previously gave no feedback — the run is a bare daemon thread,
+  and a `--dry-run` CLI pass (the user's first test) writes nothing, so the empty queue
+  looked like a broken button.
+- **Tradeoffs:** Polling (user-chosen over SSE) costs one cheap JSON request per 2s; the
+  progress bar is indeterminate during discovery because the row count is unknown until
+  every source has been fetched. `daily_status.running` is derived from `_DAILY_LOCK`,
+  not a stored flag, so a crashed run can't wedge the UI into "running".
+- **Spec delta:** Manual "Run daily now" now ignores `apply.enabled` (passes the profile's
+  apply settings explicitly), matching the CLI; that flag still gates only the nightly
+  scheduler. `/api/applications/daily-status` is declared before the
+  `/{source_job_id}` route — route order matters in Starlette.
+- **Follow-up:** A Stop/cancel control was considered and deferred; killing a run
+  mid-tailor would leave `JobQueue` jobs orphaned.
+
+## 2026-09-21 — Recommend Edge, not Chrome, for the apply-automation debug profile
+
+- **Decision:** Docs (`README.md`, `CLAUDE.md`) and in-app copy
+  (`ApplicationsPage.tsx`'s pill/instructions, `docker-compose.yml`/`requirements.txt`
+  comments, docstrings in `apply/browser.py`/`fill.py`/`__init__.py`/`fetch_jd.py`,
+  `config.py`) now recommend launching **Microsoft Edge** with
+  `--remote-debugging-port=9222` instead of Chrome. `CHROME_CDP_URL`'s name is
+  unchanged — it has no `.env.example` entry, so there was nothing to migrate, and the
+  value was always browser-agnostic (Playwright's CDP connection and the
+  `/json/version` probe never inspected which browser answered).
+- **Why:** Live-diagnosed this session: Chrome refuses to open its remote-debugging
+  port whenever *any* other Chrome window — any profile — is already running under the
+  same account (confirmed directly: Chrome running, port 9222 never bound, no second
+  Chrome process anywhere). For a user whose daily browser is Chrome, that meant fully
+  quitting Chrome every time before using the apply feature. Edge is a separate
+  binary/process, so it isn't subject to Chrome's singleton-while-debugging check and
+  can run the automation profile in the background indefinitely without touching normal
+  Chrome browsing.
+- **Tradeoff:** If a user's daily browser is Edge instead of Chrome, the identical
+  restriction applies there — this swaps which browser needs to stay free, it doesn't
+  eliminate the underlying restriction. The dedicated profile directory also had to move
+  (`%LOCALAPPDATA%\ResumeTailorEdge`, was `...\ResumeTailorChrome`) since Edge and Chrome
+  profile directories aren't interchangeable.
+- **Follow-up:** None of `browser.py`/`fill.py`'s runtime logic changed — only
+  docstrings/error-message wording — so this shipped with zero test changes required.
+
+## 2026-09-21 — Pin the apply funnel's own LLM calls to a configurable model
+
+- **Decision:** Added `ApplySettings.model_provider`/`model_name` (default
+  `ollama`/`nemotron-3-super:cloud`, exposed via a provider dropdown + model-name field
+  on the Applications page, mirroring `RunPage.tsx`'s Tailor model control) and a
+  `model_spec` property building the `provider:model` string `config.pinned()` expects.
+  `daily.py::_process_one` now wraps its `jd.extract_consensus` call, and
+  `fill.py::fill_application` wraps its `answer.answer_question` call, each in
+  `with config.pinned(settings.model_spec):`.
+- **Why:** A fresh test run's first two postings failed with a real Anthropic billing
+  error even though this workspace's Tailor model is `ollama`. Root cause:
+  `daily.py`/`fill.py` call `jd.extract_consensus`/`answer.answer_question` directly,
+  outside `web/jobs.py`'s job queue — the only place `config.resolve()` runs. Per
+  `config.backend_for()`'s documented fallback, an empty `_ACTIVE` (true on every cold
+  process, before the first tailor job) silently resolves to `resolve("claude")`,
+  regardless of the saved model setting. Also fixed in the same pass: two `_process_one`
+  branches (`no application link`, an `extract_consensus` exception) updated
+  `status_history` but never called `_append_log`, so a failing posting just vanished
+  from the visible daily log instead of showing why.
+- **Tradeoff:** Deliberately narrow scope — this setting governs only the funnel's own
+  pre-tailor screening extraction and free-text answer drafting. The actual
+  resume-tailoring stage the funnel submits via `get_queue().submit(...)` keeps using
+  the workspace's existing Tailor model settings unchanged, since that path already
+  resolves correctly through the job queue.
+- **Follow-up:** `test_daily_status_reflects_progress` had to gain a `time.sleep(0.2)`
+  inside its own stubbed `fetch_jd.fetch_jd` — once `extract_consensus` was properly
+  stubbed (it wasn't before, and silently made a real, slow, un-hermetic Ollama call
+  under the old fallback-to-Claude-then-fail-fast behavior), the whole run finished
+  faster than the test's 0.1s poll interval could reliably observe an in-flight phase.
+
+## 2026-09-23 — Apply became a three-stage, observable operation workflow
+
+- **What:** Split the Apply controls into **Find jobs**, **Prepare selected**, and **Fill
+  selected**. Added persistent operation records with live stage, current application,
+  counts, event history, cancel, and blocker pause/resume/skip controls. Selection is
+  explicit and action buttons count only eligible selected rows.
+- **Submission policy:** Added an independent auto-submit switch and blocker behavior.
+  Verified forms submit only when the switch is enabled, the ATS is allowed, and the
+  per-operation cap remains; Workday follows the same rule. Attachment inputs are matched
+  by purpose and verified from the browser's retained filename before a form is ready.
+- **Reliability:** Dropdown fill ignores blank placeholder options, checkbox/radio changes
+  are idempotent, submission success requires new post-click evidence, and fill results
+  expose missing fields plus upload outcomes. Hybrid resolution can no longer issue
+  arbitrary clicks and never receives Workday credentials.
+- **Model scope and privacy:** The Apply model now governs extraction, tailoring, answers,
+  and hybrid resolution. Applicant-profile responses redact stored Workday passwords;
+  saving a response with a blank password preserves the stored value.
+
+## 2026-09-23 — Greenhouse attachment names, cover detection, and fill checkpoints
+
+- **Observed:** National Life job `4410899009` completed the full Tailor pipeline and
+  produced `tailored.docx/.pdf` plus `cover.docx/.pdf`, but the ATS saw the internal
+  `tailored.pdf` filename and the proactive cover lookup missed Greenhouse controls
+  identified by `name="job_application[cover_letter]"`. The operation's last event stayed
+  at one broad `navigating` message, obscuring which browser wait had stalled.
+- **Fix:** Stage copies under descriptive applicant/role filenames before upload, detect
+  resume and cover inputs by both `id` and `name`, verify the staged filename retained by
+  the browser, and emit checkpoints for browser connection, posting load, form discovery,
+  each form step, each upload, screenshot capture, and readiness verification. Initial
+  navigation now bounds network-idle waiting instead of treating it as a required state.
+
+## 2026-09-23 — Semi-automated Apply handoff and observed upload behavior
+
+- **Workflow:** Fill selected processes prepared applications sequentially and hands each
+  browser tab to the user while continuing the batch. Review tab, Continue fill, and
+  explicit Reopen and fill use persisted CDP target IDs; Continue preserves existing
+  answers and attached files. Workday OTP is completed in its tab and no longer blocks
+  the batch worker. Interrupted fills return to a retryable status after restart.
+- **Field safety:** Phone calling code and address country are separate packet fields.
+  Native selects require a unique exact or declared alias match; country-specific +1
+  choices require an explicit phone region. Custom combobox actions must refer to
+  observed options and verify a selected value. Optional blanks and unsupported facts
+  remain visible for manual review.
+- **Live evidence:** National Life Greenhouse removes each file input after upload and
+  displays the filename in the form. Input-only verification falsely reported failures
+  and retried through duplicate selectors. The updated verifier accepts the displayed
+  retained filename; a fill-only acceptance pass confirmed both resume and cover letter
+  visible in the same tab. That form's phone country menu offers multiple +1 countries,
+  so the blank phone-region profile field appropriately leaves it for review. The saved
+  Booz Allen Workday posting currently displays a page-not-found message, preventing a
+  live authentication check; no account action or submission took place.
+
+## 2026-09-23 — Apply verified-engine migration, still gated
+
+The replacement async scanner, matcher, executor, and Greenhouse row adapter are staged
+behind `APPLY_FILL_ENGINE=verified`; the default remains the established legacy filler.
+Preparation now records source employment count with expansion output, and Fill uses one
+captured profile/settings snapshot per batch. Review refresh recognizes Greenhouse's
+filename display after a successful upload, preserves completed-step evidence, and
+supports stale-checked explicit corrections. The default Workday authentication path
+requires visible success evidence and leaves unchecked account terms for the applicant.
+
+Offline checks: 1,047 Python tests, 98 frontend tests, typecheck, lint, and production
+build passed. The browser suite passed seven tests using local Edge.
+Read-only inspection of the open National Life form confirmed committed education and
+demographic controls plus retained resume and cover-letter displays. A Charter Workday
+acceptance tab reached Create Account and returned `terms_needed` with the terms unchecked;
+no account was created and no application was submitted. Remaining migration gates include
+the async Workday adapter, conditional form rescans, submission parity, and a fresh
+end-to-end Fill acceptance run before changing the engine default.
+
+## 2026-09-23 — Apply page and API made to agree (audit follow-up)
+
+A whole-codebase audit found the Applications page and the backend disagreeing about
+statuses, retries, and which routes exist. All of it passed the suite, so each fix below
+comes with a regression test.
+
+- **Terminal statuses have one definition.** `store.TERMINAL_STATUSES` is public and
+  used by `preparation.check` and `daily.prepare_application` (both had their own copies).
+  The SPA had a fourth copy missing `interview`/`ghosted`/`skipped`, so those rows showed
+  "Prepare again" and were counted into bulk Prepare, then failed server-side. The SPA
+  now reads the server's `terminal_application` preparation reason
+  (`lib/applicationRows.isTerminalRow`) instead of keeping a list, and no longer shows the
+  "Needs Prepare" hint on terminal rows.
+- **Bulk Fill stays `ready`-only on purpose** (so a test batch never fills every row);
+  documented beside both `FILLABLE_STATUSES` and `preparation._FILLABLE`.
+- **Retry is server-driven.** `daily.retry_kind(app)` is the single definition of
+  "retryable" (`fetch` / `prefilter` / `tailor` / None); `ApplicationOut.retry_kind`
+  carries it, and the SPA shows one button labelled by what it does. Previously a
+  screen-rejected `screened_out` row offered Retry and got a 409, and "Fetch JD" claimed
+  to screen. The retry route now 409s while an Apply operation or daily pass owns the
+  browser, and the button is disabled while an operation runs.
+- **Tailor retry no longer blocks a request for up to an hour.** It queues the job and
+  returns at `tailoring`; a daemon thread records `ready` / `tailor_failed`, re-reading the
+  row first and doing nothing if it moved on. The page's existing poll also refreshes the
+  table while any visible row is `tailoring`.
+- **Retired routes:** `POST /api/applications/{id}/otp` (nothing ever called
+  `otp_bus.request_otp` since Workday switched to handoff), `POST`/`GET
+  /api/applications/{id}/fill`, and `POST /api/applications/run-daily` — superseded by
+  Apply operations; neither the SPA nor MCP called them. Removed with them: `otp_bus.py`,
+  `fill.start_fill_async` / `get_fill_result` / `fill_busy` / `FillBusyError` / `_progress`
+  (`fill_busy` was only ever set by `start_fill_async`), `daily.try_start_daily`, and their
+  `api.ts` helpers. `Application.otp_prompt` stays so existing rows load.
+- **Resuming a paused Fill reuses the retained tab.** The worker re-called
+  `fill_application` with the batch's original `fill_mode` (usually `initial`), which opened
+  a new tab and discarded what the user had just done there; it now continues with
+  `continue`. `needs_input` is decremented on resume too, and the per-application budget
+  restarts. Idempotent correction operations are capped at the 200 most recent.
+- **Guard-failed answers are not cached.** The sync `answer_question` wrote an empty
+  answer to the cache after two guard failures, pinning that question to `""` until a
+  prompt-version bump; it now matches the async path. The two paths' length policies
+  differ on purpose (sync trims at a sentence for copy-paste; async rejects rather than
+  truncate into a live form field) and are documented as such.
+- **Smaller:** the `propose` stage has its own progress band and label; template remap
+  overrides are typed to the five heading kinds (422 on anything else);
+  `config.apply_fill_engine()` owns the `APPLY_FILL_ENGINE` read; `.env.example` documents
+  `CHROME_CDP_URL`, `APPLY_FILL_ENGINE`, the remaining `LLM_EFFORT_*` and
+  `LLM_EXTRACT_CONSENSUS_RUNS`; CLAUDE.md lists the apply modules that call the LLM.
+- **Dependencies:** test/lint tools moved to `requirements-dev.txt` (runtime-only
+  `requirements.txt` is what Docker installs). `uv.lock` and the two identical scratch
+  files `_sources_full.py` / `_src_sources_ascii.py` were deleted.
+
+Checks: 1,062 Python tests passed (1 skipped); 102 frontend tests across 13 files,
+typecheck, lint (18 warnings, down from 19), and production build passed. Live check
+against a temp copy of the data: each seeded status showed the right button (or none),
+bulk Prepare counted 0 for a selected skipped row, a tailor retry returned in about 1.6s
+and the row settled on its own, and the retired routes returned 404/405. Known leftover:
+`test_extract_consensus_pinned_to_apply_settings_model` reads the real
+`data/master_resume.json` and fails under the empty-data-dir hermetic run.
+
+## 2026-09-23 — Workday JD fetching, and a canonical-key bug it exposed
+
+Two symptoms on the Applications page: every ATS-"workday" row was stuck at "Browser
+needed", and other `myworkdayjobs.com` rows sat at "discovered" showing ATS "unknown".
+
+- **Workday now has a JSON feed**, like the existing Greenhouse/Lever/SmartRecruiters/Ashby
+  ones. `ats_api.workday_posting_text` hits `/wday/cxs/<tenant>/<path>` (dropping a leading
+  locale segment such as `en-US`) and reads `jobPostingInfo.jobDescription`.
+  `fetch_jd.fetch_jd` tries it before the HTTP/CDP fallback, which is why the ATS-detected
+  rows were failing: the HTTP download only ever got Workday's empty JS shell, and the CDP
+  browser read the page before the description had loaded — now polled for up to 10s.
+- **Fixed a Workday canonical-key bug found while checking the fetch.** `identity.canonical_key`
+  matched the first letters-plus-year pattern anywhere in the path, so
+  `…Intern-2027_R39474` became `workday:amfam:ERN-2027` and `…Summer-2027…` became
+  `MER-2027` for *every* company — a live collision risk, since the registry is keyed by
+  canonical key. It now takes the id after the URL's final `_`. `store.SCHEMA_VERSION` is
+  now 3; `_migrate_v2` re-keys existing Workday rows (rewriting any `duplicate_of` that
+  pointed at the old key, and never colliding two rows into one), backfills `Application.ats`
+  for rows still at "unknown", and backs the file up once before rewriting it.
+- **`_application_from_row` now sets `ats` at discovery**, not just after the first fetch —
+  that's why freshly-discovered Workday rows showed "unknown".
+- **The fetch retry now uses the same 100-character floor as the nightly run**
+  (`daily._MIN_USABLE_JD_CHARS`), so a retry can't move a row to `jd_fetched` with a scrap
+  of text the nightly run would have rejected.
+
+Checks: full suite green (1,083 passed, 1 skipped — 25 new tests over the prior 1,058);
+the two `test_web.py` skills-download failures are pre-existing and reproduce on
+unmodified `main`, unrelated to this change. Verified the canonical-key fix and the
+Workday JSON feed against seven real posting URLs (CAI, AmFam, MFS, GEHC, Fidelity,
+Nebraska Medicine, GM) without touching `data/`.
+
+## 2026-09-23 (later) — the Workday fix above lost most of the JD text
+
+Watching a live "Prepare selected" run on the CAI posting from the entry above surfaced
+two more bugs, one in that fix and one pre-existing:
+
+- **`extract_text`'s "largest block only" heuristic doesn't belong on an ATS feed's
+  JD-only HTML field.** It exists so an HTTP page download can throw away nav/footer
+  chrome; reused on Greenhouse's `content`, Ashby's `descriptionHtml`, and the new
+  Workday `jobDescription` (all three are the JD and nothing else already), a single
+  outsized paragraph — an EEO/boilerplate block is a common case — ate the whole
+  extraction. CAI: 6,886 real characters became a 957-character EEO paragraph, and the
+  row went on to `tailoring` against that alone. Added `extract_fragment_text` (join
+  every block, keep nothing back) and moved the three feed call sites onto it;
+  `extract_text` keeps the largest-block heuristic for its one real caller, the raw
+  HTTP page download.
+- **A successful fetch never cleared `Application.error`.** `_process_one`'s
+  `needs_browser` branch never set `app.error` itself (only `retry_application`'s
+  fetch branch did, and it already cleared it on success) — but a row that had been
+  through a failed retry before a later `_process_one` fetch succeeded kept showing
+  the retry's stale error message on the Applications page indefinitely. Now cleared
+  the moment a fetch succeeds, right before `jd_fetched`.
+- **No progress during the tailor wait.** `_process_one`'s `log` callback (which
+  `operations.py` turns into the Applications page's "Last activity" line) only fires
+  on each step's *terminal* outcome (`[needs_browser]`, `[tailor_failed]`, `[ready]`,
+  …), never mid-step — so the entire tailor call (extract → score → facets → rewrite →
+  render, one `_wait_for_job` poll loop) showed one static message the whole time. The
+  tailor job already emits `ProgressEvent`s for exactly this (the Tailor tab's own SSE
+  stream reads them); `_wait_for_job` now takes an `on_progress` callback and relays
+  `job.events[-1].message` each time it changes, so "Prepare selected" surfaces the
+  same stage names as a normal Tailor run instead of going dark for minutes.
+- **Not a bug, but worth recording:** a `tailoring` row left behind by a server
+  restart mid-run has no dedicated recovery, but does not need one — `prepare_application`
+  resets any non-terminal status back to `discovered` before re-running the funnel, so
+  selecting the row again and clicking "Prepare selected" self-heals it. Checked this
+  is genuinely true rather than assumed.
+
+Checks: full suite green (1,088 passed, 1 skipped — 2 new tests over the prior 1,083).
+Rebuilt and restarted the Docker image (`src/` is baked in, not bind-mounted, so a
+plain container restart does not pick up a source change) and re-verified the CAI
+fetch inside the running container end to end: `fetch_jd.fetch_jd` returns
+`method="api"`, 6,886 characters, both the responsibilities section and the EEO
+paragraph present. Did not touch the real `applications.json`; a direct edit to reset
+the stuck CAI row's status was denied by the harness's own "modify shared resources"
+guard, so that row still needs the user to click "Prepare selected" on it themselves.
+
+## 2026-09-23 (evening) — Prepare now tailors with the Tailor tab's model settings
+
+"Prepare selected" was taking 20+ minutes a posting while a Tailor-tab run took under a
+minute. The cause was model routing, not the pipeline: `daily._job_settings` overwrote every
+model field on the submitted tailor job with the Apply page's picker
+(`ApplySettings.model_spec`, `ollama:nemotron-3-super:cloud` — a reasoning model, ~80s per
+call and more fabrication retries), clearing `model_name` and every per-stage override. The
+Tailor tab was running `ollama:gemma4:cloud`. Yesterday's Prepare runs on gemma4 took 38–105s.
+
+- **Routing.** The job runner's `JobSettings` → `(profile, overrides, effort)` block moved out
+  of `JobQueue._execute` into `web.jobs.model_routing`. `_job_settings` no longer touches model
+  fields, and `_process_one`'s screening `jd.extract_consensus` is pinned with the same routing
+  through `config.pinned(profile, overrides=..., effort=...)`; `pinned` gained the `overrides`
+  keyword for this. This reverses the earlier "Apply model is authoritative for every Apply
+  call" design at the user's request.
+- **The Apply picker stays, renamed "Autofill model".** It still drives Fill's
+  `answer`/`model_resolver`/`hybrid_resolver` calls (`fill.py`, `engine.py` keep
+  `config.pinned(settings.model_spec)`). Next to it, the page shows a read-only
+  "Tailoring: <profile> · <model> (Tailor tab)" line (`frontend/src/lib/modelLabel.ts`,
+  shared with RunPage's placeholder). The operation's `effective_model` now names the Tailor
+  routing for Find/Prepare (`web.jobs.model_label`) and the autofill model for Fill.
+- **The fourth JD read is gone.** Screening called `extract_consensus` with the default
+  `runs=1` (cache file `<slug>.requirements.json`) on different routing, so the tailor job's
+  `runs=extract_runs` lookup (`<slug>-consensus3…`, a different `fingerprint("extract")`) always
+  missed and read the JD three more times. Screening now passes
+  `runs=job_defaults.extract_runs` and `use_cache=not no_cache` with the same routing, so the
+  tailor job reuses it. That's 3 JD reads per posting instead of 4.
+
+## 2026-09-23 (night) — years-of-experience false positive, and stuck "tailoring" rows
+
+- **Symptom.** CAI's Data Analyst Intern (Workday R8551) failed Prepare with
+  `requires_40_years`. The phrase was company history ("over 40 years of excellence"), newly
+  visible because the full-JD fix above keeps the "Who we are" paragraph.
+- **`eligibility.min_required_years` is stricter.** A match counts only when "experience"/"exp"
+  follows within 40 characters (`_EXPERIENCE_AFTER`), and numbers over
+  `MAX_PLAUSIBLE_YEARS = 5` are ignored. The user chose 5 because every source is an intern or
+  new-grad board, so a larger floor is a misparse. `check_text` takes `role=`: an
+  intern / new-grad / entry / student title downgrades a years floor from a hard reject to a
+  `years_N` flag. Both daily callers pass `app.role`.
+- **A failed "Prepare again" no longer resurrects an orphaned row.** `prepare_application` used to
+  restore `previous` on any failure, and here `previous` was a `tailoring` row whose job died
+  with a container restart. So the row showed "tailoring" (plus a stale fetch error) forever.
+  `_settle_failed_prepare` now restores `previous` only when it had a packet (status outside
+  `store.PRE_READY_STATUSES`, which went public for this). Otherwise it keeps the new outcome,
+  e.g. `screened_out` with its reasons. An exception mid-tailor moves `tailoring` to
+  `tailor_failed` and records the error.
+- **Startup recovery.** Tailor jobs are in-memory, so `lifespan` calls
+  `daily.recover_orphaned_tailoring()`: any `tailoring` row whose `job_id` the queue doesn't
+  know becomes `tailor_failed` ("interrupted by a server restart"), which gets a Retry button.
+  It checks the queue rather than "no active operation", because a per-row tailor retry runs
+  outside any operation.
+
+## 2026-09-23 (late night) — Workday autofill rebuilt on observed screens
+
+Workday fills always ended in "1 need input" with nothing filled. Evidence from the live CAI
+tenant (read-only CDP dumps plus an isolated signed-out context): every attempt stopped at
+`handle_workday_auth` → `failed` within ~4 s, because its "logged in" selectors
+(`legalNameSection_firstName`, `applicationForm`, `signOut`, ...) no longer exist; auth submit
+buttons are covered by a `click_filter` overlay that swallows direct clicks; the Apply control
+is a link opening a Start dialog; and form hints/repeater selectors used the same stale names.
+
+- **`workday_flow.py`** — screen state machine from visible automation ids (pure `classify`,
+  fixtures captured live); `wait_for_state` / `wait_for_step_ready` (stable marker set, since
+  Workday renders Country first, applies a locale default — Vietnam here — then the rest) /
+  `wait_for_step_change` after Save and Continue. Only Apply / Continue Application / Apply
+  Manually are clicked — never "Autofill with Resume" or "Use My Last Application".
+- **Auth** — existing session wins; unknown tenant creates an account; vault `created` marks a
+  tool-made account; "already exists" with an unknown password is a handoff
+  (`sign_in_failed`), never a retry. Readable `AUTH_HANDOFF` texts replace bare codes.
+- **Fields** — `filler.js` only sees input/select/textarea, so Workday listbox buttons get a
+  deterministic pass (`select_listbox`: one evaluate for ~250 options, verified by polling the
+  button text — Workday repaints it after ~300 ms, which is also why `hybrid_resolver`'s own
+  check now polls). Radios come from their legend question; "ever employed by <company>" is
+  answered from the resume's employers. The resolver now reads a Workday field's label/legend
+  instead of the button's aria-label ("Select One Required"), which previously left the
+  model answering questions it could not see. "Phone Extension" no longer matches `phone`.
+- **My Experience** — rows are `workExperience-N--*` / `education-N--*`; dates are 0-px
+  spinbuttons typed via their display divs; prompts (Field of Study) commit a chip; a row an
+  earlier run started is completed rather than duplicated. Resume upload is skipped when the
+  filename is already listed (Workday's input empties after each upload, so every rerun was
+  attaching another copy). File inputs fall back to the section heading ("Resume/CV").
+- **Auto-submit** — `schemas.py` documented Workday as excluded but the code allowed it; the
+  guard now exists in `decide_submit_action` (the test that asserted the opposite was flipped).
+- Verified live on CAI via the Apply API: posting → draft resume → My Information → My
+  Experience (resume, 5 jobs, education) → Application Questions → Voluntary Disclosures,
+  stopping only at the required terms-consent checkbox. Several tabs on one draft produced
+  Workday's "Something went wrong" (VPS) page; fill now reloads once, then hands over.
+- **Follow-up (AmFam, same night).** Some tenants open the Create Account/Sign In step with a
+  chooser (Google / LinkedIn / "Sign in with email", `SignInWithEmailButton`) and no password
+  field, and every tenant paints that step's progress bar before its form — which
+  `classify` read as `apply_form`, so auth was skipped and Fill failed with "no controls".
+  Now: `auth_chooser` is its own state (auth clicks email only, never a third-party login),
+  and an apply shell whose active step is Create Account/Sign In (or shows `signInContent`)
+  is `unknown` until its form renders. AmFam's Sign In overlay is labelled "Submit", not
+  "Sign In", so `click_control` finds the `click_filter` by `elementFromPoint` at the
+  button's centre; the label match remains only as a fallback.
+
+## 2026-09-24 — Workday Sign In never clicked; two false prepare failures
+
+The first batch run after the Workday rebuild left AmFam, Capital Group and CAI on the Sign In
+form, filled but never submitted, each handed over as "the saved password was not accepted";
+and the Prepare operation reported 3 failures when only one row had genuinely stopped.
+
+- **Sign In click race.** Live inspection (CDP, read-only) showed the `click_filter` overlay
+  holds the only click listener; the real `<button type=submit>` has none. The run filled and
+  clicked in the same second the form appeared, before the overlay painted, so
+  `click_control` fell back to the bare button — a silent no-op — and auth waited 20s and
+  blamed the password. Zoom/DPR/smooth-scroll offsets were ruled out. Now
+  `wait_for_auth_form_ready` waits for inputs + submit + a stable overlay (a tenant with no
+  overlay is accepted after 2s), `click_control(expect_overlay=True)` keeps looking for it
+  briefly, and `_submit` verifies a reaction (screen, URL, alert, loading marker, or an
+  outgoing POST). An ignored click is retried once; a click that sent a request never is —
+  AmFam's real rejection took ~20s, and the first version of the retry double-submitted a
+  wrong password. Focus-ring and overlay-appearing changes are not counted as a reaction.
+  No error on screen now yields `no_response`; `sign_in_failed` needs Workday's own message.
+- **Verified live:** Capital Group and CAI signed in through the overlay (`overlay-point`).
+  AmFam's click now reaches Workday, which answers "wrong email address or password or your
+  account might be locked" — the profile's Workday password is not AmFam's.
+- **Also found on Capital Group:** "How Did You Hear About Us?" is a hierarchical prompt on
+  My Information that nothing filled (`fill_prompts` now does, from `how_heard`; a leaf listed
+  under two categories is one answer, and committed chips such as the phone code's are
+  excluded from the options). `select_listbox` read `aria-controls` once right after the
+  click, but Workday sets it only once the list opens — re-read while polling (My
+  Information's State had worked by timing luck). Capital Group's My Experience has no Work
+  Experience or Education section; rows are now skipped, not flagged, when the section is
+  absent.
+- **Degree prefilter:** "seeking a baccalaureate, masters, or doctoral degree" was rejected as
+  advanced-degree-only; `_BACHELOR` now knows baccalaureate, associate's, four-year and
+  college/university degree.
+- **Re-prepare status:** a successful Prepare again restored a stale `fill_failed` (from before
+  the Workday rebuild) and the operation counted any non-`ready` result as failed. Only a live
+  hand-off (`awaiting_review` / `awaiting_otp`) is retained now, and it counts as completed.
+- **Open, not changed:** the hybrid resolver answers profile-less yes/no questions itself
+  (Capital Group: work authorization "Yes", criminal history and FINRA "No"). That is
+  pre-existing behaviour on every ATS; the tab still stops for review before any submit.
+
+- **2026-09-24 UI redesign:** Shared semantic surfaces now use warm neutral/teal tokens and IBM Plex Sans. Tailor settings collapse behind an always-visible summary. Apply has independently queried working and archived tables (each with URL search/filter/sort/page state, current-page selection, top/bottom pagination, compact mobile cards, one primary action plus an overflow menu). Application details have their own route with saved overview, documents, application content, and form review; viewing does not launch generation. The Profile area separates resume contact from explicit application overrides and keeps their saves separate. Vocabulary uses tabs, with additions kept mounted so a pending debounce survives tab changes. Template preview leads, with metadata in Details. The backend adds an optional `archived_at` field, a batch archive/restore endpoint, scoped listing/search/sort, and archive exclusion at preparation, Fill, retry, daily selection, and rediscovery. Status/history/files are preserved across archive/restore. No tailoring or form automation algorithms changed.
+- **Autosave safety:** Tailor settings and vocabulary additions now have provider-owned unsaved/saving/saved/failed state and retry actions. Their pending writes survive page navigation. Profile activation through either the selector or manager flushes both drafts before switching; a failure offers Retry, Stay, or Discard. Hard reload warns while manual drafts or autosaves are unresolved. Serialized writes prevent a slower earlier save from overwriting a newer edit.
+- **Resume editing navigation:** The Profile resume editor now has a desktop section index, a mobile section picker, and a collapsed import action. Section order and entry IDs remain unchanged.
+- **Tailor results:** The result area now exposes URL-backed Overview, Documents, and Application content tabs; changing the active run returns to Overview. Skills and experience content remain available when a run has no report.
+
+## 2026-09-24 — Submitted applications auto-archive (registry schema v4)
+- `store.set_status` sets `archived_at` on the transition *into* `submitted` (not on a
+  same-status note, so a row the user restored stays restored). Every status write goes
+  through `set_status`, so fill, engine, daily, operations, and the web route all get it.
+  `submit_unconfirmed` is deliberately not archived — it still needs the user.
+- The schema v3→v4 upgrade (`_migrate_v3`) archives existing submitted rows once, using
+  the submission's own history timestamp for `archived_at`. It runs only on upgrade, so
+  a later restore is not undone. `load_all` now chains v1→v2→v3→v4 instead of returning
+  early from each branch.
+- Consequence: status changes on an archived row still 409 ("Restore … first"), so
+  moving a submitted row to interview/rejected needs a restore first.
+- Profile gained `education_start_month`, fed into the packet's profile education row
+  (`start`) and matched by `filler.js` on Greenhouse-style `start-year--N` ids only — no
+  label synonym, since "start date" already means `earliest_start`.
+
+## 2026-09-24 — Workday Skills, stray file pickers, whole-page retries, account terms
+
+User-reported: Skills never filled; the OS file picker opened on dropdown-heavy steps; a stuck
+field made the fill go over the whole page again; Create Account stopped at its terms box.
+
+- **File picker / whole-page retries had one root.** `hybrid_resolver`'s scan matched
+  `[data-automation-id*="select"]`, which on Workday also hits `select-files` (upload button),
+  `multiSelectContainer` ("0 items selected"), `promptSelectionLabel` and `selectedItemList`
+  (live read-only CDP dump, Capital Group My Information). Each "unresolved" control was
+  *clicked open* to read its options on every resolver pass (up to 3 passes × 2 attempts per
+  stuck step), so the page visibly redid itself and "Select files" raised the picker. Logs had
+  "found 3 unresolved controls … applied 0/3" on a step with no dropdowns. Now: only
+  `[role=combobox]` / `[aria-haspopup=listbox]`, one per `formField-*`, upload widgets and
+  multiselect containers excluded (`*="file"` only as a word part — `profile…` containers hold
+  real dropdowns); `_select_combobox_option` refuses upload widgets; a `filechooser` listener
+  on the fill tab intercepts any picker. `StepLedger` (per step, per frame) caches options and
+  records what was resolved or already asked; post-advance passes use `only_invalid`. Errors
+  with no actionable control no longer call the model at all.
+- **Skills.** `Packet.skills` (the tailored `skills.json` list) was never used by Fill. New
+  `workday_flow.fill_skills`: one search per skill; `field_matcher.match_skill_option` takes
+  exact text, else a `Name (ABBR)` option matching on name or abbreviation (keeps `#`/`.`, so
+  C# ≠ C); ties and substrings are no match. Leftovers with options go to ONE
+  `choose_skill_options` call (user's proposal; guard-rails added: only observed options,
+  "same skill, never related" prompt, code rejects anything not offered, one option per skill);
+  commit is verified by one new chip. `fill_prompts` no longer touches the Skills prompt.
+  The live Skills DOM was not captured (would have meant advancing the user's draft); the
+  fixture mirrors the How Did You Hear prompt markup — confirm on the next live Capital Group
+  fill.
+- **Account terms** (user decision): `createAccountCheckbox` is now ticked (check → label →
+  forced click, verified); only an un-tickable box is `terms_needed`. Application consent
+  boxes are unchanged (left to the applicant).
+- **Extra Chrome tab — not changed.** The backend only drives Edge over CDP and cannot open a
+  Chrome tab; no code calls `window.open`. The only same-origin new-tab links are the PDF links
+  ("Tailored PDF" in the row menu, View/Download PDF on the detail page), which open
+  `127.0.0.1:8000/api/jobs/<id>/preview.pdf` in a new tab. User could not reproduce; awaiting
+  their call on whether those links should change.
+- **Noticed, not fixed:** AmFam's fill record typed "First Name" into
+  `name--legalName--lastNameLocal` and "Last Name" into `…firstNameLocal`.
+- **Verified live (Capital Group Charlotte, reopen-and-fill, Docker rebuilt):** Skills prompt
+  found on My Experience; 10 skills entered one search each — 7 exact/qualifier matches
+  (Python → "Python (Programming Language)", machine learning → "Machine Learning (ML)",
+  Pandas → "Pandas (Software)"), one model call for 3 leftovers (Matplotlib → "Python
+  Matplotlib"; two course titles correctly null → one review line). Resume upload verified, no
+  file picker, no resolver pass on My Experience. Application Questions: one resolver pass
+  (5/5), stopped only at the required salary question (reserved for the applicant).
+- **Still open (pre-existing):** the resolver answered "Are you currently authorized to work in
+  the U.S.?" = No because `authorized_to_work` is blank in the profile (`visa_holder`, F-1 OPT);
+  and `FillResult.filled` holds only values `filler.js` can re-read (inputs), so Workday
+  listbox/prompt answers — Skills chips included — are absent from the saved record even
+  though they are on the form.
+
+## 2026-09-24 — Screened-out reasons, restriction check before extraction, re-check
+
+Audit of the 11 screened-out rows: 6 were genuine work restrictions (citizenship / ITAR
+U.S.-person / security clearance) for a `visa_holder` profile, but the stored reason was
+the regex source (`blocked by pattern '\bU\.?S\.? citizen'`). The listing feed's
+`citizenship_required` was "No" for all of them, so they paid for LLM JD extraction before
+a free regex rejected them. 4 were stale rejections from since-fixed rules
+(`requires_30_years`, `requires_17_years`, coverage) that nothing ever re-checked, and one
+was an "Analytics Intern" rejected because the model labelled seniority `mid`.
+
+- `screen.check_blocks` runs in the prefilter stage (`daily.prefilter_screen`), before
+  extraction; default patterns record named reasons and the matching sentence
+  (`ScreenResult.evidence`). Sentence splitting ignores single-letter abbreviations
+  (`U.S.`), which otherwise cut every quote mid-sentence.
+- An early-career title (`eligibility.is_early_career_title`) outranks the model's
+  seniority: flag `seniority_mismatch`, never a rejection.
+- `screen.screen_label` → `ApplicationOut.screen_label`, shown under the Status pill;
+  the detail Overview lists reasons and quoted evidence.
+- `retry_kind` is "prefilter" for every screened-out row with saved JD text (was only
+  `prefilter:`-noted rows); the re-check uses the stored `screen.seniority`, no LLM.
+
+## 2026-09-24 — Six Apply fixes: Workday sign-up order, salary answers, review table
+
+- **Workday auth keyed on the site, not the password.** A saved profile password sent every
+  first visit straight to Sign In; on a site with no account yet (Excellus, `lthc`) Workday
+  answered "wrong email or password" and the hand-off wrongly said an account existed. The
+  vault's `created`/`signed_in` flags now decide: a new site creates first (creating never
+  spends a lockout attempt), "already exists" gets one Sign In with the profile password, then
+  `account_exists_other_password`.
+- **Salary is answered, deterministically.** The applicant asked for `min(posted top, my top)`
+  in the posting's unit (their three cases — below/within/above the range — reduce to that),
+  and their top when no pay is posted. Structured min/max fields replace parsing the sentence
+  each time; they seed once from it (`mode="before"` validator on absent keys, so a cleared
+  range stays cleared). EEO stays reserved; salary never reaches a model.
+- **Unlabelled Workday questionnaire textareas.** `labelFor` returned '' for Excellus's
+  questions (multi-id `aria-labelledby`, label in the `formField-*` container), so even
+  the salary rule never saw them.
+- **Preferred-name checkbox.** A lone checkbox is now a yes/no switch (`has_preferred_name`
+  emitted only when the preferred name differs from the first name); a tick reports
+  `revealed` and the frame is scanned once more — the Greenhouse-only reveal rescan, generalised.
+- **Applications page.** "Only sorts the current page" was ties: the server always sorted the
+  whole list, but 104 Workday rows tie-broken by `canonical_key` read as unsorted. Ties now
+  fall back to newest-discovered, and Status sorts in pipeline order. Refresh-on-finish missed
+  operations that began and ended between two 2s polls and tailor retries (not operations);
+  the poll now compares operation id+state signatures and keeps polling while a row is
+  `tailoring`/`filling`. Review rows moved to their own top table with `review_summary`.
+  Header profile switcher/Manage/theme became one gear menu (design.md updated; the manager
+  dialog is portaled because the header's `backdrop-filter` is a containing block for `fixed`).
+- **Live Excellus follow-ups (same day).** (1) "Minimum $18.00 - Maximum $20.00" parsed as two
+  singles (answer $18); `_DASH` now allows a "Maximum"/"max"/"up to" word, case-insensitive.
+  (2) Once Workday questions had labels, "Indicate any other names under which your school…"
+  matched the `school` synonym; text controls with labels over 60 chars no longer use
+  short-field synonyms (id hints still apply). (3) Workday's questionnaire textarea showed the
+  JS-set "$18/hour" yet validated as empty; `fill._commit_workday_textareas` re-enters textarea
+  answers with Playwright `fill` + blur on Workday (text inputs accept the JS value). After
+  that the run passed both Application Questions steps and stopped only at the legal consent
+  checkbox, which stays the applicant's.

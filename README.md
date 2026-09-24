@@ -42,9 +42,12 @@ Python **3.13** is required. On this machine use Anaconda's interpreter if `py -
 ```powershell
 & C:\ProgramData\anaconda3\python.exe -m venv .venv
 .\.venv\Scripts\activate
-pip install -r requirements.txt
+pip install -r requirements-dev.txt   # runtime deps + pytest/ruff/mypy
 pip install -e .
 ```
+
+`requirements.txt` alone is the runtime set (what the Docker image installs); use it
+instead if you will never run the tests.
 
 ### CLI
 
@@ -81,6 +84,8 @@ For a hot-reload SPA during development, run `npm run dev` in `frontend/` (proxi
 
 ### Tests
 
+Needs the dev install above (`requirements-dev.txt`).
+
 ```powershell
 pytest
 ```
@@ -110,8 +115,9 @@ The container uses LibreOffice for PDF measurement. Host Ollama / LM Studio are 
 ## Automation (daily apply)
 
 ResumeTailor can discover new internship and new-grad postings overnight, tailor them,
-and fill simple ATS forms from a browser on your host. You still click **Submit** until
-you opt into per-ATS auto-submit.
+and fill ATS forms from a browser on your host. The Apply page exposes this as three
+separate actions: **Find jobs**, **Prepare selected**, and **Fill selected**. Each operation
+shows its current application, stage, counts, and recent activity.
 
 Default sources (edit `settings.apply.sources[]` to add/disable):
 
@@ -156,9 +162,19 @@ Inspect a README's section headings before enabling categories:
 docker compose exec app python scripts/apply_daily.py --limit 5
 ```
 
-5. Morning: filter **ready**, click **Open & fill**, review in Edge, click Submit,
-   mark **Submitted**. After a week of clean Greenhouse fills, add `"greenhouse"` to
-   `apply.auto_submit_ats`.
+5. Morning: select queue rows, run **Prepare selected**, then **Fill selected**. Keep
+   **Auto-submit verified forms** off to review each completed form in Edge. Turn it on
+   when you want verified forms to submit automatically; the per-run cap still applies.
+   Fill opens each prepared posting in turn, leaves its tab open, and continues through
+   blockers. Use **Review tab** to return to a form and **Continue fill** after you resolve
+   a blocker. **Reopen and fill** starts a new tab if the saved one has closed; unsaved
+   answers in the old tab may be lost. Enter Workday verification codes in its browser
+   tab, then use **Continue fill**. For calling-code menus shared by several countries,
+   set the applicant profile's optional **Phone region** before filling.
+
+**Prepare** tailors with the same model settings as the Tailor tab (shown as "Tailoring: …"
+next to the selector) — change the model there. The **Autofill model** selector covers only
+Fill's AI tasks: drafted written answers and hybrid form resolution.
 
 Host-only CLI (when Docker is not running — do not run both against the same workspace):
 

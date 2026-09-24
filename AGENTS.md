@@ -1,6 +1,6 @@
-# CLAUDE.md
+# AGENTS.md
 
-This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
+This file provides guidance to Codex (Codex.ai/code) when working with code in this repository.
 
 ResumeTailor takes a master store of resume content, a job description, and the user's own
 `.docx` resume, and produces a tailored resume that is **visually identical to the
@@ -16,16 +16,14 @@ append (`>>`), not Read+Edit** (later entries supersede earlier ones; cross-chec
 against code). `docs/PLAN.md` is the original phase-by-phase build history — open it only
 when a code comment cites a phase. `README.md` is the user-facing walkthrough (this file
 supersedes it). `docs/skills/apply-from-queue/` is
-the Claude Desktop fallback for `needs_browser` postings.
+the Codex Desktop fallback for `needs_browser` postings.
 
 ## The architectural invariant
 
 **The LLM produces plain strings and nothing else. It never sees, receives, or emits XML,
 styling, template markup, or anything about layout.** Only `jd.py`, `rewrite.py`,
-`facets.py`, `expand.py`, `skills.py`, `coverletter.py`, `review.py`, `propose.py` — plus
-the apply funnel's `apply/answer.py`, `apply/model_resolver.py`, `apply/hybrid_resolver.py`
-(form-field labels/options and resume text, never document XML) — call the API,
-exchanging plain text/JSON only. `llm.py` routes which backend; `render.py` is
+`facets.py`, `expand.py`, `skills.py`, `coverletter.py`, `review.py`, `propose.py` call
+the API, exchanging plain text/JSON only. `llm.py` routes which backend; `render.py` is
 the only module that touches the document (mechanically, via `docxtpl`); `convert.py`
 owns PDF conversion. Six stages on every clean run: JD extraction, relevance scoring,
 facet selection, bullet rewriting, experience expansion, skills selection. Opt-in: cover
@@ -73,7 +71,7 @@ registers only 3.14 and 3.10, so `py -3.13` fails.
 ```powershell
 & C:\ProgramData\anaconda3\python.exe -m venv .venv
 .venv\Scripts\activate
-pip install -r requirements-dev.txt; pip install -e .   # requirements.txt = runtime only
+pip install -r requirements.txt; pip install -e .
 copy .env.example .env    # ollama is the default backend — no key needed to run
 ```
 
@@ -87,7 +85,7 @@ python -m resume_tailor.data --validate   # validate master_resume.json
 pytest                                    # full suite (no Word or API required)
 uvicorn resume_tailor.web.app:app --reload --app-dir src   # API + SPA (build frontend first)
 docker compose up --build                 # one-click: UI at http://localhost:8000
-python -m resume_tailor.mcp_server        # Claude Desktop MCP (uvicorn must already be up)
+python -m resume_tailor.mcp_server        # Codex Desktop MCP (uvicorn must already be up)
 python scripts\apply_daily.py             # nightly apply funnel (or enable apply.enabled)
 ```
 
@@ -192,15 +190,13 @@ everything *after* the loop prototype stripped (`_wrap_cell_loop`).
 
 ## Environment notes
 
-- **The default model profile is `ollama`, not `claude`** — a fresh install runs with no
-  Anthropic key. `config.resolve()`/`backend_for`'s fallbacks still default to `claude`
+- **The default model profile is `ollama`, not `Codex`** — a fresh install runs with no
+  Anthropic key. `config.resolve()`/`backend_for`'s fallbacks still default to `Codex`
   deliberately (importable library callers that never went through the CLI).
 - **`config._ACTIVE` is populated only by `web/jobs.py`'s job runner.** A web route calling
-  an LLM outside a job hits the claude fallback; one that must not does
-  `config.pinned(config.ONE_OFF_PROFILE)` (ContextVar overlay). Apply's Prepare (screening
-  extraction in `apply/daily.py` + the tailor job) uses the Tailor settings' routing
-  (`web.jobs.model_routing`); Fill's answer/resolver calls (`fill.py`, `engine.py`) run under
-  `config.pinned(ApplySettings.model_spec)` — the Apply page's "Autofill model".
+  an LLM outside a job hits the Codex fallback; one that must not does
+  `config.pinned(config.ONE_OFF_PROFILE)` (ContextVar overlay). The apply funnel pins its
+  two LLM calls to `ApplySettings.model_spec` explicitly.
 - **Structured output**: non-frontier backends may accept a schema and ignore it — `llm.py`
   puts the schema in the prompt and escalates on **parse failure, not status code**; on the
   OpenAI-compatible path `MAX_TOKENS` is only the starting request (escalation memoised in
