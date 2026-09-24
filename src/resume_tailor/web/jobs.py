@@ -120,6 +120,62 @@ def _jd_title_fallback(jd_text: str) -> str:
     return "Untitled run"
 
 
+def model_routing(
+    settings: JobSettings,
+) -> tuple[str, dict[str, str] | None, str | None]:
+    """``(profile, overrides, effort)`` for `config.resolve`/`config.pinned` from run settings.
+
+    The one place a `JobSettings`' model fields become backend routing — shared by the
+    job runner and the Apply funnel's own screening extraction, so Prepare tailors and
+    screens with exactly the routing a Tailor-tab run with the same settings would use.
+    """
+    overrides: dict[str, str] = {}
+    # Broadest first: a blanket model name repoints every stage, then origin-specific
+    # tags, then per-stage fields overwrite whichever of them they name.
+    if settings.model_name:
+        for purpose in config.PURPOSES:
+            overrides[purpose] = settings.model_name
+    if settings.ollama_model:
+        for purpose in config.provider_stages(settings.model, "ollama"):
+            overrides[purpose] = settings.ollama_model
+    if settings.gemini_model:
+        for purpose in config.provider_stages(settings.model, "gemini"):
+            overrides[purpose] = settings.gemini_model
+    if settings.rewrite_model:
+        overrides["rewrite"] = settings.rewrite_model
+    if settings.expand_model:
+        overrides["expand"] = settings.expand_model
+    if settings.skills_model:
+        overrides["skills"] = settings.skills_model
+    if settings.cover_model:
+        overrides["cover"] = settings.cover_model
+    if settings.review_model:
+        overrides["review"] = settings.review_model
+    if settings.answer_model:
+        overrides["answer"] = settings.answer_model
+    return settings.model, overrides or None, settings.effort
+
+
+def model_label(settings: JobSettings) -> str:
+    """Short ``provider:model`` label for the routing `model_routing` produces.
+
+    Names the rewrite stage's backend (the one a tailoring run spends most calls on),
+    suffixed ``+ stage overrides`` when other tailoring stages route elsewhere. A spec
+    that doesn't resolve falls back to the raw profile string rather than raising — this
+    is a display label, and the run itself reports the real error.
+    """
+    profile, overrides, effort = model_routing(settings)
+    try:
+        with config.pinned(profile, overrides=overrides, effort=effort) as backends:
+            labels = {p: b.label() for p, b in backends.items() if p != "answer"}
+    except ValueError:
+        return settings.model
+    label = labels["rewrite"]
+    if len(set(labels.values())) > 1:
+        label += " + stage overrides"
+    return label
+
+
 def _persist_run_record(job: Job) -> None:
     """Write `out_dir/run.json` so history and downloads survive a process restart.
 
@@ -366,35 +422,8 @@ class JobQueue:
         job.check_cancelled()
 
         try:
-            overrides: dict[str, str] = {}
-            # Broadest first: a blanket model name repoints every stage, then origin-specific
-            # tags, then per-stage fields overwrite whichever of them they name.
-            if settings.model_name:
-                for purpose in config.PURPOSES:
-                    overrides[purpose] = settings.model_name
-            if settings.ollama_model:
-                for purpose in config.provider_stages(settings.model, "ollama"):
-                    overrides[purpose] = settings.ollama_model
-            if settings.gemini_model:
-                for purpose in config.provider_stages(settings.model, "gemini"):
-                    overrides[purpose] = settings.gemini_model
-            if settings.rewrite_model:
-                overrides["rewrite"] = settings.rewrite_model
-            if settings.expand_model:
-                overrides["expand"] = settings.expand_model
-            if settings.skills_model:
-                overrides["skills"] = settings.skills_model
-            if settings.cover_model:
-                overrides["cover"] = settings.cover_model
-            if settings.review_model:
-                overrides["review"] = settings.review_model
-            if settings.answer_model:
-                overrides["answer"] = settings.answer_model
-            config.resolve(
-                settings.model,
-                overrides=overrides or None,
-                effort=settings.effort,
-            )
+            profile, overrides, effort = model_routing(settings)
+            config.resolve(profile, overrides=overrides, effort=effort)
             style.activate(
                 rewrite=settings.rewrite_style,
                 expand=settings.expand_style,
@@ -577,9 +606,12 @@ class JobQueue:
                     on_event=on_event,
                 )
                 job.expansion = _to_expansion_out(expansion)
+                expansion_record = job.expansion.model_dump()
+                # Keep durable evidence that an empty expansion truly means there
+                # were no source jobs; later profile edits cannot establish this.
+                expansion_record["source_experience_count"] = len(full_resume.experience)
                 (out_dir / "expansion.json").write_text(
-                    job.expansion.model_dump_json(indent=2),
-                    encoding="utf-8",
+                    json.dumps(expansion_record, indent=2), encoding="utf-8",
                 )
                 (out_dir / "expansion.md").write_text(
                     expand.format_markdown(expansion), encoding="utf-8"

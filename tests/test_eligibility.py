@@ -25,6 +25,15 @@ def test_ms_or_phd_required_rejects():
     assert "advanced_degree_without_bachelor" in result.reasons
 
 
+def test_baccalaureate_counts_as_a_bachelor_path():
+    # AmFam intern posting wording (2026-09).
+    result = eligibility.check_text(
+        "Must be currently seeking a baccalaureate, masters, or doctoral degree and be "
+        "enrolled in an accredited college or university on a full-time basis."
+    )
+    assert result.passed
+
+
 def test_bs_ms_passes():
     result = eligibility.check_text("BS/MS in CS or equivalent")
     assert result.passed
@@ -81,3 +90,36 @@ def test_title_intern_passes():
     result = eligibility.check_title("Software Engineer Intern - Summer 2027")
     assert result.passed
     assert result.reasons == []
+
+
+def test_company_age_boilerplate_is_not_a_years_requirement():
+    """Regression (CAI, Workday R8551): "over 40 years of excellence" is company
+    history, not an experience floor — it once hard-rejected an internship."""
+    result = eligibility.check_text(
+        "We have over 40 years of excellence in uniting talent and technology to "
+        "power the possible for our clients, colleagues, and communities."
+    )
+    assert result.passed
+    assert result.reasons == []
+    assert result.flags == []
+
+
+def test_years_without_experience_nearby_are_ignored():
+    result = eligibility.check_text("Our team has grown for 3 years straight.")
+    assert result.passed
+    assert result.flags == []
+
+
+def test_years_above_plausible_ceiling_are_ignored():
+    """Intern/new-grad boards never really ask for more than 5 years."""
+    result = eligibility.check_text("8+ years of professional experience required")
+    assert result.passed
+    assert result.reasons == []
+
+
+def test_intern_title_downgrades_years_floor_to_flag():
+    text = "5+ years of professional experience"
+    assert not eligibility.check_text(text, role="Data Analyst").passed
+    result = eligibility.check_text(text, role="Data Analyst Intern")
+    assert result.passed
+    assert "years_5" in result.flags

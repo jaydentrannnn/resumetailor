@@ -37,6 +37,11 @@ def main(argv: list[str] | None = None) -> int:
     )
     parser.add_argument("--dry-run", action="store_true", help="Discover only; no writes")
     parser.add_argument(
+        "--fetch-only",
+        action="store_true",
+        help="Fetch job boards only — record as discovered without tailoring or applying",
+    )
+    parser.add_argument(
         "--no-browser",
         action="store_true",
         help="Skip CDP fallback when HTTP JD extraction is short",
@@ -71,6 +76,7 @@ def main(argv: list[str] | None = None) -> int:
         dry_run=args.dry_run,
         allow_browser=not args.no_browser,
         auto_submit_max_per_run=args.max_submissions,
+        fetch_only=args.fetch_only,
         log=print,
     )
     if summary.already_running:

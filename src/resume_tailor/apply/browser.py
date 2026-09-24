@@ -1,7 +1,8 @@
 """CDP connection to the user's host browser (Edge recommended — see README) for
 JD fetch and form fill.
 
-Sync Playwright only — call from a worker thread, never the asyncio event loop.
+The legacy filler uses synchronous Playwright from a worker thread. The gated
+verified engine and review actions use the async CDP connection below.
 
 Chromium's DevTools HTTP endpoint rejects a ``Host`` header that is neither an IP
 nor ``localhost``. From Docker, ``CHROME_CDP_URL`` is typically
@@ -11,9 +12,11 @@ the hostname to an IP before probing or connecting.
 
 from __future__ import annotations
 
+import asyncio
 import socket
+import time
 from collections.abc import Iterator
-from contextlib import contextmanager
+from contextlib import asynccontextmanager, contextmanager
 from dataclasses import dataclass
 from typing import Any
 from urllib.parse import urlparse, urlunparse
@@ -122,3 +125,101 @@ def cdp_http_origin() -> str:
     """Return the HTTP origin used for ``/json/version`` probes."""
     parsed = urlparse(effective_cdp_url())
     return f"{parsed.scheme}://{parsed.netloc}"
+
+
+def target_id(context: Any, page: Any) -> str:
+    """Read a stable CDP target id for a page without changing browser focus."""
+    session = context.new_cdp_session(page)
+    try:
+        info = session.send("Target.getTargetInfo")
+        return str(info.get("targetInfo", {}).get("targetId") or "")
+    finally:
+        session.detach()
+
+
+def find_target(context: Any, expected_id: str) -> Any | None:
+    """Return the existing tab; URLs are insufficient because postings can repeat."""
+    if not expected_id:
+        return None
+    for page in context.pages:
+        if page.is_closed():
+            continue
+        try:
+            if target_id(context, page) == expected_id:
+                return page
+        except Exception:  # noqa: BLE001
+            continue
+    return None
+
+
+def focus_target(expected_id: str) -> str:
+    """Focus a recorded application tab and return its current URL."""
+    with cdp_browser() as connected:
+        for context in connected.contexts:
+            page = find_target(context, expected_id)
+            if page is not None:
+                page.bring_to_front()
+                return str(page.url)
+    raise RuntimeError("The review tab is closed. Use Reopen and fill if you want to start again.")
+
+
+@asynccontextmanager
+async def async_cdp_browser():
+    """Async CDP connection for the deadline-bounded verified Apply engine."""
+    status = browser_status()
+    if not status.reachable:
+        raise RuntimeError(f"Browser CDP unreachable at {status.cdp_url}: {status.error}")
+    try:
+        from playwright.async_api import async_playwright
+    except ImportError as exc:
+        raise RuntimeError("playwright is not installed") from exc
+    async with async_playwright() as playwright:
+        connected = await playwright.chromium.connect_over_cdp(effective_cdp_url())
+        try:
+            yield connected
+        finally:
+            await connected.close()
+
+
+async def async_target_id(context: Any, page: Any) -> str:
+    """Read a stable CDP target id without bringing its tab forward."""
+    session = await context.new_cdp_session(page)
+    try:
+        info = await session.send("Target.getTargetInfo")
+        return str(info.get("targetInfo", {}).get("targetId") or "")
+    finally:
+        await session.detach()
+
+
+async def async_find_target(context: Any, expected_id: str) -> Any | None:
+    """Reconnect to an existing tab by target id, never by a repeated URL."""
+    if not expected_id:
+        return None
+    for page in context.pages:
+        if page.is_closed():
+            continue
+        try:
+            if await async_target_id(context, page) == expected_id:
+                return page
+        except Exception:  # noqa: BLE001
+            continue
+    return None
+
+
+async def open_background_page(connected: Any, context: Any, *, timeout: float = 10) -> tuple[Any, str]:
+    """Create a CDP tab without deliberately activating it over a review tab."""
+    session = await connected.new_browser_cdp_session()
+    try:
+        created = await session.send("Target.createTarget", {"url": "about:blank", "background": True})
+        expected_id = str(created.get("targetId") or "")
+    finally:
+        await session.detach()
+    if not expected_id:
+        raise RuntimeError("Browser did not return a target id for the new tab")
+    deadline = time.monotonic() + timeout
+    while time.monotonic() < deadline:
+        page = await async_find_target(context, expected_id)
+        if page is not None:
+            return page, expected_id
+        await asyncio.sleep(0.1)
+    raise TimeoutError("New background application tab did not appear")

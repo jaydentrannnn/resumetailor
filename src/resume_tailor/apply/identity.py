@@ -44,9 +44,10 @@ _SMART = re.compile(
     r"jobs\.smartrecruiters\.com/(?P<co>[^/]+)/(?P<id>\d+)", re.I
 )
 _ICIMS = re.compile(r"(?P<co>[^.]+)\.icims\.com/jobs/(?P<id>\d+)", re.I)
-_WORKDAY_ID = re.compile(
-    r"(?P<id>[A-Z]{1,3}[-_]?\d{4,}|R\d{4,}|JR\d{4,})", re.I
-)
+#: The requisition id is everything after the last ``_`` in Workday's final path
+#: segment (``…Intern-2027_R39474`` -> ``R39474``); require a digit so a plain
+#: word segment (no ``_id`` suffix) falls through to `_WORKDAY_FALLBACK`.
+_WORKDAY_TAIL_ID = re.compile(r"_(?P<id>[^_/]*\d[^_/]*)$")
 _WORKDAY_FALLBACK = re.compile(r"_?(?:R|JR)\d{4,}", re.I)
 
 _CORP_SUFFIX = re.compile(
@@ -173,11 +174,13 @@ def canonical_key(final_url: str) -> str:
 
     if "myworkdayjobs.com" in host:
         tenant = host.split(".")[0]
-        match = _WORKDAY_ID.search(path)
-        if match is None:
-            match = _WORKDAY_FALLBACK.search(path)
+        last_segment = path.rstrip("/").rsplit("/", 1)[-1]
+        match = _WORKDAY_TAIL_ID.search(last_segment)
         if match:
-            return f"workday:{tenant.lower()}:{match.group(0).upper()}"
+            return f"workday:{tenant.lower()}:{match.group('id').upper()}"
+        fallback = _WORKDAY_FALLBACK.search(path)
+        if fallback:
+            return f"workday:{tenant.lower()}:{fallback.group(0).upper()}"
 
     smart = _SMART.search(final_url)
     if smart:

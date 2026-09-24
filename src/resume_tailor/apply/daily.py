@@ -5,21 +5,63 @@ from __future__ import annotations
 import json
 import threading
 import time
+from contextlib import contextmanager
+from collections.abc import Callable
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Callable
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
 from resume_tailor import config, data, jd, runs, workspace
 from resume_tailor.apply import browser, fetch_jd, fill, identity, sources, store
-from resume_tailor.apply.screen import screen
+from resume_tailor.apply import eligibility as eligibility_mod
+from resume_tailor.apply import screen as screen_mod
+from resume_tailor.apply.screen import ScreenResult, screen
 from resume_tailor.apply.sources import SourceRow
 from resume_tailor.web import template_ops
-from resume_tailor.web.jobs import get_queue
+from resume_tailor.web.jobs import get_queue, model_routing
 from resume_tailor.web.schemas import ApplySettings, JobSettings, RunMetadata
 
 _DAILY_LOCK = threading.Lock()
+
+
+@contextmanager
+def registry_edit_idle():
+    """Hold the daily-run gate while changing application archive state."""
+    if not _DAILY_LOCK.acquire(blocking=False):
+        raise RuntimeError("Another Apply workflow is running")
+    try:
+        yield
+    finally:
+        _DAILY_LOCK.release()
+
+#: Below this many characters a fetched JD is treated as unusable — shared by the
+#: nightly run (`_process_one`) and the per-row fetch retry, so a retry can't move
+#: a row to `jd_fetched` with a scrap of text the nightly run would have rejected.
+_MIN_USABLE_JD_CHARS = 100
+
+
+def prefilter_screen(
+    jd_text: str, role: str, settings: ApplySettings, *, seniority: str = ""
+) -> ScreenResult:
+    """The no-LLM part of screening: eligibility rules plus work-restriction blocks.
+
+    Runs before JD extraction, so a posting it rejects costs no model call. A re-check
+    passes the row's stored ``seniority`` so a screen-stage rejection is re-judged
+    under the current rules without re-extracting.
+    """
+    elig = eligibility_mod.check_text(jd_text, settings.eligibility, role=role)
+    blocks, evidence = screen_mod.check_blocks(jd_text, settings.screen)
+    senior, senior_flags = screen_mod.seniority_reasons(seniority, role, settings.screen)
+    reasons = [*elig.reasons, *blocks, *senior]
+    return ScreenResult(
+        passed=not reasons,
+        reasons=reasons,
+        flags=[*elig.flags, *senior_flags],
+        evidence=evidence,
+        seniority=seniority,
+    )
 
 #: Guards `_LIVE` only. Never held across IO — a reader must not block a run.
 _PROGRESS_LOCK = threading.Lock()
@@ -78,6 +120,7 @@ class DailyProgress(BaseModel):
     processed: int = 0
     total: int = 0
     dry_run: bool = False
+    fetch_only: bool = False
     started_at: str = ""
     finished_at: str = ""
     date: str = ""
@@ -162,6 +205,7 @@ def _application_from_row(
         location=row.location,
         posting_url=row.application_link or "",
         final_url=final_url,
+        ats=fetch_jd.detect_ats(final_url or row.application_link or ""),
         sponsorship_ok=row.sponsorship_ok,
         citizenship_required=row.citizenship_required,
         notes=row.notes,
@@ -205,32 +249,172 @@ def _link_reused_packet(app: store.Application, prior_job_id: str) -> None:
 
 
 def _job_settings(base: JobSettings, apply: ApplySettings) -> JobSettings:
-    """Merge apply funnel knobs into workspace defaults for one tailor run."""
+    """Merge Apply knobs into one tailor run.
+
+    Model routing is deliberately left as the Tailor tab's (``base``): Prepare tailors
+    exactly like a Tailor-tab run would. ``apply.model_spec`` is the autofill model
+    only — Fill's form-answer and choice-resolution calls — never the tailoring model.
+    """
     settings = base.model_copy(deep=True)
+    settings.no_expand = False
     if apply.cover_letter:
         settings.cover_letter = True
         settings.no_cover_letter = False
     return settings
 
 
-def _wait_for_job(job_id: str, *, timeout_sec: float = 3600.0, poll_sec: float = 0.5):
-    """Poll the process queue until ``job_id`` reaches a terminal status."""
+def _settle_failed_prepare(
+    previous: store.Application, source_job_id: str, *, error: str | None = None
+) -> None:
+    """Leave a row in an honest state after a Prepare that didn't reach ``ready``.
+
+    A row that already had a packet (``ready`` or later) is restored, so a failed
+    refresh never throws away good artifacts. A row that was still pre-ready keeps the
+    new attempt's outcome (e.g. ``screened_out`` with its reasons) — restoring it could
+    resurrect a stale ``tailoring`` whose job died with a server restart.
+    """
+    if previous.status not in store.PRE_READY_STATUSES:
+        store.upsert(previous)
+        return
+    current = store.get(source_job_id)
+    if current is None:
+        return
+    if error is not None:
+        if current.status == "tailoring":
+            store.set_status(current, "tailor_failed", note=error)
+        current.error = error
+        store.upsert(current)
+
+
+def recover_orphaned_tailoring() -> int:
+    """Mark ``tailoring`` rows whose tailor job no longer exists as ``tailor_failed``.
+
+    Tailor jobs live in process memory, so a server restart orphans any row that was
+    mid-tailoring; without this it would show "tailoring" forever. Returns the count.
+    """
+    queue = get_queue()
+    recovered = 0
+    for app in store.list_applications(status="tailoring", limit=None):
+        if app.job_id and queue.get(app.job_id) is not None:
+            continue
+        note = "Tailoring was interrupted by a server restart; prepare again"
+        store.set_status(app, "tailor_failed", note=note)
+        app.error = note
+        store.upsert(app)
+        recovered += 1
+    return recovered
+
+
+#: Statuses whose retained browser tab and fill report survive a Prepare again.
+RETAINED_TAB_STATUSES = frozenset({"awaiting_review", "awaiting_otp"})
+
+
+def prepare_application(
+    source_job_id: str,
+    *,
+    settings: ApplySettings,
+    on_progress: Callable[[str], None] | None = None,
+    force_prepare: bool = False,
+) -> store.Application:
+    """Prepare one selected application through the existing fetch/screen/tailor path."""
+    app = store.get(source_job_id)
+    if app is None:
+        raise KeyError(f"unknown application {source_job_id!r}")
+    if app.archived_at:
+        raise RuntimeError("cannot prepare an archived application")
+    if app.status in store.TERMINAL_STATUSES:
+        raise RuntimeError(f"cannot prepare terminal application {app.status!r}")
+    from resume_tailor.apply import preparation
+
+    existing_preparation = preparation.check(app, require_cover=settings.cover_letter)
+    if app.status == "ready" and existing_preparation.eligible and not force_prepare:
+        return app
+    previous = app.model_copy(deep=True)
+    refresh_artifacts = force_prepare or not existing_preparation.eligible
+
+    raw = workspace.load_settings()
+    job_defaults = JobSettings.model_validate(raw["defaults"])
+    resume = data.load()
+    known_tags = sorted({t for b in resume.all_bullets() for t in b.tags})
+    row = sources.SourceRow(
+        company=app.company,
+        role=app.role,
+        location=app.location,
+        application_link=app.posting_url or app.final_url or None,
+        source_id=app.source,
+        job_id=app.source_job_id,
+        age=f"{app.age_days}d" if app.age_days is not None else "0d",
+        salary=app.salary,
+        flags=list(app.eligibility_flags),
+    )
+    if app.status != "discovered":
+        store.set_status(app, "discovered", note="prepare selected")
+        store.upsert(app)
+    summary = DailySummary(date=_today())
+    log_path = _log_path(_today())
+    log = on_progress or (lambda _message: None)
+    try:
+        _process_one(
+            row,
+            settings=settings,
+            job_defaults=job_defaults,
+            resume=resume,
+            known_tags=known_tags,
+            allow_browser=True,
+            dry_run=False,
+            log_path=log_path,
+            log=log,
+            summary=summary,
+            index=store.build_index(),
+            force_tailor=refresh_artifacts,
+        )
+    except Exception as exc:
+        _settle_failed_prepare(previous, source_job_id, error=str(exc))
+        raise
+    prepared = store.get(source_job_id)
+    assert prepared is not None
+    if refresh_artifacts and prepared.status != "ready":
+        _settle_failed_prepare(previous, source_job_id)
+        raise RuntimeError(f"Prepare again failed: {prepared.error or prepared.status}")
+    # Only a live hand-off (a tab the user may be working in) survives a refresh. An old
+    # ``fill_failed`` describes the previous packet, so the fresh one starts ``ready``.
+    if previous.fill and previous.status in RETAINED_TAB_STATUSES:
+        prepared.fill = previous.fill
+        store.set_status(prepared, previous.status, note="Prepared artifacts refreshed; review tab retained")
+        store.upsert(prepared)
+    return prepared
+
+
+def _wait_for_job(
+    job_id: str,
+    *,
+    timeout_sec: float = 3600.0,
+    poll_sec: float = 0.5,
+    on_progress: Callable[[str], None] | None = None,
+):
+    """Poll the process queue until ``job_id`` reaches a terminal status.
+
+    ``on_progress``, when given, is called with the tailor job's latest stage
+    message (`Job.events[-1].message`, the same feed the Tailor tab's SSE stream
+    reads) each time it changes — so a caller watching a single-request, single-call
+    wait (like the Apply funnel's "Fetching and tailoring application") sees which
+    pipeline stage it is actually on, instead of one static message for the whole
+    multi-minute run.
+    """
     deadline = time.monotonic() + timeout_sec
+    last_message = ""
     while time.monotonic() < deadline:
         job = get_queue().get(job_id)
-        if job is not None and job.status in {"succeeded", "failed", "cancelled"}:
-            return job
+        if job is not None:
+            if on_progress is not None and job.events:
+                message = job.events[-1].message
+                if message and message != last_message:
+                    last_message = message
+                    on_progress(message)
+            if job.status in {"succeeded", "failed", "cancelled"}:
+                return job
         time.sleep(poll_sec)
     return get_queue().get(job_id)
-
-
-def _summary_to_dict(summary: DailySummary) -> dict[str, Any]:
-    """Convert a summary model to the legacy dict shape the API expects."""
-    payload = summary.model_dump()
-    payload["skipped"] = summary.skipped or summary.already_running
-    if summary.already_running:
-        payload["reason"] = "already running"
-    return payload
 
 
 def _process_one(
@@ -242,10 +426,12 @@ def _process_one(
     known_tags: list[str],
     allow_browser: bool,
     dry_run: bool,
+    fetch_only: bool = False,
     log_path: Path,
     log: Callable[[str], None],
     summary: DailySummary,
     index: store.Index,
+    force_tailor: bool = False,
 ) -> None:
     """Run the funnel for one newly discovered posting."""
     if not row.job_id:
@@ -263,20 +449,27 @@ def _process_one(
         first_seen=_now_iso(),
     )
 
+    app: store.Application | None = None
     if ckey in index.by_canonical:
         existing = index.by_canonical[ckey]
         store.add_source_ref(existing, ref)
         if not dry_run:
             store.upsert(existing)
-        summary.already_known += 1
-        _append_log(
-            log_path,
-            f"[merge-ref] {row.company} → {ckey} via {ref.source}",
-            log,
-        )
-        return
+        if existing.archived_at:
+            summary.already_known += 1
+            return
+        if existing.status == "discovered" and not fetch_only:
+            app = existing
+        else:
+            summary.already_known += 1
+            _append_log(
+                log_path,
+                f"[merge-ref] {row.company} → {ckey} via {ref.source}",
+                log,
+            )
+            return
 
-    if gkey in index.by_group and index.by_group[gkey]:
+    if app is None and gkey in index.by_group and index.by_group[gkey]:
         primaries = [
             index.by_canonical[k]
             for k in index.by_group[gkey]
@@ -307,7 +500,7 @@ def _process_one(
             index.by_source_ref[(ref.source, ref.source_job_id)] = ckey
             index.by_group.setdefault(gkey, []).append(ckey)
             return
-        if primary.job_id:
+        if not fetch_only and primary.job_id:
             app.reused_from_job_id = primary.job_id
             app.job_id = primary.job_id
             store.set_status(
@@ -332,25 +525,37 @@ def _process_one(
             return
         # Primary not tailored yet — continue as a normal discovery; first to finish wins.
 
-    app = _application_from_row(
-        row, canonical_key=ckey, group_key=gkey, final_url=final_url
-    )
-    if not dry_run:
-        store.set_status(app, "discovered")
-        store.upsert(app)
-    summary.discovered += 1
-    _append_log(
-        log_path,
-        f"[discovered] {row.company} — {row.role} ({row.job_id})",
-        log,
-    )
-    index.by_canonical[ckey] = app
-    index.by_source_ref[(ref.source, ref.source_job_id)] = ckey
-    index.by_group.setdefault(gkey, []).append(ckey)
+    if app is None:
+        existing_app = store.get(row.job_id) if row.job_id else None
+        if existing_app is not None:
+            app = existing_app
+            if final_url and not app.final_url:
+                app.final_url = final_url
+            if ckey and not app.canonical_key:
+                app.canonical_key = ckey
+            if gkey and not app.group_key:
+                app.group_key = gkey
+        else:
+            app = _application_from_row(
+                row, canonical_key=ckey, group_key=gkey, final_url=final_url
+            )
+        if not dry_run:
+            if app.status != "discovered":
+                store.set_status(app, "discovered")
+            store.upsert(app)
+        summary.discovered += 1
+        _append_log(
+            log_path,
+            f"[discovered] {row.company} — {row.role} ({row.job_id})",
+            log,
+        )
+        index.by_canonical[ckey] = app
+        index.by_source_ref[(ref.source, ref.source_job_id)] = ckey
+        index.by_group.setdefault(gkey, []).append(ckey)
 
-    if dry_run:
-        summary.processed += 1
-        return
+        if dry_run or fetch_only:
+            summary.processed += 1
+            return
 
     url = app.posting_url or app.final_url
     if not url:
@@ -365,7 +570,7 @@ def _process_one(
     )
     app.final_url = fetch.final_url or app.final_url
     app.ats = fetch.ats
-    if fetch.method == "failed" or len(fetch.text.strip()) < 100:
+    if fetch.method == "failed" or len(fetch.text.strip()) < _MIN_USABLE_JD_CHARS:
         store.set_status(app, "needs_browser", note=fetch.error or "jd too short")
         store.upsert(app)
         summary.needs_browser += 1
@@ -374,19 +579,17 @@ def _process_one(
         return
 
     app.jd_text_path = _save_jd(app.source_job_id, fetch.text)
+    # A prior fetch attempt (nightly run or a per-row retry) may have left `error` set
+    # (e.g. "Browser extraction too short (0 chars)"); this fetch succeeded, so that
+    # error no longer describes the row's state and must not linger in the UI.
+    app.error = None
     store.set_status(app, "jd_fetched")
     store.upsert(app)
     summary.jd_fetched += 1
 
-    from resume_tailor.apply import eligibility as eligibility_mod
-
-    elig = eligibility_mod.check_text(fetch.text, settings.eligibility)
+    elig = prefilter_screen(fetch.text, app.role, settings)
     if not elig.passed:
-        from resume_tailor.apply.screen import ScreenResult
-
-        app.screen = ScreenResult(
-            passed=False, reasons=elig.reasons, flags=elig.flags
-        )
+        app.screen = elig
         app.eligibility_flags = list(row.flags) + list(elig.flags)
         store.set_status(
             app, "screened_out", note="prefilter: " + "; ".join(elig.reasons)
@@ -404,8 +607,17 @@ def _process_one(
     app.eligibility_flags = list(row.flags) + list(elig.flags)
 
     try:
-        with config.pinned(settings.model_spec):
-            requirements = jd.extract_consensus(fetch.text, known_tags=known_tags)
+        # Same routing and vote count as the tailor job below, so its own extraction
+        # is a cache hit ("Reusing cached job-description analysis") rather than a
+        # second full round of JD reads.
+        profile, overrides, effort = model_routing(job_defaults)
+        with config.pinned(profile, overrides=overrides, effort=effort):
+            requirements = jd.extract_consensus(
+                fetch.text,
+                known_tags=known_tags,
+                runs=job_defaults.extract_runs,
+                use_cache=not job_defaults.no_cache,
+            )
     except Exception as exc:  # noqa: BLE001
         store.set_status(app, "tailor_failed", note=f"extract failed: {exc}")
         store.upsert(app)
@@ -415,7 +627,9 @@ def _process_one(
         summary.processed += 1
         return
 
-    screen_result = screen(fetch.text, requirements, resume, settings=settings.screen)
+    screen_result = screen(
+        fetch.text, requirements, resume, settings=settings.screen, role=app.role
+    )
     # Carry prefilter flags into the screen result so the queue shows one list.
     screen_result.flags = list(
         dict.fromkeys([*app.eligibility_flags, *screen_result.flags])
@@ -433,7 +647,7 @@ def _process_one(
     store.upsert(app)
     summary.screened_in += 1
 
-    match = runs.closest_run(fetch.text, requirements)
+    match = None if force_tailor else runs.closest_run(fetch.text, requirements)
     if match is not None:
         prior, recommendation, score = match
         prior_company = _prior_company(prior.job_id)
@@ -475,7 +689,10 @@ def _process_one(
 
     app.job_id = job.job_id
     store.upsert(app)
-    finished = _wait_for_job(job.job_id)
+    finished = _wait_for_job(
+        job.job_id,
+        on_progress=lambda message: log(f"[tailoring] {app.company}: {message}"),
+    )
     if finished is None or finished.status != "succeeded":
         err = finished.error if finished else "timed out waiting for tailor job"
         store.set_status(app, "tailor_failed", note=err or finished.status)
@@ -501,6 +718,7 @@ def run_daily(
     dry_run: bool = False,
     allow_browser: bool = True,
     auto_submit_max_per_run: int | None = None,
+    fetch_only: bool = False,
     log: Callable[[str], None] = print,
 ) -> DailySummary:
     """Execute one daily discover/screen/tailor pass; idempotent on known ids."""
@@ -519,6 +737,7 @@ def run_daily(
         processed=0,
         total=0,
         dry_run=dry_run,
+        fetch_only=fetch_only,
         started_at=_now_iso(),
         finished_at="",
         date=date,
@@ -608,7 +827,27 @@ def run_daily(
         )
 
         cap = limit if limit is not None else settings.max_new_per_day
-        to_process = all_new[:cap]
+        if not fetch_only:
+            pending_discovered: list[sources.SourceRow] = []
+            for app in store.load_all().values():
+                if app.status == "discovered" and app.source_job_id and not app.archived_at:
+                    pending_discovered.append(
+                        sources.SourceRow(
+                            company=app.company,
+                            role=app.role,
+                            location=app.location,
+                            application_link=app.posting_url or app.final_url or None,
+                            source_id=app.source,
+                            job_id=app.source_job_id,
+                            age=f"{app.age_days}d" if app.age_days is not None else "0d",
+                            salary=app.salary or "",
+                            flags=list(app.eligibility_flags or []),
+                        )
+                    )
+            to_process = (pending_discovered + all_new)[:cap]
+        else:
+            to_process = all_new[:cap]
+
         index = store.build_index()
         _progress_set(
             phase="processing",
@@ -633,6 +872,7 @@ def run_daily(
                     known_tags=known_tags,
                     allow_browser=allow_browser,
                     dry_run=dry_run,
+                    fetch_only=fetch_only,
                     log_path=log_file,
                     log=log,
                     summary=summary,
@@ -644,19 +884,22 @@ def run_daily(
 
         _progress_set(processed=len(to_process), current="")
 
-        submit_cap = (
-            auto_submit_max_per_run
-            if auto_submit_max_per_run is not None
-            else settings.auto_submit_max_per_run
-        )
-        _run_batch_submit(
-            settings=settings,
-            cap=submit_cap,
-            dry_run=dry_run,
-            log_path=log_file,
-            log=log,
-            summary=summary,
-        )
+        if not fetch_only:
+            submit_cap = (
+                auto_submit_max_per_run
+                if auto_submit_max_per_run is not None
+                else settings.auto_submit_max_per_run
+            )
+            if not settings.auto_submit_enabled:
+                submit_cap = 0
+            _run_batch_submit(
+                settings=settings,
+                cap=submit_cap,
+                dry_run=dry_run,
+                log_path=log_file,
+                log=log,
+                summary=summary,
+            )
 
         _append_log(
             log_file,
@@ -706,7 +949,7 @@ def _run_batch_submit(
     candidates = [
         app
         for app in store.load_all().values()
-        if app.status == "ready" and app.ats.lower() in eligible_ats
+        if app.status == "ready" and not app.archived_at and app.ats.lower() in eligible_ats
     ]
     candidates.sort(key=lambda app: app.discovered_at)
     to_submit = candidates[:cap]
@@ -732,8 +975,48 @@ def _run_batch_submit(
         _append_log(log_path, f"[batch-submit] {label}: {result.status}", log)
 
 
+RetryKind = Literal["fetch", "prefilter", "tailor"]
+
+
+def retry_kind(app: store.Application) -> RetryKind | None:
+    """Which retry `retry_application` would run for ``app``, or None when it has none.
+
+    The single definition of "retryable": the API serves it per row so the SPA shows a
+    Retry button only when one can succeed, labelled by what it actually does.
+    """
+    if app.status == "screened_out":
+        # Any screen-out with saved JD text can be re-judged without a model call
+        # (`prefilter_screen` + the stored seniority), so rule fixes reach old rows.
+        return "prefilter" if app.jd_text_path else None
+    if app.status == "tailor_failed":
+        return "tailor"
+    if app.status in {"discovered", "needs_browser", "jd_fetched"}:
+        return "fetch"
+    return None
+
+
+def _finish_tailor_retry(source_job_id: str, job_id: str) -> None:
+    """Background half of a tailor retry: wait for the job, then record its outcome."""
+    finished = _wait_for_job(job_id, timeout_sec=3600.0)
+    app = store.get(source_job_id)
+    # The row may have moved on (manual status change, a newer run) while this waited.
+    if app is None or app.job_id != job_id or app.status != "tailoring":
+        return
+    if finished is None or finished.status != "succeeded":
+        err = finished.error if finished else "tailor retry timed out"
+        store.set_status(app, "tailor_failed", note=err or "tailor failed")
+        app.error = err
+    else:
+        store.set_status(app, "ready", note=f"tailored as {job_id}")
+    store.upsert(app)
+
+
 def retry_application(source_job_id: str) -> store.Application:
-    """Re-run the failed step for one application (fetch JD or re-queue tailor).
+    """Re-run the failed step for one application (fetch JD, re-check the eligibility
+    prefilter, or re-queue tailoring).
+
+    A tailor retry returns as soon as the job is queued, with the row at ``tailoring``;
+    a daemon thread records ``ready`` / ``tailor_failed`` when the job finishes.
 
     Raises:
         KeyError: When ``source_job_id`` is unknown.
@@ -743,39 +1026,35 @@ def retry_application(source_job_id: str) -> store.Application:
     app = store.get(source_job_id)
     if app is None:
         raise KeyError(f"unknown application {source_job_id!r}")
+    if app.archived_at:
+        raise RuntimeError("cannot retry an archived application")
 
-    if app.status == "screened_out":
-        last_note = ""
-        if app.status_history:
-            last_note = app.status_history[-1].note or ""
-        if last_note.startswith("prefilter:"):
-            if not app.jd_text_path or not Path(app.jd_text_path).is_file():
-                raise RuntimeError("prefilter retry requires saved jd text")
-            jd_text = Path(app.jd_text_path).read_text(encoding="utf-8")
-            raw = workspace.load_settings()
-            job_defaults = JobSettings.model_validate(raw["defaults"])
-            from resume_tailor.apply import eligibility as eligibility_mod
-
-            elig = eligibility_mod.check_text(jd_text, job_defaults.apply.eligibility)
-            if not elig.passed:
-                from resume_tailor.apply.screen import ScreenResult
-
-                app.screen = ScreenResult(
-                    passed=False, reasons=elig.reasons, flags=elig.flags
-                )
-                store.set_status(
-                    app,
-                    "screened_out",
-                    note="prefilter: " + "; ".join(elig.reasons),
-                )
-                return store.upsert(app)
-            app.eligibility_flags = list(
-                dict.fromkeys([*app.eligibility_flags, *elig.flags])
+    kind = retry_kind(app)
+    if kind == "prefilter":
+        if not app.jd_text_path or not Path(app.jd_text_path).is_file():
+            raise RuntimeError("prefilter retry requires saved jd text")
+        jd_text = Path(app.jd_text_path).read_text(encoding="utf-8")
+        raw = workspace.load_settings()
+        job_defaults = JobSettings.model_validate(raw["defaults"])
+        seniority = app.screen.seniority if app.screen else ""
+        elig = prefilter_screen(
+            jd_text, app.role, job_defaults.apply, seniority=seniority
+        )
+        if not elig.passed:
+            app.screen = elig
+            store.set_status(
+                app,
+                "screened_out",
+                note="prefilter: " + "; ".join(elig.reasons),
             )
-            store.set_status(app, "jd_fetched", note="prefilter cleared on retry")
             return store.upsert(app)
+        app.eligibility_flags = list(
+            dict.fromkeys([*app.eligibility_flags, *elig.flags])
+        )
+        store.set_status(app, "jd_fetched", note="eligibility cleared on re-check")
+        return store.upsert(app)
 
-    if app.status == "tailor_failed":
+    if kind == "tailor":
         if not app.jd_text_path or not Path(app.jd_text_path).is_file():
             raise RuntimeError("tailor retry requires saved jd text")
         jd_text = Path(app.jd_text_path).read_text(encoding="utf-8")
@@ -795,16 +1074,16 @@ def retry_application(source_job_id: str) -> store.Application:
             job, _position = get_queue().submit(jd_text, settings, metadata=metadata)
         app.job_id = job.job_id
         app.error = None
-        finished = _wait_for_job(job.job_id, timeout_sec=3600.0)
-        if finished is None or finished.status != "succeeded":
-            err = finished.error if finished else "tailor retry timed out"
-            store.set_status(app, "tailor_failed", note=err or "tailor failed")
-            app.error = err
-            return store.upsert(app)
-        store.set_status(app, "ready", note=f"tailored as {job.job_id}")
-        return store.upsert(app)
+        saved = store.upsert(app)
+        threading.Thread(
+            target=_finish_tailor_retry,
+            args=(source_job_id, job.job_id),
+            name=f"apply-retry-{source_job_id}",
+            daemon=True,
+        ).start()
+        return saved
 
-    if app.status in {"discovered", "needs_browser", "jd_fetched"}:
+    if kind == "fetch":
         if not app.posting_url:
             raise RuntimeError("fetch retry requires posting_url")
         result = fetch_jd.fetch_jd(
@@ -814,57 +1093,15 @@ def retry_application(source_job_id: str) -> store.Application:
         )
         app.final_url = result.final_url
         app.ats = result.ats
-        if result.text.strip():
+        if len(result.text.strip()) >= _MIN_USABLE_JD_CHARS:
             app.jd_text_path = _save_jd(app.source_job_id, result.text)
             store.set_status(app, "jd_fetched", note=f"retry via {result.method}")
             app.error = None
             return store.upsert(app)
-        store.set_status(app, "needs_browser", note=result.error or "empty jd")
+        store.set_status(
+            app, "needs_browser", note=result.error or "jd too short"
+        )
         app.error = result.error
         return store.upsert(app)
 
     raise RuntimeError(f"no retry path for status {app.status!r}")
-
-
-def try_start_daily(
-    *,
-    limit: int | None = None,
-    dry_run: bool = False,
-    max_submissions: int | None = None,
-) -> tuple[bool, dict[str, Any] | None]:
-    """Start ``run_daily`` on a daemon thread when not already busy.
-
-    Args:
-        limit: Cap on newly discovered rows to process this pass.
-        dry_run: Record discoveries only — no JD fetch, tailor, or store writes.
-        max_submissions: Overrides ``ApplySettings.auto_submit_max_per_run`` for this run.
-
-    Returns:
-        ``(True, None)`` when a new worker was started, else ``(False, summary dict)``.
-    """
-    if daily_busy():
-        return False, _summary_to_dict(DailySummary(already_running=True))
-
-    def _worker() -> None:
-        """Background target for a *manual* daily run.
-
-        Passes `settings` explicitly so an on-demand run is not gated by
-        `apply.enabled` — that flag gates the nightly scheduler (which calls
-        `run_daily()` with no settings). This matches `scripts/apply_daily.py`,
-        which has always passed the profile's apply settings in directly.
-        """
-        try:
-            raw = workspace.load_settings()
-            apply_settings = JobSettings.model_validate(raw["defaults"]).apply
-        except Exception:  # noqa: BLE001 - fall back to the gated path on bad settings
-            run_daily(limit=limit, dry_run=dry_run, auto_submit_max_per_run=max_submissions)
-            return
-        run_daily(
-            settings=apply_settings,
-            limit=limit,
-            dry_run=dry_run,
-            auto_submit_max_per_run=max_submissions,
-        )
-
-    threading.Thread(target=_worker, name="apply-daily", daemon=True).start()
-    return True, None

@@ -177,3 +177,28 @@ def test_char_cap_truncates_at_sentence_boundary(answer_calls):
     )
     assert len(result.answer) <= 80
     assert any("truncated" in w.lower() for w in result.warnings)
+
+
+def test_guard_failure_is_not_cached(answer_calls):
+    """A discarded answer must not pin the question to "" — the next call asks again."""
+    resume, bullets = _resume_and_bullets()
+    fabricated = "I built Kubernetes clusters for production workloads."
+    clean = "I improved reliability and throughput for production Python services at Example Corp."
+    calls = answer_calls(
+        AnswerLLM(answer=fabricated),
+        AnswerLLM(answer=fabricated),
+        AnswerLLM(answer=clean),
+    )
+    kwargs = dict(
+        resume=resume, bullets=bullets, requirements=_reqs(), profile=ApplicantProfile(),
+        jd_text="Python role.", use_cache=True,
+    )
+
+    first = answer_question("Describe your infrastructure experience.", **kwargs)
+    assert first.answer == ""
+    assert list(config.CACHE_DIR.glob("*.answer.json")) == []
+
+    second = answer_question("Describe your infrastructure experience.", **kwargs)
+    assert second.answer == clean
+    assert len(calls) == 3
+    assert len(list(config.CACHE_DIR.glob("*.answer.json"))) == 1

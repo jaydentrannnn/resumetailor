@@ -126,3 +126,16 @@ def test_pinned_invalid_profile_raises_and_leaves_no_residue():
 
     assert config._PINNED.get() is None
     assert config.backend_for("extract").provider == "anthropic"
+
+
+def test_pinned_applies_stage_overrides_then_resets():
+    """`pinned(..., overrides=)` routes the named stage elsewhere for the block only."""
+    config.resolve("claude")
+
+    with config.pinned("ollama", overrides={"rewrite": "other-model"}):
+        assert config.backend_for("rewrite").model == "other-model"
+        assert config.backend_for("rewrite").origin == "ollama"
+        assert config.backend_for("extract").model == config.OLLAMA_MODEL
+
+    assert config._PINNED.get() is None
+    assert config.backend_for("rewrite").provider == "anthropic"

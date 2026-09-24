@@ -2470,6 +2470,17 @@ def test_remap_template_forces_a_heading_kind(client, tmp_path, monkeypatch):
     assert "list" in keys
 
 
+def test_remap_template_rejects_unknown_heading_kind(client):
+    """A forced kind outside the five the analyzer understands is a 422 at the schema,
+    not an arbitrary string flowing into `SectionCandidate.key`."""
+    c, _ = client
+    res = c.post(
+        "/api/template/analyze/remap",
+        json={"source_sha256": "0" * 64, "overrides": {"5": "bogus"}},
+    )
+    assert res.status_code == 422
+
+
 def test_remap_template_unknown_sha_is_400(client, tmp_path, monkeypatch):
     """Remapping a sha that was never analyzed (or whose cache expired) is a 400 asking
     the wizard to start over, not a 404/500."""

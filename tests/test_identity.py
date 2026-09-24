@@ -39,6 +39,64 @@ def test_canonical_key_greenhouse_via_gh_jid_on_careerpuck():
     assert key == "greenhouse:lyft:8767726002"
 
 
+@pytest.mark.parametrize(
+    ("url", "expected"),
+    [
+        (
+            "https://cai.wd5.myworkdayjobs.com/computer_aid/job/"
+            "PA-CLIENT-STATE/Data-Analyst-Intern_R8551",
+            "workday:cai:R8551",
+        ),
+        (
+            "https://amfam.wd1.myworkdayjobs.com/AmFamGroupInternCareers/job/"
+            "WI-Madison/Consumer-Research-and-Insights-Intern-2027_R39474",
+            "workday:amfam:R39474",
+        ),
+        (
+            "https://mfs.wd1.myworkdayjobs.com/en-US/MFS-Careers/job/Boston/"
+            "Global-Institutional-Strategic-Accounts-Co-op-Spring-2027"
+            "--January---June-_MFS-231931",
+            "workday:mfs:MFS-231931",
+        ),
+        (
+            "https://gehc.wd5.myworkdayjobs.com/GEHC_ExternalSite/job/"
+            "Salt-Lake-City/Software-Engineering-Summer-Intern-2027_R4046481-1",
+            "workday:gehc:R4046481-1",
+        ),
+        (
+            "https://fmr.wd1.myworkdayjobs.com/fidelitycareers/job/"
+            "One-Destiny-Way-Westlake-TX/"
+            "Summer-2027-Undergraduate-Internship---Software_2134524",
+            "workday:fmr:2134524",
+        ),
+        (
+            "https://nebraskamed.wd5.myworkdayjobs.com/nm/job/Omaha-NE/"
+            "Intern---Forward-Deployed-AI-Engineer_REQ-38924",
+            "workday:nebraskamed:REQ-38924",
+        ),
+        (
+            "https://generalmotors.wd5.myworkdayjobs.com/en-CA/Careers_GM/job/"
+            "Warren-Michigan-United-States-of-America/"
+            "XMLNAME-2027-Summer-Intern---Digital-Product"
+            "--Software-Engineering_JR-202620546",
+            "workday:generalmotors:JR-202620546",
+        ),
+    ],
+)
+def test_canonical_key_workday_uses_final_path_segment_id(url, expected):
+    """The requisition id is the text after the URL's last ``_``, not the first
+    letters-plus-year match anywhere in the path (the pre-fix behavior, which
+    turned ``…Intern-2027_R39474`` into ``ERN-2027``)."""
+    assert identity.canonical_key(url) == expected
+
+
+def test_canonical_key_workday_falls_back_without_underscore_suffix():
+    key = identity.canonical_key(
+        "https://acme.wd1.myworkdayjobs.com/External/job/Remote/R12345"
+    )
+    assert key == "workday:acme:R12345"
+
+
 def test_canonical_key_other_fallback():
     key = identity.canonical_key(
         "https://apply.careers.microsoft.com/careers/job/1970393556982258"

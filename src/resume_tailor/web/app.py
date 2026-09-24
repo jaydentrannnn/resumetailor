@@ -20,7 +20,7 @@ from contextlib import asynccontextmanager, suppress
 from dataclasses import dataclass, field
 from datetime import UTC, date, datetime
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import docx
 from fastapi import FastAPI, File, Form, HTTPException, UploadFile
@@ -46,17 +46,17 @@ from resume_tailor import (
     template_analyze,
     workspace,
 )
+from resume_tailor.apply import browser as apply_browser
+from resume_tailor.apply import daily as apply_daily
+from resume_tailor.apply import packet as apply_packet
+from resume_tailor.apply import operations as apply_operations
+from resume_tailor.apply import profile as apply_profile
+from resume_tailor.apply import store as apply_store
+from resume_tailor.apply.answer import answer_question
 from resume_tailor.data import MasterResume
 from resume_tailor.events import ProgressEvent
 from resume_tailor.template_profile import TemplateProfile, active_layout
 from resume_tailor.web import template_ops
-from resume_tailor.apply import browser as apply_browser
-from resume_tailor.apply import daily as apply_daily
-from resume_tailor.apply import fill as apply_fill
-from resume_tailor.apply import packet as apply_packet
-from resume_tailor.apply import profile as apply_profile
-from resume_tailor.apply import store as apply_store
-from resume_tailor.apply.answer import answer_question
 from resume_tailor.web.jobs import Job, get_queue, regenerate_cover_letter, verify_claim
 from resume_tailor.web.schemas import (
     AnswerRequest,
@@ -65,8 +65,14 @@ from resume_tailor.web.schemas import (
     ApplicantProfileUpdateRequest,
     ApplicationDetailResponse,
     ApplicationOut,
-    ApplicationStatusRequest,
     ApplicationsListResponse,
+    ApplicationStatusRequest,
+    ArchiveApplicationsRequest,
+    ArchiveApplicationsResponse,
+    ApplyOperationControlRequest,
+    ApplyOperationRequest,
+    ApplyOperationResponse,
+    ReviewCorrectionRequest,
     BrowserStatusResponse,
     ConfigResponse,
     CoverLetterOut,
@@ -100,8 +106,6 @@ from resume_tailor.web.schemas import (
     ResumeOutlineResponse,
     ResumeOutlineSectionOut,
     RunHistoryEntryOut,
-    RunDailyRequest,
-    RunDailyResponse,
     RunHistoryResponse,
     RunMetadata,
     RunReportOut,
@@ -175,6 +179,13 @@ async def lifespan(app: FastAPI):
     result = workspace.bootstrap()
     if result is not None:
         _migrated_from_legacy = result.migrated
+    try:
+        recovered = apply_daily.recover_orphaned_tailoring()
+    except Exception:  # noqa: BLE001 — a bad store must not block startup
+        _log.exception("could not recover orphaned tailoring rows")
+    else:
+        if recovered:
+            _log.info("marked %d orphaned tailoring row(s) tailor_failed", recovered)
     _scheduler_stop.clear()
     scheduler = threading.Thread(
         target=_apply_scheduler_loop,
@@ -1137,6 +1148,18 @@ def _application_out(
         [ref.source for ref in app.source_refs] if app.source_refs else [app.source]
     )
     payload["group_size"] = group_size
+    from resume_tailor.apply import preparation
+
+    apply_settings = JobSettings.model_validate(workspace.load_settings()["defaults"]).apply
+    eligible = preparation.check(app, require_cover=apply_settings.cover_letter)
+    payload["preparation_eligible"] = eligible.eligible
+    payload["preparation_reasons"] = eligible.reasons
+    payload["retry_kind"] = apply_daily.retry_kind(app)
+    if app.status == "screened_out" and app.screen is not None:
+        from resume_tailor.apply.screen import screen_label
+
+        payload["screen_label"] = screen_label(app.screen.reasons)
+    payload["review_summary"] = apply_store.review_summary(app)
     return ApplicationOut.model_validate(payload)
 
 
@@ -1144,10 +1167,12 @@ def _application_out(
 def get_applicant_profile() -> ApplicantProfileResponse:
     """Return the active workspace's form-filling profile."""
     profile, seeded = apply_profile.load_profile()
+    password_set = bool(profile.workday_password)
     return ApplicantProfileResponse(
         workspace_id=config.active_workspace_id(),
-        profile=profile,
+        profile=profile.model_copy(update={"workday_password": ""}),
         seeded=seeded,
+        workday_password_set=password_set,
     )
 
 
@@ -1155,11 +1180,18 @@ def get_applicant_profile() -> ApplicantProfileResponse:
 def put_applicant_profile(body: ApplicantProfileUpdateRequest) -> ApplicantProfileResponse:
     """Persist ``applicant_profile.json`` for the active workspace."""
     with template_ops.LOCK:
-        saved = apply_profile.save_profile(body.profile)
+        current, _seeded = apply_profile.load_profile()
+        profile = body.profile
+        if not profile.workday_password and current.workday_password:
+            profile = profile.model_copy(
+                update={"workday_password": current.workday_password}
+            )
+        saved = apply_profile.save_profile(profile)
     return ApplicantProfileResponse(
         workspace_id=config.active_workspace_id(),
-        profile=saved,
+        profile=saved.model_copy(update={"workday_password": ""}),
         seeded=False,
+        workday_password_set=bool(saved.workday_password),
     )
 
 
@@ -1271,13 +1303,39 @@ def get_browser_status() -> BrowserStatusResponse:
 def list_applications(
     status: apply_store.ApplicationStatus | None = None,
     limit: int = 50,
+    offset: int = 0,
+    q: str = "",
+    archive: Literal["active", "archived", "all"] = "all",
+    sort: Literal["discovered_at", "archived_at", "company", "role", "location", "status", "coverage", "salary", "ats", "sources"] = "discovered_at",
+    direction: Literal["asc", "desc"] = "desc",
+    group: Literal["review", "working"] | None = None,
 ) -> ApplicationsListResponse:
-    """List tracked applications newest-first with per-status counts."""
+    """Search, sort, and page applications within one archive scope.
+
+    ``group`` splits the working list into the rows waiting on the applicant
+    (``review``) and everything else (``working``); counts cover the chosen group.
+    """
+    q = q.strip()
+    if len(q) > 200:
+        raise HTTPException(status_code=422, detail="Search must be at most 200 characters")
+    all_apps = apply_store.load_all()
+    matched = apply_store.filtered_applications(q=q, archive=archive, applications=list(all_apps.values()))
+    if group is not None:
+        matched = [row for row in matched if (row.status in apply_store.REVIEW_STATUSES) == (group == "review")]
+    counts: dict[str, int] = {}
+    for item in matched:
+        counts[item.status] = counts.get(item.status, 0) + 1
     rows = apply_store.list_applications(
         status=status,
         limit=max(1, min(limit, 500)),
+        offset=max(0, offset),
+        q=q,
+        archive=archive,
+        sort=sort,
+        direction=direction,
+        applications=matched,
     )
-    index = apply_store.build_index()
+    index = apply_store.build_index(all_apps)
     outs: list[ApplicationOut] = []
     for row in rows:
         gkey = row.group_key
@@ -1285,8 +1343,120 @@ def list_applications(
         outs.append(_application_out(row, group_size=max(1, group_size)))
     return ApplicationsListResponse(
         applications=outs,
-        counts=apply_store.status_counts(),
+        counts=counts,
+        total=counts.get(status, 0) if status else sum(counts.values()),
     )
+
+
+@app.post("/api/applications/archive", response_model=ArchiveApplicationsResponse)
+def archive_applications(body: ArchiveApplicationsRequest) -> ArchiveApplicationsResponse:
+    """Move records between the working and archived tables without changing status."""
+    try:
+        with apply_operations.registry_edit_idle():
+            with template_ops.LOCK:
+                if get_queue().busy():
+                    raise HTTPException(status_code=409, detail="Tailoring is running; try again when it finishes")
+                updated, errors = apply_store.set_archived(body.application_ids, body.archived)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return ArchiveApplicationsResponse(updated=updated, errors=errors)
+
+
+def _operation_out(operation: apply_operations.ApplyOperation) -> ApplyOperationResponse:
+    return ApplyOperationResponse.model_validate(operation.model_dump())
+
+
+@app.post("/api/applications/operations", response_model=ApplyOperationResponse, status_code=202)
+def start_apply_operation(body: ApplyOperationRequest) -> ApplyOperationResponse:
+    """Start an explicit Find, Prepare, or Fill operation."""
+    try:
+        return _operation_out(apply_operations.start(body))
+    except ValueError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.get("/api/applications/operations", response_model=list[ApplyOperationResponse])
+def list_apply_operations() -> list[ApplyOperationResponse]:
+    """Return recent Apply operations, newest first."""
+    return [_operation_out(operation) for operation in apply_operations.list_recent()]
+
+
+@app.get("/api/applications/operations/{operation_id}", response_model=ApplyOperationResponse)
+def get_apply_operation(operation_id: str) -> ApplyOperationResponse:
+    operation = apply_operations.get(operation_id)
+    if operation is None:
+        raise HTTPException(status_code=404, detail="Unknown Apply operation")
+    return _operation_out(operation)
+
+
+@app.post(
+    "/api/applications/operations/{operation_id}/control",
+    response_model=ApplyOperationResponse,
+)
+def control_apply_operation(
+    operation_id: str,
+    body: ApplyOperationControlRequest,
+) -> ApplyOperationResponse:
+    try:
+        return _operation_out(apply_operations.control(operation_id, body.action))
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail="Unknown Apply operation") from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.post("/api/applications/{source_job_id}/review-tab")
+def focus_application_review_tab(source_job_id: str) -> dict[str, str]:
+    """Focus the exact browser tab retained for human review."""
+    app = apply_store.get(source_job_id)
+    if app is None:
+        raise HTTPException(status_code=404, detail="Unknown application")
+    if app.archived_at:
+        raise HTTPException(status_code=409, detail="Restore this application before using its browser tab")
+    previous = apply_store.FillResult.model_validate(app.fill) if app.fill else None
+    if previous is None or not previous.browser_target_id:
+        raise HTTPException(status_code=409, detail="No review tab was recorded for this application")
+    try:
+        url = apply_browser.focus_target(previous.browser_target_id)
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return {"url": url}
+
+
+@app.post(
+    "/api/applications/{source_job_id}/review/refresh",
+    response_model=ApplyOperationResponse, status_code=202,
+)
+def refresh_application_review(source_job_id: str) -> ApplyOperationResponse:
+    """Inspect the existing tab under Apply worker ownership without filling it."""
+    try:
+        return _operation_out(apply_operations.start_review_action(source_job_id, action="inspect"))
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ValueError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@app.post(
+    "/api/applications/{source_job_id}/corrections",
+    response_model=ApplyOperationResponse, status_code=202,
+)
+def correct_application_field(
+    source_job_id: str, body: ReviewCorrectionRequest,
+) -> ApplyOperationResponse:
+    """Apply one explicit, stale-safe correction in the recorded tab."""
+    try:
+        return _operation_out(apply_operations.start_review_action(
+            source_job_id, action="correct", correction=body.model_dump(),
+        ))
+    except KeyError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except (ValueError, RuntimeError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 #: Declared before `/api/applications/{source_job_id}` — a literal path must be
@@ -1304,6 +1474,7 @@ def get_daily_status() -> DailyStatusResponse:
         processed=progress.processed,
         total=progress.total,
         dry_run=progress.dry_run,
+        fetch_only=progress.fetch_only,
         started_at=progress.started_at,
         finished_at=progress.finished_at,
         date=progress.date,
@@ -1355,6 +1526,8 @@ def set_application_status(
     app = apply_store.get(source_job_id)
     if app is None:
         raise HTTPException(status_code=404, detail=f"Unknown application {source_job_id!r}.")
+    if app.archived_at:
+        raise HTTPException(status_code=409, detail="Restore this application before changing its status")
     try:
         apply_store.set_status(app, body.status, note=body.note)
     except ValueError as exc:
@@ -1364,7 +1537,11 @@ def set_application_status(
 
 @app.post("/api/applications/{source_job_id}/retry", response_model=ApplicationOut)
 def retry_application_route(source_job_id: str) -> ApplicationOut:
-    """Re-run the failed fetch or tailor step for one application."""
+    """Re-run the failed fetch, prefilter, or tailor step for one application."""
+    # A fetch retry may drive the host browser, which an Apply operation or a daily
+    # pass owns while it runs.
+    if apply_operations.active() is not None or apply_daily.daily_busy():
+        raise HTTPException(status_code=409, detail="Another Apply workflow is running; retry when it finishes.")
     try:
         app = apply_daily.retry_application(source_job_id)
     except KeyError as exc:
@@ -1372,58 +1549,6 @@ def retry_application_route(source_job_id: str) -> ApplicationOut:
     except (RuntimeError, ValueError) as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     return _application_out(app)
-
-
-@app.post("/api/applications/{source_job_id}/fill", response_model=ApplicationOut)
-def start_application_fill(source_job_id: str) -> ApplicationOut:
-    """Start an async ATS fill when the host browser's CDP is reachable."""
-    status = apply_browser.browser_status()
-    if not status.reachable:
-        raise HTTPException(
-            status_code=409,
-            detail=status.error or "Browser CDP unreachable",
-        )
-    if apply_fill.fill_busy():
-        raise HTTPException(status_code=409, detail="Another fill is already running.")
-    try:
-        apply_fill.start_fill_async(source_job_id)
-    except KeyError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    except apply_fill.FillBusyError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-    except RuntimeError as exc:
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-    except Exception as exc:  # noqa: BLE001 - CDP unreachable surfaces as RuntimeError
-        raise HTTPException(status_code=409, detail=str(exc)) from exc
-    app = apply_store.get(source_job_id)
-    assert app is not None
-    return _application_out(app)
-
-
-@app.get("/api/applications/{source_job_id}/fill")
-def get_application_fill(source_job_id: str) -> dict[str, Any]:
-    """Return the persisted fill outcome for one application."""
-    app = apply_store.get(source_job_id)
-    if app is None:
-        raise HTTPException(status_code=404, detail=f"Unknown application {source_job_id!r}.")
-    result = apply_fill.get_fill_result(source_job_id)
-    if result is None:
-        raise HTTPException(status_code=404, detail="No fill result for this application.")
-    if hasattr(result, "model_dump"):
-        return result.model_dump()
-    return dict(result)
-
-
-@app.post("/api/applications/run-daily", response_model=RunDailyResponse)
-def run_daily_applications(body: RunDailyRequest | None = None) -> RunDailyResponse:
-    """Start the daily discover/screen/tailor cycle on a background thread when idle."""
-    options = body or RunDailyRequest()
-    started, summary = apply_daily.try_start_daily(
-        limit=options.limit,
-        dry_run=options.dry_run,
-        max_submissions=options.max_submissions,
-    )
-    return RunDailyResponse(started=started, summary=summary if summary else None)
 
 
 @app.get("/api/master-resume")

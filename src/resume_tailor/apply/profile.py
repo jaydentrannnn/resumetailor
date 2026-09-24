@@ -8,14 +8,13 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
-from typing import Literal
+from typing import Any, Literal
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, model_validator
 
 from resume_tailor import config
 
 WorkAuthorization = Literal["", "citizen", "permanent_resident", "visa_holder", "other"]
-EEOChoice = Literal["", "Male", "Female", "Non-binary", "decline", "Yes", "No", "Asian"]
 
 
 class EEOAnswers(BaseModel):
@@ -23,6 +22,8 @@ class EEOAnswers(BaseModel):
 
     gender: str = "decline"
     race: str = "decline"
+    race_detail: str = ""
+    hispanic_latino: bool | None = None
     veteran: str = "decline"
     disability: str = "decline"
 
@@ -31,12 +32,15 @@ class ApplicantProfile(BaseModel):
     """Flat answers reused across ATS forms; not resume content."""
 
     first_name: str = ""
+    middle_name: str = ""
     last_name: str = ""
     preferred_name: str = ""
     pronouns: str = ""
     email: str = ""
     phone: str = ""
+    phone_device_type: str = ""
     phone_country_code: str = "+1"
+    phone_country_region: str = ""
     address_line1: str = ""
     address_line2: str = ""
     city: str = ""
@@ -50,10 +54,14 @@ class ApplicantProfile(BaseModel):
     #: mention portfolio/personal site/website — never a generic "URL" field.
     portfolio_only_when_asked: bool = True
     work_authorization: WorkAuthorization = ""
+    authorized_to_work: bool | None = None
+    authorization_country: str = ""
     requires_sponsorship_now: bool | None = None
     requires_sponsorship_future: bool | None = None
     f1_opt_eligible: bool | None = None
     earliest_start: str = ""
+    notice_period: str = ""
+    education_start_month: str = ""
     graduation_month: str = ""
     degree_level: str = ""
     major: str = ""
@@ -61,14 +69,51 @@ class ApplicantProfile(BaseModel):
     gpa: str = ""
     highest_education_obtained: str = ""
     salary_expectation: str = ""
+    #: Structured range behind salary answers (`apply/salary.py`); seeded once from
+    #: ``salary_expectation`` when all four are empty.
+    salary_hourly_min: float | None = None
+    salary_hourly_max: float | None = None
+    salary_yearly_min: float | None = None
+    salary_yearly_max: float | None = None
     willing_to_relocate: bool | None = None
     location_preference: str = ""
     over_18: bool | None = None
     relatives_at_company: bool | None = None
     referred_by: str = ""
     how_heard: str = "Found through a job postings aggregator."
+    workday_email: str = ""
+    workday_password: str = ""
     eeo: EEOAnswers = Field(default_factory=EEOAnswers)
     custom_answers: dict[str, str] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _seed_salary_range(cls, data: Any) -> Any:
+        """Seed the structured range from the free-text expectation, once.
+
+        Only a profile saved before the range existed (none of its keys present) is
+        seeded; a range the applicant later cleared stays cleared.
+        """
+        keys = ("salary_hourly_min", "salary_hourly_max", "salary_yearly_min", "salary_yearly_max")
+        if not isinstance(data, dict) or any(key in data for key in keys) or not data.get("salary_expectation"):
+            return data
+        from resume_tailor.apply.salary import profile_ranges
+
+        ranges = profile_ranges(str(data["salary_expectation"]))
+        seeded = dict(data)
+        if "hour" in ranges:
+            seeded["salary_hourly_min"], seeded["salary_hourly_max"] = ranges["hour"]
+        if "year" in ranges:
+            seeded["salary_yearly_min"], seeded["salary_yearly_max"] = ranges["year"]
+        return seeded
+        from resume_tailor.apply.salary import profile_ranges
+
+        ranges = profile_ranges(self.salary_expectation)
+        if "hour" in ranges:
+            self.salary_hourly_min, self.salary_hourly_max = ranges["hour"]
+        if "year" in ranges:
+            self.salary_yearly_min, self.salary_yearly_max = ranges["year"]
+        return self
 
 
 def _path() -> Path:
@@ -127,7 +172,7 @@ def seed_default_profile(path: Path | None = None) -> ApplicantProfile:
         requires_sponsorship_now=False,
         requires_sponsorship_future=False,
         f1_opt_eligible=True,
-        earliest_start="2027-06",
+        earliest_start="2027-06-14",
         graduation_month="2027-06",
         degree_level="Bachelors",
         major="Computer Science",
@@ -146,7 +191,7 @@ def seed_default_profile(path: Path | None = None) -> ApplicantProfile:
         over_18=True,
         relatives_at_company=False,
         how_heard="Found through a job postings aggregator.",
-        eeo=EEOAnswers(gender="Male", race="Asian", veteran="No", disability="No"),
+        eeo=EEOAnswers(gender="Male", race="Asian", race_detail="Southeast Asian", hispanic_latino=False, veteran="No", disability="No"),
         custom_answers={
             "are you at least 18 years of age": "Yes",
             "what is the highest level of education you have obtained": (

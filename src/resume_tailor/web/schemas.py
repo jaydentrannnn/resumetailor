@@ -11,10 +11,10 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, model_validator
 
 from .. import config
-from ..apply.profile import ApplicantProfile
-from ..apply.screen import ScreenSettings, ScreenResult
 from ..apply.eligibility import EligibilitySettings
-from ..apply.store import AtsKind, ApplicationStatus, FillResult, StatusChange
+from ..apply.profile import ApplicantProfile
+from ..apply.screen import ScreenResult, ScreenSettings
+from ..apply.store import ApplicationStatus, AtsKind, FillResult, StatusChange
 from ..include import IncludeOptions
 
 #: Every `source_sha256` request field below is interpolated straight into a filesystem
@@ -24,6 +24,10 @@ from ..include import IncludeOptions
 #: A real sha256 hex digest can never contain `/`; enforcing the shape here rejects a
 #: traversal attempt at the schema boundary, before any path is built.
 _SHA256_HEX_PATTERN = r"^[0-9a-f]{64}$"
+
+#: Heading kinds the template wizard's remap step may force — `template_analyze`'s
+#: alias targets plus `"list"`. Mirrors the SPA's `TemplateHeadingKind`.
+HeadingKind = Literal["experience", "education", "projects", "skills", "list"]
 
 
 class CoverAnglesIn(BaseModel):
@@ -50,7 +54,7 @@ class SourceConfig(BaseModel):
 
 
 def _default_apply_sources() -> list[SourceConfig]:
-    """Built-in Simplify internship + new-grad sources; speedyapply filled in Phase D."""
+    """Built-in sources: Simplify internships, Simplify new-grad, and speedyapply."""
     return [
         SourceConfig(
             id="simplify-internships",
@@ -124,20 +128,23 @@ class ApplySettings(BaseModel):
     #: listed in `auto_submit_ats`; Workday is excluded in code regardless (see
     #: `fill.decide_submit_action`).
     auto_submit_max_per_run: int = Field(default=0, ge=0)
+    auto_submit_enabled: bool = False
+    blocker_mode: Literal["pause", "continue"] = "continue"
     reuse_threshold: float = 0.72
     cover_letter: bool = True
-    #: Provider + model for the funnel's own LLM calls (JD-requirement extraction during
-    #: screening, free-text answer drafting during fill). Independent of `JobSettings.model`
-    #: — the actual resume-tailoring stage the funnel submits still uses that setting via
-    #: the job queue. Exists because `extract`/`answer` run outside the job queue, so without
-    #: an explicit pin they fall through to `config.backend_for`'s hardcoded Claude default
+    #: Provider + model for Fill's own LLM calls only — written-answer drafting and
+    #: choice/blocker resolution (the "Autofill model" on the Apply page). Prepare's
+    #: tailoring and its screening JD extraction use the Tailor tab's routing instead
+    #: (`JobSettings.model` & co., via `web.jobs.model_routing`), so they run exactly like
+    #: a Tailor-tab run. Fill's calls run outside the job queue, so without this explicit
+    #: pin they would fall through to `config.backend_for`'s hardcoded Claude default
     #: whenever `_ACTIVE` is empty (e.g. right after a fresh restart) — see CLAUDE.md.
     model_provider: Literal["ollama", "lmstudio", "gemini", "anthropic"] = "ollama"
     model_name: str = "nemotron-3-super:cloud"
 
     @property
     def model_spec(self) -> str:
-        """``provider:model`` spec for `config.pinned`, covering this funnel's own calls."""
+        """``provider:model`` spec for `config.pinned`, covering Fill's autofill calls."""
         return f"{self.model_provider}:{self.model_name}"
 
     @model_validator(mode="after")
@@ -823,7 +830,7 @@ class TemplateRemapRequest(BaseModel):
     """
 
     source_sha256: str = Field(pattern=_SHA256_HEX_PATTERN)
-    overrides: dict[int, str | None] = Field(default_factory=dict)
+    overrides: dict[int, HeadingKind | None] = Field(default_factory=dict)
 
 
 class TemplatePreviewDraftRequest(BaseModel):
@@ -1043,6 +1050,7 @@ class ApplicantProfileResponse(BaseModel):
     workspace_id: str | None = None
     profile: ApplicantProfile
     seeded: bool = False
+    workday_password_set: bool = False
 
 
 class ApplicantProfileUpdateRequest(BaseModel):
@@ -1081,6 +1089,17 @@ class ApplicationOut(BaseModel):
     eligibility_flags: list[str] = Field(default_factory=list)
     sources: list[str] = Field(default_factory=list)
     group_size: int = 1
+    otp_prompt: str | None = None
+    archived_at: str | None = None
+    preparation_eligible: bool = False
+    preparation_reasons: list[str] = Field(default_factory=list)
+    #: Which retry `POST .../retry` would run (`daily.retry_kind`), or None when the
+    #: row has no retry path — the SPA shows and labels its Retry button from this.
+    retry_kind: Literal["fetch", "prefilter", "tailor"] | None = None
+    #: Short "why screened out" label for the Status column (`screen.screen_label`).
+    screen_label: str | None = None
+    #: What a row in the "Needs your review" table is waiting on (`store.review_summary`).
+    review_summary: str | None = None
 
 
 class ApplicationsListResponse(BaseModel):
@@ -1088,6 +1107,17 @@ class ApplicationsListResponse(BaseModel):
 
     applications: list[ApplicationOut] = Field(default_factory=list)
     counts: dict[str, int] = Field(default_factory=dict)
+    total: int = 0
+
+
+class ArchiveApplicationsRequest(BaseModel):
+    application_ids: list[str] = Field(min_length=1, max_length=500)
+    archived: bool
+
+
+class ArchiveApplicationsResponse(BaseModel):
+    updated: list[str] = Field(default_factory=list)
+    errors: dict[str, str] = Field(default_factory=dict)
 
 
 class ApplicationDetailResponse(BaseModel):
@@ -1132,25 +1162,74 @@ class BrowserStatusResponse(BaseModel):
     cdp_url: str = ""
 
 
-class RunDailyRequest(BaseModel):
-    """Optional body for ``POST /api/applications/run-daily``.
+class ApplyOperationRequest(BaseModel):
+    """Start one explicit Apply-page stage using a captured settings snapshot."""
 
-    Mirrors `scripts/apply_daily.py`'s `--limit` / `--dry-run` so the UI and CLI
-    start the same run. Omitting the body keeps the previous behavior (profile's
-    `max_new_per_day`, real run).
-    """
-
+    action: Literal["find", "prepare", "fill"]
+    fill_mode: Literal["initial", "continue", "reopen"] = "initial"
+    force_prepare: bool = False
+    application_ids: list[str] = Field(default_factory=list, max_length=500)
     limit: int | None = Field(default=None, ge=1, le=500)
     dry_run: bool = False
-    #: Overrides `ApplySettings.auto_submit_max_per_run` for this call only.
-    max_submissions: int | None = Field(default=None, ge=0, le=500)
+    auto_submit: bool = False
+    blocker_mode: Literal["pause", "continue"] = "continue"
+    model_provider: Literal["ollama", "lmstudio", "gemini", "anthropic"]
+    model_name: str = Field(min_length=1, max_length=200)
 
 
-class RunDailyResponse(BaseModel):
-    """Outcome of ``POST /api/applications/run-daily``."""
+class ApplyOperationControlRequest(BaseModel):
+    """Control a running or paused Apply operation."""
 
-    started: bool
-    summary: dict[str, Any] | None = None
+    action: Literal["resume", "skip", "cancel"]
+
+
+class ApplyOperationResponse(BaseModel):
+    """Persistent progress for one Find, Prepare, or Fill operation."""
+
+    operation_id: str
+    action: Literal["find", "prepare", "fill", "inspect", "correct"]
+    state: str
+    application_ids: list[str] = Field(default_factory=list)
+    current_application_id: str = ""
+    current_label: str = ""
+    stage: str = ""
+    message: str = ""
+    processed: int = 0
+    total: int = 0
+    completed: int = 0
+    blocked: int = 0
+    failed: int = 0
+    submitted: int = 0
+    started_at: str = ""
+    updated_at: str = ""
+    heartbeat_at: str = ""
+    current_step: int = 0
+    current_step_id: str = ""
+    current_step_number: int = 0
+    current_action_id: str = ""
+    current_action_label: str = ""
+    current_field_label: str = ""
+    action_started_at: str = ""
+    last_activity_at: str = ""
+    application_started_at: str = ""
+    application_deadline_at: str = ""
+    ready_for_review: int = 0
+    needs_input: int = 0
+    finished_at: str = ""
+    effective_model: str = ""
+    auto_submit: bool = False
+    blocker_mode: Literal["pause", "continue"] = "continue"
+    events: list[dict[str, Any]] = Field(default_factory=list)
+    excluded: dict[str, list[str]] = Field(default_factory=dict)
+
+
+class ReviewCorrectionRequest(BaseModel):
+    snapshot_id: str
+    field_id: str
+    expected_state_hash: str
+    value: str | None = None
+    option_ids: list[str] = Field(default_factory=list)
+    idempotency_key: str
 
 
 class DailyStatusResponse(BaseModel):
@@ -1163,6 +1242,7 @@ class DailyStatusResponse(BaseModel):
     processed: int = 0
     total: int = 0
     dry_run: bool = False
+    fetch_only: bool = False
     started_at: str = ""
     finished_at: str = ""
     date: str = ""

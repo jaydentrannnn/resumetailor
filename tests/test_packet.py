@@ -8,7 +8,7 @@ from pathlib import Path
 import pytest
 
 from resume_tailor import config
-from resume_tailor.apply.packet import build_fields, build_packet, write_packet
+from resume_tailor.apply.packet import _build_education, build_fields, build_packet, write_packet
 from resume_tailor.apply.profile import ApplicantProfile, EEOAnswers
 from tests.fixtures import synthetic_resume
 
@@ -131,6 +131,34 @@ def test_build_fields_falls_back_to_contact():
     assert fields["full_name"] == "Jordan Rivera"
 
 
+def test_salary_is_manual_and_declared_eeo_answers_are_distinct():
+    profile = ApplicantProfile(
+        salary_expectation="$45/hour",
+        eeo=EEOAnswers(race="Asian", race_detail="Southeast Asian", hispanic_latino=False),
+    )
+    fields = build_fields(profile, synthetic_resume())
+    assert "salary_expectation" not in fields
+    assert fields["race"] == "Asian"
+    assert fields["race_detail"] == "Southeast Asian"
+    assert fields["hispanic_latino"] == "No"
+
+
+def test_uc_irvine_school_alias_deduplicates_only_that_school():
+    resume = synthetic_resume()
+    resume.education[0].school = "University of California, Irvine"
+    profile = ApplicantProfile(school="University of California - Irvine", degree_level="Bachelors")
+    rows = _build_education(profile, resume)
+    assert len(rows) == 1
+    assert rows[0].degree == "Bachelors"
+    assert rows[0].degree_name == resume.education[0].degree
+
+
+def test_new_eeo_profile_fields_default_for_old_records():
+    profile = ApplicantProfile.model_validate({"eeo": {"race": "Asian"}})
+    assert profile.eeo.race_detail == ""
+    assert profile.eeo.hispanic_latino is None
+
+
 def test_build_packet_tolerates_missing_cover(job_dir):
     """Missing cover artifacts do not fail packet assembly."""
     packet = build_packet("test-job")
@@ -141,8 +169,18 @@ def test_build_packet_tolerates_missing_cover(job_dir):
     assert "cover_pdf" not in packet.artifacts
     assert packet.skills == ["Python", "Git"]
     assert len(packet.experience) == 1
-    assert packet.experience[0].description == "Built Python services."
+    assert packet.experience[0].description == "• Built Python services."
+    assert packet.experience[0].entry_key == "exp:example-corp"
+    assert packet.preparation.expansion_status == "present"
+    assert packet.preparation.artifacts
     assert packet.field_hints["#email"] == "email"
+
+
+def test_build_packet_uses_captured_contact_facts(job_dir):
+    snapshot = ApplicantProfile(first_name="Captured", last_name="Applicant", email="captured@example.com")
+    packet = build_packet("test-job", applicant_profile=snapshot)
+    assert packet.fields["first_name"] == "Captured"
+    assert packet.fields["email"] == "captured@example.com"
     assert packet.gaps[0]["canonical"] == "python"
 
 
@@ -154,3 +192,11 @@ def test_write_packet_persists_json(job_dir):
     saved = json.loads(path.read_text(encoding="utf-8"))
     assert saved["job_id"] == packet.job_id
     assert saved["fields"]["email"] == "jordan@example.com"
+
+
+def test_profile_education_start_month_reaches_fields_and_education_row():
+    profile = ApplicantProfile(school="Test University", education_start_month="2023-09", graduation_month="2027-06")
+    resume = synthetic_resume()
+    assert build_fields(profile, resume)["education_start_month"] == "2023-09"
+    row = _build_education(profile, resume)[0]
+    assert (row.start, row.end) == ("2023-09", "2027-06")

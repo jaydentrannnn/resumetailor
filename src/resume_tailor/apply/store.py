@@ -3,10 +3,12 @@
 from __future__ import annotations
 
 import json
+import re
+import shutil
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Any, Literal
+from typing import Any, Literal, get_args
 
 from pydantic import BaseModel, Field
 
@@ -24,6 +26,7 @@ ApplicationStatus = Literal[
     "tailor_failed",
     "ready",
     "filling",
+    "awaiting_otp",
     "fill_failed",
     "awaiting_review",
     "submitted",
@@ -45,13 +48,15 @@ AtsKind = Literal[
     "unknown",
 ]
 
-#: Statuses that close the funnel — must not revert to pre-ready states.
-_TERMINAL_STATUSES: frozenset[ApplicationStatus] = frozenset(
+#: Statuses that close the funnel — must not revert to pre-ready states. The only
+#: definition: `preparation.check` reports these as `terminal_application`, which is
+#: what the SPA reads rather than keeping its own copy.
+TERMINAL_STATUSES: frozenset[ApplicationStatus] = frozenset(
     {"submitted", "interview", "rejected", "ghosted", "skipped"}
 )
 
 #: Discovery/screen/tailor stages before a packet is ``ready``.
-_PRE_READY_STATUSES: frozenset[ApplicationStatus] = frozenset(
+PRE_READY_STATUSES: frozenset[ApplicationStatus] = frozenset(
     {
         "discovered",
         "jd_fetched",
@@ -63,7 +68,15 @@ _PRE_READY_STATUSES: frozenset[ApplicationStatus] = frozenset(
     }
 )
 
-SCHEMA_VERSION = 2
+#: Filled applications waiting on the applicant: the Applications page's top table.
+REVIEW_STATUSES: frozenset[ApplicationStatus] = frozenset(
+    {"awaiting_review", "awaiting_otp", "fill_failed", "submit_unconfirmed"}
+)
+
+#: Pipeline order, for sorting by status (not alphabetical by internal name).
+_STATUS_RANK: dict[str, int] = {status: rank for rank, status in enumerate(get_args(ApplicationStatus))}
+
+SCHEMA_VERSION = 5
 
 
 class StatusChange(BaseModel):
@@ -80,6 +93,7 @@ class FillResult(BaseModel):
     filled: list[Any] = Field(default_factory=list)
     leftovers: list[Any] = Field(default_factory=list)
     long_text_answers: dict[str, str] = Field(default_factory=dict)
+    uploads: list[dict[str, Any]] = Field(default_factory=list)
     required_empty: list[str] = Field(default_factory=list)
     ready_to_submit: bool = False
     submit_action: str = ""
@@ -87,6 +101,14 @@ class FillResult(BaseModel):
     screenshot_path: str | None = None
     error: str | None = None
     status: str = ""
+    browser_target_id: str = ""
+    browser_url: str = ""
+    handoff_reason: str = ""
+    final_step_reached: bool = False
+    field_outcomes: list[dict[str, Any]] = Field(default_factory=list)
+    current_step_id: str = ""
+    review_snapshot_id: str = ""
+    review_fields: list[dict[str, Any]] = Field(default_factory=list)
 
 
 class SourceRef(BaseModel):
@@ -128,6 +150,8 @@ class Application(BaseModel):
     salary: str = ""
     duplicate_of: str | None = None
     eligibility_flags: list[str] = Field(default_factory=list)
+    otp_prompt: str | None = None
+    archived_at: str | None = None
 
 
 @dataclass
@@ -177,10 +201,61 @@ def _migrate_v1(apps_raw: dict[str, Any]) -> dict[str, Application]:
     return out
 
 
+def _migrate_v2(apps: dict[str, Application]) -> tuple[dict[str, Application], bool]:
+    """Re-key Workday rows whose canonical key has the wrong requisition id.
+
+    Before the fix, `identity.canonical_key` matched the first letters-plus-year
+    it found anywhere in the path (so ``…Intern-2027_R39474`` became
+    ``workday:amfam:ERN-2027``); it now takes the id after the URL's final
+    ``_``. Also backfills `Application.ats` for rows still at the "unknown"
+    default, which happens for rows created by Find before their first fetch.
+    Returns the (possibly unchanged) registry and whether anything changed.
+    """
+    from resume_tailor.apply import fetch_jd
+
+    renamed: dict[str, str] = {}
+    changed = False
+    out = dict(apps)
+    for key, app in list(out.items()):
+        if not app.canonical_key.startswith("workday:"):
+            continue
+        url = app.final_url or app.posting_url
+        if not url:
+            continue
+        new_key = identity.canonical_key(url)
+        if new_key == key or new_key in out:
+            continue
+        app.canonical_key = new_key
+        del out[key]
+        out[new_key] = app
+        renamed[key] = new_key
+        changed = True
+
+    if renamed:
+        for app in out.values():
+            if app.duplicate_of in renamed:
+                app.duplicate_of = renamed[app.duplicate_of]
+
+    for app in out.values():
+        if app.ats == "unknown":
+            url = app.final_url or app.posting_url
+            if url:
+                detected = fetch_jd.detect_ats(url)
+                if detected != "unknown":
+                    app.ats = detected
+                    changed = True
+
+    return out, changed
+
+
 def load_all() -> dict[str, Application]:
     """Load every application keyed by ``canonical_key`` (or legacy id).
 
-    Schema v1 files are migrated in memory and rewritten once as v2.
+    Schema v1 files are migrated in memory to v2, then v2 registries are passed
+    through `_migrate_v2` (Workday re-keying + ATS backfill), then v3 registries
+    through `_migrate_v3` (one-time archive of submitted rows), then v4 registries
+    through `_migrate_v4` (one-time archive of screened-out rows). Any upgrade that
+    changes rows backs up the file once before rewriting it.
     """
     path = _path()
     if not path.is_file():
@@ -191,18 +266,74 @@ def load_all() -> dict[str, Application]:
         return {}
     version = int(raw.get("schema_version") or 1)
     if version < 2:
-        migrated = _migrate_v1(apps_raw)
-        save_all(migrated)
-        return migrated
-    out: dict[str, Application] = {}
-    for key, value in apps_raw.items():
-        app = Application.model_validate(value)
-        out[str(key)] = app
+        out = _migrate_v1(apps_raw)
+        backup = True
+    else:
+        out = {str(key): Application.model_validate(value) for key, value in apps_raw.items()}
+        backup = False
+    if version < 3:
+        out, changed = _migrate_v2(out)
+        backup = backup or changed
+    if version < 4:
+        out, changed = _migrate_v3(out)
+        backup = backup or changed
+    if version < 5:
+        out, changed = _migrate_v4(out)
+        backup = backup or changed
+    if version < SCHEMA_VERSION:
+        if backup:
+            _backup(path)
+        save_all(out)
     return out
 
 
+def _migrate_v3(apps: dict[str, Application]) -> tuple[dict[str, Application], bool]:
+    """Archive every submitted row once, matching the new submit-archives rule.
+
+    Runs only on the v3→v4 upgrade, so a submitted row the user later restores
+    stays restored. ``archived_at`` takes the submission's own timestamp when the
+    history has one, so the archive table sorts by when each was actually sent.
+    """
+    changed = False
+    for app in apps.values():
+        if app.status != "submitted" or app.archived_at:
+            continue
+        submitted_at = next(
+            (change.at for change in reversed(app.status_history) if change.status == "submitted"),
+            None,
+        )
+        app.archived_at = submitted_at or _now_iso()
+        changed = True
+    return apps, changed
+
+
+def _migrate_v4(apps: dict[str, Application]) -> tuple[dict[str, Application], bool]:
+    """Archive existing screen-outs once; later manual restores remain restored."""
+    changed = False
+    for app in apps.values():
+        if app.status != "screened_out" or app.archived_at:
+            continue
+        screened_at = next(
+            (change.at for change in reversed(app.status_history) if change.status == "screened_out"),
+            None,
+        )
+        app.archived_at = screened_at or _now_iso()
+        changed = True
+    return apps, changed
+
+
+def _backup(path: Path) -> None:
+    """Copy the registry file aside before a migration rewrites it in place."""
+    if not path.is_file():
+        return
+    stamp = datetime.now(UTC).strftime("%Y%m%d%H%M%S")
+    backup_path = path.with_name(f"{path.name}.bak-{stamp}")
+    if not backup_path.exists():
+        shutil.copy2(path, backup_path)
+
+
 def save_all(apps: dict[str, Application]) -> None:
-    """Persist the full registry atomically under schema version 2."""
+    """Persist the full registry atomically under ``SCHEMA_VERSION``."""
     path = _path()
     path.parent.mkdir(parents=True, exist_ok=True)
     payload = {
@@ -263,6 +394,33 @@ def upsert(app: Application) -> Application:
     return app
 
 
+def set_archived(application_ids: list[str], archived: bool) -> tuple[list[str], dict[str, str]]:
+    """Change archive state in one registry write, accepting canonical or source IDs."""
+    apps = load_all()
+    index = build_index(apps)
+    updated: list[str] = []
+    errors: dict[str, str] = {}
+    changed = False
+    for requested_id in dict.fromkeys(application_ids):
+        app = apps.get(requested_id) or index.by_canonical.get(requested_id)
+        if app is None:
+            key = next((key for (source, sid), key in index.by_source_ref.items() if sid == requested_id), None)
+            app = apps.get(key) if key else None
+        if app is None:
+            errors[requested_id] = "Application not found"
+            continue
+        if archived and not app.archived_at:
+            app.archived_at = _now_iso()
+            changed = True
+        elif not archived and app.archived_at:
+            app.archived_at = None
+            changed = True
+        updated.append(requested_id)
+    if changed:
+        save_all(apps)
+    return updated, errors
+
+
 def all_ids() -> set[tuple[str, str]]:
     """Return every ``(source, source_job_id)`` currently on disk."""
     refs: set[tuple[str, str]] = set()
@@ -287,15 +445,54 @@ def list_applications(
     *,
     status: ApplicationStatus | None = None,
     limit: int | None = None,
+    offset: int = 0,
+    q: str = "",
+    archive: Literal["active", "archived", "all"] = "all",
+    sort: Literal["discovered_at", "archived_at", "company", "role", "location", "status", "coverage", "salary", "ats", "sources"] = "discovered_at",
+    direction: Literal["asc", "desc"] = "desc",
+    group: Literal["review", "working"] | None = None,
+    applications: list[Application] | None = None,
 ) -> list[Application]:
-    """Return applications newest-first, optionally filtered by status."""
-    apps = list(load_all().values())
-    apps.sort(key=lambda row: row.discovered_at or "", reverse=True)
+    """Return applications sorted over the whole filtered list, then paged.
+
+    ``group="review"`` keeps only `REVIEW_STATUSES`; ``"working"`` drops them. Ties in
+    the sort column fall back to newest-discovered, then company, so a coarse column
+    (Platform, Status) still reads in a sensible order page after page.
+    """
+    apps = filtered_applications(q=q, archive=archive, applications=applications)
     if status is not None:
         apps = [row for row in apps if row.status == status]
+    if group is not None:
+        apps = [row for row in apps if (row.status in REVIEW_STATUSES) == (group == "review")]
+    apps.sort(key=lambda row: row.company.casefold())
+    apps.sort(key=lambda row: row.discovered_at or "", reverse=True)
+    def sort_value(row: Application) -> str | float | None:
+        if sort == "status":
+            return _STATUS_RANK.get(row.status, len(_STATUS_RANK))
+        if sort == "coverage":
+            screen = row.screen
+            total = screen.coverage_total if screen else 0
+            return screen.coverage_matched / total if screen and total > 0 else None
+        if sort == "sources":
+            return ", ".join(sorted({ref.source for ref in row.source_refs})).casefold() if row.source_refs else row.source.casefold()
+        raw = getattr(row, sort, None)
+        return str(raw).strip().casefold() if raw else None
+    values = {id(row): sort_value(row) for row in apps}
+    apps.sort(key=lambda row: values[id(row)] if values[id(row)] is not None else (0.0 if sort == "coverage" else ""), reverse=direction == "desc")
+    apps.sort(key=lambda row: values[id(row)] is None)
+    apps = apps[max(0, offset):]
     if limit is not None:
         apps = apps[: max(0, limit)]
     return apps
+
+
+def filtered_applications(*, q: str = "", archive: Literal["active", "archived", "all"] = "all", applications: list[Application] | None = None) -> list[Application]:
+    query = q.strip().casefold()
+    return [
+        app for app in (applications if applications is not None else load_all().values())
+        if (archive == "all" or bool(app.archived_at) == (archive == "archived"))
+        and (not query or query in app.company.casefold() or query in app.role.casefold() or query in app.location.casefold())
+    ]
 
 
 def status_counts() -> dict[str, int]:
@@ -327,6 +524,7 @@ _CSV_COLUMNS: tuple[str, ...] = (
     "sources",
     "salary",
     "duplicate_of",
+    "archived_at",
     "flags",
 )
 
@@ -367,6 +565,7 @@ def export_csv() -> str:
                 source_ids,
                 app.salary,
                 app.duplicate_of or "",
+                app.archived_at or "",
                 ";".join(app.eligibility_flags),
             ]
         )
@@ -383,14 +582,74 @@ def set_status(
     Raises:
         ValueError: When ``app.status`` is terminal and ``new_status`` is pre-ready.
     """
-    if app.status in _TERMINAL_STATUSES and new_status in _PRE_READY_STATUSES:
+    if app.status in TERMINAL_STATUSES and new_status in PRE_READY_STATUSES:
         raise ValueError(
             f"cannot move from terminal status {app.status!r} to pre-ready {new_status!r}"
         )
     if app.status == new_status and not note:
         return app
+    at = _now_iso()
+    # A submitted application is done with the working queue. Only the transition
+    # archives it: a submitted row the user restores stays restored.
+    if new_status == "submitted" and app.status != "submitted" and not app.archived_at:
+        app.archived_at = at
+    # A failed recheck can set screened_out on a restored screened_out row again.
+    if new_status == "screened_out" and not app.archived_at:
+        app.archived_at = at
     app.status = new_status
     app.status_history.append(
-        StatusChange(status=new_status, at=_now_iso(), note=note)
+        StatusChange(status=new_status, at=at, note=note)
     )
     return app
+
+
+#: Outcome states that need the applicant (mirrors the SPA's `reviewGroup` "attention").
+_ATTENTION_STATES = frozenset({"manual_review", "ambiguous", "invalid_existing", "failed"})
+_SIGN_IN_HANDOFF = re.compile(r"sign in|sign-in|password|account terms|create account", re.I)
+_SUMMARY_LABEL_CHARS = 40
+
+
+def _clean_label(label: str) -> str:
+    """A field label fit for a table cell; '' for a bare element id."""
+    text = " ".join(str(label or "").split()).rstrip("*").strip()
+    if not text or text.startswith("#") or (" " not in text and "--" in text):
+        return ""
+    if len(text) <= _SUMMARY_LABEL_CHARS:
+        return text
+    return text[: _SUMMARY_LABEL_CHARS - 1].rsplit(" ", 1)[0].rstrip(" ,:;") + "…"
+
+
+def review_summary(app: Application) -> str | None:
+    """A short "what needs you" line for a row in `REVIEW_STATUSES`, else None.
+
+    Names the first field waiting on the applicant ("Salary expectations +2"), or the
+    kind of hand-off when no single field is to blame.
+    """
+    if app.status not in REVIEW_STATUSES:
+        return None
+    if app.status == "awaiting_otp":
+        return "Verification code"
+    if app.status == "submit_unconfirmed":
+        return "Confirm submission"
+    fill = FillResult.model_validate(app.fill) if isinstance(app.fill, dict) else app.fill
+    if fill is None:
+        return "Fill failed" if app.status == "fill_failed" else "Check the form"
+    if fill.handoff_reason and _SIGN_IN_HANDOFF.search(fill.handoff_reason):
+        return "Sign-in needed"
+    labels: list[str] = []
+    for outcome in fill.field_outcomes:
+        state = outcome.get("state")
+        if state in _ATTENTION_STATES or (state == "unanswered" and outcome.get("required") is True):
+            labels.append(_clean_label(outcome.get("label") or ""))
+    for item in fill.leftovers:
+        if isinstance(item, dict) and (item.get("required") or item.get("reason") == "needs_review"):
+            labels.append(_clean_label(item.get("label") or ""))
+    labels.extend(_clean_label(entry) for entry in fill.required_empty)
+    unique = list(dict.fromkeys(label for label in labels if label))
+    if unique:
+        return unique[0] if len(unique) == 1 else f"{unique[0]} +{len(unique) - 1}"
+    if app.status == "fill_failed":
+        return "Fill failed"
+    if fill.ready_to_submit:
+        return "Ready to submit"
+    return "Check the form"

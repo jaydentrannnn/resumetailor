@@ -20,8 +20,9 @@ from typing import Any
 class ProgressEvent:
     """One thing that happened, named so a UI can render it without parsing prose."""
 
-    #: Coarse pipeline phase: "extract", "score", "rewrite", "expand", "render",
-    #: "measure", "fit".
+    #: Coarse pipeline phase: "extract", "score", "facets", "rewrite", "render",
+    #: "measure", "fit", "expand", "skills", "cover", "propose" (web runs), plus
+    #: "review" (CLI) and "answer" (apply funnel).
     stage: str
 
     #: Human-readable one-liner, safe to show directly.

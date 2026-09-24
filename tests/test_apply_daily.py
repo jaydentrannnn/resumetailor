@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import Any
 
 import pytest
 
@@ -14,6 +15,32 @@ from resume_tailor.jd import JobRequirements, Keyword
 from resume_tailor.web import jobs as jobs_mod
 from resume_tailor.web.jobs import Job, JobQueue
 from resume_tailor.web.schemas import ApplySettings, JobSettings
+
+
+def test_apply_job_settings_keeps_tailor_model_routing():
+    """Apply-launched tailoring uses the Tailor tab's routing, never the autofill model.
+
+    Regression: `_job_settings` used to overwrite every model field with
+    `ApplySettings.model_spec` (then `nemotron-3-super:cloud`), so Prepare ran a slow
+    reasoning model while the Tailor tab ran `gemma4:cloud` for the same resume.
+    """
+    base = JobSettings(
+        model="ollama",
+        model_name="gemma4:cloud",
+        effort="low",
+        rewrite_model="rewrite-model",
+        cover_letter=False,
+    )
+    merged = daily._job_settings(
+        base,
+        ApplySettings(model_provider="lmstudio", model_name="autofill-model", cover_letter=True),
+    )
+    assert merged.model == "ollama"
+    assert merged.model_name == "gemma4:cloud"
+    assert merged.effort == "low"
+    assert merged.rewrite_model == "rewrite-model"
+    assert merged.cover_letter is True
+    assert base.cover_letter is False  # the workspace defaults object is not mutated
 
 
 @pytest.fixture
@@ -524,16 +551,65 @@ def test_prefilter_skips_extract_consensus(stub_pipeline, apply_paths, monkeypat
     app = store.get("aaa11111-1111-1111-1111-111111111111")
     assert app is not None
     assert app.status == "screened_out"
+    assert app.archived_at == app.status_history[-1].at
     assert app.status_history[-1].note.startswith("prefilter:")
 
 
-def test_extract_consensus_pinned_to_apply_settings_model(apply_paths, monkeypatch):
-    """`_process_one` pins `config` to `ApplySettings.model_spec` before extracting.
+def test_work_restriction_is_screened_before_extract_consensus(
+    stub_pipeline, apply_paths, monkeypatch
+):
+    """A citizenship-only posting is screened out by the free text check, never
+    reaching the LLM extraction."""
 
-    Regression guard for the bug found 2026-09-21: with `_ACTIVE` empty (a fresh
-    process), `jd.extract_consensus` used to silently fall through to
-    `config.backend_for`'s hardcoded Claude default, ignoring the workspace's model
-    setting entirely.
+    def _extract(text, known_tags, **kwargs):
+        raise AssertionError("extract should not run")
+
+    monkeypatch.setattr(jd, "extract_consensus", _extract)
+    monkeypatch.setattr(
+        fetch_jd,
+        "fetch_jd",
+        lambda url, allow_browser=True, canonical_key=None: fetch_jd.FetchResult(
+            final_url=url,
+            ats="greenhouse",
+            text="Software intern building satellites. " * 10
+            + "Applicant must be a U.S. citizen or lawful permanent resident.",
+            method="http",
+        ),
+    )
+    summary = daily.run_daily(settings=ApplySettings(enabled=True, max_new_per_day=5))
+    assert summary.prefiltered_out == 1
+    app = store.get("aaa11111-1111-1111-1111-111111111111")
+    assert app is not None and app.screen is not None
+    assert app.status == "screened_out"
+    assert app.archived_at == app.status_history[-1].at
+    assert app.screen.reasons == ["citizenship_required"]
+    assert "U.S. citizen" in app.screen.evidence[0]
+
+
+def test_resume_screen_rejection_is_archived(stub_pipeline, apply_paths, monkeypatch):
+    from resume_tailor.apply.screen import ScreenResult
+
+    monkeypatch.setattr(
+        daily,
+        "screen",
+        lambda *args, **kwargs: ScreenResult(passed=False, reasons=["seniority_mismatch"]),
+    )
+    summary = daily.run_daily(settings=ApplySettings(enabled=True, max_new_per_day=5))
+    app = store.get("aaa11111-1111-1111-1111-111111111111")
+    assert summary.screened_out == 1
+    assert app is not None and app.status == "screened_out"
+    assert app.archived_at == app.status_history[-1].at
+    assert app.screen is not None and app.screen.reasons == ["seniority_mismatch"]
+
+
+def test_extract_consensus_pinned_to_tailor_routing(apply_paths, monkeypatch):
+    """`_process_one` pins `config` to the Tailor tab's routing before extracting.
+
+    Regression guards: (2026-09-21) with `_ACTIVE` empty (a fresh process),
+    `jd.extract_consensus` used to fall through to `config.backend_for`'s hardcoded
+    Claude default; (2026-09-23) it then ran on the Apply autofill model with a single
+    vote, so the tailor job — on different routing, asking for `extract_runs` votes —
+    cache-missed and re-read the JD `extract_runs` more times.
     """
     row = _sample_row()
     monkeypatch.setattr(sources, "fetch_readme", lambda url: "x")
@@ -555,12 +631,13 @@ def test_extract_consensus_pinned_to_apply_settings_model(apply_paths, monkeypat
             method="http",
         ),
     )
-    seen: dict[str, str] = {}
+    seen: dict[str, object] = {}
 
     def _extract(text, known_tags, **kwargs):
         backend = config.backend_for("extract")
         seen["origin"] = backend.origin
         seen["model"] = backend.model
+        seen["runs"] = kwargs.get("runs")
         raise RuntimeError("stop before tailoring — only checking the pin")
 
     monkeypatch.setattr(jd, "extract_consensus", _extract)
@@ -568,36 +645,20 @@ def test_extract_consensus_pinned_to_apply_settings_model(apply_paths, monkeypat
     # Confirm the exposure directly: with `_ACTIVE` empty, a real bug would resolve
     # to Claude here.
     config._ACTIVE.clear()
+    tailor = JobSettings(model="lmstudio", model_name="tailor-model", extract_runs=3)
+    monkeypatch.setattr(
+        daily.workspace, "load_settings", lambda: {"defaults": tailor.model_dump()}
+    )
     settings = ApplySettings(
         enabled=True,
         max_new_per_day=5,
-        model_provider="lmstudio",
-        model_name="some-test-model",
+        model_provider="ollama",
+        model_name="autofill-model",
     )
     summary = daily.run_daily(settings=settings)
-    assert seen == {"origin": "lmstudio", "model": "some-test-model"}
+    assert seen == {"origin": "lmstudio", "model": "tailor-model", "runs": 3}
     assert summary.tailor_failed == 1
     assert "stop before tailoring" in summary.errors[0]
-
-
-def test_try_start_daily_passes_limit_and_dry_run(monkeypatch, apply_paths):
-    """The API-started thread receives the limit and dry_run from the caller."""
-    called_with: dict[str, Any] = {}
-
-    def _fake_run(**kwargs):
-        called_with.update(kwargs)
-        return daily.DailySummary()
-
-    monkeypatch.setattr(daily, "run_daily", _fake_run)
-    daily.try_start_daily(limit=3, dry_run=True)
-    # Give the daemon thread a moment to start.
-    import time
-
-    deadline = time.monotonic() + 2.0
-    while not called_with and time.monotonic() < deadline:
-        time.sleep(0.05)
-    assert called_with.get("limit") == 3
-    assert called_with.get("dry_run") is True
 
 
 def test_daily_status_reflects_progress(apply_paths, monkeypatch):
@@ -638,8 +699,8 @@ def test_daily_status_reflects_progress(apply_paths, monkeypatch):
     monkeypatch.setattr(
         jd, "extract_consensus", lambda text, known_tags, **kwargs: requirements
     )
-    from tests.fixtures import synthetic_resume
     from resume_tailor.apply.screen import ScreenResult
+    from tests.fixtures import synthetic_resume
 
     monkeypatch.setattr(daily.data, "load", lambda: synthetic_resume())
     monkeypatch.setattr(
@@ -689,7 +750,8 @@ def test_daily_status_reflects_progress(apply_paths, monkeypatch):
         ],
     )
     # Run on a thread so we can poll daily_status() mid-flight.
-    import time, threading
+    import threading
+    import time
 
     def _runner():
         daily.run_daily(settings=settings, limit=1)
@@ -882,19 +944,432 @@ def test_run_batch_submit_one_failure_does_not_sink_the_batch(apply_paths, monke
     assert summary.submit_failed == 1
 
 
-def test_try_start_daily_passes_max_submissions(monkeypatch, apply_paths):
-    """The API-started thread receives the auto_submit_max_per_run override."""
-    called_with: dict[str, Any] = {}
+def test_run_daily_fetch_only(stub_pipeline, apply_paths):
+    """fetch_only=True ingests applications as 'discovered' without JD fetch or tailoring."""
+    summary = daily.run_daily(
+        settings=ApplySettings(enabled=True, max_new_per_day=5),
+        fetch_only=True,
+    )
+    assert summary.already_running is False
+    assert summary.new_rows == 1
+    assert summary.discovered == 1
+    assert summary.processed == 1
+    assert summary.ready == 0
+    assert summary.tailored == 0
+    assert summary.jd_fetched == 0
 
-    def _fake_run(**kwargs):
-        called_with.update(kwargs)
-        return daily.DailySummary()
+    app = store.get("aaa11111-1111-1111-1111-111111111111")
+    assert app is not None
+    assert app.status == "discovered"
+    assert app.job_id is None
 
-    monkeypatch.setattr(daily, "run_daily", _fake_run)
-    daily.try_start_daily(max_submissions=5)
-    import time
+    # A subsequent normal daily run should pick up the pending discovered app and progress it to ready
+    summary2 = daily.run_daily(
+        settings=ApplySettings(enabled=True, max_new_per_day=5),
+        fetch_only=False,
+    )
+    assert summary2.already_running is False
+    assert summary2.ready == 1
+    assert summary2.tailored == 1
+    app_ready = store.get("aaa11111-1111-1111-1111-111111111111")
+    assert app_ready is not None
+    assert app_ready.status == "ready"
+    assert app_ready.job_id == "tailor-job-1"
 
-    deadline = time.monotonic() + 2.0
-    while not called_with and time.monotonic() < deadline:
-        time.sleep(0.05)
-    assert called_with.get("auto_submit_max_per_run") == 5
+
+def test_archived_discovery_is_not_prepared_by_daily_run(stub_pipeline, apply_paths):
+    daily.run_daily(settings=ApplySettings(enabled=True, max_new_per_day=5), fetch_only=True)
+    application_id = "aaa11111-1111-1111-1111-111111111111"
+    store.set_archived([application_id], True)
+    result = daily.run_daily(settings=ApplySettings(enabled=True, max_new_per_day=5), fetch_only=False)
+    archived = store.get(application_id)
+    assert result.ready == 0
+    assert archived is not None and archived.archived_at
+    assert archived.status == "discovered"
+    with pytest.raises(RuntimeError, match="archived"):
+        daily.prepare_application(application_id, settings=ApplySettings(enabled=True))
+
+def _retry_app(status: str, *, note: str = "", **overrides: Any) -> store.Application:
+    """One application at ``status`` whose last history note is ``note``."""
+    app = store.Application(
+        **{
+            "source": "simplify-internships",
+            "source_job_id": "retry-1",
+            "company": "Acme Corp",
+            "role": "Software Intern",
+            "status": status,
+            "posting_url": "https://example.com/job",
+            **overrides,
+        }
+    )
+    if note:
+        app.status_history.append(store.StatusChange(status=status, at="2026-09-23T00:00:00+00:00", note=note))
+    return app
+
+
+@pytest.mark.parametrize(
+    ("status", "note", "expected"),
+    [
+        ("discovered", "", "fetch"),
+        ("needs_browser", "", "fetch"),
+        ("jd_fetched", "", "fetch"),
+        ("screened_out", "prefilter: 5+ years required", None),
+        ("screened_out", "screen: seniority mismatch", None),
+        ("tailor_failed", "", "tailor"),
+        ("ready", "", None),
+        ("skipped", "", None),
+    ],
+)
+def test_retry_kind_matches_retry_application_branches(status, note, expected):
+    """`retry_kind` is the single definition of what the Retry button can do."""
+    assert daily.retry_kind(_retry_app(status, note=note)) == expected
+
+
+@pytest.mark.parametrize("note", ["prefilter: requires_5_years", "seniority 'mid' not in ['intern', 'entry']"])
+def test_any_screen_out_with_saved_jd_can_be_rechecked(note):
+    """Both prefilter and screen-stage rejections re-check without a model call."""
+    app = _retry_app("screened_out", note=note, jd_text_path="jd.txt")
+    assert daily.retry_kind(app) == "prefilter"
+
+
+def test_retry_application_refuses_screened_out_without_saved_jd(apply_paths):
+    """With no saved JD text there is nothing to re-check, so the API must not offer it."""
+    store.upsert(_retry_app("screened_out", note="screen: seniority mismatch"))
+    with pytest.raises(RuntimeError, match="no retry path"):
+        daily.retry_application("retry-1")
+
+
+def _recheck_settings(monkeypatch):
+    monkeypatch.setattr(
+        daily.workspace,
+        "load_settings",
+        lambda workspace_id=None: {"defaults": JobSettings().model_dump()},
+    )
+
+
+def test_recheck_clears_a_stale_screen_out(apply_paths, monkeypatch):
+    """A row rejected by an old rule (30-year misparse, model seniority on an intern
+    title) clears under the current rules and returns to `jd_fetched`."""
+    from resume_tailor.apply.screen import ScreenResult
+
+    _recheck_settings(monkeypatch)
+    jd_path = apply_paths / "jd.txt"
+    jd_path.write_text(
+        "For over 30 years we have built games. Analytics intern, Python and SQL.",
+        encoding="utf-8",
+    )
+    store.upsert(
+        _retry_app(
+            "screened_out",
+            note="seniority 'mid' not in ['intern', 'entry']",
+            role="Analytics Intern",
+            jd_text_path=str(jd_path),
+            screen=ScreenResult(passed=False, reasons=["requires_30_years"], seniority="mid"),
+        )
+    )
+    after = daily.retry_application("retry-1")
+    assert after.status == "jd_fetched"
+    assert after.status_history[-1].note == "eligibility cleared on re-check"
+    assert "seniority_mismatch" in after.eligibility_flags
+
+
+def test_recheck_keeps_a_real_restriction_with_its_evidence(apply_paths, monkeypatch):
+    _recheck_settings(monkeypatch)
+    jd_path = apply_paths / "jd.txt"
+    jd_path.write_text(
+        "Build radar software. U.S. citizenship is required, as only U.S. citizens "
+        "are eligible for a security clearance. Python preferred.",
+        encoding="utf-8",
+    )
+    store.upsert(_retry_app("screened_out", jd_text_path=str(jd_path)))
+    after = daily.retry_application("retry-1")
+    assert after.status == "screened_out"
+    assert after.archived_at == after.status_history[-1].at
+    assert after.screen is not None
+    assert after.screen.reasons == ["citizenship_required", "clearance_required"]
+    assert after.screen.evidence[0].startswith("U.S. citizenship is required")
+
+
+def test_tailor_retry_returns_before_the_job_finishes(apply_paths, monkeypatch):
+    """A tailor retry queues the job and returns at `tailoring`; a thread records the result."""
+    import threading
+
+    jd_path = apply_paths / "jd.txt"
+    jd_path.write_text("Software intern. Python.", encoding="utf-8")
+    store.upsert(_retry_app("tailor_failed", jd_text_path=str(jd_path)))
+
+    class _Queue:
+        def submit(self, jd_text, settings, metadata=None):
+            return Job(job_id="retry-job", jd_text=jd_text, settings=settings), 0
+
+    release = threading.Event()
+
+    class _Finished:
+        status = "succeeded"
+        error = None
+
+    def fake_wait(job_id, *, timeout_sec=3600.0, poll_sec=0.5):
+        assert job_id == "retry-job"
+        release.wait(timeout=5)
+        return _Finished()
+
+    monkeypatch.setattr(daily, "get_queue", lambda: _Queue())
+    monkeypatch.setattr(daily, "_wait_for_job", fake_wait)
+    monkeypatch.setattr(daily.workspace, "load_settings", lambda: {"defaults": JobSettings().model_dump()})
+
+    returned = daily.retry_application("retry-1")
+    assert returned.status == "tailoring"
+    assert returned.job_id == "retry-job"
+
+    release.set()
+    for thread in threading.enumerate():
+        if thread.name == "apply-retry-retry-1":
+            thread.join(timeout=5)
+    assert store.get("retry-1").status == "ready"
+
+
+def test_application_from_row_sets_ats_from_url():
+    """A discovered row records its ATS immediately, not just after its first fetch
+    (fixes the Applications page showing "unknown" for every just-discovered
+    Workday row)."""
+    row = _sample_row(
+        application_link=(
+            "https://amfam.wd1.myworkdayjobs.com/AmFamGroupInternCareers/job/"
+            "WI-Madison/Consumer-Research-and-Insights-Intern-2027_R39474"
+        )
+    )
+    app = daily._application_from_row(
+        row,
+        canonical_key="workday:amfam:r39474",
+        group_key="amfam|intern",
+        final_url=row.application_link,
+    )
+    assert app.ats == "workday"
+
+
+def test_retry_application_fetch_rejects_short_text(apply_paths, monkeypatch):
+    """A fetch retry that returns under the shared minimum length stays
+    ``needs_browser``, matching what the nightly run would have done — it must
+    not slip a scrap of text past the same rule under a different name."""
+    store.upsert(_retry_app("needs_browser"))
+    monkeypatch.setattr(
+        fetch_jd,
+        "fetch_jd",
+        lambda url, allow_browser=True, canonical_key=None: fetch_jd.FetchResult(
+            final_url=url, ats="workday", text="too short", method="api"
+        ),
+    )
+    returned = daily.retry_application("retry-1")
+    assert returned.status == "needs_browser"
+
+
+def test_prepare_application_clears_stale_error_on_fetch_success(
+    stub_pipeline, apply_paths
+):
+    """A row stuck at ``needs_browser`` with a leftover ``error`` from a prior failed
+    fetch attempt (nightly run or a per-row retry) must not keep showing that error
+    once "Prepare selected" fetches it successfully — regression for a bug where
+    `_process_one`'s fetch-success path never touched `app.error`, so the Applications
+    page kept showing "Browser extraction too short (0 chars)" on a row that had
+    already moved past `jd_fetched` into `tailoring`/`ready`."""
+    row = _sample_row()
+    stale = store.Application(
+        source="simplify",
+        source_job_id=row.job_id,
+        company=row.company,
+        role=row.role,
+        posting_url=row.application_link,
+        final_url=row.application_link,
+        canonical_key=f"pending:{row.job_id}",
+        status="needs_browser",
+        error="Browser extraction too short (0 chars)",
+    )
+    store.upsert(stale)
+
+    prepared = daily.prepare_application(
+        row.job_id, settings=ApplySettings(enabled=True)
+    )
+    assert prepared.status == "ready"
+    assert prepared.error is None
+
+
+def test_wait_for_job_relays_progress_events(monkeypatch):
+    """`_wait_for_job`'s ``on_progress`` sees each new tailor-stage message once,
+    in order, and stops seeing updates once the job is terminal — the Apply funnel's
+    only visibility into what a long single tailor call is doing while it waits."""
+    from resume_tailor.events import ProgressEvent
+
+    job = Job(job_id="job-1", jd_text="jd", settings=JobSettings(), status="queued")
+    queue = JobQueue()
+    queue._jobs[job.job_id] = job
+    monkeypatch.setattr(daily, "get_queue", lambda: queue)
+
+    ticks = iter(
+        [
+            None,  # queued, no events yet
+            ProgressEvent(stage="extract", message="Extracting job requirements"),
+            ProgressEvent(stage="extract", message="Extracting job requirements"),  # repeat
+            ProgressEvent(stage="rewrite", message="Rewriting bullets"),
+        ]
+    )
+    seen: list[str] = []
+
+    def _tick(*_a, **_k):
+        event = next(ticks, "done")
+        if event == "done":
+            job.status = "succeeded"
+        elif event is not None:
+            job.events.append(event)
+
+    monkeypatch.setattr(daily.time, "sleep", _tick)
+    result = daily._wait_for_job(job.job_id, on_progress=seen.append)
+    assert result is job
+    assert result.status == "succeeded"
+    assert seen == ["Extracting job requirements", "Rewriting bullets"]
+
+
+def test_failed_prepare_again_does_not_restore_orphaned_tailoring(
+    stub_pipeline, apply_paths, monkeypatch
+):
+    """A row left at ``tailoring`` by a job that died with a server restart must show
+    the new attempt's outcome when Prepare fails — restoring ``previous`` once
+    resurrected the dead ``tailoring`` row (and its stale error) forever."""
+    row = _sample_row()
+    store.upsert(
+        store.Application(
+            source="simplify",
+            source_job_id=row.job_id,
+            company=row.company,
+            role="Software Engineer",
+            posting_url=row.application_link,
+            final_url=row.application_link,
+            canonical_key=f"pending:{row.job_id}",
+            status="tailoring",
+            job_id="dead-job",
+            error="Browser extraction too short (0 chars)",
+        )
+    )
+    monkeypatch.setattr(
+        fetch_jd,
+        "fetch_jd",
+        lambda url, allow_browser=True, canonical_key=None: fetch_jd.FetchResult(
+            final_url=url,
+            ats="greenhouse",
+            text="Requires 5+ years of professional experience. " * 20,
+            method="http",
+        ),
+    )
+
+    with pytest.raises(RuntimeError, match="screened_out"):
+        daily.prepare_application(row.job_id, settings=ApplySettings(enabled=True))
+
+    after = store.get(row.job_id)
+    assert after is not None
+    assert after.status == "screened_out"
+    assert after.error is None
+    assert after.screen is not None and "requires_5_years" in after.screen.reasons
+
+
+def test_failed_prepare_again_restores_ready_packet(stub_pipeline, apply_paths, monkeypatch):
+    """A refresh of a row that already had a packet keeps the packet on failure."""
+    row = _sample_row()
+    store.upsert(
+        store.Application(
+            source="simplify",
+            source_job_id=row.job_id,
+            company=row.company,
+            role="Software Engineer",
+            posting_url=row.application_link,
+            final_url=row.application_link,
+            canonical_key=f"pending:{row.job_id}",
+            status="ready",
+            job_id="old-job",
+        )
+    )
+    monkeypatch.setattr(
+        fetch_jd,
+        "fetch_jd",
+        lambda url, allow_browser=True, canonical_key=None: fetch_jd.FetchResult(
+            final_url=url,
+            ats="greenhouse",
+            text="Requires 5+ years of professional experience. " * 20,
+            method="http",
+        ),
+    )
+
+    with pytest.raises(RuntimeError):
+        daily.prepare_application(
+            row.job_id, settings=ApplySettings(enabled=True), force_prepare=True
+        )
+
+    after = store.get(row.job_id)
+    assert after is not None
+    assert after.status == "ready"
+    assert after.job_id == "old-job"
+
+
+def test_recover_orphaned_tailoring_marks_only_dead_jobs(apply_paths, monkeypatch):
+    queue = JobQueue()
+    live = Job(job_id="live-job", jd_text="jd", settings=JobSettings(), status="running")
+    queue._jobs[live.job_id] = live
+    monkeypatch.setattr(daily, "get_queue", lambda: queue)
+
+    def _app(source_job_id: str, status: str, job_id: str | None) -> store.Application:
+        return store.Application(
+            source="simplify",
+            source_job_id=source_job_id,
+            company="Acme Corp",
+            role="Software Intern",
+            canonical_key=f"pending:{source_job_id}",
+            status=status,
+            job_id=job_id,
+        )
+
+    store.upsert(_app("dead", "tailoring", "dead-job"))
+    store.upsert(_app("nojob", "tailoring", None))
+    store.upsert(_app("live", "tailoring", "live-job"))
+    store.upsert(_app("done", "ready", "dead-job"))
+
+    assert daily.recover_orphaned_tailoring() == 2
+
+    statuses = {sid: store.get(sid).status for sid in ("dead", "nojob", "live", "done")}
+    assert statuses == {
+        "dead": "tailor_failed",
+        "nojob": "tailor_failed",
+        "live": "tailoring",
+        "done": "ready",
+    }
+    assert "server restart" in (store.get("dead").error or "")
+    assert daily.retry_kind(store.get("dead")) == "tailor"
+
+
+@pytest.mark.parametrize(
+    ("previous_status", "expected"),
+    [("awaiting_review", "awaiting_review"), ("awaiting_otp", "awaiting_otp"), ("fill_failed", "ready")],
+)
+def test_prepare_again_keeps_only_a_live_review_tab(
+    stub_pipeline, apply_paths, previous_status, expected
+):
+    """An open review tab survives a refresh; an old fill failure does not outlive its packet."""
+    row = _sample_row()
+    store.upsert(
+        store.Application(
+            source="simplify",
+            source_job_id=row.job_id,
+            company=row.company,
+            role=row.role,
+            posting_url=row.application_link,
+            final_url=row.application_link,
+            canonical_key=f"pending:{row.job_id}",
+            status=previous_status,
+            job_id="old-job",
+            fill=store.FillResult(status=previous_status, handoff_reason="old attempt"),
+        )
+    )
+
+    prepared = daily.prepare_application(
+        row.job_id, settings=ApplySettings(enabled=True), force_prepare=True
+    )
+
+    assert prepared.status == expected
+    assert prepared.fill is not None  # the last attempt's report stays for reference

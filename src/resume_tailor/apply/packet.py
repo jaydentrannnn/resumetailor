@@ -7,6 +7,7 @@ paths to rendered documents; ``write_packet`` persists ``packet.json`` beside th
 
 from __future__ import annotations
 
+import hashlib
 import json
 from datetime import datetime, timezone
 from pathlib import Path
@@ -30,6 +31,10 @@ class PacketEducation(BaseModel):
     start: str = ""
     end: str = ""
     gpa: str = ""
+    entry_key: str = ""
+    degree_level: str = ""
+    degree_name: str = ""
+    source: str = ""
 
 
 class PacketExperience(BaseModel):
@@ -43,6 +48,30 @@ class PacketExperience(BaseModel):
     current: bool = False
     description: str = ""
     char_count: int = 0
+    entry_key: str = ""
+    source_entry_id: str = ""
+    bullets: list[str] = Field(default_factory=list)
+    warnings: list[str] = Field(default_factory=list)
+
+
+class PreparedArtifact(BaseModel):
+    purpose: str
+    path: str
+    filename: str
+    mime_type: str
+    sha256: str
+
+
+class PreparationManifest(BaseModel):
+    schema_version: int = 1
+    preparation_id: str = ""
+    job_id: str = ""
+    prepared_at: str = ""
+    source_revision: str = ""
+    expansion_status: str = "missing"
+    expansion_hash: str = ""
+    artifacts: list[PreparedArtifact] = Field(default_factory=list)
+    preparation_warnings: list[str] = Field(default_factory=list)
 
 
 class Packet(BaseModel):
@@ -62,6 +91,7 @@ class Packet(BaseModel):
     artifacts: dict[str, str] = Field(default_factory=dict)
     field_hints: dict[str, str] = Field(default_factory=dict)
     gaps: list[dict] = Field(default_factory=list)
+    preparation: PreparationManifest = Field(default_factory=PreparationManifest)
 
 
 _WORK_AUTH_LABELS: dict[str, str] = {
@@ -135,11 +165,18 @@ def build_fields(profile: ApplicantProfile, resume: MasterResume) -> dict[str, s
 
     fields: dict[str, str] = {}
     _maybe_set(fields, "first_name", first_name or None)
+    _maybe_set(fields, "middle_name", profile.middle_name or None)
     _maybe_set(fields, "last_name", last_name or None)
     _maybe_set(fields, "full_name", full_name or None)
     _maybe_set(fields, "preferred_name", profile.preferred_name or None)
+    if profile.preferred_name.strip() and profile.preferred_name.strip().casefold() != (first_name or "").strip().casefold():
+        # Ticks Workday's "I have a preferred name" box, which reveals the inputs.
+        fields["has_preferred_name"] = "Yes"
     _maybe_set(fields, "email", _pick(profile.email, contact.email) or None)
     _maybe_set(fields, "phone", _pick(profile.phone, contact.phone) or None)
+    _maybe_set(fields, "phone_device_type", profile.phone_device_type or None)
+    _maybe_set(fields, "phone_country_code", profile.phone_country_code or None)
+    _maybe_set(fields, "phone_country_region", profile.phone_country_region or None)
     _maybe_set(fields, "address_line1", profile.address_line1 or None)
     _maybe_set(fields, "address_line2", profile.address_line2 or None)
     _maybe_set(fields, "city", profile.city or None)
@@ -160,6 +197,8 @@ def build_fields(profile: ApplicantProfile, resume: MasterResume) -> dict[str, s
     if profile.portfolio_url:
         _maybe_set(fields, "website", profile.portfolio_url)
     _maybe_set(fields, "work_authorization", _work_authorization_label(profile.work_authorization))
+    _maybe_set(fields, "authorized_to_work", _yes_no(profile.authorized_to_work))
+    _maybe_set(fields, "authorization_country", profile.authorization_country or None)
     _maybe_set(fields, "requires_sponsorship", _yes_no(profile.requires_sponsorship_now))
     _maybe_set(
         fields,
@@ -168,16 +207,24 @@ def build_fields(profile: ApplicantProfile, resume: MasterResume) -> dict[str, s
     )
     _maybe_set(fields, "f1_opt_eligible", _yes_no(profile.f1_opt_eligible))
     _maybe_set(fields, "earliest_start", profile.earliest_start or None)
+    _maybe_set(fields, "notice_period", profile.notice_period or None)
+    if profile.requires_sponsorship_now is True or profile.requires_sponsorship_future is True:
+        fields["requires_sponsorship_any"] = "Yes"
+    elif profile.requires_sponsorship_now is False and profile.requires_sponsorship_future is False:
+        fields["requires_sponsorship_any"] = "No"
+    _maybe_set(fields, "education_start_month", profile.education_start_month or None)
     _maybe_set(fields, "graduation_month", profile.graduation_month or None)
     _maybe_set(fields, "degree_level", profile.degree_level or None)
     _maybe_set(fields, "major", profile.major or None)
     _maybe_set(fields, "school", profile.school or None)
     _maybe_set(fields, "gpa", profile.gpa or None)
-    _maybe_set(fields, "salary_expectation", profile.salary_expectation or None)
+    # Salary depends on the posting (`apply/salary.py`); the fill runner adds it.
     _maybe_set(fields, "willing_to_relocate", _yes_no(profile.willing_to_relocate))
     _maybe_set(fields, "how_heard", profile.how_heard or None)
     _maybe_set(fields, "gender", _eeo_value(profile.eeo.gender))
     _maybe_set(fields, "race", _eeo_value(profile.eeo.race))
+    _maybe_set(fields, "race_detail", profile.eeo.race_detail or None)
+    _maybe_set(fields, "hispanic_latino", _yes_no(profile.eeo.hispanic_latino))
     _maybe_set(fields, "veteran_status", _eeo_value(profile.eeo.veteran))
     _maybe_set(fields, "disability_status", _eeo_value(profile.eeo.disability))
     _maybe_set(fields, "current_company", current_company or None)
@@ -193,6 +240,7 @@ def _education_from_profile(profile: ApplicantProfile) -> PacketEducation | None
             profile.degree_level,
             profile.major,
             profile.gpa,
+            profile.education_start_month,
             profile.graduation_month,
         )
     ):
@@ -201,15 +249,20 @@ def _education_from_profile(profile: ApplicantProfile) -> PacketEducation | None
         school=profile.school,
         degree=profile.degree_level,
         major=profile.major,
+        start=profile.education_start_month,
         end=profile.graduation_month,
         gpa=profile.gpa,
+        entry_key="profile:education",
+        degree_level=profile.degree_level,
+        degree_name=profile.degree_level,
+        source="profile",
     )
 
 
 def _education_from_resume(resume: MasterResume) -> list[PacketEducation]:
     """Convert resume education entries into packet rows."""
     rows: list[PacketEducation] = []
-    for edu in resume.education:
+    for index, edu in enumerate(resume.education):
         start, end = parse_range(edu.dates)
         rows.append(
             PacketEducation(
@@ -218,6 +271,9 @@ def _education_from_resume(resume: MasterResume) -> list[PacketEducation]:
                 start=start,
                 end=end,
                 gpa=edu.gpa if edu.gpa else "",
+                entry_key=f"resume:education:{index}",
+                degree_name=edu.degree,
+                source="resume",
             )
         )
     return rows
@@ -229,14 +285,39 @@ def _build_education(profile: ApplicantProfile, resume: MasterResume) -> list[Pa
     profile_row = _education_from_profile(profile)
     if profile_row is not None:
         rows.append(profile_row)
-    seen_schools = {row.school.lower() for row in rows if row.school}
+    def school_key(value: str) -> str:
+        normalized = " ".join(value.casefold().replace("-", " ").replace(",", " ").split())
+        if normalized in {"university of california irvine", "uc irvine", "uci"}:
+            return "university of california irvine"
+        return normalized
+
     for row in _education_from_resume(resume):
-        key = row.school.lower()
-        if key and key in seen_schools:
-            continue
-        rows.append(row)
-        if key:
-            seen_schools.add(key)
+        def same_degree(existing: PacketEducation, candidate: PacketEducation) -> bool:
+            left = existing.degree.casefold().strip()
+            right = candidate.degree.casefold().strip()
+            generic_bachelor = {"bachelor", "bachelors", "bachelor's", "bachelors degree"}
+            specific_bachelor = lambda value: value.startswith(("bachelor of ", "bs ", "ba "))
+            return (
+                left == right or not left or not right
+                or (existing.source == "profile" and left in generic_bachelor and specific_bachelor(right))
+            )
+
+        match = next((
+            existing for existing in rows
+            if school_key(existing.school) and school_key(existing.school) == school_key(row.school)
+            and same_degree(existing, row)
+            and (not existing.end or not row.end or existing.end[:4] == row.end[:4])
+        ), None)
+        if match is None:
+            rows.append(row)
+        else:
+            match.start = match.start or row.start
+            match.end = match.end or row.end
+            match.gpa = match.gpa or row.gpa
+            if match.source == "profile" and match.degree.casefold().strip() in {
+                "bachelor", "bachelors", "bachelor's", "bachelors degree",
+            } and row.degree_name.casefold().startswith(("bachelor of ", "bs ", "ba ")):
+                match.degree_name = row.degree_name
     return rows
 
 
@@ -244,7 +325,7 @@ def _experience_from_expansion(entries: list[ExpandedEntry]) -> list[PacketExper
     """Map expansion artifact entries to packet experience rows."""
     rows: list[PacketExperience] = []
     for entry in entries:
-        description = "\n".join(entry.bullets)
+        description = "\n".join(f"• {bullet}" for bullet in entry.bullets)
         rows.append(
             PacketExperience(
                 employer=entry.company,
@@ -254,7 +335,11 @@ def _experience_from_expansion(entries: list[ExpandedEntry]) -> list[PacketExper
                 end=entry.end,
                 current=entry.end.lower() in {"present", "current"},
                 description=description,
-                char_count=entry.char_count or len(description),
+                char_count=len(description),
+                entry_key=entry.entry_key,
+                source_entry_id=entry.entry_key.removeprefix("exp:"),
+                bullets=list(entry.bullets),
+                warnings=list(entry.warnings),
             )
         )
     return rows
@@ -274,6 +359,8 @@ def _experience_from_resume(resume: MasterResume) -> list[PacketExperience]:
                 current=entry.end.lower() in {"present", "current"},
                 description="",
                 char_count=0,
+                entry_key=f"exp:{entry.id}",
+                source_entry_id=entry.id,
             )
         )
     return rows
@@ -346,7 +433,18 @@ def _artifact_paths(job_dir: Path) -> dict[str, str]:
     return {kind: str(path) for kind, path in mapping.items() if path.is_file()}
 
 
-def build_packet(job_id: str, *, out_dir: Path | None = None) -> Packet:
+def _sha256(path: Path) -> str:
+    digest = hashlib.sha256()
+    with path.open("rb") as stream:
+        for block in iter(lambda: stream.read(1024 * 1024), b""):
+            digest.update(block)
+    return digest.hexdigest()
+
+
+def build_packet(
+    job_id: str, *, out_dir: Path | None = None,
+    applicant_profile: profile_mod.ApplicantProfile | None = None,
+) -> Packet:
     """Assemble a packet from job artifacts, profile, and master resume."""
     job_dir = out_dir if out_dir is not None else config.OUTPUT_DIR / "jobs" / job_id
     run_path = job_dir / "run.json"
@@ -357,14 +455,31 @@ def build_packet(job_id: str, *, out_dir: Path | None = None) -> Packet:
     metadata = run.get("metadata") or {}
     report = run.get("report") or {}
 
-    applicant_profile, _seeded = profile_mod.load_profile()
+    if applicant_profile is None:
+        applicant_profile, _seeded = profile_mod.load_profile()
     resume = load()
 
-    expansion = _load_expansion(job_dir / "expansion.json")
-    experience = (
-        _experience_from_expansion(expansion.entries)
-        if expansion is not None and expansion.entries
-        else _experience_from_resume(resume)
+    from resume_tailor.apply import preparation
+
+    expansion_path = job_dir / "expansion.json"
+    prepared_expansion = preparation.read_expansion(expansion_path) if expansion_path.is_file() else None
+    expansion = prepared_expansion.as_expansion() if prepared_expansion is not None else None
+    experience = _experience_from_expansion(expansion.entries) if expansion is not None else []
+    artifacts = _artifact_paths(job_dir)
+    manifest_artifacts = [PreparedArtifact(
+        purpose=kind, path=path, filename=Path(path).name,
+        mime_type="application/pdf" if kind.endswith("pdf") else
+        "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
+        sha256=_sha256(Path(path)),
+    ) for kind, path in artifacts.items()]
+    expansion_status = prepared_expansion.status if prepared_expansion is not None else "missing"
+    manifest = PreparationManifest(
+        preparation_id=_sha256(run_path)[:16], job_id=job_id,
+        prepared_at=datetime.fromtimestamp(run_path.stat().st_mtime, timezone.utc).isoformat(),
+        source_revision=_sha256(run_path), expansion_status=expansion_status,
+        expansion_hash=_sha256(expansion_path) if expansion_path.is_file() else "",
+        artifacts=manifest_artifacts,
+        preparation_warnings=list(expansion.warnings) if expansion else [],
     )
 
     ats = str(metadata.get("ats") or "unknown")
@@ -380,9 +495,10 @@ def build_packet(job_id: str, *, out_dir: Path | None = None) -> Packet:
         experience=experience,
         skills=_load_skills(job_dir / "skills.json"),
         cover_letter=_load_cover_letter(job_dir / "cover.json"),
-        artifacts=_artifact_paths(job_dir),
+        artifacts=artifacts,
         field_hints=ats_hints.hints_for(ats),
         gaps=list(report.get("gaps") or []),
+        preparation=manifest,
     )
 
 

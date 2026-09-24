@@ -7,6 +7,7 @@ a JS shell. Never invents content — empty extraction becomes ``needs_browser``
 from __future__ import annotations
 
 import re
+import time
 from dataclasses import dataclass
 from html.parser import HTMLParser
 from typing import Literal
@@ -81,14 +82,18 @@ class _TextExtractor(HTMLParser):
         if piece:
             self._current.append(piece)
 
-    def text(self) -> str:
-        """Return the largest contiguous chunk, else all chunks joined."""
+    def text(self, *, largest_block_only: bool) -> str:
+        """Return the JD text: the largest contiguous chunk (page mode), or all
+        chunks joined (fragment mode, for a feed's ``jobDescription``/``content``
+        field, which holds nothing but the JD to begin with)."""
         if self._current:
             leftover = " ".join(self._current).strip()
             if leftover:
                 self._chunks.append(leftover)
         if not self._chunks:
             return ""
+        if not largest_block_only:
+            return "\n\n".join(self._chunks)
         # Prefer the longest block (usually the JD body vs chrome).
         largest = max(self._chunks, key=len)
         if len(largest) >= _MIN_JD_CHARS:
@@ -96,15 +101,35 @@ class _TextExtractor(HTMLParser):
         return "\n\n".join(self._chunks)
 
 
-def extract_text(html: str) -> str:
-    """Strip chrome tags and return the largest text block from ``html``."""
+def _extract(html: str, *, largest_block_only: bool) -> str:
     parser = _TextExtractor()
     try:
         parser.feed(html)
         parser.close()
     except Exception:  # noqa: BLE001 - malformed HTML still yields partial text
         pass
-    return parser.text().strip()
+    return parser.text(largest_block_only=largest_block_only).strip()
+
+
+def extract_text(html: str) -> str:
+    """Strip chrome tags and return the largest text block from ``html``.
+
+    For a *full page* download, where the JD body sits alongside nav/footer chrome
+    in the same document. Use `extract_fragment_text` for a feed's JD-only field.
+    """
+    return _extract(html, largest_block_only=True)
+
+
+def extract_fragment_text(html: str) -> str:
+    """Strip tags and return *all* text from ``html``, joined block by block.
+
+    For an ATS feed's JD-only HTML field (Greenhouse `content`, Ashby
+    `descriptionHtml`, Workday `jobDescription`) — the whole fragment is the JD, so
+    picking only the largest paragraph (as `extract_text` does for a full page)
+    would silently drop most of it, e.g. an EEO paragraph outsizing the actual
+    responsibilities/requirements sections.
+    """
+    return _extract(html, largest_block_only=False)
 
 
 def detect_ats(final_url: str, html: str = "") -> AtsName:
@@ -145,7 +170,11 @@ def _looks_like_js_shell(html: str, text: str) -> bool:
 
 
 def _fetch_via_browser(url: str) -> FetchResult:
-    """Open ``url`` in the CDP browser and read ``document.body.innerText``."""
+    """Open ``url`` in the CDP browser and read ``document.body.innerText``.
+
+    Some ATS pages (Workday among them) report "loaded" before the description
+    text arrives, so the read is retried for a few seconds rather than taken once.
+    """
     with cdp_browser() as browser:
         context = browser.contexts[0] if browser.contexts else browser.new_context()
         page = context.new_page()
@@ -153,8 +182,14 @@ def _fetch_via_browser(url: str) -> FetchResult:
             page.goto(url, wait_until="domcontentloaded", timeout=60_000)
             page.wait_for_load_state("networkidle", timeout=30_000)
             final_url = page.url
-            text = page.evaluate("() => document.body ? document.body.innerText : ''")
-            text = (text or "").strip()
+            text = ""
+            deadline = time.monotonic() + 10.0
+            while True:
+                text = page.evaluate("() => document.body ? document.body.innerText : ''")
+                text = (text or "").strip()
+                if len(text) >= _MIN_JD_CHARS or time.monotonic() >= deadline:
+                    break
+                page.wait_for_timeout(500)
             ats = detect_ats(final_url)
             if len(text) < _MIN_JD_CHARS:
                 return FetchResult(
@@ -177,7 +212,7 @@ def fetch_jd(
     allow_browser: bool = True,
     canonical_key: str | None = None,
 ) -> FetchResult:
-    """Fetch JD text: ATS JSON API first (when keyed), then HTTP, then CDP."""
+    """Fetch JD text: ATS JSON API first (keyed, or Workday by URL), then HTTP, then CDP."""
     if canonical_key:
         try:
             from resume_tailor.apply import ats_api
@@ -190,6 +225,20 @@ def fetch_jd(
                 final_url=url,
                 ats=detect_ats(url),
                 text=api_text,
+                method="api",
+            )
+    if detect_ats(url) == "workday":
+        try:
+            from resume_tailor.apply import ats_api
+
+            workday_text = ats_api.workday_posting_text(url)
+        except Exception:  # noqa: BLE001
+            workday_text = None
+        if workday_text:
+            return FetchResult(
+                final_url=url,
+                ats="workday",
+                text=workday_text,
                 method="api",
             )
     try:

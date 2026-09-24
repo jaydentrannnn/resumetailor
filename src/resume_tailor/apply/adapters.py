@@ -1,0 +1,127 @@
+"""Small ATS-specific hints around the shared scanner and executor."""
+
+from __future__ import annotations
+
+import re
+from typing import Any
+
+from resume_tailor.apply.field_catalog import classify
+from resume_tailor.apply.field_matcher import normalize
+from resume_tailor.apply.field_types import FieldObservation
+from resume_tailor.apply.packet import Packet
+
+
+class FormAdapter:
+    def __init__(self, platform: str):
+        self.platform = platform
+
+    def key_for(self, field: FieldObservation) -> str:
+        policy, key = classify(field)
+        return key if policy == "known" else ""
+
+    def classify(self, field: FieldObservation) -> tuple[str, str]:
+        return classify(field)
+
+    def value_for(self, field: FieldObservation, key: str, packet: Packet, fields: dict[str, str]) -> str:
+        return fields.get(key, "")
+
+    async def advance(self, page: Any) -> Any | None:
+        """Only exact ordinary step controls; never submit or legal acceptance."""
+        candidates = page.get_by_role(
+            "button", name=re.compile(r"^\s*(next|continue|save\s*&\s*continue)\s*$", re.I),
+        )
+        visible = [button for button in await candidates.all() if await button.is_visible() and await button.is_enabled()]
+        return visible[0] if len(visible) == 1 else None
+
+    async def final_submit(self, page: Any) -> Any | None:
+        candidates = page.get_by_role(
+            "button", name=re.compile(r"^\s*(submit|submit application)\s*$", re.I),
+        )
+        visible = [button for button in await candidates.all() if await button.is_visible() and await button.is_enabled()]
+        return visible[0] if len(visible) == 1 else None
+
+    async def step_id(self, page: Any, fields: list[FieldObservation]) -> str:
+        """URL plus visible structure identifies same-URL wizard transitions."""
+        structure = "|".join(
+            f"{field.frame_id}:{normalize(field.section_id)}:{normalize(field.label)}:{field.control_kind}"
+            for field in fields
+        )
+        return f"{page.url}|{structure}"
+
+
+class GreenhouseAdapter(FormAdapter):
+    def __init__(self):
+        super().__init__("greenhouse")
+
+    def classify(self, field: FieldObservation) -> tuple[str, str]:
+        field_id = str(field.constraints.get("id") or "")
+        if re.fullmatch(r"end-year--\d+", field_id):
+            return "known", "education_end_year"
+        return classify(field)
+
+    def value_for(self, field: FieldObservation, key: str, packet: Packet, fields: dict[str, str]) -> str:
+        if key not in {"school", "degree_level", "major", "education_end_year"}:
+            return fields.get(key, "")
+        row_id = field.repeater_row_id
+        if not row_id.isdigit():
+            if len(packet.education) != 1:
+                return ""
+            row_index = 0
+        else:
+            row_index = int(row_id)
+        if row_index >= len(packet.education):
+            return ""
+        education = packet.education[row_index]
+        if key == "school":
+            return education.school
+        if key == "degree_level":
+            degree = education.degree_name or education.degree_level or education.degree
+            normalized = normalize(degree)
+            if normalized.startswith(("bs ", "b s ", "bachelor of science in ")):
+                return "Bachelor of Science"
+            if normalized.startswith(("ba ", "b a ", "bachelor of arts in ")):
+                return "Bachelor of Arts"
+            return degree
+        if key == "major":
+            return education.major
+        match = re.fullmatch(r"(\d{4})(?:-\d{2})?", education.end)
+        return match.group(1) if match else ""
+
+
+class WorkdayAdapter(FormAdapter):
+    def __init__(self):
+        super().__init__("workday")
+
+    async def enter_application(self, page: Any, *, timeout_ms: int) -> Any:
+        """Cross only Workday's posting/application entry controls."""
+        for label in ("Apply", "Apply Manually"):
+            # Once an account or application form appears, an Apply-labeled
+            # action can have another meaning. Never click it in that state.
+            if await page.locator(
+                "input[type='password']:visible, [data-automation-id='applicationForm']:visible, "
+                "[data-automation-id='jobApplicationForm']:visible"
+            ).count():
+                return page
+            choices = page.get_by_role("button", name=re.compile(rf"^{re.escape(label)}$", re.I))
+            visible = [item for item in await choices.all() if await item.is_visible() and await item.is_enabled()]
+            if len(visible) != 1:
+                return page
+            existing = set(page.context.pages)
+            await visible[0].click(timeout=timeout_ms)
+            await page.wait_for_timeout(400)
+            opened = [item for item in page.context.pages if item not in existing and not item.is_closed()]
+            if len(opened) == 1:
+                page = opened[0]
+                await page.wait_for_load_state("domcontentloaded", timeout=timeout_ms)
+            elif len(opened) > 1:
+                raise RuntimeError("Workday opened multiple application tabs; review the posting")
+        return page
+
+
+def for_url(url: str) -> FormAdapter:
+    host = url.split("/", 3)[2].casefold() if "://" in url else ""
+    if "greenhouse.io" in host or "greenhouse" in host:
+        return GreenhouseAdapter()
+    if "myworkdayjobs.com" in host or "workday" in host:
+        return WorkdayAdapter()
+    return FormAdapter("generic")

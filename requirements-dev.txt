@@ -1,0 +1,8 @@
+# Everything needed to develop and test: runtime deps plus test/lint tooling.
+# `pip install -r requirements-dev.txt; pip install -e .`
+-r requirements.txt
+pytest>=8.0
+pytest-asyncio>=0.24
+# Lint/format + static typing. Config lives in pyproject.toml.
+ruff>=0.8
+mypy>=1.13

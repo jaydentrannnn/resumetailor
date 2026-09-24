@@ -53,6 +53,10 @@ _BACHELOR = re.compile(
     r"|b\.?eng\b"
     r"|b\.?sc\b"
     r"|undergrad(?:uate)?s?"
+    r"|baccalaureate"
+    r"|associate(?:'s|s)?\s+degree"
+    r"|four-?\s?year\s+degree"
+    r"|(?:college|university)\s+degree"
     r"|or\s+equivalent(?:\s+experience)?"
     r")\b",
     re.I,
@@ -88,6 +92,14 @@ _YEARS = re.compile(
     re.I,
 )
 
+# A years match only counts when "experience" follows within this many characters
+# ("3+ years of professional experience"), so company boilerplate like "over 40 years
+# of excellence" never reads as a requirement.
+_EXPERIENCE_AFTER = re.compile(r".{0,40}?\bexp(?:erience[ds]?)?\b", re.I | re.S)
+
+# Sources are intern / new-grad boards, so a larger floor is a misparse, not a real ask.
+MAX_PLAUSIBLE_YEARS = 5
+
 _YEARS_SOFT = re.compile(
     r"intern|internship|new grad|entry|student",
     re.I,
@@ -97,6 +109,11 @@ _RETURN_INTERN = re.compile(
     r"previous(?:ly)?\s+intern|returning\s+intern|return\s+offer",
     re.I,
 )
+
+
+def is_early_career_title(role: str) -> bool:
+    """True for an intern / new-grad / entry / student title."""
+    return _YEARS_SOFT.search(role) is not None
 
 
 def has_advanced_degree_requirement(text: str) -> bool:
@@ -110,14 +127,22 @@ def has_bachelor_alternative(text: str) -> bool:
 
 
 def min_required_years(text: str) -> int | None:
-    """Smallest year floor found, ignoring soft/intern/preferred contexts."""
+    """Smallest year floor found, ignoring soft/intern/preferred contexts.
+
+    A match counts only when "experience" follows it and its number is at most
+    ``MAX_PLAUSIBLE_YEARS``.
+    """
     best: int | None = None
     for match in _YEARS.finditer(text):
         start, end = match.span()
+        if not _EXPERIENCE_AFTER.match(text, end):
+            continue
         window = text[max(0, start - 60) : min(len(text), end + 60)]
         if _YEARS_SOFT.search(window):
             continue
         value = int(match.group(1))
+        if value > MAX_PLAUSIBLE_YEARS:
+            continue
         if best is None or value < best:
             best = value
     return best
@@ -146,8 +171,14 @@ def check_title(
 def check_text(
     jd_text: str,
     settings: EligibilitySettings | None = None,
+    *,
+    role: str = "",
 ) -> Eligibility:
-    """Apply degree, years, and return-intern rules to JD body text."""
+    """Apply degree, years, and return-intern rules to JD body text.
+
+    When ``role`` is an intern / new-grad / entry title, a years floor is only flagged,
+    never a hard reject — the title is stronger evidence than a regex hit in the body.
+    """
     settings = settings or EligibilitySettings()
     reasons: list[str] = []
     flags: list[str] = []
@@ -159,7 +190,7 @@ def check_text(
 
     years = min_required_years(jd_text)
     if years is not None:
-        if years >= settings.hard_reject_years:
+        if years >= settings.hard_reject_years and not is_early_career_title(role):
             reasons.append(f"requires_{years}_years")
         elif years >= settings.flag_years:
             flags.append(f"years_{years}")

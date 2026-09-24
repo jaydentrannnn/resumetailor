@@ -23,7 +23,7 @@ into the next one.
 it, a test asserting on rendered/estimated line counts would pass or fail depending on
 whether *this* machine's `data/calibration/<backend>.json` happens to exist and what it
 measured — invisible in the diff, and the exact failure mode a real corrupted
-calibration file (`chars_per_line: 20`, see `implementation-notes.md`) produced before
+calibration file (`chars_per_line: 20`, see `docs/notes/fit-and-calibration.md`) produced before
 anyone noticed. Pinned to the built-in fallback pair specifically, so the numbers a
 test sees match what a fresh checkout with no calibration file at all would compute.
 

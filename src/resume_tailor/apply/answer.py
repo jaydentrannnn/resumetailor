@@ -9,8 +9,10 @@ then discarded rather than returned unguarded.
 from __future__ import annotations
 
 import hashlib
+import asyncio
 import json
 import re
+import time
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -23,7 +25,7 @@ from resume_tailor.data import MasterResume
 from resume_tailor.jd import JobRequirements
 
 #: Bumped when ``_SYSTEM`` or the request shape changes so cached answers invalidate.
-_ANSWER_PROMPT_VERSION = 1
+_ANSWER_PROMPT_VERSION = 2
 
 _SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
 
@@ -53,8 +55,7 @@ Absolute rules:
 - Preserve every number exactly as written in the source bullets or headers.
 - Use plain prose in complete sentences. Do not use em dashes or en dashes.
 - Stay within the requested character limit.
-- If the provided material does not support a truthful answer, say briefly that the \
-information is not available in the resume content supplied.
+- If the provided material does not support a truthful answer, return an empty answer.
 """
 
 
@@ -72,7 +73,7 @@ def _profile_answer(question: str, profile: ApplicantProfile) -> str | None:
         norm_key = normalize_question(key)
         if not norm_key:
             continue
-        if norm_key in norm_q or norm_q in norm_key:
+        if norm_key == norm_q:
             return answer.strip()
     return None
 
@@ -121,19 +122,46 @@ def _truncate_at_sentence(text: str, max_chars: int) -> tuple[str, list[str]]:
     return trimmed.strip(), ["truncated to fit character limit"]
 
 
-def _cache_path(question: str, bullets: dict[str, str], *, max_chars: int) -> Path:
+def _cache_path(
+    question: str, bullets: dict[str, str], *, max_chars: int,
+    resume: MasterResume, requirements: JobRequirements | None, jd_text: str,
+    policy: str = "legacy",
+) -> Path:
     """Return the cache file path for one guarded answer request."""
     payload = "\n".join(
         [
-            str(_ANSWER_PROMPT_VERSION),
+            f"{_ANSWER_PROMPT_VERSION}:job-context-v2",
+            policy,
             config.fingerprint("answer"),
             str(max_chars),
             question,
+            _format_bullets(resume, bullets),
+            requirements.title if requirements else "",
+            requirements.seniority if requirements else "",
+            jd_text,
             *(f"{key}:{bullets[key]}" for key in sorted(bullets)),
         ]
     )
     digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()[:12]
     return config.CACHE_DIR / f"{digest}.answer.json"
+
+
+def _write_cache(path: Path, result: AnswerResult) -> None:
+    """Persist one successful answer. Guard failures are never written — see callers."""
+    path.write_text(
+        json.dumps(
+            {
+                "answer": result.answer,
+                "offenders": result.offenders,
+                "warnings": result.warnings,
+                "source": result.source,
+                "model": result.model,
+            },
+            ensure_ascii=False,
+        )
+        + "\n",
+        encoding="utf-8",
+    )
 
 
 def _call_model(
@@ -145,8 +173,37 @@ def _call_model(
     max_chars: int,
     jd_text: str,
     retry_offenders: list[str] | None = None,
+    deadline: float | None = None,
 ) -> AnswerLLM:
     """Issue one ``answer``-purpose LLM call."""
+    user_parts = _request_parts(
+        question=question, resume=resume, bullets=bullets,
+        requirements=requirements, max_chars=max_chars, jd_text=jd_text,
+        retry_offenders=retry_offenders,
+    )
+    client = llm.client_for("answer")
+    if deadline is not None:
+        timeout = max(1.0, min(60.0, deadline - time.monotonic()))
+        if hasattr(client, "timeout"):
+            client.timeout = min(float(client.timeout), timeout)
+        elif hasattr(client, "with_options"):
+            client = client.with_options(timeout=timeout)
+    response = client.messages.parse(
+        model=config.model_for("answer"),
+        max_tokens=config.max_tokens_for("answer"),
+        system=_SYSTEM,
+        messages=[{"role": "user", "content": "\n\n".join(user_parts)}],
+        output_format=AnswerLLM,
+    )
+    return response.parsed_output
+
+
+def _request_parts(
+    *, question: str, resume: MasterResume, bullets: dict[str, str],
+    requirements: JobRequirements | None, max_chars: int, jd_text: str,
+    retry_offenders: list[str] | None,
+) -> list[str]:
+    """Build the same plain-text request for sync and async transports."""
     role_title = requirements.title if requirements else "(unknown role)"
     seniority = requirements.seniority if requirements else ""
     user_parts = [
@@ -163,14 +220,33 @@ def _call_model(
             f"{', '.join(retry_offenders)}. "
             "Rewrite without them.\n</retry>"
         )
-    client = llm.client_for("answer")
-    response = client.messages.parse(
-        model=config.model_for("answer"),
-        max_tokens=config.max_tokens_for("answer"),
-        system=_SYSTEM,
-        messages=[{"role": "user", "content": "\n\n".join(user_parts)}],
-        output_format=AnswerLLM,
+    return user_parts
+
+
+async def _call_model_async(
+    *, question: str, resume: MasterResume, bullets: dict[str, str],
+    requirements: JobRequirements | None, max_chars: int, jd_text: str,
+    retry_offenders: list[str] | None = None, deadline: float,
+) -> AnswerLLM:
+    user_parts = _request_parts(
+        question=question, resume=resume, bullets=bullets,
+        requirements=requirements, max_chars=max_chars, jd_text=jd_text,
+        retry_offenders=retry_offenders,
     )
+    remaining = min(60.0, deadline - time.monotonic())
+    if remaining <= 0:
+        raise TimeoutError("Application answer exceeded its deadline")
+    async with asyncio.timeout(remaining):
+        async with llm.async_client_for("answer") as client:
+            kwargs = {"deadline": deadline} if isinstance(client, llm._AsyncOpenAICompatClient) else {}  # noqa: SLF001
+            response = await client.messages.parse(
+                model=config.model_for("answer"),
+                max_tokens=config.max_tokens_for("answer"),
+                system=_SYSTEM,
+                messages=[{"role": "user", "content": "\n\n".join(user_parts)}],
+                output_format=AnswerLLM,
+                **kwargs,
+            )
     return response.parsed_output
 
 
@@ -185,8 +261,14 @@ def answer_question(
     jd_text: str = "",
     on_event: events.ProgressCallback | None = None,
     use_cache: bool = True,
+    deadline: float | None = None,
 ) -> AnswerResult:
-    """Answer one ATS question from profile canned text or a guarded LLM draft."""
+    """Answer one ATS question from profile canned text or a guarded LLM draft.
+
+    Over-length answers are trimmed at a sentence boundary: this path serves copy-paste
+    callers (MCP, `POST /api/jobs/{id}/answer`) where a slightly shorter answer beats none.
+    `answer_question_async` deliberately rejects instead — see its docstring.
+    """
     model_label = config.backend_for("answer").label()
 
     canned = _profile_answer(question, profile)
@@ -201,7 +283,10 @@ def answer_question(
         )
 
     config.CACHE_DIR.mkdir(parents=True, exist_ok=True)
-    cache_path = _cache_path(question, bullets, max_chars=max_chars)
+    cache_path = _cache_path(
+        question, bullets, max_chars=max_chars, resume=resume,
+        requirements=requirements, jd_text=jd_text,
+    )
     if use_cache and cache_path.is_file():
         events.emit(on_event, "answer", "Reusing cached application answer", cached=True)
         cached = json.loads(cache_path.read_text(encoding="utf-8"))
@@ -221,6 +306,7 @@ def answer_question(
         requirements=requirements,
         max_chars=max_chars,
         jd_text=jd_text,
+        deadline=deadline,
     )
     answer_text = draft.answer.strip()
     check = check_claims(resume, bullets, jd_text, answer_text)
@@ -242,35 +328,22 @@ def answer_question(
             max_chars=max_chars,
             jd_text=jd_text,
             retry_offenders=offenders,
+            deadline=deadline,
         )
         answer_text = retry.answer.strip()
         check = check_claims(resume, bullets, jd_text, answer_text)
         if not check.ok:
             offenders = _offenders_from_check(check)
             warnings.append("Answer discarded after guard failure")
-            result = AnswerResult(
+            # Not cached: a guard failure is often one bad draft, and caching it would
+            # pin this question to an empty answer until the prompt version changes.
+            return AnswerResult(
                 answer="",
                 offenders=offenders,
                 warnings=warnings,
                 source="llm",
                 model=model_label,
             )
-            if use_cache:
-                cache_path.write_text(
-                    json.dumps(
-                        {
-                            "answer": result.answer,
-                            "offenders": result.offenders,
-                            "warnings": result.warnings,
-                            "source": result.source,
-                            "model": result.model,
-                        },
-                        ensure_ascii=False,
-                    )
-                    + "\n",
-                    encoding="utf-8",
-                )
-            return result
 
     answer_text, truncate_warnings = _truncate_at_sentence(answer_text, max_chars)
     warnings.extend(truncate_warnings)
@@ -281,18 +354,74 @@ def answer_question(
         model=model_label,
     )
     if use_cache:
-        cache_path.write_text(
-            json.dumps(
-                {
-                    "answer": result.answer,
-                    "offenders": result.offenders,
-                    "warnings": result.warnings,
-                    "source": result.source,
-                    "model": result.model,
-                },
-                ensure_ascii=False,
+        _write_cache(cache_path, result)
+    return result
+
+
+async def answer_question_async(
+    question: str, *, resume: MasterResume, bullets: dict[str, str],
+    requirements: JobRequirements | None, profile: ApplicantProfile,
+    max_chars: int, jd_text: str, deadline: float,
+    use_cache: bool = True,
+) -> AnswerResult:
+    """Guarded Apply answer using cancellable async transport.
+
+    Over-length answers are rejected, not trimmed: this path writes straight into a live
+    form field, where a truncated thought or an overflowed ``maxlength`` is worse than
+    leaving the field for human review. `answer_question` trims instead.
+    """
+    # This is one logical stage. Schema repair, provider fallback and the guard retry
+    # share its deadline instead of each receiving another minute.
+    stage_deadline = min(deadline, time.monotonic() + 60.0)
+    if stage_deadline <= time.monotonic():
+        raise TimeoutError("Application answer exceeded its deadline")
+    model_label = config.backend_for("answer").label()
+    canned = _profile_answer(question, profile)
+    if canned is not None:
+        if len(canned) > max_chars:
+            return AnswerResult(
+                answer="", warnings=["Saved answer exceeds field limit"],
+                source="profile", model=model_label,
             )
-            + "\n",
-            encoding="utf-8",
+        return AnswerResult(answer=canned, source="profile", model=model_label)
+    config.CACHE_DIR.mkdir(parents=True, exist_ok=True)
+    cache_path = _cache_path(
+        question, bullets, max_chars=max_chars, resume=resume,
+        requirements=requirements, jd_text=jd_text, policy="verified-v1",
+    )
+    if use_cache and cache_path.is_file():
+        cached = json.loads(cache_path.read_text(encoding="utf-8"))
+        return AnswerResult(
+            answer=str(cached.get("answer", "")), offenders=list(cached.get("offenders", [])),
+            warnings=list(cached.get("warnings", [])), source=str(cached.get("source", "llm")),
+            model=str(cached.get("model", model_label)),
         )
+    draft = await _call_model_async(
+        question=question, resume=resume, bullets=bullets,
+        requirements=requirements, max_chars=max_chars, jd_text=jd_text,
+        deadline=stage_deadline,
+    )
+    answer_text = draft.answer.strip()
+    if not answer_text:
+        return AnswerResult(answer="", warnings=["No supported answer"], model=model_label)
+    check = check_claims(resume, bullets, jd_text, answer_text)
+    if not check.ok:
+        offenders = _offenders_from_check(check)
+        retry = await _call_model_async(
+            question=question, resume=resume, bullets=bullets,
+            requirements=requirements, max_chars=max_chars, jd_text=jd_text,
+            retry_offenders=offenders, deadline=stage_deadline,
+        )
+        answer_text = retry.answer.strip()
+        check = check_claims(resume, bullets, jd_text, answer_text)
+        if not answer_text or not check.ok:
+            return AnswerResult(
+                answer="", offenders=_offenders_from_check(check),
+                warnings=["Answer discarded after guard failure"], model=model_label,
+            )
+    if len(answer_text) > max_chars:
+        return AnswerResult(answer="", warnings=["Answer exceeds field limit"], model=model_label)
+    result = AnswerResult(answer=answer_text, model=model_label)
+    if use_cache:
+        _write_cache(cache_path, result)
     return result

@@ -46,6 +46,8 @@ this only fills the gap where nothing was configured.
 from __future__ import annotations
 
 import json
+import asyncio
+import time
 from typing import Any, TypeVar
 
 import httpx
@@ -494,3 +496,148 @@ def client_for(purpose: str) -> Any:
         f"Unknown provider {backend.provider!r} for {purpose!r}. "
         f"Supported: {', '.join(config.PROVIDERS)}."
     )
+
+
+class _AsyncMessages:
+    def __init__(self, client: _AsyncOpenAICompatClient):
+        self._client = client
+
+    async def parse(
+        self, *, model: str, max_tokens: int, system: str,
+        messages: list[dict[str, str]], output_format: type[T],
+        deadline: float | None = None, **_ignored: Any,
+    ) -> _Response:
+        return await self._client.request(
+            model=model, max_tokens=max_tokens, system=system,
+            user="\n\n".join(str(m.get("content", "")) for m in messages),
+            output_format=output_format, deadline=deadline,
+        )
+
+
+class _AsyncOpenAICompatClient:
+    """Async Apply transport with a single absolute deadline across all retries."""
+
+    def __init__(
+        self, *, base_url: str, api_key: str, structured_mode: str,
+        max_token_cap: int = 0, timeout: float = 60,
+    ):
+        self.base_url = base_url.rstrip("/")
+        self.api_key = api_key
+        self.structured_mode = structured_mode
+        self.max_token_cap = max_token_cap
+        self.timeout = timeout
+        self.messages = _AsyncMessages(self)
+        self._http: httpx.AsyncClient | None = None
+
+    async def __aenter__(self) -> _AsyncOpenAICompatClient:
+        self._http = httpx.AsyncClient()
+        return self
+
+    async def __aexit__(self, *_exc: Any) -> None:
+        if self._http is not None:
+            await self._http.aclose()
+            self._http = None
+
+    async def _post(self, payload: dict[str, Any], deadline: float) -> httpx.Response:
+        remaining = deadline - time.monotonic()
+        if remaining <= 0:
+            raise TimeoutError("Apply model stage exceeded its deadline")
+        headers = {"Content-Type": "application/json"}
+        if self.api_key:
+            headers["Authorization"] = f"Bearer {self.api_key}"
+        if self._http is None:
+            raise RuntimeError("Async model client must be used as a context manager")
+        try:
+            async with asyncio.timeout(remaining):
+                return await self._http.post(
+                    f"{self.base_url}/chat/completions", headers=headers,
+                    json=payload, timeout=min(self.timeout, remaining),
+                )
+        except httpx.RequestError as exc:
+            raise LLMError(f"Could not reach {self.base_url}: {exc}") from exc
+
+    async def request(
+        self, *, model: str, max_tokens: int, system: str, user: str,
+        output_format: type[T], deadline: float | None = None,
+    ) -> _Response:
+        stage_deadline = min(
+            deadline if deadline is not None else float("inf"), time.monotonic() + 60,
+        )
+        schema = output_format.model_json_schema()
+        messages = [
+            {"role": "system", "content": system + "\n\n" + _JSON_INSTRUCTION.format(
+                schema=json.dumps(schema, ensure_ascii=False),
+            )},
+            {"role": "user", "content": user},
+        ]
+        ladder = _response_format_ladder(self.structured_mode, output_format, schema)
+        cap = max(max_tokens, self.max_token_cap) if self.max_token_cap else max_tokens
+        ceiling = min(max(max_tokens, _LEARNED_CEILING.get((self.base_url, model), 0)), cap)
+        rung = 0
+        escalations = 0
+        while True:
+            payload: dict[str, Any] = {
+                "model": model, "max_tokens": ceiling, "temperature": 0,
+                "messages": messages,
+            }
+            if ladder[rung] is not None:
+                payload["response_format"] = ladder[rung]
+            response = await self._post(payload, stage_deadline)
+            if response.status_code in (400, 422) and rung < len(ladder) - 1:
+                rung += 1
+                continue
+            _OpenAICompatClient._check_status(self, response, model)
+            content, finish = _OpenAICompatClient._read(response, model)
+            try:
+                parsed = output_format.model_validate_json(_extract_json_object(content))
+                if ceiling > max_tokens:
+                    _LEARNED_CEILING[(self.base_url, model)] = ceiling
+                return _Response(parsed, finish)
+            except ValidationError as error:
+                if finish == "length" and ceiling < cap and escalations < config.MAX_TOKEN_ESCALATIONS:
+                    ceiling = min(ceiling * 2, cap)
+                    escalations += 1
+                    continue
+                if finish == "length":
+                    raise LLMError(f"{model!r} hit its {ceiling}-token ceiling before finishing JSON") from error
+                repair = dict(payload)
+                repair["messages"] = [
+                    *messages,
+                    {"role": "assistant", "content": content},
+                    {"role": "user", "content": (
+                        "That did not match the required JSON schema:\n"
+                        f"{str(error)[:600]}\n\nReturn ONLY a corrected JSON object."
+                    )},
+                ]
+                repaired_response = await self._post(repair, stage_deadline)
+                _OpenAICompatClient._check_status(self, repaired_response, model)
+                repaired, repaired_finish = _OpenAICompatClient._read(repaired_response, model)
+                try:
+                    parsed = output_format.model_validate_json(_extract_json_object(repaired))
+                except ValidationError as exc:
+                    raise LLMError(f"{model!r} did not return valid {output_format.__name__} JSON") from exc
+                return _Response(parsed, repaired_finish)
+
+
+def async_client_for(purpose: str) -> Any:
+    """Return an async client for bounded Apply model work; sync Tailor is unchanged."""
+    backend = config.backend_for(purpose)
+    if backend.provider == "anthropic":
+        import anthropic
+
+        return anthropic.AsyncAnthropic(
+            api_key=config.api_key_for(purpose), max_retries=0,
+            timeout=min(config.LLM_TIMEOUT, 60),
+        )
+    if backend.provider == "openai":
+        if not backend.base_url:
+            raise LLMError(f"Provider {backend.origin!r} needs a base URL")
+        if backend.origin in config.PROVIDERS_REQUIRING_KEY and not config.api_key_for(purpose):
+            raise LLMError(f"No API key found for {backend.origin!r}")
+        return _AsyncOpenAICompatClient(
+            base_url=backend.base_url, api_key=config.api_key_for(purpose),
+            structured_mode=config.structured_mode_for(purpose),
+            max_token_cap=config.max_token_cap_for(purpose),
+            timeout=min(config.LLM_TIMEOUT, 60),
+        )
+    raise LLMError(f"Unknown provider {backend.provider!r} for {purpose!r}")
