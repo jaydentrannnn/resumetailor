@@ -130,6 +130,22 @@ export const DEFAULT_SECTION_TITLES: Record<SectionKind, string> = {
   skills: "Skills",
 };
 
+/** "Add section" choices: familiar resume headings mapped onto the five kinds. */
+export const SECTION_PRESETS: { title: string; kind: SectionKind; hint: string }[] = [
+  { title: "Experience", kind: "experience", hint: "Jobs and internships" },
+  { title: "Research", kind: "experience", hint: "Labs and research assistant roles" },
+  { title: "Leadership", kind: "experience", hint: "Club officer, team lead" },
+  { title: "Activities", kind: "experience", hint: "Clubs, competitions, teams" },
+  { title: "Volunteering", kind: "experience", hint: "Community service" },
+  { title: "Projects", kind: "project", hint: "Class, personal or hackathon projects" },
+  { title: "Education", kind: "education", hint: "Schools and degrees" },
+  { title: "Skills", kind: "skills", hint: "Grouped skill lists" },
+  { title: "Certifications", kind: "list", hint: "One line each" },
+  { title: "Awards", kind: "list", hint: "Honors and scholarships" },
+  { title: "Publications", kind: "list", hint: "Papers and posters" },
+  { title: "Languages", kind: "list", hint: "Spoken languages" },
+];
+
 /** Insert `item` at `index`, shifting later elements right. */
 export function insertAt<T>(list: T[], index: number, item: T): T[] {
   const next = [...list];

@@ -318,3 +318,27 @@ blank entry headers before the Pydantic path; server validation remains authorit
   application tab. Other education gaps still go to the resume.
 - Inline errors appear after a field is blurred, or on every field after a Save attempt.
   A blank value is never an error.
+
+## Resume editor 2F: split, presets, bullet coach, tag chips, history (2026-09)
+
+- `pages/EditorPage.tsx` is now split into `pages/editor/*`, one component per file.
+  `suggestMissingTags` moved to `lib/bulletLint.ts`.
+- "Add section" offers familiar headings: Research, Leadership, Activities and
+  Volunteering are experience-kind; Certifications, Awards, Publications and Languages
+  are list-kind. There is also "Something else…" with a free title and a layout kind.
+  No new section kinds were added.
+- `lintBullet` gives non-blocking tips in the browser:
+  - weak opener;
+  - an opening verb repeated within the entry;
+  - no number (hidden when "has metric" is ticked);
+  - more than 2 lines at the calibrated `chars_per_line` (hidden when the character
+    counter already warns);
+  - no tags.
+- Tag chips: vocabulary hits found locally show as "+ tag" buttons at once. "Suggest
+  tags" calls `POST /api/master-resume/suggest-tags`, which is pure matching in
+  `tag_suggest.py` over the draft vocabulary plus `config.TAG_ALIASES` (the active
+  packs). The longest phrase wins, and names of 1–2 letters only match in capitals.
+  Nothing is added without a click, because tags are the fabrication guard's whitelist.
+- History: the editor has a History drawer (the shared `ResumeHistoryList`, also used by
+  Settings → Advanced) with "Undo last save", which restores the previous version. A
+  restore is itself a new version.

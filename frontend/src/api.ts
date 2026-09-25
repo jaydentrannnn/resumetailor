@@ -1205,6 +1205,20 @@ export interface ResumeVersion {
   current: boolean;
 }
 
+export type TagSuggestion = { tag: string; matched: string };
+
+export function suggestTags(
+  text: string,
+  tags: string[],
+  vocabulary: string[],
+): Promise<{ suggestions: TagSuggestion[] }> {
+  /** Known skills (resume vocabulary + pack aliases) the text names but the tags lack. */
+  return request("/api/master-resume/suggest-tags", {
+    method: "POST",
+    body: JSON.stringify({ text, tags, vocabulary }),
+  });
+}
+
 export function listResumeVersions(): Promise<{ versions: ResumeVersion[]; keep: number }> {
   /** Saved master-resume versions, newest first. */
   return request("/api/master-resume/versions");

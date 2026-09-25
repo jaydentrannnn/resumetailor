@@ -17,7 +17,7 @@ import { useToast } from "../../lib/toast";
 import { useApplicantProfile } from "../../state/applicantProfileState";
 import { useConfirm } from "../../state/confirmState";
 import { useEditorState } from "../../state/editorState";
-import { EditorPage } from "../EditorPage";
+import { EditorPage } from "../editor/EditorPage";
 import { ApplicationTab } from "./ApplicationTab";
 import type { FieldContext, FieldValue } from "./fieldContext";
 import { PersonalTab } from "./PersonalTab";

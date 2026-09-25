@@ -20,6 +20,7 @@ from resume_tailor import (
     propose,
     resume_import,
     resume_versions,
+    tag_suggest,
     template_analyze,
 )
 from resume_tailor.data import MasterResume
@@ -27,6 +28,7 @@ from resume_tailor.web import template_ops
 from resume_tailor.web.schemas import (
     MasterResumeImportResponse,
     MasterResumeMergeResponse,
+    SuggestTagsRequest,
     ValidateResponse,
 )
 
@@ -165,6 +167,16 @@ def restore_master_resume_version(version: int) -> dict[str, Any]:
             ) from exc
         _write_master_resume(resume, note=f"restored version {version}")
     return {"resume": resume.model_dump(by_alias=True), "restored": version}
+
+
+@router.post("/api/master-resume/suggest-tags")
+def suggest_bullet_tags(body: SuggestTagsRequest) -> dict[str, Any]:
+    """Known skills a bullet's text names but its tags lack (pure matching, no model)."""
+    return {
+        "suggestions": tag_suggest.suggest_tags(
+            body.text, body.tags, body.vocabulary, config.TAG_ALIASES, config.canonical_tag
+        )
+    }
 
 
 @router.post("/api/master-resume/validate", response_model=ValidateResponse)
