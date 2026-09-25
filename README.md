@@ -148,8 +148,13 @@ Inspect a README's section headings before enabling categories:
    shortcut:
 
 ```text
-"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --remote-debugging-port=9222 --remote-allow-origins=* --user-data-dir="%LOCALAPPDATA%\ResumeTailorEdge"
+"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --remote-debugging-port=9222 --user-data-dir="%LOCALAPPDATA%\ResumeTailorEdge"
 ```
+
+   macOS: `"/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge" --remote-debugging-port=9222 --user-data-dir="$HOME/Library/Application Support/ResumeTailorEdge"`.
+   Do not add `--remote-allow-origins=*`: it lets any web page open in that browser
+   connect to the debugging port and drive your logged-in sessions. The app does not
+   need it.
 
    Log into Workday / other ATS accounts once in that profile. `--remote-debugging-port`
    exposes that profile to any local process; keep it on localhost and use only job-site

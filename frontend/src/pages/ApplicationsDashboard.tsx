@@ -35,7 +35,7 @@ import {
   applicationStatusTone,
   statusToneClass,
 } from "../lib/applicationStatus";
-import { EDGE_DEBUG_COMMAND } from "../lib/browserCommand";
+import { EDGE_DEBUG_COMMANDS, detectOs, type DesktopOs } from "../lib/browserCommand";
 import { CopyButton } from "../components/CopyButton";
 import {
   canContinueFill,
@@ -1118,16 +1118,7 @@ export function ApplicationsDashboard() {
                 Check connection
               </button>
             </div>
-            <p className="mt-2 text-xs text-ink-muted">
-              For browser-assisted Fill, run this in PowerShell to start Edge with remote debugging
-              on port 9222, then check the connection. Keep the browser open while reviewing forms.
-            </p>
-            <div className="mt-2 flex items-start gap-2">
-              <code className="min-w-0 flex-1 rounded-md bg-paper px-3 py-2 font-mono text-xs [overflow-wrap:anywhere]">
-                {EDGE_DEBUG_COMMAND}
-              </code>
-              <CopyButton label="Copy command" text={EDGE_DEBUG_COMMAND} />
-            </div>
+            <BrowserCommand />
           </section>
         </div>
       </details>
@@ -1256,5 +1247,41 @@ function ConnectionStatus({ connected }: { connected: boolean }) {
       />
       {connected ? "Connected" : "Disconnected"}
     </span>
+  );
+}
+
+const OS_LABELS: Record<DesktopOs, string> = { windows: "Windows", mac: "macOS", linux: "Linux" };
+
+/** The Edge remote-debugging command for the viewer's OS, with tabs for the others. */
+function BrowserCommand() {
+  const [os, setOs] = useState<DesktopOs>(() => detectOs());
+  const { shell, command } = EDGE_DEBUG_COMMANDS[os];
+  return (
+    <>
+      <div role="tablist" aria-label="Operating system" className="mt-2 flex gap-1">
+        {(Object.keys(OS_LABELS) as DesktopOs[]).map((key) => (
+          <button
+            key={key}
+            role="tab"
+            aria-selected={os === key}
+            className={`rounded-md px-2 py-0.5 text-xs ${os === key ? "bg-accent-soft font-medium" : "text-ink-muted"}`}
+            onClick={() => setOs(key)}
+          >
+            {OS_LABELS[key]}
+          </button>
+        ))}
+      </div>
+      <p className="mt-2 text-xs text-ink-muted">
+        For browser-assisted Fill, run this in {shell} to start Edge with remote debugging on port
+        9222, then check the connection. Keep the browser open while reviewing forms, and use this
+        Edge profile only for job-site logins.
+      </p>
+      <div className="mt-2 flex items-start gap-2">
+        <code className="min-w-0 flex-1 rounded-md bg-paper px-3 py-2 font-mono text-xs [overflow-wrap:anywhere]">
+          {command}
+        </code>
+        <CopyButton label="Copy command" text={command} />
+      </div>
+    </>
   );
 }
