@@ -769,6 +769,9 @@ def fill_application(
         fields["f1_opt_eligible"] = "Yes" if profile.f1_opt_eligible else "No"
     if profile.pronouns:
         fields["pronouns"] = profile.pronouns
+    # Location checkbox lists fall back to the posting's own city (filler.js).
+    if app.location:
+        fields["posting_location"] = app.location
     # "Authorized to work" answers for the profile's country; a posting clearly in another
     # country leaves eligibility questions to the applicant, the model included.
     authorization_note = ""
@@ -1310,6 +1313,11 @@ def fill_application(
                     if not isinstance(leftover, dict):
                         continue
                     label = str(leftover.get("label") or "")
+                    if leftover.get("review"):
+                        # Answered with a guess (a location list's first option): its
+                        # own note, so the observed value does not clear it.
+                        needs_review.append(f"{label}: {leftover.get('reason')}")
+                        continue
                     if leftover.get("key") == "salary_expectation":
                         if label not in needs_review:
                             needs_review.append(label)

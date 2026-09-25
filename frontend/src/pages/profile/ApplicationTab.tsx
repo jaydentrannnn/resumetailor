@@ -47,6 +47,8 @@ function hintFor(key: keyof ApplicantProfile, draft: ApplicantProfile): ReactNod
       return "Blank uses your email when it ends in .edu.";
     case "hours_per_week_available":
       return "For part-time and co-op forms.";
+    case "location_preference":
+      return 'Cities you would work in ("New York; Remote"). Office checklists tick the ones named here, else the posting\'s city.';
     default:
       return null;
   }

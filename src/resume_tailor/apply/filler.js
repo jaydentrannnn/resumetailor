@@ -501,6 +501,65 @@
     return false;
   }
 
+  /**
+   * "Which offices are you interested in? (select all)": a checkbox list of places. Named
+   * groups of two or more under a location question only; a lone checkbox is a switch.
+   */
+  const LOCATION_QUESTION = /\b(?:locations?|offices?|cities|sites?|hubs?)\b|\bwhere\b.{0,40}\bwork\b/i;
+  function locationGroup(el) {
+    if (el.type !== "checkbox" || !el.name) return null;
+    const group = Array.from(
+      rootOf(el).querySelectorAll(`input[type="checkbox"][name="${CSS.escape(el.name)}"]`)
+    );
+    if (group.length < 2) return null;
+    const question = groupQuestion(el);
+    return LOCATION_QUESTION.test(question) ? { group, question } : null;
+  }
+
+  /** A checkbox group's question: its legend or group label, not one option's label. */
+  function groupQuestion(el) {
+    const legend = el.closest("fieldset")?.querySelector("legend");
+    if (legend) return (legend.innerText || legend.textContent || "").trim();
+    const labelled = el.closest("[role='group'][aria-labelledby]")?.getAttribute("aria-labelledby");
+    const byId = labelled ? rootOf(el).getElementById(labelled.split(/\s+/)[0]) : null;
+    if (byId) return (byId.innerText || byId.textContent || "").trim();
+    return containerLabel(el) || labelFor(el);
+  }
+
+  /** A place's name without its region: "New York, NY" and "London (Hybrid)" -> head. */
+  function placeHead(text) {
+    return norm(String(text || "").split(/,|\(| - | – /)[0]);
+  }
+
+  /**
+   * Tick every option the profile's location preference names, else the posting's own
+   * location. ``{ picked, guessed }``: with neither matching, a required list gets its
+   * first option and ``guessed`` so the applicant checks it; an optional one stays blank.
+   */
+  function fillLocations(group, required) {
+    const texts = group.map(input => optionText(input) || labelFor(input));
+    const wanted = (source) => {
+      const haystack = ` ${norm(source)} `;
+      if (!haystack.trim()) return [];
+      return group.filter((_input, index) => {
+        const head = placeHead(texts[index]);
+        return head.length >= 3 && haystack.includes(` ${head} `);
+      });
+    };
+    let hits = wanted(fields.location_preference);
+    if (!hits.length) hits = wanted(fields.posting_location);
+    let guessed = false;
+    if (!hits.length && required) {
+      hits = [group[0]];
+      guessed = true;
+    }
+    const picked = [];
+    for (const input of hits) {
+      if (tick(input)) picked.push(texts[group.indexOf(input)]);
+    }
+    return { picked, guessed };
+  }
+
   // Always collect file inputs, even when styled with .visually-hidden or opacity: 0.
   /** Nearest enclosing section heading (Workday: "Resume/CV" above an unlabeled drop zone). */
   function sectionHeading(el) {
@@ -551,6 +610,8 @@
   // The previous control's key, in document order: "If other, please specify" right
   // after "How did you hear" is the source detail.
   let previousKey = null;
+  // Location checkbox lists already answered as a whole (by group name).
+  const locationNames = new Set();
   for (const el of controls) {
     const type = (el.getAttribute("type") || el.tagName.toLowerCase()).toLowerCase();
     const label = labelFor(el);
@@ -602,8 +663,27 @@
       filled.push({ key: "existing", label, value: existingAnswer, selector: sel, preserved: true });
       continue;
     }
+    if (type === "checkbox" && locationNames.has(el.name)) continue;
     if ((type === "checkbox" || type === "radio") && el.name && Array.from(rootOf(el).querySelectorAll(`input[name="${CSS.escape(el.name)}"]`)).some(input => input.checked)) {
       filled.push({ key: "existing", label, value: "selected", selector: sel, preserved: true });
+      continue;
+    }
+
+    const places = locationGroup(el);
+    if (places) {
+      if (locationNames.has(el.name)) continue;
+      locationNames.add(el.name);
+      const question = places.question;
+      const groupRequired = required || places.group.some(input => input.required);
+      const { picked, guessed } = fillLocations(places.group, groupRequired);
+      if (!picked.length) {
+        leftovers.push({ key: "location_preference", label: question, type, options: places.group.map(input => optionText(input)), required: groupRequired, selector: sel, reason: "No listed location matches your location preference" });
+        if (groupRequired) required_empty.push(question || sel);
+        continue;
+      }
+      filled.push({ key: "location_preference", label: question, value: picked.join("; "), selector: sel });
+      // Filled, but a guess: fill.py lists it for review under its own note.
+      if (guessed) leftovers.push({ key: "location_preference", label: question, type, options: [], required: groupRequired, selector: sel, reason: "Picked the first location; check it", review: true });
       continue;
     }
 

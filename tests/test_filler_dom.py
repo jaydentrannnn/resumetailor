@@ -295,3 +295,47 @@ def test_phone_takes_the_shape_the_input_asks_for(page, field, expected):
         "phone_e164": "+15550100000", "phone_national": "5550100000",
     })
     assert page.input_value(f"#{field}") == expected
+
+
+_OFFICES = """
+<fieldset><legend>Which offices would you like to be considered for? (select all that apply)</legend>
+  <label><input type="checkbox" name="offices" value="ny" {req}>New York, NY</label>
+  <label><input type="checkbox" name="offices" value="sf">San Francisco, CA</label>
+  <label><input type="checkbox" name="offices" value="ldn">London (Hybrid)</label>
+</fieldset>
+"""
+
+
+def _ticked(page) -> list[str]:
+    return page.eval_on_selector_all("input[name=offices]:checked", "els => els.map(e => e.value)")
+
+
+def test_location_list_ticks_every_preferred_office(page):
+    page.set_content(_OFFICES.format(req=""))
+    result = _fill(page, {"location_preference": "San Francisco or London; open to remote"})
+    assert _ticked(page) == ["sf", "ldn"]
+    rows = [row for row in result["filled"] if row["key"] == "location_preference"]
+    assert len(rows) == 1 and rows[0]["label"].startswith("Which offices")
+    assert not any(row.get("review") for row in result["leftovers"])
+
+
+def test_location_list_falls_back_to_the_postings_city(page):
+    page.set_content(_OFFICES.format(req=""))
+    _fill(page, {"location_preference": "Chicago", "posting_location": "New York, New York, United States"})
+    assert _ticked(page) == ["ny"]
+
+
+def test_location_list_guesses_only_when_required_and_flags_it(page):
+    page.set_content(_OFFICES.format(req=""))
+    optional = _fill(page, {})
+    assert _ticked(page) == []
+    assert [row["reason"] for row in optional["leftovers"]] == [
+        "No listed location matches your location preference"
+    ]
+    assert optional["required_empty"] == []
+
+    page.set_content(_OFFICES.format(req="required"))
+    required = _fill(page, {})
+    assert _ticked(page) == ["ny"]
+    flagged = [row for row in required["leftovers"] if row.get("review")]
+    assert [row["reason"] for row in flagged] == ["Picked the first location; check it"]

@@ -522,6 +522,53 @@ def test_unanswered_salary_question_forces_manual_review_even_with_auto_submit(f
     page.click.assert_not_called()
 
 
+def test_a_guessed_location_list_is_kept_for_review(fill_paths, monkeypatch):
+    """The filled first office survives verification as its own review note."""
+    store.upsert(_ready_app())
+    monkeypatch.setattr(packet, "build_packet", lambda _job_id: Packet(
+        job_id="job-1", built_at="2026-01-01T00:00:00+00:00", ats="greenhouse",
+        fields={"first_name": "Ada"},
+    ))
+    monkeypatch.setattr(profile_mod, "load_profile", lambda: (ApplicantProfile(first_name="Ada"), False))
+    monkeypatch.setattr(data, "load", lambda: MagicMock(all_bullets=lambda: []))
+    monkeypatch.setattr(fill, "_find_submit_button", lambda _page, _hints: MagicMock())  # noqa: SLF001
+    offices = "Which offices?"
+    form = {
+        "filled": [
+            {"key": "first_name", "label": "First Name", "value": "Ada", "selector": "#first_name"},
+            {"key": "location_preference", "label": offices, "value": "New York, NY", "selector": "#ny"},
+        ],
+        "leftovers": [{"key": "location_preference", "label": offices, "type": "checkbox", "selector": "#ny", "required": True, "reason": "Picked the first location; check it", "review": True}],
+        "long_text": [], "file_inputs": [], "required_empty": [], "frames_skipped": 0,
+    }
+    page = MagicMock(url="https://example.com/apply")
+    page.frames = [page]
+
+    def evaluate_form(script, args=None):
+        if script == fill._load_filler_js():  # noqa: SLF001
+            return form if args and args.get("fields") else {"filled": form["filled"], "leftovers": []}
+        if script == fill._load_readiness_js():  # noqa: SLF001
+            return []
+        return {"errors": [], "unresolved": [], "advance_disabled": False}
+
+    page.evaluate.side_effect = evaluate_form
+
+    @contextmanager
+    def fake_browser():
+        instance = MagicMock()
+        instance.contexts = [MagicMock()]
+        instance.contexts[0].new_page.return_value = page
+        yield instance
+
+    monkeypatch.setattr(browser, "cdp_browser", fake_browser)
+    result = fill.fill_application("src-1", settings=ApplySettings(auto_submit_enabled=True, auto_submit_ats=["greenhouse"]))
+    assert result.status == "awaiting_review"
+    assert result.ready_to_submit is False
+    notes = [item["label"] for item in result.leftovers if item.get("reason") == "needs_review"]
+    assert notes == [f"{offices}: Picked the first location; check it"]
+    page.click.assert_not_called()
+
+
 def test_fill_application_awaiting_review(fill_paths, monkeypatch):
     """Policy B leaves the form open and sets ``awaiting_review`` status."""
     app = _ready_app(ats="lever")
