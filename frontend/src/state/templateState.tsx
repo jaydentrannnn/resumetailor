@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import {
+  type DefaultTemplate,
   type TemplateAnalyzeResponse,
   type TemplateBuildResponse,
   type TemplateHeadingKind,
@@ -16,8 +17,10 @@ import {
   activateTemplateLibrary,
   analyzeTemplate,
   deleteTemplateLibrary,
+  fetchDefaultTemplates,
   fetchTemplateInfo,
   fetchTemplateLibrary,
+  installDefaultTemplate,
   remapTemplateHeadings,
   renameTemplateLibrary,
   uploadTemplate,
@@ -52,6 +55,10 @@ type TemplateStateValue = {
   library: TemplateLibraryEntry[];
   libraryActiveId: string | null;
   libraryBusy: boolean;
+  /** Built-in starter templates, each marked when already saved or in use. */
+  defaults: DefaultTemplate[];
+  /** Install (or re-activate) a starter template; true on success. */
+  installDefault: (name: string) => Promise<boolean>;
   refresh: () => Promise<void>;
   refreshLibrary: () => Promise<void>;
   /** Re-analyze with `convertBullets` to turn typed bullets into a real list. */
@@ -101,13 +108,15 @@ export function TemplateProvider({ children }: { children: ReactNode }) {
   const [library, setLibrary] = useState<TemplateLibraryEntry[]>([]);
   const [libraryActiveId, setLibraryActiveId] = useState<string | null>(null);
   const [libraryBusy, setLibraryBusy] = useState(false);
+  const [defaults, setDefaults] = useState<DefaultTemplate[]>([]);
 
   const refreshLibrary = useCallback(async () => {
-    /** Reload the named template library list. */
+    /** Reload the named template library list and the starter templates. */
     try {
-      const next = await fetchTemplateLibrary();
+      const [next, starters] = await Promise.all([fetchTemplateLibrary(), fetchDefaultTemplates()]);
       setLibrary(next.entries);
       setLibraryActiveId(next.active_id);
+      setDefaults(starters);
     } catch (err) {
       setError(err instanceof Error ? err.message : String(err));
     }
@@ -279,6 +288,32 @@ export function TemplateProvider({ children }: { children: ReactNode }) {
     [calibrateAlso, refresh, refreshLibrary],
   );
 
+  const installDefault = useCallback(
+    async (name: string): Promise<boolean> => {
+      /** Build and install a starter template, or re-activate its saved copy. */
+      setLibraryBusy(true);
+      setError(null);
+      try {
+        const result = await installDefaultTemplate(name, { calibrate: calibrateAlso });
+        setBuildLog(result.log || null);
+        if (result.info) {
+          setInfo(result.info);
+        } else {
+          await refresh();
+        }
+        await refreshLibrary();
+        setPreviewKey((k) => k + 1);
+        return true;
+      } catch (err) {
+        setError(err instanceof Error ? err.message : String(err));
+        return false;
+      } finally {
+        setLibraryBusy(false);
+      }
+    },
+    [calibrateAlso, refresh, refreshLibrary],
+  );
+
   const renameLibraryEntry = useCallback(
     async (id: string, label: string) => {
       /** Rename a saved template; refresh the list from the response. */
@@ -336,6 +371,8 @@ export function TemplateProvider({ children }: { children: ReactNode }) {
       library,
       libraryActiveId,
       libraryBusy,
+      defaults,
+      installDefault,
       refresh,
       refreshLibrary,
       beginAnalyze,
@@ -366,6 +403,8 @@ export function TemplateProvider({ children }: { children: ReactNode }) {
       library,
       libraryActiveId,
       libraryBusy,
+      defaults,
+      installDefault,
       refresh,
       refreshLibrary,
       beginAnalyze,

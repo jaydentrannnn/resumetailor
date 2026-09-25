@@ -16,7 +16,7 @@ from urllib.parse import unquote
 import pytest
 from fastapi.testclient import TestClient
 
-from resume_tailor import config, template_profile
+from resume_tailor import config, default_templates, template_profile
 from resume_tailor.data import load
 from resume_tailor.events import ProgressEvent
 from resume_tailor.fit import FitResult
@@ -4108,3 +4108,74 @@ def test_calibrate_route_reports_result_and_refuses_while_busy(client, tmp_path,
 
     monkeypatch.setattr(routes.template.get_queue(), "busy", lambda: True)
     assert c.post("/api/template/calibrate").status_code == 409
+
+
+def test_default_templates_install_and_reuse_the_library_entry(client, tmp_path, monkeypatch):
+    """POST /api/template/defaults/{name}/install builds the design like an upload."""
+    c, _ = client
+    templates = _point_templates_at(tmp_path, monkeypatch)
+    monkeypatch.setattr(template_ops, "_run_build", lambda **_k: (1, "stub: in-process"))
+
+    listed = c.get("/api/template/defaults").json()["templates"]
+    assert [t["name"] for t in listed] == ["classic", "compact", "business"]
+    assert all(t["library_id"] is None for t in listed)
+    assert next(t for t in listed if t["name"] == "business")["education_first"] is True
+
+    res = c.post("/api/template/defaults/classic/install")
+    assert res.status_code == 200, res.text
+    assert res.json()["info"]["active_label"] == "Classic"
+    assert (templates / "main_template.docx").exists()
+    assert (templates / "original_export.docx").read_bytes() == default_templates.build(
+        "classic"
+    )
+    classic = next(
+        t for t in c.get("/api/template/defaults").json()["templates"] if t["name"] == "classic"
+    )
+    assert classic["is_active"] and classic["library_id"]
+
+    assert c.post("/api/template/defaults/compact/install").status_code == 200
+    # Installing a design again activates its saved entry instead of adding a copy.
+    again = c.post("/api/template/defaults/classic/install")
+    assert again.status_code == 200, again.text
+    assert again.json()["info"]["active_library_id"] == classic["library_id"]
+    labels = [e["label"] for e in c.get("/api/template/library").json()["entries"]]
+    assert sorted(labels) == ["Classic", "Compact"]
+
+    assert c.post("/api/template/defaults/fancy/install").status_code == 404
+
+
+def test_default_template_label_avoids_a_taken_one(client, tmp_path, monkeypatch):
+    c, _ = client
+    _point_templates_at(tmp_path, monkeypatch)
+    monkeypatch.setattr(template_ops, "_run_build", lambda **_k: (1, "stub: in-process"))
+    monkeypatch.setattr(template_ops, "_label_taken", lambda label, **_k: label == "Business")
+    res = c.post("/api/template/defaults/business/install")
+    assert res.status_code == 200, res.text
+    assert res.json()["info"]["active_label"] == "Business (2)"
+
+
+def test_default_template_thumbnail_route(client, tmp_path, monkeypatch):
+    from pypdf import PdfWriter
+
+    from resume_tailor import thumbnails
+
+    c, _ = client
+
+    def fake_convert(docx_path, pdf_path, **_):
+        writer = PdfWriter()
+        writer.add_blank_page(width=612, height=792)
+        with open(pdf_path, "wb") as fh:
+            writer.write(fh)
+        return pdf_path
+
+    monkeypatch.setattr(thumbnails.convert, "convert", fake_convert)
+    res = c.get("/api/template/defaults/compact/thumb.png")
+    assert res.status_code == 200
+    assert res.content.startswith(b"\x89PNG")
+    assert c.get("/api/template/defaults/nope/thumb.png").status_code == 404
+
+
+def test_default_template_install_refused_while_tailoring(client):
+    c, q = client
+    q.busy = lambda: True  # type: ignore[method-assign]
+    assert c.post("/api/template/defaults/classic/install").status_code == 409

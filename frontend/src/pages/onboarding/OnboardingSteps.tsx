@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import { fetchSetupStatus, type OnboardingField, type SetupStatus } from "../../api";
 import { ImportResumePanel } from "../../components/ImportResumePanel";
 import { TemplateImportWizard } from "../../components/template/TemplateImportWizard";
+import { StarterTemplatesPanel } from "../../components/template/StarterTemplatesPanel";
 import { Button, Card, Field } from "../../components/ui";
 import { describe } from "../../lib/errors";
 import { FIELDS, packsForField, reviewResume, sourcesForField } from "../../lib/onboarding";
@@ -103,7 +104,7 @@ export function FieldStep({
 }
 
 /** Step 3: upload the .docx; its design becomes the template and its words the content.
- * A PDF gives the content only. */
+ * A PDF gives the content only, so a starter template supplies the design. */
 export function ResumeStep({ onScratch }: { onScratch: () => void }) {
   const [pdf, setPdf] = useState(false);
   return (
@@ -112,7 +113,7 @@ export function ResumeStep({ onScratch }: { onScratch: () => void }) {
       {pdf ? (
         <ImportResumePanel
           title="Import the content of a PDF"
-          intro="A PDF can't become your template, but its words can fill your master resume. Review them in the next step, then pick a template on the Template page."
+          intro="A PDF can't become your template, but its words can fill your master resume. Import them here, then pick a starter template below for the design."
         />
       ) : (
         <p className="text-sm text-ink-muted">
@@ -138,6 +139,7 @@ export function ResumeStep({ onScratch }: { onScratch: () => void }) {
         </button>{" "}
         and add your experience in the editor; you can upload a template later on the Template page.
       </p>
+      <StarterTemplatesPanel />
     </div>
   );
 }

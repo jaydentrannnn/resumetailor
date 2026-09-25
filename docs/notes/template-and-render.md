@@ -416,3 +416,10 @@ silently drops it. Restore (`POST /api/master-resume/restore/{v}`) writes throug
 normal `_write_master_resume` path (backup + new version), so a restore is undoable.
 History failures are logged and never block a save. The timestamped `.bak.json`
 siblings are unchanged.
+
+## P3-T: starter templates are generated, not committed (2026-09)
+- The plan called for committed `default_templates/<name>/{original_export.docx, main_template.docx, calibration/soffice.json}`. We don't commit them: `.gitignore` and the pre-commit path guard keep every `.docx` out of git, and a committed `main_template.docx` would be a second producer of tagged templates. `default_templates.build(name)` makes the baseline in memory, with fixed zip timestamps and core-property dates so the bytes and hash are reproducible. The install runs the ordinary upload path, so `template_build` stays the only thing that tags.
+- There is no shipped calibration. The install calibrates against the student's own resume when "Tune page fit" is on (the default); otherwise the estimates apply until the Page fit card is used. That is the same as for an uploaded template.
+- Each design includes Education, Experience, Projects, Leadership (a second experience-kind section), Skills and a bulleted Certifications list. That makes the analyzer choose `generic` mode, so any section the student has renders under its own title in the student's order. A design missing a kind would silently omit that kind's sections (`omit_*`).
+- Business capitalises the name with `w:caps` run formatting rather than upper-case text, so the student's own name renders in capitals too.
+- Re-installing a design already in the library activates the saved entry (matched by sha256) instead of adding "Classic (2)". A label a student already used for their own template gets a " (2)" suffix.

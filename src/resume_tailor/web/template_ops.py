@@ -29,6 +29,7 @@ from resume_tailor import (
     calibrate,
     config,
     data,
+    default_templates,
     docx_normalize,
     render,
     template_analyze,
@@ -42,6 +43,8 @@ from resume_tailor.template_profile import TemplateProfile, save_profile
 from resume_tailor.web.schemas import (
     CalibrateResponse,
     CalibrationInfo,
+    DefaultTemplateOut,
+    DefaultTemplatesResponse,
     TemplateAnalyzeResponse,
     TemplateBuildResponse,
     TemplateFieldCandidateOut,
@@ -1304,3 +1307,79 @@ def _install_with_profile(
             return TemplateBuildResponse(ok=True, log=log.strip(), info=info())
         finally:
             tmp_path.unlink(missing_ok=True)
+
+
+# --- built-in default templates (P3-T) ---------------------------------------------
+
+
+def list_defaults() -> DefaultTemplatesResponse:
+    """The starter templates, each marked with its library entry when already saved."""
+    by_sha = {meta.get("sha256"): meta for meta in _iter_library_metas()}
+    _active_id, _ = _library_active_meta()
+    out = []
+    for name in default_templates.names():
+        spec = default_templates.design(name)
+        meta = by_sha.get(hashlib.sha256(default_templates.build(name)).hexdigest())
+        out.append(
+            DefaultTemplateOut(
+                name=name,
+                label=spec.label,
+                description=spec.description,
+                education_first=spec.education_first,
+                library_id=meta["id"] if meta else None,
+                is_active=bool(meta) and meta["id"] == _active_id,
+            )
+        )
+    return DefaultTemplatesResponse(templates=out)
+
+
+def _unused_label(label: str) -> str:
+    candidate, n = label, 2
+    while _label_taken(candidate):
+        candidate = f"{label} ({n})"
+        n += 1
+    return candidate
+
+
+def install_default(name: str, *, do_calibrate: bool = False) -> TemplateBuildResponse:
+    """Make default template ``name`` the active template.
+
+    The baseline is built in memory (`default_templates.build`) and then installed
+    exactly like an upload: analyze, `template_build`, verify, commit. When the library
+    already holds this design (same bytes, same hash), that entry is activated instead
+    of saving a second copy.
+
+    Raises `default_templates.UnknownTemplate` for an unknown name.
+    """
+    raw, result = default_templates.analyzed(name)
+    spec = default_templates.design(name)
+    with LOCK:
+        existing = _find_entry_by_sha(result.source_sha256)
+    if existing is not None:
+        return activate_library_entry(existing["id"], do_calibrate=do_calibrate)
+    with LOCK:
+        label = _unused_label(spec.label)
+    return install_baseline(
+        raw,
+        f"{name}.docx",
+        profile=result.suggested_profile,
+        do_calibrate=do_calibrate,
+        label=label,
+    )
+
+
+def default_thumbnail(name: str) -> Path:
+    """Cached first-page PNG of a default template's design (its sample content).
+
+    Raises `default_templates.UnknownTemplate` for an unknown name and `RuntimeError`
+    when no PDF engine is available.
+    """
+    raw = default_templates.build(name)
+    digest = hashlib.sha256(raw).hexdigest()[:16]
+    folder = config.OUTPUT_DIR / "template" / "defaults"
+    folder.mkdir(parents=True, exist_ok=True)
+    baseline = folder / f"{name}-{digest}.docx"
+    with LOCK:
+        if not baseline.exists():
+            baseline.write_bytes(raw)
+        return thumbnails.docx_thumbnail(baseline, folder / f"{name}-{digest}.png")

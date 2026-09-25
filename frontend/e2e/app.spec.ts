@@ -100,3 +100,16 @@ test("resume editor: import a PDF's content as a draft", async ({ page, request 
   await page.getByRole("button", { name: "Discard" }).click();
   await page.getByRole("button", { name: "Discard" }).last().click();
 });
+
+test("template page: switch to a starter template", async ({ page }) => {
+  await page.goto("/template");
+  const starters = page.getByRole("region", { name: "Starter templates" });
+  await expect(
+    starters.getByRole("img", { name: "Sample page in the Compact template" }),
+  ).toBeVisible();
+  await page.getByLabel("Tune page fit when switching").uncheck();
+  await starters.getByRole("button", { name: "Use Compact" }).click();
+  await expect(starters.getByRole("button", { name: "In use" })).toBeVisible({ timeout: 60_000 });
+  await expect(page.getByRole("heading", { name: "Compact", level: 2 })).toBeVisible();
+  await expectAccessible(page);
+});

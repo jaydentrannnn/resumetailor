@@ -1,6 +1,7 @@
 import { templatePreviewUrl } from "../api";
 import { PageFitCard } from "../components/template/PageFitCard";
 import { SavedTemplatesPanel } from "../components/template/SavedTemplatesPanel";
+import { StarterTemplatesPanel } from "../components/template/StarterTemplatesPanel";
 import { TemplateImportWizard } from "../components/template/TemplateImportWizard";
 import { useTemplateState } from "../state/templateState";
 
@@ -150,8 +151,8 @@ export function TemplatePage() {
                 </div>
               ) : (
                 <p className="order-1 mt-4 rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">
-                  No tagged template on disk. Upload a single-column .docx export below to generate
-                  one.
+                  No template yet. Pick a starter template below, or upload your own single-column
+                  Word file.
                 </p>
               )}
             </div>
@@ -161,6 +162,7 @@ export function TemplatePage() {
 
       {info?.tagged.exists && <PageFitCard calibration={info.calibration} />}
       <SavedTemplatesPanel />
+      <StarterTemplatesPanel />
       <TemplateImportWizard />
     </div>
   );

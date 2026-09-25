@@ -765,6 +765,23 @@ class TemplateLibraryResponse(BaseModel):
     active_id: str | None = None
 
 
+class DefaultTemplateOut(BaseModel):
+    """One built-in starter template (`default_templates`)."""
+
+    name: str
+    label: str
+    description: str
+    #: The design lists Education first; the UI offers to reorder the resume to match.
+    education_first: bool = False
+    #: The library entry holding this design, when it has been installed before.
+    library_id: str | None = None
+    is_active: bool = False
+
+
+class DefaultTemplatesResponse(BaseModel):
+    templates: list[DefaultTemplateOut] = Field(default_factory=list)
+
+
 class TemplateLibraryRenameRequest(BaseModel):
     """Rename a library entry."""
 

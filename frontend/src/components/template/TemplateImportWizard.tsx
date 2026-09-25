@@ -181,7 +181,14 @@ export function TemplateImportWizard({
               onConvertBullets: draftFile
                 ? () => void beginAnalyze(draftFile, { convertBullets: true })
                 : undefined,
-              onImportContent: draftFile ? () => void importContent(draftFile) : undefined,
+              onImportContent: draftFile
+                ? () =>
+                    void importContent(draftFile).then(() =>
+                      document
+                        .getElementById("starter-templates")
+                        ?.scrollIntoView({ behavior: "smooth", block: "start" }),
+                    )
+                : undefined,
             }}
           />
           {profileDraft ? (

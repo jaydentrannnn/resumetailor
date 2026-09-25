@@ -545,6 +545,19 @@ nothing; the editor loads the result as unsaved state via `editorState.loadDraft
   no way to express (GPA as free text, not the `| GPA: …` form `_GPA_RE` requires) survives
   a merge.
 
+**Starter templates** (`default_templates.py`): three built-in designs (Classic, Compact,
+Business) for students whose own file can't become a template, or who only have a PDF.
+`default_templates.build(name)` is the only producer of their baseline `.docx`. It
+generates them with python-docx at install time and never commits them, since `.docx`
+files stay out of git. The build is byte-reproducible, so the hash is stable. Installing
+one (`POST /api/template/defaults/{name}/install`, `template_ops.install_default`) goes
+through the same analyze → `template_build` → verify → commit path as an upload. When the
+library already holds those exact bytes, that entry is re-activated instead. Every design
+carries every section kind, so the analyzer picks `section_mode="generic"`. Business lists
+Education first; because the render order follows the master resume, the UI offers to move
+the student's Education sections up. `scripts/build_default_templates.py --out DIR --pdf`
+writes each bundle plus a filled sample PDF for checking a design change by eye.
+
 ---
 
 ## 6. Fit-loop tuning and measurement

@@ -77,7 +77,7 @@ export function IssueList({
                   onClick={actions.onImportContent}
                   className="mt-2 rounded-md border border-current px-2.5 py-1 text-xs font-semibold disabled:opacity-50"
                 >
-                  Import the content only
+                  Import the content and pick a starter template
                 </button>
               )}
               <details className="mt-1 text-xs text-ink-muted">

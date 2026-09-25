@@ -8,11 +8,13 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import ValidationError
 
+from resume_tailor import default_templates
 from resume_tailor.template_profile import TemplateProfile
 from resume_tailor.web import template_ops
 from resume_tailor.web.jobs import get_queue
 from resume_tailor.web.schemas import (
     CalibrateResponse,
+    DefaultTemplatesResponse,
     TemplateAnalyzeResponse,
     TemplateBuildResponse,
     TemplateInfoResponse,
@@ -289,6 +291,45 @@ def delete_template_library_entry(entry_id: str) -> TemplateLibraryResponse:
         return template_ops.delete_library_entry(entry_id)
     except TemplateValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/api/template/defaults", response_model=DefaultTemplatesResponse)
+def get_default_templates() -> DefaultTemplatesResponse:
+    """The built-in starter templates and whether each is already saved."""
+    return template_ops.list_defaults()
+
+
+@router.post("/api/template/defaults/{name}/install", response_model=TemplateBuildResponse)
+def install_default_template(name: str, calibrate: str | None = None) -> TemplateBuildResponse:
+    """Make a built-in starter template the active template (`calibrate=true` tunes fit)."""
+    if get_queue().busy():
+        raise HTTPException(
+            status_code=409,
+            detail="A tailoring job is in progress; wait for it to finish before "
+            "switching templates.",
+        )
+    try:
+        return template_ops.install_default(name, do_calibrate=_truthy(calibrate))
+    except default_templates.UnknownTemplate as exc:
+        raise HTTPException(status_code=404, detail="No such default template.") from exc
+    except TemplateValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except TemplateBuildError as exc:
+        raise HTTPException(
+            status_code=422, detail={"message": str(exc), "log": exc.log}
+        ) from exc
+
+
+@router.get("/api/template/defaults/{name}/thumb.png")
+def default_template_thumbnail(name: str) -> FileResponse:
+    """First page of a starter template's design, as a PNG for the gallery card."""
+    try:
+        path = template_ops.default_thumbnail(name)
+    except default_templates.UnknownTemplate as exc:
+        raise HTTPException(status_code=404, detail="No such default template.") from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return FileResponse(path, media_type="image/png", headers={"Cache-Control": "no-cache"})
 
 
 def _truthy(value: str | None) -> bool:

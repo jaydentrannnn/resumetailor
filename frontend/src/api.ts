@@ -1585,6 +1585,42 @@ export function fetchTemplateLibrary(): Promise<TemplateLibraryResponse> {
   return request<TemplateLibraryResponse>("/api/template/library");
 }
 
+/** One built-in starter template (`GET /api/template/defaults`). */
+export type DefaultTemplate = {
+  name: string;
+  label: string;
+  description: string;
+  /** The design lists Education first; offer to reorder the resume to match. */
+  education_first: boolean;
+  /** Its saved library entry, when it has been installed before. */
+  library_id: string | null;
+  is_active: boolean;
+};
+
+export async function fetchDefaultTemplates(): Promise<DefaultTemplate[]> {
+  const body = await request<{ templates: DefaultTemplate[] }>("/api/template/defaults");
+  return body.templates;
+}
+
+/** Make a starter template the active one (built and installed like an upload). */
+export async function installDefaultTemplate(
+  name: string,
+  options?: { calibrate?: boolean },
+): Promise<TemplateBuildResponse> {
+  const qs = options?.calibrate ? "?calibrate=true" : "";
+  const res = await fetch(`/api/template/defaults/${encodeURIComponent(name)}/install${qs}`, {
+    method: "POST",
+  });
+  if (!res.ok) {
+    throw new Error(await templateErrorDetail(res));
+  }
+  return res.json() as Promise<TemplateBuildResponse>;
+}
+
+export function defaultTemplateThumbUrl(name: string): string {
+  return `/api/template/defaults/${encodeURIComponent(name)}/thumb.png`;
+}
+
 /**
  * Activate a library snapshot into the live template slot.
  */
