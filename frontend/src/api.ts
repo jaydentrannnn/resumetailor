@@ -619,6 +619,8 @@ export type RunHistoryEntry = {
   created_at: string;
   finished_at: string | null;
   title: string;
+  /** From the posting's metadata when known (apply funnel, JD from a link); "" otherwise. */
+  company?: string;
   error: string | null;
   pages: number | null;
   coverage_matched: number | null;

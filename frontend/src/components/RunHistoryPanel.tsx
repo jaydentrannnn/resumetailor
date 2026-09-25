@@ -1,7 +1,9 @@
 import { useEffect, useMemo, useState } from "react";
 import { type RunHistoryEntry, downloadPdfUrl, downloadUrl } from "../api";
+import { matchesRunQuery } from "../lib/runHistory";
 import { useConfirm } from "../state/confirmState";
 import { useRunState } from "../state/runState";
+import { CompareRunsDialog } from "./CompareRunsDialog";
 import { Pagination } from "./TableControls";
 
 /** Runs that can be removed from disk-backed history (not queued or running). */
@@ -11,7 +13,8 @@ function isDeletable(run: RunHistoryEntry): boolean {
 
 /**
  * Recent tailoring runs for the active profile — survives reload via disk-backed
- * `run.json`. "View" loads the run into the results tiles above without re-downloading.
+ * `run.json`. "Open" loads the run into the results tiles above without re-downloading;
+ * two selected runs can be compared bullet by bullet.
  */
 export function RunHistoryPanel() {
   const { history, jobId, loadRun, busy, deleteHistoryRuns } = useRunState();
@@ -20,6 +23,8 @@ export function RunHistoryPanel() {
   const [deleting, setDeleting] = useState(false);
   const [deleteError, setDeleteError] = useState<string | null>(null);
   const [page, setPage] = useState(0);
+  const [query, setQuery] = useState("");
+  const [comparing, setComparing] = useState<[RunHistoryEntry, RunHistoryEntry] | null>(null);
   const [size, setSize] = useState(25);
   const [sort, setSort] = useState<"started" | "title" | "status" | "coverage" | "pages">(
     "started",
@@ -39,7 +44,11 @@ export function RunHistoryPanel() {
       }),
     [history, sort],
   );
-  const visible = ordered.slice(page * size, (page + 1) * size);
+  const filtered = useMemo(
+    () => ordered.filter((run) => matchesRunQuery(run, query)),
+    [ordered, query],
+  );
+  const visible = filtered.slice(page * size, (page + 1) * size);
 
   const deletableIds = useMemo(
     () => visible.filter(isDeletable).map((run) => run.job_id),
@@ -53,14 +62,23 @@ export function RunHistoryPanel() {
     });
   }, [deletableIds]);
   useEffect(() => {
-    if (page > 0 && page >= Math.ceil(history.length / size))
-      setPage(Math.max(0, Math.ceil(history.length / size) - 1));
-  }, [history.length, page, size]);
+    if (page > 0 && page >= Math.ceil(filtered.length / size))
+      setPage(Math.max(0, Math.ceil(filtered.length / size) - 1));
+  }, [filtered.length, page, size]);
 
   if (history.length === 0) return null;
 
   const allSelected = deletableIds.length > 0 && deletableIds.every((id) => selected.has(id));
   const someSelected = selected.size > 0;
+  const comparable = history.filter(
+    (run) => selected.has(run.job_id) && run.status === "succeeded",
+  );
+
+  function openCompare() {
+    if (comparable.length !== 2) return;
+    const [x, y] = [...comparable].sort((p, q) => p.created_at.localeCompare(q.created_at));
+    setComparing([x, y]);
+  }
 
   function toggleOne(id: string) {
     setSelected((prev) => {
@@ -131,6 +149,15 @@ export function RunHistoryPanel() {
           </label>
           <button
             type="button"
+            disabled={comparable.length !== 2 || selected.size !== 2}
+            title="Select two finished runs to compare their bullets"
+            onClick={openCompare}
+            className="rounded-md border border-line px-2.5 py-1 text-xs font-medium hover:border-accent hover:text-accent disabled:opacity-50"
+          >
+            Compare selected
+          </button>
+          <button
+            type="button"
             disabled={!someSelected || deleting || busy}
             onClick={() => void handleDelete()}
             className="rounded-md border border-line px-2.5 py-1 text-xs font-medium text-danger hover:border-danger disabled:opacity-50"
@@ -146,7 +173,18 @@ export function RunHistoryPanel() {
         </p>
       )}
 
-      <div className="mt-4 flex flex-wrap gap-2 text-sm">
+      <div className="mt-4 flex flex-wrap items-center gap-3 text-sm">
+        <input
+          type="search"
+          className="field max-w-xs"
+          placeholder="Search by role or company"
+          aria-label="Search runs by role or company"
+          value={query}
+          onChange={(event) => {
+            setQuery(event.target.value);
+            setPage(0);
+          }}
+        />
         <label>
           Sort runs{" "}
           <select
@@ -169,7 +207,7 @@ export function RunHistoryPanel() {
       <Pagination
         page={page}
         size={size}
-        total={history.length}
+        total={filtered.length}
         onPage={(value) => {
           setPage(value);
           setSelected(new Set());
@@ -180,6 +218,9 @@ export function RunHistoryPanel() {
           setSelected(new Set());
         }}
       />
+      {filtered.length === 0 && (
+        <p className="mt-4 text-sm text-ink-muted">No runs match “{query.trim()}”.</p>
+      )}
       <ul className="mt-4 divide-y divide-line">
         {visible.map((run) => (
           <HistoryRow
@@ -201,7 +242,7 @@ export function RunHistoryPanel() {
       <Pagination
         page={page}
         size={size}
-        total={history.length}
+        total={filtered.length}
         onPage={(value) => {
           setPage(value);
           setSelected(new Set());
@@ -212,6 +253,9 @@ export function RunHistoryPanel() {
           setSelected(new Set());
         }}
       />
+      {comparing && (
+        <CompareRunsDialog a={comparing[0]} b={comparing[1]} onClose={() => setComparing(null)} />
+      )}
     </section>
   );
 }
@@ -253,7 +297,10 @@ function HistoryRow({
         />
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-2">
-            <span className="truncate font-medium text-ink">{run.title}</span>
+            <span className="truncate font-medium text-ink">
+              {run.title}
+              {run.company && <span className="font-normal text-ink-muted"> · {run.company}</span>}
+            </span>
             <StatusPill status={run.status} />
             {active && (
               <span className="rounded bg-accent-soft px-1.5 py-0.5 text-micro font-semibold uppercase tracking-wide text-accent">
@@ -264,7 +311,7 @@ function HistoryRow({
           <p className="mt-0.5 text-xs tabular-nums text-ink-muted">
             {when}
             {run.pages != null ? ` · ${run.pages} page${run.pages === 1 ? "" : "s"}` : ""}
-            {coverage ? ` · must-haves ${coverage}` : ""}
+            {coverage ? ` · ${coverage} required skills` : ""}
             {run.error ? ` · ${run.error.split("\n")[0]}` : ""}
           </p>
         </div>
@@ -292,7 +339,7 @@ function HistoryRow({
           onClick={onView}
           className="rounded-md border border-line px-2.5 py-1 text-xs font-medium hover:border-accent hover:text-accent disabled:opacity-50"
         >
-          View
+          Open
         </button>
       </div>
     </li>

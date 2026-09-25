@@ -502,6 +502,8 @@ class RunHistoryEntryOut(BaseModel):
     created_at: str
     finished_at: str | None = None
     title: str
+    #: From the run's posting metadata (apply funnel, JD fetched from a link); "" if unknown.
+    company: str = ""
     error: str | None = None
     pages: int | None = None
     coverage_matched: int | None = None

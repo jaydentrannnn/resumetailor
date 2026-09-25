@@ -198,6 +198,30 @@ def test_list_jobs_includes_persisted_run(client, tmp_path, monkeypatch):
     assert match["title"] == "History Fixture Role"
     assert match["has_docx"] is True
     assert match["has_pdf"] is False
+    assert match["company"] == ""
+
+
+def test_run_history_lists_company_from_posting_metadata(client):
+    """History search (Tailor page) matches on company, read from the run's metadata."""
+    c, _q = client
+    jobs_dir = config.OUTPUT_DIR / "jobs" / "histcompany01"
+    jobs_dir.mkdir(parents=True, exist_ok=True)
+    (jobs_dir / "run.json").write_text(
+        json.dumps(
+            {
+                "job_id": "histcompany01",
+                "workspace_id": config.active_workspace_id(),
+                "created_at": "2026-01-02T00:00:00+00:00",
+                "status": "succeeded",
+                "title": "Analyst",
+                "metadata": {"company": "Acme Capital", "role": "Analyst"},
+            }
+        ),
+        encoding="utf-8",
+    )
+    runs = c.get("/api/jobs").json()["runs"]
+    match = next(r for r in runs if r["job_id"] == "histcompany01")
+    assert match["company"] == "Acme Capital"
 
 
 def test_delete_run_history_removes_disk_artifacts(client):

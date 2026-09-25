@@ -230,3 +230,22 @@ blank entry headers before the Pydantic path; server validation remains authorit
 - A result over the page target is never saved, and the response gives the lines over. That is the fit loop's never-truncate rule applied to manual edits. Without a PDF engine the page count is an estimate, reported as one.
 - After a save, `packet.json` (when present) is rebuilt, because the packet records each file's sha256 and the next fill must upload the edited resume.
 - The route holds `template_ops.LOCK` like a profile switch does, because the render reads config's per-profile fit constants.
+
+## Tailor page T5–T6: plain-language report and run history search (2C)
+
+- `ReportCard` leads with one headline (`lib/reportSummary.reportHeadline`: "Matched 8 of
+  10 required skills · 1 page") and four tiles named from `lib/glossary.ts`; the page
+  count lives in the headline, not a tile. Model, ranking, PDF engine, page-fit source
+  and fit passes sit under "Technical details".
+- Coverage gaps are three checklists from `gapGroups`: missing (`no_evidence` plus
+  `missing_must_haves`, deduped: never added for the student, link to the editor),
+  untagged (`untagged_evidence`, the evidence snippets reworded by `describeEvidence`),
+  and named differently (`near_miss`, link to Vocabulary). The planned one-click "add tag
+  X to bullet Y" was not built: gap evidence names a skills line, project tech or
+  coursework, never a specific bullet, so there is no bullet to tag without guessing.
+- Run history: `RunHistoryEntryOut.company` comes from the run's posting metadata ("" when
+  the JD was pasted); search matches every word against role + company client-side.
+  "View" is now "Open". "Compare selected" (exactly two finished runs) fetches both
+  runs' `/bullets` and diffs the bullets each final document shows (`current_text`),
+  keyed by master bullet id (`lib/runHistory.compareRuns`). Runs made before the render
+  snapshot existed cannot be compared; the dialog shows the 409 text.
