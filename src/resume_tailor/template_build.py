@@ -1504,7 +1504,7 @@ def build_generic(doc, profile: TemplateProfile) -> None:
         "skills": profile.skills,
     }
     enabled = {
-        "experience": True,  # always required, same as fixed mode
+        "experience": profile.enabled.experience,
         "project": profile.enabled.projects,
         "list": profile.enabled.list_section,
         "education": profile.enabled.education,
@@ -1688,7 +1688,7 @@ def build_generic_table(doc, profile: TemplateProfile) -> None:
         "skills": profile.skills,
     }
     enabled = {
-        "experience": True,  # always required, same as fixed mode / build_generic
+        "experience": profile.enabled.experience,
         "project": profile.enabled.projects,
         "list": profile.enabled.list_section,
         "education": profile.enabled.education,
@@ -1886,7 +1886,8 @@ def build_from_profile(
         # stay valid for still-pending sections. Deletion of a later section does not
         # shift earlier heading ids.
         builders: list[tuple[int, object]] = []
-        builders.append((profile.experience.heading_paragraph_id, "experience"))
+        if profile.enabled.experience and profile.experience is not None:
+            builders.append((profile.experience.heading_paragraph_id, "experience"))
         if profile.enabled.education and profile.education is not None:
             builders.append((profile.education.heading_paragraph_id, "education"))
         if profile.enabled.projects and profile.projects is not None:
@@ -1992,10 +1993,18 @@ def build(
 
     print(
         f"wrote {dst} (profile v{profile.schema_version}; "
-        f"sections: experience"
-        f"{'+education' if profile.enabled.education else ''}"
-        f"{'+projects' if profile.enabled.projects else ''}"
-        f"{'+skills' if profile.enabled.skills else ''})"
+        "sections: "
+        + "+".join(
+            name
+            for name, on in (
+                ("experience", profile.enabled.experience),
+                ("education", profile.enabled.education),
+                ("projects", profile.enabled.projects),
+                ("skills", profile.enabled.skills),
+            )
+            if on
+        )
+        + ")"
     )
     return 0
 

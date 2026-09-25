@@ -273,7 +273,9 @@ class TemplateProfile(_Strict):
     name_paragraph_id: int = 0
     contact: ContactMapping
     enabled: EnabledSections = Field(default_factory=EnabledSections)
-    experience: ExperienceMapping
+    #: None only for a template with no Experience heading (a first-year student's
+    #: Education + Projects resume); `enabled.experience` is then False.
+    experience: ExperienceMapping | None = None
     education: EducationMapping | None = None
     projects: ProjectsMapping | None = None
     skills: SkillsMapping | None = None
@@ -320,10 +322,11 @@ class TemplateProfile(_Strict):
 
     @model_validator(mode="after")
     def _optional_consistency(self) -> TemplateProfile:
-        """Enabled flags must agree with mappings; experience is always required."""
-        if not self.enabled.experience:
-            raise ValueError("experience section is required")
+        """Enabled flags must agree with mappings; some entry section must exist."""
+        if not (self.enabled.experience or self.enabled.projects or self.enabled.list_section):
+            raise ValueError("a template needs an Experience, Projects or list section")
         pairs = (
+            (self.enabled.experience, self.experience, "experience"),
             (self.enabled.education, self.education, "education"),
             (self.enabled.projects, self.projects, "projects"),
             (self.enabled.skills, self.skills, "skills"),

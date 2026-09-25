@@ -392,3 +392,15 @@ required or made safe to finally do.
 
 - `_document_has_textboxes` used to block on any `w:drawing`: a divider line, an icon, a headshot, a logo. It now blocks only when a `w:txbxContent` (DrawingML or VML text box) holds text. Other drawings produce the non-blocking `decorative_drawing` note.
 - The build removed every run but the first when collapsing a paragraph to one tag, which deleted an icon beside the name or contact line. `collapse_runs`/`_drop_run` in `template_build.py` now keep drawing runs (`w:drawing`, `w:pict`, `w:object`) in place, strip only their text, and put the tag in the first text run even when an icon comes first. Covered by `tests/test_template_drawings.py` through analyze, build and render.
+
+## Templates without an Experience section (B16, 2026-09)
+A first-year student's resume often has Education, Projects and Activities but no
+Experience. `TemplateProfile.experience` is now optional and `enabled.experience` can be
+False; the validator only requires *some* entry section (experience, projects or a list
+section). `missing_experience` blocks only when neither a Projects nor a list heading
+exists. With experience disabled, `fit.choose_entries` forces experience-kind sections
+to 0 (even over `section_limits`, since nothing could render them), `estimate_lines`
+skips them in both section modes, and `render.build_context` leaves the legacy
+`experience` key empty. The resume's experience entries stay in the master store; they
+just have nowhere to go in this template. The SPA's section-map toggle refuses to turn
+off the last entry section.

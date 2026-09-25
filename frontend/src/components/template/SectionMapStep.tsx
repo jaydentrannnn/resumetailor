@@ -9,12 +9,17 @@ type Enabled = {
 };
 
 const SECTION_ROWS: readonly [keyof Enabled, string][] = [
-  ["experience", "Experience (required)"],
+  ["experience", "Experience"],
   ["education", "Education"],
   ["projects", "Projects"],
   ["skills", "Skills"],
   ["list_section", "Simple list (certifications, awards, …)"],
 ];
+
+/** Experience, Projects or a simple list: at least one must stay on to hold entries. */
+function hasEntrySection(enabled: Enabled): boolean {
+  return enabled.experience || enabled.projects || enabled.list_section;
+}
 
 //: Wire kind -> the label shown in the per-heading remap `<select>`. `null` reads as
 //: "Not a section" — the user telling the analyzer a candidate heading is actually
@@ -86,8 +91,9 @@ export function SectionMapStep({
 
   const setEnabled = (key: keyof Enabled, value: boolean) => {
     /** Toggle a section kind and drop/restore its mapping blob. */
-    if (key === "experience") return;
     const nextEnabled = { ...enabled, [key]: value };
+    // Some section has to hold entries; the server rejects a profile without one.
+    if (!hasEntrySection(nextEnabled)) return;
     const next: Record<string, unknown> = {
       ...profile,
       enabled: nextEnabled,
@@ -181,7 +187,10 @@ export function SectionMapStep({
                   type="checkbox"
                   className="mt-1"
                   checked={checked}
-                  disabled={key === "experience" || detected.length === 0}
+                  disabled={
+                    detected.length === 0 ||
+                    (checked && !hasEntrySection({ ...enabled, [key]: false }))
+                  }
                   onChange={(e) => setEnabled(key, e.target.checked)}
                 />
                 <span>

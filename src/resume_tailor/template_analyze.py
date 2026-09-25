@@ -1885,11 +1885,19 @@ def _analyze_document(
     }
 
     if "experience" not in section_by_key:
+        # Blocking only when nothing else can carry entries: a first-year student's
+        # Education + Projects (or Activities) resume is a complete template.
+        has_other_entries = bool({"projects", "list"} & section_by_key.keys())
         issues.append(
             Issue(
                 code="missing_experience",
-                message="Could not find an Experience / Work Experience section heading.",
-                blocking=True,
+                message=(
+                    "No Experience section heading found. The template will show your "
+                    "other sections; add an Experience heading in Word to include jobs."
+                    if has_other_entries
+                    else "Could not find an Experience / Work Experience section heading."
+                ),
+                blocking=not has_other_entries,
             )
         )
 
@@ -2343,9 +2351,9 @@ def _analyze_document(
     blockers = [i for i in issues if i.blocking]
     if (
         not blockers
-        and experience_mapping is not None
+        and (experience_mapping is not None or not enabled.experience)
+        and (enabled.experience or enabled.projects or enabled.list_section)
         and (contact_para is not None or contact_slots)
-        and enabled.experience
     ):
         if contact_slots:
             contact = ContactMapping(
@@ -2408,7 +2416,7 @@ def _analyze_document(
             name_paragraph_id=name_id,
             contact=contact,
             enabled=enabled,
-            experience=experience_mapping,
+            experience=experience_mapping if enabled.experience else None,
             education=education_mapping if enabled.education else None,
             projects=projects_mapping if enabled.projects else None,
             skills=skills_mapping if enabled.skills else None,
@@ -2625,15 +2633,17 @@ def validate_profile_against_doc(
                 )
             )
 
-    if not profile.enabled.experience:
+    if not (
+        profile.enabled.experience or profile.enabled.projects or profile.enabled.list_section
+    ):
         issues.append(
             Issue(
                 code="experience_required",
-                message="Experience section cannot be disabled.",
+                message="Keep at least one of Experience, Projects or a list section enabled.",
                 blocking=True,
             )
         )
-    else:
+    if profile.enabled.experience and profile.experience is not None:
         exp = profile.experience
         exp_spans = _present_spans(exp.header.fields)
         if exp.title.present and exp.title.span is not None:

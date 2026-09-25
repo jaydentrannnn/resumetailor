@@ -70,13 +70,14 @@ def expected_tags(profile: TemplateProfile) -> set[str]:
     else:
         tags = {NAME_TAG, CONTACT_TAG}
 
-    exp = profile.experience
-    for name, field in exp.header.fields.items():
-        if field.present and name in EXPERIENCE_HEADER_TAGS:
-            tags.add(EXPERIENCE_HEADER_TAGS[name])
-    if exp.title.present:
-        tags.add(EXPERIENCE_TITLE_TAG)
-    tags.add(BULLET_TAG)
+    exp = profile.experience if profile.enabled.experience else None
+    if exp is not None:
+        for name, field in exp.header.fields.items():
+            if field.present and name in EXPERIENCE_HEADER_TAGS:
+                tags.add(EXPERIENCE_HEADER_TAGS[name])
+        if exp.title.present:
+            tags.add(EXPERIENCE_TITLE_TAG)
+        tags.add(BULLET_TAG)
 
     if profile.enabled.education and profile.education is not None:
         edu = profile.education
@@ -306,12 +307,13 @@ def verify_roundtrip(
                 )
             )
 
-    exp_fields = profile.experience.header.fields
-    for entry in resume.experience:
+    exp_mapping = profile.experience if profile.enabled.experience else None
+    exp_fields = exp_mapping.header.fields if exp_mapping is not None else {}
+    for entry in resume.experience if exp_mapping is not None else []:
         if not entry.bullets:
             continue
         _check(entry.company, f"Experience company for {entry.company!r}")
-        if profile.experience.title.present:
+        if exp_mapping.title.present:
             _check(entry.title, f"Experience title for {entry.company!r}")
         location = exp_fields.get("location")
         if location is not None and location.present:

@@ -411,7 +411,9 @@ def build_context(
     # Legacy flattened keys — what a fixed-mode template consumes. Built from the same
     # renderers as `sections` above so the two can never disagree on what one entry
     # renders as.
-    experience = render_experience(resume.experience)
+    experience = (
+        render_experience(resume.experience) if enabled.get("experience", True) else []
+    )
     projects = render_projects(resume.projects) if enabled.get("projects", True) else []
     skills = render_skills(resume.skills) if enabled.get("skills", True) else []
     education = render_education(resume.education) if enabled.get("education", True) else []

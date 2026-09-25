@@ -169,7 +169,7 @@ def _spacer_lines(resume: MasterResume, bullets: dict[str, str], *, layout: dict
 
     enabled = layout.get("enabled") or {}
     kind_enabled = {
-        "experience": True,
+        "experience": enabled.get("experience", True),
         "project": enabled.get("projects", True),
         "list": enabled.get("list_section", True),
         "education": enabled.get("education", True),
@@ -230,13 +230,16 @@ def estimate_lines(
         for section in resume.entry_sections:
             if section.kind == "project" and not enabled.get("projects", True):
                 continue
+            if section.kind == "experience" and not enabled.get("experience", True):
+                continue
             total += _section_lines(section.entries, bullets)
         total += _spacer_lines(resume, bullets, layout=layout)
     else:
-        experience_entries = [
-            e for s in resume.entry_sections if s.kind == "experience" for e in s.entries
-        ]
-        total += _section_lines(experience_entries, bullets)
+        if enabled.get("experience", True):
+            experience_entries = [
+                e for s in resume.entry_sections if s.kind == "experience" for e in s.entries
+            ]
+            total += _section_lines(experience_entries, bullets)
         if enabled.get("projects", True):
             project_entries = [
                 e for s in resume.entry_sections if s.kind == "project" for e in s.entries
@@ -275,7 +278,9 @@ def choose_entries(
     over both.
 
     When the active template has no Projects-kind prototype, every project-kind section
-    is forced to a limit of 0.
+    is forced to a limit of 0. When it has no Experience section (a first-year student's
+    Education/Projects/Activities resume), experience-kind sections are always 0, even
+    over `section_limits`.
     """
     layout = layout if layout is not None else active_layout()
     enabled = layout.get("enabled") or {}
@@ -291,6 +296,8 @@ def choose_entries(
                 config.MAX_EXPERIENCE_ENTRIES if max_experience is None else max_experience
             )
         limit = section_limits.get(section.id, default_limit)
+        if section.kind == "experience" and not enabled.get("experience", True):
+            limit = 0  # no Experience layout in the template: nothing could render them
         chosen.extend(
             select_entries(section.entries, requirements, limit=limit, semantic=semantic)
         )
