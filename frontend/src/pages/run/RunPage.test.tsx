@@ -3,8 +3,8 @@ import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 
-vi.mock("../state/runState", async (importOriginal) => {
-  const actual = await importOriginal<typeof import("../state/runState")>();
+vi.mock("../../state/runState", async (importOriginal) => {
+  const actual = await importOriginal<typeof import("../../state/runState")>();
   return {
     ...actual,
     useRunState: () => ({
@@ -31,12 +31,15 @@ vi.mock("../state/runState", async (importOriginal) => {
       startJob: async () => {},
       cancelRun: async () => {},
       cancelling: false,
+      history: [],
     }),
   };
 });
-vi.mock("../state/workspaceState", () => ({ useWorkspaceState: () => ({ switching: false }) }));
-vi.mock("../components/DocumentsCard", () => ({ DocumentsCard: () => <p>documents panel</p> }));
-vi.mock("../components/RunHistoryPanel", () => ({ RunHistoryPanel: () => null }));
+vi.mock("../../state/workspaceState", () => ({
+  useWorkspaceState: () => ({ switching: false, activeId: "default" }),
+}));
+vi.mock("../../components/DocumentsCard", () => ({ DocumentsCard: () => <p>documents panel</p> }));
+vi.mock("../../components/RunHistoryPanel", () => ({ RunHistoryPanel: () => null }));
 
 import { RunPage } from "./RunPage";
 

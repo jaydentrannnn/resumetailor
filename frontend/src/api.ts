@@ -1916,3 +1916,25 @@ export function putOnboarding(
     body: JSON.stringify(patch),
   });
 }
+
+export interface JdText {
+  text: string;
+  source: string;
+  ats: string;
+  final_url: string;
+  warnings: string[];
+}
+
+/** Read a posting's text from its URL (resolves job-board redirect links). */
+export function fetchJdFromUrl(url: string): Promise<JdText> {
+  return request("/api/jd/fetch", { method: "POST", body: JSON.stringify({ url }) });
+}
+
+/** Extract posting text from an uploaded .txt / .pdf / .docx / .html file. */
+export async function extractJdFile(file: File): Promise<JdText> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch("/api/jd/extract-file", { method: "POST", body: form });
+  if (!res.ok) throw await apiError(res);
+  return res.json() as Promise<JdText>;
+}

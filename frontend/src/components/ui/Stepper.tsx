@@ -24,15 +24,22 @@ export function Stepper({
   failed,
   onSelect,
   label = "Progress",
+  orientation = "horizontal",
 }: {
   steps: StepItem[];
   current: number;
   failed?: number | null;
   onSelect?: (index: number) => void;
   label?: string;
+  /** "vertical" stacks the steps for narrow panels (run progress). */
+  orientation?: "horizontal" | "vertical";
 }) {
+  const vertical = orientation === "vertical";
   return (
-    <ol aria-label={label} className="flex flex-wrap items-center gap-x-2 gap-y-2">
+    <ol
+      aria-label={label}
+      className={vertical ? "flex flex-col gap-2" : "flex flex-wrap items-center gap-x-2 gap-y-2"}
+    >
       {steps.map((step, index) => {
         const state = stepState(index, current, failed);
         const clickable = onSelect && state === "done";
@@ -67,7 +74,7 @@ export function Stepper({
             ) : (
               <span className="flex items-center gap-2 px-1">{content}</span>
             )}
-            {index < steps.length - 1 && (
+            {!vertical && index < steps.length - 1 && (
               <span aria-hidden="true" className="h-px w-4 bg-line sm:w-8" />
             )}
             {state === "error" && <span className="sr-only">(failed)</span>}

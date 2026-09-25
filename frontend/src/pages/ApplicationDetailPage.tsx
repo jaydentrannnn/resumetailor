@@ -23,7 +23,7 @@ import { IN_FLIGHT_STATUSES } from "../lib/applyPoll";
 import { useWorkspaceState } from "../state/workspaceState";
 import { isTabClosed } from "../lib/applicationRows";
 import { useOpenTabs } from "../lib/useOpenTabs";
-import { ReportCard } from "./RunPage";
+import { ReportCard } from "./run/ReportCard";
 
 type Detail = { application: ApplicationRow; packet: Packet | null; jd_text: string | null };
 const tabs = ["overview", "documents", "content", "review"] as const;

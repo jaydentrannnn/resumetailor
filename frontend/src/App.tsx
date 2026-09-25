@@ -17,7 +17,7 @@ import { SettingsMenu } from "./components/SettingsMenu";
 import { KeyboardShortcuts } from "./components/KeyboardShortcuts";
 import { SetupHealth } from "./components/SetupHealth";
 import { ToastProvider } from "./components/ui/Toast";
-import { RunPage } from "./pages/RunPage";
+import { RunPage } from "./pages/run/RunPage";
 import { ConfirmProvider } from "./state/confirmState";
 import { EditorProvider } from "./state/editorState";
 import { LibraryProvider, useLibraryState } from "./state/libraryState";
