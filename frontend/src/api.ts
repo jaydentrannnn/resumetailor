@@ -137,6 +137,9 @@ export type ApplySettings = {
   eligibility: EligibilitySettings;
   auto_submit_ats: string[];
   auto_submit_max_per_run: number;
+  /** Rolling 24-hour caps on automatic submits; 0 means none. */
+  auto_submit_max_per_day: number;
+  auto_submit_max_per_company_per_day: number;
   auto_submit_enabled: boolean;
   blocker_mode: "pause" | "continue";
   reuse_threshold: number;
@@ -2132,4 +2135,46 @@ export async function deleteSavedAnswer(id: number): Promise<SavedAnswer[]> {
   return (
     await request<{ answers: SavedAnswer[] }>(`/api/answer-memory/${id}`, { method: "DELETE" })
   ).answers;
+}
+
+// --- Auto-submit guard rails (P4-S) ---------------------------------------------------
+
+export type AutomationState = {
+  paused: boolean;
+  changed_at: string;
+  /** Automatic submits in the last 24 hours, against `max_per_day`. */
+  auto_submits_24h: number;
+  max_per_day: number;
+};
+
+export function fetchAutomation(): Promise<AutomationState> {
+  return request<AutomationState>("/api/automation");
+}
+
+export function setAutomationPaused(paused: boolean): Promise<AutomationState> {
+  return request<AutomationState>("/api/automation", {
+    method: "PUT",
+    body: JSON.stringify({ paused }),
+  });
+}
+
+/** One automatic submit's audit folder: screenshots and filled fields around the click. */
+export type SubmitEvidence = {
+  stamp: string;
+  files: string[];
+  url: string;
+  status: string;
+  confirmation: string;
+};
+
+export async function fetchSubmitEvidence(applicationId: string): Promise<SubmitEvidence[]> {
+  return (
+    await request<{ evidence: SubmitEvidence[] }>(
+      `/api/applications/${encodeURIComponent(applicationId)}/submit-evidence`,
+    )
+  ).evidence;
+}
+
+export function submitEvidenceFileUrl(applicationId: string, stamp: string, name: string): string {
+  return `/api/applications/${encodeURIComponent(applicationId)}/submit-evidence/${encodeURIComponent(stamp)}/${encodeURIComponent(name)}`;
 }

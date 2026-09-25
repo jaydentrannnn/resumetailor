@@ -17,7 +17,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from resume_tailor import config, logs, workspace
-from resume_tailor.apply import daily, fill, preparation, profile, store
+from resume_tailor.apply import daily, fill, preparation, profile, store, submit_guard
 from resume_tailor.web.schemas import ApplyOperationRequest, ApplySettings, JobSettings
 
 OperationState = Literal[
@@ -326,6 +326,25 @@ def _wait_if_paused(operation: ApplyOperation) -> Literal["resume", "skip", "can
     return "cancel"
 
 
+def _wait_while_automation_paused(operation: ApplyOperation) -> bool:
+    """Hold the batch while "Pause all automation" is on; False when cancelled meanwhile."""
+    if not submit_guard.is_paused():
+        return True
+    operation.state = "paused"
+    _event(
+        operation,
+        "automation_paused",
+        "Automation is paused. Turn it back on to continue with the next application.",
+    )
+    _persist(operation)
+    while not _CANCEL.wait(timeout=0.5):
+        if not submit_guard.is_paused():
+            operation.state = "running"
+            _event(operation, "resumed", "Automation resumed")
+            return True
+    return False
+
+
 def _worker(
     operation: ApplyOperation, request: ApplyOperationRequest,
     applicant_snapshot: profile.ApplicantProfile | None = None,
@@ -358,6 +377,8 @@ def _worker(
                 operation.failed = len(result.errors)
         else:
             for application_id in operation.application_ids:
+                if not _wait_while_automation_paused(operation):
+                    break
                 if _PAUSE.is_set() and not _CANCEL.is_set():
                     _PAUSE.clear()
                     operation.state = "paused"

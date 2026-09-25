@@ -68,7 +68,7 @@ export function ApplySettingsDrawer({
     }
     const ok = await confirm({
       title: "Turn on auto-submit?",
-      message: `Applications on the platforms you tick below will be submitted without you seeing them first. Workday always stops for your review. Nightly run: ${autoSubmitCapLabel(apply.auto_submit_max_per_run).toLowerCase()}.`,
+      message: `Applications on the platforms you tick below will be submitted without you seeing them first. Workday always stops for your review. Nightly run: ${autoSubmitCapLabel(apply.auto_submit_max_per_run).toLowerCase()}; at most ${apply.auto_submit_max_per_day} in any 24 hours.`,
       confirmLabel: "Turn on",
       tone: "danger",
     });
@@ -183,6 +183,39 @@ export function ApplySettingsDrawer({
               ({autoSubmitCapLabel(apply.auto_submit_max_per_run)})
             </span>
           </label>
+          <label className="mt-3 block">
+            In any 24 hours, submit at most{" "}
+            <input
+              className="field mx-1 inline-block w-20"
+              type="number"
+              min={0}
+              max={500}
+              aria-label="Automatic submits per 24 hours"
+              value={apply.auto_submit_max_per_day}
+              onChange={(e) =>
+                patch({ auto_submit_max_per_day: Math.max(0, Number(e.target.value) || 0) })
+              }
+            />{" "}
+            applications, and at most{" "}
+            <input
+              className="field mx-1 inline-block w-16"
+              type="number"
+              min={0}
+              max={50}
+              aria-label="Automatic submits per company per 24 hours"
+              value={apply.auto_submit_max_per_company_per_day}
+              onChange={(e) =>
+                patch({
+                  auto_submit_max_per_company_per_day: Math.max(0, Number(e.target.value) || 0),
+                })
+              }
+            />{" "}
+            to one company.
+          </label>
+          <p className="mt-2 text-xs text-ink-muted">
+            Forms over a limit, and possible duplicates of something you already applied to, wait
+            for your review instead. Automatic submits are spaced 20–90 seconds apart.
+          </p>
         </Section>
 
         <Section title="Autofill model">

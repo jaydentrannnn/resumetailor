@@ -14,7 +14,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from resume_tailor import config, data, jd, runs, workspace
-from resume_tailor.apply import browser, fetch_jd, fill, identity, sources, store
+from resume_tailor.apply import browser, fetch_jd, fill, identity, sources, store, submit_guard
 from resume_tailor.apply import eligibility as eligibility_mod
 from resume_tailor.apply import screen as screen_mod
 from resume_tailor.apply.screen import ScreenResult, screen
@@ -956,6 +956,9 @@ def _run_batch_submit(
 
     for app in to_submit:
         label = f"{app.company} — {app.role}".strip(" —")
+        if not dry_run and submit_guard.is_paused():
+            _append_log(log_path, "[batch-submit] stopped: automation is paused", log)
+            return
         if dry_run:
             _append_log(log_path, f"[would-submit] {label}", log)
             continue

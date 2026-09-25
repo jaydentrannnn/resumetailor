@@ -4,12 +4,13 @@ from __future__ import annotations
 
 import json
 from contextlib import contextmanager
+from pathlib import Path
 from unittest.mock import MagicMock
 
 import pytest
 
 from resume_tailor import config, data
-from resume_tailor.apply import answer, browser, fill, packet, store
+from resume_tailor.apply import answer, browser, clicks, fill, packet, store, submit_guard
 from resume_tailor.apply import profile as profile_mod
 from resume_tailor.apply.packet import Packet
 from resume_tailor.apply.profile import ApplicantProfile
@@ -185,9 +186,9 @@ def test_decide_submit_action_never_auto_submits_workday():
     assert fill.decide_submit_action(ats="greenhouse", settings=settings, ready_to_submit=True) == "auto_submit"
 
 
-def test_fill_application_auto_submit(fill_paths, monkeypatch):
-    """End-to-end fill stub should mark the application submitted on policy A."""
-    app = _ready_app()
+def _stub_greenhouse_form(fill_paths, monkeypatch, **app_fields):
+    """A ready Greenhouse application whose form fills cleanly and confirms on submit."""
+    app = _ready_app(**app_fields)
     monkeypatch.setattr(fill, "_find_submit_button", lambda _page, _hints: MagicMock())  # noqa: SLF001
     store.upsert(app)
 
@@ -233,6 +234,7 @@ def test_fill_application_auto_submit(fill_paths, monkeypatch):
 
     page.evaluate.side_effect = evaluate_form
     page.inner_text.side_effect = ["Application form", "Thank you for applying"]
+    page.screenshot.side_effect = lambda path, **_: Path(path).write_bytes(b"png")
     page.locator.return_value.first.evaluate.return_value = "Ada Lovelace Resume - Intern.pdf"
 
     @contextmanager
@@ -244,6 +246,12 @@ def test_fill_application_auto_submit(fill_paths, monkeypatch):
 
     monkeypatch.setattr(browser, "cdp_browser", _fake_browser)
 
+    return page
+
+
+def test_fill_application_auto_submit(fill_paths, monkeypatch):
+    """End-to-end fill stub should mark the application submitted on policy A."""
+    _stub_greenhouse_form(fill_paths, monkeypatch)
     result = fill.fill_application(
         "src-1",
         settings=ApplySettings(auto_submit_enabled=True, auto_submit_ats=["greenhouse"]),
@@ -254,6 +262,102 @@ def test_fill_application_auto_submit(fill_paths, monkeypatch):
     assert result.ready_to_submit is True
     updated = store.get("src-1")
     assert updated.status == "submitted"
+
+
+_AUTO = ApplySettings(auto_submit_enabled=True, auto_submit_ats=["greenhouse"])
+
+
+def test_auto_submit_writes_before_and_after_evidence(fill_paths, monkeypatch):
+    _stub_greenhouse_form(fill_paths, monkeypatch)
+    result = fill.fill_application("src-1", settings=_AUTO)
+    assert result.status == "submitted"
+    (audit,) = list((fill_paths / "applications" / "src-1").glob("submit-*"))
+    before = json.loads((audit / "before.json").read_text(encoding="utf-8"))
+    after = json.loads((audit / "after.json").read_text(encoding="utf-8"))
+    assert before["fields"][0]["key"] == "first_name"
+    assert after["status"] == "submitted"
+    assert (audit / "before.png").exists() and (audit / "after.png").exists()
+
+
+def test_paused_automation_holds_the_submit(fill_paths, monkeypatch):
+    _stub_greenhouse_form(fill_paths, monkeypatch)
+    clicked = []
+    monkeypatch.setattr(clicks, "submit_click", lambda *a, **k: clicked.append(a))
+    submit_guard.set_paused(True)
+    result = fill.fill_application("src-1", settings=_AUTO)
+    assert clicked == []
+    assert result.status == "awaiting_review"
+    assert result.ready_to_submit is True
+    assert result.handoff_reason == "Automation is paused"
+    assert store.get("src-1").status_history[-1].note == "Automation is paused"
+
+
+def test_daily_cap_holds_the_submit(fill_paths, monkeypatch):
+    _stub_greenhouse_form(fill_paths, monkeypatch)
+    clicked = []
+    monkeypatch.setattr(clicks, "submit_click", lambda *a, **k: clicked.append(a))
+    settings = _AUTO.model_copy(update={"auto_submit_max_per_day": 0})
+    result = fill.fill_application("src-1", settings=settings)
+    assert clicked == []
+    assert result.status == "awaiting_review"
+    assert result.handoff_reason.startswith("Daily cap reached")
+
+
+def test_duplicate_submitted_elsewhere_holds_the_submit(fill_paths, monkeypatch):
+    _stub_greenhouse_form(fill_paths, monkeypatch)
+    earlier = _ready_app(source_job_id="src-0", canonical_key="other:acme:0", company="ACME Inc.")
+    store.set_status(earlier, "submitted", note="manual")
+    store.upsert(earlier)
+    clicked = []
+    monkeypatch.setattr(clicks, "submit_click", lambda *a, **k: clicked.append(a))
+    result = fill.fill_application("src-1", settings=_AUTO)
+    assert clicked == []
+    assert result.handoff_reason == "Possible duplicate of ACME Inc. — Intern"
+
+
+def test_pause_during_pacing_wait_stops_the_submit(fill_paths, monkeypatch):
+    _stub_greenhouse_form(fill_paths, monkeypatch)
+    clicked = []
+    monkeypatch.setattr(clicks, "submit_click", lambda *a, **k: clicked.append(a))
+    monkeypatch.setattr(submit_guard, "_last_submit", submit_guard._clock())  # noqa: SLF001
+    monkeypatch.setattr(submit_guard, "_sleep", lambda _s: submit_guard.set_paused(True))
+    result = fill.fill_application("src-1", settings=_AUTO)
+    assert clicked == []
+    assert result.status == "awaiting_review"
+    assert "paused" in result.handoff_reason
+
+
+class _ConfirmPage:
+    def __init__(self, url: str, body: str) -> None:
+        self.url = url
+        self._body = body
+
+    def locator(self, _selector):
+        loc = MagicMock()
+        loc.first.count.return_value = 0
+        return loc
+
+    def inner_text(self, _selector):
+        return self._body
+
+
+@pytest.mark.parametrize(
+    ("ats", "before_url", "after_url", "before", "after", "confirmed"),
+    [
+        ("greenhouse", "https://x/apply", "https://x/apply", "Form", "Thank you for applying!", True),
+        ("lever", "https://x/apply", "https://x/apply", "Form", "Application submitted.", True),
+        ("icims", "https://x/apply", "https://x/job/confirmation", "Form", "Done", True),
+        ("taleo", "https://x/a", "https://x/a", "Form", "Thank you for submitting", True),
+        ("ashby", "https://x/a", "https://x/a", "Thanks for applying soon", "Thanks for applying soon", False),
+        ("greenhouse", "https://x/confirmation", "https://x/confirmation", "Form", "Form", False),
+        ("lever", "https://x/a", "https://x/a", "Form", "Please fix the errors", False),
+    ],
+)
+def test_submission_confirmed_uses_per_ats_markers(ats, before_url, after_url, before, after, confirmed):
+    page = _ConfirmPage(after_url, after)
+    assert fill._submission_confirmed(  # noqa: SLF001
+        page, before_url=before_url, before_body=before, confirmation_text="", ats=ats
+    ) is confirmed
 
 
 def test_unanswered_salary_question_forces_manual_review_even_with_auto_submit(fill_paths, monkeypatch):

@@ -161,6 +161,12 @@ def run_now(
     return True
 
 
+def _automation_paused() -> bool:
+    from resume_tailor.apply import submit_guard
+
+    return submit_guard.is_paused()
+
+
 def tick(
     *,
     enabled: bool,
@@ -168,7 +174,8 @@ def tick(
     busy: Callable[[], bool],
     start: Callable[[], None],
     now: Callable[[], datetime] = datetime.now,
-) -> Decision | Literal["busy", "disabled"]:
+    paused: Callable[[], bool] | None = None,
+) -> Decision | Literal["busy", "disabled", "paused"]:
     """One scheduler wake: start the day's run when it is due and nothing else runs.
 
     ``busy`` reports whether another Apply workflow owns the browser (retried next
@@ -194,6 +201,10 @@ def tick(
         return decision
     if decision != "run":
         return decision
+    if (paused or _automation_paused)():
+        # Retried every tick like "busy": turning automation back on inside the
+        # catch-up window still runs today's pass.
+        return "paused"
     if busy():
         return "busy"
     # Recorded before starting: a crash mid-run must not restart it on every boot.

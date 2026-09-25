@@ -129,6 +129,11 @@ class ApplySettings(BaseModel):
     #: `fill.decide_submit_action`).
     auto_submit_max_per_run: int = Field(default=0, ge=0)
     auto_submit_enabled: bool = False
+    #: Rolling 24-hour limits on automatic submits (`apply.submit_guard`). A form that
+    #: would go over is left for review with the note "Daily cap reached". `0` means no
+    #: automatic submits, never "no limit".
+    auto_submit_max_per_day: int = Field(default=25, ge=0)
+    auto_submit_max_per_company_per_day: int = Field(default=2, ge=0)
     blocker_mode: Literal["pause", "continue"] = "continue"
     reuse_threshold: float = 0.72
     cover_letter: bool = True

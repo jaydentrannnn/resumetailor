@@ -19,6 +19,7 @@ import { DocumentsCard } from "../components/DocumentsCard";
 import { Tabs } from "../components/Tabs";
 import { ExperienceCard } from "../components/ExperienceCard";
 import { SkillsCard } from "../components/SkillsCard";
+import { SubmitEvidenceList } from "../components/SubmitEvidenceList";
 import { applicationStatusLabel } from "../lib/applicationStatus";
 import { IN_FLIGHT_STATUSES } from "../lib/applyPoll";
 import { useWorkspaceState } from "../state/workspaceState";
@@ -324,6 +325,7 @@ export function ApplicationDetailPage() {
               <p className="text-sm text-ink-muted">No status changes recorded.</p>
             )}
           </section>
+          {applicationId && <SubmitEvidenceList applicationId={applicationId} />}
         </div>
       )}
       {tab === "notes" && (

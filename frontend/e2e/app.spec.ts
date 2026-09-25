@@ -114,3 +114,15 @@ test("template page: switch to a starter template", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Compact", level: 2 })).toBeVisible();
   await expectAccessible(page);
 });
+
+test("header: pause and resume all automation", async ({ page }) => {
+  await page.goto("/applications");
+  const pause = page.getByRole("button", { name: "Pause automation" });
+  await expect(pause).toHaveAttribute("aria-pressed", "false");
+  await pause.click();
+  const resume = page.getByRole("button", { name: /Automation paused/ });
+  await expect(resume).toHaveAttribute("aria-pressed", "true");
+  await expectAccessible(page);
+  await resume.click();
+  await expect(page.getByRole("button", { name: "Pause automation" })).toBeVisible();
+});

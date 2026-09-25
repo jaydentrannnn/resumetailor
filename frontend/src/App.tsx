@@ -15,6 +15,7 @@ import { needsWelcome } from "./lib/onboarding";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { SettingsMenu } from "./components/SettingsMenu";
 import { KeyboardShortcuts } from "./components/KeyboardShortcuts";
+import { AutomationSwitch } from "./components/AutomationSwitch";
 import { SetupHealth } from "./components/SetupHealth";
 import { ToastProvider } from "./components/ui/Toast";
 import { RunPage } from "./pages/run/RunPage";
@@ -152,6 +153,7 @@ function Shell() {
           </div>
           <div className="flex min-w-0 flex-wrap items-end gap-4">
             <SetupHealth />
+            <AutomationSwitch />
             <SettingsMenu />
           </div>
         </div>

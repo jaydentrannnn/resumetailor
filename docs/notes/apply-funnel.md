@@ -947,3 +947,31 @@ the tasks that first need them (a new entry in `db.MIGRATIONS`, never an edit).
 - Company handling: labels normalise the posting's company to `{company}`, so "Why Acme?" and "Why Beta?" are one question. The answer text is never rewritten. An answer that names a company other than the current posting's comes back `needs_review` and becomes a review item (`saved_answer_other_company` in the engine) instead of being filled.
 - Never stored or recalled: equal-opportunity questions (by label regex and by canonical key), passwords (label or `input_type`), codes, SSN, date of birth, signatures.
 - Test gap: there is no end-to-end harness for `engine.fill_application` in the suite. Recall is covered at the module level and capture through `review.correct` with a faked browser.
+
+## Auto-submit guard rails (P4-S)
+
+- **The guard runs at the last moment, in `fill.py`, not in the operation worker.** The
+  worker's `auto_submit_max_per_run` still decides the submit mode. Only the form knows
+  whether it is ready, and the registry can change during a long batch. So
+  `submit_guard.check` runs right before the click and re-reads everything live. A held form
+  ends `awaiting_review`, `ready_to_submit=True`, with the hold message as its handoff reason
+  and status note.
+- **The pause switch is global, not `kv('automation')`.** The plan put it in the
+  per-workspace DB, but "pause all automation" has to cover every profile. The scheduler
+  already iterates over them. It is a small JSON file under `DATA_ROOT`; a missing or
+  unreadable file means not paused. The scheduler returns `"paused"` without recording a run,
+  so resuming inside the 12-hour catch-up window still runs today's pass.
+- **Caps use a rolling 24 hours, not calendar days**, to avoid a burst at midnight. They
+  count `submitted` *and* `submit_unconfirmed` changes noted `auto_submit`, because an
+  unconfirmed click may have reached the employer. `0` means no automatic submits, never
+  "unlimited".
+- **Duplicates:** the row's own history comes first (a row submitted by hand and later
+  reopened is never auto-submitted). Then the same `group_key` at any age, or the same
+  normalised company and role submitted by any means within 30 days.
+- **Pacing is per process, with at most one submit in flight.** `pace()` holds a lock
+  across the click and sleeps in steps of at most 1 s, so a cancel or pause during the wait
+  stops the submit. A slot is only recorded when the submit went ahead. The tests replace
+  `_sleep`, `_clock` and `seed()`, and `conftest` makes sleeping a no-op everywhere.
+- **Audit evidence:** `before.json` (filled fields and uploads) is written *before* the
+  click and is required: if it cannot be written, the submit does not happen and the row
+  ends `fill_failed`. Screenshots are best-effort.

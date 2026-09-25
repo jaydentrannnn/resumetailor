@@ -82,6 +82,7 @@ from resume_tailor import (  # noqa: E402
     template_build,
     workspace,
 )
+from resume_tailor.apply import submit_guard  # noqa: E402
 from tests.fixtures import _docx_bytes, _full_featured_resume  # noqa: E402
 
 
@@ -141,6 +142,16 @@ def _isolated_apply_paths(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "APPLICATIONS_PATH", apply_dir / "applications.json")
     monkeypatch.setattr(config, "APPLICANT_PROFILE_PATH", apply_dir / "applicant_profile.json")
     monkeypatch.setattr(config, "APPLICATIONS_OUTPUT_DIR", apply_dir / "applications_out")
+
+
+@pytest.fixture(autouse=True)
+def _isolated_submit_guard(tmp_path, monkeypatch):
+    """Keep the pause switch per test and never really sleep between submits."""
+    monkeypatch.setattr(submit_guard, "pause_path", lambda: tmp_path / "automation.json")
+    monkeypatch.setattr(submit_guard, "_sleep", lambda _seconds: None)
+    submit_guard.reset()
+    yield
+    submit_guard.reset()
 
 
 @pytest.fixture(autouse=True)

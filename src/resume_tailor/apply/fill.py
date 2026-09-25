@@ -29,6 +29,7 @@ from resume_tailor.apply import (
     field_matcher,
     hybrid_resolver,
     store,
+    submit_guard,
     workday_auth,
     workday_flow,
 )
@@ -316,31 +317,117 @@ def _form_step_signature(page: Any) -> tuple[str, tuple[str, ...]] | None:
     return None
 
 
+#: What each ATS shows after a successful submit: page selectors, and phrases that
+#: must be new on the page (absent before the click). Any one signal confirms. Generic
+#: markers apply to every ATS; the packet's ``confirmation_text`` hint is added too.
+_CONFIRMATION_MARKERS: dict[str, dict[str, tuple[str, ...]]] = {
+    "": {
+        "selectors": (
+            "[data-automation-id='applicationSubmitted']",
+            "[data-testid='application-submitted']",
+            ".application-confirmation",
+        ),
+        "texts": (),
+        "urls": (),
+    },
+    "greenhouse": {
+        "selectors": ("#application_confirmation",),
+        "texts": ("thank you for applying", "application has been submitted"),
+        "urls": ("/confirmation",),
+    },
+    "lever": {
+        "selectors": (".application-confirmation", ".thanks"),
+        "texts": ("application submitted", "thanks for applying"),
+        "urls": ("/thanks",),
+    },
+    "ashby": {
+        "selectors": (),
+        "texts": ("thanks for applying", "application was successfully submitted"),
+        "urls": (),
+    },
+    "icims": {
+        "selectors": (),
+        "texts": ("thank you for applying", "thank you for your interest"),
+        "urls": ("/confirmation",),
+    },
+    "smartrecruiters": {
+        "selectors": (),
+        "texts": ("thank you for applying", "application has been sent"),
+        "urls": ("/confirmation",),
+    },
+    "taleo": {
+        "selectors": (),
+        "texts": ("thank you for submitting", "application has been submitted"),
+        "urls": (),
+    },
+}
+
+
+def confirmation_markers(ats: str) -> dict[str, tuple[str, ...]]:
+    """The generic markers plus ``ats``'s own."""
+    generic = _CONFIRMATION_MARKERS[""]
+    own = _CONFIRMATION_MARKERS.get((ats or "").lower(), {})
+    return {
+        name: generic[name] + tuple(own.get(name, ()))
+        for name in ("selectors", "texts", "urls")
+    }
+
+
 def _submission_confirmed(
     page: Any,
     *,
     before_url: str,
     before_body: str,
     confirmation_text: str,
+    ats: str = "",
 ) -> bool:
     """Require a post-click confirmation signal that was absent before submission."""
+    markers = confirmation_markers(ats)
     try:
-        submitted_marker = page.locator(
-            "[data-automation-id='applicationSubmitted'], "
-            "[data-testid='application-submitted'], .application-confirmation"
-        ).first
+        submitted_marker = page.locator(", ".join(markers["selectors"])).first
         if _is_locator_present_and_visible(submitted_marker):
             return True
     except Exception:  # noqa: BLE001
         pass
-    after_body = page.inner_text("body")
-    marker = confirmation_text.casefold().strip()
-    marker_is_new = bool(
-        marker
-        and marker in after_body.casefold()
-        and marker not in before_body.casefold()
+    after_url = _page_url(page).casefold()
+    if any(
+        fragment in after_url and fragment not in (before_url or "").casefold()
+        for fragment in markers["urls"]
+    ):
+        return True
+    after_body = page.inner_text("body").casefold()
+    before = (before_body or "").casefold()
+    phrases = [confirmation_text.casefold().strip(), *markers["texts"]]
+    return any(
+        phrase and phrase in after_body and phrase not in before for phrase in phrases
     )
-    return marker_is_new
+
+
+def _page_url(page: Any) -> str:
+    try:
+        return str(page.url)
+    except Exception:  # noqa: BLE001
+        return ""
+
+
+def _record_submit_evidence(
+    page: Any, folder: Path, phase: str, payload: dict[str, Any], *, required: bool = False,
+) -> None:
+    """Write ``<phase>.json`` and a full-page ``<phase>.png`` to a submit's audit folder.
+
+    The JSON before a submit is ``required``: if it cannot be written, the submit does
+    not happen. The screenshot is always best-effort.
+    """
+    try:
+        folder.mkdir(parents=True, exist_ok=True)
+        (folder / f"{phase}.json").write_text(
+            json.dumps(payload, indent=2, default=str), encoding="utf-8"
+        )
+    except OSError as exc:
+        if required:
+            raise RuntimeError(f"Could not record submit evidence: {exc}") from exc
+    with contextlib.suppress(Exception):
+        page.screenshot(path=str(folder / f"{phase}.png"), full_page=True)
 
 
 def _attachment_purpose(
@@ -1442,52 +1529,85 @@ def fill_application(
             )
             if should_cancel and should_cancel():
                 action = "awaiting_review"
+            held: submit_guard.Hold | None = None
             if action == "auto_submit":
-                submit_sel = _hint_selector(hints, "submit")
-                confirm_text = hints.get("confirmation_text") or "thank you"
-                dispatched = False
-                try:
-                    before_url = page.url
-                    before_body = page.inner_text("body")
-                    submit_btn = page.locator(submit_sel).first if submit_sel else _find_submit_button(page, hints)
-                    if submit_btn is None or submit_btn.count() == 0:
-                        raise RuntimeError("Final submit button was not found")
-                    # Persist intent before dispatch. A crash after this point must
-                    # never cause an automatic second click on restart.
-                    app.fill = FillResult(
-                        filled=list(merged.get("filled") or []),
-                        leftovers=list(merged.get("leftovers") or []),
-                        uploads=uploads,
-                        required_empty=required_empty,
-                        ready_to_submit=ready_to_submit,
-                        submit_action="auto_submit",
-                        status="submit_unconfirmed",
-                        browser_target_id=target_id,
-                        browser_url=before_url,
-                        handoff_reason="Submission dispatched; confirmation pending",
-                        final_step_reached=final_step_reached,
-                    )
-                    store.upsert(app)
-                    dispatched = True
-                    clicks.submit_click(submit_btn, decision=action, timeout=10_000)
-                    page.wait_for_load_state("networkidle", timeout=30_000)
-                    if _submission_confirmed(
-                        page,
-                        before_url=before_url,
-                        before_body=before_body,
-                        confirmation_text=confirm_text,
-                    ):
-                        confirmation = confirm_text
-                        submit_action = "auto_submit"
-                        final_status = "submitted"
+                held = submit_guard.check(app, settings)
+                if held is not None:
+                    action = "awaiting_review"
+                    progress(f"auto-submit held: {held.message}")
+            if action == "auto_submit":
+                with submit_guard.pace(
+                    should_cancel=should_cancel,
+                    on_wait=lambda seconds: progress(f"waiting {seconds:.0f}s before submitting"),
+                ) as go:
+                    if not go:
+                        held = submit_guard.Hold(
+                            "paused", "Submit stopped: cancelled or paused while waiting"
+                        )
                     else:
-                        confirmation = "missing"
-                        submit_action = "auto_submit"
-                        final_status = "submit_unconfirmed"
-                except Exception as exc:  # noqa: BLE001
-                    confirmation = str(exc)
-                    submit_action = "auto_submit"
-                    final_status = "submit_unconfirmed" if dispatched else "fill_failed"
+                        submit_sel = _hint_selector(hints, "submit")
+                        confirm_text = hints.get("confirmation_text") or "thank you"
+                        dispatched = False
+                        try:
+                            before_url = page.url
+                            before_body = page.inner_text("body")
+                            submit_btn = (
+                                page.locator(submit_sel).first
+                                if submit_sel
+                                else _find_submit_button(page, hints)
+                            )
+                            if submit_btn is None or submit_btn.count() == 0:
+                                raise RuntimeError("Final submit button was not found")
+                            # Persist intent before dispatch. A crash after this point must
+                            # never cause an automatic second click on restart.
+                            app.fill = FillResult(
+                                filled=list(merged.get("filled") or []),
+                                leftovers=list(merged.get("leftovers") or []),
+                                uploads=uploads,
+                                required_empty=required_empty,
+                                ready_to_submit=ready_to_submit,
+                                submit_action="auto_submit",
+                                status="submit_unconfirmed",
+                                browser_target_id=target_id,
+                                browser_url=before_url,
+                                handoff_reason="Submission dispatched; confirmation pending",
+                                final_step_reached=final_step_reached,
+                            )
+                            store.upsert(app)
+                            stamp = time.strftime("%Y%m%dT%H%M%SZ", time.gmtime())
+                            audit_dir = out_dir / f"submit-{stamp}"
+                            _record_submit_evidence(page, audit_dir, "before", {
+                                "url": before_url,
+                                "fields": list(merged.get("filled") or []),
+                                "uploads": uploads,
+                            }, required=True)
+                            dispatched = True
+                            clicks.submit_click(submit_btn, decision=action, timeout=10_000)
+                            page.wait_for_load_state("networkidle", timeout=30_000)
+                            if _submission_confirmed(
+                                page,
+                                before_url=before_url,
+                                before_body=before_body,
+                                confirmation_text=confirm_text,
+                                ats=app.ats or pkt.ats,
+                            ):
+                                confirmation = confirm_text
+                                submit_action = "auto_submit"
+                                final_status = "submitted"
+                            else:
+                                confirmation = "missing"
+                                submit_action = "auto_submit"
+                                final_status = "submit_unconfirmed"
+                        except Exception as exc:  # noqa: BLE001
+                            confirmation = str(exc)
+                            submit_action = "auto_submit"
+                            final_status = "submit_unconfirmed" if dispatched else "fill_failed"
+                        if dispatched:
+                            _record_submit_evidence(page, audit_dir, "after", {
+                                "url": _page_url(page),
+                                "status": final_status,
+                                "confirmation": confirmation,
+                            })
 
             outcomes = {
                 (item.get("frame_index", 0), item.get("selector")): item
@@ -1514,7 +1634,11 @@ def fill_application(
                 status=final_status,
                 browser_target_id=target_id,
                 browser_url=page.url,
-                handoff_reason=barrier_hit or ("missing answers" if required_empty or needs_review else "ready for review"),
+                handoff_reason=barrier_hit or (
+                    "missing answers" if required_empty or needs_review
+                    else held.message if held
+                    else "ready for review"
+                ),
                 final_step_reached=final_step_reached,
                 field_outcomes=list(outcomes.values()),
                 missing_profile=apply_packet.missing_profile(
@@ -1530,7 +1654,7 @@ def fill_application(
                 result.model_dump_json(indent=2), encoding="utf-8"
             )
             # Policy B: leave the tab open when awaiting human review.
-            note = barrier_hit if barrier_hit else submit_action
+            note = barrier_hit or (held.message if held else submit_action)
             store.set_status(app, final_status, note=note)  # type: ignore[arg-type]
             app.fill = result
             store.upsert(app)

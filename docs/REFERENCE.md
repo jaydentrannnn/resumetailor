@@ -187,7 +187,18 @@ The SPA starts persistent `find`, `prepare`, and `fill` operations through
 required fields and each intended attachment before submission. Auto-submit additionally
 requires `auto_submit_enabled`, ATS membership in `auto_submit_ats`, and remaining room under
 `auto_submit_max_per_run`. Workday is never auto-submitted (`fill.decide_submit_action`
-returns `awaiting_review` for it whatever the settings). The Apply page sends
+returns `awaiting_review` for it whatever the settings). Right before the click,
+`apply/submit_guard.check` can still hold the form for review with a plain note. It holds when
+the header's "Pause all automation" switch is on (`<DATA_ROOT>/automation.json`, shared by every
+profile). It holds when the rolling 24-hour caps are reached (`auto_submit_max_per_day`
+default 25, `auto_submit_max_per_company_per_day` default 2), counted from `auto_submit`
+status notes. It also holds a possible duplicate: the row was already submitted, or a row in
+the same group or with the same company and role was submitted in the last 30 days.
+`submit_guard.pace` spaces automatic submits 20–90 s apart, one at a time. Each submit writes
+`submit-<UTC stamp>/{before,after}.{json,png}` next to `fill.json`, shown on the detail page's
+Timeline. `fill.confirmation_markers` adds per-ATS confirmation selectors, phrases and URL
+fragments. The pause switch also holds the operation worker between applications, stops the
+nightly batch submit, and makes the scheduler wait. The Apply page sends
 `blocker_mode="continue"` for Fill selected; older API callers may still request pause.
 Fill results persist a CDP tab target ID for same-tab Continue and Review actions, and
 Workday verification returns a handoff instead of waiting in the worker. Applicant-profile API
