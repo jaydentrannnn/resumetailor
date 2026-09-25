@@ -1,5 +1,8 @@
 import { type ReactNode, useEffect, useId, useRef } from "react";
 
+/** Open dialogs, newest last: only the topmost handles Escape and Tab (a confirm over a drawer). */
+const openDialogs: object[] = [];
+
 const FOCUSABLE_SELECTOR =
   'button:not([disabled]), input:not([disabled]), select:not([disabled]), textarea:not([disabled]), a[href], [tabindex]:not([tabindex="-1"])';
 
@@ -15,26 +18,36 @@ export function Modal({
   onClose,
   children,
   wide,
+  placement = "center",
 }: {
   title: string;
   onClose: () => void;
   children: ReactNode;
   /** Wider panel for pack editors and similar dense content. */
   wide?: boolean;
+  /** "right" renders a full-height side drawer (Apply settings). */
+  placement?: "center" | "right";
 }) {
   const titleId = useId();
   const dialogRef = useRef<HTMLDivElement>(null);
   const overlayMouseDown = useRef(false);
+  // Read through a ref so a parent re-render (a new inline `onClose`) never re-runs the
+  // focus effect below, which would pull focus out of a field mid-typing.
+  const onCloseRef = useRef(onClose);
+  onCloseRef.current = onClose;
 
   useEffect(() => {
     /** Standard modal keyboard contract: focus moves in on open and back to the
      * trigger on close, Escape closes, and Tab cannot leave the dialog. */
     const previouslyFocused = document.activeElement as HTMLElement | null;
     dialogRef.current?.focus();
+    const token = {};
+    openDialogs.push(token);
 
     function onKeyDown(e: KeyboardEvent) {
+      if (openDialogs[openDialogs.length - 1] !== token) return;
       if (e.key === "Escape") {
-        onClose();
+        onCloseRef.current();
         return;
       }
       if (e.key !== "Tab" || !dialogRef.current) return;
@@ -53,16 +66,21 @@ export function Modal({
     document.addEventListener("keydown", onKeyDown);
     return () => {
       document.removeEventListener("keydown", onKeyDown);
+      openDialogs.splice(openDialogs.indexOf(token), 1);
       previouslyFocused?.focus();
     };
-  }, [onClose]);
+  }, []);
 
   return (
     <div
       // `overflow-y-auto` here (not on the panel) so content taller than the viewport
       // scrolls the whole dialog, header included — a wide modal over dense content
       // (a vocabulary pack with 6+ verb families) can easily exceed viewport height.
-      className="fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-ink/40 px-4 py-12"
+      className={
+        placement === "right"
+          ? "fixed inset-0 z-50 flex justify-end bg-ink/40"
+          : "fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-ink/40 px-4 py-12"
+      }
       onMouseDown={(e) => {
         overlayMouseDown.current = e.target === e.currentTarget;
       }}
@@ -77,9 +95,13 @@ export function Modal({
         aria-modal="true"
         aria-labelledby={titleId}
         tabIndex={-1}
-        className={`w-full rounded-xl border border-line bg-panel p-5 shadow-lg outline-none ${
-          wide ? "max-w-2xl" : "max-w-lg"
-        }`}
+        className={
+          placement === "right"
+            ? "h-full w-full max-w-md overflow-y-auto border-l border-line bg-panel p-5 shadow-lg outline-none"
+            : `w-full rounded-xl border border-line bg-panel p-5 shadow-lg outline-none ${
+                wide ? "max-w-2xl" : "max-w-lg"
+              }`
+        }
         onClick={(e) => e.stopPropagation()}
         onMouseDown={(e) => e.stopPropagation()}
       >

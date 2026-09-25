@@ -911,9 +911,14 @@ def set_status(
     if app.status == new_status and not note:
         return app
     at = _now_iso()
-    # A submitted application is done with the working queue. Only the transition
-    # archives it: a submitted row the user restores stays restored.
-    if new_status == "submitted" and app.status != "submitted" and not app.archived_at:
+    # A submitted or skipped application is done with the working queue (the Apply
+    # page's "Done" tab lists archived rows). Only the transition archives it: a row
+    # the user restores stays restored.
+    if (
+        new_status in ("submitted", "skipped")
+        and app.status != new_status
+        and not app.archived_at
+    ):
         app.archived_at = at
     # A failed recheck can set screened_out on a restored screened_out row again.
     if new_status == "screened_out" and not app.archived_at:

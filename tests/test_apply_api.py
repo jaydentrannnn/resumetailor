@@ -390,3 +390,40 @@ def test_application_list_answers_304_when_unchanged(client):
     changed = c.get("/api/applications?limit=50", headers={"If-None-Match": etag})
     assert changed.status_code == 200 and changed.headers["etag"] != etag
     assert changed.json()["total"] == first.json()["total"] + 1
+
+
+def test_daily_run_now_starts_the_pass_or_refuses_while_busy(client, tmp_path, monkeypatch):
+    """Apply settings → Run now starts the nightly pass through the scheduler's own seams."""
+    from resume_tailor.web import app as web_app
+
+    c, _q = client
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path / "data")
+    started: list[bool] = []
+    monkeypatch.setattr(web_app, "_start_daily_run", lambda: started.append(True))
+    monkeypatch.setattr(web_app, "_apply_busy", lambda: False)
+    res = c.post("/api/applications/daily-run")
+    assert res.status_code == 202
+    assert started == [True]
+    assert res.json()["scheduler"]["last_started_at"]
+
+    monkeypatch.setattr(web_app, "_apply_busy", lambda: True)
+    res = c.post("/api/applications/daily-run")
+    assert res.status_code == 409
+    assert started == [True]
+
+
+def test_notes_route_saves_only_the_notes(client):
+    """The detail page's Notes tab writes `notes` and nothing else, archived or not."""
+    c, _q = client
+    apply_store.save_all({
+        "a": apply_store.Application(
+            source="simplify", source_job_id="a", company="Acme", role="Analyst", status="ready"
+        ),
+    })
+    res = c.put("/api/applications/a/notes", json={"notes": "Recruiter: Sam, follow up Friday"})
+    assert res.status_code == 200
+    stored = apply_store.get("a")
+    assert stored.notes == "Recruiter: Sam, follow up Friday"
+    assert stored.status == "ready"
+    assert c.put("/api/applications/zzz/notes", json={"notes": "x"}).status_code == 404
+    assert c.put("/api/applications/a/notes", json={"notes": "x" * 20_001}).status_code == 422

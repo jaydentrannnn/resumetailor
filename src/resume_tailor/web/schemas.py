@@ -1152,6 +1152,12 @@ class ApplicationStatusRequest(BaseModel):
     note: str = ""
 
 
+class ApplicationNotesRequest(BaseModel):
+    """Body for ``PUT /api/applications/{source_job_id}/notes`` (the detail page's Notes tab)."""
+
+    notes: str = Field(default="", max_length=20_000)
+
+
 class AnswerRequest(BaseModel):
     """Body for ``POST /api/jobs/{job_id}/answer``."""
 
@@ -1197,7 +1203,7 @@ class ApplyOperationRequest(BaseModel):
 class ApplyOperationControlRequest(BaseModel):
     """Control a running or paused Apply operation."""
 
-    action: Literal["resume", "skip", "cancel"]
+    action: Literal["pause", "resume", "skip", "cancel"]
 
 
 class ApplyOperationResponse(BaseModel):

@@ -104,6 +104,8 @@ _ACTIVE_ID: str | None = None
 _CANCEL = threading.Event()
 _RESUME = threading.Event()
 _SKIP = threading.Event()
+#: The applicant pressed Pause: stop before the next application (never mid-form).
+_PAUSE = threading.Event()
 
 
 def _path() -> Path:
@@ -294,6 +296,7 @@ def start(request: ApplyOperationRequest) -> ApplyOperation:
     _CANCEL.clear()
     _RESUME.clear()
     _SKIP.clear()
+    _PAUSE.clear()
     with _LOCK:
         _ACTIVE_ID = operation.operation_id
     _persist(operation)
@@ -355,6 +358,14 @@ def _worker(
                 operation.failed = len(result.errors)
         else:
             for application_id in operation.application_ids:
+                if _PAUSE.is_set() and not _CANCEL.is_set():
+                    _PAUSE.clear()
+                    operation.state = "paused"
+                    _event(
+                        operation,
+                        "paused_by_user",
+                        "Paused. Resume continues with the next application.",
+                    )
                 if _CANCEL.is_set() or _wait_if_paused(operation) == "cancel":
                     break
                 app = store.get(application_id)
@@ -475,7 +486,9 @@ def _worker(
         _RUN_LOCK.release()
 
 
-def control(operation_id: str, action: Literal["resume", "skip", "cancel"]) -> ApplyOperation:
+def control(
+    operation_id: str, action: Literal["pause", "resume", "skip", "cancel"]
+) -> ApplyOperation:
     operation = get(operation_id)
     if operation is None:
         raise KeyError(operation_id)
@@ -484,6 +497,11 @@ def control(operation_id: str, action: Literal["resume", "skip", "cancel"]) -> A
             raise RuntimeError("Apply operation is no longer active")
     if action == "cancel":
         _CANCEL.set()
+    elif action == "pause":
+        if operation.action == "find":
+            raise RuntimeError("Finding jobs cannot be paused; cancel it instead")
+        _PAUSE.set()
+        _event(operation, "pause_requested", "Pausing after the current application…")
     elif action == "skip":
         _SKIP.set()
     else:

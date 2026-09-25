@@ -4,7 +4,7 @@ import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ProfileGapBanner } from "./ProfileGapBanner";
 import { MissingProfileFields } from "./MissingProfileFields";
-import { ProfileGapsNotice } from "../pages/ApplicationsDashboard";
+import { ProfileGapsNotice } from "./ProfileGapsNotice";
 
 // No `test.globals`, so Testing Library's automatic cleanup never registers.
 afterEach(() => cleanup());

@@ -91,3 +91,33 @@ def test_status_after_a_run():
     assert info["last_run_date"] == "2026-09-25"
     assert info["next_run_at"] == "2026-09-26T02:00"
     assert info["missed_today"] is False
+
+
+def _run_now(now, *, busy=False, schedule="02:00", started=None):
+    started = started if started is not None else []
+    return scheduler.run_now(
+        schedule_time=schedule,
+        busy=lambda: busy,
+        start=lambda: started.append(now),
+        now=lambda: now,
+    )
+
+
+def test_run_now_after_todays_time_counts_as_todays_run():
+    started: list[datetime] = []
+    assert _run_now(datetime(2026, 9, 25, 13, 0), started=started) is True
+    assert _tick(datetime(2026, 9, 25, 13, 1), started=started) == "done"
+    assert len(started) == 1
+
+
+def test_run_now_before_todays_time_keeps_tonights_run():
+    started: list[datetime] = []
+    assert _run_now(datetime(2026, 9, 25, 13, 0), schedule="23:00", started=started) is True
+    assert _tick(datetime(2026, 9, 25, 23, 0), schedule="23:00", started=started) == "run"
+    assert len(started) == 2
+
+
+def test_run_now_refuses_while_busy():
+    started: list[datetime] = []
+    assert _run_now(datetime(2026, 9, 25, 13, 0), busy=True, started=started) is False
+    assert started == []

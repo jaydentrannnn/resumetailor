@@ -249,3 +249,46 @@ blank entry headers before the Pydantic path; server validation remains authorit
   runs' `/bullets` and diffs the bullets each final document shows (`current_text`),
   keyed by master bullet id (`lib/runHistory.compareRuns`). Runs made before the render
   snapshot existed cannot be compared; the dialog shows the 409 text.
+
+## Apply page 2D (A1–A8)
+
+- `pages/ApplicationsDashboard.tsx` became `pages/apply/{ApplyPage, ApplicationsTable,
+  ApplySettingsDrawer, OperationBanner, BrowserConnection, useApplicationTable}`; pure
+  logic is in `lib/applyPage.ts` and `lib/applyNotify.ts`. `ProfileGapsNotice` moved to
+  `components/`. `ApplicationProgress` was replaced by `OperationBanner`.
+- Tabs (`?tab=needs|progress|done`) map to the existing list groups: review, working,
+  archived. With no `tab` param the page waits for the review count (skeleton) and then
+  opens Needs you if anything waits, so it never flips tabs after first paint. Done =
+  archived. To make "Done" hold what students expect, `store.set_status` now archives on
+  the transition to **skipped** as well as submitted (a restore still sticks).
+- "Why it needs you" (`reviewReason`) is built client-side from the server's
+  `review_summary` plus fill hand-off details, so no second copy of the store logic.
+  The row's primary button names the step ("Sign in", "Answer 3", "Enter code",
+  "Final check"); a blank profile fact links straight to its field. Continue/Reopen keep
+  priority when the fill's tab state allows them. There is no in-app OTP entry: the code
+  goes into the browser tab, then Continue.
+- Settings drawer = `Modal placement="right"`. Modal now reads `onClose` through a ref
+  (a parent re-render no longer re-runs the focus effect and steals focus mid-typing),
+  and only the topmost open dialog handles Escape/Tab (a confirm over the drawer).
+  Auto-submit asks for confirmation when turned on and exposes `auto_submit_ats`, which
+  `fill.decide_submit_action` already required but no UI set, so enabling auto-submit
+  used to do nothing. A warning shows when no platform is ticked. A cap of 0 reads "No
+  auto-submits".
+- Pause: `operations.control("pause")` sets `_PAUSE`; the worker checks it only at the
+  top of the per-application loop (stage `paused_by_user`), so it never interrupts a
+  form. `find` can't be paused. For a user pause, Skip is hidden: the server's skip at
+  the top of the loop would just resume.
+- "Run now" = `POST /api/applications/daily-run` → `scheduler.run_now` with app.py's own
+  `_apply_busy`/`_start_daily_run`. It counts as today's scheduled run only when today's
+  time has already passed, so a midday run never cancels tonight's.
+- Desktop notifications use the browser Notification API (opt-in, per-browser
+  localStorage `rt.apply.notify`). They come from `applyNotifications(prev, next)`
+  diffs, and the first poll never notifies. Tauri native notifications replace this in
+  Phase 5.
+- Detail page tabs: Overview, Job description, Files (with the T4 bullet editor; the
+  rerender route already rebuilds the packet), Answers (the fill's `long_text_answers` +
+  packet), Form review, Timeline, Notes (`PUT /api/applications/{id}/notes`, via
+  `store.patch`). Old `?tab=documents|content` links are aliased. Editing prepared
+  answers is deferred to P3-A (answer memory). No screenshots exist yet
+  (`FillResult.screenshot_path` is never written), so the Timeline shows status history
+  only until SS5.

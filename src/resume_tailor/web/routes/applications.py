@@ -36,6 +36,7 @@ from resume_tailor.web.schemas import (
     ApplicantProfileResponse,
     ApplicantProfileUpdateRequest,
     ApplicationDetailResponse,
+    ApplicationNotesRequest,
     ApplicationOut,
     ApplicationsListResponse,
     ApplicationStatusRequest,
@@ -469,6 +470,24 @@ def get_daily_status() -> DailyStatusResponse:
     )
 
 
+@router.post("/api/applications/daily-run", response_model=DailyStatusResponse, status_code=202)
+def run_daily_now() -> DailyStatusResponse:
+    """Start the nightly discover/screen/tailor pass now (Apply settings → Run now)."""
+    from resume_tailor.web import app as web_app  # the scheduler's own busy/start pair
+
+    apply_settings = JobSettings.model_validate(workspace.load_settings()["defaults"]).apply
+    started = apply_scheduler.run_now(
+        schedule_time=apply_settings.schedule_time,
+        busy=web_app._apply_busy,
+        start=web_app._start_daily_run,
+    )
+    if not started:
+        raise HTTPException(
+            status_code=409, detail="Another Apply task is running. Try again when it finishes."
+        )
+    return get_daily_status()
+
+
 @router.get("/api/applications/export.csv")
 def export_applications_csv() -> StreamingResponse:
     """Download the application tracker as CSV."""
@@ -520,6 +539,17 @@ def set_application_status(
     except ValueError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     return _application_out(apply_store.upsert(app))
+
+
+@router.put("/api/applications/{source_job_id}/notes", response_model=ApplicationOut)
+def set_application_notes(source_job_id: str, body: ApplicationNotesRequest) -> ApplicationOut:
+    """Save the applicant's own notes; only that field changes (merge-on-write)."""
+    try:
+        app = apply_store.patch(source_job_id, notes=body.notes)
+    except apply_store.StaleApplication as exc:
+        detail = f"Unknown application {source_job_id!r}."
+        raise HTTPException(status_code=404, detail=detail) from exc
+    return _application_out(app)
 
 
 @router.post("/api/applications/{source_job_id}/retry", response_model=ApplicationOut)

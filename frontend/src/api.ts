@@ -337,6 +337,9 @@ export type ApplicationRow = {
     review_snapshot_id?: string;
     review_fields?: ApplyReviewField[];
     missing_profile?: MissingProfileField[];
+    /** Written answers the fill drafted, by question. */
+    long_text_answers?: Record<string, string>;
+    confirmation?: string;
   } | null;
 };
 
@@ -457,7 +460,7 @@ export function correctApplicationField(
 
 export function controlApplyOperation(
   operationId: string,
-  action: "resume" | "skip" | "cancel",
+  action: "pause" | "resume" | "skip" | "cancel",
 ): Promise<ApplyOperation> {
   return request(`/api/applications/operations/${encodeURIComponent(operationId)}/control`, {
     method: "POST",
@@ -1878,6 +1881,19 @@ export type SchedulerStatus = {
 /** Poll phase/counters for the daily funnel. */
 export function getDailyStatus(): Promise<DailyStatus> {
   return request("/api/applications/daily-status");
+}
+
+/** Save the applicant's own notes on one application. */
+export function setApplicationNotes(sourceJobId: string, notes: string): Promise<ApplicationRow> {
+  return request(`/api/applications/${encodeURIComponent(sourceJobId)}/notes`, {
+    method: "PUT",
+    body: JSON.stringify({ notes }),
+  });
+}
+
+/** Start the nightly pass now; 409 while another Apply task runs. */
+export function runDailyNow(): Promise<DailyStatus> {
+  return request("/api/applications/daily-run", { method: "POST" });
 }
 
 /** Probe host browser CDP reachability (Edge recommended — see README). */

@@ -161,7 +161,7 @@ function Shell() {
         <Suspense fallback={<PageLoading />}>
           <Routes>
             <Route path="/" element={<RunPage />} />
-            <Route path="/applications" element={<ApplicationsDashboard />} />
+            <Route path="/applications" element={<ApplyPage />} />
             <Route path="/applications/:applicationId" element={<ApplicationDetailPage />} />
             <Route path="/profile" element={<Navigate to="/profile/personal" replace />} />
             <Route path="/profile/personal" element={<ProfilePage />} />
@@ -181,8 +181,8 @@ function Shell() {
 
 // The Tailor page loads with the app; every other page is fetched on first visit, so
 // the first paint does not wait for the editor, Apply dashboard and template wizard.
-const ApplicationsDashboard = lazy(() =>
-  import("./pages/ApplicationsDashboard").then((m) => ({ default: m.ApplicationsDashboard })),
+const ApplyPage = lazy(() =>
+  import("./pages/apply/ApplyPage").then((m) => ({ default: m.ApplyPage })),
 );
 const ApplicationDetailPage = lazy(() =>
   import("./pages/ApplicationDetailPage").then((m) => ({ default: m.ApplicationDetailPage })),

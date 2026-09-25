@@ -476,6 +476,16 @@ def test_set_status_submitted_archives_the_row(apps_path):
     assert app.archived_at is not None
 
 
+def test_set_status_skipped_archives_the_row_once(apps_path):
+    """Skipping moves a row to the Apply page's Done tab; a restore sticks."""
+    app = _sample_app(status="ready")
+    store.set_status(app, "skipped")
+    assert app.archived_at == app.status_history[-1].at
+    app.archived_at = None
+    store.set_status(app, "skipped", note="still skipped")
+    assert app.archived_at is None
+
+
 def test_set_status_screened_out_archives_new_and_restored_rows(apps_path):
     app = _sample_app(status="jd_fetched")
     store.set_status(app, "screened_out", note="prefilter: citizenship_required")

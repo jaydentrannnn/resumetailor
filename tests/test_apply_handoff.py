@@ -157,3 +157,49 @@ def test_resume_after_pause_continues_in_the_retained_tab(tmp_path, monkeypatch)
     assert modes == ["initial", "continue"]
     assert finished.state == "completed"
     assert (finished.blocked, finished.needs_input, finished.ready_for_review) == (0, 0, 1)
+
+
+def test_user_pause_stops_before_the_next_application(tmp_path, monkeypatch):
+    """Pause never interrupts a form: it holds the batch before the next application."""
+    import threading
+
+    monkeypatch.setattr(config, "APPLICATIONS_OUTPUT_DIR", tmp_path / "output")
+    apps = {
+        key: store.Application(
+            source="test", source_job_id=key, company="Acme", role="SWE", status="ready", job_id=f"job-{key}"
+        )
+        for key in ("one", "two")
+    }
+    monkeypatch.setattr(operations.store, "get", apps.get)
+    monkeypatch.setattr(operations, "_captured_settings", lambda _request: ApplySettings())
+    monkeypatch.setattr(operations.daily, "daily_busy", lambda: False)
+    monkeypatch.setattr(
+        preparation, "check", lambda _app, **_kwargs: preparation.PreparationEligibility(eligible=True)
+    )
+    in_first = threading.Event()
+    release = threading.Event()
+    filled: list[str] = []
+
+    def fake_fill(application_id: str, **_kwargs):
+        filled.append(application_id)
+        if application_id == "one":
+            in_first.set()
+            release.wait(5)
+        return store.FillResult(status="awaiting_review", ready_to_submit=True)
+
+    monkeypatch.setattr(operations.fill, "fill_application", fake_fill)
+    request = ApplyOperationRequest(
+        action="fill", application_ids=["one", "two"], auto_submit=False,
+        blocker_mode="continue", model_provider="ollama", model_name="test",
+    )
+    started = operations.start(request)
+    assert in_first.wait(5)
+    operations.control(started.operation_id, "pause")
+    release.set()
+    paused = _wait_for_state(started.operation_id, {"paused"})
+    assert paused.stage == "paused_by_user"
+    assert filled == ["one"]
+
+    operations.control(started.operation_id, "resume")
+    _wait_for_state(started.operation_id, {"completed", "completed_with_issues", "failed"})
+    assert filled == ["one", "two"]

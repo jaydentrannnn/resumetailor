@@ -133,6 +133,34 @@ def status(*, enabled: bool, schedule_time: str, now: datetime | None = None) ->
     }
 
 
+def run_now(
+    *,
+    schedule_time: str,
+    busy: Callable[[], bool],
+    start: Callable[[], None],
+    now: Callable[[], datetime] = datetime.now,
+) -> bool:
+    """The Apply page's "Run now": start the nightly pass immediately.
+
+    Counts as today's scheduled run only when today's time has already passed, so a
+    midday manual run never cancels tonight's. Returns False when another Apply
+    workflow is busy (nothing is started).
+    """
+    if busy():
+        return False
+    current = now()
+    fields: dict[str, Any] = {
+        "last_started_at": current.isoformat(timespec="seconds"),
+        "last_error": None,
+    }
+    due = parse_schedule_time(schedule_time)
+    if due is not None and current.time() >= due:
+        fields["last_run_date"] = current.date().isoformat()
+    _save_state(**fields)
+    start()
+    return True
+
+
 def tick(
     *,
     enabled: bool,

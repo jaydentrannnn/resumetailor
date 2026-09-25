@@ -8,6 +8,7 @@ import {
   getApplication,
   getApplyOperation,
   refreshApplicationReview,
+  setApplicationNotes,
   type ApplicationRow,
   type ApplyReviewField,
   type JobStatus,
@@ -23,19 +24,24 @@ import { IN_FLIGHT_STATUSES } from "../lib/applyPoll";
 import { useWorkspaceState } from "../state/workspaceState";
 import { isTabClosed } from "../lib/applicationRows";
 import { useOpenTabs } from "../lib/useOpenTabs";
+import { useToast } from "../lib/toast";
+import { describe } from "../lib/errors";
+import { BulletReview } from "./run/BulletReview";
 import { ReportCard } from "./run/ReportCard";
 
 type Detail = { application: ApplicationRow; packet: Packet | null; jd_text: string | null };
-const tabs = ["overview", "documents", "content", "review"] as const;
+const tabs = ["overview", "jd", "files", "answers", "review", "timeline", "notes"] as const;
+// Links saved before the tabs were renamed.
+const TAB_ALIASES: Record<string, string> = { documents: "files", content: "answers" };
 export function ApplicationDetailPage() {
   const { applicationId } = useParams();
   const navigate = useNavigate();
   const location = useLocation();
   const { activeId } = useWorkspaceState();
   const [params, setParams] = useSearchParams();
-  const tab = tabs.includes(params.get("tab") as (typeof tabs)[number])
-    ? params.get("tab")!
-    : "overview";
+  const requestedTab = TAB_ALIASES[params.get("tab") ?? ""] ?? params.get("tab");
+  const tab = tabs.includes(requestedTab as (typeof tabs)[number]) ? requestedTab! : "overview";
+  const [docsRevision, setDocsRevision] = useState(0);
   const [detail, setDetail] = useState<Detail | null>(null);
   const [job, setJob] = useState<JobStatus | null>(null);
   const [error, setError] = useState<string | null>(null);
@@ -88,7 +94,7 @@ export function ApplicationDetailPage() {
     return () => window.clearInterval(id);
   }, [inFlight, applicationId]);
   const from = (location.state as { from?: string } | null)?.from;
-  const back = from ?? (app?.archived_at ? "/applications?archive_open=1" : "/applications");
+  const back = from ?? (app?.archived_at ? "/applications?tab=done" : "/applications");
   function setTab(value: string) {
     setParams(
       (previous) => {
@@ -235,9 +241,12 @@ export function ApplicationDetailPage() {
         label="Application details"
         items={[
           { id: "overview", label: "Overview" },
-          { id: "documents", label: "Documents" },
-          { id: "content", label: "Application content" },
+          { id: "jd", label: "Job description" },
+          { id: "files", label: "Files" },
+          { id: "answers", label: "Answers" },
           { id: "review", label: "Form review" },
+          { id: "timeline", label: "Timeline" },
+          { id: "notes", label: app.notes ? "Notes •" : "Notes" },
         ]}
         value={tab}
         onChange={setTab}
@@ -275,18 +284,31 @@ export function ApplicationDetailPage() {
             {app.error && <p className="text-sm text-danger">{app.error}</p>}
           </section>
           {job?.report && <ReportCard report={job.report} />}
-          {detail?.jd_text && (
-            <details className="rounded-lg border border-line bg-panel p-5">
-              <summary className="cursor-pointer font-semibold">Job description</summary>
-              <p className="mt-3 whitespace-pre-wrap text-sm">{detail.jd_text}</p>
-            </details>
+        </div>
+      )}
+      {tab === "jd" && (
+        <div role="tabpanel">
+          {detail?.jd_text ? (
+            <section className="rounded-lg border border-line bg-panel p-5">
+              <p className="whitespace-pre-wrap text-sm">{detail.jd_text}</p>
+            </section>
+          ) : (
+            <p className="rounded-lg border border-line bg-panel p-5 text-sm text-ink-muted">
+              The job description was not saved for this application.
+            </p>
           )}
+        </div>
+      )}
+      {tab === "timeline" && (
+        <div role="tabpanel">
           <section className="rounded-lg border border-line bg-panel p-5">
-            <h2 className="text-lg font-semibold">Status history</h2>
             {app.archived_at && (
               <p className="text-xs text-ink-muted">
-                Archived {new Date(app.archived_at).toLocaleString()}
+                Moved to Done {new Date(app.archived_at).toLocaleString()}
               </p>
+            )}
+            {app.fill?.confirmation && (
+              <p className="mt-1 text-sm">Confirmation: {app.fill.confirmation}</p>
             )}
             {app.status_history?.length ? (
               <ol className="mt-2 space-y-2">
@@ -304,10 +326,22 @@ export function ApplicationDetailPage() {
           </section>
         </div>
       )}
-      {tab === "documents" && (
+      {tab === "notes" && (
         <div role="tabpanel">
+          <NotesPanel
+            key={app.source_job_id}
+            application={app}
+            onSaved={(updated) =>
+              setDetail((previous) => (previous ? { ...previous, application: updated } : previous))
+            }
+          />
+        </div>
+      )}
+      {tab === "files" && (
+        <div role="tabpanel" className="space-y-4">
           {app.job_id ? (
             <DocumentsCard
+              revision={docsRevision}
               jobId={app.job_id}
               coverLetter={job?.cover_letter}
               onCoverRegenerated={() => {}}
@@ -318,9 +352,22 @@ export function ApplicationDetailPage() {
               No tailored documents were saved for this application.
             </p>
           )}
+          {app.job_id && !app.archived_at && (
+            <details className="rounded-lg border border-line bg-panel p-4">
+              <summary className="cursor-pointer text-sm font-medium">
+                Edit bullets and render again (no AI)
+              </summary>
+              <p className="mt-2 text-xs text-ink-muted">
+                The next fill uploads the updated resume.
+              </p>
+              <div className="mt-3">
+                <BulletReview jobId={app.job_id} onSaved={() => setDocsRevision((n) => n + 1)} />
+              </div>
+            </details>
+          )}
         </div>
       )}
-      {tab === "content" && (
+      {tab === "answers" && (
         <div role="tabpanel" className="space-y-4">
           <p className="text-xs text-ink-muted">
             Prepared content was saved with this application and may differ from later Profile
@@ -331,6 +378,18 @@ export function ApplicationDetailPage() {
           )}
           {job?.expansion && app.job_id && (
             <ExperienceCard expansion={job.expansion} jobId={app.job_id} />
+          )}
+          {app.fill?.long_text_answers && Object.keys(app.fill.long_text_answers).length > 0 && (
+            <section className="rounded-lg border border-line bg-panel p-5">
+              <h2 className="text-lg font-semibold">Written answers</h2>
+              <p className="text-xs text-ink-muted">What the last fill typed into the form.</p>
+              {Object.entries(app.fill.long_text_answers).map(([question, answer]) => (
+                <div className="border-t border-line py-2 text-sm" key={question}>
+                  <p className="font-medium">{question}</p>
+                  <p className="mt-1 whitespace-pre-wrap text-ink-muted">{answer}</p>
+                </div>
+              ))}
+            </section>
           )}
           {detail?.packet && (
             <section className="rounded-lg border border-line bg-panel p-5">
@@ -366,5 +425,56 @@ export function ApplicationDetailPage() {
         </div>
       )}
     </div>
+  );
+}
+
+/** The applicant's own notes on one application, saved on demand. */
+function NotesPanel({
+  application,
+  onSaved,
+}: {
+  application: ApplicationRow;
+  onSaved: (updated: ApplicationRow) => void;
+}) {
+  const toast = useToast();
+  const [text, setText] = useState(application.notes ?? "");
+  const [saving, setSaving] = useState(false);
+  const dirty = text !== (application.notes ?? "");
+  async function save() {
+    setSaving(true);
+    try {
+      onSaved(await setApplicationNotes(application.source_job_id, text));
+      toast.success("Notes saved");
+    } catch (reason) {
+      toast.error("Could not save notes", describe(reason).detail);
+    } finally {
+      setSaving(false);
+    }
+  }
+  return (
+    <section className="space-y-3 rounded-lg border border-line bg-panel p-5">
+      <label className="block text-sm font-medium" htmlFor="application-notes">
+        Your notes
+      </label>
+      <textarea
+        id="application-notes"
+        className="field min-h-40 text-sm"
+        maxLength={20000}
+        placeholder="Recruiter name, interview dates, anything to remember."
+        value={text}
+        onChange={(e) => setText(e.target.value)}
+      />
+      <div className="flex items-center gap-3">
+        <button
+          type="button"
+          className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-on-accent disabled:opacity-50"
+          disabled={!dirty || saving}
+          onClick={() => void save()}
+        >
+          {saving ? "Saving…" : "Save notes"}
+        </button>
+        {dirty && <span className="text-xs text-ink-muted">Unsaved changes</span>}
+      </div>
+    </section>
   );
 }
