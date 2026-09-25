@@ -7,6 +7,7 @@ single-worker queue behaviour without spending tokens.
 
 from __future__ import annotations
 
+import hashlib
 import json
 import threading
 import time
@@ -2964,6 +2965,39 @@ def test_activate_library_switches_live_baseline(client, tmp_path, monkeypatch):
     assert body["ok"] is True
     assert body["info"]["active_library_id"] == default_id
     assert body["info"]["active_label"] == "Default"
+
+
+def test_api_reads_are_never_cached_by_the_browser(client, tmp_path, monkeypatch):
+    """A cached GET kept the old "In use" badge until a hard refresh."""
+    c, _ = client
+    templates = _point_templates_at(tmp_path, monkeypatch)
+    payload = _minimal_docx_bytes()
+    (templates / "original_export.docx").write_bytes(payload)
+    (templates / "main_template.docx").write_bytes(payload)
+    res = c.get("/api/template/library")
+    assert res.headers["cache-control"] == "no-store"
+    # Routes that choose their own caching keep it.
+    assert c.get("/api/applications").headers["cache-control"] == "no-cache"
+
+
+def test_starter_card_marks_the_copy_that_is_in_use(monkeypatch):
+    """Two saved copies of one starter: the card follows the active copy, else the copy
+    `install_default` would reactivate (the newest), never an arbitrary one."""
+    from resume_tailor import default_templates
+
+    name = default_templates.names()[0]
+    sha = hashlib.sha256(default_templates.build(name)).hexdigest()
+    metas = [{"id": "newer", "sha256": sha}, {"id": "older", "sha256": sha}]
+    monkeypatch.setattr(template_ops, "_iter_library_metas", lambda: metas)
+    monkeypatch.setattr(template_ops, "_library_active_meta", lambda: ("newer", "x"))
+    card = next(t for t in template_ops.list_defaults().templates if t.name == name)
+    assert (card.library_id, card.is_active) == ("newer", True)
+    monkeypatch.setattr(template_ops, "_library_active_meta", lambda: ("older", "x"))
+    card = next(t for t in template_ops.list_defaults().templates if t.name == name)
+    assert (card.library_id, card.is_active) == ("older", True)
+    monkeypatch.setattr(template_ops, "_library_active_meta", lambda: (None, None))
+    card = next(t for t in template_ops.list_defaults().templates if t.name == name)
+    assert (card.library_id, card.is_active) == ("newer", False)
 
 
 def test_rename_library_rejects_duplicate_label(client, tmp_path, monkeypatch):

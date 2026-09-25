@@ -14,6 +14,7 @@ import {
   saveMasterResume,
   validateMasterResume,
 } from "../api";
+import { onAppEvent } from "../lib/appEvents";
 import {
   type MasterResume,
   completenessErrors,
@@ -72,6 +73,17 @@ export function EditorProvider({ children }: { children: ReactNode }) {
       return typeof next === "function" ? next(prev) : next;
     });
   }, []);
+
+  useEffect(
+    () =>
+      // A template switch changes the page-fit numbers `/api/config` reports.
+      onAppEvent("rt:template-changed", () => {
+        fetchConfig()
+          .then(setConfig)
+          .catch(() => undefined); // keep the old numbers; the next visit reloads them
+      }),
+    [],
+  );
 
   useEffect(() => {
     if (loaded) return;

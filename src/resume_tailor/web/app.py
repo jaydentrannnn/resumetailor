@@ -174,7 +174,40 @@ class _RequestSizeLimitMiddleware:
         await self.app(scope, receive, send)
 
 
+class _NoStoreApiMiddleware:
+    """``Cache-Control: no-store`` on API reads that don't choose their own caching.
+
+    The SPA refetches state after every change (template switch, settings save). A
+    browser or webview that heuristically cached a GET would show the old state until a
+    hard refresh. Routes that set their own header (the ETag'd application list, the
+    thumbnails, SSE) keep it.
+    """
+
+    def __init__(self, app: Any) -> None:
+        self.app = app
+
+    async def __call__(self, scope: Any, receive: Any, send: Any) -> None:
+        if (
+            scope["type"] != "http"
+            or scope.get("method") != "GET"
+            or not str(scope.get("path", "")).startswith("/api/")
+        ):
+            await self.app(scope, receive, send)
+            return
+
+        async def _send(message: Any) -> None:
+            if message["type"] == "http.response.start":
+                headers = list(message.get("headers") or [])
+                if not any(name.lower() == b"cache-control" for name, _ in headers):
+                    headers.append((b"cache-control", b"no-store"))
+                    message = {**message, "headers": headers}
+            await send(message)
+
+        await self.app(scope, receive, _send)
+
+
 app.add_middleware(_RequestSizeLimitMiddleware)
+app.add_middleware(_NoStoreApiMiddleware)
 # Added last, so it runs first: nothing, not even the size check, answers a foreign
 # Host or a cross-site write (see `web/security.py`).
 app.add_middleware(security.RequestGateMiddleware)

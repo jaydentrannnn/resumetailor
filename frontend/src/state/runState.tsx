@@ -30,7 +30,7 @@ import {
   triggerPdfDownload,
 } from "../api";
 import { useWorkspaceState } from "./workspaceState";
-import { emitAppEvent } from "../lib/appEvents";
+import { emitAppEvent, onAppEvent } from "../lib/appEvents";
 
 /** All-included defaults for a fresh `IncludeOptions` — the merge base whenever a
  * settings.json predates this field or a fresh session needs a starting point. */
@@ -416,6 +416,17 @@ export function RunProvider({ children }: { children: ReactNode }) {
       if (saveSettingsTimer.current) clearTimeout(saveSettingsTimer.current);
     };
   }, []);
+
+  useEffect(
+    () =>
+      // A template switch changes the page-fit numbers `/api/config` reports.
+      onAppEvent("rt:template-changed", () => {
+        fetchConfig()
+          .then(setConfig)
+          .catch(() => undefined); // keep the old numbers; the next visit reloads them
+      }),
+    [],
+  );
 
   useEffect(() => {
     let cancelled = false;

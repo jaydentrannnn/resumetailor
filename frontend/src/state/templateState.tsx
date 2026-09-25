@@ -25,6 +25,8 @@ import {
   renameTemplateLibrary,
   uploadTemplate,
 } from "../api";
+import { emitAppEvent } from "../lib/appEvents";
+import { useToast } from "../lib/toast";
 
 export type WizardStep = "idle" | "analyzing" | "mapping" | "installing" | "done" | "error";
 
@@ -109,18 +111,29 @@ export function TemplateProvider({ children }: { children: ReactNode }) {
   const [libraryActiveId, setLibraryActiveId] = useState<string | null>(null);
   const [libraryBusy, setLibraryBusy] = useState(false);
   const [defaults, setDefaults] = useState<DefaultTemplate[]>([]);
+  const toast = useToast();
 
   const refreshLibrary = useCallback(async () => {
-    /** Reload the named template library list and the starter templates. */
-    try {
-      const [next, starters] = await Promise.all([fetchTemplateLibrary(), fetchDefaultTemplates()]);
-      setLibrary(next.entries);
-      setLibraryActiveId(next.active_id);
-      setDefaults(starters);
-    } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+    /** Reload the named template library list and the starter templates. Each list is
+     * set on its own: one failed request must not leave the other showing the old
+     * "In use" badge. A failure is shown as a toast, not only in the saved-list panel. */
+    const [next, starters] = await Promise.allSettled([
+      fetchTemplateLibrary(),
+      fetchDefaultTemplates(),
+    ]);
+    if (next.status === "fulfilled") {
+      setLibrary(next.value.entries);
+      setLibraryActiveId(next.value.active_id);
     }
-  }, []);
+    if (starters.status === "fulfilled") setDefaults(starters.value);
+    const failed = [next, starters].find((r) => r.status === "rejected");
+    if (failed) {
+      const message =
+        failed.reason instanceof Error ? failed.reason.message : String(failed.reason);
+      setError(message);
+      toast.error("Couldn't reload your templates", message);
+    }
+  }, [toast]);
 
   const refresh = useCallback(async () => {
     /** Reload template metadata and library from the API, and re-fetch the preview. */
@@ -140,6 +153,19 @@ export function TemplateProvider({ children }: { children: ReactNode }) {
     } finally {
       setLoading(false);
     }
+  }, [refreshLibrary]);
+
+  const afterSwitch = useCallback(async () => {
+    /** After any template switch, successful or not: reload info, both lists and the
+     * preview from the server, and tell other pages their page-fit numbers are stale. */
+    try {
+      setInfo(await fetchTemplateInfo());
+    } catch {
+      /* the lists below still reload; `refresh` reports errors on the next visit */
+    }
+    await refreshLibrary();
+    setPreviewKey((k) => k + 1);
+    emitAppEvent("rt:template-changed");
   }, [refreshLibrary]);
 
   useEffect(() => {
@@ -272,20 +298,17 @@ export function TemplateProvider({ children }: { children: ReactNode }) {
           calibrate: calibrateAlso,
         });
         setBuildLog(result.log || null);
-        if (result.info) {
-          setInfo(result.info);
-        } else {
-          await refresh();
-        }
-        await refreshLibrary();
-        setPreviewKey((k) => k + 1);
+        if (result.info) setInfo(result.info);
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
       } finally {
+        // Always: a request that failed late (page-fit tuning, a timeout) may already
+        // have switched the template, and the badge must follow the server.
+        await afterSwitch();
         setLibraryBusy(false);
       }
     },
-    [calibrateAlso, refresh, refreshLibrary],
+    [calibrateAlso, afterSwitch],
   );
 
   const installDefault = useCallback(
@@ -296,22 +319,17 @@ export function TemplateProvider({ children }: { children: ReactNode }) {
       try {
         const result = await installDefaultTemplate(name, { calibrate: calibrateAlso });
         setBuildLog(result.log || null);
-        if (result.info) {
-          setInfo(result.info);
-        } else {
-          await refresh();
-        }
-        await refreshLibrary();
-        setPreviewKey((k) => k + 1);
+        if (result.info) setInfo(result.info);
         return true;
       } catch (err) {
         setError(err instanceof Error ? err.message : String(err));
         return false;
       } finally {
+        await afterSwitch();
         setLibraryBusy(false);
       }
     },
-    [calibrateAlso, refresh, refreshLibrary],
+    [calibrateAlso, afterSwitch],
   );
 
   const renameLibraryEntry = useCallback(

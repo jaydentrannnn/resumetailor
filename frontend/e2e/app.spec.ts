@@ -115,6 +115,22 @@ test("template page: switch to a starter template", async ({ page }) => {
   await expectAccessible(page);
 });
 
+test("template page: Use on a saved template moves the In use badge without a reload", async ({
+  page,
+}) => {
+  await page.goto("/template");
+  const saved = page.locator("section").filter({ hasText: "Your templates" }).first();
+  const card = (label: string) => saved.locator("li").filter({ hasText: label });
+  await expect(card("Compact").getByRole("button", { name: "In use" })).toBeVisible();
+  // Page-fit tuning on, as it is by default: the slow path the owner hit.
+  await card("E2E template").getByRole("button", { name: "Use", exact: true }).click();
+  await expect(card("E2E template").getByRole("button", { name: "In use" })).toBeVisible({
+    timeout: 90_000,
+  });
+  await expect(card("Compact").getByRole("button", { name: "Use", exact: true })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "E2E template", level: 2 })).toBeVisible();
+});
+
 test("header: pause and resume all automation", async ({ page }) => {
   await page.goto("/applications");
   const pause = page.getByRole("button", { name: "Pause automation" });

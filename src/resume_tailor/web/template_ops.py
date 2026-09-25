@@ -1318,13 +1318,22 @@ def _install_with_profile(
 
 
 def list_defaults() -> DefaultTemplatesResponse:
-    """The starter templates, each marked with its library entry when already saved."""
-    by_sha = {meta.get("sha256"): meta for meta in _iter_library_metas()}
+    """The starter templates, each marked with its library entry when already saved.
+
+    With several saved copies of one starter, the active copy wins, else the one
+    ``install_default`` would reactivate (``_find_entry_by_sha``), so the card and the
+    "Use" button always agree.
+    """
     _active_id, _ = _library_active_meta()
+    metas = _iter_library_metas()
     out = []
     for name in default_templates.names():
         spec = default_templates.design(name)
-        meta = by_sha.get(hashlib.sha256(default_templates.build(name)).hexdigest())
+        sha = hashlib.sha256(default_templates.build(name)).hexdigest()
+        copies = [meta for meta in metas if meta.get("sha256") == sha]
+        meta = next((m for m in copies if m["id"] == _active_id), None) or (
+            _find_entry_by_sha(sha) if copies else None
+        )
         out.append(
             DefaultTemplateOut(
                 name=name,
