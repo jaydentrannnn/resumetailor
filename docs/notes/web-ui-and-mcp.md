@@ -200,3 +200,11 @@ blank entry headers before the Pydantic path; server validation remains authorit
 - When the token is on, `/?t=<token>` sets an HttpOnly SameSite=Strict cookie. `/api/*` needs the cookie or `X-RT-Token`, except `/api/health`. The token is written to `<DATA_ROOT>/.session_token` (0600) for the MCP client, and `logs.redact` strips `?t=` values.
 - Breaking for tunnel users: the public hostname has to go in `RESUME_TAILOR_ALLOWED_HOSTS`, as the README step now says. The 400 body names the variable.
 - Not done: running the Docker image as a non-root user. With Linux bind mounts owned by the host uid, a fixed container uid cannot write `data/`, so it needs a uid-mapping decision first.
+
+## Settings page (Phase 2H)
+- `/settings` replaces the old redirect to `/vocabulary`. It has five tabs (AI model, Documents, Data, Advanced, About), picked with `?tab=`. Vocabulary left the top nav; Settings → Advanced links to it, and the `/vocabulary` route still exists.
+- The model and key checks (`POST /api/models/test`, `GET /api/models/local`, `POST /api/pdf/test`) live in `web/routes/system.py`. They are live probes and never write settings.
+- Export (`data_transfer.export_zip`) snapshots `app.db` with SQLite's online backup and skips `secrets.enc`, `.secret_key` and `.session_token`, so keys never travel with a zip. Import always creates a NEW profile and never overwrites the active one: "import" can't destroy data, and a user who wants a replacement deletes the old profile themselves. Import rejects unsafe member paths and enforces 2 GB / 50k-file caps.
+- Reset (`POST /api/data/reset {confirm:"DELETE"}`) moves the profile's folders to `DATA_ROOT/.trash/<id>-<stamp>/` rather than deleting them. It then re-seeds defaults, so the profile is usable straight away.
+- `storage/db.connect` forgets the "schema initialised" flag when the DB file is missing, so a DB recreated after a reset gets its schema again.
+- Resume history restore calls `editorState.syncFromDisk`, because the server has already written the file; `loadDraft` would make the restore look like an unsaved draft.

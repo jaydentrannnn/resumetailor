@@ -96,6 +96,9 @@ def connect(path: Path) -> sqlite3.Connection:
         with _init_lock:
             _initialised.discard(path)
     path.parent.mkdir(parents=True, exist_ok=True)
+    if not path.exists():  # a new (or replaced) file always gets the schema
+        with _init_lock:
+            _initialised.discard(path)
     conn = sqlite3.connect(path, timeout=5.0, isolation_level=None, check_same_thread=False)
     conn.execute("PRAGMA busy_timeout=5000")
     conn.execute("PRAGMA foreign_keys=ON")

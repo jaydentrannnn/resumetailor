@@ -141,8 +141,8 @@ function Shell() {
               <NavLink to="/template" className={navLinkClassName}>
                 Template
               </NavLink>
-              <NavLink to="/vocabulary" className={navLinkClassName}>
-                Vocabulary
+              <NavLink to="/settings" className={navLinkClassName}>
+                Settings
               </NavLink>
             </nav>
           </div>
@@ -166,7 +166,7 @@ function Shell() {
             <Route path="/editor" element={<Navigate to="/profile/resume" replace />} />
             <Route path="/template" element={<TemplatePage />} />
             <Route path="/vocabulary" element={<VocabularyPage />} />
-            <Route path="/settings" element={<Navigate to="/vocabulary" replace />} />
+            <Route path="/settings" element={<SettingsPage />} />
           </Routes>
         </Suspense>
       </main>
@@ -190,6 +190,10 @@ const TemplatePage = lazy(() =>
 );
 const VocabularyPage = lazy(() =>
   import("./pages/VocabularyPage").then((m) => ({ default: m.VocabularyPage })),
+);
+
+const SettingsPage = lazy(() =>
+  import("./pages/settings/SettingsPage").then((m) => ({ default: m.SettingsPage })),
 );
 
 function PageLoading() {

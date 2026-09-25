@@ -57,9 +57,8 @@ export type JobSettings = {
   /** Combine near-duplicate bullets within an entry; only fires if the page overflows. */
   merge: boolean;
   no_cache: boolean;
-  /** How many independent JD extractions to vote over (1-10); server defaults this to
-   * `config.EXTRACT_CONSENSUS_RUNS` (3) when omitted. No UI control — carried on the
-   * type only so a settings save/reset never silently drops a value the server sent. */
+  /** JD extraction votes (0-10); 0 = automatic (1 on Anthropic/Gemini, 3 on local
+   * models). Set on Settings → Models. */
   extract_runs: number;
   /** Skip generating expanded experience descriptions for application forms. */
   no_expand: boolean;
@@ -1221,6 +1220,85 @@ export interface SetupStatus {
 export function fetchSetupStatus(): Promise<SetupStatus> {
   /** Prerequisites checklist for the header pill; never makes a model call. */
   return request("/api/setup-status");
+}
+
+export interface SecretState {
+  name: string;
+  set: boolean;
+  /** "env" (from .env / the environment), "saved" (keychain), or null. */
+  source: "env" | "saved" | null;
+}
+
+export function fetchSecrets(): Promise<{ backend: string; secrets: SecretState[] }> {
+  /** Which API keys are set; values are never returned. */
+  return request("/api/secrets");
+}
+
+export function saveSecret(name: string, value: string): Promise<SecretState> {
+  return request(`/api/secrets/${encodeURIComponent(name)}`, {
+    method: "PUT",
+    body: JSON.stringify({ value }),
+  });
+}
+
+export function deleteSecret(name: string): Promise<SecretState> {
+  return request(`/api/secrets/${encodeURIComponent(name)}`, { method: "DELETE" });
+}
+
+export interface CheckResult {
+  ok: boolean;
+  detail: string;
+  model?: string;
+  backend?: string;
+}
+
+export function testModel(settings: JobSettings): Promise<CheckResult> {
+  /** One tiny model call with these settings (a fraction of a cent on paid APIs). */
+  return request("/api/models/test", { method: "POST", body: JSON.stringify({ settings }) });
+}
+
+export function fetchLocalModels(
+  origin: "ollama" | "lmstudio",
+): Promise<{ reachable: boolean; base_url: string; models: string[]; detail: string }> {
+  return request(`/api/models/local?origin=${origin}`);
+}
+
+export function testPdf(): Promise<CheckResult> {
+  return request("/api/pdf/test", { method: "POST" });
+}
+
+export interface DataInfo {
+  workspace_id: string | null;
+  data_dir: string;
+  templates_dir: string;
+  output_dir: string;
+  data_bytes: number;
+  output_bytes: number;
+}
+
+export function fetchDataInfo(): Promise<DataInfo> {
+  return request("/api/data/info");
+}
+
+export function exportDataUrl(includeOutput: boolean): string {
+  return `/api/data/export.zip?include_output=${includeOutput}`;
+}
+
+export async function importData(file: File): Promise<{ id: string; label: string }> {
+  /** Create a new profile from an export zip; existing profiles are never touched. */
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch("/api/data/import", { method: "POST", body: form });
+  if (!res.ok) throw await apiError(res);
+  return res.json();
+}
+
+export function resetData(confirm: string): Promise<{ trash: string }> {
+  return request("/api/data/reset", { method: "POST", body: JSON.stringify({ confirm }) });
+}
+
+export function fetchHealth(): Promise<{ app: string; ok: boolean; version: string }> {
+  return request("/api/health");
 }
 
 export function fetchCacheUsage(): Promise<CacheUsage> {
