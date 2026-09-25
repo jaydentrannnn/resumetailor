@@ -316,7 +316,9 @@ def main() -> None:
 
     base = os.environ.get("RESUME_TAILOR_API", "http://127.0.0.1:8000").rstrip("/")
     try:
-        with _httpx.Client(base_url=base, timeout=5.0) as probe:
+        from resume_tailor.mcp_server.client import auth_headers
+
+        with _httpx.Client(base_url=base, timeout=5.0, headers=auth_headers()) as probe:
             probe.get("/api/config").raise_for_status()
         log.info("Backend reachable at %s", base)
     except Exception as exc:  # noqa: BLE001 - probe must never block startup

@@ -211,6 +211,8 @@ Then locally:
 
 ```powershell
 # In .env: CLOUDFLARE_TUNNEL_TOKEN=<the token from step 2>
+# In .env: RESUME_TAILOR_ALLOWED_HOSTS=<the hostname from step 3, e.g. resume.example.com>
+#   (the server answers only loopback Host names otherwise, and returns 400)
 docker compose --profile cloudflare up --build
 ```
 

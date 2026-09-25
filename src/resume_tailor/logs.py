@@ -37,6 +37,8 @@ _REDACTIONS: tuple[tuple[re.Pattern[str], str], ...] = (
         ),
         r"\1[redacted]",
     ),
+    # The session token in a sign-in link (`web/security.py`).
+    (re.compile(r"([?&]t=)[A-Za-z0-9_\-]{8,}"), r"\1[redacted]"),
     (re.compile(r"[A-Za-z0-9._%+\-]+@[A-Za-z0-9.\-]+\.[A-Za-z]{2,}"), "[email]"),
     (
         re.compile(r"(?<!\d)(?:\+?\d{1,3}[\s.\-]?)?\(?\d{3}\)?[\s.\-]?\d{3}[\s.\-]?\d{4}(?!\d)"),

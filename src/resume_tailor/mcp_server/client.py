@@ -49,6 +49,14 @@ def _detail(payload: Any) -> str:
     return str(payload)
 
 
+def auth_headers() -> dict[str, str]:
+    """The session-token header when the server requires one (`web/security.py`)."""
+    from resume_tailor.web.security import HEADER_NAME, read_client_token
+
+    token = read_client_token()
+    return {HEADER_NAME: token} if token else {}
+
+
 class BackendClient:
     """Async HTTP client for the routes the MCP tools wrap.
 
@@ -64,7 +72,7 @@ class BackendClient:
     def from_env(cls) -> BackendClient:
         """Build a client against ``RESUME_TAILOR_API`` (default localhost:8000)."""
         base = os.environ.get("RESUME_TAILOR_API", DEFAULT_API_BASE).rstrip("/")
-        return cls(httpx.AsyncClient(base_url=base, timeout=30.0))
+        return cls(httpx.AsyncClient(base_url=base, timeout=30.0, headers=auth_headers()))
 
     async def aclose(self) -> None:
         """Close the underlying httpx client."""

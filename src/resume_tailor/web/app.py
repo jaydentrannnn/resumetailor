@@ -28,8 +28,8 @@ from resume_tailor import (
 from resume_tailor.apply import daily as apply_daily
 from resume_tailor.apply import operations as apply_operations
 from resume_tailor.apply import scheduler as apply_scheduler
+from resume_tailor.web import security, template_ops
 from resume_tailor.web import state as web_state
-from resume_tailor.web import template_ops
 from resume_tailor.web.schemas import (
     JobSettings,
 )
@@ -79,6 +79,11 @@ async def lifespan(app: FastAPI):
     log_dir = config.log_dir_setting()
     if log_dir is not None:
         logs.setup_logging(log_dir)
+    token = security.session_token()
+    if token is not None:
+        security.write_token_file(token)
+        # Printed, not logged: the log file must never hold the token.
+        print(f"ResumeTailor: open http://127.0.0.1:<port>/?t={token} to sign in", flush=True)
     result = workspace.bootstrap()
     if result is not None:
         web_state.migrated_from_legacy = result.migrated
@@ -165,6 +170,9 @@ class _RequestSizeLimitMiddleware:
 
 
 app.add_middleware(_RequestSizeLimitMiddleware)
+# Added last, so it runs first: nothing, not even the size check, answers a foreign
+# Host or a cross-site write (see `web/security.py`).
+app.add_middleware(security.RequestGateMiddleware)
 
 
 # Imported after `app` exists and its middleware is added, deliberately.

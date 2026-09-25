@@ -68,6 +68,12 @@ def build_bundle() -> bytes:
     return buffer.getvalue()
 
 
+@router.get("/api/health")
+def get_health() -> dict[str, str | bool]:
+    """Liveness probe; needs no session token and returns nothing about the user."""
+    return {"app": "resumetailor", "ok": True, "version": _version()}
+
+
 @router.get("/api/diagnostics.zip")
 def get_diagnostics() -> Response:
     """Download the redacted support bundle."""

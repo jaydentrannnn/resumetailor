@@ -67,6 +67,9 @@ os.environ.pop("RESUME_TAILOR_CACHE_DIR", None)
 os.environ.setdefault("RESUME_TAILOR_LOG_DIR", "off")
 # Never the developer's keychain or data/secrets.enc: an in-memory store per test.
 os.environ["RESUME_TAILOR_SECRETS_BACKEND"] = "memory"
+# TestClient sends `Host: testserver` (the MCP tests `test`); the session token is off unless a test sets it.
+os.environ["RESUME_TAILOR_ALLOWED_HOSTS"] = "testserver,test"
+os.environ.pop("RESUME_TAILOR_TOKEN", None)
 
 import pytest  # noqa: E402
 

@@ -192,3 +192,11 @@ blank entry headers before the Pydantic path; server validation remains authorit
   sizes. Put the font size on the container, and use `.rt-control` to give links the
   same 36px/44px min-height buttons get. (Moving the reset into `@layer base` would fix
   it globally but resize every button that has a `text-*` class — not done yet.)
+
+## Request gate (B8, 2026-09)
+
+- `web/security.py` `RequestGateMiddleware`, outermost. It always refuses a Host that is not loopback or listed in `RESUME_TAILOR_ALLOWED_HOSTS` (400, blocks DNS rebinding). It also refuses a non-GET whose Origin is foreign or `null`, or that the browser marks `Sec-Fetch-Site: cross-site` (403).
+- The session token is opt-in (`RESUME_TAILOR_TOKEN`: a value, or `auto`), not always on as the plan said. On a local-first install any process that could steal a token can already read `data/`. Docker publishes on 127.0.0.1 only, and the tunnel sits behind Cloudflare Access, so a mandatory token would mostly add a sign-in step. The desktop shell (DK2) will set it.
+- When the token is on, `/?t=<token>` sets an HttpOnly SameSite=Strict cookie. `/api/*` needs the cookie or `X-RT-Token`, except `/api/health`. The token is written to `<DATA_ROOT>/.session_token` (0600) for the MCP client, and `logs.redact` strips `?t=` values.
+- Breaking for tunnel users: the public hostname has to go in `RESUME_TAILOR_ALLOWED_HOSTS`, as the README step now says. The 400 body names the variable.
+- Not done: running the Docker image as a non-root user. With Linux bind mounts owned by the host uid, a fixed container uid cannot write `data/`, so it needs a uid-mapping decision first.
