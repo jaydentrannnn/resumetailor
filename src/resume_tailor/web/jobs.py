@@ -176,11 +176,12 @@ def model_label(settings: JobSettings) -> str:
     return label
 
 
-def _persist_run_record(job: Job) -> None:
+def _persist_run_record(job: Job, status: str | None = None) -> None:
     """Write `out_dir/run.json` so history and downloads survive a process restart.
 
-    Called after every terminal status assignment (succeeded / failed / cancelled).
-    No-op when `out_dir` was never created (cancel-while-queued before `_execute`).
+    Called with the terminal status *before* it is published on `job.status`, so a
+    client that sees the job finish can always find its record (succeeded / failed /
+    cancelled). No-op when `out_dir` was never created (cancel-while-queued).
     """
     if job.out_dir is None:
         return
@@ -190,7 +191,7 @@ def _persist_run_record(job: Job) -> None:
         "workspace_id": job.workspace_id,
         "created_at": job.created_at,
         "finished_at": datetime.now(UTC).isoformat(timespec="seconds"),
-        "status": job.status,
+        "status": status or job.status,
         "title": title,
         "error": job.error,
         "report": job.report.model_dump() if job.report else None,
@@ -369,8 +370,8 @@ class JobQueue:
             )
             try:
                 self._execute(job)
+                _persist_run_record(job, "succeeded")
                 job.status = "succeeded"
-                _persist_run_record(job)
                 try:
                     from resume_tailor.apply import packet as apply_packet
 
@@ -384,9 +385,9 @@ class JobQueue:
                         )
                     )
             except JobCancelled:
-                job.status = "cancelled"
                 job.emit(ProgressEvent(stage="cancel", message="Run cancelled.", detail={}))
-                _persist_run_record(job)
+                _persist_run_record(job, "cancelled")
+                job.status = "cancelled"
             except BaseException as exc:  # noqa: BLE001 - surface any failure to the UI
                 # `Exception` alone left a `SystemExit`/`KeyboardInterrupt`/
                 # `RecursionError`-flavoured failure with the job frozen at "running"
@@ -397,7 +398,6 @@ class JobQueue:
                 # immediately; re-raising still lets the worker thread die for a
                 # genuine `BaseException`, but `_ensure_worker` already respawns on
                 # the next `submit()` since it checks `is_alive()`.
-                job.status = "failed"
                 job.error = str(exc)
                 job.emit(
                     ProgressEvent(
@@ -406,7 +406,10 @@ class JobQueue:
                         detail={"traceback": traceback.format_exc()},
                     )
                 )
-                _persist_run_record(job)
+                try:
+                    _persist_run_record(job, "failed")
+                finally:
+                    job.status = "failed"
                 if not isinstance(exc, Exception):
                     raise
 
