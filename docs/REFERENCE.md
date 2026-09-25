@@ -159,9 +159,13 @@ Revocation invalidates that browser token. The extension reads a job page only w
 user invokes capture, then the server stores and deduplicates its JD for later Prepare.
 Opening the popup sends the URL for lookup but not the JD. LinkedIn, Indeed, Handshake,
 and Workday are assist-only; extension Prepare/Fill always use `auto_submit=false`.
-The extension can automatically start Fill after successful preparation, but Fill uses
-the configured CDP browser, not the selected ordinary tab. The separate CDP relay spike
-has not been accepted. Cross-origin iCIMS iframe text needs selection capture or opening
+The extension can automatically start Fill after successful preparation. CDP remains
+the default Fill mode. The X3 relay passed a synthetic end-to-end Greenhouse Fill,
+file upload, cross-origin frame evaluation, wait, and tab-detach failure checks in
+Edge. With `BROWSER_MODE=extension`, the local relay CDP URL, and an explicitly attached
+tab, Fill can drive that tab through `chrome.debugger`; closing it or opening DevTools
+marks Fill failed. The relay is local-only and requires manual startup and attachment.
+Cross-origin iCIMS iframe text needs selection capture or opening
 the iframe in its own tab.
 
 Discovery is multi-source (`ApplySettings.sources`): SimplifyJobs Summer2027-Internships,

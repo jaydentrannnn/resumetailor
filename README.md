@@ -207,8 +207,11 @@ Handshake, and Workday remain assist-only platforms. If the description is behin
 login wall or an inaccessible iCIMS iframe, select the JD and use **Send selection to
 ResumeTailor** from the context menu. An iCIMS iframe may also be opened as its own tab.
 
-Fill still uses the CDP browser described above; the extension's selected browser tab
-is not the fill target. The extension contacts the local ResumeTailor server on
+CDP remains the default Fill browser. To fill the selected tab through the extension,
+start the optional loopback relay with `python -m resume_tailor.apply.cdp_relay`, set
+`BROWSER_MODE=extension` and `EXTENSION_CDP_URL` to the printed URL before starting the
+app, then choose **Use this tab for Fill (relay)** in the popup. See
+[`extension/README.md`](extension/README.md) for setup. The extension contacts the local ResumeTailor server on
 127.0.0.1 ports 8000–8010. Opening its popup sends the current page URL for lookup;
 description text is sent only when you choose a capture action. The extension itself
 does not contact job sites or model providers.

@@ -1110,3 +1110,22 @@ the tasks that first need them (a new entry in `db.MIGRATIONS`, never an edit).
  -   a c t i v e T a b   c a n n o t   r e a d   a   c r o s s - o r i g i n   i C I M S   i f r a m e .   S e l e c t i o n   c a p t u r e   o r   o p e n i n g   t h e   i f r a m e   a s   i t s   o w n   t a b   i s   t h e   f a l l b a c k ;   b r o a d   h o s t   p e r m i s s i o n s   w e r e   n o t   a d d e d . 
  -   T h e   n o r m a l   C D P   b r o w s e r   r e m a i n s   t h e   F i l l   d r i v e r .   T h e   s e p a r a t e   X 3   r e l a y   s p i k e   i s   e v a l u a t e d   i n d e p e n d e n t l y ;   t h i s   e x t e n s i o n   d o e s   n o t   g a i n   d e b u g g e r   p e r m i s s i o n   w i t h o u t   a l l   G O   t e s t s .   S t o r e   p u b l i s h i n g   i s   n o t   d o n e .  
  
+## P4-X: browser extension relay decision (2026-09-25)
+
+- X3 GO on the isolated extension-relay-spike branch. A synthetic Greenhouse-like
+  posting in headless Edge completed the real fill_application path through the
+  extension relay with status awaiting_review and no submit. The same probe used
+  set_input_files, evaluated a cross-origin iframe, and completed wait_for_selector.
+  Closing the controlled tab during Fill persisted fill_failed with the exact error
+  "Tab was closed or DevTools opened". No live job site was contacted in this probe.
+- BROWSER_MODE defaults to cdp. The optional extension mode uses an explicitly
+  attached tab, a separate loopback relay process, and an ephemeral secret CDP URL.
+  The only Fill integration change is in apply/browser.py. The relay gets the
+  debugger permission; there is still no all-URLs host permission. A 20-second
+  WebSocket ping keeps the relay connection alive.
+- The relay reuses the selected tab for Target.createTarget because it cannot create
+  an arbitrary page through the limited debugger attachment. Only one tab and one
+  Playwright client are supported at a time. The relay currently needs manual startup
+  and attachment from the popup. These are deviations from a seamless Fill button.
+- Store publishing and live LinkedIn/Greenhouse manual acceptance were not done.
+  CDP remains the default. The existing Advanced CDP setting is unchanged.
