@@ -147,29 +147,32 @@ def put_applicant_profile(body: ApplicantProfileUpdateRequest) -> ApplicantProfi
             )
         # Server-owned: only the upload route sets it, so a client can never point a
         # fill's file upload at an arbitrary path on this machine.
-        profile = profile.model_copy(update={"transcript_path": current.transcript_path})
+        profile = profile.model_copy(
+            update={key: getattr(current, key) for key in _DOCUMENT_KEYS}
+        )
         saved = apply_profile.save_profile(profile)
     return _profile_response(saved, seeded=False, password_set=bool(saved.workday_password))
 
 
-TRANSCRIPT_MAX_BYTES = 10 * 1024 * 1024
+DOCUMENT_MAX_BYTES = 10 * 1024 * 1024
+#: Uploaded PDFs a fill attaches by purpose; each lives at ``files/<kind>.pdf`` and is
+#: recorded in the profile's server-owned ``<kind>_path``.
+_DOCUMENT_KEYS = ("transcript_path", "portfolio_path")
 
 
-def _transcript_file() -> Path:
-    return config.APPLICANT_PROFILE_PATH.parent / "files" / "transcript.pdf"
+def _document_file(kind: str) -> Path:
+    return config.APPLICANT_PROFILE_PATH.parent / "files" / f"{kind}.pdf"
 
 
-@router.post("/api/applicant-profile/transcript", response_model=ApplicantProfileResponse)
-async def upload_transcript(file: UploadFile = File(...)) -> ApplicantProfileResponse:
-    """Store the transcript PDF that fills attach to "Transcript" upload fields."""
-    raw = await file.read(TRANSCRIPT_MAX_BYTES + 1)
-    if len(raw) > TRANSCRIPT_MAX_BYTES:
-        raise HTTPException(status_code=413, detail="The transcript is over 10 MB.")
+async def _store_document(kind: str, file: UploadFile) -> ApplicantProfileResponse:
+    raw = await file.read(DOCUMENT_MAX_BYTES + 1)
+    if len(raw) > DOCUMENT_MAX_BYTES:
+        raise HTTPException(status_code=413, detail=f"The {kind} is over 10 MB.")
     if not raw.startswith(b"%PDF"):
-        raise HTTPException(status_code=422, detail="Upload the transcript as a PDF.")
-    target = _transcript_file()
+        raise HTTPException(status_code=422, detail=f"Upload the {kind} as a PDF.")
+    target = _document_file(kind)
     target.parent.mkdir(parents=True, exist_ok=True)
-    tmp = target.with_name(f"transcript.{uuid.uuid4().hex}.tmp")
+    tmp = target.with_name(f"{kind}.{uuid.uuid4().hex}.tmp")
     try:
         tmp.write_bytes(raw)
         os.replace(tmp, target)
@@ -178,19 +181,41 @@ async def upload_transcript(file: UploadFile = File(...)) -> ApplicantProfileRes
     with template_ops.LOCK:
         current, _seeded = apply_profile.load_profile()
         saved = apply_profile.save_profile(
-            current.model_copy(update={"transcript_path": str(target)})
+            current.model_copy(update={f"{kind}_path": str(target)})
         )
     return _profile_response(saved, seeded=False, password_set=bool(saved.workday_password))
+
+
+def _forget_document(kind: str) -> ApplicantProfileResponse:
+    _document_file(kind).unlink(missing_ok=True)
+    with template_ops.LOCK:
+        current, _seeded = apply_profile.load_profile()
+        saved = apply_profile.save_profile(current.model_copy(update={f"{kind}_path": ""}))
+    return _profile_response(saved, seeded=False, password_set=bool(saved.workday_password))
+
+
+@router.post("/api/applicant-profile/transcript", response_model=ApplicantProfileResponse)
+async def upload_transcript(file: UploadFile = File(...)) -> ApplicantProfileResponse:
+    """Store the transcript PDF that fills attach to "Transcript" upload fields."""
+    return await _store_document("transcript", file)
 
 
 @router.delete("/api/applicant-profile/transcript", response_model=ApplicantProfileResponse)
 def delete_transcript() -> ApplicantProfileResponse:
     """Forget the transcript; later fills leave transcript uploads for review."""
-    _transcript_file().unlink(missing_ok=True)
-    with template_ops.LOCK:
-        current, _seeded = apply_profile.load_profile()
-        saved = apply_profile.save_profile(current.model_copy(update={"transcript_path": ""}))
-    return _profile_response(saved, seeded=False, password_set=bool(saved.workday_password))
+    return _forget_document("transcript")
+
+
+@router.post("/api/applicant-profile/portfolio", response_model=ApplicantProfileResponse)
+async def upload_portfolio(file: UploadFile = File(...)) -> ApplicantProfileResponse:
+    """Store the portfolio / work-sample PDF fills attach to "Portfolio" upload fields."""
+    return await _store_document("portfolio", file)
+
+
+@router.delete("/api/applicant-profile/portfolio", response_model=ApplicantProfileResponse)
+def delete_portfolio() -> ApplicantProfileResponse:
+    """Forget the portfolio PDF; later fills leave portfolio uploads for review."""
+    return _forget_document("portfolio")
 
 
 @router.get("/api/jobs/{job_id}/packet.json", response_model=None)

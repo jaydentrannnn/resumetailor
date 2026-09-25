@@ -497,3 +497,17 @@ def test_profile_path_routes_profile_owned_education_to_application_tab():
     assert profile_path(section, "class_year") == "/profile/application"
     assert profile_path(section, "school_email") == "/profile/application"
     assert profile_path(PROFILE_FIELDS["email"].section, "email") == "/profile/personal"
+
+
+def test_build_packet_carries_uploaded_profile_documents(job_dir, tmp_path):
+    transcript = tmp_path / "transcript.pdf"
+    portfolio = tmp_path / "portfolio.pdf"
+    transcript.write_bytes(b"%PDF")
+    portfolio.write_bytes(b"%PDF")
+    profile = ApplicantProfile(transcript_path=str(transcript), portfolio_path=str(portfolio))
+    pkt = build_packet("test-job", applicant_profile=profile)
+    assert pkt.artifacts["transcript_pdf"] == str(transcript)
+    assert pkt.artifacts["portfolio_pdf"] == str(portfolio)
+    # A recorded path whose file is gone is not offered to a fill.
+    portfolio.unlink()
+    assert "portfolio_pdf" not in build_packet("test-job", applicant_profile=profile).artifacts

@@ -13,7 +13,7 @@ import type { Education } from "../../lib/resumeEdit";
 import { useApplicantProfile } from "../../state/applicantProfileState";
 import type { FieldContext } from "./fieldContext";
 import { ProfileField } from "./ProfileField";
-import { TranscriptUpload } from "./TranscriptUpload";
+import { DocumentUpload } from "./DocumentUpload";
 import { SavedAnswersList } from "./SavedAnswersList";
 
 const yesNo = (value: boolean) => (value ? "Yes" : "No");
@@ -131,7 +131,10 @@ export function ApplicationTab({
                   auto={autoAnswered(key, draft)}
                 />
               ))}
-              {group.id === "Education" && <TranscriptUpload />}
+              {group.id === "Education" && <DocumentUpload kind="transcript" />}
+              {group.id === "Saved answers and other preferences" && (
+                <DocumentUpload kind="portfolio" />
+              )}
             </div>
           )}
           {group.id === "Voluntary information" && (

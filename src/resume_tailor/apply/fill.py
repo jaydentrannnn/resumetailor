@@ -450,6 +450,9 @@ def _attachment_purpose(
     text = f"{label} {section} {selector}".casefold()
     if "transcript" in text:
         return "transcript"
+    # "Resume or portfolio" takes the resume, which every packet has.
+    if ("portfolio" in text or "work sample" in text) and "resume" not in text:
+        return "portfolio"
     if "cover" in text or "letter" in text:
         return "cover_letter"
     if hint_key == "resume_upload" or "resume" in text or "cv" in text:
@@ -537,7 +540,7 @@ def _observe_fields(page: Any, filler_js: str, hints: dict[str, str], attempted:
 def _stage_attachment(
     source: str,
     *,
-    purpose: Literal["resume", "cover_letter"],
+    purpose: Literal["resume", "cover_letter", "transcript", "portfolio"],
     applicant_name: str,
     role: str,
     out_dir: Path,
@@ -547,6 +550,10 @@ def _stage_attachment(
     suffix = source_path.suffix or ".pdf"
     if purpose == "resume":
         filename = report.export_filename(applicant_name, role, suffix=suffix)
+    elif purpose in {"transcript", "portfolio"}:
+        # Not tailored per role: "Ada Lovelace Transcript.pdf".
+        resume_name = report.export_filename(applicant_name, "x", suffix=suffix)
+        filename = resume_name.split(" Resume - ", 1)[0] + f" {purpose.title()}{suffix}"
     else:
         resume_name = report.export_filename(applicant_name, role, suffix=suffix)
         filename = resume_name.replace(f" Resume - ", " Cover Letter - ", 1)
@@ -1156,7 +1163,8 @@ def fill_application(
                         continue
                     path = (
                         resume_path if purpose == "resume"
-                        else pkt.artifacts.get("transcript_pdf") if purpose == "transcript"
+                        else pkt.artifacts.get(f"{purpose}_pdf")
+                        if purpose in {"transcript", "portfolio"}
                         else cover_path
                     )
                     key = (purpose, f"{frame_index}:{sel}")
@@ -1184,7 +1192,12 @@ def fill_application(
                         verified_purposes.add((purpose, frame_index))
                         continue
                     if not path or not Path(path).is_file():
-                        uploads.append({"selector": sel, "label": label, "purpose": purpose, "verified": False, "error": f"No {purpose.replace('_', ' ')} artifact available", "frame_index": frame_index})
+                        missing = (
+                            f"No {purpose} PDF saved; add one in Profile → Application"
+                            if purpose in {"transcript", "portfolio"}
+                            else f"No {purpose.replace('_', ' ')} artifact available"
+                        )
+                        uploads.append({"selector": sel, "label": label, "purpose": purpose, "verified": False, "error": missing, "frame_index": frame_index})
                         continue
                     staged_path = _stage_attachment(
                         path,

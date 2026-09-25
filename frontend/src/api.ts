@@ -226,6 +226,8 @@ export type ApplicantProfile = {
   gpa_display?: string;
   /** Server-owned: set only by the transcript upload route. */
   transcript_path?: string;
+  /** Server-owned: set only by the portfolio upload route. */
+  portfolio_path?: string;
   security_clearance?: "" | "none" | "eligible" | "secret" | "top_secret";
   drivers_license?: boolean | null;
   hours_per_week_available?: number | null;
@@ -1861,20 +1863,26 @@ export function getApplicantProfile(): Promise<ApplicantProfileResponse> {
   return request("/api/applicant-profile");
 }
 
-/** Persist the applicant form-filling profile. */
-/** Store the transcript PDF fills attach to "Transcript" uploads. */
-export async function uploadTranscript(file: File): Promise<ApplicantProfileResponse> {
+/** PDFs fills attach to matching upload fields ("Transcript", "Portfolio"). */
+export type ProfileDocument = "transcript" | "portfolio";
+
+/** Store a profile PDF; the server records its path in the profile. */
+export async function uploadProfileDocument(
+  kind: ProfileDocument,
+  file: File,
+): Promise<ApplicantProfileResponse> {
   const form = new FormData();
   form.append("file", file);
-  const res = await fetch("/api/applicant-profile/transcript", { method: "POST", body: form });
+  const res = await fetch(`/api/applicant-profile/${kind}`, { method: "POST", body: form });
   if (!res.ok) throw await apiError(res);
   return res.json() as Promise<ApplicantProfileResponse>;
 }
 
-export function deleteTranscript(): Promise<ApplicantProfileResponse> {
-  return request("/api/applicant-profile/transcript", { method: "DELETE" });
+export function deleteProfileDocument(kind: ProfileDocument): Promise<ApplicantProfileResponse> {
+  return request(`/api/applicant-profile/${kind}`, { method: "DELETE" });
 }
 
+/** Persist the applicant form-filling profile. */
 export function putApplicantProfile(profile: ApplicantProfile): Promise<ApplicantProfileResponse> {
   return request("/api/applicant-profile", {
     method: "PUT",

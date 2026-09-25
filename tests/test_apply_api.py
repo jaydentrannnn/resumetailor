@@ -451,3 +451,27 @@ def test_transcript_upload_is_server_owned(client, tmp_path):
     gone = c.delete("/api/applicant-profile/transcript")
     assert gone.json()["profile"]["transcript_path"] == ""
     assert not Path(stored).exists()
+
+
+def test_portfolio_upload_is_server_owned_and_separate(client):
+    c, _q = client
+    too_big = b"%PDF" + b"0" * (10 * 1024 * 1024)
+    big = c.post("/api/applicant-profile/portfolio", files={"file": ("p.pdf", too_big, "application/pdf")})
+    assert big.status_code == 413
+    res = c.post(
+        "/api/applicant-profile/portfolio",
+        files={"file": ("p.pdf", b"%PDF-1.4 stub", "application/pdf")},
+    )
+    assert res.status_code == 200
+    profile = res.json()["profile"]
+    stored = profile["portfolio_path"]
+    assert Path(stored).name == "portfolio.pdf"
+    assert profile["transcript_path"] == ""
+
+    profile["portfolio_path"] = "/etc/passwd"
+    put = c.put("/api/applicant-profile", json={"profile": profile})
+    assert put.json()["profile"]["portfolio_path"] == stored
+
+    gone = c.delete("/api/applicant-profile/portfolio")
+    assert gone.json()["profile"]["portfolio_path"] == ""
+    assert not Path(stored).exists()

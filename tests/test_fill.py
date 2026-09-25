@@ -84,6 +84,34 @@ def test_stage_attachment_uses_user_facing_resume_and_cover_names(tmp_path):
     assert (tmp_path / "application" / "attachments" / "Ada Lovelace Cover Letter - Software Intern.pdf").read_bytes() == b"cover"
 
 
+@pytest.mark.parametrize("purpose", ["transcript", "portfolio"])
+def test_stage_attachment_names_profile_documents_by_kind(tmp_path, purpose):
+    """A transcript or portfolio is not per-role, and never gets the cover-letter name."""
+    source = tmp_path / f"{purpose}.pdf"
+    source.write_bytes(b"%PDF")
+    staged = fill._stage_attachment(  # noqa: SLF001
+        str(source),
+        purpose=purpose,
+        applicant_name="Ada Lovelace",
+        role="Software Intern",
+        out_dir=tmp_path / "application",
+    )
+    assert Path(staged).name == f"Ada Lovelace {purpose.title()}.pdf"
+
+
+@pytest.mark.parametrize(
+    ("label", "expected"),
+    [
+        ("Portfolio", "portfolio"),
+        ("Work samples (PDF)", "portfolio"),
+        ("Resume or portfolio", "resume"),
+        ("Unofficial transcript", "transcript"),
+    ],
+)
+def test_portfolio_uploads_are_classified(label, expected):
+    assert fill._attachment_purpose(label, "input[type=file]", {}) == expected  # noqa: SLF001
+
+
 def test_greenhouse_cover_letter_input_is_classified_by_name():
     assert (
         fill._attachment_purpose(  # noqa: SLF001

@@ -759,9 +759,10 @@ def build_packet(
     expansion = prepared_expansion.as_expansion() if prepared_expansion is not None else None
     experience = _experience_from_expansion(expansion.entries) if expansion is not None else []
     artifacts = _artifact_paths(job_dir)
-    transcript = applicant_profile.transcript_path
-    if transcript and Path(transcript).is_file():
-        artifacts["transcript_pdf"] = transcript
+    for kind in ("transcript", "portfolio"):
+        uploaded = getattr(applicant_profile, f"{kind}_path")
+        if uploaded and Path(uploaded).is_file():
+            artifacts[f"{kind}_pdf"] = uploaded
     manifest_artifacts = [PreparedArtifact(
         purpose=kind, path=path, filename=Path(path).name,
         mime_type="application/pdf" if kind.endswith("pdf") else

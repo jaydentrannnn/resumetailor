@@ -141,6 +141,8 @@ class ApplicantProfile(BaseModel):
     gpa_display: str = ""
     #: Uploaded transcript (PDF) in the workspace's files folder, for transcript uploads.
     transcript_path: str = ""
+    #: Uploaded portfolio / work sample (PDF), for "Portfolio" upload fields.
+    portfolio_path: str = ""
     security_clearance: SecurityClearance = ""
     drivers_license: bool | None = None
     hours_per_week_available: int | None = Field(default=None, ge=0, le=80)
