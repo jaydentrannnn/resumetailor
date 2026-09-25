@@ -4185,3 +4185,23 @@ def test_default_template_install_refused_while_tailoring(client):
     c, q = client
     q.busy = lambda: True  # type: ignore[method-assign]
     assert c.post("/api/template/defaults/classic/install").status_code == 409
+
+
+def test_answer_memory_routes_list_edit_and_forget(client, tmp_path, monkeypatch):
+    from resume_tailor.apply import answer_memory
+
+    c, _ = client
+    monkeypatch.setattr(config, "APPLICATIONS_PATH", tmp_path / "apps" / "applications.json")
+    assert c.get("/api/answer-memory").json() == {"answers": []}
+    saved = answer_memory.remember("Preferred office?", "Remote", company="Acme", ats="lever")
+
+    listed = c.get("/api/answer-memory").json()["answers"]
+    assert [(a["label"], a["answer"], a["company"]) for a in listed] == [
+        ("Preferred office?", "Remote", "Acme")
+    ]
+    res = c.put(f"/api/answer-memory/{saved.id}", json={"answer": "Irvine"})
+    assert res.status_code == 200 and res.json()["answer"] == "Irvine"
+    assert c.put(f"/api/answer-memory/{saved.id}", json={"answer": ""}).status_code == 422
+    assert c.put("/api/answer-memory/999", json={"answer": "x"}).status_code == 404
+    assert c.delete(f"/api/answer-memory/{saved.id}").json() == {"answers": []}
+    assert c.delete(f"/api/answer-memory/{saved.id}").status_code == 404

@@ -15,6 +15,7 @@ from resume_tailor import config, data
 from resume_tailor.apply import (
     adapters,
     answer,
+    answer_memory,
     attachments,
     browser,
     clicks,
@@ -327,6 +328,23 @@ async def fill_application(
                         if value == "decline" and field.control_kind in {"text", "textarea"}:
                             value = ""
                         generated = False
+                        remembered = False
+                        if not value and not field.current_value:
+                            recalled = answer_memory.recall(
+                                field.label, company=app.company or "", ats=app.ats or "",
+                                canonical_key=key or "",
+                            )
+                            if recalled is not None and recalled.needs_review:
+                                record(step_id, FieldOutcome(
+                                    field_id=field.field_id, frame_id=field.frame_id,
+                                    label=field.label, canonical_key=key,
+                                    state="unanswered", required=field.required,
+                                    reason_code="saved_answer_other_company",
+                                ))
+                                continue
+                            if recalled is not None:
+                                value = recalled.answer
+                                remembered = True
                         if not value and not field.current_value and field_catalog.may_generate_written_answer(field):
                             progress(f"Step {step_number}: drafting {field.label}")
                             max_length = field.constraints.get("max_length")
@@ -396,7 +414,9 @@ async def fill_application(
                                 page, field_snapshot, field, fields["race"],
                                 phone_region=fields.get("phone_country_region", ""),
                             )
-                        outcome.answer_source = "generated" if generated else "profile"
+                        outcome.answer_source = (
+                            "generated" if generated else "memory" if remembered else "profile"
+                        )
                         record(step_id, outcome)
                         if (
                             outcome.state == "verified_filled"

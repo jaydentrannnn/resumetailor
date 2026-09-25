@@ -82,3 +82,75 @@ def test_correction_rejects_old_snapshot_before_browser_connection(tmp_path, mon
             "app-1", snapshot_id="old-snapshot", field_id="field-1",
             expected_state_hash="hash", value="text", option_ids=[],
         ))
+
+
+def _correctable(tmp_path, monkeypatch, label: str):
+    """An application whose review tab shows one empty field labelled ``label``,
+    with the browser, scanner and control writes faked."""
+    from contextlib import asynccontextmanager
+
+    from resume_tailor.apply.field_types import FieldOutcome
+
+    monkeypatch.setattr(config, "APPLICATIONS_PATH", tmp_path / "applications.json")
+    url = "https://boards.greenhouse.io/acme/jobs/1"
+    field = _field("").model_copy(update={"label": label})
+    saved = {**field.model_dump(), "expected_state_hash": review.state_hash(field, url)}
+    store.upsert(store.Application(
+        source="test", source_job_id="app-1", company="Acme", role="Intern", ats="greenhouse",
+        status="awaiting_review",
+        fill=store.FillResult(
+            browser_target_id="tab-1", review_snapshot_id="snapshot", review_fields=[saved],
+        ),
+    ))
+    page = SimpleNamespace(url=url)
+
+    @asynccontextmanager
+    async def fake_browser():
+        yield SimpleNamespace(contexts=[object()])
+
+    async def fake_find(_context, _target):
+        return page
+
+    async def fake_scan(_page):
+        return scanner.ScanSnapshot(snapshot_id="snapshot", fields=[field])
+
+    async def fake_apply(_page, _snapshot, observed, value, **_kwargs):
+        return FieldOutcome(
+            field_id=observed.field_id, frame_id=observed.frame_id, label=observed.label,
+            state="verified_filled", observed_value=value,
+        )
+
+    monkeypatch.setattr(review.browser, "async_cdp_browser", fake_browser)
+    monkeypatch.setattr(review.browser, "async_find_target", fake_find)
+    monkeypatch.setattr(review.scanner, "scan", fake_scan)
+    monkeypatch.setattr(review.controls, "apply_value", fake_apply)
+    return saved
+
+
+def _correct(saved, value):
+    return asyncio.run(review.correct(
+        "app-1", snapshot_id="snapshot", field_id="field-1",
+        expected_state_hash=saved["expected_state_hash"], value=value, option_ids=[],
+    ))
+
+
+def test_a_verified_correction_to_a_custom_question_is_remembered(tmp_path, monkeypatch):
+    from resume_tailor.apply import answer_memory
+
+    saved = _correctable(tmp_path, monkeypatch, "Which Acme office do you prefer?")
+    outcome = _correct(saved, "Irvine")
+    assert outcome.answer_source == "explicit_user_correction"
+    [remembered] = answer_memory.list_answers()
+    assert (remembered.label, remembered.answer, remembered.ats, remembered.company) == (
+        "Which Acme office do you prefer?", "Irvine", "greenhouse", "Acme",
+    )
+    recalled = answer_memory.recall("Which Beta office do you prefer?", company="Beta")
+    assert recalled is not None and recalled.answer == "Irvine"
+
+
+def test_a_correction_to_a_profile_fact_is_not_remembered(tmp_path, monkeypatch):
+    from resume_tailor.apply import answer_memory
+
+    saved = _correctable(tmp_path, monkeypatch, "Phone number")
+    _correct(saved, "555 010 0000")
+    assert answer_memory.list_answers() == []

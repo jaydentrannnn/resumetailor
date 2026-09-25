@@ -4,6 +4,7 @@ import { AttachmentResults } from "./AttachmentResults";
 import { FieldCorrectionRow } from "./FieldCorrectionRow";
 import { MissingProfileFields } from "./MissingProfileFields";
 import { Pagination } from "./TableControls";
+import { answerSourceLabel } from "../lib/answerSource";
 import { reviewGroup, type ReviewGroup } from "../lib/reviewGroups";
 
 type ReviewEntry = { key: string; field?: ApplyReviewField; outcome?: ApplyFieldOutcome };
@@ -106,7 +107,7 @@ export function ApplicationReview({
             item?.state?.replaceAll("_", " ") ||
             "Verification not recorded"}
         </p>
-        {item?.answer_source && <p>Source: {item.answer_source.replaceAll("_", " ")}</p>}
+        {item?.answer_source && <p>Source: {answerSourceLabel(item.answer_source)}</p>}
         <details>
           <summary>Full recorded answer</summary>
           <p className="whitespace-pre-wrap">

@@ -43,7 +43,7 @@ def _seed(base: str) -> None:
     import httpx
 
     sys.path.insert(0, str(ROOT))
-    from resume_tailor.apply import store
+    from resume_tailor.apply import answer_memory, store
     from tests.fixtures import synthetic_resume
     from tests.test_web import _resume_upload_with_profile
 
@@ -57,6 +57,9 @@ def _seed(base: str) -> None:
         timeout=300,
     ).raise_for_status()
     httpx.put(f"{base}/api/onboarding", json={"completed": True}, timeout=30).raise_for_status()
+    answer_memory.remember(
+        "Which office would you prefer?", "New York", company="Acme Capital", ats="greenhouse"
+    )
     app = store.Application
     for row in (
         app(

@@ -7,7 +7,17 @@ import json
 import re
 from typing import Any
 
-from resume_tailor.apply import adapters, attachments, browser, controls, field_catalog, scanner, store, workday_auth
+from resume_tailor.apply import (
+    adapters,
+    answer_memory,
+    attachments,
+    browser,
+    controls,
+    field_catalog,
+    scanner,
+    store,
+    workday_auth,
+)
 from resume_tailor.apply.field_types import FieldObservation, FieldOutcome
 
 _PROTECTED = re.compile(
@@ -196,5 +206,16 @@ async def correct(
             if outcome.state not in {"verified_filled", "preserved"}:
                 raise ValueError(outcome.reason_code or "Correction was not verified")
             await _record(app, page)
+            # A question the profile doesn't answer is worth remembering for the next
+            # form; a profile fact is fixed in the profile instead.
+            if policy != "known":
+                try:
+                    answer_memory.remember(
+                        target.label, wanted, company=app.company or "", ats=app.ats or "",
+                        canonical_key=_key or "",
+                        input_type=str(target.constraints.get("input_type") or ""),
+                    )
+                except Exception:  # noqa: BLE001 - memory is a convenience; the fix landed
+                    pass
             return outcome
     raise ValueError("The recorded review tab is closed")

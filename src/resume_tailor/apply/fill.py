@@ -22,6 +22,7 @@ from typing import Any, Literal
 from resume_tailor import config, data, report
 from resume_tailor.apply import (
     answer,
+    answer_memory,
     ats_hints,
     browser,
     clicks,
@@ -1078,6 +1079,21 @@ def fill_application(
                         if label in long_text_answers or label in needs_review:
                             continue
                         maxlength = int(item.get("maxlength") or 1500)
+                        recalled = answer_memory.recall(
+                            label, company=app.company or pkt.company or "", ats=ats_name
+                        )
+                        if recalled is not None:
+                            if recalled.needs_review or (0 < maxlength < len(recalled.answer)):
+                                needs_review.append(label)
+                                continue
+                            long_text_answers[label] = recalled.answer
+                            sel = item.get("selector")
+                            if sel:
+                                with contextlib.suppress(Exception):
+                                    target = frames[int(item.get("frame_index") or 0)]
+                                    if not target.locator(str(sel)).first.input_value().strip():
+                                        target.fill(sel, recalled.answer)
+                            continue
                         ans = answer.answer_question(
                             label,
                             resume=resume,
@@ -1125,7 +1141,17 @@ def fill_application(
                             if leftover["key"] == "how_heard" and selected != fields.get("how_heard"):
                                 other_chosen = True
                             continue
-                    canned = answer._profile_answer(label, profile)  # noqa: SLF001
+                    recalled = answer_memory.recall(
+                        label, company=app.company or pkt.company or "", ats=ats_name,
+                        canonical_key=str(leftover.get("key") or ""),
+                    )
+                    if recalled is not None and recalled.needs_review:
+                        needs_review.append(label)
+                        continue
+                    canned = (
+                        recalled.answer if recalled is not None
+                        else answer._profile_answer(label, profile)  # noqa: SLF001
+                    )
                     if canned and leftover.get("selector"):
                         try:
                             target = frames[int(leftover.get("frame_index") or 0)]
@@ -1143,7 +1169,7 @@ def fill_application(
                                 target.fill(selector, canned)
                             merged["filled"].append(
                                 {
-                                    "key": "custom",
+                                    "key": "memory" if recalled is not None else "custom",
                                     "label": label,
                                     "value": canned,
                                     "selector": leftover["selector"],

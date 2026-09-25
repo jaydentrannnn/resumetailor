@@ -14,6 +14,7 @@ import { useApplicantProfile } from "../../state/applicantProfileState";
 import type { FieldContext } from "./fieldContext";
 import { ProfileField } from "./ProfileField";
 import { TranscriptUpload } from "./TranscriptUpload";
+import { SavedAnswersList } from "./SavedAnswersList";
 
 const yesNo = (value: boolean) => (value ? "Yes" : "No");
 
@@ -173,12 +174,13 @@ export function ApplicationTab({
               onChange={(languages) => setDraft({ languages })}
             />
           )}
+          {group.id === "Saved answers and other preferences" && <SavedAnswersList />}
           {group.id === "Saved answers and other preferences" && (
             <div className="mt-4">
               <h3 className="text-sm font-semibold">Custom answers</h3>
               {Object.keys(draft.custom_answers ?? {}).length === 0 && (
                 <p className="mt-1 text-xs text-ink-muted">
-                  Answers you give while reviewing a form are saved here for next time.
+                  None yet. Remembered answers above are used first.
                 </p>
               )}
               {Object.entries(draft.custom_answers ?? {}).map(([question, answer]) => (
@@ -218,6 +220,7 @@ function EducationSummary({ education }: { education: Education[] }) {
               {entry.degree && ` · ${entry.degree}`}
               {entry.major && ` · ${entry.major}`}
               {entry.dates && ` · ${entry.dates}`}
+              {entry.end && ` · graduates ${entry.end}`}
               {entry.gpa && ` · GPA ${entry.gpa}`}
             </li>
           ))}

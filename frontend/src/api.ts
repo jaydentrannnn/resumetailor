@@ -2104,3 +2104,32 @@ export function rerenderJob(jobId: string, body: RerenderRequest): Promise<Reren
     body: JSON.stringify(body),
   });
 }
+
+/** One answer remembered from a review correction (`GET /api/answer-memory`). */
+export type SavedAnswer = {
+  id: number;
+  label: string;
+  answer: string;
+  ats: string;
+  company: string;
+  source: string;
+  uses: number;
+  updated_at: string;
+};
+
+export async function fetchSavedAnswers(): Promise<SavedAnswer[]> {
+  return (await request<{ answers: SavedAnswer[] }>("/api/answer-memory")).answers;
+}
+
+export function updateSavedAnswer(id: number, answer: string): Promise<SavedAnswer> {
+  return request(`/api/answer-memory/${id}`, {
+    method: "PUT",
+    body: JSON.stringify({ answer }),
+  });
+}
+
+export async function deleteSavedAnswer(id: number): Promise<SavedAnswer[]> {
+  return (
+    await request<{ answers: SavedAnswer[] }>(`/api/answer-memory/${id}`, { method: "DELETE" })
+  ).answers;
+}

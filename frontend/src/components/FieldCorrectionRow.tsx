@@ -1,5 +1,6 @@
 import { useState } from "react";
 import type { ApplyFieldOutcome, ApplyReviewField } from "../api";
+import { answerSourceLabel } from "../lib/answerSource";
 
 export function observedFieldValue(field: ApplyReviewField): string {
   const selected = field.options.filter((option) => option.selected && !option.placeholder);
@@ -70,7 +71,7 @@ export function FieldCorrectionRow({
         Current: {observedFieldValue(field)} · {reason}
       </p>
       {outcome?.answer_source && (
-        <p className="mt-1 text-ink-muted">Source: {outcome.answer_source.replaceAll("_", " ")}</p>
+        <p className="mt-1 text-ink-muted">Source: {answerSourceLabel(outcome.answer_source)}</p>
       )}
       {canCorrect ? (
         <div className="mt-2 flex flex-wrap items-center gap-2">

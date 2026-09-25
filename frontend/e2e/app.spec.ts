@@ -33,6 +33,7 @@ test("profile: one save bar validates, then saves", async ({ page }) => {
   await page.getByLabel("School email").fill("student@school.edu");
   await page.getByRole("button", { name: "Save changes" }).click();
   await expect(page.getByText("All changes saved")).toBeVisible();
+  await expect(page.getByLabel("Which office would you prefer?")).toHaveValue("New York");
   await expectAccessible(page);
 });
 

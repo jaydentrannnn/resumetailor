@@ -939,3 +939,11 @@ A file reappearing after import is ignored (logged). Deviation from the plan: th
 operations registry (`operations.json`, transient) and run directories stay files;
 the plan's `application_refs`/`application_events`/`answer_memory` tables are added by
 the tasks that first need them (a new entry in `db.MIGRATIONS`, never an edit).
+
+## P3-A: answer memory (2026-09)
+- `apply/answer_memory.py` stores in a new `answer_memory` table (db migration 2) in the workspace's `app.db`, next to the applications. It never goes in `applicant_profile.json`: the rows are a log of corrections, not profile facts. Uniqueness is `(label_norm, ats)`, so a second correction to the same question replaces the first.
+- Capture happens only in `review.correct`, after the correction is verified in the browser, and only for questions the field catalog doesn't classify as a profile fact (`policy != "known"`). A wrong phone number is fixed in the profile, not memorised. A failure to remember never fails the correction.
+- Recall runs after the profile/packet value and before the model, at three spots: `engine.py` (verified engine: `answer_source="memory"`), the legacy `fill.py` leftovers (ahead of `custom_answers`), and `fill.py` long-text questions (ahead of `answer_question`). A remembered long answer over the field's `maxlength` goes to review rather than being truncated.
+- Company handling: labels normalise the posting's company to `{company}`, so "Why Acme?" and "Why Beta?" are one question. The answer text is never rewritten. An answer that names a company other than the current posting's comes back `needs_review` and becomes a review item (`saved_answer_other_company` in the engine) instead of being filled.
+- Never stored or recalled: equal-opportunity questions (by label regex and by canonical key), passwords (label or `input_type`), codes, SSN, date of birth, signatures.
+- Test gap: there is no end-to-end harness for `engine.fill_application` in the suite. Recall is covered at the module level and capture through `review.correct` with a faked browser.

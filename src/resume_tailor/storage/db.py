@@ -57,6 +57,23 @@ MIGRATIONS: tuple[str, ...] = (
     );
     CREATE TABLE kv(name TEXT PRIMARY KEY, doc TEXT NOT NULL, updated_at TEXT NOT NULL);
     """,
+    # 2: answers the student corrected during review, reused by later fills
+    # (`apply/answer_memory.py`).
+    """
+    CREATE TABLE answer_memory(
+        id INTEGER PRIMARY KEY,
+        label_norm TEXT NOT NULL,
+        ats TEXT NOT NULL DEFAULT '',
+        label TEXT NOT NULL,
+        answer TEXT NOT NULL,
+        company TEXT NOT NULL DEFAULT '',
+        source TEXT NOT NULL DEFAULT 'correction',
+        uses INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(label_norm, ats)
+    );
+    """,
 )
 
 SCHEMA_VERSION = len(MIGRATIONS)
