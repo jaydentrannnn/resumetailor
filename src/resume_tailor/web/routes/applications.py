@@ -65,6 +65,10 @@ def _application_out(
 ) -> ApplicationOut:
     """Convert a store row into the API response model with computed fields."""
     payload = app.model_dump()
+    if isinstance(payload.get("fill"), dict) and payload["fill"].get("missing_profile"):
+        payload["fill"]["missing_profile"] = apply_packet.visible_missing_profile(
+            payload["fill"]["missing_profile"]
+        )
     payload["sources"] = (
         [ref.source for ref in app.source_refs] if app.source_refs else [app.source]
     )
@@ -101,7 +105,11 @@ def _profile_gaps(profile: apply_profile.ApplicantProfile) -> list[ProfileGap]:
         for application in apply_store.load_all().values():
             fill = application.fill
             entries = (fill.get("missing_profile") if isinstance(fill, dict) else getattr(fill, "missing_profile", None)) or []
-            for key in {str(entry.get("key") or "") for entry in entries if isinstance(entry, dict)}:
+            for key in {
+                str(entry.get("key") or "")
+                for entry in apply_packet.visible_missing_profile(entries)
+                if isinstance(entry, dict)
+            }:
                 seen[key] = seen.get(key, 0) + 1
     keys = list(apply_packet.profile_gaps(fields))
     keys += [key for key in seen if key in apply_packet.PROFILE_FIELDS and key not in keys and not fields.get(key)]

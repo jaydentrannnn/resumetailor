@@ -179,7 +179,8 @@ async def fill_application(
             if item.required and item.state not in {"verified_filled", "preserved"}
         ]
         result.missing_profile = packet.missing_profile(
-            [{"key": item.canonical_key, "label": item.label} for item in outcomes.values()
+            [{"key": item.canonical_key, "label": item.label, "required": item.required}
+             for item in outcomes.values()
              if item.reason_code == "unsupported_fact"],
             {item.label for item in outcomes.values() if item.state == "verified_filled"},
         )

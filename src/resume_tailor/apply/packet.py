@@ -144,6 +144,10 @@ class ProfileFieldInfo(BaseModel):
     label: str
     section: str
     common: bool = False
+    #: Often legitimately blank (no middle name, no apartment): a blank one is never a
+    #: profile gap, and a form's *optional* question for it is skipped silently. A form
+    #: that marks it required still stops for review through ``required_empty``.
+    optional: bool = False
 
 
 _CONTACT = "Application contact"
@@ -158,7 +162,7 @@ _SAVED = "Saved answers and other preferences"
 #: marks the facts application forms routinely ask for: a blank one is a known skip.
 PROFILE_FIELDS: dict[str, ProfileFieldInfo] = {
     "first_name": ProfileFieldInfo(label="Legal first name", section=_CONTACT, common=True),
-    "middle_name": ProfileFieldInfo(label="Middle name", section=_CONTACT),
+    "middle_name": ProfileFieldInfo(label="Middle name", section=_CONTACT, optional=True),
     "last_name": ProfileFieldInfo(label="Legal last name", section=_CONTACT, common=True),
     "full_name": ProfileFieldInfo(label="Legal first and last name", section=_CONTACT),
     "preferred_name": ProfileFieldInfo(label="Preferred name", section=_CONTACT),
@@ -167,7 +171,7 @@ PROFILE_FIELDS: dict[str, ProfileFieldInfo] = {
     "linkedin_url": ProfileFieldInfo(label="LinkedIn URL", section=_CONTACT),
     "github_url": ProfileFieldInfo(label="GitHub URL", section=_CONTACT),
     "address_line1": ProfileFieldInfo(label="Address line 1", section=_ADDRESS, common=True),
-    "address_line2": ProfileFieldInfo(label="Address line 2", section=_ADDRESS),
+    "address_line2": ProfileFieldInfo(label="Address line 2", section=_ADDRESS, optional=True),
     "city": ProfileFieldInfo(label="City", section=_ADDRESS, common=True),
     "state": ProfileFieldInfo(label="State or province", section=_ADDRESS, common=True),
     "postal_code": ProfileFieldInfo(label="Postal code", section=_ADDRESS, common=True),
@@ -341,6 +345,25 @@ def profile_gaps(fields: dict[str, str]) -> list[str]:
     return [key for key, info in PROFILE_FIELDS.items() if info.common and not fields.get(key)]
 
 
+def is_optional(key: str) -> bool:
+    """Whether a blank ``key`` is normal (see ``ProfileFieldInfo.optional``)."""
+    info = PROFILE_FIELDS.get(key)
+    return bool(info and info.optional)
+
+
+def visible_missing_profile(entries: list) -> list:
+    """Stored ``missing_profile`` minus optional fields no form required.
+
+    Fills recorded before ``optional`` existed kept a blank middle name as a gap; this
+    hides those without rewriting stored rows.
+    """
+    return [
+        entry for entry in entries
+        if not (isinstance(entry, dict) and is_optional(str(entry.get("key") or ""))
+                and not entry.get("required"))
+    ]
+
+
 #: filler.js's leftover reason for a recognised question whose profile fact is blank.
 BLANK_PROFILE_REASON = "Profile field is blank"
 
@@ -350,13 +373,20 @@ def missing_profile(blank: list[dict], filled_labels: set[str]) -> list[dict]:
 
     ``answered`` is true when every such question was filled anyway (a saved answer or
     the Autofill model): it still belongs to the profile, so the next fill is certain.
+    An ``optional`` field (middle name, address line 2) is listed only when the form
+    marked its question required.
     """
     grouped: dict[str, list[str]] = {}
+    required: set[str] = set()
     for item in blank:
         key = str(item.get("key") or "")
         if key not in PROFILE_FIELDS:
             # Not a profile field: the preferred-name tick, resume-derived employer, ...
             continue
+        if PROFILE_FIELDS[key].optional and not item.get("required"):
+            continue
+        if item.get("required"):
+            required.add(key)
         labels = grouped.setdefault(key, [])
         label = str(item.get("label") or "").strip()
         if label and label not in labels:
@@ -368,6 +398,7 @@ def missing_profile(blank: list[dict], filled_labels: set[str]) -> list[dict]:
             "key": key, "field_label": info.label, "section": info.section,
             "path": profile_path(info.section, key), "questions": questions,
             "answered": bool(questions) and all(q in filled_labels for q in questions),
+            "required": key in required,
         })
     return entries
 

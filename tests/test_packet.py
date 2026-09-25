@@ -214,6 +214,27 @@ def test_missing_profile_groups_questions_by_fact_and_marks_the_ones_answered_an
     assert by_key["phone_device_type"]["answered"] is True
 
 
+def test_blank_middle_name_and_address_line2_are_not_gaps_unless_required():
+    from resume_tailor.apply.packet import profile_gaps, visible_missing_profile
+
+    blank = [
+        {"key": "middle_name", "label": "Middle Name"},
+        {"key": "address_line2", "label": "Address Line 2", "required": False},
+        {"key": "city", "label": "City"},
+    ]
+    assert [e["key"] for e in missing_profile(blank, filled_labels=set())] == ["city"]
+    forced = missing_profile(
+        [{"key": "middle_name", "label": "Middle Name", "required": True}], filled_labels=set()
+    )
+    assert [(e["key"], e["required"]) for e in forced] == [("middle_name", True)]
+    # Rows stored before the flag existed are hidden at read time.
+    stored = [{"key": "middle_name"}, {"key": "address_line2"}, {"key": "city"},
+              {"key": "middle_name", "required": True}]
+    assert [e["key"] for e in visible_missing_profile(stored)] == ["city", "middle_name"]
+    assert "middle_name" not in profile_gaps({})
+    assert "address_line2" not in profile_gaps({})
+
+
 def test_salary_is_manual_and_declared_eeo_answers_are_distinct():
     profile = ApplicantProfile(
         salary_expectation="$45/hour",
