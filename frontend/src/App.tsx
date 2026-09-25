@@ -11,6 +11,9 @@ import {
 import { lazy, Suspense, useEffect, useRef } from "react";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { SettingsMenu } from "./components/SettingsMenu";
+import { KeyboardShortcuts } from "./components/KeyboardShortcuts";
+import { SetupHealth } from "./components/SetupHealth";
+import { ToastProvider } from "./components/ui/Toast";
 import { RunPage } from "./pages/RunPage";
 import { ConfirmProvider } from "./state/confirmState";
 import { EditorProvider } from "./state/editorState";
@@ -46,11 +49,13 @@ function AppFrame() {
   return (
     <ErrorBoundary>
       <ThemeProvider>
-        <WorkspaceProvider>
-          <ConfirmProvider>
-            <WorkspaceScope />
-          </ConfirmProvider>
-        </WorkspaceProvider>
+        <ToastProvider>
+          <WorkspaceProvider>
+            <ConfirmProvider>
+              <WorkspaceScope />
+            </ConfirmProvider>
+          </WorkspaceProvider>
+        </ToastProvider>
       </ThemeProvider>
     </ErrorBoundary>
   );
@@ -110,7 +115,7 @@ function Shell() {
   return (
     <div className="min-h-screen">
       <NavigationGuard />
-      <header className="border-b border-line/80 bg-panel/80 backdrop-blur-sm">
+      <header className="relative z-30 border-b border-line/80 bg-panel/80 backdrop-blur-sm">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-x-6 gap-y-3 px-6 py-4">
           {/* Brand and nav read left-to-right as one group; profile and theme
               utilities sit on the right. min-w-0 lets each group shrink below its
@@ -142,10 +147,12 @@ function Shell() {
             </nav>
           </div>
           <div className="flex min-w-0 flex-wrap items-end gap-4">
+            <SetupHealth />
             <SettingsMenu />
           </div>
         </div>
       </header>
+      <KeyboardShortcuts />
       <main className="mx-auto max-w-6xl px-6 py-8">
         <Suspense fallback={<PageLoading />}>
           <Routes>

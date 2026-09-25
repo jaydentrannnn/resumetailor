@@ -160,7 +160,10 @@ export function DataTable<T>({
                     className="text-left hover:text-accent"
                     onClick={() => onSort(col.id)}
                   >
-                    {col.heading} {sort === col.id ? (direction === "asc" ? "↑" : "↓") : ""}
+                    {col.heading}{" "}
+                    <span aria-hidden="true">
+                      {sort === col.id ? (direction === "asc" ? "↑" : "↓") : ""}
+                    </span>
                   </button>
                 ) : (
                   col.heading

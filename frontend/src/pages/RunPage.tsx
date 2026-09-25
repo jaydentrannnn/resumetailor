@@ -292,6 +292,7 @@ export function RunPage() {
       <div className="lg:col-start-1 lg:col-span-2 lg:row-start-3">
         <button
           type="submit"
+          data-shortcut="primary"
           disabled={busy || !jdText.trim() || !settingsLoaded || switching}
           className="w-full rounded-lg bg-accent px-4 py-3 text-sm font-semibold text-on-accent transition-[filter] duration-[var(--dur-short)] ease-out hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
         >

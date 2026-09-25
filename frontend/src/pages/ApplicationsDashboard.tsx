@@ -768,6 +768,7 @@ export function ApplicationsDashboard() {
           <input
             className="min-w-48 flex-1 rounded-md border border-line bg-panel px-3 text-sm"
             aria-label={`Search ${archived ? "archived" : "working"} applications`}
+            data-shortcut="search"
             placeholder="Search company, role, or location"
             value={state.q}
             onChange={(e) => state.change({ q: e.target.value })}

@@ -1,6 +1,6 @@
 import { describe, expect, it } from "vitest";
 import type { RunEstimate } from "../api";
-import { describeEstimate } from "./RunCostEstimate";
+import { describeEstimate } from "../lib/runEstimate";
 
 const base: RunEstimate = {
   calls: 8,

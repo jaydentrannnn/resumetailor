@@ -172,3 +172,18 @@ Every page but Tailor is `React.lazy` (initial JS 551 kB → 385 kB). `GET
 rows carry fields computed from job files and settings) and answers 304 to a matching
 `If-None-Match`; `api.conditionalGet` then hands back the previous object, so an idle
 poll does no JSON parse and gives React the same reference.
+
+## UI primitives and setup health (UI1–UI7, 2026-09)
+New primitives live in `frontend/src/components/ui/` (Button with `loading`, Card,
+EmptyState, Skeleton, Kbd, Stepper, InlineHelp, ToastProvider). Field/Modal/Tabs stay in
+their files and are re-exported from `ui/index.ts` rather than moved (dozens of imports,
+no behaviour change). Pure helpers (`buttonClass`, `stepState`, `describeEstimate`,
+`setupPillLabel`) sit in `lib/` so component files export only components (oxlint's
+fast-refresh rule). `lib/errors.ts` `describe()` maps both server `error` codes
+(`ApiError.code`, set by `request()` from the body) and known message text (job errors
+arrive as SSE strings) to title/detail/next step; add a rule there when a new failure
+mode gets a message. `GET /api/setup-status` never makes a model call: key presence via
+`credential_gaps` plus an Anthropic check (that key is enforced later, by
+`anthropic_api_key`), and a cached 2 s `GET <base>/models` probe for local servers.
+The header needs `relative z-30`: its `backdrop-blur` creates a stacking context that
+otherwise lets page cards paint over header popovers.

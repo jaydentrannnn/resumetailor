@@ -1,5 +1,7 @@
 /** Shared types and fetch helpers for the ResumeTailor API. */
 
+import { ApiError } from "./lib/errors";
+
 export type ContactField = "location" | "email" | "phone" | "linkedin" | "github";
 
 export type IncludeOptions = {
@@ -945,6 +947,22 @@ export type LibraryAliasImpact = {
   affected_bullets: [string, string][];
 };
 
+/** The thrown error for a failed response: FastAPI's `detail`, plus `error`/`hint` codes. */
+async function apiError(res: Response): Promise<ApiError> {
+  let detail = res.statusText;
+  let code: string | undefined;
+  let hint: string | undefined;
+  try {
+    const body = await res.json();
+    detail = typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail ?? body);
+    code = typeof body.error === "string" ? body.error : undefined;
+    hint = typeof body.hint === "string" ? body.hint : undefined;
+  } catch {
+    /* keep statusText */
+  }
+  return new ApiError(detail, res.status, code, hint);
+}
+
 async function request<T>(path: string, init?: RequestInit): Promise<T> {
   /** JSON fetch that surfaces FastAPI error bodies as thrown Errors. */
   const res = await fetch(path, {
@@ -954,16 +972,7 @@ async function request<T>(path: string, init?: RequestInit): Promise<T> {
       ...(init?.headers ?? {}),
     },
   });
-  if (!res.ok) {
-    let detail = res.statusText;
-    try {
-      const body = await res.json();
-      detail = typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail ?? body);
-    } catch {
-      /* keep statusText */
-    }
-    throw new Error(detail);
-  }
+  if (!res.ok) throw await apiError(res);
   if (res.status === 204) return undefined as T;
   return res.json() as Promise<T>;
 }
@@ -1192,6 +1201,26 @@ export interface CacheUsage {
   files: number;
   bytes: number;
   max_bytes: number;
+}
+
+export interface SetupItem {
+  id: string;
+  label: string;
+  ok: boolean;
+  detail: string;
+  fix: { label: string; to: string };
+  optional: boolean;
+}
+
+export interface SetupStatus {
+  items: SetupItem[];
+  ready: boolean;
+  remaining: number;
+}
+
+export function fetchSetupStatus(): Promise<SetupStatus> {
+  /** Prerequisites checklist for the header pill; never makes a model call. */
+  return request("/api/setup-status");
 }
 
 export function fetchCacheUsage(): Promise<CacheUsage> {
@@ -1689,16 +1718,7 @@ export async function conditionalGet<T>(path: string): Promise<T> {
     headers: cached ? { "If-None-Match": cached.etag } : {},
   });
   if (res.status === 304 && cached) return cached.body as T;
-  if (!res.ok) {
-    let detail = res.statusText;
-    try {
-      const body = await res.json();
-      detail = typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail ?? body);
-    } catch {
-      /* keep statusText */
-    }
-    throw new Error(detail);
-  }
+  if (!res.ok) throw await apiError(res);
   const body = (await res.json()) as T;
   const etag = res.headers.get("ETag");
   if (etag) {
