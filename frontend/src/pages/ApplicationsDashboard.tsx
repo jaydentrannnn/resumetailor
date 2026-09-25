@@ -171,6 +171,7 @@ function useApplicationTable(
         setSelectedState((previous) => {
           const ids = new Set(result.applications.map((row) => row.source_job_id));
           const next = new Set([...previous].filter((id) => ids.has(id)));
+          if (next.size === previous.size) return previous; // unchanged: keep the reference
           selectionCache.set(`${workspaceId}:${scope}`, next);
           return next;
         });

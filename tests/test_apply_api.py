@@ -378,3 +378,15 @@ def test_retired_apply_routes_are_gone(client, method, path):
     c, _q = client
     res = c.request(method.upper(), path)
     assert res.status_code in {404, 405}
+
+
+def test_application_list_answers_304_when_unchanged(client):
+    c, _ = client
+    first = c.get("/api/applications?limit=50")
+    etag = first.headers["etag"]
+    again = c.get("/api/applications?limit=50", headers={"If-None-Match": etag})
+    assert again.status_code == 304 and again.content == b""
+    apply_store.upsert(apply_store.Application(source="s", source_job_id="new", company="N", role="R"))
+    changed = c.get("/api/applications?limit=50", headers={"If-None-Match": etag})
+    assert changed.status_code == 200 and changed.headers["etag"] != etag
+    assert changed.json()["total"] == first.json()["total"] + 1

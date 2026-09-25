@@ -2,13 +2,14 @@
 
 from __future__ import annotations
 
+import hashlib
 import json
 import logging
 from contextlib import suppress
 from pathlib import Path
 from typing import Any, Literal
 
-from fastapi import APIRouter, HTTPException
+from fastapi import APIRouter, HTTPException, Request, Response
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from resume_tailor import (
@@ -270,6 +271,7 @@ def get_open_application_tabs() -> dict[str, Any]:
 
 @router.get("/api/applications", response_model=ApplicationsListResponse)
 def list_applications(
+    request: Request,
     status: apply_store.ApplicationStatus | None = None,
     limit: int = 50,
     offset: int = 0,
@@ -310,11 +312,19 @@ def list_applications(
         gkey = row.group_key
         group_size = len(index.by_group.get(gkey, [])) if gkey else 1
         outs.append(_application_out(row, group_size=max(1, group_size)))
-    return ApplicationsListResponse(
+    body = ApplicationsListResponse(
         applications=outs,
         counts=counts,
         total=counts.get(status, 0) if status else sum(counts.values()),
-    )
+    ).model_dump_json().encode("utf-8")
+    # The Apply page polls this every few seconds; an unchanged page answers 304 so the
+    # client keeps its rows (and React skips the re-render). Hashing the body rather than
+    # a store counter: rows also carry fields computed from job files and settings.
+    etag = f'W/"{hashlib.sha1(body, usedforsecurity=False).hexdigest()}"'
+    headers = {"ETag": etag, "Cache-Control": "no-cache"}
+    if request.headers.get("if-none-match") == etag:
+        return Response(status_code=304, headers=headers)
+    return Response(content=body, media_type="application/json", headers=headers)
 
 
 @router.post("/api/applications/archive", response_model=ArchiveApplicationsResponse)

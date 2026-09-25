@@ -165,3 +165,10 @@ per-stage prompt overhead, rewrite counted as two fit rounds). Unknown models ge
 counts and `usd: null`, never a guessed price; the SPA hides the line for local models.
 PF2 (unoserver) is deferred: optional in the plan, and PF1's persistent profile already
 removed the per-call profile creation.
+
+## Frontend loading and polling cost (PF5, 2026-09)
+Every page but Tailor is `React.lazy` (initial JS 551 kB → 385 kB). `GET
+/api/applications` sends a weak ETag over the response body (not a store counter:
+rows carry fields computed from job files and settings) and answers 304 to a matching
+`If-None-Match`; `api.conditionalGet` then hands back the previous object, so an idle
+poll does no JSON parse and gives React the same reference.

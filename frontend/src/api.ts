@@ -1672,7 +1672,40 @@ export function listApplications(options: ApplicationListOptions = {}): Promise<
   if (options.direction) params.set("direction", options.direction);
   params.set("limit", String(options.limit ?? 25));
   params.set("offset", String(options.offset ?? 0));
-  return request(`/api/applications?${params}`);
+  return conditionalGet(`/api/applications?${params}`);
+}
+
+/** Last body and ETag per URL, for `conditionalGet`. */
+const etagCache = new Map<string, { etag: string; body: unknown }>();
+
+/**
+ * GET that sends `If-None-Match` and, on a 304, returns the very object it returned
+ * last time: a poll that finds nothing new hands React the same reference, so the
+ * table does not re-render.
+ */
+export async function conditionalGet<T>(path: string): Promise<T> {
+  const cached = etagCache.get(path);
+  const res = await fetch(path, {
+    headers: cached ? { "If-None-Match": cached.etag } : {},
+  });
+  if (res.status === 304 && cached) return cached.body as T;
+  if (!res.ok) {
+    let detail = res.statusText;
+    try {
+      const body = await res.json();
+      detail = typeof body.detail === "string" ? body.detail : JSON.stringify(body.detail ?? body);
+    } catch {
+      /* keep statusText */
+    }
+    throw new Error(detail);
+  }
+  const body = (await res.json()) as T;
+  const etag = res.headers.get("ETag");
+  if (etag) {
+    if (etagCache.size > 50) etagCache.clear();
+    etagCache.set(path, { etag, body });
+  }
+  return body;
 }
 
 export function archiveApplications(

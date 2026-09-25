@@ -8,15 +8,10 @@ import {
   useBlocker,
   useLocation,
 } from "react-router-dom";
-import { useEffect, useRef } from "react";
+import { lazy, Suspense, useEffect, useRef } from "react";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { SettingsMenu } from "./components/SettingsMenu";
-import { ApplicationsDashboard } from "./pages/ApplicationsDashboard";
-import { ApplicationDetailPage } from "./pages/ApplicationDetailPage";
-import { ProfilePage } from "./pages/ProfilePage";
 import { RunPage } from "./pages/RunPage";
-import { TemplatePage } from "./pages/TemplatePage";
-import { VocabularyPage } from "./pages/VocabularyPage";
 import { ConfirmProvider } from "./state/confirmState";
 import { EditorProvider } from "./state/editorState";
 import { LibraryProvider, useLibraryState } from "./state/libraryState";
@@ -152,21 +147,49 @@ function Shell() {
         </div>
       </header>
       <main className="mx-auto max-w-6xl px-6 py-8">
-        <Routes>
-          <Route path="/" element={<RunPage />} />
-          <Route path="/applications" element={<ApplicationsDashboard />} />
-          <Route path="/applications/:applicationId" element={<ApplicationDetailPage />} />
-          <Route path="/profile" element={<Navigate to="/profile/personal" replace />} />
-          <Route path="/profile/personal" element={<ProfilePage />} />
-          <Route path="/profile/resume" element={<ProfilePage />} />
-          <Route path="/profile/application" element={<ProfilePage />} />
-          <Route path="/editor" element={<Navigate to="/profile/resume" replace />} />
-          <Route path="/template" element={<TemplatePage />} />
-          <Route path="/vocabulary" element={<VocabularyPage />} />
-          <Route path="/settings" element={<Navigate to="/vocabulary" replace />} />
-        </Routes>
+        <Suspense fallback={<PageLoading />}>
+          <Routes>
+            <Route path="/" element={<RunPage />} />
+            <Route path="/applications" element={<ApplicationsDashboard />} />
+            <Route path="/applications/:applicationId" element={<ApplicationDetailPage />} />
+            <Route path="/profile" element={<Navigate to="/profile/personal" replace />} />
+            <Route path="/profile/personal" element={<ProfilePage />} />
+            <Route path="/profile/resume" element={<ProfilePage />} />
+            <Route path="/profile/application" element={<ProfilePage />} />
+            <Route path="/editor" element={<Navigate to="/profile/resume" replace />} />
+            <Route path="/template" element={<TemplatePage />} />
+            <Route path="/vocabulary" element={<VocabularyPage />} />
+            <Route path="/settings" element={<Navigate to="/vocabulary" replace />} />
+          </Routes>
+        </Suspense>
       </main>
     </div>
+  );
+}
+
+// The Tailor page loads with the app; every other page is fetched on first visit, so
+// the first paint does not wait for the editor, Apply dashboard and template wizard.
+const ApplicationsDashboard = lazy(() =>
+  import("./pages/ApplicationsDashboard").then((m) => ({ default: m.ApplicationsDashboard })),
+);
+const ApplicationDetailPage = lazy(() =>
+  import("./pages/ApplicationDetailPage").then((m) => ({ default: m.ApplicationDetailPage })),
+);
+const ProfilePage = lazy(() =>
+  import("./pages/ProfilePage").then((m) => ({ default: m.ProfilePage })),
+);
+const TemplatePage = lazy(() =>
+  import("./pages/TemplatePage").then((m) => ({ default: m.TemplatePage })),
+);
+const VocabularyPage = lazy(() =>
+  import("./pages/VocabularyPage").then((m) => ({ default: m.VocabularyPage })),
+);
+
+function PageLoading() {
+  return (
+    <p role="status" className="py-12 text-center text-sm text-ink-muted">
+      Loading…
+    </p>
   );
 }
 
