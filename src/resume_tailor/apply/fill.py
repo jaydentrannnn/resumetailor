@@ -534,7 +534,43 @@ def _observe_fields(page: Any, filler_js: str, hints: dict[str, str], attempted:
                     "preserved": bool(prior.get("preserved")),
                     "frame_index": frame_index,
                 }
+                if prior.get("corrected") and prior.get("previous"):
+                    observed[(frame_index, selector)].update(
+                        corrected=True,
+                        previous=prior["previous"],
+                        reason_text=(
+                            "Corrected after the resume upload "
+                            f"(the form had “{prior['previous']}”)"
+                        ),
+                    )
     return observed
+
+
+def _correct_resume_prefill(
+    page: Any, frames: list[Any], filler_js: str, fields: dict[str, Any], hints: dict[str, str]
+) -> list[dict[str, Any]]:
+    """E3: put back contact facts an ATS's resume parser overwrote after the upload.
+
+    Greenhouse, Workday and iCIMS read the uploaded PDF and fill name, email, phone and
+    links from it, sometimes over what the fill already typed. ``filler.js`` in
+    ``correct`` mode rewrites only those facts, only where they disagree with the
+    profile, and reports each one with the value it replaced.
+    """
+    page.wait_for_timeout(1500)
+    corrected: list[dict[str, Any]] = []
+    for frame_index, frame in enumerate(frames):
+        with contextlib.suppress(Exception):
+            result = frame.evaluate(
+                filler_js,
+                {"fields": fields, "hints": hints, "synonyms": _synonym_payload(), "correct": True},
+            )
+            for key in ("filled", "leftovers"):
+                corrected.extend(
+                    {**item, "frame_index": frame_index}
+                    for item in (result or {}).get(key) or []
+                    if isinstance(item, dict)
+                )
+    return corrected
 
 
 def _stage_attachment(
@@ -1146,6 +1182,7 @@ def fill_application(
                         file_inputs.append({"selector": cov_sel, "label": "Cover Letter"})
                         break
 
+                resume_uploaded = False
                 for fin in file_inputs:
                     if time.monotonic() >= deadline or (should_cancel and should_cancel()):
                         needs_review.append("Fill stopped before all attachments were checked")
@@ -1239,6 +1276,17 @@ def fill_application(
                     if uploaded:
                         verified_purposes.add((purpose, frame_index))
                         progress(f"{purpose.replace('_', ' ')} attachment verified")
+                        resume_uploaded |= purpose == "resume"
+
+                if resume_uploaded:
+                    fixes = _correct_resume_prefill(page, frames, filler_js, fields, hints)
+                    for item in fixes:
+                        if item.get("corrected"):
+                            merged["filled"].append(item)
+                            fixed = item.get("label") or "a field"
+                            progress(f"corrected {fixed} after the resume upload")
+                        else:
+                            merged["leftovers"].append(item)
 
                 if time.monotonic() >= deadline or (should_cancel and should_cancel()):
                     needs_review.append("Fill stopped before this form step was complete")

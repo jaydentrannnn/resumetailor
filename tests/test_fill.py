@@ -1047,3 +1047,40 @@ def test_workday_review_submit_is_never_an_advance_button():
     # clicking it as "advance" submitted the application.
     assert fill._find_advance_button(_FooterPage("Submit")) is None  # noqa: SLF001
     assert fill._find_advance_button(_FooterPage("Save and Continue")) is not None  # noqa: SLF001
+
+
+class _EvalFrame:
+    def __init__(self, reply):
+        self.reply = reply
+        self.calls: list[dict] = []
+
+    def evaluate(self, _script, args):
+        self.calls.append(args)
+        if isinstance(self.reply, Exception):
+            raise self.reply
+        return self.reply
+
+
+def test_resume_prefill_correction_runs_filler_in_correct_mode():
+    fixed = {"key": "email", "label": "Email", "value": "ada@example.com", "selector": "#em", "corrected": True, "previous": "old@x.edu"}
+    stuck = {"key": "phone", "label": "Phone", "selector": "#ph", "reason": "did not stick"}
+    good = _EvalFrame({"filled": [fixed], "leftovers": [stuck]})
+    cross_origin = _EvalFrame(RuntimeError("cross-origin"))
+    page = MagicMock()
+    items = fill._correct_resume_prefill(  # noqa: SLF001
+        page, [good, cross_origin], "js", {"email": "ada@example.com"}, {}
+    )
+    assert good.calls[0]["correct"] is True
+    assert [item["selector"] for item in items] == ["#em", "#ph"]
+    assert all(item["frame_index"] == 0 for item in items)
+    page.wait_for_timeout.assert_called_once()
+
+
+def test_observed_outcome_explains_a_correction():
+    page = MagicMock()
+    page.frames = [_EvalFrame({"filled": [{"key": "existing", "label": "Email", "value": "ada@example.com", "selector": "#em"}]})]
+    attempted = {(0, "#em"): {"key": "email", "corrected": True, "previous": "old@x.edu"}}
+    observed = fill._observe_fields(page, "js", {}, attempted)  # noqa: SLF001
+    row = observed[(0, "#em")]
+    assert row["key"] == "email" and row["corrected"] is True
+    assert "old@x.edu" in row["reason_text"]

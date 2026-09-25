@@ -2,9 +2,10 @@
  * Deterministic ATS form filler — injected via Playwright page.evaluate.
  * Receives { fields, hints, synonyms, eeo } and returns fill diagnostics; ``eeo`` maps
  * a self-identification key to the regex (over ``norm``ed option text) that picks its
- * answer (`field_matcher.eeo_patterns`).
+ * answer (`field_matcher.eeo_patterns`). ``correct`` runs only the post-upload pass: put
+ * back contact facts an ATS's resume parser overwrote, and touch nothing else.
  */
-({ fields, hints, synonyms, eeo = {} }) => {
+({ fields, hints, synonyms, eeo = {}, correct = false }) => {
   const filled = [];
   const leftovers = [];
   const long_text = [];
@@ -605,6 +606,44 @@
     return "";
   }
 
+  /** The phone in the shape this box wants: national beside a code control, else E.164 when asked. */
+  function phoneText(el, label, typed) {
+    const workdayPhoneCode = document.querySelector("[data-automation-id='formField-countryPhoneCode']");
+    if (fields.phone_country_code && (workdayPhoneCode ||
+        (el.getAttribute("type") === "tel" &&
+         deepQueryAll(document, "select,[role='combobox']").some(other => phoneCodeControl(other, labelFor(other)))))) {
+      // A separate country-code control: type only the national number.
+      const code = String(fields.phone_country_code);
+      if (fields.phone_national) return String(fields.phone_national);
+      return typed.startsWith(code) ? typed.slice(code.length).replace(/^[\s()\-.]+/, "") : typed;
+    }
+    if (fields.phone_e164 && wantsInternational(el, label)) return String(fields.phone_e164);
+    return typed;
+  }
+
+  /**
+   * Contact facts a resume parser fills (Greenhouse, Workday, iCIMS read the uploaded PDF).
+   * The profile is the source of truth for these; anything else the ATS wrote is kept.
+   */
+  const CORRECTABLE_KEYS = new Set([
+    "first_name", "last_name", "email", "phone", "address_line1", "city", "postal_code",
+    "linkedin_url", "github_url", "portfolio_url", "website", "school", "major", "gpa",
+  ]);
+
+  /** Whether a pre-filled value says the same thing as the profile, formatting aside. */
+  function agrees(key, current, wanted) {
+    if (key === "phone") {
+      const a = current.replace(/\D/g, "");
+      const b = wanted.replace(/\D/g, "");
+      return Boolean(a && b) && (a.endsWith(b) || b.endsWith(a));
+    }
+    if (key.endsWith("_url") || key === "website") {
+      const bare = (url) => url.toLowerCase().replace(/^https?:\/\//, "").replace(/^www\./, "").replace(/\/+$/, "");
+      return bare(current) === bare(wanted);
+    }
+    return norm(current) === norm(wanted);
+  }
+
   const controls = deepQueryAll(document, "input, select, textarea").filter(isVisible);
 
   // The previous control's key, in document order: "If other, please specify" right
@@ -634,6 +673,22 @@
       key = "how_heard_detail";
     }
     previousKey = key;
+    if (correct) {
+      const plainText = el.tagName === "INPUT" && !["checkbox", "radio", "hidden"].includes(type) &&
+        el.getAttribute("role") !== "combobox" && !isReactSelect(el);
+      const current = plainText ? String(el.value || "").trim() : "";
+      const wanted = key && CORRECTABLE_KEYS.has(key) ? String(fields[key] ?? "").trim() : "";
+      if (!current || !wanted || agrees(key, current, wanted)) continue;
+      const textValue = key === "phone" ? phoneText(el, label, wanted) : wanted;
+      setNativeValue(el, textValue);
+      el.blur();
+      if (agrees(key, String(el.value || ""), textValue)) {
+        filled.push({ key, label, value: el.value, selector: sel, corrected: true, previous: current });
+      } else {
+        leftovers.push({ key, label, type, required, selector: sel, reason: "The ATS changed this after the resume upload and the correction did not stick" });
+      }
+      continue;
+    }
     if (el.getAttribute("role") === "combobox" || isReactSelect(el)) {
       const selectedText = (el.closest(".select__control, [class*='-control']")?.querySelector(".select__single-value, [class*='-singleValue']")?.textContent || "").trim();
       if (selectedText) {
@@ -802,17 +857,7 @@
         const [year, month, day] = textValue.split("-").map(Number);
         textValue = `${new Intl.DateTimeFormat("en-US", { month: "long" }).format(new Date(Date.UTC(year, month - 1, day)))} ${day}, ${year}`;
       }
-      const workdayPhoneCode = document.querySelector("[data-automation-id='formField-countryPhoneCode']");
-      if (key === "phone" && fields.phone_country_code && (workdayPhoneCode ||
-          (el.getAttribute("type") === "tel" &&
-           deepQueryAll(document, "select,[role='combobox']").some(other => phoneCodeControl(other, labelFor(other)))))) {
-        // A separate country-code control: type only the national number.
-        const code = String(fields.phone_country_code);
-        if (fields.phone_national) textValue = String(fields.phone_national);
-        else if (textValue.startsWith(code)) textValue = textValue.slice(code.length).replace(/^[\s()\-.]+/, "");
-      } else if (key === "phone" && fields.phone_e164 && wantsInternational(el, label)) {
-        textValue = String(fields.phone_e164);
-      }
+      if (key === "phone") textValue = phoneText(el, label, textValue);
       setNativeValue(el, textValue);
       written = textValue;
     }

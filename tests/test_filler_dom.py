@@ -339,3 +339,36 @@ def test_location_list_guesses_only_when_required_and_flags_it(page):
     assert _ticked(page) == ["ny"]
     flagged = [row for row in required["leftovers"] if row.get("review")]
     assert [row["reason"] for row in flagged] == ["Picked the first location; check it"]
+
+
+_PARSED = """
+<label for="fn">First Name</label><input id="fn" value="ADA">
+<label for="ln">Last Name</label><input id="ln" value="Lovelace-Byron">
+<label for="em">Email</label><input id="em" value="old@school.edu">
+<label for="ph">Phone</label><input id="ph" type="tel" value="(555) 010-0000">
+<label for="li">LinkedIn Profile</label><input id="li" value="linkedin.com/in/ada/">
+<label for="cl">Cover letter</label><textarea id="cl" rows="6">Parsed text</textarea>
+<label for="ttl">Current title</label><input id="ttl" value="Analyst">
+<label for="city">City</label><input id="city" value="">
+"""
+
+
+def test_correct_mode_puts_back_only_contact_facts_the_parser_changed(page):
+    page.set_content(_PARSED)
+    fields = {
+        "first_name": "Ada", "last_name": "Lovelace", "email": "ada@example.com",
+        "phone": "555 010 0000", "linkedin_url": "https://www.linkedin.com/in/ada",
+        "current_title": "Intern", "city": "Irvine",
+    }
+    result = page.evaluate(_FILLER, {"fields": fields, "hints": {}, "synonyms": _SYNONYMS, "correct": True})
+    corrected = {row["key"]: row["previous"] for row in result["filled"]}
+    # Case, phone formatting and URL shape are the same fact; the rest is put back.
+    assert corrected == {"last_name": "Lovelace-Byron", "email": "old@school.edu"}
+    assert all(row["corrected"] for row in result["filled"])
+    assert page.locator("#ln").input_value() == "Lovelace"
+    assert page.locator("#em").input_value() == "ada@example.com"
+    # Not a contact fact, and blanks are not filled in this pass.
+    assert page.locator("#ttl").input_value() == "Analyst"
+    assert page.locator("#city").input_value() == ""
+    assert page.locator("#cl").input_value() == "Parsed text"
+    assert result["leftovers"] == [] and result["long_text"] == []
