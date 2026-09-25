@@ -7,8 +7,11 @@ import {
   Routes,
   useBlocker,
   useLocation,
+  useNavigate,
 } from "react-router-dom";
 import { lazy, Suspense, useEffect, useRef } from "react";
+import { getOnboarding } from "./api";
+import { needsWelcome } from "./lib/onboarding";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { SettingsMenu } from "./components/SettingsMenu";
 import { KeyboardShortcuts } from "./components/KeyboardShortcuts";
@@ -115,6 +118,7 @@ function Shell() {
   return (
     <div className="min-h-screen">
       <NavigationGuard />
+      <OnboardingGate />
       <header className="relative z-30 border-b border-line/80 bg-panel/80 backdrop-blur-sm">
         <div className="mx-auto flex max-w-6xl flex-wrap items-center justify-between gap-x-6 gap-y-3 px-6 py-4">
           {/* Brand and nav read left-to-right as one group; profile and theme
@@ -167,6 +171,7 @@ function Shell() {
             <Route path="/template" element={<TemplatePage />} />
             <Route path="/vocabulary" element={<VocabularyPage />} />
             <Route path="/settings" element={<SettingsPage />} />
+            <Route path="/welcome" element={<OnboardingPage />} />
           </Routes>
         </Suspense>
       </main>
@@ -192,6 +197,9 @@ const VocabularyPage = lazy(() =>
   import("./pages/VocabularyPage").then((m) => ({ default: m.VocabularyPage })),
 );
 
+const OnboardingPage = lazy(() =>
+  import("./pages/onboarding/OnboardingPage").then((m) => ({ default: m.OnboardingPage })),
+);
 const SettingsPage = lazy(() =>
   import("./pages/settings/SettingsPage").then((m) => ({ default: m.SettingsPage })),
 );
@@ -202,6 +210,27 @@ function PageLoading() {
       Loading…
     </p>
   );
+}
+
+/**
+ * Sends a profile that has not finished (or skipped) first-run setup to `/welcome`,
+ * once per load: after that the student may leave the wizard (to the editor, say)
+ * and come back through the header's setup checklist.
+ */
+function OnboardingGate() {
+  const navigate = useNavigate();
+  const location = useLocation();
+  const checked = useRef(false);
+  useEffect(() => {
+    if (checked.current) return;
+    checked.current = true;
+    getOnboarding()
+      .then((state) => {
+        if (needsWelcome(state, location.pathname)) navigate("/welcome", { replace: true });
+      })
+      .catch(() => undefined); // setup progress is a convenience; never block the app
+  }, [navigate, location.pathname]);
+  return null;
 }
 
 function NavigationGuard() {

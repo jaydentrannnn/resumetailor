@@ -16,7 +16,8 @@ type State = {
   passwordSet: boolean;
   gaps: ProfileGap[];
   defaults: Record<string, string>;
-  save: () => Promise<void>;
+  /** Resolves true when the profile was saved; a failure is reported in `error`. */
+  save: () => Promise<boolean>;
   discard: () => void;
 };
 const Context = createContext<State | null>(null);
@@ -50,14 +51,16 @@ export function ApplicantProfileProvider({ children }: { children: ReactNode }) 
     };
   }, []);
   const dirty = !!draft && !!saved && JSON.stringify(draft) !== JSON.stringify(saved);
-  async function save() {
-    if (!draft) return;
+  async function save(): Promise<boolean> {
+    if (!draft) return false;
     setSaving(true);
     setError(null);
     try {
       accept(await putApplicantProfile(draft));
+      return true;
     } catch (reason) {
       setError(String(reason));
+      return false;
     } finally {
       setSaving(false);
     }

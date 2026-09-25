@@ -21,6 +21,7 @@ Files (.docx, PDFs, JD text, screenshots, caches, templates) stay on disk.
 
 from __future__ import annotations
 
+import json
 import sqlite3
 import threading
 from collections import OrderedDict
@@ -28,6 +29,7 @@ from collections.abc import Iterator
 from contextlib import contextmanager, suppress
 from datetime import UTC, datetime
 from pathlib import Path
+from typing import Any
 
 DB_NAME = "app.db"
 
@@ -184,6 +186,25 @@ def set_marker(conn: sqlite3.Connection, name: str) -> None:
     conn.execute(
         "INSERT OR IGNORE INTO schema_migrations(version, applied_at) VALUES (?, ?)",
         (name, _now_iso()),
+    )
+
+
+def kv_get(conn: sqlite3.Connection, name: str) -> Any:
+    """The JSON document stored under ``name`` in `kv`, or None."""
+    row = conn.execute("SELECT doc FROM kv WHERE name = ?", (name,)).fetchone()
+    if row is None:
+        return None
+    try:
+        return json.loads(row[0])
+    except json.JSONDecodeError:
+        return None
+
+
+def kv_set(conn: sqlite3.Connection, name: str, doc: Any) -> None:
+    conn.execute(
+        "INSERT INTO kv(name, doc, updated_at) VALUES (?, ?, ?) "
+        "ON CONFLICT(name) DO UPDATE SET doc = excluded.doc, updated_at = excluded.updated_at",
+        (name, json.dumps(doc), _now_iso()),
     )
 
 

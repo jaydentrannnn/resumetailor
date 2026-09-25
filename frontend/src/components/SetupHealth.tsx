@@ -114,6 +114,15 @@ export function SetupHealth() {
               </li>
             ))}
           </ul>
+          {!status.ready && (
+            <Link
+              to="/welcome"
+              onClick={() => setOpen(false)}
+              className="mt-4 block rounded-md border border-line px-3 py-2 text-center text-sm font-semibold text-accent hover:bg-accent-soft"
+            >
+              Open guided setup
+            </Link>
+          )}
         </div>
       )}
     </div>

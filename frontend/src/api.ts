@@ -1892,3 +1892,27 @@ export function getOpenTabs(): Promise<{ reachable: boolean; target_ids: string[
 export function applicationsExportUrl(): string {
   return "/api/applications/export.csv";
 }
+
+export type OnboardingField = "" | "cs" | "business" | "engineering" | "other";
+
+export interface OnboardingState {
+  step: "field" | "model" | "resume" | "review" | "basics" | "done";
+  field: OnboardingField;
+  completed: boolean;
+  skipped: boolean;
+  updated_at: string;
+}
+
+/** Where the first-run wizard left off for the active profile. */
+export function getOnboarding(): Promise<OnboardingState> {
+  return request("/api/onboarding");
+}
+
+export function putOnboarding(
+  patch: Partial<Pick<OnboardingState, "step" | "field" | "completed" | "skipped">>,
+): Promise<OnboardingState> {
+  return request("/api/onboarding", {
+    method: "PUT",
+    body: JSON.stringify(patch),
+  });
+}

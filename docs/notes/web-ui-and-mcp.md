@@ -208,3 +208,11 @@ blank entry headers before the Pydantic path; server validation remains authorit
 - Reset (`POST /api/data/reset {confirm:"DELETE"}`) moves the profile's folders to `DATA_ROOT/.trash/<id>-<stamp>/` rather than deleting them. It then re-seeds defaults, so the profile is usable straight away.
 - `storage/db.connect` forgets the "schema initialised" flag when the DB file is missing, so a DB recreated after a reset gets its schema again.
 - Resume history restore calls `editorState.syncFromDisk`, because the server has already written the file; `loadDraft` would make the restore look like an unsaved draft.
+
+## First-run onboarding (Phase 2B)
+- `/welcome` is a six-step wizard: field, AI model (the Settings `ModelsSection`, embedded), resume (the Template page's `TemplateImportWizard`, with calibration on by default), review, application basics, done. Progress is `kv('onboarding')` in the profile's app.db, so it is per profile and resumes after the app closes.
+- Page fit has no step of its own: the import wizard already calibrates on install ("Calibrate too" defaults on), and the review step reports whether fit was measured. A separate step would only repeat that.
+- The field choice is applied on the client, through `libraryState.setEnabled` and `runState.setSettings`. Doing it on the server would let the SPA's cached, autosaving settings overwrite the new sources on its next save. The field owns only `core-tech` and `finance-consulting` and the three built-in sources; packs and sources the user added are left alone. Re-choosing the same field changes nothing, so tuning done since survives.
+- The Simplify category names are copied from the live README headings (checked 2026-09); `sources.parse_readme` silently skips a category it cannot find, so a typo would mean "no jobs found", not an error.
+- The redirect (`OnboardingGate` in `App.tsx`) runs once per page load and never from `/settings`, so a student can leave the wizard for the editor and come back through the setup checklist's "Open guided setup". Skipping records `skipped` and stops the redirect for good.
+- A profile with an installed template or at least one resume entry and no onboarding row predates onboarding. It is recorded as complete the first time it is read, so an upgrade never sends an existing user through setup.

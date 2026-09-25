@@ -30,7 +30,12 @@ type ImportOutcome =
 /**
  * Multi-step template import: analyze → confirm mapping → install.
  */
-export function TemplateImportWizard() {
+export function TemplateImportWizard({
+  title = "Replace template",
+}: {
+  /** Heading; onboarding calls it a first upload rather than a replacement. */
+  title?: string;
+} = {}) {
   const {
     uploading,
     error,
@@ -118,11 +123,12 @@ export function TemplateImportWizard() {
     <section className="rounded-xl border border-line bg-panel p-5 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="font-display text-xl font-semibold">Replace template</h2>
+          <h2 className="font-display text-xl font-semibold">{title}</h2>
           <p className="mt-1 text-sm text-ink-muted">
             Upload a single-column Word/Google Docs export. The importer detects section headings
-            and field separators, then you confirm before it rebuilds the tagged template.
-            Experience is required; Education, Projects, and Skills can be omitted when absent.
+            and field separators, then you confirm before it rebuilds the tagged template. Any
+            section can be left out, as long as there is at least one of Experience, Projects or
+            another list of entries.
           </p>
         </div>
         {wizardStep !== "idle" ? (
