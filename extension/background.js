@@ -1,6 +1,7 @@
 import { ExtensionApiError, findPort, lookup, operation, pair, status } from "./lib/api.js";
 import { captureTab, lookupTab } from "./lib/capture.js";
 import { advanceFollowUp, cancelFollowUp, startFollowUp } from "./lib/workflow.js";
+import { connectRelay } from "./lib/relay.js";
 
 const ALARM = "resume-tailor-status";
 let actionBusy = false;
@@ -121,6 +122,7 @@ chrome.runtime.onMessage.addListener((message, _sender, sendResponse) => {
       }
       case "action": return runAction(message.action, message.tab);
       case "cancel": await cancelFollowUp(); return {};
+      case "relay": return connectRelay(message.tab);
       default: throw new Error("Unknown extension request.");
     }
   })().then((value) => sendResponse({ ok: true, value }), (error) => sendResponse({

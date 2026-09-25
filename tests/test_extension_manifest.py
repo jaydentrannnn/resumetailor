@@ -17,10 +17,12 @@ def test_manifest_files_and_permissions():
         "scripting",
         "contextMenus",
         "alarms",
+        "debugger",
     }
     assert set(manifest["host_permissions"]) == {"http://127.0.0.1/*", "http://localhost/*"}
     assert "<all_urls>" not in json.dumps(manifest)
-    assert "debugger" not in manifest["permissions"]
+    # X3 relay GO: debugger is needed only to drive the tab the user selects.
+    assert (ROOT / "lib" / "relay.js").is_file()
     referenced = [
         manifest["background"]["service_worker"],
         manifest["action"]["default_popup"],
@@ -37,7 +39,9 @@ def test_manifest_files_and_permissions():
     popup = (ROOT / manifest["action"]["default_popup"]).read_text(encoding="utf-8")
     for name in re.findall(r'(?:src|href)="([^"]+)"', popup):
         assert (ROOT / name).is_file(), name
-    for script in ("background.js", "popup.js", "lib/api.js", "lib/capture.js", "lib/workflow.js"):
+    for script in (
+        "background.js", "popup.js", "lib/api.js", "lib/capture.js", "lib/workflow.js", "lib/relay.js",
+    ):
         source = (ROOT / script).read_text(encoding="utf-8")
         for imported in re.findall(r'from "([^"]+)"', source):
             assert (ROOT / script).parent.joinpath(imported).is_file(), imported

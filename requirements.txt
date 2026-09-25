@@ -28,6 +28,8 @@ mcp>=1.2,<2
 # over CDP to the host browser (Edge recommended) — do NOT run `playwright install`
 # in Docker.
 playwright>=1.47
+# Loopback extension CDP relay (optional BROWSER_MODE=extension).
+websockets>=15,<18
 # SimplifyJobs README HTML table parsing in apply/sources.py.
 beautifulsoup4>=4.12
 # Secrets (src/resume_tailor/secret_store.py): OS keychain first (Windows Credential

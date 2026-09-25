@@ -146,6 +146,15 @@ function renderPaired() {
       button("Fill this page", () => void runAction("fill")),
     );
     parts.push(actions);
+    parts.push(button("Use this tab for Fill (relay)", async () => {
+      try {
+        const result = await rpc({ type: "relay", tab: currentTab });
+        state.lastResult = result.message;
+        render();
+      } catch (error) {
+        showError(error.message);
+      }
+    }));
     if (app) {
       const link = node("a", "Open in app", "button");
       link.href = `http://127.0.0.1:${state.port}/applications/${encodeURIComponent(app.id)}`;

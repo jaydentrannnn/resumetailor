@@ -3,7 +3,7 @@
   "name": "ResumeTailor",
   "version": "0.1.0",
   "description": "Capture the job page you choose and send it to your local ResumeTailor app.",
-  "permissions": ["storage", "activeTab", "scripting", "contextMenus", "alarms"],
+  "permissions": ["storage", "activeTab", "scripting", "contextMenus", "alarms", "debugger"],
   "host_permissions": ["http://127.0.0.1/*", "http://localhost/*"],
   "background": { "service_worker": "background.js", "type": "module" },
   "action": { "default_popup": "popup.html", "default_icon": "icons/icon32.png" },

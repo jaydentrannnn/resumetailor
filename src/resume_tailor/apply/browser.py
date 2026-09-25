@@ -13,6 +13,8 @@ the hostname to an IP before probing or connecting.
 from __future__ import annotations
 
 import asyncio
+import json
+import os
 import socket
 import time
 from collections.abc import Iterator
@@ -44,6 +46,11 @@ def effective_cdp_url(cdp_url: str | None = None) -> str:
     the HTTP ``Host`` header is an address Chrome allows. Leaves ``localhost`` /
     literal IPs unchanged.
     """
+    if os.environ.get("BROWSER_MODE", "cdp").lower() == "extension":
+        endpoint = os.environ.get("EXTENSION_CDP_URL", "").strip()
+        if not endpoint.startswith("ws://127.0.0.1:"):
+            raise RuntimeError("Set EXTENSION_CDP_URL to the loopback relay WebSocket endpoint")
+        return endpoint
     raw = (cdp_url or config.CHROME_CDP_URL).rstrip("/")
     parsed = urlparse(raw)
     host = parsed.hostname or ""
@@ -72,6 +79,25 @@ def effective_cdp_url(cdp_url: str | None = None) -> str:
 
 def browser_status() -> BrowserStatus:
     """Probe ``CHROME_CDP_URL/json/version`` with a short timeout."""
+    if os.environ.get("BROWSER_MODE", "cdp").lower() == "extension":
+        try:
+            from websockets.sync.client import connect
+
+            endpoint = effective_cdp_url()
+            with connect(endpoint, open_timeout=2, close_timeout=1) as connection:
+                connection.send(json.dumps({"id": 1, "method": "Browser.getVersion"}))
+                reply = json.loads(connection.recv(timeout=2))
+            if reply.get("error"):
+                raise RuntimeError(reply["error"].get("message", "Relay rejected connection"))
+            return BrowserStatus(
+                reachable=True, browser=reply["result"]["product"], cdp_url=endpoint
+            )
+        except Exception as exc:  # noqa: BLE001 - a stopped relay is normal
+            return BrowserStatus(
+                reachable=False,
+                error=str(exc),
+                cdp_url=os.environ.get("EXTENSION_CDP_URL", ""),
+            )
     configured = config.CHROME_CDP_URL.rstrip("/")
     cdp = effective_cdp_url(configured)
     try:
@@ -96,6 +122,17 @@ def open_target_ids() -> set[str] | None:
     whether a retained application tab still exists — one HTTP call, no Playwright,
     safe while a fill owns the browser. ``None`` means unknown, not "no tabs".
     """
+    if os.environ.get("BROWSER_MODE", "cdp").lower() == "extension":
+        try:
+            from websockets.sync.client import connect
+
+            with connect(effective_cdp_url(), open_timeout=2, close_timeout=1) as connection:
+                connection.send(json.dumps({"id": 1, "method": "Target.getTargets"}))
+                reply = json.loads(connection.recv(timeout=2))
+            return {str(row["targetId"]) for row in reply["result"]["targetInfos"]
+                    if row.get("type") == "page"}
+        except Exception:  # noqa: BLE001 - unknown is safer than an empty list
+            return None
     try:
         resp = httpx.get(f"{effective_cdp_url()}/json/list", timeout=1.0)
         resp.raise_for_status()
@@ -138,6 +175,13 @@ def cdp_browser() -> Iterator[Any]:
         browser = p.chromium.connect_over_cdp(connect_url)
         try:
             yield browser
+        except Exception as exc:
+            if (
+                os.environ.get("BROWSER_MODE", "cdp").lower() == "extension"
+                and not browser_status().reachable
+            ):
+                raise RuntimeError("Tab was closed or DevTools opened") from exc
+            raise
         finally:
             browser.close()
 
@@ -198,6 +242,13 @@ async def async_cdp_browser():
         connected = await playwright.chromium.connect_over_cdp(effective_cdp_url())
         try:
             yield connected
+        except Exception as exc:
+            if (
+                os.environ.get("BROWSER_MODE", "cdp").lower() == "extension"
+                and not browser_status().reachable
+            ):
+                raise RuntimeError("Tab was closed or DevTools opened") from exc
+            raise
         finally:
             await connected.close()
 
