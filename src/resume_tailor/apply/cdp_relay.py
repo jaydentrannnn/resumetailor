@@ -16,6 +16,7 @@ from typing import Any
 from websockets.asyncio.server import ServerConnection, serve
 from websockets.exceptions import ConnectionClosed
 
+from resume_tailor.apply.browser import RELAY_BUSY, TAB_GONE
 from resume_tailor.web import extension
 
 
@@ -88,7 +89,7 @@ class Relay:
                         await self.client.send(json.dumps(event))
                 elif message.get("type") == "detached":
                     if self.client:
-                        await self.client.close(1011, "Tab was closed or DevTools opened")
+                        await self.client.close(1011, TAB_GONE)
                     break
                 elif message.get("type") == "ping" and not extension.verify_token(
                     self.extension_token
@@ -135,13 +136,17 @@ class Relay:
         return reply.get("result") or {}
 
     async def handle_client(self, connection: ServerConnection) -> None:
+        if self.client and self.extension:
+            # Probes (`browser.browser_status`) read this as "attached and in use".
+            await connection.close(1013, RELAY_BUSY)
+            return
         if (
             self.client
             or not self.extension
             or not self.target
             or extension.verify_token(self.extension_token) is None
         ):
-            await connection.close(1008, "Extension unavailable or client already connected")
+            await connection.close(1008, "Extension unavailable")
             return
         self.client = connection
         try:
