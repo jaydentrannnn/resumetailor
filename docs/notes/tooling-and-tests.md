@@ -144,3 +144,11 @@ tailor run recreates job artifacts under `output/jobs/`.
 - `run_id` comes from a ContextVar set around job (`web/jobs.py`) and operation (`apply/operations.py`) worker threads, so one failed run can be picked out of a shared log.
 - `GET /api/diagnostics.zip` bundles the log (re-redacted), versions, platform, backend routing and redacted settings. It deliberately omits the master resume, applicant profile, registry and generated documents.
 - Tests: `tests/conftest.py` points `RESUME_TAILOR_OUTPUT_DIR` at a temp dir before importing the package, because job threads that outlive a test wrote `packet.json` into the real `output/` after the monkeypatch was undone.
+
+## Housekeeping (S5, 2026-09)
+`housekeeping.run()` runs in a daemon thread at server start and in the job worker after
+each run: the LLM cache is held under 500 MB by least-recently-used (max of atime and
+mtime, since many filesystems mount noatime), and `OUTPUT_DIR/jobs/` keeps the newest
+200 run folders plus any folder an application references (`job_id`,
+`reused_from_job_id`) or touched in the last hour. `DELETE /api/cache` 409s while a run
+is queued or running, because stages read cache files mid-run.

@@ -1140,6 +1140,42 @@ export function validateMasterResume(body: Record<string, unknown>): Promise<Val
   });
 }
 
+export interface ResumeVersion {
+  version: number;
+  saved_at: string;
+  note: string;
+  name: string;
+  bullets: number;
+  sections: number;
+  current: boolean;
+}
+
+export function listResumeVersions(): Promise<{ versions: ResumeVersion[]; keep: number }> {
+  /** Saved master-resume versions, newest first. */
+  return request("/api/master-resume/versions");
+}
+
+export function restoreResumeVersion(
+  version: number,
+): Promise<{ resume: Record<string, unknown>; restored: number }> {
+  /** Write an earlier version back as the current master resume. */
+  return request(`/api/master-resume/restore/${version}`, { method: "POST" });
+}
+
+export interface CacheUsage {
+  files: number;
+  bytes: number;
+  max_bytes: number;
+}
+
+export function fetchCacheUsage(): Promise<CacheUsage> {
+  return request("/api/cache");
+}
+
+export function clearCache(): Promise<{ removed: number; freed: number }> {
+  return request("/api/cache", { method: "DELETE" });
+}
+
 export function previewUrl(jobId: string): string {
   /** URL of the inline PDF for a finished job. */
   return `/api/jobs/${jobId}/preview.pdf`;

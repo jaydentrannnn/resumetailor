@@ -17,10 +17,11 @@ import zipfile
 from datetime import UTC, datetime
 from importlib import metadata
 
-from fastapi import APIRouter
+from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response
 
-from resume_tailor import config, logs, workspace
+from resume_tailor import config, housekeeping, logs, workspace
+from resume_tailor.web.jobs import get_queue
 
 router = APIRouter()
 
@@ -85,3 +86,19 @@ def get_diagnostics() -> Response:
             "Content-Disposition": f'attachment; filename="resumetailor-diagnostics-{stamp}.zip"'
         },
     )
+
+
+@router.get("/api/cache")
+def get_cache_usage() -> dict[str, int]:
+    """Size of the model-response cache (Settings → Data)."""
+    return housekeeping.cache_usage() | {"max_bytes": housekeeping.CACHE_MAX_BYTES}
+
+
+@router.delete("/api/cache")
+def clear_cache() -> dict[str, int]:
+    """Delete every cached model response. Refused while a run could be reading them."""
+    if get_queue().busy():
+        raise HTTPException(
+            status_code=409, detail="A tailoring run is in progress; clear the cache after it ends."
+        )
+    return housekeeping.clear_cache()

@@ -22,6 +22,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from resume_tailor import (
     config,
+    housekeeping,
     logs,
     workspace,
 )
@@ -94,6 +95,7 @@ async def lifespan(app: FastAPI):
     else:
         if recovered:
             _log.info("marked %d orphaned tailoring row(s) tailor_failed", recovered)
+    threading.Thread(target=housekeeping.run, name="housekeeping", daemon=True).start()
     _scheduler_stop.clear()
     scheduler = threading.Thread(
         target=_apply_scheduler_loop,

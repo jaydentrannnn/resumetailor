@@ -404,3 +404,15 @@ skips them in both section modes, and `render.build_context` leaves the legacy
 `experience` key empty. The resume's experience entries stay in the master store; they
 just have nowhere to go in this template. The SPA's section-map toggle refuses to turn
 off the last entry section.
+
+## Master resume version history (S4, 2026-09)
+`resume_versions.py` records every in-app save of `master_resume.json` into the
+`resume_versions` table of `app.db` (last 50, deduplicated by SHA-256). Deviation from
+the plan: the JSON file stays the source of truth (CLI, `data.load`, hand edits all read
+it; making the DB authoritative would fork every reader). A hand edit is caught by
+`sync_external()` (file digest ≠ newest version) before each save and on every history
+listing, and kept as its own "edited outside the app" version, so a restore never
+silently drops it. Restore (`POST /api/master-resume/restore/{v}`) writes through the
+normal `_write_master_resume` path (backup + new version), so a restore is undoable.
+History failures are logged and never block a save. The timestamped `.bak.json`
+siblings are unchanged.

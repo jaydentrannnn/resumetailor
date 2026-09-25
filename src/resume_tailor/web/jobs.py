@@ -31,6 +31,7 @@ from resume_tailor import (
     expand,
     facets,
     fit,
+    housekeeping,
     include,
     jd,
     libraries,
@@ -413,6 +414,7 @@ class JobQueue:
                     job.status = "failed"
                 if not isinstance(exc, Exception):
                     raise
+            housekeeping.run()
 
     def _execute(self, job: Job) -> None:
         """Run one job end-to-end. Mutates `job` with events and a final report."""

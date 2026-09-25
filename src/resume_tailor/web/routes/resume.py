@@ -19,6 +19,7 @@ from resume_tailor import (
     data,
     propose,
     resume_import,
+    resume_versions,
     template_analyze,
 )
 from resume_tailor.data import MasterResume
@@ -66,20 +67,39 @@ def _backup_master_resume(path: Path) -> Path | None:
     return backup
 
 
-def _write_master_resume(resume: MasterResume) -> Path | None:
+def _write_master_resume(resume: MasterResume, note: str = "") -> Path | None:
     """Back up the previous file (if any) and write `resume` to
     `config.MASTER_RESUME_PATH`, returning the backup's path. Shared by
-    `put_master_resume` and `merge_master_resume` so the write+backup path is defined
-    once."""
+    `put_master_resume`, `merge_master_resume` and `restore_master_resume_version` so
+    the write+backup path is defined once.
+
+    Also records the version history (`resume_versions`): first the file as it was, if
+    it was edited outside the app since the last recorded save, then the new text. A
+    history failure is logged and never fails the save itself.
+    """
     path = config.MASTER_RESUME_PATH
     path.parent.mkdir(parents=True, exist_ok=True)
+    _record_version(None)
     backup = _backup_master_resume(path)
 
     # Round-trip through the model so tags are canonicalised and unknown keys stripped
     # before anything hits disk — same guarantees `data.load` enforces on the way in.
     payload = resume.model_dump(by_alias=True)
-    path.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+    text = json.dumps(payload, indent=2, ensure_ascii=False) + "\n"
+    path.write_text(text, encoding="utf-8")
+    _record_version(text, note)
     return backup
+
+
+def _record_version(text: str | None, note: str = "") -> None:
+    """`resume_versions.record` (or `sync_external` for ``None``), never raising."""
+    try:
+        if text is None:
+            resume_versions.sync_external()
+        else:
+            resume_versions.record(text, note)
+    except Exception:  # noqa: BLE001 - history is a convenience; the save must land
+        _log.warning("could not record master resume version", exc_info=True)
 
 
 @router.put("/api/master-resume")
@@ -105,7 +125,7 @@ def put_master_resume(body: dict[str, Any]) -> ValidateResponse:
         ) from exc
 
     with template_ops.LOCK:
-        _write_master_resume(resume)
+        _write_master_resume(resume, note="saved in the editor")
 
     bullets = resume.all_bullets()
     tags = sorted({t for b in bullets for t in b.tags})
@@ -119,6 +139,32 @@ def put_master_resume(body: dict[str, Any]) -> ValidateResponse:
             "tags": len(tags),
         },
     )
+
+
+@router.get("/api/master-resume/versions")
+def list_master_resume_versions() -> dict[str, Any]:
+    """Saved versions, newest first (see `resume_versions`)."""
+    with template_ops.LOCK:
+        return {"versions": resume_versions.list_versions(), "keep": resume_versions.KEEP}
+
+
+@router.post("/api/master-resume/restore/{version}")
+def restore_master_resume_version(version: int) -> dict[str, Any]:
+    """Write an earlier version back as the current master resume (itself a new version,
+    so a restore can be undone the same way)."""
+    with template_ops.LOCK:
+        text = resume_versions.text_of(version)
+        if text is None:
+            raise HTTPException(status_code=404, detail=f"Version {version} is not kept.")
+        try:
+            resume = MasterResume.model_validate_json(text)
+        except ValidationError as exc:
+            raise HTTPException(
+                status_code=409,
+                detail=f"Version {version} no longer validates against the current format.",
+            ) from exc
+        _write_master_resume(resume, note=f"restored version {version}")
+    return {"resume": resume.model_dump(by_alias=True), "restored": version}
 
 
 @router.post("/api/master-resume/validate", response_model=ValidateResponse)
@@ -265,7 +311,7 @@ def merge_master_resume(body: dict[str, Any]) -> MasterResumeMergeResponse:
             existing = MasterResume(contact=incoming.contact, sections=[])
 
         merged, stats = resume_import.merge_into(existing, incoming)
-        backup = _write_master_resume(merged)
+        backup = _write_master_resume(merged, note="merged an import")
 
     return MasterResumeMergeResponse(
         resume=merged.model_dump(by_alias=True),
