@@ -26,7 +26,7 @@ jobs:
         with:
           python-version: "3.13"
       - name: Install
-        run: uv pip install --system -r requirements-dev.lock -e .
+        run: uv pip install -r requirements-dev.lock -e .
       - name: Ruff (advisory until the backlog is cleared)
         continue-on-error: true
         run: ruff check src tests
@@ -44,7 +44,7 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.13"
-      - run: uv pip install --system -r requirements-dev.lock -e .
+      - run: uv pip install -r requirements-dev.lock -e .
       - name: Tests with empty data/templates roots
         run: |
           export RESUME_TAILOR_DATA_DIR="$(mktemp -d)"
@@ -82,7 +82,7 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.13"
-      - run: uv pip install --system -r requirements-dev.lock -e .
+      - run: uv pip install -r requirements-dev.lock -e .
       - run: npm test
         working-directory: extension
       - run: python -m pytest tests/test_extension_manifest.py -q
@@ -106,7 +106,7 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - name: LibreOffice (page measurement) and fonts
         run: sudo apt-get update && sudo apt-get install -y --no-install-recommends libreoffice-writer fonts-liberation
-      - run: uv pip install --system -r requirements-dev.lock -e .
+      - run: uv pip install -r requirements-dev.lock -e .
       - working-directory: frontend
         run: npm ci && npx playwright install --with-deps chromium
       - name: Playwright (fake model, throwaway data)

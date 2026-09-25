@@ -49,7 +49,7 @@ jobs:
       - uses: dtolnay/rust-toolchain@stable
 
       - name: Python dependencies
-        run: uv pip install --system -r requirements.lock -e . pyinstaller
+        run: uv pip install -r requirements.lock -e . pyinstaller
       - name: Web UI
         working-directory: frontend
         run: npm ci && npm run build
