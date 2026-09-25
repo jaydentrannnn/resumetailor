@@ -3105,7 +3105,13 @@ def test_get_libraries_lists_shipped_packs_and_effective_counts(client):
     ids = [p["id"] for p in body["packs"]]
     assert "core-tech" in ids
     shipped = [p for p in body["packs"] if p["builtin"]]
-    assert {p["id"] for p in shipped} == {"core-tech", "finance-consulting"}
+    assert {p["id"] for p in shipped} == {
+        "core-tech",
+        "finance-consulting",
+        "accounting",
+        "marketing",
+        "ops-supply-chain",
+    }
     core = next(p for p in body["packs"] if p["id"] == "core-tech")
     assert core["customized"] is False
     assert body["enabled_packs"] == ["core-tech"]

@@ -32,6 +32,22 @@ involved (see `tests/test_library_seeds.py`) — what these families add is cove
 the *near-synonym* rule (three-plus related-but-different openers, e.g. a rewrite that
 lands on "recruited" for one bullet and "sourced" for another), which `core-tech`
 cannot see for any of these verbs today.
+
+It also carries the finance/banking vocabulary postings use: valuation and modeling terms
+(DCF, LBO, comps, M&A), the Excel sub-features a posting names instead of "Excel", and
+the data terminals (Bloomberg, Capital IQ). Plus the analytics tools every business field
+shares (Power BI, EViews), since onboarding enables it for all business students.
+
+**accounting**, **marketing**, **ops-supply-chain** — The rest of the Business/Finance/
+Econ launch set, enabled together by onboarding's "Business" field. Three rules keep them
+safe to enable at once, and `tests/test_library_seeds.py` pins all three:
+- New verbs join the existing family names (`analyse`, `improve`, `lead`, `write`, …) and
+  every verb is claimed by exactly one pack, so enabling several never "moves" a verb.
+- No alias value is another pack's key, so no chain is dropped.
+- Bare student-ambiguous abbreviations ("ib", "ap", "ar") are not keys at all: on a
+  student's resume they mean International Baccalaureate and Advanced Placement as often
+  as investment banking or accounts payable. The multi-character spellings ("a/p", "ibd")
+  carry those meanings instead.
 """
 
 from __future__ import annotations

@@ -162,3 +162,71 @@ def test_finance_consulting_aliases_close_a_measured_spelling_gap(monkeypatch):
     assert config.canonical_tag("google workspace") == "google drive suite"
     assert config.canonical_tag("ms office") == "microsoft 365"
     assert config.canonical_tag("kpis") == "kpi"
+
+
+BUSINESS_PACKS = ["finance-consulting", "accounting", "marketing", "ops-supply-chain"]
+
+
+def _compose(monkeypatch, pack_ids: list[str]) -> libraries.EffectiveLibrary:
+    state = libraries.WorkspaceLibraryState(enabled_packs=pack_ids)
+    monkeypatch.setattr(libraries, "read_workspace_state", lambda *_a, **_k: state)
+    return libraries._resolve_effective_uncached(None)
+
+
+def test_business_packs_compose_with_core_tech_without_moving_anything(monkeypatch):
+    """Onboarding's "Business" field enables all of these at once: no alias chain gets
+    dropped and no verb is claimed by two packs, so there is nothing to warn about."""
+    eff = _compose(monkeypatch, ["core-tech", *BUSINESS_PACKS])
+    assert eff.diagnostics == []
+    keys = set(eff.tag_aliases)
+    assert not keys & set(eff.tag_aliases.values())
+    shipped = [library_seeds.BUILTIN_PACKS[p] for p in ["core-tech", *BUSINESS_PACKS]]
+    assert sum(len(p["tag_aliases"]) for p in shipped) == len(eff.tag_aliases)
+
+
+def test_business_spellings_canonicalise(monkeypatch):
+    eff = _compose(monkeypatch, ["core-tech", *BUSINESS_PACKS])
+    monkeypatch.setattr(config, "TAG_ALIASES", eff.tag_aliases)
+    expected = {
+        "DCF": "discounted cash flow",
+        "M&A": "mergers and acquisitions",
+        "Pivot Tables": "excel",
+        "3-statement model": "financial modeling",
+        "CapIQ": "capital iq",
+        "FP&A": "financial planning and analysis",
+        "US GAAP": "gaap",
+        "A/P": "accounts payable",
+        "SOX": "sarbanes-oxley",
+        "GA4": "google analytics",
+        "PPC": "paid search",
+        "6 Sigma": "six sigma",
+        "PowerBI": "power bi",
+    }
+    for raw, canonical in expected.items():
+        assert config.canonical_tag(raw) == canonical, raw
+
+
+def test_no_shipped_pack_claims_an_ambiguous_student_abbreviation():
+    """"IB" is the International Baccalaureate and "AP" Advanced Placement on a
+    student's resume as often as investment banking or accounts payable in a posting."""
+    for pack_id, seed in library_seeds.BUILTIN_PACKS.items():
+        assert not {"ib", "ap", "ar", "gpa"} & set(seed["tag_aliases"]), pack_id
+
+
+def test_business_verb_families_extend_core_tech_families(monkeypatch):
+    eff = _compose(monkeypatch, ["core-tech", *BUSINESS_PACKS])
+    assert eff.verb_index["forecasted"] == "analyse"
+    assert eff.verb_index["grew"] == eff.verb_index["increased"] == "improve"
+    assert eff.verb_index["advised"] == "advise"
+
+
+def test_enabling_a_business_pack_changes_the_cache_fingerprints(monkeypatch):
+    core_only = _compose(monkeypatch, ["core-tech"])
+    with_finance = _compose(monkeypatch, ["core-tech", "finance-consulting"])
+    assert libraries.effective_fingerprint(core_only) != libraries.effective_fingerprint(
+        with_finance
+    )
+    monkeypatch.setattr(config, "TAG_ALIASES", core_only.tag_aliases)
+    before = config.tag_alias_fingerprint()
+    monkeypatch.setattr(config, "TAG_ALIASES", with_finance.tag_aliases)
+    assert config.tag_alias_fingerprint() != before

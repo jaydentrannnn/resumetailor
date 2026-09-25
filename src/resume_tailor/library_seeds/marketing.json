@@ -1,0 +1,47 @@
+{
+  "schema_version": 1,
+  "id": "marketing",
+  "label": "Marketing & Growth",
+  "description": "Digital marketing channels, analytics and CRM tools, and campaign vocabulary for marketing and growth roles.",
+  "tag_aliases": {
+    "search engine optimization": "seo",
+    "search engine optimisation": "seo",
+    "search engine marketing": "sem",
+    "ppc": "paid search",
+    "pay per click": "paid search",
+    "pay-per-click": "paid search",
+    "adwords": "google ads",
+    "google adwords": "google ads",
+    "facebook ads": "meta ads",
+    "instagram ads": "meta ads",
+    "ga4": "google analytics",
+    "google analytics 4": "google analytics",
+    "sfdc": "salesforce",
+    "salesforce crm": "salesforce",
+    "customer relationship management": "crm",
+    "ab testing": "a/b testing",
+    "a/b tests": "a/b testing",
+    "split testing": "a/b testing",
+    "content marketing strategy": "content strategy",
+    "social media management": "social media marketing",
+    "smm": "social media marketing",
+    "email campaigns": "email marketing",
+    "hubspot crm": "hubspot"
+  },
+  "verb_families": {
+    "promote": [
+      "advertised",
+      "branded",
+      "curated",
+      "influenced"
+    ],
+    "engage": [
+      "engaged",
+      "attracted",
+      "converted",
+      "retained"
+    ]
+  },
+  "created_at": "",
+  "updated_at": ""
+}

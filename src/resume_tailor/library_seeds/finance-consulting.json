@@ -2,7 +2,7 @@
   "schema_version": 1,
   "id": "finance-consulting",
   "label": "Finance & Consulting",
-  "description": "Financial analysis, audit, and client-consulting vocabulary, plus the fundraising/outreach terms common in early-career finance and nonprofit-adjacent work.",
+  "description": "Finance, banking and consulting vocabulary: valuation and modeling terms, the data tools finance postings name (Excel, Bloomberg, Capital IQ), and the fundraising/outreach terms common in early-career finance and nonprofit-adjacent work.",
   "tag_aliases": {
     "google workspace": "google drive suite",
     "g suite": "google drive suite",
@@ -15,14 +15,121 @@
     "key performance indicator": "kpi",
     "internal auditing": "internal audit",
     "budget management": "budgeting",
-    "budget planning": "budgeting"
+    "budget planning": "budgeting",
+    "dcf": "discounted cash flow",
+    "discounted cash flows": "discounted cash flow",
+    "lbo": "leveraged buyout",
+    "leveraged buyouts": "leveraged buyout",
+    "m&a": "mergers and acquisitions",
+    "m & a": "mergers and acquisitions",
+    "mergers & acquisitions": "mergers and acquisitions",
+    "3-statement model": "financial modeling",
+    "3 statement model": "financial modeling",
+    "three statement model": "financial modeling",
+    "three-statement model": "financial modeling",
+    "fin modeling": "financial modeling",
+    "ms excel": "excel",
+    "microsoft excel": "excel",
+    "advanced excel": "excel",
+    "adv excel": "excel",
+    "vlookup": "excel",
+    "xlookup": "excel",
+    "pivot tables": "excel",
+    "pivot table": "excel",
+    "vba": "excel vba",
+    "excel macros": "excel vba",
+    "ms powerpoint": "powerpoint",
+    "microsoft powerpoint": "powerpoint",
+    "powerbi": "power bi",
+    "power-bi": "power bi",
+    "microsoft power bi": "power bi",
+    "e-views": "eviews",
+    "bloomberg terminal": "bloomberg",
+    "capiq": "capital iq",
+    "cap iq": "capital iq",
+    "s&p capital iq": "capital iq",
+    "fp&a": "financial planning and analysis",
+    "fp and a": "financial planning and analysis",
+    "financial planning & analysis": "financial planning and analysis",
+    "p&l": "profit and loss",
+    "p and l": "profit and loss",
+    "profit & loss": "profit and loss",
+    "pnl": "profit and loss",
+    "ibd": "investment banking",
+    "pe": "private equity",
+    "vc": "venture capital",
+    "comps": "comparable company analysis",
+    "comparable companies": "comparable company analysis",
+    "trading comps": "comparable company analysis",
+    "precedents": "precedent transactions",
+    "precedent transaction analysis": "precedent transactions",
+    "weighted average cost of capital": "wacc",
+    "internal rate of return": "irr",
+    "cfa level i": "cfa level 1",
+    "cfa l1": "cfa level 1",
+    "cfa level one": "cfa level 1",
+    "securities industry essentials": "sie"
   },
   "verb_families": {
-    "collaborate": ["collaborated", "consulted", "liaised"],
-    "recruit": ["recruited", "sourced", "enlisted"],
-    "gained": ["received", "gained", "earned", "obtained"],
-    "track": ["tracked", "logged", "reconciled"],
-    "promote": ["promoted", "publicized", "marketed"]
+    "collaborate": [
+      "collaborated",
+      "consulted",
+      "liaised"
+    ],
+    "recruit": [
+      "recruited",
+      "sourced",
+      "enlisted"
+    ],
+    "gained": [
+      "received",
+      "gained",
+      "earned",
+      "obtained"
+    ],
+    "track": [
+      "tracked",
+      "logged",
+      "reconciled"
+    ],
+    "promote": [
+      "promoted",
+      "publicized",
+      "marketed"
+    ],
+    "analyse": [
+      "forecasted",
+      "projected",
+      "quantified",
+      "valued",
+      "underwrote"
+    ],
+    "advise": [
+      "advised",
+      "recommended",
+      "counseled",
+      "counselled"
+    ],
+    "write": [
+      "pitched",
+      "briefed"
+    ],
+    "negotiate": [
+      "negotiated",
+      "brokered"
+    ],
+    "improve": [
+      "grew",
+      "lowered",
+      "decreased",
+      "doubled",
+      "tripled",
+      "saved"
+    ],
+    "lead": [
+      "chaired",
+      "headed"
+    ]
   },
   "created_at": "",
   "updated_at": ""

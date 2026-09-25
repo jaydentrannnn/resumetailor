@@ -48,6 +48,16 @@ describe("onboarding helpers", () => {
     expect(packsForField(["core-tech", "finance-consulting"], "cs", available)).toEqual([
       "core-tech",
     ]);
+    const shipped = [
+      "core-tech",
+      "finance-consulting",
+      "accounting",
+      "marketing",
+      "ops-supply-chain",
+    ];
+    expect(packsForField(["core-tech"], "business", shipped)).toEqual(shipped);
+    // Switching away from Business turns every business pack off again.
+    expect(packsForField(shipped, "cs", shipped)).toEqual(["core-tech"]);
     // A pack missing from this install is skipped, not enabled by id.
     expect(packsForField([], "business", ["core-tech"])).toEqual(["core-tech"]);
     expect(packsForField(["x"], "", available)).toEqual(["x"]);

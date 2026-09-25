@@ -434,3 +434,10 @@ got a proper default stub in the `client` fixture instead of repeating that gap.
   `test_company_history_number_does_not_read_as_years_requirement` to
   `tests/test_eligibility.py`. Full suite green (983 passed), frontend `tsc -b`/lint/
   vitest green.
+
+## P3-V: business vocabulary packs (2026-09)
+- `finance-consulting` gains the valuation, modeling and data-terminal vocabulary. There are three new shipped packs: `accounting`, `marketing` and `ops-supply-chain`. Onboarding's "Business" field enables all four; choosing another field turns them all off.
+- Composition rule for the launch set: new verbs join existing family names, and each verb belongs to exactly one shipped pack. Otherwise `_resolve_effective_uncached` reports "'x' moved from … to …" even when both packs name the same family. One real case was caught: accounting's "tested" collided with core-tech's `analyse`.
+- Deviation from the plan: bare `ib`, `ap` and `ar` are not alias keys. They are too often International Baccalaureate, Advanced Placement or augmented reality on a student's resume. `ibd`, `a/p` and `a/r` carry the finance meanings instead. `pe → private equity` stays because it only runs when a business pack is enabled.
+- Aliases fold Excel sub-features (VLOOKUP, pivot tables) into `excel`. That is deliberate: a posting naming VLOOKUP should match a bullet tagged Excel. The cost is that a VLOOKUP-specific requirement can't be told apart from general Excel.
+- Cache keys: `config.tag_alias_fingerprint` (JD extraction) and `libraries.effective_fingerprint` (proposals) both change when a pack is enabled; `test_enabling_a_business_pack_changes_the_cache_fingerprints` pins it.

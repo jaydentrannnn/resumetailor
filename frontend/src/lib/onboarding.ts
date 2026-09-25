@@ -37,7 +37,7 @@ export const FIELDS: { id: Exclude<OnboardingField, "">; label: string; descript
 
 /** Skill vocabularies the field choice owns; any other enabled pack is left alone. */
 const FIELD_PACKS: Record<Exclude<OnboardingField, "">, string[]> = {
-  business: ["core-tech", "finance-consulting"],
+  business: ["core-tech", "finance-consulting", "accounting", "marketing", "ops-supply-chain"],
   cs: ["core-tech"],
   engineering: ["core-tech"],
   other: ["core-tech"],

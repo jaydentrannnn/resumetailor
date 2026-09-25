@@ -1,0 +1,48 @@
+{
+  "schema_version": 1,
+  "id": "accounting",
+  "label": "Accounting & Audit",
+  "description": "Accounting standards, audit and close-process terms, and the bookkeeping and ERP tools accounting postings name.",
+  "tag_aliases": {
+    "us gaap": "gaap",
+    "u.s. gaap": "gaap",
+    "generally accepted accounting principles": "gaap",
+    "international financial reporting standards": "ifrs",
+    "certified public accountant": "cpa",
+    "qbo": "quickbooks",
+    "quickbooks online": "quickbooks",
+    "oracle netsuite": "netsuite",
+    "sap fico": "sap",
+    "sap fi/co": "sap",
+    "a/p": "accounts payable",
+    "a/r": "accounts receivable",
+    "reconciliations": "account reconciliation",
+    "bank reconciliations": "account reconciliation",
+    "balance sheet reconciliation": "account reconciliation",
+    "external audit": "audit",
+    "auditing": "audit",
+    "sox": "sarbanes-oxley",
+    "sox compliance": "sarbanes-oxley",
+    "10-k": "sec filings",
+    "10k": "sec filings",
+    "10-q": "sec filings",
+    "month-end close": "month end close",
+    "month end closing": "month end close",
+    "journal entry": "journal entries"
+  },
+  "verb_families": {
+    "track": [
+      "posted",
+      "accrued",
+      "booked",
+      "journalized"
+    ],
+    "verify": [
+      "verified",
+      "vouched",
+      "substantiated"
+    ]
+  },
+  "created_at": "",
+  "updated_at": ""
+}
