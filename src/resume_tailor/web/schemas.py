@@ -1262,3 +1262,5 @@ class DailyStatusResponse(BaseModel):
     finished_at: str = ""
     date: str = ""
     summary: dict[str, Any] | None = None
+    #: `apply.scheduler.status()`: last/next scheduled run, today's miss, bad time.
+    scheduler: dict[str, Any] | None = None

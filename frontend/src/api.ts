@@ -1666,6 +1666,18 @@ export type DailyStatus = {
   finished_at: string;
   date: string;
   summary: Record<string, unknown> | null;
+  scheduler?: SchedulerStatus | null;
+};
+
+/** When the nightly pass last ran and will run next (`apply/scheduler.py`). */
+export type SchedulerStatus = {
+  enabled: boolean;
+  schedule_time: string;
+  last_run_date: string | null;
+  last_started_at: string | null;
+  next_run_at: string | null;
+  missed_today: boolean;
+  last_error: string | null;
 };
 
 /** Poll phase/counters for the daily funnel. */

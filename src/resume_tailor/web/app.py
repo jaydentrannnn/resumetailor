@@ -13,7 +13,6 @@ import logging
 import os
 import threading
 from contextlib import asynccontextmanager
-from datetime import date, datetime
 from typing import Any
 
 from fastapi import FastAPI
@@ -27,6 +26,8 @@ from resume_tailor import (
     workspace,
 )
 from resume_tailor.apply import daily as apply_daily
+from resume_tailor.apply import operations as apply_operations
+from resume_tailor.apply import scheduler as apply_scheduler
 from resume_tailor.web import state as web_state
 from resume_tailor.web import template_ops
 from resume_tailor.web.schemas import (
@@ -35,40 +36,41 @@ from resume_tailor.web.schemas import (
 
 _log = logging.getLogger(__name__)
 _scheduler_stop = threading.Event()
-_last_daily_run_date: date | None = None
+
+
+def _apply_busy() -> bool:
+    """Another Apply workflow owns the browser; the scheduled run waits a tick."""
+    return apply_daily.daily_busy() or apply_operations.active() is not None
+
+
+def _start_daily_run() -> None:
+    threading.Thread(
+        target=apply_daily.run_daily,
+        name="apply-daily-scheduled",
+        daemon=True,
+    ).start()
+
+
+def _apply_scheduler_tick() -> None:
+    raw = workspace.load_settings()
+    settings = JobSettings.model_validate(raw["defaults"])
+    apply_scheduler.tick(
+        enabled=settings.apply.enabled,
+        schedule_time=settings.apply.schedule_time,
+        busy=_apply_busy,
+        start=_start_daily_run,
+    )
 
 
 def _apply_scheduler_loop(stop: threading.Event) -> None:
-    """Wake every 60s and start ``run_daily`` once per local day at schedule_time."""
-    global _last_daily_run_date
-    while not stop.wait(60.0):
+    """Tick at startup (catch-up), then every `apply_scheduler.TICK_SECONDS`."""
+    while True:
         try:
-            raw = workspace.load_settings()
-            settings = JobSettings.model_validate(raw["defaults"])
-            if not settings.apply.enabled:
-                continue
-            now = datetime.now()
-            try:
-                hour_str, minute_str = settings.apply.schedule_time.split(":", 1)
-                scheduled_hour = int(hour_str)
-                scheduled_minute = int(minute_str)
-            except (ValueError, AttributeError):
-                continue
-            if now.hour != scheduled_hour or now.minute != scheduled_minute:
-                continue
-            today = now.date()
-            if _last_daily_run_date == today:
-                continue
-            if apply_daily.daily_busy():
-                continue
-            _last_daily_run_date = today
-            threading.Thread(
-                target=apply_daily.run_daily,
-                name="apply-daily-scheduled",
-                daemon=True,
-            ).start()
+            _apply_scheduler_tick()
         except Exception:  # noqa: BLE001 - scheduler must never crash the process
             _log.exception("apply scheduler tick failed")
+        if stop.wait(apply_scheduler.TICK_SECONDS):
+            return
 
 
 @asynccontextmanager
@@ -165,26 +167,15 @@ class _RequestSizeLimitMiddleware:
 app.add_middleware(_RequestSizeLimitMiddleware)
 
 
-from resume_tailor.web.routes import (  # noqa: E402 - routers need `app`-free imports first
+# Imported after `app` exists and its middleware is added, deliberately.
+from resume_tailor.web.routes import (  # noqa: E402, I001
     applications as _applications_routes,
-)
-from resume_tailor.web.routes import (
     config as _config_routes,
     diagnostics as _diagnostics_routes,
-)
-from resume_tailor.web.routes import (
     jobs as _jobs_routes,
-)
-from resume_tailor.web.routes import (
     libraries as _libraries_routes,
-)
-from resume_tailor.web.routes import (
     resume as _resume_routes,
-)
-from resume_tailor.web.routes import (
     template as _template_routes,
-)
-from resume_tailor.web.routes import (
     workspaces as _workspaces_routes,
 )
 

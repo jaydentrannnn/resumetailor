@@ -897,3 +897,11 @@ Continue start was rejected: it drops unsaved answers on the current step.
 - Restoring an earlier snapshot (failed Prepare refresh) needs the opposite of a diff, so it goes through `store.restore(previous)`, which keeps the stored notes and any terminal status.
 - `revision` is bumped on every row write, for the UI (ETag, "changed elsewhere") and the SQLite move.
 - B2 interim: `_snapshot()` caches parsed rows keyed on the file's bytes. A byte compare is robust to the coarse mtime granularity that made an mtime key flaky in tests. `get()` on 2,000 rows went from 24 ms to 0.4 ms.
+
+## Nightly scheduler (B3, 2026-09)
+
+- `apply/scheduler.py` replaces the exact-minute check in `web/app.py`. That check skipped a day whenever a 60 s wake drifted past the scheduled minute, and never ran when the machine was asleep at the time. A run is now due any time from `schedule_time` until 12 hours after it (`CATCH_UP_WINDOW`), including on the first tick after startup. Later than that the day is recorded as missed rather than starting mid-afternoon unannounced.
+- The last run date lives in `<DATA_DIR>/apply_scheduler.json` per profile and is written before the run starts, so a crash mid-run does not restart it on each boot.
+- A tick waits while a daily pass or an Apply operation is running, and retries 30 s later.
+- Only the active profile is scheduled. Scheduling others would rebind config paths under the user; that waits for S6.
+- `GET /api/applications/daily-status` carries `scheduler` (last run, next run, `missed_today`, `last_error`) for the Apply settings drawer.

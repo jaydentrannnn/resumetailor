@@ -22,6 +22,7 @@ from resume_tailor.apply import daily as apply_daily
 from resume_tailor.apply import operations as apply_operations
 from resume_tailor.apply import packet as apply_packet
 from resume_tailor.apply import profile as apply_profile
+from resume_tailor.apply import scheduler as apply_scheduler
 from resume_tailor.apply import store as apply_store
 from resume_tailor.apply.answer import answer_question
 from resume_tailor.data import MasterResume
@@ -426,7 +427,15 @@ def correct_application_field(
 def get_daily_status() -> DailyStatusResponse:
     """Return live progress for the in-flight (or last finished) daily pass."""
     progress = apply_daily.daily_status()
+    try:
+        apply_settings = JobSettings.model_validate(workspace.load_settings()["defaults"]).apply
+        scheduler = apply_scheduler.status(
+            enabled=apply_settings.enabled, schedule_time=apply_settings.schedule_time
+        )
+    except Exception:  # noqa: BLE001 - progress must still render with bad settings
+        scheduler = None
     return DailyStatusResponse(
+        scheduler=scheduler,
         running=progress.running,
         phase=progress.phase,
         source_id=progress.source_id,
