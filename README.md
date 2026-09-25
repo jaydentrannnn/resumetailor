@@ -192,6 +192,27 @@ Host-only CLI (when Docker is not running — do not run both against the same w
 .\.venv\Scripts\python.exe scripts\apply_daily.py --dry-run
 ```
 
+### Browser extension
+
+The unpacked Chrome/Edge extension in [`extension/`](extension/) captures the job page
+you choose. In `chrome://extensions` or `edge://extensions`, enable **Developer mode**,
+select **Load unpacked**, and choose the `extension/` folder. Open ResumeTailor
+**Settings → Browser**, generate a six-digit code, and enter it in the extension popup.
+You can revoke a paired browser in Settings.
+
+**Send to ResumeTailor** captures the current job; **Tailor now** prepares it. **Fill this
+page** starts Fill when preparation is ready. Extension requests always disable automatic
+submission: inspect the completed form and submit it yourself. LinkedIn, Indeed,
+Handshake, and Workday remain assist-only platforms. If the description is behind a
+login wall or an inaccessible iCIMS iframe, select the JD and use **Send selection to
+ResumeTailor** from the context menu. An iCIMS iframe may also be opened as its own tab.
+
+Fill still uses the CDP browser described above; the extension's selected browser tab
+is not the fill target. The extension contacts the local ResumeTailor server on
+127.0.0.1 ports 8000–8010. Opening its popup sends the current page URL for lookup;
+description text is sent only when you choose a capture action. The extension itself
+does not contact job sites or model providers.
+
 ### Remote access (Cloudflare Tunnel)
 
 Reach the web UI from outside your own machine — no port forwarding, no static IP, no

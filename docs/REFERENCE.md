@@ -151,6 +151,19 @@ which Edge sidesteps as a separate process) over CDP (`CHROME_CDP_URL`, default
 `http://host.docker.internal:9222` — name kept for backward compatibility, value is
 browser-agnostic) — no Chromium in the Docker image.
 
+**Browser extension (P4-X).** The unpacked MV3 extension pairs through Settings → Browser:
+the app issues one six-digit, 120-second code at a time, which the extension exchanges
+for a token. The token is sent as `X-RT-Extension` only to the dedicated
+`/api/extension/*` lane; the normal app session still protects pairing management.
+Revocation invalidates that browser token. The extension reads a job page only when the
+user invokes capture, then the server stores and deduplicates its JD for later Prepare.
+Opening the popup sends the URL for lookup but not the JD. LinkedIn, Indeed, Handshake,
+and Workday are assist-only; extension Prepare/Fill always use `auto_submit=false`.
+The extension can automatically start Fill after successful preparation, but Fill uses
+the configured CDP browser, not the selected ordinary tab. The separate CDP relay spike
+has not been accepted. Cross-origin iCIMS iframe text needs selection capture or opening
+the iframe in its own tab.
+
 Discovery is multi-source (`ApplySettings.sources`): SimplifyJobs Summer2027-Internships,
 New-Grad-Positions, and speedyapply 2027-SWE-College-Jobs (pipe tables). Dedupe is by **ATS
 requisition** (`identity.canonical_key`); same-company same-role across locations share a
