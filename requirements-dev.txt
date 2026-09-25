@@ -5,4 +5,4 @@ pytest>=8.0
 pytest-asyncio>=0.24
 # Lint/format + static typing. Config lives in pyproject.toml.
 ruff>=0.8
-mypy>=1.13
+mypy>=2.3.1
