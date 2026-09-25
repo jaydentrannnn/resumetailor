@@ -71,6 +71,26 @@ jobs:
       - run: npm run test
       - run: npm run build
 
+  extension:
+    name: Browser extension
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.13"
+      - run: uv pip install --system -r requirements-dev.lock -e .
+      - run: npm test
+        working-directory: extension
+      - run: python -m pytest tests/test_extension_manifest.py -q
+      - uses: actions/upload-artifact@v4
+        with:
+          name: resumetailor-extension
+          path: extension/
+
   e2e:
     name: Browser end-to-end
     runs-on: ubuntu-latest
@@ -94,6 +114,8 @@ jobs:
         env:
           E2E_PYTHON: python
         run: npm run e2e
+      - name: Extension extraction in Chromium
+        run: python -m pytest tests/test_extension_dom.py -q
       - uses: actions/upload-artifact@v4
         if: failure()
         with:

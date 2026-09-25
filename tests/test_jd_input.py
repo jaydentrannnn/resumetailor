@@ -145,6 +145,7 @@ def test_text_html_docx_and_pdf_files():
         ("jd.pdf", b"not a pdf", "unreadable"),
         ("jd.docx", b"not a zip", "unreadable"),
     ],
+    ids=["unsupported_extension", "too_large", "unreadable_pdf", "unreadable_docx"],
 )
 def test_bad_files(name, raw, code):
     with pytest.raises(jd_input.JdInputError) as err:
