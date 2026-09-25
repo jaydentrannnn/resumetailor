@@ -102,6 +102,26 @@ class Packet(BaseModel):
     field_hints: dict[str, str] = Field(default_factory=dict)
     gaps: list[dict] = Field(default_factory=list)
     preparation: PreparationManifest = Field(default_factory=PreparationManifest)
+    #: `inputs_digest` of the applicant profile and master resume this was built from.
+    #: Fill always rebuilds in memory; this tells a reader of ``packet.json`` whether
+    #: the saved copy is out of date.
+    inputs_digest: str = ""
+
+
+def inputs_digest(profile: ApplicantProfile, resume: MasterResume) -> str:
+    """Hash of everything outside the job folder that a packet's fields come from."""
+    payload = {
+        "profile": profile.model_dump(mode="json", exclude={"workday_password"}),
+        "resume": resume.model_dump(mode="json"),
+    }
+    return hashlib.sha256(
+        json.dumps(payload, sort_keys=True, ensure_ascii=False).encode("utf-8")
+    ).hexdigest()[:16]
+
+
+def current_inputs_digest() -> str:
+    profile, _seeded = profile_mod.load_profile()
+    return inputs_digest(profile, load())
 
 
 _WORK_AUTH_LABELS: dict[str, str] = {
@@ -696,6 +716,7 @@ def build_packet(
         field_hints=ats_hints.hints_for(ats),
         gaps=list(report.get("gaps") or []),
         preparation=manifest,
+        inputs_digest=inputs_digest(applicant_profile, resume),
     )
 
 

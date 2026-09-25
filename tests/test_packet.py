@@ -370,3 +370,33 @@ def test_legacy_profile_education_for_another_school_leaves_the_resume_alone(job
     load_profile()
     assert config.MASTER_RESUME_PATH.read_text(encoding="utf-8") == before
     assert "major" not in json.loads(config.APPLICANT_PROFILE_PATH.read_text(encoding="utf-8"))
+
+
+def test_packet_records_inputs_digest_and_route_rebuilds_stale(tmp_path, monkeypatch):
+    """A saved packet from an older profile is rebuilt when read through the API."""
+    import json as _json
+
+    from fastapi.testclient import TestClient
+
+    from resume_tailor.apply import packet as packet_mod
+    from resume_tailor.apply import profile as profile_mod
+    from resume_tailor.web.app import app
+
+    digest_a = packet_mod.inputs_digest(profile_mod.ApplicantProfile(first_name="A"), synthetic_resume())
+    digest_b = packet_mod.inputs_digest(profile_mod.ApplicantProfile(first_name="B"), synthetic_resume())
+    assert digest_a != digest_b
+    same = packet_mod.inputs_digest(
+        profile_mod.ApplicantProfile(first_name="A", workday_password="x"), synthetic_resume()
+    )
+    assert same == digest_a  # the password never feeds the digest
+
+    job_dir = tmp_path / "jobs" / "job1"
+    job_dir.mkdir(parents=True)
+    (job_dir / "packet.json").write_text(_json.dumps({"job_id": "job1", "inputs_digest": "old"}))
+    monkeypatch.setattr(config, "OUTPUT_DIR", tmp_path)
+    monkeypatch.setattr(packet_mod, "current_inputs_digest", lambda: "new")
+    rebuilt = packet_mod.Packet(job_id="job1", built_at="now", inputs_digest="new")
+    monkeypatch.setattr(packet_mod, "write_packet", lambda job_id: rebuilt)
+    with TestClient(app) as client:
+        body = client.get("/api/jobs/job1/packet.json").json()
+    assert body["inputs_digest"] == "new"

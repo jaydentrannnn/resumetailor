@@ -147,11 +147,19 @@ def put_applicant_profile(body: ApplicantProfileUpdateRequest) -> ApplicantProfi
 
 @router.get("/api/jobs/{job_id}/packet.json", response_model=None)
 def get_job_packet(job_id: str) -> JSONResponse:
-    """Return ``packet.json`` for a finished tailoring run."""
+    """Return ``packet.json`` for a finished tailoring run.
+
+    A saved packet built from an older applicant profile or master resume is rebuilt
+    first, so what the page (or the MCP server) shows matches what a fill would use.
+    """
     path = config.OUTPUT_DIR / "jobs" / job_id / "packet.json"
     if not path.is_file():
         raise HTTPException(status_code=404, detail=f"No packet for job {job_id!r}.")
-    return JSONResponse(content=json.loads(path.read_text(encoding="utf-8")))
+    content = json.loads(path.read_text(encoding="utf-8"))
+    with suppress(Exception):  # a rebuild failure still serves the saved packet
+        if content.get("inputs_digest") != apply_packet.current_inputs_digest():
+            content = json.loads(apply_packet.write_packet(job_id).model_dump_json())
+    return JSONResponse(content=content)
 
 
 @router.post("/api/jobs/{job_id}/packet/rebuild", response_model=None)

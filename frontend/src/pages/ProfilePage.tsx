@@ -352,7 +352,8 @@ export function ProfilePage() {
       {section === "application" && (
         <div className="space-y-3">
           <p className="text-sm text-ink-muted">
-            Changes affect future preparation. Existing saved application packets are not rebuilt.
+            Saved changes apply from the next fill: each fill rebuilds the application kit from this
+            profile and your resume.
           </p>
           <GapBanner
             gaps={applicant.gaps.filter((gap) => gap.path === "/profile/application")}
