@@ -31,7 +31,8 @@ type EditorStateValue = {
   /** True when the draft differs from what was last loaded or saved. */
   dirty: boolean;
   validate: () => Promise<void>;
-  save: () => Promise<void>;
+  /** Resolves true when saved (or nothing to save); errors land in `errors`. */
+  save: () => Promise<boolean>;
   discard: () => void;
   /** Replace the working draft with `resume` (e.g. a template-wizard import),
    * intentionally leaving the saved snapshot untouched so `dirty` immediately
@@ -131,14 +132,14 @@ export function EditorProvider({ children }: { children: ReactNode }) {
 
   const save = useCallback(async () => {
     /** Persist the draft and reload so tags come back canonicalised. */
-    if (!resume) return;
+    if (!resume) return false;
     setBusy(true);
     setMessage(null);
     try {
       const local = completenessErrors(resume);
       if (local.length) {
         setErrors(local);
-        return;
+        return false;
       }
       const result = await saveMasterResume(
         stripRowKeys(resume) as unknown as Record<string, unknown>,
@@ -154,8 +155,10 @@ export function EditorProvider({ children }: { children: ReactNode }) {
         const cfg = await fetchConfig();
         setConfig(cfg);
       }
+      return result.ok;
     } catch (err) {
       setErrors([err instanceof Error ? err.message : String(err)]);
+      return false;
     } finally {
       setBusy(false);
     }

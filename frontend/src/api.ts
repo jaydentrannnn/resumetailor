@@ -202,7 +202,23 @@ export type ApplicantProfile = {
   /** Spoken languages (`profile.LanguageEntry`); absent on profiles saved before it existed. */
   languages?: ApplicantLanguage[];
   custom_answers: Record<string, string>;
+  /** Sets sponsorship defaults (`profile.sponsorship_from_visa`). */
+  visa_status?: VisaStatus;
+  /** "YYYY-MM"; overrides the resume's graduation month on forms. */
+  graduation_date?: string;
+  /** Blank = derived from the graduation date. */
+  class_year?: "" | "freshman" | "sophomore" | "junior" | "senior" | "graduate";
+  gpa_display?: string;
+  /** Server-owned: set only by the transcript upload route. */
+  transcript_path?: string;
+  security_clearance?: "" | "none" | "eligible" | "secret" | "top_secret";
+  drivers_license?: boolean | null;
+  hours_per_week_available?: number | null;
+  school_email?: string;
 };
+
+export type VisaStatus =
+  "" | "none" | "f1" | "f1_opt" | "f1_stem_opt" | "f1_cpt" | "h1b" | "h4_ead" | "other";
 
 export type ApplicantLanguage = {
   language: string;
@@ -1754,6 +1770,19 @@ export function getApplicantProfile(): Promise<ApplicantProfileResponse> {
 }
 
 /** Persist the applicant form-filling profile. */
+/** Store the transcript PDF fills attach to "Transcript" uploads. */
+export async function uploadTranscript(file: File): Promise<ApplicantProfileResponse> {
+  const form = new FormData();
+  form.append("file", file);
+  const res = await fetch("/api/applicant-profile/transcript", { method: "POST", body: form });
+  if (!res.ok) throw await apiError(res);
+  return res.json() as Promise<ApplicantProfileResponse>;
+}
+
+export function deleteTranscript(): Promise<ApplicantProfileResponse> {
+  return request("/api/applicant-profile/transcript", { method: "DELETE" });
+}
+
 export function putApplicantProfile(profile: ApplicantProfile): Promise<ApplicantProfileResponse> {
   return request("/api/applicant-profile", {
     method: "PUT",

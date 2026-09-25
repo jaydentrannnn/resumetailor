@@ -67,6 +67,12 @@ CANONICAL_FIELD_KEYS: frozenset[str] = frozenset(
         "current_title",
         "languages",
         "over_18",
+        "visa_status",
+        "class_year",
+        "school_email",
+        "security_clearance",
+        "drivers_license",
+        "hours_per_week",
     }
 )
 
@@ -99,6 +105,8 @@ OVER_18 = (
 #: Ordered (regex, canonical_key) pairs for label matching in ``filler.js``.
 #: F-1/OPT/CPT must win before the generic sponsorship rule (plan section 3.2).
 SYNONYMS: list[tuple[str, str]] = [
+    # "What is your current visa status (F-1, H-1B, ...)?" names F-1 too: before the OPT rule.
+    (r"visa\s*(?:status|type)|immigration\s*status|current\s*visa", "visa_status"),
     # Whole words: "opt" inside "optionID" / "optional" is not OPT.
     (r"\bf-?1\b|\bopt\b|\bcpt\b", "f1_opt_eligible"),
     (r"current(?:ly)?\s*(?:or|and|/)\s*future.*sponsor|now,?\s*or\s*(?:will\s*you\s*)?in\s*the\s*future.*sponsor", "requires_sponsorship_any"),
@@ -140,6 +148,8 @@ SYNONYMS: list[tuple[str, str]] = [
     (r"middle name", "middle_name"),
     (r"last name|family name|surname", "last_name"),
     (r"preferred name", "preferred_name"),
+    # Before the generic email rule: "University email" wants the school address.
+    (r"(?:school|university|college|student|\.edu)\s*e-?mail", "school_email"),
     (r"email", "email"),
     (r"address line 1|street address", "address_line1"),
     (r"address line 2|apt|suite", "address_line2"),
@@ -153,6 +163,15 @@ SYNONYMS: list[tuple[str, str]] = [
     (r"major|field of study|discipline", "major"),
     (r"school|university|college", "school"),
     (r"gpa", "gpa"),
+    # "Class year" alone often means the graduation year, so it is not matched here.
+    (
+        r"class\s*standing|academic\s*(?:standing|level)|year\s*in\s*school"
+        r"|(?:current\s*)?year\s*of\s*study|student\s*classification",
+        "class_year",
+    ),
+    (r"security\s*clearance|clearance\s*level", "security_clearance"),
+    (r"driver'?s?\s*licen[sc]e", "drivers_license"),
+    (r"hours\s*(?:per|a|each)\s*week|weekly\s*hours", "hours_per_week"),
 ]
 
 ATS_HINTS: dict[str, dict[str, str]] = {

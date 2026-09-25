@@ -67,6 +67,13 @@ def test_canonical_field_keys_match_plan():
         "current_title",
         "languages",
         "over_18",
+        # Profile fields added for students (plan PR3).
+        "visa_status",
+        "class_year",
+        "school_email",
+        "security_clearance",
+        "drivers_license",
+        "hours_per_week",
     }
     assert expected == ats_hints.CANONICAL_FIELD_KEYS
 

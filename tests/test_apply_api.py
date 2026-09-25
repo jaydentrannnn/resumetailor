@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+from pathlib import Path
 
 import pytest
 from fastapi.testclient import TestClient
@@ -427,3 +428,26 @@ def test_notes_route_saves_only_the_notes(client):
     assert stored.status == "ready"
     assert c.put("/api/applications/zzz/notes", json={"notes": "x"}).status_code == 404
     assert c.put("/api/applications/a/notes", json={"notes": "x" * 20_001}).status_code == 422
+
+
+def test_transcript_upload_is_server_owned(client, tmp_path):
+    """Only the upload route sets `transcript_path`; a PUT can't point it elsewhere."""
+    c, _q = client
+    bad = c.post("/api/applicant-profile/transcript", files={"file": ("t.txt", b"hello", "text/plain")})
+    assert bad.status_code == 422
+    res = c.post(
+        "/api/applicant-profile/transcript",
+        files={"file": ("t.pdf", b"%PDF-1.4 stub", "application/pdf")},
+    )
+    assert res.status_code == 200
+    stored = res.json()["profile"]["transcript_path"]
+    assert Path(stored).read_bytes().startswith(b"%PDF")
+
+    profile = res.json()["profile"]
+    profile["transcript_path"] = "/etc/passwd"
+    put = c.put("/api/applicant-profile", json={"profile": profile})
+    assert put.json()["profile"]["transcript_path"] == stored
+
+    gone = c.delete("/api/applicant-profile/transcript")
+    assert gone.json()["profile"]["transcript_path"] == ""
+    assert not Path(stored).exists()

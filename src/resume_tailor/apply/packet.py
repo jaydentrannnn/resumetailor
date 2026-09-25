@@ -12,7 +12,7 @@ import json
 import os
 import re
 import uuid
-from datetime import datetime, timezone
+from datetime import date, datetime, timezone
 from pathlib import Path
 
 from pydantic import BaseModel, Field
@@ -207,16 +207,53 @@ PROFILE_FIELDS: dict[str, ProfileFieldInfo] = {
     "how_heard": ProfileFieldInfo(label="How heard", section=_SAVED, common=True),
     "how_heard_detail": ProfileFieldInfo(label="How heard", section=_SAVED),
     "portfolio_url": ProfileFieldInfo(label="Portfolio URL", section=_SAVED),
+    "visa_status": ProfileFieldInfo(label="Visa status", section=_WORK_AUTH),
+    "class_year": ProfileFieldInfo(label="Class standing", section=_EDUCATION),
+    "school_email": ProfileFieldInfo(label="School email", section=_EDUCATION),
+    "security_clearance": ProfileFieldInfo(label="Security clearance", section=_AVAILABILITY),
+    "drivers_license": ProfileFieldInfo(label="Driver's license", section=_AVAILABILITY),
+    "hours_per_week": ProfileFieldInfo(label="Hours per week available", section=_AVAILABILITY),
 }
+
+_CLEARANCE_LABELS: dict[str, str] = {
+    "none": "None",
+    "eligible": "Eligible to obtain a clearance",
+    "secret": "Secret",
+    "top_secret": "Top Secret",
+}
+
+
+def class_year_for(graduation: str, degree_level: str, today: date | None = None) -> str | None:
+    """Class standing ("Senior") from a "YYYY-MM" graduation month; "Graduate" for grad degrees.
+
+    Counted in academic years to graduation (a May 2027 graduate is a Senior from
+    June 2026). None when the month is unknown or already past.
+    """
+    if re.search(r"master|mba|ph\.?d|doctor|graduate", degree_level or "", re.I):
+        return "Graduate"
+    match = re.fullmatch(r"(\d{4})-(\d{2})", (graduation or "").strip())
+    if not match:
+        return None
+    today = today or date.today()
+    months = (int(match[1]) - today.year) * 12 + int(match[2]) - today.month
+    if months < 0:
+        return None
+    years = months // 12
+    return ("Senior", "Junior", "Sophomore", "Freshman")[min(years, 3)]
+
 
 #: Harmless facts with an answer that is right for almost everyone, used only when the
 #: profile leaves them blank. Never a legal or self-identification answer.
 DEFAULTS: dict[str, str] = {"phone_device_type": "Mobile"}
 
 
-def profile_path(section: str) -> str:
-    """The Profile page tab that holds ``section``."""
-    if section == _EDUCATION:
+#: Education facts the applicant profile holds itself (the rest live on the resume).
+_PROFILE_EDUCATION_KEYS = frozenset({"class_year", "school_email"})
+
+
+def profile_path(section: str, key: str = "") -> str:
+    """The Profile page tab that holds ``section`` (or, for education, ``key``)."""
+    if section == _EDUCATION and key not in _PROFILE_EDUCATION_KEYS:
         return "/profile/resume"  # education lives on the resume, not the profile
     return "/profile/personal" if section == _CONTACT else "/profile/application"
 
@@ -322,7 +359,7 @@ def missing_profile(blank: list[dict], filled_labels: set[str]) -> list[dict]:
         info = field_info(key)
         entries.append({
             "key": key, "field_label": info.label, "section": info.section,
-            "path": profile_path(info.section), "questions": questions,
+            "path": profile_path(info.section, key), "questions": questions,
             "answered": bool(questions) and all(q in filled_labels for q in questions),
         })
     return entries
@@ -442,19 +479,26 @@ def build_fields(profile: ApplicantProfile, resume: MasterResume) -> dict[str, s
     _maybe_set(fields, "work_authorization", _work_authorization_label(profile.work_authorization))
     _maybe_set(fields, "authorized_to_work", _yes_no(profile.authorized_to_work))
     _maybe_set(fields, "authorization_country", profile.authorization_country or None)
-    _maybe_set(fields, "requires_sponsorship", _yes_no(profile.requires_sponsorship_now))
-    _maybe_set(
-        fields,
-        "requires_sponsorship_future",
-        _yes_no(profile.requires_sponsorship_future),
-    )
-    _maybe_set(fields, "f1_opt_eligible", _yes_no(profile.f1_opt_eligible))
+    # An explicit Yes/No wins; otherwise the visa status implies one (`sponsorship_from_visa`).
+    implied = profile_mod.sponsorship_from_visa(profile.visa_status)
+    sponsor_now = profile.requires_sponsorship_now
+    sponsor_future = profile.requires_sponsorship_future
+    if implied is not None:
+        sponsor_now = implied[0] if sponsor_now is None else sponsor_now
+        sponsor_future = implied[1] if sponsor_future is None else sponsor_future
+    _maybe_set(fields, "requires_sponsorship", _yes_no(sponsor_now))
+    _maybe_set(fields, "requires_sponsorship_future", _yes_no(sponsor_future))
+    f1_opt = profile.f1_opt_eligible
+    if f1_opt is None and profile.visa_status.startswith("f1"):
+        f1_opt = True
+    _maybe_set(fields, "f1_opt_eligible", _yes_no(f1_opt))
+    _maybe_set(fields, "visa_status", profile_mod.VISA_LABELS.get(profile.visa_status))
     _maybe_set(fields, "over_18", _yes_no(profile.over_18))
     _maybe_set(fields, "earliest_start", profile.earliest_start or None)
     _maybe_set(fields, "notice_period", profile.notice_period or None)
-    if profile.requires_sponsorship_now is True or profile.requires_sponsorship_future is True:
+    if sponsor_now is True or sponsor_future is True:
         fields["requires_sponsorship_any"] = "Yes"
-    elif profile.requires_sponsorship_now is False and profile.requires_sponsorship_future is False:
+    elif sponsor_now is False and sponsor_future is False:
         fields["requires_sponsorship_any"] = "No"
     # Single-field forms ("School", "Major", "Graduation date") answer from the first
     # resume education entry, the same row the repeaters fill first.
@@ -467,6 +511,23 @@ def build_fields(profile: ApplicantProfile, resume: MasterResume) -> dict[str, s
         _maybe_set(fields, "major", primary.major or None)
         _maybe_set(fields, "school", primary.school or None)
         _maybe_set(fields, "gpa", primary.gpa or None)
+    # Profile overrides for what the resume states differently or not at all.
+    _maybe_set(fields, "graduation_month", profile.graduation_date or None)
+    _maybe_set(fields, "gpa", profile.gpa_display or None)
+    class_year = profile.class_year.capitalize() if profile.class_year else class_year_for(
+        fields.get("graduation_month", ""), fields.get("degree_level", "")
+    )
+    _maybe_set(fields, "class_year", class_year)
+    email = fields.get("email", "")
+    _maybe_set(
+        fields,
+        "school_email",
+        profile.school_email or (email if email.lower().endswith(".edu") else None),
+    )
+    _maybe_set(fields, "security_clearance", _CLEARANCE_LABELS.get(profile.security_clearance))
+    _maybe_set(fields, "drivers_license", _yes_no(profile.drivers_license))
+    if profile.hours_per_week_available is not None:
+        fields["hours_per_week"] = str(profile.hours_per_week_available)
     # Salary depends on the posting (`apply/salary.py`); the fill runner adds it.
     _maybe_set(fields, "willing_to_relocate", _yes_no(profile.willing_to_relocate))
     _maybe_set(fields, "how_heard", profile.how_heard or None)
@@ -676,6 +737,9 @@ def build_packet(
     expansion = prepared_expansion.as_expansion() if prepared_expansion is not None else None
     experience = _experience_from_expansion(expansion.entries) if expansion is not None else []
     artifacts = _artifact_paths(job_dir)
+    transcript = applicant_profile.transcript_path
+    if transcript and Path(transcript).is_file():
+        artifacts["transcript_pdf"] = transcript
     manifest_artifacts = [PreparedArtifact(
         purpose=kind, path=path, filename=Path(path).name,
         mime_type="application/pdf" if kind.endswith("pdf") else

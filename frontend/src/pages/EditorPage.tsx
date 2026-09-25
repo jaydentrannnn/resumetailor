@@ -55,7 +55,14 @@ type UndoToast = { id: number; message: string; snapshot: MasterResume };
  * experience-like, project-like, plain-list, education, or skills sections, in any order,
  * under any title. This page never assumes exactly one of each kind.
  */
-export function EditorPage({ showContact = true }: { showContact?: boolean }) {
+export function EditorPage({
+  showContact = true,
+  embedded = false,
+}: {
+  showContact?: boolean;
+  /** Inside Profile, whose single save bar replaces this page's Save button and pill. */
+  embedded?: boolean;
+}) {
   const {
     resume,
     setResume,
@@ -175,7 +182,7 @@ export function EditorPage({ showContact = true }: { showContact?: boolean }) {
               </p>
             </div>
             <div className="flex items-center gap-2">
-              {dirty && (
+              {dirty && !embedded && (
                 <span className="rounded-full bg-warn-soft px-2.5 py-1 text-xs font-medium text-warn">
                   Unsaved changes
                 </span>
@@ -188,14 +195,16 @@ export function EditorPage({ showContact = true }: { showContact?: boolean }) {
               >
                 Validate
               </button>
-              <button
-                type="button"
-                onClick={onSave}
-                disabled={busy}
-                className="rounded-md bg-accent px-3 py-2 text-sm font-medium text-on-accent disabled:opacity-50"
-              >
-                Save
-              </button>
+              {!embedded && (
+                <button
+                  type="button"
+                  onClick={onSave}
+                  disabled={busy}
+                  className="rounded-md bg-accent px-3 py-2 text-sm font-medium text-on-accent disabled:opacity-50"
+                >
+                  Save
+                </button>
+              )}
             </div>
           </div>
           {message && (

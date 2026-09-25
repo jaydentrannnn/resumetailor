@@ -352,6 +352,8 @@ def _attachment_purpose(
     heading ("Resume/CV") for labels that name neither document.
     """
     text = f"{label} {section} {selector}".casefold()
+    if "transcript" in text:
+        return "transcript"
     if "cover" in text or "letter" in text:
         return "cover_letter"
     if hint_key == "resume_upload" or "resume" in text or "cv" in text:
@@ -991,7 +993,11 @@ def fill_application(
                             uploads.append({"selector": sel, "label": label, "purpose": "unknown", "verified": False, "error": "Attachment purpose is ambiguous"})
                             uploaded_controls.add(("file", sel))
                         continue
-                    path = resume_path if purpose == "resume" else cover_path
+                    path = (
+                        resume_path if purpose == "resume"
+                        else pkt.artifacts.get("transcript_pdf") if purpose == "transcript"
+                        else cover_path
+                    )
                     key = (purpose, f"{frame_index}:{sel}")
                     if (purpose, frame_index) in verified_purposes:
                         continue

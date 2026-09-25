@@ -423,3 +423,77 @@ def test_packet_records_inputs_digest_and_route_rebuilds_stale(tmp_path, monkeyp
     with TestClient(app) as client:
         body = client.get("/api/jobs/job1/packet.json").json()
     assert body["inputs_digest"] == "new"
+
+
+def test_visa_status_implies_sponsorship_only_where_the_profile_is_silent():
+    from resume_tailor.apply.packet import build_fields
+
+    resume = synthetic_resume()
+    fields = build_fields(ApplicantProfile(visa_status="f1_opt"), resume)
+    assert fields["requires_sponsorship"] == "No"
+    assert fields["requires_sponsorship_future"] == "Yes"
+    assert fields["requires_sponsorship_any"] == "Yes"
+    assert fields["f1_opt_eligible"] == "Yes"
+    assert fields["visa_status"] == "F-1 (OPT)"
+    explicit = build_fields(
+        ApplicantProfile(visa_status="f1_opt", requires_sponsorship_future=False), resume
+    )
+    assert explicit["requires_sponsorship_future"] == "No"
+    assert "requires_sponsorship" not in build_fields(ApplicantProfile(visa_status="other"), resume)
+
+
+def test_student_profile_fields_override_and_derive():
+    from resume_tailor.apply.packet import build_fields
+
+    resume = synthetic_resume()
+    fields = build_fields(
+        ApplicantProfile(
+            graduation_date="2099-05",
+            gpa_display="3.9/4.0",
+            email="alex@school.edu",
+            security_clearance="eligible",
+            drivers_license=True,
+            hours_per_week_available=20,
+        ),
+        resume,
+    )
+    assert fields["graduation_month"] == "2099-05"
+    assert fields["gpa"] == "3.9/4.0"
+    assert fields["class_year"] == "Freshman"
+    assert fields["school_email"] == "alex@school.edu"
+    assert fields["security_clearance"] == "Eligible to obtain a clearance"
+    assert fields["drivers_license"] == "Yes"
+    assert fields["hours_per_week"] == "20"
+    plain = build_fields(ApplicantProfile(email="alex@example.com"), resume)
+    assert "school_email" not in plain
+
+
+@pytest.mark.parametrize(
+    ("graduation", "degree", "expected"),
+    [
+        ("2027-05", "Bachelor", "Senior"),  # 11 months out
+        ("2027-06", "Bachelor", "Junior"),  # 12 months out
+        ("2029-05", "Bachelor", "Sophomore"),
+        ("2030-05", "Bachelor", "Freshman"),
+        ("2031-05", "Bachelor", "Freshman"),
+        ("2025-05", "Bachelor", None),  # already graduated
+        ("", "Master of Science", "Graduate"),
+        ("May 2027", "Bachelor", None),
+    ],
+)
+def test_class_year_for(graduation, degree, expected):
+    from datetime import date
+
+    from resume_tailor.apply.packet import class_year_for
+
+    assert class_year_for(graduation, degree, today=date(2026, 6, 15)) == expected
+
+
+def test_profile_path_routes_profile_owned_education_to_application_tab():
+    from resume_tailor.apply.packet import PROFILE_FIELDS, profile_path
+
+    section = PROFILE_FIELDS["school"].section
+    assert profile_path(section, "school") == "/profile/resume"
+    assert profile_path(section, "class_year") == "/profile/application"
+    assert profile_path(section, "school_email") == "/profile/application"
+    assert profile_path(PROFILE_FIELDS["email"].section, "email") == "/profile/personal"

@@ -5,11 +5,13 @@ from __future__ import annotations
 import hashlib
 import json
 import logging
+import os
+import uuid
 from contextlib import suppress
 from pathlib import Path
 from typing import Any, Literal
 
-from fastapi import APIRouter, HTTPException, Request, Response
+from fastapi import APIRouter, File, HTTPException, Request, Response, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
 
 from resume_tailor import (
@@ -110,7 +112,7 @@ def _profile_gaps(profile: apply_profile.ApplicantProfile) -> list[ProfileGap]:
         info = apply_packet.field_info(key)
         gaps.append(ProfileGap(
             key=key, label=info.label, section=info.section,
-            path=apply_packet.profile_path(info.section), seen_in=seen.get(key, 0),
+            path=apply_packet.profile_path(info.section, key), seen_in=seen.get(key, 0),
         ))
     return gaps
 
@@ -143,7 +145,51 @@ def put_applicant_profile(body: ApplicantProfileUpdateRequest) -> ApplicantProfi
             profile = profile.model_copy(
                 update={"workday_password": current.workday_password}
             )
+        # Server-owned: only the upload route sets it, so a client can never point a
+        # fill's file upload at an arbitrary path on this machine.
+        profile = profile.model_copy(update={"transcript_path": current.transcript_path})
         saved = apply_profile.save_profile(profile)
+    return _profile_response(saved, seeded=False, password_set=bool(saved.workday_password))
+
+
+TRANSCRIPT_MAX_BYTES = 10 * 1024 * 1024
+
+
+def _transcript_file() -> Path:
+    return config.APPLICANT_PROFILE_PATH.parent / "files" / "transcript.pdf"
+
+
+@router.post("/api/applicant-profile/transcript", response_model=ApplicantProfileResponse)
+async def upload_transcript(file: UploadFile = File(...)) -> ApplicantProfileResponse:
+    """Store the transcript PDF that fills attach to "Transcript" upload fields."""
+    raw = await file.read(TRANSCRIPT_MAX_BYTES + 1)
+    if len(raw) > TRANSCRIPT_MAX_BYTES:
+        raise HTTPException(status_code=413, detail="The transcript is over 10 MB.")
+    if not raw.startswith(b"%PDF"):
+        raise HTTPException(status_code=422, detail="Upload the transcript as a PDF.")
+    target = _transcript_file()
+    target.parent.mkdir(parents=True, exist_ok=True)
+    tmp = target.with_name(f"transcript.{uuid.uuid4().hex}.tmp")
+    try:
+        tmp.write_bytes(raw)
+        os.replace(tmp, target)
+    finally:
+        tmp.unlink(missing_ok=True)
+    with template_ops.LOCK:
+        current, _seeded = apply_profile.load_profile()
+        saved = apply_profile.save_profile(
+            current.model_copy(update={"transcript_path": str(target)})
+        )
+    return _profile_response(saved, seeded=False, password_set=bool(saved.workday_password))
+
+
+@router.delete("/api/applicant-profile/transcript", response_model=ApplicantProfileResponse)
+def delete_transcript() -> ApplicantProfileResponse:
+    """Forget the transcript; later fills leave transcript uploads for review."""
+    _transcript_file().unlink(missing_ok=True)
+    with template_ops.LOCK:
+        current, _seeded = apply_profile.load_profile()
+        saved = apply_profile.save_profile(current.model_copy(update={"transcript_path": ""}))
     return _profile_response(saved, seeded=False, password_set=bool(saved.workday_password))
 
 

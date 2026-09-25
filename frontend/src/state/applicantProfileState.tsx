@@ -8,6 +8,8 @@ import {
 } from "../api";
 
 type State = {
+  /** The profile as last loaded or saved (the baseline for "unsaved changes"). */
+  saved: ApplicantProfile | null;
   draft: ApplicantProfile | null;
   setDraft: (value: ApplicantProfile) => void;
   dirty: boolean;
@@ -18,6 +20,8 @@ type State = {
   defaults: Record<string, string>;
   /** Resolves true when the profile was saved; a failure is reported in `error`. */
   save: () => Promise<boolean>;
+  /** Adopt a server response that already saved the profile (transcript upload). */
+  accept: (result: ApplicantProfileResponse) => void;
   discard: () => void;
 };
 const Context = createContext<State | null>(null);
@@ -79,7 +83,20 @@ export function ApplicantProfileProvider({ children }: { children: ReactNode }) 
   }, [dirty]);
   return (
     <Context.Provider
-      value={{ draft, setDraft, dirty, saving, error, passwordSet, gaps, defaults, save, discard }}
+      value={{
+        saved,
+        draft,
+        setDraft,
+        dirty,
+        saving,
+        error,
+        passwordSet,
+        gaps,
+        defaults,
+        save,
+        accept,
+        discard,
+      }}
     >
       {children}
     </Context.Provider>

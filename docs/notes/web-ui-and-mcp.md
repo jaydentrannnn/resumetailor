@@ -292,3 +292,29 @@ blank entry headers before the Pydantic path; server validation remains authorit
   answers is deferred to P3-A (answer memory). No screenshots exist yet
   (`FillResult.screenshot_path` is never written), so the Timeline shows status history
   only until SS5.
+
+## Profile 2E: one save bar, student fields, validation (2026-09)
+
+- `pages/profile/ProfilePage.tsx` owns a single sticky save bar across all three
+  sub-tabs. The change count is `changedKeys(saved, draft)` plus one when the resume
+  draft is dirty. Save runs `validateProfile` first. When a field is invalid, nothing is
+  saved: the bar lists the problems and jumps to the first one (on the current tab when
+  there is one), opening its tab and group. Otherwise it saves the resume and then the
+  profile, and names the part that failed. `EditorPage embedded` hides the editor's own
+  Save button and "Unsaved changes" pill.
+- Groups are keyed by the backend section name (`packet.PROFILE_FIELDS`), so a gap chip
+  opens the group that holds the field. Every group starts open, and the groups a
+  student collapses are remembered in localStorage (`rt.profile.closedGroups`).
+- New profile fields:
+  - `visa_status`: the sponsorship defaults come from `sponsorship_from_visa`, and the
+    UI mirrors that as "Auto from visa" hints, which also suppress the blank-gap note.
+  - `graduation_date`, `class_year` (blank means it is derived by `class_year_for`),
+    `gpa_display`, `school_email`, `security_clearance`, `drivers_license` and
+    `hours_per_week_available`.
+  - `transcript_path` is server-owned. Only `POST/DELETE /api/applicant-profile/transcript`
+    set it (PDF only, 10 MB maximum); the PUT keeps the stored value. The upload response
+    is adopted with the student's unsaved edits re-applied on top.
+- `packet.profile_path(section, key)` sends `class_year` and `school_email` gaps to the
+  application tab. Other education gaps still go to the resume.
+- Inline errors appear after a field is blurred, or on every field after a Save attempt.
+  A blank value is never an error.

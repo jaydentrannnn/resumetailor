@@ -19,6 +19,40 @@ from resume_tailor import config, secret_store
 _log = logging.getLogger(__name__)
 
 WorkAuthorization = Literal["", "citizen", "permanent_resident", "visa_holder", "other"]
+VisaStatus = Literal[
+    "", "none", "f1", "f1_opt", "f1_stem_opt", "f1_cpt", "h1b", "h4_ead", "other"
+]
+ClassYear = Literal["", "freshman", "sophomore", "junior", "senior", "graduate"]
+SecurityClearance = Literal["", "none", "eligible", "secret", "top_secret"]
+
+VISA_LABELS: dict[str, str] = {
+    "none": "No visa needed (citizen or permanent resident)",
+    "f1": "F-1 student",
+    "f1_opt": "F-1 (OPT)",
+    "f1_stem_opt": "F-1 (STEM OPT)",
+    "f1_cpt": "F-1 (CPT)",
+    "h1b": "H-1B",
+    "h4_ead": "H-4 EAD",
+    "other": "Other",
+}
+
+
+def sponsorship_from_visa(visa: str) -> tuple[bool, bool] | None:
+    """``(sponsorship now, sponsorship in future)`` a visa status implies, else None.
+
+    Only a default: an explicit Yes/No on the profile always wins. F-1 students (CPT,
+    OPT, STEM OPT) and H-4 EAD holders can work now but need sponsorship later; an H-1B
+    holder needs a transfer now. "Other" implies nothing.
+    """
+    return {
+        "none": (False, False),
+        "f1": (False, True),
+        "f1_cpt": (False, True),
+        "f1_opt": (False, True),
+        "f1_stem_opt": (False, True),
+        "h4_ead": (False, True),
+        "h1b": (True, True),
+    }.get(visa)
 
 
 class EEOAnswers(BaseModel):
@@ -97,6 +131,21 @@ class ApplicantProfile(BaseModel):
     how_heard: str = "Found through a job postings aggregator."
     workday_email: str = ""
     workday_password: str = ""
+    #: Drives sponsorship defaults (`sponsorship_from_visa`) and "Visa status" questions.
+    visa_status: VisaStatus = ""
+    #: "YYYY-MM"; overrides the resume's education end date on forms. Blank = resume.
+    graduation_date: str = ""
+    #: Blank = derived from the graduation date (`packet.class_year_for`).
+    class_year: ClassYear = ""
+    #: Overrides the resume's GPA on forms ("3.7/4.0"). Blank = resume.
+    gpa_display: str = ""
+    #: Uploaded transcript (PDF) in the workspace's files folder, for transcript uploads.
+    transcript_path: str = ""
+    security_clearance: SecurityClearance = ""
+    drivers_license: bool | None = None
+    hours_per_week_available: int | None = Field(default=None, ge=0, le=80)
+    #: A school (.edu) address for forms that ask for one; blank = the email when .edu.
+    school_email: str = ""
     eeo: EEOAnswers = Field(default_factory=EEOAnswers)
     languages: list[LanguageEntry] = Field(default_factory=list)
     custom_answers: dict[str, str] = Field(default_factory=dict)

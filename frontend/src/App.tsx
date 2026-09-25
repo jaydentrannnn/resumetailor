@@ -188,7 +188,7 @@ const ApplicationDetailPage = lazy(() =>
   import("./pages/ApplicationDetailPage").then((m) => ({ default: m.ApplicationDetailPage })),
 );
 const ProfilePage = lazy(() =>
-  import("./pages/ProfilePage").then((m) => ({ default: m.ProfilePage })),
+  import("./pages/profile/ProfilePage").then((m) => ({ default: m.ProfilePage })),
 );
 const TemplatePage = lazy(() =>
   import("./pages/TemplatePage").then((m) => ({ default: m.TemplatePage })),
