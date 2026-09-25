@@ -155,6 +155,11 @@ def cdp_browser() -> Iterator[Any]:
     """
     status = browser_status()
     if not status.reachable:
+        if os.environ.get("BROWSER_MODE", "cdp").lower() == "extension":
+            raise RuntimeError(
+                f"Extension relay unavailable at {status.cdp_url}: {status.error}. "
+                "Start the relay and choose Use this tab for Fill in the extension."
+            )
         raise RuntimeError(
             f"Browser CDP unreachable at {status.cdp_url}: {status.error}. "
             "Launch a debug-enabled browser (Edge recommended) with "
