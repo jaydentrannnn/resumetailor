@@ -18,8 +18,13 @@ identically, so each carries its own calibration — see `config._load_calibrati
 
 from __future__ import annotations
 
+import atexit
 import os
+import shutil
 import subprocess
+import tempfile
+import threading
+import time
 import uuid
 from pathlib import Path
 
@@ -38,28 +43,65 @@ def _convert_word(docx_path: Path, pdf_path: Path, *, keep_active: bool) -> None
     convert(str(docx_path.resolve()), str(pdf_path.resolve()), keep_active=keep_active)
 
 
-def _convert_soffice(docx_path: Path, pdf_path: Path, *, keep_active: bool) -> None:
-    """Convert with LibreOffice headless.
+#: Prefix of the LibreOffice user profiles this module creates under the temp dir.
+_PROFILE_PREFIX = "rt_lo_"
+#: A profile left by a crashed process is removed once it is this old.
+_STALE_PROFILE_SECONDS = 24 * 3600
 
-    `keep_active` is accepted and ignored: LibreOffice is invoked as a one-shot process,
-    so there is no persistent instance to hold open. The parameter exists only so the two
-    backends share a signature.
+_SOFFICE_LOCK = threading.Lock()
+_profile_dir: Path | None = None
 
-    Two details that are easy to get wrong:
 
-    - `--convert-to pdf` writes `<stem>.pdf` into `--outdir` and offers no way to name the
-      file, so the result is moved into place afterwards.
-    - Concurrent invocations that share a user profile directory silently serialise (or
-      fail outright) on LibreOffice's single-instance lock, so each call gets a private
-      throwaway profile via `-env:UserInstallation`.
+def _parallel_profiles() -> bool:
+    """RESUME_TAILOR_SOFFICE_PARALLEL=1: a throwaway profile per call, no lock."""
+    return os.environ.get("RESUME_TAILOR_SOFFICE_PARALLEL", "").strip() in {"1", "true", "yes"}
+
+
+def _prune_stale_profiles(root: Path) -> None:
+    cutoff = time.time() - _STALE_PROFILE_SECONDS
+    for path in root.glob(f"{_PROFILE_PREFIX}*"):
+        try:
+            if path.is_dir() and path.stat().st_mtime < cutoff:
+                shutil.rmtree(path, ignore_errors=True)
+        except OSError:
+            continue
+
+
+def _shared_profile() -> Path:
+    """This process's LibreOffice profile, created on first use and removed at exit.
+
+    Creating a profile is the largest part of a cold `soffice` start, and the fit loop
+    converts several drafts per run, so one profile is reused for the life of the
+    process. It is per process (named by pid), never shared across processes: a second
+    `soffice` on the same profile hands its job to the first instance's pipe instead
+    of converting, which fails intermittently.
     """
-    outdir = pdf_path.parent
-    outdir.mkdir(parents=True, exist_ok=True)
-    profile = Path(os.environ.get("TMPDIR", "/tmp")) / f"lo_{uuid.uuid4().hex}"
+    global _profile_dir
+    if _profile_dir is None:
+        root = Path(tempfile.gettempdir())
+        _prune_stale_profiles(root)
+        _profile_dir = root / f"{_PROFILE_PREFIX}{os.getpid()}_{uuid.uuid4().hex[:8]}"
+        atexit.register(shutil.rmtree, _profile_dir, ignore_errors=True)
+    return _profile_dir
 
+
+def _reset_shared_profile() -> None:
+    """Throw away the shared profile (a stale lock or a corrupt profile)."""
+    if _profile_dir is not None:
+        shutil.rmtree(_profile_dir, ignore_errors=True)
+
+
+def _profile_uri(profile: Path) -> str:
+    """``-env:UserInstallation`` value. `as_uri` is ``file:///C:/...`` on Windows;
+    the old ``file://`` + posix path gave ``file://C:/...``, which names a host "C:".
+    """
+    return profile.resolve().as_uri()
+
+
+def _run_soffice(docx_path: Path, outdir: Path, profile: Path) -> subprocess.CompletedProcess:
     cmd = [
         config.SOFFICE_BINARY,
-        f"-env:UserInstallation=file://{profile.as_posix()}",
+        f"-env:UserInstallation={_profile_uri(profile)}",
         "--headless",
         "--norestore",
         "--convert-to",
@@ -68,9 +110,8 @@ def _convert_soffice(docx_path: Path, pdf_path: Path, *, keep_active: bool) -> N
         str(outdir),
         str(docx_path.resolve()),
     ]
-
     try:
-        completed = subprocess.run(
+        return subprocess.run(
             cmd,
             capture_output=True,
             text=True,
@@ -88,10 +129,48 @@ def _convert_soffice(docx_path: Path, pdf_path: Path, *, keep_active: bool) -> N
             f"{config.SOFFICE_TIMEOUT:.0f}s."
         ) from exc
 
+
+def _convert_soffice(docx_path: Path, pdf_path: Path, *, keep_active: bool) -> None:
+    """Convert with LibreOffice headless.
+
+    `keep_active` is accepted and ignored: LibreOffice is invoked as a one-shot process,
+    so there is no persistent instance to hold open. The parameter exists only so the two
+    backends share a signature.
+
+    Details that are easy to get wrong:
+
+    - `--convert-to pdf` writes `<stem>.pdf` into `--outdir` and offers no way to name the
+      file, so the result is moved into place afterwards.
+    - Concurrent invocations that share a user profile directory silently serialise (or
+      fail outright) on LibreOffice's single-instance lock. Calls in this process share
+      one profile (`_shared_profile`) under `_SOFFICE_LOCK`; with
+      RESUME_TAILOR_SOFFICE_PARALLEL=1 each call gets a throwaway profile instead.
+    - A conversion that produces nothing on the shared profile is retried once on a
+      fresh profile: a crash can leave a stale lock or a half-written profile behind,
+      and every later call would fail the same way.
+    """
+    outdir = pdf_path.parent
+    outdir.mkdir(parents=True, exist_ok=True)
+    produced = outdir / f"{docx_path.stem}.pdf"
+    # A leftover from an earlier conversion would read as success below.
+    produced.unlink(missing_ok=True)
+
+    if _parallel_profiles():
+        profile = Path(tempfile.gettempdir()) / f"{_PROFILE_PREFIX}call_{uuid.uuid4().hex}"
+        try:
+            completed = _run_soffice(docx_path, outdir, profile)
+        finally:
+            shutil.rmtree(profile, ignore_errors=True)
+    else:
+        with _SOFFICE_LOCK:
+            completed = _run_soffice(docx_path, outdir, _shared_profile())
+            if not produced.exists():
+                _reset_shared_profile()
+                completed = _run_soffice(docx_path, outdir, _shared_profile())
+
     # LibreOffice is cheerfully unreliable about exit codes: it can report success while
     # writing nothing at all. The produced file is the only trustworthy signal, so the
     # return code is used for the error message rather than for the decision.
-    produced = outdir / f"{docx_path.stem}.pdf"
     if not produced.exists():
         raise RuntimeError(
             f"LibreOffice did not produce a PDF for {docx_path.name} "

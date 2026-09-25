@@ -365,3 +365,12 @@ the first measure and skips an extra rewrite pass.
 - **Impact:** Supersedes `docs/PLAN.md` Phase 12 note that "widow fabrication remains a hard
   failure" — PLAN.md stays append-only; this entry is the current behavior. `--no-widow-repair`
   remains a CLI/API control but is no longer required to unblock a run over this case.
+
+## LibreOffice profile per process (B4/B5/PF1, 2026-09)
+
+- `_convert_soffice` created `/tmp/lo_<uuid>` on every call and never removed it; 20 conversions left 20 profiles. It now reuses one profile per process (`rt_lo_<pid>_<rand>` under the system temp dir), serialised by `_SOFFICE_LOCK` and removed at exit. Profiles over a day old from crashed processes are pruned on first use.
+- Per process, not shared across processes: a second `soffice` on a profile already in use passes its job to the first instance's pipe, which fails intermittently (the calibrate script alongside the server, for example).
+- A call that produces no PDF is retried once on a fresh profile, which covers a stale `.lock` or a corrupt profile. A stale `<stem>.pdf` is deleted first so it cannot pass for success.
+- `RESUME_TAILOR_SOFFICE_PARALLEL=1` restores throwaway per-call profiles with no lock, now cleaned up.
+- B5: the profile URI comes from `Path.as_uri()`. `file://` plus a posix path gave `file://C:/...` on Windows.
+- PF1 result (Ubuntu, LibreOffice 24.2, small docx): about 1.25 s to 1.1 s per conversion, about 10%, short of the 40% target. Process start-up dominates, not profile creation, so the bigger win is PF2 (a long-lived `unoserver`).
