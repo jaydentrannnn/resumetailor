@@ -845,6 +845,9 @@ def test_job_runs_to_success_with_stubbed_pipeline(client, monkeypatch, tmp_path
         )
 
     monkeypatch.setattr(jobs_mod.expand, "expand_experience", fake_expand)
+    template = tmp_path / "live_template.docx"
+    template.write_bytes(b"PK-template")
+    monkeypatch.setattr(config, "DEFAULT_TEMPLATE_PATH", template)
 
     res = c.post(
         "/api/jobs",
@@ -870,6 +873,11 @@ def test_job_runs_to_success_with_stubbed_pipeline(client, monkeypatch, tmp_path
     assert status["report"]["title"] == "Stub Role"
     assert status["report"]["pages"] == 1
     assert status["report"]["verb_collisions_remaining"] == 0
+    # The final render's inputs are kept so bullets can be edited and re-rendered later.
+    job_dir = config.OUTPUT_DIR / "jobs" / job_id
+    snapshot = json.loads((job_dir / "render_snapshot.json").read_text())
+    assert snapshot["include_project_links"] is False and snapshot["target_pages"] == 1
+    assert (job_dir / "template.docx").read_bytes() == b"PK-template"
     assert isinstance(status["report"]["gaps"], list)
     assert status["expansion"] is not None
     assert status["expansion"]["entries"][0]["company"] == resume.experience[0].company

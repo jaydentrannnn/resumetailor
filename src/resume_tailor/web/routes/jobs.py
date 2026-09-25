@@ -13,7 +13,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
-from pydantic import ValidationError
+from pydantic import BaseModel, Field, ValidationError
 
 from resume_tailor import (
     config,
@@ -21,6 +21,7 @@ from resume_tailor import (
     estimate,
     include,
     report,
+    rerender,
     workspace,
 )
 from resume_tailor.events import ProgressEvent
@@ -573,6 +574,70 @@ def _export_download_name(job_id: str, *, suffix: str) -> str:
     except (FileNotFoundError, ValueError):
         name = "Resume"
     return report.export_filename(name, title, suffix=suffix)
+
+
+class RerenderRequest(BaseModel):
+    """Edits relative to the AI version; an empty request restores it."""
+
+    edits: dict[str, str] = Field(default_factory=dict, max_length=500)
+    reverted: list[str] = Field(default_factory=list, max_length=500)
+    removed: list[str] = Field(default_factory=list, max_length=500)
+    #: Flagged bullets the student confirmed as accurate.
+    confirmed: list[str] = Field(default_factory=list, max_length=500)
+
+
+def _finished_run_dir(job_id: str) -> Path:
+    resolved = _resolve_run(job_id)
+    if resolved is None:
+        raise HTTPException(status_code=404, detail=f"Unknown job {job_id!r}.")
+    if resolved.status != "succeeded":
+        raise HTTPException(status_code=409, detail="Only a finished run can be edited.")
+    return resolved.out_dir
+
+
+@router.get("/api/jobs/{job_id}/bullets")
+def get_job_bullets(job_id: str) -> dict:
+    """The run's bullets beside their master-resume source, for review and editing."""
+    out_dir = _finished_run_dir(job_id)
+    try:
+        return {"bullets": rerender.bullet_rows(out_dir)}
+    except rerender.NoSnapshot as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/api/jobs/{job_id}/rerender")
+def rerender_job(job_id: str, body: RerenderRequest) -> dict:
+    """Render the edited bullets with the run's own template. No model call."""
+    out_dir = _finished_run_dir(job_id)
+    # Held like a profile switch: the render reads config's per-profile fit constants.
+    with template_ops.LOCK:
+        try:
+            result = rerender.rerender(
+                out_dir,
+                edits=body.edits,
+                reverted=body.reverted,
+                removed=body.removed,
+                confirmed=body.confirmed,
+            )
+        except rerender.NoSnapshot as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+        except rerender.RerenderError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        except (FileNotFoundError, RuntimeError) as exc:
+            raise HTTPException(status_code=500, detail=str(exc)) from exc
+    if result["status"] == "saved" and (out_dir / "packet.json").is_file():
+        # The application kit records each file's hash; rebuild it so the next fill
+        # uploads the edited resume.
+        try:
+            from resume_tailor.apply import packet as apply_packet
+
+            apply_packet.write_packet(job_id)
+        except Exception as exc:  # noqa: BLE001 - the edit is saved either way
+            _log.warning("Packet rebuild after re-render failed for %s: %s", job_id, exc)
+            result.setdefault("warnings", []).append(
+                "The application kit could not be refreshed; rebuild it before filling."
+            )
+    return result
 
 
 @router.get("/api/jobs/{job_id}/preview.pdf")

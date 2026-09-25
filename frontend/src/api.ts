@@ -1938,3 +1938,45 @@ export async function extractJdFile(file: File): Promise<JdText> {
   if (!res.ok) throw await apiError(res);
   return res.json() as Promise<JdText>;
 }
+
+export interface JobBullet {
+  bullet_id: string;
+  section_title: string;
+  entry_label: string;
+  /** The master resume's text (merged bullets: each source joined by " / "). */
+  source_text: string;
+  ai_text: string;
+  /** What the current document shows; null when removed. */
+  current_text: string | null;
+  merged_from: string[];
+}
+
+export interface RerenderRequest {
+  edits: Record<string, string>;
+  reverted: string[];
+  removed: string[];
+  confirmed: string[];
+}
+
+export type RerenderResult =
+  | { status: "needs_confirmation"; flagged: Record<string, string[]> }
+  | { status: "over"; pages: number; target_pages: number; over_by_lines: number }
+  | {
+      status: "saved";
+      pages: number;
+      pages_are_estimated: boolean;
+      warnings: string[];
+      flagged: Record<string, string[]>;
+    };
+
+export function fetchJobBullets(jobId: string): Promise<{ bullets: JobBullet[] }> {
+  return request(`/api/jobs/${encodeURIComponent(jobId)}/bullets`);
+}
+
+/** Render the edited bullets with the run's template. No AI call. */
+export function rerenderJob(jobId: string, body: RerenderRequest): Promise<RerenderResult> {
+  return request(`/api/jobs/${encodeURIComponent(jobId)}/rerender`, {
+    method: "POST",
+    body: JSON.stringify(body),
+  });
+}

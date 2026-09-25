@@ -14,6 +14,7 @@ other's `.docx` / `.pdf`. JD and score caches stay in the shared `config.CACHE_D
 from __future__ import annotations
 
 import json
+import logging
 import queue
 import shutil
 import threading
@@ -38,6 +39,7 @@ from resume_tailor import (
     logs,
     propose,
     report,
+    rerender,
     rewrite,
     skills,
     style,
@@ -55,13 +57,15 @@ from resume_tailor.web.schemas import (
     ExpandedEntryOut,
     ExpansionOut,
     JobSettings,
-    RunMetadata,
     KeywordGapOut,
+    RunMetadata,
     RunReportOut,
     SectionSummaryOut,
     SkillsPlanOut,
     SkillSuggestionOut,
 )
+
+logger = logging.getLogger(__name__)
 
 JobStatus = Literal["queued", "running", "succeeded", "failed", "cancelled"]
 
@@ -538,6 +542,8 @@ class JobQueue:
         resume = facets.apply(resume, facet_result)
 
         out_path = out_dir / "tailored.docx"
+        layout = active_layout()
+        contact_fields = include.contact_order(settings.include, layout)
 
         job.check_cancelled()
         try:
@@ -553,7 +559,7 @@ class JobQueue:
                 repair_verbs=not settings.no_verb_repair,
                 merge_bullets=settings.merge,
                 include_project_links=include_links,
-                contact_fields=include.contact_order(settings.include, active_layout()),
+                contact_fields=contact_fields,
                 fill_target=settings.fill_target,
                 initial_bullet_share=settings.initial_bullet_share,
                 experience_bullet_share=settings.experience_bullet_share,
@@ -597,6 +603,20 @@ class JobQueue:
             json.dumps(config.backend_specs_snapshot(), indent=2),
             encoding="utf-8",
         )
+        try:
+            # What the final render used, so the student can edit bullets and re-render
+            # later without a model call (`rerender.py`).
+            rerender.save_snapshot(
+                out_dir,
+                resume,
+                target_pages=settings.pages,
+                include_project_links=include_links,
+                contact_fields=contact_fields,
+                layout=layout,
+                merges=result.merges,
+            )
+        except (OSError, TypeError, ValueError) as exc:
+            logger.warning("Could not save the re-render snapshot for %s: %s", job.job_id, exc)
 
         job.check_cancelled()
         if not settings.no_expand:

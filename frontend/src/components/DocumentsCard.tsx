@@ -16,6 +16,8 @@ type Props = {
   coverLetter?: CoverLetter | null;
   onCoverRegenerated: (letter: CoverLetter) => void;
   readOnly?: boolean;
+  /** Bumped when the resume was re-rendered, so the preview is fetched fresh. */
+  revision?: number;
 };
 
 /**
@@ -24,7 +26,13 @@ type Props = {
  * Only one PDF iframe mounts at a time — Chrome/Edge on Windows use a singleton PDF
  * plugin, so two embedded previews on one page often leaves one blank.
  */
-export function DocumentsCard({ jobId, coverLetter, onCoverRegenerated, readOnly = false }: Props) {
+export function DocumentsCard({
+  jobId,
+  coverLetter,
+  onCoverRegenerated,
+  readOnly = false,
+  revision = 0,
+}: Props) {
   const hasCoverLetter = Boolean(coverLetter);
   const hasCoverPdf = Boolean(coverLetter?.has_pdf);
   const [tab, setTab] = useState<PreviewTab>("resume");
@@ -35,7 +43,7 @@ export function DocumentsCard({ jobId, coverLetter, onCoverRegenerated, readOnly
     setCoverPreviewKey(0);
   }, [jobId]);
 
-  const resumeSrc = previewUrl(jobId);
+  const resumeSrc = revision ? `${previewUrl(jobId)}?v=${revision}` : previewUrl(jobId);
   const coverSrc = coverLetterPreviewUrl(jobId, coverPreviewKey);
   const activeSrc = tab === "cover" && hasCoverPdf ? coverSrc : tab === "resume" ? resumeSrc : null;
   const activeTitle =
@@ -122,7 +130,11 @@ export function DocumentsCard({ jobId, coverLetter, onCoverRegenerated, readOnly
                 Download .docx
               </a>
             </div>
-            <PdfFrame iframeKey={`resume-${jobId}`} title={activeTitle} src={resumeSrc} />
+            <PdfFrame
+              iframeKey={`resume-${jobId}-${revision}`}
+              title={activeTitle}
+              src={resumeSrc}
+            />
           </>
         )}
 

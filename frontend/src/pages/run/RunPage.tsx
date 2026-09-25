@@ -1,4 +1,4 @@
-import { useEffect, useRef } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { DocumentsCard } from "../../components/DocumentsCard";
 import { ExperienceCard } from "../../components/ExperienceCard";
@@ -8,6 +8,7 @@ import { SkillsCard } from "../../components/SkillsCard";
 import { Tabs } from "../../components/Tabs";
 import { useRunState } from "../../state/runState";
 import { useWorkspaceState } from "../../state/workspaceState";
+import { BulletReview } from "./BulletReview";
 import { JobInput } from "./JobInput";
 import { ProgressPanel } from "./ProgressPanel";
 import { ReportCard } from "./ReportCard";
@@ -47,7 +48,9 @@ export function RunPage() {
   } = useRunState();
   const { switching, activeId } = useWorkspaceState();
   const [resultParams, setResultParams] = useSearchParams();
-  const resultTab = ["overview", "documents", "content"].includes(
+  // Bumped after a re-render so the documents preview reloads the new PDF.
+  const [docsRevision, setDocsRevision] = useState(0);
+  const resultTab = ["overview", "bullets", "documents", "content"].includes(
     resultParams.get("result_tab") ?? "",
   )
     ? resultParams.get("result_tab")!
@@ -167,6 +170,7 @@ export function RunPage() {
             label="Tailored results"
             items={[
               { id: "overview", label: "Overview" },
+              { id: "bullets", label: "Review bullets" },
               { id: "documents", label: "Documents" },
               { id: "content", label: "Application content" },
             ]}
@@ -184,9 +188,15 @@ export function RunPage() {
               )}
             </div>
           )}
+          {resultTab === "bullets" && (
+            <div role="tabpanel">
+              <BulletReview jobId={jobId} onSaved={() => setDocsRevision((n) => n + 1)} />
+            </div>
+          )}
           {resultTab === "documents" && (
             <div role="tabpanel">
               <DocumentsCard
+                revision={docsRevision}
                 jobId={jobId}
                 coverLetter={coverLetter}
                 onCoverRegenerated={setCoverLetter}
