@@ -410,3 +410,24 @@ blank entry headers before the Pydantic path; server validation remains authorit
   Open/Quit only (no Pause automation / Run discovery / autostart); failure screen shows the
   log folder rather than "Copy diagnostics"; not done — DK5 LibreOffice detection UI and font
   registration, DK6 data-folder import, DK8 store publishing; not verified on clean VMs.
+
+### Desktop fixes found while writing the owner guide (2026-09)
+
+- **Template install in the frozen app.** `template_ops._run_build` spawned
+  `sys.executable scripts/build_template.py`; frozen, `sys.executable` is the server and
+  `scripts/` is not bundled, so the "build" would have started a second server and hung
+  the install. Frozen (or no script) now returns non-zero at once and the caller's
+  in-process build runs — the same fallback tests already exercise.
+- **`.env` in the frozen app.** `config` loads `PROJECT_ROOT/.env`, which frozen is the
+  install folder. `desktop_main` now reads `<app data>/.env` for missing variables (a copy
+  of a checkout's `.env` works) and defaults `CHROME_CDP_URL` to `http://127.0.0.1:9222`
+  instead of the Docker host name.
+- **Windows data folder is `%LOCALAPPDATA%\ResumeTailorData`.** Tauri's per-user NSIS
+  installer puts the program in `%LOCALAPPDATA%\<productName>` = `...\ResumeTailor`; data
+  must not share a folder with files updates replace (checked in the bundled NSIS
+  template: uninstall deletes only its own files, but the overlap is fragile).
+- **release.yml**: Windows only by default (macOS minutes cost 10x on a private repo; opt
+  in per run or with `RELEASE_MACOS=true`); the macOS x64 job is gone (macos-13 runners
+  retired); a tag `vX.Y.Z` sets the installer version so installs upgrade in place.
+- Known limit: `transcript_path`/`portfolio_path` and packet artifacts are absolute paths,
+  so moving the data folder needs a re-upload of those files (which also re-keys packets).

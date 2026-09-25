@@ -990,6 +990,11 @@ def _run_build(
     real build script.
     """
     script = config.PROJECT_ROOT / "scripts" / "build_template.py"
+    if getattr(sys, "frozen", False) or not script.is_file():
+        # The desktop build ships no scripts/, and its sys.executable is the server
+        # itself: spawning it would start a second server, not a build. A non-zero
+        # exit sends the caller to its in-process build.
+        return 1, "build script not available here; building in-process"
     cmd = [sys.executable, str(script)]
     if source is not None:
         cmd.extend(["--from", str(source)])

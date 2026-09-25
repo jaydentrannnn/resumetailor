@@ -7,11 +7,20 @@ name: Release
 # Not signed or notarized, and no updater manifest: those need certificates and keys the
 # owner has not chosen yet. Unsigned Windows installers show a SmartScreen warning;
 # unsigned macOS apps open with right-click → Open.
+#
+# Windows only by default. macOS runners bill 10x the minutes on a private repository,
+# so the macOS build is opt-in: tick "Also build macOS" when running by hand, or set the
+# repository variable RELEASE_MACOS=true for tag builds.
 
 on:
   push:
     tags: ["v*"]
   workflow_dispatch:
+    inputs:
+      macos:
+        description: Also build macOS (Apple silicon)
+        type: boolean
+        default: false
 
 permissions:
   contents: write
@@ -23,18 +32,7 @@ jobs:
     strategy:
       fail-fast: false
       matrix:
-        include:
-          - name: windows-x64
-            os: windows-latest
-            bundles: nsis,msi
-          # One build per architecture: a universal app would need a universal2 Python
-          # for the sidecar, which PyInstaller cannot assemble from the runner's Python.
-          - name: macos-arm64
-            os: macos-14
-            bundles: app,dmg
-          - name: macos-x64
-            os: macos-13
-            bundles: app,dmg
+        include: ${{ fromJSON((inputs.macos || vars.RELEASE_MACOS == 'true') && '[{"name":"windows-x64","os":"windows-latest","bundles":"nsis,msi"},{"name":"macos-arm64","os":"macos-latest","bundles":"app,dmg"}]' || '[{"name":"windows-x64","os":"windows-latest","bundles":"nsis,msi"}]') }}
     env:
       PYTHONUTF8: "1"
       PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
@@ -66,6 +64,17 @@ jobs:
           [ -f "$exe.exe" ] && exe="$exe.exe"
           python desktop/sidecar/smoke.py "$exe"
 
+      - name: Version from the tag
+        # Installers upgrade in place only when the version goes up; v1.2.3 -> 1.2.3.
+        # MSI needs plain numbers (major <= 255), so no "-beta" suffixes on tags.
+        if: startsWith(github.ref, 'refs/tags/v')
+        shell: bash
+        run: >
+          node -e "const f='desktop/src-tauri/tauri.conf.json';
+          const c=JSON.parse(require('fs').readFileSync(f,'utf8'));
+          c.version=process.env.GITHUB_REF_NAME.replace(/^v/,'');
+          require('fs').writeFileSync(f, JSON.stringify(c, null, 2));
+          console.log('version', c.version)"
       - name: Icons
         working-directory: desktop
         run: npx --yes @tauri-apps/cli@2 icon app-icon.svg

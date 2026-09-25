@@ -63,7 +63,8 @@ fn log_folder_path() -> PathBuf {
         std::env::var_os("LOCALAPPDATA")
             .map(PathBuf::from)
             .unwrap_or_else(|| home.join("AppData").join("Local"))
-            .join("ResumeTailor")
+            // Not `ResumeTailor`: the per-user installer puts the program there.
+            .join("ResumeTailorData")
     } else if cfg!(target_os = "macos") {
         home.join("Library")
             .join("Application Support")

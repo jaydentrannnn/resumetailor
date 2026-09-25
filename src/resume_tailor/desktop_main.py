@@ -12,6 +12,12 @@ reads one line from its stdout, and then points its window at the app::
   ``RESUME_TAILOR_*_DIR`` already set wins, so a developer can point a build at a
   checkout's folders. ``config`` reads these once, at import, which is why nothing from
   the app is imported at module level here.
+- **Settings from ``<app data>/.env``** (optional; a copy of a checkout's ``.env``
+  works). The app's own ``.env`` lookup points inside the install folder, so without
+  this file only real environment variables and in-app settings apply. Variables already
+  set win over the file.
+- **The browser address**: ``CHROME_CDP_URL`` defaults to ``http://127.0.0.1:9222``
+  (Edge started with remote debugging on this machine) rather than the Docker default.
 - **A session token** (`web/security.py`): a fresh random one per launch, unless
   ``RESUME_TAILOR_TOKEN`` is already set.
 - **A port** on 127.0.0.1: the first free one in 8000–8010, where the browser extension
@@ -37,6 +43,10 @@ from collections.abc import Callable, Iterable, Mapping
 from pathlib import Path
 
 APP_NAME = "ResumeTailor"
+#: Windows data folder. Not ``%LOCALAPPDATA%\ResumeTailor``: the per-user installer
+#: puts the program there, and data must not share a folder with files an update or
+#: uninstall replaces.
+WINDOWS_DATA_NAME = "ResumeTailorData"
 HOST = "127.0.0.1"
 #: Ports the browser extension scans for the app (`extension/lib/api.js`).
 PREFERRED_PORTS = range(8000, 8011)
@@ -54,7 +64,7 @@ def app_data_dir(
 ) -> Path:
     """The per-user folder the app keeps everything in.
 
-    Windows ``%LOCALAPPDATA%\\ResumeTailor``, macOS ``~/Library/Application Support/
+    Windows ``%LOCALAPPDATA%\\ResumeTailorData``, macOS ``~/Library/Application Support/
     ResumeTailor``, elsewhere ``$XDG_DATA_HOME/resumetailor`` (``~/.local/share``). The
     same locations `platformdirs` uses, without the dependency.
     """
@@ -63,7 +73,7 @@ def app_data_dir(
     home = home or Path.home()
     if platform.startswith("win"):
         base = env.get("LOCALAPPDATA") or str(home / "AppData" / "Local")
-        return Path(base) / APP_NAME
+        return Path(base) / WINDOWS_DATA_NAME
     if platform == "darwin":
         return home / "Library" / "Application Support" / APP_NAME
     base = env.get("XDG_DATA_HOME") or str(home / ".local" / "share")
@@ -73,13 +83,18 @@ def app_data_dir(
 def prepare_environment(env: dict[str, str], root: Path) -> str:
     """Fill in the storage folders and session token in ``env``; return the token.
 
-    Values already in ``env`` are kept. The folders are created so a first launch does
-    not depend on each subsystem making its own.
+    Values already in ``env`` are kept, then ``<root>/.env`` fills what is still
+    missing. The folders are created so a first launch does not depend on each
+    subsystem making its own.
     """
+    _load_env_file(env, root / ".env")
     for var, name in _DIR_VARS.items():
         if not env.get(var):
             env[var] = str(root / name)
         Path(env[var]).mkdir(parents=True, exist_ok=True)
+    if not env.get("CHROME_CDP_URL"):
+        # config's default is the Docker host name; the desktop app runs on the host.
+        env["CHROME_CDP_URL"] = "http://127.0.0.1:9222"
     token = env.get("RESUME_TAILOR_TOKEN", "").strip()
     if not token or token.lower() in {"auto", "off", "0", "none"}:
         # The desktop app always runs with the token check on.
@@ -91,6 +106,17 @@ def prepare_environment(env: dict[str, str], root: Path) -> str:
         # built SPA at frontend/dist there).
         env["RESUME_TAILOR_FRONTEND_DIST"] = str(Path(bundle) / "frontend" / "dist")
     return token
+
+
+def _load_env_file(env: dict[str, str], path: Path) -> None:
+    """Set each ``KEY=value`` from ``path`` that ``env`` does not already have."""
+    if not path.is_file():
+        return
+    from dotenv import dotenv_values
+
+    for key, value in dotenv_values(path).items():
+        if value is not None and not env.get(key):
+            env[key] = value
 
 
 def bind_socket(

@@ -20,9 +20,9 @@ from resume_tailor import desktop_main
         (
             "win32",
             {"LOCALAPPDATA": "C:/Users/a/AppData/Local"},
-            "C:/Users/a/AppData/Local/ResumeTailor",
+            "C:/Users/a/AppData/Local/ResumeTailorData",
         ),
-        ("win32", {}, "/home/a/AppData/Local/ResumeTailor"),
+        ("win32", {}, "/home/a/AppData/Local/ResumeTailorData"),
         ("darwin", {}, "/home/a/Library/Application Support/ResumeTailor"),
         ("linux", {"XDG_DATA_HOME": "/xdg"}, "/xdg/resumetailor"),
         ("linux", {}, "/home/a/.local/share/resumetailor"),
@@ -48,6 +48,27 @@ def test_prepare_environment_fills_blanks_and_keeps_overrides(tmp_path, monkeypa
 
     kept = {"RESUME_TAILOR_TOKEN": "fixed"}
     assert desktop_main.prepare_environment(kept, tmp_path / "app") == "fixed"
+
+
+def test_app_data_env_file_fills_only_missing_settings(tmp_path, monkeypatch):
+    monkeypatch.delattr(sys, "_MEIPASS", raising=False)
+    root = tmp_path / "app"
+    root.mkdir()
+    (root / ".env").write_text(
+        "OLLAMA_MODEL=from-file\nRESUME_TAILOR_PDF_BACKEND=word\n"
+        "RESUME_TAILOR_DATA_DIR={}\n".format((tmp_path / "shared").as_posix()),
+        encoding="utf-8",
+    )
+    env = {"RESUME_TAILOR_PDF_BACKEND": "soffice"}
+    desktop_main.prepare_environment(env, root)
+    assert env["OLLAMA_MODEL"] == "from-file"
+    assert env["RESUME_TAILOR_PDF_BACKEND"] == "soffice"  # a real variable wins
+    assert env["RESUME_TAILOR_DATA_DIR"] == (tmp_path / "shared").as_posix()
+    assert env["CHROME_CDP_URL"] == "http://127.0.0.1:9222"
+
+    kept = {"CHROME_CDP_URL": "http://127.0.0.1:9333"}
+    desktop_main.prepare_environment(kept, tmp_path / "other")
+    assert kept["CHROME_CDP_URL"] == "http://127.0.0.1:9333"
 
 
 def test_frozen_build_points_at_the_bundled_spa(tmp_path, monkeypatch):
@@ -96,6 +117,19 @@ def test_watch_stdin_fires_at_end_of_file():
     assert fired.is_set()
 
 
+def test_frozen_build_never_spawns_itself_for_a_template_build(monkeypatch):
+    """Frozen, sys.executable is the server: a spawned "build" would be a second server."""
+    from resume_tailor.web import template_ops
+
+    def _spawned(*_args, **_kwargs):
+        raise AssertionError("the frozen app must build templates in-process")
+
+    monkeypatch.setattr(sys, "frozen", True, raising=False)
+    monkeypatch.setattr(template_ops.subprocess, "run", _spawned)
+    code, log = template_ops._run_build()  # noqa: SLF001
+    assert code != 0 and "in-process" in log
+
+
 def test_sidecar_prints_ready_once_it_serves(tmp_path):
     """End to end: the shell's contract is one READY line, then a live server."""
     env = {
@@ -106,7 +140,12 @@ def test_sidecar_prints_ready_once_it_serves(tmp_path):
         "RESUME_TAILOR_CACHE_DIR": str(tmp_path / "cache"),
         "RESUME_TAILOR_LOG_DIR": "off",
         "RESUME_TAILOR_TOKEN": "",
+        # Keep the app-data folder (and its optional .env) out of the real profile.
+        "XDG_DATA_HOME": str(tmp_path / "appdata"),
+        "LOCALAPPDATA": str(tmp_path / "appdata"),
     }
+    if sys.platform == "darwin":
+        env["HOME"] = str(tmp_path / "home")
     proc = subprocess.Popen(
         [sys.executable, "-m", "resume_tailor.desktop_main", "--exit-with-stdin"],
         env=env,
