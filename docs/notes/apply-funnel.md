@@ -1004,3 +1004,36 @@ the tasks that first need them (a new entry in `db.MIGRATIONS`, never an edit).
   ("Summer Analyst", "Analyst Program", rotational and development programs, "Early
   Career") counts as early career. The same pass fixed a real gap: `check_title` rejected
   every title containing "manager", so "Product Manager Intern" never passed discovery.
+
+## Fill edge cases (P4-E)
+
+- **New checks** (`apply/form_guards.py`, pure and hermetically tested):
+  - E13, closed postings: a 404/410, a closing banner in the first 1,500 characters, or a
+    redirect to the same site's careers home. `fetch_jd` sets `FetchResult.closed`, and
+    `_process_one` marks the row `skipped` before screening or tailoring, so a closed
+    job costs no model calls. The per-row fetch retry does the same. Only the top of the
+    page is read, so "applications are closed on holidays" deep in a real JD doesn't
+    count.
+  - E19, non-English forms: `<html lang>` not starting with `en` is handed over.
+    A missing `lang` counts as English, since most US forms don't set it.
+  - E21, refused visits: 403/429 or a block-page title ("Access Denied", "unusual
+    traffic"). The fill hands over and the host rests for an hour, in-process;
+    `fill_application` refuses that host until then. Read from `page.goto`'s response
+    and `page.title()`, not an extra `page.evaluate`, because the fill tests queue
+    `evaluate` results in order.
+  - E14, Workday session timeout: a sign-in screen at the start of a later step is a
+    handoff (`SESSION_EXPIRED_MSG`). **Deviation:** no automatic re-sign-in. The auth
+    block runs before the step loop and isn't re-entrant, and Continue fill already
+    signs in again from the same tab.
+  - E18, long saved answers: `fit_to_limit` cuts at the last sentence end within
+    `maxlength` (or the last whole word), and the field is always flagged for review.
+    Drafted answers were already trimmed by `answer_question`.
+- **Already covered before P4-E** (no change): E1 frames (`page.frames` loop), E4
+  revealed-field passes (`filler.js`), E5/E6 comboboxes and date widgets
+  (`controls.py`, Workday prompts), E10 blank legal answers (never guessed), E11 OTP
+  handoff, E12 CAPTCHA handoff, E15 existing-account handoff, E16 phone country codes
+  (`engine._national_phone_value`, `controls._phone_match`), E17 middle name (profile
+  field), E20 Workday popups.
+- **Not done:** E2 shadow DOM (belongs to AD6), E3 overwriting ATS resume-parse
+  prefills, E7 multi-location lists, E9 portfolio uploads, and a separate E.164 packet
+  field. Each needs live ATS fixtures to build safely.

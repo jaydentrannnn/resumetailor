@@ -570,6 +570,14 @@ def _process_one(
     )
     app.final_url = fetch.final_url or app.final_url
     app.ats = fetch.ats
+    if fetch.closed:
+        # Checked before screening and tailoring, so a closed job costs no model calls.
+        store.set_status(app, "skipped", note=fetch.closed)
+        store.upsert(app)
+        summary.skipped_count += 1
+        _append_log(log_path, f"[closed] {app.company}: {fetch.closed}", log)
+        summary.processed += 1
+        return
     if fetch.method == "failed" or len(fetch.text.strip()) < _MIN_USABLE_JD_CHARS:
         store.set_status(app, "needs_browser", note=fetch.error or "jd too short")
         store.upsert(app)
@@ -1106,6 +1114,10 @@ def retry_application(source_job_id: str) -> store.Application:
         )
         app.final_url = result.final_url
         app.ats = result.ats
+        if result.closed:
+            store.set_status(app, "skipped", note=result.closed)
+            app.error = None
+            return store.upsert(app)
         if len(result.text.strip()) >= _MIN_USABLE_JD_CHARS:
             app.jd_text_path = _save_jd(app.source_job_id, result.text)
             store.set_status(app, "jd_fetched", note=f"retry via {result.method}")

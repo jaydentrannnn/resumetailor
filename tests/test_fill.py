@@ -327,6 +327,29 @@ def test_pause_during_pacing_wait_stops_the_submit(fill_paths, monkeypatch):
     assert "paused" in result.handoff_reason
 
 
+def test_non_english_form_is_handed_over(fill_paths, monkeypatch):
+    page = _stub_greenhouse_form(fill_paths, monkeypatch)
+    page.locator.return_value.first.get_attribute.return_value = "fr-FR"
+    result = fill.fill_application("src-1", settings=_AUTO)
+    assert result.status == "awaiting_review"
+    assert result.handoff_reason.startswith("The form is in another language (fr-fr)")
+    assert result.filled == []
+
+
+def test_blocked_site_hands_over_and_rests_the_host(fill_paths, monkeypatch):
+    from resume_tailor.apply import form_guards
+
+    form_guards.reset_hosts()
+    page = _stub_greenhouse_form(fill_paths, monkeypatch)
+    page.title.return_value = "Access Denied"
+    result = fill.fill_application("src-1", settings=_AUTO)
+    assert result.status == "awaiting_review"
+    assert "blocked automated access" in result.handoff_reason
+    with pytest.raises(RuntimeError, match="refused automated visits recently"):
+        fill.fill_application("src-1", settings=_AUTO)
+    form_guards.reset_hosts()
+
+
 class _ConfirmPage:
     def __init__(self, url: str, body: str) -> None:
         self.url = url

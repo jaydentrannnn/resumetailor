@@ -1419,3 +1419,21 @@ def test_run_daily_reads_a_company_watchlist(apply_paths, monkeypatch):
     (app,) = store.load_all().values()
     assert (app.company, app.role, app.canonical_key) == ("Acme", "Summer Analyst", "greenhouse:acme:7")
     assert app.source == "watch"
+
+
+def test_closed_posting_is_skipped_before_tailoring(stub_pipeline, apply_paths, monkeypatch):
+    monkeypatch.setattr(
+        fetch_jd,
+        "fetch_jd",
+        lambda url, allow_browser=True, canonical_key=None: fetch_jd.FetchResult(
+            final_url=url, ats="greenhouse", text="", method="failed",
+            error="Posting closed (the page answered 410)",
+            closed="Posting closed (the page answered 410)",
+        ),
+    )
+    summary = daily.run_daily(settings=ApplySettings(enabled=True, max_new_per_day=5))
+    assert summary.tailored == 0 and summary.needs_browser == 0
+    assert summary.skipped_count == 1
+    (app,) = store.load_all().values()
+    assert app.status == "skipped"
+    assert app.status_history[-1].note == "Posting closed (the page answered 410)"

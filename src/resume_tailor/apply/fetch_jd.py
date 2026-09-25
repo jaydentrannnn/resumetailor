@@ -15,6 +15,7 @@ from urllib.parse import urlparse
 
 import httpx
 
+from resume_tailor.apply import form_guards
 from resume_tailor.apply.browser import cdp_browser
 
 #: Minimum extracted characters before we trust an HTTP response as a real JD.
@@ -46,6 +47,8 @@ class FetchResult:
     text: str
     method: Literal["http", "browser", "api", "failed"]
     error: str = ""
+    #: Why the posting looks closed (`form_guards.closed_posting`), or "" when open.
+    closed: str = ""
 
 
 class _TextExtractor(HTMLParser):
@@ -248,11 +251,22 @@ def fetch_jd(
             timeout=30.0,
             headers={"User-Agent": _DESKTOP_UA, "Accept": "text/html"},
         )
+        gone = form_guards.closed_posting("", status=resp.status_code)
+        if gone:
+            return FetchResult(
+                final_url=str(resp.url), ats=detect_ats(url), text="", method="failed",
+                error=gone, closed=gone,
+            )
         resp.raise_for_status()
         final_url = str(resp.url)
         html = resp.text
         text = extract_text(html)
         ats = detect_ats(final_url, html)
+        closed = form_guards.closed_posting(text, final_url=final_url, requested_url=url)
+        if closed:
+            return FetchResult(
+                final_url=final_url, ats=ats, text=text, method="http", closed=closed
+            )
         if len(text) >= _MIN_JD_CHARS and not _looks_like_js_shell(html, text):
             return FetchResult(final_url=final_url, ats=ats, text=text, method="http")
         if allow_browser:

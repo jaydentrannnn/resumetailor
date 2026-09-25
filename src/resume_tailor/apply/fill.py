@@ -27,6 +27,7 @@ from resume_tailor.apply import (
     browser,
     clicks,
     field_matcher,
+    form_guards,
     hybrid_resolver,
     store,
     submit_guard,
@@ -619,6 +620,31 @@ def _commit_workday_textareas(frames: list[Any], items: list[Any]) -> None:
             control.evaluate("el => el.blur()")
 
 
+#: Workday screens that mean the session ended while a form was open (plan P4-E14).
+SIGNED_OUT_STATES = frozenset({"sign_in", "auth_chooser"})
+SESSION_EXPIRED_MSG = (
+    "Workday signed you out partway through (the session timed out). Sign in again in "
+    "this tab, then Continue fill; the steps you already saved are kept."
+)
+
+
+def _page_title(page: Any) -> str:
+    try:
+        value = page.title()
+    except Exception:  # noqa: BLE001
+        return ""
+    return value if isinstance(value, str) else ""
+
+
+def _page_lang(page: Any) -> str:
+    """The form's ``<html lang>``; "" when unset or unreadable."""
+    try:
+        value = page.locator("html").first.get_attribute("lang", timeout=2_000)
+    except Exception:  # noqa: BLE001
+        return ""
+    return value if isinstance(value, str) else ""
+
+
 def _workday_handoff(
     app: Any,
     context: Any,
@@ -749,6 +775,13 @@ def fill_application(
     page: Any | None = None
     target_id = previous_fill.browser_target_id
 
+    rest = form_guards.host_blocked(url or "") if fill_mode != "continue" else None
+    if rest is not None:
+        minutes = max(1, int(rest.total_seconds() // 60) + 1)
+        raise RuntimeError(
+            f"This site refused automated visits recently; try again in about {minutes} min"
+        )
+
     try:
         progress("connecting to browser")
         with browser.cdp_browser() as pw_browser:
@@ -774,7 +807,19 @@ def fill_application(
                 page.set_default_timeout(10_000)
             if fill_mode != "continue":
                 progress(f"opening posting: {url}")
-                page.goto(url, wait_until="domcontentloaded", timeout=min(60_000, max(1000, int((deadline - time.monotonic()) * 1000))))
+                response = page.goto(url, wait_until="domcontentloaded", timeout=min(60_000, max(1000, int((deadline - time.monotonic()) * 1000))))
+                status_code = getattr(response, "status", None)
+                refusal = form_guards.bot_block(
+                    status=status_code if isinstance(status_code, int) else None,
+                    title=_page_title(page),
+                )
+                if refusal:
+                    form_guards.block_host(url)
+                    return _workday_handoff(
+                        app, context, page,
+                        f"{refusal}. Automatic filling leaves this site alone for an hour; "
+                        "fill it yourself in this tab, or try again later.",
+                    )
                 progress("posting loaded; waiting for form controls")
                 with contextlib.suppress(Exception):
                     page.wait_for_load_state("networkidle", timeout=min(10_000, max(1000, int((deadline - time.monotonic()) * 1000))))
@@ -803,6 +848,9 @@ def fill_application(
                 app.fill = previous_fill.model_copy(update={"browser_target_id": target_id, "browser_url": page.url})
                 store.upsert(app)
             progress("application form opened")
+            language = form_guards.form_language(_page_lang(page))
+            if language:
+                return _workday_handoff(app, context, page, f"{language}. Fill it in this tab.")
 
             #: Refreshes of Workday's "Something went wrong" page this fill may still spend.
             site_error_left = 2 * workday_flow.SITE_ERROR_RELOADS
@@ -897,6 +945,10 @@ def fill_application(
                     # saved draft.
                     if not recover_site_error():
                         return _workday_handoff(app, context, page, site_error_msg)
+                    if step and workday_flow.detect_state(page) in SIGNED_OUT_STATES:
+                        # The session timed out mid-application. Workday keeps the saved
+                        # steps, and Continue fill signs in again from this tab.
+                        return _workday_handoff(app, context, page, SESSION_EXPIRED_MSG)
                     if not workday_flow.wait_for_step_ready(page, deadline=deadline):
                         if workday_flow.is_site_error(workday_flow.snapshot(page)):
                             if not recover_site_error():
@@ -1170,16 +1222,26 @@ def fill_application(
                             label, company=app.company or pkt.company or "", ats=ats_name
                         )
                         if recalled is not None:
-                            if recalled.needs_review or (0 < maxlength < len(recalled.answer)):
+                            if recalled.needs_review:
                                 needs_review.append(label)
                                 continue
-                            long_text_answers[label] = recalled.answer
+                            # A saved answer longer than this form allows is cut at a
+                            # sentence end and always left for review (a form limit, not
+                            # resume truncation).
+                            saved_answer, shortened = form_guards.fit_to_limit(
+                                recalled.answer, maxlength
+                            )
+                            if shortened:
+                                needs_review.append(label)
+                                if not saved_answer:
+                                    continue
+                            long_text_answers[label] = saved_answer
                             sel = item.get("selector")
                             if sel:
                                 with contextlib.suppress(Exception):
                                     target = frames[int(item.get("frame_index") or 0)]
                                     if not target.locator(str(sel)).first.input_value().strip():
-                                        target.fill(sel, recalled.answer)
+                                        target.fill(sel, saved_answer)
                             continue
                         ans = answer.answer_question(
                             label,
