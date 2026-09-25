@@ -119,7 +119,7 @@ class WorkdayAdapter(FormAdapter):
             if len(visible) != 1:
                 return page
             existing = set(page.context.pages)
-            await visible[0].click(timeout=timeout_ms)
+            await clicks.async_safe_click(visible[0], purpose="enter", timeout=timeout_ms)
             await page.wait_for_timeout(400)
             opened = [item for item in page.context.pages if item not in existing and not item.is_closed()]
             if len(opened) == 1:
@@ -137,3 +137,4 @@ def for_url(url: str) -> FormAdapter:
     if "myworkdayjobs.com" in host or "workday" in host:
         return WorkdayAdapter()
     return FormAdapter("generic")
+from resume_tailor.apply import clicks

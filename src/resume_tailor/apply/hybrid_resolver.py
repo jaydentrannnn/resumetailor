@@ -21,11 +21,11 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from resume_tailor import config, llm
-from resume_tailor.apply.packet import Packet
-from resume_tailor.apply.profile import ApplicantProfile
-from resume_tailor.apply import field_matcher
+from resume_tailor.apply import clicks, field_matcher
 from resume_tailor.apply.field_matcher import match_option
 from resume_tailor.apply.field_types import ObservedOption
+from resume_tailor.apply.packet import Packet
+from resume_tailor.apply.profile import ApplicantProfile
 
 _log = logging.getLogger(__name__)
 
@@ -273,7 +273,7 @@ def _select_combobox_option(
         before = _selected_combobox_text(trigger)
         if key != "phone_country_code" and before and _option_match([before], target_value, key=key):
             return True
-        trigger.click(timeout=3000)
+        clicks.safe_click(trigger, purpose="select", timeout=3000)
         search_terms = [""]
         if key == "phone_country_code" and phone_region:
             search_terms.extend([phone_region, target_value])
@@ -311,7 +311,7 @@ def _select_combobox_option(
             trigger.press("Escape")
             return True
         selected_option = match.inner_text().strip()
-        match.click(timeout=3000)
+        clicks.safe_click(match, purpose="select", timeout=3000)
         page.wait_for_timeout(150)
         selected = _selected_combobox_text(trigger)
         # Some widgets (Workday listbox buttons) repaint their text a few hundred ms later.
@@ -323,7 +323,7 @@ def _select_combobox_option(
         if key == "phone_country_code":
             # React Select often detaches the clicked option when its menu closes.
             # Reopen the owned menu and inspect the newly rendered committed choice.
-            trigger.click(timeout=3000)
+            clicks.safe_click(trigger, purpose="select", timeout=3000)
             refreshed = [choice for choice in _menu_choices(page, trigger) if choice.is_visible()]
             labels = [choice.inner_text().strip() for choice in refreshed]
             committed_label = _phone_option(labels, target_value, phone_region) or _option_match(
@@ -396,7 +396,7 @@ def _choose_radio_option(page: Any, radio_selector: str, target_value: str) -> b
             if not text:
                 text = r.get_attribute("value") or ""
             if target_lower == _norm(text):
-                r.click(timeout=3000)
+                clicks.safe_click(r, purpose="select", timeout=3000)
                 return True
     except Exception as exc:  # noqa: BLE001
         _log.debug("radio selection failed: %s", exc)
@@ -574,7 +574,7 @@ def resolve_step_blockers(
                 if _is_upload_widget(trigger):
                     field["options"] = []
                     continue
-                trigger.click(timeout=3000)
+                clicks.safe_click(trigger, purpose="select", timeout=3000)
                 choices = _menu_choices(page, trigger)
                 all_options = [choice.inner_text().strip() for choice in choices if choice.is_visible()]
                 trigger.press("Escape")

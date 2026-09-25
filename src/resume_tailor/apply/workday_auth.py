@@ -19,7 +19,7 @@ from typing import Any, Literal
 from urllib.parse import urlparse
 
 from resume_tailor import config, secret_store
-from resume_tailor.apply import store
+from resume_tailor.apply import clicks, store
 from resume_tailor.apply.profile import ApplicantProfile
 
 _log = logging.getLogger(__name__)
@@ -275,9 +275,9 @@ def _accept_account_terms(page: Any) -> bool | None:
         label = page.locator(f"label[for='{box_id}']") if box_id else None
         with contextlib.suppress(Exception):
             if label is not None and label.count():
-                label.first.click(timeout=3000)
+                clicks.safe_click(label.first, purpose="select", timeout=3000)
             else:
-                terms.click(timeout=3000, force=True)
+                clicks.safe_click(terms, purpose="select", timeout=3000, force=True)
     return bool(terms.is_checked())
 
 
@@ -294,9 +294,9 @@ async def _accept_account_terms_async(page: Any, *, timeout_ms: int) -> bool | N
         with contextlib.suppress(Exception):
             label = page.locator(f"label[for='{box_id}']")
             if box_id and await label.count():
-                await label.first.click(timeout=timeout_ms)
+                await clicks.async_safe_click(label.first, purpose="select", timeout=timeout_ms)
             else:
-                await terms.click(timeout=timeout_ms, force=True)
+                await clicks.async_safe_click(terms, purpose="select", timeout=timeout_ms, force=True)
     return bool(await terms.is_checked())
 
 
@@ -680,7 +680,7 @@ async def handle_workday_auth_async(
             "button:has-text('Create Account'), a:has-text('Create Account')"
         ).first
         if await link.count() and await link.is_visible():
-            await link.click(timeout=remaining())
+            await clicks.async_safe_click(link, purpose="auth", timeout=remaining())
             state = await detect_auth_state_async(page)
 
     if state == "create_account":
@@ -689,9 +689,9 @@ async def handle_workday_auth_async(
         await page.locator("input[data-automation-id='verifyPassword']").first.fill(password, timeout=remaining())
         if await _accept_account_terms_async(page, timeout_ms=remaining()) is False:
             return "terms_needed"
-        await page.locator(
+        await clicks.async_safe_click(page.locator(
             "button[data-automation-id='createAccountSubmitButton'], button:has-text('Create Account')"
-        ).first.click(timeout=remaining())
+        ).first, purpose="auth", timeout=remaining())
         await page.wait_for_timeout(min(1000, remaining()))
         if await detect_auth_state_async(page) == "none" and await _authenticated_evidence_async(page):
             vault = _load_vault()
@@ -704,15 +704,15 @@ async def handle_workday_auth_async(
                 "[data-automation-id='signInLink'], a:has-text('Sign In'), button:has-text('Sign In')"
             ).first
             if await link.count() and await link.is_visible():
-                await link.click(timeout=remaining())
+                await clicks.async_safe_click(link, purpose="auth", timeout=remaining())
                 state = "sign_in"
     if state == "sign_in":
         await page.locator("input[data-automation-id='email'], input[type='email']").first.fill(email, timeout=remaining())
         await page.locator("input[data-automation-id='password']").first.fill(password, timeout=remaining())
-        await page.locator(
+        await clicks.async_safe_click(page.locator(
             "button[data-automation-id='signInSubmitButton'], "
             "button[data-automation-id='loginButton'], button:has-text('Sign In')"
-        ).first.click(timeout=remaining())
+        ).first, purpose="auth", timeout=remaining())
         await page.wait_for_timeout(min(1000, remaining()))
     if await detect_auth_state_async(page) == "otp":
         return "verification_needed"

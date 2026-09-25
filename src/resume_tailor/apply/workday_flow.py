@@ -15,7 +15,7 @@ from collections.abc import Callable, Iterable
 from datetime import date
 from typing import Any, Literal
 
-from resume_tailor.apply import field_matcher
+from resume_tailor.apply import clicks, field_matcher
 
 WorkdayState = Literal[
     "posting", "start_dialog", "auth_chooser", "sign_in", "create_account", "otp", "verify_email",
@@ -179,7 +179,7 @@ def _overlay_click(page: Any, button: Any, timeout_ms: int) -> ClickMethod:
     except Exception:  # noqa: BLE001 - no geometry: use the label fallback
         point = None
     if isinstance(point, dict):
-        page.mouse.click(point["x"], point["y"])
+        clicks.mouse_click(page, point["x"], point["y"], purpose="auth")
         return "overlay-point"
     label = (button.first.inner_text() or "").strip()
     if label:
@@ -187,7 +187,7 @@ def _overlay_click(page: Any, button: Any, timeout_ms: int) -> ClickMethod:
             f"[data-automation-id='click_filter'][aria-label='{label}']"
         )
         if _visible(overlay):
-            overlay.first.click(timeout=timeout_ms)
+            clicks.safe_click(overlay.first, purpose="auth", timeout=timeout_ms)
             return "overlay-label"
     return ""
 
@@ -216,7 +216,7 @@ def click_control(
         method = _overlay_click(page, button, timeout_ms)
     if method:
         return method
-    button.first.click(timeout=timeout_ms)
+    clicks.safe_click(button.first, purpose="auth", timeout=timeout_ms)
     return "button"
 
 
@@ -263,7 +263,7 @@ def close_stray_popups(page: Any, *, attempts: int = 3) -> bool:
             again = page.evaluate(_STRAY_POPUP_JS)
             point = isinstance(again, dict) and again.get("popup") and again.get("filter")
             if point:
-                page.mouse.click(point["x"], point["y"])
+                clicks.mouse_click(page, point["x"], point["y"], purpose="dismiss")
                 page.wait_for_timeout(200)
     try:
         probe = page.evaluate(_STRAY_POPUP_JS)
@@ -404,7 +404,7 @@ def enter_application(
         entry = draft if _visible(draft) else page.locator("[data-automation-id='adventureButton']")
         if _visible(draft):
             progress("Workday: resuming the saved application draft")
-        entry.first.click(timeout=_remaining_ms(deadline, 5000))
+        clicks.safe_click(entry.first, purpose="enter", timeout=_remaining_ms(deadline, 5000))
         page.wait_for_timeout(300)
         if context is not None:
             page = _new_tab(page, context, before, deadline)
@@ -414,7 +414,7 @@ def enter_application(
         manual = page.locator("[data-automation-id='applyManually']")
         if not _visible(manual):
             return page, state
-        manual.first.click(timeout=_remaining_ms(deadline, 5000))
+        clicks.safe_click(manual.first, purpose="enter", timeout=_remaining_ms(deadline, 5000))
         state = wait_for_state(page, terminal, timeout_s=20, deadline=deadline)
     if state not in terminal:
         # The error page can also replace the form right after Apply / Apply Manually.
@@ -547,7 +547,7 @@ def select_listbox(page: Any, selector: str, value: str, *, key: str = "") -> bo
     """
     trigger = page.locator(selector).first
     try:
-        trigger.click(timeout=3000)
+        clicks.safe_click(trigger, purpose="select", timeout=3000)
         options = None
         for _ in range(12):
             # Workday sets aria-controls only once the list has opened, so it is re-read.
@@ -561,7 +561,7 @@ def select_listbox(page: Any, selector: str, value: str, *, key: str = "") -> bo
             trigger.press("Escape")
             return False
         chosen, option_id = picked
-        page.locator(f"[id='{option_id}']").first.click(timeout=3000)
+        clicks.safe_click(page.locator(f"[id='{option_id}']").first, purpose="select", timeout=3000)
         for _ in range(12):
             if (trigger.inner_text() or "").strip() == chosen:
                 return True
@@ -779,7 +779,7 @@ def fill_radios(
         if len(matches) != 1:
             continue
         try:
-            page.locator(f"label[for='{matches[0]['id']}']").first.click(timeout=3000)
+            clicks.safe_click(page.locator(f"label[for='{matches[0]['id']}']").first, purpose="select", timeout=3000)
             checked = page.locator(f"[id='{matches[0]['id']}']").first.is_checked()
         except Exception:  # noqa: BLE001
             checked = False
@@ -856,7 +856,7 @@ def _tick(page: Any, box_id: str) -> bool:
     box = page.locator(f"[id='{box_id}']").first
     if not box.is_checked():
         try:
-            page.locator(f"label[for='{box_id}']").first.click(timeout=3000)
+            clicks.safe_click(page.locator(f"label[for='{box_id}']").first, purpose="select", timeout=3000)
         except Exception:  # noqa: BLE001 - an unlabelled box takes the click itself
             box.check(timeout=2000)
     return bool(box.is_checked())
@@ -1034,7 +1034,7 @@ def select_prompt(page: Any, input_id: str, value: str, *, key: str = "") -> boo
                 options, texts = _open_options()
                 chosen = _choose(texts)
                 if chosen:
-                    options.nth(texts.index(chosen)).click(timeout=3000)
+                    clicks.safe_click(options.nth(texts.index(chosen)), purpose="select", timeout=3000)
                     break
             if chosen:
                 break
@@ -1057,7 +1057,7 @@ def select_prompt(page: Any, input_id: str, value: str, *, key: str = "") -> boo
         leaf = _choose(after)
         if leaf and leaf != chosen:
             # The click opened a category ("Other" in a hierarchical source list).
-            options.nth(after.index(leaf)).click(timeout=3000)
+            clicks.safe_click(options.nth(after.index(leaf)), purpose="select", timeout=3000)
             chosen = leaf
         else:
             # A single-select prompt (Field of Study) paints its chip once the list closes.
@@ -1170,7 +1170,7 @@ def _search_prompt(page: Any, input_id: str, term: str) -> list[str]:
 
 def _click_option(page: Any, input_id: str, texts: list[str], option: str, before: int) -> bool:
     """Click ``option`` in the open results; verified by exactly one new chip."""
-    page.locator(_OPEN_PROMPT_OPTIONS).nth(texts.index(option)).click(timeout=3000)
+    clicks.safe_click(page.locator(_OPEN_PROMPT_OPTIONS).nth(texts.index(option)), purpose="select", timeout=3000)
     for _ in range(8):
         page.wait_for_timeout(250)
         if len(_chips(page, input_id)) == before + 1:
@@ -1324,7 +1324,7 @@ def ensure_phone_code(
             charm = field.locator("[data-automation-id='DELETE_charm']")
             if not _visible(charm):
                 break
-            charm.first.click(timeout=3000)
+            clicks.safe_click(charm.first, purpose="select", timeout=3000)
             page.wait_for_timeout(200)
         box = page.locator(f"[id='{state['input_id']}']")
         box.fill(region, timeout=3000)
@@ -1335,7 +1335,7 @@ def ensure_phone_code(
             texts = [str(t).strip() for t in options.all_inner_texts()]
             exact = [i for i, text in enumerate(texts) if _matches(text)]
             if len(exact) == 1:
-                options.nth(exact[0]).click(timeout=3000)
+                clicks.safe_click(options.nth(exact[0]), purpose="select", timeout=3000)
                 break
         else:
             box.press("Escape")

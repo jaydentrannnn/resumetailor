@@ -12,7 +12,26 @@ from pathlib import Path
 from typing import Literal
 
 from resume_tailor import config, data
-from resume_tailor.apply import adapters, answer, attachments, browser, controls, field_catalog, form_routes, model_resolver, packet, preparation, profile, salary, scanner, store, workday_auth, workday_flow, workday_repeaters
+from resume_tailor.apply import (
+    adapters,
+    answer,
+    attachments,
+    browser,
+    clicks,
+    controls,
+    field_catalog,
+    form_routes,
+    model_resolver,
+    packet,
+    preparation,
+    profile,
+    salary,
+    scanner,
+    store,
+    workday_auth,
+    workday_flow,
+    workday_repeaters,
+)
 from resume_tailor.apply.field_types import FieldObservation, FieldOutcome
 from resume_tailor.jd import JobRequirements
 from resume_tailor.web.schemas import ApplySettings
@@ -466,7 +485,7 @@ async def fill_application(
                         break
                     check_budget()
                     progress(f"Advancing from form step {step_number}")
-                    await next_button.click(timeout=min(5000, int((deadline-time.monotonic())*1000)))
+                    await clicks.async_safe_click(next_button, purpose="advance", timeout=min(5000, int((deadline-time.monotonic())*1000)))
                     await page.wait_for_timeout(300)
                     next_scan = await scanner.scan(page)
                     next_step_id = await adapter.step_id(page, next_scan.fields)

@@ -7,8 +7,8 @@ Injects ``filler.js``, uploads resume PDF, drafts long-text leftovers through
 
 from __future__ import annotations
 
-import contextlib
 import asyncio
+import contextlib
 import json
 import re
 import shutil
@@ -20,7 +20,17 @@ from pathlib import Path
 from typing import Any, Literal
 
 from resume_tailor import config, data, report
-from resume_tailor.apply import answer, ats_hints, browser, field_matcher, hybrid_resolver, store, workday_auth, workday_flow
+from resume_tailor.apply import (
+    answer,
+    ats_hints,
+    browser,
+    clicks,
+    field_matcher,
+    hybrid_resolver,
+    store,
+    workday_auth,
+    workday_flow,
+)
 from resume_tailor.apply import packet as apply_packet
 from resume_tailor.apply import profile as profile_mod
 from resume_tailor.apply import salary as salary_mod
@@ -80,7 +90,7 @@ def find_and_click_apply(page: Any, ats: str, context: Any = None) -> Any:
             loc = current_page.locator(click_sel).first
             if _is_locator_present_and_visible(loc):
                 current_page = _click_and_track_popup(
-                    current_page, context, lambda loc=loc: loc.click(timeout=4000)
+                    current_page, context, lambda loc=loc: clicks.safe_click(loc, purpose="enter", timeout=4000)
                 )
                 current_page.wait_for_timeout(1000)
                 break
@@ -96,7 +106,7 @@ def find_and_click_apply(page: Any, ats: str, context: Any = None) -> Any:
             loc = current_page.get_by_role(role, name=apply_pattern).first
             if _is_locator_present_and_visible(loc):
                 current_page = _click_and_track_popup(
-                    current_page, context, lambda loc=loc: loc.click(timeout=4000)
+                    current_page, context, lambda loc=loc: clicks.safe_click(loc, purpose="enter", timeout=4000)
                 )
                 current_page.wait_for_timeout(1000)
                 break
@@ -110,7 +120,7 @@ def find_and_click_apply(page: Any, ats: str, context: Any = None) -> Any:
         ).first
         if _is_locator_present_and_visible(manual_btn):
             current_page = _click_and_track_popup(
-                current_page, context, lambda: manual_btn.click(timeout=4000)
+                current_page, context, lambda: clicks.safe_click(manual_btn, purpose="enter", timeout=4000)
             )
             current_page.wait_for_timeout(1000)
     except Exception:  # noqa: BLE001
@@ -169,15 +179,8 @@ def _detect_barriers(page: Any) -> str | None:
 #: A button that finishes the application is never a wizard "advance". Workday's Review
 #: step labels its Submit button with the same `pageFooterNextButton` automation id as
 #: Next, and clicking it submitted a Philips application (2026-09-24).
-_SUBMIT_TEXT = re.compile(r"\b(submit|send application|finish|complete application)\b", re.IGNORECASE)
-
-
-def _is_submit_like(loc: Any) -> bool:
-    try:
-        text = f"{loc.inner_text(timeout=1000) or ''} {loc.get_attribute('aria-label') or ''}"
-    except Exception:  # noqa: BLE001 - unreadable: never treat as a safe advance
-        return True
-    return bool(_SUBMIT_TEXT.search(text))
+_SUBMIT_TEXT = clicks.SUBMIT_TEXT
+_is_submit_like = clicks.is_submit_like
 
 
 def _find_advance_button(page: Any) -> Any | None:
@@ -1243,7 +1246,7 @@ def fill_application(
 
                     retried_advance = False
                     try:
-                        advance_btn.click(timeout=5000)
+                        clicks.safe_click(advance_btn, purpose="advance", timeout=5000)
                         settle_after_advance(1000)
                         with contextlib.suppress(Exception):
                             page.wait_for_load_state("networkidle", timeout=min(5000, max(1000, int((deadline - time.monotonic()) * 1000))))
@@ -1265,7 +1268,7 @@ def fill_application(
                         if retry_button is None:
                             break
                         try:
-                            retry_button.click(timeout=5000)
+                            clicks.safe_click(retry_button, purpose="advance", timeout=5000)
                             settle_after_advance(500)
                         except Exception:  # noqa: BLE001
                             break
@@ -1283,7 +1286,7 @@ def fill_application(
                         if retry_button is None:
                             break
                         with contextlib.suppress(Exception):
-                            retry_button.click(timeout=5000)
+                            clicks.safe_click(retry_button, purpose="advance", timeout=5000)
                             settle_after_advance(500)
                         if step_unchanged():
                             progress("wizard is unchanged; handing this tab over for review")
@@ -1434,7 +1437,7 @@ def fill_application(
                     )
                     store.upsert(app)
                     dispatched = True
-                    submit_btn.click(timeout=10_000)
+                    clicks.submit_click(submit_btn, decision=action, timeout=10_000)
                     page.wait_for_load_state("networkidle", timeout=30_000)
                     if _submission_confirmed(
                         page,

@@ -108,7 +108,7 @@ class _FakeLocator:
     def get_attribute(self, name: str) -> str | None:
         return None
 
-    def inner_text(self) -> str:
+    def inner_text(self, timeout: int | None = None) -> str:
         return _LABELS.get(self.aid, "")
 
     def click(self, timeout: int | None = None) -> None:

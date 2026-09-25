@@ -13,7 +13,7 @@ import re
 from collections.abc import Callable
 from typing import Any
 
-from resume_tailor.apply import field_matcher
+from resume_tailor.apply import clicks, field_matcher
 from resume_tailor.apply.packet import Packet
 
 #: Field names (the part after ``--``) inside one row.
@@ -158,7 +158,7 @@ def _add_row(page: Any, heading: str, anchor: str | tuple[str, ...]) -> str | No
         return None
     if not isinstance(index, int) or index < 0:
         return None
-    page.locator("[data-automation-id='add-button']").nth(index).click(timeout=5000)
+    clicks.safe_click(page.locator("[data-automation-id='add-button']").nth(index), purpose="select", timeout=5000)
     for _ in range(12):
         page.wait_for_timeout(250)
         added = [row for row in all_rows() if row not in before]
@@ -270,7 +270,7 @@ def fill_date_sections(page: Any, control: str, parts: list[tuple[str, str]]) ->
             continue
         # The real spinbutton input is a 0px overlay; its visible "MM"/"DD"/"YYYY"
         # display div takes the click and focuses it.
-        page.locator(f"[id='{control}-{section}-display']").first.click(timeout=3000)
+        clicks.safe_click(page.locator(f"[id='{control}-{section}-display']").first, purpose="select", timeout=3000)
         page.keyboard.type(text, delay=40)
     page.wait_for_timeout(150)
     return all(
@@ -294,7 +294,7 @@ def _tick(page: Any, prefix: str, field: str) -> bool:
         try:
             box.first.check(timeout=2000)
         except Exception:  # noqa: BLE001 - styled checkbox: its label takes the click
-            page.locator(f"label[for='{prefix}{field}']").first.click(timeout=3000)
+            clicks.safe_click(page.locator(f"label[for='{prefix}{field}']").first, purpose="select", timeout=3000)
     return box.count() == 1 and box.first.is_checked()
 
 
@@ -516,7 +516,7 @@ async def fill_education_years_async(page: Any, packet: Packet) -> tuple[list[di
                 if await display.count() != 1:
                     review.append(label)
                     continue
-                await display.click(timeout=3000)
+                await clicks.async_safe_click(display, purpose="select", timeout=3000)
                 await page.keyboard.type(year, delay=40)
                 await page.keyboard.press("Tab")
             if str(await year_input.input_value() or "").strip() == year:

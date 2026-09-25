@@ -7,7 +7,6 @@ import re
 import time
 from typing import Any
 
-
 _EMAIL_CHOICES = (
     re.compile(r"^(?:sign in|log in|login|continue) with (?:your )?email(?: address)?$", re.I),
     re.compile(r"^(?:create (?:an? )?account|sign up|register) with (?:your )?email(?: address)?$", re.I),
@@ -72,7 +71,7 @@ def choose_email_sync(page: Any, *, deadline: float) -> str:
         return "ambiguous"
     if time.monotonic() >= deadline:
         return "unchanged"
-    page.locator("button, a, [role='button']").nth(index).click(timeout=min(5000, max(1, int((deadline - time.monotonic()) * 1000))))
+    clicks.safe_click(page.locator("button, a, [role='button']").nth(index), purpose="auth", timeout=min(5000, max(1, int((deadline - time.monotonic()) * 1000))))
     for _ in range(12):
         after = page.evaluate(EMAIL_ROUTES_JS)
         if after != before:
@@ -90,7 +89,7 @@ async def choose_email_async(page: Any, *, deadline: float) -> str:
         return "ambiguous"
     if time.monotonic() >= deadline:
         return "unchanged"
-    await page.locator("button, a, [role='button']").nth(index).click(timeout=min(5000, max(1, int((deadline - time.monotonic()) * 1000))))
+    await clicks.async_safe_click(page.locator("button, a, [role='button']").nth(index), purpose="auth", timeout=min(5000, max(1, int((deadline - time.monotonic()) * 1000))))
     for _ in range(12):
         after = await page.evaluate(EMAIL_ROUTES_JS)
         if after != before:
@@ -144,7 +143,7 @@ def accept_workday_sync(page: Any) -> tuple[list[dict[str, str]], list[str]]:
                     label = page.locator(f"label[for={json.dumps(box_id)}]") if box_id else box.locator("xpath=ancestor::label")
                     if label.count() != 1:
                         raise
-                    label.click(timeout=3000)
+                    clicks.safe_click(label, purpose="select", timeout=3000)
             if box.is_checked():
                 completed.append({"label": row["label"], "id": row["id"], "value": "checked", "key": "workday_consent"})
             else:
@@ -168,7 +167,7 @@ async def accept_workday_async(page: Any) -> tuple[list[dict[str, str]], list[st
                     label = page.locator(f"label[for={json.dumps(box_id)}]") if box_id else box.locator("xpath=ancestor::label")
                     if await label.count() != 1:
                         raise
-                    await label.click(timeout=3000)
+                    await clicks.async_safe_click(label, purpose="select", timeout=3000)
             if await box.is_checked():
                 completed.append({"label": row["label"], "id": row["id"], "value": "checked", "key": "workday_consent"})
             else:
@@ -176,3 +175,4 @@ async def accept_workday_async(page: Any) -> tuple[list[dict[str, str]], list[st
         except Exception:
             unresolved.append(row["label"])
     return completed, unresolved
+from resume_tailor.apply import clicks

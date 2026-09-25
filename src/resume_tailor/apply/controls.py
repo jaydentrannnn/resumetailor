@@ -76,7 +76,7 @@ async def observe_options(
     was_open = await trigger.get_attribute("aria-expanded") == "true"
     try:
         if not was_open:
-            await trigger.click(timeout=5000)
+            await clicks.async_safe_click(trigger, purpose="select", timeout=5000)
         menu = await _owned_menu(frame, trigger)
         if menu is None:
             return []
@@ -226,7 +226,7 @@ async def _select_combobox(
     trigger: Any, value: str, *, phone_region: str, requested_option: ObservedOption | None = None,
 ) -> FieldOutcome:
     frame, _selector = snapshot.locators[field.field_id]
-    await trigger.click(timeout=5000)
+    await clicks.async_safe_click(trigger, purpose="select", timeout=5000)
     menu = await _owned_menu(frame, trigger)
     if menu is None:
         return _outcome(field, "ambiguous", reason="menu_owner_unknown")
@@ -262,7 +262,7 @@ async def _select_combobox(
         await trigger.press("Escape")
         return _outcome(field, "ambiguous" if match_status == "ambiguous" else "unanswered", reason=match_status)
     selected = observed[int(match_id)]
-    await option_locs[int(match_id)].click(timeout=5000)
+    await clicks.async_safe_click(option_locs[int(match_id)], purpose="select", timeout=5000)
     after = await _same_field(page, field)
     if after is None or after.selection_state != "committed":
         return _outcome(field, "failed", reason="selection_not_committed")
@@ -277,7 +277,7 @@ async def _select_combobox(
             fresh_snapshot, fresh_field = fresh
             trigger = await fresh_snapshot.locator(fresh_field)
             frame, _selector = fresh_snapshot.locators[fresh_field.field_id]
-            await trigger.click(timeout=5000)
+            await clicks.async_safe_click(trigger, purpose="select", timeout=5000)
             owned = await _owned_menu(frame, trigger)
             if owned is None:
                 return _outcome(field, "unanswered", reason="committed_region_unverified")
@@ -289,3 +289,4 @@ async def _select_combobox(
     elif normalize(after.current_value) != normalize(selected.label):
         return _outcome(field, "failed", reason="selection_not_committed")
     return _outcome(field, "verified_filled", value=after.current_value)
+from resume_tailor.apply import clicks

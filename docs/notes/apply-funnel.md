@@ -914,3 +914,10 @@ Continue start was rejected: it drops unsaved answers on the current step.
 - `save_profile` with an empty password leaves the stored one alone, because `_migrate_education` and similar paths rebuild a profile from the file, which never has it. `clear_workday_password()` is the explicit delete.
 - API keys: `config.credential(name)` reads the environment first, then `api_key:<NAME>` in the store, only for `SAVABLE_CREDENTIALS`. `/api/secrets` is write-only: GET reports set/source, never a value.
 - Secret names are namespaced per profile (`profile:<workspace id>:...`), so the store is shared across profiles without collisions.
+
+## Click guard (B13, 2026-09)
+
+- Every Apply click goes through `apply/clicks.py`, and `tests/test_click_guard.py` fails on any `.click(` elsewhere under `apply/`. The 49 call sites were rewritten mechanically (AST) with a purpose each: `enter` (Apply / Apply Manually / resume draft), `advance` (Next / Save and Continue), `dismiss` (stray popup), `select` (options, labels, dropdown triggers, repeater Add), `auth` (Sign In, Create Account, email-route chooser, Workday click-filter overlay).
+- `enter`/`advance`/`dismiss` refuse text, aria-label, value or title matching `SUBMIT_TEXT`, and refuse when the text cannot be read. `select` refuses a submit input or a button-like control whose text reads as submit, but not options: an option may legitimately say "Complete". `auth` is unchecked because some Workday tenants label the sign-in overlay "Submit"; only the auth code uses it.
+- `submit_click(loc, decision=action)` is the only path to a final submit, used once in `fill.py`, and raises unless the decision is `auto_submit`.
+- Checked by hand against Chromium: a Workday Review "Submit" (no form), Greenhouse "Submit Application" and an iCIMS `input[type=submit]` are refused for both `advance` and `select`. The same checks live in the test file and run where Playwright's bundled browser exists.
