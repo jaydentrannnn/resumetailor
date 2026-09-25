@@ -17,7 +17,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from resume_tailor import config
+from resume_tailor import config, edu_dates
 from resume_tailor.apply import ats_hints, field_matcher, profile as profile_mod
 from resume_tailor.apply.profile import ApplicantProfile
 from resume_tailor.data import MasterResume, load
@@ -500,11 +500,12 @@ def build_fields(profile: ApplicantProfile, resume: MasterResume) -> dict[str, s
         fields["requires_sponsorship_any"] = "Yes"
     elif sponsor_now is False and sponsor_future is False:
         fields["requires_sponsorship_any"] = "No"
-    # Single-field forms ("School", "Major", "Graduation date") answer from the first
-    # resume education entry, the same row the repeaters fill first.
+    # Single-field forms ("School", "Major", "Graduation date") answer from the current
+    # school: the entry graduating last (a transfer student's new school, the later of
+    # two degrees), else the first entry.
     education = _build_education(resume)
     if education:
-        primary = education[0]
+        primary = current_education(education)
         _maybe_set(fields, "education_start_month", primary.start or None)
         _maybe_set(fields, "graduation_month", primary.end or None)
         _maybe_set(fields, "degree_level", primary.degree_level or None)
@@ -558,7 +559,12 @@ def _build_education(resume: MasterResume) -> list[PacketEducation]:
     """One packet row per resume education entry: the resume is the only education source."""
     rows: list[PacketEducation] = []
     for index, edu in enumerate(resume.education):
-        start, end = parse_range(edu.dates)
+        # The editor's structured months win; older files only have the printed dates.
+        parsed_start, parsed_end = edu_dates.months(edu.dates)
+        start = edu.start or parsed_start
+        end = edu.end or parsed_end
+        if not (start or end):
+            start, end = parse_range(edu.dates)
         rows.append(
             PacketEducation(
                 school=edu.school,
@@ -574,6 +580,15 @@ def _build_education(resume: MasterResume) -> list[PacketEducation]:
             )
         )
     return rows
+
+
+def current_education(education: list[PacketEducation]) -> PacketEducation:
+    """The row a single "School"/"Graduation date" question means: the latest ``end``
+    month, ties and undated rows falling back to resume order."""
+    dated = [row for row in education if edu_dates.MONTH_RE.match(row.end or "")]
+    if not dated:
+        return education[0]
+    return max(dated, key=lambda row: row.end)
 
 
 def degree_name(education: list[PacketEducation], level: str) -> str:

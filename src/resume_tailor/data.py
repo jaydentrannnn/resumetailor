@@ -12,6 +12,7 @@ from __future__ import annotations
 
 import argparse
 import json
+import re
 import sys
 from collections import Counter
 from pathlib import Path
@@ -116,6 +117,19 @@ class Education(_Strict):
     #: Field of study for application forms ("Computer Science"). Never rendered: the
     #: printed degree line is `degree`. The apply packet's only source of a major.
     major: str = ""
+    #: Start and (expected) graduation month as ``YYYY-MM`` for application forms. Never
+    #: rendered: the printed line is `dates`. Filled from `dates` on save when empty
+    #: (`edu_dates.fill`); "" when the printed dates give no month.
+    start: str = ""
+    end: str = ""
+
+    @field_validator("start", "end")
+    @classmethod
+    def _month(cls, value: str) -> str:
+        value = value.strip()
+        if value and not re.fullmatch(r"\d{4}-(0[1-9]|1[0-2])", value):
+            raise ValueError("must be a month as YYYY-MM, or empty")
+        return value
 
 
 class Project(_Strict):

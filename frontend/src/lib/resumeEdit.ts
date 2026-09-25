@@ -53,6 +53,10 @@ export type Education = {
   details?: string[];
   /** Field of study for application forms; never printed on the resume. */
   major?: string;
+  /** Start and (expected) graduation month, `YYYY-MM`, for application forms. Never
+   * printed; the server fills them from `dates` on save when empty. */
+  start?: string;
+  end?: string;
   /** Client-only React list key — never sent to the server (see `stripRowKeys`).
    * Unlike a bullet or entry, an education row has no server-assigned id at all. */
   _key?: string;

@@ -81,7 +81,8 @@ export function EducationEntries({
                   value={edu.dates}
                   onChange={(v) => {
                     const next = [...entries];
-                    next[i] = { ...edu, dates: v };
+                    // New printed dates: the months are read again from them on save.
+                    next[i] = { ...edu, dates: v, start: "", end: "" };
                     setEntries(next);
                   }}
                 />
@@ -97,6 +98,32 @@ export function EducationEntries({
                   />
                   <p className="mt-1 text-xs text-ink-muted">
                     Used to answer application forms; never printed on the resume.
+                  </p>
+                </div>
+                <div className="grid grid-cols-1 gap-3 sm:col-span-2 sm:grid-cols-2">
+                  <TextField
+                    label="Start month"
+                    type="month"
+                    value={edu.start ?? ""}
+                    onChange={(v) => {
+                      const next = [...entries];
+                      next[i] = { ...edu, start: v };
+                      setEntries(next);
+                    }}
+                  />
+                  <TextField
+                    label="Graduation month (or expected)"
+                    type="month"
+                    value={edu.end ?? ""}
+                    onChange={(v) => {
+                      const next = [...entries];
+                      next[i] = { ...edu, end: v };
+                      setEntries(next);
+                    }}
+                  />
+                  <p className="text-xs text-ink-muted sm:col-span-2">
+                    For application forms; the resume prints Dates as written. Left empty, they are
+                    read from Dates when you save.
                   </p>
                 </div>
                 <div className="sm:col-span-2">

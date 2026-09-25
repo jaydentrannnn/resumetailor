@@ -17,6 +17,7 @@ from pydantic import ValidationError
 from resume_tailor import (
     config,
     data,
+    edu_dates,
     propose,
     resume_import,
     resume_import_pdf,
@@ -85,6 +86,10 @@ def _write_master_resume(resume: MasterResume, note: str = "") -> Path | None:
     _record_version(None)
     backup = _backup_master_resume(path)
 
+    # Structured education months for application forms, read from the printed dates
+    # where the student left them empty (`edu_dates`).
+    for education in resume.education:
+        edu_dates.fill(education)
     # Round-trip through the model so tags are canonicalised and unknown keys stripped
     # before anything hits disk — same guarantees `data.load` enforces on the way in.
     payload = resume.model_dump(by_alias=True)
