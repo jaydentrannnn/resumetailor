@@ -11,6 +11,8 @@ import hashlib
 import json
 import os
 import re
+import threading
+import time
 import uuid
 from datetime import date, datetime, timezone
 from pathlib import Path
@@ -813,6 +815,23 @@ def build_packet(
     )
 
 
+#: One writer at a time: on Windows, two threads replacing the same ``packet.json`` at
+#: once fail with "Access is denied" (the job thread and a rebuild request can race).
+_WRITE_LOCK = threading.Lock()
+
+
+def _replace(src: Path, dst: Path, attempts: int = 10) -> None:
+    """``os.replace``, retried briefly while a reader holds ``dst`` open (Windows)."""
+    for attempt in range(attempts):
+        try:
+            os.replace(src, dst)
+            return
+        except PermissionError:
+            if attempt == attempts - 1:
+                raise
+            time.sleep(0.05 * (attempt + 1))
+
+
 def write_packet(job_id: str) -> Packet:
     """Build and persist ``packet.json`` for ``job_id``."""
     packet = build_packet(job_id)
@@ -826,7 +845,8 @@ def write_packet(job_id: str) -> Packet:
     tmp = path.with_name(f"packet.{uuid.uuid4().hex}.tmp")
     try:
         tmp.write_text(packet.model_dump_json(indent=2) + "\n", encoding="utf-8")
-        os.replace(tmp, path)
+        with _WRITE_LOCK:
+            _replace(tmp, path)
     finally:
         tmp.unlink(missing_ok=True)
     return packet

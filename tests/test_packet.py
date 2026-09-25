@@ -359,6 +359,42 @@ def test_write_packet_never_exposes_a_partial_file(job_dir, monkeypatch):
     assert not list(job_dir.glob("packet.*.tmp"))
 
 
+def test_write_packet_retries_while_windows_holds_the_file(job_dir, monkeypatch):
+    """A reader or another writer holding `packet.json` on Windows fails the rename with
+    "Access is denied" for a moment; the write retries instead of failing the request."""
+    import resume_tailor.apply.packet as packet_mod
+
+    real_replace = packet_mod.os.replace
+    calls = []
+
+    def flaky_replace(src, dst):
+        calls.append(dst)
+        if len(calls) < 3:
+            raise PermissionError(5, "Access is denied")
+        real_replace(src, dst)
+
+    monkeypatch.setattr(packet_mod.os, "replace", flaky_replace)
+    monkeypatch.setattr(packet_mod.time, "sleep", lambda _s: None)
+    packet = write_packet("test-job")
+    assert len(calls) == 3
+    stored = json.loads((job_dir / "packet.json").read_text(encoding="utf-8"))
+    assert stored["job_id"] == packet.job_id
+    assert not list(job_dir.glob("packet.*.tmp"))
+
+
+def test_write_packet_gives_up_after_the_retries(job_dir, monkeypatch):
+    import resume_tailor.apply.packet as packet_mod
+
+    def denied(src, dst):
+        raise PermissionError(5, "Access is denied")
+
+    monkeypatch.setattr(packet_mod.os, "replace", denied)
+    monkeypatch.setattr(packet_mod.time, "sleep", lambda _s: None)
+    with pytest.raises(PermissionError):
+        write_packet("test-job")
+    assert not list(job_dir.glob("packet.*.tmp"))
+
+
 def _legacy_profile(job_dir, **education):
     """A profile file saved before education moved to the resume."""
     config.APPLICANT_PROFILE_PATH.write_text(json.dumps({"first_name": "Jordan", **education}), encoding="utf-8")
