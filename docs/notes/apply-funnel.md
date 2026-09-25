@@ -1166,3 +1166,18 @@ the tasks that first need them (a new entry in `db.MIGRATIONS`, never an edit).
 - **Encoding fix:** the extension branch's note block above was appended as UTF-16
   (PowerShell `>>`), which made this file read as binary; it was re-encoded to UTF-8.
   On Windows append notes with `Add-Content -Encoding utf8`, not `>>`.
+
+## Workday: no second Education row after Continue/Reopen (2026-09)
+
+The owner saw Education added twice. On a re-run of My Experience (Continue, Reopen,
+error recovery) the row this fill added earlier carried a Field of Study the applicant
+picked or a one-result search committed ("Computer and Information Science" for
+"Computer Science"), so `_choose_row`'s exact/partial/blank stages all missed and a new
+row was added. Now: the major compares both ways through `closest_option` (`_same`);
+rows claimed by an earlier entry this pass are excluded; when nothing matches, the single
+unclaimed row whose school (employer, for work rows) matches is reused if no later entry
+shares that school (`_reuse_or_guard`), keeping its Field of Study as the applicant's
+answer; and when the page already has as many rows at that school as entries left to
+place, the add is blocked and flagged "possible duplicate row" instead. `_add_row` takes
+one late look (1.5 s) so a slow render is not left as a second blank row for the next
+pass to call ambiguous.

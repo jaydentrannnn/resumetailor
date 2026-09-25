@@ -179,7 +179,7 @@ def test_a_failed_school_search_still_fills_the_rest_of_the_education_row(monkey
 
     monkeypatch.setattr(repeaters, "_section_present", lambda *_a: True)
     monkeypatch.setattr(repeaters, "_rows", lambda *_a: ["education-1--"])
-    monkeypatch.setattr(repeaters, "_choose_row", lambda *_a: "education-1--")
+    monkeypatch.setattr(repeaters, "_choose_row", lambda *_a, **_k: "education-1--")
     monkeypatch.setattr(repeaters, "_text_or_prompt", text_or_prompt)
     monkeypatch.setattr(repeaters, "_blank_fill", lambda *_a: True)
     monkeypatch.setattr(repeaters, "_value", lambda *_a: "")
@@ -218,3 +218,104 @@ def test_a_committed_school_chip_identifies_its_row():
         ("schoolName", "fieldOfStudy"),
     )
     assert row == "education-1--"
+
+
+def _edu(school: str, major: str):
+    from resume_tailor.apply.packet import PacketEducation
+
+    return PacketEducation(school=school, major=major, start="2023", end="2027")
+
+
+def _education_run(monkeypatch, page: _Page, education: list) -> tuple[list[str], list, list[str]]:
+    """Run the education step with the search/date helpers stubbed; returns
+    (Add clicks, filled, review)."""
+    adds: list[str] = []
+
+    def add_row(_page, heading, _anchor):
+        adds.append(heading)
+        n = 1 + max((int(k.split("-")[1]) for k in page.values if k.startswith("education-")), default=0)
+        page.values[f"education-{n}--schoolName"] = ""
+        page.values[f"education-{n}--fieldOfStudy"] = ""
+        return f"education-{n}--"
+
+    def text_or_prompt(_page, row, field, value, *, key):
+        return repeaters._blank_fill(page, row, field, value)  # noqa: SLF001
+
+    monkeypatch.setattr(repeaters, "_add_row", add_row)
+    monkeypatch.setattr(repeaters, "_text_or_prompt", text_or_prompt)
+    monkeypatch.setattr(repeaters, "_fill_date", lambda *_a, **_k: True)
+    packet = SimpleNamespace(experience=[], education=education)
+    filled, review = repeaters.fill(page, packet, lambda _m: None)
+    return adds, filled, review
+
+
+def test_continue_reuses_the_education_row_whose_major_the_applicant_changed(monkeypatch):
+    # The first pass added the row; the applicant picked another Field of Study, then
+    # pressed Continue. The school still identifies the row: no second Education entry.
+    page = _Page({"education-1--schoolName": "UC Irvine", "education-1--fieldOfStudy": "Mathematics"})
+    adds, filled, review = _education_run(monkeypatch, page, [_edu("UC Irvine", "Computer Science")])
+    assert adds == []
+    assert review == []
+    assert [f["label"] for f in filled] == ["Education: UC Irvine"]
+    assert page.values["education-1--fieldOfStudy"] == "Mathematics"
+
+
+def test_running_the_education_step_twice_leaves_one_row(monkeypatch):
+    page = _Page({})
+    monkeypatch.setattr(repeaters, "_section_present", lambda *_a: True)
+    entries = [_edu("UC Irvine", "Computer Science")]
+    first_adds, _, _ = _education_run(monkeypatch, page, entries)
+    # A one-result search committed a longer major than the profile's.
+    page.values["education-1--fieldOfStudy"] = "Computer and Information Science"
+    second_adds, _, review = _education_run(monkeypatch, page, entries)
+    assert (first_adds, second_adds) == (["Education"], [])
+    assert review == []
+    assert sorted(k for k in page.values if k.endswith("--schoolName")) == ["education-1--schoolName"]
+
+
+def test_two_entries_at_one_school_do_not_reuse_by_school_alone(monkeypatch):
+    # One row at the school with an unrelated major: which entry it belongs to is
+    # unknowable, so the first entry does not claim it; one row short means one add.
+    page = _Page({"education-1--schoolName": "UC Irvine", "education-1--fieldOfStudy": "Mathematics"})
+    adds, _, _ = _education_run(
+        monkeypatch, page, [_edu("UC Irvine", "Computer Science"), _edu("UC Irvine", "Physics")],
+    )
+    assert adds == ["Education"]
+
+
+def test_rows_already_covering_every_entry_block_the_add(monkeypatch):
+    page = _Page({
+        "education-1--schoolName": "UC Irvine", "education-1--fieldOfStudy": "Mathematics",
+        "education-2--schoolName": "UC Irvine", "education-2--fieldOfStudy": "History",
+    })
+    adds, _, review = _education_run(
+        monkeypatch, page, [_edu("UC Irvine", "Computer Science"), _edu("UC Irvine", "Physics")],
+    )
+    assert adds == []
+    assert all("possible duplicate row" in item for item in review) and len(review) == 2
+
+
+def test_a_major_match_is_tried_both_ways():
+    assert repeaters._same("computer and information science", "computer science", "major")  # noqa: SLF001
+    assert repeaters._same("computer science", "computer and information science", "major")  # noqa: SLF001
+    assert not repeaters._same("stanford university", "uc irvine", "school")  # noqa: SLF001
+
+
+def test_a_row_rendered_after_the_wait_is_still_returned(monkeypatch):
+    class _SlowPage(_Page):
+        waits = 0
+
+        def evaluate(self, script, arg):
+            if script == repeaters._ADD_BUTTON_JS:  # noqa: SLF001
+                return 0
+            return super().evaluate(script, arg)
+
+        def wait_for_timeout(self, ms):
+            self.waits += 1
+            if ms == 1500:  # the late look: the row has rendered by now
+                self.values["education-2--schoolName"] = ""
+
+    page = _SlowPage({"education-1--schoolName": "UC Irvine"})
+    monkeypatch.setattr(repeaters.clicks, "safe_click", lambda *_a, **_k: None)
+    monkeypatch.setattr(page, "locator", lambda _s: SimpleNamespace(nth=lambda _i: None), raising=False)
+    assert repeaters._add_row(page, "Education", "schoolName") == "education-2--"  # noqa: SLF001

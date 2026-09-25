@@ -104,23 +104,44 @@ def _rows(page: Any, anchor: str) -> list[str]:
         return []
 
 
-def _choose_row(page: Any, rows: list[str], identity: tuple[str, ...], fields: tuple[str, ...]) -> str | None:
+def _same(value: str, wanted: str, key: str) -> bool:
+    """Whether a row's ``value`` is the profile's ``wanted`` answer.
+
+    A committed chip reads "University of California, Irvine" for the profile's
+    "University of California - Irvine", and a one-result search can commit "Computer
+    and Information Science" for "Computer Science": the match is tried both ways.
+    """
+    if value == wanted:
+        return True
+    if not (key and value and wanted):
+        return False
+    return bool(
+        field_matcher.closest_option([value], wanted, key=key)
+        or field_matcher.closest_option([wanted], value, key=key)
+    )
+
+
+def _choose_row(
+    page: Any,
+    rows: list[str],
+    identity: tuple[str, ...],
+    fields: tuple[str, ...],
+    *,
+    exclude: frozenset[str] | set[str] = frozenset(),
+) -> str | None:
     """Pick the row for ``identity``: exact match, else one partially filled row that
     agrees on every filled identity field (a row an earlier run started), else the single
     blank row. Ambiguity at any stage returns None so a new row is added instead.
+    Rows in ``exclude`` (already claimed by another entry this pass) are never picked.
     """
+    rows = [row for row in rows if row not in exclude]
     expected = tuple(part.strip().casefold() for part in identity)
     values = {row: tuple(_value(page, row, field).casefold() for field in fields) for row in rows}
     keys = tuple(_MATCH_KEYS.get(field, "") for field in fields)
 
-    def same(value: str, wanted: str, key: str) -> bool:
-        # A committed school chip reads "University of California, Irvine" for the
-        # profile's "University of California - Irvine".
-        return value == wanted or bool(key and value and field_matcher.closest_option([value], wanted, key=key))
-
     def agrees(row: str, *, allow_blank: bool) -> bool:
         return all(
-            (allow_blank and not v) or same(v, e, k)
+            (allow_blank and not v) or _same(v, e, k)
             for v, e, k in zip(values[row], expected, keys, strict=True)
         )
 
@@ -132,6 +153,18 @@ def _choose_row(page: Any, rows: list[str], identity: tuple[str, ...], fields: t
         return partial[0] if len(partial) == 1 else None
     blank = [row for row in rows if not any(values[row])]
     return blank[0] if len(blank) == 1 else None
+
+
+def _anchor_rows(
+    page: Any, rows: list[str], value: str, field: str, *, exclude: frozenset[str] | set[str] = frozenset()
+) -> list[str]:
+    """Unclaimed rows whose ``field`` (the school, the employer) already holds ``value``."""
+    key = _MATCH_KEYS.get(field, "")
+    wanted = value.strip().casefold()
+    return [
+        row for row in rows
+        if row not in exclude and _same(_value(page, row, field).casefold(), wanted, key)
+    ]
 
 
 def _section_present(page: Any, heading: str, anchor: str) -> bool:
@@ -164,7 +197,11 @@ def _add_row(page: Any, heading: str, anchor: str | tuple[str, ...]) -> str | No
         added = [row for row in all_rows() if row not in before]
         if len(added) == 1:
             return added[0]
-    return None
+    # A slow tenant can render the row after the wait: one late look, so the next pass
+    # does not find two blank rows, call that ambiguous, and add a third.
+    page.wait_for_timeout(1500)
+    added = [row for row in all_rows() if row not in before]
+    return added[0] if len(added) == 1 else None
 
 
 def _school_field(page: Any, row: str | None = None) -> str:
@@ -347,6 +384,27 @@ def _fill_language(page: Any, row: str, entry: Any, select: Callable[..., bool] 
     return results
 
 
+def _reuse_or_guard(
+    page: Any, rows: list[str], anchors: list[str], field: str, claimed: set[str]
+) -> tuple[str | None, bool]:
+    """When no row matches an entry's full identity: (row to reuse, add is blocked).
+
+    ``anchors`` is this entry's school/employer followed by the remaining entries'. The
+    single unclaimed row holding it is reused when no later entry shares the value. When
+    the page already holds at least as many such rows as the entries still to place,
+    adding one would duplicate an existing row, so the add is blocked for review.
+    """
+    wanted = anchors[0]
+    if not wanted:
+        return None, False
+    matching = _anchor_rows(page, rows, wanted, field, exclude=claimed)
+    key = _MATCH_KEYS.get(field, "")
+    still_to_place = sum(1 for other in anchors if _same(other.strip().casefold(), wanted.strip().casefold(), key))
+    if len(matching) == 1 and still_to_place == 1:
+        return matching[0], False
+    return None, len(matching) >= still_to_place
+
+
 def fill(
     page: Any,
     packet: Packet,
@@ -370,16 +428,27 @@ def fill(
         experience = []
     if experience:
         progress("Inspecting Workday employment rows")
-    for exp in experience:
+    claimed: set[str] = set()
+    for index, exp in enumerate(experience):
         label = f"Work experience: {exp.title} at {exp.employer}"
         try:
-            row = _choose_row(page, _rows(page, _WORK["title"]), (exp.title, exp.employer),
-                              (_WORK["title"], _WORK["company"]))
+            rows = _rows(page, _WORK["title"])
+            row = _choose_row(page, rows, (exp.title, exp.employer),
+                              (_WORK["title"], _WORK["company"]), exclude=claimed)
+            if row is None:
+                row, blocked = _reuse_or_guard(
+                    page, rows, [e.employer for e in experience[index:]], _WORK["company"], claimed,
+                )
+                if blocked:
+                    progress(f"Workday: {label} already has a row; not adding another")
+                    review.append(f"{label} (possible duplicate row: check the list)")
+                    continue
             if row is None:
                 row = _add_row(page, "Work Experience", _WORK["title"])
             if row is None:
                 review.append(label)
                 continue
+            claimed.add(row)
             results = {
                 "Job Title": _attempt(lambda: _blank_fill(page, row, _WORK["title"], exp.title)),
                 "Company": _attempt(lambda: _blank_fill(page, row, _WORK["company"], exp.employer)),
@@ -408,22 +477,47 @@ def fill(
         education = []
     if education:
         progress("Inspecting Workday education rows")
-    for edu in education:
+    claimed = set()
+    for index, edu in enumerate(education):
         label = f"Education: {edu.school}"
         try:
-            row = _choose_row(page, _rows(page, school), (edu.school, edu.major), (school, _EDU["major"]))
+            rows = _rows(page, school)
+            row = _choose_row(page, rows, (edu.school, edu.major), (school, _EDU["major"]), exclude=claimed)
+            reused_by_school = False
+            if row is None:
+                # Continue / Reopen / error recovery re-run this step: the row this fill
+                # added earlier may now carry a Field of Study the applicant picked or
+                # fixed. Its school still identifies it; adding a row would duplicate it.
+                row, blocked = _reuse_or_guard(
+                    page, rows, [e.school for e in education[index:]], school, claimed,
+                )
+                reused_by_school = row is not None
+                if blocked:
+                    progress(f"Workday: {label} already has a row; not adding another")
+                    review.append(f"{label} (possible duplicate row: check the list)")
+                    continue
             if row is None:
                 row = _add_row(page, "Education", _SCHOOL_FIELDS)
             if row is None:
                 progress(f"Workday: no education row available for {edu.school}")
                 review.append(label)
                 continue
+            claimed.add(row)
             school = _school_field(page, row)
+            current_major = _value(page, row, _EDU["major"])
+            kept_major = current_major if reused_by_school or _same(
+                current_major.casefold(), edu.major.strip().casefold(), "major"
+            ) else ""
             # Each field on its own: a school search that fails (Upbound, 2026-09) must
             # not leave the major, years, and degree unfilled.
             results = {
                 "School": _attempt(lambda: _text_or_prompt(page, row, school, edu.school, key="school")),
-                "Field of Study": _attempt(lambda: _text_or_prompt(page, row, _EDU["major"], edu.major, key="major")),
+                # A Field of Study already there that matches (or, on a row found by its
+                # school, any one: the applicant's reviewed answer) is kept, not flagged
+                # again on every Continue.
+                "Field of Study": bool(kept_major) or _attempt(
+                    lambda: _text_or_prompt(page, row, _EDU["major"], edu.major, key="major")
+                ),
                 # Most tenants do not ask for a GPA; an absent control is not a gap.
                 "GPA": _attempt(lambda: _ctl(page, row, _EDU["gpa"]).count() == 0
                                 or _blank_fill(page, row, _EDU["gpa"], edu.gpa)),
