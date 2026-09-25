@@ -201,11 +201,18 @@ ATS_HINTS: dict[str, dict[str, str]] = {
         "input[name='org']": "current_company",
         "input[name='urls[LinkedIn]']": "linkedin_url",
         "input[name='urls[GitHub]']": "github_url",
+        "input[name='urls[Portfolio]']": "portfolio_url",
+        "input[name='urls[Other]']": "website",
         "input[name='resume']": "resume_upload",
         "button.postings-btn.template-btn-submit": "submit",
         "confirmation_text": "Application submitted",
     },
+    # Ashby's built-in questions carry `_systemfield_<name>` ids; custom ones are
+    # matched by label.
     "ashby": {
+        "input[id='_systemfield_name']": "full_name",
+        "input[id='_systemfield_email']": "email",
+        "input[id='_systemfield_resume']": "resume_upload",
         "input[type='file']": "resume_upload",
         "button[type='submit']": "submit",
         "confirmation_text": "Thank you",
@@ -228,6 +235,10 @@ ATS_HINTS: dict[str, dict[str, str]] = {
     "oracle": {
         "confirmation_text": "Thank you for applying",
     },
+    # Wizard platforms (`wizards.py` names their screens); fields are matched by label.
+    "icims": {"confirmation_text": "Thank you"},
+    "taleo": {"confirmation_text": "Thank you for submitting"},
+    "successfactors": {"confirmation_text": "Thank you"},
 }
 
 #: Button labels or selectors to click before the form is visible (plan section 8.2).

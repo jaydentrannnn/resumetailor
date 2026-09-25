@@ -30,6 +30,27 @@
     return rect.width > 0 && rect.height > 0;
   }
 
+  /** The document or shadow root holding el: its `label[for]` and radio group live there. */
+  function rootOf(el) {
+    const root = el.getRootNode();
+    return root && typeof root.querySelectorAll === "function" ? root : document;
+  }
+
+  /**
+   * querySelectorAll that also searches open shadow roots, in document order. Web-component
+   * forms (SmartRecruiters' apply page) keep their inputs there; closed roots stay hidden,
+   * as they are from the page's own scripts. Playwright's CSS locators pierce open roots,
+   * so the selectors reported back still resolve.
+   */
+  function deepQueryAll(root, sel) {
+    const out = [];
+    for (const node of root.querySelectorAll("*")) {
+      if (node.matches(sel)) out.push(node);
+      if (node.shadowRoot) out.push(...deepQueryAll(node.shadowRoot, sel));
+    }
+    return out;
+  }
+
   /** Build a CSS selector that uniquely identifies el among peers. */
   function selectorFor(el) {
     if (el.id) return `#${CSS.escape(el.id)}`;
@@ -69,8 +90,9 @@
   /** Resolve human-readable label text for a control. */
   function labelFor(el) {
     const id = el.id;
+    const root = rootOf(el);
     if (id) {
-      const label = document.querySelector(`label[for="${CSS.escape(id)}"]`);
+      const label = root.querySelector(`label[for="${CSS.escape(id)}"]`);
       if (label) return (label.innerText || label.textContent || "").trim();
     }
     const aria = el.getAttribute("aria-label");
@@ -78,7 +100,7 @@
     const labelledBy = el.getAttribute("aria-labelledby");
     if (labelledBy) {
       // A space-separated id list: the question plus, often, its hint or error text.
-      const text = labelledBy.split(/\s+/).map(ref => document.getElementById(ref))
+      const text = labelledBy.split(/\s+/).map(ref => root.getElementById(ref))
         .filter(Boolean).map(ref => (ref.innerText || ref.textContent || "").trim())
         .filter(Boolean).join(" ");
       if (text) return text;
@@ -144,7 +166,7 @@
   /** The visible text of one radio/checkbox option (not its question). */
   function optionText(input) {
     if (input.id) {
-      const lbl = document.querySelector(`label[for="${CSS.escape(input.id)}"]`);
+      const lbl = rootOf(input).querySelector(`label[for="${CSS.escape(input.id)}"]`);
       if (lbl) return (lbl.innerText || lbl.textContent || "").trim();
     }
     const wrap = input.closest("label");
@@ -404,7 +426,7 @@
   function tick(input) {
     if (input.checked) return true;
     input.click();
-    if (!input.checked && input.id) document.querySelector(`label[for="${CSS.escape(input.id)}"]`)?.click();
+    if (!input.checked && input.id) rootOf(input).querySelector(`label[for="${CSS.escape(input.id)}"]`)?.click();
     return input.checked;
   }
 
@@ -417,8 +439,9 @@
     const val = norm(value);
     const name = el.name;
     const rule = eeo[key] ? new RegExp(eeo[key]) : null;
+    const root = rootOf(el);
     const single = el.type === "checkbox" &&
-      (!name || document.querySelectorAll(`input[type="checkbox"][name="${CSS.escape(name)}"]`).length === 1);
+      (!name || root.querySelectorAll(`input[type="checkbox"][name="${CSS.escape(name)}"]`).length === 1);
     if (rule && el.type === "checkbox" && single) {
       // Workday's disability form: one unnamed checkbox per answer ("No, I do not have a
       // disability..."), not a yes/no switch.
@@ -433,13 +456,13 @@
       const shouldCheck = ["yes", "true", "1"].includes(val);
       if (el.checked !== shouldCheck) {
         el.click();
-        if (el.checked !== shouldCheck && el.id) document.querySelector(`label[for="${CSS.escape(el.id)}"]`)?.click();
+        if (el.checked !== shouldCheck && el.id) root.querySelector(`label[for="${CSS.escape(el.id)}"]`)?.click();
         if (shouldCheck) revealed = true;
       }
       return el.checked === shouldCheck;
     }
     if (!name) return false;
-    const group = document.querySelectorAll(
+    const group = root.querySelectorAll(
       `input[type="${el.type}"][name="${name.replace(/"/g, '\\"')}"]`
     );
     const texts = Array.from(group, input => norm(optionText(input) || labelFor(input)));
@@ -488,7 +511,7 @@
     return "";
   }
 
-  for (const fileEl of document.querySelectorAll('input[type="file"]')) {
+  for (const fileEl of deepQueryAll(document, 'input[type="file"]')) {
     const fileSel = selectorFor(fileEl);
     const section = sectionHeading(fileEl);
     const fileLbl = labelFor(fileEl) || section;
@@ -508,9 +531,7 @@
     return "";
   }
 
-  const controls = Array.from(
-    document.querySelectorAll("input, select, textarea")
-  ).filter(isVisible);
+  const controls = deepQueryAll(document, "input, select, textarea").filter(isVisible);
 
   // The previous control's key, in document order: "If other, please specify" right
   // after "How did you hear" is the source detail.
@@ -566,7 +587,7 @@
       filled.push({ key: "existing", label, value: existingAnswer, selector: sel, preserved: true });
       continue;
     }
-    if ((type === "checkbox" || type === "radio") && el.name && Array.from(document.querySelectorAll(`input[name="${CSS.escape(el.name)}"]`)).some(input => input.checked)) {
+    if ((type === "checkbox" || type === "radio") && el.name && Array.from(rootOf(el).querySelectorAll(`input[name="${CSS.escape(el.name)}"]`)).some(input => input.checked)) {
       filled.push({ key: "existing", label, value: "selected", selector: sel, preserved: true });
       continue;
     }
@@ -689,7 +710,7 @@
       const workdayPhoneCode = document.querySelector("[data-automation-id='formField-countryPhoneCode']");
       if (key === "phone" && fields.phone_country_code && (workdayPhoneCode ||
           (el.getAttribute("type") === "tel" &&
-           Array.from(document.querySelectorAll("select,[role='combobox']")).some(other => phoneCodeControl(other, labelFor(other)))))) {
+           deepQueryAll(document, "select,[role='combobox']").some(other => phoneCodeControl(other, labelFor(other)))))) {
         const code = String(fields.phone_country_code);
         if (textValue.startsWith(code)) textValue = textValue.slice(code.length).replace(/^[\s()\-.]+/, "");
       }

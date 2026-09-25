@@ -14,17 +14,34 @@
     return rect.width > 0 && rect.height > 0;
   }
 
+  /** The document or shadow root holding el (see filler.js). */
+  function rootOf(el) {
+    const root = el.getRootNode();
+    return root && typeof root.querySelectorAll === "function" ? root : document;
+  }
+
+  /** querySelectorAll that also searches open shadow roots, in document order. */
+  function deepQueryAll(root, sel) {
+    const out = [];
+    for (const node of root.querySelectorAll("*")) {
+      if (node.matches(sel)) out.push(node);
+      if (node.shadowRoot) out.push(...deepQueryAll(node.shadowRoot, sel));
+    }
+    return out;
+  }
+
   function labelFor(el) {
     const id = el.id;
+    const root = rootOf(el);
     if (id) {
-      const label = document.querySelector(`label[for="${CSS.escape(id)}"]`);
+      const label = root.querySelector(`label[for="${CSS.escape(id)}"]`);
       if (label) return (label.innerText || label.textContent || "").trim();
     }
     const aria = el.getAttribute("aria-label");
     if (aria) return aria.trim();
     const labelledBy = el.getAttribute("aria-labelledby");
     if (labelledBy) {
-      const ref = document.getElementById(labelledBy.split(/\s+/)[0]);
+      const ref = root.getElementById(labelledBy.split(/\s+/)[0]);
       if (ref) return (ref.innerText || ref.textContent || "").trim();
     }
     const placeholder = el.getAttribute("placeholder");
@@ -58,7 +75,7 @@
     if (type === "checkbox" || type === "radio") {
       const name = el.name;
       if (!name) return !el.checked;
-      const group = document.querySelectorAll(
+      const group = rootOf(el).querySelectorAll(
         `input[type="${type}"][name="${name.replace(/"/g, '\\"')}"]`
       );
       return !Array.from(group).some((input) => input.checked);
@@ -71,7 +88,7 @@
   }
 
   const seenGroups = new Set();
-  for (const [index, el] of Array.from(document.querySelectorAll("input, select, textarea")).entries()) {
+  for (const [index, el] of deepQueryAll(document, "input, select, textarea").entries()) {
     if (!isVisible(el)) continue;
     const type = (el.getAttribute("type") || el.tagName.toLowerCase()).toLowerCase();
     if (skipTypes.has(type)) continue;

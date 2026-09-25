@@ -4,11 +4,12 @@ from __future__ import annotations
 
 import json
 from pathlib import Path
+from typing import get_args
 
 import pytest
 
 from resume_tailor import config
-from resume_tailor.apply import identity
+from resume_tailor.apply import fetch_jd, identity, store
 
 
 @pytest.fixture
@@ -154,3 +155,64 @@ def test_resolve_final_url_caches_and_skips_second_http(resolve_cache, monkeypat
 def test_resolve_final_url_passthrough_for_direct_ats():
     url = "https://boards.greenhouse.io/figma/jobs/1"
     assert identity.resolve_final_url(url) == url
+
+
+@pytest.mark.parametrize(
+    ("url", "key", "ats"),
+    [
+        (
+            "https://jpmc.taleo.net/careersection/2/jobdetail.ftl?job=240012345&lang=en",
+            "taleo:jpmc:240012345",
+            "taleo",
+        ),
+        (
+            "https://career4.successfactors.com/sfcareer/jobreqcareer"
+            "?jobId=1&company=AcmeCorp&career_job_req_id=98765",
+            "successfactors:acmecorp:98765",
+            "successfactors",
+        ),
+        (
+            "https://ejaa.fa.us2.oraclecloud.com/hcmUI/CandidateExperience/en/sites/"
+            "CX_1/job/12345/?utm_medium=jobshare",
+            "oracle:ejaa:12345",
+            "oracle",
+        ),
+        (
+            "https://jobs.jobvite.com/acme/job/oAbC123x?nl=0",
+            "jobvite:acme:oAbC123x",
+            "jobvite",
+        ),
+        ("https://acme.bamboohr.com/careers/42", "bamboohr:acme:42", "bamboohr"),
+        ("https://acme.bamboohr.com/jobs/view.php?id=77", "bamboohr:acme:77", "bamboohr"),
+        (
+            "https://www.linkedin.com/jobs/view/summer-analyst-at-acme-4012345678/",
+            "linkedin:jobs:4012345678",
+            "linkedin",
+        ),
+        (
+            "https://www.linkedin.com/jobs/collections/recommended/?currentJobId=4012345678",
+            "linkedin:jobs:4012345678",
+            "linkedin",
+        ),
+        ("https://www.indeed.com/viewjob?jk=AB12cd34ef56&from=serp", "indeed:jobs:ab12cd34ef56", "indeed"),
+        ("https://app.joinhandshake.com/stu/jobs/9876543", "handshake:jobs:9876543", "handshake"),
+        ("https://uci.joinhandshake.com/jobs/9876543", "handshake:jobs:9876543", "handshake"),
+    ],
+)
+def test_canonical_key_and_ats_for_more_platforms(url, key, ats):
+    assert identity.canonical_key(url) == key
+    assert fetch_jd.detect_ats(url) == ats
+
+
+def test_platform_pages_without_a_job_id_fall_back_to_the_path_digest():
+    assert identity.canonical_key("https://jpmc.taleo.net/careersection/2/moresearch.ftl").startswith(
+        "other:jpmc.taleo.net:"
+    )
+    assert identity.canonical_key("https://www.linkedin.com/jobs/").startswith("other:")
+    # An Oracle Cloud page that is not the candidate site is not an Oracle posting.
+    assert fetch_jd.detect_ats("https://docs.oraclecloud.com/en/cloud/") != "oracle"
+
+
+def test_ats_kinds_agree():
+    """`fetch_jd.detect_ats` may only return kinds the store accepts."""
+    assert get_args(fetch_jd.AtsName) == get_args(store.AtsKind)

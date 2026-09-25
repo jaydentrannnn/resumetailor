@@ -26,11 +26,13 @@ from resume_tailor.apply import (
     ats_hints,
     browser,
     clicks,
+    fetch_jd,
     field_matcher,
     form_guards,
     hybrid_resolver,
     store,
     submit_guard,
+    wizards,
     workday_auth,
     workday_flow,
 )
@@ -242,6 +244,12 @@ def _find_submit_button(page: Any, hints: dict[str, str]) -> Any | None:
     return None
 
 
+#: Platforms that are filled but never submitted automatically, whatever the settings:
+#: Workday's Review page has submitted by accident before, and the job boards' own
+#: apply flows (LinkedIn Easy Apply, Indeed Apply, Handshake) forbid automation.
+ASSIST_ONLY_ATS = frozenset({"workday", "linkedin", "indeed", "handshake"})
+
+
 def decide_submit_action(
     *,
     ats: str,
@@ -252,8 +260,7 @@ def decide_submit_action(
     """Return ``auto_submit`` when policy allows it, else ``awaiting_review``."""
     if submit_mode == "awaiting_review":
         return "awaiting_review"
-    if ats.lower() == "workday":
-        # Workday applications are always handed over for review, whatever the settings.
+    if ats.lower() in ASSIST_ONLY_ATS:
         return "awaiting_review"
     if submit_mode == "auto_submit" and not settings.auto_submit_enabled:
         return "awaiting_review"
@@ -770,6 +777,12 @@ def fill_application(
         progress(authorization_note)
     url = app.final_url or app.posting_url
     is_workday = (app.ats or pkt.ats or "").lower() == "workday" or workday_auth.is_workday_url(url or "")
+    # Other multi-step platforms (iCIMS, Taleo, SuccessFactors, Oracle): each step's screen
+    # is named first, so a sign-in, an emailed code or the review page is handed over.
+    wizard_ats = app.ats or pkt.ats or ""
+    if wizard_ats in {"", "other", "unknown"}:
+        wizard_ats = fetch_jd.detect_ats(url or "")
+    wizard = None if is_workday else wizards.for_ats(wizard_ats)
     out_dir = config.APPLICATIONS_OUTPUT_DIR / source_job_id
     deadline = time.monotonic() + 240
     page: Any | None = None
@@ -1011,6 +1024,14 @@ def fill_application(
                         needs_review.append("Country Phone Code")
                     elif phone_code and "Country Phone Code" in needs_review:
                         needs_review.remove("Country Phone Code")
+                if wizard is not None:
+                    # A sign-in, an emailed code or a closed posting is the applicant's;
+                    # checked before this step is filled, so nothing is typed into it.
+                    stop = wizard.stop_for(wizard.detect_state(page))
+                    if stop is not None:
+                        return _workday_handoff(
+                            app, context, page, stop.message, status=stop.status
+                        )
                 barrier = _detect_barriers(page)
                 if barrier and "Cloudflare" in barrier:
                     if not _locator_exists(page.locator("input, select, textarea")):
@@ -1387,6 +1408,11 @@ def fill_application(
                         country_rechecked = True
                         progress(f"Workday: Country reads {wrong_country} after filling; correcting it and rescanning this step")
                         continue
+
+                if wizard is not None and wizard.is_final_step(wizard.snapshot(page)):
+                    final_step_reached = True
+                    progress(f"{wizard.label} review page reached; the applicant submits")
+                    break
 
                 # Workday's Review step is the end: its footer button submits. Stop here
                 # whatever the button is called; submission is always the applicant's.

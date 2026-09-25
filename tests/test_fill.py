@@ -10,7 +10,7 @@ from unittest.mock import MagicMock
 import pytest
 
 from resume_tailor import config, data
-from resume_tailor.apply import answer, browser, clicks, fill, packet, store, submit_guard
+from resume_tailor.apply import answer, browser, clicks, fill, packet, store, submit_guard, wizards
 from resume_tailor.apply import profile as profile_mod
 from resume_tailor.apply.packet import Packet
 from resume_tailor.apply.profile import ApplicantProfile
@@ -186,6 +186,19 @@ def test_decide_submit_action_never_auto_submits_workday():
     assert fill.decide_submit_action(ats="greenhouse", settings=settings, ready_to_submit=True) == "auto_submit"
 
 
+@pytest.mark.parametrize("ats", ["linkedin", "indeed", "handshake", "LinkedIn"])
+def test_job_board_apply_flows_are_assist_only(ats):
+    """LinkedIn Easy Apply, Indeed Apply and Handshake are filled, never auto-submitted."""
+    settings = ApplySettings(auto_submit_enabled=True, auto_submit_ats=[ats.lower()])
+    assert fill.decide_submit_action(ats=ats, settings=settings, ready_to_submit=True) == "awaiting_review"
+    assert (
+        fill.decide_submit_action(
+            ats=ats, settings=settings, ready_to_submit=True, submit_mode="auto_submit"
+        )
+        == "awaiting_review"
+    )
+
+
 def _stub_greenhouse_form(fill_paths, monkeypatch, **app_fields):
     """A ready Greenhouse application whose form fills cleanly and confirms on submit."""
     app = _ready_app(**app_fields)
@@ -247,6 +260,63 @@ def _stub_greenhouse_form(fill_paths, monkeypatch, **app_fields):
     monkeypatch.setattr(browser, "cdp_browser", _fake_browser)
 
     return page
+
+
+def _wizard_screen(page, snap):
+    """Answer the wizard snapshot script with ``snap``; everything else as before."""
+    previous = page.evaluate.side_effect
+
+    def evaluate(script, args=None):
+        if script == wizards.SNAPSHOT_JS:
+            return snap
+        return previous(script, args)
+
+    page.evaluate.side_effect = evaluate
+
+
+def test_wizard_sign_in_page_is_handed_over_unfilled(fill_paths, monkeypatch):
+    """A Taleo login is the applicant's: nothing is typed and the tab is left open."""
+    page = _stub_greenhouse_form(fill_paths, monkeypatch, ats="taleo")
+    _wizard_screen(page, {"headings": ["Returning User"], "buttons": ["Log In"],
+                          "password_inputs": 1, "fields": 2, "text": "Returning User"})
+    result = fill.fill_application("src-1", settings=ApplySettings())
+    assert result.status == "awaiting_review"
+    assert "Sign in to Taleo" in result.handoff_reason
+    assert fill._load_filler_js() not in [c.args[0] for c in page.evaluate.call_args_list]  # noqa: SLF001
+    assert store.get("src-1").status == "awaiting_review"
+
+
+def test_a_row_stored_as_other_is_recognised_from_its_url(fill_paths, monkeypatch):
+    """Rows found before Taleo was a known platform still get its sign-in handoff."""
+    taleo = "https://jpmc.taleo.net/careersection/2/jobdetail.ftl?job=1"
+    page = _stub_greenhouse_form(fill_paths, monkeypatch, ats="other", final_url=taleo)
+    _wizard_screen(page, {"password_inputs": 1, "fields": 2, "text": "Returning User"})
+    result = fill.fill_application("src-1", settings=ApplySettings())
+    assert "Sign in to Taleo" in result.handoff_reason
+
+
+def test_wizard_code_screen_waits_for_the_code(fill_paths, monkeypatch):
+    page = _stub_greenhouse_form(fill_paths, monkeypatch, ats="oracle")
+    _wizard_screen(page, {"fields": 6, "otp_input": True, "text": "Enter the verification code"})
+    result = fill.fill_application("src-1", settings=ApplySettings())
+    assert result.status == "awaiting_otp"
+    assert "code Oracle emailed" in result.handoff_reason
+
+
+def test_wizard_review_page_ends_the_fill_for_the_applicant(fill_paths, monkeypatch):
+    page = _stub_greenhouse_form(fill_paths, monkeypatch, ats="taleo")
+    _wizard_screen(page, {"active_step": "5 - Review and Submit", "headings": ["Review and Submit"],
+                          "buttons": ["Submit"], "fields": 1, "text": "Review and Submit"})
+    messages: list[str] = []
+    result = fill.fill_application(
+        "src-1",
+        settings=ApplySettings(auto_submit_enabled=True, auto_submit_ats=["greenhouse"]),
+        on_progress=messages.append,
+    )
+    assert result.status == "awaiting_review"
+    assert result.submit_action == "awaiting_review"
+    assert "Taleo review page reached; the applicant submits" in messages
+    assert not any(m.startswith("advancing wizard step") for m in messages)
 
 
 def test_fill_application_auto_submit(fill_paths, monkeypatch):

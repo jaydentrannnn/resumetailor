@@ -1037,3 +1037,43 @@ the tasks that first need them (a new entry in `db.MIGRATIONS`, never an edit).
 - **Not done:** E2 shadow DOM (belongs to AD6), E3 overwriting ATS resume-parse
   prefills, E7 multi-location lists, E9 portfolio uploads, and a separate E.164 packet
   field. Each needs live ATS fixtures to build safely.
+
+## P4-A: platform adapters (2026-09-25)
+
+- **Wizard screens, not wizard handlers.** The plan sketched a `WizardAdapter` with
+  `handlers: dict[Screen, Callable]` extracted from `workday_flow`. Workday's 1,350-line
+  flow is tuned on captured live tenants, and nothing here can re-capture them, so it was not
+  moved. `wizards.WorkdayWizard` wraps `workday_flow.classify` / `is_review_step` and a test
+  checks every captured Workday screen maps unchanged. The new platforms share one
+  text-and-structure classifier; the fill loop's existing field filling does the steps, and
+  the adapter only decides which screens are the applicant's (sign-in, account, code,
+  closed) and where the loop stops (review).
+- **Why hand over before filling.** On a sign-in page the filler would type the email into
+  the login box. The handoff check runs after the Workday block and before the filler, so
+  nothing is typed. The review check runs after filling, because review pages can carry an
+  e-signature field.
+- **Review detection is whole-name.** "Review our privacy policy" is not the review step.
+  Only a step name or heading that is exactly "Review", "Review and Submit/Apply", "Review
+  (your) application", "(Application) summary" (after "Step 5 of 6" / "5 -" numbering is
+  stripped), a platform's own `review_words`, or a page with no fields and only a Submit
+  button counts.
+- **Fixtures are synthetic.** `tests/fixtures/wizards/screens.json` is written from each
+  platform's public wording (the proxy blocks these sites here). Replace with captured
+  snapshots as real dry-run fills are reviewed; the plan's "10 live dry-run fills per
+  adapter" gate is still open.
+- **Not done:** the `ats_auth.py` vault generalisation (iCIMS/Taleo accounts are handed
+  over, not created), Taleo/SuccessFactors radio-table handling beyond `filler.js`, and
+  Lever `cards[...]` parsing (the filler's bare-text labels already read them).
+- **Assist-only job boards.** `fill.ASSIST_ONLY_ATS` = Workday + LinkedIn + Indeed +
+  Handshake (plan X5, done here with the new kinds). The settings drawer's auto-submit list
+  never offered them.
+- **New canonical keys do not re-key stored rows.** A row stored as `other:<host>:<digest>`
+  keeps its key; discovery drops known rows by `(source, source_job_id)` before recomputing
+  a key, and `group_key` plus the P4-S duplicate guard cover the rest. `ats_stats.py`
+  re-detects the platform from the URL so old `other` rows count under their platform.
+- **Shadow DOM (AD6 / E2).** `deepQueryAll` walks open shadow roots in document order;
+  closed roots stay hidden. Playwright CSS locators pierce open roots, so reported
+  selectors still resolve. A `<legend>` question with `label[for]` radios was already
+  unrecognised in the light DOM (the hybrid resolver handles those groups); unchanged.
+- `tests/test_filler_dom.py` now falls back from Edge to Playwright's Chromium
+  (`PW_CHROMIUM_PATH`), so these DOM tests run in the container as well as on Windows.

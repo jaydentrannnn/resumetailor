@@ -1,0 +1,33 @@
+{
+  "_source": "Synthetic snapshots (wizards.SNAPSHOT_JS shape) written from each platform's public wording; not captured from live tenants. Replace with captured screens as real fills are reviewed.",
+  "taleo": {
+    "sign_in": {"expect": "sign_in", "headings": ["Returning User", "Welcome"], "buttons": ["Log In", "Forgot your password?"], "password_inputs": 1, "fields": 2, "text": "Returning User\nUser Name\nPassword\nLog In"},
+    "create_account": {"expect": "create_account", "headings": ["New User Registration"], "buttons": ["Register"], "password_inputs": 2, "fields": 5, "text": "New User Registration\nUser Name\nPassword\nRe-enter Password\nEmail Address"},
+    "apply_form": {"expect": "apply_form", "active_step": "1 - Personal Information", "headings": ["Personal Information"], "buttons": ["Save and Continue", "Save as Draft"], "fields": 12, "text": "Personal Information\nFirst Name\nLast Name"},
+    "review": {"expect": "review", "active_step": "5 - Review and Submit", "headings": ["Review and Submit"], "buttons": ["Submit", "Save as Draft"], "fields": 1, "text": "Review and Submit\nPlease review your application"},
+    "confirmation": {"expect": "confirmation", "headings": ["Thank You"], "buttons": ["My Submissions"], "fields": 0, "text": "Thank you for submitting your application."}
+  },
+  "icims": {
+    "sign_in": {"expect": "sign_in", "headings": ["Log In"], "buttons": ["Log In"], "password_inputs": 1, "fields": 2, "text": "Please enter your email address and password"},
+    "otp": {"expect": "otp", "headings": ["Verify Your Identity"], "buttons": ["Verify"], "fields": 1, "otp_input": true, "text": "We have sent a verification code to your email."},
+    "apply_form": {"expect": "apply_form", "active_step": "Candidate Profile", "headings": ["Candidate Profile"], "buttons": ["Next"], "fields": 9, "text": "Candidate Profile\nFirst Name\nLast Name"},
+    "review": {"expect": "review", "headings": ["Submit Application"], "buttons": ["Submit"], "fields": 2, "text": "Submit Application\nBy submitting you certify..."},
+    "already_applied": {"expect": "already_applied", "headings": ["Job Details"], "buttons": ["Return to Job"], "fields": 0, "text": "You have already applied for this position."}
+  },
+  "successfactors": {
+    "create_account": {"expect": "create_account", "headings": ["Create an Account"], "buttons": ["Create Account"], "password_inputs": 2, "fields": 6, "text": "Create an Account\nEmail\nPassword\nRetype Password"},
+    "apply_form": {"expect": "apply_form", "headings": ["Application", "My Documents"], "buttons": ["Apply", "Save Draft"], "fields": 20, "text": "Application\nResume\nCover Letter"},
+    "posting": {"expect": "posting", "headings": ["Summer Analyst"], "buttons": ["Apply now"], "fields": 0, "text": "Summer Analyst\nJob Description"},
+    "unavailable": {"expect": "unavailable", "headings": ["Job not found"], "buttons": [], "fields": 0, "text": "The job you are looking for is no longer available."}
+  },
+  "oracle": {
+    "email_step": {"expect": "apply_form", "headings": ["Apply for Summer Analyst"], "buttons": ["Next"], "fields": 2, "text": "Email Address\nI agree with the terms and conditions"},
+    "otp": {"expect": "otp", "headings": ["Confirm your identity"], "buttons": ["Verify"], "fields": 6, "text": "Enter the verification code we sent to your email."},
+    "review": {"expect": "review", "active_step": "Step 4 of 4: Review", "headings": ["Review"], "buttons": ["Submit"], "fields": 1, "text": "Review\nContact Information"}
+  },
+  "generic": {
+    "privacy_heading_is_not_review": {"expect": "apply_form", "headings": ["Review our privacy policy"], "buttons": ["Next"], "fields": 4, "text": "Review our privacy policy before you continue."},
+    "long_jd_mentioning_codes": {"expect": "apply_form", "headings": ["Application"], "buttons": ["Next"], "fields": 5, "text": "Application"},
+    "blank": {"expect": "unknown", "text": ""}
+  }
+}

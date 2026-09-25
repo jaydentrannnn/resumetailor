@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import os
 from pathlib import Path
 
 import pytest
@@ -10,14 +11,26 @@ from playwright.sync_api import sync_playwright
 from resume_tailor.apply import ats_hints, field_matcher
 
 _FILLER = (Path(__file__).parents[1] / "src/resume_tailor/apply/filler.js").read_text(encoding="utf-8")
+_READINESS = (Path(__file__).parents[1] / "src/resume_tailor/apply/filler_readiness.js").read_text(
+    encoding="utf-8"
+)
 _SYNONYMS = [list(pair) for pair in ats_hints.SYNONYMS]
+
+
+def _launch(playwright):
+    """Installed Edge, else Playwright's Chromium (``PW_CHROMIUM_PATH`` names its binary)."""
+    try:
+        return playwright.chromium.launch(headless=True, channel="msedge")
+    except Exception:
+        path = os.environ.get("PW_CHROMIUM_PATH")
+        return playwright.chromium.launch(headless=True, executable_path=path or None)
 
 
 @pytest.fixture
 def page():
     try:
         with sync_playwright() as playwright:
-            browser = playwright.chromium.launch(headless=True, channel="msedge")
+            browser = _launch(playwright)
             try:
                 yield browser.new_page()
             finally:
@@ -196,3 +209,55 @@ def test_decline_selects_the_forms_decline_option(page):
     """)
     _fill(page, {"disability_status": "decline"})
     assert page.locator("#dis").input_value() == "I do not want to answer"
+
+
+# A web-component form (SmartRecruiters' apply page): every input sits in an open shadow
+# root, with its <label for> beside it inside the same root.
+_SHADOW = """
+<form>
+  <label for="light">Email</label><input id="light" type="email">
+  <spl-field id="first"></spl-field>
+  <spl-field id="phone"></spl-field>
+  <spl-choice id="auth"></spl-choice>
+  <spl-closed id="secret"></spl-closed>
+</form>
+<script>
+  const open = (host, html) => { host.attachShadow({ mode: "open" }).innerHTML = html; };
+  open(document.getElementById("first"),
+       '<label for="f">First name</label><input id="f" required>');
+  open(document.getElementById("phone"),
+       '<span id="ph-label">Phone number</span><input id="p" aria-labelledby="ph-label">');
+  open(document.getElementById("auth"),
+       '<div><div>Are you legally authorized to work in the United States?</div>' +
+       '<label><input type="radio" name="auth" id="ay" value="yes">Yes</label>' +
+       '<label><input type="radio" name="auth" id="an" value="no">No</label></div>');
+  document.getElementById("secret").attachShadow({ mode: "closed" }).innerHTML =
+    '<label for="s">Last name</label><input id="s">';
+</script>
+"""
+
+
+def test_shadow_dom_inputs_are_labelled_and_filled(page):
+    page.set_content(_SHADOW)
+    result = _fill(page, {
+        "email": "a@example.com", "first_name": "Alex", "phone": "555 010 0000",
+        "last_name": "Doe", "authorized_to_work": "Yes",
+    })
+    # Playwright's CSS locators pierce open roots, so the reported selectors resolve.
+    assert page.locator("#light").input_value() == "a@example.com"
+    assert page.locator("#f").input_value() == "Alex"
+    assert page.locator("#p").input_value() == "555 010 0000"
+    assert page.locator("#ay").is_checked()
+    labels = {item["label"]: item["selector"] for item in result["filled"]}
+    assert labels["First name"] == "#f"
+    assert labels["Phone number"] == "#p"
+    # A closed root stays hidden, as it is from the page's own scripts.
+    assert "Last name" not in labels
+    assert not any(item["label"] == "Last name" for item in result["leftovers"])
+
+
+def test_readiness_sees_empty_required_fields_in_shadow_roots(page):
+    page.set_content(_SHADOW)
+    assert page.evaluate(_READINESS, {}) == ["First name"]
+    page.locator("#f").fill("Alex")
+    assert page.evaluate(_READINESS, {}) == []

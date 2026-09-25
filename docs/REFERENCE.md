@@ -351,6 +351,19 @@ one-field corrections share the Apply operation lock; a correction requires a fr
 snapshot and state hash. Prepare records the source employment count with expansion output
 so an empty expansion is accepted only when no source employment existed at preparation.
 
+Platforms (plan P4-A): `store.AtsKind` also names Taleo, SuccessFactors, Oracle Cloud,
+Jobvite, BambooHR, LinkedIn, Indeed and Handshake; `fetch_jd.detect_ats` and
+`identity.canonical_key` recognise their URLs (`fetch_jd.AtsName` must match `AtsKind`, and a
+test checks it). LinkedIn, Indeed and Handshake are assist-only like Workday
+(`fill.ASSIST_ONLY_ATS`): filled, never submitted automatically. Multi-step platforms get a
+`wizards.WizardAdapter` whose pure `classify(snapshot)` names the screen. Each fill step
+first hands over a sign-in, account creation, an emailed code or a closed posting (before
+anything is typed), and a review page ends the loop like Workday's Review step. Workday
+itself stays on `workday_flow`; `WorkdayWizard` only renames its states. `filler.js` and
+`filler_readiness.js` search open shadow roots (`deepQueryAll`; label and radio-group
+lookups use the control's own root). `python scripts/ats_stats.py` counts rows by
+re-detected ATS and status, to choose the next adapter.
+
 Nightly: enable `apply.enabled` in settings, or run `python scripts/apply_daily.py`. List
 README section names with `python scripts/apply_daily.py --list-sections <url>`. SPA route
 `/applications` (working and archived tables) and `/applications/:applicationId`

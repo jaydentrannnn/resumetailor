@@ -51,6 +51,13 @@ const ATS_NAMES: Record<string, string> = {
   icims: "iCIMS",
   smartrecruiters: "SmartRecruiters",
   oracle: "Oracle",
+  taleo: "Taleo",
+  successfactors: "SuccessFactors",
+  jobvite: "Jobvite",
+  bamboohr: "BambooHR",
+  linkedin: "LinkedIn",
+  indeed: "Indeed",
+  handshake: "Handshake",
 };
 
 /**

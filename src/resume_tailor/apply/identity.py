@@ -44,6 +44,11 @@ _SMART = re.compile(
     r"jobs\.smartrecruiters\.com/(?P<co>[^/]+)/(?P<id>\d+)", re.I
 )
 _ICIMS = re.compile(r"(?P<co>[^.]+)\.icims\.com/jobs/(?P<id>\d+)", re.I)
+_ORACLE = re.compile(r"/hcmUI/CandidateExperience/.*/job/(?P<id>\d+)", re.I)
+_JOBVITE = re.compile(r"jobs\.jobvite\.com/(?P<co>[^/]+)/job/(?P<id>[A-Za-z0-9]+)", re.I)
+_BAMBOO = re.compile(r"/careers/(?P<id>\d+)", re.I)
+_LINKEDIN = re.compile(r"/jobs/view/(?:[^/]*?-)?(?P<id>\d+)", re.I)
+_HANDSHAKE = re.compile(r"/(?:stu/)?jobs/(?P<id>\d+)", re.I)
 #: The requisition id is everything after the last ``_`` in Workday's final path
 #: segment (``…Intern-2027_R39474`` -> ``R39474``); require a digit so a plain
 #: word segment (no ``_id`` suffix) falls through to `_WORKDAY_FALLBACK`.
@@ -191,6 +196,40 @@ def canonical_key(final_url: str) -> str:
     icims = _ICIMS.search(final_url)
     if icims:
         return f"icims:{icims.group('co').lower()}:{icims.group('id')}"
+
+    tenant = host.split(".")[0]
+
+    def first(name: str) -> str:
+        return (query.get(name) or [""])[0].strip()
+
+    if host.endswith("taleo.net") and first("job"):
+        return f"taleo:{tenant}:{first('job').lower()}"
+    if "successfactors" in host and first("career_job_req_id"):
+        company = first("company").lower() or tenant
+        return f"successfactors:{company}:{first('career_job_req_id')}"
+    oracle = _ORACLE.search(path) if "oraclecloud.com" in host else None
+    if oracle:
+        return f"oracle:{tenant}:{oracle.group('id')}"
+    jobvite = _JOBVITE.search(final_url)
+    if jobvite:
+        return f"jobvite:{jobvite.group('co').lower()}:{jobvite.group('id')}"
+    if host.endswith("bamboohr.com"):
+        bamboo = _BAMBOO.search(path)
+        job = bamboo.group("id") if bamboo else first("id")
+        if job.isdigit():
+            return f"bamboohr:{tenant}:{job}"
+    # Job boards: one global id space, so the slug is the board itself.
+    if host == "linkedin.com" or host.endswith(".linkedin.com"):
+        linkedin = _LINKEDIN.search(path)
+        job = linkedin.group("id") if linkedin else first("currentJobId")
+        if job.isdigit():
+            return f"linkedin:jobs:{job}"
+    if (host == "indeed.com" or host.endswith(".indeed.com")) and first("jk"):
+        return f"indeed:jobs:{first('jk').lower()}"
+    if host.endswith("joinhandshake.com"):
+        handshake = _HANDSHAKE.search(path)
+        if handshake:
+            return f"handshake:jobs:{handshake.group('id')}"
 
     digest = hashlib.sha1(path.encode("utf-8")).hexdigest()[:12]
     return f"other:{host}:{digest}"

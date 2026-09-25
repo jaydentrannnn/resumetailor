@@ -33,6 +33,14 @@ AtsName = Literal[
     "workday",
     "icims",
     "smartrecruiters",
+    "taleo",
+    "successfactors",
+    "oracle",
+    "jobvite",
+    "bamboohr",
+    "linkedin",
+    "indeed",
+    "handshake",
     "other",
     "unknown",
 ]
@@ -153,6 +161,23 @@ def detect_ats(final_url: str, html: str = "") -> AtsName:
         return "icims"
     if "smartrecruiters.com" in host:
         return "smartrecruiters"
+    if host.endswith("taleo.net"):
+        return "taleo"
+    if "successfactors" in host:
+        return "successfactors"
+    if "oraclecloud.com" in host and "/hcmui/" in path:
+        return "oracle"
+    if "jobvite.com" in host:
+        return "jobvite"
+    if host.endswith("bamboohr.com"):
+        return "bamboohr"
+    # Job boards whose own apply flow is assist-only (`fill.ASSIST_ONLY_ATS`).
+    if host == "linkedin.com" or host.endswith(".linkedin.com"):
+        return "linkedin"
+    if host == "indeed.com" or host.endswith(".indeed.com"):
+        return "indeed"
+    if host.endswith("joinhandshake.com"):
+        return "handshake"
     if host and ("jobs." in host or "/careers" in path or "/job" in path):
         return "other"
     return "unknown"
