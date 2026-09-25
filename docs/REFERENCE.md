@@ -143,7 +143,8 @@ goes away. Build locally: `npm run build` in `frontend/`, then `pyinstaller
 desktop/sidecar/resumetailor.spec --noconfirm --distpath desktop/sidecar/dist`, then in
 `desktop/`: `npx @tauri-apps/cli@2 icon app-icon.svg` and `npx @tauri-apps/cli@2 build`.
 Installers: `.github/workflows/release.yml` on a `v*` tag (draft release, unsigned). Details:
-`docs/notes/web-ui-and-mcp.md` "Desktop packaging".
+`docs/notes/web-ui-and-mcp.md` "Desktop packaging". Owner walkthrough (build, install,
+update, move data): `docs/GUIDE.md`.
 
 ---
 
