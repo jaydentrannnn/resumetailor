@@ -18,6 +18,12 @@ profile), so it only answers requests that come from the user's own browser tab.
   ``<DATA_ROOT>/.session_token`` (0600) for the MCP server and CLI clients. The desktop
   build turns this on; other local processes can read the data folder anyway, so it
   matters most when the port is reachable by someone else.
+- **Extension lane** (``/api/extension/*``, plan P4-X). The paired browser extension
+  calls from a ``chrome-extension://`` origin with no cookie, so these paths skip the two
+  checks above and instead need the pairing token in ``X-RT-Extension``
+  (`web/extension.py`); only ``/api/extension/pair/complete``, which trades a
+  6-digit code for that token, is open. Their ``Origin`` must be an extension or an
+  allowed host, so a web page cannot use them even with a stolen token.
 """
 
 from __future__ import annotations
@@ -32,6 +38,7 @@ from typing import Any
 from urllib.parse import parse_qs, urlsplit
 
 from resume_tailor import config
+from resume_tailor.web import extension
 
 COOKIE_NAME = "rt_session"
 HEADER_NAME = "x-rt-token"
@@ -41,6 +48,10 @@ _SAFE_METHODS = frozenset({"GET", "HEAD", "OPTIONS"})
 #: Answered without the token: liveness only, no data (container healthcheck, and the
 #: browser extension finding which port the app is on).
 _PUBLIC_PATHS = frozenset({"/api/health"})
+
+_EXTENSION_PREFIX = "/api/extension/"
+_EXTENSION_OPEN = frozenset({"/api/extension/pair/complete"})
+_EXTENSION_SCHEMES = frozenset({"chrome-extension", "moz-extension", "safari-web-extension"})
 
 _auto_token: str | None = None
 
@@ -147,6 +158,11 @@ class RequestGateMiddleware:
             })
             return
 
+        path = scope.get("path", "")
+        if path.startswith(_EXTENSION_PREFIX):
+            await self._extension_lane(scope, receive, send, headers, path, allowed, any_host)
+            return
+
         method = scope.get("method", "GET")
         if scope["type"] == "http" and method not in _SAFE_METHODS:
             origin = headers.get("origin")
@@ -166,7 +182,6 @@ class RequestGateMiddleware:
         if token is None:
             await self.app(scope, receive, send)
             return
-        path = scope.get("path", "")
         if scope["type"] == "http" and path == "/" and method == "GET":
             query = parse_qs(scope.get("query_string", b"").decode("latin-1"))
             offered = (query.get("t") or [""])[0]
@@ -191,6 +206,31 @@ class RequestGateMiddleware:
                 "error": "auth",
                 "detail": "Session expired or missing. Reopen ResumeTailor from its "
                 "window, or open the link printed when the server started.",
+            })
+            return
+        await self.app(scope, receive, send)
+
+    async def _extension_lane(
+        self, scope, receive, send, headers, path, allowed, any_host
+    ) -> None:
+        origin = headers.get("origin")
+        if origin is not None:
+            parts = urlsplit(origin)
+            ok = parts.scheme in _EXTENSION_SCHEMES or (
+                origin != "null" and (any_host or hostname(parts.netloc) in allowed)
+            )
+            if not ok:
+                await _send_json(send, 403, {
+                    "error": "origin",
+                    "detail": "Only the paired browser extension may call this.",
+                })
+                return
+        token = headers.get(extension.HEADER_NAME, "")
+        if path not in _EXTENSION_OPEN and extension.verify_token(token) is None:
+            await _send_json(send, 401, {
+                "error": "extension_auth",
+                "detail": "This browser is not paired. Pair it again from "
+                "ResumeTailor Settings → Browser.",
             })
             return
         await self.app(scope, receive, send)

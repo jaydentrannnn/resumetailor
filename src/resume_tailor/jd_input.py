@@ -86,6 +86,11 @@ def _finish(text: str, result: JdText) -> JdText:
     return result
 
 
+def from_text(text: str, source: str) -> JdText:
+    """Clean text that arrived already extracted (the browser extension's capture)."""
+    return _finish(text, JdText(text="", source=source))
+
+
 def from_url(url: str, *, allow_browser: bool = True) -> JdText:
     url = url.strip()
     parsed = urlparse(url)

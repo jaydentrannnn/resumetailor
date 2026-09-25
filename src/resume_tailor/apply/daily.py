@@ -228,6 +228,26 @@ def _save_jd(source_job_id: str, text: str) -> str:
     return str(path)
 
 
+def _captured_jd(app: store.Application) -> fetch_jd.FetchResult | None:
+    """The text the browser extension sent for this row, instead of fetching it again.
+
+    A captured page (LinkedIn, Handshake, a careers page behind a login) often cannot be
+    fetched without the applicant's session, so Prepare reuses what was captured.
+    """
+    if app.source != "extension" or not app.jd_text_path:
+        return None
+    try:
+        text = Path(app.jd_text_path).read_text(encoding="utf-8")
+    except OSError:
+        return None
+    if len(text.strip()) < _MIN_USABLE_JD_CHARS:
+        return None
+    url = app.final_url or app.posting_url
+    return fetch_jd.FetchResult(
+        final_url=url, ats=app.ats or fetch_jd.detect_ats(url), text=text, method="captured"
+    )
+
+
 def _prior_company(job_id: str) -> str:
     """Read company name from a prior run's ``run.json`` metadata."""
     run_path = config.OUTPUT_DIR / "jobs" / job_id / "run.json"
@@ -565,7 +585,7 @@ def _process_one(
         _append_log(log_path, f"[skipped] {app.company}: no application link", log)
         return
 
-    fetch = fetch_jd.fetch_jd(
+    fetch = _captured_jd(app) or fetch_jd.fetch_jd(
         url, allow_browser=allow_browser, canonical_key=ckey
     )
     app.final_url = fetch.final_url or app.final_url

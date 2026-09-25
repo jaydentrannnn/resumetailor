@@ -1077,3 +1077,27 @@ the tasks that first need them (a new entry in `db.MIGRATIONS`, never an edit).
   unrecognised in the light DOM (the hybrid resolver handles those groups); unchanged.
 - `tests/test_filler_dom.py` now falls back from Edge to Playwright's Chromium
   (`PW_CHROMIUM_PATH`), so these DOM tests run in the container as well as on Windows.
+
+## P4-X: extension pairing and capture, server side (2026-09-25)
+
+- **Pairing** (`web/extension.py`): one pending 6-digit code at a time (120 s, 5 wrong
+  guesses voids it), traded at `POST /api/extension/pair/complete` for a random token.
+  Only its SHA-256 is stored, in `<DATA_ROOT>/extensions.json` (global, like the
+  automation switch), not in `secret_store` as the plan said: a hash needs no keychain,
+  and the file can be revoked from without unlocking anything.
+- **Extension lane** (`web/security.py`): `/api/extension/*` skips the cross-site and
+  session-token checks (the origin is `chrome-extension://…` and there is no cookie) and
+  instead needs `X-RT-Extension`; `pair/complete` is the one open path. The Origin must
+  be an extension scheme or an allowed host, so a web page cannot use the lane even with
+  a stolen token. Pairing management (`/api/extension-pairings*`) stays behind the app's
+  own session.
+- **Capture** (`POST /api/extension/capture`): keyed on the external apply URL when the
+  page gives one, else the page URL; dedupes against both. Text goes through
+  `jd_input.from_text` (same 200-char floor and warnings as paste/URL), row is
+  `source="extension"`, `jd_fetched`, then the no-LLM prefilter (a failure marks it
+  `screened_out`). Prepare reuses the captured text (`daily._captured_jd`, fetch method
+  `captured`) because LinkedIn/Handshake pages cannot be refetched without a login.
+- **Prepare/Fill from the extension** always send `auto_submit=False`: the student is at
+  the tab. Model comes from the Apply settings' autofill model.
+- **Not done here:** the MV3 extension UI, the Settings → Browser pairing UI, and the X3
+  `cdp_relay` spike (moved to another machine). CDP mode stays the only fill driver.

@@ -53,7 +53,7 @@ class FetchResult:
     final_url: str
     ats: AtsName
     text: str
-    method: Literal["http", "browser", "api", "failed"]
+    method: Literal["http", "browser", "api", "captured", "failed"]
     error: str = ""
     #: Why the posting looks closed (`form_guards.closed_posting`), or "" when open.
     closed: str = ""

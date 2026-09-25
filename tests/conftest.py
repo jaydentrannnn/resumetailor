@@ -83,6 +83,7 @@ from resume_tailor import (  # noqa: E402
     workspace,
 )
 from resume_tailor.apply import form_guards, submit_guard  # noqa: E402
+from resume_tailor.web import extension as web_extension  # noqa: E402
 from tests.fixtures import _docx_bytes, _full_featured_resume  # noqa: E402
 
 
@@ -146,14 +147,17 @@ def _isolated_apply_paths(tmp_path, monkeypatch):
 
 @pytest.fixture(autouse=True)
 def _isolated_submit_guard(tmp_path, monkeypatch):
-    """Keep the pause switch and blocked hosts per test; never really sleep between submits."""
+    """Keep the pause switch, blocked hosts and extension pairings per test; never sleep."""
     monkeypatch.setattr(submit_guard, "pause_path", lambda: tmp_path / "automation.json")
     monkeypatch.setattr(submit_guard, "_sleep", lambda _seconds: None)
     submit_guard.reset()
     form_guards.reset_hosts()
+    monkeypatch.setattr(web_extension, "store_path", lambda: tmp_path / "extensions.json")
+    web_extension.reset()
     yield
     submit_guard.reset()
     form_guards.reset_hosts()
+    web_extension.reset()
 
 
 @pytest.fixture(autouse=True)
