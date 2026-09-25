@@ -35,6 +35,7 @@ import {
 } from "../../lib/applyNotify";
 import {
   fillBlockers,
+  nightlyRunLabel,
   resolveApplyTab,
   TERMINAL_STATUSES,
   type ApplyTab,
@@ -404,6 +405,33 @@ export function ApplyPage() {
       >
         Find jobs
       </Button>
+      <details className="relative">
+        <summary
+          className="rt-control inline-flex cursor-pointer items-center rounded-md border border-line bg-panel px-3 text-sm"
+          title="Options for the next Find jobs only; not saved"
+        >
+          Search options{limit || dryRun ? " •" : ""}
+        </summary>
+        <div className="absolute left-0 z-20 mt-1 w-64 space-y-3 rounded-md border border-line bg-panel p-3 text-sm shadow-lg">
+          <p className="text-xs font-medium text-ink-muted">This search only (not saved)</p>
+          <label className="block">
+            Most postings per search
+            <input
+              className="field mt-1 w-24"
+              type="number"
+              min={1}
+              max={500}
+              placeholder="All"
+              value={limit}
+              onChange={(e) => setLimit(e.target.value)}
+            />
+          </label>
+          <label className="flex items-center gap-2">
+            <input type="checkbox" checked={dryRun} onChange={(e) => setDryRun(e.target.checked)} />
+            Only list what's found (don't tailor)
+          </label>
+        </div>
+      </details>
       <a
         className="rt-control inline-flex items-center rounded-md border border-line bg-panel px-3 font-medium text-ink hover:border-line-hover"
         href={applicationsExportUrl()}
@@ -482,6 +510,14 @@ export function ApplyPage() {
           </p>
         </div>
         <div className="flex flex-wrap items-center gap-3 text-sm">
+          <button
+            type="button"
+            className={`rounded-full border px-3 py-1 text-xs font-medium ${settings.apply.enabled ? "border-accent/40 bg-accent-soft text-accent" : "border-line bg-panel text-ink-muted"}`}
+            title="Change the nightly run in Apply settings"
+            onClick={() => setDrawerOpen(true)}
+          >
+            {nightlyRunLabel(settings.apply)}
+          </button>
           <ConnectionStatus connected={browserConnected} />
           <Button variant="secondary" onClick={() => setDrawerOpen(true)}>
             Apply settings
@@ -620,7 +656,6 @@ export function ApplyPage() {
                 { replace: true },
               );
           }}
-          discovery={{ limit, setLimit, dryRun, setDryRun }}
           scheduler={daily?.scheduler ?? null}
           dailyRunning={dailyRunning}
           onRunNow={() => void runNow()}

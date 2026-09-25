@@ -1,4 +1,4 @@
-import type { ApplicationRow, ApplyOperation } from "../api";
+import type { ApplicationRow, ApplyOperation, ApplySettings } from "../api";
 
 /** The Apply page's three tabs, in the URL as `?tab=`. */
 export type ApplyTab = "needs" | "progress" | "done";
@@ -172,4 +172,44 @@ export function formatEta(seconds: number): string {
   if (minutes < 60) return `about ${minutes} min`;
   const hours = Math.floor(minutes / 60);
   return `about ${hours} h ${minutes % 60} min`;
+}
+
+type AutoSubmitCaps = Pick<
+  ApplySettings,
+  | "auto_submit_enabled"
+  | "auto_submit_max_per_run"
+  | "auto_submit_max_per_day"
+  | "auto_submit_max_per_company_per_day"
+>;
+
+/**
+ * The three auto-submit caps as one sentence. The per-run cap applies to the nightly
+ * run's unattended submits; the 24-hour caps to every automatic submit.
+ */
+export function autoSubmitSummary(caps: AutoSubmitCaps): string {
+  if (!caps.auto_submit_enabled) return "Auto-submit is off: every application waits for you.";
+  if (caps.auto_submit_max_per_day <= 0 || caps.auto_submit_max_per_company_per_day <= 0)
+    return "A limit is 0, so nothing is submitted automatically.";
+  const nightly =
+    caps.auto_submit_max_per_run > 0
+      ? `Nightly run: up to ${caps.auto_submit_max_per_run}`
+      : "Nightly run: none";
+  return `${nightly} · no more than ${caps.auto_submit_max_per_day} a day · no more than ${caps.auto_submit_max_per_company_per_day} per company.`;
+}
+
+/** "2:00 AM" for a stored "02:00" (the viewer's locale); the raw value if unparseable. */
+export function scheduleTimeLabel(value: string): string {
+  const match = /^(\d{1,2}):(\d{2})$/.exec(value.trim());
+  if (!match) return value;
+  const date = new Date(2000, 0, 1, Number(match[1]), Number(match[2]));
+  return date.toLocaleTimeString(undefined, { hour: "numeric", minute: "2-digit" });
+}
+
+/** The Apply page header's nightly-run chip text. */
+export function nightlyRunLabel(
+  settings: Pick<ApplySettings, "enabled" | "schedule_time">,
+): string {
+  return settings.enabled
+    ? `Nightly run: on · ${scheduleTimeLabel(settings.schedule_time)}`
+    : "Nightly run: off";
 }

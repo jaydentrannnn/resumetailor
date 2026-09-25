@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import type { AppConfig, JobSettings, SchedulerStatus, SourceConfig } from "../../api";
 import { Modal } from "../../components/Modal";
 import { Button } from "../../components/ui";
-import { autoSubmitCapLabel } from "../../lib/applyPage";
+import { autoSubmitCapLabel, autoSubmitSummary } from "../../lib/applyPage";
 import { tailorModelLabel } from "../../lib/modelLabel";
 import { newWatchlistSource, WATCHLIST_ID } from "../../lib/watchlist";
 import { useConfirm } from "../../state/confirmState";
@@ -30,24 +30,17 @@ const AUTO_SUBMIT_ATS: { id: string; label: string }[] = [
   { id: "oracle", label: "Oracle" },
 ];
 
-export interface DiscoveryOptions {
-  limit: string;
-  setLimit: (value: string) => void;
-  dryRun: boolean;
-  setDryRun: (value: boolean) => void;
-}
-
 /**
- * Apply settings in a right-hand drawer: what to search, whether and where to
- * auto-submit, the Autofill model, the nightly schedule, the browser connection and
- * desktop notifications. Every change autosaves through `runState`.
+ * Apply settings in a right-hand drawer: the nightly run first (on/off, time, how much
+ * it finds), then what to search, whether and where to auto-submit, the Autofill model,
+ * the browser connection and desktop notifications. Every change autosaves through
+ * `runState`. One-off search options ("this search only") live beside Find jobs.
  */
 export function ApplySettingsDrawer({
   settings,
   setSettings,
   config,
   onClose,
-  discovery,
   scheduler,
   dailyRunning,
   onRunNow,
@@ -59,7 +52,6 @@ export function ApplySettingsDrawer({
   setSettings: (next: JobSettings) => void;
   config: AppConfig | null;
   onClose: () => void;
-  discovery: DiscoveryOptions;
   scheduler: SchedulerStatus | null;
   dailyRunning: boolean;
   onRunNow: () => void;
@@ -92,6 +84,94 @@ export function ApplySettingsDrawer({
   return (
     <Modal title="Apply settings" onClose={onClose} placement="right">
       <div className="mt-4 space-y-5 text-sm">
+        <Section
+          title="Nightly run"
+          aside={
+            <span
+              className={`rounded-full px-2 py-0.5 text-micro font-semibold uppercase tracking-wide ${apply.enabled ? "bg-accent-soft text-accent" : "bg-paper text-ink-muted"}`}
+            >
+              {apply.enabled ? "On" : "Off"}
+            </span>
+          }
+        >
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="flex items-center gap-2 font-medium">
+              <input
+                type="checkbox"
+                role="switch"
+                aria-checked={apply.enabled}
+                className="h-4 w-4"
+                checked={apply.enabled}
+                onChange={(e) => patch({ enabled: e.target.checked })}
+              />
+              Run automatically every day at
+            </label>
+            <input
+              aria-label="Nightly run time"
+              type="time"
+              className="field inline-block w-32"
+              value={apply.schedule_time}
+              onChange={(e) => patch({ schedule_time: e.target.value })}
+            />
+          </div>
+          <p className="mt-1 text-xs text-ink-muted">
+            It finds new postings and tailors your resume for each. The app must be open (or in the
+            tray) at that time.
+          </p>
+          <fieldset className="mt-3 space-y-2" disabled={!apply.enabled}>
+            <label className="block">
+              Find up to{" "}
+              <input
+                className="field mx-1 inline-block w-20"
+                type="number"
+                min={1}
+                max={500}
+                aria-label="New postings per nightly run"
+                value={apply.max_new_per_day}
+                onChange={(e) =>
+                  patch({ max_new_per_day: Math.max(1, Number(e.target.value) || 1) })
+                }
+              />{" "}
+              new postings each night
+            </label>
+            <label className="block">
+              Only postings from the last{" "}
+              <input
+                className="field mx-1 inline-block w-16"
+                type="number"
+                min={0}
+                max={365}
+                aria-label="Posting age in days"
+                value={apply.max_age_days}
+                onChange={(e) =>
+                  patch({ max_age_days: Math.min(365, Math.max(0, Number(e.target.value) || 0)) })
+                }
+              />{" "}
+              day(s)
+              <span className="block text-xs text-ink-muted">
+                A company watchlist uses its own age limit.
+              </span>
+            </label>
+          </fieldset>
+          <p className="mt-3 text-xs text-ink-muted">
+            Last run: {scheduler?.last_started_at ? formatWhen(scheduler.last_started_at) : "never"}
+            {apply.enabled && scheduler?.next_run_at
+              ? ` · Next: ${formatWhen(scheduler.next_run_at)}`
+              : ""}
+          </p>
+          {scheduler?.missed_today && (
+            <p className="mt-1 text-xs text-warn">
+              Today's run was missed because the app was closed.
+            </p>
+          )}
+          {scheduler?.last_error && (
+            <p className="mt-1 text-xs text-danger">{scheduler.last_error}</p>
+          )}
+          <Button className="mt-2" variant="secondary" onClick={onRunNow} disabled={dailyRunning}>
+            {dailyRunning ? "Running…" : "Run now"}
+          </Button>
+        </Section>
+
         <Section title="What to search">
           <ul className="space-y-2">
             {apply.sources.map((source, index) => (
@@ -142,28 +222,6 @@ export function ApplySettingsDrawer({
               Add a company watchlist
             </button>
           )}
-          <div className="mt-3 flex flex-wrap items-center gap-4">
-            <label>
-              Most postings per search{" "}
-              <input
-                className="field ml-2 w-20"
-                type="number"
-                min={1}
-                max={500}
-                placeholder="All"
-                value={discovery.limit}
-                onChange={(e) => discovery.setLimit(e.target.value)}
-              />
-            </label>
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={discovery.dryRun}
-                onChange={(e) => discovery.setDryRun(e.target.checked)}
-              />
-              Only list what's found (don't tailor)
-            </label>
-          </div>
         </Section>
 
         <Section title="Auto-submit">
@@ -203,51 +261,62 @@ export function ApplySettingsDrawer({
               No platform is ticked, so every application still stops for your review.
             </p>
           )}
-          <label className="mt-3 block">
-            Nightly run submits at most{" "}
-            <input
-              className="field mx-1 inline-block w-20"
-              type="number"
-              min={0}
-              max={500}
-              value={apply.auto_submit_max_per_run}
-              onChange={(e) =>
-                patch({ auto_submit_max_per_run: Math.max(0, Number(e.target.value) || 0) })
-              }
-            />
-            <span className="text-xs text-ink-muted">
-              ({autoSubmitCapLabel(apply.auto_submit_max_per_run)})
-            </span>
-          </label>
-          <label className="mt-3 block">
-            In any 24 hours, submit at most{" "}
-            <input
-              className="field mx-1 inline-block w-20"
-              type="number"
-              min={0}
-              max={500}
-              aria-label="Automatic submits per 24 hours"
-              value={apply.auto_submit_max_per_day}
-              onChange={(e) =>
-                patch({ auto_submit_max_per_day: Math.max(0, Number(e.target.value) || 0) })
-              }
-            />{" "}
-            applications, and at most{" "}
-            <input
-              className="field mx-1 inline-block w-16"
-              type="number"
-              min={0}
-              max={50}
-              aria-label="Automatic submits per company per 24 hours"
-              value={apply.auto_submit_max_per_company_per_day}
-              onChange={(e) =>
-                patch({
-                  auto_submit_max_per_company_per_day: Math.max(0, Number(e.target.value) || 0),
-                })
-              }
-            />{" "}
-            to one company.
-          </label>
+          <fieldset
+            className="mt-3 space-y-2 rounded-md border border-line p-3 disabled:opacity-50"
+            disabled={!apply.auto_submit_enabled}
+          >
+            <legend className="px-1 text-xs font-medium">Limits on automatic submits</legend>
+            <label className="block">
+              Nightly run: at most{" "}
+              <input
+                className="field mx-1 inline-block w-20"
+                type="number"
+                min={0}
+                max={500}
+                aria-label="Automatic submits per nightly run"
+                value={apply.auto_submit_max_per_run}
+                onChange={(e) =>
+                  patch({ auto_submit_max_per_run: Math.max(0, Number(e.target.value) || 0) })
+                }
+              />
+              <span className="text-xs text-ink-muted">
+                ({autoSubmitCapLabel(apply.auto_submit_max_per_run)})
+              </span>
+            </label>
+            <label className="block">
+              Any 24 hours, all sites: at most{" "}
+              <input
+                className="field mx-1 inline-block w-20"
+                type="number"
+                min={0}
+                max={500}
+                aria-label="Automatic submits per 24 hours"
+                value={apply.auto_submit_max_per_day}
+                onChange={(e) =>
+                  patch({ auto_submit_max_per_day: Math.max(0, Number(e.target.value) || 0) })
+                }
+              />
+            </label>
+            <label className="block">
+              Any 24 hours, one company: at most{" "}
+              <input
+                className="field mx-1 inline-block w-16"
+                type="number"
+                min={0}
+                max={50}
+                aria-label="Automatic submits per company per 24 hours"
+                value={apply.auto_submit_max_per_company_per_day}
+                onChange={(e) =>
+                  patch({
+                    auto_submit_max_per_company_per_day: Math.max(0, Number(e.target.value) || 0),
+                  })
+                }
+              />
+            </label>
+          </fieldset>
+          <p className="mt-2 text-sm font-medium" aria-live="polite">
+            {autoSubmitSummary(apply)}
+          </p>
           <p className="mt-2 text-xs text-ink-muted">
             Forms over a limit, and possible duplicates of something you already applied to, wait
             for your review instead. Automatic submits are spaced 20–90 seconds apart.
@@ -287,46 +356,6 @@ export function ApplySettingsDrawer({
               />
             </label>
           </div>
-        </Section>
-
-        <Section title="Nightly run">
-          <div className="flex flex-wrap items-center gap-4">
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={apply.enabled}
-                onChange={(e) => patch({ enabled: e.target.checked })}
-              />
-              Search and tailor every day at
-            </label>
-            <input
-              aria-label="Nightly run time"
-              type="time"
-              className="field w-28"
-              value={apply.schedule_time}
-              onChange={(e) => patch({ schedule_time: e.target.value })}
-            />
-          </div>
-          <p className="mt-2 text-xs text-ink-muted">
-            Last run: {scheduler?.last_started_at ? formatWhen(scheduler.last_started_at) : "never"}
-            {apply.enabled && scheduler?.next_run_at
-              ? ` · Next: ${formatWhen(scheduler.next_run_at)}`
-              : ""}
-          </p>
-          {scheduler?.missed_today && (
-            <p className="mt-1 text-xs text-warn">
-              Today's run was missed because the app was closed.
-            </p>
-          )}
-          {scheduler?.last_error && (
-            <p className="mt-1 text-xs text-danger">{scheduler.last_error}</p>
-          )}
-          <p className="mt-1 text-xs text-ink-muted">
-            The app must be open (or in the tray) at that time.
-          </p>
-          <Button className="mt-2" onClick={onRunNow} disabled={dailyRunning}>
-            {dailyRunning ? "Running…" : "Run now"}
-          </Button>
         </Section>
 
         <Section title="Browser" aside={<ConnectionStatus connected={browserConnected} />}>

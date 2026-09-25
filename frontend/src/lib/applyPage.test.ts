@@ -2,6 +2,8 @@ import { describe, expect, it } from "vitest";
 import type { ApplicationRow, ApplyOperation } from "../api";
 import {
   autoSubmitCapLabel,
+  autoSubmitSummary,
+  nightlyRunLabel,
   fillBlockers,
   formatEta,
   operationEtaSeconds,
@@ -139,5 +141,37 @@ describe("operation banner", () => {
   it("never lets a cap of 0 read as unlimited", () => {
     expect(autoSubmitCapLabel(0)).toBe("No auto-submits");
     expect(autoSubmitCapLabel(5)).toBe("At most 5 per run");
+  });
+});
+
+describe("autoSubmitSummary", () => {
+  const caps = {
+    auto_submit_enabled: true,
+    auto_submit_max_per_run: 5,
+    auto_submit_max_per_day: 25,
+    auto_submit_max_per_company_per_day: 2,
+  };
+  it("reads the three caps as one sentence", () => {
+    expect(autoSubmitSummary(caps)).toBe(
+      "Nightly run: up to 5 · no more than 25 a day · no more than 2 per company.",
+    );
+    expect(autoSubmitSummary({ ...caps, auto_submit_max_per_run: 0 })).toContain(
+      "Nightly run: none",
+    );
+  });
+  it("says when nothing is submitted", () => {
+    expect(autoSubmitSummary({ ...caps, auto_submit_enabled: false })).toContain("off");
+    expect(autoSubmitSummary({ ...caps, auto_submit_max_per_day: 0 })).toContain(
+      "nothing is submitted",
+    );
+  });
+});
+
+describe("nightlyRunLabel", () => {
+  it("shows on with the time, or off", () => {
+    expect(nightlyRunLabel({ enabled: false, schedule_time: "02:00" })).toBe("Nightly run: off");
+    expect(nightlyRunLabel({ enabled: true, schedule_time: "02:00" })).toMatch(
+      /^Nightly run: on · 2:00/,
+    );
   });
 });

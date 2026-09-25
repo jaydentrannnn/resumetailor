@@ -169,3 +169,19 @@ test("apply settings: build a company watchlist", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Remove Acme Capital" })).toBeVisible();
   await expectAccessible(page);
 });
+
+test("apply settings: nightly run first, auto-submit limits off until auto-submit is on", async ({
+  page,
+}) => {
+  await page.goto("/applications");
+  await page.getByRole("button", { name: /^Nightly run: / }).click();
+  const drawer = page.getByRole("dialog", { name: "Apply settings" });
+  await expect(drawer.getByRole("heading", { level: 3 }).first()).toHaveText("Nightly run");
+  await expect(drawer.getByLabel("New postings per nightly run")).toBeVisible();
+  await expect(drawer.getByLabel("Automatic submits per 24 hours")).toBeDisabled();
+  await expect(
+    drawer.getByText("Auto-submit is off: every application waits for you."),
+  ).toBeVisible();
+  await expect(drawer.getByText("Most postings per search")).toHaveCount(0);
+  await expectAccessible(page);
+});

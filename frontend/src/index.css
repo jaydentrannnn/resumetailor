@@ -123,16 +123,20 @@ input:not([type="checkbox"]):not([type="radio"]),
 
 /* Shared text-input/select styling for label+control pairs — used by RunPage's
    SettingsPanel and VocabularyPage's pack editor, both via the `Field` component. */
-.field {
-  width: 100%;
-  border: 1px solid var(--color-line);
-  border-radius: 0.5rem;
-  padding: 0.4rem 0.65rem;
-  font-size: 0.875rem;
-  background: color-mix(in srgb, var(--color-paper) 40%, var(--color-panel));
-}
-.field:focus {
-  border-color: var(--color-accent);
+/* Layered so a utility on the element wins: `field w-20` is a 5rem box, not a full-width
+   one (unlayered, `width: 100%` beat every w-* class and broke inline number inputs). */
+@layer components {
+  .field {
+    width: 100%;
+    border: 1px solid var(--color-line);
+    border-radius: 0.5rem;
+    padding: 0.4rem 0.65rem;
+    font-size: 0.875rem;
+    background: color-mix(in srgb, var(--color-paper) 40%, var(--color-panel));
+  }
+  .field:focus {
+    border-color: var(--color-accent);
+  }
 }
 
 @keyframes rt-progress-slide {
