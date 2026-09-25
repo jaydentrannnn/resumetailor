@@ -503,3 +503,131 @@ def test_v4_registry_archives_screened_out_rows_once_preserving_details(apps_pat
     store.set_archived(["rejected"], False)
     assert store.load_all()["rejected"].archived_at is None
     assert len(list(apps_path.parent.glob("applications.json.bak-*"))) == 1
+
+
+# --- concurrent writers (B1/B12) -------------------------------------------------
+
+
+def test_stale_row_write_keeps_a_concurrent_change(apps_path):
+    """A row held across a long operation writes back only what it changed."""
+    store.upsert(_sample_app(canonical_key="gh:acme:1"))
+    held = store.get("gh:acme:1")  # e.g. fill reads the row, then drives a browser
+    user = store.get("gh:acme:1")
+    user.notes = "call recruiter"
+    store.upsert(user)
+    store.set_archived(["gh:acme:1"], True)
+
+    held.error = "fill failed"
+    store.upsert(held)
+
+    stored = store.get("gh:acme:1")
+    assert stored.notes == "call recruiter"
+    assert stored.archived_at
+    assert stored.error == "fill failed"
+    # The held object is refreshed to the merged row, so its next write is not stale.
+    assert held.notes == "call recruiter" and held.archived_at == stored.archived_at
+
+
+def test_late_fill_does_not_unsubmit_a_row(apps_path):
+    store.upsert(_sample_app(canonical_key="gh:acme:1", status="filling"))
+    fill_view = store.get("gh:acme:1")
+    store.update("gh:acme:1", lambda app: store.set_status(app, "submitted", note="by hand"))
+
+    store.set_status(fill_view, "awaiting_review", note="fill done")
+    fill_view.error = None
+    fill_view.fill = store.FillResult(ready_to_submit=True)
+    store.upsert(fill_view)
+
+    stored = store.get("gh:acme:1")
+    assert stored.status == "submitted"
+    assert stored.archived_at  # submit archives, and the late write did not undo it
+    assert stored.fill.ready_to_submit is True  # the fill's own result is still saved
+    assert "status kept" in stored.status_history[-1].note
+    assert [c.status for c in stored.status_history][-3:] == [
+        "submitted",
+        "awaiting_review",
+        "submitted",
+    ]
+
+
+def test_status_history_entries_from_both_writers_survive(apps_path):
+    store.upsert(_sample_app(canonical_key="k"))
+    first = store.get("k")
+    second = store.get("k")
+    store.set_status(first, "jd_fetched", note="a")
+    store.upsert(first)
+    second.notes = "n"
+    store.set_status(second, "screened_in", note="b")
+    store.upsert(second)
+    notes = [c.note for c in store.get("k").status_history]
+    assert notes == ["a", "b"]
+
+
+def test_parallel_updates_lose_nothing(apps_path):
+    import threading
+
+    store.upsert(_sample_app(canonical_key="k"))
+
+    def bump(field_name: str) -> None:
+        for i in range(100):
+            store.patch("k", **{field_name: f"{field_name}-{i}"})
+
+    threads = [threading.Thread(target=bump, args=(name,)) for name in ("notes", "salary")]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    stored = store.get("k")
+    assert stored.notes == "notes-99"
+    assert stored.salary == "salary-99"
+    assert stored.revision == 201
+
+
+def test_update_missing_row_raises(apps_path):
+    with pytest.raises(store.StaleApplication):
+        store.update("nope", lambda app: None)
+
+
+def test_update_resolves_a_source_job_id(apps_path):
+    store.upsert(_sample_app(canonical_key="gh:acme:1", source_job_id="sid-1"))
+    store.patch("sid-1", notes="found")
+    assert store.get("gh:acme:1").notes == "found"
+
+
+def test_rekey_through_merge_moves_the_row(apps_path):
+    store.upsert(_sample_app(canonical_key="pending:job-1"))
+    app = store.get("pending:job-1")
+    app.canonical_key = "gh:acme:1"
+    store.upsert(app)
+    assert set(store.load_all()) == {"gh:acme:1"}
+
+
+def test_restore_keeps_user_notes_and_terminal_status(apps_path):
+    store.upsert(_sample_app(canonical_key="k", status="ready", job_id="j1"))
+    previous = store.get("k").model_copy(deep=True)
+    store.update("k", lambda app: setattr(app, "job_id", "j2"))
+    store.patch("k", notes="mine")
+    store.restore(previous)
+    stored = store.get("k")
+    assert stored.job_id == "j1" and stored.notes == "mine" and stored.status == "ready"
+
+    store.update("k", lambda app: store.set_status(app, "skipped"))
+    store.restore(previous)
+    assert store.get("k").status == "skipped"
+
+
+def test_get_reparses_after_an_external_edit(apps_path):
+    store.upsert(_sample_app(canonical_key="k"))
+    assert store.get("k").company == "Acme"
+    raw = json.loads(apps_path.read_text(encoding="utf-8"))
+    raw["applications"]["k"]["company"] = "Beta"
+    apps_path.write_text(json.dumps(raw), encoding="utf-8")
+    assert store.get("k").company == "Beta"
+
+
+def test_returned_rows_are_private_copies(apps_path):
+    store.upsert(_sample_app(canonical_key="k"))
+    store.get("k").company = "mutated"
+    store.load_all()["k"].notes = "mutated"
+    stored = store.get("k")
+    assert stored.company == "Acme" and stored.notes == ""

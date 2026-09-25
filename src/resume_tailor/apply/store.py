@@ -1,16 +1,33 @@
-"""Application funnel state persisted in ``applications.json``."""
+"""Application funnel state persisted in ``applications.json``.
+
+Concurrency model. Web routes, the operation worker threads, the nightly run and fill
+all read and write this registry, and fill holds a row for minutes while it drives a
+browser. Every read-modify-write therefore goes through `_LOCK`, and `upsert` is a
+field-level three-way merge rather than a blind replace: a row returned by `get`,
+`load_all` or `list_applications` remembers the stored version it was read from
+(`Application._base`), and `upsert` writes back only the fields the caller changed
+since then, on top of whatever is stored *now*. A user's archive, note or "mark
+submitted" made while a fill was running therefore survives the fill's later write.
+Conflicts (both sides changed one field) go to the caller, except that a status the
+user moved to a terminal state is kept (`_merge_into`). After a write the caller's
+object is refreshed in place to the merged row, so it never carries stale fields into
+its next write. `update(key, mutate)` is the atomic form for new code.
+"""
 
 from __future__ import annotations
 
+import copy
 import json
 import re
 import shutil
+import threading
+from collections.abc import Callable
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal, get_args
 
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, PrivateAttr
 
 from resume_tailor import config
 from resume_tailor.apply import identity
@@ -155,6 +172,12 @@ class Application(BaseModel):
     eligibility_flags: list[str] = Field(default_factory=list)
     otp_prompt: str | None = None
     archived_at: str | None = None
+    #: Bumped on every write of this row; lets a client tell that a row changed.
+    revision: int = 0
+
+    #: The stored version this object was read from (never mutated), or None for a
+    #: row built in memory. `upsert` diffs against it; see the module docstring.
+    _base: Application | None = PrivateAttr(default=None)
 
 
 @dataclass
@@ -260,13 +283,58 @@ def load_all() -> dict[str, Application]:
     through `_migrate_v4` (one-time archive of screened-out rows). Any upgrade that
     changes rows backs up the file once before rewriting it.
     """
+    with _LOCK:
+        return {key: _checkout(app) for key, app in _snapshot().items()}
+
+
+class StaleApplication(RuntimeError):
+    """`update` could not find the row it was asked to change."""
+
+
+_LOCK = threading.RLock()
+
+#: (path, file bytes, parsed rows) of the last registry read or written. The rows
+#: are private: callers only ever get `_checkout` copies, so they are never mutated.
+_cache: tuple[Path, bytes, dict[str, Application]] | None = None
+
+
+def _snapshot() -> dict[str, Application]:
+    """Current registry rows, shared and read-only. Hold `_LOCK` while using them.
+
+    Re-parses only when the file's bytes differ from the last read or write, which
+    turns `get()` on a large registry from a full parse into a byte compare.
+    """
+    global _cache
     path = _path()
     if not path.is_file():
         return {}
-    raw = json.loads(path.read_text(encoding="utf-8"))
+    raw_bytes = path.read_bytes()
+    if _cache is not None and _cache[0] == path and _cache[1] == raw_bytes:
+        return _cache[2]
+    apps, migrated = _parse(path, raw_bytes)
+    if migrated:
+        # The migration's `save_all` cached exactly what it wrote.
+        return _snapshot()
+    _cache = (path, raw_bytes, apps)
+    return apps
+
+
+def _checkout(app: Application) -> Application:
+    """A private, mutable copy of a stored row that remembers where it came from."""
+    out = app.model_copy(deep=True)
+    out._base = app
+    return out
+
+
+def _parse(path: Path, raw_bytes: bytes) -> tuple[dict[str, Application], bool]:
+    """Parse registry bytes, migrating and rewriting an old schema (see `load_all`).
+
+    Returns the rows and whether the file was rewritten.
+    """
+    raw = json.loads(raw_bytes.decode("utf-8"))
     apps_raw = raw.get("applications", {})
     if not isinstance(apps_raw, dict):
-        return {}
+        return {}, False
     version = int(raw.get("schema_version") or 1)
     if version < 2:
         out = _migrate_v1(apps_raw)
@@ -287,7 +355,8 @@ def load_all() -> dict[str, Application]:
         if backup:
             _backup(path)
         save_all(out)
-    return out
+        return out, True
+    return out, False
 
 
 def _migrate_v3(apps: dict[str, Application]) -> tuple[dict[str, Application], bool]:
@@ -336,19 +405,35 @@ def _backup(path: Path) -> None:
 
 
 def save_all(apps: dict[str, Application]) -> None:
-    """Persist the full registry atomically under ``SCHEMA_VERSION``."""
-    path = _path()
-    path.parent.mkdir(parents=True, exist_ok=True)
-    payload = {
-        "schema_version": SCHEMA_VERSION,
-        "applications": {key: app.model_dump() for key, app in apps.items()},
-    }
-    tmp = path.with_suffix(".json.tmp")
-    tmp.write_text(
-        json.dumps(payload, indent=2, ensure_ascii=False) + "\n",
-        encoding="utf-8",
-    )
-    tmp.replace(path)
+    """Persist the full registry atomically under ``SCHEMA_VERSION``.
+
+    A blind write of every row: use `upsert`/`update` to change rows other code may
+    also be changing.
+    """
+    stored: dict[str, Application] = {}
+    for key, app in apps.items():
+        row = app.model_copy(deep=True)
+        row._base = None
+        stored[key] = row
+    _write(stored)
+
+
+def _write(rows: dict[str, Application]) -> None:
+    """`save_all` for rows the store owns outright: cached as-is, not copied."""
+    global _cache
+    with _LOCK:
+        path = _path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        payload = {
+            "schema_version": SCHEMA_VERSION,
+            "applications": {key: app.model_dump() for key, app in rows.items()},
+        }
+        tmp = path.with_suffix(".json.tmp")
+        tmp.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
+        tmp.replace(path)
+        # Read back rather than encode: text mode translates newlines on Windows.
+        raw_bytes = path.read_bytes()
+        _cache = (path, raw_bytes, rows)
 
 
 def build_index(apps: dict[str, Application] | None = None) -> Index:
@@ -371,63 +456,222 @@ def build_index(apps: dict[str, Application] | None = None) -> Index:
     return index
 
 
-def get(key: str) -> Application | None:
-    """Return one application by canonical key or any source_job_id."""
-    apps = load_all()
+def _locate(apps: dict[str, Application], key: str) -> str | None:
+    """Registry key of the row ``key`` names: a registry key, canonical key or source id."""
     if key in apps:
-        return apps[key]
+        return key
     index = build_index(apps)
     if key in index.by_canonical:
-        return index.by_canonical[key]
+        found = index.by_canonical[key]
+        return next((k for k, app in apps.items() if app is found), None)
     for (_source, source_job_id), ckey in index.by_source_ref.items():
         if source_job_id == key:
-            return index.by_canonical.get(ckey) or apps.get(ckey)
+            if ckey in apps:
+                return ckey
+            found = index.by_canonical.get(ckey)
+            return next((k for k, app in apps.items() if app is found), None)
     return None
 
 
+def get(key: str) -> Application | None:
+    """Return one application by canonical key or any source_job_id."""
+    with _LOCK:
+        apps = _snapshot()
+        found = _locate(apps, key)
+        return _checkout(apps[found]) if found is not None else None
+
+
+#: Fields `_merge_into` never copies from the caller: bookkeeping it computes itself.
+_MERGE_SKIP = frozenset({"revision", "status_history", "source_refs"})
+
+
+def _merge_into(stored: Application, app: Application, base: Application) -> Application:
+    """Apply the fields ``app`` changed since ``base`` onto ``stored`` (the row as it is now).
+
+    Returns a new row; none of the three inputs is modified. ``status_history`` and
+    ``source_refs`` are append-only, so the caller's new entries are appended to the
+    stored ones rather than replacing entries a concurrent writer added. When the
+    caller changed ``status`` while someone else moved the row to a terminal status
+    (the user marked it submitted, skipped, ...), the terminal status is kept and a
+    note says what arrived late: a background fill must never un-submit a row.
+    """
+    merged = stored.model_copy(deep=True)
+    merged._base = None
+    keep_status = (
+        app.status != base.status
+        and stored.status != base.status
+        and stored.status in TERMINAL_STATUSES
+        and app.status != stored.status
+    )
+    for name in type(app).model_fields:
+        if name in _MERGE_SKIP:
+            continue
+        mine = getattr(app, name)
+        if mine == getattr(base, name):
+            continue
+        if keep_status and name in {"status", "archived_at"}:
+            continue
+        setattr(merged, name, copy.deepcopy(mine))
+
+    base_history = base.status_history
+    if app.status_history[: len(base_history)] == base_history:
+        merged.status_history.extend(
+            change.model_copy() for change in app.status_history[len(base_history):]
+        )
+    else:  # the caller rewrote history rather than appending: its version wins
+        merged.status_history = [change.model_copy() for change in app.status_history]
+    if keep_status:
+        merged.status_history.append(
+            StatusChange(
+                status=stored.status,
+                at=_now_iso(),
+                note=f"{app.status} arrived after this was marked {stored.status}; status kept",
+            )
+        )
+
+    known = {(ref.source, ref.source_job_id) for ref in merged.source_refs}
+    for ref in app.source_refs:
+        if (ref.source, ref.source_job_id) not in known:
+            merged.source_refs.append(ref.model_copy())
+            known.add((ref.source, ref.source_job_id))
+    return merged
+
+
+def _refresh(app: Application, row: Application) -> None:
+    """Make the caller's ``app`` equal to the stored ``row`` it just wrote."""
+    for name in type(app).model_fields:
+        setattr(app, name, copy.deepcopy(getattr(row, name)))
+    app._base = row
+
+
 def upsert(app: Application) -> Application:
-    """Insert or replace one application and persist the registry."""
-    apps = load_all()
-    key = _registry_key(app)
-    # Drop a stale legacy key if we are promoting to a canonical key.
-    if app.canonical_key and app.source_job_id in apps and app.source_job_id != key:
-        del apps[app.source_job_id]
-    apps[key] = app
-    save_all(apps)
-    return app
+    """Insert ``app``, or write its changes onto the stored row, and persist.
+
+    A row read from the store is merged (see `_merge_into`); a row built in memory
+    replaces whatever is stored under its key. Either way ``app`` is refreshed in
+    place to the stored result and returned.
+    """
+    with _LOCK:
+        apps = dict(_snapshot())
+        key = _registry_key(app)
+        base = app._base
+        stored_key: str | None = None
+        if base is not None:
+            stored_key = _locate(apps, _registry_key(base))
+            if stored_key is None:
+                stored_key = _locate(apps, base.source_job_id)
+        if stored_key is not None and base is not None:
+            row = _merge_into(apps[stored_key], app, base)
+            if stored_key != key:
+                del apps[stored_key]
+            key = _registry_key(row)
+        else:
+            row = app.model_copy(deep=True)
+            row._base = None
+            previous = apps.get(key)
+            row.revision = previous.revision if previous is not None else row.revision
+        # Drop a stale legacy key if we are promoting to a canonical key.
+        if row.canonical_key and row.source_job_id in apps and row.source_job_id != key:
+            del apps[row.source_job_id]
+        row.revision += 1
+        apps[key] = row
+        _write(apps)
+        _refresh(app, row)
+        return app
+
+
+def update(key: str, mutate: Callable[[Application], None]) -> Application:
+    """Atomically re-read the row ``key`` names, apply ``mutate`` to it, and save.
+
+    Raises:
+        StaleApplication: When no row matches ``key`` (deleted or re-keyed).
+    """
+    with _LOCK:
+        app = get(key)
+        if app is None:
+            raise StaleApplication(f"application {key!r} not found")
+        mutate(app)
+        return upsert(app)
+
+
+def patch(key: str, **fields: Any) -> Application:
+    """`update` that assigns ``fields``: ``patch(key, notes="...")``."""
+
+    def _assign(app: Application) -> None:
+        for name, value in fields.items():
+            setattr(app, name, value)
+
+    return update(key, _assign)
+
+
+def restore(previous: Application) -> Application:
+    """Put back an earlier copy of a row, e.g. after a failed Prepare refresh.
+
+    Unlike `upsert`, every field returns to ``previous`` except what the user owns:
+    the stored ``notes``, and a terminal status set since (kept, with a note).
+    """
+    with _LOCK:
+        apps = _snapshot()
+        found = _locate(apps, _registry_key(previous))
+        if found is None:
+            found = _locate(apps, previous.source_job_id)
+        row = previous.model_copy(deep=True)
+        row._base = None
+        if found is not None:
+            stored = apps[found]
+            row.notes = stored.notes
+            if stored.status in TERMINAL_STATUSES and stored.status != previous.status:
+                row.status = stored.status
+                row.archived_at = stored.archived_at
+                row.status_history = [change.model_copy() for change in stored.status_history]
+                row.status_history.append(
+                    StatusChange(
+                        status=stored.status,
+                        at=_now_iso(),
+                        note=f"restore skipped: already marked {stored.status}",
+                    )
+                )
+            row.revision = stored.revision
+            if found != _registry_key(row):
+                apps = dict(apps)
+                del apps[found]
+                _write(apps)
+        return upsert(row)
 
 
 def set_archived(application_ids: list[str], archived: bool) -> tuple[list[str], dict[str, str]]:
     """Change archive state in one registry write, accepting canonical or source IDs."""
-    apps = load_all()
-    index = build_index(apps)
-    updated: list[str] = []
-    errors: dict[str, str] = {}
-    changed = False
-    for requested_id in dict.fromkeys(application_ids):
-        app = apps.get(requested_id) or index.by_canonical.get(requested_id)
-        if app is None:
-            key = next((key for (source, sid), key in index.by_source_ref.items() if sid == requested_id), None)
-            app = apps.get(key) if key else None
-        if app is None:
-            errors[requested_id] = "Application not found"
-            continue
-        if archived and not app.archived_at:
-            app.archived_at = _now_iso()
-            changed = True
-        elif not archived and app.archived_at:
-            app.archived_at = None
-            changed = True
-        updated.append(requested_id)
-    if changed:
-        save_all(apps)
-    return updated, errors
+    with _LOCK:
+        apps = load_all()
+        updated: list[str] = []
+        errors: dict[str, str] = {}
+        changed = False
+        for requested_id in dict.fromkeys(application_ids):
+            found = _locate(apps, requested_id)
+            if found is None:
+                errors[requested_id] = "Application not found"
+                continue
+            app = apps[found]
+            if archived and not app.archived_at:
+                app.archived_at = _now_iso()
+                app.revision += 1
+                changed = True
+            elif not archived and app.archived_at:
+                app.archived_at = None
+                app.revision += 1
+                changed = True
+            updated.append(requested_id)
+        if changed:
+            save_all(apps)
+        return updated, errors
 
 
 def all_ids() -> set[tuple[str, str]]:
     """Return every ``(source, source_job_id)`` currently on disk."""
     refs: set[tuple[str, str]] = set()
-    for app in load_all().values():
+    with _LOCK:
+        rows = list(_snapshot().values())
+    for app in rows:
         if app.source_refs:
             for ref in app.source_refs:
                 refs.add((ref.source, ref.source_job_id))
@@ -501,7 +745,9 @@ def filtered_applications(*, q: str = "", archive: Literal["active", "archived",
 def status_counts() -> dict[str, int]:
     """Count applications grouped by ``status``."""
     counts: dict[str, int] = {}
-    for app in load_all().values():
+    with _LOCK:
+        rows = list(_snapshot().values())
+    for app in rows:
         counts[app.status] = counts.get(app.status, 0) + 1
     return counts
 

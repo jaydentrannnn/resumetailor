@@ -274,7 +274,7 @@ def _settle_failed_prepare(
     resurrect a stale ``tailoring`` whose job died with a server restart.
     """
     if previous.status not in store.PRE_READY_STATUSES:
-        store.upsert(previous)
+        store.restore(previous)
         return
     current = store.get(source_job_id)
     if current is None:

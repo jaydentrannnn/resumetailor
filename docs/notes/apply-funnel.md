@@ -888,3 +888,12 @@ Continue start was rejected: it drops unsaved answers on the current step.
 - Education gaps now link to `/profile/resume` (`packet.profile_path`), where a banner
   lists them; the resume editor has a "Major (field of study)" input. Fills rebuild the
   packet every run, so already-prepared applications need no re-prepare.
+
+## Store: merge-on-write instead of compare-and-set (B1/B2, 2026-09)
+
+- Lost updates came from `load_all -> mutate -> save_all` with no lock, and from fill holding a row for minutes and writing the whole row back. The plan was a `revision` compare-and-set with every one of the 44 `upsert` call sites rewritten to `update(key, fn)`. Chosen instead: `upsert` is a field-level three-way merge. Rows handed out by `get`/`load_all`/`list_applications`/`build_index()` remember the stored version they came from (`Application._base`, a PrivateAttr), and `upsert` writes only the fields that differ from it onto the row as stored now, under a process-wide `RLock`. That fixes every existing call site at once and leaves nothing that can raise mid-fill.
+- Conflict rule: the caller wins, except that a row someone moved to a terminal status keeps it, and a note records the late result (a fill finishing after "Mark submitted"). `status_history` and `source_refs` are append-merged.
+- After a write the caller's object is refreshed in place to the merged row. Without that, its next write would diff stale fields against the new base and revert other writers.
+- Restoring an earlier snapshot (failed Prepare refresh) needs the opposite of a diff, so it goes through `store.restore(previous)`, which keeps the stored notes and any terminal status.
+- `revision` is bumped on every row write, for the UI (ETag, "changed elsewhere") and the SQLite move.
+- B2 interim: `_snapshot()` caches parsed rows keyed on the file's bytes. A byte compare is robust to the coarse mtime granularity that made an mtime key flaky in tests. `get()` on 2,000 rows went from 24 ms to 0.4 ms.
