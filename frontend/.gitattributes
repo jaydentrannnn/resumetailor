@@ -1,0 +1,3 @@
+# Prettier checks for LF endings; keep Windows checkouts (core.autocrlf=true) in LF so
+# `npm run format:check` agrees with CI.
+* text=auto eol=lf
