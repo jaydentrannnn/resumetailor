@@ -57,6 +57,14 @@ OUTPUT_ROOT = _dir_from_env("RESUME_TAILOR_OUTPUT_DIR", PROJECT_ROOT / "output")
 #: be hit — the whole point of those caches is that they survive across runs.
 CACHE_ROOT = _dir_from_env("RESUME_TAILOR_CACHE_DIR", OUTPUT_ROOT)
 
+
+def log_dir_setting() -> Path | None:
+    """Where the app log goes: RESUME_TAILOR_LOG_DIR, "off" to disable, else OUTPUT_ROOT/logs."""
+    raw = os.environ.get("RESUME_TAILOR_LOG_DIR", "").strip()
+    if raw.lower() in {"off", "0", "none"}:
+        return None
+    return Path(raw).expanduser().resolve() if raw else OUTPUT_ROOT / "logs"
+
 #: Name of the sub-directory holding per-workspace state under each root above.
 WORKSPACES_DIRNAME = "workspaces"
 

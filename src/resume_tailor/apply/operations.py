@@ -16,7 +16,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from resume_tailor import config, workspace
+from resume_tailor import config, logs, workspace
 from resume_tailor.apply import daily, fill, preparation, profile, store
 from resume_tailor.web.schemas import ApplyOperationRequest, ApplySettings, JobSettings
 
@@ -298,8 +298,8 @@ def start(request: ApplyOperationRequest) -> ApplyOperation:
         _ACTIVE_ID = operation.operation_id
     _persist(operation)
     threading.Thread(
-        target=_worker,
-        args=(operation, request, applicant_snapshot, settings_snapshot),
+        target=logs.call_in_context,
+        args=(operation.operation_id, _worker, operation, request, applicant_snapshot, settings_snapshot),
         name=f"apply-{operation.action}-{operation.operation_id[:8]}",
         daemon=True,
     ).start()
@@ -534,7 +534,8 @@ def start_review_action(
         _ACTIVE_ID = operation.operation_id
     _persist(operation)
     threading.Thread(
-        target=_review_worker, args=(operation, source_job_id, correction),
+        target=logs.call_in_context,
+        args=(operation.operation_id, _review_worker, operation, source_job_id, correction),
         name=f"apply-{action}-{operation.operation_id[:8]}", daemon=True,
     ).start()
     return operation

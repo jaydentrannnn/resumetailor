@@ -30,6 +30,7 @@ from resume_tailor import (  # noqa: E402
     fit,
     include,
     jd,
+    logs,
     report,
     review,
     rewrite,
@@ -410,6 +411,10 @@ def main(argv: list[str] | None = None) -> int:
     if range_error is not None:
         print(f"error: {range_error}", file=sys.stderr)
         return 1
+
+    log_dir = config.log_dir_setting()
+    if log_dir is not None:
+        logs.setup_logging(log_dir)
 
     try:
         workspace.bootstrap(workspace_id=args.workspace)

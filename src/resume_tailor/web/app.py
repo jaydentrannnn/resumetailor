@@ -23,6 +23,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from resume_tailor import (
     config,
+    logs,
     workspace,
 )
 from resume_tailor.apply import daily as apply_daily
@@ -32,9 +33,6 @@ from resume_tailor.web.schemas import (
     JobSettings,
 )
 
-#: Set by `lifespan` on startup — True only the first time the legacy single-slot
-#: layout was migrated into a "Default" workspace. Surfaced once by `GET /api/config`
-#: so the UI can tell the user where their files went.
 _log = logging.getLogger(__name__)
 _scheduler_stop = threading.Event()
 _last_daily_run_date: date | None = None
@@ -76,6 +74,9 @@ def _apply_scheduler_loop(stop: threading.Event) -> None:
 @asynccontextmanager
 async def lifespan(app: FastAPI):
     """Resolve the active workspace (migrating the legacy layout on first boot)."""
+    log_dir = config.log_dir_setting()
+    if log_dir is not None:
+        logs.setup_logging(log_dir)
     result = workspace.bootstrap()
     if result is not None:
         web_state.migrated_from_legacy = result.migrated
@@ -169,6 +170,7 @@ from resume_tailor.web.routes import (  # noqa: E402 - routers need `app`-free i
 )
 from resume_tailor.web.routes import (
     config as _config_routes,
+    diagnostics as _diagnostics_routes,
 )
 from resume_tailor.web.routes import (
     jobs as _jobs_routes,
@@ -190,7 +192,7 @@ from resume_tailor.web.routes import (
 # the single-file app (config, jobs, applications, resume, template, libraries, profiles).
 for _router in (
     _config_routes, _jobs_routes, _applications_routes, _resume_routes,
-    _template_routes, _libraries_routes, _workspaces_routes,
+    _template_routes, _libraries_routes, _workspaces_routes, _diagnostics_routes,
 ):
     app.include_router(_router.router)
 

@@ -48,12 +48,35 @@ hold instead of failing closed.
 
 from __future__ import annotations
 
+import atexit
+import os
+import shutil
+import tempfile
 from pathlib import Path
 
-import pytest
+# Before any `resume_tailor` import: `config.OUTPUT_ROOT`/`CACHE_ROOT` are resolved at
+# import time. A job/operation worker thread that outlives its test runs after that
+# test's `monkeypatch` of `config.OUTPUT_DIR` is undone, and would otherwise write into
+# the checkout's real `output/`. Overridden, not setdefault: a developer's own
+# RESUME_TAILOR_OUTPUT_DIR must never receive test artifacts either.
+_TEST_OUTPUT_ROOT = tempfile.mkdtemp(prefix="rt-test-output-")
+atexit.register(shutil.rmtree, _TEST_OUTPUT_ROOT, ignore_errors=True)
+os.environ["RESUME_TAILOR_OUTPUT_DIR"] = _TEST_OUTPUT_ROOT
+os.environ.pop("RESUME_TAILOR_CACHE_DIR", None)
+# The app log is on by default; the suite must never write one either.
+os.environ.setdefault("RESUME_TAILOR_LOG_DIR", "off")
 
-from resume_tailor import config, libraries, style, template_analyze, template_build, workspace
-from tests.fixtures import _docx_bytes, _full_featured_resume
+import pytest  # noqa: E402
+
+from resume_tailor import (  # noqa: E402
+    config,
+    libraries,
+    style,
+    template_analyze,
+    template_build,
+    workspace,
+)
+from tests.fixtures import _docx_bytes, _full_featured_resume  # noqa: E402
 
 
 @pytest.fixture(autouse=True)

@@ -137,3 +137,10 @@ tailor run recreates job artifacts under `output/jobs/`.
 **What:** Split the 252 KB `implementation-notes.md` into nine topic files under `docs/notes/` (all 110 entries kept verbatim); the root file is now a 2 KB index. Deleted `docs/ARCHITECTURE.md` (stale, marked do-not-trust, unreferenced).
 **Why:** Agents appended via Read+Edit, which pulled up to ~40k tokens of notes into every session that logged a decision.
 **Impact:** Look things up by grepping `docs/notes/`; append with `>>`. The user-level `implementation-notes` skill (Claude Code `~/.claude/skills`, Codex/Cursor `~/.agents/skills`) now requires this. ARCHITECTURE.md is recoverable from git (`c7d7c60`).
+
+## E6 app logging (2026-09)
+
+- `logs.py` writes one rotating JSON-lines `app.log` (2 MB x 5) under `RESUME_TAILOR_LOG_DIR` (default `<OUTPUT_ROOT>/logs`, `off` disables). Every record passes `RedactingFilter` before any handler writes it: emails, phones, API keys and `password=`/`token=` style values are replaced, so the file is safe to attach to a bug report.
+- `run_id` comes from a ContextVar set around job (`web/jobs.py`) and operation (`apply/operations.py`) worker threads, so one failed run can be picked out of a shared log.
+- `GET /api/diagnostics.zip` bundles the log (re-redacted), versions, platform, backend routing and redacted settings. It deliberately omits the master resume, applicant profile, registry and generated documents.
+- Tests: `tests/conftest.py` points `RESUME_TAILOR_OUTPUT_DIR` at a temp dir before importing the package, because job threads that outlive a test wrote `packet.json` into the real `output/` after the monkeypatch was undone.

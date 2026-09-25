@@ -34,6 +34,7 @@ from resume_tailor import (
     include,
     jd,
     libraries,
+    logs,
     propose,
     report,
     rewrite,
@@ -369,7 +370,7 @@ class JobQueue:
                 ProgressEvent(stage="fit", message="Starting tailoring run", detail={})
             )
             try:
-                self._execute(job)
+                logs.call_in_context(job.job_id, self._execute, job)
                 _persist_run_record(job, "succeeded")
                 job.status = "succeeded"
                 try:
