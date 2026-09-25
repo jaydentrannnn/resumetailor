@@ -29,6 +29,22 @@ describe("runSteps", () => {
     expect(state.steps[state.current].label).toBe("Fitting to the page");
     expect(state.failed).toBeNull();
   });
+  it("does not jump ahead on the job-start event or the pre-rewrite fit event", () => {
+    const early = runSteps([ev("start")], "running", false);
+    expect(early.current).toBe(0);
+    const state = runSteps(
+      [ev("start"), ev("extract"), ev("score"), ev("facets"), ev("fit"), ev("rewrite")],
+      "running",
+      false,
+    );
+    expect(state.steps[state.current].label).toBe("Rewriting bullets");
+    const fitting = runSteps(
+      [ev("start"), ev("extract"), ev("fit"), ev("rewrite"), ev("render")],
+      "running",
+      false,
+    );
+    expect(fitting.steps[fitting.current].label).toBe("Fitting to the page");
+  });
   it("marks all done on success and the current step on failure", () => {
     expect(runSteps([ev("extract")], "succeeded", false).current).toBe(6);
     expect(runSteps([ev("extract"), ev("score")], "failed", false).failed).toBe(1);

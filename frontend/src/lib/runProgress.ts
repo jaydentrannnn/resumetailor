@@ -34,6 +34,7 @@ const BANDS: { stages: string[]; from: number; to: number }[] = [
 const FIT_ITERATION_DECAY = 0.45;
 
 const LABELS: Record<string, string> = {
+  start: "Starting",
   extract: "Reading the posting",
   score: "Scoring bullets",
   facets: "Selecting tech & coursework",
@@ -87,7 +88,7 @@ export function runProgress(
       value: busy ? 0.02 : 0,
       indeterminate: busy,
       label: events.length
-        ? events[events.length - 1].stage
+        ? (LABELS[events[events.length - 1].stage] ?? events[events.length - 1].stage)
         : status === "queued"
           ? "Queued"
           : "Starting",

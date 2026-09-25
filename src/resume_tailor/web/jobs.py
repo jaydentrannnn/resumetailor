@@ -372,7 +372,7 @@ class JobQueue:
                     self._order.remove(job_id)
             job.status = "running"
             job.emit(
-                ProgressEvent(stage="fit", message="Starting tailoring run", detail={})
+                ProgressEvent(stage="start", message="Starting tailoring run", detail={})
             )
             try:
                 logs.call_in_context(job.job_id, self._execute, job)

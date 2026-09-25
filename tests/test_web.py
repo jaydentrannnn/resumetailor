@@ -4205,3 +4205,19 @@ def test_answer_memory_routes_list_edit_and_forget(client, tmp_path, monkeypatch
     assert c.put("/api/answer-memory/999", json={"answer": "x"}).status_code == 404
     assert c.delete(f"/api/answer-memory/{saved.id}").json() == {"answers": []}
     assert c.delete(f"/api/answer-memory/{saved.id}").status_code == 404
+
+
+def test_job_start_event_is_not_a_fit_stage(tmp_path, monkeypatch):
+    """The worker's pick-up event is `start`, not `fit`: the SPA's stepper and bar
+    never rewind, so a leading `fit` jumped them straight to "Fitting to the page"."""
+    monkeypatch.setattr(config, "OUTPUT_DIR", tmp_path / "output")
+    config.OUTPUT_DIR.mkdir()
+    q = JobQueue()
+    monkeypatch.setattr(q, "_execute", lambda job: None)
+    job, _ = q.submit("jd", JobSettings())
+    deadline = time.time() + 2
+    while time.time() < deadline and q.get(job.job_id).status in ("queued", "running"):
+        time.sleep(0.02)
+    events = q.get(job.job_id).events
+    assert events[0].stage == "start"
+    assert all(e.stage != "fit" for e in events)

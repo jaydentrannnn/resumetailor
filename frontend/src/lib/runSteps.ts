@@ -3,14 +3,17 @@ import type { ProgressEvent, RunHistoryEntry } from "../api";
 /**
  * The run's pipeline stages (`web/jobs.py` events) grouped into six steps a student
  * can follow. The fit loop repeats rewrite → render → measure, so progress is the
- * furthest step any event has reached and never moves backwards.
+ * furthest step any event has reached and never moves backwards. `fit` is left out of
+ * the fit step on purpose: `fit.py` emits "Selected N entries…" as `fit` *before* the
+ * first rewrite, which would skip "Rewriting bullets"; a `render` always follows the
+ * first rewrite. `start` (job picked up) belongs to no step.
  */
 export const RUN_STEPS = [
   { id: "read", label: "Reading the job", stages: ["extract"] },
   { id: "score", label: "Scoring your experience", stages: ["score"] },
   { id: "choose", label: "Choosing projects and coursework", stages: ["facets"] },
   { id: "rewrite", label: "Rewriting bullets", stages: ["rewrite"] },
-  { id: "fit", label: "Fitting to the page", stages: ["fit", "render", "measure"] },
+  { id: "fit", label: "Fitting to the page", stages: ["render", "measure"] },
   { id: "finish", label: "Finishing touches", stages: ["expand", "skills", "cover", "propose"] },
 ] as const;
 

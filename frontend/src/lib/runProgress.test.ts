@@ -8,6 +8,7 @@ function ev(stage: string, message = ""): ProgressEvent {
 
 /** The stage sequence a clean run emits, in `web/jobs.py` order. */
 const CLEAN_RUN = [
+  ev("start"),
   ev("extract"),
   ev("extract"),
   ev("score"),
@@ -26,6 +27,13 @@ describe("runProgress", () => {
     const p = runProgress([], "queued", true);
     expect(p.indeterminate).toBe(true);
     expect(p.label).toBe("Queued");
+  });
+
+  it("stays at the start on the job-start event instead of jumping into the fit band", () => {
+    const p = runProgress([ev("start")], "running", true);
+    expect(p.indeterminate).toBe(true);
+    expect(p.value).toBeLessThan(0.05);
+    expect(p.label).toBe("Starting");
   });
 
   it("reads zero when nothing is running", () => {
