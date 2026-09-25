@@ -365,3 +365,10 @@ blank entry headers before the Pydantic path; server validation remains authorit
   messages now point at this button instead of re-uploading.
 - The "use a default template instead" action (`IssueHelp.useDefault`) is recorded in
   the data but not rendered until the P3-T default templates exist.
+
+## Tests 2I: browser e2e on a fake model (2026-09)
+- `RESUME_TAILOR_FAKE_LLM=1` makes `llm.client_for`/`async_client_for` return `fake_llm.FakeClient`: rewrite echoes each bullet's current text, scoring gives 6/10, extraction keeps the known tags the posting names, everything else gets the smallest valid instance. Replies are read off the prompt, so the fabrication guard stays clean. The server logs a warning at startup when it is on; it is never on by default.
+- `scripts/e2e_server.py` runs a throwaway server (temp dirs, in-memory secrets, auth off) and seeds a synthetic resume, one template (via `tests.test_web._resume_upload_with_profile`) and three applications. Playwright's readiness URL is the last seeded application, so tests never start mid-seed.
+- `frontend/e2e/app.spec.ts` covers tailor + bullet edit + re-render, profile save/validation, Apply tabs, template gallery, editor coach/preset, and onboarding/settings; `a11y.ts` fails on serious/critical axe violations. Page-fit steps still need LibreOffice, so CI installs it in the `e2e` job.
+- Found by the suite: BulletReview fetched while the run was still going, got a 409 and never retried (now waits on `ready`); the light accent failed contrast on `accent-soft` (4.17:1), darkened to #077468.
+- `frontend/.gitignore` gained `test-results/` and `playwright-report/` (Playwright output only).

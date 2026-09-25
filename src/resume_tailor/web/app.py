@@ -22,6 +22,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from resume_tailor import (
     config,
+    fake_llm,
     housekeeping,
     logs,
     workspace,
@@ -80,6 +81,7 @@ async def lifespan(app: FastAPI):
     log_dir = config.log_dir_setting()
     if log_dir is not None:
         logs.setup_logging(log_dir)
+    fake_llm.warn_if_enabled()
     token = security.session_token()
     if token is not None:
         security.write_token_file(token)

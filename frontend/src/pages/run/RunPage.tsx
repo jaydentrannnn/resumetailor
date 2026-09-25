@@ -190,7 +190,11 @@ export function RunPage() {
           )}
           {resultTab === "bullets" && (
             <div role="tabpanel">
-              <BulletReview jobId={jobId} onSaved={() => setDocsRevision((n) => n + 1)} />
+              <BulletReview
+                jobId={jobId}
+                ready={!busy}
+                onSaved={() => setDocsRevision((n) => n + 1)}
+              />
             </div>
           )}
           {resultTab === "documents" && (

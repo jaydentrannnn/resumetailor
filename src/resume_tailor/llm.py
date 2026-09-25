@@ -53,7 +53,7 @@ from typing import Any, TypeVar
 import httpx
 from pydantic import BaseModel, ValidationError
 
-from . import config
+from . import config, fake_llm
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -460,6 +460,8 @@ def client_for(purpose: str) -> Any:
     `--model hybrid` does. Expansion follows the profile (Ollama under `hybrid`) and is
     advisory paste text.
     """
+    if fake_llm.enabled():  # e2e tests only; see fake_llm.py
+        return fake_llm.FakeClient(purpose)
     backend = config.backend_for(purpose)
 
     if backend.provider == "anthropic":
@@ -621,6 +623,8 @@ class _AsyncOpenAICompatClient:
 
 def async_client_for(purpose: str) -> Any:
     """Return an async client for bounded Apply model work; sync Tailor is unchanged."""
+    if fake_llm.enabled():  # e2e tests only; see fake_llm.py
+        return fake_llm.AsyncFakeClient(purpose)
     backend = config.backend_for(purpose)
     if backend.provider == "anthropic":
         import anthropic

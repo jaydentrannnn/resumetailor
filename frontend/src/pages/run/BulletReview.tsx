@@ -25,7 +25,16 @@ const MODES: { id: BulletMode; label: string }[] = [
  * and render the document again. No AI call: the edited text goes into the run's own
  * template, and a result that no longer fits the page is refused, not cut.
  */
-export function BulletReview({ jobId, onSaved }: { jobId: string; onSaved: () => void }) {
+export function BulletReview({
+  jobId,
+  ready = true,
+  onSaved,
+}: {
+  jobId: string;
+  /** False while the run is still going: the bullets load once it finishes. */
+  ready?: boolean;
+  onSaved: () => void;
+}) {
   const toast = useToast();
   const [rows, setRows] = useState<JobBullet[] | null>(null);
   const [unavailable, setUnavailable] = useState<string | null>(null);
@@ -37,6 +46,7 @@ export function BulletReview({ jobId, onSaved }: { jobId: string; onSaved: () =>
   const [over, setOver] = useState<Extract<RerenderResult, { status: "over" }> | null>(null);
 
   const load = useCallback(() => {
+    if (!ready) return;
     fetchJobBullets(jobId)
       .then((res) => {
         setRows(res.bullets);
@@ -44,12 +54,19 @@ export function BulletReview({ jobId, onSaved }: { jobId: string; onSaved: () =>
         setUnavailable(null);
       })
       .catch((err) => setUnavailable(describe(err).detail));
-  }, [jobId]);
+  }, [jobId, ready]);
   useEffect(load, [load]);
 
   const groups = useMemo(() => groupRows(rows ?? []), [rows]);
   const pending = rows ? pendingCount(rows, state) : 0;
 
+  if (!ready) {
+    return (
+      <p className="rounded-lg border border-line bg-panel p-5 text-sm text-ink-muted">
+        You can review and edit the bullets when the run finishes.
+      </p>
+    );
+  }
   if (unavailable) {
     return (
       <p className="rounded-lg border border-line bg-panel p-5 text-sm text-ink-muted">
