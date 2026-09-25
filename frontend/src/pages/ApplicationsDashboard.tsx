@@ -35,6 +35,7 @@ import {
   applicationStatusTone,
   statusToneClass,
 } from "../lib/applicationStatus";
+import { startAdaptivePoll } from "../lib/adaptivePoll";
 import { EDGE_DEBUG_COMMANDS, detectOs, type DesktopOs } from "../lib/browserCommand";
 import { CopyButton } from "../components/CopyButton";
 import {
@@ -311,6 +312,7 @@ export function ApplicationsDashboard() {
   const refreshRef = useRef(refresh);
   refreshRef.current = refresh;
   const inFlightRef = useRef(false);
+  const wakePollRef = useRef<() => void>(() => {});
   inFlightRef.current = [queue.data, reviewTable.data].some((data) =>
     data?.applications.some((row) => IN_FLIGHT_STATUSES.has(row.status)),
   );
@@ -333,33 +335,33 @@ export function ApplicationsDashboard() {
   useEffect(() => {
     let live = true;
     let seen: string | null = null;
-    async function poll() {
-      try {
-        const [operations, day] = await Promise.all([listApplyOperations(), getDailyStatus()]);
-        if (!live) return;
-        setDailyRunning(day.running);
-        const current =
-          operations.find((op) => ["queued", "running", "paused"].includes(op.state)) ??
-          operations[0];
-        const latest = current ? await getApplyOperation(current.operation_id) : null;
-        if (!live) return;
-        setOperation(latest);
-        const snapshot = {
-          operationId: latest?.operation_id ?? null,
-          state: latest?.state ?? null,
-          dailyRunning: day.running,
-        };
-        if (shouldRefreshTables(seen, snapshot, inFlightRef.current)) refreshRef.current();
-        seen = pollSignature(snapshot);
-      } catch {
-        /* retain progress */
-      }
+    // Resolves to whether anything is in flight, which sets the next poll's delay.
+    async function poll(): Promise<boolean> {
+      const [operations, day] = await Promise.all([listApplyOperations(), getDailyStatus()]);
+      if (!live) return false;
+      setDailyRunning(day.running);
+      const current =
+        operations.find((op) => ["queued", "running", "paused"].includes(op.state)) ??
+        operations[0];
+      const latest = current ? await getApplyOperation(current.operation_id) : null;
+      if (!live) return false;
+      setOperation(latest);
+      const snapshot = {
+        operationId: latest?.operation_id ?? null,
+        state: latest?.state ?? null,
+        dailyRunning: day.running,
+      };
+      if (shouldRefreshTables(seen, snapshot, inFlightRef.current)) refreshRef.current();
+      seen = pollSignature(snapshot);
+      const operationActive = ["queued", "running", "paused"].includes(latest?.state ?? "");
+      return operationActive || day.running || inFlightRef.current;
     }
-    void poll();
-    const id = window.setInterval(() => void poll(), 2000);
+    const { stop, wake } = startAdaptivePoll(poll);
+    wakePollRef.current = wake;
     return () => {
       live = false;
-      window.clearInterval(id);
+      wakePollRef.current = () => {};
+      stop();
     };
   }, []);
   const selectedRows = (queue.data?.applications ?? []).filter((row) =>
@@ -406,6 +408,7 @@ export function ApplicationsDashboard() {
       setError(String(reason));
     } finally {
       setBusy(false);
+      wakePollRef.current();
     }
   }
   /** Reopen in fresh tabs; ask first only when a tab that may hold unsaved answers is still open. */
@@ -1154,7 +1157,8 @@ export function ApplicationsDashboard() {
           onControl={(action) => {
             void controlApplyOperation(operation.operation_id, action)
               .then(setOperation)
-              .catch((reason) => setError(String(reason)));
+              .catch((reason) => setError(String(reason)))
+              .finally(() => wakePollRef.current());
           }}
         />
       )}
