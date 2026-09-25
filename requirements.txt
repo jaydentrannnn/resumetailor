@@ -17,7 +17,7 @@ pdfplumber>=0.11
 pydantic>=2.9
 python-dotenv>=1.0
 # Web UI (src/resume_tailor/web). Not required for the CLI.
-fastapi>=0.115
+fastapi>=0.141.1
 uvicorn[standard]>=0.32
 python-multipart>=0.0.12
 # Claude Desktop / MCP front door (src/resume_tailor/mcp_server). Thin HTTP client
