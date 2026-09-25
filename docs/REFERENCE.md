@@ -154,8 +154,8 @@ browser-agnostic) — no Chromium in the Docker image.
 Discovery is multi-source (`ApplySettings.sources`): SimplifyJobs Summer2027-Internships,
 New-Grad-Positions, and speedyapply 2027-SWE-College-Jobs (pipe tables). Dedupe is by **ATS
 requisition** (`identity.canonical_key`); same-company same-role across locations share a
-`group_key` and reuse one tailor run. `applications.json` is schema v2, keyed by canonical
-key, with `source_refs` listing every sighting.
+`group_key` and reuse one tailor run. Application rows (the `applications` table of the
+workspace's `app.db`) are keyed by canonical key, with `source_refs` listing every sighting.
 
 Eligibility (`eligibility.py`) hard-rejects graduate-degree-only postings (master's/PhD
 without a bachelor's alternative), senior titles, and high year floors — before
@@ -174,7 +174,9 @@ fetches use ETag caching under `applications/readme_cache/`.
 
 Per-workspace state:
 
-- `data/workspaces/<id>/applications.json` — funnel records (schema v3)
+- `data/workspaces/<id>/app.db` — SQLite: funnel records (`applications`), master-resume
+  version history (`resume_versions`). A pre-SQLite `applications.json` is imported once
+  and renamed `applications.json.migrated` (original also copied to `backup-pre-sqlite-*/`)
 - `data/workspaces/<id>/applicant_profile.json` — form answers (work auth, address, EEO)
 - `output/workspaces/<id>/applications/` — JD text, fill screenshots, nightly logs,
   `url_resolve_cache.json`, `readme_cache/`

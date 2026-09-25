@@ -1075,7 +1075,7 @@ class ApplicantProfileUpdateRequest(BaseModel):
 
 
 class ApplicationOut(BaseModel):
-    """API view of one tracked application from ``applications.json``."""
+    """API view of one tracked application (``apply.store``)."""
 
     source: str
     source_job_id: str

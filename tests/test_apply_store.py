@@ -1,8 +1,10 @@
-"""Hermetic tests for the applications.json store."""
+"""Hermetic tests for the application store (SQLite, with the legacy JSON import)."""
 
 from __future__ import annotations
 
 import json
+import sqlite3
+import threading
 
 import pytest
 
@@ -31,6 +33,22 @@ def apps_path(tmp_path, monkeypatch):
     return path
 
 
+def _db_rows(apps_path) -> dict[str, dict]:
+    """The stored documents, read straight from the database file."""
+    conn = sqlite3.connect(apps_path.parent / "app.db")
+    try:
+        return {key: json.loads(doc) for key, doc in conn.execute("SELECT key, doc FROM applications")}
+    finally:
+        conn.close()
+
+
+def _imported(apps_path) -> bool:
+    """The legacy file was imported: renamed aside, with a pre-import backup copy."""
+    migrated = apps_path.with_name("applications.json.migrated")
+    backups = list(apps_path.parent.glob("backup-pre-sqlite-*/applications.json"))
+    return not apps_path.exists() and migrated.is_file() and len(backups) == 1
+
+
 def test_load_all_missing_file_returns_empty(apps_path):
     assert store.load_all() == {}
 
@@ -42,9 +60,8 @@ def test_save_and_load_round_trip(apps_path):
     assert set(loaded) == {"job-1"}
     assert loaded["job-1"].company == "Acme"
     assert loaded["job-1"].location == "SF"
-    raw = json.loads(apps_path.read_text(encoding="utf-8"))
-    assert raw["schema_version"] == store.SCHEMA_VERSION
-    assert "job-1" in raw["applications"]
+    assert set(_db_rows(apps_path)) == {"job-1"}
+    assert not apps_path.exists()  # nothing is written to the legacy JSON file
 
 
 def test_archive_round_trip_is_idempotent_and_preserves_workflow(apps_path):
@@ -133,12 +150,27 @@ def test_review_summary(status, fill, summary):
     assert store.review_summary(app) == summary
 
 
-def test_current_registry_load_does_not_rewrite_to_add_archive_field(apps_path):
+def test_current_registry_imports_once_and_keeps_the_original(apps_path):
     raw = {"schema_version": store.SCHEMA_VERSION, "applications": {"a": {"source": "simplify", "source_job_id": "a", "company": "Acme", "role": "Intern"}}}
     original = json.dumps(raw)
     apps_path.write_text(original, encoding="utf-8")
     assert store.load_all()["a"].archived_at is None
-    assert apps_path.read_text(encoding="utf-8") == original
+    assert _imported(apps_path)
+    assert apps_path.with_name("applications.json.migrated").read_text(encoding="utf-8") == original
+    # A file that reappears after the import (a restored copy) is ignored, not re-imported.
+    apps_path.write_text(json.dumps({"schema_version": 5, "applications": {}}), encoding="utf-8")
+    store._imported.clear()
+    assert set(store.load_all()) == {"a"}
+    assert apps_path.exists()
+
+
+def test_corrupt_registry_is_kept_aside_not_fatal(apps_path):
+    apps_path.write_text("{not json", encoding="utf-8")
+    assert store.load_all() == {}
+    assert list(apps_path.parent.glob("applications.json.corrupt-*"))
+    assert list(apps_path.parent.glob("backup-pre-sqlite-*/applications.json"))
+    store.upsert(_sample_app(source_job_id="new"))
+    assert set(store.load_all()) == {"new"}
 
 
 def test_upsert_and_get(apps_path):
@@ -185,9 +217,8 @@ def test_v1_migrates_to_v2(apps_path):
     app = next(iter(loaded.values()))
     assert app.canonical_key == "greenhouse:figma:6143238004"
     assert app.source_refs[0].source_job_id == "uuid-1"
-    raw = json.loads(apps_path.read_text(encoding="utf-8"))
-    assert raw["schema_version"] == store.SCHEMA_VERSION
-    assert "greenhouse:figma:6143238004" in raw["applications"]
+    assert "greenhouse:figma:6143238004" in _db_rows(apps_path)
+    assert _imported(apps_path)
     # get works by legacy source_job_id and by canonical key
     assert store.get("uuid-1") is not None
     assert store.get("greenhouse:figma:6143238004") is not None
@@ -245,29 +276,42 @@ def test_set_status_allows_terminal_to_post_ready():
     assert app.status == "interview"
 
 
-def test_atomic_write_uses_tmp_suffix(apps_path, monkeypatch):
-    """Persist via ``.json.tmp`` then replace — no partial read of half a file."""
-    writes: list[str] = []
+def test_failed_write_rolls_back_the_whole_transaction(apps_path, monkeypatch):
+    """A write that fails part-way leaves every row as it was, and the cache honest."""
+    store.save_all({"a": _sample_app(source_job_id="a"), "b": _sample_app(source_job_id="b")})
+    real_put = store._put
+    calls = {"n": 0}
 
-    def _tracked_write_text(self, data, encoding="utf-8"):
-        writes.append(self.name)
-        return Path_write_text(self, data, encoding=encoding)
+    def _failing_put(conn, key, app):
+        calls["n"] += 1
+        if calls["n"] == 2:
+            raise sqlite3.OperationalError("disk I/O error")
+        real_put(conn, key, app)
 
-    Path_write_text = type(apps_path).write_text
-    monkeypatch.setattr(type(apps_path), "write_text", _tracked_write_text)
-    replaced: list[tuple] = []
+    monkeypatch.setattr(store, "_put", _failing_put)
+    with pytest.raises(sqlite3.OperationalError):
+        store.save_all({"a": _sample_app(source_job_id="a", notes="x"), "c": _sample_app(source_job_id="c")})
+    monkeypatch.setattr(store, "_put", real_put)
+    assert set(store.load_all()) == {"a", "b"}
+    assert store.get("a").notes == ""
+    assert set(_db_rows(apps_path)) == {"a", "b"}
 
-    def _tracked_replace(self, target):
-        replaced.append((self.name, target.name))
-        return Path_replace(self, target)
 
-    Path_replace = type(apps_path).replace
-    monkeypatch.setattr(type(apps_path), "replace", _tracked_replace)
+def test_concurrent_updates_from_threads_lose_nothing(apps_path):
+    store.upsert(_sample_app(canonical_key="k"))
 
-    store.save_all({"job-1": _sample_app()})
-    assert any(name.endswith(".json.tmp") for name in writes)
-    assert replaced
-    assert not (apps_path.parent / "applications.json.tmp").exists()
+    def _worker(field: str) -> None:
+        for i in range(50):
+            store.patch("k", **{field: f"{field}-{i}"})
+
+    threads = [threading.Thread(target=_worker, args=(name,)) for name in ("notes", "salary")]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    row = store.get("k")
+    assert row.notes == "notes-49" and row.salary == "salary-49"
+    assert row.revision == 101
 
 
 def _v2_registry(applications: dict) -> dict:
@@ -323,14 +367,11 @@ def test_v2_migrates_workday_keys_to_last_path_segment_id(apps_path):
     other = next(a for a in loaded.values() if a.source_job_id == "job-2")
     assert other.duplicate_of == "workday:amfam:R39474"
 
-    raw = json.loads(apps_path.read_text(encoding="utf-8"))
-    assert raw["schema_version"] == store.SCHEMA_VERSION
-    backups = list(apps_path.parent.glob("applications.json.bak-*"))
-    assert len(backups) == 1
+    assert _imported(apps_path)
 
     # A second load is a no-op: no further re-keying, no second backup.
     store.load_all()
-    assert len(list(apps_path.parent.glob("applications.json.bak-*"))) == 1
+    assert _imported(apps_path)
 
 
 def test_v2_migration_keeps_old_key_on_collision(apps_path):
@@ -405,7 +446,7 @@ def test_v2_migration_backfills_unknown_ats(apps_path):
 
 
 def test_v2_migration_is_noop_without_workday_or_unknown_rows(apps_path):
-    """A clean v2 registry is bumped to the current schema without a backup."""
+    """A clean v2 registry imports unchanged."""
     apps_path.write_text(
         json.dumps(
             _v2_registry(
@@ -424,10 +465,9 @@ def test_v2_migration_is_noop_without_workday_or_unknown_rows(apps_path):
         ),
         encoding="utf-8",
     )
-    store.load_all()
-    raw = json.loads(apps_path.read_text(encoding="utf-8"))
-    assert raw["schema_version"] == store.SCHEMA_VERSION
-    assert not list(apps_path.parent.glob("applications.json.bak-*"))
+    loaded = store.load_all()
+    assert set(loaded) == {"greenhouse:figma:1"} and loaded["greenhouse:figma:1"].ats == "greenhouse"
+    assert _imported(apps_path)
 
 
 def test_set_status_submitted_archives_the_row(apps_path):
@@ -467,8 +507,7 @@ def test_v3_registry_archives_submitted_rows_once(apps_path):
     loaded = store.load_all()
     assert loaded["s"].archived_at == "2026-09-01T12:00:00+00:00"
     assert loaded["u"].archived_at is None
-    assert json.loads(apps_path.read_text(encoding="utf-8"))["schema_version"] == store.SCHEMA_VERSION
-    assert list(apps_path.parent.glob("applications.json.bak-*"))
+    assert _imported(apps_path)
 
     # A later restore sticks: the migration does not run again on an upgraded file.
     store.set_archived(["s"], False)
@@ -497,12 +536,11 @@ def test_v4_registry_archives_screened_out_rows_once_preserving_details(apps_pat
     assert loaded["archived"].archived_at == already_archived.archived_at
     assert loaded["no-history"].archived_at is not None
     assert loaded["ready"].archived_at is None
-    assert json.loads(apps_path.read_text(encoding="utf-8"))["schema_version"] == store.SCHEMA_VERSION
-    assert len(list(apps_path.parent.glob("applications.json.bak-*"))) == 1
+    assert _imported(apps_path)
 
     store.set_archived(["rejected"], False)
     assert store.load_all()["rejected"].archived_at is None
-    assert len(list(apps_path.parent.glob("applications.json.bak-*"))) == 1
+    assert _imported(apps_path)
 
 
 # --- concurrent writers (B1/B12) -------------------------------------------------
@@ -616,12 +654,17 @@ def test_restore_keeps_user_notes_and_terminal_status(apps_path):
     assert store.get("k").status == "skipped"
 
 
-def test_get_reparses_after_an_external_edit(apps_path):
+def test_get_rereads_after_another_process_writes(apps_path):
+    """A write through a separate connection (the nightly CLI) is seen on the next read."""
     store.upsert(_sample_app(canonical_key="k"))
     assert store.get("k").company == "Acme"
-    raw = json.loads(apps_path.read_text(encoding="utf-8"))
-    raw["applications"]["k"]["company"] = "Beta"
-    apps_path.write_text(json.dumps(raw), encoding="utf-8")
+    doc = _db_rows(apps_path)["k"]
+    doc["company"] = "Beta"
+    conn = sqlite3.connect(apps_path.parent / "app.db")
+    with conn:
+        conn.execute("UPDATE applications SET doc = ? WHERE key = 'k'", (json.dumps(doc),))
+        conn.execute("UPDATE meta SET value = value + 1 WHERE name = 'applications'")
+    conn.close()
     assert store.get("k").company == "Beta"
 
 

@@ -921,3 +921,21 @@ Continue start was rejected: it drops unsaved answers on the current step.
 - `enter`/`advance`/`dismiss` refuse text, aria-label, value or title matching `SUBMIT_TEXT`, and refuse when the text cannot be read. `select` refuses a submit input or a button-like control whose text reads as submit, but not options: an option may legitimately say "Complete". `auth` is unchecked because some Workday tenants label the sign-in overlay "Submit"; only the auth code uses it.
 - `submit_click(loc, decision=action)` is the only path to a final submit, used once in `fill.py`, and raises unless the decision is `auto_submit`.
 - Checked by hand against Chromium: a Workday Review "Submit" (no form), Greenhouse "Submit Application" and an iCIMS `input[type=submit]` are refused for both `advance` and `select`. The same checks live in the test file and run where Playwright's bundled browser exists.
+
+## Application store on SQLite (S1–S3, 2026-09)
+`apply/store.py` keeps its whole public API but persists to the `applications` table of
+`<DATA_DIR>/app.db` (`storage/db.py`: per-thread connections, WAL, `BEGIN IMMEDIATE`
+for every read-modify-write, a per-table change counter in `meta`). The DB path derives
+from `config.APPLICATIONS_PATH.parent`, so workspace switches and tests' monkeypatched
+path need no new plumbing, and there is one file per workspace rather than a
+`workspace_id` column (add that column only for the hosted version). The three-way
+merge from B1 is unchanged; it now runs inside a DB transaction, so the nightly CLI
+process and the server cannot lose each other's writes either. `_write` writes only
+rows that are not the cached objects, so an upsert is one row, not the table.
+Legacy `applications.json` is imported on first open (old v1–v4 upgrade steps run in
+memory), copied to `backup-pre-sqlite-<stamp>/` and renamed `.migrated`; a corrupt
+file is set aside as `.corrupt-<stamp>` and logged rather than crashing every read.
+A file reappearing after import is ignored (logged). Deviation from the plan: the
+operations registry (`operations.json`, transient) and run directories stay files;
+the plan's `application_refs`/`application_events`/`answer_memory` tables are added by
+the tasks that first need them (a new entry in `db.MIGRATIONS`, never an edit).

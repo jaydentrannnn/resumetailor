@@ -1,7 +1,8 @@
 """CLI entry for one daily apply-funnel pass.
 
 Use either this host-side script *or* the in-process Docker scheduler — not both
-against the same workspace at once (they share ``applications.json`` via the bind mount).
+against the same workspace at once. Both write the workspace's ``app.db`` (safe: SQLite
+transactions), but two runs would discover and fill the same postings.
 
     python scripts/apply_daily.py --dry-run
     python scripts/apply_daily.py --workspace default --limit 5 --no-browser

@@ -1,4 +1,13 @@
-"""Application funnel state persisted in ``applications.json``.
+"""Application funnel state, persisted in the workspace's SQLite database.
+
+Storage. Rows live in the ``applications`` table of ``<DATA_DIR>/app.db``
+(`resume_tailor.storage.db`), one JSON document per row plus indexed copies of the
+columns the Apply page filters on. A pre-SQLite ``applications.json`` is imported once
+on first open (`_import_json`): the original is copied to
+``backup-pre-sqlite-<stamp>/``, migrated in memory through the old schema steps, and
+renamed to ``applications.json.migrated`` (rename it back and delete ``app.db`` to
+downgrade). Parsed rows are cached per process and re-read only when the table's
+change counter moves, so a write from another process (the nightly CLI) is seen.
 
 Concurrency model. Web routes, the operation worker threads, the nightly run and fill
 all read and write this registry, and fill holds a row for minutes while it drives a
@@ -18,10 +27,13 @@ from __future__ import annotations
 
 import copy
 import json
+import logging
 import re
 import shutil
+import sqlite3
 import threading
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
@@ -32,6 +44,9 @@ from pydantic import BaseModel, Field, PrivateAttr
 from resume_tailor import config
 from resume_tailor.apply import identity
 from resume_tailor.apply.screen import ScreenResult
+from resume_tailor.storage import db
+
+_log = logging.getLogger(__name__)
 
 ApplicationStatus = Literal[
     "discovered",
@@ -275,14 +290,7 @@ def _migrate_v2(apps: dict[str, Application]) -> tuple[dict[str, Application], b
 
 
 def load_all() -> dict[str, Application]:
-    """Load every application keyed by ``canonical_key`` (or legacy id).
-
-    Schema v1 files are migrated in memory to v2, then v2 registries are passed
-    through `_migrate_v2` (Workday re-keying + ATS backfill), then v3 registries
-    through `_migrate_v3` (one-time archive of submitted rows), then v4 registries
-    through `_migrate_v4` (one-time archive of screened-out rows). Any upgrade that
-    changes rows backs up the file once before rewriting it.
-    """
+    """Every application keyed by ``canonical_key`` (or legacy id), as private copies."""
     with _LOCK:
         return {key: _checkout(app) for key, app in _snapshot().items()}
 
@@ -292,31 +300,54 @@ class StaleApplication(RuntimeError):
 
 
 _LOCK = threading.RLock()
+_TABLE = "applications"
+_JSON_MARKER = "json_import:applications"
 
-#: (path, file bytes, parsed rows) of the last registry read or written. The rows
+#: (database path, table generation, parsed rows) of the last read or write. The rows
 #: are private: callers only ever get `_checkout` copies, so they are never mutated.
-_cache: tuple[Path, bytes, dict[str, Application]] | None = None
+_cache: tuple[Path, int, dict[str, Application]] | None = None
+#: Databases whose JSON import is settled, so `_db` can skip the check.
+_imported: set[Path] = set()
+
+
+def _db_file() -> Path:
+    return db.db_path(_path().parent)
+
+
+def _db() -> sqlite3.Connection:
+    """This thread's connection to the active workspace's database, JSON imported."""
+    db_file = _db_file()
+    conn = db.connect(db_file)
+    if db_file not in _imported:
+        _import_json(conn, db_file)
+    return conn
+
+
+@contextmanager
+def _txn() -> Iterator[sqlite3.Connection]:
+    """`_LOCK` plus a database write transaction, for every read-modify-write."""
+    with _LOCK, db.transaction(_db()) as conn:
+        yield conn
 
 
 def _snapshot() -> dict[str, Application]:
     """Current registry rows, shared and read-only. Hold `_LOCK` while using them.
 
-    Re-parses only when the file's bytes differ from the last read or write, which
-    turns `get()` on a large registry from a full parse into a byte compare.
+    Re-parses only when the table's change counter moved since the last read or write,
+    which turns `get()` on a large registry into one small query.
     """
     global _cache
-    path = _path()
-    if not path.is_file():
-        return {}
-    raw_bytes = path.read_bytes()
-    if _cache is not None and _cache[0] == path and _cache[1] == raw_bytes:
+    conn = _db()
+    db_file = _db_file()
+    gen = db.generation(conn, _TABLE)
+    if _cache is not None and _cache[0] == db_file and _cache[1] == gen:
         return _cache[2]
-    apps, migrated = _parse(path, raw_bytes)
-    if migrated:
-        # The migration's `save_all` cached exactly what it wrote.
-        return _snapshot()
-    _cache = (path, raw_bytes, apps)
-    return apps
+    rows = {
+        key: Application.model_validate_json(doc)
+        for key, doc in conn.execute("SELECT key, doc FROM applications ORDER BY rowid")
+    }
+    _cache = (db_file, gen, rows)
+    return rows
 
 
 def _checkout(app: Application) -> Application:
@@ -326,37 +357,89 @@ def _checkout(app: Application) -> Application:
     return out
 
 
-def _parse(path: Path, raw_bytes: bytes) -> tuple[dict[str, Application], bool]:
-    """Parse registry bytes, migrating and rewriting an old schema (see `load_all`).
+def _parse_json(raw_bytes: bytes) -> dict[str, Application]:
+    """Rows of a legacy ``applications.json``, upgraded through every old schema step.
 
-    Returns the rows and whether the file was rewritten.
+    Schema v1 files are migrated to v2, then v2 registries through `_migrate_v2`
+    (Workday re-keying + ATS backfill), v3 through `_migrate_v3` (one-time archive of
+    submitted rows), and v4 through `_migrate_v4` (one-time archive of screen-outs).
     """
     raw = json.loads(raw_bytes.decode("utf-8"))
-    apps_raw = raw.get("applications", {})
+    apps_raw = raw.get("applications", {}) if isinstance(raw, dict) else {}
     if not isinstance(apps_raw, dict):
-        return {}, False
+        return {}
     version = int(raw.get("schema_version") or 1)
     if version < 2:
         out = _migrate_v1(apps_raw)
-        backup = True
     else:
         out = {str(key): Application.model_validate(value) for key, value in apps_raw.items()}
-        backup = False
     if version < 3:
-        out, changed = _migrate_v2(out)
-        backup = backup or changed
+        out, _ = _migrate_v2(out)
     if version < 4:
-        out, changed = _migrate_v3(out)
-        backup = backup or changed
+        out, _ = _migrate_v3(out)
     if version < 5:
-        out, changed = _migrate_v4(out)
-        backup = backup or changed
-    if version < SCHEMA_VERSION:
-        if backup:
-            _backup(path)
-        save_all(out)
-        return out, True
-    return out, False
+        out, _ = _migrate_v4(out)
+    return out
+
+
+def _import_json(conn: sqlite3.Connection, db_file: Path) -> None:
+    """Move a pre-SQLite ``applications.json`` into the database, once.
+
+    Rows already in the database win over same-key rows in the file. A file that does
+    not parse is kept aside as ``applications.json.corrupt-<stamp>`` and logged; the
+    import is not retried, since retrying would fail the same way on every read.
+    """
+    path = _path()
+    with _LOCK:
+        if db.marker(conn, _JSON_MARKER):
+            if path.is_file():
+                _log.warning("ignoring %s: already imported into %s", path.name, db_file.name)
+            _imported.add(db_file)
+            return
+        if not path.is_file():
+            return  # checked again on the next open, in case the file appears
+        stamp = datetime.now(UTC).strftime("%Y%m%d%H%M%S")
+        backup_dir = path.parent / f"backup-pre-sqlite-{stamp}"
+        backup_dir.mkdir(parents=True, exist_ok=True)
+        shutil.copy2(path, backup_dir / path.name)
+        try:
+            rows = _parse_json(path.read_bytes())
+            suffix = ".migrated"
+        except (ValueError, UnicodeDecodeError, TypeError) as exc:
+            _log.error("could not import %s (%s); kept it in %s", path.name, exc, backup_dir.name)
+            rows = {}
+            suffix = f".corrupt-{stamp}"
+        with db.transaction(conn):
+            existing = {row[0] for row in conn.execute("SELECT key FROM applications")}
+            for key, app in rows.items():
+                if key not in existing:
+                    _put(conn, key, app)
+            db.set_marker(conn, _JSON_MARKER)
+            db.bump(conn, _TABLE)
+        _imported.add(db_file)
+        try:
+            path.replace(path.with_name(path.name + suffix))
+        except OSError as exc:  # e.g. open in an editor on Windows; the marker is set
+            _log.warning("imported %s but could not rename it: %s", path.name, exc)
+
+
+def _put(conn: sqlite3.Connection, key: str, app: Application) -> None:
+    conn.execute(
+        """INSERT INTO applications(key, revision, status, company, role, location, ats,
+               discovered_at, archived_at, group_key, job_id, doc)
+           VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?, ?)
+           ON CONFLICT(key) DO UPDATE SET
+               revision = excluded.revision, status = excluded.status,
+               company = excluded.company, role = excluded.role,
+               location = excluded.location, ats = excluded.ats,
+               discovered_at = excluded.discovered_at, archived_at = excluded.archived_at,
+               group_key = excluded.group_key, job_id = excluded.job_id, doc = excluded.doc""",
+        (
+            key, app.revision, app.status, app.company, app.role, app.location, app.ats,
+            app.discovered_at, app.archived_at, app.group_key, app.job_id,
+            app.model_dump_json(),
+        ),
+    )
 
 
 def _migrate_v3(apps: dict[str, Application]) -> tuple[dict[str, Application], bool]:
@@ -394,18 +477,8 @@ def _migrate_v4(apps: dict[str, Application]) -> tuple[dict[str, Application], b
     return apps, changed
 
 
-def _backup(path: Path) -> None:
-    """Copy the registry file aside before a migration rewrites it in place."""
-    if not path.is_file():
-        return
-    stamp = datetime.now(UTC).strftime("%Y%m%d%H%M%S")
-    backup_path = path.with_name(f"{path.name}.bak-{stamp}")
-    if not backup_path.exists():
-        shutil.copy2(path, backup_path)
-
-
 def save_all(apps: dict[str, Application]) -> None:
-    """Persist the full registry atomically under ``SCHEMA_VERSION``.
+    """Persist the full registry in one transaction: rows not in ``apps`` are deleted.
 
     A blind write of every row: use `upsert`/`update` to change rows other code may
     also be changing.
@@ -419,21 +492,21 @@ def save_all(apps: dict[str, Application]) -> None:
 
 
 def _write(rows: dict[str, Application]) -> None:
-    """`save_all` for rows the store owns outright: cached as-is, not copied."""
+    """`save_all` for rows the store owns outright: cached as-is, not copied.
+
+    Writes only the rows that are not the very objects already stored, so an `upsert`
+    that took its dict from `_snapshot` rewrites one row, not the table.
+    """
     global _cache
-    with _LOCK:
-        path = _path()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        payload = {
-            "schema_version": SCHEMA_VERSION,
-            "applications": {key: app.model_dump() for key, app in rows.items()},
-        }
-        tmp = path.with_suffix(".json.tmp")
-        tmp.write_text(json.dumps(payload, indent=2, ensure_ascii=False) + "\n", encoding="utf-8")
-        tmp.replace(path)
-        # Read back rather than encode: text mode translates newlines on Windows.
-        raw_bytes = path.read_bytes()
-        _cache = (path, raw_bytes, rows)
+    with _txn() as conn:
+        current = _snapshot()
+        for key in current.keys() - rows.keys():
+            conn.execute("DELETE FROM applications WHERE key = ?", (key,))
+        for key, app in rows.items():
+            if current.get(key) is not app:
+                _put(conn, key, app)
+        gen = db.bump(conn, _TABLE)
+        _cache = (_db_file(), gen, rows)
 
 
 def build_index(apps: dict[str, Application] | None = None) -> Index:
@@ -551,7 +624,7 @@ def upsert(app: Application) -> Application:
     replaces whatever is stored under its key. Either way ``app`` is refreshed in
     place to the stored result and returned.
     """
-    with _LOCK:
+    with _txn():
         apps = dict(_snapshot())
         key = _registry_key(app)
         base = app._base
@@ -586,7 +659,7 @@ def update(key: str, mutate: Callable[[Application], None]) -> Application:
     Raises:
         StaleApplication: When no row matches ``key`` (deleted or re-keyed).
     """
-    with _LOCK:
+    with _txn():
         app = get(key)
         if app is None:
             raise StaleApplication(f"application {key!r} not found")
@@ -610,7 +683,7 @@ def restore(previous: Application) -> Application:
     Unlike `upsert`, every field returns to ``previous`` except what the user owns:
     the stored ``notes``, and a terminal status set since (kept, with a note).
     """
-    with _LOCK:
+    with _txn():
         apps = _snapshot()
         found = _locate(apps, _registry_key(previous))
         if found is None:
@@ -641,7 +714,7 @@ def restore(previous: Application) -> Application:
 
 def set_archived(application_ids: list[str], archived: bool) -> tuple[list[str], dict[str, str]]:
     """Change archive state in one registry write, accepting canonical or source IDs."""
-    with _LOCK:
+    with _txn():
         apps = load_all()
         updated: list[str] = []
         errors: dict[str, str] = {}
