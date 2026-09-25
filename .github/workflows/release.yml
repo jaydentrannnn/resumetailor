@@ -1,0 +1,97 @@
+name: Release
+
+# Desktop installers (plan Phase 5, DK7). A `v*` tag builds the Python sidecar with
+# PyInstaller, smoke-tests it, wraps it in the Tauri shell, and attaches the installers
+# to a *draft* GitHub release for the owner to review and publish.
+#
+# Not signed or notarized, and no updater manifest: those need certificates and keys the
+# owner has not chosen yet. Unsigned Windows installers show a SmartScreen warning;
+# unsigned macOS apps open with right-click → Open.
+
+on:
+  push:
+    tags: ["v*"]
+  workflow_dispatch:
+
+permissions:
+  contents: write
+
+jobs:
+  installer:
+    name: Installer (${{ matrix.name }})
+    runs-on: ${{ matrix.os }}
+    strategy:
+      fail-fast: false
+      matrix:
+        include:
+          - name: windows-x64
+            os: windows-latest
+            bundles: nsis,msi
+          # One build per architecture: a universal app would need a universal2 Python
+          # for the sidecar, which PyInstaller cannot assemble from the runner's Python.
+          - name: macos-arm64
+            os: macos-14
+            bundles: app,dmg
+          - name: macos-x64
+            os: macos-13
+            bundles: app,dmg
+    env:
+      PYTHONUTF8: "1"
+      PLAYWRIGHT_SKIP_BROWSER_DOWNLOAD: "1"
+    steps:
+      - uses: actions/checkout@v4
+      - uses: astral-sh/setup-uv@v5
+        with:
+          python-version: "3.13"
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+          cache: npm
+          cache-dependency-path: frontend/package-lock.json
+      - uses: dtolnay/rust-toolchain@stable
+
+      - name: Python dependencies
+        run: uv pip install --system -r requirements.lock -e . pyinstaller
+      - name: Web UI
+        working-directory: frontend
+        run: npm ci && npm run build
+      - name: Sidecar (PyInstaller)
+        run: >
+          pyinstaller desktop/sidecar/resumetailor.spec --noconfirm
+          --distpath desktop/sidecar/dist --workpath build/pyinstaller
+      - name: Sidecar smoke test
+        shell: bash
+        run: |
+          exe=desktop/sidecar/dist/resumetailor-server/resumetailor-server
+          [ -f "$exe.exe" ] && exe="$exe.exe"
+          python desktop/sidecar/smoke.py "$exe"
+
+      - name: Icons
+        working-directory: desktop
+        run: npx --yes @tauri-apps/cli@2 icon app-icon.svg
+      - name: Shell (Tauri)
+        working-directory: desktop
+        run: npx --yes @tauri-apps/cli@2 build --bundles ${{ matrix.bundles }}
+
+      - name: Collect installers
+        shell: bash
+        run: |
+          mkdir -p dist-installers
+          bundle=desktop/src-tauri/target/release/bundle
+          for f in "$bundle"/nsis/*.exe "$bundle"/msi/*.msi "$bundle"/dmg/*.dmg; do
+            [ -f "$f" ] || continue
+            name=$(basename "$f")
+            cp "$f" "dist-installers/${name%.*}-${{ matrix.name }}.${name##*.}"
+          done
+          ls -l dist-installers
+          [ -n "$(ls dist-installers)" ]
+      - uses: actions/upload-artifact@v4
+        with:
+          name: installer-${{ matrix.name }}
+          path: dist-installers/
+      - name: Attach to the draft release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: dist-installers/*

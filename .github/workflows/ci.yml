@@ -122,6 +122,31 @@ jobs:
           name: playwright-traces
           path: frontend/test-results
 
+  desktop:
+    name: Desktop shell
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - name: WebKitGTK and tray libraries
+        run: >
+          sudo apt-get update && sudo apt-get install -y --no-install-recommends
+          libwebkit2gtk-4.1-dev libayatana-appindicator3-dev librsvg2-dev
+      - uses: dtolnay/rust-toolchain@stable
+        with:
+          components: rustfmt
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - name: Icons and a stand-in server folder
+        working-directory: desktop
+        # The real server folder comes from PyInstaller in release.yml; the build script
+        # only needs the resource path to exist.
+        run: |
+          npx --yes @tauri-apps/cli@2 icon app-icon.svg
+          mkdir -p sidecar/dist/resumetailor-server
+      - working-directory: desktop/src-tauri
+        run: cargo fmt --check && cargo test
+
   docker:
     name: Docker image
     runs-on: ubuntu-latest

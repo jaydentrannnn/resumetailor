@@ -1,0 +1,41 @@
+{
+  "$schema": "https://schema.tauri.app/config/2",
+  "productName": "ResumeTailor",
+  "version": "0.1.0",
+  "identifier": "app.resumetailor.desktop",
+  "build": {
+    "frontendDist": "../ui"
+  },
+  "app": {
+    "withGlobalTauri": true,
+    "windows": [
+      {
+        "label": "main",
+        "title": "ResumeTailor",
+        "width": 1280,
+        "height": 860,
+        "minWidth": 390,
+        "minHeight": 600
+      }
+    ],
+    "security": {
+      "csp": null
+    }
+  },
+  "bundle": {
+    "active": true,
+    "targets": ["nsis", "msi", "app", "dmg"],
+    "icon": [
+      "icons/32x32.png",
+      "icons/128x128.png",
+      "icons/128x128@2x.png",
+      "icons/icon.icns",
+      "icons/icon.ico"
+    ],
+    "resources": {
+      "../sidecar/dist/resumetailor-server/": "server/"
+    },
+    "category": "Productivity",
+    "shortDescription": "Tailor your resume to a job without changing its look"
+  }
+}

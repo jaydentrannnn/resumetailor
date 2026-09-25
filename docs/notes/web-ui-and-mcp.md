@@ -372,3 +372,41 @@ blank entry headers before the Pydantic path; server validation remains authorit
 - `frontend/e2e/app.spec.ts` covers tailor + bullet edit + re-render, profile save/validation, Apply tabs, template gallery, editor coach/preset, and onboarding/settings; `a11y.ts` fails on serious/critical axe violations. Page-fit steps still need LibreOffice, so CI installs it in the `e2e` job.
 - Found by the suite: BulletReview fetched while the run was still going, got a 409 and never retried (now waits on `ready`); the light accent failed contrast on `accent-soft` (4.17:1), darkened to #077468.
 - `frontend/.gitignore` gained `test-results/` and `playwright-report/` (Playwright output only).
+
+## Desktop packaging, Phase 5 scaffold (2026-09)
+
+- **Shape.** Tauri v2 shell (`desktop/src-tauri/`) + a PyInstaller `--onedir` build of the
+  server (`desktop/sidecar/resumetailor.spec`, entry `src/resume_tailor/desktop_main.py`).
+  The shell spawns the server, reads stdout for `READY <port> <token>`, and navigates its
+  window to `http://127.0.0.1:<port>/?t=<token>` — the existing B8 cookie bootstrap, so the
+  web UI needs no desktop-specific code. The window starts on a bundled page
+  (`desktop/ui/index.html`, "Starting…"); only that page has Tauri IPC (`log_folder`), the
+  127.0.0.1 origin gets none.
+- **`desktop_main` sets the environment before importing the app** because `config` reads
+  `RESUME_TAILOR_*_DIR` at import. Storage defaults to the per-user app-data folder (own
+  `app_data_dir()`, same paths as platformdirs, no new dependency); any variable already set
+  wins. The token is always on: blank/`auto`/`off` get a fresh random token, because the
+  shell must know the value the server will use. Ports 8000–8010 first (where the extension
+  scans), else any; the socket is bound before uvicorn starts and handed over, so no race.
+  READY is printed from `Server.startup` after `started`, never before the port listens.
+- **`RESUME_TAILOR_FRONTEND_DIST`** (new, `web/app.py`): the frozen build points the SPA mount
+  at `_MEIPASS/frontend/dist`; unset keeps `PROJECT_ROOT/frontend/dist`.
+- **Orphans.** Killing the shell (not quitting) left the server holding its port. Fix:
+  `--exit-with-stdin` — the shell holds a piped stdin it never writes; EOF (any shell exit,
+  including SIGKILL) sets `server.should_exit`. Verified under Xvfb: 0 servers after killing
+  the shell.
+- **Crash restart.** stdout EOF = server exited → restart, at most 3 in a row without a READY
+  in between (READY resets the count); then the start page's `#failed` state shows the log
+  folder. Quit sets `quitting` first so the reader thread does not restart it.
+- **Resources, not `externalBin`.** `externalBin` takes one executable; the onedir build is a
+  folder (`_internal/` beside the exe). `bundle.resources` maps it to `server/`; the bundler
+  copies the folder's *contents* flat, and `server_program` accepts either layout.
+- **Verified here (Linux):** frozen sidecar 263 MB, READY, SPA and API served, token 401/200,
+  Playwright driver, watchlists and seeds bundled; `desktop/sidecar/smoke.py` passes against
+  it; shell spawn/restart/no-orphan under Xvfb; `cargo test` (READY parsing). Not verified:
+  Windows/macOS installers (built only by `release.yml` on a `v*` tag).
+- **Deviations from DK1–DK8:** no updater, signing or notarization (owner's decision; the
+  release is a draft); macOS ships per-arch dmgs (arm64 + x64) instead of universal; tray is
+  Open/Quit only (no Pause automation / Run discovery / autostart); failure screen shows the
+  log folder rather than "Copy diagnostics"; not done — DK5 LibreOffice detection UI and font
+  registration, DK6 data-folder import, DK8 store publishing; not verified on clean VMs.

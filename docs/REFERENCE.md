@@ -132,6 +132,19 @@ master resume — create-if-absent only, called from `create()`/`activate()`/`bo
 **Single process is a hard requirement** — `config._ACTIVE` plus the path globals are
 process-wide; don't add `--workers` to the Dockerfile CMD or the dev command.
 
+### Desktop app (Tauri + bundled server)
+
+`desktop/` holds the Tauri v2 shell; `desktop/sidecar/resumetailor.spec` freezes the server
+(`python -m resume_tailor.desktop_main`) with PyInstaller. Contract: the server prints
+`READY <port> <token>` once listening; the shell opens `http://127.0.0.1:<port>/?t=<token>`.
+Storage defaults to the per-user app-data folder (`desktop_main.app_data_dir`); any
+`RESUME_TAILOR_*_DIR` already set wins. `--exit-with-stdin` stops the server when its parent
+goes away. Build locally: `npm run build` in `frontend/`, then `pyinstaller
+desktop/sidecar/resumetailor.spec --noconfirm --distpath desktop/sidecar/dist`, then in
+`desktop/`: `npx @tauri-apps/cli@2 icon app-icon.svg` and `npx @tauri-apps/cli@2 build`.
+Installers: `.github/workflows/release.yml` on a `v*` tag (draft release, unsigned). Details:
+`docs/notes/web-ui-and-mcp.md` "Desktop packaging".
+
 ---
 
 ## 3. Application automation

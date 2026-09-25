@@ -13,6 +13,7 @@ import logging
 import os
 import threading
 from contextlib import asynccontextmanager
+from pathlib import Path
 from typing import Any
 
 from fastapi import FastAPI
@@ -233,7 +234,12 @@ class _SPAStaticFiles(StaticFiles):
 
 
 # Serve the built SPA when it exists (production / Docker). The Vite dev server handles
-# this in development, so a missing frontend/dist is not an error here.
-_FRONTEND_DIST = config.PROJECT_ROOT / "frontend" / "dist"
+# this in development, so a missing frontend/dist is not an error here. The desktop
+# bundle ships it beside the frozen code (`desktop_main` sets the variable).
+_FRONTEND_DIST = (
+    Path(os.environ["RESUME_TAILOR_FRONTEND_DIST"])
+    if os.environ.get("RESUME_TAILOR_FRONTEND_DIST")
+    else config.PROJECT_ROOT / "frontend" / "dist"
+)
 if _FRONTEND_DIST.is_dir():
     app.mount("/", _SPAStaticFiles(directory=str(_FRONTEND_DIST), html=True), name="spa")
