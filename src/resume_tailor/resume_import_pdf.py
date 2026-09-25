@@ -1119,7 +1119,21 @@ def import_pdf(
     `ask` replaces the model call (tests).
     """
     physical, links = extract_lines(raw)
-    lines = clean_lines(physical)
+    return import_lines(
+        clean_lines(physical), links, known_tags=known_tags, use_model=use_model, ask=ask
+    )
+
+
+def import_lines(
+    lines: list[Line],
+    links: list[str],
+    *,
+    known_tags: set[str] | None = None,
+    use_model: bool = False,
+    ask: Callable[[list[Line]], ImportLLM] | None = None,
+) -> ImportedResume:
+    """Structure already-cleaned logical lines into a draft. Shared by the PDF import
+    and the .docx content-only import (`resume_import.import_content_only`)."""
     warnings: list[str] = []
     vocabulary = _default_vocabulary() if known_tags is None else set(known_tags)
 

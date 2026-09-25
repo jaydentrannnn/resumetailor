@@ -982,7 +982,10 @@ def _para_by_id(doc, paragraph_id: int) -> Paragraph:
 
 
 def build_name_profile(doc, profile: TemplateProfile) -> None:
-    """Tag the mapped name paragraph as ``{{ name }}``."""
+    """Tag the mapped name paragraph as ``{{ name }}`` (nothing when it is in the page
+    header, which is kept as uploaded)."""
+    if profile.name_in_header:
+        return
     paragraph = _para_by_id(doc, profile.name_paragraph_id)
     runs = paragraph.runs
     if not runs:
@@ -998,8 +1001,11 @@ def build_contact_profile(doc, profile: TemplateProfile) -> None:
     fourth) — each slot gets its own `contact_slot_<i>` tag on its own paragraph,
     instead of collapsing everything onto one joined `{{r contact }}` line, which
     would discard the layout. Empty `slots` (every profile before this existed, and
-    any single-paragraph contact block) keeps today's exact one-tag behaviour.
+    any single-paragraph contact block) keeps today's exact one-tag behaviour. A contact
+    line in the page header (`contact is None`) is left as uploaded.
     """
+    if profile.contact is None:
+        return
     if profile.contact.slots:
         for i, slot in enumerate(profile.contact.slots):
             paragraph = _para_by_id(doc, slot.paragraph_id)

@@ -454,6 +454,30 @@ def _classify_heading(text: str) -> tuple[str | None, float, str]:
     return None, 0.0, ""
 
 
+def header_identity_text(doc) -> str:
+    """Text of every page header (paragraphs and table cells), one line each.
+
+    Many Word resume templates put the name and contact line in the header part, which
+    `iter_document_paragraphs` (body only) never sees.
+    """
+    lines: list[str] = []
+    for section in doc.sections:
+        for header in (section.header, section.first_page_header, section.even_page_header):
+            if header is None or header.is_linked_to_previous:
+                continue
+            for paragraph in header.paragraphs:
+                lines.append(paragraph.text)
+            for table in header.tables:
+                for row in table.rows:
+                    for cell in row.cells:
+                        lines.extend(paragraph.text for paragraph in cell.paragraphs)
+    seen: list[str] = []
+    for line in lines:
+        if line.strip() and line not in seen:
+            seen.append(line)
+    return "\n".join(seen)
+
+
 def _is_chrome(text: str) -> bool:
     """Blank, or a decorative rule/underscore line — never an entry header or content.
 
@@ -1912,7 +1936,32 @@ def _analyze_document(
         paras, first_heading_id
     )
 
-    if contact_para is None and not contact_slots:
+    # A name/contact block in the page header (Insert → Header) is kept as uploaded.
+    body_before_heading = first_heading_id is None or any(
+        p.text.strip() and not p.is_bullet for p in paras if p.id < first_heading_id
+    )
+    header_text = header_identity_text(doc)
+    contact_in_header = (
+        contact_para is None
+        and not contact_slots
+        and bool(_EMAIL_RE.search(header_text) or _PHONE_RE.search(header_text))
+    )
+    name_in_header = contact_in_header and not body_before_heading
+    if contact_in_header:
+        issues.append(
+            Issue(
+                code="contact_in_header",
+                message=(
+                    "Your name and contact details are in the page header. They'll be kept "
+                    "exactly as they are and won't change when you tailor."
+                    if name_in_header
+                    else "Your contact details are in the page header. They'll be kept "
+                    "exactly as they are and won't change when you tailor."
+                ),
+                blocking=False,
+            )
+        )
+    elif contact_para is None and not contact_slots:
         issues.append(
             Issue(
                 code="missing_contact",
@@ -2353,15 +2402,15 @@ def _analyze_document(
         not blockers
         and (experience_mapping is not None or not enabled.experience)
         and (enabled.experience or enabled.projects or enabled.list_section)
-        and (contact_para is not None or contact_slots)
+        and (contact_para is not None or contact_slots or contact_in_header)
     ):
+        contact: ContactMapping | None = None  # stays None for a header contact block
         if contact_slots:
             contact = ContactMapping(
                 paragraph_id=contact_slots[0].paragraph_id,
                 slots=contact_slots,
             )
-        else:
-            assert contact_para is not None
+        elif contact_para is not None:
             contact = ContactMapping(
                 paragraph_id=contact_para.id,
                 field_order=_contact_field_order(contact_para.text),
@@ -2415,6 +2464,8 @@ def _analyze_document(
             source_sha256=digest,
             name_paragraph_id=name_id,
             contact=contact,
+            name_in_header=name_in_header,
+            contact_in_header=contact_in_header,
             enabled=enabled,
             experience=experience_mapping if enabled.experience else None,
             education=education_mapping if enabled.education else None,
@@ -2467,7 +2518,7 @@ def validate_profile_against_doc(
     result = analyze_docx(raw=raw)
     # Structural re-validation: required paragraphs must still exist and spans fit.
     para_by_id = {p.id: p for p in result.paragraphs}
-    if profile.name_paragraph_id not in para_by_id:
+    if not profile.name_in_header and profile.name_paragraph_id not in para_by_id:
         issues.append(
             Issue(
                 code="bad_name",
@@ -2475,7 +2526,7 @@ def validate_profile_against_doc(
                 blocking=True,
             )
         )
-    if profile.contact.paragraph_id not in para_by_id:
+    if profile.contact is not None and profile.contact.paragraph_id not in para_by_id:
         issues.append(
             Issue(
                 code="bad_contact",

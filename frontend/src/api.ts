@@ -1473,9 +1473,15 @@ async function templateErrorDetail(res: Response): Promise<string> {
 /**
  * Analyze an uploaded baseline without writing under templates/.
  */
-export async function analyzeTemplate(file: File): Promise<TemplateAnalyzeResponse> {
+export async function analyzeTemplate(
+  file: File,
+  options?: { convertBullets?: boolean },
+): Promise<TemplateAnalyzeResponse> {
   const form = new FormData();
   form.append("file", file);
+  if (options?.convertBullets) {
+    form.append("convert_bullets", "true");
+  }
   const res = await fetch("/api/template/analyze", { method: "POST", body: form });
   if (!res.ok) {
     throw new Error(await templateErrorDetail(res));
@@ -1551,11 +1557,14 @@ export async function fetchTemplateDraftPreview(
 export async function uploadTemplate(
   file: File,
   profile: Record<string, unknown>,
-  options?: { calibrate?: boolean; label?: string },
+  options?: { calibrate?: boolean; label?: string; convertBullets?: boolean },
 ): Promise<TemplateBuildResponse> {
   const form = new FormData();
   form.append("file", file);
   form.append("profile", JSON.stringify(profile));
+  if (options?.convertBullets) {
+    form.append("convert_bullets", "true");
+  }
   if (options?.calibrate) {
     form.append("calibrate", "true");
   }

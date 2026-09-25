@@ -131,7 +131,7 @@ def _find_rule_donor(doc: Document):
 def _apply_letterhead_rule(doc: Document, profile: TemplateProfile) -> None:
     """Clone the resume's section-heading rule onto the letterhead contact line."""
     donor_bdr = _find_rule_donor(doc)
-    if donor_bdr is None:
+    if donor_bdr is None or profile.contact is None:
         return
     paragraph = _para_by_id(doc, profile.contact.paragraph_id)
     p_pr = paragraph._p.get_or_add_pPr()
@@ -143,9 +143,12 @@ def _apply_letterhead_rule(doc: Document, profile: TemplateProfile) -> None:
 
 
 def _contact_paragraph_ids(profile: TemplateProfile) -> list[int]:
-    """Return every paragraph id that belongs to the letterhead contact block."""
-    ids = [profile.name_paragraph_id, profile.contact.paragraph_id]
-    ids.extend(slot.paragraph_id for slot in profile.contact.slots)
+    """Return every body paragraph id that belongs to the letterhead contact block
+    (none of them when the name and contact live in the page header)."""
+    ids = [] if profile.name_in_header else [profile.name_paragraph_id]
+    if profile.contact is not None:
+        ids.append(profile.contact.paragraph_id)
+        ids.extend(slot.paragraph_id for slot in profile.contact.slots)
     return sorted({i for i in ids if i is not None})
 
 
@@ -208,7 +211,7 @@ def build_cover_template(
         build_name_profile(doc, profile)
         build_contact_profile(doc, profile)
         _apply_letterhead_rule(doc, profile)
-        last_keep_id = max(_contact_paragraph_ids(profile))
+        last_keep_id = max(_contact_paragraph_ids(profile), default=-1)
     else:
         last_keep_id = 1
 

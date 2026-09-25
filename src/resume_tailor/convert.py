@@ -98,14 +98,16 @@ def _profile_uri(profile: Path) -> str:
     return profile.resolve().as_uri()
 
 
-def _run_soffice(docx_path: Path, outdir: Path, profile: Path) -> subprocess.CompletedProcess:
+def _run_soffice(
+    docx_path: Path, outdir: Path, profile: Path, target: str = "pdf"
+) -> subprocess.CompletedProcess:
     cmd = [
         config.SOFFICE_BINARY,
         f"-env:UserInstallation={_profile_uri(profile)}",
         "--headless",
         "--norestore",
         "--convert-to",
-        "pdf",
+        target,
         "--outdir",
         str(outdir),
         str(docx_path.resolve()),
@@ -212,3 +214,26 @@ def convert(
     if not pdf_path.exists():
         raise RuntimeError(f"Conversion reported success but {pdf_path} was not created.")
     return pdf_path
+
+
+#: Word-processor formats LibreOffice can turn into .docx for import (P3-D7).
+CONVERTIBLE_SUFFIXES = (".doc", ".odt", ".rtf")
+
+
+def to_docx(src: Path, outdir: Path) -> Path:
+    """Convert a .doc/.odt/.rtf file to .docx with LibreOffice (whatever the PDF
+    backend is: Word's COM path only exports PDF). Raises RuntimeError on failure."""
+    outdir.mkdir(parents=True, exist_ok=True)
+    produced = outdir / f"{src.stem}.docx"
+    produced.unlink(missing_ok=True)
+    with _SOFFICE_LOCK:
+        completed = _run_soffice(src, outdir, _shared_profile(), target="docx")
+        if not produced.exists():
+            _reset_shared_profile()
+            completed = _run_soffice(src, outdir, _shared_profile(), target="docx")
+    if not produced.exists():
+        raise RuntimeError(
+            f"LibreOffice could not convert {src.name} to .docx "
+            f"(exit {completed.returncode}): {completed.stderr.strip() or 'no stderr'}"
+        )
+    return produced

@@ -1,8 +1,9 @@
 import type { TemplateAnalyzeResponse, TemplateFieldCandidate } from "../../api";
-import { IssueList } from "./IssueList";
+import { IssueList, type IssueActions } from "./IssueList";
 
 type Props = {
   analysis: TemplateAnalyzeResponse;
+  actions?: IssueActions;
 };
 
 //: Fields the wizard cares about seeing even when nothing was detected for them —
@@ -59,7 +60,7 @@ function SectionFieldRows({
 /**
  * Compatibility summary: blockers, warnings, detected sections, and per-field spans.
  */
-export function AnalyzeReport({ analysis }: Props) {
+export function AnalyzeReport({ analysis, actions }: Props) {
   const blockers = analysis.issues.filter((i) => i.blocking);
   const warnings = analysis.issues.filter((i) => !i.blocking);
 
@@ -95,8 +96,8 @@ export function AnalyzeReport({ analysis }: Props) {
         )}
       </div>
 
-      {blockers.length > 0 ? <IssueList issues={blockers} tone="danger" /> : null}
-      {warnings.length > 0 ? <IssueList issues={warnings} tone="warn" /> : null}
+      {blockers.length > 0 ? <IssueList issues={blockers} tone="danger" actions={actions} /> : null}
+      {warnings.length > 0 ? <IssueList issues={warnings} tone="warn" actions={actions} /> : null}
 
       {analysis.ready ? (
         <p className="rounded-md bg-accent-soft px-3 py-2 text-accent">

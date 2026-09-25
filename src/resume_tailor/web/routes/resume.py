@@ -266,7 +266,12 @@ def _import_pdf(raw: bytes, known_tags: set[str], use_model: bool) -> resume_imp
 
 
 def _import_docx(raw: bytes, filename: str, known_tags: set[str]) -> resume_import.ImportedResume:
+    """Content import from a Word file. The upload is converted/cleaned first; typed
+    bullets always become a list here (it is a private copy, never a template). A layout
+    that can't become a template is still read, in reading order."""
     try:
+        prepared = template_ops.prepare_upload(raw, filename, convert_bullets=True)
+        raw, filename = prepared.raw, prepared.filename
         template_ops._validate_upload_bytes(raw, filename)
         with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as tmp:
             tmp.write(raw)
@@ -279,7 +284,14 @@ def _import_docx(raw: bytes, filename: str, known_tags: set[str]) -> resume_impo
                     f"File is not a readable .docx: {exc}"
                 ) from exc
             result = template_analyze.analyze_docx(raw=raw)
-            return resume_import.import_from_analysis(result, doc, known_tags=known_tags)
+            if any(
+                i.blocking and i.code in resume_import.LAYOUT_BLOCKERS for i in result.issues
+            ):
+                imported = resume_import.import_content_only(doc, known_tags=known_tags)
+            else:
+                imported = resume_import.import_from_analysis(result, doc, known_tags=known_tags)
+            imported.warnings[:0] = [n.message for n in prepared.notices]
+            return imported
         finally:
             tmp_path.unlink(missing_ok=True)
     except template_ops.TemplateValidationError as exc:

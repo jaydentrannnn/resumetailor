@@ -79,9 +79,16 @@ export function TemplateImportWizard({
     setImportOutcome(null);
     const installed = await confirmInstall();
     if (!installed || !alsoImportContent || !draftFile) return;
+    await importContent(draftFile);
+  };
+
+  /** Import the file's words into the master resume (merge or draft, the user's
+   * choice). Used after an install, or on its own when the layout can't be a template. */
+  const importContent = async (file: File) => {
+    setImportOutcome(null);
     setImportBusy(true);
     try {
-      const result = await importMasterResumeContent(draftFile, { suggestTags });
+      const result = await importMasterResumeContent(file, { suggestTags });
       const picked = await choice({
         title: MERGE_CHOICE_TITLE,
         message: MERGE_CHOICE_MESSAGE,
@@ -151,8 +158,8 @@ export function TemplateImportWizard({
             uploading
               ? "Analyzing…"
               : wizardStep === "error"
-                ? "Fix the source and drop a new .docx, or"
-                : "Drop a .docx here, or"
+                ? "Fix the source and drop a new Word file, or"
+                : "Drop a Word file here, or"
           }
         />
       ) : null}
@@ -167,7 +174,16 @@ export function TemplateImportWizard({
           <p className="mt-4 text-sm text-ink-muted">
             File: <span className="font-medium text-ink">{draftFile?.name}</span>
           </p>
-          <AnalyzeReport analysis={analysis} />
+          <AnalyzeReport
+            analysis={analysis}
+            actions={{
+              busy: uploading || importBusy,
+              onConvertBullets: draftFile
+                ? () => void beginAnalyze(draftFile, { convertBullets: true })
+                : undefined,
+              onImportContent: draftFile ? () => void importContent(draftFile) : undefined,
+            }}
+          />
           {profileDraft ? (
             <>
               <SectionMapStep

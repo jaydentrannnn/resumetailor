@@ -3,11 +3,28 @@ import { issueHelp } from "../../lib/templateIssues";
 
 type Issue = TemplateAnalyzeResponse["issues"][number];
 
+/** Fixes the app can make itself, offered next to the issue that needs them. */
+export type IssueActions = {
+  /** Re-analyze with typed bullets turned into a real list. */
+  onConvertBullets?: () => void;
+  /** Import the file's words into the master resume without using its layout. */
+  onImportContent?: () => void;
+  busy?: boolean;
+};
+
 /**
  * Analyzer findings in plain language: what it means, how to fix it in Word or Google
  * Docs, and the analyzer's exact wording under "Details" for anyone who wants it.
  */
-export function IssueList({ issues, tone }: { issues: Issue[]; tone: "danger" | "warn" }) {
+export function IssueList({
+  issues,
+  tone,
+  actions,
+}: {
+  issues: Issue[];
+  tone: "danger" | "warn";
+  actions?: IssueActions;
+}) {
   const box = tone === "danger" ? "bg-danger-soft text-danger" : "bg-warn-soft text-warn";
   return (
     <div className={`rounded-md px-3 py-2 ${box}`}>
@@ -42,6 +59,26 @@ export function IssueList({ issues, tone }: { issues: Issue[]; tone: "danger" | 
                     </div>
                   )}
                 </dl>
+              )}
+              {issue.code === "manual_bullets" && actions?.onConvertBullets && (
+                <button
+                  type="button"
+                  disabled={actions.busy}
+                  onClick={actions.onConvertBullets}
+                  className="mt-2 rounded-md border border-current px-2.5 py-1 text-xs font-semibold disabled:opacity-50"
+                >
+                  Convert typed bullets to a real list
+                </button>
+              )}
+              {help.useDefault && actions?.onImportContent && (
+                <button
+                  type="button"
+                  disabled={actions.busy}
+                  onClick={actions.onImportContent}
+                  className="mt-2 rounded-md border border-current px-2.5 py-1 text-xs font-semibold disabled:opacity-50"
+                >
+                  Import the content only
+                </button>
               )}
               <details className="mt-1 text-xs text-ink-muted">
                 <summary className="cursor-pointer">Details</summary>

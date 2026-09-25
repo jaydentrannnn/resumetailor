@@ -92,6 +92,32 @@ export const TEMPLATE_ISSUES: Record<string, IssueHelp> = {
     why: "No Experience heading was found. That is fine for a first resume: your Projects and other sections are still used. Add an Experience heading later to include jobs.",
     word: "Add a line such as EXPERIENCE formatted like your other headings, with at least one job below it.",
   },
+  contact_in_header: {
+    title: "Contact details in the page header (kept as-is)",
+    why: "Your name or contact line is in the page header. The header is kept exactly as it is, so tailoring never changes it. To have the app fill it from your profile instead, move it into the page body.",
+    word: "Double-click the header, cut the lines (Ctrl+X), close the header and paste them at the top of the page.",
+  },
+  tracked_changes_accepted: {
+    title: "Tracked changes accepted (in a copy)",
+    why: "Your file still had tracked changes. The app accepted them in its own copy, so it reads the text as it looks with changes accepted. Your file is unchanged.",
+  },
+  comments_removed: {
+    title: "Comments removed (in a copy)",
+    why: "Review comments were removed from the app's copy so they can't end up in a tailored resume. Your file is unchanged.",
+  },
+  content_controls_unwrapped: {
+    title: "Fill-in boxes turned into plain text",
+    why: "Word resume templates use content controls (fill-in boxes). The app unwrapped them in its copy so their text can be read and tailored.",
+  },
+  typed_bullets_converted: {
+    title: "Typed bullets turned into a real list",
+    why: "The typed bullet characters were turned into a real Word bullet list, so each bullet can be tailored. Check the preview: the indentation can shift slightly.",
+  },
+  converted_to_docx: {
+    title: "Converted to .docx",
+    why: "Your file was converted to .docx with LibreOffice. Some formatting can change in conversion, so check the preview before you install it.",
+    word: "For an exact match, open the file in Word and use File → Save As → Word Document (.docx), then upload that.",
+  },
   missing_contact: {
     title: "No contact line under your name",
     why: "The line after your name should hold your email, phone or links. It may be in the page header or missing.",

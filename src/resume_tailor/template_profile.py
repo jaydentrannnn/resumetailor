@@ -271,7 +271,13 @@ class TemplateProfile(_Strict):
     #: SHA-256 of the exact baseline bytes this mapping was confirmed against.
     source_sha256: str
     name_paragraph_id: int = 0
-    contact: ContactMapping
+    #: None only when `contact_in_header`.
+    contact: ContactMapping | None = None
+    #: The name / contact line sit in the page header (Word's Insert → Header) rather
+    #: than the body. The header is kept exactly as uploaded: nothing there is tagged,
+    #: so those lines are never tailored (P3-D5).
+    name_in_header: bool = False
+    contact_in_header: bool = False
     enabled: EnabledSections = Field(default_factory=EnabledSections)
     #: None only for a template with no Experience heading (a first-year student's
     #: Education + Projects resume); `enabled.experience` is then False.
@@ -325,6 +331,8 @@ class TemplateProfile(_Strict):
         """Enabled flags must agree with mappings; some entry section must exist."""
         if not (self.enabled.experience or self.enabled.projects or self.enabled.list_section):
             raise ValueError("a template needs an Experience, Projects or list section")
+        if (self.contact is None) != self.contact_in_header:
+            raise ValueError("a contact mapping is required unless contact_in_header is set")
         pairs = (
             (self.enabled.experience, self.experience, "experience"),
             (self.enabled.education, self.education, "education"),
@@ -399,17 +407,18 @@ def active_layout(profile: TemplateProfile | None = None) -> dict:
         profile = load_profile()
     if profile is None:
         return legacy_defaults()
+    contact = profile.contact or ContactMapping(paragraph_id=0)
     layout = {
-        "contact_separator": profile.contact.separator,
-        "contact_field_order": list(profile.contact.field_order),
+        "contact_separator": contact.separator,
+        "contact_field_order": list(contact.field_order),
         "enabled": profile.enabled.model_dump(),
         "warnings": list(profile.warnings),
         "schema_version": profile.schema_version,
         "section_mode": profile.section_mode,
         "layout": profile.layout,
     }
-    if profile.contact.slots:
-        layout["contact_slots"] = [s.model_dump() for s in profile.contact.slots]
+    if contact.slots:
+        layout["contact_slots"] = [s.model_dump() for s in contact.slots]
     if profile.section_mode == "generic":
         layout["sections"] = [s.model_dump() for s in profile.sections]
         layout["spacing"] = profile.spacing.model_dump()

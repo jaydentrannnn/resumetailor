@@ -29,6 +29,7 @@ from resume_tailor import (
     calibrate,
     config,
     data,
+    docx_normalize,
     render,
     template_analyze,
     template_build,
@@ -194,7 +195,7 @@ def _profile_summary() -> TemplateProfileSummary:
         schema_version=profile.schema_version,
         enabled=profile.enabled.model_dump(),
         warnings=list(profile.warnings),
-        contact_separator=profile.contact.separator,
+        contact_separator=profile.contact.separator if profile.contact else None,
     )
 
 
@@ -768,12 +769,43 @@ def _prune_upload_cache(*, max_age_seconds: float = 24 * 3600) -> None:
             pass
 
 
-def _cache_upload(raw: bytes, sha: str) -> None:
-    """Persist an analyzed upload's bytes for later remap/preview calls."""
+def _cache_upload(raw: bytes, sha: str, *, origin_sha: str | None = None) -> None:
+    """Persist an analyzed upload's bytes for later remap/preview calls.
+
+    `origin_sha` is the hash of the file as the user uploaded it, before `prepare`
+    converted or cleaned it. Install looks the prepared bytes up by it, because a
+    LibreOffice conversion is not byte-for-byte repeatable.
+    """
     _prune_upload_cache()
     directory = _upload_cache_dir()
     directory.mkdir(parents=True, exist_ok=True)
     (directory / f"{sha}.docx").write_bytes(raw)
+    if origin_sha and origin_sha != sha:
+        (directory / f"{sha}.origin").write_text(origin_sha, encoding="ascii")
+
+
+def _prepared_for(raw: bytes, sha: str) -> bytes | None:
+    """The cached prepared upload `sha`, if it was made from exactly these bytes."""
+    directory = _upload_cache_dir()
+    origin = directory / f"{sha}.origin"
+    path = directory / f"{sha}.docx"
+    if not re.fullmatch(r"[0-9a-f]{64}", sha or "") or not origin.exists() or not path.exists():
+        return None
+    if origin.read_text(encoding="ascii").strip() != hashlib.sha256(raw).hexdigest():
+        return None
+    return path.read_bytes()
+
+
+def prepare_upload(raw: bytes, filename: str, *, convert_bullets: bool = False):
+    """`docx_normalize.prepare`, with its errors as `TemplateValidationError`."""
+    if len(raw) > _MAX_UPLOAD_BYTES:
+        raise TemplateValidationError(
+            f"Upload is {len(raw)} bytes; maximum is {_MAX_UPLOAD_BYTES}."
+        )
+    try:
+        return docx_normalize.prepare(raw, filename, convert_bullets=convert_bullets)
+    except docx_normalize.UploadFormatError as exc:
+        raise TemplateValidationError(str(exc)) from exc
 
 
 def _load_cached_upload(sha: str) -> bytes:
@@ -841,8 +873,17 @@ def _analysis_to_response(result: template_analyze.AnalyzeResult) -> TemplateAna
     )
 
 
-def analyze_upload(raw: bytes, filename: str) -> TemplateAnalyzeResponse:
-    """Analyse an uploaded DOCX without writing under templates/."""
+def analyze_upload(
+    raw: bytes, filename: str, *, convert_bullets: bool = False
+) -> TemplateAnalyzeResponse:
+    """Analyse an uploaded DOCX without writing under templates/.
+
+    The upload is converted/cleaned first (`docx_normalize.prepare`); what it changed is
+    reported as non-blocking issues, and the cleaned bytes are what gets cached.
+    """
+    origin_sha = hashlib.sha256(raw).hexdigest()
+    prepared = prepare_upload(raw, filename, convert_bullets=convert_bullets)
+    raw, filename = prepared.raw, prepared.filename
     _validate_upload_bytes(raw, filename)
     with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as tmp:
         tmp.write(raw)
@@ -856,7 +897,8 @@ def analyze_upload(raw: bytes, filename: str) -> TemplateAnalyzeResponse:
     finally:
         tmp_path.unlink(missing_ok=True)
 
-    _cache_upload(raw, result.source_sha256)
+    _cache_upload(raw, result.source_sha256, origin_sha=origin_sha)
+    result = result.model_copy(update={"issues": [*prepared.notices, *result.issues]})
     return _analysis_to_response(result)
 
 
@@ -1057,8 +1099,13 @@ def install_baseline(
     profile: TemplateProfile | dict,
     do_calibrate: bool = False,
     label: str | None = None,
+    convert_bullets: bool = False,
 ) -> TemplateBuildResponse:
     """Validate an uploaded .docx, rebuild the tagged template, then swap live files.
+
+    The upload goes through the same `prepare_upload` as analyze. When analyze cached
+    prepared bytes for exactly this file (a converted .doc, say), those are used, so the
+    profile's recorded hash still matches.
 
     Build + smoke-render happen in a temp directory and only then replace baseline,
     tagged template, and `template_profile.json` together.
@@ -1072,6 +1119,17 @@ def install_baseline(
     Raises `TemplateValidationError` for bad inputs and `TemplateBuildError` on build
     failure.
     """
+    confirmed_sha = (
+        profile.source_sha256
+        if isinstance(profile, TemplateProfile)
+        else str((profile or {}).get("source_sha256", ""))
+    )
+    cached = _prepared_for(raw, confirmed_sha)
+    if cached is not None:
+        raw, filename = cached, f"{Path(filename).stem}.docx"
+    else:
+        prepared = prepare_upload(raw, filename, convert_bullets=convert_bullets)
+        raw, filename = prepared.raw, prepared.filename
     _validate_upload_bytes(raw, filename)
     resolved_label = _normalize_library_label(
         label

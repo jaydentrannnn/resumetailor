@@ -56,8 +56,13 @@ def template_preview_pdf() -> FileResponse:
 
 
 @router.post("/api/template/analyze", response_model=TemplateAnalyzeResponse)
-def analyze_template(file: UploadFile = File(...)) -> TemplateAnalyzeResponse:
+def analyze_template(
+    file: UploadFile = File(...), convert_bullets: str | None = Form(None)
+) -> TemplateAnalyzeResponse:
     """Preflight an uploaded baseline without writing under templates/.
+
+    Truthy `convert_bullets` turns typed bullets ("•" + tab) into a real Word list in
+    the server's copy (`docx_normalize`), for a file the analyzer flagged.
 
     A plain `def`: `template_ops.analyze_upload` does real synchronous work (docx
     parsing, full structural analysis), so this must run in FastAPI's threadpool
@@ -66,7 +71,7 @@ def analyze_template(file: UploadFile = File(...)) -> TemplateAnalyzeResponse:
     raw = file.file.read()
     filename = file.filename or "upload.docx"
     try:
-        return template_ops.analyze_upload(raw, filename)
+        return template_ops.analyze_upload(raw, filename, convert_bullets=_truthy(convert_bullets))
     except TemplateValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
@@ -141,6 +146,7 @@ def upload_template(
     profile: str = Form(...),
     calibrate: str | None = Form(None),
     label: str | None = Form(None),
+    convert_bullets: str | None = Form(None),
 ) -> TemplateBuildResponse:
     """Replace the baseline export and regenerate the tagged template.
 
@@ -186,6 +192,7 @@ def upload_template(
             profile=parsed_profile,
             do_calibrate=do_calibrate,
             label=label,
+            convert_bullets=_truthy(convert_bullets),
         )
     except TemplateValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
@@ -282,3 +289,7 @@ def delete_template_library_entry(entry_id: str) -> TemplateLibraryResponse:
         return template_ops.delete_library_entry(entry_id)
     except TemplateValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def _truthy(value: str | None) -> bool:
+    return (value or "").strip().lower() in ("1", "true", "yes", "on")

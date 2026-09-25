@@ -65,10 +65,11 @@ def expected_tags(profile: TemplateProfile) -> set[str]:
     itself a bug is `template_analyze`'s job, not this module's. This module only holds
     tagging accountable to whatever mapping it was actually given.
     """
-    if profile.contact.slots:
-        tags = {NAME_TAG} | {CONTACT_SLOT_TAG_FMT % i for i in range(len(profile.contact.slots))}
-    else:
-        tags = {NAME_TAG, CONTACT_TAG}
+    tags = set() if profile.name_in_header else {NAME_TAG}
+    if profile.contact is not None and profile.contact.slots:
+        tags |= {CONTACT_SLOT_TAG_FMT % i for i in range(len(profile.contact.slots))}
+    elif profile.contact is not None:
+        tags.add(CONTACT_TAG)
 
     exp = profile.experience if profile.enabled.experience else None
     if exp is not None:

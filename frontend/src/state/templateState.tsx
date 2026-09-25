@@ -54,7 +54,8 @@ type TemplateStateValue = {
   libraryBusy: boolean;
   refresh: () => Promise<void>;
   refreshLibrary: () => Promise<void>;
-  beginAnalyze: (file: File) => Promise<void>;
+  /** Re-analyze with `convertBullets` to turn typed bullets into a real list. */
+  beginAnalyze: (file: File, options?: { convertBullets?: boolean }) => Promise<void>;
   setProfileDraft: (profile: Record<string, unknown> | null) => void;
   confirmInstall: () => Promise<boolean>;
   resetWizard: () => void;
@@ -96,6 +97,7 @@ export function TemplateProvider({ children }: { children: ReactNode }) {
   const [remapBusy, setRemapBusy] = useState(false);
   const [calibrateAlso, setCalibrateAlso] = useState(true);
   const [installLabel, setInstallLabel] = useState("");
+  const [convertBullets, setConvertBullets] = useState(false);
   const [library, setLibrary] = useState<TemplateLibraryEntry[]>([]);
   const [libraryActiveId, setLibraryActiveId] = useState<string | null>(null);
   const [libraryBusy, setLibraryBusy] = useState(false);
@@ -143,13 +145,16 @@ export function TemplateProvider({ children }: { children: ReactNode }) {
     setProfileDraft(null);
     setHeadingOverrides({});
     setInstallLabel("");
+    setConvertBullets(false);
     setError(null);
     setBuildLog(null);
     setLastBuildOk(null);
   }, []);
 
-  const beginAnalyze = useCallback(async (file: File) => {
+  const beginAnalyze = useCallback(async (file: File, options?: { convertBullets?: boolean }) => {
     /** Run preflight analysis and open the mapping step when possible. */
+    const convert = Boolean(options?.convertBullets);
+    setConvertBullets(convert);
     setUploading(true);
     setError(null);
     setBuildLog(null);
@@ -161,7 +166,7 @@ export function TemplateProvider({ children }: { children: ReactNode }) {
     setProfileDraft(null);
     setHeadingOverrides({});
     try {
-      const result = await analyzeTemplate(file);
+      const result = await analyzeTemplate(file, { convertBullets: convert });
       setAnalysis(result);
       setProfileDraft(result.suggested_profile);
       setWizardStep("mapping");
@@ -215,6 +220,7 @@ export function TemplateProvider({ children }: { children: ReactNode }) {
       const result: TemplateBuildResponse = await uploadTemplate(draftFile, profileDraft, {
         calibrate: calibrateAlso,
         label: installLabel.trim() || undefined,
+        convertBullets,
       });
       setBuildLog(result.log || null);
       setLastBuildOk(true);
@@ -237,7 +243,15 @@ export function TemplateProvider({ children }: { children: ReactNode }) {
     } finally {
       setUploading(false);
     }
-  }, [draftFile, profileDraft, calibrateAlso, installLabel, refresh, refreshLibrary]);
+  }, [
+    draftFile,
+    profileDraft,
+    calibrateAlso,
+    installLabel,
+    convertBullets,
+    refresh,
+    refreshLibrary,
+  ]);
 
   const activateLibraryEntry = useCallback(
     async (id: string) => {

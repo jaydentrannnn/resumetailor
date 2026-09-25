@@ -6,7 +6,11 @@
   "bad_name",
   "bad_span",
   "bullet_not_list",
+  "comments_removed",
+  "contact_in_header",
   "contact_unmapped_paragraph",
+  "content_controls_unwrapped",
+  "converted_to_docx",
   "date_span_not_date_shaped",
   "decorative_drawing",
   "education_bullets_not_list",
@@ -43,5 +47,7 @@
   "table_sidebar_headings",
   "table_vertical_merge",
   "textboxes",
-  "too_short"
+  "too_short",
+  "tracked_changes_accepted",
+  "typed_bullets_converted"
 ]
