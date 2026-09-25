@@ -5,7 +5,7 @@ build an installer for yourself, move your data into the installed app, and keep
 updated. Commands are PowerShell on Windows unless a section says otherwise.
 
 Contents:
-0. [Do this first: the history rewrite](#0-do-this-first-the-history-rewrite)
+0. [Do this first: the history rewrite and the new `main`](#0-do-this-first-the-history-rewrite-and-the-new-main)
 1. [Two ways to run: dev checkout or installed app](#1-two-ways-to-run-dev-checkout-or-installed-app)
 2. [Test the new code (dev checkout)](#2-test-the-new-code-dev-checkout)
 3. [Build the installer](#3-build-the-installer)
@@ -18,64 +18,110 @@ Contents:
 
 ---
 
-## 0. Do this first: the history rewrite
+## 0. Do this first: the history rewrite and the new `main`
 
-All three branches (`main`, `extension`, `claude/dazzling-davinci-nlr8ob`) were
-rewritten with `git filter-repo` and force-pushed (2026-09-25):
+### What changed on GitHub (2026-09-25)
 
-- **Replaced with synthetic values in every commit:** your legal name, street address,
-  city, ZIP, phone number, old work email, school email and LinkedIn slug. The
-  replacements are "Alex Jordan Lee Doe", "123 Main St", "Springfield", "12345",
-  "555 010 0000" and `alex@example.com`.
-- **Removed from every commit:** `projects.md`, your project write-ups.
-- **Checked:** 106 commits scanned afterwards, with no matches in text or binary
-  objects. The two branches whose latest version was already clean have
-  byte-identical trees. The old and new `main` pass and fail the same tests.
-- **Changed:** every commit hash. Branch names are unchanged.
+- **History rewritten** with `git filter-repo` and force-pushed:
+  - **Replaced with synthetic values in every commit:** your legal name, street
+    address, city, ZIP, phone number, old work email, school email and LinkedIn slug.
+    The replacements are "Alex Jordan Lee Doe", "123 Main St", "Springfield", "12345",
+    "555 010 0000" and `alex@example.com`.
+  - **Removed from every commit:** `projects.md`, your project write-ups.
+  - **Changed:** every commit hash.
+  - **Checked:** 106 commits scanned afterwards, with no matches in text or binary
+    objects. The two branches whose latest version was already clean have
+    byte-identical trees, and the old and new `main` pass and fail the same tests.
+- **Branches now:**
+
+  | Branch | What it is |
+  |---|---|
+  | `main` | the latest work (everything in this guide); the default branch |
+  | `old-main-2026-09` | the previous `main`, kept as-is (also rewritten, so also clean) |
+  | `claude/dazzling-davinci-nlr8ob`, `extension` | fully contained in `main`; safe to delete on GitHub |
+
+### Step 1: clean every clone made before 2026-09-25
 
 **Every clone made before the rewrite still has the old history, including the personal
 data.** That includes the Windows checkout and the orca workspace under
-`C:\Users\Jayden Tran\orca\workspaces\ResumeTailor\`. For each one:
+`C:\Users\Jayden Tran\orca\workspaces\ResumeTailor\`.
 
-1. **Do not `git pull`, `git merge` or `git push` from it.** A pull merges the old history
-   back in, and a push of any branch uploads it again.
-2. Re-clone and carry over only the untracked files:
+**Until a clone is cleaned, do not `git pull`, `git merge` or `git push` from it.** A
+pull merges the old history back in, and a push uploads it again.
 
-   ```powershell
-   cd C:\path\to                      # the folder that holds your checkout
-   Rename-Item resumetailor resumetailor-old
-   git clone https://github.com/jaydentrannnn/resumetailor.git
-   cd resumetailor
-   git checkout claude/dazzling-davinci-nlr8ob
-   robocopy ..\resumetailor-old\data data /E
-   robocopy ..\resumetailor-old\templates templates /E
-   robocopy ..\resumetailor-old\output output /E
-   Copy-Item ..\resumetailor-old\.env .env
-   ```
+Adding files to `.gitignore` does not help. It only affects untracked files, never
+commits already stored in `.git`. Your personal files (`data\`, `templates\`,
+`output\`, `.env`) were always ignored. The personal data was in old versions of
+tracked files (tests, docs), and those versions live in each clone's `.git` folder.
 
-3. Once the new clone works (section 2), delete the old folder:
-   `Remove-Item -Recurse -Force ..\resumetailor-old`. Its `.git` folder holds the old
-   history. Do the same for the orca workspace. Let the other agent start from a fresh
-   clone.
-4. Add the extra patterns this rewrite covered to `data\pii_denylist.txt`: your city,
-   school email address and LinkedIn slug. `tests/test_no_pii.py` then guards them too.
+Pick one of the two ways below for each clone.
 
-**On GitHub:**
-- Old commits stay reachable by their exact hash until GitHub garbage-collects them.
-  The repository is private, so only you can reach them.
-- For a complete purge, ask GitHub Support to "remove cached views and run garbage
-  collection" for `jaydentrannnn/resumetailor`. Say that the history was rewritten to
-  remove personal data. The repo has no pull requests or forks, so nothing else holds
-  the old commits.
-- Commit *author* metadata still shows your school email on your own commits. That is
-  normal. To hide it on future commits, turn on GitHub's "Keep my email address private"
-  and run `git config --global user.email <id>+jaydentrannnn@users.noreply.github.com`.
+**Way A: re-clone.** Simplest and can't miss anything. Recommended for the orca
+workspace.
 
-**Bring `main` up to date.** `main` is 63 commits behind this branch, and this branch
-builds directly on it. The **Run workflow** button in section 3 only appears for
-workflows that are on the default branch. Open a pull request from
-`claude/dazzling-davinci-nlr8ob` into `main` and merge it, or fast-forward it yourself:
-`git push origin claude/dazzling-davinci-nlr8ob:main`.
+```powershell
+cd C:\path\to                      # the folder that holds your checkout
+Rename-Item resumetailor resumetailor-old
+git clone https://github.com/jaydentrannnn/resumetailor.git    # checks out main
+cd resumetailor
+robocopy ..\resumetailor-old\data data /E
+robocopy ..\resumetailor-old\templates templates /E
+robocopy ..\resumetailor-old\output output /E
+Copy-Item ..\resumetailor-old\.env .env
+# once the new clone works (section 2):
+Remove-Item -Recurse -Force ..\resumetailor-old    # its .git folder holds the old history
+```
+
+**Way B: clean the clone in place.** Keeps the folder. `data\`, `templates\`,
+`output\` and `.env` are untouched, because a hard reset leaves untracked and ignored
+files alone.
+
+```powershell
+cd C:\path\to\resumetailor
+git status                      # commit or copy out real uncommitted edits: reset --hard discards them
+git stash list                  # stashes hold old history too; save what you need, then:
+git stash clear
+git worktree list               # clean or remove every extra worktree listed (git worktree remove <path>)
+git tag                         # delete local tags from before today: git tag -d <name>
+
+git fetch origin --prune        # remote-tracking branches move to the rewritten history
+git switch main
+git reset --hard origin/main
+git branch                      # delete every other local branch, e.g.:
+git branch -D claude/dazzling-davinci-nlr8ob extension
+
+git reflog expire --expire=now --all
+git gc --prune=now              # deletes the now-unreferenced old commits
+```
+
+**Check a clone, whichever way you cleaned it.** This must print nothing:
+
+```powershell
+Get-Content data\pii_denylist.txt | Where-Object { $_ -and -not $_.StartsWith('#') } |
+  ForEach-Object { git log --all --oneline -S $_ }
+```
+
+If it prints commits, something still holds the old history: a branch, tag, stash or
+worktree. Find it, or use Way A.
+
+### Step 2: small follow-ups
+
+- **Deny-list:** add the extra patterns this rewrite covered to `data\pii_denylist.txt`:
+  your city, school email address and LinkedIn slug. `tests/test_no_pii.py` then fails if
+  any of them is ever committed again.
+- **Complete purge on GitHub (optional):**
+  - Old commits stay reachable by their exact hash until GitHub garbage-collects them.
+    The repository is private, so only you can reach them.
+  - To speed that up, ask GitHub Support to "remove cached views and run garbage
+    collection" for `jaydentrannnn/resumetailor`, saying the history was rewritten to
+    remove personal data.
+  - The repo has no pull requests or forks, so nothing else holds the old commits.
+- **Author email (optional):** commit metadata still shows your school email on your own
+  commits. To hide it on future commits, turn on GitHub's "Keep my email address
+  private" and run
+  `git config --global user.email <id>+jaydentrannnn@users.noreply.github.com`.
+- **Old branches (optional):** delete `claude/dazzling-davinci-nlr8ob` and `extension` on
+  GitHub (Branches page). Their work is in `main`.
 
 ---
 
@@ -227,10 +273,9 @@ admin rights, and installing newer versions over it is simplest.
 
 ### Option A: GitHub Actions (recommended; nothing to install)
 
-1. Merge the branch into `main` (section 0).
-2. GitHub → **Actions** → **Release** → **Run workflow** (branch `main`). Leave "Also build
+1. GitHub → **Actions** → **Release** → **Run workflow** (branch `main`). Leave "Also build
    macOS" unticked unless you need a Mac build.
-3. Wait about 20–30 minutes. Open the run → **Artifacts** → `installer-windows-x64` →
+2. Wait about 20–30 minutes. Open the run → **Artifacts** → `installer-windows-x64` →
    unzip.
 
 For a **versioned** build, tag it instead:
