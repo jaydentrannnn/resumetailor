@@ -144,6 +144,38 @@ def has_tab_element(run) -> bool:
     return run._r.find(qn("w:tab")) is not None
 
 
+_DRAWING_TAGS = ("w:drawing", "w:pict", "w:object")
+
+
+def _has_drawing(run) -> bool:
+    """True for a run holding an image, shape or embedded object (not text)."""
+    return any(run._r.find(f".//{qn(tag)}") is not None for tag in _DRAWING_TAGS)
+
+
+def _drop_run(run) -> None:
+    """Remove a run, unless it holds a drawing: then only its text goes.
+
+    An icon beside the name, a phone glyph in the contact line, a divider image: the
+    build never edits them, so collapsing a paragraph to one tagged run keeps them in
+    place (template-analyze reports them as the non-blocking `decorative_drawing`).
+    """
+    if _has_drawing(run):
+        for t in run._r.findall(qn("w:t")):
+            run._r.remove(t)
+        return
+    run._r.getparent().remove(run._r)
+
+
+def collapse_runs(runs, tag: str) -> None:
+    """Put ``tag`` in the first text run and drop the other runs, keeping drawings."""
+    runs = list(runs)
+    target = next((run for run in runs if not _has_drawing(run)), runs[0])
+    set_run_text(target, tag)
+    for extra in runs:
+        if extra._r is not target._r:
+            _drop_run(extra)
+
+
 def set_run_text(run, text: str, *, keep_tabs: bool = False) -> None:
     """Replace a run's text, preserving significant whitespace.
 
@@ -630,7 +662,7 @@ def tag_header(paragraph: Paragraph, fields: list[str], *, tail_field: str) -> N
         else:
             set_run_text(tab_run, "\t" + tail_field)
         for extra in runs[tab_idx + 1 :]:
-            paragraph._p.remove(extra._r)
+            _drop_run(extra)
     else:
         # Tab and date are in separate runs; keep that split so the date keeps its own
         # formatting (the tab run is sometimes bold, the date never is).
@@ -640,15 +672,13 @@ def tag_header(paragraph: Paragraph, fields: list[str], *, tail_field: str) -> N
             set_run_text(tab_run, "\t")
         set_run_text(runs[tab_idx + 1], tail_field)
         for extra in runs[tab_idx + 2 :]:
-            paragraph._p.remove(extra._r)
+            _drop_run(extra)
 
 
 def tag_bullet(paragraph: Paragraph, expr: str) -> None:
     """Collapse a bullet to a single tagged run, keeping its list formatting."""
     runs = paragraph.runs
-    set_run_text(runs[0], expr)
-    for extra in runs[1:]:
-        paragraph._p.remove(extra._r)
+    collapse_runs(runs, expr)
 
 
 def build_loop(
@@ -957,9 +987,7 @@ def build_name_profile(doc, profile: TemplateProfile) -> None:
     runs = paragraph.runs
     if not runs:
         raise RuntimeError("Name line has no runs to tag.")
-    set_run_text(runs[0], NAME_TAG)
-    for extra in runs[1:]:
-        paragraph._p.remove(extra._r)
+    collapse_runs(runs, NAME_TAG)
 
 
 def build_contact_profile(doc, profile: TemplateProfile) -> None:
@@ -979,9 +1007,7 @@ def build_contact_profile(doc, profile: TemplateProfile) -> None:
             runs = paragraph.runs
             if not runs:
                 raise RuntimeError(f"Contact slot {i} has no runs to tag.")
-            set_run_text(runs[0], CONTACT_SLOT_TAG_FMT % i)
-            for extra in runs[1:]:
-                paragraph._p.remove(extra._r)
+            collapse_runs(runs, CONTACT_SLOT_TAG_FMT % i)
         return
 
     paragraph = _para_by_id(doc, profile.contact.paragraph_id)
@@ -989,9 +1015,7 @@ def build_contact_profile(doc, profile: TemplateProfile) -> None:
     runs = paragraph.runs
     if not runs:
         raise RuntimeError("Contact line has no runs to tag.")
-    set_run_text(runs[0], CONTACT_TAG)
-    for extra in runs[1:]:
-        paragraph._p.remove(extra._r)
+    collapse_runs(runs, CONTACT_TAG)
 
 
 def _tag_mapped_header(
@@ -1045,9 +1069,7 @@ def _tag_experience_prototype(
     elif mapping.title_paragraph_id is not None:
         title_para = _para_by_id(doc, mapping.title_paragraph_id)
         if title_para.runs:
-            set_run_text(title_para.runs[0], EXPERIENCE_TITLE_TAG)
-            for extra in title_para.runs[1:]:
-                title_para._p.remove(extra._r)
+            collapse_runs(title_para.runs, EXPERIENCE_TITLE_TAG)
     else:
         raise RuntimeError("Experience mapping is missing a job title.")
 
@@ -1599,9 +1621,7 @@ def build_generic(doc, profile: TemplateProfile) -> None:
     heading_runs = heading_clone.runs
     if not heading_runs:
         raise RuntimeError("Heading prototype paragraph has no runs to tag.")
-    set_run_text(heading_runs[0], SECTION_TITLE_TAG)
-    for extra in heading_runs[1:]:
-        heading_clone._p.remove(extra._r)
+    collapse_runs(heading_runs, SECTION_TITLE_TAG)
 
     insertions: list = [make_para(SECTION_LOOP_OPEN)]
     if before_heading_donors:
@@ -1801,13 +1821,11 @@ def build_generic_table(doc, profile: TemplateProfile) -> None:
             if not heading_tagged:
                 runs = p_obj.runs
                 if runs:
-                    set_run_text(runs[0], SECTION_TITLE_TAG)
-                    for extra in runs[1:]:
-                        p_obj._p.remove(extra._r)
+                    collapse_runs(runs, SECTION_TITLE_TAG)
                 heading_tagged = True
             else:
                 for run in list(p_obj.runs):
-                    run._r.getparent().remove(run._r)
+                    _drop_run(run)
     if not heading_tagged:
         raise RuntimeError("Heading prototype row has no text to tag.")
 

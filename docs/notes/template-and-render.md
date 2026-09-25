@@ -387,3 +387,8 @@ required or made safe to finally do.
   analyze → build → `verify_tagged` → `verify_roundtrip` pass came back clean for both.
   Full backend suite: 649 passed, 1 deselected. Frontend: `tsc -b`, `oxlint`,
   `vitest run`, `vite build` all clean.
+
+## Decorative drawings (B15, 2026-09)
+
+- `_document_has_textboxes` used to block on any `w:drawing`: a divider line, an icon, a headshot, a logo. It now blocks only when a `w:txbxContent` (DrawingML or VML text box) holds text. Other drawings produce the non-blocking `decorative_drawing` note.
+- The build removed every run but the first when collapsing a paragraph to one tag, which deleted an icon beside the name or contact line. `collapse_runs`/`_drop_run` in `template_build.py` now keep drawing runs (`w:drawing`, `w:pict`, `w:object`) in place, strip only their text, and put the tag in the first text run even when an icon comes first. Covered by `tests/test_template_drawings.py` through analyze, build and render.

@@ -220,16 +220,28 @@ def _document_has_tables(doc) -> bool:
 
 
 def _document_has_textboxes(doc) -> bool:
-    """True when any paragraph hosts a drawing/textbox (common multi-column cue).
+    """True when a text box holds text (the common multi-column / sidebar cue).
 
-    Checks paragraphs inside table cells too — a textbox parked in a cell is just as
-    strong a multi-column cue as one at body level.
+    `w:txbxContent` covers both DrawingML and legacy VML text boxes. Checks paragraphs
+    inside table cells too: a text box parked in a cell is just as strong a cue. An
+    empty text box (a styled rectangle) is decoration, see `_document_has_drawings`.
+    """
+    for paragraph, _location in docx_text.iter_document_paragraphs(doc):
+        for box in paragraph._p.iter(qn("w:txbxContent")):
+            if "".join(t.text or "" for t in box.iter(qn("w:t"))).strip():
+                return True
+    return False
+
+
+def _document_has_drawings(doc) -> bool:
+    """True when the body has a drawing or VML shape: a rule, an icon, a photo, a logo.
+
+    Not blocking. The build copies paragraphs it does not tag untouched, drawings
+    included, and never sends them anywhere near the model.
     """
     for paragraph, _location in docx_text.iter_document_paragraphs(doc):
         p = paragraph._p
-        if p.find(f".//{qn('w:txbxContent')}") is not None:
-            return True
-        if p.find(f".//{qn('w:drawing')}") is not None:
+        if p.find(f".//{qn('w:drawing')}") is not None or p.find(f".//{qn('w:pict')}") is not None:
             return True
     return False
 
@@ -1682,10 +1694,21 @@ def _analyze_document(
             Issue(
                 code="textboxes",
                 message=(
-                    "Document contains drawings or text boxes, which usually means a "
+                    "Document puts text inside text boxes, which usually means a "
                     "multi-column or sidebar layout. Only single-column body text is supported."
                 ),
                 blocking=True,
+            )
+        )
+    elif _document_has_drawings(doc):
+        issues.append(
+            Issue(
+                code="decorative_drawing",
+                message=(
+                    "Images, icons and lines are kept exactly as they are; only the text "
+                    "around them is tailored."
+                ),
+                blocking=False,
             )
         )
 
