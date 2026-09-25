@@ -8,6 +8,55 @@ export function matchesRunQuery(run: RunHistoryEntry, query: string): boolean {
   return words.every((w) => haystack.includes(w));
 }
 
+export type RunSort = "started" | "title" | "company" | "status" | "coverage" | "pages";
+export type RunStatusFilter = "" | "succeeded" | "failed" | "cancelled" | "active";
+
+function coverageRatio(run: RunHistoryEntry): number {
+  return run.coverage_total ? (run.coverage_matched ?? 0) / run.coverage_total : -1;
+}
+
+/** Runs matching the search words and the status filter ("active" = queued or running). */
+export function filterRuns(
+  runs: RunHistoryEntry[],
+  query: string,
+  status: RunStatusFilter,
+): RunHistoryEntry[] {
+  return runs.filter(
+    (run) =>
+      matchesRunQuery(run, query) &&
+      (!status ||
+        (status === "active"
+          ? run.status === "queued" || run.status === "running"
+          : run.status === status)),
+  );
+}
+
+/** A sorted copy; ties fall back to newest first so the order never jumps. */
+export function sortRuns(
+  runs: RunHistoryEntry[],
+  sort: RunSort,
+  direction: "asc" | "desc",
+): RunHistoryEntry[] {
+  const sign = direction === "asc" ? 1 : -1;
+  const key = (a: RunHistoryEntry, b: RunHistoryEntry): number => {
+    switch (sort) {
+      case "title":
+        return a.title.localeCompare(b.title);
+      case "company":
+        return (a.company ?? "").localeCompare(b.company ?? "");
+      case "status":
+        return a.status.localeCompare(b.status);
+      case "coverage":
+        return coverageRatio(a) - coverageRatio(b);
+      case "pages":
+        return (a.pages ?? -1) - (b.pages ?? -1);
+      default:
+        return a.created_at.localeCompare(b.created_at);
+    }
+  };
+  return [...runs].sort((a, b) => sign * key(a, b) || b.created_at.localeCompare(a.created_at));
+}
+
 export type CompareKind = "same" | "changed" | "only_a" | "only_b";
 
 export interface CompareRow {

@@ -89,6 +89,8 @@ export function DataTable<T>({
   onSort,
   empty,
   loading,
+  loadingText = "Loading applications…",
+  rowLabel,
   error,
   selectable = () => true,
 }: {
@@ -102,9 +104,13 @@ export function DataTable<T>({
   onSort: (id: string) => void;
   empty: ReactNode;
   loading?: boolean;
+  loadingText?: string;
+  /** The row's name for its checkbox ("Select Data Analyst at Acme"); defaults to its id. */
+  rowLabel?: (row: T) => string;
   error?: string | null;
   selectable?: (row: T) => boolean;
 }) {
+  const label = (row: T) => `Select ${rowLabel ? rowLabel(row) : id(row)}`;
   const checkbox = useRef<HTMLInputElement>(null);
   const mobileCheckbox = useRef<HTMLInputElement>(null);
   const eligible = rows.filter(selectable);
@@ -181,7 +187,7 @@ export function DataTable<T>({
               <td className="px-2 py-3 align-top">
                 <input
                   type="checkbox"
-                  aria-label={`Select ${id(row)}`}
+                  aria-label={label(row)}
                   checked={selected.has(id(row))}
                   disabled={!selectable(row)}
                   onChange={() => {
@@ -229,7 +235,7 @@ export function DataTable<T>({
             <label className="flex items-center gap-2 text-xs text-ink-muted">
               <input
                 type="checkbox"
-                aria-label={`Select ${id(row)}`}
+                aria-label={label(row)}
                 checked={selected.has(id(row))}
                 disabled={!selectable(row)}
                 onChange={() => {
@@ -252,7 +258,7 @@ export function DataTable<T>({
       </div>
       {!rows.length && (
         <div className="p-8 text-center text-sm text-ink-muted">
-          {loading ? "Loading applications…" : empty}
+          {loading ? loadingText : empty}
         </div>
       )}
     </div>

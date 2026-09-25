@@ -20,6 +20,19 @@ test("tailor a resume, edit a bullet and re-render without AI", async ({ page })
   await box.fill(`${current} Quickly.`);
   await page.getByRole("button", { name: "Update resume (no AI)" }).click();
   await expect(page.getByText(/Resume updated · \d page/)).toBeVisible({ timeout: 60_000 });
+
+  // Recent runs: the Apply page's table, with a row menu.
+  await expect(page.getByRole("heading", { name: "Recent runs" })).toBeVisible();
+  await expect(page.getByRole("columnheader", { name: /Skill match/ })).toBeVisible();
+  const actions = page.getByRole("button", { name: /^Actions for / }).first();
+  // The menu closes on scroll: bring the row into view before opening it.
+  await actions.scrollIntoViewIfNeeded();
+  await page.evaluate(() => new Promise((done) => requestAnimationFrame(() => done(null))));
+  await actions.click();
+  await expect(page.getByRole("menuitem", { name: "Download PDF" })).toBeVisible();
+  await expect(page.getByRole("menuitem", { name: "Showing above" })).toBeDisabled();
+  await page.keyboard.press("Escape");
+  await expectAccessible(page);
 });
 
 test("profile: one save bar validates, then saves", async ({ page }) => {
