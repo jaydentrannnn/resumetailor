@@ -197,9 +197,24 @@
 
   const synonymList = normaliseSynonyms(synonyms);
 
+  /** One box for the whole international number: a ^\+ pattern, or an "international" /
+   * "include country code" / "E.164" hint. A "+1 (555)" placeholder alone is not enough:
+   * masked inputs show one and add the +1 themselves. */
+  function wantsInternational(el, label) {
+    const placeholder = el.getAttribute("placeholder") || "";
+    if (/^\^?\\?\+/.test(el.getAttribute("pattern") || "")) return true;
+    const described = el.getAttribute("aria-describedby");
+    const help = described ? rootOf(el).getElementById?.(described)?.textContent || "" : "";
+    return /international|e\.?164|include (?:the |your )?country code|with country code/i
+      .test(`${placeholder} ${label || ""} ${help}`);
+  }
+
   /** A phone prefix is a distinct field even when the widget is called country. */
   function phoneCodeControl(el, label) {
     const clues = `${label} ${el.id} ${el.name || ""} ${el.getAttribute("autocomplete") || ""}`.toLowerCase();
+    // "Phone (include country code)" is the number box itself, asking for +<code>.
+    if (el.getAttribute("type") === "tel" &&
+        /\b(?:include|including|with)\s+(?:the\s+|your\s+)?country\s+code/.test(clues)) return false;
     if (/tel-country-code|dial(?:ling|ing)?[ _-]*code|calling[ _-]*code|phone[ _-]*country|country[ _/-]*code/.test(clues)) return true;
     if (!/country/.test(clues)) return false;
     if (el.tagName !== "SELECT" && el.getAttribute("role") !== "combobox") return false;
@@ -711,8 +726,12 @@
       if (key === "phone" && fields.phone_country_code && (workdayPhoneCode ||
           (el.getAttribute("type") === "tel" &&
            deepQueryAll(document, "select,[role='combobox']").some(other => phoneCodeControl(other, labelFor(other)))))) {
+        // A separate country-code control: type only the national number.
         const code = String(fields.phone_country_code);
-        if (textValue.startsWith(code)) textValue = textValue.slice(code.length).replace(/^[\s()\-.]+/, "");
+        if (fields.phone_national) textValue = String(fields.phone_national);
+        else if (textValue.startsWith(code)) textValue = textValue.slice(code.length).replace(/^[\s()\-.]+/, "");
+      } else if (key === "phone" && fields.phone_e164 && wantsInternational(el, label)) {
+        textValue = String(fields.phone_e164);
       }
       setNativeValue(el, textValue);
       written = textValue;

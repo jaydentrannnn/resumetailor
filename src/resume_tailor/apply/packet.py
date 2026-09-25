@@ -18,7 +18,9 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 
 from resume_tailor import config, edu_dates
-from resume_tailor.apply import ats_hints, field_matcher, profile as profile_mod
+from resume_tailor.apply import ats_hints, field_matcher
+from resume_tailor.apply import phone as phone_mod
+from resume_tailor.apply import profile as profile_mod
 from resume_tailor.apply.profile import ApplicantProfile
 from resume_tailor.data import MasterResume, load
 from resume_tailor.expand import Expansion, ExpandedEntry
@@ -453,7 +455,12 @@ def build_fields(profile: ApplicantProfile, resume: MasterResume) -> dict[str, s
         # Ticks Workday's "I have a preferred name" box, which reveals the inputs.
         fields["has_preferred_name"] = "Yes"
     _maybe_set(fields, "email", _pick(profile.email, contact.email) or None)
-    _maybe_set(fields, "phone", _pick(profile.phone, contact.phone) or None)
+    typed_phone = _pick(profile.phone, contact.phone)
+    _maybe_set(fields, "phone", typed_phone or None)
+    # The two shapes forms ask for (`phone.py`); the filler picks by the input's hints.
+    code = profile.phone_country_code or "+1"
+    _maybe_set(fields, "phone_e164", phone_mod.e164(typed_phone, code))
+    _maybe_set(fields, "phone_national", phone_mod.national(typed_phone, code))
     _maybe_set(fields, "phone_device_type", profile.phone_device_type or DEFAULTS["phone_device_type"])
     _maybe_set(fields, "phone_country_code", profile.phone_country_code or None)
     _maybe_set(fields, "phone_country_region", profile.phone_country_region or None)

@@ -117,6 +117,12 @@ SYNONYMS: list[tuple[str, str]] = [
     (r"notice\s*period|weeks\s*of\s*notice", "notice_period"),
     (AUTHORIZED_TO_WORK, "authorized_to_work"),
     (OVER_18, "over_18"),
+    # "Phone (include country code)" is the number box, typed with +<code> (E.164).
+    (
+        r"(?:phone|mobile|telephone|cell).*"
+        r"\b(?:include|including|with)\s+(?:the\s+|your\s+)?country\s*code",
+        "phone",
+    ),
     (r"country\s*(?:/|or)?\s*(?:dial(?:ling|ing)?\s*)?code|dial(?:ling|ing)?\s*code|calling\s*code|tel-country-code", "phone_country_code"),
     # "Phone Extension" is its own (optional) field; no profile fact feeds it.
     (r"\bextension\b|\bext\.?$", "phone_extension"),

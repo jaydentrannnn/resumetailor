@@ -261,3 +261,37 @@ def test_readiness_sees_empty_required_fields_in_shadow_roots(page):
     assert page.evaluate(_READINESS, {}) == ["First name"]
     page.locator("#f").fill("Alex")
     assert page.evaluate(_READINESS, {}) == []
+
+
+_PHONES = """
+<label for="plain">Phone</label><input id="plain" type="tel">
+<label for="intl">Phone (include country code)</label><input id="intl" type="tel">
+<label for="pattern">Mobile</label><input id="pattern" type="tel" pattern="^\\+[0-9]{8,15}$">
+<div class="phone-group">
+  <label for="code">Country code</label>
+  <select id="code"><option value="">Select</option><option>+1</option><option>+44</option></select>
+  <label for="split">Phone number</label><input id="split" type="tel">
+</div>
+"""
+
+
+@pytest.mark.parametrize(
+    ("field", "expected"),
+    [
+        ("plain", "(555) 010-0000"),
+        ("intl", "+15550100000"),
+        ("pattern", "+15550100000"),
+        ("split", "5550100000"),
+    ],
+)
+def test_phone_takes_the_shape_the_input_asks_for(page, field, expected):
+    page.set_content(_PHONES)
+    for other in {"plain", "intl", "pattern", "split"} - {field}:
+        page.evaluate(f"document.getElementById('{other}').remove()")
+    if field != "split":
+        page.evaluate("document.querySelector('.phone-group').remove()")
+    _fill(page, {
+        "phone": "(555) 010-0000", "phone_country_code": "+1",
+        "phone_e164": "+15550100000", "phone_national": "5550100000",
+    })
+    assert page.input_value(f"#{field}") == expected
