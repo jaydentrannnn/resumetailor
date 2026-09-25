@@ -111,9 +111,49 @@ _RETURN_INTERN = re.compile(
 )
 
 
+#: Business-track entry titles (plan P4-D3). Banks hire undergraduates as "Summer
+#: Analyst", and corporates run analyst, rotational and development programs. A bare
+#: "Analyst" or "Associate" is not enough: those titles also name experienced roles, so
+#: the posting's years requirement decides (they still pass `check_title`). These words
+#: only count without a senior word or a level token ("Summer Analyst II" is not entry).
+_BUSINESS_ENTRY = re.compile(
+    r"\b(?:summer\s+(?:analyst|associate)|(?:analyst|associate)\s+(?:program|class)"
+    r"|rotational|rotation\s+program|(?:leadership\s+)?development\s+program"
+    r"|early\s+(?:career|talent))\b",
+    re.I,
+)
+
+#: A senior word that is part of an entry-level title rather than a seniority marker:
+#: "Associate Product Manager", "Assistant Project Manager".
+_JUNIOR_MANAGER = re.compile(
+    r"\b(?:associate|assistant|junior|jr\.?)\s+(?:\w+\s+){0,2}manager\b", re.I
+)
+_SENIOR_ONLY = re.compile(
+    r"\b(?:senior|sr\.?|staff|principal|director|head\s+of|vp|vice\s+president)\b", re.I
+)
+
+
 def is_early_career_title(role: str) -> bool:
-    """True for an intern / new-grad / entry / student title."""
-    return _YEARS_SOFT.search(role) is not None
+    """True for an intern / new-grad / entry / student title, or a business entry title."""
+    if _YEARS_SOFT.search(role) is not None:
+        return True
+    return (
+        _BUSINESS_ENTRY.search(role) is not None
+        and _TITLE_SENIOR.search(_JUNIOR_MANAGER.sub(" ", role)) is None
+        and _TITLE_LEVEL_FLAG.search(role) is None
+    )
+
+
+def _senior_title(role: str) -> bool:
+    """A seniority word that makes the title more than entry level.
+
+    "Product Manager Intern" and "Associate Product Manager" are entry-level: for an
+    intern / new-grad title, or a junior manager title, only unambiguous seniority
+    ("Senior", "Director", "VP", …) counts.
+    """
+    if _YEARS_SOFT.search(role) or _JUNIOR_MANAGER.search(role):
+        return _SENIOR_ONLY.search(role) is not None
+    return _TITLE_SENIOR.search(role) is not None
 
 
 def has_advanced_degree_requirement(text: str) -> bool:
@@ -158,7 +198,7 @@ def check_title(
     flags: list[str] = []
     if _TITLE_HARD.search(role):
         reasons.append("title_advanced_degree")
-    if _TITLE_SENIOR.search(role):
+    if _senior_title(role):
         reasons.append("title_senior")
     if _TITLE_LEVEL_FLAG.search(role):
         flags.append("title_level_token")

@@ -1,0 +1,17 @@
+{
+  "description": "Fintech, payments and trading firms with public job boards. Suggestions only: each board is checked live before it is added.",
+  "boards": [
+    {"ats": "greenhouse", "slug": "stripe", "company": "Stripe"},
+    {"ats": "greenhouse", "slug": "robinhood", "company": "Robinhood"},
+    {"ats": "greenhouse", "slug": "affirm", "company": "Affirm"},
+    {"ats": "greenhouse", "slug": "coinbase", "company": "Coinbase"},
+    {"ats": "greenhouse", "slug": "brex", "company": "Brex"},
+    {"ats": "greenhouse", "slug": "chime", "company": "Chime"},
+    {"ats": "greenhouse", "slug": "sofi", "company": "SoFi"},
+    {"ats": "greenhouse", "slug": "gusto", "company": "Gusto"},
+    {"ats": "greenhouse", "slug": "wehrtyou", "company": "Hudson River Trading"},
+    {"ats": "lever", "slug": "plaid", "company": "Plaid"},
+    {"ats": "ashby", "slug": "ramp", "company": "Ramp"},
+    {"ats": "smartrecruiters", "slug": "Visa", "company": "Visa"}
+  ]
+}

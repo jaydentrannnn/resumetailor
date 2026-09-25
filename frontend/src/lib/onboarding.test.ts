@@ -72,6 +72,10 @@ describe("onboarding helpers", () => {
     expect(out[1].categories[0]).toBe("Quantitative Finance New Grad Roles");
     expect(out[2].enabled).toBe(false);
     expect(out[3]).toBe(SOURCES[3]);
+    expect(out[4]).toMatchObject({ kind: "ats_board", boards: [], enabled: true });
+    // Choosing business again never adds a second watchlist.
+    expect(sourcesForField(out, "business").filter((s) => s.kind === "ats_board")).toHaveLength(1);
+    expect(sourcesForField(SOURCES, "cs").some((s) => s.kind === "ats_board")).toBe(false);
     expect(sourcesForField(SOURCES, "other")).toBe(SOURCES);
   });
 

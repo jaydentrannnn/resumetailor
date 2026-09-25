@@ -486,3 +486,95 @@ def parse_pipe_table_readme(text: str, categories: list[str]) -> list[SourceRow]
         for seg_start, seg_end in keep_segments:
             rows.extend(_parse_pipe_rows(lines, seg_start, seg_end))
     return rows
+
+
+# --- company watchlists (``kind="ats_board"``, plan P4-D2) -------------------------
+
+
+def _keyword_re(words: list[str], *, whole: bool) -> re.Pattern[str] | None:
+    """One case-insensitive pattern for ``words``; None when there are none.
+
+    Keywords match at a word start, so "intern" also finds "Internship" and "consult"
+    finds "Consulting". Locations match whole words, so "NY" does not match "Albany".
+    """
+    cleaned = [w.strip() for w in words if w and w.strip()]
+    if not cleaned:
+        return None
+    tail = r"(?!\w)" if whole else ""
+    alternatives = "|".join(re.escape(w) for w in cleaned)
+    return re.compile(rf"(?<!\w)(?:{alternatives}){tail}", re.IGNORECASE)
+
+
+def _age_days(updated_at: str, now: Any) -> int | None:
+    from datetime import UTC, datetime
+
+    try:
+        when = datetime.fromisoformat(updated_at.replace("Z", "+00:00"))
+    except (AttributeError, ValueError):
+        return None
+    if when.tzinfo is None:
+        when = when.replace(tzinfo=UTC)
+    return max(0, (now - when).days)
+
+
+def board_rows(
+    source: Any,
+    *,
+    list_board: Any = None,
+    now: Any = None,
+) -> tuple[list[SourceRow], list[str]]:
+    """Postings from every board on a watchlist source, and one error per failed board.
+
+    ``source`` is a `SourceConfig` with ``kind="ats_board"``. A board that fails
+    (wrong name, unreachable) is reported and skipped; the others still count.
+    A posting with no date is kept as new (``age_days=0``, flag ``age_unknown``):
+    boards only list open postings.
+    """
+    from datetime import UTC, datetime
+
+    from resume_tailor.apply import boards, identity
+
+    list_board = list_board or boards.list_board
+    now = now or datetime.now(UTC)
+    include = _keyword_re(source.include, whole=False)
+    exclude = _keyword_re(source.exclude, whole=False)
+    places = _keyword_re(source.locations, whole=True)
+    rows: list[SourceRow] = []
+    errors: list[str] = []
+    for position, board in enumerate(source.boards):
+        if position:
+            boards._sleep(boards.BOARD_DELAY_SECONDS)  # noqa: SLF001
+        name = board.company or board.slug
+        try:
+            jobs = list_board(board.ats, board.slug)
+        except boards.BoardNotFound:
+            errors.append(f"{name}: no {board.ats} board named {board.slug!r}")
+            continue
+        except Exception as exc:  # noqa: BLE001 - one board must not sink the source
+            errors.append(f"{name}: {exc}")
+            continue
+        for job in jobs:
+            if not job.title:
+                continue
+            if include and not include.search(job.title):
+                continue
+            if exclude and exclude.search(job.title):
+                continue
+            if places and job.location and not places.search(job.location):
+                continue
+            age = _age_days(job.updated_at, now) if job.updated_at else None
+            flags = [] if age is not None else ["age_unknown"]
+            rows.append(
+                SourceRow(
+                    company=board.company or job.company or board.slug,
+                    role=job.title,
+                    location=job.location,
+                    age=f"{age}d" if age is not None else "",
+                    age_days=age if age is not None else 0,
+                    job_id=identity.canonical_key(job.url),
+                    application_link=job.url,
+                    source_id=source.id,
+                    flags=flags,
+                )
+            )
+    return rows, errors

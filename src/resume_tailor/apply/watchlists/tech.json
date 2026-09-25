@@ -1,0 +1,17 @@
+{
+  "description": "Technology companies with public job boards that also hire business, product and operations interns. Suggestions only: each board is checked live before it is added.",
+  "boards": [
+    {"ats": "greenhouse", "slug": "figma", "company": "Figma"},
+    {"ats": "greenhouse", "slug": "databricks", "company": "Databricks"},
+    {"ats": "greenhouse", "slug": "airbnb", "company": "Airbnb"},
+    {"ats": "greenhouse", "slug": "discord", "company": "Discord"},
+    {"ats": "greenhouse", "slug": "dropbox", "company": "Dropbox"},
+    {"ats": "greenhouse", "slug": "pinterest", "company": "Pinterest"},
+    {"ats": "greenhouse", "slug": "reddit", "company": "Reddit"},
+    {"ats": "greenhouse", "slug": "lyft", "company": "Lyft"},
+    {"ats": "lever", "slug": "palantir", "company": "Palantir"},
+    {"ats": "ashby", "slug": "openai", "company": "OpenAI"},
+    {"ats": "ashby", "slug": "notion", "company": "Notion"},
+    {"ats": "smartrecruiters", "slug": "BoschGroup", "company": "Bosch"}
+  ]
+}

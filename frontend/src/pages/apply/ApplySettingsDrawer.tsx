@@ -1,12 +1,21 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
-import type { AppConfig, JobSettings, SchedulerStatus } from "../../api";
+import type { AppConfig, JobSettings, SchedulerStatus, SourceConfig } from "../../api";
 import { Modal } from "../../components/Modal";
 import { Button } from "../../components/ui";
 import { autoSubmitCapLabel } from "../../lib/applyPage";
 import { tailorModelLabel } from "../../lib/modelLabel";
+import { newWatchlistSource, WATCHLIST_ID } from "../../lib/watchlist";
 import { useConfirm } from "../../state/confirmState";
 import { BrowserCommand, ConnectionStatus } from "./BrowserConnection";
+import { CategoryPicker, WatchlistEditor } from "./SourceEditors";
+
+function sourceLabel(source: SourceConfig): string {
+  if (source.kind === "ats_board") {
+    return source.id === WATCHLIST_ID ? "Company watchlist" : source.id;
+  }
+  return source.id;
+}
 
 /** Platforms that may auto-submit. Workday is absent: it always stops for review. */
 const AUTO_SUBMIT_ATS: { id: string; label: string }[] = [
@@ -59,6 +68,8 @@ export function ApplySettingsDrawer({
   const apply = settings.apply;
   const patch = (fields: Partial<JobSettings["apply"]>) =>
     setSettings({ ...settings, apply: { ...apply, ...fields } });
+  const updateSource = (index: number, next: SourceConfig) =>
+    patch({ sources: apply.sources.map((s, i) => (i === index ? next : s)) });
   const allowed = new Set(apply.auto_submit_ats.map((a) => a.toLowerCase()));
 
   async function toggleAutoSubmit(on: boolean) {
@@ -95,17 +106,39 @@ export function ApplySettingsDrawer({
                     })
                   }
                 />
-                <label htmlFor={`source-${source.id}`}>
-                  <span className="font-medium">{source.id}</span>
-                  {source.categories.length > 0 && (
-                    <span className="block text-xs text-ink-muted">
-                      {source.categories.join(" · ")}
-                    </span>
+                <div className="min-w-0 flex-1">
+                  <label htmlFor={`source-${source.id}`}>
+                    <span className="font-medium">{sourceLabel(source)}</span>
+                    {source.kind !== "ats_board" && source.categories.length > 0 && (
+                      <span className="block text-xs text-ink-muted">
+                        {source.categories.join(" · ")}
+                      </span>
+                    )}
+                  </label>
+                  {source.kind === "ats_board" ? (
+                    <WatchlistEditor
+                      source={source}
+                      onChange={(next) => updateSource(index, next)}
+                    />
+                  ) : (
+                    <CategoryPicker
+                      source={source}
+                      onChange={(next) => updateSource(index, next)}
+                    />
                   )}
-                </label>
+                </div>
               </li>
             ))}
           </ul>
+          {!apply.sources.some((source) => source.kind === "ats_board") && (
+            <button
+              type="button"
+              className="mt-2 text-xs text-accent underline"
+              onClick={() => patch({ sources: [...apply.sources, newWatchlistSource()] })}
+            >
+              Add a company watchlist
+            </button>
+          )}
           <div className="mt-3 flex flex-wrap items-center gap-4">
             <label>
               Most postings per search{" "}

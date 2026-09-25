@@ -48,6 +48,7 @@ export function CopyButton({ label, text }: { label: string; text: string }) {
   return (
     <button
       type="button"
+      aria-label={label}
       onClick={() => void onCopy()}
       className="inline-grid shrink-0 place-items-center whitespace-nowrap rounded-md border border-line px-2.5 py-1 text-xs font-medium text-ink-muted hover:border-accent hover:text-accent"
     >

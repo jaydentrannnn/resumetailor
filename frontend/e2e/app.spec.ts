@@ -126,3 +126,17 @@ test("header: pause and resume all automation", async ({ page }) => {
   await resume.click();
   await expect(page.getByRole("button", { name: "Pause automation" })).toBeVisible();
 });
+
+test("apply settings: build a company watchlist", async ({ page }) => {
+  await page.goto("/applications");
+  await page.getByRole("button", { name: "Apply settings" }).click();
+  await page.getByRole("button", { name: "Add a company watchlist" }).click();
+  const link = page.getByLabel("Job board link");
+  await link.fill("https://boards.greenhouse.io/nope");
+  await page.getByRole("button", { name: "Add company" }).click();
+  await expect(page.getByRole("alert")).toContainText("No greenhouse job board");
+  await link.fill("https://boards.greenhouse.io/acme");
+  await page.getByRole("button", { name: "Add company" }).click();
+  await expect(page.getByRole("button", { name: "Remove Acme Capital" })).toBeVisible();
+  await expectAccessible(page);
+});

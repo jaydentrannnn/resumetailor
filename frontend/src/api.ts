@@ -107,12 +107,24 @@ export type ScreenSettings = {
   block_patterns: string[];
 };
 
+export type BoardAts = "greenhouse" | "lever" | "ashby" | "smartrecruiters";
+
+/** One company job board on a watchlist source. */
+export type BoardConfig = { ats: BoardAts; slug: string; company: string };
+
 export type SourceConfig = {
   id: string;
-  kind: "simplify_html" | "pipe_table";
+  kind: "simplify_html" | "pipe_table" | "ats_board";
   url: string;
   categories: string[];
   enabled: boolean;
+  /** Watchlist (`ats_board`) sources only. */
+  boards?: BoardConfig[];
+  include?: string[];
+  exclude?: string[];
+  locations?: string[];
+  /** Overrides the funnel-wide age limit; watchlists default to 7 days. */
+  max_age_days?: number | null;
 };
 
 export type EligibilitySettings = {
@@ -2177,4 +2189,31 @@ export async function fetchSubmitEvidence(applicationId: string): Promise<Submit
 
 export function submitEvidenceFileUrl(applicationId: string, stamp: string, name: string): string {
   return `/api/applications/${encodeURIComponent(applicationId)}/submit-evidence/${encodeURIComponent(stamp)}/${encodeURIComponent(name)}`;
+}
+
+// --- Discovery sources (P4-D) ---------------------------------------------------------
+
+export type ResolvedBoard = BoardConfig & { jobs: number; url: string };
+
+/** Check a careers link (or a board) against its ATS before it joins a watchlist. */
+export function resolveBoard(
+  input: { url: string } | { ats: BoardAts; slug: string; company?: string },
+): Promise<ResolvedBoard> {
+  return request<ResolvedBoard>("/api/apply/boards/resolve", {
+    method: "POST",
+    body: JSON.stringify(input),
+  });
+}
+
+export async function fetchWatchlists(): Promise<Record<string, BoardConfig[]>> {
+  return (await request<{ fields: Record<string, BoardConfig[]> }>("/api/apply/watchlists")).fields;
+}
+
+/** The category headings a README source offers. */
+export async function fetchSourceSections(url: string): Promise<string[]> {
+  return (
+    await request<{ sections: string[] }>(
+      `/api/apply/sources/sections?url=${encodeURIComponent(url)}`,
+    )
+  ).sections;
 }

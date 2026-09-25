@@ -156,10 +156,21 @@ New-Grad-Positions, and speedyapply 2027-SWE-College-Jobs (pipe tables). Dedupe 
 requisition** (`identity.canonical_key`); same-company same-role across locations share a
 `group_key` and reuse one tailor run. Application rows (the `applications` table of the
 workspace's `app.db`) are keyed by canonical key, with `source_refs` listing every sighting.
+A company watchlist (`kind="ats_board"`, `apply/boards.py`) reads public Greenhouse, Lever,
+Ashby and SmartRecruiters boards directly. It keeps titles matching `include` and none of
+`exclude`, in `locations`, and applies its own `max_age_days` (default 7). Its rows use the
+ATS's own job URL, so they merge with Simplify sightings of the same job. A wrong board name
+is one run error, not a failed source. `POST /api/apply/boards/resolve` checks a board
+before the settings add it. `apply/watchlists/*.json` are suggestions, checked the same way.
 
 Eligibility (`eligibility.py`) hard-rejects graduate-degree-only postings (master's/PhD
 without a bachelor's alternative), senior titles, and high year floors — before
 `jd.extract_consensus`. Ambiguous signals become `eligibility_flags`, never silent drops.
+A manager word in an intern or junior title ("Product Manager Intern", "Associate Product
+Manager") is not seniority; only unambiguous words (Senior, Director, VP, …) reject those.
+Business program titles ("Summer Analyst", rotational or development programs) count as
+early career, so a years floor in their JD is a flag, not a reject. A bare "Analyst" or
+"Associate" does not count as early career.
 The work-restriction block patterns (`screen.check_blocks`: citizenship, security clearance,
 user extras) run in the same no-LLM stage (`daily.prefilter_screen`) and record a named
 reason (`citizenship_required` / `clearance_required`) plus the matching JD sentence in

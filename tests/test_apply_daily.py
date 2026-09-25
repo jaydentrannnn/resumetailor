@@ -1378,3 +1378,44 @@ def test_prepare_again_keeps_only_a_live_review_tab(
 
     assert prepared.status == expected
     assert prepared.fill is not None  # the last attempt's report stays for reference
+
+
+def test_run_daily_reads_a_company_watchlist(apply_paths, monkeypatch):
+    """An ``ats_board`` source lists its boards, keeps its own age limit, and reports a
+    wrong board name without losing the others."""
+    from datetime import UTC, datetime, timedelta
+
+    from resume_tailor.apply import boards
+    from tests.fixtures import synthetic_resume
+
+    monkeypatch.setattr(daily.data, "load", synthetic_resume)
+    monkeypatch.setattr(boards, "_sleep", lambda _s: None)
+    fresh = (datetime.now(UTC) - timedelta(days=5)).isoformat()
+
+    def fake_list(ats, slug):
+        if slug == "gone":
+            raise boards.BoardNotFound(slug)
+        return [
+            boards.BoardJob("7", "Summer Analyst", "New York, NY",
+                            "https://boards.greenhouse.io/acme/jobs/7", fresh),
+            boards.BoardJob("8", "Senior Associate", "New York, NY",
+                            "https://boards.greenhouse.io/acme/jobs/8", fresh),
+        ]
+
+    monkeypatch.setattr(boards, "list_board", fake_list)
+    settings = ApplySettings(
+        enabled=True,
+        max_new_per_day=5,
+        max_age_days=1,  # the README limit; the watchlist keeps its own 7 days
+        sources=[{
+            "id": "watch", "kind": "ats_board",
+            "boards": [{"ats": "greenhouse", "slug": "gone"},
+                       {"ats": "greenhouse", "slug": "acme", "company": "Acme"}],
+        }],
+    )
+    summary = daily.run_daily(settings=settings, fetch_only=True)
+    assert summary.new_rows == 1
+    assert summary.errors == ["watch: gone: no greenhouse board named 'gone'"]
+    (app,) = store.load_all().values()
+    assert (app.company, app.role, app.canonical_key) == ("Acme", "Summer Analyst", "greenhouse:acme:7")
+    assert app.source == "watch"

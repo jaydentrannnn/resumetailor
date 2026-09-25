@@ -975,3 +975,32 @@ the tasks that first need them (a new entry in `db.MIGRATIONS`, never an edit).
 - **Audit evidence:** `before.json` (filled fields and uploads) is written *before* the
   click and is required: if it cannot be written, the submit does not happen and the row
   ends `fill_failed`. Screenshots are best-effort.
+
+## Company watchlists and business titles (P4-D)
+
+- **Board listings live in `apply/boards.py`, not `ats_api.py`.** `ats_api` fetches one
+  posting's text by canonical key. A board listing is a different job with different
+  failures, and they need to be told apart: `BoardNotFound` (404: a wrong or retired
+  name, so fix the settings) versus `BoardUnavailable` (try again tomorrow). A watchlist
+  reports each failed board as one run error and keeps the others.
+- **Rows use the ATS's own job URL** (`boards.greenhouse.io/{slug}/jobs/{id}` and so on),
+  never the company's careers-page redirect. That keeps `identity.canonical_key` equal to
+  the key a Simplify row for the same job gets. The Ashby listing also primes
+  `ats_api._ASHBY_BOARD_CACHE`, so the JD fetch doesn't download the board a second time.
+- **An undated posting is kept as fresh** (`age_days=0`, flag `age_unknown`). The
+  README filter drops rows with no age, but a board only lists open postings.
+- **Keyword matching:** title words match at a word start ("intern" finds "Internship",
+  "consult" finds "Consulting"). Locations match whole words, so "NY" matches
+  "Albany, NY" but not "Sunnyvale".
+- **Starter watchlists were not verified from the build environment.** Its network
+  policy blocks the ATS APIs. So they are suggestions only: each one goes through
+  `POST /api/apply/boards/resolve` before it is added, and a renamed board shows as
+  struck through, never silently empty. Onboarding's business field adds an *empty*
+  watchlist, with business title keywords, for the same reason. Consulting has no
+  starter list: the large firms mostly run Workday or their own sites.
+- **D3 was narrowed on purpose.** The plan said to treat "Analyst" and "Associate" as
+  early career. Existing tests pin a deliberate rule: a bare "Data Analyst" asking for 5+
+  years is rejected. Bare titles still pass `check_title`; only explicit program wording
+  ("Summer Analyst", "Analyst Program", rotational and development programs, "Early
+  Career") counts as early career. The same pass fixed a real gap: `check_title` rejected
+  every title containing "manager", so "Product Manager Intern" never passed discovery.

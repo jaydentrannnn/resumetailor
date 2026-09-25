@@ -775,18 +775,28 @@ def run_daily(
         for src in [s for s in settings.sources if s.enabled]:
             _progress_set(phase="discovering", source_id=src.id, current=src.url)
             try:
-                readme = sources.fetch_readme(src.url)
-                if src.kind == "simplify_html":
-                    rows = sources.parse_readme(readme, src.categories)
-                elif src.kind == "pipe_table":
-                    rows = sources.parse_pipe_table_readme(readme, src.categories)
+                if src.kind == "ats_board":
+                    rows, board_errors = sources.board_rows(src)
+                    for message in board_errors:
+                        summary.errors.append(f"{src.id}: {message}")
+                        _append_log(log_file, f"[source {src.id}] {message}", log)
                 else:
-                    raise ValueError(f"unknown source kind {src.kind!r}")
+                    readme = sources.fetch_readme(src.url)
+                    if src.kind == "simplify_html":
+                        rows = sources.parse_readme(readme, src.categories)
+                    elif src.kind == "pipe_table":
+                        rows = sources.parse_pipe_table_readme(readme, src.categories)
+                    else:
+                        raise ValueError(f"unknown source kind {src.kind!r}")
                 for row in rows:
                     row.source_id = src.id
                 filtered = sources.filter_rows(
                     rows,
-                    max_age_days=settings.max_age_days,
+                    max_age_days=(
+                        src.max_age_days
+                        if src.max_age_days is not None
+                        else settings.max_age_days
+                    ),
                     exclude_advanced_degree=settings.exclude_advanced_degree,
                     exclude_citizenship=settings.exclude_citizenship_required,
                     exclude_no_sponsorship=settings.exclude_no_sponsorship,

@@ -43,14 +43,45 @@ class CoverAnglesIn(BaseModel):
     tone: Literal["", "formal", "direct", "conversational", "mirror"] = ""
 
 
+class BoardConfig(BaseModel):
+    """One company job board on a watchlist source (`apply/boards.py`)."""
+
+    ats: Literal["greenhouse", "lever", "ashby", "smartrecruiters"]
+    slug: str = Field(min_length=1, max_length=100, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+    #: The name shown in the UI and used for postings; the slug when empty.
+    company: str = ""
+
+
 class SourceConfig(BaseModel):
-    """One discoverable README source for the daily apply funnel."""
+    """One discovery source for the daily apply funnel.
+
+    ``simplify_html`` and ``pipe_table`` read a README at ``url`` and keep the rows under
+    ``categories``. ``ats_board`` (plan P4-D2) reads each board in ``boards`` and keeps
+    the postings whose title matches ``include`` (any word, or everything when empty)
+    and none of ``exclude``, and whose location matches ``locations`` (any, or
+    everywhere when empty). ``max_age_days`` overrides the funnel-wide age limit for
+    this source; watchlists default to 7 days, since finance recruiting opens months
+    ahead and a board posting stays relevant for longer than a README row.
+    """
 
     id: str
-    kind: Literal["simplify_html", "pipe_table"]
-    url: str
+    kind: Literal["simplify_html", "pipe_table", "ats_board"]
+    url: str = ""
     categories: list[str] = Field(default_factory=list)
     enabled: bool = True
+    boards: list[BoardConfig] = Field(default_factory=list)
+    include: list[str] = Field(default_factory=list)
+    exclude: list[str] = Field(default_factory=list)
+    locations: list[str] = Field(default_factory=list)
+    max_age_days: int | None = Field(default=None, ge=0, le=365)
+
+    @model_validator(mode="after")
+    def _check_kind(self) -> SourceConfig:
+        if self.kind != "ats_board" and not self.url.strip():
+            raise ValueError(f"source {self.id!r} needs a url")
+        if self.kind == "ats_board" and self.max_age_days is None:
+            self.max_age_days = 7
+        return self
 
 
 def _default_apply_sources() -> list[SourceConfig]:

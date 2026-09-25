@@ -123,6 +123,17 @@ def main() -> None:
     )
     app.router.routes.insert(0, app.router.routes.pop())
 
+    # Test-only: job boards answer from memory (no network), so the watchlist test can
+    # add a company. Any board name other than "acme" is "not found".
+    from resume_tailor.apply import boards
+
+    def _fake_board(ats: str, slug: str, **_kwargs):
+        if slug.lower() != "acme":
+            raise boards.BoardNotFound(slug)
+        return [boards.BoardJob("1", "Summer Analyst", "New York, NY", "", "", "Acme Capital")]
+
+    boards.list_board = _fake_board
+
     server = uvicorn.Server(
         uvicorn.Config(app, host="127.0.0.1", port=args.port, log_level="warning")
     )

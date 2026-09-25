@@ -1,5 +1,6 @@
 import type { OnboardingField, OnboardingState, SourceConfig } from "../api";
 import type { Bullet, MasterResume } from "./resumeEdit";
+import { newWatchlistSource } from "./watchlist";
 
 export const ONBOARDING_STEPS = [
   { id: "field", label: "Your field" },
@@ -95,16 +96,22 @@ const FIELD_CATEGORIES: Partial<
   },
 };
 
-/** Job sources after choosing ``field``. Unknown sources and "other" are unchanged. */
+/** Job sources after choosing ``field``. Unknown sources and "other" are unchanged.
+ * Business also gets an (empty) company watchlist to fill in the Apply settings, since
+ * few finance and consulting postings reach the README lists. */
 export function sourcesForField(sources: SourceConfig[], field: OnboardingField): SourceConfig[] {
   const preset = field ? FIELD_CATEGORIES[field] : undefined;
   if (!preset) return sources;
-  return sources.map((source) => {
+  const next = sources.map((source) => {
     const rule = preset[source.id];
     if (rule === undefined) return source;
     if (rule === false) return { ...source, enabled: false };
     return { ...source, categories: [...rule], enabled: true };
   });
+  if (field === "business" && !next.some((source) => source.kind === "ats_board")) {
+    next.push(newWatchlistSource());
+  }
+  return next;
 }
 
 export interface ResumeReview {
