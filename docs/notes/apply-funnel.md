@@ -1181,3 +1181,19 @@ answer; and when the page already has as many rows at that school as entries lef
 place, the add is blocked and flagged "possible duplicate row" instead. `_add_row` takes
 one late look (1.5 s) so a slow render is not left as a second blank row for the next
 pass to call ambiguous.
+
+## Remembered answers never duplicate the profile (2026-09)
+
+The owner saw Profile → Remembered answers repeat facts from other profile sections.
+`review.correct` remembered any correction whose `field_catalog.classify` was not
+"known", and that catalog is far smaller than `ats_hints.SYNONYMS`; rows were also one
+per (question, ATS). Now `answer_memory.profile_key` (the fill's canonical key, else a
+short label of at most 8 words through `workday_flow.key_for_label` + a referral regex)
+decides whether a profile field answers the question. Such a correction is never
+remembered: it fills the profile text field when blank (`save_to_profile`, a fixed list
+of plain-string fields; Yes/No and EEO fields are never written). `list_answers` groups
+rows by `label_norm` (sites, `differs`), and edit/delete act on every row of the
+question. A one-off pass (`schema_migrations` marker `answer_memory_cleanup_v1`, run
+lazily from `list_answers`/`recall`) moves existing profile-duplicate rows into blank
+profile fields and deletes them, after writing `backups/answer_memory-<stamp>.json` next
+to the workspace database.

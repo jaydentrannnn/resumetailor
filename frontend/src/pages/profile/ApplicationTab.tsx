@@ -179,13 +179,12 @@ export function ApplicationTab({
               onChange={(languages) => setDraft({ languages })}
             />
           )}
-          {group.id === "Saved answers and other preferences" && <SavedAnswersList />}
           {group.id === "Saved answers and other preferences" && (
             <div className="mt-4">
               <h3 className="text-sm font-semibold">Custom answers</h3>
               {Object.keys(draft.custom_answers ?? {}).length === 0 && (
                 <p className="mt-1 text-xs text-ink-muted">
-                  None yet. Remembered answers above are used first.
+                  None yet. Remembered answers below are used first.
                 </p>
               )}
               {Object.entries(draft.custom_answers ?? {}).map(([question, answer]) => (
@@ -206,6 +205,15 @@ export function ApplicationTab({
           )}
         </details>
       ))}
+      <details
+        id="profile-group-remembered-answers"
+        open={!closed.has("remembered-answers")}
+        onToggle={(e) => onToggle("remembered-answers", e.currentTarget.open)}
+        className="rounded-lg border border-line bg-panel p-4"
+      >
+        <summary className="cursor-pointer font-semibold">Remembered answers</summary>
+        <SavedAnswersList />
+      </details>
     </div>
   );
 }

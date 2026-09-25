@@ -154,3 +154,17 @@ def test_a_correction_to_a_profile_fact_is_not_remembered(tmp_path, monkeypatch)
     saved = _correctable(tmp_path, monkeypatch, "Phone number")
     _correct(saved, "555 010 0000")
     assert answer_memory.list_answers() == []
+
+
+def test_a_correction_to_a_blank_profile_question_fills_the_profile(tmp_path, monkeypatch):
+    # Workday asked "Middle Name" (a profile field the fill had no value for): the
+    # correction belongs in the profile, not in remembered answers as a second copy.
+    from resume_tailor import config
+    from resume_tailor.apply import answer_memory
+    from resume_tailor.apply import profile as profile_mod
+
+    monkeypatch.setattr(config, "APPLICANT_PROFILE_PATH", tmp_path / "applicant_profile.json")
+    saved = _correctable(tmp_path, monkeypatch, "Middle Name")
+    _correct(saved, "Quinn")
+    assert answer_memory.list_answers() == []
+    assert profile_mod.load_profile()[0].middle_name == "Quinn"

@@ -11,6 +11,7 @@ from resume_tailor.apply import answer_memory as memory
 @pytest.fixture(autouse=True)
 def _isolated_db(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "APPLICATIONS_PATH", tmp_path / "applications.json")
+    monkeypatch.setattr(config, "APPLICANT_PROFILE_PATH", tmp_path / "applicant_profile.json")
 
 
 @pytest.mark.parametrize(
@@ -36,11 +37,11 @@ def test_company_name_drops_legal_suffixes():
 
 def test_a_correction_is_reused_for_the_same_question_elsewhere():
     memory.remember(
-        "How did you hear about us?", "University career fair", company="Acme", ats="greenhouse"
+        "Which team interests you most?", "Payments", company="Acme", ats="greenhouse"
     )
-    recalled = memory.recall("How did you hear about us", company="Beta", ats="lever")
+    recalled = memory.recall("Which team interests you most", company="Beta", ats="lever")
     assert recalled is not None and not recalled.needs_review
-    assert recalled.answer == "University career fair"
+    assert recalled.answer == "Payments"
     assert memory.list_answers()[0].uses == 1
 
 
@@ -87,16 +88,16 @@ def test_sensitive_answers_are_never_stored(label, kwargs):
 
 
 def test_a_second_correction_replaces_the_first():
-    memory.remember("Earliest start date?", "June 2026")
-    memory.remember("Earliest start date", "May 2026")
+    memory.remember("Preferred team?", "Risk")
+    memory.remember("Preferred team", "Payments")
     saved = memory.list_answers()
-    assert [s.answer for s in saved] == ["May 2026"]
+    assert [s.answer for s in saved] == ["Payments"]
 
 
 def test_edit_and_delete():
-    saved = memory.remember("Portfolio link", "https://example.com")
-    edited = memory.update(saved.id, "https://example.org")
-    assert edited.answer == "https://example.org" and edited.source == "edited"
+    saved = memory.remember("Favorite product of ours", "The API")
+    edited = memory.update(saved.id, "The dashboard")
+    assert edited.answer == "The dashboard" and edited.source == "edited"
     with pytest.raises(ValueError):
         memory.update(saved.id, "   ")
     memory.delete(saved.id)
@@ -110,3 +111,84 @@ def test_edit_and_delete():
 def test_blank_or_oversized_answers_are_ignored():
     assert memory.remember("Anything else?", "  ") is None
     assert memory.remember("Anything else?", "x" * (memory.MAX_ANSWER_CHARS + 1)) is None
+
+
+@pytest.mark.parametrize(
+    ("label", "key"),
+    [
+        ("Middle Name", "middle_name"),
+        ("How did you hear about us?", "how_heard"),
+        ("Address Line 2", "address_line2"),
+        ("LinkedIn Profile URL", "linkedin_url"),
+        ("Who referred you?", "referred_by"),
+    ],
+)
+def test_profile_questions_are_not_remembered(label, key):
+    assert memory.profile_key(label) == key
+    assert memory.remember(label, "something") is None
+    assert memory.list_answers() == []
+
+
+def test_long_questions_that_mention_a_profile_word_are_remembered():
+    label = "Describe a project from school that you are proud of and what you learned"
+    assert memory.profile_key(label) is None
+    assert memory.remember(label, "The compiler") is not None
+
+
+def test_a_profile_correction_fills_only_a_blank_profile_field():
+    from resume_tailor.apply import profile as profile_mod
+
+    assert memory.save_to_profile("middle_name", "Quinn")
+    assert profile_mod.load_profile()[0].middle_name == "Quinn"
+    # The profile is the source: a field that holds a value is not overwritten.
+    assert not memory.save_to_profile("middle_name", "Other")
+    assert profile_mod.load_profile()[0].middle_name == "Quinn"
+    # Non-text fields (Yes/No, EEO) are never written from a correction.
+    assert not memory.save_to_profile("gender", "Decline")
+
+
+def _insert(label: str, answer: str, ats: str, updated_at: str) -> None:
+    """A row as an earlier version stored it, bypassing today's filter."""
+    conn = memory._conn()  # noqa: SLF001
+    with memory.db.transaction(conn):
+        conn.execute(
+            "INSERT INTO answer_memory(label_norm, ats, label, answer, company, source, "
+            "created_at, updated_at) VALUES (?, ?, ?, ?, '', 'correction', ?, ?)",
+            (memory.normalize_label(label), ats, label, answer, updated_at, updated_at),
+        )
+
+
+def test_answers_are_listed_once_per_question_with_their_sites():
+    memory.db.set_marker(memory._conn(), memory.CLEANUP_MARKER)  # noqa: SLF001
+    _insert("Preferred office", "Remote", "greenhouse", "2026-01-01T00:00:00+00:00")
+    _insert("Preferred office", "New York", "workday", "2026-02-01T00:00:00+00:00")
+    _insert("Favorite product", "The API", "lever", "2026-01-15T00:00:00+00:00")
+    listed = memory.list_answers()
+    assert [(a.label, a.answer, a.sites, a.differs) for a in listed] == [
+        ("Preferred office", "New York", ["greenhouse", "workday"], True),
+        ("Favorite product", "The API", ["lever"], False),
+    ]
+    # Edit and delete act on the question, on every site.
+    memory.update(listed[0].id, "Hybrid")
+    assert {memory.recall("Preferred office", ats=ats).answer for ats in ("greenhouse", "workday")} == {"Hybrid"}
+    memory.delete(listed[0].id)
+    assert [a.label for a in memory.list_answers()] == ["Favorite product"]
+
+
+def test_cleanup_moves_profile_duplicates_out_once_with_a_backup(tmp_path):
+    from resume_tailor.apply import profile as profile_mod
+
+    _insert("Middle Name", "Quinn", "workday", "2026-02-01T00:00:00+00:00")
+    _insert("Middle name", "Old", "greenhouse", "2026-01-01T00:00:00+00:00")
+    _insert("How did you hear about us?", "Career fair", "workday", "2026-01-01T00:00:00+00:00")
+    _insert("Preferred office", "Remote", "workday", "2026-01-01T00:00:00+00:00")
+    listed = memory.list_answers()  # runs the one-off cleanup
+    assert [a.label for a in listed] == ["Preferred office"]
+    profile = profile_mod.load_profile()[0]
+    assert profile.middle_name == "Quinn"  # the most recent answer filled the blank field
+    assert profile.how_heard != "Career fair"  # a field with a value is kept
+    backups = list((tmp_path / "backups").glob("answer_memory-*.json"))
+    assert len(backups) == 1 and "Career fair" in backups[0].read_text(encoding="utf-8")
+    # Idempotent: a row stored after the pass is not touched again.
+    _insert("Middle Name", "Later", "lever", "2026-03-01T00:00:00+00:00")
+    assert memory.cleanup_profile_duplicates() == 0

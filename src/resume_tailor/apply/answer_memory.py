@@ -13,12 +13,17 @@ names the company it was written for is never reused for another company; it com
 back as `Recall.needs_review` instead.
 
 Never stored: equal-opportunity answers (they come only from the profile), passwords,
-one-time codes, and other credentials or identity numbers. Rows live in the
-workspace's SQLite database next to the applications.
+one-time codes, and other credentials or identity numbers, and questions a profile field
+already answers (`profile_key`): those corrections fill the blank profile field instead
+(`save_to_profile`), so the Profile page never shows one fact twice. Rows live in the
+workspace's SQLite database next to the applications, one per (question, ATS); the
+Profile page sees them grouped by question (`list_answers`).
 """
 
 from __future__ import annotations
 
+import json
+import logging
 import re
 import sqlite3
 from dataclasses import dataclass
@@ -29,6 +34,8 @@ from pydantic import BaseModel
 
 from resume_tailor import config
 from resume_tailor.storage import db
+
+_log = logging.getLogger(__name__)
 
 #: Labels whose answers must never be remembered or recalled.
 _NEVER = re.compile(
@@ -50,10 +57,30 @@ _COMPANY_SUFFIX = re.compile(
     re.IGNORECASE,
 )
 MAX_ANSWER_CHARS = 5000
+#: A profile question is a short label ("Middle Name", "How did you hear about us?").
+#: Longer prompts that merely mention a school or a city are questions of their own.
+_PROFILE_LABEL_WORDS = 8
+_REFERRAL = re.compile(r"referred by|referral name|who referred you|name of (?:your |the )?referr", re.I)
+#: Profile text fields a correction may fill when blank: canonical key -> profile attribute.
+_PROFILE_TEXT: dict[str, str] = {
+    key: key for key in (
+        "first_name", "middle_name", "last_name", "preferred_name", "email", "phone",
+        "linkedin_url", "github_url", "portfolio_url", "address_line1", "address_line2",
+        "city", "state", "postal_code", "country", "earliest_start", "notice_period",
+        "location_preference", "authorization_country", "referred_by", "school_email",
+    )
+}  # fmt: skip
+#: The one-off pass that moved profile-duplicate rows out (`cleanup_profile_duplicates`).
+CLEANUP_MARKER = "answer_memory_cleanup_v1"
 
 
 class SavedAnswer(BaseModel):
-    """One remembered answer, as the Profile page lists it."""
+    """One remembered answer, as the Profile page lists it.
+
+    `list_answers` returns one per question: ``id`` and the text are the most recent
+    row's, ``ids`` every row for that question, ``sites`` the ATSs it was answered on,
+    and ``differs`` whether those rows disagree.
+    """
 
     id: int
     label: str
@@ -63,6 +90,9 @@ class SavedAnswer(BaseModel):
     source: str = "correction"
     uses: int = 0
     updated_at: str = ""
+    ids: list[int] = []
+    sites: list[str] = []
+    differs: bool = False
 
 
 @dataclass(frozen=True)
@@ -112,13 +142,55 @@ def normalize_label(label: str, company: str = "") -> str:
     return re.sub(r"\s+", " ", text).strip()
 
 
+def profile_key(label: str, canonical_key: str = "") -> str | None:
+    """The profile field that answers this question, if one does.
+
+    ``canonical_key`` (the fill's own classification) wins; otherwise a short label is
+    matched against the same synonyms the fills use.
+    """
+    from resume_tailor.apply import ats_hints, packet, workday_flow  # noqa: PLC0415
+
+    covered = set(packet.PROFILE_FIELDS) | {"referred_by"}
+    if canonical_key in covered:
+        return canonical_key
+    text = (label or "").strip()
+    if not text or len(text.split()) > _PROFILE_LABEL_WORDS:
+        return None
+    if _REFERRAL.search(text):
+        return "referred_by"
+    key = workday_flow.key_for_label(text, ats_hints.SYNONYMS)
+    return key if key in covered else None
+
+
 def storable(label: str, *, canonical_key: str = "", input_type: str = "") -> bool:
     """Whether an answer to this question may be remembered at all."""
     if not label.strip() or canonical_key in _EEO_KEYS:
         return False
     if input_type.casefold() == "password":
         return False
-    return _NEVER.search(label) is None
+    if _NEVER.search(label) is not None:
+        return False
+    return profile_key(label, canonical_key) is None
+
+
+def save_to_profile(key: str, answer: str) -> bool:
+    """Put ``answer`` into the blank profile text field ``key``; False when not blank.
+
+    A correction to a profile question is what the applicant meant their profile to
+    say. A field that already holds a value is left alone: the profile is the source.
+    """
+    from resume_tailor.apply import profile as profile_mod  # noqa: PLC0415
+
+    attr = _PROFILE_TEXT.get(key)
+    answer = (answer or "").strip()
+    if attr is None or not answer or len(answer) > MAX_ANSWER_CHARS:
+        return False
+    current, _seeded = profile_mod.load_profile()
+    if str(getattr(current, attr, "") or "").strip():
+        return False
+    setattr(current, attr, answer)
+    profile_mod.save_profile(current)
+    return True
 
 
 def remember(
@@ -168,6 +240,7 @@ def recall(
     if not norm:
         return None
     conn = _conn()
+    cleanup_profile_duplicates(conn)
     row = conn.execute(
         "SELECT id, answer, company FROM answer_memory WHERE label_norm = ? "
         "ORDER BY (ats = ?) DESC, updated_at DESC, id DESC LIMIT 1",
@@ -210,12 +283,36 @@ def get(answer_id: int) -> SavedAnswer | None:
 
 
 def list_answers() -> list[SavedAnswer]:
-    rows = (
-        _conn()
-        .execute(f"SELECT {_COLUMNS} FROM answer_memory ORDER BY updated_at DESC, id DESC")
-        .fetchall()
-    )
-    return [_row(row) for row in rows]
+    """One entry per question, most recently updated first (see `SavedAnswer`)."""
+    conn = _conn()
+    cleanup_profile_duplicates(conn)
+    rows = conn.execute(
+        f"SELECT label_norm, {_COLUMNS} FROM answer_memory ORDER BY updated_at DESC, id DESC"
+    ).fetchall()
+    grouped: dict[str, list[SavedAnswer]] = {}
+    for row in rows:
+        grouped.setdefault(str(row[0]), []).append(_row(row[1:]))
+    merged: list[SavedAnswer] = []
+    for items in grouped.values():
+        latest = items[0]
+        merged.append(latest.model_copy(update={
+            "ids": [item.id for item in items],
+            "sites": sorted({item.ats for item in items if item.ats}),
+            "differs": len({item.answer.strip() for item in items}) > 1,
+            "uses": sum(item.uses for item in items),
+        }))
+    return merged
+
+
+def _question_ids(conn: sqlite3.Connection, answer_id: int) -> list[int]:
+    """Every row for the same question as ``answer_id``; raises `KeyError` when unknown."""
+    row = conn.execute("SELECT label_norm FROM answer_memory WHERE id = ?", (answer_id,)).fetchone()
+    if row is None:
+        raise KeyError(answer_id)
+    return [
+        int(r[0])
+        for r in conn.execute("SELECT id FROM answer_memory WHERE label_norm = ?", (row[0],))
+    ]
 
 
 def update(answer_id: int, answer: str) -> SavedAnswer:
@@ -225,19 +322,58 @@ def update(answer_id: int, answer: str) -> SavedAnswer:
         raise ValueError(f"An answer must be 1 to {MAX_ANSWER_CHARS} characters.")
     conn = _conn()
     with db.transaction(conn):
-        changed = conn.execute(
+        # The Profile page shows one row per question: an edit answers it on every site.
+        ids = _question_ids(conn, answer_id)
+        now = _now()
+        conn.executemany(
             "UPDATE answer_memory SET answer = ?, source = 'edited', updated_at = ? WHERE id = ?",
-            (answer, _now(), answer_id),
-        ).rowcount
-    if not changed:
-        raise KeyError(answer_id)
+            [(answer, now, row_id) for row_id in ids],
+        )
     saved = get(answer_id)
     assert saved is not None
     return saved
 
 
 def delete(answer_id: int) -> None:
+    """Forget the question ``answer_id`` belongs to, on every site."""
     conn = _conn()
     with db.transaction(conn):
-        if not conn.execute("DELETE FROM answer_memory WHERE id = ?", (answer_id,)).rowcount:
-            raise KeyError(answer_id)
+        ids = _question_ids(conn, answer_id)
+        conn.executemany("DELETE FROM answer_memory WHERE id = ?", [(row_id,) for row_id in ids])
+
+
+def cleanup_profile_duplicates(conn: sqlite3.Connection | None = None) -> int:
+    """Once per workspace: move rows a profile field answers out of answer memory.
+
+    Earlier versions remembered corrections to profile questions ("Middle Name", "How
+    did you hear about us?"), which the Profile page then showed twice. Each such row
+    fills its profile field when that is blank, and is removed either way. The removed
+    rows are written to ``backups/answer_memory-<stamp>.json`` first. Returns the
+    number of rows removed.
+    """
+    conn = conn or _conn()
+    if db.marker(conn, CLEANUP_MARKER):
+        return 0
+    rows = conn.execute(
+        f"SELECT {_COLUMNS} FROM answer_memory ORDER BY updated_at DESC, id DESC"
+    ).fetchall()
+    doomed = [(item, key) for item in map(_row, rows) if (key := profile_key(item.label))]
+    if doomed:
+        folder = Path(config.APPLICATIONS_PATH).parent / "backups"
+        folder.mkdir(parents=True, exist_ok=True)
+        stamp = datetime.now(UTC).strftime("%Y%m%dT%H%M%SZ")
+        (folder / f"answer_memory-{stamp}.json").write_text(
+            json.dumps([item.model_dump() for item, _key in doomed], indent=2, ensure_ascii=False),
+            encoding="utf-8",
+        )
+        for item, key in doomed:  # most recent first: its answer wins a blank field
+            try:
+                save_to_profile(key, item.answer)
+            except Exception:  # noqa: BLE001 - the backup keeps the answer either way
+                _log.warning("could not move saved answer %r into the profile", item.label)
+    with db.transaction(conn):
+        conn.executemany(
+            "DELETE FROM answer_memory WHERE id = ?", [(item.id,) for item, _key in doomed]
+        )
+        db.set_marker(conn, CLEANUP_MARKER)
+    return len(doomed)

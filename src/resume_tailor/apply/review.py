@@ -207,15 +207,19 @@ async def correct(
                 raise ValueError(outcome.reason_code or "Correction was not verified")
             await _record(app, page)
             # A question the profile doesn't answer is worth remembering for the next
-            # form; a profile fact is fixed in the profile instead.
-            if policy != "known":
-                try:
+            # form; a profile question fills its profile field when that is blank, and is
+            # never remembered as well (the Profile page would show the fact twice).
+            try:
+                profile_key = answer_memory.profile_key(target.label, _key or "")
+                if profile_key:
+                    answer_memory.save_to_profile(profile_key, wanted)
+                elif policy != "known":
                     answer_memory.remember(
                         target.label, wanted, company=app.company or "", ats=app.ats or "",
                         canonical_key=_key or "",
                         input_type=str(target.constraints.get("input_type") or ""),
                     )
-                except Exception:  # noqa: BLE001 - memory is a convenience; the fix landed
-                    pass
+            except Exception:  # noqa: BLE001 - memory is a convenience; the fix landed
+                pass
             return outcome
     raise ValueError("The recorded review tab is closed")

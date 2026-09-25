@@ -16,9 +16,10 @@ function when(iso: string): string {
 }
 
 /**
- * Answers remembered from corrections in the review flow. Each saves on its own (they
- * live in the application database, not the profile), so edits here don't wait for the
- * page's save bar.
+ * Answers remembered from corrections in the review flow, one row per question (the
+ * server groups the per-site rows). Each saves on its own (they live in the application
+ * database, not the profile), so edits here don't wait for the page's save bar. Profile
+ * questions are never remembered here: a correction to one fills the profile field.
  */
 export function SavedAnswersList() {
   const [answers, setAnswers] = useState<SavedAnswer[] | null>(null);
@@ -39,7 +40,14 @@ export function SavedAnswersList() {
     setBusy(item.id);
     try {
       const saved = await updateSavedAnswer(item.id, text);
-      setAnswers((list) => (list ?? []).map((a) => (a.id === saved.id ? saved : a)));
+      // The edit answered the question on every site: keep the grouping, drop "differs".
+      setAnswers((list) =>
+        (list ?? []).map((a) =>
+          a.id === saved.id
+            ? { ...a, answer: saved.answer, updated_at: saved.updated_at, differs: false }
+            : a,
+        ),
+      );
       setDrafts(({ [item.id]: _dropped, ...rest }) => rest);
       toast.success("Saved answer updated.");
     } catch (err) {
@@ -52,7 +60,7 @@ export function SavedAnswersList() {
   async function forget(item: SavedAnswer) {
     const ok = await confirm({
       title: "Forget this answer?",
-      message: `Forms asking “${item.label}” will be left for you (or the AI model) to answer again.`,
+      message: `Forms asking “${item.label}” will be left for you (or the AI model) to answer again, on every site.`,
       confirmLabel: "Forget",
       tone: "danger",
     });
@@ -68,12 +76,11 @@ export function SavedAnswersList() {
   }
 
   return (
-    <div className="mt-4">
-      <h3 className="text-sm font-semibold">Remembered answers</h3>
-      <p className="mt-1 text-xs text-ink-muted">
-        When you correct an answer while reviewing a form, it is remembered and used the next time
-        any form asks the same question. An answer that names a company is only reused for that
-        company. Equal-opportunity answers, passwords and codes are never remembered.
+    <div className="mt-3">
+      <p className="text-xs text-ink-muted">
+        Answers you corrected during autofill, used only when your profile doesn&apos;t cover the
+        question. An answer that names a company is only reused for that company. Profile questions,
+        equal-opportunity answers, passwords and codes are never remembered here.
       </p>
       {answers === null ? (
         <p className="mt-2 text-xs text-ink-muted">Loading…</p>
@@ -87,7 +94,22 @@ export function SavedAnswersList() {
             return (
               <li key={item.id} className="rounded-md border border-line p-3 text-sm">
                 <label className="block">
-                  <span className="font-medium">{item.label}</span>
+                  <span className="flex flex-wrap items-center gap-1.5">
+                    <span className="font-medium">{item.label}</span>
+                    {(item.sites ?? []).map((site) => (
+                      <span
+                        key={site}
+                        className="rounded-full border border-line px-2 py-0.5 text-[11px] text-ink-muted"
+                      >
+                        {site}
+                      </span>
+                    ))}
+                    {item.differs && (
+                      <span className="text-[11px] text-warn">
+                        differs by site: showing the latest
+                      </span>
+                    )}
+                  </span>
                   <textarea
                     className="field mt-1"
                     value={draft}
@@ -97,9 +119,8 @@ export function SavedAnswersList() {
                 </label>
                 <div className="mt-1 flex flex-wrap items-center justify-between gap-2 text-xs text-ink-muted">
                   <span>
-                    {item.company ? `First answered for ${item.company}` : "Saved"}
-                    {item.ats ? ` on ${item.ats}` : ""} · updated {when(item.updated_at)} · used{" "}
-                    {item.uses} {item.uses === 1 ? "time" : "times"}
+                    {item.company ? `Last answered for ${item.company}` : "Saved"} · updated{" "}
+                    {when(item.updated_at)} · used {item.uses} {item.uses === 1 ? "time" : "times"}
                   </span>
                   <span className="flex gap-2">
                     <Button

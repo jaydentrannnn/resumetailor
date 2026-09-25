@@ -2161,6 +2161,12 @@ export type SavedAnswer = {
   source: string;
   uses: number;
   updated_at: string;
+  /** Every stored row for this question (one per site); edits and deletes cover all. */
+  ids?: number[];
+  /** The ATSs the question was answered on. */
+  sites?: string[];
+  /** The sites' answers disagree; the one shown is the most recent. */
+  differs?: boolean;
 };
 
 export async function fetchSavedAnswers(): Promise<SavedAnswer[]> {
