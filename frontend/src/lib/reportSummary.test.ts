@@ -1,16 +1,17 @@
 import { describe, expect, it } from "vitest";
 import type { KeywordGap, RunReport } from "../api";
-import { describeEvidence, gapGroups, reportHeadline } from "./reportSummary";
+import { describeEvidence, gapGroups, missingSummary, reportHeadline } from "./reportSummary";
 
 const gap = (
   phrase: string,
   reason: KeywordGap["reason"],
   evidence: string[] = [],
   band?: string,
+  importance: KeywordGap["importance"] = "must_have",
 ): KeywordGap => ({
   canonical: phrase.toLowerCase(),
   phrase,
-  importance: "must_have",
+  importance,
   reason,
   evidence,
   band,
@@ -71,5 +72,29 @@ describe("report summary", () => {
       { phrase: "SQL", where: [`listed as "SQL" under Tools skills`] },
     ]);
     expect(groups.renamed[0].where[0]).toBe(`a bullet is tagged "ml"`);
+  });
+
+  it("marks required skills by importance, not band, lists them first, and never twice", () => {
+    const groups = gapGroups(
+      report({
+        gaps: [
+          gap("Tableau", "no_evidence", [], "critical", "nice_to_have"),
+          gap("Excel", "no_evidence", [], "meaningful", "must_have"),
+          gap("SQL", "untagged_evidence", [`skills 'Tools': "SQL"`], "high", "must_have"),
+          gap("Looker", "no_evidence", [], "preferred", "nice_to_have"),
+        ],
+        missing_must_haves: ["Excel", "SQL"],
+      }),
+    );
+    expect(groups.missing.map((m) => [m.phrase, m.required])).toEqual([
+      ["Excel", true],
+      ["Tableau", false],
+      ["Looker", false],
+    ]);
+    expect(groups.untagged.map((u) => u.phrase)).toEqual(["SQL"]);
+    expect(missingSummary(groups)).toBe(
+      "1 required and 2 nice-to-have skills aren't on your resume",
+    );
+    expect(missingSummary({ missing: [], untagged: [], renamed: [] })).toBeNull();
   });
 });

@@ -2,7 +2,7 @@ import { Link } from "react-router-dom";
 import type { RunReport } from "../../api";
 import { InlineHelp } from "../../components/ui";
 import { GLOSSARY, type GlossaryKey } from "../../lib/glossary";
-import { gapGroups, reportHeadline } from "../../lib/reportSummary";
+import { gapGroups, missingSummary, reportHeadline } from "../../lib/reportSummary";
 
 /**
  * End-of-run summary: one headline, a few plain-language numbers, the skills the
@@ -16,6 +16,9 @@ export function ReportCard({ report }: { report: RunReport }) {
       ? Math.round((100 * report.coverage_matched) / report.coverage_total)
       : null;
   const gaps = gapGroups(report);
+  const missingLine = missingSummary(gaps);
+  const missingRequired = gaps.missing.filter((g) => g.required);
+  const missingOptional = gaps.missing.filter((g) => !g.required);
   const warnCount =
     report.dropped.length + report.warnings.length + (report.calibration_rejection ? 1 : 0);
 
@@ -25,6 +28,7 @@ export function ReportCard({ report }: { report: RunReport }) {
         <h2 className="font-display text-xl font-semibold">{report.title}</h2>
         {report.seniority && <p className="text-sm text-ink-muted">{report.seniority}</p>}
         <p className="mt-2 text-base font-medium text-ink">{reportHeadline(report)}</p>
+        {missingLine && <p className="text-sm text-ink-muted">{missingLine}</p>}
       </div>
 
       <dl className="mt-4 grid grid-cols-2 gap-3 text-sm tabular-nums sm:grid-cols-4">
@@ -54,17 +58,22 @@ export function ReportCard({ report }: { report: RunReport }) {
         />
       </dl>
 
-      {gaps.missing.length > 0 && (
+      {missingRequired.length > 0 && (
         <GapList
-          title="Missing from your resume"
-          note="Nothing in your master resume shows these, so they were not added. If you have real experience with one, add a bullet for it."
+          title="Required by the posting, missing from your resume"
+          note="The posting lists these as requirements and nothing in your master resume shows them, so they were not added. If you have real experience with one, add a bullet for it."
           action={<Link to="/profile/resume">Open resume editor</Link>}
-          items={gaps.missing.map((g) => ({
-            key: g.phrase,
-            text: g.phrase,
-            sub: g.band === "critical" || g.band === "high" ? "required" : undefined,
-          }))}
+          items={missingRequired.map((g) => ({ key: g.phrase, text: g.phrase }))}
           tone="warn"
+        />
+      )}
+      {missingOptional.length > 0 && (
+        <GapList
+          title="Nice to have, missing from your resume"
+          note="Mentioned in the posting but not required. Worth adding only if you really have them."
+          action={<Link to="/profile/resume">Open resume editor</Link>}
+          items={missingOptional.map((g) => ({ key: g.phrase, text: g.phrase }))}
+          collapsed={missingOptional.length > 5}
         />
       )}
       {gaps.untagged.length > 0 && (
@@ -180,38 +189,63 @@ function GapList({
   action,
   items,
   tone,
+  collapsed,
 }: {
   title: string;
   note: string;
   action: React.ReactNode;
   items: { key: string; text: string; sub?: string }[];
   tone?: "warn";
+  /** Long secondary lists start folded so the required ones stay in view. */
+  collapsed?: boolean;
 }) {
+  const className = `mt-4 rounded-lg border p-3 text-sm ${tone === "warn" ? "border-warn/40 bg-warn-soft/30" : "border-line"}`;
+  const heading = (
+    <>
+      {title} ({items.length})
+    </>
+  );
+  const body = (
+    <>
+      <p className="mt-1 text-xs text-ink-muted">{note}</p>
+      <GapItems items={items} />
+    </>
+  );
+  if (collapsed) {
+    return (
+      <details className={className}>
+        <summary className="cursor-pointer font-medium text-ink">{heading}</summary>
+        <div className="mt-1 text-xs font-medium text-accent underline">{action}</div>
+        {body}
+      </details>
+    );
+  }
   return (
-    <div
-      className={`mt-4 rounded-lg border p-3 text-sm ${tone === "warn" ? "border-warn/40 bg-warn-soft/30" : "border-line"}`}
-    >
+    <div className={className}>
       <div className="flex flex-wrap items-baseline justify-between gap-2">
-        <h3 className="font-medium text-ink">
-          {title} ({items.length})
-        </h3>
+        <h3 className="font-medium text-ink">{heading}</h3>
         <span className="text-xs font-medium text-accent underline">{action}</span>
       </div>
-      <p className="mt-1 text-xs text-ink-muted">{note}</p>
-      <ul className="mt-2 space-y-1">
-        {items.map((item) => (
-          <li key={item.key} className="flex gap-2">
-            <span aria-hidden className="text-ink-muted">
-              ☐
-            </span>
-            <span>
-              <span className="text-ink">{item.text}</span>
-              {item.sub && <span className="text-ink-muted"> · {item.sub}</span>}
-            </span>
-          </li>
-        ))}
-      </ul>
+      {body}
     </div>
+  );
+}
+
+function GapItems({ items }: { items: { key: string; text: string; sub?: string }[] }) {
+  return (
+    <ul className="mt-2 space-y-1">
+      {items.map((item) => (
+        <li key={item.key} className="flex gap-2">
+          <span aria-hidden className="text-ink-muted">
+            ☐
+          </span>
+          <span>
+            <span className="text-ink">{item.text}</span>
+            {item.sub && <span className="text-ink-muted"> · {item.sub}</span>}
+          </span>
+        </li>
+      ))}
+    </ul>
   );
 }
 

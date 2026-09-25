@@ -9,6 +9,19 @@ export function reportHeadline(report: RunReport): string {
   return `Matched ${report.coverage_matched} of ${report.coverage_total} required skills · ${pages}`;
 }
 
+/** "1 required and 9 nice-to-have skills aren't on your resume", or null when none. */
+export function missingSummary(groups: GapGroups): string | null {
+  const required = groups.missing.filter((m) => m.required).length;
+  const optional = groups.missing.length - required;
+  if (!required && !optional) return null;
+  const parts = [
+    required ? `${required} required` : "",
+    optional ? `${optional} nice-to-have` : "",
+  ].filter(Boolean);
+  const total = required + optional;
+  return `${parts.join(" and ")} skill${total === 1 ? "" : "s"} ${total === 1 ? "isn't" : "aren't"} on your resume`;
+}
+
 const BAND_RANK: Record<string, number> = {
   critical: 4,
   high: 3,
@@ -34,8 +47,9 @@ export function describeEvidence(raw: string): string {
 }
 
 export interface GapGroups {
-  /** Nothing in the master resume supports these. Never added for you. */
-  missing: { phrase: string; band?: string }[];
+  /** Nothing in the master resume supports these. Never added for you. `required` is
+   * the posting's must-have list (what "Required skills covered" counts), not `band`. */
+  missing: { phrase: string; band?: string; required: boolean }[];
   /** The resume mentions them, but no bullet is tagged with them. */
   untagged: { phrase: string; where: string[] }[];
   /** A bullet uses a different name for the same thing. */
@@ -46,11 +60,15 @@ export function gapGroups(report: RunReport): GapGroups {
   const gaps = [...report.gaps].sort(byBand);
   const missing: GapGroups["missing"] = gaps
     .filter((g) => g.reason === "no_evidence")
-    .map((g) => ({ phrase: g.phrase, band: g.band }));
-  const seen = new Set(missing.map((m) => m.phrase.toLowerCase()));
+    .map((g) => ({ phrase: g.phrase, band: g.band, required: g.importance === "must_have" }));
+  // Every diagnosed gap, whatever its group: a must-have the resume mentions untagged
+  // belongs under "not on a bullet", not a second time under "missing".
+  const seen = new Set(gaps.map((g) => g.phrase.toLowerCase()));
   for (const phrase of report.missing_must_haves) {
-    if (!seen.has(phrase.toLowerCase())) missing.push({ phrase, band: "critical" });
+    if (!seen.has(phrase.toLowerCase())) missing.push({ phrase, band: "critical", required: true });
   }
+  // Stable: band order is kept within each group.
+  missing.sort((a, b) => Number(b.required) - Number(a.required));
   return {
     missing,
     untagged: gaps
