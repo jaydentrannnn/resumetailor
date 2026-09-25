@@ -9,7 +9,9 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
+import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -726,5 +728,14 @@ def write_packet(job_id: str) -> Packet:
     job_dir = config.OUTPUT_DIR / "jobs" / job_id
     job_dir.mkdir(parents=True, exist_ok=True)
     path = job_dir / "packet.json"
-    path.write_text(packet.model_dump_json(indent=2) + "\n", encoding="utf-8")
+    # Temp file + rename: the job is already "succeeded" when this runs, so a reader
+    # (the Apply page, the MCP server) can open the file mid-write. An in-place
+    # write_text truncates first and was read back as empty JSON. The temp name is
+    # unique because the job thread and a rebuild request can write at the same time.
+    tmp = path.with_name(f"packet.{uuid.uuid4().hex}.tmp")
+    try:
+        tmp.write_text(packet.model_dump_json(indent=2) + "\n", encoding="utf-8")
+        os.replace(tmp, path)
+    finally:
+        tmp.unlink(missing_ok=True)
     return packet

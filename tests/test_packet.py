@@ -336,6 +336,29 @@ def test_write_packet_persists_json(job_dir):
     assert saved["fields"]["email"] == "jordan@example.com"
 
 
+def test_write_packet_never_exposes_a_partial_file(job_dir, monkeypatch):
+    """Readers only ever see the old packet or the new one, never a truncated file.
+
+    The job is marked succeeded before its packet is written, so the Apply page and the
+    MCP server can read `packet.json` while it is being replaced.
+    """
+    write_packet("test-job")
+    path = job_dir / "packet.json"
+    before = path.read_text(encoding="utf-8")
+    real_write = Path.write_text
+
+    def failing_write(self, data, *args, **kwargs):
+        real_write(self, data[:10], *args, **kwargs)  # a write cut off part-way
+        raise OSError("disk full")
+
+    monkeypatch.setattr(Path, "write_text", failing_write)
+    with pytest.raises(OSError):
+        write_packet("test-job")
+    monkeypatch.undo()
+    assert path.read_text(encoding="utf-8") == before
+    assert not list(job_dir.glob("packet.*.tmp"))
+
+
 def _legacy_profile(job_dir, **education):
     """A profile file saved before education moved to the resume."""
     config.APPLICANT_PROFILE_PATH.write_text(json.dumps({"first_name": "Jordan", **education}), encoding="utf-8")
