@@ -1688,6 +1688,35 @@ def test_import_master_resume_rejects_a_non_docx(client):
     assert res.status_code == 400
 
 
+def test_import_master_resume_reads_a_pdf_without_writing(client):
+    from tests.pdf_fixtures import single_column_resume
+
+    c, _ = client
+    before = config.MASTER_RESUME_PATH.read_text(encoding="utf-8")
+    res = c.post(
+        "/api/master-resume/import",
+        files={"file": ("resume.pdf", single_column_resume(), "application/pdf")},
+    )
+    assert res.status_code == 200, res.text
+    body = res.json()
+    assert body["resume"]["contact"]["name"] == "Alex Doe"
+    kinds = [s["kind"] for s in body["resume"]["sections"]]
+    assert kinds[:3] == ["education", "experience", "project"]
+    assert config.MASTER_RESUME_PATH.read_text(encoding="utf-8") == before
+
+
+def test_import_master_resume_explains_an_image_only_pdf(client):
+    from tests.pdf_fixtures import image_only_pdf
+
+    c, _ = client
+    res = c.post(
+        "/api/master-resume/import",
+        files={"file": ("scan.pdf", image_only_pdf(), "application/pdf")},
+    )
+    assert res.status_code == 400
+    assert "no readable text" in res.json()["detail"]
+
+
 def test_merge_master_resume_writes_and_backs_up(client):
     """POST /api/master-resume/merge actually persists — unlike /import — and reports
     the backup filename of the pre-merge content."""

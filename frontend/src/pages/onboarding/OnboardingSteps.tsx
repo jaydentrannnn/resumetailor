@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { fetchSetupStatus, type OnboardingField, type SetupStatus } from "../../api";
+import { ImportResumePanel } from "../../components/ImportResumePanel";
 import { TemplateImportWizard } from "../../components/template/TemplateImportWizard";
 import { Button, Card, Field } from "../../components/ui";
 import { describe } from "../../lib/errors";
@@ -101,11 +102,31 @@ export function FieldStep({
   );
 }
 
-/** Step 3: upload the .docx; its design becomes the template and its words the content. */
+/** Step 3: upload the .docx; its design becomes the template and its words the content.
+ * A PDF gives the content only. */
 export function ResumeStep({ onScratch }: { onScratch: () => void }) {
+  const [pdf, setPdf] = useState(false);
   return (
     <div className="space-y-4">
       <TemplateImportWizard title="Upload your resume" />
+      {pdf ? (
+        <ImportResumePanel
+          title="Import the content of a PDF"
+          intro="A PDF can't become your template, but its words can fill your master resume. Review them in the next step, then pick a template on the Template page."
+        />
+      ) : (
+        <p className="text-sm text-ink-muted">
+          Only have a PDF?{" "}
+          <button
+            type="button"
+            onClick={() => setPdf(true)}
+            className="font-semibold text-accent underline-offset-2 hover:underline"
+          >
+            Import its content
+          </button>
+          .
+        </p>
+      )}
       <p className="text-sm text-ink-muted">
         No Word file?{" "}
         <button

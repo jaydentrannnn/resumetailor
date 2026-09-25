@@ -80,3 +80,23 @@ test("onboarding and settings pages render accessibly", async ({ page }) => {
   await expect(page.getByRole("heading").first()).toBeVisible();
   await expectAccessible(page);
 });
+
+test("resume editor: import a PDF's content as a draft", async ({ page, request }) => {
+  const pdf = await request.get("/e2e/resume.pdf");
+  await page.goto("/profile/resume");
+  await page.getByText("Import resume content").click();
+  const panel = page.locator("section").filter({ hasText: "Import from a document" });
+  await panel.locator('input[type="file"]').setInputFiles({
+    name: "resume.pdf",
+    mimeType: "application/pdf",
+    buffer: await pdf.body(),
+  });
+  await page.getByRole("button", { name: "Review as draft" }).click();
+  await expect(panel.getByText(/imported as an unsaved draft/)).toBeVisible();
+  await expect(
+    page.getByRole("navigation", { name: "Resume sections" }).getByText("CERTIFICATIONS"),
+  ).toBeVisible();
+  await expectAccessible(page);
+  await page.getByRole("button", { name: "Discard" }).click();
+  await page.getByRole("button", { name: "Discard" }).last().click();
+});

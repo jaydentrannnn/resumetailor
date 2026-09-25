@@ -29,6 +29,8 @@ certifi==2026.7.22
     #   httpx
 cffi==2.1.1 ; platform_python_implementation != 'PyPy'
     # via cryptography
+charset-normalizer==3.5.1
+    # via pdfminer-six
 click==8.5.0
     # via uvicorn
 colorama==0.4.6 ; sys_platform == 'win32'
@@ -36,6 +38,7 @@ colorama==0.4.6 ; sys_platform == 'win32'
 cryptography==50.0.1
     # via
     #   -r requirements.txt
+    #   pdfminer-six
     #   pyjwt
     #   secretstorage
 docstring-parser==0.18.0
@@ -107,6 +110,12 @@ more-itertools==11.1.0
     # via
     #   jaraco-classes
     #   jaraco-functools
+pdfminer-six==20260107
+    # via pdfplumber
+pdfplumber==0.11.10
+    # via -r requirements.txt
+pillow==12.3.0
+    # via pdfplumber
 playwright==1.63.0
     # via -r requirements.txt
 pycparser==3.0 ; implementation_name != 'PyPy' and platform_python_implementation != 'PyPy'
@@ -129,7 +138,9 @@ pyjwt==2.15.0
 pypdf==6.19.0
     # via -r requirements.txt
 pypdfium2==5.13.0
-    # via -r requirements.txt
+    # via
+    #   -r requirements.txt
+    #   pdfplumber
 python-docx==1.2.0
     # via
     #   -r requirements.txt

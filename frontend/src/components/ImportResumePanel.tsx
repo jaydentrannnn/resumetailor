@@ -30,10 +30,17 @@ type Outcome =
  * (see `TemplateImportWizard.tsx`) but standalone, since this page has no wizard step
  * machine to hang off of.
  */
-export function ImportResumePanel() {
+export function ImportResumePanel({
+  title = "Import from a document",
+  intro,
+}: {
+  title?: string;
+  intro?: string;
+} = {}) {
   const { loadDraft, syncFromDisk } = useEditorState();
   const { choice } = useConfirm();
   const [suggestTags, setSuggestTags] = useState(false);
+  const [useModel, setUseModel] = useState(false);
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
 
@@ -41,7 +48,7 @@ export function ImportResumePanel() {
     setBusy(true);
     setOutcome(null);
     try {
-      const result = await importMasterResumeContent(file, { suggestTags });
+      const result = await importMasterResumeContent(file, { suggestTags, useModel });
       const picked = await choice({
         title: MERGE_CHOICE_TITLE,
         message: MERGE_CHOICE_MESSAGE,
@@ -82,13 +89,30 @@ export function ImportResumePanel() {
 
   return (
     <section className="rounded-xl border border-line bg-panel p-5 shadow-sm">
-      <h2 className="font-display text-lg font-semibold">Import from a document</h2>
+      <h2 className="font-display text-lg font-semibold">{title}</h2>
       <p className="mt-1 text-sm text-ink-muted">
-        Upload a .docx resume to fold its content into the master resume below — matching entries
-        are updated, new ones are added, nothing else changes.
+        {intro ??
+          "Upload a .docx or PDF resume to fold its content into the master resume below — matching entries are updated, new ones are added, nothing else changes."}
       </p>
 
-      <UploadDropzone disabled={busy} onFile={(file) => void handleFile(file)} />
+      <UploadDropzone allowPdf disabled={busy} onFile={(file) => void handleFile(file)} />
+
+      <label className="mt-3 flex items-start gap-2 text-sm">
+        <input
+          type="checkbox"
+          className="mt-1"
+          checked={useModel}
+          disabled={busy}
+          onChange={(e) => setUseModel(e.target.checked)}
+        />
+        <span>
+          <span className="font-medium text-ink">Let the AI model sort a PDF into sections</span>
+          <span className="block text-xs text-ink-muted">
+            Helps with unusual layouts. Every name, title and date it picks is checked against the
+            PDF's own text, and the built-in reader is used if the model can't be reached.
+          </span>
+        </span>
+      </label>
 
       <label className="mt-3 flex items-start gap-2 text-sm">
         <input

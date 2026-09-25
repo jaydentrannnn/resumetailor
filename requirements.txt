@@ -11,6 +11,9 @@ pypdf>=5.0
 # First-page PNG thumbnails of template previews (web/template_ops.py). Apache-2.0/BSD;
 # pdfium ships inside the wheel, so no system package is needed.
 pypdfium2>=4.30
+# PDF resume import (resume_import_pdf.py): positioned text and font names. MIT, pure
+# Python on pdfminer.six. Not PyMuPDF, whose AGPL licence cannot ship in a closed app.
+pdfplumber>=0.11
 pydantic>=2.9
 python-dotenv>=1.0
 # Web UI (src/resume_tailor/web). Not required for the CLI.

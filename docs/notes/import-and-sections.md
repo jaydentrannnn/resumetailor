@@ -764,3 +764,12 @@ live and unmocked, twice for idempotency, through the real `POST /api/master-res
 against the actual reconciled `nina` data and the real `original_export.docx`: the UCI entry
 comes back `updated` (not `added`), still exactly one education entry, coursework and
 `gpa=3.92`/`show_gpa=True` both stable across both runs.
+
+## PDF import (P3-P, 2026-09)
+- `resume_import_pdf.py` turns a PDF's text layer into the same `ImportedResume` draft as the .docx importer; `POST /api/master-resume/import` routes by `.pdf` extension or `%PDF-` signature. A PDF is content only: it never becomes a template.
+- Library: pdfplumber (MIT, on pdfminer.six). PyMuPDF was ruled out because it is AGPL. pdfplumber pulls in Pillow.
+- Lines are built from raw characters, not `extract_words`: rows by baseline, a word gap at >0.3 em (handles Canva-style letter placement), a segment break at >2 em. A tab-aligned date becomes `"\t"`, the same convention the .docx side uses.
+- Two columns are detected per page by a gutter: many segments start at the same mid-page x, and almost none span across it. Right-aligned dates fail the "nothing spans" test because bullets run the full width, so single-column resumes aren't split.
+- Wrapped lines rejoin when a line is indented to the previous bullet's text start (or the previous line ends in a comma/connective). A hard hyphen at a line end is kept ("cross-functional"). A soft hyphen is dropped. This is a deviation from the plan's blanket de-hyphenation, which would corrupt real compounds.
+- The model-assisted pass (opt-in `use_model`) answers with line numbers, and bullets are always the PDF's own lines. Field strings (company, title, dates, location) must be substrings of their cited header lines, or a ≥0.9 difflib match of a segment. Anything else is dropped with a warning, and unplaced lines are listed in the warnings. It rides the `extract` purpose like `propose.py` rather than adding an `import` purpose. The cache key is `_PROMPT_VERSION` + `fingerprint("extract")` + the numbered text. Any model failure falls back to the heuristic draft.
+- Test PDFs are written by `tests/pdf_fixtures.py` (hand-rolled PDF with standard Helvetica fonts; no reportlab). The e2e server serves one at `/e2e/resume.pdf`, so no binary fixture is committed.

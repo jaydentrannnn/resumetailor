@@ -106,10 +106,22 @@ def main() -> None:
     import httpx
     import uvicorn
 
+    sys.path.insert(0, str(ROOT))
+    from fastapi.responses import Response
+
+    from resume_tailor.web.app import app
+    from tests.pdf_fixtures import single_column_resume
+
+    # Test-only: the synthetic PDF the import test uploads (no binary fixture in git).
+    # Moved ahead of the SPA mount at "/", which would otherwise answer first.
+    pdf = single_column_resume()
+    app.add_api_route(
+        "/e2e/resume.pdf", lambda: Response(pdf, media_type="application/pdf"), methods=["GET"]
+    )
+    app.router.routes.insert(0, app.router.routes.pop())
+
     server = uvicorn.Server(
-        uvicorn.Config(
-            "resume_tailor.web.app:app", host="127.0.0.1", port=args.port, log_level="warning"
-        )
+        uvicorn.Config(app, host="127.0.0.1", port=args.port, log_level="warning")
     )
     thread = threading.Thread(target=server.run, daemon=True)
     thread.start()

@@ -19,6 +19,7 @@ from resume_tailor import (
     data,
     propose,
     resume_import,
+    resume_import_pdf,
     resume_versions,
     tag_suggest,
     template_analyze,
@@ -209,8 +210,13 @@ def validate_master_resume(body: dict[str, Any]) -> ValidateResponse:
 def import_master_resume(
     file: UploadFile = File(...),
     suggest_tags: str | None = Form(None),
+    use_model: str | None = Form(None),
 ) -> MasterResumeImportResponse:
-    """Parse an uploaded .docx into a `MasterResume` draft — content, not just layout.
+    """Parse an uploaded .docx or PDF into a `MasterResume` draft — content, not just layout.
+
+    A PDF (by extension or its ``%PDF`` signature) goes through `resume_import_pdf`;
+    truthy `use_model` adds that module's guarded model-assisted structuring pass,
+    pinned to `config.ONE_OFF_PROFILE` like the tag suggestions below.
 
     Writes nothing: the editor loads the result as unsaved state and the user saves
     through the existing `PUT /api/master-resume`, same as a hand edit. Tags are seeded
@@ -229,6 +235,37 @@ def import_master_resume(
     """
     raw = file.file.read()
     filename = file.filename or "upload.docx"
+    known_tags = resume_import._default_vocabulary()
+    # brand-new workspace with no master resume yet
+    with suppress(FileNotFoundError, ValueError):
+        known_tags |= set(data.load().tag_vocabulary)
+    if filename.lower().endswith(".pdf") or raw[:5] == b"%PDF-":
+        imported = _import_pdf(raw, known_tags, _truthy(use_model))
+    else:
+        imported = _import_docx(raw, filename, known_tags)
+    return _suggest_tags(imported, known_tags, _truthy(suggest_tags))
+
+
+def _truthy(value: str | None) -> bool:
+    return (value or "").strip().lower() in ("1", "true", "yes", "on")
+
+
+def _import_pdf(raw: bytes, known_tags: set[str], use_model: bool) -> resume_import.ImportedResume:
+    if not raw:
+        raise HTTPException(status_code=400, detail="Upload is empty.")
+    if len(raw) > template_ops._MAX_UPLOAD_BYTES:
+        raise HTTPException(
+            status_code=413,
+            detail=f"Upload is {len(raw)} bytes; maximum is {template_ops._MAX_UPLOAD_BYTES}.",
+        )
+    try:
+        with config.pinned(config.ONE_OFF_PROFILE):
+            return resume_import_pdf.import_pdf(raw, known_tags=known_tags, use_model=use_model)
+    except resume_import_pdf.PdfImportError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+def _import_docx(raw: bytes, filename: str, known_tags: set[str]) -> resume_import.ImportedResume:
     try:
         template_ops._validate_upload_bytes(raw, filename)
         with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as tmp:
@@ -242,19 +279,17 @@ def import_master_resume(
                     f"File is not a readable .docx: {exc}"
                 ) from exc
             result = template_analyze.analyze_docx(raw=raw)
-
-            known_tags = resume_import._default_vocabulary()
-            # brand-new workspace with no master resume yet
-            with suppress(FileNotFoundError, ValueError):
-                known_tags |= set(data.load().tag_vocabulary)
-
-            imported = resume_import.import_from_analysis(result, doc, known_tags=known_tags)
+            return resume_import.import_from_analysis(result, doc, known_tags=known_tags)
         finally:
             tmp_path.unlink(missing_ok=True)
     except template_ops.TemplateValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    do_suggest = (suggest_tags or "").strip().lower() in ("1", "true", "yes", "on")
+
+def _suggest_tags(
+    imported: resume_import.ImportedResume, known_tags: set[str], do_suggest: bool
+) -> MasterResumeImportResponse:
+    """Optional model pass proposing tags for bullets the import left untagged."""
     if do_suggest and imported.untagged_bullet_count:
         all_bullets = imported.resume.all_bullets()
         untagged_indices = [

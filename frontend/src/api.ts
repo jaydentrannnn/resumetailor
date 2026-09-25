@@ -1153,19 +1153,23 @@ export type MasterResumeImportResponse = {
 };
 
 /**
- * Parse an uploaded .docx into a `MasterResume` draft — content, not just layout.
+ * Parse an uploaded .docx or PDF into a `MasterResume` draft — content, not just layout.
  * Writes nothing; the caller loads the result as unsaved editor state and saves
  * through `saveMasterResume` when ready. `suggestTags` additionally runs an opt-in LLM
- * pass for whatever the deterministic import left untagged.
+ * pass for whatever the deterministic import left untagged; `useModel` lets the model
+ * sort a PDF's lines into sections (every field is checked against the PDF's text).
  */
 export async function importMasterResumeContent(
   file: File,
-  options?: { suggestTags?: boolean },
+  options?: { suggestTags?: boolean; useModel?: boolean },
 ): Promise<MasterResumeImportResponse> {
   const form = new FormData();
   form.append("file", file);
   if (options?.suggestTags) {
     form.append("suggest_tags", "true");
+  }
+  if (options?.useModel) {
+    form.append("use_model", "true");
   }
   const res = await fetch("/api/master-resume/import", { method: "POST", body: form });
   if (!res.ok) {
