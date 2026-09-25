@@ -905,3 +905,12 @@ Continue start was rejected: it drops unsaved answers on the current step.
 - A tick waits while a daily pass or an Apply operation is running, and retries 30 s later.
 - Only the active profile is scheduled. Scheduling others would rebind config paths under the user; that waits for S6.
 - `GET /api/applications/daily-status` carries `scheduler` (last run, next run, `missed_today`, `last_error`) for the Apply settings drawer.
+
+## Secrets out of the JSON files (B7, 2026-09)
+
+- `secret_store.py` keeps the Workday profile password, the per-tenant Workday vault passwords, and API keys saved in the app. Backends: the OS keychain via `keyring`; else `<DATA_ROOT>/secrets.enc` (Fernet, key in `RESUME_TAILOR_SECRET_KEY` or `.secret_key` 0600); `memory` for tests (forced in `tests/conftest.py`).
+- The file fallback is honest about its limit: with the key beside the data it protects a copied or synced JSON file, not a stolen data folder.
+- Migration is lazy and one-way. `profile.load_profile` moves a plaintext `workday_password` into the store after a backup; `workday_auth._save_vault` drops passwords from `workday_vault.json`. If the store refuses a write (a locked keychain), the password stays in the file and a warning is logged, so it is never lost.
+- `save_profile` with an empty password leaves the stored one alone, because `_migrate_education` and similar paths rebuild a profile from the file, which never has it. `clear_workday_password()` is the explicit delete.
+- API keys: `config.credential(name)` reads the environment first, then `api_key:<NAME>` in the store, only for `SAVABLE_CREDENTIALS`. `/api/secrets` is write-only: GET reports set/source, never a value.
+- Secret names are namespaced per profile (`profile:<workspace id>:...`), so the store is shared across profiles without collisions.

@@ -247,16 +247,44 @@ def set_active_workspace(workspace_id: str, *, create_dirs: bool = False) -> str
     return workspace_id
 
 
+#: API-key names a user may save in the app (Settings -> Models) instead of `.env`.
+SAVABLE_CREDENTIALS: tuple[str, ...] = (
+    "ANTHROPIC_API_KEY",
+    "GEMINI_API_KEY",
+    "GOOGLE_API_KEY",
+    "LLM_API_KEY",
+    "OLLAMA_API_KEY",
+)
+
+
+def credential(name: str) -> str:
+    """An API key: the environment (`.env`) first, then the app's secret store.
+
+    The environment wins so a key set for one shell or container overrides the saved
+    one. A secret store that cannot be read counts as "not set".
+    """
+    value = os.environ.get(name, "")
+    if value or name not in SAVABLE_CREDENTIALS:
+        return value
+    from resume_tailor import secret_store
+
+    try:
+        return secret_store.get(f"api_key:{name}") or ""
+    except secret_store.SecretStoreError:
+        return ""
+
+
 def anthropic_api_key() -> str:
     """Return the API key, failing with an actionable message if it is missing.
 
     Read lazily rather than at import time so that offline commands (validating the
     master resume, rendering dummy data) work without a key configured.
     """
-    key = os.environ.get("ANTHROPIC_API_KEY")
+    key = credential("ANTHROPIC_API_KEY")
     if not key:
         raise RuntimeError(
-            "ANTHROPIC_API_KEY is not set. Copy .env.example to .env and add your key "
+            "ANTHROPIC_API_KEY is not set. Save it in Settings, or copy .env.example to "
+            ".env and add it "
             "(get one at https://console.claude.com/settings/keys)."
         )
     return key
@@ -875,7 +903,7 @@ def api_key_for(purpose: str) -> str:
     if backend.provider == "anthropic":
         return anthropic_api_key()
     for name in api_key_env_for(backend.origin):
-        value = os.environ.get(name, "")
+        value = credential(name)
         if value:
             return value
     return ""
@@ -913,7 +941,7 @@ def credential_gaps(profile: str, overrides: dict[str, str] | None = None) -> li
         if origin not in PROVIDERS_REQUIRING_KEY or origin in seen_origins:
             continue
         seen_origins.add(origin)
-        if not any(os.environ.get(name) for name in api_key_env_for(origin)):
+        if not any(credential(name) for name in api_key_env_for(origin)):
             env_names = " or ".join(api_key_env_for(origin))
             gaps.append(f"{env_names} is not set — required by the {origin!r} provider.")
     return gaps

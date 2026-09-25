@@ -65,12 +65,15 @@ os.environ["RESUME_TAILOR_OUTPUT_DIR"] = _TEST_OUTPUT_ROOT
 os.environ.pop("RESUME_TAILOR_CACHE_DIR", None)
 # The app log is on by default; the suite must never write one either.
 os.environ.setdefault("RESUME_TAILOR_LOG_DIR", "off")
+# Never the developer's keychain or data/secrets.enc: an in-memory store per test.
+os.environ["RESUME_TAILOR_SECRETS_BACKEND"] = "memory"
 
 import pytest  # noqa: E402
 
 from resume_tailor import (  # noqa: E402
     config,
     libraries,
+    secret_store,
     style,
     template_analyze,
     template_build,
@@ -100,6 +103,14 @@ def _isolated_libraries(tmp_path, monkeypatch):
     libraries.reset()
     yield
     libraries.reset()
+
+
+@pytest.fixture(autouse=True)
+def _fresh_secret_store():
+    """A new, empty in-memory secret store for every test."""
+    secret_store.reset_backend()
+    yield
+    secret_store.reset_backend()
 
 
 @pytest.fixture(autouse=True)

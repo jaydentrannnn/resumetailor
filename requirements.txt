@@ -24,3 +24,8 @@ mcp>=1.2,<2
 playwright>=1.47
 # SimplifyJobs README HTML table parsing in apply/sources.py.
 beautifulsoup4>=4.12
+# Secrets (src/resume_tailor/secret_store.py): OS keychain first (Windows Credential
+# Manager, macOS Keychain, Secret Service); `cryptography` encrypts the file fallback
+# used where no keychain exists (Docker, headless Linux).
+keyring>=25
+cryptography>=43

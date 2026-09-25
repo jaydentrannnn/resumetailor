@@ -8,6 +8,7 @@ from __future__ import annotations
 
 import contextlib
 import json
+import logging
 import re
 import secrets
 import string
@@ -17,9 +18,11 @@ from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import urlparse
 
-from resume_tailor import config
+from resume_tailor import config, secret_store
 from resume_tailor.apply import store
 from resume_tailor.apply.profile import ApplicantProfile
+
+_log = logging.getLogger(__name__)
 
 _VAULT_FILENAME = "workday_vault.json"
 
@@ -30,25 +33,56 @@ def _vault_path() -> Path:
     return config.APPLICATIONS_OUTPUT_DIR / _VAULT_FILENAME
 
 
+def _vault_secret(tenant: str) -> str:
+    return secret_store.profile_name(f"workday:{tenant}")
+
+
 def _load_vault() -> dict[str, dict[str, str]]:
-    """Load cached tenant credentials, or return empty dict."""
+    """Load cached tenant credentials, or return empty dict.
+
+    Passwords live in the secret store; the JSON file keeps the email and flags. A
+    plaintext password still in the file (written before the store existed, or while
+    it was unavailable) is used as-is and moved into the store on the next save.
+    """
     path = _vault_path()
     if not path.is_file():
         return {}
     try:
         raw = json.loads(path.read_text(encoding="utf-8"))
-        if isinstance(raw, dict):
-            return {str(k): dict(v) for k, v in raw.items() if isinstance(v, dict)}
     except (OSError, json.JSONDecodeError):
-        pass
-    return {}
+        return {}
+    if not isinstance(raw, dict):
+        return {}
+    vault = {str(k): dict(v) for k, v in raw.items() if isinstance(v, dict)}
+    for tenant, entry in vault.items():
+        if entry.get("password"):
+            continue
+        try:
+            stored = secret_store.get(_vault_secret(tenant))
+        except secret_store.SecretStoreError as exc:
+            _log.warning("could not read the saved password for %s: %s", tenant, exc)
+            stored = None
+        if stored:
+            entry["password"] = stored
+    return vault
 
 
 def _save_vault(vault: dict[str, dict[str, str]]) -> None:
-    """Persist tenant credentials atomically."""
+    """Persist tenant credentials atomically, passwords to the secret store."""
     path = _vault_path()
+    on_disk: dict[str, dict[str, str]] = {}
+    for tenant, entry in vault.items():
+        entry = dict(entry)
+        password = entry.pop("password", "")
+        if password:
+            try:
+                secret_store.set(_vault_secret(tenant), password)
+            except secret_store.SecretStoreError as exc:
+                _log.warning("password for %s kept in %s: %s", tenant, path.name, exc)
+                entry["password"] = password
+        on_disk[tenant] = entry
     tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(vault, indent=2) + "\n", encoding="utf-8")
+    tmp.write_text(json.dumps(on_disk, indent=2) + "\n", encoding="utf-8")
     tmp.replace(path)
 
 

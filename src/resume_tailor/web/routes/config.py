@@ -3,7 +3,6 @@
 from __future__ import annotations
 
 import logging
-import os
 from contextlib import suppress
 
 from fastapi import APIRouter
@@ -91,7 +90,7 @@ def _config_response(*, consume_migrated: bool = True) -> ConfigResponse:
         # origin word coinciding with one (as "gemini" does today) would be a coincidence
         # to depend on, not a guarantee.
         provider_keys={
-            origin: any(os.environ.get(name) for name in config.api_key_env_for(origin))
+            origin: any(config.credential(name) for name in config.api_key_env_for(origin))
             for origin in config.PROVIDERS_REQUIRING_KEY
         },
         effort_options=["low", "medium", "high"],

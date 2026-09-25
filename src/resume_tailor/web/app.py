@@ -175,6 +175,7 @@ from resume_tailor.web.routes import (  # noqa: E402, I001
     jobs as _jobs_routes,
     libraries as _libraries_routes,
     resume as _resume_routes,
+    secrets as _secrets_routes,
     template as _template_routes,
     workspaces as _workspaces_routes,
 )
@@ -184,6 +185,7 @@ from resume_tailor.web.routes import (  # noqa: E402, I001
 for _router in (
     _config_routes, _jobs_routes, _applications_routes, _resume_routes,
     _template_routes, _libraries_routes, _workspaces_routes, _diagnostics_routes,
+    _secrets_routes,
 ):
     app.include_router(_router.router)
 

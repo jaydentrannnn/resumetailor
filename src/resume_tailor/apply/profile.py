@@ -14,7 +14,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-from resume_tailor import config
+from resume_tailor import config, secret_store
 
 _log = logging.getLogger(__name__)
 
@@ -174,25 +174,69 @@ def _migrate_education(path: Path, raw: dict[str, Any]) -> None:
     save_profile(ApplicantProfile.model_validate(raw))
 
 
+#: Secret-store key of the profile's Workday password (see `secret_store.profile_name`).
+_PASSWORD_SECRET = "workday_password"
+
+
+def _stored_password() -> str:
+    try:
+        return secret_store.get(secret_store.profile_name(_PASSWORD_SECRET)) or ""
+    except secret_store.SecretStoreError as exc:
+        _log.warning("could not read the saved Workday password: %s", exc)
+        return ""
+
+
 def load_profile() -> tuple[ApplicantProfile, bool]:
-    """Load the profile; return ``(profile, seeded)`` where seeded means file was missing."""
+    """Load the profile; return ``(profile, seeded)`` where seeded means file was missing.
+
+    ``workday_password`` is filled from the secret store; the JSON file holds it only
+    when the store could not take it (see `save_profile`). A plaintext password found
+    in the file is moved into the store once, after a backup.
+    """
     path = _path()
     if not path.is_file():
         return ApplicantProfile(), True
     raw = json.loads(path.read_text(encoding="utf-8"))
     if isinstance(raw, dict) and any(key in raw for key in _LEGACY_EDUCATION):
         _migrate_education(path, raw)
-    return ApplicantProfile.model_validate(raw), False
+    profile = ApplicantProfile.model_validate(raw)
+    if profile.workday_password:
+        _backup(path)
+        save_profile(profile)
+    else:
+        profile.workday_password = _stored_password()
+    return profile, False
 
 
 def save_profile(profile: ApplicantProfile) -> ApplicantProfile:
-    """Write ``applicant_profile.json`` atomically and return the saved model."""
+    """Write ``applicant_profile.json`` atomically and return the saved model.
+
+    The Workday password goes to the secret store and the file gets an empty string.
+    An empty password leaves the stored one alone (`clear_workday_password` removes
+    it), so code that rebuilds a profile from the file cannot wipe it by accident. If
+    the store refuses the password (a locked keychain), it stays in the file rather
+    than being lost, and a warning is logged.
+    """
     path = _path()
     path.parent.mkdir(parents=True, exist_ok=True)
+    on_disk = profile.model_dump()
+    if profile.workday_password:
+        try:
+            secret_store.set(
+                secret_store.profile_name(_PASSWORD_SECRET), profile.workday_password
+            )
+            on_disk["workday_password"] = ""
+        except secret_store.SecretStoreError as exc:
+            _log.warning("Workday password kept in applicant_profile.json: %s", exc)
     tmp = path.with_suffix(".json.tmp")
     tmp.write_text(
-        json.dumps(profile.model_dump(), indent=2, ensure_ascii=False) + "\n",
+        json.dumps(on_disk, indent=2, ensure_ascii=False) + "\n",
         encoding="utf-8",
     )
     tmp.replace(path)
     return profile
+
+
+def clear_workday_password() -> None:
+    """Forget the active profile's saved Workday password."""
+    secret_store.delete(secret_store.profile_name(_PASSWORD_SECRET))
