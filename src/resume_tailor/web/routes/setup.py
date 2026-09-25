@@ -41,6 +41,36 @@ def probe_local_server(base_url: str) -> str | None:
     return problem
 
 
+#: A hosted endpoint's answer that means the key, not the service, is the problem.
+KEY_REJECTED = "key rejected"
+
+
+def probe_remote_server(base_url: str, api_key: str) -> str | None:
+    """Like ``probe_local_server`` for a hosted endpoint (Ollama Cloud): sends the key,
+    waits longer, and reports a 401/403 as ``KEY_REJECTED``. Cached per URL and key."""
+    cache_key = f"{base_url}\0{hash(api_key)}"
+    now = time.monotonic()
+    hit = _probe_cache.get(cache_key)
+    if hit is not None and now - hit[0] < _PROBE_TTL:
+        return hit[1]
+    headers = {"Authorization": f"Bearer {api_key}"} if api_key else {}
+    try:
+        response = httpx.get(f"{base_url.rstrip('/')}/models", headers=headers, timeout=5.0)
+        if response.status_code in (401, 403):
+            problem: str | None = KEY_REJECTED
+        else:
+            problem = None if response.status_code < 500 else f"HTTP {response.status_code}"
+    except httpx.HTTPError as exc:
+        problem = type(exc).__name__
+    _probe_cache[cache_key] = (now, problem)
+    return problem
+
+
+def clear_probe_cache() -> None:
+    """Forget every probe result, e.g. after "Test connection" succeeded."""
+    _probe_cache.clear()
+
+
 def _item(
     item_id: str, label: str, ok: bool, detail: str, fix: str, to: str, *, optional: bool = False
 ) -> dict[str, Any]:
@@ -65,6 +95,13 @@ def _model_item() -> dict[str, Any]:
         )
     with config.pinned(profile, overrides=overrides, effort=effort):
         backends = {config.backend_for(p) for p in ("extract", "rewrite")}
+        # Only hosted Ollama/LM Studio endpoints need the key for the probe below;
+        # `api_key_for` raises for a missing Anthropic key, which is reported above.
+        keys = {
+            config.backend_for(p): config.api_key_for(p)
+            for p in ("extract", "rewrite")
+            if (config.backend_for(p).origin or "") in _LOCAL_ORIGINS
+        }
     # `credential_gaps` covers only origins whose key `llm.py` checks up front; the
     # Anthropic key is enforced later, by `config.anthropic_api_key`.
     if any(b.provider == "anthropic" for b in backends) and not config.credential(
@@ -76,15 +113,34 @@ def _model_item() -> dict[str, Any]:
         )
     for backend in backends:
         origin = backend.origin or backend.provider
-        if origin in _LOCAL_ORIGINS and backend.base_url:
+        if origin not in _LOCAL_ORIGINS or not backend.base_url:
+            continue
+        name = "Ollama" if origin == "ollama" else "LM Studio"
+        if config.is_local_url(backend.base_url):
             problem = probe_local_server(backend.base_url)
             if problem is not None:
-                name = "Ollama" if origin == "ollama" else "LM Studio"
                 return _item(
                     "model", "AI model", False,
-                    f"{name} is not answering at {backend.base_url}. Start it, then check again.",
+                    f"{name} is not answering at {backend.base_url} ({problem}). "
+                    "Start it, then check again.",
                     "Model settings", "/settings",
                 )
+            continue
+        # A hosted endpoint (Ollama Cloud): nothing to "start", and it wants the key.
+        problem = probe_remote_server(backend.base_url, keys.get(backend, ""))
+        if problem == KEY_REJECTED:
+            return _item(
+                "model", "AI model", False,
+                f"{backend.base_url} rejected the API key. Check OLLAMA_API_KEY in Settings.",
+                "Model settings", "/settings",
+            )
+        if problem is not None:
+            return _item(
+                "model", "AI model", False,
+                f"Can't reach {backend.base_url} ({problem}). Check your internet connection, "
+                "then test the connection in Settings.",
+                "Model settings", "/settings",
+            )
     models = ", ".join(sorted({f"{b.origin or b.provider}:{b.model}" for b in backends}))
     return _item("model", "AI model", True, f"Using {models}.", "Model settings", "/settings")
 

@@ -1,15 +1,16 @@
 """Pre-run estimate of model calls, tokens and cost for one tailoring run (PF4).
 
-Shown next to "Tailor resume" for paid backends, so a student with an API key knows
-what a run costs before starting it. Purely arithmetic: no model call, no network.
+Shown under "Tailor resume" for every backend, so a student knows how much model work a
+run is before starting it: dollars on a per-token API key, usage alone on a local model
+or a subscription service (Ollama Cloud). Purely arithmetic: no model call, no network.
 
 The figures are for a first run on a posting. A repeat hits the extraction, scoring and
 facet caches and costs less. Tokens are estimated as characters / 4 plus each stage's
 fixed prompt overhead, measured from the shipped prompts and rounded up. Rewriting is
 counted as `_REWRITE_ROUNDS` passes, because the fit loop usually shortens once. Prices
 are list prices per million tokens for the model families below. An unknown model gets
-token counts and no dollar figure, never a guess. Local backends (Ollama, LM Studio)
-cost nothing.
+token counts and no dollar figure, never a guess. Ollama and LM Studio have no
+per-token price: on this machine they are free, and Ollama Cloud bills by plan.
 """
 
 from __future__ import annotations
@@ -43,6 +44,16 @@ class StageEstimate:
     input_tokens: int
     output_tokens: int
     usd: float | None
+    #: "per_token" (API key, dollars), "local" (this machine), "subscription" (a hosted
+    #: Ollama/LM Studio endpoint such as Ollama Cloud: usage counts against a plan).
+    billing: str = "per_token"
+
+
+def billing_for(origin: str, base_url: str | None) -> str:
+    """How a stage on ``origin`` at ``base_url`` is paid for (see ``StageEstimate``)."""
+    if origin not in _LOCAL_ORIGINS:
+        return "per_token"
+    return "local" if not base_url or config.is_local_url(base_url) else "subscription"
 
 
 def _tokens(chars: int) -> int:
@@ -103,7 +114,10 @@ def estimate_run(
         if price is not None:
             usd = calls * (tin * price[0] + tout * price[1]) / 1_000_000
         stages.append(
-            StageEstimate(stage, f"{origin}:{backend.model}", calls, calls * tin, calls * tout, usd)
+            StageEstimate(
+                stage, f"{origin}:{backend.model}", calls, calls * tin, calls * tout, usd,
+                billing_for(origin, backend.base_url),
+            )
         )
     known = [s.usd for s in stages]
     return {
@@ -111,6 +125,15 @@ def estimate_run(
         "input_tokens": sum(s.input_tokens for s in stages),
         "output_tokens": sum(s.output_tokens for s in stages),
         "usd": round(sum(known), 4) if all(u is not None for u in known) else None,
-        "local": all(s.model.split(":", 1)[0] in _LOCAL_ORIGINS for s in stages),
+        "local": all(s.billing == "local" for s in stages),
+        "billing": _overall_billing({s.billing for s in stages}),
         "stages": [asdict(s) for s in stages],
     }
+
+
+def _overall_billing(kinds: set[str]) -> str:
+    """Per-token wins (there is money to show), then subscription, then local."""
+    for kind in ("per_token", "subscription"):
+        if kind in kinds:
+            return kind
+    return "local"

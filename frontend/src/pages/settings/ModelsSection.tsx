@@ -9,6 +9,7 @@ import {
   type SecretState,
 } from "../../api";
 import { Button, Card, InlineHelp } from "../../components/ui";
+import { emitAppEvent } from "../../lib/appEvents";
 import { describe } from "../../lib/errors";
 import { GLOSSARY } from "../../lib/glossary";
 import { profileDefaultModel } from "../../lib/modelLabel";
@@ -58,7 +59,9 @@ export function ModelsSection() {
     setTesting(true);
     setResult(null);
     try {
-      setResult(await testModel(settings));
+      const result = await testModel(settings);
+      setResult(result);
+      if (result.ok) emitAppEvent("rt:setup-changed");
     } catch (err) {
       setResult({ ok: false, detail: describe(err).detail });
     } finally {
@@ -233,6 +236,7 @@ function KeyRow({
       await saveSecret(secret.name, value.trim());
       setValue("");
       toast.success("Key saved");
+      emitAppEvent("rt:setup-changed");
       onChange();
     } catch (err) {
       const d = describe(err);
@@ -247,6 +251,7 @@ function KeyRow({
     try {
       await deleteSecret(secret.name);
       toast.success("Key removed");
+      emitAppEvent("rt:setup-changed");
       onChange();
     } catch (err) {
       toast.error("Could not remove the key", describe(err).detail);

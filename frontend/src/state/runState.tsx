@@ -30,6 +30,7 @@ import {
   triggerPdfDownload,
 } from "../api";
 import { useWorkspaceState } from "./workspaceState";
+import { emitAppEvent } from "../lib/appEvents";
 
 /** All-included defaults for a fresh `IncludeOptions` — the merge base whenever a
  * settings.json predates this field or a fresh session needs a starting point. */
@@ -337,6 +338,7 @@ export function RunProvider({ children }: { children: ReactNode }) {
         setSettingsSaveState("saving");
         try {
           await saveSettings(next);
+          if (next.model !== savedSettings.current.model) emitAppEvent("rt:setup-changed");
           savedSettings.current = next;
           lastWriteFailed.current = false;
           if (revision === settingsRevision.current) {

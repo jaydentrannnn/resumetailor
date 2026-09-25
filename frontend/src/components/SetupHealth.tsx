@@ -1,11 +1,13 @@
 import { useCallback, useEffect, useId, useRef, useState } from "react";
 import { Link, useLocation } from "react-router-dom";
 import { fetchSetupStatus, type SetupStatus } from "../api";
+import { onAppEvent } from "../lib/appEvents";
 import { setupPillLabel } from "../lib/setupStatus";
 
 /**
  * Header pill + checklist of prerequisites (model reachable, template, resume, profile).
- * Refreshes on navigation, when the tab regains focus, and every minute.
+ * Refreshes on navigation, when the tab regains focus, every minute, and when another
+ * page reports a change that affects it (`rt:setup-changed`, e.g. a successful model test).
  */
 export function SetupHealth() {
   const [status, setStatus] = useState<SetupStatus | null>(null);
@@ -23,6 +25,15 @@ export function SetupHealth() {
   useEffect(() => {
     load();
   }, [load, location.pathname]);
+
+  useEffect(() => {
+    const offSetup = onAppEvent("rt:setup-changed", load);
+    const offTemplate = onAppEvent("rt:template-changed", load);
+    return () => {
+      offSetup();
+      offTemplate();
+    };
+  }, [load]);
 
   useEffect(() => {
     const timer = window.setInterval(() => {

@@ -2,7 +2,7 @@ import { useEffect, useState } from "react";
 import { estimateJob, type JobSettings, type RunEstimate } from "../api";
 import { describeEstimate } from "../lib/runEstimate";
 
-/** Debounced cost preview for paid backends; renders nothing for local models. */
+/** Debounced usage and cost preview, shown for every backend (`lib/runEstimate.ts`). */
 export function RunCostEstimate({
   jdText,
   settings,

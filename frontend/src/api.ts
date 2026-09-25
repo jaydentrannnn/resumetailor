@@ -1109,6 +1109,9 @@ export interface RunEstimate {
   usd: number | null;
   /** Every stage runs on a local model: nothing to pay. */
   local: boolean;
+  /** How the run is paid for: dollars per token, free on this machine, or an Ollama
+   * Cloud plan. Absent from servers older than the field. */
+  billing?: "per_token" | "local" | "subscription";
   stages: {
     stage: string;
     model: string;
@@ -1116,6 +1119,7 @@ export interface RunEstimate {
     input_tokens: number;
     output_tokens: number;
     usd: number | null;
+    billing?: "per_token" | "local" | "subscription";
   }[];
 }
 

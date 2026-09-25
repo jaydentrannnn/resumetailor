@@ -551,6 +551,31 @@ MODEL_PROFILES: dict[str, dict[str, str]] = {
 }
 
 
+def is_local_url(url: str | None) -> bool:
+    """Whether ``url`` points at this machine or the local network.
+
+    Localhost, loopback, ``host.docker.internal``, ``*.local`` and private (RFC 1918,
+    link-local) addresses count as local. Anything else, such as Ollama Cloud's
+    ``https://ollama.com/v1``, is a remote service: it needs a key, is billed by its
+    provider, and is not something the student "starts".
+    """
+    import ipaddress
+    from urllib.parse import urlsplit
+
+    if not url:
+        return False
+    host = (urlsplit(url if "//" in url else f"//{url}").hostname or "").lower()
+    if not host:
+        return False
+    if host in {"localhost", "host.docker.internal"} or host.endswith((".localhost", ".local")):
+        return True
+    try:
+        address = ipaddress.ip_address(host)
+    except ValueError:
+        return False
+    return address.is_loopback or address.is_private or address.is_link_local
+
+
 class Backend(NamedTuple):
     """A fully resolved routing decision for one stage.
 

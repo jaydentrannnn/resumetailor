@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import pytest
 from fastapi.testclient import TestClient
 
 from resume_tailor import config, estimate
@@ -54,3 +55,38 @@ def test_estimate_route(tmp_path, monkeypatch):
         )
         assert res.status_code == 200, res.text
         assert res.json()["stages"][0]["calls"] == 1
+
+
+def test_ollama_cloud_is_a_subscription_not_free_local(monkeypatch):
+    resume = synthetic_resume()
+    monkeypatch.setattr(config, "OLLAMA_BASE_URL", "https://ollama.com/v1")
+    with config.pinned("ollama"):
+        cloud = estimate.estimate_run("jd", resume, extract_runs=1)
+    assert cloud["billing"] == "subscription"
+    assert not cloud["local"]
+    assert cloud["calls"] > 0 and cloud["input_tokens"] > 0
+    monkeypatch.setattr(config, "OLLAMA_BASE_URL", "http://127.0.0.1:11434/v1")
+    with config.pinned("ollama"):
+        here = estimate.estimate_run("jd", resume, extract_runs=1)
+    assert here["billing"] == "local" and here["local"]
+    with config.pinned("claude"):
+        assert estimate.estimate_run("jd", resume, extract_runs=1)["billing"] == "per_token"
+
+
+@pytest.mark.parametrize(
+    ("url", "local"),
+    [
+        ("http://localhost:11434/v1", True),
+        ("http://127.0.0.1:1234/v1", True),
+        ("http://[::1]:11434", True),
+        ("http://host.docker.internal:11434/v1", True),
+        ("http://192.168.1.20:11434", True),
+        ("http://mybox.local:11434", True),
+        ("https://ollama.com/v1", False),
+        ("https://api.example.com", False),
+        ("", False),
+        (None, False),
+    ],
+)
+def test_is_local_url(url, local):
+    assert config.is_local_url(url) is local

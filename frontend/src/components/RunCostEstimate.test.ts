@@ -12,9 +12,17 @@ const base: RunEstimate = {
 };
 
 describe("describeEstimate", () => {
-  it("hides the line for local models and missing estimates", () => {
+  it("hides the line only when there is no estimate", () => {
     expect(describeEstimate(null)).toBeNull();
-    expect(describeEstimate({ ...base, local: true, usd: 0 })).toBeNull();
+  });
+  it("shows usage without dollars for local models and Ollama Cloud", () => {
+    expect(describeEstimate({ ...base, local: true, usd: 0, billing: "local" })).toBe(
+      "About 8 model calls, ~24k tokens. No per-token charge: it runs on your computer.",
+    );
+    expect(describeEstimate({ ...base, local: true, usd: 0 })).toContain("runs on your computer");
+    expect(describeEstimate({ ...base, usd: 0, billing: "subscription" })).toBe(
+      "About 8 model calls, ~24k tokens. No per-token charge: it counts against your Ollama Cloud plan.",
+    );
   });
   it("shows dollars when every stage is priced", () => {
     expect(describeEstimate(base)).toBe(

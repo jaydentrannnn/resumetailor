@@ -64,6 +64,10 @@ def test_model(body: ModelTestRequest) -> dict[str, Any]:
             )
     except Exception as exc:  # noqa: BLE001 - every failure is reported, not raised
         return {"ok": False, "model": label, "detail": str(exc)}
+    # The setup pill's reachability probe must not keep a stale "not answering".
+    from resume_tailor.web.routes import setup as setup_routes
+
+    setup_routes.clear_probe_cache()
     return {
         "ok": True,
         "model": label,

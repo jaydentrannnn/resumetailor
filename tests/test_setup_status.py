@@ -62,3 +62,41 @@ def test_missing_api_key_is_a_gap_without_any_call(monkeypatch):
     with TestClient(app) as c:
         _body, items = _status(c)
         assert items["model"]["ok"] is False and "API key" in items["model"]["detail"]
+
+
+def test_ollama_cloud_is_probed_with_the_key_not_as_a_local_server(monkeypatch):
+    """https://ollama.com/v1 is hosted: never "start it"; the key goes along."""
+    monkeypatch.setattr(config, "OLLAMA_BASE_URL", "https://ollama.com/v1")
+    monkeypatch.setattr(config, "credential", lambda name: "sk-test" if name == "OLLAMA_API_KEY" else "")
+    monkeypatch.setattr(
+        setup_routes, "probe_local_server", lambda url: (_ for _ in ()).throw(AssertionError)
+    )
+    monkeypatch.setattr(
+        setup_routes.workspace, "load_settings", lambda *a: {"defaults": {"model": "ollama"}}
+    )
+    calls: list[dict] = []
+
+    class _Response:
+        def __init__(self, status):
+            self.status_code = status
+
+    status = {"code": 401}
+
+    def _get(url, headers=None, timeout=None):
+        calls.append({"url": url, "headers": headers or {}, "timeout": timeout})
+        return _Response(status["code"])
+
+    monkeypatch.setattr(setup_routes.httpx, "get", _get)
+    setup_routes.clear_probe_cache()
+    with TestClient(app) as c:
+        _body, items = _status(c)
+        assert items["model"]["ok"] is False
+        assert "rejected the API key" in items["model"]["detail"]
+        assert "Start it" not in items["model"]["detail"]
+        assert calls[0]["url"] == "https://ollama.com/v1/models"
+        assert calls[0]["headers"] == {"Authorization": "Bearer sk-test"}
+        # Cached until a successful "Test connection" clears it.
+        status["code"] = 200
+        assert _status(c)[1]["model"]["ok"] is False
+        setup_routes.clear_probe_cache()
+        assert _status(c)[1]["model"]["ok"] is True
