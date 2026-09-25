@@ -1102,14 +1102,14 @@ the tasks that first need them (a new entry in `db.MIGRATIONS`, never an edit).
 - **Not done here:** the MV3 extension UI, the Settings → Browser pairing UI, and the X3
   `cdp_relay` spike (moved to another machine). CDP mode stays the only fill driver.
 
- # #   P 4 - X :   b r o w s e r   e x t e n s i o n   ( 2 0 2 6 - 0 9 - 2 5 ) 
- 
- -   S e t t i n g s   �!  B r o w s e r   n o w   c r e a t e s   a n d   r e p l a c e s   s h o r t - l i v e d   p a i r i n g   c o d e s ,   l i s t s   p a i r e d   b r o w s e r s ,   a n d   c o n f i r m s   r e v o c a t i o n .   T h e   n o r m a l   a p p   s e s s i o n   s t i l l   p r o t e c t s   t h o s e   r o u t e s . 
- -   T h e   u n p a c k e d   M V 3   e x t e n s i o n   d i s c o v e r s   t h e   l o c a l   a p p   o n   p o r t s   8 0 0 0  8 0 1 0 ,   s t o r e s   i t s   p a i r e d   t o k e n   i n   e x t e n s i o n   l o c a l   s t o r a g e ,   a n d   s e n d s   p a g e   t e x t   o n l y   a f t e r   a   c a p t u r e   a c t i o n .   T h e   p o p u p   s e n d s   t h e   a c t i v e   U R L   f o r   l o o k u p .   C a p t u r e d   e x t e r n a l   A p p l y   l i n k s   a r e   u s e d   f o r   d e d u p l i c a t i o n   a n d   l o o k u p ;   L i n k e d I n   r e d i r e c t   l i n k s   a r e   u n w r a p p e d   w i t h o u t   a   n e t w o r k   r e q u e s t . 
- -   T h e   e x t e n s i o n   s e r v i c e   w o r k e r   o w n s   a   s e s s i o n - s c o p e d   P r e p a r e   �!  F i l l   f o l l o w - u p   s o   c l o s i n g   t h e   p o p u p   d o e s   n o t   c a n c e l   i t .   A   d i s p a t c h   i n t e r r u p t e d   b e f o r e   i t s   r e s p o n s e   i s   n o t   r e t r i e d   b l i n d l y .   A l l   e x t e n s i o n   F i l l   r e q u e s t s   c o n t i n u e   t o   s e t   a u t o _ s u b m i t = f a l s e   i n   t h e   e x i s t i n g   s e r v e r   r o u t e . 
- -   a c t i v e T a b   c a n n o t   r e a d   a   c r o s s - o r i g i n   i C I M S   i f r a m e .   S e l e c t i o n   c a p t u r e   o r   o p e n i n g   t h e   i f r a m e   a s   i t s   o w n   t a b   i s   t h e   f a l l b a c k ;   b r o a d   h o s t   p e r m i s s i o n s   w e r e   n o t   a d d e d . 
- -   T h e   n o r m a l   C D P   b r o w s e r   r e m a i n s   t h e   F i l l   d r i v e r .   T h e   s e p a r a t e   X 3   r e l a y   s p i k e   i s   e v a l u a t e d   i n d e p e n d e n t l y ;   t h i s   e x t e n s i o n   d o e s   n o t   g a i n   d e b u g g e r   p e r m i s s i o n   w i t h o u t   a l l   G O   t e s t s .   S t o r e   p u b l i s h i n g   i s   n o t   d o n e .  
- 
+## P4-X: browser extension (2026-09-25)
+
+- Settings → Browser now creates and replaces short-lived pairing codes, lists paired browsers, and confirms revocation. The normal app session still protects those routes.
+- The unpacked MV3 extension discovers the local app on ports 8000–8010, stores its paired token in extension local storage, and sends page text only after a capture action. The popup sends the active URL for lookup. Captured external Apply links are used for deduplication and lookup; LinkedIn redirect links are unwrapped without a network request.
+- The extension service worker owns a session-scoped Prepare → Fill follow-up so closing the popup does not cancel it. A dispatch interrupted before its response is not retried blindly. All extension Fill requests continue to set auto_submit=false in the existing server route.
+- activeTab cannot read a cross-origin iCIMS iframe. Selection capture or opening the iframe as its own tab is the fallback; broad host permissions were not added.
+- The normal CDP browser remains the Fill driver. The separate X3 relay spike is evaluated independently; this extension does not gain debugger permission without all GO tests. Store publishing is not done.
+
 ## P4-X: browser extension relay decision (2026-09-25)
 
 - X3 GO on the isolated extension-relay-spike branch. A synthetic Greenhouse-like
@@ -1129,3 +1129,40 @@ the tasks that first need them (a new entry in `db.MIGRATIONS`, never an edit).
   and attachment from the popup. These are deviations from a seamless Fill button.
 - Store publishing and live LinkedIn/Greenhouse manual acceptance were not done.
   CDP remains the default. The existing Advanced CDP setting is unchanged.
+
+## P4-E leftovers: phone shapes, portfolio, location lists, parser overwrites, Lever cards (2026-09-25)
+
+- **E.164 (E16):** `apply/phone.py` is pure string rules, not a phone library: the
+  calling code comes from a typed `+`/`00`, else `phone_country_code`; NANP numbers must
+  be 10 digits, other codes drop a trunk `0`; 8–15 digits or `None` (the phone is then
+  typed as entered). The packet carries `phone_e164` and `phone_national`. filler.js
+  uses the national number beside a separate code control, E.164 only when the box asks
+  (`^\+` pattern, "international"/"include country code" hint). A "+1" placeholder
+  alone does not count: masked inputs show one and reject a typed "+".
+- **E9 portfolio:** the transcript upload was generalised (`_store_document` /
+  `_forget_document`); `portfolio_path` is server-owned like `transcript_path`. Fields
+  labelled portfolio / work sample take the PDF; "Resume or portfolio" takes the resume
+  (every packet has one). Transcript and portfolio files are staged as
+  "<Name> Transcript.pdf" / "<Name> Portfolio.pdf" — before this the transcript was
+  staged under the cover-letter filename (bug fixed in passing).
+- **E7 location lists:** only a named checkbox group of 2+ under a location question.
+  Order: every option `location_preference` names (place head before a comma or
+  parenthesis, whole-word match), else the posting's city (`posting_location`, fill-time
+  only), else the first option **only when the list is required**, flagged as
+  "<question>: Picked the first location; check it". Deviation from the plan's "else the
+  first": an optional list stays blank rather than guessing. The flag is its own
+  needs_review string because verification drops review labels whose field it observes.
+- **E3 parser overwrites:** runs only after a resume upload in the step, as filler.js
+  `correct: true`: plain text inputs whose key is a contact fact (names, email, phone,
+  address, city, postcode, links, school, major, GPA) and that disagree with the profile
+  (case, phone digits and URL shape normalised) are rewritten; nothing else is touched
+  and blanks are not filled. The outcome keeps `previous` and a `reason_text` the review
+  row already renders. Selects/comboboxes (state, country, typeahead school) are not
+  corrected.
+- **Lever cards:** labels and the required flag come from the card's hidden
+  `cards[<id>][baseTemplate]` JSON (the markup only shows a styled "✱" and the card
+  title), in both filler.js and filler_readiness.js. No live Lever form was used; the
+  test fixture is synthetic.
+- **Encoding fix:** the extension branch's note block above was appended as UTF-16
+  (PowerShell `>>`), which made this file read as binary; it was re-encoded to UTF-8.
+  On Windows append notes with `Add-Content -Encoding utf8`, not `>>`.
