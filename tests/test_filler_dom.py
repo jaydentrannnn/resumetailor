@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import json
 import os
 from pathlib import Path
 
@@ -372,3 +373,45 @@ def test_correct_mode_puts_back_only_contact_facts_the_parser_changed(page):
     assert page.locator("#city").input_value() == ""
     assert page.locator("#cl").input_value() == "Parsed text"
     assert result["leftovers"] == [] and result["long_text"] == []
+
+
+def _lever_card(card: str, title: str, fields: list[dict], body: str) -> str:
+    template = json.dumps({"text": title, "fields": fields}).replace('"', "&quot;")
+    return f"""
+    <li class="application-question custom-question">
+      <div class="application-label"><div class="text">{title}<span class="required">✱</span></div></div>
+      <div class="application-field">{body}</div>
+      <input type="hidden" name="cards[{card}][baseTemplate]" value="{template}">
+    </li>"""
+
+
+# Lever (jobs.lever.co) custom questions, synthetic: the card title is not the question,
+# and "required" lives only in the card's JSON.
+_LEVER = "<ul>" + _lever_card(
+    "8c1c2d3e-aaaa",
+    "Eligibility",
+    [{"type": "multiple-choice", "text": "Are you legally authorized to work in the United States?",
+      "required": True, "options": [{"text": "Yes"}, {"text": "No"}]}],
+    """<ul><li><label><input type="radio" name="cards[8c1c2d3e-aaaa][field0]" value="Yes"><span>Yes</span></label></li>
+           <li><label><input type="radio" name="cards[8c1c2d3e-aaaa][field0]" value="No"><span>No</span></label></li></ul>""",
+) + _lever_card(
+    "9d9d-bbbb",
+    "Logistics",
+    [{"type": "text", "text": "What is your expected graduation date?", "required": False},
+     {"type": "text", "text": "Which team interests you most?", "required": True}],
+    """<input type="text" name="cards[9d9d-bbbb][field0]">
+       <input type="text" name="cards[9d9d-bbbb][field1]">""",
+) + "</ul>"
+
+
+def test_lever_cards_use_the_question_and_required_flag_from_the_template(page):
+    page.set_content(_LEVER)
+    result = _fill(page, {"authorized_to_work": "Yes", "graduation_month": "2027-06"})
+    assert page.locator("input[value='Yes']").is_checked()
+    labels = {row["label"] for row in result["filled"]}
+    assert "Are you legally authorized to work in the United States?" in labels
+    assert "What is your expected graduation date?" in labels
+    team = [row for row in result["leftovers"] if row["label"] == "Which team interests you most?"]
+    assert team and team[0]["required"] is True
+    assert result["required_empty"] == ["Which team interests you most?"]
+    assert page.evaluate(_READINESS, {}) == ["Which team interests you most?"]

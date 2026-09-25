@@ -89,7 +89,33 @@
   }
 
   /** Resolve human-readable label text for a control. */
+  /**
+   * Lever custom questions: ``cards[<card>][field<N>]`` controls. The card's hidden
+   * ``cards[<card>][baseTemplate]`` JSON names each field's exact question and whether it
+   * is required, which the markup marks only with a styled "✱".
+   */
+  const leverCards = new Map();
+  function leverQuestion(el) {
+    const match = /^cards\[([^\]]+)\]\[field(\d+)\]/.exec(el.getAttribute("name") || "");
+    if (!match) return null;
+    if (!leverCards.has(match[1])) {
+      let card = null;
+      const template = rootOf(el).querySelector(`input[name="cards[${CSS.escape(match[1])}][baseTemplate]"]`);
+      try {
+        card = JSON.parse(template?.value || "null");
+      } catch {
+        card = null;
+      }
+      leverCards.set(match[1], card);
+    }
+    const field = leverCards.get(match[1])?.fields?.[Number(match[2])];
+    const text = field && typeof field.text === "string" ? field.text.trim() : "";
+    return text ? { text, required: field.required === true } : null;
+  }
+
   function labelFor(el) {
+    const lever = leverQuestion(el);
+    if (lever) return lever.text;
     const id = el.id;
     const root = rootOf(el);
     if (id) {
@@ -519,6 +545,8 @@
 
   /** A checkbox group's question: its legend or group label, not one option's label. */
   function groupQuestion(el) {
+    const lever = leverQuestion(el);
+    if (lever) return lever.text;
     const legend = el.closest("fieldset")?.querySelector("legend");
     if (legend) return (legend.innerText || legend.textContent || "").trim();
     const labelled = el.closest("[role='group'][aria-labelledby]")?.getAttribute("aria-labelledby");
@@ -655,7 +683,8 @@
     const type = (el.getAttribute("type") || el.tagName.toLowerCase()).toLowerCase();
     const label = labelFor(el);
     const sel = selectorFor(el);
-    const required = el.required || el.getAttribute("aria-required") === "true";
+    const required = el.required || el.getAttribute("aria-required") === "true" ||
+      Boolean(leverQuestion(el)?.required);
 
     if (type === "file" || skipTypes.has(type)) continue;
     // Workday: a honeypot "for robots only" input, and the search box of a multiselect

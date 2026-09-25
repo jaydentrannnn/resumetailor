@@ -87,12 +87,26 @@
     return !String(el.value || "").trim();
   }
 
+  /** A Lever custom question from its card's `baseTemplate` JSON (see filler.js). */
+  function leverQuestion(el) {
+    const match = /^cards\[([^\]]+)\]\[field(\d+)\]/.exec(el.getAttribute("name") || "");
+    if (!match) return null;
+    const template = rootOf(el).querySelector(`input[name="cards[${CSS.escape(match[1])}][baseTemplate]"]`);
+    try {
+      const field = JSON.parse(template?.value || "null")?.fields?.[Number(match[2])];
+      return field && typeof field.text === "string" ? field : null;
+    } catch {
+      return null;
+    }
+  }
+
   const seenGroups = new Set();
   for (const [index, el] of deepQueryAll(document, "input, select, textarea").entries()) {
     if (!isVisible(el)) continue;
     const type = (el.getAttribute("type") || el.tagName.toLowerCase()).toLowerCase();
     if (skipTypes.has(type)) continue;
-    const required = el.required || el.getAttribute("aria-required") === "true";
+    const lever = leverQuestion(el);
+    const required = el.required || el.getAttribute("aria-required") === "true" || lever?.required === true;
     if (!required) continue;
     if ((type === "radio" || type === "checkbox") && el.name) {
       const groupKey = `${type}:${el.name}`;
@@ -100,7 +114,8 @@
       seenGroups.add(groupKey);
     }
     if (isEmpty(el)) {
-      const label = type === "radio" || type === "checkbox" ? groupLabel(el) : labelFor(el);
+      const label = lever?.text.trim() ||
+        (type === "radio" || type === "checkbox" ? groupLabel(el) : labelFor(el));
       empty.push(label || el.id || el.getAttribute("name") || `Unlabeled required field ${index + 1}`);
     }
   }
