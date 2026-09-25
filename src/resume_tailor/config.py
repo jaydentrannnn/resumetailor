@@ -485,6 +485,27 @@ DEFAULT_EFFORT: dict[str, str] = {
 #: propose — see `extract_consensus`'s docstring for the exact rule. 3 is the minimum that
 #: produces a majority; 1 restores today's single-call behaviour exactly.
 EXTRACT_CONSENSUS_RUNS = int(os.environ.get("LLM_EXTRACT_CONSENSUS_RUNS", "3"))
+#: Set only when the environment pins the vote count; otherwise it follows the backend.
+_EXTRACT_RUNS_PINNED = bool(os.environ.get("LLM_EXTRACT_CONSENSUS_RUNS"))
+#: Extraction origins stable enough that one call is the default: the frontier APIs
+#: rarely disagree with themselves, and a vote there triples a paid call. Local models
+#: (ollama, lmstudio) and generic OpenAI-compatible servers keep the 3-way vote.
+SINGLE_EXTRACT_ORIGINS: frozenset[str] = frozenset({"anthropic", "gemini"})
+
+
+def extract_runs(requested: int | None = None) -> int:
+    """Vote count for JD extraction: ``requested`` when set (>0), else the env value
+    when pinned, else 1 for `SINGLE_EXTRACT_ORIGINS` and `EXTRACT_CONSENSUS_RUNS` for the
+    rest. Resolve inside the run's routing (`resolve`/`pinned`): it reads the extract
+    stage's backend. The count is part of the extraction cache file name, so a change
+    never replays a vote of a different size."""
+    if requested:
+        return requested
+    if _EXTRACT_RUNS_PINNED:
+        return EXTRACT_CONSENSUS_RUNS
+    backend = backend_for("extract")
+    origin = backend.origin or backend.provider
+    return 1 if origin in SINGLE_EXTRACT_ORIGINS else EXTRACT_CONSENSUS_RUNS
 
 _ANTHROPIC_DEFAULT = f"anthropic:{MODEL}"
 _OLLAMA_DEFAULT = f"ollama:{OLLAMA_MODEL}"

@@ -139,3 +139,17 @@ def test_pinned_applies_stage_overrides_then_resets():
 
     assert config._PINNED.get() is None
     assert config.backend_for("rewrite").provider == "anthropic"
+
+
+def test_extract_runs_follows_the_extract_backend(monkeypatch):
+    monkeypatch.setattr(config, "_EXTRACT_RUNS_PINNED", False)
+    with config.pinned("anthropic:claude-x"):
+        assert config.extract_runs(None) == 1
+        assert config.extract_runs(0) == 1
+        assert config.extract_runs(5) == 5
+    with config.pinned("ollama:llama3"):
+        assert config.extract_runs(None) == config.EXTRACT_CONSENSUS_RUNS
+    monkeypatch.setattr(config, "_EXTRACT_RUNS_PINNED", True)
+    monkeypatch.setattr(config, "EXTRACT_CONSENSUS_RUNS", 2)
+    with config.pinned("anthropic:claude-x"):
+        assert config.extract_runs(None) == 2

@@ -18,12 +18,14 @@ from pydantic import ValidationError
 from resume_tailor import (
     config,
     data,
+    estimate,
     include,
     report,
     workspace,
 )
 from resume_tailor.events import ProgressEvent
 from resume_tailor.template_profile import active_layout
+from resume_tailor.web import jobs as jobs_mod
 from resume_tailor.web import template_ops
 from resume_tailor.web.jobs import Job, get_queue, regenerate_cover_letter, verify_claim
 from resume_tailor.web.routes.config import _event_out, _seed_include_gpa_if_missing
@@ -106,6 +108,38 @@ def create_job(body: CreateJobRequest) -> CreateJobResponse:
             body.jd_text.strip(), settings, metadata=body.metadata
         )
     return CreateJobResponse(job_id=job.job_id, queue_position=position)
+
+
+@router.post("/api/jobs/estimate")
+def estimate_job(body: CreateJobRequest) -> dict[str, Any]:
+    """Estimated calls, tokens and cost of a run with these settings (`estimate.py`).
+
+    No model call. Resolved under the run's own routing, like the job itself, and under
+    `template_ops.LOCK` so the resume read is the active workspace's.
+    """
+    settings = body.settings
+    if settings is None:
+        settings = JobSettings.model_validate(workspace.load_settings()["defaults"])
+    profile, overrides, effort = jobs_mod.model_routing(settings)
+    with template_ops.LOCK:
+        try:
+            resume = data.load()
+        except (FileNotFoundError, ValueError) as exc:
+            raise HTTPException(status_code=400, detail=str(exc)) from exc
+    try:
+        with config.pinned(profile, overrides=overrides, effort=effort):
+            return estimate.estimate_run(
+                body.jd_text,
+                resume,
+                extract_runs=config.extract_runs(settings.extract_runs),
+                facets=not settings.no_facets,
+                expand=not settings.no_expand,
+                skills=not settings.no_skills,
+                cover_letter=settings.cover_letter and not settings.no_cover_letter,
+                vocabulary=settings.suggest_vocabulary,
+            )
+    except ValueError as exc:  # an unparseable model spec in the settings
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
 @router.get("/api/resume-outline", response_model=ResumeOutlineResponse)

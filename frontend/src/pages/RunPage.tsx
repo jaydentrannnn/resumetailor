@@ -4,6 +4,7 @@ import { Tabs } from "../components/Tabs";
 import { ExperienceCard } from "../components/ExperienceCard";
 import { Field, Toggle } from "../components/Field";
 import { IncludePanel } from "../components/IncludePanel";
+import { RunCostEstimate } from "../components/RunCostEstimate";
 import { RunHistoryPanel } from "../components/RunHistoryPanel";
 import { StylePromptField } from "../components/StylePromptField";
 import { SkillsCard } from "../components/SkillsCard";
@@ -288,19 +289,26 @@ export function RunPage() {
         )}
       </div>
 
-      <button
-        type="submit"
-        disabled={busy || !jdText.trim() || !settingsLoaded || switching}
-        className="w-full rounded-lg bg-accent px-4 py-3 text-sm font-semibold text-on-accent transition-[filter] duration-[var(--dur-short)] ease-out hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50 lg:col-start-1 lg:col-span-2 lg:row-start-3"
-      >
-        {busy
-          ? "Tailoring…"
-          : switching
-            ? "Switching profile…"
-            : !settingsLoaded
-              ? "Loading settings…"
-              : "Tailor resume"}
-      </button>
+      <div className="lg:col-start-1 lg:col-span-2 lg:row-start-3">
+        <button
+          type="submit"
+          disabled={busy || !jdText.trim() || !settingsLoaded || switching}
+          className="w-full rounded-lg bg-accent px-4 py-3 text-sm font-semibold text-on-accent transition-[filter] duration-[var(--dur-short)] ease-out hover:brightness-110 disabled:cursor-not-allowed disabled:opacity-50"
+        >
+          {busy
+            ? "Tailoring…"
+            : switching
+              ? "Switching profile…"
+              : !settingsLoaded
+                ? "Loading settings…"
+                : "Tailor resume"}
+        </button>
+        <RunCostEstimate
+          jdText={jdText}
+          settings={settings}
+          enabled={settingsLoaded && !busy && !switching}
+        />
+      </div>
 
       {jobId && (
         <section id="tailored-results" className="space-y-4 lg:col-span-2 lg:row-start-4">

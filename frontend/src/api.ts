@@ -1041,6 +1041,32 @@ export function createJob(
   });
 }
 
+export interface RunEstimate {
+  calls: number;
+  input_tokens: number;
+  output_tokens: number;
+  /** Null when a stage's model has no known price (never guessed). */
+  usd: number | null;
+  /** Every stage runs on a local model: nothing to pay. */
+  local: boolean;
+  stages: {
+    stage: string;
+    model: string;
+    calls: number;
+    input_tokens: number;
+    output_tokens: number;
+    usd: number | null;
+  }[];
+}
+
+export function estimateJob(jdText: string, settings: JobSettings): Promise<RunEstimate> {
+  /** Estimated calls, tokens and cost of a run; no model call is made. */
+  return request("/api/jobs/estimate", {
+    method: "POST",
+    body: JSON.stringify({ jd_text: jdText, settings }),
+  });
+}
+
 export function fetchJob(jobId: string): Promise<JobStatus> {
   /** Poll current job state and accumulated events. */
   return request<JobStatus>(`/api/jobs/${jobId}`);

@@ -99,11 +99,12 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     parser.add_argument(
         "--extract-runs",
         type=int,
-        default=config.EXTRACT_CONSENSUS_RUNS,
+        default=None,
         metavar="N",
         help=(
             "Vote over N independent JD extractions to damp per-call canonicalisation "
-            f"noise (default: {config.EXTRACT_CONSENSUS_RUNS}). 1 restores a single call."
+            "noise (default: 1 on Anthropic/Gemini, "
+            f"{config.EXTRACT_CONSENSUS_RUNS} on local models). 1 restores a single call."
         ),
     )
     parser.add_argument(
@@ -498,7 +499,7 @@ def main(argv: list[str] | None = None) -> int:
         requirements = jd.extract_consensus(
             jd_text,
             known_tags=known_tags,
-            runs=args.extract_runs,
+            runs=config.extract_runs(args.extract_runs),
             use_cache=not args.no_cache,
         )
     except (FileNotFoundError, ValueError, RuntimeError) as exc:

@@ -615,7 +615,7 @@ def _process_one(
             requirements = jd.extract_consensus(
                 fetch.text,
                 known_tags=known_tags,
-                runs=job_defaults.extract_runs,
+                runs=config.extract_runs(job_defaults.extract_runs),
                 use_cache=not job_defaults.no_cache,
             )
     except Exception as exc:  # noqa: BLE001

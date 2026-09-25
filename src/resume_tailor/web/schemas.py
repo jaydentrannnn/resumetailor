@@ -196,9 +196,9 @@ class JobSettings(BaseModel):
     no_verb_repair: bool = False
     merge: bool = False
     no_cache: bool = False
-    #: How many independent JD extractions to vote over — see `jd.extract_consensus`.
-    #: 1 restores a single call.
-    extract_runs: int = Field(default_factory=lambda: config.EXTRACT_CONSENSUS_RUNS, ge=1, le=10)
+    #: How many independent JD extractions to vote over (`jd.extract_consensus`); 0 = automatic (`config.extract_runs`: 1 on Anthropic/Gemini,
+    #: 3 on local models).
+    extract_runs: int = Field(default=0, ge=0, le=10)
     no_expand: bool = False
     #: Skips the tailored skills-list stage. Defaults off (the stage runs): unlike
     #: `suggest_vocabulary`, this is read-only advisory output and is the point of the

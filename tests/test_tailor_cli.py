@@ -389,7 +389,7 @@ def test_extract_runs_flag_reaches_extract_consensus(cli, jd_file, tmp_path, mon
     monkeypatch.setattr(cli.fit, "fit", lambda *a, **k: _fit_result(resume, tmp_path / "o.docx"))
 
     cli.main(["--jd", str(jd_file)])
-    assert seen["runs"] == config.EXTRACT_CONSENSUS_RUNS
+    assert seen["runs"] == config.extract_runs(None)
 
     cli.main(["--jd", str(jd_file), "--extract-runs", "1"])
     assert seen["runs"] == 1

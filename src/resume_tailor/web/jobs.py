@@ -446,7 +446,7 @@ class JobQueue:
             requirements = jd.extract_consensus(
                 job.jd_text,
                 known_tags=known_tags,
-                runs=settings.extract_runs,
+                runs=config.extract_runs(settings.extract_runs),
                 use_cache=not settings.no_cache,
                 on_event=on_event,
             )

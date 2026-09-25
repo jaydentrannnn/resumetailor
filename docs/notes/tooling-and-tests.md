@@ -152,3 +152,16 @@ mtime, since many filesystems mount noatime), and `OUTPUT_DIR/jobs/` keeps the n
 200 run folders plus any folder an application references (`job_id`,
 `reused_from_job_id`) or touched in the last hour. `DELETE /api/cache` 409s while a run
 is queued or running, because stages read cache files mid-run.
+
+## Extraction votes per backend, and the cost preview (PF3/PF4, 2026-09)
+`JobSettings.extract_runs` defaults to 0 = automatic: `config.extract_runs` gives 1 vote
+on Anthropic/Gemini (a 3-way vote there triples a paid call for little stability gain)
+and `EXTRACT_CONSENSUS_RUNS` (3) elsewhere; `LLM_EXTRACT_CONSENSUS_RUNS` in the
+environment pins it everywhere. Resolve it inside the run's routing. The vote count is
+already in the extraction cache file name (`-consensusN`), so no fingerprint change.
+Saved settings from before carry an explicit 3 and keep it.
+`estimate.py` + `POST /api/jobs/estimate` price a run arithmetically (chars/4 plus
+per-stage prompt overhead, rewrite counted as two fit rounds). Unknown models get token
+counts and `usd: null`, never a guessed price; the SPA hides the line for local models.
+PF2 (unoserver) is deferred: optional in the plan, and PF1's persistent profile already
+removed the per-call profile creation.
