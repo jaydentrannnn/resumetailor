@@ -1,0 +1,36 @@
+# pip install pre-commit && pre-commit install
+repos:
+  - repo: https://github.com/astral-sh/ruff-pre-commit
+    rev: v0.8.6
+    hooks:
+      - id: ruff
+        args: [--fix]
+        # Only files touched by the commit are checked, so the existing backlog
+        # does not block unrelated changes.
+  - repo: https://github.com/pre-commit/pre-commit-hooks
+    rev: v5.0.0
+    hooks:
+      - id: check-added-large-files
+        args: [--maxkb=500]
+        exclude: ^(docker/fonts/|tests/fixtures/)
+      - id: check-merge-conflict
+      - id: check-json
+        exclude: ^frontend/tsconfig
+  - repo: https://github.com/gitleaks/gitleaks
+    rev: v8.21.2
+    hooks:
+      - id: gitleaks
+  - repo: local
+    hooks:
+      - id: no-personal-data-paths
+        name: block data/, templates/, output/ and resume files
+        entry: "Personal data paths must never be committed (data/, templates/, output/, *.docx, *.pdf)."
+        language: fail
+        files: ^(data|templates|output)/|\.(docx|pdf)$
+        exclude: ^(tests/fixtures/|docker/fonts/|src/resume_tailor/default_templates/)
+      - id: prettier-frontend
+        name: prettier (frontend)
+        entry: bash -c 'cd frontend && npx prettier --check src'
+        language: system
+        files: ^frontend/src/
+        pass_filenames: false

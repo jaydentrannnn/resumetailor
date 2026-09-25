@@ -73,7 +73,7 @@ registers only 3.14 and 3.10, so `py -3.13` fails.
 ```powershell
 & C:\ProgramData\anaconda3\python.exe -m venv .venv
 .venv\Scripts\activate
-pip install -r requirements-dev.txt; pip install -e .   # requirements.txt = runtime only
+pip install -r requirements-dev.lock; pip install -e .   # *.lock = pinned; *.txt = ranges
 copy .env.example .env    # ollama is the default backend — no key needed to run
 ```
 

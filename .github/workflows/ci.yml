@@ -26,7 +26,7 @@ jobs:
         with:
           python-version: "3.13"
       - name: Install
-        run: uv pip install --system -r requirements-dev.txt -e .
+        run: uv pip install --system -r requirements-dev.lock -e .
       - name: Ruff (advisory until the backlog is cleared)
         continue-on-error: true
         run: ruff check src tests
@@ -44,7 +44,7 @@ jobs:
       - uses: astral-sh/setup-uv@v5
         with:
           python-version: "3.13"
-      - run: uv pip install --system -r requirements-dev.txt -e .
+      - run: uv pip install --system -r requirements-dev.lock -e .
       - name: Tests with empty data/templates roots
         run: |
           export RESUME_TAILOR_DATA_DIR="$(mktemp -d)"

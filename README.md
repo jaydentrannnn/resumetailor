@@ -42,9 +42,14 @@ Python **3.13** is required. On this machine use Anaconda's interpreter if `py -
 ```powershell
 & C:\ProgramData\anaconda3\python.exe -m venv .venv
 .\.venv\Scripts\activate
-pip install -r requirements-dev.txt   # runtime deps + pytest/ruff/mypy
+pip install -r requirements-dev.lock   # pinned runtime deps + pytest/ruff/mypy
 pip install -e .
 ```
+
+Dependency ranges live in `requirements*.txt`; the pinned sets actually installed are
+`requirements*.lock`. After changing a range, regenerate both with
+`uv pip compile --universal -p 3.13 requirements.txt -o requirements.lock` (and the same
+for `requirements-dev`).
 
 `requirements.txt` alone is the runtime set (what the Docker image installs); use it
 instead if you will never run the tests.

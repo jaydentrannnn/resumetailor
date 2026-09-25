@@ -37,8 +37,8 @@ RUN fc-cache -f > /dev/null
 
 WORKDIR /app
 
-COPY requirements.txt pyproject.toml ./
-RUN pip install --no-cache-dir -r requirements.txt
+COPY requirements.txt requirements.lock pyproject.toml ./
+RUN pip install --no-cache-dir -r requirements.lock
 
 # Dependency install is its own layer, cached as long as requirements.txt/pyproject.toml
 # don't change — src/ changes on nearly every rebuild, so it's copied and installed
