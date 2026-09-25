@@ -699,6 +699,17 @@ class CalibrationInfo(BaseModel):
     #: True when main_template.docx is newer than the calibration file (or there is none).
     stale: bool
     message: str | None = None
+    #: When this backend's calibration file was written (ISO, UTC); None when there is none.
+    calibrated_at: str | None = None
+
+
+class CalibrateResponse(BaseModel):
+    """Result of ``POST /api/template/calibrate`` (the Template tab's "Tune page fit")."""
+
+    ok: bool
+    log: str
+    warnings: list[str] = Field(default_factory=list)
+    calibration: CalibrationInfo
 
 
 class TemplateProfileSummary(BaseModel):

@@ -1,4 +1,5 @@
 import type { TemplateAnalyzeResponse, TemplateFieldCandidate } from "../../api";
+import { IssueList } from "./IssueList";
 
 type Props = {
   analysis: TemplateAnalyzeResponse;
@@ -94,27 +95,8 @@ export function AnalyzeReport({ analysis }: Props) {
         )}
       </div>
 
-      {blockers.length > 0 ? (
-        <div className="rounded-md bg-danger-soft px-3 py-2 text-danger">
-          <p className="font-semibold">Blocking issues</p>
-          <ul className="mt-1 list-disc pl-5">
-            {blockers.map((i) => (
-              <li key={i.code + i.message}>{i.message}</li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
-
-      {warnings.length > 0 ? (
-        <div className="rounded-md bg-warn-soft px-3 py-2 text-warn">
-          <p className="font-semibold">Warnings</p>
-          <ul className="mt-1 list-disc pl-5">
-            {warnings.map((i) => (
-              <li key={i.code + i.message}>{i.message}</li>
-            ))}
-          </ul>
-        </div>
-      ) : null}
+      {blockers.length > 0 ? <IssueList issues={blockers} tone="danger" /> : null}
+      {warnings.length > 0 ? <IssueList issues={warnings} tone="warn" /> : null}
 
       {analysis.ready ? (
         <p className="rounded-md bg-accent-soft px-3 py-2 text-accent">
@@ -122,8 +104,8 @@ export function AnalyzeReport({ analysis }: Props) {
         </p>
       ) : (
         <p className="rounded-md bg-danger-soft px-3 py-2 text-danger">
-          Cannot install until the blocking issues above are fixed in the source document — fix it
-          and upload again.
+          Can't install yet. Fix the items above in your document, save it as .docx, and upload it
+          again.
         </p>
       )}
     </div>

@@ -12,6 +12,7 @@ from resume_tailor.template_profile import TemplateProfile
 from resume_tailor.web import template_ops
 from resume_tailor.web.jobs import get_queue
 from resume_tailor.web.schemas import (
+    CalibrateResponse,
     TemplateAnalyzeResponse,
     TemplateBuildResponse,
     TemplateInfoResponse,
@@ -195,6 +196,20 @@ def upload_template(
         ) from exc
 
 
+@router.post("/api/template/calibrate", response_model=CalibrateResponse)
+def calibrate_template() -> CalibrateResponse:
+    """Measure page-fit constants for the active template (the "Tune page fit" button)."""
+    if get_queue().busy():
+        raise HTTPException(
+            status_code=409,
+            detail="A tailoring job is in progress; tune page fit after it finishes.",
+        )
+    try:
+        return template_ops.calibrate_now()
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+
+
 @router.get("/api/template/library", response_model=TemplateLibraryResponse)
 def get_template_library() -> TemplateLibraryResponse:
     """List named template snapshots; seeds Default from live when the library is empty."""
@@ -245,6 +260,19 @@ def rename_template_library_entry(
         return template_ops.rename_library_entry(entry_id, body.label)
     except TemplateValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
+
+
+@router.get("/api/template/library/{entry_id}/thumb.png")
+def template_library_thumbnail(entry_id: str) -> FileResponse:
+    """First page of a saved template's baseline, as a PNG for the gallery card."""
+    try:
+        path = template_ops.library_thumbnail(entry_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="No such saved template.") from exc
+    except RuntimeError as exc:
+        # PDF conversion unavailable (no Word / LibreOffice): the card shows a placeholder.
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return FileResponse(path, media_type="image/png", headers={"Cache-Control": "no-cache"})
 
 
 @router.delete("/api/template/library/{entry_id}", response_model=TemplateLibraryResponse)

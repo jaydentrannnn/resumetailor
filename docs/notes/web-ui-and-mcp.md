@@ -342,3 +342,26 @@ blank entry headers before the Pydantic path; server validation remains authorit
 - History: the editor has a History drawer (the shared `ResumeHistoryList`, also used by
   Settings → Advanced) with "Undo last save", which restores the previous version. A
   restore is itself a new version.
+
+## Template page 2G: gallery, plain-language issues, page fit (2026-09)
+
+- The saved-template list is now a card gallery. Each card shows page one of that
+  entry's `original_export.docx`, served by
+  `GET /api/template/library/{id}/thumb.png`. `thumbnails.py` converts the docx with the
+  configured PDF engine, then rasterises page one with pdfium (new dependency
+  `pypdfium2`, Apache/BSD). It writes the PNG with a small encoder, so Pillow isn't
+  needed. The image is cached as `thumb.png` in the entry folder and re-rendered when the
+  baseline is newer. With no PDF engine the route returns 503 and the card shows a
+  placeholder. The thumbnail shows the design only: no tags, no resume content.
+- `lib/templateIssues.ts` explains every analyzer issue code (title, why, steps in Word
+  or Google Docs, or a fix in the app). `scripts/export_issue_codes.py` writes
+  `lib/templateIssueCodes.json` from `template_analyze.py`. `tests/test_issue_codes.py`
+  fails when that file is out of date, and a vitest fails when a code has no
+  explanation. The raw analyzer message stays under "Details".
+- The "Page fit tuning" card calls `POST /api/template/calibrate`
+  (`template_ops.calibrate_now`, which returns 409 while a job runs). A failure comes
+  back as `ok=False` with the reason and the old constants stay in effect.
+  `CalibrationInfo.calibrated_at` is the calibration file's mtime. The stale/missing
+  messages now point at this button instead of re-uploading.
+- The "use a default template instead" action (`IssueHelp.useDefault`) is recorded in
+  the data but not rendered until the P3-T default templates exist.

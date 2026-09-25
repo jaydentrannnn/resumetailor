@@ -784,7 +784,21 @@ export type CalibrationInfo = {
   lines_per_page: number;
   stale: boolean;
   message: string | null;
+  /** When page fit was last tuned for this PDF engine (ISO); null when never. */
+  calibrated_at?: string | null;
 };
+
+export type CalibrateResult = {
+  ok: boolean;
+  log: string;
+  warnings: string[];
+  calibration: CalibrationInfo;
+};
+
+export function calibrateTemplate(): Promise<CalibrateResult> {
+  /** Measure page-fit constants for the active template (takes a few seconds). */
+  return request<CalibrateResult>("/api/template/calibrate", { method: "POST" });
+}
 
 export type TemplateProfileSummary = {
   exists: boolean;

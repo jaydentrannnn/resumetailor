@@ -1,4 +1,5 @@
 import { templatePreviewUrl } from "../api";
+import { PageFitCard } from "../components/template/PageFitCard";
 import { SavedTemplatesPanel } from "../components/template/SavedTemplatesPanel";
 import { TemplateImportWizard } from "../components/template/TemplateImportWizard";
 import { useTemplateState } from "../state/templateState";
@@ -87,10 +88,6 @@ export function TemplatePage() {
                     value={`${info.experience_entries} jobs · ${info.project_entries} projects · ${info.bullets} bullets`}
                   />
                   <MetaItem
-                    label="Fit constants"
-                    value={`${info.calibration.chars_per_line} chars/line · ${info.calibration.lines_per_page} lines/page`}
-                  />
-                  <MetaItem
                     label="Profile"
                     value={
                       info.profile?.exists
@@ -117,12 +114,6 @@ export function TemplatePage() {
                     </p>
                   ))}
                 </details>
-              ) : null}
-
-              {info.calibration.stale && info.calibration.message ? (
-                <p className="order-3 mt-4 rounded-md bg-warn-soft px-3 py-2 text-sm text-warn">
-                  {info.calibration.message}
-                </p>
               ) : null}
 
               {info.tagged.exists ? (
@@ -168,6 +159,7 @@ export function TemplatePage() {
         ) : null}
       </section>
 
+      {info?.tagged.exists && <PageFitCard calibration={info.calibration} />}
       <SavedTemplatesPanel />
       <TemplateImportWizard />
     </div>

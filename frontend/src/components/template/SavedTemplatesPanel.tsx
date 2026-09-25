@@ -60,10 +60,10 @@ export function SavedTemplatesPanel() {
     <section className="rounded-xl border border-line bg-panel p-5 shadow-sm">
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="font-display text-xl font-semibold">Saved templates</h2>
+          <h2 className="font-display text-xl font-semibold">Your templates</h2>
           <p className="mt-1 text-sm text-ink-muted">
-            Switch among named snapshots without re-uploading. Activate copies the saved baseline
-            and tagged template into the live slot.
+            Every template you've installed (up to 20). Switch between them without re-uploading;
+            your resume content stays the same.
           </p>
         </div>
         <label className="flex items-center gap-2 text-xs text-ink-muted">
@@ -73,7 +73,7 @@ export function SavedTemplatesPanel() {
             disabled={busy}
             onChange={(e) => setCalibrateAlso(e.target.checked)}
           />
-          Calibrate on activate
+          Tune page fit when switching
         </label>
       </div>
 
@@ -83,13 +83,16 @@ export function SavedTemplatesPanel() {
           choose.
         </p>
       ) : (
-        <ul className="mt-4 divide-y divide-line/80 rounded-lg border border-line">
+        <ul className="mt-4 grid grid-cols-1 gap-4 sm:grid-cols-2 lg:grid-cols-3">
           {library.map((entry) => (
             <li
               key={entry.id}
-              className="flex flex-wrap items-center justify-between gap-3 px-3 py-3 text-sm"
+              className={`flex flex-col overflow-hidden rounded-lg border bg-paper/40 text-sm ${
+                entry.is_active ? "border-accent ring-1 ring-accent" : "border-line"
+              }`}
             >
-              <div className="min-w-0 flex-1">
+              <Thumbnail id={entry.id} version={entry.created_at} label={entry.label} />
+              <div className="flex flex-1 flex-col gap-2 border-t border-line p-3">
                 {renamingId === entry.id ? (
                   <form
                     className="flex flex-wrap items-center gap-2"
@@ -108,7 +111,7 @@ export function SavedTemplatesPanel() {
                       maxLength={80}
                       disabled={busy}
                       onChange={(e) => setRenameDraft(e.target.value)}
-                      className="min-w-[12rem] flex-1 rounded-md border border-line bg-paper px-2 py-1 text-ink"
+                      className="min-w-0 flex-1 rounded-md border border-line bg-paper px-2 py-1 text-ink"
                       aria-label="New template label"
                     />
                     <button
@@ -128,58 +131,57 @@ export function SavedTemplatesPanel() {
                     </button>
                   </form>
                 ) : (
-                  <>
+                  <div>
                     <div className="flex flex-wrap items-center gap-2">
                       <span className="font-medium text-ink">{entry.label}</span>
                       {entry.is_active ? (
                         <span className="rounded bg-accent-soft px-1.5 py-0.5 text-xs font-medium text-accent">
-                          Active
+                          In use
                         </span>
                       ) : null}
-                      {entry.has_profile ? (
-                        <span className="text-xs text-ink-muted">profile</span>
-                      ) : (
-                        <span className="text-xs text-ink-muted">legacy</span>
-                      )}
                     </div>
-                    <p className="mt-0.5 text-xs text-ink-muted">
-                      {formatBytes(entry.size_bytes)} · {formatWhen(entry.created_at)}
-                      {entry.source_filename ? ` · ${entry.source_filename}` : null}
+                    <p
+                      className="mt-0.5 truncate text-xs text-ink-muted"
+                      title={entry.source_filename ?? undefined}
+                    >
+                      {formatWhen(entry.created_at)}
+                      {entry.source_filename ? ` · ${entry.source_filename}` : null} ·{" "}
+                      {formatBytes(entry.size_bytes)}
                     </p>
-                  </>
+                  </div>
+                )}
+                {renamingId === entry.id ? null : (
+                  <div className="mt-auto flex flex-wrap gap-2">
+                    <button
+                      type="button"
+                      disabled={busy || entry.is_active}
+                      onClick={() => void activateLibraryEntry(entry.id)}
+                      className="rounded-md border border-line px-2.5 py-1 text-xs font-medium text-ink hover:border-accent hover:text-accent disabled:opacity-50"
+                    >
+                      {entry.is_active ? "In use" : "Use"}
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busy}
+                      onClick={() => {
+                        setRenamingId(entry.id);
+                        setRenameDraft(entry.label);
+                      }}
+                      className="rounded-md border border-line px-2.5 py-1 text-xs font-medium text-ink hover:border-accent hover:text-accent disabled:opacity-50"
+                    >
+                      Rename
+                    </button>
+                    <button
+                      type="button"
+                      disabled={busy || entry.is_active}
+                      onClick={() => void handleDelete(entry.id, entry.label)}
+                      className="rounded-md border border-line px-2.5 py-1 text-xs font-medium text-danger hover:border-danger disabled:opacity-50"
+                    >
+                      Delete
+                    </button>
+                  </div>
                 )}
               </div>
-              {renamingId === entry.id ? null : (
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    disabled={busy || entry.is_active}
-                    onClick={() => void activateLibraryEntry(entry.id)}
-                    className="rounded-md border border-line px-2.5 py-1 text-xs font-medium text-ink hover:border-accent hover:text-accent disabled:opacity-50"
-                  >
-                    {entry.is_active ? "Active" : "Activate"}
-                  </button>
-                  <button
-                    type="button"
-                    disabled={busy}
-                    onClick={() => {
-                      setRenamingId(entry.id);
-                      setRenameDraft(entry.label);
-                    }}
-                    className="rounded-md border border-line px-2.5 py-1 text-xs font-medium text-ink hover:border-accent hover:text-accent disabled:opacity-50"
-                  >
-                    Rename
-                  </button>
-                  <button
-                    type="button"
-                    disabled={busy || entry.is_active}
-                    onClick={() => void handleDelete(entry.id, entry.label)}
-                    className="rounded-md border border-line px-2.5 py-1 text-xs font-medium text-danger hover:border-danger disabled:opacity-50"
-                  >
-                    Delete
-                  </button>
-                </div>
-              )}
             </li>
           ))}
         </ul>
@@ -191,5 +193,27 @@ export function SavedTemplatesPanel() {
         </p>
       ) : null}
     </section>
+  );
+}
+
+/** First page of the template's original document; a plain card when it can't render. */
+function Thumbnail({ id, version, label }: { id: string; version: string; label: string }) {
+  const [failed, setFailed] = useState(false);
+  return (
+    <div className="flex aspect-[8.5/11] max-h-72 items-start justify-center overflow-hidden bg-white">
+      {failed ? (
+        <span className="m-auto px-4 text-center text-xs text-ink-muted">
+          Preview unavailable (needs Word or LibreOffice)
+        </span>
+      ) : (
+        <img
+          src={`/api/template/library/${encodeURIComponent(id)}/thumb.png?v=${encodeURIComponent(version)}`}
+          alt={`First page of ${label}`}
+          loading="lazy"
+          className="w-full object-cover object-top"
+          onError={() => setFailed(true)}
+        />
+      )}
+    </div>
   );
 }

@@ -4003,3 +4003,79 @@ def test_verify_claim_404_when_job_missing_artifacts(client):
         json={"job_id": "no-such-job", "text": "Anything at all."},
     )
     assert res.status_code == 404
+
+
+def test_library_thumbnail_route(client, tmp_path, monkeypatch):
+    """GET /api/template/library/{id}/thumb.png renders the baseline; unknown ids 404."""
+    from pypdf import PdfWriter
+
+    from resume_tailor import thumbnails
+
+    c, _ = client
+    templates = _point_templates_at(tmp_path, monkeypatch)
+    payload = _minimal_docx_bytes()
+    (templates / "original_export.docx").write_bytes(payload)
+    (templates / "main_template.docx").write_bytes(payload)
+
+    def fake_convert(docx_path, pdf_path, **_):
+        writer = PdfWriter()
+        writer.add_blank_page(width=612, height=792)
+        with open(pdf_path, "wb") as fh:
+            writer.write(fh)
+        return pdf_path
+
+    monkeypatch.setattr(thumbnails.convert, "convert", fake_convert)
+    entry_id = c.get("/api/template/library").json()["entries"][0]["id"]
+    res = c.get(f"/api/template/library/{entry_id}/thumb.png")
+    assert res.status_code == 200
+    assert res.headers["content-type"] == "image/png"
+    assert res.content.startswith(b"\x89PNG")
+    assert c.get("/api/template/library/nope/thumb.png").status_code == 404
+    assert c.get("/api/template/library/..%2F..%2Fx/thumb.png").status_code == 404
+
+    def no_engine(*_a, **_k):
+        raise RuntimeError("No PDF engine")
+
+    monkeypatch.setattr(thumbnails.convert, "convert", no_engine)
+    thumb = next(templates.rglob("thumb.png"))
+    thumb.unlink()
+    assert c.get(f"/api/template/library/{entry_id}/thumb.png").status_code == 503
+
+
+def test_calibrate_route_reports_result_and_refuses_while_busy(client, tmp_path, monkeypatch):
+    """POST /api/template/calibrate runs calibration; failures are ok=False, never 500."""
+    from resume_tailor.calibrate import CalibrationResult
+
+    c, _ = client
+    templates = _point_templates_at(tmp_path, monkeypatch)
+    assert c.post("/api/template/calibrate").status_code == 404  # no template yet
+
+    (templates / "main_template.docx").write_bytes(_minimal_docx_bytes())
+    calls = []
+
+    def fake_run(*, verify_anchors=True, rebaseline=False):
+        calls.append(verify_anchors)
+        return CalibrationResult(
+            chars_per_line=95, lines_per_page=50, path=tmp_path / "cal.json",
+            log="CHARS_PER_LINE = 95", warnings=["anchor drift"],
+        )
+
+    monkeypatch.setattr(template_ops.calibrate, "run", fake_run)
+    monkeypatch.setattr(config, "reload_calibration", lambda: (95, 50, "test"))
+    res = c.post("/api/template/calibrate")
+    assert res.status_code == 200
+    body = res.json()
+    assert body["ok"] is True and body["warnings"] == ["anchor drift"] and calls == [True]
+    assert "calibrated_at" in body["calibration"]
+
+    def boom(**_):
+        raise RuntimeError("No PDF engine found")
+
+    monkeypatch.setattr(template_ops.calibrate, "run", boom)
+    body = c.post("/api/template/calibrate").json()
+    assert body["ok"] is False and "No PDF engine" in body["log"]
+
+    from resume_tailor.web import routes
+
+    monkeypatch.setattr(routes.template.get_queue(), "busy", lambda: True)
+    assert c.post("/api/template/calibrate").status_code == 409

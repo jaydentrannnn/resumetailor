@@ -34,10 +34,12 @@ from resume_tailor import (
     template_build,
     template_profile,
     template_verify,
+    thumbnails,
 )
 from resume_tailor.labels import label_taken, normalize_label
 from resume_tailor.template_profile import TemplateProfile, save_profile
 from resume_tailor.web.schemas import (
+    CalibrateResponse,
     CalibrationInfo,
     TemplateAnalyzeResponse,
     TemplateBuildResponse,
@@ -139,6 +141,11 @@ def _calibration_info(tagged: Path) -> CalibrationInfo:
             message=rejection,
         )
 
+    calibrated_at = (
+        datetime.fromtimestamp(cal_path.stat().st_mtime, UTC).isoformat()
+        if cal_path.exists()
+        else None
+    )
     if not cal_path.exists() or source == "fallback":
         other = _other_backend_calibrations(exclude=config.PDF_BACKEND)
         hint = (
@@ -153,10 +160,10 @@ def _calibration_info(tagged: Path) -> CalibrationInfo:
             lines_per_page=lines,
             stale=True,
             message=(
-                "No calibration file for this PDF backend. Re-upload with "
-                "“Also calibrate fit constants”, or run `python scripts/calibrate.py`."
-                + hint
+                "Page fit isn't tuned for this template yet, so page length is estimated. "
+                "Use “Tune page fit” (or run `python scripts/calibrate.py`)." + hint
             ),
+            calibrated_at=calibrated_at,
         )
 
     # Module-level CHARS_PER_LINE / LINES_PER_PAGE were loaded at import time; if the
@@ -168,11 +175,12 @@ def _calibration_info(tagged: Path) -> CalibrationInfo:
         lines_per_page=lines,
         stale=stale,
         message=(
-            "Template is newer than calibration. Re-upload with "
-            "“Also calibrate fit constants”, or run `python scripts/calibrate.py`."
+            "The template changed after page fit was tuned. Use “Tune page fit” (or run "
+            "`python scripts/calibrate.py`)."
             if stale
             else None
         ),
+        calibrated_at=calibrated_at,
     )
 
 
@@ -684,6 +692,23 @@ def ensure_preview() -> Path:
         return pdf_path
 
 
+def library_thumbnail(entry_id: str) -> Path:
+    """Cached first-page PNG of a saved template's baseline export (the gallery card).
+
+    Raises `FileNotFoundError` for an unknown entry and `RuntimeError` when no PDF
+    engine is available (the card then shows a placeholder).
+    """
+    if not re.fullmatch(r"[A-Za-z0-9_-]+", entry_id):
+        raise FileNotFoundError(entry_id)
+    with LOCK:
+        if _load_entry_meta(entry_id) is None:
+            raise FileNotFoundError(entry_id)
+        entry_dir = _library_entry_dir(entry_id)
+        return thumbnails.docx_thumbnail(
+            entry_dir / "original_export.docx", entry_dir / "thumb.png"
+        )
+
+
 def invalidate_preview() -> None:
     """Delete the cached preview so the next `ensure_preview` regenerates it."""
     docx_path, pdf_path = _preview_paths()
@@ -973,6 +998,32 @@ def _verify_staged_build(tagged: Path, profile: TemplateProfile) -> None:
         raise TemplateBuildError(
             f"Build verification failed: {detail}",
             log="\n".join(f"{i.code}: {i.message}" for i in blockers),
+        )
+
+
+def calibrate_now() -> CalibrateResponse:
+    """Measure fit constants for the active template now and hot-reload them.
+
+    Raises `FileNotFoundError` without a tagged template. A failed measurement (no PDF
+    engine, a render error) comes back as ``ok=False`` with the reason in ``log``; the
+    previous constants stay in effect.
+    """
+    tagged = config.DEFAULT_TEMPLATE_PATH
+    if not tagged.exists():
+        raise FileNotFoundError("Install a template before tuning page fit.")
+    with LOCK:
+        try:
+            result = calibrate.run(verify_anchors=True)
+        except Exception as exc:  # noqa: BLE001 - reported to the UI, never swallowed
+            return CalibrateResponse(
+                ok=False, log=f"Calibration failed: {exc}", calibration=_calibration_info(tagged)
+            )
+        config.reload_calibration()
+        return CalibrateResponse(
+            ok=True,
+            log=result.log,
+            warnings=list(result.warnings or []),
+            calibration=_calibration_info(tagged),
         )
 
 
