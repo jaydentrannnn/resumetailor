@@ -2022,6 +2022,25 @@ export function getBrowserStatus(): Promise<BrowserStatus> {
   return request("/api/browser/status");
 }
 
+export type ExtensionPairing = {
+  id: string;
+  label: string;
+  created_at: string;
+  last_seen: string;
+};
+
+export function createExtensionPairingCode(): Promise<{ code: string; expires_in: number }> {
+  return request("/api/extension-pairings/code", { method: "POST" });
+}
+
+export function listExtensionPairings(): Promise<ExtensionPairing[]> {
+  return request("/api/extension-pairings");
+}
+
+export function revokeExtensionPairing(id: string): Promise<void> {
+  return request(`/api/extension-pairings/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
 /** Open browser tab ids; `reachable: false` means tab state is unknown. */
 export function getOpenTabs(): Promise<{ reachable: boolean; target_ids: string[] }> {
   return request("/api/applications/open-tabs");

@@ -5,12 +5,14 @@ import { AdvancedSection } from "./AdvancedSection";
 import { DataSection } from "./DataSection";
 import { DocumentsSection } from "./DocumentsSection";
 import { ModelsSection } from "./ModelsSection";
+import { BrowserSection } from "./BrowserSection";
 
 const TABS = [
   { id: "models", label: "AI model" },
   { id: "documents", label: "Documents" },
   { id: "data", label: "Data" },
   { id: "advanced", label: "Advanced" },
+  { id: "browser", label: "Browser" },
   { id: "about", label: "About" },
 ] as const;
 
@@ -35,6 +37,7 @@ export function SettingsPage() {
         {tab === "documents" && <DocumentsSection />}
         {tab === "data" && <DataSection />}
         {tab === "advanced" && <AdvancedSection />}
+        {tab === "browser" && <BrowserSection />}
         {tab === "about" && <AboutSection />}
       </div>
     </div>
