@@ -12,14 +12,17 @@
 //!   stops with the shell even when the shell is killed rather than quit;
 //! - keeps one instance (a second launch focuses the first window);
 //! - hides the window on close so the nightly scheduler keeps running, with a tray menu
-//!   to reopen or quit; quitting stops the server.
+//!   to reopen or quit; quitting stops the server;
+//! - checks for, downloads and installs updates when the server asks (`update.rs`).
 //!
 //! The web UI runs from a 127.0.0.1 origin and gets no Tauri IPC (see
 //! `capabilities/default.json`); only the bundled start page can call `log_folder`.
+//! Everything else between the web UI and the shell goes through the server's pipes:
+//! `READY` and `SHELL <command>` lines on its stdout, `UPDATE <json>` lines on its stdin.
 
-use std::io::{BufRead, BufReader};
+use std::io::{BufRead, BufReader, Write};
 use std::path::PathBuf;
-use std::process::{Child, Command, Stdio};
+use std::process::{Child, ChildStdin, Command, Stdio};
 use std::sync::atomic::{AtomicBool, AtomicU32, Ordering};
 use std::sync::Mutex;
 
@@ -27,11 +30,16 @@ use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
 use tauri::{AppHandle, Manager, RunEvent, Url, WindowEvent};
 
+mod update;
+
 const MAX_RESTARTS: u32 = 3;
 
 #[derive(Default)]
 struct Sidecar {
     child: Mutex<Option<Child>>,
+    /// The server's stdin: held open (its end stops the server) and written to with
+    /// update events.
+    stdin: Mutex<Option<ChildStdin>>,
     restarts: AtomicU32,
     quitting: AtomicBool,
     /// The bundled start page's URL, so a failure can navigate back to it.
@@ -90,6 +98,8 @@ fn start_server(app: &AppHandle) -> Result<(), String> {
     // when the shell is killed rather than quit.
     command
         .arg("--exit-with-stdin")
+        .arg("--app-version")
+        .arg(app.package_info().version.to_string())
         .stdin(Stdio::piped())
         .stdout(Stdio::piped())
         .stderr(Stdio::null());
@@ -103,7 +113,10 @@ fn start_server(app: &AppHandle) -> Result<(), String> {
         .spawn()
         .map_err(|e| format!("could not start {}: {e}", program.display()))?;
     let stdout = child.stdout.take().ok_or("the server has no stdout")?;
-    *app.state::<Sidecar>().child.lock().unwrap() = Some(child);
+    let pid = child.id();
+    let state = app.state::<Sidecar>();
+    *state.stdin.lock().unwrap() = child.stdin.take();
+    *state.child.lock().unwrap() = Some(child);
 
     let handle = app.clone();
     std::thread::spawn(move || {
@@ -118,9 +131,12 @@ fn start_server(app: &AppHandle) -> Result<(), String> {
                 if let Some(window) = handle.get_webview_window("main") {
                     let _ = window.navigate(url);
                 }
+                update::on_ready(&handle);
+            } else if let Some(command) = update::parse_command(&line) {
+                update::handle(&handle, command);
             }
         }
-        server_exited(&handle);
+        server_exited(&handle, pid);
     });
     Ok(())
 }
@@ -133,12 +149,28 @@ fn ready_url(line: &str) -> Option<Url> {
     Url::parse(&format!("http://127.0.0.1:{port}/?t={token}")).ok()
 }
 
-fn server_exited(app: &AppHandle) {
+/// Write one line to the server's stdin; a server that is not running just misses it.
+fn send_to_server(app: &AppHandle, line: &str) {
+    if let Some(stdin) = app.state::<Sidecar>().stdin.lock().unwrap().as_mut() {
+        let _ = writeln!(stdin, "{line}").and_then(|()| stdin.flush());
+    }
+}
+
+fn server_exited(app: &AppHandle, pid: u32) {
     let state = app.state::<Sidecar>();
-    let exited = state.child.lock().unwrap().take();
+    let exited = {
+        let mut current = state.child.lock().unwrap();
+        // Already stopped (quit, update) or replaced by a newer server: not ours to
+        // restart.
+        if current.as_ref().map(Child::id) != Some(pid) {
+            return;
+        }
+        current.take()
+    };
     if let Some(mut child) = exited {
         let _ = child.wait();
     }
+    *state.stdin.lock().unwrap() = None;
     if state.quitting.load(Ordering::SeqCst) {
         return;
     }
@@ -162,9 +194,21 @@ fn stop_server(app: &AppHandle) {
     let state = app.state::<Sidecar>();
     state.quitting.store(true, Ordering::SeqCst);
     let running = state.child.lock().unwrap().take();
+    *state.stdin.lock().unwrap() = None;
     if let Some(mut child) = running {
         let _ = child.kill();
         let _ = child.wait();
+    }
+}
+
+/// Start the server again after `stop_server`, e.g. when an update failed to install.
+fn restart_server(app: &AppHandle) {
+    let state = app.state::<Sidecar>();
+    state.quitting.store(false, Ordering::SeqCst);
+    state.restarts.store(0, Ordering::SeqCst);
+    if let Err(message) = start_server(app) {
+        eprintln!("{message}");
+        show_failure(app);
     }
 }
 
@@ -182,7 +226,9 @@ pub fn run() {
         .plugin(tauri_plugin_single_instance::init(|app, _args, _cwd| {
             show_main(app)
         }))
+        .plugin(tauri_plugin_updater::Builder::new().build())
         .manage(Sidecar::default())
+        .manage(update::Updates::default())
         .invoke_handler(tauri::generate_handler![log_folder])
         .setup(|app| {
             let handle = app.handle().clone();

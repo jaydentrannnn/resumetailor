@@ -27,13 +27,16 @@ reads one line from its stdout, and then points its window at the app::
 Only loopback is ever bound. The READY line is printed after uvicorn has started, so
 the shell never opens a window onto a server that is not listening yet.
 
-``--exit-with-stdin``: the shell holds this process's stdin open and never writes to
-it; when the shell goes away for any reason (quit, crash, killed at logout) the pipe
-closes and the server shuts down instead of lingering on its port.
+``--exit-with-stdin``: the shell holds this process's stdin open; when the shell goes
+away for any reason (quit, crash, killed at logout) the pipe closes and the server shuts
+down instead of lingering on its port. The shell also writes ``UPDATE <json>`` lines to
+it, and reads ``SHELL <command>`` lines from stdout, for in-app updates
+(`desktop_update`). ``--app-version <x>``: the installed app's version, from the shell.
 """
 
 from __future__ import annotations
 
+import logging
 import os
 import secrets
 import socket
@@ -140,14 +143,27 @@ def ready_line(port: int, token: str) -> str:
     return f"READY {port} {token}"
 
 
-def watch_stdin(on_eof: Callable[[], None], stream=None) -> threading.Thread:
-    """Call ``on_eof`` once ``stream`` (stdin) reaches end of file, from a daemon thread."""
+def watch_stdin(
+    on_eof: Callable[[], None],
+    stream=None,
+    on_line: Callable[[str], None] | None = None,
+) -> threading.Thread:
+    """Call ``on_eof`` once ``stream`` (stdin) reaches end of file, from a daemon thread.
+
+    Each line read before that goes to ``on_line``. A line it fails on is logged and
+    skipped: the watcher must keep running, or the server would shut down with it.
+    """
     stream = sys.stdin if stream is None else stream
 
     def _wait() -> None:
         try:
-            while stream.read(4096):
-                pass
+            for line in iter(stream.readline, ""):
+                if on_line is None:
+                    continue
+                try:
+                    on_line(line.rstrip("\r\n"))
+                except Exception:
+                    logging.getLogger(__name__).exception("stdin line handler failed")
         except (OSError, ValueError):
             pass
         on_eof()
@@ -155,6 +171,15 @@ def watch_stdin(on_eof: Callable[[], None], stream=None) -> threading.Thread:
     thread = threading.Thread(target=_wait, name="parent-watch", daemon=True)
     thread.start()
     return thread
+
+
+def _flag_value(args: list[str], flag: str) -> str | None:
+    """The value after ``flag`` in ``args`` (``--flag value``), or None."""
+    if flag in args:
+        index = args.index(flag)
+        if index + 1 < len(args):
+            return args[index + 1]
+    return None
 
 
 def main(argv: list[str] | None = None) -> int:
@@ -173,13 +198,18 @@ def main(argv: list[str] | None = None) -> int:
             if self.started:
                 print(ready_line(port, token), flush=True)
 
+    from resume_tailor import desktop_update
+
+    desktop_update.CURRENT = _flag_value(args, "--app-version")
     server = _Server(uvicorn.Config(app, log_level="warning", access_log=False))
     if "--exit-with-stdin" in args:
+        # Launched by the shell: it is on the other end of both pipes.
+        desktop_update.ENABLED = True
 
         def _parent_gone() -> None:
             server.should_exit = True
 
-        watch_stdin(_parent_gone)
+        watch_stdin(_parent_gone, on_line=desktop_update.receive)
     server.run(sockets=[sock])
     return 0
 

@@ -24,6 +24,7 @@
   },
   "bundle": {
     "active": true,
+    "createUpdaterArtifacts": true,
     "targets": ["nsis", "msi", "app", "dmg"],
     "icon": [
       "icons/32x32.png",
@@ -36,6 +37,19 @@
       "../sidecar/dist/resumetailor-server/": "server/"
     },
     "category": "Productivity",
-    "shortDescription": "Tailor your resume to a job without changing its look"
+    "shortDescription": "Tailor your resume to a job without changing its look",
+    "license": "MIT",
+    "copyright": "Copyright (c) 2026 Jayden Tran"
+  },
+  "plugins": {
+    "updater": {
+      "pubkey": "REPLACE_WITH_PUBLIC_KEY_FROM_TAURI_SIGNER_GENERATE",
+      "endpoints": [
+        "https://github.com/jaydentrannnn/resumetailor/releases/latest/download/latest.json"
+      ],
+      "windows": {
+        "installMode": "passive"
+      }
+    }
   }
 }

@@ -142,7 +142,17 @@ Storage defaults to the per-user app-data folder (`desktop_main.app_data_dir`); 
 goes away. Build locally: `npm run build` in `frontend/`, then `pyinstaller
 desktop/sidecar/resumetailor.spec --noconfirm --distpath desktop/sidecar/dist`, then in
 `desktop/`: `npx @tauri-apps/cli@2 icon app-icon.svg` and `npx @tauri-apps/cli@2 build`.
-Installers: `.github/workflows/release.yml` on a `v*` tag (draft release, unsigned). Details:
+Installers: `.github/workflows/release.yml` on a `v*` tag (draft release, not
+code-signed; updater bundles signed with `TAURI_SIGNING_PRIVATE_KEY`, plus `latest.json`
+from `scripts/release_manifest.py`). **In-app updates** (`desktop/src-tauri/src/update.rs`,
+`desktop_update.py`, `web/routes/update.py`): the SPA has no Tauri IPC, so the server
+relays over the sidecar's pipes: `SHELL check|download|apply` on its stdout, `UPDATE
+<json>` events on its stdin (`--app-version` gives it the installed version). `apply` is
+sent only when the job queue and Apply operations are idle, after a zip of data +
+templates to `OUTPUT_ROOT/backups/`. The feed is `releases/latest/download/latest.json`
+(drafts are invisible, so publishing ships); `RESUMETAILOR_UPDATE_ENDPOINT` overrides it
+for testing (the plugin still rejects plain `http://` unless the build sets
+`plugins.updater.dangerousInsecureTransportProtocol`). Details:
 `docs/notes/web-ui-and-mcp.md` "Desktop packaging". Owner walkthrough (build, install,
 update, move data): `docs/GUIDE.md`.
 

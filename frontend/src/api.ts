@@ -1380,6 +1380,43 @@ export function fetchHealth(): Promise<{ app: string; ok: boolean; version: stri
   return request("/api/health");
 }
 
+/** In-app update state (desktop app only; `supported` is false in dev and Docker). */
+export type UpdateState =
+  | "idle"
+  | "checking"
+  | "available"
+  | "up_to_date"
+  | "downloading"
+  | "ready"
+  | "waiting"
+  | "installing"
+  | "error";
+
+export type UpdateStatus = {
+  supported: boolean;
+  current: string | null;
+  state: UpdateState;
+  available: { version: string; notes: string; date: string } | null;
+  pct: number | null;
+  last_checked: string | null;
+  error: string | null;
+  waiting_for: string | null;
+  backup: string | null;
+};
+
+export function fetchUpdateStatus(): Promise<UpdateStatus> {
+  return request("/api/update");
+}
+
+export function checkForUpdate(): Promise<UpdateStatus> {
+  return request("/api/update/check", { method: "POST" });
+}
+
+/** Download the update; it installs (and the app restarts) once nothing is running. */
+export function installUpdate(): Promise<UpdateStatus> {
+  return request("/api/update/install", { method: "POST" });
+}
+
 export function fetchCacheUsage(): Promise<CacheUsage> {
   return request("/api/cache");
 }

@@ -4,9 +4,15 @@ name: Release
 # PyInstaller, smoke-tests it, wraps it in the Tauri shell, and attaches the installers
 # to a *draft* GitHub release for the owner to review and publish.
 #
-# Not signed or notarized, and no updater manifest: those need certificates and keys the
-# owner has not chosen yet. Unsigned Windows installers show a SmartScreen warning;
-# unsigned macOS apps open with right-click → Open.
+# In-app updates: every build signs its updater bundles with the key in the
+# TAURI_SIGNING_PRIVATE_KEY(_PASSWORD) secrets, and a tag build also attaches
+# `latest.json` (scripts/release_manifest.py). Installed apps read
+# releases/latest/download/latest.json, which skips drafts: **publishing the draft is
+# what ships the update.** The public half of the key is `plugins.updater.pubkey` in
+# desktop/src-tauri/tauri.conf.json (docs/GUIDE.md §3 has the one-time setup).
+#
+# Not code-signed or notarized: unsigned Windows installers show a SmartScreen
+# warning; unsigned macOS apps open with right-click → Open.
 #
 # Windows only by default. macOS runners bill 10x the minutes on a private repository,
 # so the macOS build is opt-in: tick "Also build macOS" when running by hand, or set the
@@ -48,6 +54,22 @@ jobs:
           cache-dependency-path: frontend/package-lock.json
       - uses: dtolnay/rust-toolchain@stable
 
+      - name: Updater key configured
+        # Without both halves the build fails late (tauri) or ships an app that can
+        # never verify an update; fail here with the fix instead.
+        shell: bash
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+        run: |
+          if grep -q REPLACE_WITH_PUBLIC_KEY desktop/src-tauri/tauri.conf.json; then
+            echo "::error::Set plugins.updater.pubkey in desktop/src-tauri/tauri.conf.json (docs/GUIDE.md §3)."
+            exit 1
+          fi
+          if [ -z "$TAURI_SIGNING_PRIVATE_KEY" ]; then
+            echo "::error::Add the TAURI_SIGNING_PRIVATE_KEY secret (docs/GUIDE.md §3)."
+            exit 1
+          fi
+
       - name: Python dependencies
         run: uv pip install -r requirements.lock -e . pyinstaller
       - name: Web UI
@@ -75,11 +97,20 @@ jobs:
           c.version=process.env.GITHUB_REF_NAME.replace(/^v/,'');
           require('fs').writeFileSync(f, JSON.stringify(c, null, 2));
           console.log('version', c.version)"
+      - name: License and third-party notices
+        # Next to the server in the install folder (bundle.resources ships this folder).
+        shell: bash
+        run: |
+          python scripts/third_party_notices.py --require-cargo             --out desktop/sidecar/dist/resumetailor-server/THIRD-PARTY-NOTICES.txt
+          cp LICENSE desktop/sidecar/dist/resumetailor-server/LICENSE.txt
       - name: Icons
         working-directory: desktop
         run: npx --yes @tauri-apps/cli@2 icon app-icon.svg
       - name: Shell (Tauri)
         working-directory: desktop
+        env:
+          TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
+          TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: npx --yes @tauri-apps/cli@2 build --bundles ${{ matrix.bundles }}
 
       - name: Collect installers
@@ -90,7 +121,16 @@ jobs:
           for f in "$bundle"/nsis/*.exe "$bundle"/msi/*.msi "$bundle"/dmg/*.dmg; do
             [ -f "$f" ] || continue
             name=$(basename "$f")
-            cp "$f" "dist-installers/${name%.*}-${{ matrix.name }}.${name##*.}"
+            out="dist-installers/${name%.*}-${{ matrix.name }}.${name##*.}"
+            cp "$f" "$out"
+            # The updater signature, renamed to match (release_manifest.py pairs them).
+            [ -f "$f.sig" ] && cp "$f.sig" "$out.sig"
+          done
+          # macOS updates install from the .app archive, not the .dmg.
+          for f in "$bundle"/macos/*.app.tar.gz; do
+            [ -f "$f" ] || continue
+            cp "$f" dist-installers/
+            [ -f "$f.sig" ] && cp "$f.sig" dist-installers/
           done
           ls -l dist-installers
           [ -n "$(ls dist-installers)" ]
@@ -104,3 +144,36 @@ jobs:
         with:
           draft: true
           files: dist-installers/*
+
+  manifest:
+    # latest.json for in-app updates, from every platform's signed bundles.
+    name: Updater manifest
+    needs: installer
+    if: startsWith(github.ref, 'refs/tags/v')
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - uses: actions/download-artifact@v4
+        with:
+          pattern: installer-*
+          path: dist-installers
+          merge-multiple: true
+      - name: Release notes from the tag message
+        shell: bash
+        run: |
+          git fetch --force origin "refs/tags/$GITHUB_REF_NAME:refs/tags/$GITHUB_REF_NAME"
+          git tag -l --format='%(contents)' "$GITHUB_REF_NAME" > notes.txt
+          cat notes.txt
+      - name: Write latest.json
+        run: >
+          python scripts/release_manifest.py --tag "$GITHUB_REF_NAME"
+          --dir dist-installers --repo "$GITHUB_REPOSITORY"
+          --notes-file notes.txt --out latest.json
+      - name: Attach to the draft release
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: latest.json

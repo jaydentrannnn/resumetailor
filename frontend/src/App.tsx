@@ -17,6 +17,7 @@ import { SettingsMenu } from "./components/SettingsMenu";
 import { KeyboardShortcuts } from "./components/KeyboardShortcuts";
 import { AutomationSwitch } from "./components/AutomationSwitch";
 import { SetupHealth } from "./components/SetupHealth";
+import { UpdateChip } from "./components/UpdateChip";
 import { ToastProvider } from "./components/ui/Toast";
 import { RunPage } from "./pages/run/RunPage";
 import { ConfirmProvider } from "./state/confirmState";
@@ -153,6 +154,7 @@ function Shell() {
           </div>
           <div className="flex min-w-0 flex-wrap items-end gap-4">
             <SetupHealth />
+            <UpdateChip />
             <AutomationSwitch />
             <SettingsMenu />
           </div>

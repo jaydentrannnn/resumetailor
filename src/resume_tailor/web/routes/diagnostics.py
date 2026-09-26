@@ -27,6 +27,11 @@ router = APIRouter()
 
 
 def _version() -> str:
+    # The desktop shell passes the installer's version; it is the one users see.
+    from resume_tailor import desktop_update
+
+    if desktop_update.CURRENT:
+        return desktop_update.CURRENT
     try:
         return metadata.version("resume-tailor")
     except metadata.PackageNotFoundError:

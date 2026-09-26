@@ -431,3 +431,32 @@ blank entry headers before the Pydantic path; server validation remains authorit
   retired); a tag `vX.Y.Z` sets the installer version so installs upgrade in place.
 - Known limit: `transcript_path`/`portfolio_path` and packet artifacts are absolute paths,
   so moving the data folder needs a re-upload of those files (which also re-keys packets).
+
+### In-app updates and the MIT license (2026-09-26)
+
+- **License**: MIT (`LICENSE`); the repo goes public so installed apps can read Releases
+  without credentials. `scripts/third_party_notices.py` writes THIRD-PARTY-NOTICES.txt
+  (Python from `requirements.lock` for this platform, npm runtime deps, cargo crates;
+  identical texts deduplicated) into the installed server folder, with `LICENSE.txt`.
+  Attribution matters for docxtpl (LGPL-2.1; PyInstaller onedir keeps it replaceable),
+  certifi and tqdm (MPL-2.0).
+- **Updater**: tauri-plugin-updater, driven from Rust only. The SPA still gets no Tauri
+  IPC; the server relays over the pipes the shell already held (`SHELL check|download|
+  apply` on stdout, `UPDATE <json>` on stdin, which used to be read and discarded). The
+  alternative, giving the 127.0.0.1 origin IPC, would hand every script on that origin
+  the power to install software.
+- **Never automatic**: check on start (+30 s) and every 12 h; download only on the
+  user's click; `apply` only when `get_queue().busy()`, `daily_busy()` and
+  `operations.active()` are all clear, after a zip of data + templates to
+  `OUTPUT_ROOT/backups` (newest 3; output/ is never itself backed up and is gitignored in
+  a checkout). A failed backup aborts the install.
+- **Draft gate**: release.yml keeps releases as drafts and adds `latest.json`; the feed
+  is `releases/latest/download/latest.json`, which ignores drafts, so publishing is the
+  ship step. The workflow refuses to build while `plugins.updater.pubkey` is the
+  placeholder or the signing secret is missing.
+- **Shell restart bookkeeping**: `server_exited` now acts only if the child in the mutex
+  is still the one whose stdout ended (pid), so a server restarted after a failed
+  install is not mistaken for the old one exiting.
+- Not verified here: no Rust toolchain on the dev PC, so `update.rs`/`lib.rs` compile
+  and `cargo fmt` are first checked by CI's desktop job; the end-to-end install needs
+  two signed builds (docs/GUIDE.md §6).

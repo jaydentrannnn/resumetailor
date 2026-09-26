@@ -438,3 +438,9 @@ Start the LM Studio server on the host, then use the `lmstudio` profile from the
 | `hybrid` | Ollama | Claude | Ollama | Ollama |
 
 Per-stage overrides (`--rewrite-model`, `--expand-model`, `--skills-model`, or the web UI fields) always win over the profile defaults.
+
+## License
+
+ResumeTailor is released under the [MIT License](LICENSE). The desktop installer also
+ships `THIRD-PARTY-NOTICES.txt`, the licenses of the libraries it bundles
+(`scripts/third_party_notices.py` generates it at release time).

@@ -1,5 +1,5 @@
 [build-system]
-requires = ["setuptools>=68"]
+requires = ["setuptools>=77"]
 build-backend = "setuptools.build_meta"
 
 [project]
@@ -7,6 +7,8 @@ name = "resume-tailor"
 version = "0.1.0"
 description = "Tailor a resume to a job description without changing its formatting"
 requires-python = ">=3.13"
+license = "MIT"
+license-files = ["LICENSE"]
 dynamic = ["dependencies"]
 
 [tool.setuptools.dynamic]

@@ -271,6 +271,30 @@ The result is an unsigned Windows installer: `ResumeTailor_<version>_x64-setup.e
 (NSIS, per-user) and a `.msi` (per-machine). **Use the `-setup.exe`.** It needs no
 admin rights, and installing newer versions over it is simplest.
 
+### Once: the update signing key
+
+Installed apps only accept an update signed with your key (section 6). Set it up once,
+before the first release build; the Release workflow stops with an error until you do.
+
+```powershell
+npx --yes @tauri-apps/cli@2 signer generate -w $env:USERPROFILE\.tauri\resumetailor.key
+```
+
+It asks for a password. Then:
+
+1. Open `$env:USERPROFILE\.tauri\resumetailor.key.pub`. Paste its one line into
+   `desktop\src-tauri\tauri.conf.json` as `plugins.updater.pubkey`, replacing
+   `REPLACE_WITH_PUBLIC_KEY_FROM_TAURI_SIGNER_GENERATE`, and commit. The public half is
+   safe to publish.
+2. Give GitHub the private half and its password:
+   ```powershell
+   Get-Content $env:USERPROFILE\.tauri\resumetailor.key -Raw | gh secret set TAURI_SIGNING_PRIVATE_KEY
+   gh secret set TAURI_SIGNING_PRIVATE_KEY_PASSWORD
+   ```
+3. **Back up `resumetailor.key` and the password** (a password manager is fine). If you
+   lose them, installed copies can never be updated again; everyone would have to
+   reinstall by hand once from a build with a new key.
+
 ### Option A: GitHub Actions (recommended; nothing to install)
 
 1. GitHub → **Actions** → **Release** → **Run workflow** (branch `main`). Leave "Also build
@@ -317,6 +341,17 @@ The installer lands in `desktop\src-tauri\target\release\bundle\nsis\`. The smok
 must print `sidecar OK ...` before you build the shell. The first Rust build takes about
 10 minutes; later builds are faster. For a local build, set the version in
 `desktop\src-tauri\tauri.conf.json` before building.
+
+The build signs its updater files, so it needs the key from "Once: the update signing
+key" in the environment first:
+
+```powershell
+$env:TAURI_SIGNING_PRIVATE_KEY = Get-Content $env:USERPROFILE\.tauri\resumetailor.key -Raw
+$env:TAURI_SIGNING_PRIVATE_KEY_PASSWORD = "<your password>"
+```
+
+Without the key, add `--config '{\"bundle\":{\"createUpdaterArtifacts\":false}}'` to the
+build line. That installer works, but it can't be offered as an update.
 
 ---
 
@@ -386,11 +421,34 @@ lines) in the app's `.env`. Then never run dev and the app at the same time.
 
 ## 6. Updating: no reinstall needed
 
-- **Update by installing the newer `-setup.exe` over the current one.** Quit the app from
-  the tray first. You don't need to uninstall. Your data is in `ResumeTailorData`, a
-  separate folder, and the installer never touches it.
-- There is **no auto-updater yet**: you build or download each new version (section 3)
-  and run it. An in-app updater needs a signing key and an update manifest (section 9).
+**In the app (from the first build with the updater onward):**
+
+1. **Release:** tag a higher version (`git tag -a v0.2.0 -m "What changed"`, then
+   `git push origin v0.2.0`). The tag message becomes the release notes users see.
+2. The Release workflow builds, signs and attaches the installers plus `latest.json` to a
+   **draft** release. Installed apps don't see drafts.
+3. **Publish the draft** on GitHub when you're happy with it. That is the moment it
+   ships.
+4. Installed apps check about 30 seconds after they start, then every 12 hours, and show
+   an **Update available** chip in the header. Settings → About shows the version, the
+   notes, **Check now** and **Install and restart**.
+5. **Install and restart** downloads the update and checks its signature against your
+   key; a download that doesn't match is refused. The install waits until no tailor or
+   Apply run is going. The app then backs up your data and templates to
+   `ResumeTailorData\output\backups\pre-update-<old>-to-<new>-<time>.zip` (the newest 3
+   are kept), closes, installs with a small progress window, and starts again.
+
+Nothing installs without that click. A dev checkout or Docker says to update with
+`git pull` instead.
+
+**The one manual step:** a copy installed *before* the updater existed (the 0.1.0 builds)
+can't update itself. Install the first updater build by hand once, as below.
+
+**By hand (always works):**
+
+- **Install the newer `-setup.exe` over the current one.** Quit the app from the tray
+  first. You don't need to uninstall. Your data is in `ResumeTailorData`, a separate
+  folder, and the installer never touches it.
 - **Version numbers:**
   - Tag builds get their version from the tag: always go up.
   - Builds from **Run workflow** without a tag all say `0.1.0`. The `-setup.exe`
@@ -459,7 +517,6 @@ yet. On your first install, check:
 ## 9. What is not done, and decisions left to you
 
 **Not built, from the desktop plan:**
-- auto-updater;
 - code signing (Windows) and notarization (macOS);
 - tray items Pause, Run discovery and launch-at-login (the tray has Open and Quit only);
 - a "Copy diagnostics" button on the failure screen (it shows the log folder instead);
@@ -482,9 +539,25 @@ yet. On your first install, check:
 1. **Merge into `main`** (section 0). Needed for **Run workflow**.
 2. **Windows code-signing certificate** (roughly $100–400 a year). Removes the
    SmartScreen and antivirus warnings. Optional for personal use.
-3. **Auto-updater:** I can add Tauri's updater. It needs a signing key pair (free) that
-   you keep secret, and a published release feed.
-4. **Apple Developer account** ($99 a year), only if you want a Mac build that opens
+3. **Apple Developer account** ($99 a year), only if you want a Mac build that opens
    without warnings.
-5. **Extension store listing** (unlisted is fine), if you want to install it without
+4. **Extension store listing** (unlisted is fine), if you want to install it without
    developer mode.
+
+**Making the repository public** (needed for in-app updates: installed apps download
+from its Releases without signing in). The code is MIT-licensed (`LICENSE`). Before you
+switch it:
+
+1. Put your personal strings in `data\pii_denylist.txt` (one per line: name, email,
+   phone, street), then run `pytest tests\test_no_pii.py`. It must pass, not skip.
+2. Search the whole history too. Each of these must print nothing:
+   ```powershell
+   git log --all --oneline -S "<your email>"
+   git log --all --oneline -S "<your phone>"
+   git log --all --oneline -S "<your street>"
+   ```
+3. Check that no secret is written into `.github\workflows\` (they must all be
+   `${{ secrets.* }}`).
+4. Switch it: `gh repo edit --visibility public --accept-visibility-change-consequences`,
+   or GitHub → Settings → General → Danger Zone. Actions minutes are free for public
+   repos.
