@@ -174,7 +174,10 @@ def test_backups_keep_the_newest_three(tmp_path):
 def test_busy_reason_reports_a_running_tailor(monkeypatch):
     from resume_tailor.web import jobs
 
-    monkeypatch.setattr(jobs.get_queue(), "busy", lambda: True)
+    # Patch the class, not the singleton: undoing an instance patch leaves the original
+    # bound method in the instance's __dict__, which then shadows later tests' class
+    # patches (test_housekeeping::test_cache_routes).
+    monkeypatch.setattr(jobs.JobQueue, "busy", lambda self: True)
     assert desktop_update.busy_reason() == "a tailoring run"
 
 
