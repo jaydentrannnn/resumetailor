@@ -1,8 +1,37 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import type { ApplyOperation } from "../../api";
-import { formatEta, operationEtaSeconds, operationHeadline } from "../../lib/applyPage";
-import { runProgressPercent } from "../../lib/applicationStatus";
+import { type ApplyOperation, type JobStatus, fetchJob } from "../../api";
+import {
+  formatEta,
+  itemProgress,
+  operationEtaSeconds,
+  operationHeadline,
+} from "../../lib/applyPage";
+
+/** Poll the tailor job Prepare is running, for progress inside the current item. */
+function useCurrentJob(jobId: string, active: boolean): JobStatus | null {
+  const [job, setJob] = useState<JobStatus | null>(null);
+  useEffect(() => {
+    setJob(null);
+    if (!jobId || !active) return;
+    let stopped = false;
+    const load = () =>
+      fetchJob(jobId)
+        .then((next) => {
+          if (!stopped) setJob(next);
+        })
+        .catch(() => {
+          /* advisory: the bar falls back to whole items */
+        });
+    void load();
+    const id = window.setInterval(load, 1500);
+    return () => {
+      stopped = true;
+      window.clearInterval(id);
+    };
+  }, [jobId, active]);
+  return job;
+}
 
 export type OperationControl = "pause" | "resume" | "skip" | "cancel";
 
@@ -25,7 +54,15 @@ export function OperationBanner({
     const id = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(id);
   }, [active]);
-  const eta = operationEtaSeconds(operation, now);
+  const job = useCurrentJob(
+    operation.action === "prepare" ? (operation.current_job_id ?? "") : "",
+    active,
+  );
+  const item = itemProgress(operation, job, now);
+  const done = Math.min(operation.total, operation.processed + (item?.fraction ?? 0));
+  const eta = operationEtaSeconds(operation, now, done);
+  const pct = (n: number) =>
+    operation.total > 0 ? Math.max(0, Math.min(100, (n / operation.total) * 100)) : 0;
   const userPaused = operation.state === "paused" && operation.stage === "paused_by_user";
   const pauseRequested =
     operation.state === "running" && operation.events.at(-1)?.stage === "pause_requested";
@@ -110,14 +147,20 @@ export function OperationBanner({
         <div
           role="progressbar"
           aria-label="Apply task progress"
-          aria-valuenow={operation.processed}
+          aria-valuenow={Math.round(done * 10) / 10}
           aria-valuemin={0}
           aria-valuemax={operation.total}
-          className="mt-3 h-2 overflow-hidden rounded-full bg-line"
+          aria-valuetext={`${operation.processed} of ${operation.total} done${item ? `; ${item.detail}` : ""}`}
+          className="relative mt-3 h-2 overflow-hidden rounded-full bg-line"
         >
+          {/* Lighter: the item in flight, by its own progress. Solid: finished items. */}
           <div
-            className="h-full bg-accent transition-[width] duration-500"
-            style={{ width: `${runProgressPercent(operation.processed, operation.total)}%` }}
+            className="absolute inset-y-0 left-0 bg-accent/35 transition-[width] duration-500"
+            style={{ width: `${pct(done)}%` }}
+          />
+          <div
+            className="absolute inset-y-0 left-0 bg-accent transition-[width] duration-500"
+            style={{ width: `${pct(operation.processed)}%` }}
           />
         </div>
       ) : (
@@ -130,7 +173,19 @@ export function OperationBanner({
         )
       )}
       <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-muted">
-        {eta != null && <span>{formatEta(eta)} left</span>}
+        {active && operation.total > 0 && (
+          <span className="font-medium text-ink">
+            {operation.processed} of {operation.total} done
+            {item
+              ? ` · ${operation.current_label ? `${operation.current_label}: ` : ""}${item.detail}`
+              : ""}
+          </span>
+        )}
+        {eta != null && (
+          <span>
+            {formatEta(eta)} left{item?.estimate ? " (estimate)" : ""}
+          </span>
+        )}
         <span>{operation.ready_for_review ?? operation.completed} ready for you</span>
         <span>{operation.submitted} submitted</span>
         <span>{operation.needs_input ?? operation.blocked} need input</span>

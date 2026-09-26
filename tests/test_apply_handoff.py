@@ -203,3 +203,34 @@ def test_user_pause_stops_before_the_next_application(tmp_path, monkeypatch):
     operations.control(started.operation_id, "resume")
     _wait_for_state(started.operation_id, {"completed", "completed_with_issues", "failed"})
     assert filled == ["one", "two"]
+
+
+def test_prepare_records_the_tailor_job_while_it_runs(tmp_path, monkeypatch):
+    """The Apply page reads the in-flight tailor job's steps for progress inside an item."""
+    monkeypatch.setattr(config, "APPLICATIONS_OUTPUT_DIR", tmp_path / "output")
+    app = store.Application(source="test", source_job_id="one", company="Acme", role="Intern", status="discovered")
+    monkeypatch.setattr(operations.store, "get", {"one": app}.get)
+    monkeypatch.setattr(operations, "_captured_settings", lambda _request: ApplySettings())
+    monkeypatch.setattr(operations.daily, "daily_busy", lambda: False)
+    seen: list[str] = []
+
+    def fake_prepare(application_id, *, on_job, **_kwargs):
+        on_job("job-42")
+        current = operations.get(operations.active().operation_id)
+        seen.append(current.current_job_id)
+        return app.model_copy(update={"status": "ready"})
+
+    monkeypatch.setattr(operations.daily, "prepare_application", fake_prepare)
+    started = operations.start(ApplyOperationRequest(
+        action="prepare", application_ids=["one"], model_provider="ollama", model_name="test",
+    ))
+    deadline = time.monotonic() + 3
+    while time.monotonic() < deadline:
+        current = operations.get(started.operation_id)
+        if current and current.state not in {"queued", "running", "paused"}:
+            break
+        time.sleep(0.02)
+    finished = operations.get(started.operation_id)
+    assert seen == ["job-42"]
+    assert finished is not None and finished.state == "completed"
+    assert finished.current_job_id == ""

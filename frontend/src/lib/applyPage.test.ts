@@ -1,10 +1,11 @@
 import { describe, expect, it } from "vitest";
-import type { ApplicationRow, ApplyOperation } from "../api";
+import type { ApplicationRow, ApplyOperation, JobStatus } from "../api";
 import {
   autoSubmitCapLabel,
   autoSubmitSummary,
   nightlyRunLabel,
   fillBlockers,
+  itemProgress,
   formatEta,
   operationEtaSeconds,
   operationHeadline,
@@ -173,5 +174,68 @@ describe("nightlyRunLabel", () => {
     expect(nightlyRunLabel({ enabled: true, schedule_time: "02:00" })).toMatch(
       /^Nightly run: on · 2:00/,
     );
+  });
+});
+
+describe("itemProgress", () => {
+  const now = Date.parse("2026-01-01T00:04:00Z");
+  const job = (stages: string[]): JobStatus =>
+    ({
+      job_id: "job-1",
+      status: "running",
+      queue_position: null,
+      error: null,
+      report: null,
+      expansion: null,
+      skills: null,
+      cover_letter: null,
+      events: stages.map((stage) => ({ stage, message: stage })),
+    }) as JobStatus;
+
+  it("reads a Prepare item's tailor job steps", () => {
+    const running = op({ current_application_id: "a", current_job_id: "job-1" });
+    const item = itemProgress(
+      running,
+      job(["start", "extract", "score", "facets", "fit", "rewrite"]),
+      now,
+    );
+    expect(item?.detail).toBe("Tailoring, step 4 of 6 (Rewriting bullets)");
+    expect(item?.estimate).toBe(false);
+    expect(item!.fraction).toBeGreaterThan(0.3);
+    expect(item!.fraction).toBeLessThan(1);
+    // Another item's job, or none yet: nothing to show inside the item.
+    expect(
+      itemProgress(
+        op({ current_application_id: "a", current_job_id: "job-2" }),
+        job(["extract"]),
+        now,
+      ),
+    ).toBeNull();
+    expect(itemProgress(op({ current_application_id: "a" }), null, now)).toBeNull();
+  });
+
+  it("estimates a Fill item from form pages, else from time against its deadline", () => {
+    const filling = op({ action: "fill", current_application_id: "a" });
+    expect(itemProgress({ ...filling, current_step: 3 }, null, now)).toEqual({
+      fraction: 3 / 9,
+      detail: "Filling, page 3 (estimate)",
+      estimate: true,
+    });
+    expect(itemProgress({ ...filling, current_step: 20 }, null, now)?.fraction).toBe(0.9);
+    const timed = itemProgress(
+      {
+        ...filling,
+        application_started_at: "2026-01-01T00:02:00Z",
+        application_deadline_at: "2026-01-01T00:06:00Z",
+      },
+      null,
+      now,
+    );
+    expect(timed?.fraction).toBeCloseTo(0.5);
+  });
+
+  it("counts the item in flight toward the time left", () => {
+    // 4 minutes for half of the first item: 8 minutes per item, 11.5 items to go.
+    expect(operationEtaSeconds(op({ processed: 0 }), now, 0.5)).toBe(5520);
   });
 });

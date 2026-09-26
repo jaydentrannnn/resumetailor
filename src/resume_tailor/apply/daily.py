@@ -335,8 +335,13 @@ def prepare_application(
     settings: ApplySettings,
     on_progress: Callable[[str], None] | None = None,
     force_prepare: bool = False,
+    on_job: Callable[[str], None] | None = None,
 ) -> store.Application:
-    """Prepare one selected application through the existing fetch/screen/tailor path."""
+    """Prepare one selected application through the existing fetch/screen/tailor path.
+
+    ``on_job`` is called with the tailor job's id as soon as it is queued, so the Apply
+    page can show that job's own progress inside the current item.
+    """
     app = store.get(source_job_id)
     if app is None:
         raise KeyError(f"unknown application {source_job_id!r}")
@@ -387,6 +392,7 @@ def prepare_application(
             summary=summary,
             index=store.build_index(),
             force_tailor=refresh_artifacts,
+            on_job=on_job,
         )
     except Exception as exc:
         _settle_failed_prepare(previous, source_job_id, error=str(exc))
@@ -452,6 +458,7 @@ def _process_one(
     summary: DailySummary,
     index: store.Index,
     force_tailor: bool = False,
+    on_job: Callable[[str], None] | None = None,
 ) -> None:
     """Run the funnel for one newly discovered posting."""
     if not row.job_id:
@@ -717,6 +724,8 @@ def _process_one(
 
     app.job_id = job.job_id
     store.upsert(app)
+    if on_job is not None:
+        on_job(job.job_id)
     finished = _wait_for_job(
         job.job_id,
         on_progress=lambda message: log(f"[tailoring] {app.company}: {message}"),

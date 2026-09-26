@@ -1,4 +1,6 @@
-import type { ApplicationRow, ApplyOperation, ApplySettings } from "../api";
+import type { ApplicationRow, ApplyOperation, ApplySettings, JobStatus } from "../api";
+import { runProgress } from "./runProgress";
+import { runSteps } from "./runSteps";
 
 /** The Apply page's three tabs, in the URL as `?tab=`. */
 export type ApplyTab = "needs" | "progress" | "done";
@@ -157,12 +159,75 @@ export function operationHeadline(op: ApplyOperation): string {
 }
 
 /** Remaining time from the average per-item time so far; null until one item is done. */
-export function operationEtaSeconds(op: ApplyOperation, nowMs: number): number | null {
-  if (!["running"].includes(op.state) || op.total <= 0 || op.processed <= 0) return null;
+/**
+ * Time left, from the average time per item so far. ``done`` counts the item in flight
+ * by its fraction (`itemProgress`), so the estimate appears during the first item.
+ */
+export function operationEtaSeconds(
+  op: ApplyOperation,
+  nowMs: number,
+  done: number = op.processed,
+): number | null {
+  if (!["running"].includes(op.state) || op.total <= 0 || done <= 0.05) return null;
   const started = Date.parse(op.started_at);
   if (!Number.isFinite(started)) return null;
-  const perItem = (nowMs - started) / 1000 / op.processed;
-  return Math.max(0, Math.round(perItem * (op.total - op.processed)));
+  const perItem = (nowMs - started) / 1000 / done;
+  return Math.max(0, Math.round(perItem * (op.total - done)));
+}
+
+/** Pages a Workday fill typically walks; only an estimate (tenants differ). */
+const TYPICAL_FILL_PAGES = 9;
+
+export type ItemProgress = {
+  /** 0 to just under 1: how far the item in flight is. */
+  fraction: number;
+  /** "Tailoring, step 4 of 6 (Rewriting bullets)" / "Filling, page 3 (estimate)". */
+  detail: string;
+  /** The fraction is a guess (a fill's page count is unknown in advance). */
+  estimate: boolean;
+};
+
+/**
+ * Progress inside the application being worked on. Prepare reads the tailor job's own
+ * stage events (the Tailor page's six steps); Fill has no known length, so it counts
+ * form pages against a typical nine, or elapsed time against the item's deadline,
+ * and says it is an estimate. Null when nothing is known.
+ */
+export function itemProgress(
+  op: ApplyOperation,
+  job: JobStatus | null,
+  nowMs: number,
+): ItemProgress | null {
+  if (!["running", "paused"].includes(op.state) || !op.current_application_id) return null;
+  if (op.action === "prepare") {
+    if (!job || !op.current_job_id || job.job_id !== op.current_job_id) return null;
+    const bar = runProgress(job.events, job.status, true);
+    const steps = runSteps(job.events, job.status, false);
+    const step = Math.min(steps.current, steps.steps.length - 1);
+    return {
+      fraction: Math.min(0.99, Math.max(0, bar.value)),
+      detail: `Tailoring, step ${step + 1} of ${steps.steps.length} (${steps.steps[step].label})`,
+      estimate: false,
+    };
+  }
+  if (op.action === "fill") {
+    if (op.current_step > 0) {
+      return {
+        fraction: Math.min(op.current_step / TYPICAL_FILL_PAGES, 0.9),
+        detail: `Filling, page ${op.current_step} (estimate)`,
+        estimate: true,
+      };
+    }
+    const started = Date.parse(op.application_started_at ?? "");
+    const deadline = Date.parse(op.application_deadline_at ?? "");
+    if (!Number.isFinite(started) || !Number.isFinite(deadline) || deadline <= started) return null;
+    return {
+      fraction: Math.min(0.9, Math.max(0, (nowMs - started) / (deadline - started))),
+      detail: "Filling (estimate)",
+      estimate: true,
+    };
+  }
+  return null;
 }
 
 /** "about 4 min" / "under a minute". */

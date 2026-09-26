@@ -399,6 +399,8 @@ export type ApplyOperation = {
   state: string;
   application_ids: string[];
   current_application_id: string;
+  /** The tailor job of the item Prepare is working on, while it runs; "" otherwise. */
+  current_job_id?: string;
   current_label: string;
   stage: string;
   message: string;

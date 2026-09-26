@@ -46,6 +46,9 @@ class ApplyOperation(BaseModel):
     state: OperationState = "queued"
     application_ids: list[str] = Field(default_factory=list)
     current_application_id: str = ""
+    #: The tailor job of the item being prepared, while it runs (the page reads its
+    #: stage events for progress within the item); "" otherwise.
+    current_job_id: str = ""
     current_label: str = ""
     stage: str = "queued"
     message: str = ""
@@ -153,6 +156,12 @@ def _persist(operation: ApplyOperation) -> None:
             )[:30]
             operations = {item.operation_id: item for item in [*durable, *ordered]}
         _save(operations)
+
+
+def _set_job(operation: ApplyOperation, job_id: str) -> None:
+    """Record (or clear) the tailor job of the item in flight."""
+    operation.current_job_id = job_id
+    _persist(operation)
 
 
 def _event(operation: ApplyOperation, stage: str, message: str, application_id: str = "") -> None:
@@ -391,6 +400,7 @@ def _worker(
                     break
                 app = store.get(application_id)
                 operation.current_application_id = application_id
+                operation.current_job_id = ""
                 operation.current_step = 0
                 operation.current_step_id = ""
                 operation.current_step_number = 0
@@ -417,7 +427,9 @@ def _worker(
                             settings=settings,
                             on_progress=lambda message, aid=application_id: _event(operation, "preparing", message, aid),
                             force_prepare=request.force_prepare,
+                            on_job=lambda job_id: _set_job(operation, job_id),
                         )
+                        _set_job(operation, "")
                         if result_app.status == "ready":
                             operation.completed += 1
                         elif result_app.status in daily.RETAINED_TAB_STATUSES:
@@ -492,11 +504,13 @@ def _worker(
         else:
             operation.state = "completed"
         operation.current_application_id = ""
+        operation.current_job_id = ""
         operation.current_label = ""
         operation.finished_at = _now()
         _event(operation, "done", operation.state.replace("_", " ").title())
     except Exception as exc:  # noqa: BLE001
         operation.state = "failed"
+        operation.current_job_id = ""
         operation.failed += 1
         operation.finished_at = _now()
         _event(operation, "failed", str(exc))

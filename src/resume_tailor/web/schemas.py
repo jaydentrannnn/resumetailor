@@ -1278,6 +1278,7 @@ class ApplyOperationResponse(BaseModel):
     state: str
     application_ids: list[str] = Field(default_factory=list)
     current_application_id: str = ""
+    current_job_id: str = ""
     current_label: str = ""
     stage: str = ""
     message: str = ""
