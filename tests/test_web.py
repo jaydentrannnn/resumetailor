@@ -380,6 +380,20 @@ def test_create_job_rejects_a_profile_with_no_key(client, monkeypatch):
     assert q._jobs == {}
 
 
+def test_create_job_rejects_ollama_cloud_with_no_key(client, monkeypatch):
+    """Ollama Cloud's direct API needs `OLLAMA_API_KEY`; refused at the door like Gemini."""
+    c, q = client
+    monkeypatch.setattr(config, "credential", lambda name: "")
+
+    res = c.post(
+        "/api/jobs",
+        json={"jd_text": "Some job description.", "settings": {"model": "ollama-cloud"}},
+    )
+    assert res.status_code == 400
+    assert "OLLAMA_API_KEY" in res.json()["detail"]
+    assert q._jobs == {}
+
+
 def test_create_job_with_a_gemini_key_present_is_accepted(client, monkeypatch):
     """The inverse: a key present, even a fake one, must not be blocked at the door."""
     c, q = client

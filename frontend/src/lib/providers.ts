@@ -14,10 +14,20 @@ export const PROVIDERS: ProviderInfo[] = [
   {
     id: "ollama",
     name: "Ollama",
-    summary: "Free. Runs on this computer, so your resume never leaves it. Needs Ollama installed.",
+    summary:
+      "Free. Uses the Ollama app on this computer (run `ollama signin` for cloud models). Needs Ollama installed.",
     keys: [],
     local: true,
     link: { label: "Get Ollama", href: "https://ollama.com/download" },
+  },
+  {
+    id: "ollama-cloud",
+    name: "Ollama Cloud",
+    summary:
+      "Runs on Ollama's servers with your Ollama account, so there is nothing to install. Needs an Ollama API key.",
+    keys: ["OLLAMA_API_KEY", "LLM_API_KEY"],
+    local: false,
+    link: { label: "Get an API key", href: "https://ollama.com/settings/keys" },
   },
   {
     id: "claude",

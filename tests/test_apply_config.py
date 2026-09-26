@@ -48,3 +48,12 @@ def test_apply_settings_without_model_fields_still_validates():
     settings = ApplySettings.model_validate(legacy)
     assert settings.model_provider == "ollama"
     assert settings.model_name == "nemotron-3-super:cloud"
+
+
+def test_apply_settings_ollama_cloud_spec_pins_the_cloud_address():
+    """`ollama-cloud` is not a provider word `parse_spec` knows — it must become an
+    Ollama spec carrying the cloud base URL, or Fill would silently run on the daemon."""
+    settings = ApplySettings(model_provider="ollama-cloud", model_name="gemma4:cloud")
+    assert settings.model_spec == f"ollama:gemma4:cloud@{config.OLLAMA_CLOUD_BASE_URL}"
+    origin, model, base_url = config.parse_spec(settings.model_spec)
+    assert (origin, model, base_url) == ("ollama", "gemma4:cloud", "https://ollama.com/v1")

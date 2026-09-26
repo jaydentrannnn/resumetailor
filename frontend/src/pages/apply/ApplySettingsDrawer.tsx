@@ -336,6 +336,7 @@ export function ApplySettingsDrawer({
                 }
               >
                 <option value="ollama">Ollama</option>
+                <option value="ollama-cloud">Ollama Cloud</option>
                 <option value="lmstudio">LM Studio</option>
                 <option value="gemini">Gemini</option>
                 <option value="anthropic">Anthropic</option>

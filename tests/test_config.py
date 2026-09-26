@@ -153,3 +153,102 @@ def test_extract_runs_follows_the_extract_backend(monkeypatch):
     monkeypatch.setattr(config, "EXTRACT_CONSENSUS_RUNS", 2)
     with config.pinned("anthropic:claude-x"):
         assert config.extract_runs(None) == 2
+
+
+# --------------------------------------------------------------------------------------
+# Ollama Cloud: which backends need a key
+# --------------------------------------------------------------------------------------
+
+
+def _keys(monkeypatch, **present: str) -> None:
+    """Make `config.credential` see exactly these keys and nothing else."""
+    monkeypatch.setattr(config, "credential", lambda name: present.get(name, ""))
+
+
+@pytest.mark.parametrize(
+    ("url", "cloud"),
+    [
+        ("https://ollama.com/v1", True),
+        ("https://OLLAMA.com/v1/", True),
+        ("http://localhost:11434/v1", False),
+        ("http://gpu-box:11434/v1", False),
+        ("http://host.docker.internal:11434/v1", False),
+        ("https://generativelanguage.googleapis.com/v1beta/openai", False),
+        (None, False),
+        ("", False),
+    ],
+)
+def test_is_ollama_cloud_matches_the_cloud_host_only(url, cloud):
+    assert config.is_ollama_cloud(url) is cloud
+
+
+def test_requires_key_for_gemini_and_ollama_cloud_but_not_local_ollama():
+    assert config.requires_key("gemini", config.GEMINI_BASE_URL)
+    assert config.requires_key("ollama", "https://ollama.com/v1")
+    assert not config.requires_key("ollama", "http://localhost:11434/v1")
+    # A self-hosted server on a LAN hostname is remote by `is_local_url`, yet keyless.
+    assert not config.requires_key("ollama", "http://gpu-box:11434/v1")
+    assert not config.requires_key("lmstudio", "https://ollama.com/v1")
+
+
+def test_ollama_cloud_prefers_its_own_key_over_llm_api_key():
+    """`LLM_API_KEY` may belong to another custom server; it must not reach ollama.com."""
+    assert config.api_key_env_for("ollama", "https://ollama.com/v1") == (
+        "OLLAMA_API_KEY",
+        "LLM_API_KEY",
+    )
+    assert config.api_key_env_for("ollama", "http://localhost:11434/v1") == (
+        "LLM_API_KEY",
+        "OLLAMA_API_KEY",
+    )
+    assert config.api_key_env_for("ollama") == ("LLM_API_KEY", "OLLAMA_API_KEY")
+
+
+def test_ollama_cloud_profile_without_a_key_is_one_gap_naming_it(monkeypatch):
+    _keys(monkeypatch)
+    gaps = config.credential_gaps("ollama-cloud")
+    assert len(gaps) == 1
+    assert "OLLAMA_API_KEY" in gaps[0] and "Ollama Cloud" in gaps[0]
+
+
+def test_ollama_cloud_profile_with_a_key_has_no_gap(monkeypatch):
+    _keys(monkeypatch, OLLAMA_API_KEY="sk-test")
+    assert config.credential_gaps("ollama-cloud") == []
+    _keys(monkeypatch, LLM_API_KEY="sk-test")
+    assert config.credential_gaps("ollama-cloud") == []
+
+
+def test_local_ollama_needs_no_key(monkeypatch):
+    _keys(monkeypatch)
+    assert config.credential_gaps("ollama") == []
+    assert config.credential_gaps("hybrid") == []
+
+
+def test_ollama_profile_pointed_at_the_cloud_by_env_needs_the_key(monkeypatch):
+    """The older `.env` route (`OLLAMA_BASE_URL=https://ollama.com/v1`) is caught too."""
+    _keys(monkeypatch)
+    monkeypatch.setattr(config, "OLLAMA_BASE_URL", "https://ollama.com/v1")
+    gaps = config.credential_gaps("ollama")
+    assert len(gaps) == 1 and "Ollama Cloud" in gaps[0]
+
+
+def test_ollama_cloud_profile_routes_every_stage_to_the_cloud():
+    try:
+        backends = config.resolve("ollama-cloud")
+        for purpose in config.PURPOSES:
+            backend = backends[purpose]
+            assert backend.origin == "ollama"
+            assert backend.provider == "openai"
+            assert backend.base_url == config.OLLAMA_CLOUD_BASE_URL
+            assert backend.model == config.OLLAMA_MODEL
+    finally:
+        config.resolve("claude")
+
+
+def test_a_bare_tag_override_keeps_the_cloud_address():
+    try:
+        backends = config.resolve("ollama-cloud", overrides={"rewrite": "other:cloud"})
+        assert backends["rewrite"].model == "other:cloud"
+        assert backends["rewrite"].base_url == config.OLLAMA_CLOUD_BASE_URL
+    finally:
+        config.resolve("claude")

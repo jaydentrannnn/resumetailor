@@ -664,6 +664,36 @@ def test_client_for_rejects_an_unknown_provider(monkeypatch):
         llm.client_for("extract")
 
 
+def test_client_for_rejects_ollama_cloud_without_a_key(monkeypatch):
+    """Fail before any request, naming the key — not a bare 401 mid-run."""
+    monkeypatch.setattr(config, "credential", lambda name: "")
+    monkeypatch.setitem(
+        config._ACTIVE,
+        "extract",
+        config.Backend(
+            provider="openai", model="gemma4:cloud", base_url="https://ollama.com/v1",
+            effort="low", origin="ollama",
+        ),
+    )
+    with pytest.raises(llm.LLMError, match="OLLAMA_API_KEY"):
+        llm.client_for("extract")
+    with pytest.raises(llm.LLMError, match="OLLAMA_API_KEY"):
+        llm.async_client_for("extract")
+
+
+def test_client_for_accepts_local_ollama_without_a_key(monkeypatch):
+    monkeypatch.setattr(config, "credential", lambda name: "")
+    monkeypatch.setitem(
+        config._ACTIVE,
+        "extract",
+        config.Backend(
+            provider="openai", model="gemma4:cloud", base_url="http://localhost:11434/v1",
+            effort="low", origin="ollama",
+        ),
+    )
+    assert llm.client_for("extract") is not None
+
+
 def test_llm_error_is_catchable_as_runtime_error():
     """`tailor.py`'s existing handlers catch RuntimeError; this keeps them working."""
     assert issubclass(llm.LLMError, RuntimeError)

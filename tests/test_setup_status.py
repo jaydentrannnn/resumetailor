@@ -100,3 +100,47 @@ def test_ollama_cloud_is_probed_with_the_key_not_as_a_local_server(monkeypatch):
         assert _status(c)[1]["model"]["ok"] is False
         setup_routes.clear_probe_cache()
         assert _status(c)[1]["model"]["ok"] is True
+
+
+def test_ollama_cloud_without_a_key_is_a_gap_before_any_probe(monkeypatch):
+    """No key means no request at all: ollama.com may answer `/models` without one, which
+    would otherwise read as "ready" until the first real call fails with 401."""
+    monkeypatch.setattr(config, "credential", lambda name: "")
+    monkeypatch.setattr(
+        setup_routes.workspace, "load_settings", lambda *a: {"defaults": {"model": "ollama-cloud"}}
+    )
+    monkeypatch.setattr(
+        setup_routes.httpx, "get", lambda *a, **k: (_ for _ in ()).throw(AssertionError)
+    )
+    setup_routes.clear_probe_cache()
+    with TestClient(app) as c:
+        _body, items = _status(c)
+        assert items["model"]["ok"] is False
+        assert "OLLAMA_API_KEY" in items["model"]["detail"]
+        assert "Ollama Cloud" in items["model"]["detail"]
+
+
+def test_ollama_cloud_profile_is_probed_with_its_key(monkeypatch):
+    monkeypatch.setattr(
+        config, "credential", lambda name: {"OLLAMA_API_KEY": "sk-cloud", "LLM_API_KEY": "sk-other"}.get(name, "")
+    )
+    monkeypatch.setattr(
+        setup_routes.workspace, "load_settings", lambda *a: {"defaults": {"model": "ollama-cloud"}}
+    )
+    calls: list[dict] = []
+
+    class _Response:
+        status_code = 200
+
+    def _get(url, headers=None, timeout=None):
+        calls.append({"url": url, "headers": headers or {}})
+        return _Response()
+
+    monkeypatch.setattr(setup_routes.httpx, "get", _get)
+    setup_routes.clear_probe_cache()
+    with TestClient(app) as c:
+        _body, items = _status(c)
+        assert items["model"]["ok"] is True
+        assert calls[0]["url"] == "https://ollama.com/v1/models"
+        # Ollama Cloud's own key, not the custom-server one.
+        assert calls[0]["headers"] == {"Authorization": "Bearer sk-cloud"}

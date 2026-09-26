@@ -289,12 +289,17 @@ this project to someone who just wants to run `tailor.py` without installing Oll
 
 1. Create a key at [ollama.com/settings/keys](https://ollama.com/settings/keys) (just
    needs an ollama.com account — the free plan works, same quota as the daemon-proxied path).
-2. Set in `.env`:
+2. In the web UI, open Settings → Models, pick **Ollama Cloud**, and paste the key into
+   "Ollama cloud key". On the CLI, set the key in `.env` and pass `--model ollama-cloud`:
 
 ```env
-OLLAMA_BASE_URL=https://ollama.com/v1
 OLLAMA_API_KEY=your-key-here
 ```
+
+The switch goes both ways: pick **Ollama** again to go back to the local daemon. Without a
+key, the Ollama Cloud profile is refused before any call, naming `OLLAMA_API_KEY`. The
+older route — `OLLAMA_BASE_URL=https://ollama.com/v1` for the plain `ollama` profile —
+still works.
 
 `OLLAMA_MODEL` does not need setting — it already defaults to `gemma4:cloud`, and the tag
 is the same whether you reach it through the local daemon or straight over HTTPS. If a tag

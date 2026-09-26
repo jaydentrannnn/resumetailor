@@ -64,8 +64,9 @@ python tailor.py --jd jd.txt --skills-model ollama   # override skills selection
 python tailor.py --jd jd.txt --effort medium     # per-stage default is low/low/medium/medium/low
 ```
 
-`--model` takes a profile (`config.MODEL_PROFILES`: `claude`, `ollama`, `lmstudio`,
-`gemini`, `hybrid`) or a spec `provider:model[@base_url]` — splits on the **first** colon
+`--model` takes a profile (`config.MODEL_PROFILES`: `claude`, `ollama`, `ollama-cloud`,
+`lmstudio`, `gemini`, `hybrid`; `ollama-cloud` is `ollama` pinned to
+`OLLAMA_CLOUD_BASE_URL` and needs `OLLAMA_API_KEY`) or a spec `provider:model[@base_url]` — splits on the **first** colon
 only, so `ollama:gemma4:cloud` keeps the second colon in the model name. `ollama` and
 `lmstudio` are both the OpenAI-compatible provider pointed at different base URLs
 (`OLLAMA_BASE_URL` / `LMSTUDIO_BASE_URL`) — the same path reaches local Ollama, Ollama

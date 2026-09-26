@@ -176,12 +176,18 @@ class ApplySettings(BaseModel):
     #: a Tailor-tab run. Fill's calls run outside the job queue, so without this explicit
     #: pin they would fall through to `config.backend_for`'s hardcoded Claude default
     #: whenever `_ACTIVE` is empty (e.g. right after a fresh restart) — see CLAUDE.md.
-    model_provider: Literal["ollama", "lmstudio", "gemini", "anthropic"] = "ollama"
+    model_provider: Literal["ollama", "ollama-cloud", "lmstudio", "gemini", "anthropic"] = "ollama"
     model_name: str = "nemotron-3-super:cloud"
 
     @property
     def model_spec(self) -> str:
-        """``provider:model`` spec for `config.pinned`, covering Fill's autofill calls."""
+        """``provider:model`` spec for `config.pinned`, covering Fill's autofill calls.
+
+        ``ollama-cloud`` is not a provider word `config.parse_spec` knows: it is Ollama
+        pinned to Ollama Cloud's API, so it becomes ``ollama:<tag>@<cloud URL>``.
+        """
+        if self.model_provider == "ollama-cloud":
+            return f"ollama:{self.model_name}@{config.OLLAMA_CLOUD_BASE_URL}"
         return f"{self.model_provider}:{self.model_name}"
 
     @model_validator(mode="after")
@@ -1263,7 +1269,7 @@ class ApplyOperationRequest(BaseModel):
     dry_run: bool = False
     auto_submit: bool = False
     blocker_mode: Literal["pause", "continue"] = "continue"
-    model_provider: Literal["ollama", "lmstudio", "gemini", "anthropic"]
+    model_provider: Literal["ollama", "ollama-cloud", "lmstudio", "gemini", "anthropic"]
     model_name: str = Field(min_length=1, max_length=200)
 
 

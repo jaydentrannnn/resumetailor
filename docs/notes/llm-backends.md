@@ -326,3 +326,33 @@ in both non-job routes comes back as a warning, not a 500). Full suite: 712 pass
 actually reached `gemma4:cloud` and tagged the bullet, never touching Anthropic; and with
 `OLLAMA_BASE_URL` pointed at a closed port, the import still returned 200 with the
 deterministic draft and a `"Tag suggestion pass failed: …"` warning instead of a 500.
+
+## 2026-09-26 - `ollama-cloud` profile: switch between the daemon and Ollama Cloud in the UI
+
+- **What:** New `ollama-cloud` entry in `config.MODEL_PROFILES`: every stage is
+  `ollama:{OLLAMA_MODEL}@{OLLAMA_CLOUD_BASE_URL}` (default `https://ollama.com/v1`). It
+  shows up as an "Ollama Cloud" radio in Settings → Models (the list is server-driven) and
+  as an "Ollama Cloud" Autofill provider on the Apply page (`ApplySettings.model_provider`
+  and `ApplyOperationRequest.model_provider`; `model_spec` turns it into the `@cloud` spec).
+  Before this, reaching the direct API meant editing `OLLAMA_BASE_URL` and restarting —
+  that route still works.
+- **Key rule:** `config.requires_key(origin, base_url)` is the one rule shared by
+  `credential_gaps` (setup pill, job-start 400) and `llm.client_for`/`async_client_for`:
+  Gemini always, Ollama only when `config.is_ollama_cloud(base_url)`. Matched on the exact
+  host of `OLLAMA_CLOUD_BASE_URL`, **not** "any non-local URL": a self-hosted Ollama on a
+  LAN hostname (`gpu-box:11434`) is remote by `is_local_url` yet keyless, and must not
+  start failing. The missing key is reported before the setup probe — ollama.com may
+  answer `/models` without auth, which would have shown a green pill until the first 401.
+  `credential_gaps` resolves each stage's address through `_default_base`, the same helper
+  `_backend` now uses, so the address checked is the address called; this also catches the
+  older `OLLAMA_BASE_URL=https://ollama.com/v1` route without a key.
+- **Key order:** for Ollama Cloud, `api_key_env_for` returns `OLLAMA_API_KEY` before
+  `LLM_API_KEY` (the latter may belong to another custom server). Local Ollama keeps the
+  historical `LLM_API_KEY`-first order.
+- **Why `fingerprint()` did not change:** the daemon forwards a `:cloud` tag to the same
+  hosted model the direct API serves under the same tag, so their answers are
+  interchangeable and a cache entry is valid for both. Folding the base URL in would have
+  reset every cache (and split localhost vs `host.docker.internal`) for no correctness gain.
+- **UI copy:** the "Ollama" card no longer claims "your resume never leaves it" — untrue for
+  the default `:cloud` tag. The connection-test note for Ollama Cloud says it counts toward
+  the Ollama plan rather than "a fraction of a cent".

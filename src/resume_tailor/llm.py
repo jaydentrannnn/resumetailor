@@ -478,10 +478,10 @@ def client_for(purpose: str) -> Any:
                 f"{config.LMSTUDIO_BASE_URL}), or 'gemini:model' (defaults to "
                 f"{config.GEMINI_BASE_URL})."
             )
-        if backend.origin in config.PROVIDERS_REQUIRING_KEY and not config.api_key_for(
+        if config.requires_key(backend.origin, backend.base_url) and not config.api_key_for(
             purpose
         ):
-            env_names = " or ".join(config.api_key_env_for(backend.origin))
+            env_names = " or ".join(config.api_key_env_for(backend.origin, backend.base_url))
             raise LLMError(
                 f"No API key found for the {backend.origin!r} provider ({purpose!r} "
                 f"stage). Set {env_names} in .env."
@@ -636,8 +636,11 @@ def async_client_for(purpose: str) -> Any:
     if backend.provider == "openai":
         if not backend.base_url:
             raise LLMError(f"Provider {backend.origin!r} needs a base URL")
-        if backend.origin in config.PROVIDERS_REQUIRING_KEY and not config.api_key_for(purpose):
-            raise LLMError(f"No API key found for {backend.origin!r}")
+        if config.requires_key(backend.origin, backend.base_url) and not config.api_key_for(
+            purpose
+        ):
+            env_names = " or ".join(config.api_key_env_for(backend.origin, backend.base_url))
+            raise LLMError(f"No API key found for {backend.origin!r}. Set {env_names}.")
         return _AsyncOpenAICompatClient(
             base_url=backend.base_url, api_key=config.api_key_for(purpose),
             structured_mode=config.structured_mode_for(purpose),

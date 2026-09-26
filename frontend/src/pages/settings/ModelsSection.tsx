@@ -180,7 +180,9 @@ export function ModelsSection() {
           )}
           {!provider?.local && (
             <span className="text-xs text-ink-muted">
-              The test sends one tiny request (a fraction of a cent).
+              {settings.model === "ollama-cloud"
+                ? "The test sends one tiny request (counts toward your Ollama plan)."
+                : "The test sends one tiny request (a fraction of a cent)."}
             </span>
           )}
         </div>

@@ -81,3 +81,26 @@ def test_effective_model_fill_shows_autofill_model(monkeypatch):
 
     monkeypatch.setattr(operations.workspace, "load_settings", _no_settings)
     assert operations._effective_model(_request("fill")) == "lmstudio:autofill-model"
+
+
+def test_ollama_model_setting_repoints_the_cloud_profile_and_keeps_its_address():
+    """`ollama-cloud` is an Ollama-routed profile, so the shared Ollama tag applies — the
+    same `:cloud` tag works on the daemon and on the direct API."""
+    profile, overrides, _effort = model_routing(
+        JobSettings(model="ollama-cloud", ollama_model="x:cloud")
+    )
+    assert profile == "ollama-cloud"
+    assert overrides == dict.fromkeys(config.PURPOSES, "x:cloud")
+    try:
+        backends = config.resolve(profile, overrides=overrides)
+        assert {b.base_url for b in backends.values()} == {config.OLLAMA_CLOUD_BASE_URL}
+        assert {b.model for b in backends.values()} == {"x:cloud"}
+    finally:
+        config.resolve("claude")
+
+
+def test_apply_request_accepts_ollama_cloud():
+    request = ApplyOperationRequest(
+        action="fill", model_provider="ollama-cloud", model_name="gemma4:cloud"
+    )
+    assert request.model_provider == "ollama-cloud"

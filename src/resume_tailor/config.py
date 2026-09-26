@@ -402,6 +402,11 @@ PROVIDERS_REQUIRING_KEY = frozenset({"gemini"})
 
 OLLAMA_BASE_URL = os.environ.get("OLLAMA_BASE_URL", "http://localhost:11434/v1")
 
+#: Ollama Cloud's own OpenAI-compatible endpoint, for the `ollama-cloud` profile: the same
+#: hosted models the local daemon forwards `:cloud` tags to, reached without installing
+#: anything. Needs `OLLAMA_API_KEY` (see `requires_key`).
+OLLAMA_CLOUD_BASE_URL = os.environ.get("OLLAMA_CLOUD_BASE_URL", "https://ollama.com/v1")
+
 #: Ollama Cloud runs this on Ollama's servers, so laptop VRAM is irrelevant. Note the
 #: colon in the tag — see `parse_spec`.
 OLLAMA_MODEL = os.environ.get("OLLAMA_MODEL", "gemma4:cloud")
@@ -509,19 +514,23 @@ def extract_runs(requested: int | None = None) -> int:
 
 _ANTHROPIC_DEFAULT = f"anthropic:{MODEL}"
 _OLLAMA_DEFAULT = f"ollama:{OLLAMA_MODEL}"
+_OLLAMA_CLOUD_DEFAULT = f"ollama:{OLLAMA_MODEL}@{OLLAMA_CLOUD_BASE_URL}"
 _LMSTUDIO_DEFAULT = f"lmstudio:{LMSTUDIO_MODEL}"
 _GEMINI_DEFAULT = f"gemini:{GEMINI_MODEL}"
 
 #: Named shorthands for `--model`. `hybrid` is the one worth understanding: the two cheap,
 #: low-risk calls move to the free backend while rewriting stays on Claude, which is where
-#: an invented tool or a restated number would actually cost you. `lmstudio` mirrors
-#: `ollama` but points at LM Studio's local server (see LMSTUDIO_BASE_URL). `gemini` is the
-#: same shape again, pointed at GEMINI_BASE_URL — there is deliberately no `gemini-hybrid`;
-#: mixing Gemini with Claude is one `--rewrite-model claude-sonnet-5` away and a second
-#: `*-hybrid` profile would make the existing one ambiguous about which "hybrid" it means.
+#: an invented tool or a restated number would actually cost you. `ollama-cloud` is
+#: `ollama` with every stage pinned to OLLAMA_CLOUD_BASE_URL — same tag, no local daemon.
+#: `lmstudio` mirrors `ollama` but points at LM Studio's local server (see
+#: LMSTUDIO_BASE_URL). `gemini` is the same shape again, pointed at GEMINI_BASE_URL —
+#: there is deliberately no `gemini-hybrid`; mixing Gemini with Claude is one
+#: `--rewrite-model claude-sonnet-5` away and a second `*-hybrid` profile would make the
+#: existing one ambiguous about which "hybrid" it means.
 MODEL_PROFILES: dict[str, dict[str, str]] = {
     "claude": dict.fromkeys(PURPOSES, _ANTHROPIC_DEFAULT),
     "ollama": dict.fromkeys(PURPOSES, _OLLAMA_DEFAULT),
+    "ollama-cloud": dict.fromkeys(PURPOSES, _OLLAMA_CLOUD_DEFAULT),
     "lmstudio": dict.fromkeys(PURPOSES, _LMSTUDIO_DEFAULT),
     "gemini": dict.fromkeys(PURPOSES, _GEMINI_DEFAULT),
     "hybrid": {
@@ -574,6 +583,31 @@ def is_local_url(url: str | None) -> bool:
     except ValueError:
         return False
     return address.is_loopback or address.is_private or address.is_link_local
+
+
+def is_ollama_cloud(url: str | None) -> bool:
+    """Whether ``url`` is Ollama Cloud's hosted API (the host of OLLAMA_CLOUD_BASE_URL).
+
+    Matched on the exact host, not on "any remote address": a self-hosted Ollama on a LAN
+    hostname like ``gpu-box:11434`` is not local by `is_local_url`'s rules, yet needs no
+    key, and must not start failing for want of one.
+    """
+    from urllib.parse import urlsplit
+
+    def _host(value: str) -> str:
+        return (urlsplit(value if "//" in value else f"//{value}").hostname or "").lower()
+
+    cloud = _host(OLLAMA_CLOUD_BASE_URL)
+    return bool(url) and bool(cloud) and _host(url) == cloud
+
+
+def requires_key(origin: str, base_url: str | None) -> bool:
+    """Whether a backend fails without a credential — the one rule `credential_gaps` and
+    `llm.client_for` share. Gemini always; Ollama only when pointed at Ollama Cloud's API
+    (the local daemon authenticates through `ollama signin` instead)."""
+    if origin in PROVIDERS_REQUIRING_KEY:
+        return True
+    return origin == "ollama" and is_ollama_cloud(base_url)
 
 
 class Backend(NamedTuple):
@@ -701,18 +735,27 @@ def ollama_stages(profile: str) -> tuple[str, ...]:
     return provider_stages(profile, "ollama")
 
 
+def _default_base(provider: str) -> str | None:
+    """The env-default base URL for a provider word, or None when it has none.
+
+    Shared by `_backend` and `credential_gaps` so the address a key check looks at is the
+    address the call will actually go to.
+    """
+    return {
+        "ollama": OLLAMA_BASE_URL,
+        "lmstudio": LMSTUDIO_BASE_URL,
+        "gemini": GEMINI_BASE_URL,
+    }.get(provider)
+
+
 def _backend(spec: str, purpose: str, effort: str | None) -> Backend:
     """Resolve a raw spec into a Backend, remapping local aliases to OpenAI-compat."""
     provider, model, base_url = parse_spec(spec)
     origin = provider
     # All three speak /v1/chat/completions; keep distinct env defaults so switching
     # profiles does not require editing a shared base URL.
-    if provider == "ollama":
-        provider, base_url = "openai", base_url or OLLAMA_BASE_URL
-    elif provider == "lmstudio":
-        provider, base_url = "openai", base_url or LMSTUDIO_BASE_URL
-    elif provider == "gemini":
-        provider, base_url = "openai", base_url or GEMINI_BASE_URL
+    if provider in ("ollama", "lmstudio", "gemini"):
+        provider, base_url = "openai", base_url or _default_base(provider)
     return Backend(
         provider=provider,
         model=model,
@@ -931,8 +974,18 @@ _API_KEY_ENV_BY_ORIGIN: dict[str, tuple[str, ...]] = {
 _DEFAULT_API_KEY_ENV = ("LLM_API_KEY", "OLLAMA_API_KEY")
 
 
-def api_key_env_for(origin: str) -> tuple[str, ...]:
-    """Which env vars `api_key_for` checks, in order, for a given `Backend.origin`."""
+#: Ollama Cloud's own key first: `LLM_API_KEY` may belong to some other custom server and
+#: must not be the one sent to ollama.com when both are set.
+_OLLAMA_CLOUD_API_KEY_ENV = ("OLLAMA_API_KEY", "LLM_API_KEY")
+
+
+def api_key_env_for(origin: str, base_url: str | None = None) -> tuple[str, ...]:
+    """Which env vars `api_key_for` checks, in order, for a given `Backend.origin`.
+
+    `base_url` only matters for Ollama: pointed at Ollama Cloud, `OLLAMA_API_KEY` wins.
+    """
+    if origin == "ollama" and is_ollama_cloud(base_url):
+        return _OLLAMA_CLOUD_API_KEY_ENV
     return _API_KEY_ENV_BY_ORIGIN.get(origin, _DEFAULT_API_KEY_ENV)
 
 
@@ -948,7 +1001,7 @@ def api_key_for(purpose: str) -> str:
     backend = backend_for(purpose)
     if backend.provider == "anthropic":
         return anthropic_api_key()
-    for name in api_key_env_for(backend.origin):
+    for name in api_key_env_for(backend.origin, backend.base_url):
         value = credential(name)
         if value:
             return value
@@ -978,18 +1031,21 @@ def credential_gaps(profile: str, overrides: dict[str, str] | None = None) -> li
             specs[purpose] = _bind_bare_override(spec, specs.get(purpose, spec))
 
     gaps: list[str] = []
-    seen_origins: set[str] = set()
+    seen: set[tuple[str, bool]] = set()
     for spec in specs.values():
         try:
-            origin = parse_spec(spec)[0]
+            origin, _model, base_url = parse_spec(spec)
         except ValueError:
             continue
-        if origin not in PROVIDERS_REQUIRING_KEY or origin in seen_origins:
+        base_url = base_url or _default_base(origin)
+        cloud = origin == "ollama" and is_ollama_cloud(base_url)
+        if not requires_key(origin, base_url) or (origin, cloud) in seen:
             continue
-        seen_origins.add(origin)
-        if not any(credential(name) for name in api_key_env_for(origin)):
-            env_names = " or ".join(api_key_env_for(origin))
-            gaps.append(f"{env_names} is not set — required by the {origin!r} provider.")
+        seen.add((origin, cloud))
+        env = api_key_env_for(origin, base_url)
+        if not any(credential(name) for name in env):
+            needed_by = f"Ollama Cloud ({base_url})" if cloud else f"the {origin!r} provider"
+            gaps.append(f"{' or '.join(env)} is not set — required by {needed_by}.")
     return gaps
 
 
