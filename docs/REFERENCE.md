@@ -189,7 +189,9 @@ requisition** (`identity.canonical_key`); same-company same-role across location
 workspace's `app.db`) are keyed by canonical key, with `source_refs` listing every sighting.
 A company watchlist (`kind="ats_board"`, `apply/boards.py`) reads public Greenhouse, Lever,
 Ashby and SmartRecruiters boards directly. It keeps titles matching `include` and none of
-`exclude`, in `locations`, and applies its own `max_age_days` (default 7). Its rows use the
+`exclude`, in `locations`, and applies its own `max_age_days` (default 7), or the funnel-wide
+limit when that is longer (a Find's one-off `max_age_days` replaces the funnel-wide limit
+for that search only). Its rows use the
 ATS's own job URL, so they merge with Simplify sightings of the same job. A wrong board name
 is one run error, not a failed source. `POST /api/apply/boards/resolve` checks a board
 before the settings add it. `apply/watchlists/*.json` are suggestions, checked the same way.

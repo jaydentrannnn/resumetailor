@@ -80,6 +80,7 @@ class ApplyOperation(BaseModel):
     needs_input: int = 0
     dry_run: bool = False
     limit: int | None = None
+    max_age_days: int | None = None
     events: list[dict[str, Any]] = Field(default_factory=list)
     excluded: dict[str, list[str]] = Field(default_factory=dict)
     idempotency_key: str = ""
@@ -301,6 +302,7 @@ def start(request: ApplyOperationRequest) -> ApplyOperation:
         fill_mode=request.fill_mode,
         dry_run=request.dry_run,
         limit=request.limit,
+        max_age_days=request.max_age_days,
     )
     _CANCEL.clear()
     _RESUME.clear()
@@ -373,6 +375,9 @@ def _worker(
         settings = settings_snapshot or _captured_settings(request)
         if operation.action == "find":
             _event(operation, "discovering", "Fetching configured job sources")
+            if request.max_age_days is not None:
+                # One-off catch-up window; the saved settings are left as they are.
+                settings = settings.model_copy(update={"max_age_days": request.max_age_days})
             result = daily.run_daily(
                 settings=settings,
                 limit=request.limit,

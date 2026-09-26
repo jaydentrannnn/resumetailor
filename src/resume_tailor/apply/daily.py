@@ -829,8 +829,11 @@ def run_daily(
                     row.source_id = src.id
                 filtered = sources.filter_rows(
                     rows,
+                    # A source's own limit only widens the funnel-wide one, so a
+                    # catch-up window reaches watchlists too (and 1 day never
+                    # shrinks a watchlist below its own 7).
                     max_age_days=(
-                        src.max_age_days
+                        max(src.max_age_days, settings.max_age_days)
                         if src.max_age_days is not None
                         else settings.max_age_days
                     ),

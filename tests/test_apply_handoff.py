@@ -234,3 +234,36 @@ def test_prepare_records_the_tailor_job_while_it_runs(tmp_path, monkeypatch):
     assert seen == ["job-42"]
     assert finished is not None and finished.state == "completed"
     assert finished.current_job_id == ""
+
+
+@pytest.mark.parametrize(("override", "expected"), [(30, 30), (None, 2)])
+def test_find_applies_a_one_off_age_window(tmp_path, monkeypatch, override, expected):
+    """Search options' age window reaches the search only; the saved settings keep theirs."""
+    monkeypatch.setattr(config, "APPLICATIONS_OUTPUT_DIR", tmp_path / "output")
+    saved = ApplySettings(max_age_days=2)
+    monkeypatch.setattr(operations, "_captured_settings", lambda _request: saved)
+    monkeypatch.setattr(operations.daily, "daily_busy", lambda: False)
+    calls: list[dict] = []
+
+    def fake_run_daily(**kwargs):
+        calls.append(kwargs)
+        return operations.daily.DailySummary()
+
+    monkeypatch.setattr(operations.daily, "run_daily", fake_run_daily)
+    started = operations.start(ApplyOperationRequest(
+        action="find", max_age_days=override, model_provider="ollama", model_name="test",
+    ))
+    finished = _wait_for_state(started.operation_id, {"completed", "completed_with_issues", "failed"})
+    assert finished.state == "completed"
+    assert finished.max_age_days == override
+    (call,) = calls
+    assert call["settings"].max_age_days == expected
+    assert saved.max_age_days == 2
+
+
+@pytest.mark.parametrize("days", [-1, 366])
+def test_find_age_window_is_bounded(days):
+    with pytest.raises(ValueError):
+        ApplyOperationRequest(
+            action="find", max_age_days=days, model_provider="ollama", model_name="test",
+        )

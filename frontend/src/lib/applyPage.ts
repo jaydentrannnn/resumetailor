@@ -137,6 +137,13 @@ export function autoSubmitCapLabel(cap: number): string {
   return `At most ${cap} per run`;
 }
 
+/** Which posting-age segment a day count selects; anything but 1 or 7 is a custom window. */
+export function ageChoice(days: number): "1" | "7" | "custom" {
+  if (days === 1) return "1";
+  if (days === 7) return "7";
+  return "custom";
+}
+
 const ACTION_VERB: Record<string, string> = {
   find: "Finding jobs",
   prepare: "Tailoring",

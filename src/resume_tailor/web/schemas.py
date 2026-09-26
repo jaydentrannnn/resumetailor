@@ -59,9 +59,10 @@ class SourceConfig(BaseModel):
     ``categories``. ``ats_board`` (plan P4-D2) reads each board in ``boards`` and keeps
     the postings whose title matches ``include`` (any word, or everything when empty)
     and none of ``exclude``, and whose location matches ``locations`` (any, or
-    everywhere when empty). ``max_age_days`` overrides the funnel-wide age limit for
-    this source; watchlists default to 7 days, since finance recruiting opens months
-    ahead and a board posting stays relevant for longer than a README row.
+    everywhere when empty). ``max_age_days`` widens the funnel-wide age limit for this
+    source (the longer of the two wins); watchlists default to 7 days, since finance
+    recruiting opens months ahead and a board posting stays relevant for longer than a
+    README row.
     """
 
     id: str
@@ -1257,6 +1258,8 @@ class ApplyOperationRequest(BaseModel):
     force_prepare: bool = False
     application_ids: list[str] = Field(default_factory=list, max_length=500)
     limit: int | None = Field(default=None, ge=1, le=500)
+    #: One-off posting-age window for Find; ``None`` uses the saved ``max_age_days``.
+    max_age_days: int | None = Field(default=None, ge=0, le=365)
     dry_run: bool = False
     auto_submit: bool = False
     blocker_mode: Literal["pause", "continue"] = "continue"

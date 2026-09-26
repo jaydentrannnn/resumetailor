@@ -1197,3 +1197,14 @@ question. A one-off pass (`schema_migrations` marker `answer_memory_cleanup_v1`,
 lazily from `list_answers`/`recall`) moves existing profile-duplicate rows into blank
 profile fields and deletes them, after writing `backups/answer_memory-<stamp>.json` next
 to the workspace database.
+
+## 2026-09-26 — Posting-age window: one-off catch-up, watchlists widen only
+Find keeps postings no older than `max_age_days` and dedupes against the store; it never
+looks at the last run, so days away lost postings for good. Search options now carries a
+one-off window (1 day / 7 days / custom, `ApplyOperationRequest.max_age_days`, applied as a
+`model_copy` of the captured settings in `operations._worker`); the saved setting uses the
+same `AgeWindowPicker`. A source's own `max_age_days` now *widens* the funnel-wide limit
+(`max(src, funnel)`) instead of replacing it, so a 30-day catch-up reaches watchlists while
+1 day never shrinks a watchlist below its 7. The per-search cap is unchanged; the "Most
+postings per search" placeholder read "All" but empty means `max_new_per_day`, so it now
+shows that number.

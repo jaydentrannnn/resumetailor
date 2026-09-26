@@ -123,7 +123,7 @@ export type SourceConfig = {
   include?: string[];
   exclude?: string[];
   locations?: string[];
-  /** Overrides the funnel-wide age limit; watchlists default to 7 days. */
+  /** Widens the funnel-wide age limit (the longer wins); watchlists default to 7 days. */
   max_age_days?: number | null;
 };
 
@@ -439,6 +439,8 @@ export function startApplyOperation(options: {
   force_prepare?: boolean;
   application_ids?: string[];
   limit?: number | null;
+  /** One-off posting-age window for Find; null uses the saved setting. */
+  max_age_days?: number | null;
   dry_run?: boolean;
   auto_submit: boolean;
   blocker_mode: "pause" | "continue";
@@ -451,6 +453,7 @@ export function startApplyOperation(options: {
       ...options,
       application_ids: options.application_ids ?? [],
       limit: options.limit ?? null,
+      max_age_days: options.max_age_days ?? null,
       dry_run: options.dry_run ?? false,
     }),
   });

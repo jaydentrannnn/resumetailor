@@ -1421,6 +1421,34 @@ def test_run_daily_reads_a_company_watchlist(apply_paths, monkeypatch):
     assert app.source == "watch"
 
 
+@pytest.mark.parametrize(("funnel_days", "kept"), [(1, 0), (30, 1)])
+def test_watchlist_age_limit_only_widens(apply_paths, monkeypatch, funnel_days, kept):
+    """A longer funnel-wide window (a catch-up search) reaches past a watchlist's own 7
+    days; a shorter one never narrows it."""
+    from datetime import UTC, datetime, timedelta
+
+    from resume_tailor.apply import boards
+    from tests.fixtures import synthetic_resume
+
+    monkeypatch.setattr(daily.data, "load", synthetic_resume)
+    monkeypatch.setattr(boards, "_sleep", lambda _s: None)
+    stale = (datetime.now(UTC) - timedelta(days=20)).isoformat()
+    monkeypatch.setattr(boards, "list_board", lambda _ats, _slug: [
+        boards.BoardJob("9", "Summer Analyst", "New York, NY",
+                        "https://boards.greenhouse.io/acme/jobs/9", stale),
+    ])
+    settings = ApplySettings(
+        enabled=True,
+        max_age_days=funnel_days,
+        sources=[{
+            "id": "watch", "kind": "ats_board",
+            "boards": [{"ats": "greenhouse", "slug": "acme", "company": "Acme"}],
+        }],
+    )
+    summary = daily.run_daily(settings=settings, fetch_only=True)
+    assert summary.new_rows == kept
+
+
 def test_closed_posting_is_skipped_before_tailoring(stub_pipeline, apply_paths, monkeypatch):
     monkeypatch.setattr(
         fetch_jd,

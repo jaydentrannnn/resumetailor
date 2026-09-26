@@ -49,6 +49,7 @@ import { useProfileGaps } from "../../state/applicantProfileState";
 import { useConfirm } from "../../state/confirmState";
 import { useRunState } from "../../state/runState";
 import { useWorkspaceState } from "../../state/workspaceState";
+import { AgeWindowPicker } from "./AgeWindowPicker";
 import { ApplicationsTable, type TableActions } from "./ApplicationsTable";
 import { ApplySettingsDrawer } from "./ApplySettingsDrawer";
 import { ConnectionStatus } from "./BrowserConnection";
@@ -89,6 +90,8 @@ export function ApplyPage() {
   const [busy, setBusy] = useState(false);
   const [dryRun, setDryRun] = useState(false);
   const [limit, setLimit] = useState("");
+  // null follows the saved setting; a number widens or narrows the next Find only.
+  const [ageDays, setAgeDays] = useState<number | null>(null);
   const [drawerOpen, setDrawerOpen] = useState(params.get("settings") === "1");
   const [notify, setNotify] = useState(notifyPreference);
   const active = dailyRunning || (!!operation && ACTIVE_STATES.includes(operation.state));
@@ -236,6 +239,7 @@ export function ApplyPage() {
           fill_mode: mode,
           force_prepare: force,
           limit: Number(limit) > 0 ? Number(limit) : null,
+          max_age_days: action === "find" ? ageDays : null,
           dry_run: action === "find" && dryRun,
           auto_submit: settings.apply.auto_submit_enabled,
           blocker_mode: "continue",
@@ -410,10 +414,22 @@ export function ApplyPage() {
           className="rt-control inline-flex cursor-pointer items-center rounded-md border border-line bg-panel px-3 text-sm"
           title="Options for the next Find jobs only; not saved"
         >
-          Search options{limit || dryRun ? " •" : ""}
+          Search options{limit || dryRun || ageDays != null ? " •" : ""}
         </summary>
-        <div className="absolute left-0 z-20 mt-1 w-64 space-y-3 rounded-md border border-line bg-panel p-3 text-sm shadow-lg">
+        <div className="absolute left-0 z-20 mt-1 w-72 space-y-3 rounded-md border border-line bg-panel p-3 text-sm shadow-lg">
           <p className="text-xs font-medium text-ink-muted">This search only (not saved)</p>
+          <div>
+            <p className="mb-1">Postings from the last</p>
+            <AgeWindowPicker
+              ariaLabel="Posting age for this search"
+              value={ageDays ?? settings.apply.max_age_days}
+              onChange={(days) => setAgeDays(days === settings.apply.max_age_days ? null : days)}
+            />
+            <p className="mt-1 text-xs text-ink-muted">
+              Postings you've already found are skipped. Each search still stops at the most
+              postings per search below.
+            </p>
+          </div>
           <label className="block">
             Most postings per search
             <input
@@ -421,7 +437,7 @@ export function ApplyPage() {
               type="number"
               min={1}
               max={500}
-              placeholder="All"
+              placeholder={String(settings.apply.max_new_per_day)}
               value={limit}
               onChange={(e) => setLimit(e.target.value)}
             />

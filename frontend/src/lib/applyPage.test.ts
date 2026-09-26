@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 import type { ApplicationRow, ApplyOperation, JobStatus } from "../api";
 import {
+  ageChoice,
   autoSubmitCapLabel,
   autoSubmitSummary,
   nightlyRunLabel,
@@ -237,5 +238,14 @@ describe("itemProgress", () => {
   it("counts the item in flight toward the time left", () => {
     // 4 minutes for half of the first item: 8 minutes per item, 11.5 items to go.
     expect(operationEtaSeconds(op({ processed: 0 }), now, 0.5)).toBe(5520);
+  });
+});
+
+describe("ageChoice", () => {
+  it("selects the preset segments and treats every other window as custom", () => {
+    expect(ageChoice(1)).toBe("1");
+    expect(ageChoice(7)).toBe("7");
+    expect(ageChoice(3)).toBe("custom");
+    expect(ageChoice(0)).toBe("custom");
   });
 });

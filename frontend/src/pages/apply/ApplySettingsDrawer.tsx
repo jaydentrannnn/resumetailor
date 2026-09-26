@@ -7,6 +7,7 @@ import { autoSubmitCapLabel, autoSubmitSummary } from "../../lib/applyPage";
 import { tailorModelLabel } from "../../lib/modelLabel";
 import { newWatchlistSource, WATCHLIST_ID } from "../../lib/watchlist";
 import { useConfirm } from "../../state/confirmState";
+import { AgeWindowPicker } from "./AgeWindowPicker";
 import { BrowserCommand, ConnectionStatus } from "./BrowserConnection";
 import { CategoryPicker, WatchlistEditor } from "./SourceEditors";
 
@@ -134,24 +135,17 @@ export function ApplySettingsDrawer({
               />{" "}
               new postings each night
             </label>
-            <label className="block">
-              Only postings from the last{" "}
-              <input
-                className="field mx-1 inline-block w-16"
-                type="number"
-                min={0}
-                max={365}
-                aria-label="Posting age in days"
+            <div>
+              <p className="mb-1">Only postings from the last</p>
+              <AgeWindowPicker
+                ariaLabel="Posting age in days"
                 value={apply.max_age_days}
-                onChange={(e) =>
-                  patch({ max_age_days: Math.min(365, Math.max(0, Number(e.target.value) || 0)) })
-                }
-              />{" "}
-              day(s)
-              <span className="block text-xs text-ink-muted">
-                A company watchlist uses its own age limit.
-              </span>
-            </label>
+                onChange={(days) => patch({ max_age_days: days })}
+              />
+              <p className="mt-1 text-xs text-ink-muted">
+                A company watchlist keeps its own limit when that one is longer.
+              </p>
+            </div>
           </fieldset>
           <p className="mt-3 text-xs text-ink-muted">
             Last run: {scheduler?.last_started_at ? formatWhen(scheduler.last_started_at) : "never"}
