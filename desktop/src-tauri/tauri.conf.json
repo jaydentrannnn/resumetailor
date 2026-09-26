@@ -43,7 +43,7 @@
   },
   "plugins": {
     "updater": {
-      "pubkey": "REPLACE_WITH_PUBLIC_KEY_FROM_TAURI_SIGNER_GENERATE",
+      "pubkey": "dW50cnVzdGVkIGNvbW1lbnQ6IG1pbmlzaWduIHB1YmxpYyBrZXk6IEI0MzRDMTY2RjZCRTRGQTgKUldTb1Q3NzJac0UwdE8xcUJBalRJbnhOM2l6bnM5c29Cck5INnA2VWJBQmxOWmtJVTVUL3dpQWoK",
       "endpoints": [
         "https://github.com/jaydentrannnn/resumetailor/releases/latest/download/latest.json"
       ],
