@@ -224,6 +224,9 @@ PROFILE_FIELDS: dict[str, ProfileFieldInfo] = {
     "security_clearance": ProfileFieldInfo(label="Security clearance", section=_AVAILABILITY),
     "drivers_license": ProfileFieldInfo(label="Driver's license", section=_AVAILABILITY),
     "hours_per_week": ProfileFieldInfo(label="Hours per week available", section=_AVAILABILITY),
+    "noncompete": ProfileFieldInfo(
+        label="Subject to a non-compete", section=_AVAILABILITY, common=True
+    ),
 }
 
 _CLEARANCE_LABELS: dict[str, str] = {
@@ -537,6 +540,7 @@ def build_fields(profile: ApplicantProfile, resume: MasterResume) -> dict[str, s
     _maybe_set(fields, "f1_opt_eligible", _yes_no(f1_opt))
     _maybe_set(fields, "visa_status", profile_mod.VISA_LABELS.get(profile.visa_status))
     _maybe_set(fields, "over_18", _yes_no(profile.over_18))
+    _maybe_set(fields, "noncompete", _yes_no(profile.subject_to_noncompete))
     _maybe_set(fields, "earliest_start", profile.earliest_start or None)
     _maybe_set(fields, "notice_period", profile.notice_period or None)
     if sponsor_now is True or sponsor_future is True:

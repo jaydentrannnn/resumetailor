@@ -48,6 +48,8 @@ def classify(field: FieldObservation) -> tuple[Classification, str]:
         return "known", "authorized_to_work"
     if re.search(ats_hints.OVER_18, label):
         return "known", "over_18"
+    if re.search(ats_hints.NONCOMPETE, label):
+        return "known", "noncompete"
     if "country" in label and field.control_kind in {"combobox", "native_select"}:
         if "phone" in section and bool(attrs.get("phone_sibling")):
             return "known", "phone_country_code"

@@ -42,6 +42,7 @@ export const PROFILE_LABELS: Partial<Record<keyof ApplicantProfile | string, str
   workday_password: "Workday password",
   over_18: "18 or older",
   relatives_at_company: "Relatives at the company",
+  subject_to_noncompete: "Subject to a non-compete agreement",
   portfolio_only_when_asked: "Portfolio only when asked",
   visa_status: "Visa status",
   graduation_date: "Graduation month",
@@ -215,6 +216,7 @@ export const PROFILE_GROUPS: ProfileGroup[] = [
       "location_preference",
       "drivers_license",
       "security_clearance",
+      "subject_to_noncompete",
     ],
   },
   {
@@ -272,6 +274,7 @@ export const BOOLEAN_FIELDS = new Set<string>([
   "over_18",
   "relatives_at_company",
   "drivers_license",
+  "subject_to_noncompete",
 ]);
 
 /** Plain on/off settings (never blank on the server). */
@@ -282,6 +285,7 @@ export const GAP_FIELD_ALIASES: Record<string, string> = {
   requires_sponsorship: "requires_sponsorship_now",
   hours_per_week: "hours_per_week_available",
   graduation_month: "graduation_date",
+  noncompete: "subject_to_noncompete",
 };
 
 export const NUMBER_FIELDS = new Set<string>([

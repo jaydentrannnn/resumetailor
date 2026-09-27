@@ -67,6 +67,7 @@ def test_canonical_field_keys_match_plan():
         "current_title",
         "languages",
         "over_18",
+        "noncompete",
         # Profile fields added for students (plan PR3).
         "visa_status",
         "class_year",
@@ -119,6 +120,9 @@ def test_f1_opt_synonym_precedes_sponsorship():
         ("Are you legally authorized to work in the United States?", "authorized_to_work"),
         ("Are you at least 18 years old?", "over_18"),
         ("Are you 18 years of age or older?", "over_18"),
+        ("Are you currently subject to a non-compete agreement?", "noncompete"),
+        ("To your knowledge are you currently subject to any non-compete or non-solicitation restrictions?", "noncompete"),
+        ("Are you bound by a noncompete or restrictive covenant?", "noncompete"),
         # Neighbours that must keep their own meaning.
         ("Which country do you live in?", "country"),
         ("Country", "country"),

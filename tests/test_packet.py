@@ -168,6 +168,14 @@ def test_over_18_comes_from_the_profile_and_is_a_gap_when_blank():
     assert "over_18" in profile_gaps(blank)
 
 
+def test_noncompete_comes_from_the_profile_and_is_a_gap_when_blank():
+    fields = build_fields(ApplicantProfile(subject_to_noncompete=False), synthetic_resume())
+    assert fields["noncompete"] == "No"
+    blank = build_fields(ApplicantProfile(), synthetic_resume())
+    assert "noncompete" not in blank
+    assert "noncompete" in profile_gaps(blank)
+
+
 @pytest.mark.parametrize(
     ("location", "country"),
     [

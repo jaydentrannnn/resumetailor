@@ -67,6 +67,7 @@ CANONICAL_FIELD_KEYS: frozenset[str] = frozenset(
         "current_title",
         "languages",
         "over_18",
+        "noncompete",
         "visa_status",
         "class_year",
         "school_email",
@@ -102,6 +103,9 @@ OVER_18 = (
     r"|legal\s*(?:working\s*)?age)"
 )
 
+#: "Are you subject to a non-compete (or non-solicitation) agreement?"
+NONCOMPETE = r"\bnon[-\s]?compet|\bnon[-\s]?solicit|restrictive\s*covenant"
+
 #: Ordered (regex, canonical_key) pairs for label matching in ``filler.js``.
 #: F-1/OPT/CPT must win before the generic sponsorship rule (plan section 3.2).
 SYNONYMS: list[tuple[str, str]] = [
@@ -117,6 +121,7 @@ SYNONYMS: list[tuple[str, str]] = [
     (r"notice\s*period|weeks\s*of\s*notice", "notice_period"),
     (AUTHORIZED_TO_WORK, "authorized_to_work"),
     (OVER_18, "over_18"),
+    (NONCOMPETE, "noncompete"),
     # "Phone (include country code)" is the number box, typed with +<code> (E.164).
     (
         r"(?:phone|mobile|telephone|cell).*"

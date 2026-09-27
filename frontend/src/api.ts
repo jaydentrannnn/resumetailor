@@ -220,6 +220,7 @@ export type ApplicantProfile = {
   location_preference: string;
   over_18: boolean | null;
   relatives_at_company: boolean | null;
+  subject_to_noncompete: boolean | null;
   referred_by: string;
   how_heard: string;
   workday_email?: string;

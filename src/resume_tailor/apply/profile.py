@@ -163,6 +163,8 @@ class ApplicantProfile(BaseModel):
     location_preference: str = ""
     over_18: bool | None = None
     relatives_at_company: bool | None = None
+    #: "Are you currently subject to a non-compete agreement?"
+    subject_to_noncompete: bool | None = None
     referred_by: str = ""
     how_heard: str = "Found through a job postings aggregator."
     workday_email: str = ""

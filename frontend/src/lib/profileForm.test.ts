@@ -44,6 +44,7 @@ const base = {
   location_preference: "",
   over_18: null,
   relatives_at_company: null,
+  subject_to_noncompete: null,
   referred_by: "",
   how_heard: "",
   eeo: { gender: "decline", race: "decline", veteran: "decline", disability: "decline" },

@@ -413,7 +413,7 @@ def test_screening_keys_and_graduation_parts():
     assert sr.screening_key(
         "Will you need sponsorship in the future from an employer to obtain, extend or renew your authorization?"
     ) == "requires_sponsorship_future"
-    assert sr.screening_key("Are you currently subject to a non-compete agreement?") is None
+    assert sr.screening_key("Are you currently subject to a non-compete agreement?") == "noncompete"
     assert sr.graduation_part("What is your expected graduation month?", "2027-06") == "June"
     assert sr.graduation_part("What is your expected graduation year?", "2027-06") == "2027"
     assert sr.graduation_part("Expected graduation year", "May 2026") == "2026"
