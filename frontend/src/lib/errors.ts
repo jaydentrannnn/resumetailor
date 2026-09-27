@@ -132,6 +132,17 @@ const RULES: Rule[] = [
     detail: () => "Wait for the current run to finish, then try again.",
   },
   {
+    code: "payload_too_large",
+    match: /Request body is \d+ bytes|larger than 2 GB|Payload Too Large|HTTP 413/i,
+    title: "File is too large",
+    detail: (raw) =>
+      /larger than 2 GB/i.test(raw)
+        ? raw
+        : /Request body is \d+ bytes/i.test(raw)
+          ? "This file is larger than the 2 GB import limit."
+          : raw || "This file is larger than the 2 GB import limit.",
+  },
+  {
     code: "network",
     match: /Failed to fetch|NetworkError|Load failed/i,
     title: "Can't reach ResumeTailor",
@@ -145,7 +156,11 @@ export function describe(error: unknown): DescribedError {
   const raw =
     error instanceof Error ? error.message : typeof error === "string" ? error : String(error);
   const code = error instanceof ApiError ? error.code : undefined;
-  const rule = (code && RULES.find((r) => r.code === code)) || RULES.find((r) => r.match.test(raw));
+  const is413 = error instanceof ApiError && error.status === 413;
+  const rule =
+    (code && RULES.find((r) => r.code === code)) ||
+    (is413 && RULES.find((r) => r.code === "payload_too_large")) ||
+    RULES.find((r) => r.match.test(raw));
   if (rule) {
     return {
       code: rule.code,
