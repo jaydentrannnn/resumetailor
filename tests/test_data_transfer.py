@@ -4,7 +4,9 @@ from __future__ import annotations
 
 import io
 import json
+import os
 import zipfile
+from pathlib import Path
 
 import pytest
 
@@ -27,30 +29,48 @@ def active(isolated_roots):  # noqa: F811
     return workspace_id
 
 
-def _names(raw: bytes) -> set[str]:
-    with zipfile.ZipFile(io.BytesIO(raw)) as archive:
+def _names(source: bytes | Path) -> set[str]:
+    if isinstance(source, Path):
+        with zipfile.ZipFile(source) as archive:
+            return set(archive.namelist())
+    with zipfile.ZipFile(io.BytesIO(source)) as archive:
         return set(archive.namelist())
 
 
 def test_export_includes_content_and_never_secrets(active):
     raw = data_transfer.export_zip(active)
-    names = _names(raw)
-    assert {"manifest.json", "data/app.db", "data/master_resume.json"} <= names
-    assert "templates/main_template.docx" in names and "output/jobs/j1/resume.pdf" in names
-    assert not any(n.endswith(("secrets.enc", ".session_token", "-wal", "-shm")) for n in names)
-    manifest = data_transfer.read_manifest(raw)
-    assert manifest["secrets_included"] is False
-    assert "output/jobs/j1/resume.pdf" not in _names(
-        data_transfer.export_zip(active, include_output=False)
-    )
+    try:
+        names = _names(raw)
+        assert {"manifest.json", "data/app.db", "data/master_resume.json"} <= names
+        assert "templates/main_template.docx" in names and "output/jobs/j1/resume.pdf" in names
+        assert not any(n.endswith(("secrets.enc", ".session_token", "-wal", "-shm")) for n in names)
+        manifest = data_transfer.read_manifest(raw)
+        assert manifest["secrets_included"] is False
+    finally:
+        raw.unlink(missing_ok=True)
+
+    no_output = data_transfer.export_zip(active, include_output=False)
+    try:
+        assert "output/jobs/j1/resume.pdf" not in _names(no_output)
+    finally:
+        no_output.unlink(missing_ok=True)
+
+    # export_zip_bytes wrapper returns valid bytes
+    raw_bytes = data_transfer.export_zip_bytes(active)
+    assert isinstance(raw_bytes, bytes)
+    assert "manifest.json" in _names(raw_bytes)
 
 
 def test_import_creates_a_new_profile_with_the_same_data(active):
     raw = data_transfer.export_zip(active)
-    entry = data_transfer.import_zip(raw)
-    assert entry.id != active and "(imported)" in entry.label
-    again = data_transfer.import_zip(raw)
-    assert again.id not in {entry.id, active} and again.label.endswith("2")
+    try:
+        entry = data_transfer.import_zip(raw)
+        assert entry.id != active and "(imported)" in entry.label
+        raw_bytes = raw.read_bytes()
+        again = data_transfer.import_zip(raw_bytes)
+        assert again.id not in {entry.id, active} and again.label.endswith("2")
+    finally:
+        raw.unlink(missing_ok=True)
 
     workspace.activate(entry.id)
     assert store.get("1").company == "Acme"
@@ -153,3 +173,112 @@ def test_reset_route_requires_typed_confirmation():
 
     with TestClient(app) as c:
         assert c.post("/api/data/reset", json={"confirm": "delete"}).status_code == 400
+
+
+def test_import_route_accepts_upload_larger_than_10mb(active):
+    """(a) POST /api/data/import with a valid export larger than 10 MB succeeds and creates a profile."""
+    from fastapi.testclient import TestClient
+
+    from resume_tailor.web.app import app
+
+    export_path = data_transfer.export_zip(active)
+    try:
+        # Build an incompressible random payload over 10 MB (11 MB) stored uncompressed
+        large_payload = os.urandom(11 * 1024 * 1024)
+        buffer = io.BytesIO()
+        with zipfile.ZipFile(export_path, "r") as src_zip:
+            with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_STORED) as dst_zip:
+                for item in src_zip.infolist():
+                    dst_zip.writestr(item, src_zip.read(item.filename))
+                dst_zip.writestr("data/large_payload.bin", large_payload)
+    finally:
+        export_path.unlink(missing_ok=True)
+
+    zip_bytes = buffer.getvalue()
+    assert len(zip_bytes) > 10 * 1024 * 1024
+
+    with TestClient(app) as c:
+        response = c.post(
+            "/api/data/import",
+            files={"file": ("export.zip", zip_bytes, "application/zip")},
+        )
+        assert response.status_code == 200, response.text
+        data = response.json()
+        assert "id" in data and "label" in data
+        assert workspace.resolve(data["id"]) is not None
+
+
+def test_request_content_length_exceeding_import_limit_gets_413():
+    """(b) A request whose Content-Length exceeds the import limit gets 413 without body read."""
+    from fastapi.testclient import TestClient
+
+    from resume_tailor.web.app import _RequestSizeLimitMiddleware, app
+
+    limit = data_transfer.MAX_IMPORT_BYTES + _RequestSizeLimitMiddleware._MULTIPART_OVERHEAD
+    with TestClient(app) as c:
+        response = c.post(
+            "/api/data/import",
+            headers={"Content-Length": str(limit + 1024)},
+            content=b"",
+        )
+        assert response.status_code == 413
+        assert f"maximum is {limit}" in response.json()["detail"]
+
+
+def test_non_import_route_over_10mb_gets_413():
+    """(c) A non-import route over 10 MB still gets 413."""
+    from fastapi.testclient import TestClient
+
+    from resume_tailor.web import template_ops
+    from resume_tailor.web.app import app
+
+    over_10mb = template_ops._MAX_UPLOAD_BYTES + 1
+    with TestClient(app) as c:
+        response = c.post(
+            "/api/models/test",
+            headers={"Content-Length": str(over_10mb)},
+            content=b"",
+        )
+        assert response.status_code == 413
+        assert f"maximum is {template_ops._MAX_UPLOAD_BYTES}" in response.json()["detail"]
+
+
+def test_import_zip_exceeding_declared_uncompressed_total_refused(monkeypatch):
+    """(d) A zip whose declared uncompressed total exceeds MAX_IMPORT_BYTES is refused."""
+    monkeypatch.setattr(data_transfer, "MAX_IMPORT_BYTES", 500)
+
+    buffer = io.BytesIO()
+    with zipfile.ZipFile(buffer, "w") as archive:
+        archive.writestr(
+            "manifest.json",
+            json.dumps({"format": data_transfer.FORMAT, "format_version": data_transfer.FORMAT_VERSION}),
+        )
+        archive.writestr("data/large.txt", b"x" * 1000)
+
+    with pytest.raises(data_transfer.TransferError, match="larger than 2 GB"):
+        data_transfer.import_zip(buffer.getvalue())
+
+
+def test_export_round_trips_through_import(active):
+    """(e) Export round-trips through import."""
+    from fastapi.testclient import TestClient
+
+    from resume_tailor.web.app import app
+
+    with TestClient(app) as c:
+        export_res = c.get("/api/data/export.zip")
+        assert export_res.status_code == 200
+        assert export_res.headers["content-type"] == "application/zip"
+        assert "Content-Disposition" in export_res.headers
+        zip_bytes = export_res.content
+        assert len(zip_bytes) > 0
+
+        import_res = c.post(
+            "/api/data/import",
+            files={"file": ("export.zip", zip_bytes, "application/zip")},
+        )
+        assert import_res.status_code == 200, import_res.text
+        created = import_res.json()
+        assert created["id"] != active
+        imported_ws = workspace.resolve(created["id"])
+        assert imported_ws is not None

@@ -23,6 +23,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from resume_tailor import (
     config,
+    data_transfer,
     fake_llm,
     housekeeping,
     logs,
@@ -128,6 +129,11 @@ class _RequestSizeLimitMiddleware:
     """Reject an oversized request by its declared `Content-Length`, before FastAPI's
     multipart/JSON parsing ever runs.
 
+    Requests to ``POST /api/data/import`` may be up to ``data_transfer.MAX_IMPORT_BYTES``
+    (2 GiB) plus a small multipart overhead allowance (1 MiB), allowing large profile
+    imports to proceed without being read into memory. Every other path keeps the
+    existing 10 MB limit (`template_ops._MAX_UPLOAD_BYTES`).
+
     A check inside a route handler (e.g. `len(raw) > _MAX_UPLOAD_BYTES` after
     `await file.read()`, as `template_ops._validate_upload_bytes` does) is too late to
     bound memory use: `File(...)`/`Form(...)` dependency resolution fully consumes and
@@ -144,6 +150,7 @@ class _RequestSizeLimitMiddleware:
     #: redundantly but harmlessly, once a request does pass this gate) rather than a
     #: separate constant, so the two limits can't quietly drift apart.
     _MAX_BYTES = template_ops._MAX_UPLOAD_BYTES
+    _MULTIPART_OVERHEAD = 1024 * 1024  # 1 MiB allowance for multipart boundaries and headers
 
     def __init__(self, app: Any) -> None:
         self.app = app
@@ -159,18 +166,25 @@ class _RequestSizeLimitMiddleware:
                 length = int(raw_length)
             except ValueError:
                 length = None
-            if length is not None and length > self._MAX_BYTES:
-                response = JSONResponse(
-                    {
-                        "detail": (
-                            f"Request body is {length} bytes; maximum is "
-                            f"{self._MAX_BYTES}."
-                        )
-                    },
-                    status_code=413,
-                )
-                await response(scope, receive, send)
-                return
+            if length is not None:
+                path = str(scope.get("path", "")).rstrip("/")
+                method = scope.get("method")
+                if method == "POST" and path == "/api/data/import":
+                    max_bytes = data_transfer.MAX_IMPORT_BYTES + self._MULTIPART_OVERHEAD
+                else:
+                    max_bytes = self._MAX_BYTES
+                if length > max_bytes:
+                    response = JSONResponse(
+                        {
+                            "detail": (
+                                f"Request body is {length} bytes; maximum is "
+                                f"{max_bytes}."
+                            )
+                        },
+                        status_code=413,
+                    )
+                    await response(scope, receive, send)
+                    return
         await self.app(scope, receive, send)
 
 

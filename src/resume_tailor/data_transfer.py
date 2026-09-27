@@ -1,13 +1,12 @@
 """Export, import and reset one profile's data (Settings → Data).
 
-- `export_zip(workspace_id)`: the profile's data and template folders, and optionally
-  its generated files, as one zip with a ``manifest.json``. The SQLite database is
-  copied through SQLite's backup API, so a write landing mid-export cannot tear it.
-  Secrets are never included (API keys and the Workday password live in the OS
-  keychain), nor are the session token, caches or logs.
-- `import_zip(raw, label)`: always creates a **new** profile from an export and never
-  overwrites an existing one, so an import can never destroy data. The user switches
-  to it like any other profile.
+- `export_zip(workspace_id, target=None)`: writes the profile's data and template folders,
+  and optionally its generated files, as one zip with a ``manifest.json`` to a temporary
+  file (or `target` path). Returns the `Path` to the zip file.
+  `export_zip_bytes` provides a buffered-bytes wrapper for callers that need bytes.
+- `import_zip(source, label=None)`: accepts a binary file-like object, Path, or bytes;
+  always creates a **new** profile from an export and never overwrites an existing one, so
+  an import can never destroy data. The user switches to it like any other profile.
 - `reset_workspace(workspace_id)`: "Delete all data" for one profile. Its folders move
   to ``<DATA_ROOT>/.trash/<id>-<stamp>/`` rather than being deleted, then start empty.
 
@@ -25,6 +24,8 @@ import zipfile
 from datetime import UTC, datetime
 from importlib import metadata
 from pathlib import Path, PurePosixPath
+
+from typing import BinaryIO
 
 from resume_tailor import config, workspace
 from resume_tailor.storage import db
@@ -61,11 +62,26 @@ def _skip(path: Path) -> bool:
     return path.name in _EXCLUDED_NAMES or path.name.endswith(_EXCLUDED_SUFFIXES)
 
 
-def export_zip(workspace_id: str, *, include_output: bool = True) -> bytes:
+def export_zip(
+    workspace_id: str,
+    target: Path | str | None = None,
+    *,
+    include_output: bool = True,
+) -> Path:
+    """Build an export archive on disk. Returns the Path to the zip file."""
     paths = config.workspace_paths(workspace_id)
     roots = [r for r in _ROOTS if include_output or r != "OUTPUT_DIR"]
-    buffer = io.BytesIO()
-    with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_DEFLATED) as archive:
+    if target is not None:
+        target_path = Path(target)
+    else:
+        with tempfile.NamedTemporaryFile(
+            prefix=f"resumetailor-export-{workspace_id}-",
+            suffix=".zip",
+            delete=False,
+        ) as tmp:
+            target_path = Path(tmp.name)
+
+    with zipfile.ZipFile(target_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         archive.writestr(
             "manifest.json",
             json.dumps(
@@ -96,7 +112,16 @@ def export_zip(workspace_id: str, *, include_output: bool = True) -> bytes:
                     archive.writestr(arcname, _db_snapshot(path))
                 else:
                     archive.write(path, arcname)
-    return buffer.getvalue()
+    return target_path
+
+
+def export_zip_bytes(workspace_id: str, *, include_output: bool = True) -> bytes:
+    """Convenience wrapper returning export bytes (buffered in RAM)."""
+    path = export_zip(workspace_id, include_output=include_output)
+    try:
+        return path.read_bytes()
+    finally:
+        path.unlink(missing_ok=True)
 
 
 def _db_snapshot(path: Path) -> bytes:
@@ -123,12 +148,42 @@ def _safe_member(name: str) -> PurePosixPath | None:
     return pure
 
 
-def read_manifest(raw: bytes) -> dict:
+def _as_file(source: bytes | BinaryIO | io.BytesIO | Path | str) -> tuple[BinaryIO, bool]:
+    """Return (file_like_object, should_close)."""
+    if isinstance(source, bytes):
+        return io.BytesIO(source), False
+    if isinstance(source, (str, Path)):
+        return open(source, "rb"), True
+    if hasattr(source, "seek"):
+        source.seek(0)
+    return source, False
+
+
+def read_manifest(source: bytes | BinaryIO | io.BytesIO | Path | str) -> dict:
+    file_obj, should_close = _as_file(source)
     try:
-        with zipfile.ZipFile(io.BytesIO(raw)) as archive:
-            manifest = json.loads(archive.read("manifest.json"))
-    except (zipfile.BadZipFile, KeyError, ValueError) as exc:
-        raise TransferError("This is not a ResumeTailor export (no readable manifest).") from exc
+        if hasattr(file_obj, "seek"):
+            file_obj.seek(0)
+        with zipfile.ZipFile(file_obj) as archive:
+            try:
+                manifest_raw = archive.read("manifest.json")
+            except KeyError as exc:
+                raise TransferError(
+                    "This is not a ResumeTailor export (no readable manifest)."
+                ) from exc
+    except (zipfile.BadZipFile, OSError) as exc:
+        raise TransferError(
+            "This is not a ResumeTailor export (no readable manifest)."
+        ) from exc
+    finally:
+        if should_close:
+            file_obj.close()
+    try:
+        manifest = json.loads(manifest_raw)
+    except (ValueError, TypeError) as exc:
+        raise TransferError(
+            "This is not a ResumeTailor export (no readable manifest)."
+        ) from exc
     if manifest.get("format") != FORMAT:
         raise TransferError("This zip was not made by ResumeTailor's Export.")
     if int(manifest.get("format_version", 0)) > FORMAT_VERSION:
@@ -138,39 +193,57 @@ def read_manifest(raw: bytes) -> dict:
     return manifest
 
 
-def import_zip(raw: bytes, label: str | None = None) -> workspace.WorkspaceEntry:
+def import_zip(
+    source: bytes | BinaryIO | io.BytesIO | Path | str,
+    label: str | None = None,
+) -> workspace.WorkspaceEntry:
     """Create a new profile holding the export's files. Returns its registry entry."""
-    manifest = read_manifest(raw)
-    with zipfile.ZipFile(io.BytesIO(raw)) as archive:
-        members = [
-            m for m in archive.infolist() if not m.is_dir() and m.filename != "manifest.json"
-        ]
-        if len(members) > MAX_IMPORT_FILES:
-            raise TransferError("This export has too many files to import.")
-        if sum(m.file_size for m in members) > MAX_IMPORT_BYTES:
-            raise TransferError("This export is larger than 2 GB and cannot be imported.")
-        planned: list[tuple[zipfile.ZipInfo, PurePosixPath]] = []
-        for member in members:
-            safe = _safe_member(member.filename)
-            if safe is None:
-                raise TransferError(f"Refusing an unsafe path in the export: {member.filename!r}")
-            planned.append((member, safe))
+    file_obj, should_close = _as_file(source)
+    try:
+        if hasattr(file_obj, "seek"):
+            file_obj.seek(0)
+        manifest = read_manifest(file_obj)
+        if hasattr(file_obj, "seek"):
+            file_obj.seek(0)
+        try:
+            archive = zipfile.ZipFile(file_obj)
+        except zipfile.BadZipFile as exc:
+            raise TransferError(
+                "This is not a ResumeTailor export (no readable manifest)."
+            ) from exc
+        with archive:
+            members = [
+                m for m in archive.infolist() if not m.is_dir() and m.filename != "manifest.json"
+            ]
+            if len(members) > MAX_IMPORT_FILES:
+                raise TransferError("This export has too many files to import.")
+            if sum(m.file_size for m in members) > MAX_IMPORT_BYTES:
+                raise TransferError("This export is larger than 2 GB and cannot be imported.")
+            planned: list[tuple[zipfile.ZipInfo, PurePosixPath]] = []
+            for member in members:
+                safe = _safe_member(member.filename)
+                if safe is None:
+                    raise TransferError(f"Refusing an unsafe path in the export: {member.filename!r}")
+                planned.append((member, safe))
 
-        entry = _create_unique(label or f"{manifest.get('label') or 'Imported'} (imported)")
-        paths = config.workspace_paths(entry.id)
-        roots = {
-            "data": paths["DATA_DIR"],
-            "templates": paths["TEMPLATES_DIR"],
-            "output": paths["OUTPUT_DIR"],
-        }
-        for member, safe in planned:
-            target = roots[safe.parts[0]].joinpath(*safe.parts[1:])
-            if safe.parts[0] == "data" and safe.parts[1:] == ("workspace.json",):
-                continue  # the new profile keeps its own identity file
-            target.parent.mkdir(parents=True, exist_ok=True)
-            with archive.open(member) as source, target.open("wb") as dest:
-                shutil.copyfileobj(source, dest)
-    return entry
+            entry = _create_unique(label or f"{manifest.get('label') or 'Imported'} (imported)")
+            paths = config.workspace_paths(entry.id)
+            roots = {
+                "data": paths["DATA_DIR"],
+                "templates": paths["TEMPLATES_DIR"],
+                "output": paths["OUTPUT_DIR"],
+            }
+            for member, safe in planned:
+                target = roots[safe.parts[0]].joinpath(*safe.parts[1:])
+                if safe.parts[0] == "data" and safe.parts[1:] == ("workspace.json",):
+                    continue  # the new profile keeps its own identity file
+                target.parent.mkdir(parents=True, exist_ok=True)
+                with archive.open(member) as src_member, target.open("wb") as dest:
+                    shutil.copyfileobj(src_member, dest)
+        return entry
+    finally:
+        if should_close:
+            file_obj.close()
 
 
 def _create_unique(label: str) -> workspace.WorkspaceEntry:

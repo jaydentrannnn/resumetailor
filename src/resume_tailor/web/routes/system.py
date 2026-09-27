@@ -11,8 +11,9 @@ from typing import Any
 import docx
 import httpx
 from fastapi import APIRouter, File, HTTPException, UploadFile
-from fastapi.responses import Response
+from fastapi.responses import FileResponse, Response
 from pydantic import BaseModel, Field
+from starlette.background import BackgroundTask
 
 from resume_tailor import config, convert, data_transfer, libraries, llm, workspace
 from resume_tailor.apply import daily as apply_daily
@@ -140,32 +141,33 @@ def data_info() -> dict[str, Any]:
 
 
 @router.get("/api/data/export.zip")
-def export_data(include_output: bool = True) -> Response:
+def export_data(include_output: bool = True) -> FileResponse:
     """Download this profile as a zip (never includes API keys or passwords)."""
     workspace_id = config.active_workspace_id()
     if workspace_id is None:
         raise HTTPException(409, "No active profile.")
     with template_ops.LOCK:
-        raw = data_transfer.export_zip(workspace_id, include_output=include_output)
+        path = data_transfer.export_zip(workspace_id, include_output=include_output)
     stamp = time.strftime("%Y%m%d")
-    return Response(
-        content=raw,
+    return FileResponse(
+        path=path,
         media_type="application/zip",
-        headers={
-            "Content-Disposition": f'attachment; filename="resumetailor-{workspace_id}-{stamp}.zip"'
-        },
+        filename=f"resumetailor-{workspace_id}-{stamp}.zip",
+        background=BackgroundTask(path.unlink, missing_ok=True),
     )
 
 
 @router.post("/api/data/import")
 async def import_data(file: UploadFile = File(...)) -> dict[str, Any]:
     """Create a new profile from an export zip. Existing profiles are never touched."""
-    raw = await file.read()
-    if len(raw) > data_transfer.MAX_IMPORT_BYTES:
+    file.file.seek(0, 2)
+    size = file.file.tell()
+    file.file.seek(0)
+    if size > data_transfer.MAX_IMPORT_BYTES:
         raise HTTPException(413, "This file is larger than 2 GB.")
     with template_ops.LOCK:
         try:
-            entry = data_transfer.import_zip(raw)
+            entry = data_transfer.import_zip(file.file)
         except data_transfer.TransferError as exc:
             raise HTTPException(400, str(exc)) from exc
     return {"id": entry.id, "label": entry.label}
