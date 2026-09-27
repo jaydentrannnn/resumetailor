@@ -15,13 +15,16 @@ SmartRecruiters and Workday flows), then asks this module three things:
   threshold, located in or willing to move to a place, ...). No fact, no answer.
 - :func:`choose` — the exact option of a choice control that says that answer.
 
-The rules here are pure and deterministic; a model never picks an answer value.
+The rules here are pure and deterministic; a model never picks an answer value. When
+no rule covers a choice question, :func:`plan_for` may ask a classifier (a model call,
+`answer.classify_questions`) which of :data:`MODEL_KEYS` it asks — a key only, which
+the same gates check and the same code answers.
 """
 
 from __future__ import annotations
 
 import re
-from collections.abc import Iterable, Sequence
+from collections.abc import Callable, Iterable, Sequence
 from dataclasses import dataclass, field
 from datetime import date
 from typing import TYPE_CHECKING, Literal
@@ -493,15 +496,48 @@ _DATE_KEYS = frozenset({"graduation_month", "education_start_month"})
 _PLACEHOLDER_OPTION = re.compile(r"^(?:select|choose|please select|month|year|day)\b|^-+$|^$", re.I)
 
 
-def plan_for(items: Iterable[dict], facts: Facts) -> dict[str, dict[str, str | None]]:
+#: The facts a classifier may say a choice question asks for, in the words it is shown.
+#: Every one is answered by :func:`answers` from the profile, never by the classifier.
+MODEL_KEYS: dict[str, str] = {
+    "authorized_to_work": "is legally authorized to work in the job's country",
+    "requires_sponsorship": "needs employer visa sponsorship now",
+    "requires_sponsorship_future": "will need employer visa sponsorship in the future",
+    "requires_sponsorship_any": "needs employer visa sponsorship now or in the future",
+    "over_18": "is at least 18 years old",
+    "willing_to_relocate": "is willing to relocate for the job",
+    "noncompete": "is subject to a non-compete or non-solicitation agreement",
+    "currently_enrolled": "is currently enrolled in a degree program",
+    "degree_by": "will have completed their degree by a date the question names",
+    "returning_to_school": "will return to school after the internship",
+    "gpa_at_least": "has a GPA at or above a threshold the question names",
+    "located_or_relocate": "lives in, or will relocate to, a place the question names",
+    "has_prior_internship": "has completed an internship before",
+    "previous_worker": "has worked for this company before",
+    "degree_level": "the degree they are pursuing or hold (Bachelor's, Master's, ...)",
+    "major": "their field of study",
+    "gender": "their gender",
+    "race": "their race or ethnicity",
+    "hispanic_latino": "whether they are Hispanic or Latino",
+    "veteran_status": "their veteran status",
+    "disability_status": "their disability status",
+}
+
+#: Asks which of ``MODEL_KEYS`` each question asks for (None: none of them).
+Classifier = Callable[[list[Question]], list[str | None]]
+
+
+def plan_for(
+    items: Iterable[dict], facts: Facts, *, classifier: Classifier | None = None,
+) -> dict[str, dict[str, str | None]]:
     """What ``filler.js`` should do with each scanned question, by its question id.
 
-    ``key`` is the fact (None: no rule covers the question, so it is left alone and
+    ``key`` is the fact (None: nothing covers the question, so it is left alone and
     reported); ``value``, when set, is the exact option to pick or the text to type — the
     filler's own value and formatting are used otherwise. A key the DOM itself states (an
-    ATS hint, an education-date input's name) is kept; label wording is decided here.
+    ATS hint, an education-date input's name) is kept; label wording is decided here,
+    and choice questions no rule covers go to ``classifier`` in one batch.
     """
-    plan: dict[str, dict[str, str | None]] = {}
+    asked: list[tuple[str, dict, Question, Match | None]] = []
     for item in items:
         qid = str(item.get("qid") or item.get("selector") or "")
         if not qid:
@@ -519,24 +555,53 @@ def plan_for(items: Iterable[dict], facts: Facts) -> dict[str, dict[str, str | N
         name_key = str(item.get("name_key") or "")
         if match is None and name_key and _compatible(name_key, question):
             match = Match(name_key)
-        if match is None:
-            plan[qid] = {"key": None, "value": ""}
-            continue
-        found = answers(match, question, facts)
-        value = ""
-        if found and options and question.kind in {"choice", "multi"}:
-            value = choose(question, match.key, found) or ""
-        elif found and question.kind == "date" and match.key in _DATE_KEYS:
-            value = date_text(
-                facts.fields.get(match.key, ""), placeholder=str(item.get("placeholder") or ""),
-                input_type=str(item.get("input_type") or ""),
-            )
-        elif found and (match.key in _COMPUTED or (question.part and question.kind == "typeahead")):
-            # A split date's month typeahead is searched by name ("June"); a plain text
-            # box takes the filler's own number formatting.
-            value = found[0]
-        plan[qid] = {"key": match.key, "value": value}
-    return plan
+        asked.append((qid, item, question, match))
+    if classifier is not None:
+        asked = _classify_rest(asked, classifier)
+    return {qid: _step(item, question, match, facts) for qid, item, question, match in asked}
+
+
+def _classify_rest(
+    asked: list[tuple[str, dict, Question, Match | None]], classifier: Classifier,
+) -> list[tuple[str, dict, Question, Match | None]]:
+    """Ask ``classifier`` about the choice questions no rule keyed; keep a key only when
+    it is one of ``MODEL_KEYS`` and suits the control."""
+    unkeyed = [
+        index for index, (_qid, _item, question, match) in enumerate(asked)
+        if match is None and question.kind in {"choice", "multi"} and question.options
+        and _clean(question.text) and not _CONSENT.search(question.text.casefold())
+        and not _FOLLOW_UP.search(_clean(question.text).casefold())
+    ]
+    if not unkeyed:
+        return asked
+    keys = classifier([asked[index][2] for index in unkeyed])
+    out = list(asked)
+    for index, key in zip(unkeyed, keys, strict=False):
+        qid, item, question, _match = asked[index]
+        if key in MODEL_KEYS and _compatible(key, question):
+            out[index] = (qid, item, question, Match(key, _param(key, _clean(question.text))))
+    return out
+
+
+def _step(
+    item: dict, question: Question, match: Match | None, facts: Facts,
+) -> dict[str, str | None]:
+    if match is None:
+        return {"key": None, "value": ""}
+    found = answers(match, question, facts)
+    value = ""
+    if found and question.options and question.kind in {"choice", "multi"}:
+        value = choose(question, match.key, found) or ""
+    elif found and question.kind == "date" and match.key in _DATE_KEYS:
+        value = date_text(
+            facts.fields.get(match.key, ""), placeholder=str(item.get("placeholder") or ""),
+            input_type=str(item.get("input_type") or ""),
+        )
+    elif found and (match.key in _COMPUTED or (question.part and question.kind == "typeahead")):
+        # A split date's month typeahead is searched by name ("June"); a plain text
+        # box takes the filler's own number formatting.
+        value = found[0]
+    return {"key": match.key, "value": value}
 
 
 def facts_from_packet(packet: Packet, *, fields: dict[str, str] | None = None) -> Facts:

@@ -1,9 +1,10 @@
 """Guarded free-text answers for ATS application questions.
 
-The only LLM call in the apply package. Profile ``custom_answers`` short-circuit without
-a model round-trip; otherwise one ``answer``-purpose call runs with a locked-core prompt,
-then ``coverletter.check_claims`` verifies the draft. Fabricating answers are retried once,
-then discarded rather than returned unguarded.
+Profile ``custom_answers`` short-circuit without a model round-trip; otherwise one
+``answer``-purpose call runs with a locked-core prompt, then ``coverletter.check_claims``
+verifies the draft. Fabricating answers are retried once, then discarded rather than
+returned unguarded. :func:`classify_questions` (the decision layer's fallback) names the
+fact a choice question asks for; it never answers one.
 """
 
 from __future__ import annotations
@@ -19,6 +20,7 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 
 from resume_tailor import config, events, llm
+from resume_tailor.apply import questions
 from resume_tailor.apply.profile import ApplicantProfile
 from resume_tailor.coverletter import check_claims
 from resume_tailor.data import MasterResume
@@ -425,3 +427,91 @@ async def answer_question_async(
     if use_cache:
         _write_cache(cache_path, result)
     return result
+
+
+#: Bumped when ``_CLASSIFY_SYSTEM`` or the request shape changes; part of each cache key.
+_CLASSIFY_PROMPT_VERSION = 1
+#: Seconds one classification call may take before the fill carries on without it.
+_CLASSIFY_TIMEOUT = 45.0
+
+_CLASSIFY_SYSTEM = """\
+You sort job-application questions. For each numbered question, reply with the one key
+from the list whose meaning the question asks about, or "none" when no key fits exactly.
+Reply with keys only: never answer a question, and never make up a key.
+"""
+
+
+class ClassifiedLLM(BaseModel):
+    """Schema-validated model output: one key (or "none") per question, in order."""
+
+    keys: list[str] = Field(default_factory=list)
+
+
+def _classify_cache_path(question: questions.Question) -> Path:
+    payload = "\n".join(
+        [
+            str(_CLASSIFY_PROMPT_VERSION),
+            config.fingerprint("answer"),
+            *sorted(questions.MODEL_KEYS),
+            normalize_question(question.text),
+            *question.options,
+        ]
+    )
+    digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()[:12]
+    return config.CACHE_DIR / f"{digest}.question-key.json"
+
+
+def classify_questions(asked: list[questions.Question]) -> list[str | None]:
+    """Which of `questions.MODEL_KEYS` each question asks about, None for none of them.
+
+    The fallback for choice questions no rule covers: one ``answer``-purpose call for all
+    of them, each result cached by the question's wording and options so the same
+    question keys the same way every time. The model sees question text and options only
+    and returns keys only; the answer is computed from the profile (`questions.answers`).
+    A failed call keys nothing, and the questions are left for review.
+    """
+    keys: list[str | None] = [None] * len(asked)
+    pending: list[int] = []
+    for index, question in enumerate(asked):
+        path = _classify_cache_path(question)
+        if path.is_file():
+            cached = json.loads(path.read_text(encoding="utf-8")).get("key")
+            keys[index] = cached if cached in questions.MODEL_KEYS else None
+        else:
+            pending.append(index)
+    if not pending:
+        return keys
+    listing = "\n".join(f"- {key}: {meaning}" for key, meaning in questions.MODEL_KEYS.items())
+    numbered = "\n".join(
+        f"{number}. {asked[index].text.strip()}"
+        + (f" (options: {' | '.join(asked[index].options)})" if asked[index].options else "")
+        for number, index in enumerate(pending, start=1)
+    )
+    try:
+        client = llm.client_for("answer")
+        if hasattr(client, "timeout"):
+            client.timeout = min(float(client.timeout), _CLASSIFY_TIMEOUT)
+        elif hasattr(client, "with_options"):
+            client = client.with_options(timeout=_CLASSIFY_TIMEOUT)
+        response = client.messages.parse(
+            model=config.model_for("answer"),
+            max_tokens=config.max_tokens_for("answer"),
+            system=_CLASSIFY_SYSTEM,
+            messages=[{
+                "role": "user",
+                "content": f"<keys>\n{listing}\n</keys>\n\n<questions>\n{numbered}\n</questions>",
+            }],
+            output_format=ClassifiedLLM,
+        )
+        replies = list(response.parsed_output.keys)
+    except Exception:  # noqa: BLE001 - a classifier outage must never stop a fill
+        return keys
+    if len(replies) != len(pending):
+        return keys  # misaligned: no reply can be trusted to name its question
+    for index, reply in zip(pending, replies, strict=True):
+        key = reply.strip() if reply.strip() in questions.MODEL_KEYS else None
+        keys[index] = key
+        _classify_cache_path(asked[index]).write_text(
+            json.dumps({"key": key or "none"}) + "\n", encoding="utf-8"
+        )
+    return keys

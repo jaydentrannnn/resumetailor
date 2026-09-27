@@ -243,3 +243,30 @@ def test_plan_for_decides_key_and_value():
     assert plan["e"] == {"key": None, "value": ""}
     # A name hint that does not fit the control is dropped, not trusted.
     assert plan["f"] == {"key": None, "value": ""}
+
+
+def test_plan_for_asks_the_classifier_only_about_unkeyed_choices():
+    items = [
+        {"qid": "a", "label": "Will you still be a student in summer 2027?", "kind": "choice", "options": ["Yes", "No"]},
+        {"qid": "b", "label": "Do you have a car?", "kind": "choice", "options": ["Yes", "No"]},
+        {"qid": "c", "label": "Anything else?", "kind": "textarea"},
+        {"qid": "d", "label": "I consent to text messages", "kind": "choice", "options": ["Yes", "No"]},
+        {"qid": "e", "label": "Are you at least 18 years of age?", "kind": "choice", "options": ["Yes", "No"]},
+        {"qid": "f", "label": "What is your GPA band?", "kind": "choice", "options": ["Yes", "No"]},
+    ]
+    seen: list[str] = []
+    replies = {"Will you still be a student in summer 2027?": "currently_enrolled",
+               "Do you have a car?": None, "What is your GPA band?": "gpa"}
+
+    def classifier(asked):
+        seen.extend(question.text for question in asked)
+        return [replies[question.text] for question in asked]
+
+    plan = q.plan_for(items, FACTS, classifier=classifier)
+    assert seen == ["Will you still be a student in summer 2027?", "Do you have a car?", "What is your GPA band?"]
+    # The classifier names the fact; the answer is computed from the graduation date.
+    assert plan["a"] == {"key": "currently_enrolled", "value": "Yes"}
+    assert plan["b"]["key"] is None
+    # "gpa" is not a classifier key (and a Yes/No question cannot be a GPA).
+    assert plan["f"]["key"] is None
+    assert plan["e"]["key"] == "over_18"

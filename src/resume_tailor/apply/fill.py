@@ -525,9 +525,11 @@ def _fill_declared_combobox(target: Any, item: dict[str, Any], fields: dict[str,
 
 def _fill_frame(
     frame: Any, filler_js: str, fields: dict[str, str], hints: dict[str, str], facts: questions.Facts,
+    classifier: questions.Classifier | None = None,
 ) -> Any:
     """Fill one frame: ``filler.js`` reads its questions, `questions` decides each one's
-    key and answer, and the filler sets them (a failed read fills without a plan)."""
+    key and answer (``classifier`` names what a choice question no rule covers asks),
+    and the filler sets them (a failed read fills without a plan)."""
     args = {
         "fields": fields, "hints": hints, "synonyms": _synonym_payload(),
         "eeo": field_matcher.eeo_patterns(fields),
@@ -535,7 +537,9 @@ def _fill_frame(
     plan = None
     with contextlib.suppress(Exception):
         scanned = frame.evaluate(filler_js, {**args, "scan": True})
-        plan = questions.plan_for((scanned or {}).get("questions") or [], facts)
+        plan = questions.plan_for(
+            (scanned or {}).get("questions") or [], facts, classifier=classifier,
+        )
     return frame.evaluate(filler_js, {**args, "plan": plan})
 
 
@@ -1024,6 +1028,10 @@ def fill_application(
             # Questions recognised as a profile fact the profile leaves blank (every step).
             blank_facts: list[dict[str, Any]] = []
             facts = questions.facts_from_packet(pkt, fields=fields)
+
+            def classify_unkeyed(asked: list[questions.Question]) -> list[str | None]:
+                with config.pinned(settings.model_spec):
+                    return answer.classify_questions(asked)
             posting_text = jd_text
             with contextlib.suppress(Exception):
                 posting_text += "\n" + page.locator("body").inner_text(timeout=2000)[:50000]
@@ -1165,7 +1173,7 @@ def fill_application(
                 pass_start = len(merged["filled"])
                 for frame_index, frame in enumerate(frames):
                     try:
-                        partial = _fill_frame(frame, filler_js, fields, hints, facts)
+                        partial = _fill_frame(frame, filler_js, fields, hints, facts, classify_unkeyed)
                     except Exception as exc:  # noqa: BLE001 - cross-origin frames fail evaluate
                         merged["frames_skipped"] = int(merged["frames_skipped"]) + 1
                         if frame_index == 0:
@@ -1179,7 +1187,7 @@ def fill_application(
                         # frame once more and keep the first pass's own fills.
                         page.wait_for_timeout(600)
                         with contextlib.suppress(Exception):
-                            again = _fill_frame(frame, filler_js, fields, hints, facts)
+                            again = _fill_frame(frame, filler_js, fields, hints, facts, classify_unkeyed)
                             if isinstance(again, dict):
                                 first = [item for item in partial.get("filled") or [] if isinstance(item, dict)]
                                 seen = {item.get("selector") for item in first}
@@ -1527,7 +1535,7 @@ def fill_application(
                     known_filled = {(item.get("frame_index", 0), item.get("selector")) for item in merged["filled"] if isinstance(item, dict)}
                     for frame_index, frame in enumerate(frames):
                         with contextlib.suppress(Exception):
-                            revealed = _fill_frame(frame, filler_js, fields, hints, facts)
+                            revealed = _fill_frame(frame, filler_js, fields, hints, facts, classify_unkeyed)
                             merged["filled"].extend(
                                 {**item, "frame_index": frame_index} for item in revealed.get("filled") or []
                                 if isinstance(item, dict) and item.get("key") != "existing"

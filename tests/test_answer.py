@@ -202,3 +202,46 @@ def test_guard_failure_is_not_cached(answer_calls):
     assert second.answer == clean
     assert len(calls) == 3
     assert len(list(config.CACHE_DIR.glob("*.answer.json"))) == 1
+
+
+def test_classifier_keys_questions_once_and_caches_them(answer_calls):
+    from resume_tailor.apply.answer import ClassifiedLLM, classify_questions
+    from resume_tailor.apply.questions import Question
+
+    asked = [
+        Question("Will you still be a student during summer 2027?", kind="choice", options=("Yes", "No")),
+        Question("Favourite colour?", kind="choice", options=("Red", "Blue")),
+    ]
+    calls = answer_calls(ClassifiedLLM(keys=["currently_enrolled", "none"]))
+    assert classify_questions(asked) == ["currently_enrolled", None]
+    assert len(calls) == 1
+    # The model sees question text and options, never the applicant's facts.
+    content = calls[0]["messages"][0]["content"]
+    assert "Will you still be a student during summer 2027? (options: Yes | No)" in content
+    assert "currently_enrolled" in content
+    # Same wording, same key, no second call.
+    assert classify_questions(asked) == ["currently_enrolled", None]
+    assert len(calls) == 1
+
+
+def test_classifier_ignores_made_up_and_misaligned_keys(answer_calls):
+    from resume_tailor.apply.answer import ClassifiedLLM, classify_questions
+    from resume_tailor.apply.questions import Question
+
+    one = [Question("Do you have a car?", kind="choice", options=("Yes", "No"))]
+    answer_calls(ClassifiedLLM(keys=["owns_car"]))
+    assert classify_questions(one) == [None]
+    two = [Question("A?", kind="choice", options=("Yes", "No")), Question("B?", kind="choice", options=("Yes", "No"))]
+    answer_calls(ClassifiedLLM(keys=["over_18"]))
+    assert classify_questions(two) == [None, None]
+    # Only "Do you have a car?" is cached; a misaligned reply is not, so the next fill asks again.
+    assert len(list(config.CACHE_DIR.glob("*.question-key.json"))) == 1
+
+
+def test_classifier_outage_keys_nothing(answer_calls):
+    from resume_tailor.apply.answer import classify_questions
+    from resume_tailor.apply.questions import Question
+
+    # No reply queued: the fake raises, as a backend that is down would.
+    asked = [Question("Are you a student?", kind="choice", options=("Yes", "No"))]
+    assert classify_questions(asked) == [None]
