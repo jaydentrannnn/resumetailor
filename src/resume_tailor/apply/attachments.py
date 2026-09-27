@@ -8,6 +8,7 @@ import time
 from pathlib import Path
 
 from resume_tailor import report
+from resume_tailor.apply import browser
 from resume_tailor.apply.field_types import AttachmentOutcome, FieldObservation
 from resume_tailor.apply.packet import Packet
 from resume_tailor.apply.scanner import ScanSnapshot
@@ -81,7 +82,9 @@ async def upload(
         )
         if await component.count() != 1:
             component = None
-        await target.set_input_files(str(expected), timeout=min(20000, max(1000, int((deadline-time.monotonic())*1000))))
+        async with browser.upload_slot():
+            timeout = min(20000, max(1000, int((deadline - time.monotonic()) * 1000)))
+            await target.set_input_files(str(expected), timeout=timeout)
         end = min(deadline, time.monotonic() + 20)
         while time.monotonic() < end:
             retained = ""

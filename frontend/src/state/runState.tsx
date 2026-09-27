@@ -157,6 +157,7 @@ export const DEFAULT_SETTINGS: JobSettings = {
     },
     auto_submit_ats: [],
     auto_submit_max_per_run: 0,
+    max_parallel_fills: 2,
     auto_submit_max_per_day: 25,
     auto_submit_max_per_company_per_day: 2,
     auto_submit_enabled: false,

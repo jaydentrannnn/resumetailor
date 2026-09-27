@@ -255,6 +255,7 @@ def pace(
     *,
     should_cancel: Callable[[], bool] | None = None,
     on_wait: Callable[[float], None] | None = None,
+    can_submit: Callable[[], bool] | None = None,
 ) -> Iterator[bool]:
     """Hold the one submit slot, first waiting out the gap since the previous submit.
 
@@ -276,7 +277,11 @@ def pace(
                 step = min(remaining, 1.0)
                 _sleep(step)
                 remaining -= step
-        if proceed and is_paused():
+        if proceed and (
+            (should_cancel and should_cancel())
+            or is_paused()
+            or (can_submit and not can_submit())
+        ):
             proceed = False
         try:
             yield proceed

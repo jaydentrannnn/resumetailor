@@ -150,6 +150,7 @@ export type ApplySettings = {
   eligibility: EligibilitySettings;
   auto_submit_ats: string[];
   auto_submit_max_per_run: number;
+  max_parallel_fills: number;
   /** Rolling 24-hour caps on automatic submits; 0 means none. */
   auto_submit_max_per_day: number;
   auto_submit_max_per_company_per_day: number;

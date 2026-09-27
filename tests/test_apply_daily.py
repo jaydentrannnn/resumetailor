@@ -2,15 +2,20 @@
 
 from __future__ import annotations
 
+import asyncio
 import json
+import sys
 import threading
+import time
+import types
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from typing import Any
 
 import pytest
 
 from resume_tailor import config, jd
-from resume_tailor.apply import browser, daily, fetch_jd, fill, sources, store
+from resume_tailor.apply import browser, daily, fetch_jd, fill, sources, store, submit_guard
 from resume_tailor.apply.sources import SourceRow
 from resume_tailor.jd import JobRequirements, Keyword
 from resume_tailor.web import jobs as jobs_mod
@@ -890,7 +895,7 @@ def test_run_batch_submit_respects_cap_oldest_first(apply_paths, monkeypatch):
 
     summary = daily.DailySummary()
     daily._run_batch_submit(
-        settings=ApplySettings(auto_submit_ats=["greenhouse"]),
+        settings=ApplySettings(auto_submit_ats=["greenhouse"], max_parallel_fills=1),
         cap=2,
         dry_run=False,
         log_path=apply_paths / "log.txt",
@@ -999,6 +1004,219 @@ def test_run_batch_submit_one_failure_does_not_sink_the_batch(apply_paths, monke
     assert summary.submit_attempted == 2
     assert summary.submitted == 1
     assert summary.submit_failed == 1
+
+
+def test_run_batch_submit_bounds_workers_and_copies_context(apply_paths, monkeypatch):
+    monkeypatch.setattr(config, "DATA_ROOT", apply_paths / "data")
+    monkeypatch.setattr(config, "OUTPUT_ROOT", apply_paths / "output-root")
+    monkeypatch.setattr(config, "CACHE_ROOT", apply_paths / "cache-root")
+    monkeypatch.setattr(config, "TEMPLATES_ROOT", apply_paths / "templates-root")
+    monkeypatch.setattr(browser, "browser_status", lambda: browser.BrowserStatus(reachable=True))
+    monkeypatch.setattr(browser, "extension_mode", lambda: False)
+    monkeypatch.setattr(submit_guard, "is_paused", lambda: False)
+    lock = threading.Lock()
+    seen: list[str] = []
+    active = peak = 0
+
+    def fake_fill(key, **kwargs):
+        nonlocal active, peak
+        assert config.workspace_paths("parallel")["DATA_DIR"] == config.DATA_DIR
+        assert config.backend_for("score").origin == "ollama"
+        with lock:
+            active += 1
+            peak = max(peak, active)
+            seen.append(key)
+        time.sleep(0.02)
+        with lock:
+            active -= 1
+        return store.FillResult(status="submitted")
+
+    monkeypatch.setattr(fill, "fill_application", fake_fill)
+    summary = daily.DailySummary()
+    with config.use_context(config.context_for_workspace("parallel")):
+        config.resolve("ollama")
+        for i in range(5):
+            store.upsert(_ready_app(f"a{i}", ats="greenhouse", discovered_at=f"2026-01-0{i + 1}T00:00:00+00:00"))
+        daily._run_batch_submit(
+            settings=ApplySettings(auto_submit_ats=["greenhouse"], max_parallel_fills=2),
+            cap=5, dry_run=False, log_path=apply_paths / "log.txt",
+            log=lambda *_: None, summary=summary,
+        )
+    assert 1 < peak <= 2
+    assert len(seen) == 5
+    assert summary.submit_attempted == summary.submitted == 5
+    assert summary.submit_failed == 0
+
+
+def test_run_batch_submit_pause_stops_new_starts_and_pending_submits(apply_paths, monkeypatch):
+    for i in range(5):
+        store.upsert(_ready_app(f"a{i}", ats="greenhouse", discovered_at=f"2026-01-0{i + 1}T00:00:00+00:00"))
+    monkeypatch.setattr(browser, "browser_status", lambda: browser.BrowserStatus(reachable=True))
+    monkeypatch.setattr(browser, "extension_mode", lambda: False)
+    paused = threading.Event()
+    both_started = threading.Barrier(2)
+    monkeypatch.setattr(submit_guard, "is_paused", paused.is_set)
+    seen: list[str] = []
+    lock = threading.Lock()
+
+    def fake_fill(key, **kwargs):
+        with lock:
+            seen.append(key)
+        both_started.wait(timeout=5)
+        paused.set()
+        assert kwargs["should_cancel"]()
+        return store.FillResult(status="awaiting_review")
+
+    monkeypatch.setattr(fill, "fill_application", fake_fill)
+    summary = daily.DailySummary()
+    daily._run_batch_submit(
+        settings=ApplySettings(auto_submit_ats=["greenhouse"], max_parallel_fills=2),
+        cap=5, dry_run=False, log_path=apply_paths / "log.txt",
+        log=lambda *_: None, summary=summary,
+    )
+    assert len(seen) == 2
+    assert summary.submit_attempted == summary.submit_failed == 2
+    assert summary.submitted == 0
+
+
+def test_extension_batch_falls_back_to_serial_fills(apply_paths, monkeypatch):
+    for i in range(3):
+        store.upsert(_ready_app(f"a{i}", ats="greenhouse", discovered_at=f"2026-01-0{i + 1}T00:00:00+00:00"))
+    monkeypatch.setattr(browser, "browser_status", lambda: browser.BrowserStatus(reachable=True))
+    monkeypatch.setattr(browser, "extension_mode", lambda: True)
+    monkeypatch.setattr(submit_guard, "is_paused", lambda: False)
+    active = peak = 0
+    seen: list[str] = []
+
+    def fake_fill(key, **_kwargs):
+        nonlocal active, peak
+        active += 1
+        peak = max(peak, active)
+        seen.append(key)
+        time.sleep(0.01)
+        active -= 1
+        return store.FillResult(status="submitted")
+
+    monkeypatch.setattr(fill, "fill_application", fake_fill)
+    logged: list[str] = []
+    summary = daily.DailySummary()
+    daily._run_batch_submit(
+        settings=ApplySettings(auto_submit_ats=["greenhouse"], max_parallel_fills=3),
+        cap=3, dry_run=False, log_path=apply_paths / "log.txt",
+        log=logged.append, summary=summary,
+    )
+    assert peak == 1
+    assert seen == [f"greenhouse:acme:a{i}" for i in range(3)]
+    assert summary.submit_attempted == summary.submitted == 3
+    assert any("parallel fills disabled" in line for line in logged)
+
+
+def test_batch_settings_load_without_parallel_field():
+    old = ApplySettings().model_dump()
+    old.pop("max_parallel_fills")
+    assert ApplySettings.model_validate(old).max_parallel_fills == 2
+    with pytest.raises(ValueError):
+        ApplySettings(max_parallel_fills=5)
+
+
+def test_cdp_browser_connection_is_owned_by_each_worker(monkeypatch):
+    monkeypatch.setattr(browser, "browser_status", lambda: browser.BrowserStatus(reachable=True))
+    monkeypatch.setattr(browser, "effective_cdp_url", lambda *_: "http://127.0.0.1:9222")
+    monkeypatch.setattr(browser, "_tab_gone", lambda: False)
+    connections: list[tuple[int, object]] = []
+    closed: list[object] = []
+    barrier = threading.Barrier(2)
+
+    class FakeBrowser:
+        def close(self):
+            closed.append(self)
+
+    class FakePlaywright:
+        chromium = None
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_):
+            pass
+
+        def connect_over_cdp(self, _url):
+            connected = FakeBrowser()
+            connections.append((threading.get_ident(), connected))
+            return connected
+
+    FakePlaywright.chromium = FakePlaywright()
+    monkeypatch.setitem(sys.modules, "playwright.sync_api", types.SimpleNamespace(sync_playwright=FakePlaywright))
+
+    def connect():
+        with browser.cdp_browser() as connected:
+            barrier.wait(timeout=5)
+            return connected
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        first = executor.submit(connect)
+        second = executor.submit(connect)
+        result = {first.result(timeout=5), second.result(timeout=5)}
+    assert len(result) == 2
+    assert len({thread_id for thread_id, _ in connections}) == 2
+    assert set(closed) == result
+
+
+def test_parallel_legacy_uploads_do_not_overlap():
+    lock = threading.Lock()
+    active = peak = 0
+    barrier = threading.Barrier(2)
+
+    class Control:
+        first = None
+
+        def locator(self, _selector):
+            return self
+
+        def set_input_files(self, _path, **_kwargs):
+            nonlocal active, peak
+            with lock:
+                active += 1
+                peak = max(peak, active)
+            time.sleep(0.02)
+            with lock:
+                active -= 1
+
+        def evaluate(self, *_args, **_kwargs):
+            return "resume.pdf"
+
+    Control.first = Control()
+
+    def upload():
+        barrier.wait(timeout=5)
+        return fill._set_and_verify_file(Control(), "input[type=file]", "resume.pdf")
+
+    with ThreadPoolExecutor(max_workers=2) as executor:
+        first = executor.submit(upload)
+        second = executor.submit(upload)
+        assert first.result(timeout=5) and second.result(timeout=5)
+    assert peak == 1
+
+
+def test_cancelled_async_upload_waiter_does_not_take_slot_later():
+    async def check():
+        async def waiter():
+            async with browser.upload_slot():
+                pytest.fail("cancelled waiter acquired the upload slot")
+
+        browser.UPLOAD_LOCK.acquire()
+        try:
+            task = asyncio.create_task(waiter())
+            await asyncio.sleep(0)
+            task.cancel()
+            with pytest.raises(asyncio.CancelledError):
+                await task
+        finally:
+            browser.UPLOAD_LOCK.release()
+        async with browser.upload_slot():
+            pass
+
+    asyncio.run(check())
 
 
 def test_run_daily_fetch_only(stub_pipeline, apply_paths):

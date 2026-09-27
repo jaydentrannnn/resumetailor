@@ -479,7 +479,8 @@ def _attachment_purpose(
 def _set_and_verify_file(target: Any, selector: str, path: str) -> bool:
     """Verify either a retained input or an ATS replacement showing the filename."""
     control = target.locator(selector).first
-    control.set_input_files(path, timeout=5000)
+    with browser.UPLOAD_LOCK:
+        control.set_input_files(path, timeout=5000)
     expected = Path(path).name
     with contextlib.suppress(Exception):
         actual = control.evaluate(
@@ -1744,12 +1745,18 @@ def fill_application(
                     action = "awaiting_review"
                     progress(f"auto-submit held: {held.message}")
             if action == "auto_submit":
+                def submit_still_allowed() -> bool:
+                    nonlocal held
+                    held = submit_guard.check(app, settings)
+                    return held is None
+
                 with submit_guard.pace(
                     should_cancel=should_cancel,
                     on_wait=lambda seconds: progress(f"waiting {seconds:.0f}s before submitting"),
+                    can_submit=submit_still_allowed,
                 ) as go:
                     if not go:
-                        held = submit_guard.Hold(
+                        held = held or submit_guard.Hold(
                             "paused", "Submit stopped: cancelled or paused while waiting"
                         )
                     else:
