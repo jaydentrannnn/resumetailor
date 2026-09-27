@@ -1,8 +1,7 @@
-"""Single-worker job queue for tailoring runs.
+"""Bounded job queue for tailoring runs.
 
-The worker remains serial. Each job enters a context that captures its workspace paths,
-calibration, backend routing, vocabulary, and writing style. Other threads can use the
-same context primitives without changing the queue's scheduling policy.
+Each job enters a context that captures its workspace paths, calibration, backend
+routing, vocabulary, and writing style. PDF conversion is serialized in convert.py.
 
 Each job writes into `output/jobs/<job_id>/` so successive runs never overwrite each
 other's `.docx` / `.pdf`. JD and score caches stay in the shared `config.CACHE_DIR`.
@@ -213,7 +212,7 @@ def _persist_run_record(job: Job, status: str | None = None) -> None:
 
 
 class JobQueue:
-    """Process-wide queue that drains one job at a time on a background thread."""
+    """Process-wide queue that dispatches up to the configured concurrent jobs."""
 
     #: Retained job records are never pruned by time — a long-running server process
     #: (this is a `daemon` background thread with no natural end) would otherwise grow
@@ -229,6 +228,8 @@ class JobQueue:
         self._jobs: dict[str, Job] = {}
         self._pending: queue.Queue[str] = queue.Queue()
         self._lock = threading.Lock()
+        self._idle = threading.Condition(self._lock)
+        self._active = 0
         self._worker: threading.Thread | None = None
         self._order: list[str] = []  # job ids still waiting, in queue order
 
@@ -318,6 +319,7 @@ class JobQueue:
                         stage="cancel", message="Cancelled before it started.", detail={}
                     )
                 )
+                self._idle.notify_all()
                 return job
             if job.status == "running":
                 job.cancel_requested.set()
@@ -360,22 +362,32 @@ class JobQueue:
         self._worker.start()
 
     def _run_loop(self) -> None:
-        """Pull jobs forever. Exits only when the process does (daemon thread)."""
+        """Dispatch waiting jobs when their requested concurrency has room."""
         while True:
             job_id = self._pending.get()
-            job = self._jobs.get(job_id)
-            if job is None or job.status != "queued":
-                # Already cancelled while waiting — `cancel()` marks a queued job
-                # terminal immediately but can't pull its id back out of `self._pending`
-                # (a plain `queue.Queue`), so it still surfaces here once dequeued.
-                continue
-            with self._lock:
+            with self._idle:
+                job = self._jobs.get(job_id)
+                while job is not None and job.status == "queued" and (
+                    self._active >= job.settings.max_concurrent_jobs
+                ):
+                    self._idle.wait()
+                if job is None or job.status != "queued":
+                    continue
                 if job_id in self._order:
                     self._order.remove(job_id)
-            job.status = "running"
-            job.emit(
-                ProgressEvent(stage="start", message="Starting tailoring run", detail={})
-            )
+                self._active += 1
+                job.status = "running"
+                job.emit(
+                    ProgressEvent(stage="start", message="Starting tailoring run", detail={})
+                )
+            threading.Thread(
+                target=config.run_in_context(self._run_job),
+                args=(job,), name=f"job-{job_id}", daemon=True,
+            ).start()
+
+    def _run_job(self, job: Job) -> None:
+        """Finish one dispatched job and release its queue slot."""
+        try:
             try:
                 logs.call_in_context(job.job_id, self._execute, job)
                 _persist_run_record(job, "succeeded")
@@ -425,7 +437,16 @@ class JobQueue:
                     job.status = "failed"
                 if not isinstance(exc, Exception):
                     raise
-            housekeeping.run()
+            context = (
+                config.context_for_workspace(job.workspace_id)
+                if job.workspace_id is not None else config.default_context()
+            )
+            with config.use_context(context):
+                housekeeping.run()
+        finally:
+            with self._idle:
+                self._active -= 1
+                self._idle.notify_all()
 
     def _execute(self, job: Job) -> None:
         """Run one job in its workspace context."""

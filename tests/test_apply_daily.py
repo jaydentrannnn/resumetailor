@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import json
+import threading
 from pathlib import Path
 from typing import Any
 
@@ -204,6 +205,57 @@ def test_run_daily_progresses_new_posting(stub_pipeline, apply_paths):
     assert app is not None
     assert app.status == "ready"
     assert app.job_id == "tailor-job-1"
+
+
+def test_daily_rows_overlap_and_match_serial_counts(stub_pipeline, apply_paths, monkeypatch):
+    rows = [
+        _sample_row(
+            company=f"Company {i}", role=f"Engineer {i}",
+            job_id=f"parallel-row-{i}",
+            application_link=f"https://boards.greenhouse.io/company{i}/jobs/{i}",
+        )
+        for i in range(3)
+    ]
+    monkeypatch.setattr(sources, "parse_readme", lambda text, categories: rows)
+    monkeypatch.setattr(
+        sources, "filter_rows",
+        lambda source_rows, **kwargs: sources.FilterResult(
+            new_rows=list(source_rows), total_candidates=len(source_rows)
+        ),
+    )
+    barrier = threading.Barrier(3)
+
+    def fake_fetch(url, *, allow_browser, canonical_key):
+        if barrier is not None:
+            barrier.wait(timeout=5)
+        if url.endswith("/1"):
+            raise RuntimeError("one bad posting")
+        return fetch_jd.FetchResult(
+            final_url=url, ats="greenhouse", text="We need Python engineers. " * 10,
+            method="http",
+        )
+
+    monkeypatch.setattr(fetch_jd, "fetch_jd", fake_fetch)
+    settings = ApplySettings(enabled=True, max_new_per_day=3)
+
+    def run_at(name, workers):
+        root = apply_paths / name
+        monkeypatch.setattr(config, "APPLICATIONS_PATH", root / "applications.json")
+        monkeypatch.setattr(config, "APPLICATIONS_OUTPUT_DIR", root / "applications")
+        monkeypatch.setattr(config, "OUTPUT_DIR", root / "output")
+        monkeypatch.setattr(config, "CACHE_DIR", root / "cache")
+        (root / "output" / "jobs").mkdir(parents=True)
+        monkeypatch.setattr(daily, "_ROW_POOL_SIZE", workers)
+        return daily.run_daily(settings=settings)
+
+    parallel = run_at("parallel", 3)
+    barrier = None
+    serial = run_at("serial", 1)
+    for field in ("new_rows", "discovered", "jd_fetched", "screened_in", "tailored", "ready", "processed"):
+        assert getattr(parallel, field) == getattr(serial, field)
+    assert parallel.processed == 2
+    assert len(parallel.errors) == len(serial.errors) == 1
+    assert "one bad posting" in parallel.errors[0]
 
 
 def test_run_daily_idempotent_on_known_ids(stub_pipeline, apply_paths, monkeypatch):

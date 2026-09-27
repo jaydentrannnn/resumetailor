@@ -12,8 +12,13 @@ from __future__ import annotations
 
 import hashlib
 import json
+import os
 import re
+import tempfile
+import threading
 from collections import Counter
+from concurrent.futures import ThreadPoolExecutor
+from functools import partial
 from pathlib import Path
 from typing import Literal
 
@@ -164,6 +169,26 @@ the product, the team's shape, the core responsibilities.
 #: is invisible rather than merely wrong. Version 3 added band/evidence and the
 #: untrusted-input framing — every prior extraction is intentionally discarded.
 _PROMPT_VERSION = 3
+_EXTRACT_POOL_SIZE = 3
+_CACHE_WRITE_LOCK = threading.Lock()
+
+
+def _write_cache(path: Path, requirements: JobRequirements) -> None:
+    """Publish a complete cache file even when runs share the same key."""
+    payload = json.dumps(requirements.model_dump(), indent=2, ensure_ascii=False)
+    name: str | None = None
+    try:
+        with tempfile.NamedTemporaryFile(
+            mode="w", encoding="utf-8", dir=path.parent, prefix=f".{path.name}.",
+            suffix=".tmp", delete=False,
+        ) as handle:
+            name = handle.name
+            handle.write(payload)
+        with _CACHE_WRITE_LOCK:
+            os.replace(name, path)
+    finally:
+        if name is not None and os.path.exists(name):
+            os.unlink(name)
 
 
 def _slug(text: str, known_tags: list[str] | None = None) -> str:
@@ -281,10 +306,7 @@ def extract(
         kw.canonical = config.canonical_tag(kw.canonical)
         _apply_evidence_cap(kw)
 
-    cache_path.write_text(
-        json.dumps(requirements.model_dump(), indent=2, ensure_ascii=False),
-        encoding="utf-8",
-    )
+    _write_cache(cache_path, requirements)
     events.emit(
         on_event,
         "extract",
@@ -318,7 +340,9 @@ def extraction_diagnosis(requirements: JobRequirements) -> str | None:
     return None
 
 
-def _vote(samples: list[JobRequirements], known_tags: list[str] | None) -> tuple[JobRequirements, bool]:
+def _vote(
+    samples: list[JobRequirements], known_tags: list[str] | None
+) -> tuple[JobRequirements, bool]:
     """Collapse `samples` (independent extractions of the same JD) into one consensus.
 
     Grouped by `phrase` rather than `canonical`, because `phrase` is guaranteed verbatim
@@ -471,25 +495,24 @@ def extract_consensus(
         )
         return JobRequirements.model_validate_json(cache_path.read_text(encoding="utf-8"))
 
-    samples: list[JobRequirements] = []
-    for i in range(runs):
-        events.emit(
-            on_event,
-            "extract",
-            f"Reading the job description ({i + 1}/{runs})",
-            cached=False,
-            model=config.model_for("extract"),
-        )
-        samples.append(
-            extract(jd_text, known_tags=known_tags, use_cache=False, on_event=None)
-        )
+    with ThreadPoolExecutor(max_workers=min(runs, _EXTRACT_POOL_SIZE)) as executor:
+        futures = []
+        for i in range(runs):
+            events.emit(
+                on_event,
+                "extract",
+                f"Reading the job description ({i + 1}/{runs})",
+                cached=False,
+                model=config.model_for("extract"),
+            )
+            futures.append(config.submit_in_context(
+                executor, partial(extract, known_tags=known_tags, use_cache=False), jd_text,
+            ))
+        samples = [future.result() for future in futures]
 
     consensus, dropped_all = _vote(samples, known_tags)
 
-    cache_path.write_text(
-        json.dumps(consensus.model_dump(), indent=2, ensure_ascii=False),
-        encoding="utf-8",
-    )
+    _write_cache(cache_path, consensus)
     events.emit(
         on_event,
         "extract",

@@ -1966,8 +1966,8 @@ def test_import_master_resume_suggest_tags_survives_a_non_runtimeerror_failure(
     assert body["resume"]["contact"]["name"] == "Ada Lovelace"
 
 
-def test_queue_serialises_jobs(monkeypatch, tmp_path):
-    """Two submitted jobs never run concurrently — the second waits for the first."""
+def test_queue_respects_one_job_limit(monkeypatch, tmp_path):
+    """An explicit one-job limit keeps the second run waiting."""
     import threading
     import time
 
@@ -1989,8 +1989,8 @@ def test_queue_serialises_jobs(monkeypatch, tmp_path):
 
     monkeypatch.setattr(q, "_execute", slow_execute)
 
-    j1, _ = q.submit("jd one", JobSettings())
-    j2, pos2 = q.submit("jd two", JobSettings())
+    j1, _ = q.submit("jd one", JobSettings(max_concurrent_jobs=1))
+    j2, pos2 = q.submit("jd two", JobSettings(max_concurrent_jobs=1))
     assert pos2 >= 1
 
     # Wait until the first job is running, then release it.
@@ -2028,8 +2028,8 @@ def test_cancel_removes_a_queued_job_before_the_worker_ever_executes_it(monkeypa
 
     monkeypatch.setattr(q, "_execute", slow_execute)
 
-    j1, _ = q.submit("jd one", JobSettings())
-    j2, _ = q.submit("jd two", JobSettings())
+    j1, _ = q.submit("jd one", JobSettings(max_concurrent_jobs=1))
+    j2, _ = q.submit("jd two", JobSettings(max_concurrent_jobs=1))
 
     assert running.wait(timeout=2)
     assert q.get(j2.job_id).status == "queued"
