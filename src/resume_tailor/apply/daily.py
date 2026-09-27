@@ -832,7 +832,8 @@ def run_daily(
             _progress_set(
                 phase="discovering",
                 source_id=src.id,
-                current=src.url or (f"{src.provider}: {src.query}" if src.kind == "job_search" else ""),
+                current=src.url
+                or (f"{src.provider}: {src.query}" if src.kind == "job_search" else ""),
             )
             try:
                 if src.kind == "ats_board":

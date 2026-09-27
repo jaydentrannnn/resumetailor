@@ -532,9 +532,7 @@ def matches_filters(
         return False
     if exclude and exclude.search(title):
         return False
-    if locations and location and not locations.search(location):
-        return False
-    return True
+    return not (locations and location) or bool(locations.search(location))
 
 
 def board_rows(

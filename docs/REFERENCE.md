@@ -214,6 +214,13 @@ for that search only). Its rows use the
 ATS's own job URL, so they merge with Simplify sightings of the same job. A wrong board name
 is one run error, not a failed source. `POST /api/apply/boards/resolve` checks a board
 before the settings add it. `apply/watchlists/*.json` are suggestions, checked the same way.
+A keyword search (`kind="job_search"`, `apply/job_apis.py`) queries Adzuna or USAJobs by
+`query`/`location` (`country` for Adzuna) across any industry, then applies the same
+`include`/`exclude`/`locations` filters (`sources.matches_filters`) and its own
+`max_age_days` (default 14). Paging stops at `MAX_PAGES` with a polite delay between pages.
+Keys (`ADZUNA_APP_ID`, `ADZUNA_APP_KEY`, `USAJOBS_API_KEY`, `USAJOBS_EMAIL`) are
+`config.SAVABLE_CREDENTIALS`, never `settings.json`; a missing key is one run error for that
+source, and error text is redacted because Adzuna carries its keys in the query string.
 
 Eligibility (`eligibility.py`) hard-rejects graduate-degree-only postings (master's/PhD
 without a bachelor's alternative), senior titles, and high year floors — before
@@ -257,7 +264,12 @@ profile). It holds when the rolling 24-hour caps are reached (`auto_submit_max_p
 default 25, `auto_submit_max_per_company_per_day` default 2), counted from `auto_submit`
 status notes. It also holds a possible duplicate: the row was already submitted, or a row in
 the same group or with the same company and role was submitted in the last 30 days.
-`submit_guard.pace` spaces automatic submits 20–90 s apart, one at a time. Each submit writes
+`submit_guard.pace` spaces automatic submits 20–90 s apart, one at a time. The nightly batch
+fills up to `ApplySettings.max_parallel_fills` (default 2, range 1–4) applications at once,
+each in its own tab over its own CDP connection (Playwright sync objects are thread-bound);
+file uploads share `browser.UPLOAD_LOCK`, submits still pass through `pace`, the batch holds
+`operations.batch_browser_owner()` so a user operation cannot share the browser, and extension
+mode (one relayed tab) always runs one at a time. Each submit writes
 `submit-<UTC stamp>/{before,after}.{json,png}` next to `fill.json`, shown on the detail page's
 Timeline. `fill.confirmation_markers` adds per-ATS confirmation selectors, phrases and URL
 fragments. The pause switch also holds the operation worker between applications, stops the
@@ -890,8 +902,9 @@ fixed overhead the fit loop never trims.
   toggle; later would let an excluded entry's tech/coursework still shape what facets
   shows.
 - **Web UI is an alternate front door, not a second pipeline** — `src/resume_tailor/web/`
-  queues jobs into the same pipeline. Jobs run **one at a time** because `config._ACTIVE`
-  is process-wide. `events.py`'s one-way `ProgressEvent` callback is optional everywhere,
+  queues jobs into the same pipeline. Jobs run concurrently up to
+  `JobSettings.max_concurrent_jobs` (§2), each in its own `RunContext`; the process-wide
+  module globals still make a **single process** a hard requirement. `events.py`'s one-way `ProgressEvent` callback is optional everywhere,
   which is what keeps it out of the callback-free CLI test suite.
 - **MCP is a third front door, also not a second pipeline** — `src/resume_tailor/
   mcp_server/` is a stdio MCP server for Claude Desktop that talks plain HTTP to the

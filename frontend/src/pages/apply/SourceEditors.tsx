@@ -429,4 +429,3 @@ export function JobSearchEditor({
     </div>
   );
 }
-

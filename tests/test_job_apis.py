@@ -10,8 +10,6 @@ import pytest
 
 from resume_tailor import config
 from resume_tailor.apply import daily, job_apis, store
-from resume_tailor.apply.job_apis import MissingCredentialsError
-from resume_tailor.apply.sources import SourceRow
 from resume_tailor.web.schemas import ApplySettings, SourceConfig
 from tests.fixtures import synthetic_resume
 
@@ -51,7 +49,6 @@ def test_adzuna_paging_and_mapping(monkeypatch):
 
     def fake_get(url: str, **kwargs):
         requests.append({"url": url, **kwargs})
-        params = kwargs.get("params", {})
         page = int(url.split("/")[-1])
         if page == 1:
             return _FakeResponse({
@@ -424,3 +421,35 @@ def test_old_settings_json_shapes_still_validate():
             "provider": "adzuna",
             "query": "   ",
         })
+
+
+@pytest.mark.parametrize(
+    ("provider", "secrets"),
+    [
+        ("adzuna", ("fake-ADZUNA_APP_ID", "fake-ADZUNA_APP_KEY")),
+        ("usajobs", ("fake-USAJOBS_API_KEY", "fake-USAJOBS_EMAIL")),
+    ],
+)
+def test_transport_errors_never_leak_credentials(monkeypatch, provider, secrets):
+    """An httpx error that echoes the request (Adzuna keys ride in the URL) is redacted."""
+    import httpx
+
+    monkeypatch.setattr(config, "credential", lambda key: "fake-" + key)
+    monkeypatch.setattr(job_apis, "_sleep", lambda _s: None)
+
+    def fake_get(url: str, **kwargs):
+        raise httpx.ConnectError(f"failed {url}?{'&'.join(secrets)}")
+
+    source = SourceConfig.model_validate({
+        "id": "leak-check",
+        "kind": "job_search",
+        "provider": provider,
+        "query": "analyst",
+    })
+    rows, errors = job_apis.job_search_rows(source, get=fake_get)
+
+    assert rows == []
+    assert len(errors) == 1
+    assert "***" in errors[0]
+    for secret in secrets:
+        assert secret not in errors[0]

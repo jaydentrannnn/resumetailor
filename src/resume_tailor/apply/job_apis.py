@@ -11,12 +11,10 @@ import time
 from collections.abc import Callable
 from datetime import UTC, datetime
 from typing import Any, Literal
-from urllib.parse import urlsplit
 
 import httpx
 
 from resume_tailor import config
-from resume_tailor.apply import sources
 from resume_tailor.apply.sources import SourceRow, _age_days, _keyword_re, matches_filters
 
 JobProvider = Literal["adzuna", "usajobs"]
@@ -28,6 +26,18 @@ JOB_SEARCH_DELAY_SECONDS = 1.0
 MAX_PAGES = 5
 
 _sleep: Callable[[float], None] = time.sleep
+
+
+def _redact(text: str, *secrets: str | None) -> str:
+    """Mask credential values in text that reaches the daily log and run summary.
+
+    Adzuna takes its keys as query parameters, so an HTTP error that echoes the
+    request URL would otherwise carry them into `summary.errors`.
+    """
+    for secret in secrets:
+        if secret:
+            text = text.replace(secret, "***")
+    return text
 
 
 class MissingCredentialsError(RuntimeError):
@@ -143,7 +153,9 @@ def _search_adzuna(
         try:
             response = get(url, params=params, follow_redirects=True, timeout=20.0)
         except httpx.HTTPError as exc:
-            errors.append(f"could not reach api.adzuna.com: {exc}")
+            errors.append(
+                _redact(f"could not reach api.adzuna.com: {exc}", app_id, app_key)
+            )
             break
         if response.status_code != 200:
             errors.append(f"api.adzuna.com answered {response.status_code}")
@@ -264,7 +276,9 @@ def _search_usajobs(
                 timeout=20.0,
             )
         except httpx.HTTPError as exc:
-            errors.append(f"could not reach data.usajobs.gov: {exc}")
+            errors.append(
+                _redact(f"could not reach data.usajobs.gov: {exc}", api_key, email)
+            )
             break
         if response.status_code != 200:
             errors.append(f"data.usajobs.gov answered {response.status_code}")
