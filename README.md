@@ -1,25 +1,86 @@
 # ResumeTailor
 
-Takes your master resume content, a job description, and your own `.docx` template, and produces a tailored resume that looks identical to the original — only the words change.
+Takes your master resume content, a job description, and your own `.docx` resume, and
+produces a tailored resume that looks identical to the original — only the words change.
+Around that core it can find postings, tailor an application kit for each (resume, cover
+letter, written answers), and fill the application forms in your browser.
 
-## Prerequisites
+- **Your layout, untouched.** The model only ever sees and returns plain text; your
+  `.docx` is filled mechanically, so fonts, spacing and layout stay exactly as you made them.
+- **No invented content.** Every fact comes from your master resume. A rewrite that adds a
+  skill or number you never listed is caught in code and replaced with your own wording.
+- **Fits the page.** Each draft is rendered and measured; it is shortened or grown until it
+  fits, and it fails loudly rather than silently cutting content.
+- **Any model.** Runs on local Ollama by default (no API key needed), or on Claude, Gemini,
+  LM Studio, or a mix.
 
-Before anything runs you need:
+## Install the desktop app (Windows)
+
+1. Download `ResumeTailor_<version>_x64-setup-windows-x64.exe` from the
+   [latest release](https://github.com/jaydentrannnn/resumetailor/releases/latest) and run it.
+   The installer is not code-signed, so Windows SmartScreen warns you: click **More info →
+   Run anyway**.
+2. Launch **ResumeTailor** from the Start menu. The first start takes a few seconds.
+3. Follow the setup screen (see [First run](#first-run) below).
+
+Good to know:
+
+- **Updates install from inside the app:** an **Update available** chip appears in the
+  header, and Settings → About has **Install and restart**. You never reinstall; your data
+  is zipped to a backup before each update.
+- **Closing the window hides it to the tray**, so scheduled runs keep going. Quit from the
+  tray icon.
+- **Your data** lives in `%LOCALAPPDATA%\ResumeTailorData` (profile, resume content,
+  templates, outputs, logs). Settings such as the model can go in a `.env` file there.
+- **PDFs** are made with Microsoft Word, so Office must be installed. Without Word, install
+  LibreOffice and put `RESUME_TAILOR_PDF_BACKEND=soffice` in that `.env`.
+- **A model:** have [Ollama](#using-ollama) running, or add an API key in Settings → Models.
+
+The owner's walkthrough (building installers, moving data from a dev checkout, updating,
+day-to-day operation) is [`docs/GUIDE.md`](docs/GUIDE.md).
+
+## First run
+
+The setup screen walks you through:
+
+1. **What you're studying** — picks the skill words it recognises and which job lists to search.
+2. **Upload your resume** (`.docx`) — the app analyzes its layout and turns it into a
+   template. You can also import the content of a PDF resume.
+3. **Your content** — review the sections, entries and bullets it read; this becomes your
+   master resume, which you can edit any time in the **Editor**.
+4. **Template and page fit** — tunes how much text fits on your page.
+
+Then open **Tailor**, paste a job description, and run. Each run produces the tailored
+`.docx` and `.pdf`, plus an optional cover letter, reviewer notes and application answers.
+
+Other pages: **Profile** (your applicant details for forms, saved answers, and several
+profiles you can switch between, each exported or imported as one `.zip` of up to 2 GB),
+**Template** (install or switch saved templates), **Vocabulary** (the skill and
+action-verb libraries the rewriter uses), **Apply** (see [Automation](#automation-apply-page)),
+and **Settings** (models, browser, extension pairing, updates).
+
+---
+
+## Run from source
+
+For development, or to run without the installer. Personal data lives in `data/`,
+`templates/` and `output/`, which are gitignored; restore them by hand after cloning, or
+start empty and use the setup screen.
+
+```powershell
+copy .env.example .env
+# Ollama is the default backend and needs no key; add ANTHROPIC_API_KEY / GEMINI_API_KEY
+# only if you use those models.
+```
+
+The files the pipeline reads:
 
 1. **`data/master_resume.json`** — every fact the tool can use
 2. **`templates/original_export.docx`** — your baseline resume (read-only)
 3. **`templates/main_template.docx`** — generated from the export (see below)
-4. A **`.env`** file (copy from `.env.example`)
-
-These folders are gitignored (they hold personal data). Restore them by hand after cloning.
-
-```powershell
-copy .env.example .env
-# Edit .env — add ANTHROPIC_API_KEY for the default Claude setup
-```
 
 Generate the tagged template once (or after replacing the export). Prefer the **Template**
-tab in the web UI (analyze → confirm mapping → install; optional calibrate). Each successful
+page in the web UI (analyze → confirm mapping → install; optional calibrate). Each successful
 install is saved under a label in **Saved templates** so you can switch without re-uploading
 (max 20). The CLI reads whatever mapping the wizard already confirmed and saved to
 `templates/template_profile.json`:
@@ -33,11 +94,9 @@ python scripts\build_template.py --from path\to\export.docx --profile templates\
 After any template change, run `python scripts\calibrate.py` (or use the UI calibrate
 checkbox on install/activate) so fit constants match.
 
----
+### Install (Windows)
 
-## Local install (Windows)
-
-Python **3.13** is required. On this machine use Anaconda's interpreter if `py -3.13` is unavailable:
+Python **3.13** is required. If `py -3.13` isn't available, point at any 3.13 interpreter (Anaconda's, for example):
 
 ```powershell
 & C:\ProgramData\anaconda3\python.exe -m venv .venv
@@ -117,79 +176,89 @@ docker compose run --rm app python scripts/calibrate.py
 
 The container uses LibreOffice for PDF measurement. Host Ollama / LM Studio are reachable via `host.docker.internal` (already set in `docker-compose.yml`).
 
-## Automation (daily apply)
+## Automation (Apply page)
 
-ResumeTailor can discover new internship and new-grad postings overnight, tailor them,
-and fill ATS forms from a browser on your host. The Apply page exposes this as three
-separate actions: **Find jobs**, **Prepare selected**, and **Fill selected**. Each operation
-shows its current application, stage, counts, and recent activity.
+The **Apply** page finds postings, tailors an application kit for each, and fills the
+application forms in a browser on your PC. It can run all of that on a nightly schedule,
+or you drive it with three buttons: **Find jobs**, **Tailor files for selected**, and
+**Fill selected**. Postings are split into **Needs you** (sign-ins, emailed codes,
+CAPTCHAs, questions it won't guess, final checks), **In progress** and **Done**, sorted
+by the date each job was posted.
 
-Default sources (edit `settings.apply.sources[]` to add/disable):
+### Where postings come from
 
-| id | kind | repo |
-| --- | --- | --- |
-| `simplify-internships` | HTML table | SimplifyJobs/Summer2027-Internships |
-| `simplify-newgrad` | HTML table | SimplifyJobs/New-Grad-Positions |
-| `speedyapply` | pipe table | speedyapply/2027-SWE-College-Jobs |
+Add and edit sources in the Apply settings drawer (**What to search**):
 
-Inspect a README's section headings before enabling categories:
+| Source | What it reads |
+| --- | --- |
+| **Job lists** | Curated GitHub README lists, e.g. SimplifyJobs internships / new-grad and speedyapply (enabled by default for tech; the setup screen picks lists for your field) |
+| **Company watchlist** | Paste a company's careers page or job-board link; it finds the Greenhouse, Lever, Ashby, SmartRecruiters or Workday board behind it and watches every posting there |
+| **Keyword search** | Adzuna or USAJobs by keywords and location, for any industry. Needs free API keys, entered in Settings → Models |
 
-```powershell
-.\.venv\Scripts\python.exe scripts\apply_daily.py --list-sections https://raw.githubusercontent.com/speedyapply/2027-SWE-College-Jobs/main/README.md
-```
+Every source can filter titles (must contain / skip) and locations, and has a maximum
+posting age. Postings that duplicate one you already have are merged, and eligibility
+rules screen out senior roles, graduate-degree-only roles, and citizenship requirements
+you don't meet.
 
-1. **Microsoft Edge with remote debugging** (dedicated profile). Chrome refuses to open
-   its remote-debugging port whenever *any* other Chrome window — any profile — is
-   already running under your account, which would mean closing your normal browsing
-   session every time. Edge is a separate process from Chrome, so it sidesteps that
-   entirely and can sit in the background without touching your regular Chrome. (If you
-   also use Edge as a daily browser, the same restriction applies there instead — pick
-   whichever of the two you use less.) Create a Task Scheduler "At log on" action, or a
-   shortcut:
+### Set up the browser
+
+Fill drives a browser through its remote-debugging port. Use a **dedicated Microsoft Edge
+profile**: Chrome refuses to open the port while any other Chrome window is running,
+which would mean closing your normal browsing every time. (If Edge is your everyday
+browser, the same applies to Edge; use whichever you use less.) The Apply page's browser
+card shows the exact command; for a shortcut or a Task Scheduler "At log on" action:
 
 ```text
 "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --remote-debugging-port=9222 --user-data-dir="%LOCALAPPDATA%\ResumeTailorEdge"
 ```
 
-   macOS: `"/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge" --remote-debugging-port=9222 --user-data-dir="$HOME/Library/Application Support/ResumeTailorEdge"`.
-   Do not add `--remote-allow-origins=*`: it lets any web page open in that browser
-   connect to the debugging port and drive your logged-in sessions. The app does not
-   need it.
+macOS: `"/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge" --remote-debugging-port=9222 --user-data-dir="$HOME/Library/Application Support/ResumeTailorEdge"`.
+Do not add `--remote-allow-origins=*`: it lets any web page open in that browser drive your
+logged-in sessions, and the app does not need it. The debugging port is open to any local
+process, so keep it on localhost and use only job-site logins in that profile. Log into
+Workday and other ATS accounts there once. The browser pill on the Apply page turns green
+when it is connected. (The [browser extension](#browser-extension) is an alternative.)
 
-   Log into Workday / other ATS accounts once in that profile. `--remote-debugging-port`
-   exposes that profile to any local process; keep it on localhost and use only job-site
-   logins there.
+### Day to day
 
-2. `docker compose up -d` (sets `CHROME_CDP_URL=http://host.docker.internal:9222`).
+1. Fill in **Profile** (contact details, work authorization, education dates, salary
+   range, equal-opportunity answers). Fill answers only from these facts and from answers
+   you saved earlier; a question they don't cover is left for you, never guessed.
+2. **Find jobs**, or schedule the nightly run in the Apply settings drawer (**Nightly
+   run**). The app must be running; the tray is enough, and a run missed while the PC was
+   off catches up at the next start within 12 hours.
+3. Select postings and press **Tailor files for selected**. It tailors with the Tailor
+   page's model settings, several at once (Settings → Advanced → **Concurrent tailoring
+   runs**, default 2, up to 4).
+4. Select prepared postings and press **Fill selected**. It fills several at once, each in
+   its own tab (**Parallel fills** in the Apply settings drawer, default 2, up to 4), and
+   the progress banner shows each one. Each tab stays open for you to review.
+   - **Continue fill** resumes a tab after you sort out a blocker (such as a Workday
+     verification code); **Reopen and fill** starts a new tab if the old one closed
+     (unsaved answers in it may be lost).
+   - **Auto-submit** is off until you turn it on. Even then it respects per-run, per-day
+     and per-company caps, spaces submits out, skips likely duplicates, keeps before and
+     after screenshots, and never submits on Workday, LinkedIn, Indeed, Handshake or
+     SmartRecruiters. There you always press Submit yourself.
+   - **Pause all automation** in the header stops everything at once.
 
-3. Open **Apply** in the UI. Confirm the Browser CDP pill is green. Fill **Applicant
-   profile** (or use the seeded `data/workspaces/default/applicant_profile.json`).
+The **Autofill model** selector covers only Fill's AI tasks (drafted written answers and
+hybrid form resolution). For calling-code menus shared by several countries, set the
+profile's optional **Phone region**.
 
-4. In Tailor settings (saved with the profile), set `apply.enabled` true and optionally
-   `schedule_time` (local `HH:MM`). Or run once:
-
-```powershell
-docker compose exec app python scripts/apply_daily.py --limit 5
-```
-
-5. Morning: select queue rows, run **Prepare selected**, then **Fill selected**. Keep
-   **Auto-submit verified forms** off to review each completed form in Edge. Turn it on
-   when you want verified forms to submit automatically; the per-run cap still applies.
-   Fill opens each prepared posting in turn, leaves its tab open, and continues through
-   blockers. Use **Review tab** to return to a form and **Continue fill** after you resolve
-   a blocker. **Reopen and fill** starts a new tab if the saved one has closed; unsaved
-   answers in the old tab may be lost. Enter Workday verification codes in its browser
-   tab, then use **Continue fill**. For calling-code menus shared by several countries,
-   set the applicant profile's optional **Phone region** before filling.
-
-**Prepare** tailors with the same model settings as the Tailor tab (shown as "Tailoring: …"
-next to the selector) — change the model there. The **Autofill model** selector covers only
-Fill's AI tasks: drafted written answers and hybrid form resolution.
-
-Host-only CLI (when Docker is not running — do not run both against the same workspace):
+From a dev checkout with Docker, `docker compose up -d` sets
+`CHROME_CDP_URL=http://host.docker.internal:9222`; run once with
+`docker compose exec app python scripts/apply_daily.py --limit 5`. Without Docker (never
+both against the same profile):
 
 ```powershell
 .\.venv\Scripts\python.exe scripts\apply_daily.py --dry-run
+```
+
+To look at a job list's section headings before enabling its categories:
+
+```powershell
+.\.venv\Scripts\python.exe scripts\apply_daily.py --list-sections https://raw.githubusercontent.com/speedyapply/2027-SWE-College-Jobs/main/README.md
 ```
 
 ### Browser extension
