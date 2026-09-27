@@ -35,6 +35,7 @@ export function CoverLetterActionBar({ letter, jobId }: ActionProps) {
         <CopyButton label="Copy all" text={letterText(letter)} />
         <a
           href={coverLetterMdUrl(jobId)}
+          download
           className="rounded-lg border border-line px-3 py-1.5 text-sm hover:bg-paper"
         >
           Download .md
@@ -42,6 +43,7 @@ export function CoverLetterActionBar({ letter, jobId }: ActionProps) {
         {letter.has_docx && (
           <a
             href={coverLetterDocxUrl(jobId)}
+            download
             className="rounded-lg border border-line px-3 py-1.5 text-sm hover:bg-paper"
           >
             Download .docx
@@ -50,6 +52,7 @@ export function CoverLetterActionBar({ letter, jobId }: ActionProps) {
         {letter.has_pdf && (
           <a
             href={coverLetterPdfUrl(jobId)}
+            download
             className="rounded-lg border border-line px-3 py-1.5 text-sm hover:bg-paper"
           >
             Download .pdf

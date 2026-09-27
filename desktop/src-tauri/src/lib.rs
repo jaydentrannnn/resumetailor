@@ -13,7 +13,9 @@
 //! - keeps one instance (a second launch focuses the first window);
 //! - hides the window on close so the nightly scheduler keeps running, with a tray menu
 //!   to reopen or quit; quitting stops the server;
-//! - checks for, downloads and installs updates when the server asks (`update.rs`).
+//! - checks for, downloads and installs updates when the server asks (`update.rs`);
+//! - opens outside links in the default browser, keeping the window on the app
+//!   (`links.rs`).
 //!
 //! The web UI runs from a 127.0.0.1 origin and gets no Tauri IPC (see
 //! `capabilities/default.json`); only the bundled start page can call `log_folder`.
@@ -28,8 +30,10 @@ use std::sync::Mutex;
 
 use tauri::menu::{Menu, MenuItem};
 use tauri::tray::TrayIconBuilder;
-use tauri::{AppHandle, Manager, RunEvent, Url, WindowEvent};
+use tauri::webview::NewWindowResponse;
+use tauri::{AppHandle, Manager, RunEvent, Url, WebviewWindowBuilder, WindowEvent};
 
+mod links;
 mod update;
 
 const MAX_RESTARTS: u32 = 3;
@@ -44,6 +48,8 @@ struct Sidecar {
     quitting: AtomicBool,
     /// The bundled start page's URL, so a failure can navigate back to it.
     start_url: Mutex<Option<Url>>,
+    /// The running server's URL, so links to it stay in the app (`links::route`).
+    server_url: Mutex<Option<Url>>,
 }
 
 fn server_program(app: &AppHandle) -> tauri::Result<PathBuf> {
@@ -128,6 +134,7 @@ fn start_server(app: &AppHandle) -> Result<(), String> {
                     .state::<Sidecar>()
                     .restarts
                     .store(0, Ordering::SeqCst);
+                *handle.state::<Sidecar>().server_url.lock().unwrap() = Some(url.clone());
                 if let Some(window) = handle.get_webview_window("main") {
                     let _ = window.navigate(url);
                 }
@@ -220,6 +227,47 @@ fn show_main(app: &AppHandle) {
     }
 }
 
+/// The main window from `tauri.conf.json` (`"create": false`), with its link handling.
+fn main_window(app: &AppHandle) -> tauri::Result<tauri::WebviewWindow> {
+    let config = app
+        .config()
+        .app
+        .windows
+        .iter()
+        .find(|window| window.label == "main")
+        .cloned()
+        .expect("tauri.conf.json defines the main window");
+    let navigation = app.clone();
+    let popup = app.clone();
+    WebviewWindowBuilder::from_config(app, &config)?
+        .on_navigation(move |url| {
+            // A link followed in the window itself.
+            let server = navigation.state::<Sidecar>().server_url.lock().unwrap().clone();
+            match links::route(url, server.as_ref()) {
+                links::Route::App => true,
+                links::Route::Browser => {
+                    links::open_in_browser(url);
+                    false
+                }
+                links::Route::Block => false,
+            }
+        })
+        .on_new_window(move |url, _features| {
+            // A `target="_blank"` link or `window.open`: local files (a PDF preview) open
+            // in an app window, which shares the session cookie; the rest go outside.
+            let server = popup.state::<Sidecar>().server_url.lock().unwrap().clone();
+            match links::route(&url, server.as_ref()) {
+                links::Route::App => NewWindowResponse::Allow,
+                links::Route::Browser => {
+                    links::open_in_browser(&url);
+                    NewWindowResponse::Deny
+                }
+                links::Route::Block => NewWindowResponse::Deny,
+            }
+        })
+        .build()
+}
+
 #[cfg_attr(mobile, tauri::mobile_entry_point)]
 pub fn run() {
     let app = tauri::Builder::default()
@@ -232,9 +280,8 @@ pub fn run() {
         .invoke_handler(tauri::generate_handler![log_folder])
         .setup(|app| {
             let handle = app.handle().clone();
-            if let Some(window) = app.get_webview_window("main") {
-                *handle.state::<Sidecar>().start_url.lock().unwrap() = window.url().ok();
-            }
+            let window = main_window(&handle)?;
+            *handle.state::<Sidecar>().start_url.lock().unwrap() = window.url().ok();
 
             let open = MenuItem::with_id(app, "open", "Open ResumeTailor", true, None::<&str>)?;
             let quit = MenuItem::with_id(app, "quit", "Quit", true, None::<&str>)?;
