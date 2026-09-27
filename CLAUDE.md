@@ -211,3 +211,7 @@ everything *after* the loop prototype stripped (`_wrap_cell_loop`).
 - **`output/`, `data/`, `templates/` are gitignored** (PII) — if `git add -A` stages
   `output/`, treat it as a regression; whether `data/`/`templates/` *should* be gitignored
   is an open question, so never silently change `.gitignore`.
+
+## Tool Guidelines
+
+When you need the exact syntactic footprint of a function, type definition, or class ecosystem, use `ast-bro <symbol_name>`.
