@@ -1,0 +1,874 @@
+<sr-screening-questions-form data-test="screening-questions-form" showtextinputscharacterscounters=""><template shadowrootmode="open"> <spl-wrapper theme="bluesteel"><template shadowrootmode="open">
+<spl-context-provider id="d79d2d58-b7a0-4674-8d96-7b5029df40fe"><template shadowrootmode="open"><slot></slot></template>
+<slot></slot>
+</spl-context-provider>
+</template>
+<sr-question-form-ai-banner><template shadowrootmode="open">
+</template></sr-question-form-ai-banner>
+<spl-form id="question-form-1"><template shadowrootmode="open"><form>
+<slot></slot>
+</form></template>
+<div class="spl-mt-2" data-test="question-container">
+<sr-question-field-radio name=""> <spl-radio-group variant="vertical" required="" inlinelabelcontent="" id="spl-form-element_75" value=""><template shadowrootmode="open">
+<spl-internal-form-field variant="vertical"><template shadowrootmode="open"><div class=" c-spl-form-field c-spl-form-field--vertical ">
+<slot name="label"></slot>
+<slot name="description"></slot>
+<slot class="c-spl-form-field-slot"></slot>
+<spl-typography-body variant="sm" class="  "><template shadowrootmode="open">
+<p class=" c-spl-typography-body c-spl-typography-body--sm ">
+<slot></slot>
+</p>
+</template>
+<slot name="error-msg"></slot>
+</spl-typography-body>
+</div></template>
+<label slot="label" class=" c-spl-form-field-label c-spl-form-field-label--group " for="spl-form-element_75" id="spl-form-element_75-label">
+<spl-typography-label variant="md"><template shadowrootmode="open"><span class=" c-spl-typography-label c-spl-typography-label--md "><slot></slot></span></template>
+<span class="c-spl-form-field-label-wrapper">
+<span><span class="c-spl-form-field-label-required-group"><slot name="label-content"></slot><span class="c-spl-form-field-required-mark" aria-hidden="true">*</span></span></span>
+<span class="c-spl-form-field-label-suffix">
+<slot name="label-suffix"></slot>
+</span>
+</span>
+</spl-typography-label>
+</label>
+<fieldset role="radiogroup" class=" c-spl-radio-group c-spl-radio-group--vertical " aria-labelledby="spl-form-element_75-label" aria-required="true">
+<slot></slot>
+</fieldset>
+</spl-internal-form-field>
+</template>
+<span slot="label-content">
+Are you authorized to work and accept new employment in the United States?
+</span>
+<spl-radio label="Yes" tabindex="0" inlinelabelcontent="" id="spl-form-element_76" variant="default" value="1" role="radio" aria-checked="false" aria-disabled="false"><template shadowrootmode="open">
+<spl-internal-form-field preventerrormsgrender="" class="c-spl-radio-wrapper c-spl-radio-wrapper--first" variant="horizontal"><template shadowrootmode="open"><div class=" c-spl-form-field c-spl-form-field--horizontal ">
+<slot class="c-spl-form-field-slot"></slot>
+<div class="c-spl-form-field-content">
+<slot name="label"></slot> <div class="c-spl-form-field-error-sr-only"><slot name="error-msg"></slot></div>
+</div>
+</div></template>
+<label slot="label" class=" c-spl-form-field-label " for="spl-form-element_76" id="spl-form-element_76-label">
+<spl-typography-label variant="md"><template shadowrootmode="open"><span class=" c-spl-typography-label c-spl-typography-label--md "><slot></slot></span></template>
+<span class="c-spl-form-field-label-wrapper">
+<span><span class="c-spl-form-field-label-required-group">Yes</span></span>
+<span class="c-spl-form-field-label-suffix">
+<slot name="label-suffix"></slot>
+</span>
+</span>
+</spl-typography-label>
+</label>
+<div class=" c-spl-radio ">
+<div class="c-spl-radio__ring"></div>
+</div>
+</spl-internal-form-field>
+</template></spl-radio><spl-radio label="No" tabindex="-1" inlinelabelcontent="" id="spl-form-element_77" variant="default" value="0" role="radio" aria-checked="false" aria-disabled="false"><template shadowrootmode="open">
+<spl-internal-form-field preventerrormsgrender="" class="c-spl-radio-wrapper c-spl-radio-wrapper--last" variant="horizontal"><template shadowrootmode="open"><div class=" c-spl-form-field c-spl-form-field--horizontal ">
+<slot class="c-spl-form-field-slot"></slot>
+<div class="c-spl-form-field-content">
+<slot name="label"></slot> <div class="c-spl-form-field-error-sr-only"><slot name="error-msg"></slot></div>
+</div>
+</div></template>
+<label slot="label" class=" c-spl-form-field-label " for="spl-form-element_77" id="spl-form-element_77-label">
+<spl-typography-label variant="md"><template shadowrootmode="open"><span class=" c-spl-typography-label c-spl-typography-label--md "><slot></slot></span></template>
+<span class="c-spl-form-field-label-wrapper">
+<span><span class="c-spl-form-field-label-required-group">No</span></span>
+<span class="c-spl-form-field-label-suffix">
+<slot name="label-suffix"></slot>
+</span>
+</span>
+</spl-typography-label>
+</label>
+<div class=" c-spl-radio ">
+<div class="c-spl-radio__ring"></div>
+</div>
+</spl-internal-form-field>
+</template></spl-radio>
+</spl-radio-group></sr-question-field-radio>
+</div>
+<div class="spl-mt-2" data-test="question-container">
+<sr-question-field-radio name=""> <spl-radio-group variant="vertical" required="" inlinelabelcontent="" id="spl-form-element_78" value=""><template shadowrootmode="open">
+<spl-internal-form-field variant="vertical"><template shadowrootmode="open"><div class=" c-spl-form-field c-spl-form-field--vertical ">
+<slot name="label"></slot>
+<slot name="description"></slot>
+<slot class="c-spl-form-field-slot"></slot>
+<spl-typography-body variant="sm" class="  "><template shadowrootmode="open">
+<p class=" c-spl-typography-body c-spl-typography-body--sm ">
+<slot></slot>
+</p>
+</template>
+<slot name="error-msg"></slot>
+</spl-typography-body>
+</div></template>
+<label slot="label" class=" c-spl-form-field-label c-spl-form-field-label--group " for="spl-form-element_78" id="spl-form-element_78-label">
+<spl-typography-label variant="md"><template shadowrootmode="open"><span class=" c-spl-typography-label c-spl-typography-label--md "><slot></slot></span></template>
+<span class="c-spl-form-field-label-wrapper">
+<span><span class="c-spl-form-field-label-required-group"><slot name="label-content"></slot><span class="c-spl-form-field-required-mark" aria-hidden="true">*</span></span></span>
+<span class="c-spl-form-field-label-suffix">
+<slot name="label-suffix"></slot>
+</span>
+</span>
+</spl-typography-label>
+</label>
+<fieldset role="radiogroup" class=" c-spl-radio-group c-spl-radio-group--vertical " aria-labelledby="spl-form-element_78-label" aria-required="true">
+<slot></slot>
+</fieldset>
+</spl-internal-form-field>
+</template>
+<span slot="label-content">
+Will you need sponsorship in the future from an employer to obtain, extend or renew your authorization to work in the United States?
+</span>
+<spl-radio label="Yes" tabindex="0" inlinelabelcontent="" id="spl-form-element_79" variant="default" value="1" role="radio" aria-checked="false" aria-disabled="false"><template shadowrootmode="open">
+<spl-internal-form-field preventerrormsgrender="" class="c-spl-radio-wrapper c-spl-radio-wrapper--first" variant="horizontal"><template shadowrootmode="open"><div class=" c-spl-form-field c-spl-form-field--horizontal ">
+<slot class="c-spl-form-field-slot"></slot>
+<div class="c-spl-form-field-content">
+<slot name="label"></slot> <div class="c-spl-form-field-error-sr-only"><slot name="error-msg"></slot></div>
+</div>
+</div></template>
+<label slot="label" class=" c-spl-form-field-label " for="spl-form-element_79" id="spl-form-element_79-label">
+<spl-typography-label variant="md"><template shadowrootmode="open"><span class=" c-spl-typography-label c-spl-typography-label--md "><slot></slot></span></template>
+<span class="c-spl-form-field-label-wrapper">
+<span><span class="c-spl-form-field-label-required-group">Yes</span></span>
+<span class="c-spl-form-field-label-suffix">
+<slot name="label-suffix"></slot>
+</span>
+</span>
+</spl-typography-label>
+</label>
+<div class=" c-spl-radio ">
+<div class="c-spl-radio__ring"></div>
+</div>
+</spl-internal-form-field>
+</template></spl-radio><spl-radio label="No" tabindex="-1" inlinelabelcontent="" id="spl-form-element_80" variant="default" value="0" role="radio" aria-checked="false" aria-disabled="false"><template shadowrootmode="open">
+<spl-internal-form-field preventerrormsgrender="" class="c-spl-radio-wrapper c-spl-radio-wrapper--last" variant="horizontal"><template shadowrootmode="open"><div class=" c-spl-form-field c-spl-form-field--horizontal ">
+<slot class="c-spl-form-field-slot"></slot>
+<div class="c-spl-form-field-content">
+<slot name="label"></slot> <div class="c-spl-form-field-error-sr-only"><slot name="error-msg"></slot></div>
+</div>
+</div></template>
+<label slot="label" class=" c-spl-form-field-label " for="spl-form-element_80" id="spl-form-element_80-label">
+<spl-typography-label variant="md"><template shadowrootmode="open"><span class=" c-spl-typography-label c-spl-typography-label--md "><slot></slot></span></template>
+<span class="c-spl-form-field-label-wrapper">
+<span><span class="c-spl-form-field-label-required-group">No</span></span>
+<span class="c-spl-form-field-label-suffix">
+<slot name="label-suffix"></slot>
+</span>
+</span>
+</spl-typography-label>
+</label>
+<div class=" c-spl-radio ">
+<div class="c-spl-radio__ring"></div>
+</div>
+</spl-internal-form-field>
+</template></spl-radio>
+</spl-radio-group></sr-question-field-radio>
+</div>
+<div class="spl-mt-2" data-test="question-container">
+<sr-question-field-radio name=""> <spl-radio-group variant="vertical" required="" inlinelabelcontent="" id="spl-form-element_87" value=""><template shadowrootmode="open">
+<spl-internal-form-field variant="vertical"><template shadowrootmode="open"><div class=" c-spl-form-field c-spl-form-field--vertical ">
+<slot name="label"></slot>
+<slot name="description"></slot>
+<slot class="c-spl-form-field-slot"></slot>
+<spl-typography-body variant="sm" class="  "><template shadowrootmode="open">
+<p class=" c-spl-typography-body c-spl-typography-body--sm ">
+<slot></slot>
+</p>
+</template>
+<slot name="error-msg"></slot>
+</spl-typography-body>
+</div></template>
+<label slot="label" class=" c-spl-form-field-label c-spl-form-field-label--group " for="spl-form-element_87" id="spl-form-element_87-label">
+<spl-typography-label variant="md"><template shadowrootmode="open"><span class=" c-spl-typography-label c-spl-typography-label--md "><slot></slot></span></template>
+<span class="c-spl-form-field-label-wrapper">
+<span><span class="c-spl-form-field-label-required-group"><slot name="label-content"></slot><span class="c-spl-form-field-required-mark" aria-hidden="true">*</span></span></span>
+<span class="c-spl-form-field-label-suffix">
+<slot name="label-suffix"></slot>
+</span>
+</span>
+</spl-typography-label>
+</label>
+<fieldset role="radiogroup" class=" c-spl-radio-group c-spl-radio-group--vertical " aria-labelledby="spl-form-element_87-label" aria-required="true">
+<slot></slot>
+</fieldset>
+</spl-internal-form-field>
+</template>
+<span slot="label-content">
+Are you currently subject to a non-compete agreement?
+</span>
+<spl-radio label="Yes" tabindex="0" inlinelabelcontent="" id="spl-form-element_88" variant="default" value="1" role="radio" aria-checked="false" aria-disabled="false"><template shadowrootmode="open">
+<spl-internal-form-field preventerrormsgrender="" class="c-spl-radio-wrapper c-spl-radio-wrapper--first" variant="horizontal"><template shadowrootmode="open"><div class=" c-spl-form-field c-spl-form-field--horizontal ">
+<slot class="c-spl-form-field-slot"></slot>
+<div class="c-spl-form-field-content">
+<slot name="label"></slot> <div class="c-spl-form-field-error-sr-only"><slot name="error-msg"></slot></div>
+</div>
+</div></template>
+<label slot="label" class=" c-spl-form-field-label " for="spl-form-element_88" id="spl-form-element_88-label">
+<spl-typography-label variant="md"><template shadowrootmode="open"><span class=" c-spl-typography-label c-spl-typography-label--md "><slot></slot></span></template>
+<span class="c-spl-form-field-label-wrapper">
+<span><span class="c-spl-form-field-label-required-group">Yes</span></span>
+<span class="c-spl-form-field-label-suffix">
+<slot name="label-suffix"></slot>
+</span>
+</span>
+</spl-typography-label>
+</label>
+<div class=" c-spl-radio ">
+<div class="c-spl-radio__ring"></div>
+</div>
+</spl-internal-form-field>
+</template></spl-radio><spl-radio label="No" tabindex="-1" inlinelabelcontent="" id="spl-form-element_89" variant="default" value="0" role="radio" aria-checked="false" aria-disabled="false"><template shadowrootmode="open">
+<spl-internal-form-field preventerrormsgrender="" class="c-spl-radio-wrapper c-spl-radio-wrapper--last" variant="horizontal"><template shadowrootmode="open"><div class=" c-spl-form-field c-spl-form-field--horizontal ">
+<slot class="c-spl-form-field-slot"></slot>
+<div class="c-spl-form-field-content">
+<slot name="label"></slot> <div class="c-spl-form-field-error-sr-only"><slot name="error-msg"></slot></div>
+</div>
+</div></template>
+<label slot="label" class=" c-spl-form-field-label " for="spl-form-element_89" id="spl-form-element_89-label">
+<spl-typography-label variant="md"><template shadowrootmode="open"><span class=" c-spl-typography-label c-spl-typography-label--md "><slot></slot></span></template>
+<span class="c-spl-form-field-label-wrapper">
+<span><span class="c-spl-form-field-label-required-group">No</span></span>
+<span class="c-spl-form-field-label-suffix">
+<slot name="label-suffix"></slot>
+</span>
+</span>
+</spl-typography-label>
+</label>
+<div class=" c-spl-radio ">
+<div class="c-spl-radio__ring"></div>
+</div>
+</spl-internal-form-field>
+</template></spl-radio>
+</spl-radio-group></sr-question-field-radio>
+</div>
+<div class="spl-mt-2" data-test="question-container">
+<sr-question-field-select name="">
+<spl-autocomplete data-spl-field="" required="" id="question_89501da0-cb06-433c-a168-316a602e3644" name="question_89501da0-cb06-433c-a168-316a602e3644" aria-label="Select What is your current or most recently completed degree type?" inlinelabelcontent="" minquerylength="0" nomatcheslabel="No matches"><template shadowrootmode="open"><div>
+<spl-internal-form-field variant="vertical"><template shadowrootmode="open"><div class=" c-spl-form-field c-spl-form-field--vertical ">
+<slot name="label"></slot>
+<slot name="description"></slot>
+<slot class="c-spl-form-field-slot"></slot>
+<spl-typography-body variant="sm" class="  "><template shadowrootmode="open">
+<p class=" c-spl-typography-body c-spl-typography-body--sm ">
+<slot></slot>
+</p>
+</template>
+<slot name="error-msg"></slot>
+</spl-typography-body>
+</div></template>
+<div class="c-spl-autocomplete-status" role="status" aria-live="polite" aria-atomic="true">
+</div>
+<spl-dropdown class="c-spl-autocomplete-dropdown" menustretch="" preventfocusonshow=""><template shadowrootmode="open"> <div class=" c-spl-dropdown c-spl-dropdown--close ">
+<span class="c-spl-dropdown-trigger" id="spl-449">
+<slot name="trigger"></slot>
+</span>
+<div class="c-spl-dropdown-menu-wrapper">
+<div class="c-spl-dropdown-menu" aria-hidden="true">
+<spl-keyboard-list-navigator><template shadowrootmode="open"><slot></slot></template>
+<slot name="search"></slot>
+<slot name="prefix" class="c-spl-dropdown-prefix-slot"></slot>
+<slot name="menu" class="c-spl-dropdown-menu-slot"></slot>
+<slot name="suffix"></slot>
+</spl-keyboard-list-navigator>
+</div>
+</div>
+<div class="c-spl-dropdown__status" role="status" aria-live="polite" aria-atomic="true"></div>
+</div></template>
+<div slot="trigger" class="c-spl-autocomplete-trigger">
+<div class="">
+<slot name="prefixIcon"></slot>
+</div>
+<spl-input type="text" value="" preventerrormsgrender="" autocomplete="off" label="" required="" id="question_89501da0-cb06-433c-a168-316a602e3644" ariacontrols="menu-question_89501da0-cb06-433c-a168-316a602e3644" ariaautocomplete="list" ariarole="combobox" ariahaspopup="listbox" ariaexpanded="false"><template shadowrootmode="open"><spl-internal-form-field preventerrormsgrender="" variant="vertical"><template shadowrootmode="open"><div class=" c-spl-form-field c-spl-form-field--vertical ">
+<slot name="label"></slot>
+<slot name="description"></slot>
+<slot class="c-spl-form-field-slot"></slot>
+<div class="c-spl-form-field-error-sr-only"><slot name="error-msg"></slot></div>
+</div></template>
+<label slot="label" class=" c-spl-form-field-label " for="question_89501da0-cb06-433c-a168-316a602e3644" id="question_89501da0-cb06-433c-a168-316a602e3644-label">
+<spl-typography-label variant="md"><template shadowrootmode="open"><span class=" c-spl-typography-label c-spl-typography-label--md "><slot></slot></span></template>
+<span class="c-spl-form-field-label-wrapper">
+<span class="c-spl-form-field-label-required-group"><slot name="label-content"></slot><span class="c-spl-form-field-required-mark" aria-hidden="true">*</span></span>
+<span class="c-spl-form-field-label-suffix">
+<slot name="label-suffix"></slot>
+</span>
+</span>
+</spl-typography-label>
+</label>
+<div class="c-spl-input-grid">
+<div class=" c-spl-input-slot c-spl-input-slot-hidden ">
+<slot name="before"></slot>
+</div>
+<div class="c-spl-input-wrapper">
+<slot name="inner-prefix" class="  "></slot>
+<input autocomplete="off" class="c-spl-input" id="question_89501da0-cb06-433c-a168-316a602e3644" type="text" placeholder="" aria-controls="menu-question_89501da0-cb06-433c-a168-316a602e3644" aria-autocomplete="list" aria-invalid="false" aria-required="true" aria-expanded="false" aria-haspopup="listbox" role="combobox" style="padding-right: 40px;"></input>
+<slot name="inner-suffix" class="  "></slot>
+</div>
+<div class="c-spl-input-slot"><slot name="after"></slot></div>
+</div>
+</spl-internal-form-field></template>
+<slot name="label-suffix" slot="label-suffix"></slot>
+<slot name="label-content" slot="label-content"></slot>
+</spl-input>
+<div class="c-spl-autocomplete-icon">
+<slot name="suffixIcon">
+<spl-icon></spl-icon>
+</slot>
+</div>
+</div> <div slot="menu" id="menu-question_89501da0-cb06-433c-a168-316a602e3644" role="listbox" aria-labelledby="spl-449">
+</div>
+</spl-dropdown>
+</spl-internal-form-field>
+</div></template>
+<span slot="label-content">
+What is your current or most recently completed degree type?
+</span>
+</spl-autocomplete>
+</sr-question-field-select>
+</div>
+<div class="spl-mt-2" data-test="question-container">
+<sr-question-field-select name="">
+<spl-autocomplete data-spl-field="" required="" id="question_867d31ec-87ef-49f2-8c11-1f9fb51f9df5" name="question_867d31ec-87ef-49f2-8c11-1f9fb51f9df5" aria-label="Select What is your current or most recent major?" inlinelabelcontent="" minquerylength="0" nomatcheslabel="No matches"><template shadowrootmode="open"><div>
+<spl-internal-form-field variant="vertical"><template shadowrootmode="open"><div class=" c-spl-form-field c-spl-form-field--vertical ">
+<slot name="label"></slot>
+<slot name="description"></slot>
+<slot class="c-spl-form-field-slot"></slot>
+<spl-typography-body variant="sm" class="  "><template shadowrootmode="open">
+<p class=" c-spl-typography-body c-spl-typography-body--sm ">
+<slot></slot>
+</p>
+</template>
+<slot name="error-msg"></slot>
+</spl-typography-body>
+</div></template>
+<div class="c-spl-autocomplete-status" role="status" aria-live="polite" aria-atomic="true">
+</div>
+<spl-dropdown class="c-spl-autocomplete-dropdown" menustretch="" preventfocusonshow=""><template shadowrootmode="open"> <div class=" c-spl-dropdown c-spl-dropdown--close ">
+<span class="c-spl-dropdown-trigger" id="spl-450">
+<slot name="trigger"></slot>
+</span>
+<div class="c-spl-dropdown-menu-wrapper">
+<div class="c-spl-dropdown-menu" aria-hidden="true">
+<spl-keyboard-list-navigator><template shadowrootmode="open"><slot></slot></template>
+<slot name="search"></slot>
+<slot name="prefix" class="c-spl-dropdown-prefix-slot"></slot>
+<slot name="menu" class="c-spl-dropdown-menu-slot"></slot>
+<slot name="suffix"></slot>
+</spl-keyboard-list-navigator>
+</div>
+</div>
+<div class="c-spl-dropdown__status" role="status" aria-live="polite" aria-atomic="true"></div>
+</div></template>
+<div slot="trigger" class="c-spl-autocomplete-trigger">
+<div class="">
+<slot name="prefixIcon"></slot>
+</div>
+<spl-input type="text" value="" preventerrormsgrender="" autocomplete="off" label="" required="" id="question_867d31ec-87ef-49f2-8c11-1f9fb51f9df5" ariacontrols="menu-question_867d31ec-87ef-49f2-8c11-1f9fb51f9df5" ariaautocomplete="list" ariarole="combobox" ariahaspopup="listbox" ariaexpanded="false"><template shadowrootmode="open"><spl-internal-form-field preventerrormsgrender="" variant="vertical"><template shadowrootmode="open"><div class=" c-spl-form-field c-spl-form-field--vertical ">
+<slot name="label"></slot>
+<slot name="description"></slot>
+<slot class="c-spl-form-field-slot"></slot>
+<div class="c-spl-form-field-error-sr-only"><slot name="error-msg"></slot></div>
+</div></template>
+<label slot="label" class=" c-spl-form-field-label " for="question_867d31ec-87ef-49f2-8c11-1f9fb51f9df5" id="question_867d31ec-87ef-49f2-8c11-1f9fb51f9df5-label">
+<spl-typography-label variant="md"><template shadowrootmode="open"><span class=" c-spl-typography-label c-spl-typography-label--md "><slot></slot></span></template>
+<span class="c-spl-form-field-label-wrapper">
+<span class="c-spl-form-field-label-required-group"><slot name="label-content"></slot><span class="c-spl-form-field-required-mark" aria-hidden="true">*</span></span>
+<span class="c-spl-form-field-label-suffix">
+<slot name="label-suffix"></slot>
+</span>
+</span>
+</spl-typography-label>
+</label>
+<div class="c-spl-input-grid">
+<div class=" c-spl-input-slot c-spl-input-slot-hidden ">
+<slot name="before"></slot>
+</div>
+<div class="c-spl-input-wrapper">
+<slot name="inner-prefix" class="  "></slot>
+<input autocomplete="off" class="c-spl-input" id="question_867d31ec-87ef-49f2-8c11-1f9fb51f9df5" type="text" placeholder="" aria-controls="menu-question_867d31ec-87ef-49f2-8c11-1f9fb51f9df5" aria-autocomplete="list" aria-invalid="false" aria-required="true" aria-expanded="false" aria-haspopup="listbox" role="combobox" style="padding-right: 40px;"></input>
+<slot name="inner-suffix" class="  "></slot>
+</div>
+<div class="c-spl-input-slot"><slot name="after"></slot></div>
+</div>
+</spl-internal-form-field></template>
+<slot name="label-suffix" slot="label-suffix"></slot>
+<slot name="label-content" slot="label-content"></slot>
+</spl-input>
+<div class="c-spl-autocomplete-icon">
+<slot name="suffixIcon">
+<spl-icon></spl-icon>
+</slot>
+</div>
+</div> <div slot="menu" id="menu-question_867d31ec-87ef-49f2-8c11-1f9fb51f9df5" role="listbox" aria-labelledby="spl-450">
+</div>
+</spl-dropdown>
+</spl-internal-form-field>
+</div></template>
+<span slot="label-content">
+What is your current or most recent major?
+</span>
+</spl-autocomplete>
+</sr-question-field-select>
+</div>
+<div class="spl-mt-2" data-test="question-container">
+<sr-question-field-text name="" showcharacterscounter="">
+<spl-input data-spl-field="" required="" id="question_7a39b8d4-ae56-4427-85ef-ac86797d271d" name="question_7a39b8d4-ae56-4427-85ef-ac86797d271d" maxlength="200" inlinelabelcontent="" type="text" value=""><template shadowrootmode="open"><spl-internal-form-field variant="vertical"><template shadowrootmode="open"><div class=" c-spl-form-field c-spl-form-field--vertical ">
+<slot name="label"></slot>
+<slot name="description"></slot>
+<slot class="c-spl-form-field-slot"></slot>
+<spl-typography-body variant="sm" class="  "><template shadowrootmode="open">
+<p class=" c-spl-typography-body c-spl-typography-body--sm ">
+<slot></slot>
+</p>
+</template>
+<slot name="error-msg"></slot>
+</spl-typography-body>
+</div></template>
+<label slot="label" class=" c-spl-form-field-label " for="question_7a39b8d4-ae56-4427-85ef-ac86797d271d" id="question_7a39b8d4-ae56-4427-85ef-ac86797d271d-label">
+<spl-typography-label variant="md"><template shadowrootmode="open"><span class=" c-spl-typography-label c-spl-typography-label--md "><slot></slot></span></template>
+<span class="c-spl-form-field-label-wrapper">
+<span><span class="c-spl-form-field-label-required-group"><slot name="label-content"></slot><span class="c-spl-form-field-required-mark" aria-hidden="true">*</span></span></span>
+<span class="c-spl-form-field-label-suffix">
+<slot name="label-suffix"></slot>
+</span>
+</span>
+</spl-typography-label>
+</label>
+<div class="c-spl-input-grid">
+<div class=" c-spl-input-slot c-spl-input-slot-hidden ">
+<slot name="before"></slot>
+</div>
+<div class="c-spl-input-wrapper">
+<slot name="inner-prefix" class="  "></slot>
+<input class=" c-spl-input " id="question_7a39b8d4-ae56-4427-85ef-ac86797d271d" type="text" placeholder="" maxlength="200" aria-invalid="false" aria-required="true" style=""></input>
+<slot name="inner-suffix" class="  "></slot>
+</div>
+<div class="c-spl-input-slot"><slot name="after"></slot></div>
+</div>
+</spl-internal-form-field></template>
+<span slot="label-content">
+What is the name of your school?
+</span>
+</spl-input>
+<div class="spl-flex spl-justify-end">
+<spl-typography-label variant="sm" class="  "><template shadowrootmode="open"><span class=" c-spl-typography-label c-spl-typography-label--sm "><slot></slot></span></template>
+0/200
+</spl-typography-label>
+</div>
+</sr-question-field-text>
+</div>
+<div class="spl-mt-2" data-test="question-container">
+<sr-question-field-select name="">
+<spl-autocomplete data-spl-field="" required="" id="question_3cc6377b-4f8b-4db4-9f43-5615c80664a8" name="question_3cc6377b-4f8b-4db4-9f43-5615c80664a8" aria-label="Select What is your expected graduation month?" inlinelabelcontent="" minquerylength="0" nomatcheslabel="No matches"><template shadowrootmode="open"><div>
+<spl-internal-form-field variant="vertical"><template shadowrootmode="open"><div class=" c-spl-form-field c-spl-form-field--vertical ">
+<slot name="label"></slot>
+<slot name="description"></slot>
+<slot class="c-spl-form-field-slot"></slot>
+<spl-typography-body variant="sm" class="  "><template shadowrootmode="open">
+<p class=" c-spl-typography-body c-spl-typography-body--sm ">
+<slot></slot>
+</p>
+</template>
+<slot name="error-msg"></slot>
+</spl-typography-body>
+</div></template>
+<div class="c-spl-autocomplete-status" role="status" aria-live="polite" aria-atomic="true">
+</div>
+<spl-dropdown class="c-spl-autocomplete-dropdown" menustretch="" preventfocusonshow=""><template shadowrootmode="open"> <div class=" c-spl-dropdown c-spl-dropdown--close ">
+<span class="c-spl-dropdown-trigger" id="spl-451">
+<slot name="trigger"></slot>
+</span>
+<div class="c-spl-dropdown-menu-wrapper">
+<div class="c-spl-dropdown-menu" aria-hidden="true">
+<spl-keyboard-list-navigator><template shadowrootmode="open"><slot></slot></template>
+<slot name="search"></slot>
+<slot name="prefix" class="c-spl-dropdown-prefix-slot"></slot>
+<slot name="menu" class="c-spl-dropdown-menu-slot"></slot>
+<slot name="suffix"></slot>
+</spl-keyboard-list-navigator>
+</div>
+</div>
+<div class="c-spl-dropdown__status" role="status" aria-live="polite" aria-atomic="true"></div>
+</div></template>
+<div slot="trigger" class="c-spl-autocomplete-trigger">
+<div class="">
+<slot name="prefixIcon"></slot>
+</div>
+<spl-input type="text" value="" preventerrormsgrender="" autocomplete="off" label="" required="" id="question_3cc6377b-4f8b-4db4-9f43-5615c80664a8" ariacontrols="menu-question_3cc6377b-4f8b-4db4-9f43-5615c80664a8" ariaautocomplete="list" ariarole="combobox" ariahaspopup="listbox" ariaexpanded="false"><template shadowrootmode="open"><spl-internal-form-field preventerrormsgrender="" variant="vertical"><template shadowrootmode="open"><div class=" c-spl-form-field c-spl-form-field--vertical ">
+<slot name="label"></slot>
+<slot name="description"></slot>
+<slot class="c-spl-form-field-slot"></slot>
+<div class="c-spl-form-field-error-sr-only"><slot name="error-msg"></slot></div>
+</div></template>
+<label slot="label" class=" c-spl-form-field-label " for="question_3cc6377b-4f8b-4db4-9f43-5615c80664a8" id="question_3cc6377b-4f8b-4db4-9f43-5615c80664a8-label">
+<spl-typography-label variant="md"><template shadowrootmode="open"><span class=" c-spl-typography-label c-spl-typography-label--md "><slot></slot></span></template>
+<span class="c-spl-form-field-label-wrapper">
+<span class="c-spl-form-field-label-required-group"><slot name="label-content"></slot><span class="c-spl-form-field-required-mark" aria-hidden="true">*</span></span>
+<span class="c-spl-form-field-label-suffix">
+<slot name="label-suffix"></slot>
+</span>
+</span>
+</spl-typography-label>
+</label>
+<div class="c-spl-input-grid">
+<div class=" c-spl-input-slot c-spl-input-slot-hidden ">
+<slot name="before"></slot>
+</div>
+<div class="c-spl-input-wrapper">
+<slot name="inner-prefix" class="  "></slot>
+<input autocomplete="off" class="c-spl-input" id="question_3cc6377b-4f8b-4db4-9f43-5615c80664a8" type="text" placeholder="" aria-controls="menu-question_3cc6377b-4f8b-4db4-9f43-5615c80664a8" aria-autocomplete="list" aria-invalid="false" aria-required="true" aria-expanded="false" aria-haspopup="listbox" role="combobox" style="padding-right: 40px;"></input>
+<slot name="inner-suffix" class="  "></slot>
+</div>
+<div class="c-spl-input-slot"><slot name="after"></slot></div>
+</div>
+</spl-internal-form-field></template>
+<slot name="label-suffix" slot="label-suffix"></slot>
+<slot name="label-content" slot="label-content"></slot>
+</spl-input>
+<div class="c-spl-autocomplete-icon">
+<slot name="suffixIcon">
+<spl-icon></spl-icon>
+</slot>
+</div>
+</div> <div slot="menu" id="menu-question_3cc6377b-4f8b-4db4-9f43-5615c80664a8" role="listbox" aria-labelledby="spl-451">
+</div>
+</spl-dropdown>
+</spl-internal-form-field>
+</div></template>
+<span slot="label-content">
+What is your expected graduation month?
+</span>
+</spl-autocomplete>
+</sr-question-field-select>
+</div>
+<div class="spl-mt-2" data-test="question-container">
+<sr-question-field-select name="">
+<spl-autocomplete data-spl-field="" required="" id="question_f2ec8fc1-4caa-4fdc-a701-f101f65ee792" name="question_f2ec8fc1-4caa-4fdc-a701-f101f65ee792" aria-label="Select What is your expected graduation year?" inlinelabelcontent="" minquerylength="0" nomatcheslabel="No matches"><template shadowrootmode="open"><div>
+<spl-internal-form-field variant="vertical"><template shadowrootmode="open"><div class=" c-spl-form-field c-spl-form-field--vertical ">
+<slot name="label"></slot>
+<slot name="description"></slot>
+<slot class="c-spl-form-field-slot"></slot>
+<spl-typography-body variant="sm" class="  "><template shadowrootmode="open">
+<p class=" c-spl-typography-body c-spl-typography-body--sm ">
+<slot></slot>
+</p>
+</template>
+<slot name="error-msg"></slot>
+</spl-typography-body>
+</div></template>
+<div class="c-spl-autocomplete-status" role="status" aria-live="polite" aria-atomic="true">
+</div>
+<spl-dropdown class="c-spl-autocomplete-dropdown" menustretch="" preventfocusonshow=""><template shadowrootmode="open"> <div class=" c-spl-dropdown c-spl-dropdown--close ">
+<span class="c-spl-dropdown-trigger" id="spl-452">
+<slot name="trigger"></slot>
+</span>
+<div class="c-spl-dropdown-menu-wrapper">
+<div class="c-spl-dropdown-menu" aria-hidden="true">
+<spl-keyboard-list-navigator><template shadowrootmode="open"><slot></slot></template>
+<slot name="search"></slot>
+<slot name="prefix" class="c-spl-dropdown-prefix-slot"></slot>
+<slot name="menu" class="c-spl-dropdown-menu-slot"></slot>
+<slot name="suffix"></slot>
+</spl-keyboard-list-navigator>
+</div>
+</div>
+<div class="c-spl-dropdown__status" role="status" aria-live="polite" aria-atomic="true"></div>
+</div></template>
+<div slot="trigger" class="c-spl-autocomplete-trigger">
+<div class="">
+<slot name="prefixIcon"></slot>
+</div>
+<spl-input type="text" value="" preventerrormsgrender="" autocomplete="off" label="" required="" id="question_f2ec8fc1-4caa-4fdc-a701-f101f65ee792" ariacontrols="menu-question_f2ec8fc1-4caa-4fdc-a701-f101f65ee792" ariaautocomplete="list" ariarole="combobox" ariahaspopup="listbox" ariaexpanded="false"><template shadowrootmode="open"><spl-internal-form-field preventerrormsgrender="" variant="vertical"><template shadowrootmode="open"><div class=" c-spl-form-field c-spl-form-field--vertical ">
+<slot name="label"></slot>
+<slot name="description"></slot>
+<slot class="c-spl-form-field-slot"></slot>
+<div class="c-spl-form-field-error-sr-only"><slot name="error-msg"></slot></div>
+</div></template>
+<label slot="label" class=" c-spl-form-field-label " for="question_f2ec8fc1-4caa-4fdc-a701-f101f65ee792" id="question_f2ec8fc1-4caa-4fdc-a701-f101f65ee792-label">
+<spl-typography-label variant="md"><template shadowrootmode="open"><span class=" c-spl-typography-label c-spl-typography-label--md "><slot></slot></span></template>
+<span class="c-spl-form-field-label-wrapper">
+<span class="c-spl-form-field-label-required-group"><slot name="label-content"></slot><span class="c-spl-form-field-required-mark" aria-hidden="true">*</span></span>
+<span class="c-spl-form-field-label-suffix">
+<slot name="label-suffix"></slot>
+</span>
+</span>
+</spl-typography-label>
+</label>
+<div class="c-spl-input-grid">
+<div class=" c-spl-input-slot c-spl-input-slot-hidden ">
+<slot name="before"></slot>
+</div>
+<div class="c-spl-input-wrapper">
+<slot name="inner-prefix" class="  "></slot>
+<input autocomplete="off" class="c-spl-input" id="question_f2ec8fc1-4caa-4fdc-a701-f101f65ee792" type="text" placeholder="" aria-controls="menu-question_f2ec8fc1-4caa-4fdc-a701-f101f65ee792" aria-autocomplete="list" aria-invalid="false" aria-required="true" aria-expanded="false" aria-haspopup="listbox" role="combobox" style="padding-right: 40px;"></input>
+<slot name="inner-suffix" class="  "></slot>
+</div>
+<div class="c-spl-input-slot"><slot name="after"></slot></div>
+</div>
+</spl-internal-form-field></template>
+<slot name="label-suffix" slot="label-suffix"></slot>
+<slot name="label-content" slot="label-content"></slot>
+</spl-input>
+<div class="c-spl-autocomplete-icon">
+<slot name="suffixIcon">
+<spl-icon></spl-icon>
+</slot>
+</div>
+</div> <div slot="menu" id="menu-question_f2ec8fc1-4caa-4fdc-a701-f101f65ee792" role="listbox" aria-labelledby="spl-452">
+</div>
+</spl-dropdown>
+</spl-internal-form-field>
+</div></template>
+<span slot="label-content">
+What is your expected graduation year?
+</span>
+</spl-autocomplete>
+</sr-question-field-select>
+</div>
+<div class="spl-mt-2" data-test="question-container">
+<sr-question-field-text name="" showcharacterscounter="">
+<spl-input data-spl-field="" required="" id="question_48925dcc-bcbe-452a-88ba-3cb73b8d3d49" name="question_48925dcc-bcbe-452a-88ba-3cb73b8d3d49" maxlength="200" inlinelabelcontent="" type="text" value=""><template shadowrootmode="open"><spl-internal-form-field variant="vertical"><template shadowrootmode="open"><div class=" c-spl-form-field c-spl-form-field--vertical ">
+<slot name="label"></slot>
+<slot name="description"></slot>
+<slot class="c-spl-form-field-slot"></slot>
+<spl-typography-body variant="sm" class="  "><template shadowrootmode="open">
+<p class=" c-spl-typography-body c-spl-typography-body--sm ">
+<slot></slot>
+</p>
+</template>
+<slot name="error-msg"></slot>
+</spl-typography-body>
+</div></template>
+<label slot="label" class=" c-spl-form-field-label " for="question_48925dcc-bcbe-452a-88ba-3cb73b8d3d49" id="question_48925dcc-bcbe-452a-88ba-3cb73b8d3d49-label">
+<spl-typography-label variant="md"><template shadowrootmode="open"><span class=" c-spl-typography-label c-spl-typography-label--md "><slot></slot></span></template>
+<span class="c-spl-form-field-label-wrapper">
+<span><span class="c-spl-form-field-label-required-group"><slot name="label-content"></slot><span class="c-spl-form-field-required-mark" aria-hidden="true">*</span></span></span>
+<span class="c-spl-form-field-label-suffix">
+<slot name="label-suffix"></slot>
+</span>
+</span>
+</spl-typography-label>
+</label>
+<div class="c-spl-input-grid">
+<div class=" c-spl-input-slot c-spl-input-slot-hidden ">
+<slot name="before"></slot>
+</div>
+<div class="c-spl-input-wrapper">
+<slot name="inner-prefix" class="  "></slot>
+<input class=" c-spl-input " id="question_48925dcc-bcbe-452a-88ba-3cb73b8d3d49" type="text" placeholder="" maxlength="200" aria-invalid="false" aria-required="true" style=""></input>
+<slot name="inner-suffix" class="  "></slot>
+</div>
+<div class="c-spl-input-slot"><slot name="after"></slot></div>
+</div>
+</spl-internal-form-field></template>
+<span slot="label-content">
+What is your hourly wage expectation?
+</span>
+</spl-input>
+<div class="spl-flex spl-justify-end">
+<spl-typography-label variant="sm" class="  "><template shadowrootmode="open"><span class=" c-spl-typography-label c-spl-typography-label--sm "><slot></slot></span></template>
+0/200
+</spl-typography-label>
+</div>
+</sr-question-field-text>
+</div>
+<div class="spl-mt-2" data-test="question-container">
+<sr-question-field-text name="" showcharacterscounter="">
+<spl-input data-spl-field="" required="" id="question_04fa480f-c32b-49e7-b117-22936d46584d" name="question_04fa480f-c32b-49e7-b117-22936d46584d" maxlength="200" inlinelabelcontent="" type="text" value=""><template shadowrootmode="open"><spl-internal-form-field variant="vertical"><template shadowrootmode="open"><div class=" c-spl-form-field c-spl-form-field--vertical ">
+<slot name="label"></slot>
+<slot name="description"></slot>
+<slot class="c-spl-form-field-slot"></slot>
+<spl-typography-body variant="sm" class="  "><template shadowrootmode="open">
+<p class=" c-spl-typography-body c-spl-typography-body--sm ">
+<slot></slot>
+</p>
+</template>
+<slot name="error-msg"></slot>
+</spl-typography-body>
+</div></template>
+<label slot="label" class=" c-spl-form-field-label " for="question_04fa480f-c32b-49e7-b117-22936d46584d" id="question_04fa480f-c32b-49e7-b117-22936d46584d-label">
+<spl-typography-label variant="md"><template shadowrootmode="open"><span class=" c-spl-typography-label c-spl-typography-label--md "><slot></slot></span></template>
+<span class="c-spl-form-field-label-wrapper">
+<span><span class="c-spl-form-field-label-required-group"><slot name="label-content"></slot><span class="c-spl-form-field-required-mark" aria-hidden="true">*</span></span></span>
+<span class="c-spl-form-field-label-suffix">
+<slot name="label-suffix"></slot>
+</span>
+</span>
+</spl-typography-label>
+</label>
+<div class="c-spl-input-grid">
+<div class=" c-spl-input-slot c-spl-input-slot-hidden ">
+<slot name="before"></slot>
+</div>
+<div class="c-spl-input-wrapper">
+<slot name="inner-prefix" class="  "></slot>
+<input class=" c-spl-input " id="question_04fa480f-c32b-49e7-b117-22936d46584d" type="text" placeholder="" maxlength="200" aria-invalid="false" aria-required="true" style=""></input>
+<slot name="inner-suffix" class="  "></slot>
+</div>
+<div class="c-spl-input-slot"><slot name="after"></slot></div>
+</div>
+</spl-internal-form-field></template>
+<span slot="label-content">
+How did you learn about Resultant and this opportunity? (Please include the job board or employee referral name)
+</span>
+</spl-input>
+<div class="spl-flex spl-justify-end">
+<spl-typography-label variant="sm" class="  "><template shadowrootmode="open"><span class=" c-spl-typography-label c-spl-typography-label--sm "><slot></slot></span></template>
+0/200
+</spl-typography-label>
+</div>
+</sr-question-field-text>
+</div>
+<div class="spl-mt-2" data-test="question-container">
+<sr-question-field-checkbox name="">
+<spl-checkbox data-spl-field="" name="question_799343cd-9473-4e2a-9beb-e4da164f0978" required="" inlinelabelcontent="" id="spl-form-element_100"><template shadowrootmode="open">
+<spl-internal-form-field class=" c-spl-checkbox__form-field " variant="horizontal"><template shadowrootmode="open"><div class=" c-spl-form-field c-spl-form-field--horizontal ">
+<slot class="c-spl-form-field-slot"></slot>
+<div class="c-spl-form-field-content">
+<slot name="label"></slot> <spl-typography-body variant="sm" class="  "><template shadowrootmode="open">
+<p class=" c-spl-typography-body c-spl-typography-body--sm ">
+<slot></slot>
+</p>
+</template>
+<slot name="error-msg"></slot>
+</spl-typography-body>
+</div>
+</div></template>
+<label slot="label" class=" c-spl-form-field-label " for="spl-form-element_100" id="spl-form-element_100-label">
+<spl-typography-label variant="md"><template shadowrootmode="open"><span class=" c-spl-typography-label c-spl-typography-label--md "><slot></slot></span></template>
+<span class="c-spl-form-field-label-wrapper">
+<span><span class="c-spl-form-field-label-required-group"><slot name="label-content"></slot><span class="c-spl-form-field-required-mark" aria-hidden="true">*</span></span></span>
+<span class="c-spl-form-field-label-suffix">
+<slot name="label-suffix"></slot>
+</span>
+</span>
+</spl-typography-label>
+</label>
+<div class=" c-spl-checkbox-wrapper c-spl-checkbox ">
+<spl-icon></spl-icon>
+<input class="c-spl-checkbox__input" type="checkbox" autocomplete="off" id="spl-form-element_100" aria-invalid="false" aria-required="true" aria-labelledby="spl-form-element_100-label" style="" data-live-value="on"></input>
+</div>
+</spl-internal-form-field>
+</template>
+<span slot="label-content">
+*I declare that all statements and answers in this application are true and complete and agree that any untrue or misleading answer, omission, concealment or failure to answer any questions fully, completely and accurately may be grounds for terminating my employment, regardless of when it is discovered. By completing this application, I give this employer the permission to validate some of my answers with the appropriate authorities/institutions.<br></br><br></br>I authorize this employer or its agents to investigate my references, to review my former employment record and to keep and preserve records of such investigations. Additionally, I release all parties from liability for any damage that may result from furnishing information to this employer or its agents.<br></br>
+</span>
+</spl-checkbox>
+</sr-question-field-checkbox>
+</div>
+<div class="spl-mt-2" data-test="question-container">
+<sr-question-field-radio name=""> <spl-radio-group variant="vertical" inlinelabelcontent="" id="spl-form-element_103" value=""><template shadowrootmode="open">
+<spl-internal-form-field variant="vertical"><template shadowrootmode="open"><div class=" c-spl-form-field c-spl-form-field--vertical ">
+<slot name="label"></slot>
+<slot name="description"></slot>
+<slot class="c-spl-form-field-slot"></slot>
+<spl-typography-body variant="sm" class="  "><template shadowrootmode="open">
+<p class=" c-spl-typography-body c-spl-typography-body--sm ">
+<slot></slot>
+</p>
+</template>
+<slot name="error-msg"></slot>
+</spl-typography-body>
+</div></template>
+<label slot="label" class=" c-spl-form-field-label c-spl-form-field-label--group " for="spl-form-element_103" id="spl-form-element_103-label">
+<spl-typography-label variant="md"><template shadowrootmode="open"><span class=" c-spl-typography-label c-spl-typography-label--md "><slot></slot></span></template>
+<span class="c-spl-form-field-label-wrapper">
+<span><span class="c-spl-form-field-label-required-group"><slot name="label-content"></slot></span></span>
+<span class="c-spl-form-field-label-suffix">
+<slot name="label-suffix"></slot>
+</span>
+</span>
+</spl-typography-label>
+</label>
+<fieldset role="radiogroup" class=" c-spl-radio-group c-spl-radio-group--vertical " aria-labelledby="spl-form-element_103-label">
+<slot></slot>
+</fieldset>
+</spl-internal-form-field>
+</template>
+<span slot="label-content">
+Are you a veteran?
+</span>
+<spl-radio label="Yes" tabindex="0" inlinelabelcontent="" id="spl-form-element_104" variant="default" value="1" role="radio" aria-checked="false" aria-disabled="false"><template shadowrootmode="open">
+<spl-internal-form-field preventerrormsgrender="" class="c-spl-radio-wrapper c-spl-radio-wrapper--first" variant="horizontal"><template shadowrootmode="open"><div class=" c-spl-form-field c-spl-form-field--horizontal ">
+<slot class="c-spl-form-field-slot"></slot>
+<div class="c-spl-form-field-content">
+<slot name="label"></slot> <div class="c-spl-form-field-error-sr-only"><slot name="error-msg"></slot></div>
+</div>
+</div></template>
+<label slot="label" class=" c-spl-form-field-label " for="spl-form-element_104" id="spl-form-element_104-label">
+<spl-typography-label variant="md"><template shadowrootmode="open"><span class=" c-spl-typography-label c-spl-typography-label--md "><slot></slot></span></template>
+<span class="c-spl-form-field-label-wrapper">
+<span><span class="c-spl-form-field-label-required-group">Yes</span></span>
+<span class="c-spl-form-field-label-suffix">
+<slot name="label-suffix"></slot>
+</span>
+</span>
+</spl-typography-label>
+</label>
+<div class=" c-spl-radio ">
+<div class="c-spl-radio__ring"></div>
+</div>
+</spl-internal-form-field>
+</template></spl-radio><spl-radio label="No" tabindex="-1" inlinelabelcontent="" id="spl-form-element_105" variant="default" value="0" role="radio" aria-checked="false" aria-disabled="false"><template shadowrootmode="open">
+<spl-internal-form-field preventerrormsgrender="" class="c-spl-radio-wrapper c-spl-radio-wrapper--last" variant="horizontal"><template shadowrootmode="open"><div class=" c-spl-form-field c-spl-form-field--horizontal ">
+<slot class="c-spl-form-field-slot"></slot>
+<div class="c-spl-form-field-content">
+<slot name="label"></slot> <div class="c-spl-form-field-error-sr-only"><slot name="error-msg"></slot></div>
+</div>
+</div></template>
+<label slot="label" class=" c-spl-form-field-label " for="spl-form-element_105" id="spl-form-element_105-label">
+<spl-typography-label variant="md"><template shadowrootmode="open"><span class=" c-spl-typography-label c-spl-typography-label--md "><slot></slot></span></template>
+<span class="c-spl-form-field-label-wrapper">
+<span><span class="c-spl-form-field-label-required-group">No</span></span>
+<span class="c-spl-form-field-label-suffix">
+<slot name="label-suffix"></slot>
+</span>
+</span>
+</spl-typography-label>
+</label>
+<div class=" c-spl-radio ">
+<div class="c-spl-radio__ring"></div>
+</div>
+</spl-internal-form-field>
+</template></spl-radio>
+</spl-radio-group></sr-question-field-radio>
+</div>
+<div class="spl-mt-2" data-test="question-container">
+<sr-question-field-info><template shadowrootmode="open">
+<sr-question-custom-form-field><template shadowrootmode="open">
+<spl-form-field variant="vertical" inlinelabelcontent=""><template shadowrootmode="open"><spl-internal-form-field variant="vertical"><template shadowrootmode="open"><div class=" c-spl-form-field c-spl-form-field--vertical ">
+<slot name="label"></slot>
+<slot name="description"></slot>
+<slot class="c-spl-form-field-slot"></slot>
+<spl-typography-body variant="sm" class="  "><template shadowrootmode="open">
+<p class=" c-spl-typography-body c-spl-typography-body--sm ">
+<slot></slot>
+</p>
+</template>
+<slot name="error-msg"></slot>
+</spl-typography-body>
+</div></template>
+<label slot="label" class=" c-spl-form-field-label " for="" id="-label">
+<spl-typography-label variant="md"><template shadowrootmode="open"><span class=" c-spl-typography-label c-spl-typography-label--md "><slot></slot></span></template>
+<span class="c-spl-form-field-label-wrapper">
+<span><span class="c-spl-form-field-label-required-group"><slot name="label-content"></slot></span></span>
+<span class="c-spl-form-field-label-suffix">
+<slot name="label-suffix"></slot>
+</span>
+</span>
+</spl-typography-label>
+</label>
+<slot></slot>
+<slot name="label-content" slot="label-content"></slot>
+<slot name="label-suffix" slot="label-suffix"></slot>
+</spl-internal-form-field></template>
+<slot name="label-content" slot="label-content"></slot>
+<slot name="label-suffix" slot="label-suffix"></slot>
+<slot name="content"></slot>
+</spl-form-field>
+</template>
+<span slot="label-content">
+All qualified applicants will receive consideration for employment without regard to age, color, sex, disability, national origin, race, religion, or veteran status
+</span>
+</sr-question-custom-form-field>
+</template></sr-question-field-info>
+</div>
+</spl-form>
+</spl-wrapper></template></sr-screening-questions-form>

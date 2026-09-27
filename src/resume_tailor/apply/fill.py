@@ -1185,16 +1185,24 @@ def fill_application(
                 # shares its id with the parse-and-prefill one, and the hiring-team message
                 # (`smartrecruiters_flow`). The generic pass's records for them are replaced.
                 if is_smartrecruiters and smartrecruiters_flow.is_form(page):
-                    progress("SmartRecruiters: filling city, experience, education, resume and message")
+                    progress("SmartRecruiters: filling city, experience, education, resume, message and screening")
                     sr_filled, sr_review = smartrecruiters_flow.fill(
                         page, pkt, progress, resume_path=resume_path, deadline=deadline - 45,
                     )
+                    # The screening step's controls read as "*" to the generic pass; the
+                    # flow answered or listed them, so those records are dropped too.
+                    owned = smartrecruiters_flow.HANDLED_SELECTORS | smartrecruiters_flow.screening_selectors(page)
                     for key in ("filled", "leftovers", "long_text"):
                         merged[key] = [
                             item for item in merged[key] if not isinstance(item, dict) or (
                                 item.get("key") != "city" and item.get("label") != "City"
-                                and item.get("selector") not in smartrecruiters_flow.HANDLED_SELECTORS
+                                and item.get("selector") not in owned
                             )
+                        ]
+                    if owned - smartrecruiters_flow.HANDLED_SELECTORS:
+                        merged["required_empty"] = [
+                            label for label in merged.get("required_empty") or []
+                            if str(label).strip() not in {"", "*"}
                         ]
                     merged["file_inputs"] = [
                         item for item in merged["file_inputs"]

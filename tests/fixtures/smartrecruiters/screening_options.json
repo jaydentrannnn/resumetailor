@@ -1,0 +1,246 @@
+{
+ "question_89501da0-cb06-433c-a168-316a602e3644": [
+  [
+   "61d0c29c-a338-489d-ac71-0d8f442beebe",
+   "Vocational Certification"
+  ],
+  [
+   "56900d5b-4a1a-4b0a-acc7-3f1362299ebd",
+   "Associate's Degree"
+  ],
+  [
+   "cc41e0d5-bb5b-4b54-a16c-1703c41fc243",
+   "Bachelor's Degree"
+  ],
+  [
+   "427c203f-77af-461c-af6d-aa1de780f12c",
+   "MBA"
+  ],
+  [
+   "6fb3aabf-5dcf-4559-a813-1c1ec7982728",
+   "Master's Degree"
+  ],
+  [
+   "18377f26-610c-401d-8bc5-58d3ddd8caa2",
+   "PhD"
+  ],
+  [
+   "c0f1095d-4fa6-4871-b012-25180a7b928c",
+   "Other"
+  ]
+ ],
+ "question_867d31ec-87ef-49f2-8c11-1f9fb51f9df5": [
+  [
+   "3c1ebe6e-af3f-4c82-81ed-dd91fdf4d40e",
+   "Accounting"
+  ],
+  [
+   "a62bd822-fa8c-4beb-8cf2-b372de56d752",
+   "Advertising"
+  ],
+  [
+   "cea4b933-3695-41df-b3e2-7552e3614c00",
+   "Art, General"
+  ],
+  [
+   "b3892867-9d85-47f5-9d3d-ec7f4ee835d8",
+   "Business Administration & Management, General"
+  ],
+  [
+   "4334e168-7633-4a66-907b-4f80cbf56c39",
+   "Business Analytics"
+  ],
+  [
+   "0d0d6049-ff96-4a43-812d-46fdc735fd1a",
+   "Communications, General"
+  ],
+  [
+   "a7516fde-9bb9-4a6b-9b2b-c9bf25e3db28",
+   "Computer Engineering"
+  ],
+  [
+   "379c48d3-1c4d-4491-b1dc-59f9bf129706",
+   "Computer Science & Programming"
+  ],
+  [
+   "bf0bd978-21c6-4037-a668-cdbe654ff0d8",
+   "Criminal Justice"
+  ],
+  [
+   "2cf16bef-b734-46d1-80d9-4d7ad12c4b6a",
+   "Data Science/Data Analytics"
+  ],
+  [
+   "43d0447b-06b3-49a3-84fa-31e85b0b6d53",
+   "Economics"
+  ],
+  [
+   "b56927bb-5669-4a7e-8af7-81c3144c01b0",
+   "Engineering (Pre-Engineering), General"
+  ],
+  [
+   "32812d8d-a9ef-4335-8948-62a95f28ae60",
+   "English"
+  ],
+  [
+   "da335b97-3fbf-4d08-9f15-5a79730a75ee",
+   "Finance, General"
+  ],
+  [
+   "3dc41c65-c8cd-4a21-b9b7-7ddafd7f3f61",
+   "Geography"
+  ],
+  [
+   "02e5ce5f-7847-49a5-abdb-7343abb1caaf",
+   "Human & Organizational Development"
+  ],
+  [
+   "fb30f4d5-af4c-4e26-b706-6e75d43170f4",
+   "Human Resources Management"
+  ],
+  [
+   "c7252bb6-bae5-486e-8ea0-1d8daa80a784",
+   "Information Technology, General"
+  ],
+  [
+   "557c362d-3508-486e-94ca-1d838244f3e3",
+   "Information Systems"
+  ],
+  [
+   "4973bc9c-e06c-430c-9465-9223dc8bbd5d",
+   "Law/Legal Studies"
+  ],
+  [
+   "3bfa3e55-df25-4e97-a273-26d49a08d8b4",
+   "Management Information Systems"
+  ],
+  [
+   "decbfabe-e5bc-4343-843b-aed37f02a810",
+   "Marketing"
+  ],
+  [
+   "207e1a44-8792-43a9-8ef4-934dae61d112",
+   "Mathematics"
+  ],
+  [
+   "c7bd76bb-c1c4-4509-bb28-9774ba2e29b7",
+   "Physics"
+  ],
+  [
+   "c0608e58-95bf-47d1-b27e-e5c45ff5c59a",
+   "Political Science"
+  ],
+  [
+   "6cea952d-e4d1-40fc-a78e-2008a0b82dba",
+   "Psychology"
+  ],
+  [
+   "41cf5ffb-2f36-4d4e-843e-ab4f3f4cb5ea",
+   "Public Relations"
+  ],
+  [
+   "2afc9ab4-a8c6-42ae-8117-a3e8d4e1cc09",
+   "Sales, Merchandising, & Marketing, General"
+  ],
+  [
+   "14c15c4e-cdad-4ca7-8809-6beffdc38af7",
+   "Statistics"
+  ],
+  [
+   "0466c6f0-704b-49bd-95dd-b766075c2f25",
+   "Other"
+  ]
+ ],
+ "question_3cc6377b-4f8b-4db4-9f43-5615c80664a8": [
+  [
+   "c3532ed1-4467-4fbb-9d97-165c18003ca2",
+   "January"
+  ],
+  [
+   "9e6dcf5d-71d1-499b-8a37-8f0368609c78",
+   "February"
+  ],
+  [
+   "b8ffa2f9-cda4-4acd-ac9d-51660042ee9a",
+   "March"
+  ],
+  [
+   "0c5b1257-1d8f-4a58-b340-ad84694ea22e",
+   "April"
+  ],
+  [
+   "59d7b72f-9630-4581-b391-a1ebbd96a035",
+   "May"
+  ],
+  [
+   "c31b773f-7ca5-4db1-b5b7-fb1af5968ce8",
+   "June"
+  ],
+  [
+   "7380bf60-3931-4460-b3c8-6506e60823da",
+   "July"
+  ],
+  [
+   "c1ac2f90-c2f3-4d19-ad41-9e13f17ee27d",
+   "August"
+  ],
+  [
+   "c4d51d75-5937-4c82-b86d-2f856a79208d",
+   "September"
+  ],
+  [
+   "3de28de0-bc7c-4978-8d2d-ff773b550661",
+   "October"
+  ],
+  [
+   "c5503d1e-ca54-459a-a194-3b1814267800",
+   "November"
+  ],
+  [
+   "0cc2f120-f219-4a39-a579-a1ea055adf37",
+   "December"
+  ],
+  [
+   "b0e9ff09-5312-4bfc-bb11-a935598ba429",
+   "N/A"
+  ]
+ ],
+ "question_f2ec8fc1-4caa-4fdc-a701-f101f65ee792": [
+  [
+   "d5ba6d9c-edab-454a-9e10-76f6d5351acb",
+   "Prior to 2023"
+  ],
+  [
+   "72193bc8-d982-44c8-9b20-88d4fea64912",
+   "2023"
+  ],
+  [
+   "c649ee7b-fceb-4927-866b-7036da9c9faa",
+   "2024"
+  ],
+  [
+   "66d74ec0-5bfb-467c-883e-e9dd64359022",
+   "2025"
+  ],
+  [
+   "a2cef01f-dad1-494e-a31b-a5c1ed4676fa",
+   "2026"
+  ],
+  [
+   "3f638f3f-744f-4e1b-90a1-eb5611a38b6f",
+   "2027"
+  ],
+  [
+   "f0224111-45b9-4dda-a405-17679b6196c1",
+   "2028"
+  ],
+  [
+   "9e3192a5-fd21-4866-9479-0d25e45a2103",
+   "2029 or later"
+  ],
+  [
+   "81dcd555-a4db-4fb4-b551-a40b7cf82e93",
+   "N/A"
+  ]
+ ]
+}

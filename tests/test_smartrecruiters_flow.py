@@ -3,7 +3,9 @@
 Fixtures under ``tests/fixtures/smartrecruiters/`` are the live form's structure (open
 shadow roots kept as declarative ``<template shadowrootmode>``), captured 2026-09-27 from
 jobs.smartrecruiters.com/Resultant/744000151474767 and /WellmarkInc/744000150732768 with
-personal data replaced. ``behaviour.js`` stands in for the components' scripts.
+personal data replaced; ``screening_resultant.html`` is the Resultant form's second step
+(a subset of its questions, the page's question ``definition`` JSON removed and its
+select options kept in ``screening_options.json``). ``behaviour.js`` stands in for the components' scripts.
 """
 
 from __future__ import annotations
@@ -95,7 +97,8 @@ def _open(browser, form: str = "form_resultant.html", *, replace: dict[str, str]
         "experience": _entry(_fixture("experience_editor.html"), "oc-experience-entry"),
         "education": _entry(_fixture("education_editor.html"), "oc-education-entry"),
     }
-    state = {"catalog": _CATALOG, "locations": _LOCATIONS, "editors": editors}
+    state = {"catalog": _CATALOG, "locations": _LOCATIONS, "editors": editors,
+             "selects": json.loads(_fixture("screening_options.json"))}
     page = browser.new_page()
     html = (f"<!doctype html><html><body><main>{body}</main>"
             f"<script>window.__sr = {json.dumps(state)};</script>"
@@ -386,3 +389,101 @@ def test_the_wellmark_form_has_no_city_but_every_other_area(browser, tmp_path):
         "Resume", "Message to the Hiring Team",
         "Experience 1 (Data Intern at Acme Corp)", "Education 1 (State University)",
     ]
+
+
+# --- Screening step ---------------------------------------------------------------------
+
+_SCREENING_FIELDS = {
+    "authorized_to_work": "Yes", "requires_sponsorship_future": "No",
+    "degree_level": "Bachelors", "degree_name": "Bachelor of Science", "major": "Computer Science",
+    "school": "State University", "graduation_month": "2027-06", "salary_hourly": "$30/hour",
+    "how_heard": "LinkedIn", "veteran_status": "not_veteran",
+}
+
+
+@pytest.fixture
+def no_memory(monkeypatch):
+    monkeypatch.setattr(sr.answer_memory, "recall", lambda *_args, **_kwargs: None)
+
+
+def test_screening_keys_and_graduation_parts():
+    assert sr.screening_key("What is your expected graduation year?") == "graduation_month"
+    assert sr.screening_key("What is your hourly wage expectation?") == "salary_hourly"
+    assert sr.screening_key("How did you learn about Acme and this opportunity?") == "how_heard"
+    assert sr.screening_key(
+        "Will you need sponsorship in the future from an employer to obtain, extend or renew your authorization?"
+    ) == "requires_sponsorship_future"
+    assert sr.screening_key("Are you currently subject to a non-compete agreement?") is None
+    assert sr.graduation_part("What is your expected graduation month?", "2027-06") == "June"
+    assert sr.graduation_part("What is your expected graduation year?", "2027-06") == "2027"
+    assert sr.graduation_part("Expected graduation year", "May 2026") == "2026"
+    assert sr.graduation_part("Graduation month", "2027") == ""
+
+
+def test_screening_questions_are_answered_from_profile_facts(browser, no_memory):
+    page = _open(browser, "screening_resultant.html")
+    filled, review = sr.fill_screening(page, _SCREENING_FIELDS, _no_progress)
+    answers = {item["label"][:40]: item["value"] for item in filled}
+    assert answers == {question[:40]: value for question, value in [
+        ("Are you authorized to work and accept new employment in the United States?", "Yes"),
+        ("Will you need sponsorship in the future from an employer", "No"),
+        ("What is your current or most recently completed degree type?", "Bachelor's Degree"),
+        ("What is your current or most recent major?", "Computer Science & Programming"),
+        ("What is the name of your school?", "State University"),
+        ("What is your expected graduation month?", "June"),
+        ("What is your expected graduation year?", "2027"),
+        ("What is your hourly wage expectation?", "$30/hour"),
+        ("How did you learn about Resultant and this opportunity?", "LinkedIn"),
+        ("Are you a veteran?", "No"),
+    ]}
+    # No profile fact answers a non-compete; declarations are the applicant's to tick.
+    assert review[0] == "Are you currently subject to a non-compete agreement?: no answer in the applicant profile"
+    assert review[1:] == [
+        "*I declare that all statements and answers in this application are true and complete an...: "
+        "read and tick it yourself",
+    ]
+    assert page.evaluate("""() => {
+      const deep = (root, out = []) => { out.push(...root.querySelectorAll('input[type=checkbox]'));
+        for (const el of root.querySelectorAll('*')) if (el.shadowRoot) deep(el.shadowRoot, out); return out; };
+      return deep(document).filter((box) => box.checked).length;
+    }""") == 0
+    degree = page.locator("spl-autocomplete#question_89501da0-cb06-433c-a168-316a602e3644")
+    assert degree.evaluate("h => h.value") == "cc41e0d5-bb5b-4b54-a16c-1703c41fc243"
+
+
+def test_screening_keeps_answers_already_given(browser, no_memory):
+    page = _open(browser, "screening_resultant.html")
+    sr.fill_screening(page, _SCREENING_FIELDS, _no_progress)
+    clicks = page.evaluate("window.__sr.radioClicks")
+    filled, _review = sr.fill_screening(page, {**_SCREENING_FIELDS, "authorized_to_work": "No"}, _no_progress)
+    assert page.evaluate("window.__sr.radioClicks") == clicks
+    kept = {item["label"]: item for item in filled}
+    work = kept["Are you authorized to work and accept new employment in the United States?"]
+    assert (work["value"], work["state"]) == ("Yes", "preserved")
+
+
+def test_an_option_no_answer_names_is_left_for_review(browser, no_memory):
+    page = _open(browser, "screening_resultant.html")
+    fields = {"major": "Mathematics and Computer Science"}
+    filled, review = sr.fill_screening(page, fields, _no_progress)
+    assert filled == []
+    assert "What is your current or most recent major?: could not set 'Mathematics and Computer Science'" in review
+    major = page.locator("spl-autocomplete#question_867d31ec-87ef-49f2-8c11-1f9fb51f9df5")
+    assert major.evaluate("h => h.value") in (None, "")
+
+
+def test_a_remembered_answer_covers_a_question_the_profile_does_not(browser, monkeypatch):
+    remembered = {"are you currently subject to a non compete agreement": "No"}
+
+    def recall(label, **_kwargs):
+        from resume_tailor.apply.answer_memory import Recall, normalize_label
+
+        answer = remembered.get(normalize_label(label))
+        return Recall(answer=answer, id=1) if answer else None
+
+    monkeypatch.setattr(sr.answer_memory, "recall", recall)
+    page = _open(browser, "screening_resultant.html")
+    filled, review = sr.fill_screening(page, {}, _no_progress, company="Resultant")
+    assert {"label": "Are you currently subject to a non-compete agreement?", "value": "No"} in filled
+    assert not any("non-compete" in line for line in review)
+

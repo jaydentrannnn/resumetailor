@@ -136,7 +136,7 @@ SYNONYMS: list[tuple[str, str]] = [
     (r"graduation|expected graduation", "graduation_month"),
     # "If other, how did you hear about us? Please specify" is the free-text follow-up.
     (r"(?:hear|source|referr).{0,40}specify|specify.{0,40}(?:hear|source|referr)", "how_heard_detail"),
-    (r"how did you hear", "how_heard"),
+    (r"how did you (?:hear|learn|find out) about|how did you hear", "how_heard"),
     (r"gender", "gender"),
     (r"hispanic|latino", "hispanic_latino"),
     (r"race|ethnicity", "race"),

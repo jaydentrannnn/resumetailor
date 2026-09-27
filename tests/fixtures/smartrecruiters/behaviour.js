@@ -46,13 +46,16 @@
 
   const menuOf = (ac) => ac.shadowRoot.querySelector("spl-dropdown");
   const closeMenu = (ac) => menuOf(ac).querySelectorAll("[slot=menu]").forEach((m) => m.remove());
-  const render = (ac, query) => {
+  const render = (ac, query, all = false) => {
     closeMenu(ac);
-    if (!query) return;
+    if (!query && !all) return;
     const kind = ac.getAttribute("data-test");
-    const q = query.toLowerCase();
+    const q = (query || "").toLowerCase();
     let options;
-    if (kind === "location-autocomplete") {
+    if (sr.selects && sr.selects[ac.id]) {
+      // A screening select: a fixed list, all of it on ArrowDown, filtered by typed text.
+      options = sr.selects[ac.id].filter(([, label]) => label.toLowerCase().includes(q));
+    } else if (kind === "location-autocomplete") {
       options = Object.entries(sr.locations)
         .filter(([, loc]) => loc.city.toLowerCase().startsWith(q))
         .map(([value, loc]) => [value, loc.displayString]);
@@ -92,7 +95,10 @@
     const value = option.getAttribute("value");
     if (value === "goToManualLocationMode") return;
     const input = deep(ac.shadowRoot, "input[role=combobox]")[0];
-    if (ac.getAttribute("data-test") === "location-autocomplete") {
+    if (sr.selects && sr.selects[ac.id]) {
+      ac.value = value;
+      input.value = text(option.textContent);
+    } else if (ac.getAttribute("data-test") === "location-autocomplete") {
       ac.value = sr.locations[value];
       input.value = ac.value.displayString;
     } else {
@@ -113,8 +119,13 @@
   }, true);
 
   document.addEventListener("keydown", (e) => {
-    if (e.key !== "Enter") return;
     const path = e.composedPath();
+    const select = find(path, "SPL-AUTOCOMPLETE");
+    if (e.key === "ArrowDown" && select && path[0].getAttribute("role") === "combobox") {
+      render(select, path[0].value, true);
+      return;
+    }
+    if (e.key !== "Enter") return;
     const field = find(path, "SPL-DATE-FIELD");
     if (!field) return;
     const match = /^(\d{2})\/(\d{4})$/.exec(path[0].value);
@@ -155,6 +166,18 @@
     sr.saves += 1;
     return true;
   };
+
+  // A screening radio: a trusted press checks it and unchecks its siblings; the group's
+  // `value` becomes the radio's value ("1" Yes / "0" No, as live).
+  document.addEventListener("click", (e) => {
+    const radio = find(e.composedPath(), "SPL-RADIO");
+    if (!radio || !e.isTrusted) return;
+    const group = radio.closest("spl-radio-group");
+    for (const other of group.querySelectorAll("spl-radio")) other.setAttribute("aria-checked", "false");
+    radio.setAttribute("aria-checked", "true");
+    group.value = radio.getAttribute("value");
+    sr.radioClicks = (sr.radioClicks || 0) + 1;
+  }, true);
 
   document.addEventListener("click", (e) => {
     const path = e.composedPath();
