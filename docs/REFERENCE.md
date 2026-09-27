@@ -287,6 +287,13 @@ Workday verification returns a handoff instead of waiting in the worker. Applica
 responses redact the stored Workday password, and a blank password on update preserves the
 existing secret.
 
+Selected Apply table Fill actions use the same `max_parallel_fills` limit, except extension
+mode and "Pause on blocker" use one worker. Selected Prepare actions use the Tailor page's
+`max_concurrent_jobs` limit, while rows from the same posting group prepare in order.
+The operation records each active row in `in_flight`; legacy current-item fields continue
+to show the most recently active row. Pause holds new work until resumed, and automatic
+submits reserve a run-limit slot before a fill starts.
+
 **Workday (legacy engine).** `apply/workday_flow.py` recognises each Workday screen from its
 visible `data-automation-id` markers (`classify` is pure; captured screens live in
 `tests/fixtures/workday/screens.json`) and waits for screen changes instead of sleeping:

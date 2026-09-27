@@ -1,4 +1,10 @@
-import type { ApplicationRow, ApplyOperation, ApplySettings, JobStatus } from "../api";
+import type {
+  ApplicationRow,
+  ApplyOperation,
+  ApplySettings,
+  InFlightItem,
+  JobStatus,
+} from "../api";
 import { runProgress } from "./runProgress";
 import { runSteps } from "./runSteps";
 
@@ -155,6 +161,9 @@ const ACTION_VERB: Record<string, string> = {
 /** "Tailoring 3 of 12 · Acme" for the operation banner. */
 export function operationHeadline(op: ApplyOperation): string {
   const verb = ACTION_VERB[op.action] ?? op.action;
+  if ((op.in_flight?.length ?? 0) > 1) {
+    return `${op.action === "prepare" ? "Preparing" : "Filling"} ${op.in_flight!.length} at once`;
+  }
   if (op.state === "paused") return `Paused · ${verb.toLowerCase()}`;
   if (!["queued", "running"].includes(op.state)) {
     const done = op.state.replaceAll("_", " ");
@@ -204,10 +213,16 @@ export function itemProgress(
   op: ApplyOperation,
   job: JobStatus | null,
   nowMs: number,
+  inFlight?: InFlightItem,
 ): ItemProgress | null {
-  if (!["running", "paused"].includes(op.state) || !op.current_application_id) return null;
+  if (
+    !["running", "paused"].includes(op.state) ||
+    !(inFlight?.application_id || op.current_application_id)
+  )
+    return null;
   if (op.action === "prepare") {
-    if (!job || !op.current_job_id || job.job_id !== op.current_job_id) return null;
+    const jobId = inFlight?.job_id ?? op.current_job_id;
+    if (!job || !jobId || job.job_id !== jobId) return null;
     const bar = runProgress(job.events, job.status, true);
     const steps = runSteps(job.events, job.status, false);
     const step = Math.min(steps.current, steps.steps.length - 1);
@@ -218,15 +233,16 @@ export function itemProgress(
     };
   }
   if (op.action === "fill") {
-    if (op.current_step > 0) {
+    const step = inFlight?.step ?? op.current_step;
+    if (step > 0) {
       return {
-        fraction: Math.min(op.current_step / TYPICAL_FILL_PAGES, 0.9),
-        detail: `Filling, page ${op.current_step} (estimate)`,
+        fraction: Math.min(step / TYPICAL_FILL_PAGES, 0.9),
+        detail: `Filling, page ${step} (estimate)`,
         estimate: true,
       };
     }
-    const started = Date.parse(op.application_started_at ?? "");
-    const deadline = Date.parse(op.application_deadline_at ?? "");
+    const started = Date.parse(inFlight?.started_at ?? op.application_started_at ?? "");
+    const deadline = Date.parse(inFlight?.deadline_at ?? op.application_deadline_at ?? "");
     if (!Number.isFinite(started) || !Number.isFinite(deadline) || deadline <= started) return null;
     return {
       fraction: Math.min(0.9, Math.max(0, (nowMs - started) / (deadline - started))),

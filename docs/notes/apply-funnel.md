@@ -841,14 +841,17 @@ A Workday step asked "Are you over the age of 18?", "Are you legally permitted t
 country where this job is located?", then (only after Yes) "If hired, can you provide proof of
 eligibility?". The model answered the first two and missed the third. Causes: no synonym for
 "permitted"/"proof of eligibility"/"over 18"; the permitted question matched the country rule
-(first match wins), so ill_dropdowns tried "United States" in a Yes/No list and
+(first match wins), so 
+ill_dropdowns tried "United States" in a Yes/No list and
 country_mismatch read the later "Yes" as a wrong Country; profile.over_18 was never emitted;
-and esolve_step_blockers returned as soon as the page showed no errors, which on Workday is
+and 
+esolve_step_blockers returned as soon as the page showed no errors, which on Workday is
 always true before Save and Continue, so a question revealed by the model's own answer was
 never seen. Fix: ts_hints.AUTHORIZED_TO_WORK/OVER_18 before the Country rule (proof of
 eligibility reads the same fact as authorization: provable follows from authorised; exclusions
 for veteran/degree/licence/clearance proof and "under 18"); uild_fields emits over_18
-(registered, common); ield_catalog reuses the patterns but leaves "sponsor" wording alone;
+(registered, common); 
+ield_catalog reuses the patterns but leaves "sponsor" wording alone;
 the resolver runs up to 2 extra rounds on controls revealed after its actions (not counted
 against max_retries). Also packet.authorization_mismatch: a posting whose location names
 another country drops uthorized_to_work (fill + engine), with a review line, not a blank.
@@ -1302,3 +1305,4 @@ The Found column became Posted. No stored field held a posting date, but `age_da
 ## 2026-09-27: SmartRecruiters screening step
 
 The one-click form's second page (`/screening`) filled nothing. The generic pass did see its controls, but every label read as "*": the question text is slotted (`[slot=label-content]`) into a `<label>` inside the control's shadow root, and innerText of that label omits slotted nodes. The Yes/No `spl-radio`s have no native input at all, and the `spl-autocomplete` selects list their options only after ArrowDown. `smartrecruiters_flow.fill_screening` reads each `[data-test=question-container]` itself, keys the question with `workday_flow.key_for_label` (salary by its unit; graduation month/year split from one date), then a remembered answer, and picks options with `field_matcher.closest_option`. Declarations and the privacy consent are never ticked; a question with no profile answer is listed for review, never guessed. The page's `definition` attribute carries every question with its options (72 KB); the fixture drops it and keeps the select options in `screening_options.json`. "How did you learn about" now maps to `how_heard`.
+2026-09-27 - Apply table actions now dispatch selected fills up to max_parallel_fills and prepares up to max_concurrent_jobs. Extension mode and pause-on-blocker stay serial; same-group prepares run in selection order. Each worker records in_flight progress, while the legacy current fields mirror the most recent activity. Submit slots are reserved before fill and returned unless submitted; pause holds new dispatch only.
