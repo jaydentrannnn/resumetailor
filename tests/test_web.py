@@ -662,7 +662,8 @@ def test_blank_ollama_model_leaves_the_env_default_in_place(client, monkeypatch)
 
     def recording_resolve(profile=None, *, overrides=None, effort=None):
         seen["overrides"] = dict(overrides or {})
-        return real_resolve(profile, overrides=overrides, effort=effort)
+        seen["backends"] = real_resolve(profile, overrides=overrides, effort=effort)
+        return seen["backends"]
 
     monkeypatch.setattr(jobs_mod.config, "resolve", recording_resolve)
     monkeypatch.setattr(jobs_mod.jd, "extract", _stub_no_network_extract)
@@ -675,7 +676,7 @@ def test_blank_ollama_model_leaves_the_env_default_in_place(client, monkeypatch)
     _drain(c, res.json()["job_id"])
 
     assert seen["overrides"] == {}
-    assert config.model_for("extract") == config.OLLAMA_MODEL == "gemma4:cloud"
+    assert seen["backends"]["extract"].model == config.OLLAMA_MODEL == "gemma4:cloud"
     config.resolve("claude")
 
 

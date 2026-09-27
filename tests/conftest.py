@@ -52,6 +52,7 @@ import atexit
 import os
 import shutil
 import tempfile
+from dataclasses import replace
 from pathlib import Path
 
 # Before any `resume_tailor` import: `config.OUTPUT_ROOT`/`CACHE_ROOT` are resolved at
@@ -104,7 +105,8 @@ def _isolated_libraries(tmp_path, monkeypatch):
     resume at its own separately-set path.
     """
     monkeypatch.setattr(libraries, "store_root", lambda: tmp_path / "libraries")
-    monkeypatch.setattr(config, "LIBRARIES_PATH", tmp_path / "workspace_data" / "libraries.json")
+    paths = {**config._DEFAULT.paths, "LIBRARIES_PATH": tmp_path / "workspace_data" / "libraries.json"}
+    monkeypatch.setattr(config, "_DEFAULT", replace(config._DEFAULT, paths=paths))
     libraries.reset()
     yield
     libraries.reset()
@@ -129,10 +131,8 @@ def _reset_style():
 @pytest.fixture(autouse=True)
 def _pinned_calibration(monkeypatch):
     """Pin fit-constant globals to the built-in fallback pair for every test."""
-    monkeypatch.setattr(config, "CHARS_PER_LINE", config._FALLBACK_CHARS_PER_LINE)
-    monkeypatch.setattr(config, "LINES_PER_PAGE", config._FALLBACK_LINES_PER_PAGE)
-    monkeypatch.setattr(config, "CALIBRATION_SOURCE", "fallback")
-    monkeypatch.setattr(config, "CALIBRATION_REJECTION", None)
+    calibration = (config._FALLBACK_CHARS_PER_LINE, config._FALLBACK_LINES_PER_PAGE, "fallback", None)
+    monkeypatch.setattr(config, "_DEFAULT", replace(config._DEFAULT, calibration=calibration))
 
 
 @pytest.fixture(autouse=True)
@@ -140,9 +140,11 @@ def _isolated_apply_paths(tmp_path, monkeypatch):
     """Redirect apply-funnel paths so tests never touch a developer's applications.json."""
     apply_dir = tmp_path / "apply_workspace"
     apply_dir.mkdir(exist_ok=True)
-    monkeypatch.setattr(config, "APPLICATIONS_PATH", apply_dir / "applications.json")
-    monkeypatch.setattr(config, "APPLICANT_PROFILE_PATH", apply_dir / "applicant_profile.json")
-    monkeypatch.setattr(config, "APPLICATIONS_OUTPUT_DIR", apply_dir / "applications_out")
+    paths = {**config._DEFAULT.paths,
+             "APPLICATIONS_PATH": apply_dir / "applications.json",
+             "APPLICANT_PROFILE_PATH": apply_dir / "applicant_profile.json",
+             "APPLICATIONS_OUTPUT_DIR": apply_dir / "applications_out"}
+    monkeypatch.setattr(config, "_DEFAULT", replace(config._DEFAULT, paths=paths))
 
 
 @pytest.fixture(autouse=True)
@@ -168,11 +170,13 @@ def _isolated_template_paths(tmp_path, monkeypatch):
     (`test_web.py`/`test_workspace.py` already do) — those patches win, since they run
     after this one.
     """
-    monkeypatch.setattr(config, "TEMPLATE_PROFILE_PATH", tmp_path / "no-such-profile.json")
-    monkeypatch.setattr(config, "DEFAULT_TEMPLATE_PATH", tmp_path / "no-such-template.docx")
-    monkeypatch.setattr(config, "BASELINE_TEMPLATE_PATH", tmp_path / "no-such-baseline.docx")
-    monkeypatch.setattr(config, "COVER_TEMPLATE_PATH", tmp_path / "no-such-cover-template.docx")
-    monkeypatch.setattr(config, "COVER_TEMPLATE_META_PATH", tmp_path / "no-such-cover-meta.json")
+    paths = {**config._DEFAULT.paths,
+             "TEMPLATE_PROFILE_PATH": tmp_path / "no-such-profile.json",
+             "DEFAULT_TEMPLATE_PATH": tmp_path / "no-such-template.docx",
+             "BASELINE_TEMPLATE_PATH": tmp_path / "no-such-baseline.docx",
+             "COVER_TEMPLATE_PATH": tmp_path / "no-such-cover-template.docx",
+             "COVER_TEMPLATE_META_PATH": tmp_path / "no-such-cover-meta.json"}
+    monkeypatch.setattr(config, "_DEFAULT", replace(config._DEFAULT, paths=paths))
 
 
 @pytest.fixture(scope="session")
