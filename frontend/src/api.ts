@@ -414,11 +414,25 @@ export type ApplicationsList = {
   total: number;
 };
 
+export type InFlightItem = {
+  application_id: string;
+  label: string;
+  job_id: string;
+  step: number;
+  step_id: string;
+  action_label: string;
+  field_label: string;
+  stage: string;
+  started_at: string;
+  deadline_at: string;
+};
+
 export type ApplyOperation = {
   operation_id: string;
   action: "find" | "prepare" | "fill" | "inspect" | "correct";
   state: string;
   application_ids: string[];
+  in_flight?: InFlightItem[];
   current_application_id: string;
   /** The tailor job of the item Prepare is working on, while it runs; "" otherwise. */
   current_job_id?: string;

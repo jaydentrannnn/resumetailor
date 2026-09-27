@@ -8,29 +8,33 @@ import {
   operationHeadline,
 } from "../../lib/applyPage";
 
-/** Poll the tailor job Prepare is running, for progress inside the current item. */
-function useCurrentJob(jobId: string, active: boolean): JobStatus | null {
-  const [job, setJob] = useState<JobStatus | null>(null);
+/** Poll the tailor jobs Prepare is running, for progress inside each item. */
+function useCurrentJobs(jobIds: string[], active: boolean): Record<string, JobStatus> {
+  const [jobs, setJobs] = useState<Record<string, JobStatus>>({});
+  const key = jobIds.filter(Boolean).join(",");
   useEffect(() => {
-    setJob(null);
-    if (!jobId || !active) return;
+    setJobs({});
+    if (!key || !active) return;
     let stopped = false;
-    const load = () =>
-      fetchJob(jobId)
-        .then((next) => {
-          if (!stopped) setJob(next);
-        })
-        .catch(() => {
-          /* advisory: the bar falls back to whole items */
-        });
+    const load = () => {
+      for (const jobId of key.split(",")) {
+        void fetchJob(jobId)
+          .then((next) => {
+            if (!stopped) setJobs((previous) => ({ ...previous, [jobId]: next }));
+          })
+          .catch(() => {
+            /* advisory: the bar falls back to whole items */
+          });
+      }
+    };
     void load();
     const id = window.setInterval(load, 1500);
     return () => {
       stopped = true;
       window.clearInterval(id);
     };
-  }, [jobId, active]);
-  return job;
+  }, [key, active]);
+  return jobs;
 }
 
 export type OperationControl = "pause" | "resume" | "skip" | "cancel";
@@ -54,12 +58,30 @@ export function OperationBanner({
     const id = window.setInterval(() => setNow(Date.now()), 1000);
     return () => window.clearInterval(id);
   }, [active]);
-  const job = useCurrentJob(
-    operation.action === "prepare" ? (operation.current_job_id ?? "") : "",
+  const inFlight = operation.in_flight ?? [];
+  const multiple = inFlight.length > 1;
+  const jobs = useCurrentJobs(
+    operation.action === "prepare"
+      ? multiple
+        ? inFlight.map((item) => item.job_id)
+        : [operation.current_job_id ?? ""]
+      : [],
     active,
   );
-  const item = itemProgress(operation, job, now);
-  const done = Math.min(operation.total, operation.processed + (item?.fraction ?? 0));
+  const item = itemProgress(operation, jobs[operation.current_job_id ?? ""] ?? null, now);
+  const itemLines = multiple
+    ? inFlight.map((entry) => ({
+        entry,
+        progress: itemProgress(operation, jobs[entry.job_id] ?? null, now, entry),
+      }))
+    : [];
+  const done = Math.min(
+    operation.total,
+    operation.processed +
+      (multiple
+        ? itemLines.reduce((sum, line) => sum + (line.progress?.fraction ?? 0), 0)
+        : (item?.fraction ?? 0)),
+  );
   const eta = operationEtaSeconds(operation, now, done);
   const pct = (n: number) =>
     operation.total > 0 ? Math.max(0, Math.min(100, (n / operation.total) * 100)) : 0;
@@ -79,19 +101,30 @@ export function OperationBanner({
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div className="min-w-0">
           <h2 className="text-lg font-semibold">{operationHeadline(operation)}</h2>
-          {active && (
-            <p className="mt-0.5 text-sm text-ink-muted">
-              {userPaused
-                ? "Paused by you. Nothing is being filled."
-                : operation.state === "paused"
-                  ? operation.message || "Waiting on you before the next application."
-                  : operation.current_action_label || operation.message}
-              {!userPaused && operation.current_field_label
-                ? ` · ${operation.current_field_label}`
-                : ""}
-            </p>
+          {active && multiple ? (
+            <ul className="mt-0.5 space-y-1 text-sm text-ink-muted">
+              {itemLines.map(({ entry, progress }) => (
+                <li key={entry.application_id}>
+                  {entry.label} · {entry.stage || operation.action} ·{" "}
+                  {progress?.detail || entry.action_label || "Starting"}
+                </li>
+              ))}
+            </ul>
+          ) : (
+            active && (
+              <p className="mt-0.5 text-sm text-ink-muted">
+                {userPaused
+                  ? "Paused by you. Nothing is being filled."
+                  : operation.state === "paused"
+                    ? operation.message || "Waiting on you before the next application."
+                    : operation.current_action_label || operation.message}
+                {!userPaused && operation.current_field_label
+                  ? ` · ${operation.current_field_label}`
+                  : ""}
+              </p>
+            )
           )}
-          {operation.current_application_id && active && (
+          {operation.current_application_id && active && !multiple && (
             <Link
               className="text-xs text-accent underline"
               to={`/applications/${encodeURIComponent(operation.current_application_id)}`}
@@ -176,7 +209,7 @@ export function OperationBanner({
         {active && operation.total > 0 && (
           <span className="font-medium text-ink">
             {operation.processed} of {operation.total} done
-            {item
+            {!multiple && item
               ? ` · ${operation.current_label ? `${operation.current_label}: ` : ""}${item.detail}`
               : ""}
           </span>

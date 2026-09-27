@@ -124,10 +124,7 @@ def _default_apply_sources() -> list[SourceConfig]:
         SourceConfig(
             id="simplify-newgrad",
             kind="simplify_html",
-            url=(
-                "https://raw.githubusercontent.com/SimplifyJobs/"
-                "New-Grad-Positions/dev/README.md"
-            ),
+            url=("https://raw.githubusercontent.com/SimplifyJobs/New-Grad-Positions/dev/README.md"),
             categories=[
                 "Software Engineering New Grad Roles",
                 "Data Science, AI & Machine Learning New Grad Roles",
@@ -137,8 +134,7 @@ def _default_apply_sources() -> list[SourceConfig]:
             id="speedyapply",
             kind="pipe_table",
             url=(
-                "https://raw.githubusercontent.com/speedyapply/"
-                "2027-SWE-College-Jobs/main/README.md"
+                "https://raw.githubusercontent.com/speedyapply/2027-SWE-College-Jobs/main/README.md"
             ),
             categories=[
                 "2027 USA SWE Internships",
@@ -1309,6 +1305,7 @@ class ApplyOperationResponse(BaseModel):
     action: Literal["find", "prepare", "fill", "inspect", "correct"]
     state: str
     application_ids: list[str] = Field(default_factory=list)
+    in_flight: list[dict[str, Any]] = Field(default_factory=list)
     current_application_id: str = ""
     current_job_id: str = ""
     current_label: str = ""
