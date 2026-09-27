@@ -160,7 +160,11 @@ export function ApplicationTab({
                     value={draft.eeo.veteran ?? ""}
                     onChange={(e) =>
                       setDraft({
-                        eeo: { ...draft.eeo, veteran: e.target.value as VeteranStatus, veteran_legacy: "" },
+                        eeo: {
+                          ...draft.eeo,
+                          veteran: e.target.value as VeteranStatus,
+                          veteran_legacy: "",
+                        },
                       })
                     }
                   >
