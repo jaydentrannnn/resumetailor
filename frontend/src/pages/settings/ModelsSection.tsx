@@ -13,7 +13,7 @@ import { emitAppEvent } from "../../lib/appEvents";
 import { describe } from "../../lib/errors";
 import { GLOSSARY } from "../../lib/glossary";
 import { profileDefaultModel } from "../../lib/modelLabel";
-import { KEY_LABELS, PROVIDERS, providerInfo } from "../../lib/providers";
+import { KEY_HELP, KEY_LABELS, PROVIDERS, providerInfo } from "../../lib/providers";
 import { useToast } from "../../lib/toast";
 import { useRunState } from "../../state/runState";
 import { CheckResultLine } from "./CheckResultLine";
@@ -262,12 +262,26 @@ function KeyRow({
     }
   }
 
+  const help = KEY_HELP[secret.name];
+
   return (
     <li className={highlighted ? "rounded-lg border border-accent/40 p-3" : "px-3"}>
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <label htmlFor={inputId} className="text-sm font-medium text-ink">
-          {KEY_LABELS[secret.name] ?? secret.name}
-        </label>
+        <div>
+          <label htmlFor={inputId} className="text-sm font-medium text-ink">
+            {KEY_LABELS[secret.name] ?? secret.name}
+          </label>
+          {help && (
+            <a
+              href={help.href}
+              target="_blank"
+              rel="noopener noreferrer"
+              className="ml-2 text-xs text-accent underline hover:text-accent-hover"
+            >
+              {help.label}
+            </a>
+          )}
+        </div>
         <span
           className={`rounded-full px-2 py-0.5 text-xs ${
             secret.set ? "bg-success-soft text-success" : "bg-paper text-ink-muted"

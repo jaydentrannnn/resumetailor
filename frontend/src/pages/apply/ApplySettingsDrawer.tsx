@@ -9,11 +9,20 @@ import { newWatchlistSource, WATCHLIST_ID } from "../../lib/watchlist";
 import { useConfirm } from "../../state/confirmState";
 import { AgeWindowPicker } from "./AgeWindowPicker";
 import { BrowserCommand, ConnectionStatus } from "./BrowserConnection";
-import { CategoryPicker, WatchlistEditor } from "./SourceEditors";
+import { CategoryPicker, JobSearchEditor, WatchlistEditor } from "./SourceEditors";
 
 function sourceLabel(source: SourceConfig): string {
   if (source.kind === "ats_board") {
     return source.id === WATCHLIST_ID ? "Company watchlist" : source.id;
+  }
+  if (source.kind === "job_search") {
+    const prov =
+      source.provider === "adzuna"
+        ? "Adzuna"
+        : source.provider === "usajobs"
+          ? "USAJobs"
+          : "Job search";
+    return source.query ? `${prov}: "${source.query}"` : `${prov} search`;
   }
   return source.id;
 }
@@ -183,16 +192,36 @@ export function ApplySettingsDrawer({
                   }
                 />
                 <div className="min-w-0 flex-1">
-                  <label htmlFor={`source-${source.id}`}>
-                    <span className="font-medium">{sourceLabel(source)}</span>
-                    {source.kind !== "ats_board" && source.categories.length > 0 && (
-                      <span className="block text-xs text-ink-muted">
-                        {source.categories.join(" · ")}
-                      </span>
+                  <div className="flex items-center justify-between">
+                    <label htmlFor={`source-${source.id}`}>
+                      <span className="font-medium">{sourceLabel(source)}</span>
+                      {source.kind !== "ats_board" && source.kind !== "job_search" && source.categories.length > 0 && (
+                        <span className="block text-xs text-ink-muted">
+                          {source.categories.join(" · ")}
+                        </span>
+                      )}
+                    </label>
+                    {source.kind === "job_search" && (
+                      <button
+                        type="button"
+                        className="text-xs text-ink-muted hover:text-danger"
+                        onClick={() =>
+                          patch({
+                            sources: apply.sources.filter((_, i) => i !== index),
+                          })
+                        }
+                      >
+                        Remove
+                      </button>
                     )}
-                  </label>
+                  </div>
                   {source.kind === "ats_board" ? (
                     <WatchlistEditor
+                      source={source}
+                      onChange={(next) => updateSource(index, next)}
+                    />
+                  ) : source.kind === "job_search" ? (
+                    <JobSearchEditor
                       source={source}
                       onChange={(next) => updateSource(index, next)}
                     />
@@ -206,15 +235,45 @@ export function ApplySettingsDrawer({
               </li>
             ))}
           </ul>
-          {!apply.sources.some((source) => source.kind === "ats_board") && (
+          <div className="mt-2 flex flex-wrap items-center gap-3">
+            {!apply.sources.some((source) => source.kind === "ats_board") && (
+              <button
+                type="button"
+                className="text-xs text-accent underline"
+                onClick={() => patch({ sources: [...apply.sources, newWatchlistSource()] })}
+              >
+                Add a company watchlist
+              </button>
+            )}
             <button
               type="button"
-              className="mt-2 text-xs text-accent underline"
-              onClick={() => patch({ sources: [...apply.sources, newWatchlistSource()] })}
+              className="text-xs text-accent underline"
+              onClick={() =>
+                patch({
+                  sources: [
+                    ...apply.sources,
+                    {
+                      id: `job-search-${Date.now().toString(36)}`,
+                      kind: "job_search",
+                      url: "",
+                      categories: [],
+                      enabled: true,
+                      provider: "adzuna",
+                      query: "",
+                      location: "",
+                      country: "us",
+                      include: [],
+                      exclude: [],
+                      locations: [],
+                      max_age_days: 14,
+                    },
+                  ],
+                })
+              }
             >
-              Add a company watchlist
+              Add a keyword search
             </button>
-          )}
+          </div>
         </Section>
 
         <Section title="Auto-submit">
