@@ -1,11 +1,8 @@
 """Single-worker job queue for tailoring runs.
 
-Concurrency is deliberately serial. `config.resolve()` writes the active backend routing
-into a process-wide `_ACTIVE` dict that every LLM call site reads; two concurrent runs
-with different `--model` settings would race and corrupt each other. A single worker is
-the cheap way to keep that invariant without threading a context object through every
-function between the CLI and the two API call sites — that refactor is the documented
-follow-up if this ever becomes multi-user.
+The worker remains serial. Each job enters a context that captures its workspace paths,
+calibration, backend routing, vocabulary, and writing style. Other threads can use the
+same context primitives without changing the queue's scheduling policy.
 
 Each job writes into `output/jobs/<job_id>/` so successive runs never overwrite each
 other's `.docx` / `.pdf`. JD and score caches stay in the shared `config.CACHE_DIR`.
@@ -341,7 +338,12 @@ class JobQueue:
             if job_id in self._order:
                 self._order.remove(job_id)
 
-        out_dir = config.OUTPUT_DIR / "jobs" / job_id
+        output_dir = (
+            config.workspace_paths(job.workspace_id)["OUTPUT_DIR"]
+            if job is not None and job.workspace_id is not None
+            else config.OUTPUT_DIR
+        )
+        out_dir = output_dir / "jobs" / job_id
         if not out_dir.exists():
             return "not found"
         try:
@@ -381,7 +383,12 @@ class JobQueue:
                 try:
                     from resume_tailor.apply import packet as apply_packet
 
-                    apply_packet.write_packet(job.job_id)
+                    context = (
+                        config.context_for_workspace(job.workspace_id)
+                        if job.workspace_id is not None else config.default_context()
+                    )
+                    with config.use_context(context):
+                        apply_packet.write_packet(job.job_id)
                 except Exception as exc:  # noqa: BLE001 - never fail a finished run
                     job.emit(
                         ProgressEvent(
@@ -421,6 +428,15 @@ class JobQueue:
             housekeeping.run()
 
     def _execute(self, job: Job) -> None:
+        """Run one job in its workspace context."""
+        context = (
+            config.context_for_workspace(job.workspace_id)
+            if job.workspace_id is not None else config.default_context()
+        )
+        with config.use_context(context):
+            self._execute_in_context(job)
+
+    def _execute_in_context(self, job: Job) -> None:
         """Run one job end-to-end. Mutates `job` with events and a final report."""
         settings = job.settings
         on_event: ProgressCallback = job.emit

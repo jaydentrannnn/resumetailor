@@ -2,8 +2,8 @@
 
 The rewrite, expand, and cover stages split their system prompts into a locked core
 (fabrication, numbers, ids, length cliff) and an editable style block. This module holds the
-default style text, the per-run active override, and a digest for cache keys — module state
-rather than a threaded parameter, for the same reason ``config._ACTIVE`` is module state.
+default style text, the per-run active override, and a digest for cache keys. Overrides
+live in the active run context; module state holds only the process default.
 
 One punctuation trap, specific to ``DEFAULT_COVER_STYLE``: a model mimics the punctuation of
 its own instructions, so a style block written with em dashes produces output full of them.
@@ -116,23 +116,29 @@ def activate(
     cover: str | None = None,
 ) -> None:
     """Bind style overrides for one tailoring run. Clears any prior activation."""
-    _ACTIVE["rewrite"] = rewrite
-    _ACTIVE["expand"] = expand
-    _ACTIVE["cover"] = cover
+    from . import config
+
+    values = {"rewrite": rewrite, "expand": expand, "cover": cover}
+    if not config.set_styles(values):
+        _ACTIVE.update(values)
 
 
 def is_overridden(stage: str) -> bool:
     """Return True when ``stage`` carries a user override rather than the shipped default."""
     if stage not in _STAGES:
         raise ValueError(f"Unknown style stage {stage!r}. Expected one of {_STAGES}.")
-    return _ACTIVE[stage] is not None
+    from . import config
+
+    return (config.active_styles() or _ACTIVE)[stage] is not None
 
 
 def active(stage: str) -> str:
     """Return the active style block for ``stage`` — override or shipped default."""
     if stage not in _STAGES:
         raise ValueError(f"Unknown style stage {stage!r}. Expected one of {_STAGES}.")
-    override = _ACTIVE[stage]
+    from . import config
+
+    override = (config.active_styles() or _ACTIVE)[stage]
     return override if override is not None else _DEFAULTS[stage]
 
 

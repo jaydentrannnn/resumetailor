@@ -1,18 +1,15 @@
-"""Regression test for the config-rebinding discipline `set_active_workspace` relies on.
+"""Regression test for dynamically resolved config paths and fit constants.
 
-`set_active_workspace` (and `reload_calibration`) reassign a fixed set of module-level
-path/constant globals in `config.py` in place — this is only safe because every reader
-resolves them through `config.X` at read time, not once at import time. A
+`set_active_workspace` and run contexts change the values returned by `config.__getattr__`.
+Every reader must resolve them through `config.X` at read time. A
 `from .config import X` anywhere else would bind a local name to whatever `X` pointed to
 at *import* time, permanently decoupled from any later `set_active_workspace` call —
 switching workspaces would silently leave that one caller reading the previous (or
 default) workspace's path forever, with no error and no obvious symptom until someone
 notices a job reading the wrong master resume.
 
-This AST-scans every first-party module for exactly that mistake, deriving the set of
-"rebound" names directly from `set_active_workspace`'s own `global` declarations rather
-than hardcoding a list, so a newly-added rebound global is covered automatically instead
-of silently falling outside a stale hardcoded set.
+This AST-scans every first-party module for that mistake using the names served by
+`config.__getattr__`, so a newly added dynamic view is covered automatically.
 """
 
 from __future__ import annotations
@@ -27,20 +24,8 @@ _CONFIG_MODULE_NAMES = ("config", "resume_tailor.config")
 
 
 def _rebound_globals() -> set[str]:
-    """Every name `set_active_workspace` reassigns, read from its own `global` statements
-    rather than hardcoded — a rebound global added later is picked up automatically."""
-    source = Path(config_mod.__file__).read_text(encoding="utf-8")
-    tree = ast.parse(source)
-    func = next(
-        node
-        for node in ast.walk(tree)
-        if isinstance(node, ast.FunctionDef) and node.name == "set_active_workspace"
-    )
-    names: set[str] = set()
-    for node in ast.walk(func):
-        if isinstance(node, ast.Global):
-            names.update(node.names)
-    return names
+    """Names served dynamically from the current run context."""
+    return set(config_mod._PATH_NAMES) | set(config_mod._CALIBRATION_NAMES)
 
 
 def _first_party_python_files() -> list[Path]:
@@ -54,14 +39,12 @@ def _first_party_python_files() -> list[Path]:
 
 
 def test_rebound_globals_extraction_finds_the_known_set():
-    """Sanity check on the extraction itself, independent of the real test below — an
+    """Sanity check on the dynamic-name set, independent of the real test below — an
     empty or trivially small set would make that test vacuously pass and never catch
     anything."""
     rebound = _rebound_globals()
     assert len(rebound) >= 10
-    # A handful of the globals `set_active_workspace`'s own docstring names, present as
-    # a floor rather than an exhaustive list — the extraction is the source of truth,
-    # this just confirms it actually parsed the right function.
+    # A handful of path names confirm the dynamic-name table is in use.
     assert {"DATA_DIR", "OUTPUT_DIR", "MASTER_RESUME_PATH", "TEMPLATE_PROFILE_PATH"} <= rebound
 
 

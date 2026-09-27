@@ -460,3 +460,38 @@ blank entry headers before the Pydantic path; server validation remains authorit
 - Not verified here: no Rust toolchain on the dev PC, so `update.rs`/`lib.rs` compile
   and `cargo fmt` are first checked by CI's desktop job; the end-to-end install needs
   two signed builds (docs/GUIDE.md §6).
+
+## 2026-09-27 - Per-request run context and mutable-state audit
+
+RunContext now captures workspace paths, calibration, routing, vocabulary, and writing style. JobQueue enters one context per job; the worker remains serial. ContextVar values are copied explicitly by run_in_context/submit_in_context for child threads. A module subclass maps legacy config monkeypatch.setattr calls into the process default context, so test patches remain effective without shadowing context views. The path and fit names have no real module globals; config.__getattr__ serves them. resolve and style.activate update the active context, or the process default when none is active. Existing cache fingerprints and keys are unchanged.
+
+| Module | Mutable state audited | Classification and disposition |
+| --- | --- | --- |
+| config | _DEFAULT, _RUN_CONTEXT, _ACTIVE, _PINNED | Workspace paths, calibration, backends, vocabulary, and style are per run in RunContext; _DEFAULT and _ACTIVE preserve legacy process defaults; _PINNED remains a ContextVar overlay. |
+| config | _VERB_INDEX, _VERB_INDEX_SOURCE, _VERB_INDEX_LOCK | Process cache keyed by vocabulary dict identity; lock and captured local index prevent cross-context races. |
+| style | _ACTIVE | Process default only; active run styles live in RunContext. |
+| libraries | _ACTIVE_MEMO | Per-workspace memo now keyed by libraries path; writes invalidate all entries. |
+| web/jobs | queue_singleton, JobQueue._jobs/_pending/_order/_lock/_worker | Process scheduler and job records, keyed by job id; each execution builds its own workspace context; single worker retained. |
+| workspace | _LOCK | Process registry lock; shared by all workspace mutations. |
+| convert | _profile_dir, _SOFFICE_LOCK | Process LibreOffice profile and converter lock; output arguments carry workspace paths. |
+| desktop_update | _waiter, _state, _out, _lock, _write_lock | One application updater and output stream, intentionally process shared. |
+| logs | _configured_dir and run-id ContextVar | Logger configuration is process wide under OUTPUT_ROOT; run id is already context local. |
+| llm | _LEARNED_CEILING | Process measurement cache keyed by base URL and model, independent of workspace. |
+| secret_store | _backend, _backend_lock | Process credential backend rooted at DATA_ROOT, independent of active workspace. |
+| mcp_server/server | _client | Process client to one local web service, independent of workspace. |
+| apply/operations | _ACTIVE_ID, _LOCK, _RUN_LOCK, _CANCEL, _RESUME, _SKIP, _PAUSE | One process Apply/browser operation at a time; the lock enforces that ownership. |
+| apply/store | _cache, _imported, _LOCK | Snapshot cache includes database path and generation; import set is keyed by database path; lock covers shared access. |
+| apply/submit_guard | _last_submit, _PACE_LOCK, _PAUSE_LOCK, _rng, _sleep, _clock | Installation-wide submit pacing and pause state; shared intentionally across profiles. Clock/sleep are test seams. |
+| apply/ats_api | _ASHBY_BOARD_CACHE | External company board metadata keyed by company, independent of workspace. |
+| apply/form_guards | _blocked, _blocked_lock | Process block list keyed by host, shared across Apply actions. |
+| apply/daily, apply/scheduler | _DAILY_LOCK, _PROGRESS_LOCK, _STATE_LOCK | One process Apply scheduler and progress writer, intentionally shared. |
+| apply/packet | _WRITE_LOCK | Serializes packet replacement for a job id; packet path resolves within the run context. |
+| web/extension | _pending, _seen_written, _LOCK | Installation-wide extension pairing and token throttle; store is under DATA_ROOT. |
+| web/security | _auto_token | Installation-wide session token, independent of workspace. |
+| web/template_ops | LOCK | Shared template mutation lock; workspace-specific file paths are resolved per call. |
+| web/routes/setup | _probe_cache | Connectivity probes keyed by endpoint/model, independent of workspace. |
+| web/app | _scheduler_stop | Process scheduler lifecycle event, shared intentionally. |
+| storage/db | _local, _initialised, _init_lock | Connections are thread local and keyed by database path; initialized set is path keyed. |
+| Static lookup dictionaries across config, apply, render, and web modules | Provider tables, aliases, prices, ATS hints, schema maps, route registries | Process shared read-only reference data; no run mutation or workspace data is stored in them. |
+
+The two legacy tests that assumed process-wide routing/rebound globals were updated to assert the new context contract. No queue parallelism, Apply concurrency, cache-key format, or process model changed.

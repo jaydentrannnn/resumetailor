@@ -555,7 +555,7 @@ def write_workspace_state(
 #: workspace (`resolve_effective(workspace_id=...)`, used by pack validation previews
 #: and workspace duplication) are always recomputed fresh rather than cached under a
 #: second key, which would risk staleness with no invalidation signal.
-_ACTIVE_MEMO: EffectiveLibrary | None = None
+_ACTIVE_MEMO: dict[Path, EffectiveLibrary] = {}
 
 
 def _invalidate_memo() -> None:
@@ -566,8 +566,7 @@ def _invalidate_memo() -> None:
     determine whether *this* write actually affects the active workspace is the safer
     default. Distinct from `reload()`, which additionally rebinds `config`'s tables —
     that stays caller-driven (after a route's write, or a workspace switch)."""
-    global _ACTIVE_MEMO
-    _ACTIVE_MEMO = None
+    _ACTIVE_MEMO.clear()
 
 
 def resolve_effective(
@@ -584,10 +583,10 @@ def resolve_effective(
     """
     if workspace_id is not None or exclude_pack_id is not None:
         return _resolve_effective_uncached(workspace_id, exclude_pack_id=exclude_pack_id)
-    global _ACTIVE_MEMO
-    if _ACTIVE_MEMO is None:
-        _ACTIVE_MEMO = _resolve_effective_uncached(None)
-    return _ACTIVE_MEMO
+    key = config.LIBRARIES_PATH
+    if key not in _ACTIVE_MEMO:
+        _ACTIVE_MEMO[key] = _resolve_effective_uncached(None)
+    return _ACTIVE_MEMO[key]
 
 
 def _resolve_effective_uncached(
@@ -796,8 +795,7 @@ def apply_to_config(workspace_id: str | None = None) -> EffectiveLibrary:
     "rebind, don't mutate" contract for the path globals.
     """
     effective = resolve_effective(workspace_id)
-    config.TAG_ALIASES = dict(effective.tag_aliases)
-    config.VERB_FAMILIES = dict(effective.verb_families)
+    config.set_vocabulary(dict(effective.tag_aliases), dict(effective.verb_families))
     return effective
 
 
@@ -817,8 +815,10 @@ def reset() -> None:
     memo. Test seam — pairs with monkeypatching `store_root` in `tests/conftest.py`."""
     _invalidate_memo()
     core = library_seeds.BUILTIN_PACKS["core-tech"]
-    config.TAG_ALIASES = dict(core["tag_aliases"])
-    config.VERB_FAMILIES = {family: tuple(verbs) for family, verbs in core["verb_families"].items()}
+    config.set_vocabulary(
+        dict(core["tag_aliases"]),
+        {family: tuple(verbs) for family, verbs in core["verb_families"].items()},
+    )
 
 
 # --------------------------------------------------------------------------------------
