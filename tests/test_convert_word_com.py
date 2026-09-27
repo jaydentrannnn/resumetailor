@@ -7,6 +7,8 @@ import threading
 import types
 from pathlib import Path
 
+import pytest
+
 from resume_tailor import convert
 
 
@@ -50,8 +52,6 @@ def test_com_is_released_when_word_fails(monkeypatch, tmp_path: Path):
     )
     monkeypatch.setitem(sys.modules, "docx2pdf", types.SimpleNamespace(convert=fail))
 
-    try:
+    with pytest.raises(OSError):
         convert._convert_word(tmp_path / "a.docx", tmp_path / "a.pdf", keep_active=False)  # noqa: SLF001
-    except OSError:
-        pass
     assert calls == ["init", "uninit"]
