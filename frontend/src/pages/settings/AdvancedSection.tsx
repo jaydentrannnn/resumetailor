@@ -26,6 +26,21 @@ export function AdvancedSection() {
         </select>
       </Card>
       <Card
+        title="Concurrent tailoring runs"
+        description="How many tailoring jobs may run together. PDF conversion is queued separately."
+      >
+        <select
+          className="field max-w-xs"
+          aria-label="Concurrent tailoring runs"
+          value={settings.max_concurrent_jobs}
+          onChange={(e) => setSettings({ ...settings, max_concurrent_jobs: Number(e.target.value) })}
+        >
+          {[1, 2, 3, 4].map((count) => (
+            <option key={count} value={count}>{count} run{count === 1 ? "" : "s"}</option>
+          ))}
+        </select>
+      </Card>
+      <Card
         title="Skill vocabulary"
         description="Teach ResumeTailor that different spellings mean the same skill (for example, “MS Excel” and “Excel”)."
       >

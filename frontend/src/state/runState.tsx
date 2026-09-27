@@ -79,6 +79,7 @@ export const DEFAULT_SETTINGS: JobSettings = {
   // Matches `config.EXTRACT_CONSENSUS_RUNS` server-side. No UI control exposes this;
   // it exists here only so "Reset to defaults" round-trips it instead of dropping it.
   extract_runs: 0, // 0 = automatic: 1 vote on Anthropic/Gemini, 3 on local models
+  max_concurrent_jobs: 2,
   no_expand: false,
   no_skills: false,
   cover_letter: false,

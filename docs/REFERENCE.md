@@ -123,6 +123,14 @@ safe to call concurrently with a running job, daily apply funnel, or template-ta
 every mutating workspace route holds `get_queue().busy()` then `template_ops.LOCK`, in that
 order (and 409s while `apply.daily.daily_busy()`).
 
+Tailoring jobs now run concurrently up to `JobSettings.max_concurrent_jobs` (default 2,
+range 1–4). Each job carries a `RunContext` with its workspace paths, backend routing,
+calibration, vocabulary, and style; worker threads in JD voting and daily processing
+copy that context explicitly. `get_queue().busy()` remains true while any job is queued
+or running, so workspace mutations still wait. `convert.convert()` serializes both Word
+and LibreOffice PDF conversion with a process-wide lock: Word COM needs exclusive use,
+and LibreOffice's shared profile is also not safe for overlapping conversions.
+
 `workspace.bootstrap()` resolves and activates a workspace on every process start.
 `tailor.py`/`build_template.py`/`calibrate.py` each take a `--workspace <id>` override that
 applies to that invocation only and never writes the registry. First boot with no registry

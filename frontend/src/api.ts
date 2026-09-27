@@ -60,6 +60,7 @@ export type JobSettings = {
   /** JD extraction votes (0-10); 0 = automatic (1 on Anthropic/Gemini, 3 on local
    * models). Set on Settings → Models. */
   extract_runs: number;
+  max_concurrent_jobs: number;
   /** Skip generating expanded experience descriptions for application forms. */
   no_expand: boolean;
   /** Skip generating the tailored skills list for application-form Skills fields. */

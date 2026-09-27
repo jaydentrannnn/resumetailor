@@ -218,6 +218,7 @@ class JobSettings(BaseModel):
     """Per-run knobs, mirroring the CLI flags in `tailor.py`."""
 
     pages: int = Field(default=1, ge=1, le=5)
+    max_concurrent_jobs: int = Field(default=2, ge=1, le=4)
     experience: int | None = Field(default=None, ge=1, le=10)
     projects: int | None = Field(default=None, ge=1, le=10)
     #: Defaults to `ollama` rather than `claude` so a fresh install runs without an
@@ -247,8 +248,8 @@ class JobSettings(BaseModel):
     no_verb_repair: bool = False
     merge: bool = False
     no_cache: bool = False
-    #: How many independent JD extractions to vote over (`jd.extract_consensus`); 0 = automatic (`config.extract_runs`: 1 on Anthropic/Gemini,
-    #: 3 on local models).
+    #: How many independent JD extractions to vote over (`jd.extract_consensus`);
+    #: 0 = automatic (`config.extract_runs`: 1 on Anthropic/Gemini, 3 on local models).
     extract_runs: int = Field(default=0, ge=0, le=10)
     no_expand: bool = False
     #: Skips the tailored skills-list stage. Defaults off (the stage runs): unlike

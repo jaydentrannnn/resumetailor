@@ -49,6 +49,7 @@ _PROFILE_PREFIX = "rt_lo_"
 _STALE_PROFILE_SECONDS = 24 * 3600
 
 _SOFFICE_LOCK = threading.Lock()
+_CONVERSION_LOCK = threading.Lock()
 _profile_dir: Path | None = None
 
 
@@ -203,7 +204,8 @@ def convert(
         ) from None
 
     try:
-        impl(docx_path, pdf_path, keep_active=keep_active)
+        with _CONVERSION_LOCK:
+            impl(docx_path, pdf_path, keep_active=keep_active)
     except RuntimeError:
         raise
     except Exception as exc:  # noqa: BLE001 - COM in particular raises a wide variety

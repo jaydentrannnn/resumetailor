@@ -5,8 +5,9 @@ from __future__ import annotations
 import json
 import threading
 import time
-from contextlib import contextmanager
 from collections.abc import Callable
+from concurrent.futures import ThreadPoolExecutor, as_completed
+from contextlib import contextmanager, nullcontext
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Any, Literal
@@ -24,6 +25,8 @@ from resume_tailor.web.jobs import get_queue, model_routing
 from resume_tailor.web.schemas import ApplySettings, JobSettings, RunMetadata
 
 _DAILY_LOCK = threading.Lock()
+_LOG_LOCK = threading.Lock()
+_ROW_POOL_SIZE = 4
 
 
 @contextmanager
@@ -145,6 +148,17 @@ def _progress_set(**fields: Any) -> None:
             setattr(_LIVE, key, value)
 
 
+def _bump(summary: DailySummary, field: str) -> None:
+    """Keep counters and live progress snapshots consistent across row workers."""
+    with _PROGRESS_LOCK:
+        setattr(summary, field, getattr(summary, field) + 1)
+
+
+def _row_error(summary: DailySummary, message: str) -> None:
+    with _PROGRESS_LOCK:
+        summary.errors.append(message)
+
+
 def daily_status() -> DailyProgress:
     """Return a snapshot of daily-run progress, safe to serialise.
 
@@ -177,9 +191,10 @@ def _log_path(date: str) -> Path:
 
 def _append_log(path: Path, line: str, log: Callable[[str], None]) -> None:
     """Write one line to the daily log file and the live logger."""
-    path.parent.mkdir(parents=True, exist_ok=True)
-    with path.open("a", encoding="utf-8") as handle:
-        handle.write(line + "\n")
+    with _LOG_LOCK:
+        path.parent.mkdir(parents=True, exist_ok=True)
+        with path.open("a", encoding="utf-8") as handle:
+            handle.write(line + "\n")
     log(line)
 
 
@@ -406,7 +421,9 @@ def prepare_application(
     # ``fill_failed`` describes the previous packet, so the fresh one starts ``ready``.
     if previous.fill and previous.status in RETAINED_TAB_STATUSES:
         prepared.fill = previous.fill
-        store.set_status(prepared, previous.status, note="Prepared artifacts refreshed; review tab retained")
+        store.set_status(
+            prepared, previous.status, note="Prepared artifacts refreshed; review tab retained"
+        )
         store.upsert(prepared)
     return prepared
 
@@ -457,12 +474,13 @@ def _process_one(
     log: Callable[[str], None],
     summary: DailySummary,
     index: store.Index,
+    index_lock: threading.Lock | None = None,
     force_tailor: bool = False,
     on_job: Callable[[str], None] | None = None,
 ) -> None:
     """Run the funnel for one newly discovered posting."""
     if not row.job_id:
-        summary.skipped_count += 1
+        _bump(summary, "skipped_count")
         return
 
     wrapper_or_direct = row.application_link or ""
@@ -476,119 +494,120 @@ def _process_one(
         first_seen=_now_iso(),
     )
 
-    app: store.Application | None = None
-    if ckey in index.by_canonical:
-        existing = index.by_canonical[ckey]
-        store.add_source_ref(existing, ref)
-        if not dry_run:
-            store.upsert(existing)
-        if existing.archived_at:
-            summary.already_known += 1
-            return
-        if existing.status == "discovered" and not fetch_only:
-            app = existing
-        else:
-            summary.already_known += 1
-            _append_log(
-                log_path,
-                f"[merge-ref] {row.company} → {ckey} via {ref.source}",
-                log,
-            )
-            return
-
-    if app is None and gkey in index.by_group and index.by_group[gkey]:
-        primaries = [
-            index.by_canonical[k]
-            for k in index.by_group[gkey]
-            if k in index.by_canonical
-        ]
-        primary = next((p for p in primaries if p.job_id), None) or primaries[0]
-        app = _application_from_row(
-            row, canonical_key=ckey, group_key=gkey, final_url=final_url
-        )
-        app.duplicate_of = primary.canonical_key or primary.source_job_id
-        terminal = {"submitted", "interview", "rejected", "ghosted", "skipped"}
-        if primary.status in terminal:
-            store.set_status(
-                app,
-                "skipped",
-                note=f"duplicate of {app.duplicate_of} (already applied)",
-            )
+    with index_lock or nullcontext():
+        app: store.Application | None = None
+        if ckey in index.by_canonical:
+            existing = index.by_canonical[ckey]
+            store.add_source_ref(existing, ref)
             if not dry_run:
-                store.upsert(app)
-            summary.grouped += 1
-            summary.skipped_count += 1
-            _append_log(
-                log_path,
-                f"[grouped-skip] {row.company} duplicate_of={app.duplicate_of}",
-                log,
-            )
-            index.by_canonical[ckey] = app
-            index.by_source_ref[(ref.source, ref.source_job_id)] = ckey
-            index.by_group.setdefault(gkey, []).append(ckey)
-            return
-        if not fetch_only and primary.job_id:
-            app.reused_from_job_id = primary.job_id
-            app.job_id = primary.job_id
-            store.set_status(
-                app,
-                "ready",
-                note=f"same role group as {app.duplicate_of}",
-            )
-            if not dry_run:
-                store.upsert(app)
-            summary.grouped += 1
-            summary.ready += 1
-            summary.reused += 1
-            summary.processed += 1
-            _append_log(
-                log_path,
-                f"[grouped-reuse] {row.company} ← {primary.job_id}",
-                log,
-            )
-            index.by_canonical[ckey] = app
-            index.by_source_ref[(ref.source, ref.source_job_id)] = ckey
-            index.by_group.setdefault(gkey, []).append(ckey)
-            return
-        # Primary not tailored yet — continue as a normal discovery; first to finish wins.
+                store.upsert(existing)
+            if existing.archived_at:
+                _bump(summary, "already_known")
+                return
+            if existing.status == "discovered" and not fetch_only:
+                app = existing
+            else:
+                _bump(summary, "already_known")
+                _append_log(
+                    log_path,
+                    f"[merge-ref] {row.company} → {ckey} via {ref.source}",
+                    log,
+                )
+                return
 
-    if app is None:
-        existing_app = store.get(row.job_id) if row.job_id else None
-        if existing_app is not None:
-            app = existing_app
-            if final_url and not app.final_url:
-                app.final_url = final_url
-            if ckey and not app.canonical_key:
-                app.canonical_key = ckey
-            if gkey and not app.group_key:
-                app.group_key = gkey
-        else:
+        if app is None and gkey in index.by_group and index.by_group[gkey]:
+            primaries = [
+                index.by_canonical[k]
+                for k in index.by_group[gkey]
+                if k in index.by_canonical
+            ]
+            primary = next((p for p in primaries if p.job_id), None) or primaries[0]
             app = _application_from_row(
                 row, canonical_key=ckey, group_key=gkey, final_url=final_url
             )
-        if not dry_run:
-            if app.status != "discovered":
-                store.set_status(app, "discovered")
-            store.upsert(app)
-        summary.discovered += 1
-        _append_log(
-            log_path,
-            f"[discovered] {row.company} — {row.role} ({row.job_id})",
-            log,
-        )
-        index.by_canonical[ckey] = app
-        index.by_source_ref[(ref.source, ref.source_job_id)] = ckey
-        index.by_group.setdefault(gkey, []).append(ckey)
+            app.duplicate_of = primary.canonical_key or primary.source_job_id
+            terminal = {"submitted", "interview", "rejected", "ghosted", "skipped"}
+            if primary.status in terminal:
+                store.set_status(
+                    app,
+                    "skipped",
+                    note=f"duplicate of {app.duplicate_of} (already applied)",
+                )
+                if not dry_run:
+                    store.upsert(app)
+                _bump(summary, "grouped")
+                _bump(summary, "skipped_count")
+                _append_log(
+                    log_path,
+                    f"[grouped-skip] {row.company} duplicate_of={app.duplicate_of}",
+                    log,
+                )
+                index.by_canonical[ckey] = app
+                index.by_source_ref[(ref.source, ref.source_job_id)] = ckey
+                index.by_group.setdefault(gkey, []).append(ckey)
+                return
+            if not fetch_only and primary.job_id:
+                app.reused_from_job_id = primary.job_id
+                app.job_id = primary.job_id
+                store.set_status(
+                    app,
+                    "ready",
+                    note=f"same role group as {app.duplicate_of}",
+                )
+                if not dry_run:
+                    store.upsert(app)
+                _bump(summary, "grouped")
+                _bump(summary, "ready")
+                _bump(summary, "reused")
+                _bump(summary, "processed")
+                _append_log(
+                    log_path,
+                    f"[grouped-reuse] {row.company} ← {primary.job_id}",
+                    log,
+                )
+                index.by_canonical[ckey] = app
+                index.by_source_ref[(ref.source, ref.source_job_id)] = ckey
+                index.by_group.setdefault(gkey, []).append(ckey)
+                return
+            # Primary not tailored yet — continue as a normal discovery; first to finish wins.
 
-        if dry_run or fetch_only:
-            summary.processed += 1
-            return
+        if app is None:
+            existing_app = store.get(row.job_id) if row.job_id else None
+            if existing_app is not None:
+                app = existing_app
+                if final_url and not app.final_url:
+                    app.final_url = final_url
+                if ckey and not app.canonical_key:
+                    app.canonical_key = ckey
+                if gkey and not app.group_key:
+                    app.group_key = gkey
+            else:
+                app = _application_from_row(
+                    row, canonical_key=ckey, group_key=gkey, final_url=final_url
+                )
+            if not dry_run:
+                if app.status != "discovered":
+                    store.set_status(app, "discovered")
+                store.upsert(app)
+            _bump(summary, "discovered")
+            _append_log(
+                log_path,
+                f"[discovered] {row.company} — {row.role} ({row.job_id})",
+                log,
+            )
+            index.by_canonical[ckey] = app
+            index.by_source_ref[(ref.source, ref.source_job_id)] = ckey
+            index.by_group.setdefault(gkey, []).append(ckey)
+
+            if dry_run or fetch_only:
+                _bump(summary, "processed")
+                return
 
     url = app.posting_url or app.final_url
     if not url:
         store.set_status(app, "skipped", note="no application link")
         store.upsert(app)
-        summary.skipped_count += 1
+        _bump(summary, "skipped_count")
         _append_log(log_path, f"[skipped] {app.company}: no application link", log)
         return
 
@@ -601,16 +620,16 @@ def _process_one(
         # Checked before screening and tailoring, so a closed job costs no model calls.
         store.set_status(app, "skipped", note=fetch.closed)
         store.upsert(app)
-        summary.skipped_count += 1
+        _bump(summary, "skipped_count")
         _append_log(log_path, f"[closed] {app.company}: {fetch.closed}", log)
-        summary.processed += 1
+        _bump(summary, "processed")
         return
     if fetch.method == "failed" or len(fetch.text.strip()) < _MIN_USABLE_JD_CHARS:
         store.set_status(app, "needs_browser", note=fetch.error or "jd too short")
         store.upsert(app)
-        summary.needs_browser += 1
+        _bump(summary, "needs_browser")
         _append_log(log_path, f"[needs_browser] {app.company}: {fetch.error}", log)
-        summary.processed += 1
+        _bump(summary, "processed")
         return
 
     app.jd_text_path = _save_jd(app.source_job_id, fetch.text)
@@ -620,7 +639,7 @@ def _process_one(
     app.error = None
     store.set_status(app, "jd_fetched")
     store.upsert(app)
-    summary.jd_fetched += 1
+    _bump(summary, "jd_fetched")
 
     elig = prefilter_screen(fetch.text, app.role, settings)
     if not elig.passed:
@@ -630,14 +649,14 @@ def _process_one(
             app, "screened_out", note="prefilter: " + "; ".join(elig.reasons)
         )
         store.upsert(app)
-        summary.prefiltered_out += 1
-        summary.screened_out += 1
+        _bump(summary, "prefiltered_out")
+        _bump(summary, "screened_out")
         _append_log(
             log_path,
             f"[prefilter] {app.company}: {elig.reasons}",
             log,
         )
-        summary.processed += 1
+        _bump(summary, "processed")
         return
     app.eligibility_flags = list(row.flags) + list(elig.flags)
 
@@ -656,10 +675,10 @@ def _process_one(
     except Exception as exc:  # noqa: BLE001
         store.set_status(app, "tailor_failed", note=f"extract failed: {exc}")
         store.upsert(app)
-        summary.tailor_failed += 1
-        summary.errors.append(f"{app.company}: extract {exc}")
+        _bump(summary, "tailor_failed")
+        _row_error(summary, f"{app.company}: extract {exc}")
         _append_log(log_path, f"[tailor_failed] {app.company}: extract failed: {exc}", log)
-        summary.processed += 1
+        _bump(summary, "processed")
         return
 
     screen_result = screen(
@@ -673,14 +692,14 @@ def _process_one(
     if not screen_result.passed:
         store.set_status(app, "screened_out", note="; ".join(screen_result.reasons))
         store.upsert(app)
-        summary.screened_out += 1
+        _bump(summary, "screened_out")
         _append_log(log_path, f"[screened_out] {app.company}: {screen_result.reasons}", log)
-        summary.processed += 1
+        _bump(summary, "processed")
         return
 
     store.set_status(app, "screened_in")
     store.upsert(app)
-    summary.screened_in += 1
+    _bump(summary, "screened_in")
 
     match = None if force_tailor else runs.closest_run(fetch.text, requirements)
     if match is not None:
@@ -693,14 +712,14 @@ def _process_one(
         ):
             _link_reused_packet(app, prior.job_id)
             store.upsert(app)
-            summary.reused += 1
-            summary.ready += 1
+            _bump(summary, "reused")
+            _bump(summary, "ready")
             _append_log(
                 log_path,
                 f"[reuse] {app.company} ← {prior.job_id} (jaccard={score:.2f})",
                 log,
             )
-            summary.processed += 1
+            _bump(summary, "processed")
             return
 
     metadata = RunMetadata(
@@ -735,17 +754,17 @@ def _process_one(
         store.set_status(app, "tailor_failed", note=err or finished.status)
         app.error = err
         store.upsert(app)
-        summary.tailor_failed += 1
-        summary.errors.append(f"{app.company}: tailor {err}")
+        _bump(summary, "tailor_failed")
+        _row_error(summary, f"{app.company}: tailor {err}")
         _append_log(log_path, f"[tailor_failed] {app.company}: {err}", log)
     else:
         store.set_status(app, "ready", note=f"tailored as {job.job_id}")
         store.upsert(app)
-        summary.tailored += 1
-        summary.ready += 1
+        _bump(summary, "tailored")
+        _bump(summary, "ready")
         _append_log(log_path, f"[ready] {app.company} job={job.job_id}", log)
 
-    summary.processed += 1
+    _bump(summary, "processed")
 
 
 def run_daily(
@@ -907,30 +926,53 @@ def run_daily(
             total=len(to_process),
         )
 
-        for position, row in enumerate(to_process):
-            _progress_set(
-                source_id=row.source_id,
-                current=f"{row.company} — {row.role}".strip(" —"),
-                processed=position,
-            )
-            try:
-                _process_one(
-                    row,
-                    settings=settings,
-                    job_defaults=job_defaults,
-                    resume=resume,
-                    known_tags=known_tags,
-                    allow_browser=allow_browser,
-                    dry_run=dry_run,
-                    fetch_only=fetch_only,
-                    log_path=log_file,
-                    log=log,
-                    summary=summary,
-                    index=index,
+        index_lock = threading.Lock()
+        group_locks: dict[str, threading.Lock] = {}
+
+        def process_row(row: sources.SourceRow, prior: Any = None) -> None:
+            if prior is not None:
+                prior.result()
+            group_key = identity.group_key(row.company, row.role)
+            with group_locks[group_key]:
+                _progress_set(
+                    source_id=row.source_id,
+                    current=f"{row.company} — {row.role}".strip(" —"),
                 )
-            except Exception as exc:  # noqa: BLE001
-                summary.errors.append(f"{row.company}: {exc}")
-                _append_log(log_file, f"[error] {row.company}: {exc}", log)
+                try:
+                    _process_one(
+                        row,
+                        settings=settings,
+                        job_defaults=job_defaults,
+                        resume=resume,
+                        known_tags=known_tags,
+                        allow_browser=allow_browser,
+                        dry_run=dry_run,
+                        fetch_only=fetch_only,
+                        log_path=log_file,
+                        log=log,
+                        summary=summary,
+                        index=index,
+                        index_lock=index_lock,
+                    )
+                except Exception as exc:  # noqa: BLE001
+                    _row_error(summary, f"{row.company}: {exc}")
+                    _append_log(log_file, f"[error] {row.company}: {exc}", log)
+
+        for row in to_process:
+            group_locks.setdefault(identity.group_key(row.company, row.role), threading.Lock())
+        with ThreadPoolExecutor(max_workers=_ROW_POOL_SIZE) as executor:
+            futures = []
+            prior_by_group: dict[str, Any] = {}
+            for row in to_process:
+                group_key = identity.group_key(row.company, row.role)
+                future = config.submit_in_context(
+                    executor, process_row, row, prior_by_group.get(group_key)
+                )
+                futures.append(future)
+                prior_by_group[group_key] = future
+            for completed, future in enumerate(as_completed(futures), start=1):
+                future.result()
+                _progress_set(processed=completed)
 
         _progress_set(processed=len(to_process), current="")
 
