@@ -168,6 +168,7 @@ class ApplySettings(BaseModel):
     #: listed in `auto_submit_ats`; Workday is excluded in code regardless (see
     #: `fill.decide_submit_action`).
     auto_submit_max_per_run: int = Field(default=0, ge=0)
+    max_parallel_fills: int = Field(default=2, ge=1, le=4)
     auto_submit_enabled: bool = False
     #: Rolling 24-hour limits on automatic submits (`apply.submit_guard`). A form that
     #: would go over is left for review with the note "Daily cap reached". `0` means no

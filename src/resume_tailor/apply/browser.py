@@ -16,6 +16,7 @@ import asyncio
 import json
 import os
 import socket
+import threading
 import time
 from collections.abc import Iterator
 from contextlib import asynccontextmanager, contextmanager
@@ -43,6 +44,18 @@ class BrowserStatus:
 #: holds the one connection it allows: the relay and tab are fine, just in use.
 RELAY_BUSY = "Relay busy: a fill is connected"
 TAB_GONE = "Tab was closed or DevTools opened"
+UPLOAD_LOCK = threading.Lock()
+
+
+@asynccontextmanager
+async def upload_slot():
+    """Share the upload slot with synchronous fills without blocking the event loop."""
+    while not UPLOAD_LOCK.acquire(blocking=False):
+        await asyncio.sleep(0.05)
+    try:
+        yield
+    finally:
+        UPLOAD_LOCK.release()
 
 
 def extension_mode() -> bool:
@@ -177,7 +190,9 @@ def _tab_gone() -> bool:
 def cdp_browser() -> Iterator[Any]:
     """Connect to the host browser over CDP; yield a Playwright ``Browser``.
 
-    Raises ``RuntimeError`` with a clear message when the endpoint is unreachable.
+    Each caller owns a separate sync Playwright connection in its own thread. Browser
+    objects cannot be shared across worker threads. Raises ``RuntimeError`` with a clear
+    message when the endpoint is unreachable.
     """
     status = browser_status()
     if not status.reachable:

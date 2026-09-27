@@ -260,6 +260,21 @@ export function ApplySettingsDrawer({
           >
             <legend className="px-1 text-xs font-medium">Limits on automatic submits</legend>
             <label className="block">
+              Parallel fills{" "}
+              <input
+                className="field mx-1 inline-block w-16"
+                type="number"
+                min={1}
+                max={4}
+                aria-label="Parallel fills"
+                value={apply.max_parallel_fills}
+                onChange={(e) =>
+                  patch({ max_parallel_fills: Math.min(4, Math.max(1, Number(e.target.value) || 1)) })
+                }
+              />
+            </label>
+            <p className="text-xs text-ink-muted">More tabs raise the chance of bot checks.</p>
+            <label className="block">
               Nightly run: at most{" "}
               <input
                 className="field mx-1 inline-block w-20"

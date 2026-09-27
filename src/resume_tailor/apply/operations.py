@@ -95,6 +95,17 @@ _RUN_LOCK = threading.Lock()
 
 
 @contextmanager
+def batch_browser_owner():
+    """Reserve the Apply browser for a daily batch and all of its fill workers."""
+    if not _RUN_LOCK.acquire(blocking=False):
+        raise RuntimeError("Another Apply operation owns the browser")
+    try:
+        yield
+    finally:
+        _RUN_LOCK.release()
+
+
+@contextmanager
 def registry_edit_idle():
     """Exclude explicit and daily Apply workers during a registry mutation."""
     if not _RUN_LOCK.acquire(blocking=False):

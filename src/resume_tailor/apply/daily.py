@@ -1031,12 +1031,6 @@ def _run_batch_submit(
     if cap <= 0:
         return
 
-    status = browser.browser_status()
-    if not status.reachable:
-        summary.submit_skipped_no_browser = True
-        _append_log(log_path, "[batch-submit] skipped: browser CDP unreachable", log)
-        return
-
     eligible_ats = {a.lower() for a in settings.auto_submit_ats}
     candidates = [
         app
@@ -1046,28 +1040,76 @@ def _run_batch_submit(
     candidates.sort(key=lambda app: app.discovered_at)
     to_submit = candidates[:cap]
 
-    for app in to_submit:
-        label = f"{app.company} — {app.role}".strip(" —")
-        if not dry_run and submit_guard.is_paused():
-            _append_log(log_path, "[batch-submit] stopped: automation is paused", log)
-            return
-        if dry_run:
+    if dry_run:
+        for app in to_submit:
+            label = f"{app.company} — {app.role}".strip(" —")
             _append_log(log_path, f"[would-submit] {label}", log)
-            continue
-        summary.submit_attempted += 1
-        try:
-            result = fill.fill_application(
-                app.canonical_key or app.source_job_id, settings=settings
-            )
-        except Exception as exc:  # noqa: BLE001 - one bad posting must not sink the batch
-            summary.submit_failed += 1
-            _append_log(log_path, f"[batch-submit] {label}: {exc}", log)
-            continue
-        if result.status == "submitted":
-            summary.submitted += 1
-        else:
-            summary.submit_failed += 1
-        _append_log(log_path, f"[batch-submit] {label}: {result.status}", log)
+        return
+
+    status = browser.browser_status()
+    if not status.reachable:
+        summary.submit_skipped_no_browser = True
+        _append_log(log_path, "[batch-submit] skipped: browser CDP unreachable", log)
+        return
+    extension = browser.extension_mode()
+    workers = 1 if extension else settings.max_parallel_fills
+    if extension and settings.max_parallel_fills > 1:
+        _append_log(log_path, "[batch-submit] extension relay: parallel fills disabled", log)
+
+    from resume_tailor.apply import operations
+
+    next_app = iter(to_submit)
+    dispatch_lock = threading.Lock()
+    log_lock = threading.Lock()
+    stopped = False
+
+    def process_next() -> None:
+        nonlocal stopped
+        while True:
+            with dispatch_lock:
+                if stopped:
+                    return
+                if submit_guard.is_paused():
+                    stopped = True
+                    with log_lock:
+                        _append_log(log_path, "[batch-submit] stopped: automation is paused", log)
+                    return
+                app = next(next_app, None)
+                if app is None:
+                    return
+                _bump(summary, "submit_attempted")
+            label = f"{app.company} — {app.role}".strip(" —")
+            try:
+                result = fill.fill_application(
+                    app.canonical_key or app.source_job_id,
+                    settings=settings,
+                    should_cancel=submit_guard.is_paused,
+                )
+            except Exception as exc:  # noqa: BLE001 - one bad posting must not sink the batch
+                _bump(summary, "submit_failed")
+                with log_lock:
+                    _append_log(log_path, f"[batch-submit] {label}: {exc}", log)
+                continue
+            _bump(summary, "submitted" if result.status == "submitted" else "submit_failed")
+            with log_lock:
+                _append_log(log_path, f"[batch-submit] {label}: {result.status}", log)
+
+    owned = False
+    try:
+        with operations.batch_browser_owner(), ThreadPoolExecutor(
+            max_workers=workers
+        ) as executor:
+            owned = True
+            futures = [
+                config.submit_in_context(executor, process_next)
+                for _ in range(min(workers, len(to_submit)))
+            ]
+            for future in futures:
+                future.result()
+    except RuntimeError as exc:
+        if owned:
+            raise
+        _append_log(log_path, f"[batch-submit] skipped: {exc}", log)
 
 
 RetryKind = Literal["fetch", "prefilter", "tailor"]

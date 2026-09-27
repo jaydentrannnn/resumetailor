@@ -212,6 +212,17 @@ def test_pause_switch_stops_a_submit_even_without_a_wait(clock):
         assert go is False
 
 
+def test_final_submit_guard_runs_in_paced_slot(clock):
+    allowed = True
+    with submit_guard.pace(can_submit=lambda: allowed) as go:
+        assert go
+    before = submit_guard._last_submit  # noqa: SLF001
+    allowed = False
+    with submit_guard.pace(can_submit=lambda: allowed) as go:
+        assert go is False
+    assert submit_guard._last_submit == before  # noqa: SLF001
+
+
 # --- scheduler and operation worker -------------------------------------------------
 
 
