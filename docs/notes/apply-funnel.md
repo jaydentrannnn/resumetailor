@@ -1268,3 +1268,9 @@ while `pageFooterNextButton` is disabled (save in flight) the wait extends to 3Ã
 timeout, with one last look at the end. A draft saved by an earlier run kept duplicate
 skill chips; `workday_flow.remove_duplicate_chips` (focus + Delete, verified per chip) runs
 before skills are entered. CACI could not be re-checked live (already applied).
+
+ # #   2 0 2 6 - 0 9 - 2 7      C a r e e r - p a g e   w a t c h l i s t   d i s c o v e r y   a n d   W o r k d a y   b o a r d s 
+ 
+ -   W o r k d a y   b o a r d   s l u g s   s t o r e   ` { h o s t - p r e f i x } / { t e n a n t } / { s i t e } `   ( f o r   e x a m p l e   ` a c m e . w d 5 / a c m e / E x t e r n a l ` ) ,   s o   t h e   p u b l i c   c a r e e r s   U R L   a n d   C X S   j o b s   e n d p o i n t   r o u n d - t r i p   w i t h o u t   r e l y i n g   o n   a   c o m p a n y   n a m e .   L i s t i n g   u s e s   b o u n d e d   2 0 - j o b   P O S T   p a g e s   a n d   c o n v e r t s   W o r k d a y   r e l a t i v e   p o s t i n g   d a t e s   t o   I S O   d a t e s   f o r   t h e   e x i s t i n g   w a t c h l i s t   a g e   f i l t e r . 
+ -   B o a r d   r e s o l u t i o n   r e a d s   o n e   b o u n d e d   c o m p a n y   c a r e e r s   p a g e   a n d   c o u n t s   s u p p o r t e d   A T S   l i n k s   i n   i f r a m e ,   s c r i p t ,   a n d   a n c h o r   U R L s .   I t   v a l i d a t e s   t h e   s e l e c t e d   b o a r d   t h r o u g h   t h e   e x i s t i n g   l i v e   l i s t i n g   c h e c k ;   e q u a l   t o p   c o u n t s   r e t u r n   c a n d i d a t e s ,   a n d   p a g e s   w i t h   n o   s u p p o r t e d   l i n k   r e t u r n   4 0 4 .   T h e   e d i t o r   a c c e p t s   a n d   l a b e l s   W o r k d a y   w h i l e   s h o w i n g   t h e   r e s o l v e r ' s   e x i s t i n g   e r r o r   d e t a i l .  
+ 

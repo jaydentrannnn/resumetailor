@@ -11,6 +11,7 @@ Supported boards and their endpoints:
 - Lever: ``api.lever.co/v0/postings/{slug}?mode=json``
 - Ashby: ``api.ashbyhq.com/posting-api/job-board/{slug}``
 - SmartRecruiters: ``api.smartrecruiters.com/v1/companies/{slug}/postings`` (paged)
+- Workday: ``{host}.myworkdayjobs.com/wday/cxs/{tenant}/{site}/jobs`` (paged POST)
 
 Each posting's URL is the ATS's own job URL, so `identity.canonical_key` gives the same
 key a Simplify row for the same job gets, and the two sightings merge.
@@ -23,21 +24,28 @@ import re
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from importlib import resources
 from typing import Any, Literal
-from urllib.parse import urlsplit
+from urllib.parse import parse_qs, urlsplit
 
 import httpx
 
-BoardAts = Literal["greenhouse", "lever", "ashby", "smartrecruiters"]
-BOARD_ATS: tuple[BoardAts, ...] = ("greenhouse", "lever", "ashby", "smartrecruiters")
+BoardAts = Literal["greenhouse", "lever", "ashby", "smartrecruiters", "workday"]
+BOARD_ATS: tuple[BoardAts, ...] = ("greenhouse", "lever", "ashby", "smartrecruiters", "workday")
 
 #: Pause between two boards, to stay polite to the public APIs.
 BOARD_DELAY_SECONDS = 1.0
 #: SmartRecruiters pages hold 100 postings; stop after this many pages.
 _SMART_MAX_PAGES = 10
+_WORKDAY_MAX_PAGES = 10
 _SLUG_RE = re.compile(r"^[A-Za-z0-9][A-Za-z0-9._-]{0,99}$")
+_WORKDAY_SLUG_RE = re.compile(
+    r"^(?P<host>[A-Za-z0-9-]+(?:\.[A-Za-z0-9-]+)*)/"
+    r"(?P<tenant>[A-Za-z0-9_-]+)/(?P<site>[A-Za-z0-9_-]+)$"
+)
+_LOCALE_RE = re.compile(r"^[a-z]{2}-[A-Z]{2}$")
+_POSTED_AGO_RE = re.compile(r"^Posted (\d+)\+? (Day|Week|Month|Year)s? Ago$", re.I)
 
 _sleep: Callable[[float], None] = time.sleep
 
@@ -61,12 +69,21 @@ class BoardJob:
     company: str = ""
 
 
-def valid_slug(slug: str) -> bool:
-    return bool(_SLUG_RE.match(slug or ""))
+def valid_slug(slug: str, ats: str | None = None) -> bool:
+    if ats == "workday":
+        match = _WORKDAY_SLUG_RE.fullmatch(slug or "")
+        return bool(
+            match and len(slug) <= 100
+            and match["host"].split(".")[0].lower() == match["tenant"].lower()
+        )
+    return bool(_SLUG_RE.fullmatch(slug or ""))
 
 
 def board_url(ats: str, slug: str) -> str:
     """The public careers page for a board, for links in the UI."""
+    if ats == "workday" and valid_slug(slug, ats):
+        host, _tenant, site = slug.split("/")
+        return f"https://{host}.myworkdayjobs.com/{site}"
     return {
         "greenhouse": f"https://boards.greenhouse.io/{slug}",
         "lever": f"https://jobs.lever.co/{slug}",
@@ -81,7 +98,9 @@ def parse_board_url(url: str) -> tuple[BoardAts, str] | None:
     Accepts ``boards.greenhouse.io/acme``, ``job-boards.greenhouse.io/acme/jobs/1``,
     ``boards.greenhouse.io/embed/job_board?for=acme``, ``jobs.lever.co/acme``,
     ``jobs.ashbyhq.com/acme``, ``jobs.smartrecruiters.com/Acme`` and
-    ``careers.smartrecruiters.com/Acme``.
+    ``careers.smartrecruiters.com/Acme``. Workday slugs are
+    ``{host-prefix}/{tenant}/{site}``, e.g. ``acme.wd5/acme/External``;
+    the host prefix excludes ``.myworkdayjobs.com``.
     """
     raw = (url or "").strip()
     if not raw:
@@ -93,11 +112,11 @@ def parse_board_url(url: str) -> tuple[BoardAts, str] | None:
     segments = [s for s in parts.path.split("/") if s]
     slug = ""
     ats: BoardAts | None = None
-    if host.endswith("greenhouse.io"):
+    if host in {"boards.greenhouse.io", "job-boards.greenhouse.io"}:
         ats = "greenhouse"
-        query = dict(p.split("=", 1) for p in parts.query.split("&") if "=" in p)
+        query = parse_qs(parts.query)
         if segments[:1] == ["embed"] and query.get("for"):
-            slug = query["for"]
+            slug = query["for"][0]
         elif segments:
             slug = segments[0]
     elif host == "jobs.lever.co" and segments:
@@ -106,14 +125,23 @@ def parse_board_url(url: str) -> tuple[BoardAts, str] | None:
         ats, slug = "ashby", segments[0]
     elif host in {"jobs.smartrecruiters.com", "careers.smartrecruiters.com"} and segments:
         ats, slug = "smartrecruiters", segments[0]
-    if ats is None or not valid_slug(slug):
+    elif host.endswith(".myworkdayjobs.com") and segments:
+        host_prefix = host.removesuffix(".myworkdayjobs.com")
+        if _LOCALE_RE.fullmatch(segments[0]):
+            segments = segments[1:]
+        if segments:
+            ats, slug = "workday", f"{host_prefix}/{host_prefix.split('.')[0]}/{segments[0]}"
+    if ats is None or not valid_slug(slug, ats):
         return None
     return ats, slug
 
 
-def _get(url: str, *, get: Callable[..., Any]) -> Any:
+def _get(url: str, *, get: Callable[..., Any], payload: dict[str, Any] | None = None) -> Any:
     try:
-        response = get(url, follow_redirects=True, timeout=20.0)
+        kwargs: dict[str, Any] = {"follow_redirects": True, "timeout": 20.0}
+        if payload is not None:
+            kwargs["json"] = payload
+        response = get(url, **kwargs)
     except httpx.HTTPError as exc:
         raise BoardUnavailable(f"could not reach {urlsplit(url).hostname}: {exc}") from exc
     if response.status_code == 404:
@@ -237,6 +265,57 @@ def _smartrecruiters(slug: str, get: Callable[..., Any]) -> list[BoardJob]:
     return out
 
 
+def _workday_date(value: Any) -> str:
+    if not isinstance(value, str):
+        return ""
+    value = value.strip()
+    if value.lower() == "posted today":
+        return datetime.now(UTC).date().isoformat()
+    if value.lower() == "posted yesterday":
+        return (datetime.now(UTC).date() - timedelta(days=1)).isoformat()
+    match = _POSTED_AGO_RE.fullmatch(value)
+    if match:
+        unit_days = {"day": 1, "week": 7, "month": 30, "year": 365}
+        days = int(match[1]) * unit_days[match[2].lower()]
+        return (datetime.now(UTC).date() - timedelta(days=days)).isoformat()
+    try:
+        return datetime.fromisoformat(value.replace("Z", "+00:00")).isoformat()
+    except ValueError:
+        return ""
+
+
+def _workday(slug: str, post: Callable[..., Any]) -> list[BoardJob]:
+    host, tenant, site = slug.split("/")
+    root = f"https://{host}.myworkdayjobs.com"
+    endpoint = f"{root}/wday/cxs/{tenant}/{site}/jobs"
+    out: list[BoardJob] = []
+    for page in range(_WORKDAY_MAX_PAGES):
+        data = _get(endpoint, get=post, payload={
+            "limit": 20, "offset": page * 20, "searchText": "", "appliedFacets": {},
+        })
+        postings = data.get("jobPostings") if isinstance(data, dict) else None
+        if not isinstance(postings, list) or not postings:
+            break
+        for job in postings:
+            if not isinstance(job, dict) or not job.get("externalPath"):
+                continue
+            path = str(job["externalPath"])
+            if not path.startswith("/") or path.startswith("//"):
+                continue
+            posting_path = path if path.startswith(f"/{site}/") else f"/{site}{path}"
+            out.append(BoardJob(
+                id=posting_path.rsplit("/", 1)[-1],
+                title=str(job.get("title") or "").strip(),
+                location=str(job.get("locationsText") or ""),
+                url=f"{root}{posting_path}",
+                updated_at=_workday_date(job.get("postedOn")),
+            ))
+        total = data.get("total") if isinstance(data, dict) else None
+        if not isinstance(total, int) or (page + 1) * 20 >= total:
+            break
+    return out
+
+
 _LISTERS: dict[str, Callable[[str, Callable[..., Any]], list[BoardJob]]] = {
     "greenhouse": _greenhouse,
     "lever": _lever,
@@ -245,7 +324,10 @@ _LISTERS: dict[str, Callable[[str, Callable[..., Any]], list[BoardJob]]] = {
 }
 
 
-def list_board(ats: str, slug: str, *, get: Callable[..., Any] | None = None) -> list[BoardJob]:
+def list_board(
+    ats: str, slug: str, *, get: Callable[..., Any] | None = None,
+    post: Callable[..., Any] | None = None,
+) -> list[BoardJob]:
     """Every open posting on one board.
 
     Raises:
@@ -253,12 +335,13 @@ def list_board(ats: str, slug: str, *, get: Callable[..., Any] | None = None) ->
         BoardUnavailable: anything else that stopped the read.
         ValueError: an unsupported ATS or a malformed slug.
     """
-    lister = _LISTERS.get(ats)
-    if lister is None:
+    if ats not in BOARD_ATS:
         raise ValueError(f"unsupported board ATS {ats!r}")
-    if not valid_slug(slug):
+    if not valid_slug(slug, ats):
         raise ValueError(f"not a board name: {slug!r}")
-    return lister(slug, get or httpx.get)
+    if ats == "workday":
+        return _workday(slug, post or httpx.post)
+    return _LISTERS[ats](slug, get or httpx.get)
 
 
 # --- starter watchlists -----------------------------------------------------------
@@ -280,7 +363,8 @@ def watchlists() -> dict[str, list[dict[str, str]]]:
         boards = [
             {"ats": str(b["ats"]), "slug": str(b["slug"]), "company": str(b.get("company") or "")}
             for b in raw.get("boards", [])
-            if isinstance(b, dict) and b.get("ats") in BOARD_ATS and valid_slug(str(b.get("slug")))
+            if isinstance(b, dict) and b.get("ats") in BOARD_ATS
+            and valid_slug(str(b.get("slug")), str(b.get("ats")))
         ]
         out[entry.name.removesuffix(".json")] = boards
     return out

@@ -107,7 +107,7 @@ export type ScreenSettings = {
   block_patterns: string[];
 };
 
-export type BoardAts = "greenhouse" | "lever" | "ashby" | "smartrecruiters";
+export type BoardAts = "greenhouse" | "lever" | "ashby" | "smartrecruiters" | "workday";
 
 /** One company job board on a watchlist source. */
 export type BoardConfig = { ats: BoardAts; slug: string; company: string };
