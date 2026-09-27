@@ -11,7 +11,7 @@ from typing import Any
 import docx
 import httpx
 from fastapi import APIRouter, File, HTTPException, UploadFile
-from fastapi.responses import FileResponse, Response
+from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from starlette.background import BackgroundTask
 
@@ -158,8 +158,12 @@ def export_data(include_output: bool = True) -> FileResponse:
 
 
 @router.post("/api/data/import")
-async def import_data(file: UploadFile = File(...)) -> dict[str, Any]:
-    """Create a new profile from an export zip. Existing profiles are never touched."""
+def import_data(file: UploadFile = File(...)) -> dict[str, Any]:
+    """Create a new profile from an export zip. Existing profiles are never touched.
+
+    Sync on purpose: extracting up to 2 GB under `template_ops.LOCK` would stall the
+    event loop in an `async` handler; FastAPI runs a plain `def` in its threadpool.
+    """
     file.file.seek(0, 2)
     size = file.file.tell()
     file.file.seek(0)

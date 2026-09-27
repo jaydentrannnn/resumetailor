@@ -24,7 +24,6 @@ import zipfile
 from datetime import UTC, datetime
 from importlib import metadata
 from pathlib import Path, PurePosixPath
-
 from typing import BinaryIO
 
 from resume_tailor import config, workspace
@@ -68,19 +67,31 @@ def export_zip(
     *,
     include_output: bool = True,
 ) -> Path:
-    """Build an export archive on disk. Returns the Path to the zip file."""
-    paths = config.workspace_paths(workspace_id)
-    roots = [r for r in _ROOTS if include_output or r != "OUTPUT_DIR"]
+    """Build an export archive on disk. Returns the Path to the zip file.
+
+    A temp file this call created is deleted again if the export fails part-way.
+    """
     if target is not None:
         target_path = Path(target)
-    else:
-        with tempfile.NamedTemporaryFile(
-            prefix=f"resumetailor-export-{workspace_id}-",
-            suffix=".zip",
-            delete=False,
-        ) as tmp:
-            target_path = Path(tmp.name)
+        _write_export(target_path, workspace_id, include_output=include_output)
+        return target_path
+    with tempfile.NamedTemporaryFile(
+        prefix=f"resumetailor-export-{workspace_id}-",
+        suffix=".zip",
+        delete=False,
+    ) as tmp:
+        target_path = Path(tmp.name)
+    try:
+        _write_export(target_path, workspace_id, include_output=include_output)
+    except BaseException:
+        target_path.unlink(missing_ok=True)
+        raise
+    return target_path
 
+
+def _write_export(target_path: Path, workspace_id: str, *, include_output: bool) -> None:
+    paths = config.workspace_paths(workspace_id)
+    roots = [r for r in _ROOTS if include_output or r != "OUTPUT_DIR"]
     with zipfile.ZipFile(target_path, "w", compression=zipfile.ZIP_DEFLATED) as archive:
         archive.writestr(
             "manifest.json",
@@ -112,7 +123,6 @@ def export_zip(
                     archive.writestr(arcname, _db_snapshot(path))
                 else:
                     archive.write(path, arcname)
-    return target_path
 
 
 def export_zip_bytes(workspace_id: str, *, include_output: bool = True) -> bytes:
@@ -223,7 +233,9 @@ def import_zip(
             for member in members:
                 safe = _safe_member(member.filename)
                 if safe is None:
-                    raise TransferError(f"Refusing an unsafe path in the export: {member.filename!r}")
+                    raise TransferError(
+                        f"Refusing an unsafe path in the export: {member.filename!r}"
+                    )
                 planned.append((member, safe))
 
             entry = _create_unique(label or f"{manifest.get('label') or 'Imported'} (imported)")

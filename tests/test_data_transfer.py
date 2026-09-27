@@ -79,6 +79,25 @@ def test_import_creates_a_new_profile_with_the_same_data(active):
     assert meta["id"] == entry.id  # the new profile keeps its own identity
 
 
+def test_failed_export_removes_its_temp_file(active, monkeypatch, tmp_path):
+    made: list[Path] = []
+    real = data_transfer.tempfile.NamedTemporaryFile
+
+    def recording(*args, **kwargs):
+        handle = real(*args, dir=tmp_path, **kwargs)
+        made.append(Path(handle.name))
+        return handle
+
+    def boom(path):
+        raise OSError("disk full")
+
+    monkeypatch.setattr(data_transfer.tempfile, "NamedTemporaryFile", recording)
+    monkeypatch.setattr(data_transfer, "_db_snapshot", boom)  # the fixture's store db
+    with pytest.raises(OSError, match="disk full"):
+        data_transfer.export_zip(active)
+    assert made and not made[0].exists()
+
+
 def test_import_rejects_unsafe_and_foreign_zips(active):
     buffer = io.BytesIO()
     with zipfile.ZipFile(buffer, "w") as archive:
@@ -186,11 +205,13 @@ def test_import_route_accepts_upload_larger_than_10mb(active):
         # Build an incompressible random payload over 10 MB (11 MB) stored uncompressed
         large_payload = os.urandom(11 * 1024 * 1024)
         buffer = io.BytesIO()
-        with zipfile.ZipFile(export_path, "r") as src_zip:
-            with zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_STORED) as dst_zip:
-                for item in src_zip.infolist():
-                    dst_zip.writestr(item, src_zip.read(item.filename))
-                dst_zip.writestr("data/large_payload.bin", large_payload)
+        with (
+            zipfile.ZipFile(export_path, "r") as src_zip,
+            zipfile.ZipFile(buffer, "w", compression=zipfile.ZIP_STORED) as dst_zip,
+        ):
+            for item in src_zip.infolist():
+                dst_zip.writestr(item, src_zip.read(item.filename))
+            dst_zip.writestr("data/large_payload.bin", large_payload)
     finally:
         export_path.unlink(missing_ok=True)
 
