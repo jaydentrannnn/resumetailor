@@ -384,6 +384,50 @@ are education dates; React Select inputs without `role=combobox` are dropdowns; 
 question never takes a short-field key (school, city, …). Workday's generic "Upload a file"
 input reports its hint key and section heading, so it is attached as the resume.
 
+**What a question asks, and its answer (`apply/questions.py`).** One decision layer
+serves every fill path: the generic filler, SmartRecruiters' screening step, Workday's
+dropdowns, radios and prompts, and answer memory's canonical keys. The fills do not each
+run their own regexes. The layer has three parts:
+
+- **`classify`** runs its rules in this order:
+  1. consent and "If other / if yes" follow-up questions, which get no key;
+  2. derived-answer stems (enrolled now, degree finished by a date, GPA at least a
+     threshold, located in or willing to relocate to a place, a prior internship,
+     previously worked here);
+  3. split-date parts, placed by their section (start or end);
+  4. `ats_hints.SYNONYMS`, behind two gates: a question over 60 characters never takes a
+     short identity key, and a Yes/No question only takes a Yes/No key.
+- **`answers`** takes the answer from the profile or computes it.
+- **`choose`** picks the one option that says that answer.
+
+**How the generic fill uses it.** `fill._fill_frame` runs `filler.js` twice:
+
+1. `scan` mode reads one entry per question. A radio, checkbox or `aria-pressed`
+   toggle-button group counts once; Ashby's name-less radios group by fieldset.
+2. `questions.plan_for` turns those entries into `{qid: {key, value}}`.
+3. The filler sets each planned question. The plan's key wins, and a null key means leave
+   the question alone. The plan's `value`, when set, beats the field value: an exact
+   option, a date typed as the first of the month (a raw "2027-06" in a picker is
+   May 31st west of UTC), a month name for a typeahead, or "City, State" for Location.
+
+A combobox leftover carries the planned value to `_fill_declared_combobox`.
+`selectorFor` only returns a selector that matches one element.
+
+**The model fallback.** Choice questions that no rule keys go in one batch to
+`answer.classify_questions` under the Autofill model. It returns a key from the closed
+`questions.MODEL_KEYS` list, or none. Each result is cached by wording and options (and
+`_CLASSIFY_PROMPT_VERSION`). The key passes the same gates, and code still computes the
+answer.
+
+**Adding a case.** A new failure is a captured page in `tests/fixtures/forms/` with rows
+in `tests/test_question_pipeline.py`, plus a rule fix in `questions.py`. It is never a
+per-site branch.
+
+**Reaching the form.** A wizard platform's posting page (an Apply control and at most two
+chrome inputs, such as iCIMS's footer language picker) is entered once through that
+control (`WizardAdapter.enter`). A fill that saw only unlabelled chrome hands the tab
+over with `fill.NO_FORM_MSG`, never "ready for review".
+
 **Salary and revealed fields.** Salary questions are answered deterministically (no LLM) by
 `apply/salary.py`: `min(posted top, applicant top)` in the posting's unit, hourly ↔ yearly at
 2,080 h. Posted pay comes from the listing's salary column, else the saved JD text; with none,

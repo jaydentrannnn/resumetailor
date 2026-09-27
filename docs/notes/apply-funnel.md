@@ -1304,3 +1304,53 @@ The Found column became Posted. No stored field held a posting date, but `age_da
 
 The one-click form's second page (`/screening`) filled nothing. The generic pass did see its controls, but every label read as "*": the question text is slotted (`[slot=label-content]`) into a `<label>` inside the control's shadow root, and innerText of that label omits slotted nodes. The Yes/No `spl-radio`s have no native input at all, and the `spl-autocomplete` selects list their options only after ArrowDown. `smartrecruiters_flow.fill_screening` reads each `[data-test=question-container]` itself, keys the question with `workday_flow.key_for_label` (salary by its unit; graduation month/year split from one date), then a remembered answer, and picks options with `field_matcher.closest_option`. Declarations and the privacy consent are never ticked; a question with no profile answer is listed for review, never guessed. The page's `definition` attribute carries every question with its options (72 KB); the fixture drops it and keeps the select options in `screening_options.json`. "How did you learn about" now maps to `how_heard`.
 2026-09-27 - Apply table actions now dispatch selected fills up to max_parallel_fills and prepares up to max_concurrent_jobs. Extension mode and pause-on-blocker stay serial; same-group prepares run in selection order. Each worker records in_flight progress, while the legacy current fields mirror the most recent activity. Submit slots are reserved before fill and returned unless submitted; pause holds new dispatch only.
+
+## 2026-09-28: One decision layer for questions (`apply/questions.py`)
+
+The fill reports for 7 applications (Quora and Ramp on Ashby, AbbVie and RRS on
+SmartRecruiters, GCM on Greenhouse, Atlassian on iCIMS) showed the same four weaknesses in
+every fill path.
+
+1. **Controls were scanned instead of questions.** Ashby's name-less radios became one
+   "Unrecognized field" per option.
+2. **Keying took the first regex hit on the label, with no type check.**
+   - "Is your cumulative GPA 3.0 or above?" was keyed to major.
+   - "Have you uploaded your transcript?" was keyed to school.
+   - "Requesting visa sponsorship?" lost to "work authorization".
+3. **No answer was derived.** AbbVie's "currently enrolled?" and "degree by June of next
+   year?" follow from the graduation date.
+4. **Selectors were not unique.** Ramp's Phone was filled with the school.
+
+Patching each site would have piled up per-site branches. The fix is instead one layer
+that every path calls: classify, then answer, then choose. Workday, SmartRecruiters and
+the generic filler now call it. The generic filler reads questions in scan mode and fills
+from `plan_for`'s plan.
+
+**Why the model did not answer AbbVie's questions.** The SmartRecruiters screening path
+called no model, and `hybrid_resolver` only runs on blockers (a required field left
+empty, or an invalid one). Letting a model answer eligibility questions would be unstable
+across runs, so the split is:
+
+- **The model classifies.** `answer.classify_questions` returns a key from the closed
+  `MODEL_KEYS` list, cached by wording, and only for choice questions no rule keys.
+- **Code answers.** The value is always computed from the profile.
+
+The derived rules alone answer AbbVie's two questions without any model call.
+
+**Other fixes in the same change:**
+
+- A date picker gets MM/01/YYYY, because a typed "2027-06" landed on May 31st.
+- Greenhouse's `start-month--0` combobox is keyed by id and date part.
+- "If other…" and "If yes…" follow-ups take no fact.
+
+**iCIMS** never clicked "Apply for this job online". The footer language `<select>` made
+the wizard read the posting page as the form, and filling that one select reported
+"ready for review". Now:
+
+- A posting page with at most 2 inputs and an Apply control is still the posting.
+- `WizardAdapter.enter` clicks that control once.
+- A fill that sees only unlabelled chrome hands over with `NO_FORM_MSG`.
+
+The regression corpus is `tests/fixtures/forms/{ashby_quora,ashby_ramp,greenhouse_gcm}.html`
+with `tests/test_question_pipeline.py`. The captures were sanitized: example.com emails and
+555 phone numbers.
