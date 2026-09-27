@@ -148,7 +148,8 @@ def test_fill_batch_continues_past_missing_answers_and_workday_verification(tmp_
         2,
         0,
     )
-    assert visited == ["one", "two", "three"]
+    # Parallel fills (default 2) finish in any order; every row is still visited once.
+    assert sorted(visited) == ["one", "three", "two"]
 
 
 def _wait_for_state(
