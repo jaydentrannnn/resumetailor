@@ -311,6 +311,18 @@ def _scanned_nothing(merged: dict[str, Any], filled_start: int) -> bool:
     )
 
 
+def _form_questions(merged: dict[str, Any]) -> list[dict[str, Any]]:
+    """What the fill saw that is part of an application: a keyed or labelled control, not
+    a page's unlabelled chrome (a footer language picker) it only observed."""
+    return [
+        item
+        for key in ("filled", "leftovers", "long_text")
+        for item in merged.get(key) or []
+        if isinstance(item, dict)
+        and (item.get("label") or item.get("key") not in {None, "", "existing"})
+    ]
+
+
 def _synonym_payload() -> list[list[str]]:
     """Serialise ``SYNONYMS`` for the page evaluate argument."""
     return [[pat, key] for pat, key in ats_hints.SYNONYMS]
@@ -709,6 +721,11 @@ def _commit_workday_textareas(frames: list[Any], items: list[Any]) -> None:
 
 #: Workday screens that mean the session ended while a form was open (plan P4-E14).
 SIGNED_OUT_STATES = frozenset({"sign_in", "auth_chooser"})
+#: The fill found only the page's own chrome (a language picker), never the form.
+NO_FORM_MSG = (
+    "Couldn't reach the application form: open it in this tab (it may need a sign-in), "
+    "then Continue fill"
+)
 SESSION_EXPIRED_MSG = (
     "Workday signed you out partway through (the session timed out). Sign in again in "
     "this tab, then Continue fill; the steps you already saved are kept."
@@ -1020,6 +1037,7 @@ def fill_application(
             final_step_reached = False
             country_rechecked = False
             blank_step_rescanned = False
+            entered = False
             for step in range(MAX_WIZARD_STEPS):
                 if should_cancel and should_cancel():
                     needs_review.append("Fill cancelled")
@@ -1115,7 +1133,20 @@ def fill_application(
                 if wizard is not None:
                     # A sign-in, an emailed code or a closed posting is the applicant's;
                     # checked before this step is filled, so nothing is typed into it.
-                    stop = wizard.stop_for(wizard.detect_state(page))
+                    state = wizard.detect_state(page)
+                    if state == "posting":
+                        # Still the job description (iCIMS keeps the form behind "Apply
+                        # for this job online"): open the form once, else hand it over.
+                        if not entered and wizard.enter(page):
+                            entered = True
+                            progress(f"opening the {wizard.label} application form")
+                            with contextlib.suppress(Exception):
+                                page.wait_for_load_state("domcontentloaded", timeout=15000)
+                            page.wait_for_timeout(2000)
+                            state = wizard.detect_state(page)
+                        if state == "posting":
+                            return _workday_handoff(app, context, page, NO_FORM_MSG)
+                    stop = wizard.stop_for(state)
                     if stop is not None:
                         return _workday_handoff(
                             app, context, page, stop.message, status=stop.status
@@ -1690,6 +1721,10 @@ def fill_application(
             total_controls = attempted_count
             if total_controls == 0 and not barrier_hit and is_workday and workday_flow.is_site_error(workday_flow.snapshot(page)):
                 return _workday_handoff(app, context, page, site_error_msg)
+            if total_controls and not barrier_hit and not _form_questions(merged):
+                # iCIMS (2026-09): the job page's language picker was "filled", and the
+                # untouched posting was reported ready for review.
+                return _workday_handoff(app, context, page, NO_FORM_MSG)
             if total_controls == 0 and not barrier_hit:
                 guard_msg = "No application form controls detected on page"
                 with contextlib.suppress(Exception):

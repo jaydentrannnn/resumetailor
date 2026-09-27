@@ -154,3 +154,23 @@ def test_snapshot_script_reads_a_real_page(page):
       <button>Log In</button>
     """)
     assert adapter.detect_state(page) == "sign_in"
+
+
+def test_a_posting_page_with_a_language_picker_is_still_the_posting(page):
+    # iCIMS (2026-09): the footer language select made the job page look like the form,
+    # so the fill never pressed "Apply for this job online".
+    page.set_content("""
+      <h1>Research Intern, 2027 Summer</h1>
+      <a class="iCIMS_Anchor iCIMS_ApplyOnlineButton" title="Apply for this job online"
+         href="#" onclick="document.body.dataset.applied = 'yes'; return false;">Apply for this job online</a>
+      <select id="footer-language-selector"><option>English</option></select>
+    """)
+    adapter = wizards.IcimsWizard()
+    assert adapter.detect_state(page) == "posting"
+    assert adapter.enter(page) is True
+    assert page.evaluate("document.body.dataset.applied") == "yes"
+
+
+def test_a_page_without_an_apply_control_cannot_be_entered(page):
+    page.set_content("<h1>Careers</h1><select><option>English</option></select>")
+    assert wizards.IcimsWizard().enter(page) is False

@@ -814,6 +814,70 @@ def test_fill_application_readiness_guard_fails_when_zero_controls(fill_paths, m
     assert store.get("src-1").status == "fill_failed"
 
 
+
+
+def test_a_page_with_only_its_own_chrome_is_not_ready_for_review(fill_paths, monkeypatch):
+    """When 0 controls are found on the page, fill must fail instead of falsely claiming awaiting_review."""
+    app = _ready_app(ats="other")
+    store.upsert(app)
+
+    sample_packet = Packet(
+        job_id="job-1",
+        built_at="2026-01-01T00:00:00+00:00",
+        ats="other",
+        fields={},
+        field_hints={},
+    )
+    monkeypatch.setattr(packet, "build_packet", lambda job_id: sample_packet)
+    monkeypatch.setattr(profile_mod, "load_profile", lambda: (ApplicantProfile(), False))
+    monkeypatch.setattr(data, "load", lambda: MagicMock(all_bullets=lambda: []))
+
+    # iCIMS (2026-09): only the job page's footer language picker was seen.
+    chrome = {"key": "existing", "label": "", "value": "English", "selector": "#footer-language-selector", "preserved": True}
+    filler_result = {
+        "filled": [chrome],
+        "leftovers": [],
+        "long_text": [],
+        "file_inputs": [],
+        "required_empty": [],
+        "frames_skipped": 0,
+    }
+    page = MagicMock()
+    page.url = "https://example.com/apply"
+    page.frames = [page]
+
+    def evaluate(script, args=None):
+        if script == fill._load_filler_js():  # noqa: SLF001
+            return {"questions": []} if args and args.get("scan") else filler_result
+        if script == fill._load_readiness_js():  # noqa: SLF001
+            return []
+        return {"errors": [], "unresolved": [], "advance_disabled": False}
+
+    page.evaluate.side_effect = evaluate
+
+    # Mock locators to return 0 counts so barriers and buttons aren't falsely detected
+    mock_loc = MagicMock()
+    mock_loc.count.return_value = 0
+    mock_loc.first = mock_loc
+    page.locator.return_value = mock_loc
+    page.get_by_role.return_value = mock_loc
+
+    @contextmanager
+    def _fake_browser():
+        browser = MagicMock()
+        browser.contexts = [MagicMock()]
+        browser.contexts[0].new_page.return_value = page
+        yield browser
+
+    monkeypatch.setattr(browser, "cdp_browser", _fake_browser)
+    monkeypatch.setattr(browser, "target_id", lambda _context, _page: "target-no-form")
+
+    result = fill.fill_application("src-1")
+    assert result.status == "awaiting_review"
+    assert result.handoff_reason == fill.NO_FORM_MSG
+    assert store.get("src-1").status == "awaiting_review"
+
+
 def test_workday_error_page_that_survives_refreshes_is_handed_over(fill_paths, monkeypatch):
     """Workday's "Something went wrong ... Error Code: VPS|" page is refreshed; if it keeps
     coming back, the tab is handed over for review, not failed as "no form controls"."""

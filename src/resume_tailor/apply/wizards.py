@@ -51,8 +51,8 @@ SNAPSHOT_JS = r"""() => {
     url: location.href,
     title: document.title || '',
     headings: texts('h1, h2, h3, legend').slice(0, 12),
-    buttons: texts("button, input[type='submit'], input[type='button'], a[role='button']")
-      .slice(0, 40),
+    buttons: texts("button, input[type='submit'], input[type='button'], a[role='button'], "
+      + "a[class*='button' i], a[class*='apply' i]").slice(0, 40),
     password_inputs: inputs.filter(e => kind(e) === 'password').length,
     fields: inputs.filter(e => !['hidden', 'submit', 'button', 'image', 'reset']
       .includes(kind(e))).length,
@@ -91,6 +91,19 @@ _APPLY_BUTTON = re.compile(
     r"^\s*apply(?:\s+now|\s+online|\s+for\s+this\s+(?:job|position)(?:\s+online)?)?\s*$", re.I
 )
 _SUBMIT_BUTTON = re.compile(r"^\s*submit(?:\s+(?:my\s+)?application)?\s*$", re.I)
+#: At most this many inputs beside an Apply control is still the posting page.
+_POSTING_CHROME_FIELDS = 2
+#: Click the first visible control whose text or title is an Apply button's.
+_ENTER_JS = r"""(pattern) => {
+  const rule = new RegExp(pattern, 'i');
+  const vis = e => !!(e.offsetWidth || e.offsetHeight || e.getClientRects().length);
+  const control = [...document.querySelectorAll("a, button, input[type='submit'], [role='button']")]
+    .filter(vis)
+    .find(e => [e.innerText, e.value, e.getAttribute('title')].some(t => t && rule.test(t.trim())));
+  if (!control) return false;
+  control.click();
+  return true;
+}"""
 
 
 @dataclass(frozen=True)
@@ -151,11 +164,24 @@ class WizardAdapter:
             return "review"
         if fields == 0 and form_guards.closed_posting(text):
             return "unavailable"
+        # A posting page's own chrome (a language picker, a job search box) is not a form.
+        if fields <= _POSTING_CHROME_FIELDS and any(_APPLY_BUTTON.match(b) for b in buttons):
+            return "posting"
         if fields:
             return "apply_form"
-        if any(_APPLY_BUTTON.match(b) for b in buttons):
-            return "posting"
         return "unknown"
+
+    def enter(self, page: Any) -> bool:
+        """Click the posting's own apply control (iCIMS "Apply for this job online");
+        False when it has none."""
+        try:
+            return bool(self._target(page).evaluate(_ENTER_JS, _APPLY_BUTTON.pattern))
+        except Exception:  # noqa: BLE001 - a navigating page cannot be clicked yet
+            return False
+
+    def _target(self, page: Any) -> Any:
+        """The page or frame holding the application."""
+        return page
 
     def _is_review(self, step: str, headings: list[str], buttons: list[str], fields: int) -> bool:
         extra = {w.casefold() for w in self.review_words}
@@ -232,10 +258,13 @@ class IcimsWizard(WizardAdapter):
     review_words = ("Review and Submit", "Submit Application", "Review Your Application")
 
     def snapshot(self, page: Any) -> dict[str, Any]:
+        return super().snapshot(self._target(page))
+
+    def _target(self, page: Any) -> Any:
         frame = None
         with contextlib.suppress(Exception):
             frame = page.frame(name="icims_content_iframe")
-        return super().snapshot(frame if frame is not None else page)
+        return frame if frame is not None else page
 
 
 class TaleoWizard(WizardAdapter):
