@@ -85,7 +85,8 @@ def browser():
         pytest.skip(f"Local Chromium unavailable: {exc}")
 
 
-def _open(browser, form: str = "form_resultant.html", *, replace: dict[str, str] | None = None):
+def _open(browser, form: str = "form_resultant.html", *, replace: dict[str, str] | None = None,
+          arrow_limit: int = 0):
     """The form served at a one-click URL (declarative shadow roots need a real parse)."""
     body = _fixture(form)
     for section, html in (replace or {}).items():
@@ -98,7 +99,7 @@ def _open(browser, form: str = "form_resultant.html", *, replace: dict[str, str]
         "education": _entry(_fixture("education_editor.html"), "oc-education-entry"),
     }
     state = {"catalog": _CATALOG, "locations": _LOCATIONS, "editors": editors,
-             "selects": json.loads(_fixture("screening_options.json"))}
+             "selects": json.loads(_fixture("screening_options.json")), "arrowLimit": arrow_limit}
     page = browser.new_page()
     html = (f"<!doctype html><html><body><main>{body}</main>"
             f"<script>window.__sr = {json.dumps(state)};</script>"
@@ -406,23 +407,9 @@ def no_memory(monkeypatch):
     monkeypatch.setattr(sr.answer_memory, "recall", lambda *_args, **_kwargs: None)
 
 
-def test_screening_keys_and_graduation_parts():
-    assert sr.screening_key("What is your expected graduation year?") == "graduation_month"
-    assert sr.screening_key("What is your hourly wage expectation?") == "salary_hourly"
-    assert sr.screening_key("How did you learn about Acme and this opportunity?") == "how_heard"
-    assert sr.screening_key(
-        "Will you need sponsorship in the future from an employer to obtain, extend or renew your authorization?"
-    ) == "requires_sponsorship_future"
-    assert sr.screening_key("Are you currently subject to a non-compete agreement?") == "noncompete"
-    assert sr.graduation_part("What is your expected graduation month?", "2027-06") == "June"
-    assert sr.graduation_part("What is your expected graduation year?", "2027-06") == "2027"
-    assert sr.graduation_part("Expected graduation year", "May 2026") == "2026"
-    assert sr.graduation_part("Graduation month", "2027") == ""
-
-
 def test_screening_questions_are_answered_from_profile_facts(browser, no_memory):
     page = _open(browser, "screening_resultant.html")
-    filled, review = sr.fill_screening(page, _SCREENING_FIELDS, _no_progress)
+    filled, review = sr.fill_screening(page, _packet(fields=_SCREENING_FIELDS), _no_progress)
     answers = {item["label"][:40]: item["value"] for item in filled}
     assert answers == {question[:40]: value for question, value in [
         ("Are you authorized to work and accept new employment in the United States?", "Yes"),
@@ -453,9 +440,9 @@ def test_screening_questions_are_answered_from_profile_facts(browser, no_memory)
 
 def test_screening_keeps_answers_already_given(browser, no_memory):
     page = _open(browser, "screening_resultant.html")
-    sr.fill_screening(page, _SCREENING_FIELDS, _no_progress)
+    sr.fill_screening(page, _packet(fields=_SCREENING_FIELDS), _no_progress)
     clicks = page.evaluate("window.__sr.radioClicks")
-    filled, _review = sr.fill_screening(page, {**_SCREENING_FIELDS, "authorized_to_work": "No"}, _no_progress)
+    filled, _review = sr.fill_screening(page, _packet(fields={**_SCREENING_FIELDS, "authorized_to_work": "No"}), _no_progress)
     assert page.evaluate("window.__sr.radioClicks") == clicks
     kept = {item["label"]: item for item in filled}
     work = kept["Are you authorized to work and accept new employment in the United States?"]
@@ -465,11 +452,21 @@ def test_screening_keeps_answers_already_given(browser, no_memory):
 def test_an_option_no_answer_names_is_left_for_review(browser, no_memory):
     page = _open(browser, "screening_resultant.html")
     fields = {"major": "Mathematics and Computer Science"}
-    filled, review = sr.fill_screening(page, fields, _no_progress)
+    filled, review = sr.fill_screening(page, _packet(fields=fields), _no_progress)
     assert filled == []
     assert "What is your current or most recent major?: could not set 'Mathematics and Computer Science'" in review
     major = page.locator("spl-autocomplete#question_867d31ec-87ef-49f2-8c11-1f9fb51f9df5")
     assert major.evaluate("h => h.value") in (None, "")
+
+
+def test_a_long_select_is_searched_when_its_first_options_miss(browser, no_memory):
+    # AbbVie (2026-09): the majors list opens on its first few options only.
+    page = _open(browser, "screening_resultant.html", arrow_limit=5)
+    filled, _review = sr.fill_screening(page, _packet(fields=_SCREENING_FIELDS), _no_progress)
+    answered = {item["label"]: item["value"] for item in filled}
+    assert answered["What is your current or most recent major?"] == "Computer Science & Programming"
+    major = page.locator("spl-autocomplete#question_867d31ec-87ef-49f2-8c11-1f9fb51f9df5")
+    assert major.evaluate("h => h.value")
 
 
 def test_a_remembered_answer_covers_a_question_the_profile_does_not(browser, monkeypatch):
@@ -483,7 +480,7 @@ def test_a_remembered_answer_covers_a_question_the_profile_does_not(browser, mon
 
     monkeypatch.setattr(sr.answer_memory, "recall", recall)
     page = _open(browser, "screening_resultant.html")
-    filled, review = sr.fill_screening(page, {}, _no_progress, company="Resultant")
+    filled, review = sr.fill_screening(page, _packet(fields={}, company="Resultant"), _no_progress)
     assert {"label": "Are you currently subject to a non-compete agreement?", "value": "No"} in filled
     assert not any("non-compete" in line for line in review)
 

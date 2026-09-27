@@ -27,8 +27,9 @@ screening questions, each in a ``[data-test=question-container]``: Yes/No
 selects whose options load on ArrowDown, ``spl-input`` text boxes, and declaration
 ``spl-checkbox``es. The question text is slotted into the control's shadow ``<label>``
 (``[slot=label-content]``), so the generic pass reads every label as "*". `fill_screening`
-answers them from profile facts, then remembered answers (`answer_memory`); a declaration
-is never ticked for the applicant, and a question with no known answer is left for review.
+answers them through `questions` (profile facts and what follows from them), then
+remembered answers (`answer_memory`); a declaration is never ticked for the applicant, and
+a question with no known answer is left for review.
 
 Like `workday_repeaters`: an entry already listed is reused, never edited or deleted; an
 answer already present is kept; anything not verified on the page is reported for review.
@@ -40,12 +41,12 @@ import contextlib
 import re
 import time
 from collections.abc import Callable
+from dataclasses import replace
 from pathlib import Path
 from typing import Any
 
-from resume_tailor.apply import answer_memory, ats_hints, clicks, field_matcher, form_guards, salary
+from resume_tailor.apply import answer_memory, clicks, field_matcher, form_guards, questions
 from resume_tailor.apply.packet import Packet, PacketEducation, PacketExperience
-from resume_tailor.apply.workday_flow import key_for_label
 
 #: Entries added per section at most; the packet is already bounded by the resume.
 MAX_ENTRIES = 10
@@ -796,52 +797,6 @@ _QUESTIONS_JS = r"""() => {
   return out;
 }"""
 
-_MONTHS = ("January", "February", "March", "April", "May", "June", "July", "August",
-           "September", "October", "November", "December")
-
-
-def screening_key(question: str) -> str | None:
-    """The profile field a screening question asks for; a salary question by its unit."""
-    key = key_for_label(question, ats_hints.SYNONYMS)
-    if key == "salary_expectation":
-        unit = salary.question_unit(question)
-        return {"hour": "salary_hourly", "year": "salary_yearly"}.get(unit or "", key)
-    return key
-
-
-def graduation_part(question: str, value: str) -> str:
-    """The part of a graduation date a split question asks for: "June" or "2027"."""
-    match = re.search(r"(\d{4})(?:-(\d{1,2}))?", value or "")
-    month_name = next((m for m in _MONTHS if m.casefold() in (value or "").casefold()), "")
-    year = match.group(1) if match else ""
-    if match and match.group(2) and 1 <= int(match.group(2)) <= 12:
-        month_name = _MONTHS[int(match.group(2)) - 1]
-    low = question.casefold()
-    if "year" in low and "month" not in low:
-        return year
-    if "month" in low and "year" not in low:
-        return month_name
-    return value
-
-
-def screening_answers(key: str | None, question: str, fields: dict[str, str]) -> list[str]:
-    """Answers to try for one question, most specific first; [] when the profile has none."""
-    if not key:
-        return []
-    if key == "graduation_month":
-        part = graduation_part(question, fields.get(key, ""))
-        return [part] if part else []
-    return field_matcher.choice_values(key, fields)
-
-
-def _first_match(options: list[str], answers: list[str], key: str) -> str | None:
-    for answer in answers:
-        hit = field_matcher.closest_option(options, answer, key=key)
-        if hit:
-            return hit
-    return None
-
-
 def _choose_radio(page: Any, group_id: str, label: str) -> bool:
     literal = label.replace("\\", "\\\\").replace('"', '\\"')
     radio = page.locator(f'spl-radio-group[id="{group_id}"] spl-radio[label="{literal}"]').first
@@ -853,29 +808,51 @@ def _choose_radio(page: Any, group_id: str, label: str) -> bool:
         return False
 
 
-def _choose_select(host: Any, answers: list[str], key: str) -> str | None:
-    """Open the select and click the option naming one of ``answers``; the text committed."""
+def _choose_select(
+    host: Any, question: questions.Question, key: str, answers: list[str],
+) -> str | None:
+    """Open the select and click the option that says one of ``answers``; the text committed.
+
+    ArrowDown lists the options; a long list (majors, schools) shows only its first ones,
+    so when none of them says the answer, the answer's search terms are typed to filter it.
+    """
     field = host.locator("input[role=combobox]").first
     try:
         field.focus(timeout=3000)
         field.press("ArrowDown", timeout=3000)
     except Exception:  # noqa: BLE001
         return None
-    options = [item for item in _options(host, want_results=True)
-               if item[0] not in {_CUSTOM_OPTION, _MANUAL_LOCATION}]
-    chosen = _first_match([text for _value, text in options], answers, key)
-    value = next((v for v, t in options if t == chosen), None) if chosen else None
-    if value is None:
+
+    def pick(options: list[tuple[str, str]]) -> tuple[str, str] | None:
+        real = [item for item in options if item[0] not in {_CUSTOM_OPTION, _MANUAL_LOCATION}]
+        offered = replace(question, options=tuple(text for _value, text in real))
+        chosen = questions.choose(offered, key, answers)
+        value = next((v for v, t in real if t == chosen), None) if chosen else None
+        return (value, chosen) if value is not None and chosen else None
+
+    hit = pick(_options(host, want_results=True))
+    if hit is None:
+        for term in field_matcher.search_terms(key, answers[0]) if answers else []:
+            found: list[tuple[str, str]] = []
+
+            def choose(options: list[tuple[str, str]], found: list = found) -> str | None:
+                picked = pick(options)
+                if picked:
+                    found.append(picked)
+                return picked[0] if picked else None
+
+            if _type_and_pick(host, term, choose, want_results=True):
+                return found[0][1] if _committed(host) not in (None, "", [], {}) else None
         _clear_typeahead(host)
         return None
-    literal = value.replace("\\", "\\\\").replace('"', '\\"')
+    literal = hit[0].replace("\\", "\\\\").replace('"', '\\"')
     try:
         _activate(host.locator(f'spl-select-option[value="{literal}"]').first)
         host.page.wait_for_timeout(300)
     except Exception:  # noqa: BLE001
         _clear_typeahead(host)
         return None
-    return chosen if _committed(host) not in (None, "", [], {}) else None
+    return hit[1] if _committed(host) not in (None, "", [], {}) else None
 
 
 def _short(question: str) -> str:
@@ -884,25 +861,26 @@ def _short(question: str) -> str:
 
 def fill_screening(
     page: Any,
-    fields: dict[str, str],
+    packet: Packet,
     progress: Callable[[str], None] = lambda _msg: None,
-    *,
-    company: str = "",
 ) -> tuple[list[dict[str, str]], list[str]]:
     """Answer the screening step's questions from profile facts and remembered answers.
 
-    Declarations and acknowledgements are never ticked for the applicant; a question no
-    profile fact or saved answer covers is left for review, never guessed.
+    What each question asks and its answer come from `questions` (the decision layer every
+    fill path shares). Declarations and acknowledgements are never ticked for the
+    applicant; a question no profile fact or saved answer covers is left for review, never
+    guessed.
     """
     try:
-        questions = page.evaluate(_QUESTIONS_JS) or []
+        found = page.evaluate(_QUESTIONS_JS) or []
     except Exception:  # noqa: BLE001
         return [], []
+    facts = questions.facts_from_packet(packet)
     filled: list[dict[str, str]] = []
     review: list[str] = []
-    for item in questions:
-        question = str(item.get("question") or item.get("id") or "question")
-        label = _short(question)
+    for item in found:
+        text = str(item.get("question") or item.get("id") or "question")
+        label = _short(text)
         selector = f'[id="{item.get("id")}"]'
         if item.get("value"):
             filled.append({"label": label, "value": str(item["value"]), "state": "preserved"})
@@ -912,11 +890,17 @@ def fill_screening(
             if item.get("required"):
                 review.append(f"{label}: read and tick it yourself")
             continue
-        key = screening_key(question)
-        answers = screening_answers(key, question, fields)
+        options = tuple(str(opt.get("label") or "") for opt in item.get("options") or [])
+        question = questions.Question(
+            text, kind={"radio": "choice", "select": "typeahead"}.get(str(kind), "text"),
+            options=options,
+        )
+        match = questions.classify(question)
+        key = match.key if match else ""
+        answers = questions.answers(match, question, facts)
         if not answers and key not in field_matcher.EEO_KEYS:
             recalled = answer_memory.recall(
-                question, company=company, ats="smartrecruiters", canonical_key=key or ""
+                text, company=packet.company, ats="smartrecruiters", canonical_key=key
             )
             if recalled is not None and not recalled.needs_review:
                 answers = [recalled.answer]
@@ -926,8 +910,7 @@ def fill_screening(
             continue
         answer: str | None = None
         if kind == "radio":
-            labels = [str(opt.get("label") or "") for opt in item.get("options") or []]
-            chosen = _first_match(labels, answers, key or "")
+            chosen = questions.choose(question, key, answers)
             if chosen is None:
                 review.append(f"{label}: no option matches {answers[0]!r}")
                 continue
@@ -935,7 +918,7 @@ def fill_screening(
                 answer = chosen
         elif kind == "select":
             host = page.locator(f"spl-autocomplete{selector}").first
-            answer = _choose_select(host, answers, key or "")
+            answer = _choose_select(host, question, key, answers)
         elif kind == "text":
             control = page.locator(f"{selector} input, {selector} textarea").first
             if _set_text(control, answers[0], label=label, review=review):
@@ -982,7 +965,7 @@ def fill(
         lambda: fill_message(page, packet.cover_letter),
         lambda: fill_experience(page, packet, progress, deadline=deadline),
         lambda: fill_education(page, packet, progress, deadline=deadline),
-        lambda: fill_screening(page, packet.fields, progress, company=packet.company),
+        lambda: fill_screening(page, packet, progress),
     ):
         done, left = step()
         filled.extend(done)

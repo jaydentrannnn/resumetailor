@@ -55,6 +55,8 @@
     if (sr.selects && sr.selects[ac.id]) {
       // A screening select: a fixed list, all of it on ArrowDown, filtered by typed text.
       options = sr.selects[ac.id].filter(([, label]) => label.toLowerCase().includes(q));
+      // AbbVie's majors list shows only its first options until something is typed.
+      if (all && !q && sr.arrowLimit) options = options.slice(0, sr.arrowLimit);
     } else if (kind === "location-autocomplete") {
       options = Object.entries(sr.locations)
         .filter(([, loc]) => loc.city.toLowerCase().startsWith(q))
