@@ -517,6 +517,26 @@ def _age_days(updated_at: str, now: Any) -> int | None:
     return max(0, (now - when).days)
 
 
+def matches_filters(
+    title: str,
+    location: str,
+    *,
+    include: re.Pattern[str] | None = None,
+    exclude: re.Pattern[str] | None = None,
+    locations: re.Pattern[str] | None = None,
+) -> bool:
+    """Check if title and location satisfy include, exclude, and locations filter patterns."""
+    if not title:
+        return False
+    if include and not include.search(title):
+        return False
+    if exclude and exclude.search(title):
+        return False
+    if locations and location and not locations.search(location):
+        return False
+    return True
+
+
 def board_rows(
     source: Any,
     *,
@@ -554,13 +574,13 @@ def board_rows(
             errors.append(f"{name}: {exc}")
             continue
         for job in jobs:
-            if not job.title:
-                continue
-            if include and not include.search(job.title):
-                continue
-            if exclude and exclude.search(job.title):
-                continue
-            if places and job.location and not places.search(job.location):
+            if not matches_filters(
+                job.title,
+                job.location,
+                include=include,
+                exclude=exclude,
+                locations=places,
+            ):
                 continue
             age = _age_days(job.updated_at, now) if job.updated_at else None
             flags = [] if age is not None else ["age_unknown"]

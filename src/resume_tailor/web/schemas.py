@@ -74,7 +74,7 @@ class SourceConfig(BaseModel):
     """
 
     id: str
-    kind: Literal["simplify_html", "pipe_table", "ats_board"]
+    kind: Literal["simplify_html", "pipe_table", "ats_board", "job_search"]
     url: str = ""
     categories: list[str] = Field(default_factory=list)
     enabled: bool = True
@@ -83,13 +83,26 @@ class SourceConfig(BaseModel):
     exclude: list[str] = Field(default_factory=list)
     locations: list[str] = Field(default_factory=list)
     max_age_days: int | None = Field(default=None, ge=0, le=365)
+    provider: Literal["adzuna", "usajobs"] | None = None
+    query: str = ""
+    location: str = ""
+    country: str = "us"
 
     @model_validator(mode="after")
     def _check_kind(self) -> SourceConfig:
-        if self.kind != "ats_board" and not self.url.strip():
-            raise ValueError(f"source {self.id!r} needs a url")
-        if self.kind == "ats_board" and self.max_age_days is None:
-            self.max_age_days = 7
+        if self.kind == "job_search":
+            if not self.provider:
+                raise ValueError(f"source {self.id!r} needs a provider")
+            if not self.query.strip():
+                raise ValueError(f"source {self.id!r} needs a query")
+            if self.max_age_days is None:
+                self.max_age_days = 14
+        elif self.kind == "ats_board":
+            if self.max_age_days is None:
+                self.max_age_days = 7
+        else:
+            if not self.url.strip():
+                raise ValueError(f"source {self.id!r} needs a url")
         return self
 
 

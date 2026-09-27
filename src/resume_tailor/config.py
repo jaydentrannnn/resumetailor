@@ -206,11 +206,15 @@ def set_active_workspace(workspace_id: str, *, create_dirs: bool = False) -> str
 
 #: API-key names a user may save in the app (Settings -> Models) instead of `.env`.
 SAVABLE_CREDENTIALS: tuple[str, ...] = (
+    "ADZUNA_APP_ID",
+    "ADZUNA_APP_KEY",
     "ANTHROPIC_API_KEY",
     "GEMINI_API_KEY",
     "GOOGLE_API_KEY",
     "LLM_API_KEY",
     "OLLAMA_API_KEY",
+    "USAJOBS_API_KEY",
+    "USAJOBS_EMAIL",
 )
 
 

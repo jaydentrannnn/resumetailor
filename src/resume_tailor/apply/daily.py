@@ -810,11 +810,22 @@ def run_daily(
         known_ids: set[tuple[str, str]] = set(store.all_ids())
         seen_job_ids: set[str] = {job_id for _src, job_id in known_ids}
         for src in [s for s in settings.sources if s.enabled]:
-            _progress_set(phase="discovering", source_id=src.id, current=src.url)
+            _progress_set(
+                phase="discovering",
+                source_id=src.id,
+                current=src.url or (f"{src.provider}: {src.query}" if src.kind == "job_search" else ""),
+            )
             try:
                 if src.kind == "ats_board":
                     rows, board_errors = sources.board_rows(src)
                     for message in board_errors:
+                        summary.errors.append(f"{src.id}: {message}")
+                        _append_log(log_file, f"[source {src.id}] {message}", log)
+                elif src.kind == "job_search":
+                    from resume_tailor.apply import job_apis
+
+                    rows, search_errors = job_apis.job_search_rows(src)
+                    for message in search_errors:
                         summary.errors.append(f"{src.id}: {message}")
                         _append_log(log_file, f"[source {src.id}] {message}", log)
                 else:
