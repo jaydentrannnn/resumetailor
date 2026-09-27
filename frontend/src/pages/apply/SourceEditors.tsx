@@ -1,9 +1,12 @@
-import { useState } from "react";
+import { useEffect, useState } from "react";
+import { Link } from "react-router-dom";
 import {
+  fetchSecrets,
   fetchSourceSections,
   fetchWatchlists,
   resolveBoard,
   type BoardConfig,
+  type SecretState,
   type SourceConfig,
 } from "../../api";
 import { describe } from "../../lib/errors";
@@ -286,3 +289,144 @@ export function WatchlistEditor({
     </div>
   );
 }
+
+/**
+ * A keyword job-search source (`job_search` source): queries Adzuna or USAJobs by
+ * keyword, location, and recency. Checks for required credentials and links to Settings.
+ */
+export function JobSearchEditor({
+  source,
+  onChange,
+}: {
+  source: SourceConfig;
+  onChange: (next: SourceConfig) => void;
+}) {
+  const [secrets, setSecrets] = useState<SecretState[] | null>(null);
+  const provider = source.provider ?? "adzuna";
+
+  useEffect(() => {
+    fetchSecrets()
+      .then((res) => setSecrets(res.secrets))
+      .catch(() => setSecrets([]));
+  }, []);
+
+  const neededKeys =
+    provider === "adzuna"
+      ? ["ADZUNA_APP_ID", "ADZUNA_APP_KEY"]
+      : ["USAJOBS_API_KEY", "USAJOBS_EMAIL"];
+  const missingKeys = secrets
+    ? neededKeys.filter((k) => !secrets.some((s) => s.name === k && s.set))
+    : [];
+
+  return (
+    <div className="mt-2 space-y-3 rounded-md border border-line p-3">
+      {missingKeys.length > 0 && (
+        <div role="alert" className="rounded-md bg-warn-soft p-2.5 text-xs text-warn">
+          Missing credentials: {missingKeys.join(", ")}. Add them in{" "}
+          <Link
+            to="/settings?tab=models"
+            className="text-accent underline font-medium hover:text-accent-hover"
+          >
+            Settings → Models
+          </Link>{" "}
+          before running discovery.
+        </div>
+      )}
+
+      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+        <label className="block text-xs">
+          <span className="font-medium">Provider</span>
+          <select
+            aria-label="Job search provider"
+            className="field mt-1 text-sm w-full"
+            value={provider}
+            onChange={(e) =>
+              onChange({
+                ...source,
+                provider: e.target.value as "adzuna" | "usajobs",
+              })
+            }
+          >
+            <option value="adzuna">Adzuna</option>
+            <option value="usajobs">USAJobs</option>
+          </select>
+        </label>
+
+        {provider === "adzuna" && (
+          <label className="block text-xs">
+            <span className="font-medium">Country code</span>
+            <input
+              aria-label="Adzuna country code"
+              className="field mt-1 text-sm w-full"
+              placeholder="us"
+              value={source.country ?? "us"}
+              onChange={(e) =>
+                onChange({ ...source, country: e.target.value.toLowerCase().trim() })
+              }
+            />
+          </label>
+        )}
+      </div>
+
+      <label className="block text-xs">
+        <span className="font-medium">Keywords</span>
+        <input
+          aria-label="Search keywords"
+          className="field mt-1 text-sm w-full"
+          placeholder='e.g. "software engineer", "data scientist"'
+          value={source.query ?? ""}
+          onChange={(e) => onChange({ ...source, query: e.target.value })}
+        />
+      </label>
+
+      <label className="block text-xs">
+        <span className="font-medium">Location</span>
+        <input
+          aria-label="Search location"
+          className="field mt-1 text-sm w-full"
+          placeholder='e.g. "San Francisco", "Remote", "Washington, DC"'
+          value={source.location ?? ""}
+          onChange={(e) => onChange({ ...source, location: e.target.value })}
+        />
+      </label>
+
+      <WordsField
+        label="Titles must contain one of"
+        hint="Comma-separated. Leave empty to keep every title."
+        words={source.include ?? []}
+        onChange={(include) => onChange({ ...source, include })}
+      />
+      <WordsField
+        label="Skip titles containing"
+        hint="Comma-separated."
+        words={source.exclude ?? []}
+        onChange={(exclude) => onChange({ ...source, exclude })}
+      />
+      <WordsField
+        label="Locations"
+        hint='Comma-separated, e.g. "NY, Chicago, Remote". Leave empty for anywhere.'
+        words={source.locations ?? []}
+        onChange={(locations) => onChange({ ...source, locations })}
+      />
+      <label className="block text-xs">
+        Postings updated in the last{" "}
+        <input
+          aria-label="Days old limit"
+          className="field mx-1 inline-block w-16"
+          type="number"
+          min={0}
+          max={365}
+          value={source.max_age_days ?? 14}
+          onChange={(e) =>
+            onChange({
+              ...source,
+              max_age_days: Math.min(365, Math.max(0, Number(e.target.value) || 0)),
+            })
+          }
+        />{" "}
+        days
+      </label>
+    </div>
+  );
+}
+

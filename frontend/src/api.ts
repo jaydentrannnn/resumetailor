@@ -115,7 +115,7 @@ export type BoardConfig = { ats: BoardAts; slug: string; company: string };
 
 export type SourceConfig = {
   id: string;
-  kind: "simplify_html" | "pipe_table" | "ats_board";
+  kind: "simplify_html" | "pipe_table" | "ats_board" | "job_search";
   url: string;
   categories: string[];
   enabled: boolean;
@@ -124,8 +124,13 @@ export type SourceConfig = {
   include?: string[];
   exclude?: string[];
   locations?: string[];
-  /** Widens the funnel-wide age limit (the longer wins); watchlists default to 7 days. */
+  /** Widens the funnel-wide age limit (the longer wins); watchlists default to 7 days, job_search 14 days. */
   max_age_days?: number | null;
+  /** Keyword job search (`job_search`) sources only. */
+  provider?: "adzuna" | "usajobs" | null;
+  query?: string;
+  location?: string;
+  country?: string;
 };
 
 export type EligibilitySettings = {

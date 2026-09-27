@@ -1285,3 +1285,13 @@ Deviation: clicks go through `_activate`, a real mouse press at the control's ce
 ## 2026-09-27 - Parallel nightly fills (T7)
 
 The unattended batch dispatches oldest ready applications to up to 1-4 workers based on max_parallel_fills, copying the current RunContext into each. One daily batch owns the Apply browser operation lock; each synchronous Playwright worker opens its own CDP connection and new tab, while the upload lock serializes file attachment and the submit pacing lock rechecks caps immediately before a click. Pause stops dispatch and is passed into each fill so in-flight forms hand off without submitting. The extension relay continues serially because its selected-tab, single-connection model cannot provide independent tabs. The verified engine currently hands off for review rather than auto-submitting, but its attachment upload uses the same lock.
+
+## 2026-09-27 — Keyword job-search source (Adzuna + USAJobs)
+
+Added `job_search` source kind with providers `"adzuna"` and `"usajobs"` to allow keyword-based searches across any industry.
+- `schemas.SourceConfig` supports `kind="job_search"`, `provider` ("adzuna" | "usajobs"), `query`, `location`, `country` (default "us"), and default `max_age_days=14`. Existing schemas still validate unchanged.
+- `apply/job_apis.py` implements bounded paging (up to 5 pages), polite delay (`JOB_SEARCH_DELAY_SECONDS=1.0`), timeouts, and injectable `get` callable. Results map to `sources.SourceRow` with stable `adzuna:<id>` and `usajobs:<MatchedObjectId>` keys, recency derived from timestamps, and formatted salary when present.
+- Factored shared `sources.matches_filters` helper to reuse `include`, `exclude`, and `locations` keyword filtering consistently across `ats_board` and `job_search`.
+- Missing API credentials (`ADZUNA_APP_ID`, `ADZUNA_APP_KEY`, `USAJOBS_API_KEY`, `USAJOBS_EMAIL`) raise `MissingCredentialsError` and are recorded per-source by `run_daily` in `summary.errors` without crashing the run.
+- Configured savable credentials in `config.SAVABLE_CREDENTIALS` and updated frontend UI (`providers.ts`, `ModelsSection.tsx`, `SourceEditors.tsx`, `ApplySettingsDrawer.tsx`) with sensible labels, documentation links, inline missing-credential alerts, and drawer "Add a keyword search" integration.
+- Deviation: none.

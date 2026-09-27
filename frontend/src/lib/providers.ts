@@ -61,9 +61,21 @@ export function providerInfo(id: string): ProviderInfo | undefined {
 
 /** Readable names for the savable key slots. */
 export const KEY_LABELS: Record<string, string> = {
+  ADZUNA_APP_ID: "Adzuna App ID (job search)",
+  ADZUNA_APP_KEY: "Adzuna App Key (job search)",
   ANTHROPIC_API_KEY: "Anthropic API key",
   GEMINI_API_KEY: "Gemini API key",
   GOOGLE_API_KEY: "Google API key (alternative to the Gemini key)",
   LLM_API_KEY: "Custom server key (OpenAI-compatible)",
   OLLAMA_API_KEY: "Ollama cloud key (only for Ollama cloud models)",
+  USAJOBS_API_KEY: "USAJobs API Key (job search)",
+  USAJOBS_EMAIL: "USAJobs Email (User-Agent header)",
+};
+
+/** Help text and links for savable credentials. */
+export const KEY_HELP: Record<string, { label: string; href: string }> = {
+  ADZUNA_APP_ID: { label: "developer.adzuna.com", href: "https://developer.adzuna.com/" },
+  ADZUNA_APP_KEY: { label: "developer.adzuna.com", href: "https://developer.adzuna.com/" },
+  USAJOBS_API_KEY: { label: "developer.usajobs.gov", href: "https://developer.usajobs.gov/APIRequest/Index" },
+  USAJOBS_EMAIL: { label: "developer.usajobs.gov", href: "https://developer.usajobs.gov/APIRequest/Index" },
 };
