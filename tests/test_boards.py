@@ -10,6 +10,7 @@ from fastapi.testclient import TestClient
 
 from resume_tailor.apply import boards, eligibility, identity, sources
 from resume_tailor.web.app import app as web_app
+from resume_tailor.web.routes import discovery
 from resume_tailor.web.schemas import ApplySettings, SourceConfig
 
 NOW = datetime(2026, 9, 25, tzinfo=UTC)
@@ -77,6 +78,8 @@ GREENHOUSE = {
         ("https://jobs.lever.co/acme/0f8f6c1e-0000-0000-0000-000000000000", ("lever", "acme")),
         ("https://jobs.ashbyhq.com/acme", ("ashby", "acme")),
         ("https://careers.smartrecruiters.com/AcmeCorp", ("smartrecruiters", "AcmeCorp")),
+        ("https://acme.wd5.myworkdayjobs.com/en-US/External", ("workday", "acme.wd5/acme/External")),
+        ("https://acme.wd5.myworkdayjobs.com/External/job/Boston/Analyst_R12345", ("workday", "acme.wd5/acme/External")),
         ("https://www.acme.com/careers", None),
         ("https://jobs.lever.co/", None),
         ("", None),
@@ -164,6 +167,37 @@ def test_lever_ashby_and_smartrecruiters_listings():
     assert smart[1].location == "(Remote)"
 
 
+def test_workday_listing_pages_with_post_and_round_trips():
+    endpoint = "https://acme.wd5.myworkdayjobs.com/wday/cxs/acme/External/jobs"
+    calls = []
+
+    def post(url, **kwargs):
+        assert url == endpoint
+        calls.append(kwargs["json"])
+        offset = kwargs["json"]["offset"]
+        postings = [
+            {"title": "Finance Intern", "locationsText": "Boston, MA", "postedOn": "Posted 3 Days Ago",
+             "externalPath": "/job/Boston/Finance-Intern_R12345"},
+        ] if offset == 0 else [
+            {"title": "Strategy Analyst", "locationsText": "Remote", "postedOn": "Posted Today",
+             "externalPath": "/job/Remote/Strategy-Analyst_R12346"},
+        ]
+        return _Response(200, {"total": 21, "jobPostings": postings})
+
+    slug = "acme.wd5/acme/External"
+    assert boards.board_url("workday", slug) == "https://acme.wd5.myworkdayjobs.com/External"
+    assert boards.parse_board_url(boards.board_url("workday", slug)) == ("workday", slug)
+    jobs = boards.list_board("workday", slug, post=post)
+    assert [job.id for job in jobs] == ["Finance-Intern_R12345", "Strategy-Analyst_R12346"]
+    assert jobs[0].url == "https://acme.wd5.myworkdayjobs.com/External/job/Boston/Finance-Intern_R12345"
+    assert identity.canonical_key(jobs[0].url) == "workday:acme:R12345"
+    assert (datetime.now(UTC).date() - datetime.fromisoformat(jobs[0].updated_at).date()).days == 3
+    assert [call["offset"] for call in calls] == [0, 20]
+    assert all(call["limit"] == 20 and call["searchText"] == "" and call["appliedFacets"] == {} for call in calls)
+    with pytest.raises(ValueError):
+        boards.list_board("workday", "acme.wd5/other/External", post=post)
+
+
 def test_wrong_board_name_and_outage_are_told_apart():
     with pytest.raises(boards.BoardNotFound):
         boards.list_board("greenhouse", "nope", get=_FakeGet({}))
@@ -180,7 +214,7 @@ def test_wrong_board_name_and_outage_are_told_apart():
     with pytest.raises(boards.BoardUnavailable):
         boards.list_board("greenhouse", "acme", get=offline)
     with pytest.raises(ValueError):
-        boards.list_board("workday", "acme", get=offline)
+        boards.list_board("workday", "acme", post=offline)
     with pytest.raises(ValueError):
         boards.list_board("greenhouse", "../etc", get=offline)
 
@@ -252,6 +286,9 @@ def test_watchlist_source_defaults_and_validation():
         SourceConfig(id="x", kind="simplify_html")  # a README source needs its url
     with pytest.raises(ValueError):
         _source(boards=[{"ats": "greenhouse", "slug": "../x"}])
+    assert _source(boards=[{"ats": "workday", "slug": "acme.wd5/acme/External"}]).boards[0].ats == "workday"
+    with pytest.raises(ValueError):
+        _source(boards=[{"ats": "workday", "slug": "acme.wd5/other/External"}])
     # Existing settings files still load unchanged.
     assert ApplySettings().sources[0].max_age_days is None
 
@@ -357,6 +394,7 @@ def test_resolve_board_route(client, monkeypatch):
         return [boards.BoardJob("1", "Analyst", "NY", "u", "", company="Acme Capital")] * 3
 
     monkeypatch.setattr(boards, "list_board", fake_list)
+    monkeypatch.setattr(discovery, "_fetch_career_page", lambda url: "<html></html>")
     body = client.post(
         "/api/apply/boards/resolve", json={"url": "boards.greenhouse.io/acme"}
     ).json()
@@ -373,7 +411,7 @@ def test_resolve_board_route(client, monkeypatch):
     assert named["company"] == "Acme"
     assert (
         client.post("/api/apply/boards/resolve", json={"url": "https://acme.com/jobs"}).status_code
-        == 400
+        == 404
     )
     assert (
         client.post("/api/apply/boards/resolve", json={"url": "jobs.lever.co/gone"}).status_code
@@ -383,6 +421,75 @@ def test_resolve_board_route(client, monkeypatch):
         client.post("/api/apply/boards/resolve", json={"url": "jobs.lever.co/down"}).status_code
         == 502
     )
+
+
+@pytest.mark.parametrize(
+    ("html", "expected"),
+    [
+        ('<script src="https://boards.greenhouse.io/embed/job_board/js?for=acme"></script>', ("greenhouse", "acme")),
+        ('<a href="https://jobs.lever.co/acme">Jobs</a>', ("lever", "acme")),
+        ('<a href="https://jobs.ashbyhq.com/acme">Jobs</a>', ("ashby", "acme")),
+        ('<a href="https://careers.smartrecruiters.com/Acme">Jobs</a>', ("smartrecruiters", "Acme")),
+        ('<iframe src="https://acme.wd5.myworkdayjobs.com/en-US/External"></iframe>', ("workday", "acme.wd5/acme/External")),
+    ],
+)
+def test_embedded_board_detection(client, monkeypatch, html, expected):
+    fetched = []
+    listed = []
+    monkeypatch.setattr(discovery, "_fetch_career_page", lambda url: (fetched.append(url), html)[1])
+    monkeypatch.setattr(boards, "list_board", lambda ats, slug: (listed.append((ats, slug)), [])[1])
+    response = client.post("/api/apply/boards/resolve", json={"url": "https://acme.example/careers"})
+    assert response.status_code == 200
+    assert (response.json()["ats"], response.json()["slug"]) == expected
+    assert fetched == ["https://acme.example/careers"]
+    assert listed == [expected]
+
+
+def test_embedded_board_prefers_most_frequent_and_reports_ties(client, monkeypatch):
+    monkeypatch.setattr(boards, "list_board", lambda ats, slug: [])
+    html = '<a href="https://jobs.lever.co/acme">A</a><a href="https://jobs.lever.co/acme/x">B</a><a href="https://jobs.ashbyhq.com/other">C</a>'
+    monkeypatch.setattr(discovery, "_fetch_career_page", lambda url: html)
+    preferred = client.post("/api/apply/boards/resolve", json={"url": "https://acme.example/careers"})
+    assert preferred.status_code == 200 and preferred.json()["ats"] == "lever"
+    monkeypatch.setattr(discovery, "_fetch_career_page", lambda url: '<a href="https://jobs.lever.co/acme">A</a><a href="https://jobs.ashbyhq.com/other">B</a>')
+    tied = client.post("/api/apply/boards/resolve", json={"url": "https://acme.example/careers"})
+    assert tied.status_code == 409
+    assert "https://jobs.lever.co/acme" in tied.json()["detail"]
+    assert "https://jobs.ashbyhq.com/other" in tied.json()["detail"]
+    monkeypatch.setattr(discovery, "_fetch_career_page", lambda url: "<p>No jobs</p>")
+    none = client.post("/api/apply/boards/resolve", json={"url": "https://acme.example/careers"})
+    assert none.status_code == 404
+    assert none.json()["detail"] == discovery._NO_BOARD
+
+
+def test_career_page_fetch_has_a_size_cap(monkeypatch):
+    class _Page:
+        encoding = "utf-8"
+
+        def __enter__(self):
+            return self
+
+        def __exit__(self, *_args):
+            return False
+
+        def raise_for_status(self):
+            pass
+
+        def iter_bytes(self):
+            yield b"x" * (discovery._PAGE_LIMIT + 1)
+
+    calls = []
+
+    def fake_stream(method, url, **kwargs):
+        calls.append((method, url, kwargs))
+        return _Page()
+
+    monkeypatch.setattr(discovery.httpx, "stream", fake_stream)
+    with pytest.raises(ValueError, match="too large"):
+        discovery._fetch_career_page("https://acme.example/careers")
+    assert len(calls) == 1
+    assert calls[0][2]["timeout"] <= 10
+    assert "ResumeTailor" in calls[0][2]["headers"]["User-Agent"]
 
 
 def test_watchlists_and_sections_routes(client, monkeypatch):

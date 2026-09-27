@@ -164,7 +164,7 @@ export function WatchlistEditor({
     <div className="mt-2 space-y-3 rounded-md border border-line p-3">
       {boards.length === 0 ? (
         <p className="text-xs text-ink-muted">
-          No companies yet. Paste a link to a company's job board or to one of its jobs.
+          No companies yet. Paste a company's careers page, job board, or job link.
         </p>
       ) : (
         <ul className="flex flex-wrap gap-2">
@@ -198,8 +198,8 @@ export function WatchlistEditor({
       >
         <input
           className="field min-w-0 flex-1 text-sm"
-          aria-label="Job board link"
-          placeholder="https://boards.greenhouse.io/company"
+          aria-label="Company careers page or job board link"
+          placeholder="https://company.com/careers"
           value={link}
           onChange={(e) => setLink(e.target.value)}
         />

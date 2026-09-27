@@ -46,10 +46,18 @@ class CoverAnglesIn(BaseModel):
 class BoardConfig(BaseModel):
     """One company job board on a watchlist source (`apply/boards.py`)."""
 
-    ats: Literal["greenhouse", "lever", "ashby", "smartrecruiters"]
-    slug: str = Field(min_length=1, max_length=100, pattern=r"^[A-Za-z0-9][A-Za-z0-9._-]*$")
+    ats: Literal["greenhouse", "lever", "ashby", "smartrecruiters", "workday"]
+    slug: str = Field(min_length=1, max_length=100, pattern=r"^[A-Za-z0-9][A-Za-z0-9._/-]*$")
     #: The name shown in the UI and used for postings; the slug when empty.
     company: str = ""
+
+    @model_validator(mode="after")
+    def check_slug(self) -> BoardConfig:
+        from ..apply import boards
+
+        if not boards.valid_slug(self.slug, self.ats):
+            raise ValueError("Invalid job board slug")
+        return self
 
 
 class SourceConfig(BaseModel):

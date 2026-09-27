@@ -68,4 +68,5 @@ export const ATS_LABELS: Record<BoardConfig["ats"], string> = {
   lever: "Lever",
   ashby: "Ashby",
   smartrecruiters: "SmartRecruiters",
+  workday: "Workday",
 };
