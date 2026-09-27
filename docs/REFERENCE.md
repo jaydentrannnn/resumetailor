@@ -222,6 +222,13 @@ Keys (`ADZUNA_APP_ID`, `ADZUNA_APP_KEY`, `USAJOBS_API_KEY`, `USAJOBS_EMAIL`) are
 `config.SAVABLE_CREDENTIALS`, never `settings.json`; a missing key is one run error for that
 source, and error text is redacted because Adzuna carries its keys in the query string.
 
+The Apply tables sort by **Posted** (`store.posted_date`): the source's own publication date
+when it states one (`SourceRow.posted_at`: Greenhouse `first_published`, Lever `createdAt`,
+Ashby `publishedAt`, SmartRecruiters `releasedDate`, Workday `postedOn`, Adzuna `created`,
+USAJobs `PublicationStartDate`), else the date found minus the age the source reported,
+else (extension captures, `age_unknown`) the date found, shown as `~date`. The age filter
+still reads `updated_at`, so a repost stays fresh; existing rows need no migration.
+
 Eligibility (`eligibility.py`) hard-rejects graduate-degree-only postings (master's/PhD
 without a bachelor's alternative), senior titles, and high year floors — before
 `jd.extract_consensus`. Ambiguous signals become `eligibility_flags`, never silent drops.

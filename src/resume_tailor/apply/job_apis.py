@@ -15,7 +15,7 @@ from typing import Any, Literal
 import httpx
 
 from resume_tailor import config
-from resume_tailor.apply.sources import SourceRow, _age_days, _keyword_re, matches_filters
+from resume_tailor.apply.sources import SourceRow, _age_days, _keyword_re, iso_date, matches_filters
 
 JobProvider = Literal["adzuna", "usajobs"]
 JOB_PROVIDERS: tuple[JobProvider, ...] = ("adzuna", "usajobs")
@@ -204,6 +204,7 @@ def _search_adzuna(
                     location=location,
                     age=f"{age}d" if age is not None else "",
                     age_days=age if age is not None else 0,
+                    posted_at=iso_date(created) if created else "",
                     job_id=f"adzuna:{job['id']}",
                     application_link=str(job.get("redirect_url") or ""),
                     source_id=source.id,
@@ -339,6 +340,7 @@ def _search_usajobs(
                     location=location,
                     age=f"{age}d" if age is not None else "",
                     age_days=age if age is not None else 0,
+                    posted_at=iso_date(pub_date) if pub_date else "",
                     job_id=f"usajobs:{item['MatchedObjectId']}",
                     application_link=app_link,
                     source_id=source.id,

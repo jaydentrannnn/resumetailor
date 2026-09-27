@@ -49,6 +49,7 @@ GREENHOUSE = {
             "id": 101,
             "title": "Investment Banking Summer Analyst",
             "updated_at": "2026-09-20T10:00:00-04:00",
+            "first_published": "2026-09-01T09:00:00-04:00",
             "location": {"name": "New York, NY"},
             "company_name": "Acme Capital",
         },
@@ -248,6 +249,9 @@ def test_board_rows_filters_keywords_and_locations(monkeypatch):
     assert first.job_id == "greenhouse:acme:101"
     assert first.age_days == 4 and first.age == "4d"
     assert undated.age_days == 0 and undated.flags == ["age_unknown"]
+    # The age filter reads the last update; the posted date is first publication.
+    assert first.posted_at == "2026-09-01"
+    assert undated.posted_at == ""
 
 
 def test_board_rows_reports_a_bad_board_and_keeps_the_rest(monkeypatch):

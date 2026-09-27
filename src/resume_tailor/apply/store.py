@@ -35,7 +35,7 @@ import threading
 from collections.abc import Callable, Iterator
 from contextlib import contextmanager
 from dataclasses import dataclass, field
-from datetime import UTC, datetime
+from datetime import UTC, datetime, timedelta
 from pathlib import Path
 from typing import Any, Literal, get_args
 
@@ -190,6 +190,9 @@ class Application(BaseModel):
     group_key: str = ""
     source_refs: list[SourceRef] = Field(default_factory=list)
     age_days: int | None = None
+    #: The posting's own publication date (ISO date) when its source states one;
+    #: otherwise `posted_date` derives it from ``discovered_at`` and ``age_days``.
+    posted_at: str = ""
     salary: str = ""
     duplicate_of: str | None = None
     eligibility_flags: list[str] = Field(default_factory=list)
@@ -769,6 +772,24 @@ def add_source_ref(app: Application, ref: SourceRef) -> Application:
     return app
 
 
+def posted_date(app: Application) -> tuple[str, bool]:
+    """The date ``app`` was posted (ISO date) and whether it is known.
+
+    A source that states a date wins. Otherwise the posting's age on the day it was
+    found dates it, unless the source gave no age (flag ``age_unknown``). With neither,
+    the date found stands in, reported as unknown: a posting is never newer than that.
+    """
+    if app.posted_at:
+        return app.posted_at[:10], True
+    try:
+        found = datetime.fromisoformat(app.discovered_at.replace("Z", "+00:00"))
+    except ValueError:
+        return "", False
+    if app.age_days is not None and "age_unknown" not in app.eligibility_flags:
+        return (found.date() - timedelta(days=max(0, app.age_days))).isoformat(), True
+    return found.date().isoformat(), False
+
+
 def list_applications(
     *,
     status: ApplicationStatus | None = None,
@@ -776,7 +797,7 @@ def list_applications(
     offset: int = 0,
     q: str = "",
     archive: Literal["active", "archived", "all"] = "all",
-    sort: Literal["discovered_at", "archived_at", "company", "role", "location", "status", "coverage", "salary", "ats", "sources"] = "discovered_at",
+    sort: Literal["posted_at", "discovered_at", "archived_at", "company", "role", "location", "status", "coverage", "salary", "ats", "sources"] = "discovered_at",
     direction: Literal["asc", "desc"] = "desc",
     group: Literal["review", "working"] | None = None,
     applications: list[Application] | None = None,
@@ -795,6 +816,8 @@ def list_applications(
     apps.sort(key=lambda row: row.company.casefold())
     apps.sort(key=lambda row: row.discovered_at or "", reverse=True)
     def sort_value(row: Application) -> str | float | None:
+        if sort == "posted_at":
+            return posted_date(row)[0] or None
         if sort == "status":
             return _STATUS_RANK.get(row.status, len(_STATUS_RANK))
         if sort == "coverage":

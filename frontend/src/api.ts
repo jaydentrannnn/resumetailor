@@ -347,6 +347,9 @@ export type ApplicationRow = {
   status: string;
   status_history?: Array<{ status: string; at: string; note?: string }>;
   discovered_at: string;
+  /** Posting date (ISO date); the date found instead when `posted_known` is false. */
+  posted_at?: string;
+  posted_known?: boolean;
   archived_at?: string | null;
   job_id: string | null;
   preparation_eligible?: boolean;

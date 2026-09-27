@@ -229,6 +229,7 @@ def _application_from_row(
         group_key=group_key,
         source_refs=[ref],
         age_days=row.age_days,
+        posted_at=row.posted_at,
         salary=row.salary,
         eligibility_flags=list(row.flags),
     )
@@ -499,6 +500,8 @@ def _process_one(
         if ckey in index.by_canonical:
             existing = index.by_canonical[ckey]
             store.add_source_ref(existing, ref)
+            if row.posted_at and not existing.posted_at:
+                existing.posted_at = row.posted_at
             if not dry_run:
                 store.upsert(existing)
             if existing.archived_at:

@@ -684,3 +684,27 @@ def test_returned_rows_are_private_copies(apps_path):
     store.load_all()["k"].notes = "mutated"
     stored = store.get("k")
     assert stored.company == "Acme" and stored.notes == ""
+
+
+def test_posted_date_prefers_the_stated_date_then_the_age_then_the_date_found():
+    stated = _sample_app(posted_at="2026-08-30", discovered_at="2026-09-20T10:00:00+00:00", age_days=3)
+    aged = _sample_app(discovered_at="2026-09-20T10:00:00+00:00", age_days=3)
+    unknown = _sample_app(discovered_at="2026-09-20T10:00:00+00:00", age_days=0, eligibility_flags=["age_unknown"])
+    captured = _sample_app(discovered_at="2026-09-20T10:00:00+00:00")
+    assert store.posted_date(stated) == ("2026-08-30", True)
+    assert store.posted_date(aged) == ("2026-09-17", True)
+    assert store.posted_date(unknown) == ("2026-09-20", False)
+    assert store.posted_date(captured) == ("2026-09-20", False)
+    assert store.posted_date(_sample_app()) == ("", False)
+
+
+def test_sort_by_posted_date_orders_by_publication_not_discovery(apps_path):
+    store.save_all({
+        # Found last, but posted first: a 30-day-old posting found today.
+        "old": _sample_app(source_job_id="old", company="Old", discovered_at="2026-09-20T00:00:00+00:00", age_days=30),
+        "new": _sample_app(source_job_id="new", company="New", discovered_at="2026-09-10T00:00:00+00:00", posted_at="2026-09-09"),
+        "cap": _sample_app(source_job_id="cap", company="Captured", discovered_at="2026-09-15T00:00:00+00:00"),
+    })
+    newest_first = [app.source_job_id for app in store.list_applications(sort="posted_at")]
+    assert newest_first == ["cap", "new", "old"]
+    assert [app.source_job_id for app in store.list_applications(sort="discovered_at")] == ["old", "cap", "new"]

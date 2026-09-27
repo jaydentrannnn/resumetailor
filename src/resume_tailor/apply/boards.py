@@ -67,6 +67,9 @@ class BoardJob:
     #: ISO timestamp of the posting's last update (or publication); "" when unknown.
     updated_at: str
     company: str = ""
+    #: ISO timestamp of first publication when the board states it; "" otherwise. The
+    #: age filter keeps using ``updated_at`` (a repost counts as fresh).
+    posted_at: str = ""
 
 
 def valid_slug(slug: str, ats: str | None = None) -> bool:
@@ -177,6 +180,7 @@ def _greenhouse(slug: str, get: Callable[..., Any]) -> list[BoardJob]:
                 url=f"https://boards.greenhouse.io/{slug}/jobs/{job['id']}",
                 updated_at=str(job.get("updated_at") or job.get("first_published") or ""),
                 company=str(job.get("company_name") or ""),
+                posted_at=str(job.get("first_published") or ""),
             )
         )
     return out
@@ -197,6 +201,7 @@ def _lever(slug: str, get: Callable[..., Any]) -> list[BoardJob]:
                 location=str(location or ""),
                 url=str(job.get("hostedUrl") or f"https://jobs.lever.co/{slug}/{job['id']}"),
                 updated_at=_iso_from_ms(job.get("updatedAt") or job.get("createdAt")),
+                posted_at=_iso_from_ms(job.get("createdAt")),
             )
         )
     return out
@@ -221,6 +226,7 @@ def _ashby(slug: str, get: Callable[..., Any]) -> list[BoardJob]:
                 location=str(job.get("location") or ""),
                 url=str(job.get("jobUrl") or f"https://jobs.ashbyhq.com/{slug}/{job['id']}"),
                 updated_at=str(job.get("updatedAt") or job.get("publishedAt") or ""),
+                posted_at=str(job.get("publishedAt") or ""),
             )
         )
     return out
@@ -256,6 +262,7 @@ def _smartrecruiters(slug: str, get: Callable[..., Any]) -> list[BoardJob]:
                     location=place,
                     url=f"https://jobs.smartrecruiters.com/{slug}/{job['id']}",
                     updated_at=str(job.get("releasedDate") or ""),
+                    posted_at=str(job.get("releasedDate") or ""),
                     company=str(company.get("name") or "") if isinstance(company, dict) else "",
                 )
             )
@@ -309,6 +316,7 @@ def _workday(slug: str, post: Callable[..., Any]) -> list[BoardJob]:
                 location=str(job.get("locationsText") or ""),
                 url=f"{root}{posting_path}",
                 updated_at=_workday_date(job.get("postedOn")),
+                posted_at=_workday_date(job.get("postedOn")),
             ))
         total = data.get("total") if isinstance(data, dict) else None
         if not isinstance(total, int) or (page + 1) * 20 >= total:

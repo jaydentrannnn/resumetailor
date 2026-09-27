@@ -1187,6 +1187,10 @@ class ApplicationOut(BaseModel):
     status: ApplicationStatus = "discovered"
     status_history: list[StatusChange] = Field(default_factory=list)
     discovered_at: str = ""
+    #: When the posting was published (`store.posted_date`); when ``posted_known`` is
+    #: false this is the date it was found instead.
+    posted_at: str = ""
+    posted_known: bool = False
     jd_text_path: str | None = None
     screen: ScreenResult | None = None
     job_id: str | None = None

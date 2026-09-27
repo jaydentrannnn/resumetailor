@@ -1735,3 +1735,13 @@ def test_closed_posting_is_skipped_before_tailoring(stub_pipeline, apply_paths, 
     (app,) = store.load_all().values()
     assert app.status == "skipped"
     assert app.status_history[-1].note == "Posting closed (the page answered 410)"
+
+
+def test_new_application_keeps_the_sources_posted_date():
+    from resume_tailor.apply.sources import SourceRow
+
+    row = SourceRow(company="Acme", role="Analyst", location="", age="4d", age_days=4,
+                    posted_at="2026-09-01", job_id="greenhouse:acme:1")
+    app = daily._application_from_row(row, canonical_key="greenhouse:acme:1", group_key="g", final_url="")
+    assert app.posted_at == "2026-09-01"
+    assert app.age_days == 4

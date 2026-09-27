@@ -16,6 +16,7 @@ import {
 import {
   canContinueFill,
   canReopenFill,
+  localDate,
   isTabClosed,
   retryShortLabel,
   retryTitle,
@@ -111,7 +112,7 @@ export function ApplicationsTable({
   const selectedIds = rows
     .filter((row) => state.selected.has(row.source_job_id))
     .map((row) => row.source_job_id);
-  const dateColumn = archived ? "archived_at" : "discovered_at";
+  const dateColumn = archived ? "archived_at" : "posted_at";
 
   function menu(row: ApplicationRow): MenuItem[] {
     const items: MenuItem[] = [];
@@ -392,17 +393,22 @@ export function ApplicationsTable({
       : []),
     {
       id: dateColumn,
-      heading: archived ? "Done on" : "Found",
+      heading: archived ? "Done on" : "Posted",
       sortable: true,
       className: "w-[10%]",
       cell: (row) => {
-        const value = archived ? row.archived_at : row.discovered_at;
-        return value ? new Date(value).toLocaleDateString() : "—";
+        if (!archived) return <PostedDate row={row} />;
+        return row.archived_at ? new Date(row.archived_at).toLocaleDateString() : "—";
       },
     },
     ...extraColumns.map((id) => ({
       id,
-      heading: id === "coverage" ? "Skill match" : id[0].toUpperCase() + id.slice(1),
+      heading:
+        id === "coverage"
+          ? "Skill match"
+          : id === "discovered_at"
+            ? "Found"
+            : id[0].toUpperCase() + id.slice(1),
       sortable: true,
       className: "w-[10%]",
       cell: (row: ApplicationRow) =>
@@ -440,7 +446,7 @@ export function ApplicationsTable({
   );
   const optionalColumns = archived
     ? ["coverage", "discovered_at", "salary", "sources"]
-    : ["salary", "sources"];
+    : ["discovered_at", "salary", "sources"];
 
   return (
     <div className="space-y-3">
@@ -554,5 +560,17 @@ export function ApplicationsTable({
       />
       {pagination}
     </div>
+  );
+}
+
+/** When the posting went up; the date found, marked "~", when the source gave none. */
+export function PostedDate({ row }: { row: ApplicationRow }) {
+  const value = row.posted_at || row.discovered_at;
+  if (!value) return <>—</>;
+  if (row.posted_at && row.posted_known) return <>{localDate(value)}</>;
+  return (
+    <span className="text-ink-muted" title="Posting date unknown — date found">
+      ~{localDate(value)}
+    </span>
   );
 }

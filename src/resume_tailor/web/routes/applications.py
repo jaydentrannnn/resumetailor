@@ -73,6 +73,7 @@ def _application_out(
         [ref.source for ref in app.source_refs] if app.source_refs else [app.source]
     )
     payload["group_size"] = group_size
+    payload["posted_at"], payload["posted_known"] = apply_store.posted_date(app)
     from resume_tailor.apply import preparation
 
     apply_settings = JobSettings.model_validate(workspace.load_settings()["defaults"]).apply
@@ -357,7 +358,7 @@ def list_applications(
     offset: int = 0,
     q: str = "",
     archive: Literal["active", "archived", "all"] = "all",
-    sort: Literal["discovered_at", "archived_at", "company", "role", "location", "status", "coverage", "salary", "ats", "sources"] = "discovered_at",
+    sort: Literal["posted_at", "discovered_at", "archived_at", "company", "role", "location", "status", "coverage", "salary", "ats", "sources"] = "discovered_at",
     direction: Literal["asc", "desc"] = "desc",
     group: Literal["review", "working"] | None = None,
 ) -> ApplicationsListResponse:

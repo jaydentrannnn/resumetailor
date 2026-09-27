@@ -82,3 +82,9 @@ export function canReopenFill(
 ): boolean {
   return !!row.job_id && !row.archived_at && REOPENABLE.has(row.status);
 }
+
+/** A date-only ISO string as a local calendar date (`new Date("YYYY-MM-DD")` is UTC midnight). */
+export function localDate(iso: string): string {
+  const day = /^\d{4}-\d{2}-\d{2}$/.test(iso) ? `${iso}T00:00:00` : iso;
+  return new Date(day).toLocaleDateString();
+}

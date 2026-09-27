@@ -31,6 +31,8 @@ class SourceRow(BaseModel):
     location: str
     age: str
     age_days: int | None = None
+    #: ISO date the posting was published, when the source states one ("" otherwise).
+    posted_at: str = ""
     job_id: str | None = None
     application_link: str | None = None
     sponsorship_ok: SponsorshipOk = "Unknown"
@@ -505,6 +507,16 @@ def _keyword_re(words: list[str], *, whole: bool) -> re.Pattern[str] | None:
     return re.compile(rf"(?<!\w)(?:{alternatives}){tail}", re.IGNORECASE)
 
 
+def iso_date(value: str) -> str:
+    """The ISO date (YYYY-MM-DD) of a timestamp string, or "" when it does not parse."""
+    from datetime import datetime
+
+    try:
+        return datetime.fromisoformat(str(value).strip().replace("Z", "+00:00")).date().isoformat()
+    except ValueError:
+        return ""
+
+
 def _age_days(updated_at: str, now: Any) -> int | None:
     from datetime import UTC, datetime
 
@@ -589,6 +601,7 @@ def board_rows(
                     location=job.location,
                     age=f"{age}d" if age is not None else "",
                     age_days=age if age is not None else 0,
+                    posted_at=iso_date(job.posted_at) if job.posted_at else "",
                     job_id=identity.canonical_key(job.url),
                     application_link=job.url,
                     source_id=source.id,

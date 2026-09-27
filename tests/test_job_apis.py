@@ -121,6 +121,7 @@ def test_adzuna_paging_and_mapping(monkeypatch):
     assert first.application_link == "https://adzuna.com/land/0"
     assert first.job_id == "adzuna:ad-0"
     assert first.age_days == 3
+    assert first.posted_at == "2026-09-24"
     assert first.salary == "$100,000 - $150,000"
     assert first.flags == []
 
@@ -198,6 +199,7 @@ def test_usajobs_mapping_and_headers_asserted(monkeypatch):
     assert row.role == "IT Specialist (SYSANALYSIS)"
     assert row.location == "Washington, DC"
     assert row.application_link == "https://data.usajobs.gov/apply/12345678"
+    assert row.posted_at == (datetime.now(UTC) - timedelta(days=4)).strftime("%Y-%m-%d")
     assert row.age_days == 4
     assert row.salary == "$90,000 - $130,000 / PA"
 
