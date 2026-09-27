@@ -17,6 +17,7 @@ from pydantic import BaseModel, Field, ValidationError
 
 from resume_tailor import (
     config,
+    convert,
     data,
     estimate,
     include,
@@ -558,9 +559,28 @@ def _job_artifact(job_id: str, suffix: str) -> Path:
             status_code=409, detail=f"Job {job_id} is {resolved.status}, not ready for download."
         )
     path = resolved.out_dir / f"tailored{suffix}"
+    if suffix == ".pdf":
+        _rebuild_missing_pdf(path)
     if not path.exists():
         raise HTTPException(status_code=404, detail=f"{path.name} was not produced.")
     return path
+
+
+def _rebuild_missing_pdf(pdf: Path) -> None:
+    """Convert a finished run's `.docx` when its PDF is missing, or raise 404.
+
+    A run whose PDF step failed (e.g. Word refusing a conversion) still has a good
+    `.docx`, so the PDF is rebuilt on first request instead of leaving a dead link.
+    """
+    docx = pdf.with_suffix(".docx")
+    if pdf.exists() or not docx.exists():
+        return
+    try:
+        convert.convert(docx, pdf)
+    except RuntimeError as exc:
+        raise HTTPException(
+            status_code=404, detail=f"{pdf.name} was not produced, and rebuilding it failed: {exc}"
+        ) from exc
 
 
 def _export_download_name(job_id: str, *, suffix: str) -> str:
@@ -782,6 +802,7 @@ def download_cover_letter_pdf(job_id: str) -> FileResponse:
             status_code=409, detail=f"Job {job_id} is {resolved.status}, not ready for download."
         )
     path = resolved.out_dir / "cover.pdf"
+    _rebuild_missing_pdf(path)
     if not path.exists():
         raise HTTPException(
             status_code=404,
@@ -806,6 +827,7 @@ def preview_cover_letter_pdf(job_id: str) -> FileResponse:
             status_code=409, detail=f"Job {job_id} is {resolved.status}, not ready for download."
         )
     path = resolved.out_dir / "cover.pdf"
+    _rebuild_missing_pdf(path)
     if not path.exists():
         raise HTTPException(
             status_code=404,

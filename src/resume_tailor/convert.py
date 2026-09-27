@@ -38,9 +38,16 @@ def _convert_word(docx_path: Path, pdf_path: Path, *, keep_active: bool) -> None
     run and passes True for every call but the last, which avoids paying Word's ~9s
     startup on each retry.
     """
+    import pythoncom  # pywin32; docx2pdf's own dependency on Windows
     from docx2pdf import convert
 
-    convert(str(docx_path.resolve()), str(pdf_path.resolve()), keep_active=keep_active)
+    # COM is per thread, and pywin32 only initialises the thread that first imports it.
+    # Tailoring jobs each run on their own thread, so every call initialises its own.
+    pythoncom.CoInitialize()
+    try:
+        convert(str(docx_path.resolve()), str(pdf_path.resolve()), keep_active=keep_active)
+    finally:
+        pythoncom.CoUninitialize()
 
 
 #: Prefix of the LibreOffice user profiles this module creates under the temp dir.

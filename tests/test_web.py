@@ -23,6 +23,7 @@ from resume_tailor.events import ProgressEvent
 from resume_tailor.fit import FitResult
 from resume_tailor.web import jobs as jobs_mod
 from resume_tailor.web import template_ops
+from resume_tailor.web.routes import jobs as routes_jobs
 from resume_tailor.web.app import app
 from resume_tailor.web.jobs import JobQueue
 from resume_tailor.web.schemas import JobSettings
@@ -270,12 +271,8 @@ def test_delete_run_history_rejects_active_job(client):
     assert out_dir.exists()
 
 
-def test_download_works_for_disk_only_job(client):
-    """A job id absent from memory but present on disk still serves its artifact."""
-    c, q = client
-    job_id = "diskonly001"
-    # Ensure it is not in the live queue.
-    assert q.get(job_id) is None
+def _disk_only_run(job_id: str) -> Path:
+    """Write a finished run's `run.json` straight to disk; returns its folder."""
     jobs_dir = config.OUTPUT_DIR / "jobs" / job_id
     jobs_dir.mkdir(parents=True, exist_ok=True)
     (jobs_dir / "run.json").write_text(
@@ -303,6 +300,16 @@ def test_download_works_for_disk_only_job(client):
         ),
         encoding="utf-8",
     )
+    return jobs_dir
+
+
+def test_download_works_for_disk_only_job(client):
+    """A job id absent from memory but present on disk still serves its artifact."""
+    c, q = client
+    job_id = "diskonly001"
+    # Ensure it is not in the live queue.
+    assert q.get(job_id) is None
+    jobs_dir = _disk_only_run(job_id)
     (jobs_dir / "tailored.docx").write_bytes(b"PK\x03\x04disk-only")
     res = c.get(f"/api/jobs/{job_id}/download.docx")
     assert res.status_code == 200
@@ -311,6 +318,40 @@ def test_download_works_for_disk_only_job(client):
     assert status.status_code == 200
     assert status.json()["status"] == "succeeded"
     assert status.json()["title"] == "Disk Only"
+
+
+def test_missing_pdf_is_rebuilt_from_the_docx(client, monkeypatch):
+    """A run whose PDF step failed serves a PDF converted on first request."""
+    c, _ = client
+    jobs_dir = _disk_only_run("nopdf001")
+    (jobs_dir / "tailored.docx").write_bytes(b"PK\x03\x04")
+    (jobs_dir / "cover.docx").write_bytes(b"PK\x03\x04")
+    converted = []
+
+    def fake_convert(docx, pdf, **_):
+        converted.append(docx.name)
+        pdf.write_bytes(b"%PDF-rebuilt")
+        return pdf
+
+    monkeypatch.setattr(routes_jobs.convert, "convert", fake_convert)
+    assert c.get("/api/jobs/nopdf001/download.pdf").content == b"%PDF-rebuilt"
+    assert c.get("/api/jobs/nopdf001/preview.pdf").status_code == 200
+    assert c.get("/api/jobs/nopdf001/cover-letter/preview.pdf").content == b"%PDF-rebuilt"
+    assert converted == ["tailored.docx", "cover.docx"]
+
+
+def test_missing_pdf_rebuild_failure_is_a_404(client, monkeypatch):
+    c, _ = client
+    jobs_dir = _disk_only_run("nopdf002")
+    (jobs_dir / "tailored.docx").write_bytes(b"PK\x03\x04")
+
+    def boom(docx, pdf, **_):
+        raise RuntimeError("word could not convert tailored.docx")
+
+    monkeypatch.setattr(routes_jobs.convert, "convert", boom)
+    res = c.get("/api/jobs/nopdf002/download.pdf")
+    assert res.status_code == 404
+    assert "word could not convert" in res.json()["detail"]
 
 
 def test_failed_run_writes_run_json(client, monkeypatch):
