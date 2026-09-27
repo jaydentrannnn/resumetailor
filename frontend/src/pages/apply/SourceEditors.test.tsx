@@ -44,8 +44,12 @@ describe("JobSearchEditor", () => {
       </MemoryRouter>,
     );
 
-    expect((screen.getByLabelText("Job search provider") as HTMLSelectElement).value).toBe("adzuna");
-    expect((screen.getByLabelText("Search keywords") as HTMLInputElement).value).toBe("python developer");
+    expect((screen.getByLabelText("Job search provider") as HTMLSelectElement).value).toBe(
+      "adzuna",
+    );
+    expect((screen.getByLabelText("Search keywords") as HTMLInputElement).value).toBe(
+      "python developer",
+    );
     expect((screen.getByLabelText("Search location") as HTMLInputElement).value).toBe("Austin, TX");
     expect((screen.getByLabelText("Adzuna country code") as HTMLInputElement).value).toBe("us");
 
@@ -79,7 +83,9 @@ describe("JobSearchEditor", () => {
       </MemoryRouter>,
     );
 
-    expect((screen.getByLabelText("Job search provider") as HTMLSelectElement).value).toBe("usajobs");
+    expect((screen.getByLabelText("Job search provider") as HTMLSelectElement).value).toBe(
+      "usajobs",
+    );
     expect(screen.queryByLabelText("Adzuna country code")).toBeNull();
   });
 
@@ -101,7 +107,9 @@ describe("JobSearchEditor", () => {
     await waitFor(() => {
       const alert = screen.getByRole("alert");
       expect(alert.textContent).toContain("Missing credentials: ADZUNA_APP_ID, ADZUNA_APP_KEY");
-      expect(screen.getByText("Settings → Models").getAttribute("href")).toBe("/settings?tab=models");
+      expect(screen.getByText("Settings → Models").getAttribute("href")).toBe(
+        "/settings?tab=models",
+      );
     });
   });
 });

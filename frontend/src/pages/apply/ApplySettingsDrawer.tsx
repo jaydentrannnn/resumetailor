@@ -195,11 +195,13 @@ export function ApplySettingsDrawer({
                   <div className="flex items-center justify-between">
                     <label htmlFor={`source-${source.id}`}>
                       <span className="font-medium">{sourceLabel(source)}</span>
-                      {source.kind !== "ats_board" && source.kind !== "job_search" && source.categories.length > 0 && (
-                        <span className="block text-xs text-ink-muted">
-                          {source.categories.join(" · ")}
-                        </span>
-                      )}
+                      {source.kind !== "ats_board" &&
+                        source.kind !== "job_search" &&
+                        source.categories.length > 0 && (
+                          <span className="block text-xs text-ink-muted">
+                            {source.categories.join(" · ")}
+                          </span>
+                        )}
                     </label>
                     {source.kind === "job_search" && (
                       <button
@@ -328,7 +330,9 @@ export function ApplySettingsDrawer({
                 aria-label="Parallel fills"
                 value={apply.max_parallel_fills}
                 onChange={(e) =>
-                  patch({ max_parallel_fills: Math.min(4, Math.max(1, Number(e.target.value) || 1)) })
+                  patch({
+                    max_parallel_fills: Math.min(4, Math.max(1, Number(e.target.value) || 1)),
+                  })
                 }
               />
             </label>

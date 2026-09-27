@@ -33,10 +33,14 @@ export function AdvancedSection() {
           className="field max-w-xs"
           aria-label="Concurrent tailoring runs"
           value={settings.max_concurrent_jobs}
-          onChange={(e) => setSettings({ ...settings, max_concurrent_jobs: Number(e.target.value) })}
+          onChange={(e) =>
+            setSettings({ ...settings, max_concurrent_jobs: Number(e.target.value) })
+          }
         >
           {[1, 2, 3, 4].map((count) => (
-            <option key={count} value={count}>{count} run{count === 1 ? "" : "s"}</option>
+            <option key={count} value={count}>
+              {count} run{count === 1 ? "" : "s"}
+            </option>
           ))}
         </select>
       </Card>

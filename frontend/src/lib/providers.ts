@@ -76,6 +76,12 @@ export const KEY_LABELS: Record<string, string> = {
 export const KEY_HELP: Record<string, { label: string; href: string }> = {
   ADZUNA_APP_ID: { label: "developer.adzuna.com", href: "https://developer.adzuna.com/" },
   ADZUNA_APP_KEY: { label: "developer.adzuna.com", href: "https://developer.adzuna.com/" },
-  USAJOBS_API_KEY: { label: "developer.usajobs.gov", href: "https://developer.usajobs.gov/APIRequest/Index" },
-  USAJOBS_EMAIL: { label: "developer.usajobs.gov", href: "https://developer.usajobs.gov/APIRequest/Index" },
+  USAJOBS_API_KEY: {
+    label: "developer.usajobs.gov",
+    href: "https://developer.usajobs.gov/APIRequest/Index",
+  },
+  USAJOBS_EMAIL: {
+    label: "developer.usajobs.gov",
+    href: "https://developer.usajobs.gov/APIRequest/Index",
+  },
 };
