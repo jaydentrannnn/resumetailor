@@ -23,6 +23,14 @@ def classify(field: FieldObservation) -> tuple[Classification, str]:
     identity = f"{name} {normalize(str(attrs.get('id') or ''))} {normalize(str(attrs.get('automation_id') or ''))}"
     if input_type == "password" or auto in {"current password", "new password", "one time code"} or re.search(r"\b(password|passcode|verification code|one time code)\b", label):
         return "manual_review", "credential_or_verification"
+    # Self-identification before salary: VEVRAA's veteran question quotes "entitled to
+    # compensation" (CACI, 2026-09).
+    if "veteran" in label:
+        return "known", "veteran_status"
+    if re.search(r"\bdisabilit", label):
+        return "known", "disability_status"
+    if re.search(r"\bgender\b|\bsex\b", label):
+        return "known", "gender"
     if re.search(r"\b(salary|compensation|pay expectation|desired pay|pay rate|wages?)\b", label):
         # Deterministic per-posting answer (`apply/salary.py`), in the unit asked for.
         unit = "salary_hourly" if "hour" in label else "salary_yearly" if re.search(r"\b(year|annual)", label) else "salary_expectation"

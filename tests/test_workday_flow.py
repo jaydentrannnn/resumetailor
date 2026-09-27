@@ -1006,3 +1006,34 @@ def test_select_prompt_accepts_the_option_enter_committed_itself():
     page.locator = locator
     assert workday_flow.select_prompt(page, "education-1--fieldOfStudy", "Computer Science", key="major")
     assert page.chips == ["Computer and Information Science"]
+
+
+class _SavingPage:
+    """A step that saves slowly: the button stays disabled, then the next step shows."""
+
+    def __init__(self, saved_after_ms: int) -> None:
+        self.elapsed = 0
+        self.saved_after_ms = saved_after_ms
+
+    def evaluate(self, script, *_args):
+        if script == workday_flow._SAVING_JS:  # noqa: SLF001
+            return self.elapsed < self.saved_after_ms
+        step = "Application Questions" if self.elapsed >= self.saved_after_ms else "My Experience"
+        return {"ids": ["progressBarActiveStep"], "step": step, "alerts": []}
+
+    def wait_for_timeout(self, ms):
+        self.elapsed += ms
+
+
+def test_a_slow_save_is_waited_for_while_the_button_is_disabled(monkeypatch):
+    # F5 (2026-09): My Experience with five rows saved after 15 s.
+    monkeypatch.setattr(workday_flow, "snapshot", lambda p: p.evaluate("snapshot"))
+    monkeypatch.setattr(workday_flow, "active_step", lambda snap: snap["step"])
+    page = _SavingPage(saved_after_ms=25_000)
+    monkeypatch.setattr(workday_flow.time, "monotonic", lambda: page.elapsed / 1000)
+    assert workday_flow.wait_for_step_change(page, "My Experience", deadline=1e9, timeout_s=15)
+    # A save that never finishes still gives up, at three times the timeout.
+    stuck = _SavingPage(saved_after_ms=10**9)
+    monkeypatch.setattr(workday_flow.time, "monotonic", lambda: stuck.elapsed / 1000)
+    assert not workday_flow.wait_for_step_change(stuck, "My Experience", deadline=1e9, timeout_s=15)
+    assert stuck.elapsed <= 46_000

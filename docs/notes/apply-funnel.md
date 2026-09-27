@@ -1208,3 +1208,63 @@ same `AgeWindowPicker`. A source's own `max_age_days` now *widens* the funnel-wi
 1 day never shrinks a watchlist below its 7. The per-search cap is unchanged; the "Most
 postings per search" placeholder read "All" but empty means `max_new_per_day`, so it now
 shows that number.
+
+## 2026-09-27 — Workday rows: popup before Add, skill-chip dedupe, rows kept in the record
+F5 (Software Engineer I) left every Work Experience and Education row empty: each `_add_row`
+press timed out (bare `TimeoutError`, ~5 s apart). The Skills prompt runs just before the
+rows and its results popup kept Workday's full-viewport `click_filter` up over the Add
+buttons. `fill._fill_workday_experience_and_education` now passes
+`workday_flow.close_stray_popups` as `dismiss`: it runs before the rows and once more when an
+Add press is blocked; `fill_skills` also ends with it. `_ADD_BUTTON_JS` counts only visible
+add buttons and tags the chosen one `data-rt-add` (a hidden template button shifted `.nth`).
+A press that still fails raises `AddRowError` naming Playwright's call-log blocker ("…
+intercepts pointer events", `_reason`), and later entries in that section reuse the reason
+instead of waiting again. The same page showed "You cannot enter duplicate skills": the
+exact and model paths never checked the option against existing chips (a Continue run finds
+the first run's chips; "HuggingFace" searches to "Hugging Face"); `field_matcher.same_skill_in`
+now skips it. Filled rows (no selector) were dropped when `_observe_fields` replaced
+`merged["filled"]` and collapsed in the `(frame, selector)` outcomes map; they are kept and
+keyed by label.
+
+## 2026-09-27 — Veteran status is a four-way category, matched by option tiers
+CACI's required veteran listbox (four options) was left on "Select One". The profile held
+free text "No", which cannot say "not a veteran" vs "not a *protected* veteran", and
+`eeo_pattern` built one regex per answer and hoped exactly one option matched; each new
+wording needed another regex patch, and the failure recorded only a bare label. Now
+`EEOAnswers.veteran` is `protected | veteran_not_protected | not_veteran | decline | ""`;
+a `mode="before"` validator converts legacy text (`field_matcher.veteran_category`: No →
+not_veteran, Yes → protected) and keeps the original in `veteran_legacy`, which the Profile
+page shows as "please check" until confirmed. `field_matcher.VETERAN_TIERS` lists option
+patterns per category, most specific first (not_veteran: "not a veteran", then "not a
+protected veteran", then a bare "No"); a tier naming no option falls through, one naming two
+stops. `eeo_tiers`/`eeo_patterns` return lists, and `filler.js`'s `eeoPick` applies the same
+rule (unnamed checkbox boxes choose among their container's boxes, so a fallback tier never
+ticks a second box). The OFCCP "protected veteran but choose not to self-identify" option is
+an answer, not a decline; OFCCP sub-categories ("Disabled Veteran") are never guessed. Failed
+self-identification choices now log and review `choice_failure` lines with the form's options
+(`workday_flow.last_listbox`). VEVRAA labels quote "entitled to compensation": self-
+identification now classifies before salary in `field_catalog.classify` and filler.js never
+treats a choice control as a salary box. Corpus: `tests/fixtures/eeo/veteran_options.json`
+(add new live wordings there). Gender/disability keep their single-rule matching for now.
+
+## 2026-09-27 — SmartRecruiters entry: "I'm interested", DataDome, assist-only
+SmartRecruiters postings open the one-click form with an "I'm interested" link
+(`a#st-apply`, `a.js-oneclick`); hidden `js-smartr-oneclick` twins go to smartr.me and are
+excluded. `ats_hints.ATS_PRE_FILL_CLICKS["smartrecruiters"]` clicks it; the generic entry
+search uses the shared `ats_hints.APPLY_ENTRY_PATTERN` (Apply…, I'm/I am interested, Start
+application) and is skipped once the SmartRecruiters hint has entered the form. The verified
+engine gets `SmartRecruitersAdapter.enter_application`; `engine` calls any adapter that
+overrides `FormAdapter.enter_application` (was Workday-only). The one-click form sits behind
+DataDome ("Verification Required", `geo.captcha-delivery.com`) for automated browsers:
+`_detect_barriers` reports it as a CAPTCHA for the applicant, never automated. SmartRecruiters
+joined `fill.ASSIST_ONLY_ATS` and left the auto-submit picker until live dry-runs exist.
+
+## 2026-09-27 — F5 live re-run: optional education years, slow saves, stale duplicate chips
+A live reopen fill on F5 after the fixes above filled all five employment rows and the
+education row, and My Experience saved. Three follow-ups: F5's Education asks no years
+attended, so `_date_absent` makes a missing years control "not a gap" (like GPA). The save
+took longer than `wait_for_step_change`'s 15 s and the fill reported "did not advance";
+while `pageFooterNextButton` is disabled (save in flight) the wait extends to 3× the
+timeout, with one last look at the end. A draft saved by an earlier run kept duplicate
+skill chips; `workday_flow.remove_duplicate_chips` (focus + Delete, verified per chip) runs
+before skills are entered. CACI could not be re-checked live (already applied).

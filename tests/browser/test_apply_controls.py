@@ -696,3 +696,83 @@ def test_workday_skills_are_entered_one_at_a_time():
             assert review == ["COBOL"]
         finally:
             browser.close()
+
+
+def test_a_skill_already_on_the_form_is_not_added_again():
+    # F5 (2026-09): "HuggingFace" searched to "Hugging Face", which a Continue run's
+    # earlier pass had already committed; Workday then refused the step with "You
+    # cannot enter duplicate skills".
+    from resume_tailor.apply import workday_flow
+
+    content = _SKILLS_PROMPT.replace(
+        '<li><div data-automation-id="selectedItem">SQL</div></li>',
+        '<li><div data-automation-id="selectedItem">Hugging Face</div></li>',
+    ).replace('"sql": ["SQL"],', '"huggingface": ["Hugging Face", "Hugging Face Hub"],')
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=str(_EDGE), headless=True)
+        try:
+            page = browser.new_page()
+            page.set_content(content)
+            committed, review = workday_flow.fill_skills(
+                page, ["HuggingFace"], choose_many=lambda unmatched: {"HuggingFace": "Hugging Face"},
+            )
+            chips = page.locator("[data-automation-id=selectedItem]").all_inner_texts()
+            assert chips == ["Hugging Face"]
+            assert committed == [] and review == []
+        finally:
+            browser.close()
+
+
+def test_duplicate_chips_from_an_earlier_draft_are_removed():
+    # F5's saved draft (2026-09) held "Hugging Face" and "Model Fine-Tuning" twice, and
+    # Workday refused the step until they were gone.
+    from resume_tailor.apply import workday_flow
+
+    chips = "".join(
+        f'<li><div data-automation-id="selectedItem" tabindex="-1" '
+        f'onkeydown="if (event.key === \'Delete\') this.parentElement.remove()">{text}</div></li>'
+        for text in ["Hugging Face", "PyTorch", "Hugging Face", "Model Fine-Tuning", "model fine-tuning"]
+    )
+    content = _SKILLS_PROMPT.replace(
+        '<li><div data-automation-id="selectedItem">SQL</div></li>', chips,
+    )
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=str(_EDGE), headless=True)
+        try:
+            page = browser.new_page()
+            page.set_content(content)
+            assert workday_flow.remove_duplicate_chips(page, "skills--skills") == 2
+            assert page.locator("[data-automation-id=selectedItem]").all_inner_texts() == [
+                "Hugging Face", "PyTorch", "Model Fine-Tuning",
+            ]
+        finally:
+            browser.close()
+
+
+#: My Experience with a hidden template Add button ahead of the visible ones.
+_EXPERIENCE_STEP = '''
+    <div data-automation-id="applyFlowPage">
+      <div style="display:none"><h3>Work Experience</h3>
+        <button data-automation-id="add-button" onclick="window.pressed='template'">Add</button></div>
+      <div id="work"><h3>Work Experience</h3>
+        <button data-automation-id="add-button" onclick="window.pressed='work';
+          document.getElementById('work').insertAdjacentHTML('beforeend',
+          '<input id=workExperience-7--jobTitle>')">Add</button></div>
+      <div id="edu"><h3>Education</h3>
+        <button data-automation-id="add-button" onclick="window.pressed='edu'">Add</button></div>
+    </div>'''
+
+
+def test_the_visible_add_button_under_the_heading_is_pressed():
+    from resume_tailor.apply import workday_repeaters
+
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=str(_EDGE), headless=True)
+        try:
+            page = browser.new_page()
+            page.set_content(_EXPERIENCE_STEP)
+            row = workday_repeaters._add_row(page, "Work Experience", "jobTitle")  # noqa: SLF001
+            assert row == "workExperience-7--"
+            assert page.evaluate("window.pressed") == "work"
+        finally:
+            browser.close()

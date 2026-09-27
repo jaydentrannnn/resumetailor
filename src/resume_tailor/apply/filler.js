@@ -1,8 +1,9 @@
 /**
  * Deterministic ATS form filler — injected via Playwright page.evaluate.
  * Receives { fields, hints, synonyms, eeo } and returns fill diagnostics; ``eeo`` maps
- * a self-identification key to the regex (over ``norm``ed option text) that picks its
- * answer (`field_matcher.eeo_patterns`). ``correct`` runs only the post-upload pass: put
+ * a self-identification key to the regexes (over ``norm``ed option text) that pick its
+ * answer, most specific first (`field_matcher.eeo_patterns`: the first regex naming
+ * exactly one option wins, one naming two stops). ``correct`` runs only the post-upload pass: put
  * back contact facts an ATS's resume parser overwrote, and touch nothing else.
  */
 ({ fields, hints, synonyms, eeo = {}, correct = false }) => {
@@ -13,6 +14,22 @@
   const required_empty = [];
   // Set when a tick may have revealed more fields; the fill runner then scans again.
   let revealed = false;
+
+  /**
+   * Index into ``texts`` (``norm``ed option texts) of the one option ``eeo[key]`` names:
+   * each tier in turn, the first naming exactly one wins; -1 when none names one, -2 when
+   * a tier names two (ambiguous: left for review, never guessed).
+   */
+  function eeoPick(texts, key) {
+    for (const pattern of [].concat(eeo[key] || [])) {
+      const rule = new RegExp(pattern);
+      const hits = [];
+      texts.forEach((text, index) => { if (rule.test(text)) hits.push(index); });
+      if (hits.length === 1) return hits[0];
+      if (hits.length > 1) return -2;
+    }
+    return -1;
+  }
 
   const skipTypes = new Set(["hidden", "file", "submit", "button", "image", "reset"]);
   const frames_skipped = document.querySelectorAll("iframe").length;
@@ -442,8 +459,8 @@
         matches = options.filter(o => alternatives.includes(norm(o.text)) || alternatives.includes(norm(o.value)));
       }
       if (!matches.length && eeo[key]) {
-        const rule = new RegExp(eeo[key]);
-        matches = options.filter(o => rule.test(norm(o.text)));
+        const index = eeoPick(options.map(o => norm(o.text)), key);
+        matches = index >= 0 ? [options[index]] : index === -2 ? options : [];
       }
       if (!matches.length && key === "degree_level") matches = degreeMatches(options, value);
     }
@@ -480,15 +497,20 @@
   function fillChoiceGroup(el, value, label, key) {
     const val = norm(value);
     const name = el.name;
-    const rule = eeo[key] ? new RegExp(eeo[key]) : null;
+    const rule = !!eeo[key];
     const root = rootOf(el);
     const single = el.type === "checkbox" &&
       (!name || root.querySelectorAll(`input[type="checkbox"][name="${CSS.escape(name)}"]`).length === 1);
     if (rule && el.type === "checkbox" && single) {
       // Workday's disability form: one unnamed checkbox per answer ("No, I do not have a
-      // disability..."), not a yes/no switch.
-      const text = norm(optionText(el) || labelFor(el));
-      if (!rule.test(text)) return "skip";
+      // disability..."), not a yes/no switch. The answer is chosen among the question's
+      // boxes, so a fallback tier never ticks a second box beside the first tier's.
+      const container = el.closest("fieldset, [role='group'], [data-automation-id^='formField-']");
+      const boxes = container
+        ? Array.from(container.querySelectorAll('input[type="checkbox"]'))
+        : [el];
+      const index = eeoPick(boxes.map(box => norm(optionText(box) || labelFor(box))), key);
+      if (index < 0 || boxes[index] !== el) return "skip";
       if (tick(el)) revealed = true;
       return el.checked;
     }
@@ -518,11 +540,12 @@
       }
     }
     if (rule) {
-      const hits = Array.from(group).filter((_input, index) => rule.test(texts[index]));
-      if (hits.length === 1) {
-        if (el.type === "checkbox") return tick(hits[0]);
-        if (!hits[0].checked) hits[0].click();
-        return hits[0].checked;
+      const index = eeoPick(texts, key);
+      if (index >= 0) {
+        const hit = group[index];
+        if (el.type === "checkbox") return tick(hit);
+        if (!hit.checked) hit.click();
+        return hit.checked;
       }
     }
     return false;
@@ -771,7 +794,11 @@
       continue;
     }
 
-    const salaryQuestion = /\b(salary|compensation|pay expectation|desired pay|pay rate|wages?)\b/i.test(label);
+    // VEVRAA's veteran question quotes "entitled to compensation": a self-identification
+    // question, and any choice control, is never a salary box.
+    const selfIdentification = /\b(veteran|disabilit|gender|race|ethnic|hispanic)/i.test(label);
+    const salaryQuestion = !selfIdentification && type !== "radio" && type !== "checkbox" &&
+      /\b(salary|compensation|pay expectation|desired pay|pay rate|wages?)\b/i.test(label);
     if (salaryQuestion && (el.tagName === "TEXTAREA" || el.tagName === "INPUT")) {
       // The fill runner precomputes every unit/format variant (`apply/salary.py`).
       const unit = /\bhour/i.test(label) ? "salary_hourly" : /\b(year|annual)/i.test(label) ? "salary_yearly" : "salary_expectation";
@@ -860,9 +887,11 @@
         continue;
       }
       written = String(value);
-    } else if (value === "decline" && eeo[key]) {
-      // Declining picks a choice; it is never typed into a text box.
-      leftovers.push({ key, label, type, options: [], required, selector: sel, reason: "Declined to self-identify" });
+    } else if (eeo[key] && (value === "decline" || key === "veteran_status")) {
+      // Declining picks a choice, and a veteran answer is a category
+      // ("not_veteran"): neither is ever typed into a text box.
+      leftovers.push({ key, label, type, options: [], required, selector: sel,
+        reason: value === "decline" ? "Declined to self-identify" : "Self-identification needs a choice, not typed text" });
       if (required) required_empty.push(label || sel);
       continue;
     } else {

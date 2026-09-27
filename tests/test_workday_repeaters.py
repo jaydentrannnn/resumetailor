@@ -61,6 +61,9 @@ class _Page:
         self.keyboard = _Keyboard(self)
 
     def locator(self, selector: str) -> _Control:
+        prefix = re.fullmatch(r"\[id\^='([^']+)'\]", selector)
+        if prefix:  # controls whose id starts with the text (split date sections)
+            return SimpleNamespace(count=lambda: sum(key.startswith(prefix.group(1)) for key in self.values))
         match = re.fullmatch(r"\[id='([^']+)'\]", selector)
         assert match, selector
         return _Control(self, match.group(1))
@@ -231,7 +234,7 @@ def _education_run(monkeypatch, page: _Page, education: list) -> tuple[list[str]
     (Add clicks, filled, review)."""
     adds: list[str] = []
 
-    def add_row(_page, heading, _anchor):
+    def add_row(_page, heading, _anchor, **_kw):
         adds.append(heading)
         n = 1 + max((int(k.split("-")[1]) for k in page.values if k.startswith("education-")), default=0)
         page.values[f"education-{n}--schoolName"] = ""
@@ -317,5 +320,94 @@ def test_a_row_rendered_after_the_wait_is_still_returned(monkeypatch):
 
     page = _SlowPage({"education-1--schoolName": "UC Irvine"})
     monkeypatch.setattr(repeaters.clicks, "safe_click", lambda *_a, **_k: None)
-    monkeypatch.setattr(page, "locator", lambda _s: SimpleNamespace(nth=lambda _i: None), raising=False)
+    monkeypatch.setattr(page, "locator", lambda _s: _AddButton(), raising=False)
     assert repeaters._add_row(page, "Education", "schoolName") == "education-2--"  # noqa: SLF001
+
+
+class _AddButton:
+    """The ``[data-rt-add]`` button `_press_add` clicks."""
+
+    @property
+    def first(self) -> _AddButton:
+        return self
+
+    def scroll_into_view_if_needed(self, timeout: int | None = None) -> None:
+        pass
+
+
+class _AddPage(_Page):
+    """A page whose section Add buttons exist; each press adds an education row unless
+    ``blocked`` presses remain (a popup's dismiss layer over the button)."""
+
+    def __init__(self, values: dict[str, str], *, blocked: int = 0) -> None:
+        super().__init__(values)
+        self.blocked = blocked
+        self.presses = 0
+        self.dismissed = 0
+        self.add_args: list[object] = []
+
+    def evaluate(self, script, arg):
+        if script == repeaters._ADD_BUTTON_JS:  # noqa: SLF001
+            self.add_args.append(arg)
+            return 0
+        return super().evaluate(script, arg)
+
+    def locator(self, selector: str):
+        if selector == "[data-rt-add]":
+            return _AddButton()
+        return super().locator(selector)
+
+    def press(self) -> None:
+        self.presses += 1
+        if self.blocked:
+            self.blocked -= 1
+            raise TimeoutError(
+                "Locator.click: Timeout 5000ms exceeded.\n"
+                "  - <div data-automation-id=\"click_filter\"></div> intercepts pointer events"
+            )
+        n = 1 + max((int(k.split("-")[1]) for k in self.values if k.startswith("education-")), default=0)
+        self.values[f"education-{n}--schoolName"] = ""
+
+    def dismiss(self, _page) -> bool:
+        self.dismissed += 1
+        return True
+
+
+def test_a_blocked_add_press_is_retried_after_closing_the_popup(monkeypatch):
+    # F5 (2026-09): the Skills prompt's dismiss layer sat over the Add buttons and every
+    # press timed out. The popup is closed and the press tried once more.
+    page = _AddPage({}, blocked=1)
+    monkeypatch.setattr(repeaters.clicks, "safe_click", lambda *_a, **_k: page.press())
+    row = repeaters._add_row(page, "Education", "schoolName", dismiss=page.dismiss)  # noqa: SLF001
+    assert row == "education-1--"
+    assert (page.presses, page.dismissed) == (2, 1)
+    # Only the visible button under the heading is marked and clicked by its tag.
+    assert page.add_args == [["Education", True], ["Education", True]]
+
+
+def test_an_add_press_that_stays_blocked_names_the_blocker_once_per_section(monkeypatch):
+    page = _AddPage({}, blocked=99)
+    monkeypatch.setattr(repeaters.clicks, "safe_click", lambda *_a, **_k: page.press())
+    monkeypatch.setattr(repeaters, "_fill_date", lambda *_a, **_k: True)
+    packet = SimpleNamespace(experience=[], education=[_edu("UC Irvine", "Computer Science"),
+                                                        _edu("Irvine Valley College", "Mathematics")])
+    messages: list[str] = []
+    filled, review = repeaters.fill(page, packet, messages.append, dismiss=page.dismiss)
+    assert filled == []
+    assert len(review) == 2
+    assert all("Add button not clickable" in item and "intercepts pointer events" in item for item in review)
+    # One press plus one retry for the section; the second entry does not wait again.
+    assert page.presses == 2
+    assert any("intercepts pointer events" in message for message in messages)
+
+
+def test_an_education_row_without_year_controls_is_not_flagged(monkeypatch):
+    # F5 (2026-09) asks school, degree, field of study and GPA, but no years attended.
+    page = _Page({"education-1--schoolName": "", "education-1--fieldOfStudy": ""})
+    monkeypatch.setattr(repeaters, "_text_or_prompt",
+                        lambda _p, row, field, value, *, key: repeaters._blank_fill(page, row, field, value))  # noqa: SLF001
+    monkeypatch.setattr(repeaters, "_fill_date", lambda *_a, **_k: False)  # would fail if tried
+    packet = SimpleNamespace(experience=[], education=[_edu("UC Irvine", "Computer Science")])
+    filled, review = repeaters.fill(page, packet, lambda _m: None)
+    assert review == []
+    assert [item["label"] for item in filled] == ["Education: UC Irvine"]

@@ -55,6 +55,19 @@ def sponsorship_from_visa(visa: str) -> tuple[bool, bool] | None:
     }.get(visa)
 
 
+#: Veteran self-identification is four answers, not Yes/No: forms tell "not a veteran"
+#: from "a veteran, just not a protected one" (CACI, 2026-09), and a Yes/No profile could
+#: not say which applied. Blank skips the question. Matching: `field_matcher.VETERAN_TIERS`.
+VeteranStatus = Literal["", "protected", "veteran_not_protected", "not_veteran", "decline"]
+VETERAN_CHOICES: tuple[str, ...] = ("", "protected", "veteran_not_protected", "not_veteran", "decline")
+VETERAN_LABELS: dict[str, str] = {
+    "protected": "I am a protected veteran",
+    "veteran_not_protected": "I am a veteran, but not a protected veteran",
+    "not_veteran": "I am not a veteran",
+    "decline": "Decline to self-identify",
+}
+
+
 class EEOAnswers(BaseModel):
     """Voluntary self-identification answers; "decline" picks the form's decline option."""
 
@@ -62,8 +75,31 @@ class EEOAnswers(BaseModel):
     race: str = "decline"
     race_detail: str = ""
     hispanic_latino: bool | None = None
-    veteran: str = "decline"
+    veteran: VeteranStatus = "decline"
+    #: The free-text answer an older profile held ("No") when it was converted to a
+    #: ``veteran`` category; the Profile page asks the applicant to confirm the
+    #: conversion and clears this once they have.
+    veteran_legacy: str = ""
     disability: str = "decline"
+
+    @model_validator(mode="before")
+    @classmethod
+    def _migrate_veteran(cls, data: Any) -> Any:
+        """Read a pre-category ``veteran`` answer ("No", "Yes", a long-form sentence)."""
+        if not isinstance(data, dict):
+            return data
+        raw = data.get("veteran")
+        if not isinstance(raw, str) or raw in VETERAN_CHOICES:
+            return data
+        from resume_tailor.apply.field_matcher import veteran_category  # noqa: PLC0415
+
+        text = raw.strip()
+        category = "" if not text else veteran_category(text) or "decline"
+        migrated = {**data, "veteran": category}
+        if text and text.casefold() != "decline":
+            # "No" could mean "not a veteran" or "not a *protected* veteran": asked, not assumed.
+            migrated["veteran_legacy"] = migrated.get("veteran_legacy") or text
+        return migrated
 
 
 #: Proficiency categories and levels a language row may carry; forms word their own

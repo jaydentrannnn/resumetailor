@@ -267,7 +267,24 @@ ATS_PRE_FILL_CLICKS: dict[str, list[str]] = {
         "text=Apply Now",
         "text=Apply",
     ],
+    # The posting's "I'm interested" link opens the one-click form (2026-09). Its hidden
+    # twins (``js-smartr-oneclick``) apply through a Smartr account instead, so they are
+    # excluded.
+    "smartrecruiters": [
+        "a#st-apply",
+        "a.js-oneclick:not(.js-smartr-oneclick)",
+    ],
 }
+
+#: Labels of the link/button that opens an application from its posting, across ATSs:
+#: "Apply", "Apply now", "Apply for this job", "Apply manually", SmartRecruiters' "I'm
+#: interested" (straight or curly apostrophe), "Apply online", "Start application".
+#: Never a submit label (`clicks.SUBMIT_TEXT`).
+APPLY_ENTRY_PATTERN = re.compile(
+    r"\bapply(?:\s+now|\s+for\s+this\s+(?:job|position|role)|\s+manually|\s+online)?\b"
+    r"|\bi['’]?\s?a?m\s+interested\b|\bstart\s+(?:your\s+)?application\b",
+    re.IGNORECASE,
+)
 
 
 def hints_for(ats: str) -> dict[str, str]:

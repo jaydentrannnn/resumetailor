@@ -19,14 +19,13 @@ function sourceLabel(source: SourceConfig): string {
 }
 
 /**
- * Platforms that may auto-submit. Workday, LinkedIn, Indeed and Handshake are absent: they
- * always stop for review (`fill.ASSIST_ONLY_ATS`).
+ * Platforms that may auto-submit. Workday, LinkedIn, Indeed, Handshake and SmartRecruiters
+ * are absent: they always stop for review (`fill.ASSIST_ONLY_ATS`).
  */
 const AUTO_SUBMIT_ATS: { id: string; label: string }[] = [
   { id: "greenhouse", label: "Greenhouse" },
   { id: "lever", label: "Lever" },
   { id: "ashby", label: "Ashby" },
-  { id: "smartrecruiters", label: "SmartRecruiters" },
   { id: "icims", label: "iCIMS" },
   { id: "oracle", label: "Oracle" },
 ];

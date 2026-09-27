@@ -162,6 +162,17 @@ export type ApplySettings = {
   model_name: string;
 };
 
+/** Veteran self-identification (`profile.VeteranStatus`); "" skips the question. */
+export type VeteranStatus = "" | "protected" | "veteran_not_protected" | "not_veteran" | "decline";
+
+export const VETERAN_OPTIONS: { value: VeteranStatus; label: string }[] = [
+  { value: "", label: "Not set (skip the question)" },
+  { value: "not_veteran", label: "I am not a veteran" },
+  { value: "veteran_not_protected", label: "I am a veteran, but not a protected veteran" },
+  { value: "protected", label: "I am a protected veteran" },
+  { value: "decline", label: "Decline to self-identify" },
+];
+
 export type ApplicantProfile = {
   first_name: string;
   middle_name?: string;
@@ -211,7 +222,10 @@ export type ApplicantProfile = {
     race: string;
     race_detail?: string;
     hispanic_latino?: boolean | null;
-    veteran: string;
+    /** A category (`profile.VeteranStatus`), matched to each form's own wording. */
+    veteran: VeteranStatus;
+    /** The older free-text answer this category was converted from; "" once confirmed. */
+    veteran_legacy?: string;
     disability: string;
   };
   /** Spoken languages (`profile.LanguageEntry`); absent on profiles saved before it existed. */

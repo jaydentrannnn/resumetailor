@@ -1,6 +1,6 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
-import type { ApplicantProfile } from "../../api";
+import { VETERAN_OPTIONS, type ApplicantProfile, type VeteranStatus } from "../../api";
 import { LanguagesEditor } from "../../components/LanguagesEditor";
 import { ProfileGapBanner } from "../../components/ProfileGapBanner";
 import {
@@ -141,7 +141,7 @@ export function ApplicationTab({
           )}
           {group.id === "Voluntary information" && (
             <div className="mt-3 grid gap-3 sm:grid-cols-2">
-              {(["gender", "race", "race_detail", "veteran", "disability"] as const).map((key) => (
+              {(["gender", "race", "race_detail", "disability"] as const).map((key) => (
                 <label key={key} className="text-sm">
                   {fieldLabel(key)}
                   <input
@@ -152,6 +152,39 @@ export function ApplicationTab({
                   />
                 </label>
               ))}
+              <div className="text-sm">
+                <label className="block">
+                  {fieldLabel("veteran")}
+                  <select
+                    className="field mt-1"
+                    value={draft.eeo.veteran ?? ""}
+                    onChange={(e) =>
+                      setDraft({
+                        eeo: { ...draft.eeo, veteran: e.target.value as VeteranStatus, veteran_legacy: "" },
+                      })
+                    }
+                  >
+                    {VETERAN_OPTIONS.map((option) => (
+                      <option key={option.value} value={option.value}>
+                        {option.label}
+                      </option>
+                    ))}
+                  </select>
+                </label>
+                {draft.eeo.veteran_legacy && (
+                  <span className="mt-1 flex flex-wrap items-center gap-2 text-xs text-warn">
+                    Converted from your earlier answer “{draft.eeo.veteran_legacy}”. Forms tell
+                    apart “not a veteran” and “not a protected veteran”, so please check it.
+                    <button
+                      type="button"
+                      className="rounded-md border border-line px-2 py-0.5 font-medium text-ink hover:border-accent"
+                      onClick={() => setDraft({ eeo: { ...draft.eeo, veteran_legacy: "" } })}
+                    >
+                      Looks right
+                    </button>
+                  </span>
+                )}
+              </div>
               <label className="text-sm">
                 Hispanic or Latino
                 <select

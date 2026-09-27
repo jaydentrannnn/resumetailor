@@ -220,8 +220,10 @@ async def fill_application(
                     result.browser_url = str(page.url)
                     checkpoint(force=True)
                 adapter = adapters.for_url(str(page.url))
-                if isinstance(adapter, adapters.WorkdayAdapter):
-                    progress("Opening the Workday application")
+                if type(adapter).enter_application is not adapters.FormAdapter.enter_application:
+                    # Workday's "Apply", SmartRecruiters' "I'm interested"; other forms
+                    # are the posting page itself.
+                    progress(f"Opening the {adapter.platform} application")
                     page = await adapter.enter_application(
                         page, timeout_ms=min(5000, max(1, int((deadline-time.monotonic())*1000))),
                     )

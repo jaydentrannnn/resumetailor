@@ -1,0 +1,98 @@
+{
+  "_comment": "Veteran self-identification option lists as forms word them, and the option each profile category must pick (null: no option says it; left for review, never guessed). Checked by tests/test_veteran_matching.py.",
+  "lists": {
+    "vevraa_standard": {
+      "options": [
+        "I am not a protected veteran",
+        "I identify as one or more of the classifications of protected veteran",
+        "I don't wish to answer"
+      ],
+      "expected": {
+        "not_veteran": "I am not a protected veteran",
+        "veteran_not_protected": "I am not a protected veteran",
+        "protected": "I identify as one or more of the classifications of protected veteran",
+        "decline": "I don't wish to answer"
+      }
+    },
+    "caci_workday_2026_09": {
+      "options": [
+        "I IDENTIFY AS ONE OR MORE OF THE CLASSIFICATIONS OF PROTECTED VETERANS",
+        "I IDENTIFY AS A VETERAN, JUST NOT A PROTECTED VETERAN",
+        "I AM NOT A VETERAN",
+        "I DO NOT WISH TO SELF-IDENTIFY"
+      ],
+      "expected": {
+        "not_veteran": "I AM NOT A VETERAN",
+        "veteran_not_protected": "I IDENTIFY AS A VETERAN, JUST NOT A PROTECTED VETERAN",
+        "protected": "I IDENTIFY AS ONE OR MORE OF THE CLASSIFICATIONS OF PROTECTED VETERANS",
+        "decline": "I DO NOT WISH TO SELF-IDENTIFY"
+      }
+    },
+    "workday_veteran_but_not_protected": {
+      "options": [
+        "I am a veteran, but I am not a protected veteran",
+        "I am not a veteran",
+        "I identify as one or more of the classifications of protected veterans",
+        "I do not wish to self-identify"
+      ],
+      "expected": {
+        "not_veteran": "I am not a veteran",
+        "veteran_not_protected": "I am a veteran, but I am not a protected veteran",
+        "protected": "I identify as one or more of the classifications of protected veterans",
+        "decline": "I do not wish to self-identify"
+      }
+    },
+    "ofccp_choose_not_to_identify": {
+      "options": [
+        "I identify as one or more of the classifications of protected veteran listed above",
+        "I am a protected veteran but choose not to self-identify the classification to which I belong",
+        "I am not a protected veteran",
+        "I do not wish to self-identify"
+      ],
+      "expected": {
+        "not_veteran": "I am not a protected veteran",
+        "veteran_not_protected": "I am not a protected veteran",
+        "protected": "I identify as one or more of the classifications of protected veteran listed above",
+        "decline": "I do not wish to self-identify"
+      }
+    },
+    "ofccp_subcategories": {
+      "options": [
+        "Disabled Veteran",
+        "Recently Separated Veteran",
+        "Active Duty Wartime or Campaign Badge Veteran",
+        "Armed Forces Service Medal Veteran",
+        "I am not a protected veteran",
+        "I prefer not to answer"
+      ],
+      "expected": {
+        "not_veteran": "I am not a protected veteran",
+        "veteran_not_protected": "I am not a protected veteran",
+        "protected": null,
+        "decline": "I prefer not to answer"
+      }
+    },
+    "yes_no_long_form": {
+      "options": [
+        "Yes, I am a protected veteran",
+        "No, I am not a protected veteran",
+        "I prefer not to answer"
+      ],
+      "expected": {
+        "not_veteran": "No, I am not a protected veteran",
+        "veteran_not_protected": "No, I am not a protected veteran",
+        "protected": "Yes, I am a protected veteran",
+        "decline": "I prefer not to answer"
+      }
+    },
+    "bare_yes_no": {
+      "options": ["Yes", "No"],
+      "expected": {
+        "not_veteran": "No",
+        "veteran_not_protected": null,
+        "protected": "Yes",
+        "decline": null
+      }
+    }
+  }
+}

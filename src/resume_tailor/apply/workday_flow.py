@@ -451,14 +451,25 @@ def wait_for_step_ready(page: Any, *, deadline: float, timeout_s: float = 20) ->
         page.wait_for_timeout(250)
 
 
+#: Whether Workday is still saving the step: its Save and Continue button is disabled
+#: while the request is in flight.
+_SAVING_JS = r"""() => {
+  const b = document.querySelector("[data-automation-id='pageFooterNextButton']");
+  return !!(b && (b.disabled || b.getAttribute('aria-disabled') === 'true'));
+}"""
+
+
 def wait_for_step_change(page: Any, before: str, *, deadline: float, timeout_s: float = 15) -> bool:
     """After Save and Continue, wait for the progress bar to move past ``before``.
 
     Returns False once validation errors are showing on the unchanged step (they appear
-    within about a second) or at the timeout.
+    within about a second) or at the timeout. A save still in flight (the button
+    disabled) extends the wait to three times ``timeout_s``: F5's My Experience with five
+    rows (2026-09) saved after the fill had already reported "did not advance".
     """
-    stop = min(deadline, time.monotonic() + timeout_s)
     started = time.monotonic()
+    stop = min(deadline, started + timeout_s)
+    hard_stop = min(deadline, started + 3 * timeout_s)
     while time.monotonic() < stop:
         snap = snapshot(page)
         step = active_step(snap)
@@ -468,7 +479,16 @@ def wait_for_step_change(page: Any, before: str, *, deadline: float, timeout_s: 
         if time.monotonic() - started > 2 and ({"errorMessage", "inputAlert"} & ids or snap.get("alerts")):
             return False
         page.wait_for_timeout(250)
-    return False
+        if time.monotonic() >= stop and stop < hard_stop:
+            try:
+                saving = bool(page.evaluate(_SAVING_JS))
+            except Exception:  # noqa: BLE001 - navigating: look again
+                saving = True
+            if saving:
+                stop = min(hard_stop, time.monotonic() + 2)
+    # One last look: the step can land on the very tick the wait runs out.
+    step = active_step(snapshot(page))
+    return bool(step and step != before)
 
 
 # -- My Information / questionnaire dropdowns -------------------------------------------
@@ -537,6 +557,23 @@ def _pick_listbox_option(options: list[dict[str, Any]], value: str, key: str) ->
     return chosen, next(o["id"] for o in usable if o["label"] == chosen)
 
 
+#: What the last `select_listbox` call saw: its options and why it did not commit, so a
+#: failed required choice is reported with the form's own wording (CACI's veteran list,
+#: 2026-09, failed with nothing but its label in ``required_empty``).
+last_listbox: dict[str, Any] = {}
+
+
+def _options_text(options: list[str], limit: int = 8) -> str:
+    shown = [option[:80] for option in options[:limit]]
+    return " | ".join(shown) + (f" | … ({len(options) - limit} more)" if len(options) > limit else "")
+
+
+def choice_failure(label: str, value: str, options: list[str], status: str = "no_match") -> str:
+    """One review line for a profile fact no option named: the value, why, and the options."""
+    seen = f"; options: {_options_text(options)}" if options else "; no options were read"
+    return f"{label}: no option for {value} ({status.replace('_', ' ')}{seen})"
+
+
 def select_listbox(page: Any, selector: str, value: str, *, key: str = "") -> bool:
     """Commit one option of a Workday listbox button, verified by the button's new text.
 
@@ -546,6 +583,8 @@ def select_listbox(page: Any, selector: str, value: str, *, key: str = "") -> bo
     after the click, so the result is polled rather than read once.
     """
     trigger = page.locator(selector).first
+    last_listbox.clear()
+    last_listbox.update(selector=selector, value=value, options=[], status="not_opened")
     try:
         clicks.safe_click(trigger, purpose="select", timeout=3000)
         options = None
@@ -556,10 +595,13 @@ def select_listbox(page: Any, selector: str, value: str, *, key: str = "") -> bo
             if options:
                 break
             page.wait_for_timeout(250)
+        labels = [str(o.get("label") or "") for o in options or [] if not _PLACEHOLDER.match(str(o.get("label") or ""))]
+        last_listbox.update(options=labels, status="no_match" if labels else "no_options")
         picked = _pick_listbox_option(options or [], value, key)
         if picked is None:
             trigger.press("Escape")
             return False
+        last_listbox["status"] = "unverified"
         chosen, option_id = picked
         clicks.safe_click(page.locator(f"[id='{option_id}']").first, purpose="select", timeout=3000)
         for _ in range(12):
@@ -681,6 +723,16 @@ def fill_dropdowns(
                     else f"Country is {current}; profile says {value}"
                 )
                 progress(f"Workday: could not change Country from {current or 'blank'} to {value}")
+            elif not progressed and is_blank:
+                # A profile fact no option named is a gap with a cause, not a bare label.
+                # Always in the log; a review line only for self-identification, which the
+                # resolver does not answer from the profile (other keys it often fills).
+                seen = last_listbox if last_listbox.get("selector") == selector else {}
+                line = choice_failure(item["label"], value, list(seen.get("options") or []),
+                                      str(seen.get("status") or "no_match"))
+                progress(f"Workday: {line}")
+                if review is not None and key in field_matcher.EEO_KEYS:
+                    review.append(line)
             if progressed and key == "country":
                 page.wait_for_timeout(800)  # the form re-renders under the new country
                 break
@@ -744,8 +796,12 @@ def fill_radios(
     employers: Iterable[str],
     progress: Callable[[str], None] = lambda _msg: None,
     blank: list[dict[str, str]] | None = None,
+    review: list[str] | None = None,
 ) -> list[dict[str, Any]]:
     """Answer unanswered Yes/No radio questions from profile facts, and only those.
+
+    A self-identification question no option answers is reported in ``review`` with the
+    options it offered (`choice_failure`).
 
     "Have you ever been employed by <company>?" is answered from the applicant's own
     experience entries; every other question needs a profile fact whose value names one
@@ -772,11 +828,16 @@ def fill_radios(
             _note_blank(blank, key, question, True)
             continue
         labels = [str(opt.get("label", "")) for opt in options]
-        # Exact text, or a self-identification answer's long form ("No" -> "I am not a
-        # protected veteran", `field_matcher.eeo_pattern`).
+        # Exact text, or a self-identification answer's long form ("not_veteran" -> "I am
+        # not a protected veteran", `field_matcher.eeo_tiers`).
         chosen = field_matcher.closest_option(labels, value, key=key)
         matches = [opt for opt in options if str(opt.get("label", "")) == chosen] if chosen else []
         if len(matches) != 1:
+            if key in field_matcher.EEO_KEYS and not any(opt.get("checked") for opt in options):
+                line = choice_failure(question or key, value, labels)
+                progress(f"Workday: {line}")
+                if review is not None:
+                    review.append(line)
             continue
         try:
             clicks.safe_click(page.locator(f"label[for='{matches[0]['id']}']").first, purpose="select", timeout=3000)
@@ -894,7 +955,7 @@ def fill_choice_checkboxes(
                 break
         if chosen is None:
             if fields.get(key) and review is not None:
-                review.append(f"{question}: no option matching {fields[key]}")
+                review.append(choice_failure(question, fields[key], labels))
             continue
         box_id = next(str(option["id"]) for option in options if option.get("label") == chosen)
         try:
@@ -1148,6 +1209,49 @@ def _chips(page: Any, input_id: str) -> list[str]:
         return []
 
 
+#: Tag the ``index``-th committed chip of one prompt (the order `_chips` reads) with
+#: ``data-rt-chip`` so it can be focused by attribute; False when there is no such chip.
+_CHIP_AT_JS = r"""([id, index]) => {
+  document.querySelectorAll('[data-rt-chip]').forEach(e => e.removeAttribute('data-rt-chip'));
+  const input = document.getElementById(id);
+  const field = input && input.closest("[data-automation-id^='formField-']");
+  const chips = field ? [...field.querySelectorAll("[data-automation-id='selectedItem']")] : [];
+  if (chips[index]) chips[index].setAttribute('data-rt-chip', '1');
+  return !!chips[index];
+}"""
+
+
+def remove_duplicate_chips(page: Any, input_id: str, progress: Callable[[str], None] = lambda _msg: None) -> int:
+    """Delete repeated chips (same skill text), keeping the first of each; the count removed.
+
+    Workday refuses the whole step with "You cannot enter duplicate skills", and a draft
+    saved by an earlier run keeps them (F5, 2026-09). A chip is removed the way its own
+    label says ("press delete to clear value"), and each removal is verified.
+    """
+    from resume_tailor.apply.field_matcher import same_skill_in  # noqa: PLC0415
+
+    removed = 0
+    for _ in range(20):
+        chips = _chips(page, input_id)
+        duplicate = next((index for index, chip in enumerate(chips) if same_skill_in(chips[:index], chip)), None)
+        if duplicate is None:
+            break
+        try:
+            if not page.evaluate(_CHIP_AT_JS, [input_id, duplicate]):
+                break
+            chip = page.locator("[data-rt-chip]").first
+            chip.focus(timeout=2000)
+            chip.press("Delete", timeout=2000)
+            page.wait_for_timeout(300)
+        except Exception:  # noqa: BLE001 - left for the applicant
+            break
+        if len(_chips(page, input_id)) != len(chips) - 1:
+            break
+        removed += 1
+        progress(f"Workday: removed a duplicate skill chip ({chips[duplicate]})")
+    return removed
+
+
 def _search_prompt(page: Any, input_id: str, term: str) -> list[str]:
     """Type one search into a prompt and return its settled options (duplicates kept)."""
     box = page.locator(f"[id='{input_id}']").first
@@ -1201,7 +1305,7 @@ def fill_skills(
     ignored. Chips already on the prompt are kept and not re-added. Returns the committed
     chips and the skills left for the applicant.
     """
-    from resume_tailor.apply.field_matcher import match_skill_option  # noqa: PLC0415
+    from resume_tailor.apply.field_matcher import match_skill_option, same_skill_in  # noqa: PLC0415
 
     try:
         prompts = [item for item in page.evaluate(PROMPTS_JS) or [] if isinstance(item, dict)]
@@ -1224,6 +1328,14 @@ def fill_skills(
         committed.append({"key": "skills", "label": label, "value": option,
                           "selector": f"[id='{input_id}']"})
 
+    def on_form(option: str) -> bool:
+        # Two skills can resolve to one option ("HuggingFace", "Hugging Face"), and a
+        # Continue run finds the first run's chips: Workday rejects the whole step with
+        # "You cannot enter duplicate skills" (F5, 2026-09), so an option already
+        # committed as a chip is never clicked again.
+        return same_skill_in(_chips(page, input_id), option)
+
+    remove_duplicate_chips(page, input_id, progress)
     progress(f"Workday: entering {len(skills)} skill(s) one at a time")
     for skill in dict.fromkeys(s.strip() for s in skills if s.strip()):
         if out_of_time():
@@ -1235,6 +1347,8 @@ def fill_skills(
         try:
             texts = _search_prompt(page, input_id, skill)
             chosen = match_skill_option(texts, skill)
+            if chosen and same_skill_in(chips, chosen):
+                continue  # this option is already a chip, under another skill's name
             if chosen and _click_option(page, input_id, texts, chosen, len(chips)):
                 record(skill, chosen, "exact")
             elif chosen:
@@ -1259,6 +1373,8 @@ def fill_skills(
             if not pick or pick not in options or pick in used or out_of_time():
                 review.append(skill)
                 continue
+            if on_form(pick):
+                continue  # the model chose a skill the form already lists
             try:
                 ok = _commit_skill(page, input_id, skill, pick)
             except Exception:  # noqa: BLE001
@@ -1272,6 +1388,9 @@ def fill_skills(
         review.extend(unmatched)
     with contextlib.suppress(Exception):
         page.locator(f"[id='{input_id}']").first.press("Escape")
+    # Escape on the input can leave the results list (and its full-viewport dismiss
+    # layer) open, which then swallows the next clicks: the Add buttons below it.
+    close_stray_popups(page)
     return committed, review
 
 

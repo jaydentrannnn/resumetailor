@@ -40,6 +40,10 @@ class FormAdapter:
         visible = [button for button in await candidates.all() if await button.is_visible() and await button.is_enabled()]
         return visible[0] if len(visible) == 1 else None
 
+    async def enter_application(self, page: Any, *, timeout_ms: int) -> Any:
+        """Cross from the posting into the application form; most forms are the posting."""
+        return page
+
     async def step_id(self, page: Any, fields: list[FieldObservation]) -> str:
         """URL plus visible structure identifies same-URL wizard transitions."""
         structure = "|".join(
@@ -130,11 +134,36 @@ class WorkdayAdapter(FormAdapter):
         return page
 
 
+class SmartRecruitersAdapter(FormAdapter):
+    """SmartRecruiters: the posting's "I'm interested" link opens the one-click form."""
+
+    #: The posting's own entry link; ``js-smartr-oneclick`` twins apply through a Smartr
+    #: account instead and are never followed.
+    ENTRY = "a#st-apply:visible, a.js-oneclick:not(.js-smartr-oneclick):visible"
+
+    def __init__(self):
+        super().__init__("smartrecruiters")
+
+    async def enter_application(self, page: Any, *, timeout_ms: int) -> Any:
+        if "/oneclick-ui/" in str(page.url):
+            return page  # already on the form
+        links = page.locator(self.ENTRY)
+        hrefs = {await link.get_attribute("href") for link in await links.all()}
+        # The posting repeats its link (header, sidebar, footer): all must go one place.
+        if len(hrefs) != 1:
+            return page
+        await clicks.async_safe_click(links.first, purpose="enter", timeout=timeout_ms)
+        await page.wait_for_load_state("domcontentloaded", timeout=timeout_ms)
+        return page
+
+
 def for_url(url: str) -> FormAdapter:
     host = url.split("/", 3)[2].casefold() if "://" in url else ""
     if "greenhouse.io" in host or "greenhouse" in host:
         return GreenhouseAdapter()
     if "myworkdayjobs.com" in host or "workday" in host:
         return WorkdayAdapter()
+    if host.endswith("smartrecruiters.com"):
+        return SmartRecruitersAdapter()
     return FormAdapter("generic")
 from resume_tailor.apply import clicks

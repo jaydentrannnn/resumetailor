@@ -85,9 +85,14 @@ def _click_and_track_popup(page: Any, context: Any, click_fn: Callable[[], None]
         return page
 
 
+#: ATSs whose pre-fill hint opens the application form itself (no second entry click).
+_HINT_ENTERS_FORM = frozenset({"smartrecruiters"})
+
+
 def find_and_click_apply(page: Any, ats: str, context: Any = None) -> Any:
     """Find and click the Apply button/link, returning the resulting active page."""
     current_page = page
+    entered = False
 
     # 1. ATS-specific hints
     for click_sel in ats_hints.ATS_PRE_FILL_CLICKS.get(ats.lower(), []):
@@ -98,17 +103,19 @@ def find_and_click_apply(page: Any, ats: str, context: Any = None) -> Any:
                     current_page, context, lambda loc=loc: clicks.safe_click(loc, purpose="enter", timeout=4000)
                 )
                 current_page.wait_for_timeout(1000)
+                entered = True
                 break
         except Exception:  # noqa: BLE001
             pass
 
-    # 2. Semantic role-based button/link discovery
-    apply_pattern = re.compile(
-        r"\bapply(\s+now|\s+for\s+this\s+job|\s+manually)?\b", re.IGNORECASE
-    )
+    # 2. Semantic role-based button/link discovery ("Apply", SmartRecruiters' "I'm
+    # interested", ...). SmartRecruiters' entry hint lands on the form itself, where a
+    # second "apply" search could only find the form's own final button.
     for role in ("button", "link"):
+        if entered and ats.lower() in _HINT_ENTERS_FORM:
+            break
         try:
-            loc = current_page.get_by_role(role, name=apply_pattern).first
+            loc = current_page.get_by_role(role, name=ats_hints.APPLY_ENTRY_PATTERN).first
             if _is_locator_present_and_visible(loc):
                 current_page = _click_and_track_popup(
                     current_page, context, lambda loc=loc: clicks.safe_click(loc, purpose="enter", timeout=4000)
@@ -169,6 +176,9 @@ def _detect_barriers(page: Any) -> str | None:
         "iframe[src*='hcaptcha'][src*='challenge']",
         "iframe[src*='turnstile']",
         ".g-recaptcha:not([data-size='invisible'])",
+        # DataDome's wall (SmartRecruiters' application form, 2026-09): its "Verification
+        # Required" slider is the applicant's to pass, never automated.
+        "iframe[src*='captcha-delivery.com']",
     ]
     for sel in other_captcha_selectors:
         try:
@@ -247,7 +257,9 @@ def _find_submit_button(page: Any, hints: dict[str, str]) -> Any | None:
 #: Platforms that are filled but never submitted automatically, whatever the settings:
 #: Workday's Review page has submitted by accident before, and the job boards' own
 #: apply flows (LinkedIn Easy Apply, Indeed Apply, Handshake) forbid automation.
-ASSIST_ONLY_ATS = frozenset({"workday", "linkedin", "indeed", "handshake"})
+#: SmartRecruiters' one-click form sits behind a DataDome verification wall (2026-09) and
+#: has no live dry-run record yet: filled for review only.
+ASSIST_ONLY_ATS = frozenset({"workday", "linkedin", "indeed", "handshake", "smartrecruiters"})
 
 
 def decide_submit_action(
@@ -631,7 +643,12 @@ def _fill_workday_experience_and_education(
     """Fill only Workday rows whose identity is unambiguous; preserve manual rows."""
     from resume_tailor.apply import workday_repeaters
 
-    return workday_repeaters.fill(page, pkt, progress, select=workday_flow.select_listbox)
+    # The Skills prompt runs just before and can leave its popup (and the full-viewport
+    # dismiss layer) open over the Add buttons (F5, 2026-09): closed first, and again
+    # when an Add press is blocked.
+    return workday_repeaters.fill(
+        page, pkt, progress, select=workday_flow.select_listbox, dismiss=workday_flow.close_stray_popups,
+    )
 
 
 def _guard_file_chooser(page: Any, progress: Callable[[str], None]) -> None:
@@ -1031,8 +1048,9 @@ def fill_application(
                         page, fields, synonyms=ats_hints.SYNONYMS, progress=progress,
                         company=app.company or pkt.company or "",
                         employers=[entry.company for entry in getattr(resume, "experience", []) or []],
-                        blank=blank_facts,
+                        blank=blank_facts, review=dropdown_review,
                     )
+                    needs_review.extend(label for label in dropdown_review if label not in needs_review)
                     # Self-identification answers rendered as checkboxes (the disability
                     # form), then the Self Identify step's signature Name and Date.
                     self_id_review: list[str] = []
@@ -1603,7 +1621,11 @@ def fill_application(
             needs_review = [label for label in needs_review if label not in observed_labels or label == "No salary range in the applicant profile"]
             if not observed and attempted:
                 needs_review.append("Filled values could not be verified on the current form")
-            merged["filled"] = list(observed.values())
+            # Repeater rows have no single selector to observe by; without this they
+            # vanished from the record even when every field was filled.
+            rows_done = [item for item in merged.get("filled") or []
+                         if isinstance(item, dict) and item.get("key") == "workday_row"]
+            merged["filled"] = list(observed.values()) + rows_done
 
             if is_workday:
                 workday_flow.close_stray_popups(page)
@@ -1766,8 +1788,9 @@ def fill_application(
                                 "confirmation": confirmation,
                             })
 
+            # A repeater row has no selector; its label keeps each row its own entry.
             outcomes = {
-                (item.get("frame_index", 0), item.get("selector")): item
+                (item.get("frame_index", 0), item.get("selector") or f"label:{item.get('label')}"): item
                 for item in merged.get("filled") or []
                 if isinstance(item, dict)
             }

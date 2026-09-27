@@ -121,7 +121,9 @@ def test_build_fields_yes_no_and_omit_none():
     assert "requires_sponsorship_future" not in fields
     assert fields["gender"] == "decline"
     assert "race_detail" not in fields
-    assert fields["veteran_status"] == "No"
+    # A legacy "No" is read as its category (and flagged for the applicant to confirm).
+    assert fields["veteran_status"] == "not_veteran"
+    assert profile.eeo.veteran_legacy == "No"
 
 
 def test_build_fields_carries_the_source_for_a_please_specify_follow_up():

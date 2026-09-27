@@ -51,10 +51,15 @@ _ROWS_JS = r"""(anchor) => [...document.querySelectorAll(`[id$="--${anchor}"]`)]
   .map(e => e.id.slice(0, e.id.length - anchor.length))
   .filter(prefix => /^[A-Za-z]+-\d+--$/.test(prefix))"""
 
-#: Index (among all add buttons) of the one under the section whose heading is given.
-_ADD_BUTTON_JS = r"""(heading) => {
-  const buttons = [...document.querySelectorAll("[data-automation-id='add-button']")];
-  return buttons.findIndex(b => {
+#: Index (among the visible add buttons) of the one under the section whose heading is
+#: given. Hidden add buttons (a collapsed template) are skipped, so the index names the
+#: button a person would press; with ``tag`` that button is also marked ``data-rt-add``
+#: so the click targets it by attribute rather than by an index that can drift.
+_ADD_BUTTON_JS = r"""([heading, tag]) => {
+  const vis = e => !!(e.offsetWidth || e.offsetHeight || e.getClientRects().length);
+  document.querySelectorAll('[data-rt-add]').forEach(e => e.removeAttribute('data-rt-add'));
+  const buttons = [...document.querySelectorAll("[data-automation-id='add-button']")].filter(vis);
+  const index = buttons.findIndex(b => {
     let node = b;
     for (let i = 0; i < 8 && node; i++) {
       node = node.parentElement;
@@ -63,7 +68,14 @@ _ADD_BUTTON_JS = r"""(heading) => {
     }
     return false;
   });
+  if (tag && index >= 0) buttons[index].setAttribute('data-rt-add', '1');
+  return index;
 }"""
+
+
+class AddRowError(RuntimeError):
+    """The section's Add button was found but could not be pressed (e.g. a popup's
+    dismiss layer over it); the message names what Playwright saw."""
 
 
 #: A prompt field's value is its committed chips, not the text in its search box.
@@ -172,13 +184,62 @@ def _section_present(page: Any, heading: str, anchor: str) -> bool:
     if _rows(page, anchor):
         return True
     try:
-        index = page.evaluate(_ADD_BUTTON_JS, heading)
+        index = page.evaluate(_ADD_BUTTON_JS, [heading, False])
     except Exception:  # noqa: BLE001 - unknown is treated as present, so rows get flagged
         return True
     return isinstance(index, int) and index >= 0
 
 
-def _add_row(page: Any, heading: str, anchor: str | tuple[str, ...]) -> str | None:
+#: Playwright call-log lines that say why an action could not happen; the message's
+#: first line is only "Timeout 5000ms exceeded."
+_BLOCKER = re.compile(
+    r"intercepts pointer events|not visible|not enabled|not stable|outside of the viewport"
+    r"|detached|not attached", re.I,
+)
+
+
+def _reason(exc: BaseException) -> str:
+    """A one-line reason: the exception's first line plus the call-log line that says what
+    blocked the action (for a click, the element that "intercepts pointer events")."""
+    lines = [line.strip(" -\t") for line in str(exc).strip().splitlines() if line.strip()]
+    if not lines:
+        return type(exc).__name__
+    blocker = next((line for line in reversed(lines[1:]) if _BLOCKER.search(line)), "")
+    text = lines[0][:160] + (f"; {blocker[:200]}" if blocker else "")
+    return f"{type(exc).__name__}: {text}"
+
+
+def _press_add(page: Any, heading: str) -> bool:
+    """Mark and press the section's Add button; False when there is none."""
+    try:
+        index = page.evaluate(_ADD_BUTTON_JS, [heading, True])
+    except Exception:  # noqa: BLE001
+        return False
+    if not isinstance(index, int) or index < 0:
+        return False
+    button = page.locator("[data-rt-add]").first
+    try:
+        button.scroll_into_view_if_needed(timeout=2000)
+    except Exception:  # noqa: BLE001 - the click reports what is really wrong
+        pass
+    clicks.safe_click(button, purpose="select", timeout=5000)
+    return True
+
+
+def _add_row(
+    page: Any,
+    heading: str,
+    anchor: str | tuple[str, ...],
+    *,
+    dismiss: Callable[[Any], Any] | None = None,
+) -> str | None:
+    """Press the section's Add button and return the one new row's prefix.
+
+    An earlier pass (the Skills prompt, 2026-09 F5) can leave a popup open whose
+    full-viewport dismiss layer swallows the click; ``dismiss`` (`workday_flow.
+    close_stray_popups`) closes it and the press is tried once more. A press that still
+    fails raises `AddRowError` with Playwright's reason, not a bare TimeoutError.
+    """
     anchors = (anchor,) if isinstance(anchor, str) else anchor
 
     def all_rows() -> list[str]:
@@ -186,12 +247,17 @@ def _add_row(page: Any, heading: str, anchor: str | tuple[str, ...]) -> str | No
 
     before = set(all_rows())
     try:
-        index = page.evaluate(_ADD_BUTTON_JS, heading)
-    except Exception:  # noqa: BLE001
+        pressed = _press_add(page, heading)
+    except Exception as first:  # noqa: BLE001
+        if dismiss is None:
+            raise AddRowError(f"Add button not clickable ({_reason(first)})") from first
+        dismiss(page)
+        try:
+            pressed = _press_add(page, heading)
+        except Exception as second:  # noqa: BLE001
+            raise AddRowError(f"Add button not clickable ({_reason(second)})") from second
+    if not pressed:
         return None
-    if not isinstance(index, int) or index < 0:
-        return None
-    clicks.safe_click(page.locator("[data-automation-id='add-button']").nth(index), purpose="select", timeout=5000)
     for _ in range(12):
         page.wait_for_timeout(250)
         added = [row for row in all_rows() if row not in before]
@@ -287,6 +353,14 @@ def _fill_date(page: Any, prefix: str, field: str, value: str, *, with_month: bo
             return current == year if current else workday_flow.select_listbox(page, f"[id='{prefix}{field}']", year)
     parts = ([("dateSectionMonth", month)] if with_month else []) + [("dateSectionYear", year)]
     return fill_date_sections(page, f"{prefix}{field}", parts)
+
+
+def _date_absent(page: Any, prefix: str, field: str) -> bool:
+    """Whether this tenant's row has no such date at all (F5's Education, 2026-09)."""
+    return (
+        _ctl(page, prefix, field).count() == 0
+        and page.locator(f"[id^='{prefix}{field}-dateSection']").count() == 0
+    )
 
 
 def fill_date_sections(page: Any, control: str, parts: list[tuple[str, str]]) -> bool:
@@ -411,14 +485,34 @@ def fill(
     progress: Callable[[str], None],
     *,
     select: Callable[..., bool] | None = None,
+    dismiss: Callable[[Any], Any] | None = None,
 ) -> tuple[list[dict[str, str]], list[str]]:
     """Populate prepared entries where an exact or blank row is observable.
 
     Returns (filled, needs_review): filled rows as ``{"label", "value"}`` records and the
-    human labels of rows or fields left for the applicant.
+    human labels of rows or fields left for the applicant. ``dismiss`` closes a popup an
+    earlier pass left open (`workday_flow.close_stray_popups`); it runs before the rows
+    and again when an Add press is blocked.
     """
     filled: list[dict[str, str]] = []
     review: list[str] = []
+    if dismiss is not None:
+        dismiss(page)
+    #: Section heading -> why its Add button could not be pressed; later entries in the
+    #: section are flagged with the same reason instead of waiting on the same failure.
+    blocked_add: dict[str, str] = {}
+
+    def add(heading: str, anchor: str | tuple[str, ...]) -> str | None:
+        if heading in blocked_add:
+            raise AddRowError(blocked_add[heading])
+        try:
+            return _add_row(page, heading, anchor, dismiss=dismiss)
+        except AddRowError as exc:
+            blocked_add[heading] = str(exc)
+            raise
+
+    def why(exc: BaseException) -> str:
+        return str(exc) if isinstance(exc, AddRowError) else _reason(exc)
 
     # Some tenants (Capital Group, 2026-09) ask only for a resume on My Experience; a
     # section that is not on the page is not a gap to review.
@@ -444,7 +538,7 @@ def fill(
                     review.append(f"{label} (possible duplicate row: check the list)")
                     continue
             if row is None:
-                row = _add_row(page, "Work Experience", _WORK["title"])
+                row = add("Work Experience", _WORK["title"])
             if row is None:
                 review.append(label)
                 continue
@@ -467,8 +561,8 @@ def fill(
             else:
                 review.append(f"{label} ({', '.join(failed)})")
         except Exception as exc:  # noqa: BLE001 - preserve the rest of the batch
-            progress(f"Workday employment row needs review: {exp.title} at {exp.employer} ({type(exc).__name__})")
-            review.append(label)
+            progress(f"Workday employment row needs review: {exp.title} at {exp.employer} ({why(exc)})")
+            review.append(f"{label} ({why(exc)})")
 
     education = packet.education
     school = _school_field(page)
@@ -497,7 +591,7 @@ def fill(
                     review.append(f"{label} (possible duplicate row: check the list)")
                     continue
             if row is None:
-                row = _add_row(page, "Education", _SCHOOL_FIELDS)
+                row = add("Education", _SCHOOL_FIELDS)
             if row is None:
                 progress(f"Workday: no education row available for {edu.school}")
                 review.append(label)
@@ -521,8 +615,11 @@ def fill(
                 # Most tenants do not ask for a GPA; an absent control is not a gap.
                 "GPA": _attempt(lambda: _ctl(page, row, _EDU["gpa"]).count() == 0
                                 or _blank_fill(page, row, _EDU["gpa"], edu.gpa)),
-                "From": _attempt(lambda: _fill_date(page, row, "firstYearAttended", edu.start, with_month=False)),
-                "To": _attempt(lambda: _fill_date(page, row, "lastYearAttended", edu.end, with_month=False)),
+                # Years attended are optional per tenant (F5 asks none): absent is not a gap.
+                "From": _attempt(lambda: _date_absent(page, row, "firstYearAttended")
+                                 or _fill_date(page, row, "firstYearAttended", edu.start, with_month=False)),
+                "To": _attempt(lambda: _date_absent(page, row, "lastYearAttended")
+                               or _fill_date(page, row, "lastYearAttended", edu.end, with_month=False)),
             }
             degree = edu.degree_name or edu.degree_level or edu.degree
             if degree and not _value(page, row, _EDU["degree"]):
@@ -543,8 +640,8 @@ def fill(
                 progress(f"Workday: {label} needs review ({', '.join(failed)})")
                 review.append(f"{label} ({', '.join(failed)})")
         except Exception as exc:  # noqa: BLE001
-            progress(f"Workday education row needs review: {edu.school} ({type(exc).__name__})")
-            review.append(label)
+            progress(f"Workday education row needs review: {edu.school} ({why(exc)})")
+            review.append(f"{label} ({why(exc)})")
 
     languages = getattr(packet, "languages", [])
     if languages and not _section_present(page, "Languages", _LANGUAGE):
@@ -556,7 +653,7 @@ def fill(
         try:
             row = _choose_row(page, _rows(page, _LANGUAGE), (entry.language,), (_LANGUAGE,))
             if row is None:
-                row = _add_row(page, "Languages", _LANGUAGE)
+                row = add("Languages", _LANGUAGE)
             if row is None:
                 progress(f"Workday: no language row available for {entry.language}")
                 review.append(label)
@@ -570,8 +667,8 @@ def fill(
                 progress(f"Workday: {label} needs review ({', '.join(failed)})")
                 review.append(f"{label} ({', '.join(failed)})")
         except Exception as exc:  # noqa: BLE001
-            progress(f"Workday language row needs review: {entry.language} ({type(exc).__name__})")
-            review.append(label)
+            progress(f"Workday language row needs review: {entry.language} ({why(exc)})")
+            review.append(f"{label} ({why(exc)})")
     return filled, review
 
 

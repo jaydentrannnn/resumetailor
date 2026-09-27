@@ -104,7 +104,8 @@ def test_no_matching_disability_option_is_reviewed_not_guessed(page):
     workday_flow.fill_choice_checkboxes(page, {"disability_status": "decline"},
                                         synonyms=ats_hints.SYNONYMS, review=review)
     assert _ticked(page) == []
-    assert review == ["Disability: no option matching decline"]
+    # The review says what was wanted and what the form offered.
+    assert review == [f"Disability: no option for decline (no match; options: {_DISABILITY[0]} | {_DISABILITY[1]})"]
 
 
 def test_race_checkboxes_pick_the_option_starting_with_the_answer(page):
@@ -120,10 +121,22 @@ def test_veteran_radios_take_the_long_form_of_no(page):
                "I don't wish to answer"]
     radios = "".join(f'<input type="radio" name="v" id="v{i}"><label for="v{i}">{text}</label>' for i, text in enumerate(options))
     page.set_content(f'<div data-automation-id="formField-veteranStatus"><fieldset><legend>Veteran Status*</legend>{radios}</fieldset></div>')
-    committed = workday_flow.fill_radios(page, {"veteran_status": "No"}, synonyms=ats_hints.SYNONYMS,
+    committed = workday_flow.fill_radios(page, {"veteran_status": "not_veteran"}, synonyms=ats_hints.SYNONYMS,
                                          company="Acme", employers=[])
     assert page.locator("[id='v0']").is_checked()
     assert committed[0]["value"] == options[0]
+
+
+def test_a_veteran_question_no_option_answers_is_reviewed_with_its_options(page):
+    # OFCCP sub-categories only: which one applies is not in the profile.
+    options = ["Disabled Veteran", "Recently Separated Veteran"]
+    radios = "".join(f'<input type="radio" name="v" id="v{i}"><label for="v{i}">{text}</label>' for i, text in enumerate(options))
+    page.set_content(f'<div data-automation-id="formField-veteranStatus"><fieldset><legend>Veteran Status*</legend>{radios}</fieldset></div>')
+    review: list[str] = []
+    committed = workday_flow.fill_radios(page, {"veteran_status": "protected"}, synonyms=ats_hints.SYNONYMS,
+                                         company="Acme", employers=[], review=review)
+    assert committed == []
+    assert review == ["Veteran Status: no option for protected (no match; options: Disabled Veteran | Recently Separated Veteran)"]
 
 
 def test_a_yes_no_question_whose_profile_fact_is_blank_is_recorded_not_skipped(page):

@@ -202,6 +202,37 @@ def test_a_named_checkbox_group_ticks_the_matching_option(page):
     assert page.locator("#g").input_value() == ""
 
 
+#: CACI's veteran question (2026-09): the VEVRAA preamble, then four answers.
+_VEVRAA_LABEL = ("If you believe you belong to any of the categories of protected veterans listed above "
+                 "(including veterans entitled to compensation), please indicate by checking the appropriate box.")
+
+
+def test_a_four_way_veteran_select_takes_the_profile_category(page):
+    page.set_content(f"""
+      <label for="vet">{_VEVRAA_LABEL}</label>
+      <select id="vet"><option value="">Select One</option>
+        <option>I IDENTIFY AS ONE OR MORE OF THE CLASSIFICATIONS OF PROTECTED VETERANS</option>
+        <option>I IDENTIFY AS A VETERAN, JUST NOT A PROTECTED VETERAN</option>
+        <option>I AM NOT A VETERAN</option><option>I DO NOT WISH TO SELF-IDENTIFY</option></select>
+    """)
+    _fill(page, {"veteran_status": "not_veteran", "salary_expectation": "100000"})
+    assert page.locator("#vet").input_value() == "I AM NOT A VETERAN"
+
+
+def test_veteran_checkboxes_fall_back_a_tier_without_ticking_two(page):
+    # No "I am not a veteran" box: the non-veteran is "not a protected veteran", and the
+    # quoted "compensation" does not make the question a salary box.
+    page.set_content(f"""
+      <fieldset><legend>{_VEVRAA_LABEL}</legend>
+        <input type="checkbox" id="v0"><label for="v0">I identify as one or more of the classifications of protected veteran</label>
+        <input type="checkbox" id="v1"><label for="v1">I am not a protected veteran</label>
+        <input type="checkbox" id="v2"><label for="v2">I don't wish to answer</label>
+      </fieldset>
+    """)
+    _fill(page, {"veteran_status": "not_veteran", "salary_expectation": "100000"})
+    assert [page.locator(f"#v{i}").is_checked() for i in range(3)] == [False, True, False]
+
+
 def test_decline_selects_the_forms_decline_option(page):
     page.set_content("""
       <label for="dis">Disability status</label>

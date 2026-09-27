@@ -82,6 +82,13 @@ def _skill_forms(text: str) -> set[str]:
     return forms - {""}
 
 
+def same_skill_in(chips: list[str], option: str) -> bool:
+    """Whether ``option`` is already one of the committed ``chips`` (same text, ignoring
+    case, spacing and punctuation other than ``#``/``.``)."""
+    wanted = _skill_norm(option)
+    return bool(wanted) and any(_skill_norm(chip) == wanted for chip in chips)
+
+
 def match_skill_option(options: list[str], skill: str) -> str | None:
     """Pick the one skill-search option that names ``skill`` exactly, or None.
 
@@ -126,12 +133,16 @@ def match_option(
         return _match_degree(available, target)
     if not matches and key == "language_level":
         return _match_level(available, target)
-    pattern = eeo_pattern(key, target)
-    if not matches and pattern:
-        rule = re.compile(pattern)
-        matches = [option for option in available if rule.search(normalize(option.label))]
-        if len(matches) == 1:
-            return OptionMatch(status="matched", option_id=matches[0].option_id, method="alias")
+    if not matches:
+        # Most specific category first; a tier that names no option falls through to the
+        # next, a tier that names two stops (never a guess between them).
+        for pattern in eeo_tiers(key, target):
+            rule = re.compile(pattern)
+            matches = [option for option in available if rule.search(normalize(option.label))]
+            if len(matches) == 1:
+                return OptionMatch(status="matched", option_id=matches[0].option_id, method="alias")
+            if matches:
+                break
     return OptionMatch(status="ambiguous" if matches else "no_match")
 
 
@@ -181,12 +192,6 @@ _EEO_RULES: dict[str, dict[str, str]] = {
         "yes": r"^yes\b.*\bhave\b.*\bdisabilit",
         "no": r"^no\b.*\b(?:do not|don t) have\b.*\bdisabilit",
     },
-    "veteran_status": {
-        "yes": r"^(?!.*\bnot\b).*\b(?:identify as|i am a|am a protected)\b.*\bveteran",
-        # Not "I identify as a veteran, just not a protected veteran" (CACI, 2026-09):
-        # that applicant is a veteran.
-        "no": r"^(?!.*\b(?:identify as|i am) a veteran\b).*\b(?:am not|not a)\b(?: protected)? veteran\b",
-    },
     "hispanic_latino": {
         "yes": r"^(?!.*\bnot\b)(?:yes\b|hispanic or latino\b)",
         "no": r"^no\b|\bnot hispanic\b",
@@ -198,32 +203,102 @@ _EEO_RULES: dict[str, dict[str, str]] = {
 }
 
 
-def eeo_pattern(key: str, answer: str) -> str | None:
-    """Regex (over ``normalize``d option text) for a self-identification answer, or None.
+# -- Veteran status: a four-way answer, matched by option category -----------------------
+#
+# The question has four honest answers, and forms word them at different grain: "I am
+# not a protected veteran" (VEVRAA's standard list) versus CACI's "I identify as a
+# veteran, just not a protected veteran" and "I am not a veteran" (2026-09). A Yes/No
+# profile cannot say which applies, so the profile stores a category
+# (`profile.VETERAN_CHOICES`) and every option is read by what it *says*: each category
+# is an ordered list of option patterns, most specific first. A category that names no
+# option falls through to the next; one that names two is left for review.
 
-    Deterministic and conservative: "No" picks the one option that says the applicant
-    has no disability / is not a protected veteran; "decline" picks the decline option;
-    a race or gender answer also matches an option that starts with it ("Asian (United
-    States of America)"). A caller treats more than one hit as no answer.
-    """
-    wanted = normalize(answer)
-    if key not in EEO_KEYS or not wanted:
+#: The option says the applicant is a veteran (of some kind).
+_IS_VETERAN = r"\b(?:identify as a|i am a|am a) (?:protected )?veteran\b"
+_VET_NOT_A_VETERAN = rf"^(?!.*{_IS_VETERAN}).*\b(?:am not|not) a veteran\b|\bnever served\b|\bno (?:prior )?military service\b"
+_VET_NOT_PROTECTED = rf"^(?!.*{_IS_VETERAN}).*\b(?:am not|not) a protected veteran\b"
+_VET_VETERAN_NOT_PROTECTED = (
+    r"\b(?:identify as a|i am a|am a) veteran\b.*\bnot (?:a )?protected\b"
+    r"|\bveteran\b.*\bbut not (?:a )?protected\b"
+)
+#: The generic "one or more of the classifications" option (never an OFCCP sub-category
+#: such as "Disabled Veteran": which of those applies is not in the profile).
+_VET_PROTECTED = (
+    r"^(?!.*\bnot\b)(?!.*\bchoose\b).*\b(?:identify as|i am|am) (?:one or more of the classifications of |a )protected veteran"
+    r"|^(?!.*\bnot\b).*\bone or more of the (?:classifications|categories) of protected veteran"
+)
+#: Declining, but not "I am a protected veteran but choose not to self-identify the
+#: classification" (OFCCP): that option is an answer, not a refusal.
+_VET_DECLINE = rf"^(?!.*{_IS_VETERAN}).*(?:{_DECLINE})"
+_VET_YES_OPTION = r"^yes\b"
+_VET_NO_OPTION = r"^no\b"
+
+VETERAN_TIERS: dict[str, tuple[str, ...]] = {
+    # A non-veteran is also not a protected veteran; a bare "No" answers "Are you a
+    # protected veteran?".
+    "not_veteran": (_VET_NOT_A_VETERAN, _VET_NOT_PROTECTED, _VET_NO_OPTION),
+    # A bare Yes/No is left alone: whether it asks "veteran?" or "protected?" is in the
+    # question, not the option.
+    "veteran_not_protected": (_VET_VETERAN_NOT_PROTECTED, _VET_NOT_PROTECTED),
+    "protected": (_VET_PROTECTED, _VET_YES_OPTION),
+    "decline": (_VET_DECLINE,),
+}
+
+#: Older profiles and prepared packets say Yes/No; read as the answers they always meant.
+_LEGACY_VETERAN = {"yes": "protected", "y": "protected", "true": "protected",
+                   "no": "not_veteran", "n": "not_veteran", "false": "not_veteran"}
+
+
+def veteran_category(answer: str) -> str | None:
+    """The `VETERAN_TIERS` category for a profile answer, or None when it names none."""
+    wanted = normalize(answer).replace(" ", "_")
+    if wanted in VETERAN_TIERS:
+        return wanted
+    if wanted in _LEGACY_VETERAN:
+        return _LEGACY_VETERAN[wanted]
+    text = normalize(answer)
+    if not text:
         return None
-    if wanted == "decline" or re.search(_DECLINE, wanted):
-        return _DECLINE
-    rules = _EEO_RULES.get(key, {})
-    choice = "yes" if wanted in _YES else "no" if wanted in _NO else wanted
-    if choice in rules:
-        return rules[choice]
-    if key in {"gender", "race", "race_detail"} and choice not in {"yes", "no"}:
-        return rf"^{re.escape(wanted)}\b"
+    if text == "decline" or re.search(_VET_DECLINE, text):
+        return "decline"
+    # A long-form answer typed into an older profile: read like an option.
+    for category in ("veteran_not_protected", "protected", "not_veteran"):
+        if re.search(VETERAN_TIERS[category][0], text):
+            return category
     return None
 
 
-def eeo_patterns(fields: dict[str, str]) -> dict[str, str]:
-    """``eeo_pattern`` for every self-identification answer in ``fields`` (filler.js)."""
-    patterns = {key: eeo_pattern(key, fields.get(key, "")) for key in EEO_KEYS}
-    return {key: pattern for key, pattern in patterns.items() if pattern}
+def eeo_tiers(key: str, answer: str) -> list[str]:
+    """Option patterns (over ``normalize``d text) for a self-identification answer, most
+    specific first; empty when the answer is not a self-identification choice.
+
+    Deterministic and conservative: "No" picks the one option that says the applicant
+    has no disability; "decline" picks the decline option; a race or gender answer also
+    matches an option that starts with it ("Asian (United States of America)"); a
+    veteran answer is a category (`VETERAN_TIERS`). A caller tries each pattern in turn
+    and treats more than one hit on a pattern as no answer.
+    """
+    wanted = normalize(answer)
+    if key not in EEO_KEYS or not wanted:
+        return []
+    if key == "veteran_status":
+        category = veteran_category(answer)
+        return list(VETERAN_TIERS[category]) if category else []
+    if wanted == "decline" or re.search(_DECLINE, wanted):
+        return [_DECLINE]
+    rules = _EEO_RULES.get(key, {})
+    choice = "yes" if wanted in _YES else "no" if wanted in _NO else wanted
+    if choice in rules:
+        return [rules[choice]]
+    if key in {"gender", "race", "race_detail"} and choice not in {"yes", "no"}:
+        return [rf"^{re.escape(wanted)}\b"]
+    return []
+
+
+def eeo_patterns(fields: dict[str, str]) -> dict[str, list[str]]:
+    """``eeo_tiers`` for every self-identification answer in ``fields`` (filler.js)."""
+    patterns = {key: eeo_tiers(key, fields.get(key, "")) for key in EEO_KEYS}
+    return {key: tiers for key, tiers in patterns.items() if tiers}
 
 
 #: Named degrees and the abbreviations forms print for them, normalised ("B.S." -> "b s").
