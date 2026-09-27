@@ -25,8 +25,21 @@ def test_extraction_votes_overlap_and_keep_submission_order(monkeypatch, tmp_pat
         for i in range(3)
     ]
     barrier = threading.Barrier(3)
-    claim_lock = threading.Lock()
-    next_index = 0
+    # Each vote's reply is fixed by its submission order (not by which thread reaches the
+    # model first, which the scheduler decides); later votes finish first.
+    submitted = iter(range(3))
+    current = threading.local()
+    calls = []
+    submit = config.submit_in_context
+
+    def numbered(executor, fn, *args, **kwargs):
+        index = next(submitted)
+
+        def run(*a, **k):
+            current.index = index
+            return fn(*a, **k)
+
+        return submit(executor, run, *args, **kwargs)
 
     class Client:
         @property
@@ -34,19 +47,18 @@ def test_extraction_votes_overlap_and_keep_submission_order(monkeypatch, tmp_pat
             return self
 
         def parse(self, **kwargs):
-            nonlocal next_index
-            with claim_lock:
-                index = next_index
-                next_index += 1
+            index = current.index
+            calls.append(index)
             barrier.wait(timeout=5)
             time.sleep(0.03 * (2 - index))
             return SimpleNamespace(parsed_output=replies[index], stop_reason="end_turn")
 
+    monkeypatch.setattr(config, "submit_in_context", numbered)
     monkeypatch.setattr(jd.llm, "client_for", lambda purpose: Client())
     result = jd.extract_consensus("Python required.", runs=3, use_cache=False)
     serial, _ = jd._vote(replies, None)
     assert result == serial
-    assert next_index == 3
+    assert sorted(calls) == [0, 1, 2]
 
 
 def test_two_workspace_jobs_overlap_without_crossing_contexts(monkeypatch, tmp_path):
