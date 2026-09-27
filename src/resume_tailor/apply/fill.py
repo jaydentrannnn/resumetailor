@@ -30,6 +30,7 @@ from resume_tailor.apply import (
     field_matcher,
     form_guards,
     hybrid_resolver,
+    smartrecruiters_flow,
     store,
     submit_guard,
     wizards,
@@ -840,6 +841,7 @@ def fill_application(
         progress(authorization_note)
     url = app.final_url or app.posting_url
     is_workday = (app.ats or pkt.ats or "").lower() == "workday" or workday_auth.is_workday_url(url or "")
+    is_smartrecruiters = (app.ats or pkt.ats or "").lower() == "smartrecruiters" or "smartrecruiters.com" in (url or "")
     # Other multi-step platforms (iCIMS, Taleo, SuccessFactors, Oracle): each step's screen
     # is named first, so a sign-in, an emailed code or the review page is handed over.
     wizard_ats = app.ats or pkt.ats or ""
@@ -1176,6 +1178,33 @@ def fill_application(
                 # File uploads via Playwright (cannot set from page JS).
                 resume_path = pkt.artifacts.get("resume_pdf") or pkt.artifacts.get("resume_docx")
                 cover_path = pkt.artifacts.get("cover_pdf") or pkt.artifacts.get("cover_docx")
+
+                # SmartRecruiters' one-click form: a City typeahead that drops typed text on
+                # blur, inline Experience/Education editors, a Resume dropzone whose input
+                # shares its id with the parse-and-prefill one, and the hiring-team message
+                # (`smartrecruiters_flow`). The generic pass's records for them are replaced.
+                if is_smartrecruiters and smartrecruiters_flow.is_form(page):
+                    progress("SmartRecruiters: filling city, experience, education, resume and message")
+                    sr_filled, sr_review = smartrecruiters_flow.fill(
+                        page, pkt, progress, resume_path=resume_path, deadline=deadline - 45,
+                    )
+                    for key in ("filled", "leftovers", "long_text"):
+                        merged[key] = [
+                            item for item in merged[key] if not isinstance(item, dict) or (
+                                item.get("key") != "city" and item.get("label") != "City"
+                                and item.get("selector") not in smartrecruiters_flow.HANDLED_SELECTORS
+                            )
+                        ]
+                    merged["file_inputs"] = [
+                        item for item in merged["file_inputs"]
+                        if not isinstance(item, dict) or item.get("selector") not in smartrecruiters_flow.HANDLED_SELECTORS
+                    ]
+                    done = {item.get("label") for item in merged["filled"] if item.get("key") == "smartrecruiters_entry"}
+                    merged["filled"].extend(
+                        {**item, "key": "smartrecruiters_entry", "frame_index": 0}
+                        for item in sr_filled if item["label"] not in done
+                    )
+                    needs_review.extend(label for label in sr_review if label not in needs_review)
                 file_inputs = list(merged.get("file_inputs") or [])
 
                 # Proactively discover file inputs if not yet registered
@@ -1624,7 +1653,7 @@ def fill_application(
             # Repeater rows have no single selector to observe by; without this they
             # vanished from the record even when every field was filled.
             rows_done = [item for item in merged.get("filled") or []
-                         if isinstance(item, dict) and item.get("key") == "workday_row"]
+                         if isinstance(item, dict) and item.get("key") in {"workday_row", "smartrecruiters_entry"}]
             merged["filled"] = list(observed.values()) + rows_done
 
             if is_workday:
