@@ -17,6 +17,8 @@ import { formatBytes } from "../../lib/format";
 import { useToast } from "../../lib/toast";
 import { useWorkspaceState } from "../../state/workspaceState";
 
+const MAX_IMPORT_BYTES = 2 * 1024 * 1024 * 1024;
+
 /** Settings → Data: where files live, export/import, cache, and "delete all data". */
 export function DataSection() {
   const toast = useToast();
@@ -40,6 +42,11 @@ export function DataSection() {
   useEffect(load, [load]);
 
   async function onImport(file: File) {
+    if (file.size > MAX_IMPORT_BYTES) {
+      toast.error("Import failed", "This file is larger than 2 GB.");
+      if (fileInput.current) fileInput.current.value = "";
+      return;
+    }
     setImporting(true);
     try {
       const created = await importData(file);
@@ -114,7 +121,7 @@ export function DataSection() {
 
       <Card
         title="Back up or move to another computer"
-        description="Export saves this profile as one .zip file. Import adds a zip as a new profile and never overwrites an existing one."
+        description="Export saves this profile as one .zip file. Import adds a zip as a new profile and never overwrites an existing one (up to 2 GB)."
       >
         <label className="flex items-center gap-2 text-sm">
           <input

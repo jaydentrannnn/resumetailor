@@ -24,6 +24,18 @@ suite("errors.describe", () => {
     expect(unknown).toMatchObject({ code: "unknown", detail: "Try X", raw: "Odd failure" });
     expect(describe(new TypeError("Failed to fetch")).code).toBe("network");
   });
+  it("maps 413 and oversized payload errors to plain language", () => {
+    const error413 = describe(
+      new ApiError("Request body is 2500000000 bytes; maximum is 2148532224.", 413),
+    );
+    expect(error413.code).toBe("payload_too_large");
+    expect(error413.title).toBe("File is too large");
+    expect(error413.detail).toBe("This file is larger than the 2 GB import limit.");
+
+    const serverDetail = describe(new ApiError("This file is larger than 2 GB.", 413));
+    expect(serverDetail.code).toBe("payload_too_large");
+    expect(serverDetail.detail).toBe("This file is larger than 2 GB.");
+  });
 });
 
 suite("toastReducer", () => {
