@@ -841,17 +841,14 @@ A Workday step asked "Are you over the age of 18?", "Are you legally permitted t
 country where this job is located?", then (only after Yes) "If hired, can you provide proof of
 eligibility?". The model answered the first two and missed the third. Causes: no synonym for
 "permitted"/"proof of eligibility"/"over 18"; the permitted question matched the country rule
-(first match wins), so 
-ill_dropdowns tried "United States" in a Yes/No list and
+(first match wins), so ill_dropdowns tried "United States" in a Yes/No list and
 country_mismatch read the later "Yes" as a wrong Country; profile.over_18 was never emitted;
-and 
-esolve_step_blockers returned as soon as the page showed no errors, which on Workday is
+and esolve_step_blockers returned as soon as the page showed no errors, which on Workday is
 always true before Save and Continue, so a question revealed by the model's own answer was
 never seen. Fix: ts_hints.AUTHORIZED_TO_WORK/OVER_18 before the Country rule (proof of
 eligibility reads the same fact as authorization: provable follows from authorised; exclusions
 for veteran/degree/licence/clearance proof and "under 18"); uild_fields emits over_18
-(registered, common); 
-ield_catalog reuses the patterns but leaves "sponsor" wording alone;
+(registered, common); ield_catalog reuses the patterns but leaves "sponsor" wording alone;
 the resolver runs up to 2 extra rounds on controls revealed after its actions (not counted
 against max_retries). Also packet.authorization_mismatch: a posting whose location names
 another country drops uthorized_to_work (fill + engine), with a review line, not a blank.
@@ -1298,6 +1295,7 @@ Added `job_search` source kind with providers `"adzuna"` and `"usajobs"` to allo
 - Missing API credentials (`ADZUNA_APP_ID`, `ADZUNA_APP_KEY`, `USAJOBS_API_KEY`, `USAJOBS_EMAIL`) raise `MissingCredentialsError` and are recorded per-source by `run_daily` in `summary.errors` without crashing the run.
 - Configured savable credentials in `config.SAVABLE_CREDENTIALS` and updated frontend UI (`providers.ts`, `ModelsSection.tsx`, `SourceEditors.tsx`, `ApplySettingsDrawer.tsx`) with sensible labels, documentation links, inline missing-credential alerts, and drawer "Add a keyword search" integration.
 - Deviation: none.
+
 ## 2026-09-27: Apply tables sort by posted date
 
 The Found column became Posted. No stored field held a posting date, but `age_days` is the age on the day a row was found, so posted = discovered_at - age_days reconstructs it for every existing row without a migration. Sources that state a date now carry it (`SourceRow.posted_at`, then `Application.posted_at`), and a re-sighting fills an empty one. Greenhouse lists `updated_at` first; that stays the age-filter input (a repost reads as fresh), while `first_published` is the posted date. Rows with no age (`age_unknown`, extension captures) fall back to the date found, marked `~` in the UI, because a posting is never newer than when we found it. Date-only values render through `localDate`, since `new Date("YYYY-MM-DD")` is UTC midnight and showed the previous day west of UTC.
