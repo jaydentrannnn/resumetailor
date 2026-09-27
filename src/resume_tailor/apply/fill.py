@@ -1041,16 +1041,18 @@ def fill_application(
                     progress(f"Workday step: {workday_flow.active_step(workday_flow.snapshot(page)) or 'unknown'}")
                     dropdown_review: list[str] = []
                     wd_filled = workday_flow.fill_dropdowns(
-                        page, fields, synonyms=ats_hints.SYNONYMS, progress=progress, deadline=deadline,
+                        page, fields, progress=progress, deadline=deadline,
                         select=workday_flow.select_listbox, review=dropdown_review, blank=blank_facts,
                     )
                     if any(item.get("key") == "country" for item in wd_filled):
                         needs_review[:] = [label for label in needs_review if not label.startswith("Country is ")]
                     needs_review.extend(label for label in dropdown_review if label not in needs_review)
                     wd_filled += workday_flow.fill_radios(
-                        page, fields, synonyms=ats_hints.SYNONYMS, progress=progress,
+                        page, fields, progress=progress,
                         company=app.company or pkt.company or "",
                         employers=[entry.company for entry in getattr(resume, "experience", []) or []],
+                        role=app.role or pkt.role or "",
+                        experience_titles=[entry.title for entry in pkt.experience],
                         blank=blank_facts, review=dropdown_review,
                     )
                     needs_review.extend(label for label in dropdown_review if label not in needs_review)
@@ -1058,7 +1060,7 @@ def fill_application(
                     # form), then the Self Identify step's signature Name and Date.
                     self_id_review: list[str] = []
                     ticked = workday_flow.fill_choice_checkboxes(
-                        page, fields, synonyms=ats_hints.SYNONYMS, progress=progress, review=self_id_review,
+                        page, fields, progress=progress, review=self_id_review,
                     )
                     wd_filled += ticked
                     if ticked or workday_flow.is_self_identify_step(workday_flow.snapshot(page)):
@@ -1067,7 +1069,7 @@ def fill_application(
                         )
                     needs_review.extend(label for label in self_id_review if label not in needs_review)
                     wd_filled += workday_flow.fill_prompts(
-                        page, fields, synonyms=ats_hints.SYNONYMS, progress=progress,
+                        page, fields, progress=progress,
                     )
                     skills_deadline = min(deadline, time.monotonic() + 120)
                     with config.pinned(settings.model_spec):
@@ -1528,7 +1530,7 @@ def fill_application(
                 # address fields and empties the phone code; correct it and fill the
                 # re-rendered step again, once.
                 if is_workday and not country_rechecked:
-                    wrong_country = workday_flow.country_mismatch(page, fields, synonyms=ats_hints.SYNONYMS)
+                    wrong_country = workday_flow.country_mismatch(page, fields)
                     if wrong_country:
                         country_rechecked = True
                         progress(f"Workday: Country reads {wrong_country} after filling; correcting it and rescanning this step")

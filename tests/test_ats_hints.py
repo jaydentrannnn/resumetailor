@@ -131,7 +131,7 @@ def test_f1_opt_synonym_precedes_sponsorship():
     ],
 )
 def test_eligibility_questions_map_to_profile_facts(label, key):
-    assert workday_flow.key_for_label(label, ats_hints.SYNONYMS) == key
+    assert workday_flow.key_for_label(label) == key
 
 
 @pytest.mark.parametrize(
@@ -146,13 +146,13 @@ def test_eligibility_questions_map_to_profile_facts(label, key):
     ],
 )
 def test_lookalike_questions_do_not_borrow_eligibility_answers(label):
-    assert workday_flow.key_for_label(label, ats_hints.SYNONYMS) not in {"over_18", "authorized_to_work"}
+    assert workday_flow.key_for_label(label) not in {"over_18", "authorized_to_work"}
 
 
 def test_eligibility_patterns_span_label_line_breaks():
     """Workday legends can wrap: the keyword may sit on the label's second line."""
     label = "Legal eligibility\nAre you legally permitted to work in this country?"
-    assert workday_flow.key_for_label(label, ats_hints.SYNONYMS) == "authorized_to_work"
+    assert workday_flow.key_for_label(label) == "authorized_to_work"
 
 
 def test_hints_for_known_ats():

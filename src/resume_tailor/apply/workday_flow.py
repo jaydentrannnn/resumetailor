@@ -15,7 +15,7 @@ from collections.abc import Callable, Iterable
 from datetime import date
 from typing import Any, Literal
 
-from resume_tailor.apply import clicks, field_matcher
+from resume_tailor.apply import clicks, field_matcher, questions
 
 WorkdayState = Literal[
     "posting", "start_dialog", "auth_chooser", "sign_in", "create_account", "otp", "verify_email",
@@ -622,17 +622,13 @@ def _same_option(current: str, value: str, key: str) -> bool:
     return _option_match([current], value, key=key) is not None
 
 
-def key_for_label(label: str, synonyms: list[tuple[str, str]]) -> str | None:
-    low = label.casefold()
-    if "future" in low and "sponsor" in low and not re.search(r"\bnow\b|\bcurrent", low):
-        return "requires_sponsorship_future"
-    for pattern, key in synonyms:
-        if re.search(pattern, low, re.I):
-            return key
-    return None
+def key_for_label(label: str) -> str | None:
+    """The fact a question label asks for (`questions.classify`, shared by every fill)."""
+    match = questions.classify(questions.Question(label))
+    return match.key if match else None
 
 
-def country_mismatch(page: Any, fields: dict[str, str], *, synonyms: list[tuple[str, str]]) -> str | None:
+def country_mismatch(page: Any, fields: dict[str, str]) -> str | None:
     """The Country dropdown's current text when it disagrees with the profile, else None.
 
     Checked again just before a step advances: Live Oak's and Upbound's Country read
@@ -643,7 +639,7 @@ def country_mismatch(page: Any, fields: dict[str, str], *, synonyms: list[tuple[
     if not value:
         return None
     for item in dropdowns(page):
-        if key_for_label(item["label"], synonyms) != "country":
+        if key_for_label(item["label"]) != "country":
             continue
         current = str(item.get("current") or "")
         if current and not _PLACEHOLDER.match(current) and not _same_option(current, value, "country"):
@@ -666,7 +662,6 @@ def fill_dropdowns(
     page: Any,
     fields: dict[str, str],
     *,
-    synonyms: list[tuple[str, str]],
     select: Callable[..., bool],
     progress: Callable[[str], None] = lambda _msg: None,
     deadline: float | None = None,
@@ -685,29 +680,33 @@ def fill_dropdowns(
     """
     committed: list[dict[str, Any]] = []
     tried: set[str] = set()
+    facts = questions.facts_for(fields)
     for _pass in range(3):
         progressed = False
         items = dropdowns(page)
-        items.sort(key=lambda item: 0 if key_for_label(item["label"], synonyms) == "country" else 1)
+        items.sort(key=lambda item: 0 if key_for_label(item["label"]) == "country" else 1)
         for item in items:
             if deadline is not None and time.monotonic() >= deadline:
                 return committed
             selector = item["selector"]
             if selector in tried:
                 continue
-            key = key_for_label(item["label"], synonyms)
-            value = fields.get(key or "", "")
+            question = questions.Question(item["label"], kind="choice")
+            match = questions.classify(question)
+            key = match.key if match else None
+            answers = questions.answers(match, question, facts)
+            value = answers[0] if answers else ""
             current = str(item.get("current") or "")
             is_blank = not current or bool(_PLACEHOLDER.match(current))
             if not key or key in _BLANK_EXEMPT:
                 continue
             if not value:
-                _note_blank(blank, key, item["label"], is_blank)
+                _note_blank(blank, questions.profile_field(key), item["label"], is_blank)
                 continue
             if not is_blank and not (key == "country" and not _same_option(current, value, key)):
                 continue
             tried.add(selector)
-            for candidate in field_matcher.choice_values(key, fields):
+            for candidate in answers:
                 if select(page, selector, candidate, key=key):
                     progress(f"Workday: selected {item['label']} = {candidate}")
                     committed.append(
@@ -763,13 +762,6 @@ RADIOS_JS = r"""() => {
   return out;
 }"""
 
-_PREVIOUS_WORKER = re.compile(
-    r"previous(?:ly)?\s+(?:worked|employed)|ever\s+(?:been\s+)?(?:worked|employed)|"
-    r"former\s+employee|current\s+or\s+former|worked\s+(?:for|at)\s+.{0,40}before",
-    re.I,
-)
-
-
 def _norm_company(value: str) -> str:
     value = re.sub(r"[^a-z0-9 ]+", " ", value.casefold())
     value = re.sub(r"\b(inc|llc|ltd|corp|corporation|company|co|group)\b", " ", value)
@@ -791,9 +783,10 @@ def fill_radios(
     page: Any,
     fields: dict[str, str],
     *,
-    synonyms: list[tuple[str, str]],
     company: str,
     employers: Iterable[str],
+    role: str = "",
+    experience_titles: Iterable[str] = (),
     progress: Callable[[str], None] = lambda _msg: None,
     blank: list[dict[str, str]] | None = None,
     review: list[str] | None = None,
@@ -803,34 +796,40 @@ def fill_radios(
     A self-identification question no option answers is reported in ``review`` with the
     options it offered (`choice_failure`).
 
-    "Have you ever been employed by <company>?" is answered from the applicant's own
-    experience entries; every other question needs a profile fact whose value names one
-    option (exactly, or a self-identification answer's long form). Anything else stays
-    for the resolver or the applicant.
+    What a question asks, its answer and the option that says it come from `questions`:
+    "Have you ever been employed by <company>?" from the applicant's own experience
+    entries, "Are you currently enrolled?" from the graduation date, every other question
+    from a profile fact whose value names one option (exactly, or a self-identification
+    answer's long form). Anything else stays for the resolver or the applicant.
     """
     try:
         groups = page.evaluate(RADIOS_JS) or []
     except Exception:  # noqa: BLE001
         return []
-    employers = list(employers)
+    facts = questions.facts_for(
+        fields, company=company, role=role, employers=employers,
+        experience_titles=experience_titles,
+    )
     committed: list[dict[str, Any]] = []
     for group in groups:
         question = str(group.get("question") or "")
         options = group.get("options") or []
-        if _PREVIOUS_WORKER.search(question) or group.get("field") == "formField-candidateIsPreviousWorker":
-            key, value = "previous_worker", "Yes" if previously_employed(company, employers) else "No"
-        else:
-            key = key_for_label(question, synonyms) or ""
-            value = fields.get(key, "")
+        labels = [str(opt.get("label", "")) for opt in options]
+        asked = questions.Question(question, kind="choice", options=tuple(labels))
+        match = (
+            questions.Match("previous_worker", question.casefold())
+            if group.get("field") == "formField-candidateIsPreviousWorker"
+            else questions.classify(asked)
+        )
+        key = match.key if match else ""
         if not key or key in _BLANK_EXEMPT:
             continue
-        if not value:
-            _note_blank(blank, key, question, True)
+        answers = questions.answers(match, asked, facts)
+        if not answers:
+            _note_blank(blank, questions.profile_field(key), question, True)
             continue
-        labels = [str(opt.get("label", "")) for opt in options]
-        # Exact text, or a self-identification answer's long form ("not_veteran" -> "I am
-        # not a protected veteran", `field_matcher.eeo_tiers`).
-        chosen = field_matcher.closest_option(labels, value, key=key)
+        value = answers[0]
+        chosen = questions.choose(asked, key, answers)
         matches = [opt for opt in options if str(opt.get("label", "")) == chosen] if chosen else []
         if len(matches) != 1:
             if key in field_matcher.EEO_KEYS and not any(opt.get("checked") for opt in options):
@@ -905,11 +904,11 @@ _EMPLOYEE_ID = re.compile(r"employee\s*(?:id|number)", re.I)
 _DATE_LABEL = re.compile(r"^(?:today'?s )?date(?: signed)?$", re.I)
 
 
-def _group_key(group: dict[str, Any], synonyms: list[tuple[str, str]]) -> str | None:
+def _group_key(group: dict[str, Any]) -> str | None:
     labels = [str(option.get("label") or "") for option in group.get("options") or []]
     if sum(bool(_DISABILITY_OPTION.search(label)) for label in labels) >= 2:
         return "disability_status"
-    key = key_for_label(str(group.get("question") or ""), synonyms)
+    key = key_for_label(str(group.get("question") or ""))
     return key if key in field_matcher.EEO_KEYS else None
 
 
@@ -927,7 +926,6 @@ def fill_choice_checkboxes(
     page: Any,
     fields: dict[str, str],
     *,
-    synonyms: list[tuple[str, str]],
     progress: Callable[[str], None] = lambda _msg: None,
     review: list[str] | None = None,
 ) -> list[dict[str, Any]]:
@@ -942,7 +940,7 @@ def fill_choice_checkboxes(
         return []
     committed: list[dict[str, Any]] = []
     for group in groups:
-        key = _group_key(group, synonyms)
+        key = _group_key(group)
         options = group.get("options") or []
         if not key or any(option.get("checked") for option in options):
             continue
@@ -1155,7 +1153,6 @@ def fill_prompts(
     page: Any,
     fields: dict[str, str],
     *,
-    synonyms: list[tuple[str, str]],
     select: Callable[..., bool] | None = None,
     progress: Callable[[str], None] = lambda _msg: None,
 ) -> list[dict[str, Any]]:
@@ -1174,11 +1171,14 @@ def fill_prompts(
     for item in found:
         if not isinstance(item, dict) or item.get("chips") or is_skills_prompt(item):
             continue
-        key = key_for_label(str(item.get("label") or ""), synonyms)
-        value = fields.get(key or "", "")
+        question = questions.Question(str(item.get("label") or ""), kind="typeahead")
+        match = questions.classify(question)
+        key = match.key if match else None
+        answers = questions.answers(match, question, questions.facts_for(fields))
+        value = answers[0] if answers else ""
         if not key or not value:
             continue
-        for candidate in field_matcher.choice_values(key, fields):
+        for candidate in answers:
             if choose(page, item["input_id"], candidate, key=key):
                 progress(f"Workday: selected {item['label']} = {candidate}")
                 committed.append({

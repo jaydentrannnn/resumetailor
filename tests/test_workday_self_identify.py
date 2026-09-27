@@ -74,7 +74,7 @@ def test_self_identify_ticks_the_disability_answer_and_signs(page, answer, expec
     page.set_content(_SELF_IDENTIFY)
     fields = {"disability_status": answer, "full_name": "Jordan Rivera"}
     review: list[str] = []
-    ticked = workday_flow.fill_choice_checkboxes(page, fields, synonyms=ats_hints.SYNONYMS, review=review)
+    ticked = workday_flow.fill_choice_checkboxes(page, fields, review=review)
     signed = workday_flow.fill_self_identify(page, fields, today=date(2026, 9, 24), review=review)
 
     assert _ticked(page) == [expected]
@@ -92,7 +92,7 @@ def test_an_answered_disability_group_and_a_typed_name_are_kept(page):
     page.locator("[id='disabilityStatus-2']").check()
     page.locator("[id='sid--name']").fill("J. Rivera")
     fields = {"disability_status": "No", "full_name": "Jordan Rivera"}
-    assert workday_flow.fill_choice_checkboxes(page, fields, synonyms=ats_hints.SYNONYMS) == []
+    assert workday_flow.fill_choice_checkboxes(page, fields) == []
     workday_flow.fill_self_identify(page, fields, today=date(2026, 9, 24))
     assert _ticked(page) == [_DISABILITY[2]]
     assert page.locator("[id='sid--name']").input_value() == "J. Rivera"
@@ -101,8 +101,7 @@ def test_an_answered_disability_group_and_a_typed_name_are_kept(page):
 def test_no_matching_disability_option_is_reviewed_not_guessed(page):
     page.set_content(_checkboxes("disabilityStatus", "Disability", _DISABILITY[:2]))
     review: list[str] = []
-    workday_flow.fill_choice_checkboxes(page, {"disability_status": "decline"},
-                                        synonyms=ats_hints.SYNONYMS, review=review)
+    workday_flow.fill_choice_checkboxes(page, {"disability_status": "decline"}, review=review)
     assert _ticked(page) == []
     # The review says what was wanted and what the form offered.
     assert review == [f"Disability: no option for decline (no match; options: {_DISABILITY[0]} | {_DISABILITY[1]})"]
@@ -111,8 +110,7 @@ def test_no_matching_disability_option_is_reviewed_not_guessed(page):
 def test_race_checkboxes_pick_the_option_starting_with_the_answer(page):
     options = ["Asian (United States of America)", "White (United States of America)", "I do not wish to answer"]
     page.set_content(f'<div data-automation-id="applyFlowPage">{_checkboxes("ethnicity", "Race/Ethnicity", options)}</div>')
-    workday_flow.fill_choice_checkboxes(page, {"race": "Asian", "race_detail": "Southeast Asian"},
-                                        synonyms=ats_hints.SYNONYMS)
+    workday_flow.fill_choice_checkboxes(page, {"race": "Asian", "race_detail": "Southeast Asian"})
     assert _ticked(page) == [options[0]]
 
 
@@ -121,7 +119,7 @@ def test_veteran_radios_take_the_long_form_of_no(page):
                "I don't wish to answer"]
     radios = "".join(f'<input type="radio" name="v" id="v{i}"><label for="v{i}">{text}</label>' for i, text in enumerate(options))
     page.set_content(f'<div data-automation-id="formField-veteranStatus"><fieldset><legend>Veteran Status*</legend>{radios}</fieldset></div>')
-    committed = workday_flow.fill_radios(page, {"veteran_status": "not_veteran"}, synonyms=ats_hints.SYNONYMS,
+    committed = workday_flow.fill_radios(page, {"veteran_status": "not_veteran"},
                                          company="Acme", employers=[])
     assert page.locator("[id='v0']").is_checked()
     assert committed[0]["value"] == options[0]
@@ -133,7 +131,7 @@ def test_a_veteran_question_no_option_answers_is_reviewed_with_its_options(page)
     radios = "".join(f'<input type="radio" name="v" id="v{i}"><label for="v{i}">{text}</label>' for i, text in enumerate(options))
     page.set_content(f'<div data-automation-id="formField-veteranStatus"><fieldset><legend>Veteran Status*</legend>{radios}</fieldset></div>')
     review: list[str] = []
-    committed = workday_flow.fill_radios(page, {"veteran_status": "protected"}, synonyms=ats_hints.SYNONYMS,
+    committed = workday_flow.fill_radios(page, {"veteran_status": "protected"},
                                          company="Acme", employers=[], review=review)
     assert committed == []
     assert review == ["Veteran Status: no option for protected (no match; options: Disabled Veteran | Recently Separated Veteran)"]
@@ -144,7 +142,7 @@ def test_a_yes_no_question_whose_profile_fact_is_blank_is_recorded_not_skipped(p
     question = "Are you currently legally authorized to work in the United States?"
     page.set_content(f'<div data-automation-id="formField-q1"><fieldset><legend>{question}*</legend>{radios}</fieldset></div>')
     blank: list[dict] = []
-    committed = workday_flow.fill_radios(page, {}, synonyms=ats_hints.SYNONYMS, company="Acme", employers=[], blank=blank)
+    committed = workday_flow.fill_radios(page, {}, company="Acme", employers=[], blank=blank)
     assert committed == []
     assert blank == [{"key": "authorized_to_work", "label": question}]
 

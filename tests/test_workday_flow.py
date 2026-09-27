@@ -666,7 +666,7 @@ def test_fill_dropdowns_corrects_country_first_and_leaves_unknowns():
         return True
 
     fields = {"country": "United States", "state": "California", "how_heard": "LinkedIn", "salary_expectation": "100"}
-    committed = workday_flow.fill_dropdowns(page, fields, synonyms=ats_hints.SYNONYMS, select=select)
+    committed = workday_flow.fill_dropdowns(page, fields, select=select)
     assert calls[0] == ("#country--country", "United States", "country")
     assert ("#address--countryRegion", "California", "state") in calls
     assert ("#source--source", "LinkedIn", "how_heard") in calls
@@ -685,7 +685,7 @@ def test_fill_dropdowns_records_a_blank_profile_fact_instead_of_skipping_silentl
     ])
     blank: list[dict] = []
     workday_flow.fill_dropdowns(
-        page, {}, synonyms=ats_hints.SYNONYMS, select=lambda *a, **k: True, blank=blank,
+        page, {}, select=lambda *a, **k: True, blank=blank,
     )
     # An already-answered State and the per-posting salary are not blanks to report.
     assert blank == [{"key": "phone_device_type", "label": "Phone Device Type"}]
@@ -714,14 +714,14 @@ def test_an_answer_that_reveals_a_follow_up_is_followed_in_the_same_call():
         return True
 
     fields = {"country": "United States", "authorized_to_work": "Yes", "over_18": "Yes"}
-    workday_flow.fill_dropdowns(page, fields, synonyms=ats_hints.SYNONYMS, select=select)
+    workday_flow.fill_dropdowns(page, fields, select=select)
     assert calls == [
         ("#age", "Yes", "over_18"),
         ("#permitted", "Yes", "authorized_to_work"),
         ("#proof", "Yes", "authorized_to_work"),
     ]
     # Answered "Yes", the question is not a Country that reads wrong.
-    assert workday_flow.country_mismatch(page, fields, synonyms=ats_hints.SYNONYMS) is None
+    assert workday_flow.country_mismatch(page, fields) is None
 
 
 def test_fill_dropdowns_keeps_an_existing_choice():
@@ -730,7 +730,7 @@ def test_fill_dropdowns_keeps_an_existing_choice():
     page = _DropdownPage([{"selector": "#address--countryRegion", "label": "State", "current": "Texas"}])
     calls: list = []
     workday_flow.fill_dropdowns(
-        page, {"state": "California"}, synonyms=ats_hints.SYNONYMS,
+        page, {"state": "California"},
         select=lambda *a, **k: calls.append(a) or True,
     )
     assert calls == []
@@ -760,7 +760,7 @@ def test_fill_prompts_answers_only_empty_prompts_with_a_profile_fact():
         return True
 
     committed = workday_flow.fill_prompts(
-        page, {"how_heard": "LinkedIn"}, synonyms=ats_hints.SYNONYMS, select=select,
+        page, {"how_heard": "LinkedIn"}, select=select,
     )
     assert calls == [("source--source", "LinkedIn", "how_heard")]
     assert committed[0]["label"] == "How Did You Hear About Us?"
@@ -839,14 +839,15 @@ def test_select_listbox_waits_for_the_list_to_open():
     assert page.text == "No"
 
 
-def test_fill_prompts_leaves_the_skills_prompt_to_fill_skills():
-    from resume_tailor.apply import ats_hints
+def test_fill_prompts_leaves_the_skills_prompt_to_fill_skills(monkeypatch):
+    from resume_tailor.apply import questions
 
+    # Even a Skills prompt keyed to a known fact is `fill_skills`' to fill.
+    monkeypatch.setattr(workday_flow.questions, "classify", lambda _q: questions.Match("skills"))
     page = _PromptPage([{"input_id": "skills--skills", "field": "formField-skills", "label": "Skills", "chips": 0}])
     calls: list = []
     workday_flow.fill_prompts(
-        page, {"skills": "Python"}, synonyms=[*ats_hints.SYNONYMS, (r"skill", "skills")],
-        select=lambda *a, **k: calls.append(a) or True,
+        page, {"skills": "Python"}, select=lambda *a, **k: calls.append(a) or True,
     )
     assert calls == []
 
@@ -914,7 +915,7 @@ def test_fill_prompts_falls_back_to_other_when_the_source_is_not_listed():
         return value == "Other"
 
     committed = workday_flow.fill_prompts(
-        page, {"how_heard": "LinkedIn"}, synonyms=ats_hints.SYNONYMS, select=select,
+        page, {"how_heard": "LinkedIn"}, select=select,
     )
     assert tried == ["LinkedIn", "Other"]
     assert [item["value"] for item in committed] == ["Other"]
@@ -928,10 +929,10 @@ def test_country_mismatch_reads_a_wrong_saved_country():
         return SimpleNamespace(evaluate=lambda script, arg=None: [dict(i) for i in items])
 
     fields = {"country": "United States"}
-    assert workday_flow.country_mismatch(page_with("Vietnam"), fields, synonyms=ats_hints.SYNONYMS) == "Vietnam"
-    assert workday_flow.country_mismatch(page_with("United States of America"), fields, synonyms=ats_hints.SYNONYMS) is None
-    assert workday_flow.country_mismatch(page_with("Select One"), fields, synonyms=ats_hints.SYNONYMS) is None
-    assert workday_flow.country_mismatch(page_with("Vietnam"), {}, synonyms=ats_hints.SYNONYMS) is None
+    assert workday_flow.country_mismatch(page_with("Vietnam"), fields) == "Vietnam"
+    assert workday_flow.country_mismatch(page_with("United States of America"), fields) is None
+    assert workday_flow.country_mismatch(page_with("Select One"), fields) is None
+    assert workday_flow.country_mismatch(page_with("Vietnam"), {}) is None
 
 
 def test_fill_dropdowns_reports_a_country_it_could_not_change():
@@ -947,7 +948,7 @@ def test_fill_dropdowns_reports_a_country_it_could_not_change():
 
     review: list[str] = []
     committed = workday_flow.fill_dropdowns(
-        _Page(), {"country": "United States"}, synonyms=ats_hints.SYNONYMS,
+        _Page(), {"country": "United States"},
         select=lambda *a, **k: False, review=review,
     )
     assert committed == []

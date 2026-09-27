@@ -146,10 +146,26 @@ _DERIVED: tuple[tuple[str, str], ...] = (
         "has_prior_internship",
     ),
     (
-        r"\bhave you (?:ever )?(?:previously )?(?:worked|been employed)\s+(?:at|for|by|with)\b",
+        r"\bhave you (?:ever )?(?:previously )?(?:worked|been employed)\s+(?:at|for|by|with)\b"
+        r"|previous(?:ly)?\s+(?:worked|employed)|ever\s+(?:been\s+)?(?:worked|employed)"
+        r"|former\s+employee|current\s+or\s+former|worked\s+(?:for|at)\s+.{0,40}before",
         "previous_worker",
     ),
 )
+
+#: The profile field a derived answer comes from: the field to fill in when it is blank.
+SOURCE_FIELD = {
+    "currently_enrolled": "graduation_month",
+    "degree_by": "graduation_month",
+    "returning_to_school": "graduation_month",
+    "gpa_at_least": "gpa",
+    "located_or_relocate": "willing_to_relocate",
+}
+
+
+def profile_field(key: str) -> str:
+    """The profile field behind ``key`` (itself, unless its answer is derived)."""
+    return SOURCE_FIELD.get(key, key)
 
 
 def _clean(text: str) -> str:

@@ -146,9 +146,9 @@ def profile_key(label: str, canonical_key: str = "") -> str | None:
     """The profile field that answers this question, if one does.
 
     ``canonical_key`` (the fill's own classification) wins; otherwise a short label is
-    matched against the same synonyms the fills use.
+    classified by the decision layer every fill uses (`questions`).
     """
-    from resume_tailor.apply import ats_hints, packet, workday_flow  # noqa: PLC0415
+    from resume_tailor.apply import packet, questions  # noqa: PLC0415
 
     covered = set(packet.PROFILE_FIELDS) | {"referred_by"}
     if canonical_key in covered:
@@ -158,8 +158,8 @@ def profile_key(label: str, canonical_key: str = "") -> str | None:
         return None
     if _REFERRAL.search(text):
         return "referred_by"
-    key = workday_flow.key_for_label(text, ats_hints.SYNONYMS)
-    return key if key in covered else None
+    match = questions.classify(questions.Question(text))
+    return match.key if match and match.key in covered else None
 
 
 def storable(label: str, *, canonical_key: str = "", input_type: str = "") -> bool:
