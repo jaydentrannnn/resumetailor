@@ -155,8 +155,9 @@ export function EditorPage({
         {/* bg-panel (not bg-paper/85) so the sticky bar reads as a toolbar sitting
           above the page, not a translucent cream-on-cream band that only shows
           up as a faint seam. shadow-sm carries the same "this is elevated"
-          signal the rest of the app's panels use. */}
-        <div className="sticky top-0 z-20 -mx-6 border-b border-line bg-panel px-6 py-3 shadow-sm">
+          signal the rest of the app's panels use. Rounded and inset like the other
+          cards: it lives inside the Profile page now, not full-bleed under the nav. */}
+        <div className="sticky top-0 z-20 rounded-xl border border-line bg-panel px-5 py-3 shadow-sm">
           <div className="flex flex-wrap items-center justify-between gap-3">
             <div>
               <h1 className="font-display text-2xl font-semibold">Master resume</h1>
