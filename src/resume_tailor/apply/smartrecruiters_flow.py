@@ -27,6 +27,7 @@ answer already present is kept; anything not verified on the page is reported fo
 
 from __future__ import annotations
 
+import contextlib
 import re
 import time
 from collections.abc import Callable
@@ -75,7 +76,8 @@ _OPTIONS_JS = r"""(host) => {
   const walk = (root) => {
     for (const el of root.querySelectorAll('*')) {
       if (el.tagName === 'SPL-SELECT-OPTION') {
-        out.push([el.getAttribute('value') || '', (el.textContent || '').replace(/\s+/g, ' ').trim()]);
+        const label = (el.textContent || '').replace(/\s+/g, ' ').trim();
+        out.push([el.getAttribute('value') || '', label]);
       }
       if (el.shadowRoot) walk(el.shadowRoot);
     }
@@ -96,8 +98,12 @@ _ENTRIES_JS = r"""([section, kind]) => {
   if (!root) return null;
   const text = (e) => e ? (e.innerText || e.textContent || '').replace(/\s+/g, ' ').trim() : '';
   const tag = kind === 'experience' ? 'oc-experience-entry' : 'oc-education-entry';
-  return [...root.querySelectorAll(tag)].filter(e => !e.querySelector('[data-test$="-edit-form"]')).map(e => {
-    const first = e.querySelector(kind === 'experience' ? '[data-test=experience-entry-title]' : '[data-test=education-entry-institution]');
+  const heading = kind === 'experience'
+    ? '[data-test=experience-entry-title]' : '[data-test=education-entry-institution]';
+  const saved = [...root.querySelectorAll(tag)]
+    .filter(e => !e.querySelector('[data-test$="-edit-form"]'));
+  return saved.map(e => {
+    const first = e.querySelector(heading);
     const date = text(e.querySelector(`[data-test=${kind}-entry-date]`));
     let head = text(first);
     if (date && head.endsWith(date)) head = head.slice(0, head.length - date.length).trim();
@@ -203,7 +209,9 @@ def _state_code(state: str) -> str:
     return state.strip().upper() if state.strip().upper() in _STATE_CODES.values() else ""
 
 
-def pick_location(options: list[tuple[str, str]], city: str, state: str = "", country: str = "") -> str | None:
+def pick_location(
+    options: list[tuple[str, str]], city: str, state: str = "", country: str = ""
+) -> str | None:
     """The one option naming ``city`` (in ``state`` when known); None when unsure.
 
     Options read "Glendale, CA, US" with values "US_CA_CITY_glendale"; the "fill in
@@ -223,7 +231,8 @@ def pick_location(options: list[tuple[str, str]], city: str, state: str = "", co
         country_code = value.split("_", 1)[0].upper()
         if code:
             region = parts[1] if len(parts) > 2 else ""
-            if region.upper() != code and field_matcher.normalize(region) != field_matcher.normalize(state):
+            same_state = field_matcher.normalize(region) == field_matcher.normalize(state)
+            if region.upper() != code and not same_state:
                 continue
         if usa and country_code != "US":
             continue
@@ -254,7 +263,9 @@ def location_matches(committed: Any, city: str, state: str = "", country: str = 
     ):
         return False
     if country:
-        wanted = "united states" if field_matcher.normalize(country) in _US else field_matcher.normalize(country)
+        wanted = field_matcher.normalize(country)
+        if wanted in _US:
+            wanted = "united states"
         have = field_matcher.normalize(str(committed.get("country") or ""))
         if have and have != wanted:
             return False
@@ -302,7 +313,9 @@ def _activate(control: Any) -> None:
     it lands on ``control`` itself; otherwise the ordinary click (with its waits) runs.
     """
     if clicks.is_submit_like(control):
-        raise clicks.SubmitRefused("refused a click on a control that reads as submitting the application")
+        raise clicks.SubmitRefused(
+            "refused a click on a control that reads as submitting the application"
+        )
     page = control.page
     deadline = time.monotonic() + 3
     while time.monotonic() < deadline:
@@ -324,7 +337,11 @@ def _clear_typeahead(host: Any) -> None:
 
 
 def _type_and_pick(
-    host: Any, query: str, choose: Callable[[list[tuple[str, str]]], str | None], *, want_results: bool,
+    host: Any,
+    query: str,
+    choose: Callable[[list[tuple[str, str]]], str | None],
+    *,
+    want_results: bool,
 ) -> bool:
     """Type ``query`` into the typeahead and click the option ``choose`` names.
 
@@ -357,7 +374,10 @@ def _text_typeahead(host: Any, wanted: str) -> bool:
     """Commit ``wanted`` in a title/company/institution typeahead and verify it."""
     if not wanted or not _present(host):
         return False
-    if not _type_and_pick(host, wanted, lambda options: pick_text(options, wanted), want_results=False):
+    def choose(options: list[tuple[str, str]]) -> str | None:
+        return pick_text(options, wanted)
+
+    if not _type_and_pick(host, wanted, choose, want_results=False):
         return False
     committed = _committed(host)
     return isinstance(committed, str) and _same(committed, wanted, "school")
@@ -366,7 +386,10 @@ def _text_typeahead(host: Any, wanted: str) -> bool:
 def _location_typeahead(host: Any, city: str, state: str, country: str) -> bool:
     if not city or not _present(host):
         return False
-    if not _type_and_pick(host, city, lambda options: pick_location(options, city, state, country), want_results=True):
+    def choose(options: list[tuple[str, str]]) -> str | None:
+        return pick_location(options, city, state, country)
+
+    if not _type_and_pick(host, city, choose, want_results=True):
         return False
     if location_matches(_committed(host), city, state, country):
         return True
@@ -379,7 +402,8 @@ def fill_city(page: Any, fields: dict[str, str]) -> tuple[list[dict[str, str]], 
     host = page.locator(_LOCATION).first
     if not _present(page.locator(_LOCATION)):
         return [], []  # this tenant does not ask for a city
-    city, state, country = fields.get("city", ""), fields.get("state", ""), fields.get("country", "")
+    city, state = fields.get("city", ""), fields.get("state", "")
+    country = fields.get("country", "")
     committed = _committed(host)
     if isinstance(committed, dict) and committed.get("city"):
         # An applicant's (or an earlier run's) choice is kept as it is.
@@ -484,7 +508,9 @@ def _save(page: Any, kind: str, editor: Any) -> bool:
     return _wait_closed(page, _editor(page, kind))
 
 
-def _experience_entry(page: Any, editor: Any, exp: PacketExperience, label: str) -> tuple[bool, list[str]]:
+def _experience_entry(
+    page: Any, editor: Any, exp: PacketExperience, label: str
+) -> tuple[bool, list[str]]:
     """Fill one open experience editor; ``(complete, review notes)``."""
     review: list[str] = []
     title = editor.locator("spl-autocomplete[data-test=job-title-autocomplete]").first
@@ -518,7 +544,9 @@ def _degree(edu: PacketEducation) -> str:
     return edu.degree_level or edu.degree_name or edu.degree
 
 
-def _education_entry(page: Any, editor: Any, edu: PacketEducation, label: str) -> tuple[bool, list[str]]:
+def _education_entry(
+    page: Any, editor: Any, edu: PacketEducation, label: str
+) -> tuple[bool, list[str]]:
     review: list[str] = []
     school = editor.locator("spl-autocomplete[data-test=institution-autocomplete]").first
     if not _text_typeahead(school, edu.school):
@@ -683,13 +711,12 @@ def fill_message(page: Any, cover_letter: str) -> tuple[list[dict[str, str]], li
     except Exception:  # noqa: BLE001
         return [], ["Message to the Hiring Team"]
     if current.strip():
-        return [{"label": "Message to the Hiring Team", "value": current[:60], "state": "preserved"}], []
+        kept = {"label": "Message to the Hiring Team", "value": current[:60], "state": "preserved"}
+        return [kept], []
     review: list[str] = []
     if _set_text(box, cover_letter.strip(), label="Message to the Hiring Team", review=review):
-        try:
+        with contextlib.suppress(Exception):
             box.evaluate("e => e.blur()")
-        except Exception:  # noqa: BLE001
-            pass
         return [{"label": "Message to the Hiring Team", "value": "cover letter"}], review
     return [], [*review, "Message to the Hiring Team"]
 
