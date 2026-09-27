@@ -242,7 +242,12 @@ fn main_window(app: &AppHandle) -> tauri::Result<tauri::WebviewWindow> {
     WebviewWindowBuilder::from_config(app, &config)?
         .on_navigation(move |url| {
             // A link followed in the window itself.
-            let server = navigation.state::<Sidecar>().server_url.lock().unwrap().clone();
+            let server = navigation
+                .state::<Sidecar>()
+                .server_url
+                .lock()
+                .unwrap()
+                .clone();
             match links::route(url, server.as_ref()) {
                 links::Route::App => true,
                 links::Route::Browser => {
