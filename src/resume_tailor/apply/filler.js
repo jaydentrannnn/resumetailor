@@ -5,8 +5,14 @@
  * answer, most specific first (`field_matcher.eeo_patterns`: the first regex naming
  * exactly one option wins, one naming two stops). ``correct`` runs only the post-upload pass: put
  * back contact facts an ATS's resume parser overwrote, and touch nothing else.
+ *
+ * ``scan`` fills nothing and returns ``{ questions }``: one entry per question (a radio,
+ * checkbox or toggle-button group counts once) with its id, label, kind, options and
+ * date part. `questions.plan_for` turns those into ``plan``, ``{ qid: { key, value } }``;
+ * given a plan, a planned question takes its key from it (null: leave it for review)
+ * and its ``value``, when set, over ``fields[key]`` (`fill._fill_frame`).
  */
-({ fields, hints, synonyms, eeo = {}, correct = false }) => {
+({ fields, hints, synonyms, eeo = {}, correct = false, scan = false, plan = null }) => {
   const filled = [];
   const leftovers = [];
   const long_text = [];
@@ -69,13 +75,27 @@
     return out;
   }
 
-  /** Build a CSS selector that uniquely identifies el among peers. */
+  /**
+   * A CSS selector for el. A radio/checkbox group member is named by its group (the
+   * group is the question); anything else gets a path grown until it matches el alone:
+   * a short ``div:nth-of-type`` path can match another control, whose value is then read
+   * back as this one's (Ramp's Phone "filled" with the School typeahead's text).
+   */
   function selectorFor(el) {
     if (el.id) return `#${CSS.escape(el.id)}`;
     const name = el.getAttribute("name");
+    const tag = el.tagName.toLowerCase();
+    const root = rootOf(el);
+    const unique = (sel) => {
+      try {
+        return root.querySelectorAll(sel).length === 1;
+      } catch (_) {
+        return false;
+      }
+    };
     if (name) {
-      const tag = el.tagName.toLowerCase();
-      return `${tag}[name="${name.replace(/"/g, '\\"')}"]`;
+      const byName = `${tag}[name="${name.replace(/"/g, '\\"')}"]`;
+      if (el.type === "radio" || el.type === "checkbox" || unique(byName)) return byName;
     }
     const automationId = el.getAttribute("data-automation-id");
     if (automationId && document.querySelectorAll(`[data-automation-id="${CSS.escape(automationId)}"]`).length === 1) {
@@ -83,7 +103,7 @@
     }
     const parts = [];
     let node = el;
-    while (node && node.nodeType === 1 && parts.length < 4) {
+    while (node && node.nodeType === 1 && (parts.length < 4 || !unique(parts.join(" > ")))) {
       let part = node.tagName.toLowerCase();
       if (node.id) {
         part += `#${CSS.escape(node.id)}`;
@@ -130,9 +150,110 @@
     return text ? { text, required: field.required === true } : null;
   }
 
+  /** A radio/checkbox with siblings of its name: one option of a question. */
+  const CONTROLS = "input:not([type='hidden']), select, textarea";
+  const textOf = (node) => (node?.innerText || node?.textContent || "").replace(/[⁠​]/g, "").replace(/\s+/g, " ").trim();
+
+  /** Toggle buttons answering one question (Ashby's Yes/No): el's own, or el's siblings. */
+  function toggleButtons(el) {
+    const parent = el.tagName === "BUTTON" ? el.parentElement : el.parentElement;
+    const buttons = parent ? Array.from(parent.querySelectorAll(":scope > button[aria-pressed]")) : [];
+    return buttons.length > 1 ? buttons : [];
+  }
+
+  /**
+   * The options answering the same question as el: radios/checkboxes sharing its name;
+   * else checkboxes each named after themselves inside one fieldset or group (Ashby's
+   * race list); else a toggle-button group, whose decoy checkbox rides along.
+   */
+  function questionMembers(el) {
+    const buttons = toggleButtons(el);
+    if (buttons.length) {
+      const decoys = Array.from(buttons[0].parentElement.querySelectorAll(":scope > input"));
+      return [...buttons, ...decoys];
+    }
+    if (el.type !== "radio" && el.type !== "checkbox") return [el];
+    const root = rootOf(el);
+    if (el.name) {
+      const named = Array.from(root.querySelectorAll(`input[type="${el.type}"][name="${CSS.escape(el.name)}"]`));
+      if (named.length > 1) return named;
+    }
+    const box = el.closest("fieldset, [role='group'], [role='radiogroup']");
+    if (box) {
+      const all = Array.from(box.querySelectorAll(CONTROLS));
+      if (all.length > 1 && all.every((other) => other.type === el.type)) return all;
+    }
+    return [el];
+  }
+
+  /** The options (not the decoy) of el's question. */
+  function questionOptions(el) {
+    return questionMembers(el).filter((member) => member.tagName === "BUTTON" || member.type === "radio" || member.type === "checkbox")
+      .filter((member, _i, all) => member.tagName === "BUTTON" || !all.some((other) => other.tagName === "BUTTON"));
+  }
+
+  function isGroupMember(el) {
+    return questionMembers(el).length > 1;
+  }
+
+  /** One id for a question: its group's name or container, else the control's selector. */
+  function questionId(el) {
+    const members = questionMembers(el);
+    if (members.length < 2) return selectorFor(el);
+    const first = members[0];
+    if (first.tagName !== "BUTTON" && first.name && members.every((member) => member.name === first.name)) {
+      return selectorFor(first);
+    }
+    return `group:${selectorFor(first)}`;
+  }
+
+  /**
+   * A wrapper's own label: ``<label for="startDate">`` naming the element that holds the
+   * month and year selects (Ashby's date fields), not a control of its own.
+   */
+  function wrapperLabel(el) {
+    const root = rootOf(el);
+    for (let node = el.parentElement; node && node !== document.body; node = node.parentElement) {
+      if (!node.id || node.matches(CONTROLS)) continue;
+      const label = root.querySelector(`label[for="${CSS.escape(node.id)}"]`);
+      if (label && !label.querySelector(CONTROLS)) return textOf(label);
+    }
+    return "";
+  }
+
+  /**
+   * The label nearest before el in the smallest field holding only el: Ashby puts the
+   * question in a ``<label>`` whose ``for`` names no element, then helper text ("For most
+   * recent or in progress degree."), then the control — the helper is not the question.
+   */
+  function fieldLabel(el) {
+    const root = rootOf(el);
+    const members = questionMembers(el);
+    const ours = (other) => members.includes(other);
+    for (let node = el.parentElement, depth = 0; node && node !== document.body && depth < 8; node = node.parentElement, depth++) {
+      if (Array.from(node.querySelectorAll(CONTROLS)).some((other) => !ours(other))) break;
+      const labels = Array.from(node.querySelectorAll("label")).filter((label) => {
+        if (label.querySelector(CONTROLS)) return false;  // an option's own wrapping label
+        const target = label.getAttribute("for");
+        const named = target ? root.getElementById?.(target) || document.getElementById(target) : null;
+        // A label for this control or its group's options is an option, not the question.
+        if (named && named.matches?.(CONTROLS)) return false;
+        return Boolean(label.compareDocumentPosition(el) & Node.DOCUMENT_POSITION_FOLLOWING);
+      });
+      const text = textOf(labels[labels.length - 1]);
+      if (text) return text.replace(/\s*\*\s*$/, "");
+    }
+    return "";
+  }
+
   function labelFor(el) {
     const lever = leverQuestion(el);
     if (lever) return lever.text;
+    // One option of a radio/checkbox question stands for the question.
+    if (isGroupMember(el)) {
+      const question = groupQuestion(el);
+      if (question) return question;
+    }
     const id = el.id;
     const root = rootOf(el);
     if (id) {
@@ -156,6 +277,10 @@
       const text = title ? (title.innerText || title.textContent || "").trim() : "";
       if (text) return text;
     }
+    const wrapper = wrapperLabel(el);
+    if (wrapper) return wrapper;
+    const field = fieldLabel(el);
+    if (field) return field;
     const container = containerLabel(el);
     if (container) return container;
     const placeholder = el.getAttribute("placeholder");
@@ -271,10 +396,19 @@
     return Boolean(nearPhone && codes.length >= 2);
   }
 
-  /** Match a field key via hints, autocomplete attrs, then label synonyms. */
+  /** Match a field key via the DOM's own facts, then label synonyms. */
   function matchKey(el, label) {
-    if (/^end[-_ ]?year(?:--\d+)?$/i.test(el.id || "")) return "graduation_month";
-    if (/^start[-_ ]?year(?:--\d+)?$/i.test(el.id || "")) return "education_start_month";
+    return attrKey(el, label) || labelKey(el, label);
+  }
+
+  /**
+   * A key the DOM itself states: an ATS hint selector, an education-date input's id or
+   * name, a phone-code control, Workday's preferred-name block. A plan from the fill
+   * runner keeps these; label wording is the decision layer's (`questions.py`).
+   */
+  function attrKey(el, label) {
+    if (/^end[-_ ]?(?:year|month)(?:--\d+)?$/i.test(el.id || "")) return "graduation_month";
+    if (/^start[-_ ]?(?:year|month)(?:--\d+)?$/i.test(el.id || "")) return "education_start_month";
     // Epic Games / Greenhouse-style education rows: educations[0].start_date.year. Decided
     // here so "start date" never reaches the availability synonym (earliest_start).
     const eduDate = /educations?\[\d+\]\.(start|end)_date\.(?:year|month)$/i.exec(el.getAttribute("name") || "");
@@ -315,7 +449,27 @@
         /* invalid selector — skip */
       }
     }
+    return null;
+  }
 
+  /** The key autocomplete / automation-id / name attributes alone name ("given-name"). */
+  function nameKey(el) {
+    const name = el.getAttribute("name") || "";
+    const auto = el.getAttribute("autocomplete") || el.getAttribute("data-automation-id") ||
+      el.getAttribute("data-field") || "";
+    const haystack = `${auto} ${name.replace(/[._\-\[\]]+/g, " ")}`.toLowerCase().trim();
+    if (!haystack || /^(?:on|off)$/.test(haystack)) return null;
+    for (const [pattern, key] of synonymList) {
+      try {
+        if (new RegExp(pattern, "i").test(haystack)) return key;
+      } catch (_) {
+        /* bad regex — skip */
+      }
+    }
+    return null;
+  }
+
+  function labelKey(el, label) {
     const auto =
       el.getAttribute("autocomplete") ||
       el.getAttribute("data-automation-id") ||
@@ -481,6 +635,83 @@
     return selectEl.value === opt.value ? opt.text.trim() : null;
   }
 
+  /**
+   * Answer a question whose options are toggle buttons or checkboxes named after
+   * themselves: the option saying ``value`` (exactly, a "Yes"/"No" head, or a
+   * self-identification answer's option), verified. Returns its text, or null.
+   */
+  /** The option of a group that says value, set; null when none does or it would not stick. */
+  function fillGroup(options, value, key) {
+    const texts = options.map((option) => norm(option.tagName === "BUTTON" ? textOf(option) : optionText(option)));
+    const wanted = norm(value);
+    let index = texts.indexOf(wanted);
+    if (index < 0 && (wanted === "yes" || wanted === "no")) {
+      const heads = texts.flatMap((text, i) => (text.split(" ")[0] === wanted ? [i] : []));
+      if (heads.length === 1) index = heads[0];
+    }
+    if (index < 0 && eeo[key]) index = eeoPick(texts, key);
+    if (index < 0) return null;
+    const option = options[index];
+    if (option.tagName === "BUTTON") {
+      if (option.getAttribute("aria-pressed") !== "true") option.click();
+      return option.getAttribute("aria-pressed") === "true" ? option : null;
+    }
+    if (option.type === "checkbox") return tick(option) ? option : null;
+    if (!option.checked) option.click();
+    return option.checked ? option : null;
+  }
+
+  const MONTH_NAME = /^(?:jan|feb|mar|apr|may|jun|jul|aug|sep|oct|nov|dec)[a-z]*\.?$/i;
+  const DATE_HINT = /\b(?:pick|select|choose|enter) (?:a )?date\b|^(?:mm|dd|yyyy)\s*[/.-]/i;
+
+  /** "month"/"year" for one box of a split date: its name, placeholder, first option or options. */
+  function datePartOf(el, label, options) {
+    const stated = datePart(el, label);
+    if (stated) return stated;
+    const first = el.tagName === "SELECT" ? (el.options[0]?.text || "").trim() : "";
+    const real = options.filter((option) => option && !/^(select|choose|please select|month|year)\b/i.test(option));
+    if (/^month\b/i.test(first) || (real.length >= 12 && real.filter((option) => MONTH_NAME.test(option.trim())).length >= 12)) return "month";
+    if (/^year\b/i.test(first) || (real.length >= 3 && real.every((option) => /^\d{4}$/.test(option.trim())))) return "year";
+    if (el.tagName === "SELECT" || el.type === "number") {
+      if (/\bmonth\b/i.test(label) && !/\byear\b/i.test(label)) return "month";
+      if (/\byear\b/i.test(label) && !/\bmonth\b/i.test(label)) return "year";
+    }
+    return "";
+  }
+
+  /** Helper text shown with a question ("For most recent or in progress degree."). */
+  function helpFor(el) {
+    const described = el.getAttribute("aria-describedby");
+    if (described) {
+      const text = described.split(/\s+/).map((ref) => rootOf(el).getElementById?.(ref)).filter(Boolean).map(textOf).join(" ");
+      if (text) return text.slice(0, 300);
+    }
+    const field = el.closest("[class*='field-entry' i], [class*='form-group' i], fieldset");
+    return textOf(field?.querySelector("[class*='description' i], [class*='help-text' i], [class*='hint' i]")).slice(0, 300);
+  }
+
+  /** One question for the fill runner's plan (`questions.py`): what it asks and how. */
+  function describe(el, { qid, members, buttonGroup, label, sel, required }) {
+    const type = (el.getAttribute("type") || el.tagName.toLowerCase()).toLowerCase();
+    const options = members.length > 1
+      ? questionOptions(el).map((option) => (option.tagName === "BUTTON" ? textOf(option) : optionText(option)))
+      : el.tagName === "SELECT" ? Array.from(el.options).map((option) => option.text.trim()) : [];
+    const combo = el.getAttribute("role") === "combobox" || isReactSelect(el);
+    const kind = buttonGroup || type === "radio" || el.tagName === "SELECT" ? "choice"
+      : type === "checkbox" ? (members.length > 1 ? "multi" : "checkbox")
+      : combo ? "typeahead"
+      : el.tagName === "TEXTAREA" ? "textarea"
+      : type === "date" || DATE_HINT.test(el.getAttribute("placeholder") || "") ? "date"
+      : "text";
+    return {
+      qid, selector: sel, label, help: helpFor(el), kind, options, required,
+      part: kind === "choice" || kind === "text" || kind === "typeahead" ? datePartOf(el, label, options) : "",
+      attr_key: attrKey(el, label) || "", name_key: nameKey(el) || "",
+      placeholder: el.getAttribute("placeholder") || "", input_type: type,
+      section: sectionHeading(el),
+    };
+  }
+
   /** Tick a checkbox; a styled one takes the click on its label. */
   function tick(input) {
     if (input.checked) return true;
@@ -570,12 +801,15 @@
   function groupQuestion(el) {
     const lever = leverQuestion(el);
     if (lever) return lever.text;
-    const legend = el.closest("fieldset")?.querySelector("legend");
+    const fieldset = el.closest("fieldset");
+    const legend = fieldset?.querySelector("legend");
     if (legend) return (legend.innerText || legend.textContent || "").trim();
-    const labelled = el.closest("[role='group'][aria-labelledby]")?.getAttribute("aria-labelledby");
+    const labelled = el.closest("[role='group'][aria-labelledby], [role='radiogroup'][aria-labelledby]")
+      ?.getAttribute("aria-labelledby");
     const byId = labelled ? rootOf(el).getElementById(labelled.split(/\s+/)[0]) : null;
     if (byId) return (byId.innerText || byId.textContent || "").trim();
-    return containerLabel(el) || labelFor(el);
+    // Ashby: the fieldset's own <label>, before its helper text and options.
+    return fieldLabel(el) || containerLabel(el);
   }
 
   /** A place's name without its region: "New York, NY" and "London (Hybrid)" -> head. */
@@ -652,8 +886,10 @@
   function datePart(el, label) {
     const name = el.getAttribute("name") || "";
     const placeholder = el.getAttribute("placeholder") || "";
-    if (/\.year$/i.test(name) || /^yyyy$/i.test(placeholder) || /\(year\)/i.test(label)) return "year";
-    if (/\.month$/i.test(name) || /^mm$/i.test(placeholder) || /\(month\)/i.test(label)) return "month";
+    // Greenhouse's education dates: ids start-month--0 / end-year--0.
+    const id = el.id || "";
+    if (/\.year$/i.test(name) || /[-_]year(?:--\d+)?$/i.test(id) || /^yyyy$/i.test(placeholder) || /\(year\)/i.test(label)) return "year";
+    if (/\.month$/i.test(name) || /[-_]month(?:--\d+)?$/i.test(id) || /^mm$/i.test(placeholder) || /\(month\)/i.test(label)) return "month";
     return "";
   }
 
@@ -695,20 +931,24 @@
     return norm(current) === norm(wanted);
   }
 
-  const controls = deepQueryAll(document, "input, select, textarea").filter(isVisible);
+  // Toggle-button groups (Ashby's Yes/No) are questions too; a group is visited once.
+  const controls = deepQueryAll(document, "input, select, textarea, button[aria-pressed]").filter(isVisible);
+  const questions_out = [];
 
   // The previous control's key, in document order: "If other, please specify" right
   // after "How did you hear" is the source detail.
   let previousKey = null;
   // Location checkbox lists already answered as a whole (by group name).
   const locationNames = new Set();
+  // Questions already answered or reported: a group is one question, not one per option.
+  const doneQuestions = new Set();
   for (const el of controls) {
-    const type = (el.getAttribute("type") || el.tagName.toLowerCase()).toLowerCase();
-    const label = labelFor(el);
-    const sel = selectorFor(el);
-    const required = el.required || el.getAttribute("aria-required") === "true" ||
-      Boolean(leverQuestion(el)?.required);
-
+    const members = questionMembers(el);
+    const buttonGroup = members[0]?.tagName === "BUTTON";
+    // A toggle-button group is handled at its first button; its decoy input with it.
+    if (buttonGroup && el !== members[0]) continue;
+    const type = buttonGroup ? "buttons"
+      : (el.getAttribute("type") || el.tagName.toLowerCase()).toLowerCase();
     if (type === "file" || skipTypes.has(type)) continue;
     // Workday: a honeypot "for robots only" input, and the search box of a multiselect
     // prompt (typing there does not commit a choice; the fill runner owns those).
@@ -716,10 +956,57 @@
     // The options of an open prompt popup (Skills search results) are not questions.
     if (el.closest("[data-automation-id='promptOption'], [data-automation-id='promptLeafNode'], [data-automation-id='activeListContainer'], [role='listbox']")) continue;
     if (el.closest("[data-automation-id='multiselectInputContainer']")) {
-      previousKey = matchKey(el, label);
+      if (!scan) previousKey = matchKey(el, labelFor(el));
       continue;
     }
-    let key = matchKey(el, label);
+    const qid = questionId(el);
+    const multiMember = members.length > 1 && (buttonGroup || !el.name || members.some((member) => member.name !== el.name));
+    if (multiMember && doneQuestions.has(qid)) continue;
+    const label = labelFor(el);
+    const sel = selectorFor(el);
+    const required = el.required || el.getAttribute("aria-required") === "true" ||
+      Boolean(leverQuestion(el)?.required) || members.some((member) => member.required);
+    const planned = plan && Object.prototype.hasOwnProperty.call(plan, qid) ? plan[qid] : null;
+
+    if (scan) {
+      if (!doneQuestions.has(qid)) {
+        doneQuestions.add(qid);
+        questions_out.push(describe(el, { qid, members, buttonGroup, label, sel, required }));
+      }
+      continue;
+    }
+    if (multiMember) {
+      // Options named after themselves (Ashby's race list) or toggle buttons: the group
+      // is answered here as a whole.
+      doneQuestions.add(qid);
+      const options = questionOptions(el);
+      const key = planned ? planned.key : matchKey(el, label);
+      const answered = options.find((option) => option.tagName === "BUTTON"
+        ? option.getAttribute("aria-pressed") === "true" : option.checked);
+      if (answered) {
+        filled.push({ key: "existing", label, value: answered.tagName === "BUTTON" ? textOf(answered) : optionText(answered), selector: selectorFor(answered), preserved: true });
+        continue;
+      }
+      const value = planned && planned.value ? planned.value : (key ? fields[key] : "");
+      const texts = options.map((option) => option.tagName === "BUTTON" ? textOf(option) : optionText(option));
+      if (!key || !value) {
+        leftovers.push({ key, label, type, options: texts, required, selector: sel,
+          reason: key ? "Profile field is blank" : "Unrecognized field" });
+        if (required) required_empty.push(label || qid);
+        continue;
+      }
+      const chosen = fillGroup(options, String(value), key);
+      if (!chosen) {
+        leftovers.push({ key, label, type, options: texts, required, selector: sel,
+          reason: options.some((option) => norm(option.tagName === "BUTTON" ? textOf(option) : optionText(option)) === norm(value))
+            ? "The choice did not stay selected" : "No exact matching choice" });
+        if (required) required_empty.push(label || qid);
+        continue;
+      }
+      filled.push({ key, label, value: chosen.tagName === "BUTTON" ? textOf(chosen) : optionText(chosen), selector: selectorFor(chosen) });
+      continue;
+    }
+    let key = planned ? planned.key : matchKey(el, label);
     if ((!key || key === "how_heard") && previousKey === "how_heard" && el.tagName !== "SELECT" &&
         !["radio", "checkbox"].includes(type) && /specify|if other|please explain/i.test(label)) {
       key = "how_heard_detail";
@@ -747,7 +1034,7 @@
         filled.push({ key: "existing", label, value: selectedText, selector: sel, preserved: true });
         continue;
       }
-      leftovers.push({ key, label, type: "combobox", options: [], required, selector: sel, reason: "Custom dropdown needs an observed selection" });
+      leftovers.push({ key, label, type: "combobox", options: [], required, selector: sel, value: planned && planned.value ? planned.value : undefined, reason: "Custom dropdown needs an observed selection" });
       if (required) required_empty.push(label || sel);
       continue;
     }
@@ -846,7 +1133,7 @@
       continue;
     }
 
-    const value = fields[key];
+    const value = planned && planned.value ? planned.value : fields[key];
     if (value === undefined || value === null || String(value).trim() === "") {
       // A recognised question whose profile fact is blank: the fill result names the
       // profile field to set (`packet.missing_profile`).
@@ -923,6 +1210,7 @@
     filled.push({ key, label, value: written, selector: sel });
   }
 
+  if (scan) return { questions: questions_out, frames_skipped };
   return {
     filled,
     leftovers,

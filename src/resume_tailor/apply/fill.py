@@ -30,6 +30,7 @@ from resume_tailor.apply import (
     field_matcher,
     form_guards,
     hybrid_resolver,
+    questions,
     smartrecruiters_flow,
     store,
     submit_guard,
@@ -501,12 +502,29 @@ def _fill_declared_combobox(target: Any, item: dict[str, Any], fields: dict[str,
     selector = str(item.get("selector") or "")
     if not selector or key in {"salary_expectation", ""}:
         return None
-    for value in field_matcher.choice_values(key, fields):
+    planned = [str(item["value"])] if item.get("value") else []
+    for value in dict.fromkeys([*planned, *field_matcher.choice_values(key, fields)]):
         if value and hybrid_resolver._select_combobox_option(  # noqa: SLF001
             target, selector, value, key=key, phone_region=fields.get("phone_country_region", ""),
         ):
             return value
     return None
+
+
+def _fill_frame(
+    frame: Any, filler_js: str, fields: dict[str, str], hints: dict[str, str], facts: questions.Facts,
+) -> Any:
+    """Fill one frame: ``filler.js`` reads its questions, `questions` decides each one's
+    key and answer, and the filler sets them (a failed read fills without a plan)."""
+    args = {
+        "fields": fields, "hints": hints, "synonyms": _synonym_payload(),
+        "eeo": field_matcher.eeo_patterns(fields),
+    }
+    plan = None
+    with contextlib.suppress(Exception):
+        scanned = frame.evaluate(filler_js, {**args, "scan": True})
+        plan = questions.plan_for((scanned or {}).get("questions") or [], facts)
+    return frame.evaluate(filler_js, {**args, "plan": plan})
 
 
 def _availability_note(earliest_start: str, jd_text: str) -> str | None:
@@ -988,6 +1006,7 @@ def fill_application(
             needs_review: list[str] = [authorization_note] if authorization_note else []
             # Questions recognised as a profile fact the profile leaves blank (every step).
             blank_facts: list[dict[str, Any]] = []
+            facts = questions.facts_from_packet(pkt, fields=fields)
             posting_text = jd_text
             with contextlib.suppress(Exception):
                 posting_text += "\n" + page.locator("body").inner_text(timeout=2000)[:50000]
@@ -1115,15 +1134,7 @@ def fill_application(
                 pass_start = len(merged["filled"])
                 for frame_index, frame in enumerate(frames):
                     try:
-                        partial = frame.evaluate(
-                            filler_js,
-                            {
-                                "fields": fields,
-                                "hints": hints,
-                                "synonyms": _synonym_payload(),
-                                "eeo": field_matcher.eeo_patterns(fields),
-                            },
-                        )
+                        partial = _fill_frame(frame, filler_js, fields, hints, facts)
                     except Exception as exc:  # noqa: BLE001 - cross-origin frames fail evaluate
                         merged["frames_skipped"] = int(merged["frames_skipped"]) + 1
                         if frame_index == 0:
@@ -1137,11 +1148,7 @@ def fill_application(
                         # frame once more and keep the first pass's own fills.
                         page.wait_for_timeout(600)
                         with contextlib.suppress(Exception):
-                            again = frame.evaluate(
-                                filler_js,
-                                {"fields": fields, "hints": hints, "synonyms": _synonym_payload(),
-                                 "eeo": field_matcher.eeo_patterns(fields)},
-                            )
+                            again = _fill_frame(frame, filler_js, fields, hints, facts)
                             if isinstance(again, dict):
                                 first = [item for item in partial.get("filled") or [] if isinstance(item, dict)]
                                 seen = {item.get("selector") for item in first}
@@ -1158,8 +1165,11 @@ def fill_application(
                             items = [{**item, "frame_index": frame_index} for item in items if isinstance(item, dict)]
                         merged[key].extend(items)
                     merged["frames_skipped"] += int(partial.get("frames_skipped") or 0)
+                    # A derived answer ("currently enrolled?") is blank for want of the
+                    # profile field it comes from (the graduation date).
                     blank_facts.extend(
-                        item for item in partial.get("leftovers") or []
+                        {**item, "key": questions.profile_field(str(item.get("key") or ""))}
+                        for item in partial.get("leftovers") or []
                         if isinstance(item, dict) and item.get("reason") == apply_packet.BLANK_PROFILE_REASON
                     )
 
@@ -1486,8 +1496,7 @@ def fill_application(
                     known_filled = {(item.get("frame_index", 0), item.get("selector")) for item in merged["filled"] if isinstance(item, dict)}
                     for frame_index, frame in enumerate(frames):
                         with contextlib.suppress(Exception):
-                            revealed = frame.evaluate(filler_js, {"fields": fields, "hints": hints, "synonyms": _synonym_payload(),
-                                 "eeo": field_matcher.eeo_patterns(fields)})
+                            revealed = _fill_frame(frame, filler_js, fields, hints, facts)
                             merged["filled"].extend(
                                 {**item, "frame_index": frame_index} for item in revealed.get("filled") or []
                                 if isinstance(item, dict) and item.get("key") != "existing"

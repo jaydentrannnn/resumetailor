@@ -200,3 +200,46 @@ def test_graduation_parts_need_the_part():
     month_only = q.facts_for({"graduation_month": "2027"})
     question = Question("Graduation month")
     assert q.answers(q.classify(question), question, month_only) == []
+
+
+@pytest.mark.parametrize(
+    ("placeholder", "input_type", "expected"),
+    [
+        ("Pick date...", "text", "06/01/2027"),
+        ("", "date", "2027-06-01"),
+        ("MM/YYYY", "text", "06/2027"),
+        ("DD/MM/YYYY", "text", "01/06/2027"),
+    ],
+)
+def test_date_text_always_names_the_day(placeholder, input_type, expected):
+    # "2027-06" parsed by a date picker is June 1st UTC: May 31st in California.
+    assert q.date_text("2027-06", placeholder=placeholder, input_type=input_type) == expected
+    assert q.date_text("", placeholder=placeholder, input_type=input_type) == ""
+
+
+@pytest.mark.parametrize(
+    "text",
+    ["If Other for Education, please list the school name", "If yes, please provide details:"],
+)
+def test_follow_up_questions_are_not_classified(text):
+    assert q.classify(Question(text)) is None
+
+
+def test_plan_for_decides_key_and_value():
+    items = [
+        {"qid": "a", "label": "Are you currently enrolled in college?", "kind": "choice", "options": ["Select...", "Yes", "No"]},
+        {"qid": "b", "label": "Graduation Date", "kind": "date", "placeholder": "Pick date..."},
+        {"qid": "c", "label": "End date month", "kind": "typeahead", "part": "month"},
+        {"qid": "d", "label": "Start date year", "kind": "text", "part": "year", "attr_key": "education_start_month"},
+        {"qid": "e", "label": "Do you have experience with Kotlin?", "kind": "choice", "options": ["Yes", "No"]},
+        {"qid": "f", "label": "Phone", "kind": "choice", "options": ["Yes", "No"], "name_key": "phone"},
+    ]
+    plan = q.plan_for(items, FACTS)
+    assert plan["a"] == {"key": "currently_enrolled", "value": "Yes"}
+    assert plan["b"] == {"key": "graduation_month", "value": "06/01/2027"}
+    assert plan["c"] == {"key": "graduation_month", "value": "June"}
+    # A text box's number formatting stays the filler's.
+    assert plan["d"] == {"key": "education_start_month", "value": ""}
+    assert plan["e"] == {"key": None, "value": ""}
+    # A name hint that does not fit the control is dropped, not trusted.
+    assert plan["f"] == {"key": None, "value": ""}

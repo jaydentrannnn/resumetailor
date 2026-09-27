@@ -244,12 +244,38 @@ def _by_match(text: str) -> re.Match[str] | None:
     return None
 
 
+#: Consents, declarations and acknowledgements: the applicant's to give, never answered
+#: from a profile fact (the SMS opt-in's "reply STOP to opt out" is not F-1 OPT).
+_CONSENT = re.compile(
+    r"\b(?:consent|i agree|i understand|i acknowledge|i certify|i attest|i declare|i confirm"
+    r"|text messages?|sms|terms (?:and|&) conditions|privacy (?:policy|notice)"
+    r"|opt[- ]?(?:in|out))\b",
+)
+
+#: "If Other, please list the school" / "If yes, please provide details": a follow-up
+#: to another answer, which no profile fact answers on its own.
+_FOLLOW_UP = re.compile(
+    r"^if (?:other|yes|no|so|not|applicable|you (?:answered|selected|chose|checked))\b"
+)
+
+#: "Location" / "Where are you located?": the applicant's city, as a place search.
+_LOCATION = re.compile(
+    r"^(?:current |your )?location$"
+    r"|^where (?:are you|do you) (?:currently )?(?:located|based|live)\b"
+    r"|^(?:current )?(?:city|location),? (?:state|region)",
+)
+
+
 def classify(question: Question) -> Match | None:
     """The fact ``question`` asks for, or None when no rule covers it."""
     text = _clean(question.text)
     if not text:
         return None
     low = text.casefold()
+    if _CONSENT.search(low) or _FOLLOW_UP.search(low):
+        return None
+    if _LOCATION.search(low.rstrip("?*: ")) and question.kind in {"text", "typeahead"}:
+        return Match("location")
     for pattern, key in _DERIVED:
         if re.search(pattern, low) and _compatible(key, question):
             return Match(key, _param(key, text))
@@ -387,6 +413,9 @@ def answers(match: Match | None, question: Question, facts: Facts) -> list[str]:
         part = question.part or _part_from_text(question.text)
         answer = _date_part(value, part) if value else ""
         return [answer] if answer else []
+    if match.key == "location":
+        city, state = facts.fields.get("city", ""), facts.fields.get("state", "")
+        return [", ".join(part for part in (city, state) if part)] if city else []
     if match.key == "salary_expectation":
         # The fill runner precomputes each unit's answer (`apply/salary.py`).
         unit = salary.question_unit(question.text)
@@ -435,6 +464,79 @@ def _month_option(options: list[str], month: str) -> str | None:
         if low in {month.casefold(), month[:3].casefold()} or low.lstrip("0") == str(number):
             return option
     return None
+
+
+def date_text(value: str, *, placeholder: str = "", input_type: str = "") -> str:
+    """A "2027-06" profile date typed the way a date box reads it; "" without a date.
+
+    A date picker parsing "2027-06" reads it as midnight UTC on June 1st, which is May 31st
+    west of Greenwich (Ramp's graduation date, 2026-09): the month is always typed with
+    its day, in the order the placeholder shows.
+    """
+    parsed = _year_month(value)
+    if parsed is None:
+        return ""
+    year, month = parsed
+    hint = placeholder.casefold()
+    if input_type == "date" or re.search(r"yyyy\s*-\s*mm", hint):
+        return f"{year:04d}-{month:02d}-01"
+    if re.search(r"mm\s*/\s*yyyy", hint) and "dd" not in hint:
+        return f"{month:02d}/{year}"
+    if re.search(r"dd\s*/\s*mm", hint):
+        return f"01/{month:02d}/{year}"
+    return f"{month:02d}/01/{year}"
+
+
+#: Keys whose answer the fill runner cannot read from the packet's fields.
+_COMPUTED = frozenset({key for _pattern, key in _DERIVED} | {"location"})
+_DATE_KEYS = frozenset({"graduation_month", "education_start_month"})
+_PLACEHOLDER_OPTION = re.compile(r"^(?:select|choose|please select|month|year|day)\b|^-+$|^$", re.I)
+
+
+def plan_for(items: Iterable[dict], facts: Facts) -> dict[str, dict[str, str | None]]:
+    """What ``filler.js`` should do with each scanned question, by its question id.
+
+    ``key`` is the fact (None: no rule covers the question, so it is left alone and
+    reported); ``value``, when set, is the exact option to pick or the text to type — the
+    filler's own value and formatting are used otherwise. A key the DOM itself states (an
+    ATS hint, an education-date input's name) is kept; label wording is decided here.
+    """
+    plan: dict[str, dict[str, str | None]] = {}
+    for item in items:
+        qid = str(item.get("qid") or item.get("selector") or "")
+        if not qid:
+            continue
+        options = tuple(
+            str(option) for option in item.get("options") or []
+            if not _PLACEHOLDER_OPTION.match(str(option).strip())
+        )
+        question = Question(
+            str(item.get("label") or ""), kind=item.get("kind") or "text", options=options,
+            part=str(item.get("part") or ""), section=str(item.get("section") or ""),
+        )
+        stated = str(item.get("attr_key") or "")
+        match = Match(stated) if stated else classify(question)
+        name_key = str(item.get("name_key") or "")
+        if match is None and name_key and _compatible(name_key, question):
+            match = Match(name_key)
+        if match is None:
+            plan[qid] = {"key": None, "value": ""}
+            continue
+        found = answers(match, question, facts)
+        value = ""
+        if found and options and question.kind in {"choice", "multi"}:
+            value = choose(question, match.key, found) or ""
+        elif found and question.kind == "date" and match.key in _DATE_KEYS:
+            value = date_text(
+                facts.fields.get(match.key, ""), placeholder=str(item.get("placeholder") or ""),
+                input_type=str(item.get("input_type") or ""),
+            )
+        elif found and (match.key in _COMPUTED or (question.part and question.kind == "typeahead")):
+            # A split date's month typeahead is searched by name ("June"); a plain text
+            # box takes the filler's own number formatting.
+            value = found[0]
+        plan[qid] = {"key": match.key, "value": value}
+    return plan
 
 
 def facts_from_packet(packet: Packet, *, fields: dict[str, str] | None = None) -> Facts:

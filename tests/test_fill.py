@@ -601,7 +601,7 @@ def test_fill_application_awaiting_review(fill_paths, monkeypatch):
     page = MagicMock()
     page.url = "https://example.com/apply"
     page.frames = [page]
-    page.evaluate.side_effect = [filler_result, ["Phone"]]
+    page.evaluate.side_effect = [{"questions": []}, filler_result, ["Phone"]]
 
     @contextmanager
     def _fake_browser():
@@ -667,7 +667,7 @@ def test_fill_application_answer_stage_pinned_to_apply_settings_model(fill_paths
     page = MagicMock()
     page.url = "https://example.com/apply"
     page.frames = [page]
-    page.evaluate.side_effect = [filler_result, []]
+    page.evaluate.side_effect = [{"questions": []}, filler_result, []]
 
     @contextmanager
     def _fake_browser():
@@ -788,7 +788,7 @@ def test_fill_application_readiness_guard_fails_when_zero_controls(fill_paths, m
     page = MagicMock()
     page.url = "https://example.com/apply"
     page.frames = [page]
-    page.evaluate.side_effect = [filler_result, []]
+    page.evaluate.side_effect = [{"questions": []}, filler_result, []]
 
     # Mock locators to return 0 counts so barriers and buttons aren't falsely detected
     mock_loc = MagicMock()
@@ -931,7 +931,7 @@ def test_fill_application_multi_step_wizard(fill_paths, monkeypatch):
     def evaluate_form(script, args=None):
         nonlocal form_step
         if script == fill._load_filler_js():  # noqa: SLF001
-            if args and args.get("fields"):
+            if args and args.get("fields") and not args.get("scan"):
                 form_step += 1
             current = step1_result if form_step <= 1 else step2_result
             return current
