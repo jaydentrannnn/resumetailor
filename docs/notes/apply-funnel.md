@@ -1374,3 +1374,7 @@ regression tests are in `tests/browser/test_apply_controls.py`: a sibling page o
 tab while the click is in flight. The shared claimed-tabs registry discussed as a guard
 was dropped. A foreign tab has no opener or another fill's page as opener, so the opener
 check already refuses everything the registry would.
+
+## 2026-09-28: School email and year-only Workday text
+
+Classify school-issued email separately from personal email so a missing school address is reported as a blank profile fact. Format availability date parts from the question label and replace stale text in date-part inputs, preventing values such as 142027.

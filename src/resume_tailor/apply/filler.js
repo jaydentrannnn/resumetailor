@@ -1053,7 +1053,12 @@
       }
       continue;
     }
-    if (existingAnswer) {
+    // Date-part text boxes can retain a fragment from an earlier fill (for example "14"
+    // before a year). A planned part replaces that fragment with the exact answer.
+    const replaceDatePart = el.tagName === "INPUT" && type === "text" && planned && planned.value &&
+      ["earliest_start", "graduation_month", "education_start_month"].includes(key) &&
+      String(planned.value) !== String(fields[key] || "");
+    if (existingAnswer && !replaceDatePart) {
       filled.push({ key: "existing", label, value: existingAnswer, selector: sel, preserved: true });
       continue;
     }

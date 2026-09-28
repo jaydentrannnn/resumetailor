@@ -411,7 +411,7 @@ def answers(match: Match | None, question: Question, facts: Facts) -> list[str]:
     derived = _derived(match, facts)
     if derived or match.key in {key for _pattern, key in _DERIVED}:
         return derived
-    if match.key in {"graduation_month", "education_start_month"}:
+    if match.key in {"graduation_month", "education_start_month", "earliest_start"}:
         value = facts.fields.get(match.key, "")
         part = question.part or _part_from_text(question.text)
         answer = _date_part(value, part) if value else ""
@@ -430,9 +430,11 @@ def answers(match: Match | None, question: Question, facts: Facts) -> list[str]:
 
 def _part_from_text(text: str) -> str:
     low = text.casefold()
-    if "year" in low and "month" not in low:
+    year = bool(re.search(r"\b(?:year|yyyy|xxxx)\b", low))
+    month = bool(re.search(r"\bmonth\b", low))
+    if year and not month:
         return "year"
-    if "month" in low and "year" not in low:
+    if month and not year:
         return "month"
     return ""
 
@@ -597,6 +599,10 @@ def _step(
             facts.fields.get(match.key, ""), placeholder=str(item.get("placeholder") or ""),
             input_type=str(item.get("input_type") or ""),
         )
+    elif found and match.key == "earliest_start" and (
+        question.part or _part_from_text(question.text)
+    ):
+        value = found[0]
     elif found and (match.key in _COMPUTED or (question.part and question.kind == "typeahead")):
         # A split date's month typeahead is searched by name ("June"); a plain text
         # box takes the filler's own number formatting.
