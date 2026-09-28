@@ -47,6 +47,7 @@ from __future__ import annotations
 
 import json
 import asyncio
+import math
 import time
 from typing import Any, TypeVar
 
@@ -191,6 +192,22 @@ def _response_format_ladder(  # noqa: UP047 - shares module-level `T` with 3 sib
 #: Tests MUST clear this between cases or a call-count assertion becomes flaky for reasons
 #: that have nothing to do with the test — see the `client` fixture in tests/test_llm.py.
 _LEARNED_CEILING: dict[tuple[str, str], int] = {}
+_sleep = time.sleep
+_async_sleep = asyncio.sleep
+_RETRYABLE_STATUSES = {429, 500, 502, 503, 504}
+_RETRY_BACKOFF = (2.0, 5.0, 10.0)
+
+
+def _retry_delay(response: httpx.Response, retry: int) -> float:
+    header = response.headers.get("Retry-After")
+    if header is not None:
+        try:
+            seconds = float(header)
+            if math.isfinite(seconds) and seconds >= 0:
+                return min(seconds, 15.0)
+        except ValueError:
+            pass
+    return _RETRY_BACKOFF[retry]
 
 
 # --------------------------------------------------------------------------------------
@@ -268,23 +285,33 @@ class _OpenAICompatClient:
         # header outright, so send one only when there is a key.
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
-        try:
-            return httpx.post(
-                f"{self.base_url}/chat/completions",
-                headers=headers,
-                json=payload,
-                timeout=self.timeout,
-            )
-        except httpx.RequestError as exc:
-            # base_url is whatever the profile/override resolved — do not assume Ollama.
-            # :11434 → Ollama, :1234 → LM Studio; from Docker both use host.docker.internal.
-            raise LLMError(
-                f"Could not reach {self.base_url}: {exc}. Check that server is running "
-                f"and reachable from this process (local: localhost; Docker: "
-                f"host.docker.internal). A :11434 URL is Ollama; :1234 is LM Studio. "
-                f"Profile 'lmstudio' uses LM Studio for all stages unless Rewrite/Expand "
-                f"model overrides (or profile hybrid/ollama) point elsewhere."
-            ) from exc
+        slept = 0.0
+        for retry in range(len(_RETRY_BACKOFF) + 1):
+            try:
+                response = httpx.post(
+                    f"{self.base_url}/chat/completions",
+                    headers=headers,
+                    json=payload,
+                    timeout=self.timeout,
+                )
+            except httpx.RequestError as exc:
+                # base_url is whatever the profile/override resolved — do not assume Ollama.
+                # :11434 → Ollama, :1234 → LM Studio; from Docker both use host.docker.internal.
+                raise LLMError(
+                    f"Could not reach {self.base_url}: {exc}. Check that server is running "
+                    f"and reachable from this process (local: localhost; Docker: "
+                    f"host.docker.internal). A :11434 URL is Ollama; :1234 is LM Studio. "
+                    f"Profile 'lmstudio' uses LM Studio for all stages unless Rewrite/Expand "
+                    f"model overrides (or profile hybrid/ollama) point elsewhere."
+                ) from exc
+            if response.status_code not in _RETRYABLE_STATUSES or retry == len(_RETRY_BACKOFF):
+                return response
+            delay = _retry_delay(response, retry)
+            if delay >= self.timeout - slept:
+                return response
+            _sleep(delay)
+            slept += delay
+        return response
 
     def _check_status(self, response: httpx.Response, model: str) -> None:
         if response.status_code < 400:
@@ -541,22 +568,32 @@ class _AsyncOpenAICompatClient:
             self._http = None
 
     async def _post(self, payload: dict[str, Any], deadline: float) -> httpx.Response:
-        remaining = deadline - time.monotonic()
-        if remaining <= 0:
-            raise TimeoutError("Apply model stage exceeded its deadline")
         headers = {"Content-Type": "application/json"}
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
         if self._http is None:
             raise RuntimeError("Async model client must be used as a context manager")
-        try:
-            async with asyncio.timeout(remaining):
-                return await self._http.post(
-                    f"{self.base_url}/chat/completions", headers=headers,
-                    json=payload, timeout=min(self.timeout, remaining),
-                )
-        except httpx.RequestError as exc:
-            raise LLMError(f"Could not reach {self.base_url}: {exc}") from exc
+        slept = 0.0
+        for retry in range(len(_RETRY_BACKOFF) + 1):
+            remaining = deadline - time.monotonic()
+            if remaining <= 0:
+                raise TimeoutError("Apply model stage exceeded its deadline")
+            try:
+                async with asyncio.timeout(remaining):
+                    response = await self._http.post(
+                        f"{self.base_url}/chat/completions", headers=headers,
+                        json=payload, timeout=min(self.timeout, remaining),
+                    )
+            except httpx.RequestError as exc:
+                raise LLMError(f"Could not reach {self.base_url}: {exc}") from exc
+            if response.status_code not in _RETRYABLE_STATUSES or retry == len(_RETRY_BACKOFF):
+                return response
+            delay = _retry_delay(response, retry)
+            if delay >= min(self.timeout - slept, deadline - time.monotonic()):
+                return response
+            await _async_sleep(delay)
+            slept += delay
+        return response
 
     async def request(
         self, *, model: str, max_tokens: int, system: str, user: str,

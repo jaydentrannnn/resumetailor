@@ -64,3 +64,36 @@ def test_async_client_checks_absolute_deadline_before_request():
                 )
 
     asyncio.run(run())
+
+
+def test_async_client_retries_transient_503(monkeypatch):
+    calls: list[dict] = []
+    sleeps: list[float] = []
+
+    async def fake_sleep(delay: float) -> None:
+        sleeps.append(delay)
+
+    async def handler(request: httpx.Request) -> httpx.Response:
+        calls.append(json.loads(request.content))
+        if len(calls) < 3:
+            return httpx.Response(503)
+        return _reply('{"value":"grounded"}')
+
+    monkeypatch.setattr(llm, "_async_sleep", fake_sleep)
+
+    async def run() -> str:
+        client = llm._AsyncOpenAICompatClient(  # noqa: SLF001
+            base_url="https://example.test/v1", api_key="", structured_mode="prompt",
+            timeout=30,
+        )
+        async with httpx.AsyncClient(transport=httpx.MockTransport(handler)) as http:
+            client._http = http  # noqa: SLF001
+            response = await client.messages.parse(
+                model="test", max_tokens=128, system="Answer", messages=[{"content": "Question"}],
+                output_format=_Answer,
+            )
+        return response.parsed_output.value
+
+    assert asyncio.run(run()) == "grounded"
+    assert len(calls) == 3
+    assert sleeps == [2.0, 5.0]

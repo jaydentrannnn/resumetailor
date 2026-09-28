@@ -64,13 +64,13 @@ def client(monkeypatch):
     # that have nothing to do with what that test is checking.
     llm._LEARNED_CEILING.clear()
 
-    def _make(*responses, structured_mode="prompt", max_token_cap=0):
+    def _make(*responses, structured_mode="prompt", max_token_cap=0, timeout=5):
         recorder = _Recorder(*responses)
         monkeypatch.setattr(llm.httpx, "post", recorder)
         c = llm._OpenAICompatClient(
             base_url="http://localhost:11434/v1",
             api_key="",
-            timeout=5,
+            timeout=timeout,
             structured_mode=structured_mode,
             max_token_cap=max_token_cap,
         )
@@ -461,16 +461,20 @@ def test_prose_in_a_200_triggers_the_repair_retry(client):
     assert "did not match" in c.recorder.payloads[1]["messages"][-1]["content"]
 
 
-def test_a_400_on_response_format_retries_without_it(client):
+def test_a_400_on_response_format_retries_without_it(client, monkeypatch):
     """Some endpoints reject the field outright; the schema is already in the prompt.
 
     Default `prompt` mode's ladder is `[json_object, None]` — the same one-step drop this
     behaviour always had, so this passes unchanged by the graded-ladder rewrite.
     """
+    sleeps: list[float] = []
+    monkeypatch.setattr(llm, "_sleep", sleeps.append)
     c = client(httpx.Response(400, text="unknown parameter response_format"), _completion(VALID))
     result = _request(c)
 
     assert result.parsed_output.title == "Engineer"
+    assert c.recorder.calls == 2
+    assert sleeps == []
     assert "response_format" not in c.recorder.payloads[1]
 
 
@@ -619,6 +623,58 @@ def test_a_404_explains_that_the_model_is_not_available(client):
     c = client(httpx.Response(404, text='{"error":{"message":"model not found"}}'))
     with pytest.raises(llm.LLMError, match="ollama pull"):
         _request(c)
+    assert c.recorder.calls == 1
+
+
+def test_transient_503_recovers_after_two_retries(client, monkeypatch):
+    sleeps: list[float] = []
+    monkeypatch.setattr(llm, "_sleep", sleeps.append)
+    c = client(httpx.Response(503), httpx.Response(503), _completion(VALID), timeout=30)
+
+    assert _request(c).parsed_output.title == "Engineer"
+    assert c.recorder.calls == 3
+    assert sleeps == [2.0, 5.0]
+
+
+def test_transient_503_stops_after_four_posts(client, monkeypatch):
+    sleeps: list[float] = []
+    monkeypatch.setattr(llm, "_sleep", sleeps.append)
+    c = client(*(httpx.Response(503) for _ in range(4)), timeout=30)
+
+    with pytest.raises(llm.LLMError, match="HTTP 503"):
+        _request(c)
+    assert c.recorder.calls == 4
+    assert sleeps == [2.0, 5.0, 10.0]
+
+
+def test_retry_after_seconds_override_backoff(client, monkeypatch):
+    sleeps: list[float] = []
+    monkeypatch.setattr(llm, "_sleep", sleeps.append)
+    c = client(httpx.Response(503, headers={"Retry-After": "3"}), _completion(VALID))
+
+    assert _request(c).parsed_output.title == "Engineer"
+    assert sleeps == [3.0]
+
+
+def test_429_is_retried(client, monkeypatch):
+    sleeps: list[float] = []
+    monkeypatch.setattr(llm, "_sleep", sleeps.append)
+    c = client(httpx.Response(429), _completion(VALID))
+
+    assert _request(c).parsed_output.title == "Engineer"
+    assert c.recorder.calls == 2
+    assert sleeps == [2.0]
+
+
+def test_retries_stop_before_sleep_budget_is_exhausted(client, monkeypatch):
+    sleeps: list[float] = []
+    monkeypatch.setattr(llm, "_sleep", sleeps.append)
+    c = client(*(httpx.Response(503) for _ in range(4)), timeout=6)
+
+    with pytest.raises(llm.LLMError, match="HTTP 503"):
+        _request(c)
+    assert c.recorder.calls == 2
+    assert sleeps == [2.0]
 
 
 def test_an_unreachable_daemon_says_so(client, monkeypatch):
