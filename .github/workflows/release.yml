@@ -11,8 +11,9 @@ name: Release
 # what ships the update.** The public half of the key is `plugins.updater.pubkey` in
 # desktop/src-tauri/tauri.conf.json (docs/GUIDE.md §3 has the one-time setup).
 #
-# Not code-signed or notarized: unsigned Windows installers show a SmartScreen
-# warning; unsigned macOS apps open with right-click → Open.
+# Windows installers are unsigned and show a SmartScreen warning. The macOS app
+# has an ad hoc signature to avoid a "damaged" alert on Apple Silicon, but it is
+# not notarized and may require approval in Privacy & Security before opening.
 #
 # Windows only by default. macOS runners bill 10x the minutes on a private repository,
 # so the macOS build is opt-in: tick "Also build macOS" when running by hand, or set the
@@ -112,6 +113,11 @@ jobs:
           TAURI_SIGNING_PRIVATE_KEY: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY }}
           TAURI_SIGNING_PRIVATE_KEY_PASSWORD: ${{ secrets.TAURI_SIGNING_PRIVATE_KEY_PASSWORD }}
         run: npx --yes @tauri-apps/cli@2 build --bundles ${{ matrix.bundles }}
+
+      - name: Verify macOS app signature
+        if: matrix.name == 'macos-arm64'
+        shell: bash
+        run: codesign --verify --deep --strict --verbose=2 desktop/src-tauri/target/release/bundle/macos/ResumeTailor.app
 
       - name: Collect installers
         shell: bash

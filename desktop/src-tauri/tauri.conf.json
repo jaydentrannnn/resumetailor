@@ -40,7 +40,10 @@
     "category": "Productivity",
     "shortDescription": "Tailor your resume to a job without changing its look",
     "license": "MIT",
-    "copyright": "Copyright (c) 2026 Jayden Tran"
+    "copyright": "Copyright (c) 2026 Jayden Tran",
+    "macOS": {
+      "signingIdentity": "-"
+    }
   },
   "plugins": {
     "updater": {

@@ -517,7 +517,7 @@ yet. On your first install, check:
 ## 9. What is not done, and decisions left to you
 
 **Not built, from the desktop plan:**
-- code signing (Windows) and notarization (macOS);
+- Developer ID code signing and notarization (macOS), and Windows code signing;
 - tray items Pause, Run discovery and launch-at-login (the tray has Open and Quit only);
 - a "Copy diagnostics" button on the failure screen (it shows the log folder instead);
 - LibreOffice detection and font installation (DK5);

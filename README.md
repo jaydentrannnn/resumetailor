@@ -39,6 +39,14 @@ Good to know:
 The owner's walkthrough (building installers, moving data from a dev checkout, updating,
 day-to-day operation) is [`docs/GUIDE.md`](docs/GUIDE.md).
 
+## Install the desktop app (Apple Silicon Mac)
+
+Download the `aarch64-macos-arm64.dmg` from the latest release, open it, and copy
+ResumeTailor to Applications. The app has an ad hoc signature but is not notarized by
+Apple. If macOS blocks the first launch, try opening it once, then go to **System
+Settings → Privacy & Security → Open Anyway**. This approval is required only once.
+The macOS installer does not run on Intel Macs.
+
 ## First run
 
 The setup screen walks you through:
