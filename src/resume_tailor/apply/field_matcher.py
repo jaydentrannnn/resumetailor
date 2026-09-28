@@ -121,6 +121,16 @@ def match_option(
         if len(matches) == 1:
             return OptionMatch(status="matched", option_id=matches[0].option_id, method=method)
         if len(matches) > 1:
+            # Options that differ only in punctuation (American Century lists "University
+            # of California, Irvine" and "University of California-Irvine"): the one
+            # spelled exactly as the target, else the first spelling. Two identical labels
+            # (two "No" options) stay a tie.
+            spelled = [getattr(option, field).strip().casefold() for option in matches]
+            literal = [option for option, text in zip(matches, spelled) if text == target.strip().casefold()]
+            if len(literal) == 1:
+                return OptionMatch(status="matched", option_id=literal[0].option_id, method=method)
+            if not literal and len(set(spelled)) == len(spelled):
+                return OptionMatch(status="matched", option_id=matches[0].option_id, method=method)
             return OptionMatch(status="ambiguous")
     aliases = _ALIASES.get(key, {}).get(wanted, set())
     matches = [

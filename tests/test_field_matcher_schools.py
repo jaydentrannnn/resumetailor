@@ -43,3 +43,16 @@ def test_short_term_for_known_school() -> None:
 
 def test_diacritics_normalise() -> None:
     assert field_matcher.normalize("Université de Montréal") == "universite de montreal"
+
+
+def test_a_school_listed_twice_with_different_punctuation_is_chosen():
+    """American Century's School search (2026-09-28) listed "University of California,
+    Irvine" and "University of California-Irvine"; both normalise alike, which was read
+    as a tie and left School blank."""
+    listed = ["Irvine Valley College", "University of California, Irvine", "University of California-Irvine"]
+    assert field_matcher.closest_option(listed, "University of California, Irvine", key="school") == listed[1]
+    assert field_matcher.closest_option(listed, "University of California-Irvine", key="school") == listed[2]
+    # Neither spelling matches exactly: the same words, so the first spelling.
+    assert field_matcher.closest_option(listed, "University of California Irvine", key="school") == listed[1]
+    # Identical labels are still a tie.
+    assert field_matcher.closest_option(["No", "No"], "No") is None
