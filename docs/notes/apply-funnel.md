@@ -1381,3 +1381,6 @@ CACI rows failed: the Skills results list (promptLeafNode rows) covered the Add 
 ## 2026-09-28: School email and year-only Workday text
 
 Classify school-issued email separately from personal email so a missing school address is reported as a blank profile fact. Format availability date parts from the question label and replace stale text in date-part inputs, preventing values such as 142027.
+
+## 2026-09-28: duplicate spellings in a prompt search are one answer
+American Century School search returned "University of California, Irvine" and "University of California-Irvine"; normalize() makes them equal, so match_option returned ambiguous and School stayed blank. Now the exact spelling wins, else the first of distinct spellings; identical labels remain a tie. Cencora "How Did You Hear = LinkedIn" (hierarchical list: Job Board, Social Media, ...) is still open: the tab session expired (prompts stay aria-busy), so the category tree could not be captured.
