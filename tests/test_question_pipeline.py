@@ -105,18 +105,22 @@ def _planned(scanned: list[dict], plan: dict, start: str) -> dict:
 
 
 @pytest.mark.browser
-def test_workday_year_text_replaces_leftover_value(browser):
+@pytest.mark.parametrize(("leftover", "expected"), [("14", "2027"), ("142027", "2027"), ("2028", "2028")])
+def test_workday_year_text_replaces_leftover_value(browser, leftover, expected):
+    """A malformed year left by an earlier fill (MPC's "142027") is replaced; a
+    well-formed year is the applicant's own answer and is kept."""
     page = browser.new_page()
     try:
         label = "If selected for a full-time opportunity post graduation, when would you be available to start? (Year-XXXX)"
-        page.set_content(f'<label for="start">{label}</label><input id="start" type="text" value="14" required>')
+        page.set_content(f'<label for="start">{label}</label><input id="start" type="text" value="{leftover}" required>')
         fields = {"earliest_start": "2027-06"}
         args = {"fields": fields, "hints": {}, "synonyms": [list(pair) for pair in ats_hints.SYNONYMS], "eeo": {}}
         scanned = page.evaluate(_FILLER, {**args, "scan": True})["questions"]
         plan = questions.plan_for(scanned, questions.facts_for(fields))
         result = page.evaluate(_FILLER, {**args, "plan": plan})
-        assert page.locator("#start").input_value() == "2027"
-        assert _filled(result, "If selected for a full-time opportunity") == ["2027"]
+        assert page.locator("#start").input_value() == expected
+        if expected != leftover:
+            assert _filled(result, "If selected for a full-time opportunity") == [expected]
     finally:
         page.close()
 
