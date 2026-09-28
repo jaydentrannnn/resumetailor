@@ -125,7 +125,11 @@ class WorkdayAdapter(FormAdapter):
             existing = set(page.context.pages)
             await clicks.async_safe_click(visible[0], purpose="enter", timeout=timeout_ms)
             await page.wait_for_timeout(400)
-            opened = [item for item in page.context.pages if item not in existing and not item.is_closed()]
+            # Only a tab this page opened: a parallel fill's new tab is in the same context.
+            opened = [
+                item for item in page.context.pages
+                if item not in existing and not item.is_closed() and await item.opener() == page
+            ]
             if len(opened) == 1:
                 page = opened[0]
                 await page.wait_for_load_state("domcontentloaded", timeout=timeout_ms)

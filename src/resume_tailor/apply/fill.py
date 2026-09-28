@@ -71,13 +71,15 @@ def _locator_exists(loc: Any) -> bool:
 def _click_and_track_popup(page: Any, context: Any, click_fn: Callable[[], None]) -> Any:
     """Execute click_fn while watching for popups.
 
-    Returns the new active page if a popup was opened.
+    Returns the new active page if a popup was opened. Only a tab this page opened
+    counts: parallel fills share the browser's one context, so a context-wide wait
+    would adopt another fill's freshly opened tab.
     """
-    if not context or not hasattr(context, "expect_page"):
+    if not context or not hasattr(page, "expect_popup"):
         click_fn()
         return page
     try:
-        with context.expect_page(timeout=5000) as page_info:
+        with page.expect_popup(timeout=5000) as page_info:
             click_fn()
         new_page = page_info.value
         with contextlib.suppress(Exception):

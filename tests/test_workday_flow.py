@@ -1038,3 +1038,31 @@ def test_a_slow_save_is_waited_for_while_the_button_is_disabled(monkeypatch):
     monkeypatch.setattr(workday_flow.time, "monotonic", lambda: stuck.elapsed / 1000)
     assert not workday_flow.wait_for_step_change(stuck, "My Experience", deadline=1e9, timeout_s=15)
     assert stuck.elapsed <= 46_000
+
+
+class _Tab:
+    """A tab in the shared context; ``opener`` is the page that opened it, if any."""
+
+    def __init__(self, opener: object = None) -> None:
+        self._opener = opener
+
+    def opener(self) -> object:
+        return self._opener
+
+    def is_closed(self) -> bool:
+        return False
+
+    def wait_for_load_state(self, *_args: object, **_kwargs: object) -> None:
+        return None
+
+
+def test_new_tab_ignores_a_tab_another_fill_opened(clock):
+    """Parallel fills share one context: only a tab this page opened is followed."""
+    page, other_fill = _Tab(), _Tab()
+    before = [page, other_fill]
+    for foreign in (_Tab(opener=other_fill), _Tab(opener=None)):
+        context = SimpleNamespace(pages=[*before, foreign])
+        assert workday_flow._new_tab(page, context, before, clock.now + 60) is page  # noqa: SLF001
+    own = _Tab(opener=page)
+    context = SimpleNamespace(pages=[*before, _Tab(opener=other_fill), own])
+    assert workday_flow._new_tab(page, context, before, clock.now + 60) is own  # noqa: SLF001

@@ -1354,3 +1354,23 @@ the wizard read the posting page as the form, and filling that one select report
 The regression corpus is `tests/fixtures/forms/{ashby_quora,ashby_ramp,greenhouse_gcm}.html`
 with `tests/test_question_pipeline.py`. The captures were sanitized: example.com emails and
 555 phone numbers.
+
+## 2026-09-27: A parallel fill adopts only a tab its own page opened
+
+**Symptom:** in a batch Fill of ~20, some applications failed with "No application form
+controls detected" while their real form tab sat open and unfilled. Two applications
+recorded the same `browser_target_id` (GM Financial and Goldbelt; ZipRecruiter and CHS).
+
+**Cause:** `max_parallel_fills` (default 2) runs fills against one browser context. After
+clicking Apply, `fill._click_and_track_popup` waited on `context.expect_page()`, which
+fires for any new tab in the context. A fill whose Apply navigated in place adopted the
+tab the other fill had just opened with `context.new_page()`. `workday_flow._new_tab` and
+`WorkdayAdapter.enter_application` diffed `context.pages` and had the same race.
+
+**Rule:** a fill follows only a tab whose opener is its own page: `page.expect_popup()`,
+or `opener() == page` when diffing `context.pages`. Playwright takes the opener from CDP's
+`openerId`, so `rel=noopener` links are still followed (browser test). Real-Edge
+regression tests are in `tests/browser/test_apply_controls.py`: a sibling page opens a
+tab while the click is in flight. The shared claimed-tabs registry discussed as a guard
+was dropped. A foreign tab has no opener or another fill's page as opener, so the opener
+check already refuses everything the registry would.

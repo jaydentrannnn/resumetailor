@@ -1148,3 +1148,37 @@ def test_observed_outcome_explains_a_correction():
     row = observed[(0, "#em")]
     assert row["key"] == "email" and row["corrected"] is True
     assert "old@x.edu" in row["reason_text"]
+
+
+class _PopupPage:
+    """A page whose Apply click opens ``popup`` (or nothing, raising like a timeout)."""
+
+    def __init__(self, popup: object | None) -> None:
+        self.popup = popup
+        self.waits: list[int] = []
+
+    @contextmanager
+    def expect_popup(self, timeout: int):
+        self.waits.append(timeout)
+        info = MagicMock()
+        yield info
+        if self.popup is None:
+            raise TimeoutError("no popup")
+        info.value = self.popup
+
+
+class _SharedContext:
+    """The browser's one context, shared with parallel fills: never watched as a whole."""
+
+    def expect_page(self, **_kwargs: object):
+        raise AssertionError("a context-wide wait adopts another fill's tab")
+
+
+def test_apply_click_follows_only_a_popup_of_its_own_page():
+    popup = MagicMock()
+    page = _PopupPage(popup)
+    clicked: list[bool] = []
+    assert fill._click_and_track_popup(page, _SharedContext(), lambda: clicked.append(True)) is popup  # noqa: SLF001
+    assert clicked == [True] and page.waits == [5000]
+    stay = _PopupPage(None)
+    assert fill._click_and_track_popup(stay, _SharedContext(), lambda: None) is stay  # noqa: SLF001

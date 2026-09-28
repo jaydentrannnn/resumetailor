@@ -346,6 +346,91 @@ def test_workday_entry_tracks_single_popup_tab():
     asyncio.run(run())
 
 
+#: Another fill's page opening its own tab while this fill waits on its Apply click
+#: (parallel fills share the browser's one context).
+_OTHER_FILL_OPENS_TAB = "setTimeout(() => window.open('about:blank', '_blank'), 150)"
+
+
+def test_apply_click_ignores_a_tab_another_fill_opens():
+    from resume_tailor.apply import fill
+
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=str(_EDGE), headless=True)
+        try:
+            context = browser.new_context()
+            other = context.new_page()
+            page = context.new_page()
+            page.set_content("<button onclick=\"location.hash = 'form'\">Apply</button>")
+            other.evaluate(_OTHER_FILL_OPENS_TAB)
+            resulting = fill._click_and_track_popup(page, context, lambda: page.click("button"))  # noqa: SLF001
+            assert resulting is page
+            assert len(context.pages) == 3  # the other fill's tab did open
+        finally:
+            browser.close()
+
+
+def test_apply_click_follows_its_own_noopener_tab():
+    from resume_tailor.apply import fill
+
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=str(_EDGE), headless=True)
+        try:
+            context = browser.new_context()
+            context.route("**/*", lambda route: route.fulfill(body="<form>form</form>", content_type="text/html"))
+            page = context.new_page()
+            page.set_content('<a href="https://fixture.example/form" target="_blank" rel="noopener">Apply</a>')
+            resulting = fill._click_and_track_popup(page, context, lambda: page.click("a"))  # noqa: SLF001
+            assert resulting is not page
+            assert resulting.url == "https://fixture.example/form"
+        finally:
+            browser.close()
+
+
+def test_workday_new_tab_ignores_a_tab_another_fill_opens():
+    from resume_tailor.apply import workday_flow
+
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=str(_EDGE), headless=True)
+        try:
+            context = browser.new_context()
+            other = context.new_page()
+            page = context.new_page()
+            before = list(context.pages)
+            other.evaluate(_OTHER_FILL_OPENS_TAB)
+            page.wait_for_timeout(600)
+            assert len(context.pages) == 3
+            assert workday_flow._new_tab(page, context, before, time.monotonic() + 10) is page  # noqa: SLF001
+        finally:
+            browser.close()
+
+
+def test_workday_adapter_entry_ignores_a_tab_another_fill_opens():
+    async def run():
+        playwright, browser = await _browser()
+        try:
+            context = await browser.new_context()
+            await context.route("**/*", lambda route: route.fulfill(body="<p>posting</p>", content_type="text/html"))
+            other = await context.new_page()
+            page = await context.new_page()
+            await other.goto("https://fixture.example/other")
+            await page.goto("https://fixture.example/posting")
+            # The other fill opens its tab exactly while this click is in flight.
+            await other.evaluate(
+                "new BroadcastChannel('fills').onmessage = () => window.open('about:blank', '_blank')"
+            )
+            await page.set_content(
+                "<button onclick=\"new BroadcastChannel('fills').postMessage('clicked')\">Apply</button>"
+            )
+            resulting = await adapters.WorkdayAdapter().enter_application(page, timeout_ms=5000)
+            assert resulting is page
+            assert len(context.pages) >= 3  # the other fill's tab did open
+        finally:
+            await browser.close()
+            await playwright.stop()
+
+    asyncio.run(run())
+
+
 _WORKDAY_MY_INFO = '''
     <div data-automation-id="utilityButtonAccountTasksMenu">me</div>
     <div data-automation-id="applyFlowPage"><ol data-automation-id="progressBar">

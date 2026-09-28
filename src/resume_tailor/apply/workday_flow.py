@@ -363,9 +363,15 @@ def recover_site_error(
 
 
 def _new_tab(page: Any, context: Any, before: list[Any], deadline: float) -> Any:
-    """Follow Apply into a new tab when a tenant opens one; otherwise stay put."""
+    """Follow Apply into a new tab when a tenant opens one; otherwise stay put.
+
+    Only a tab this page opened counts: a parallel fill's new tab is in the same context.
+    """
     try:
-        opened = [item for item in context.pages if item not in before and not item.is_closed()]
+        opened = [
+            item for item in context.pages
+            if item not in before and not item.is_closed() and item.opener() == page
+        ]
     except Exception:  # noqa: BLE001 - no context to inspect
         return page
     if len(opened) != 1:
