@@ -542,6 +542,41 @@ def test_workday_stray_popup_is_closed_before_handoff(escape_closes):
             browser.close()
 
 
+def test_workday_prompt_results_list_is_closed_by_tab():
+    """A prompt's results list (Skills, How Did You Hear) has no dismiss layer and ignores
+    Escape; left open it covered CACI's Add buttons (2026-09-28). Tab out of its search box
+    closes it, and the always-visible chip list (selectedItemList) is not a popup."""
+    from resume_tailor.apply import workday_flow
+
+    html = '''
+        <div data-automation-id="formField-skills">
+          <ul role="listbox" data-automation-id="selectedItemList">
+            <li><div data-automation-id="selectedItem"><div data-automation-id="promptOption">Python</div></div></li></ul>
+          <div data-automation-id="multiselectInputContainer">
+            <input id="skills--skills" data-automation-id="searchBox"></div>
+          <div id="list" data-automation-id="activeListContainer" style="position:fixed;top:0;left:0;width:100%;height:300px">
+            <div data-automation-id="promptLeafNode"><div data-automation-id="promptOption">YAML Config</div></div></div>
+        </div>
+        <button id="add" style="position:absolute;top:100px;left:10px" onclick="window.added=true">Add</button>
+        <script>document.getElementById('skills--skills').addEventListener('blur',
+          () => document.getElementById('list').remove());</script>'''
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=str(_EDGE), headless=True)
+        try:
+            page = browser.new_page()
+            page.set_content(html)
+            page.focus("#skills--skills")
+            assert workday_flow.close_stray_popups(page) is True
+            assert page.locator("[data-automation-id='activeListContainer']").count() == 0
+            assert page.locator("[data-automation-id='selectedItem']").count() == 1
+            page.click("#add", timeout=2000)
+            assert page.evaluate("window.added") is True
+            # Nothing open: the chip list alone reads as no popup.
+            assert page.evaluate(workday_flow._STRAY_POPUP_JS)["popup"] is False  # noqa: SLF001
+        finally:
+            browser.close()
+
+
 def test_workday_stray_popup_cleanup_leaves_a_real_dialog_open():
     """The Start Your Application / OTP / terms dialogs are the applicant's to act on."""
     from resume_tailor.apply import workday_flow

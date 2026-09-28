@@ -224,10 +224,13 @@ def click_control(
 _OVERLAY_GRACE_MS = 2000
 
 #: Whether a dropdown/prompt popup is left open, whether a real dialog is up, and a
-#: corner point where a full-viewport ``click_filter`` (the popup's dismiss layer) sits.
+#: corner point where a full-viewport ``click_filter`` (the popup's dismiss layer) sits,
+#: and whether focus is in a prompt's search box (whose results list only Tab closes).
 _STRAY_POPUP_JS = r"""() => {
   const vis = e => !!(e && (e.offsetWidth || e.offsetHeight || e.getClientRects().length));
-  const POPUP = "[role='listbox'], [data-automation-id='activeListContainer'], "
+  // A prompt's chips sit in an always-visible role=listbox (selectedItemList): not a popup.
+  const POPUP = "[role='listbox']:not([data-automation-id='selectedItemList']), "
+    + "[data-automation-id='activeListContainer'], "
     + "[data-automation-id='promptOption']:not([data-automation-id='selectedItem'] *)";
   const popup = [...document.querySelectorAll(POPUP)].some(vis)
     || [...document.querySelectorAll("[aria-haspopup='listbox'][aria-expanded='true']")].some(vis);
@@ -235,7 +238,10 @@ _STRAY_POPUP_JS = r"""() => {
     .some(d => vis(d) && !d.querySelector(POPUP));
   const top = document.elementFromPoint(2, innerHeight - 2);
   const filter = top && top.closest("[data-automation-id='click_filter']");
-  return {popup, dialog, filter: filter ? {x: 2, y: innerHeight - 2} : null};
+  const focused = document.activeElement;
+  const prompt = !!focused && (focused.getAttribute('data-automation-id') === 'searchBox'
+    || !!focused.closest("[data-automation-id='multiselectInputContainer']"));
+  return {popup, dialog, prompt, filter: filter ? {x: 2, y: innerHeight - 2} : null};
 }"""
 
 
@@ -246,7 +252,10 @@ def close_stray_popups(page: Any, *, attempts: int = 3) -> bool:
     miss; an open popup keeps Workday's full-viewport ``click_filter`` up, and that layer
     swallows the applicant's mouse wheel after handoff. Escape goes to the page, and when
     it does not land a click on the dismiss layer's corner closes the popup the way a
-    click outside would. A real dialog (Start Your Application, OTP, terms) is left alone.
+    click outside would. A prompt's results list (Skills, How Did You Hear) has no dismiss
+    layer and ignores Escape; Tab out of its search box closes it without choosing
+    anything (CACI 2026-09-28: the list covered the Add buttons). A real dialog (Start
+    Your Application, OTP, terms) is left alone.
     """
     for _ in range(attempts):
         try:
@@ -264,6 +273,9 @@ def close_stray_popups(page: Any, *, attempts: int = 3) -> bool:
             point = isinstance(again, dict) and again.get("popup") and again.get("filter")
             if point:
                 clicks.mouse_click(page, point["x"], point["y"], purpose="dismiss")
+                page.wait_for_timeout(200)
+            elif isinstance(again, dict) and again.get("popup") and again.get("prompt"):
+                page.keyboard.press("Tab")
                 page.wait_for_timeout(200)
     try:
         probe = page.evaluate(_STRAY_POPUP_JS)
