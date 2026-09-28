@@ -569,7 +569,8 @@ def test_a_guessed_location_list_is_kept_for_review(fill_paths, monkeypatch):
     page.click.assert_not_called()
 
 
-def test_fill_application_awaiting_review(fill_paths, monkeypatch):
+@pytest.mark.parametrize("model_unavailable", [False, True])
+def test_fill_application_awaiting_review(fill_paths, monkeypatch, model_unavailable):
     """Policy B leaves the form open and sets ``awaiting_review`` status."""
     app = _ready_app(ats="lever")
     store.upsert(app)
@@ -613,6 +614,12 @@ def test_fill_application_awaiting_review(fill_paths, monkeypatch):
     monkeypatch.setattr(browser, "cdp_browser", _fake_browser)
     from resume_tailor.apply import form_routes
     monkeypatch.setattr(form_routes, "choose_email_sync", lambda page, *, deadline: "absent")
+    if model_unavailable:
+        def unavailable_resolver(_page, _packet, _profile, *, ledger, **_kwargs):
+            ledger.model_unavailable = True
+            return False
+
+        monkeypatch.setattr(fill.hybrid_resolver, "resolve_step_blockers", unavailable_resolver)
     submit_called = {"value": False}
     original_click = MagicMock()
 
@@ -628,6 +635,7 @@ def test_fill_application_awaiting_review(fill_paths, monkeypatch):
     )
 
     assert result.status == "awaiting_review"
+    assert result.handoff_reason == ("autofill model unavailable" if model_unavailable else "missing answers")
     assert result.submit_action == "awaiting_review"
     assert submit_called["value"] is False
     assert store.get("src-1").status == "awaiting_review"

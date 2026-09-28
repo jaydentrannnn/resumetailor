@@ -1374,3 +1374,5 @@ regression tests are in `tests/browser/test_apply_controls.py`: a sibling page o
 tab while the click is in flight. The shared claimed-tabs registry discussed as a guard
 was dropped. A foreign tab has no opener or another fill's page as opener, so the opener
 check already refuses everything the registry would.
+
+2026-09-28: OpenAI-compatible sync and async calls retry HTTP 429/500/502/503/504 with bounded backoff. Exhausted Autofill errors are recorded on the step ledger and named in the handoff when required answers remain.

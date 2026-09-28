@@ -1045,6 +1045,7 @@ def fill_application(
             # One pass more than the steps it may advance: a blank Workday step is rescanned once.
             MAX_WIZARD_STEPS = 9
             final_step_reached = False
+            model_unavailable = False
             country_rechecked = False
             blank_step_rescanned = False
             entered = False
@@ -1607,6 +1608,7 @@ def fill_application(
                                 frame, pkt, profile, on_progress=progress, deadline=deadline,
                                 ledger=ledgers.setdefault(frame_index, hybrid_resolver.StepLedger()),
                             )
+                            model_unavailable |= ledgers[frame_index].model_unavailable
                     advance_btn = _find_advance_button(page)
 
                 if advance_btn and step < MAX_WIZARD_STEPS - 1:
@@ -1648,6 +1650,7 @@ def fill_application(
                                 page, pkt, profile, max_retries=1, on_progress=progress, deadline=deadline,
                                 ledger=ledgers.setdefault(0, hybrid_resolver.StepLedger()), only_invalid=True,
                             )
+                            model_unavailable |= ledgers[0].model_unavailable
                         retry_button = _find_advance_button(page)
                         if retry_button is None:
                             break
@@ -1666,6 +1669,7 @@ def fill_application(
                                 page, pkt, profile, max_retries=1, on_progress=progress, deadline=deadline,
                                 ledger=ledgers.setdefault(0, hybrid_resolver.StepLedger()), only_invalid=True,
                             )
+                            model_unavailable |= ledgers[0].model_unavailable
                         retry_button = _find_advance_button(page)
                         if retry_button is None:
                             break
@@ -1915,7 +1919,8 @@ def fill_application(
                 browser_target_id=target_id,
                 browser_url=page.url,
                 handoff_reason=barrier_hit or (
-                    "missing answers" if required_empty or needs_review
+                    "autofill model unavailable" if model_unavailable and required_empty
+                    else "missing answers" if required_empty or needs_review
                     else held.message if held
                     else "ready for review"
                 ),

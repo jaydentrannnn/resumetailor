@@ -7,7 +7,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from resume_tailor import config
+from resume_tailor import config, llm
 from resume_tailor.apply import hybrid_resolver, workday_auth
 from resume_tailor.apply.profile import ApplicantProfile
 
@@ -243,6 +243,25 @@ def _resolve(state, ledger, messages=None, **kwargs):
         state.page, Packet.model_construct(fields={}), ApplicantProfile(),
         ledger=ledger, max_retries=1, on_progress=(messages if messages is not None else []).append, **kwargs,
     )
+
+
+def test_transient_model_failure_is_recorded_for_review(resolver_page, monkeypatch):
+    state = resolver_page
+    state.unresolved = [_field("#state", "State"), _field("#vet", "Veteran status")]
+
+    class FailingMessages:
+        def parse(self, **_kwargs):
+            raise llm.LLMError("https://example.test returned HTTP 503 for 'test': high demand")
+
+    monkeypatch.setattr(hybrid_resolver.llm, "client_for", lambda _purpose: SimpleNamespace(
+        messages=FailingMessages(), timeout=60.0,
+    ))
+    ledger = hybrid_resolver.StepLedger()
+    messages: list[str] = []
+
+    assert _resolve(state, ledger, messages) is False
+    assert ledger.model_unavailable is True
+    assert "[hybrid-resolver] Autofill model unavailable (HTTP 503); leaving 2 question(s) for review" in messages
 
 
 def test_a_second_pass_on_the_step_touches_only_the_new_gap(resolver_page):

@@ -496,6 +496,7 @@ class StepLedger:
     options: dict[str, list[str]] = dc_field(default_factory=dict)
     asked: set[str] = dc_field(default_factory=set)
     done: set[str] = dc_field(default_factory=set)
+    model_unavailable: bool = False
 
 
 def resolve_step_blockers(
@@ -639,6 +640,14 @@ def resolve_step_blockers(
                 output_format=StepResolution,
             )
             resolution: StepResolution = response.parsed_output
+        except llm.LLMError as exc:
+            status = re.search(r"\bHTTP (429|5\d\d)\b", str(exc))
+            if status:
+                ledger.model_unavailable = True
+                log(f"Autofill model unavailable (HTTP {status.group(1)}); leaving {len(unresolved)} question(s) for review")
+            else:
+                log(f"LLM call failed: {exc}")
+            return False
         except Exception as exc:  # noqa: BLE001
             log(f"LLM call failed: {exc}")
             return False
