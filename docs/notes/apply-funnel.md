@@ -1378,3 +1378,6 @@ check already refuses everything the registry would.
 ## 2026-09-28: a Workday prompt results list closes with Tab
 CACI rows failed: the Skills results list (promptLeafNode rows) covered the Add buttons. A prompt list has no click_filter and ignores Escape (verified live on Cencora), so close_stray_popups now presses Tab when focus is in a prompt search box. The chip list (role=listbox, data-automation-id=selectedItemList) is always visible and no longer counts as a popup. Also seen: a narrow Edge window (~710px) makes Workday render responsiveMonikerPrompt variants; an expired session leaves such a prompt aria-busy forever.
 2026-09-28: OpenAI-compatible sync and async calls retry HTTP 429/500/502/503/504 with bounded backoff. Exhausted Autofill errors are recorded on the step ledger and named in the handoff when required answers remain.
+## 2026-09-28: School email and year-only Workday text
+
+Classify school-issued email separately from personal email so a missing school address is reported as a blank profile fact. Format availability date parts from the question label and replace stale text in date-part inputs, preventing values such as 142027.

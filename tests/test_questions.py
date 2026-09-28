@@ -111,6 +111,31 @@ def test_short_fields_keep_their_labels():
     assert q.classify(Question("School Name", kind="typeahead")) == q.Match("school")
 
 
+@pytest.mark.parametrize(
+    ("label", "key"),
+    [
+        ("Please provide your current school-issued email address", "school_email"),
+        ("University-provided e-mail", "school_email"),
+        ("Student email address", "school_email"),
+        ("Please enter your personal (non-school) email address", "email"),
+    ],
+)
+def test_school_and_personal_email_questions(label, key):
+    question = Question(label)
+    match = q.classify(question)
+    assert match == q.Match(key)
+
+
+def test_blank_school_email_has_no_personal_email_fallback():
+    question = Question("Please provide your current school-issued email address")
+    match = q.classify(question)
+    facts = q.facts_for({"email": "alex@example.com"})
+    assert q.answers(match, question, facts) == []
+    assert q.plan_for([{"qid": "school", "label": question.text}], facts)["school"] == {
+        "key": "school_email", "value": "",
+    }
+
+
 def test_split_dates_follow_their_section():
     months = ("January", "February", "March", "June")
     years = ("2027", "2026", "2023")
@@ -200,6 +225,25 @@ def test_graduation_parts_need_the_part():
     month_only = q.facts_for({"graduation_month": "2027"})
     question = Question("Graduation month")
     assert q.answers(q.classify(question), question, month_only) == []
+
+
+@pytest.mark.parametrize(
+    ("label", "expected"),
+    [
+        ("Available to start? (Year-XXXX)", "2027"),
+        ("Available to start? (YYYY)", "2027"),
+        ("Available to start? (Month)", "June"),
+    ],
+)
+def test_earliest_start_text_date_parts(label, expected):
+    facts = q.facts_for({"earliest_start": "2027-06"})
+    question = Question(label)
+    match = q.classify(question)
+    assert match == q.Match("earliest_start")
+    assert q.answers(match, question, facts) == [expected]
+    assert q.plan_for([{"qid": "start", "label": label}], facts)["start"] == {
+        "key": "earliest_start", "value": expected,
+    }
 
 
 @pytest.mark.parametrize(

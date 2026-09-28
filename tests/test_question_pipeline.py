@@ -14,7 +14,7 @@ from pathlib import Path
 import pytest
 from playwright.sync_api import sync_playwright
 
-from resume_tailor.apply import ats_hints, field_matcher, questions
+from resume_tailor.apply import ats_hints, field_matcher, packet, questions
 
 _ROOT = Path(__file__).parents[1]
 _FILLER = (_ROOT / "src/resume_tailor/apply/filler.js").read_text(encoding="utf-8")
@@ -102,6 +102,41 @@ def _planned(scanned: list[dict], plan: dict, start: str) -> dict:
     hits = [plan[item["qid"]] for item in scanned if item["label"].startswith(start)]
     assert hits, f"no scanned question starts {start!r}"
     return hits[0]
+
+
+@pytest.mark.browser
+def test_workday_year_text_replaces_leftover_value(browser):
+    page = browser.new_page()
+    try:
+        label = "If selected for a full-time opportunity post graduation, when would you be available to start? (Year-XXXX)"
+        page.set_content(f'<label for="start">{label}</label><input id="start" type="text" value="14" required>')
+        fields = {"earliest_start": "2027-06"}
+        args = {"fields": fields, "hints": {}, "synonyms": [list(pair) for pair in ats_hints.SYNONYMS], "eeo": {}}
+        scanned = page.evaluate(_FILLER, {**args, "scan": True})["questions"]
+        plan = questions.plan_for(scanned, questions.facts_for(fields))
+        result = page.evaluate(_FILLER, {**args, "plan": plan})
+        assert page.locator("#start").input_value() == "2027"
+        assert _filled(result, "If selected for a full-time opportunity") == ["2027"]
+    finally:
+        page.close()
+
+
+@pytest.mark.browser
+def test_blank_school_email_is_reported_without_filling_personal_email(browser):
+    page = browser.new_page()
+    try:
+        label = "Please provide your current school-issued email address"
+        page.set_content(f'<label for="school-email">{label}</label><input id="school-email" type="email" required>')
+        fields = {"email": "alex@example.com"}
+        args = {"fields": fields, "hints": {}, "synonyms": [list(pair) for pair in ats_hints.SYNONYMS], "eeo": {}}
+        scanned = page.evaluate(_FILLER, {**args, "scan": True})["questions"]
+        plan = questions.plan_for(scanned, questions.facts_for(fields))
+        result = page.evaluate(_FILLER, {**args, "plan": plan})
+        assert page.locator("#school-email").input_value() == ""
+        blanks = [item for item in result["leftovers"] if item.get("reason") == packet.BLANK_PROFILE_REASON]
+        assert packet.missing_profile(blanks, set())[0]["key"] == "school_email"
+    finally:
+        page.close()
 
 
 @pytest.fixture(scope="module")

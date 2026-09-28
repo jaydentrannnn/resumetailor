@@ -159,8 +159,9 @@ SYNONYMS: list[tuple[str, str]] = [
     (r"middle name", "middle_name"),
     (r"last name|family name|surname", "last_name"),
     (r"preferred name", "preferred_name"),
-    # Before the generic email rule: "University email" wants the school address.
-    (r"(?:school|university|college|student|\.edu)\s*e-?mail", "school_email"),
+    # A personal email request can mention "non-school"; keep it ahead of school email.
+    (r"(?:\bpersonal\b|\bnon[- ]school\b).{0,40}e-?mail", "email"),
+    (r"(?:school|university|college|student|\.edu)[\w\s-]{0,20}e-?mail", "school_email"),
     (r"email", "email"),
     (r"address line 1|street address", "address_line1"),
     (r"address line 2|apt|suite", "address_line2"),
