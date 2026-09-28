@@ -577,6 +577,56 @@ def test_workday_prompt_results_list_is_closed_by_tab():
             browser.close()
 
 
+def _workday_checkbox_group(field: str, question: str, options: list[str], *, required: bool = True) -> str:
+    """A Workday questionnaire checkbox group as American Century renders it (2026-09-28)."""
+    rows = "".join(
+        f'<div role="row"><div role="cell"><input id="{field}-{i}" type="checkbox" aria-checked="false">'
+        f'<label for="{field}-{i}">{option}</label></div></div>'
+        for i, option in enumerate(options)
+    )
+    return (
+        f'<div data-automation-id="formField-{field}"><fieldset><legend><p>{question}</p></legend>'
+        f'<fieldset data-automation-id="{field}-CheckboxGroup" aria-required="{str(required).lower()}" '
+        f'aria-invalid="true"><div role="grid">{rows}</div></fieldset>'
+        f'<p data-automation-id="inputAlert">Error: The field is required and must have a value.</p>'
+        f'</fieldset></div>'
+    )
+
+
+def test_resolver_sees_and_ticks_a_required_workday_checkbox_group():
+    """Required checkbox groups (MPC's locations, American Century's listed firms) were
+    invisible to both fill layers; the resolver's scan now reports them and ticks them."""
+    from resume_tailor.apply import hybrid_resolver
+
+    html = (
+        _workday_checkbox_group(
+            "5c8be8f5firms", "Have you worked for any of the listed firms?*",
+            ["Grant Thornton", "FORVIS", "No"],
+        )
+        + _workday_checkbox_group("optional", "Optional interests", ["A", "B"], required=False)
+    )
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=str(_EDGE), headless=True)
+        try:
+            page = browser.new_page()
+            page.set_content(html)
+            groups = [f for f in hybrid_resolver.extract_page_blockers(page)["unresolved"] if f["type"] == "checkboxgroup"]
+            assert len(groups) == 1  # the optional group is not a blocker
+            group = groups[0]
+            assert group["label"] == "Have you worked for any of the listed firms?*"
+            assert group["options"] == ["Grant Thornton", "FORVIS", "No"]
+            assert group["invalid"] is True
+            action = hybrid_resolver.FieldAction(
+                label=group["label"], selector=group["selector"], action="check_options", value="No",
+            )
+            assert hybrid_resolver.execute_action(page, action) is True
+            assert page.is_checked("[id='5c8be8f5firms-2']") and not page.is_checked("[id='5c8be8f5firms-0']")
+            # Answered: the group is no longer a blocker.
+            assert not [f for f in hybrid_resolver.extract_page_blockers(page)["unresolved"] if f["type"] == "checkboxgroup"]
+        finally:
+            browser.close()
+
+
 def test_workday_stray_popup_cleanup_leaves_a_real_dialog_open():
     """The Start Your Application / OTP / terms dialogs are the applicant's to act on."""
     from resume_tailor.apply import workday_flow

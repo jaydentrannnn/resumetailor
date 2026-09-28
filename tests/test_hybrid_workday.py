@@ -324,6 +324,40 @@ def test_no_reveal_means_no_extra_model_call(resolver_page):
     assert len(state.calls) == 1
 
 
+_FIRMS = ["Grant Thornton", "FORVIS", "Deloitte and Touche", "No"]
+
+
+@pytest.mark.parametrize(("action", "value", "executed"), [
+    ("check_options", "No", True),
+    ("check_options", "FORVIS | Deloitte and Touche", True),
+    # "No" answers the whole question; ticked with a firm it contradicts it.
+    ("check_options", "Grant Thornton | No", False),
+    ("check_options", "KPMG", False),  # not an option the form showed
+    ("select_combobox", "No", False),  # a checkbox group is only ever ticked
+])
+def test_checkbox_group_answers_are_only_offered_options(resolver_page, monkeypatch, action, value, executed):
+    """American Century's required "listed firms" group (2026-09-28) was invisible to both
+    layers; the resolver now asks for it, and ticks only what the form offers."""
+    state = resolver_page
+    done: list[str] = []
+
+    def execute(_page, act):
+        done.append(act.value)
+        state.unresolved = []
+        return True
+
+    monkeypatch.setattr(hybrid_resolver, "execute_action", execute)
+    state.unresolved = [{
+        "type": "checkboxgroup", "selector": "[data-automation-id=\"firms-CheckboxGroup\"]",
+        "label": "Have you worked for any of the listed firms?", "options": _FIRMS, "invalid": True,
+    }]
+    state.replies.append(hybrid_resolver.StepResolution(actions=[hybrid_resolver.FieldAction(
+        label="firms", selector="[data-automation-id=\"firms-CheckboxGroup\"]", action=action, value=value)]))
+    _resolve(state, hybrid_resolver.StepLedger())
+    assert state.opened == []  # a checkbox group has no menu to open
+    assert done == ([value] if executed else [])
+
+
 def test_errors_with_nothing_actionable_do_not_call_the_model(resolver_page, monkeypatch):
     state = resolver_page
     monkeypatch.setattr(

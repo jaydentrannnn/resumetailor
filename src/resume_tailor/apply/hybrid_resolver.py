@@ -35,8 +35,11 @@ class FieldAction(BaseModel):
 
     label: str = Field(description="Human label of the field or question")
     selector: str = Field(description="Target CSS selector on the page")
-    action: Literal["select_combobox", "choose_radio", "fill_text"]
-    value: str = Field(description="Option text to choose or text value to fill")
+    action: Literal["select_combobox", "choose_radio", "check_options", "fill_text"]
+    value: str = Field(
+        description="Option text to choose or text value to fill; for check_options, the "
+        "option texts to tick joined by ' | '",
+    )
     rationale: str = Field(default="", description="Why this choice matches the candidate")
 
 
@@ -55,6 +58,7 @@ Rules:
 - Never fabricate work authorization or citizenship: adhere strictly to the candidate's declared profile.
 - For 'How did you hear about us?' or sources, pick 'Job Board', 'LinkedIn', 'Online', or 'Other' if exact text isn't listed.
 - For demographic / EEO questions (Gender, Race, Veteran, Disability): if the applicant declined or preferred not to say, choose 'Decline to self-identify', 'I prefer not to say', or similar.
+- For a checkbox group, use check_options and tick only options the profile supports (a location question: the applicant's location or stated relocation preferences). When none applies, tick the one explicit 'No', 'None of the above' or 'Not Available' option on its own.
 - Return actions for each unresolved control.
 """
 
@@ -193,6 +197,24 @@ _INSPECT_PAGE_JS = """
         });
       }
     }
+  });
+
+  // 2b. Required checkbox groups with nothing ticked (Workday "-CheckboxGroup" fieldsets:
+  // MPC's internship locations, American Century's "listed firms" with a "No" option).
+  document.querySelectorAll('fieldset[data-automation-id$="-CheckboxGroup"]').forEach(group => {
+    const boxes = Array.from(group.querySelectorAll('input[type="checkbox"]'));
+    if (!boxes.length || boxes.some(b => b.checked) || !boxes.some(isVisible)) return;
+    const required = group.getAttribute('aria-required') === 'true'
+      || boxes.some(b => b.getAttribute('aria-required') === 'true');
+    if (!required) return;
+    const title = group.closest('[data-automation-id^="formField-"]')?.querySelector('legend');
+    unresolved.push({
+      type: 'checkboxgroup',
+      selector: `[data-automation-id="${CSS.escape(group.getAttribute('data-automation-id'))}"]`,
+      label: title ? title.innerText.trim() : 'Checkbox group',
+      options: boxes.map(b => getLabel(b)),
+      invalid: invalid(group)
+    });
   });
 
   // 3. Check if Next / Continue button is currently disabled
@@ -403,12 +425,43 @@ def _choose_radio_option(page: Any, radio_selector: str, target_value: str) -> b
     return False
 
 
+#: A checkbox-group option that answers "none of these"; it is never ticked with another.
+_EXCLUSIVE_OPTION = re.compile(r"^(?:no|none(?: of the above)?|not available|n/?a)$", re.I)
+
+
+def checked_values(value: str) -> list[str]:
+    """The option texts a check_options action names (joined by ``|``)."""
+    return [part.strip() for part in value.split("|") if part.strip()]
+
+
+def _check_options(page: Any, group_selector: str, values: list[str]) -> bool:
+    """Tick the checkboxes labelled ``values`` in one group; True when all are ticked."""
+    wanted = {_norm(value) for value in values}
+    ticked = 0
+    try:
+        for box in page.locator(f"{group_selector} input[type='checkbox']").all():
+            bid = box.get_attribute("id")
+            label = page.locator(f"label[for='{bid}']").first if bid else None
+            if label is None or label.count() == 0 or _norm(label.inner_text()) not in wanted:
+                continue
+            if not box.is_checked():
+                clicks.safe_click(label, purpose="select", timeout=3000)
+                page.wait_for_timeout(150)
+            ticked += box.is_checked()
+    except Exception as exc:  # noqa: BLE001
+        _log.debug("checkbox selection failed: %s", exc)
+        return False
+    return ticked == len(wanted)
+
+
 def execute_action(page: Any, action: FieldAction) -> bool:
     """Execute one resolved action in the browser page."""
     if action.action == "select_combobox":
         return _select_combobox_option(page, action.selector, action.value)
     if action.action == "choose_radio":
         return _choose_radio_option(page, action.selector, action.value)
+    if action.action == "check_options":
+        return _check_options(page, action.selector, checked_values(action.value))
     if action.action == "fill_text":
         try:
             loc = page.locator(action.selector).first
@@ -662,6 +715,17 @@ def resolve_step_blockers(
             }:
                 continue
             if action.action == "fill_text" or action.action == "select_combobox" and field.get("type") != "combobox":
+                continue
+            if action.action == "check_options":
+                picked = checked_values(action.value)
+                offered = {_norm(str(value)) for value in field.get("options", [])}
+                if (
+                    field.get("type") != "checkboxgroup" or not picked
+                    or any(_norm(value) not in offered for value in picked)
+                    or len(picked) > 1 and any(_EXCLUSIVE_OPTION.match(value) for value in picked)
+                ):
+                    continue
+            elif field.get("type") == "checkboxgroup":
                 continue
             log(f"executing action: {action.action} on '{action.label}' -> '{action.value}'")
             if execute_action(page, action):
