@@ -13,15 +13,15 @@ export type DesktopOs = "windows" | "mac" | "linux";
 export const EDGE_DEBUG_COMMANDS: Record<DesktopOs, { shell: string; command: string }> = {
   windows: {
     shell: "PowerShell",
-    command: String.raw`& "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --remote-debugging-port=9222 --user-data-dir="$env:LOCALAPPDATA\ResumeTailorEdge"`,
+    command: String.raw`& "C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --remote-debugging-port=9222 --disable-background-timer-throttling --disable-renderer-backgrounding --disable-backgrounding-occluded-windows --user-data-dir="$env:LOCALAPPDATA\ResumeTailorEdge"`,
   },
   mac: {
     shell: "Terminal",
-    command: String.raw`"/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge" --remote-debugging-port=9222 --user-data-dir="$HOME/Library/Application Support/ResumeTailorEdge"`,
+    command: String.raw`"/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge" --remote-debugging-port=9222 --disable-background-timer-throttling --disable-renderer-backgrounding --disable-backgrounding-occluded-windows --user-data-dir="$HOME/Library/Application Support/ResumeTailorEdge"`,
   },
   linux: {
     shell: "a terminal",
-    command: String.raw`microsoft-edge --remote-debugging-port=9222 --user-data-dir="$HOME/.config/ResumeTailorEdge"`,
+    command: String.raw`microsoft-edge --remote-debugging-port=9222 --disable-background-timer-throttling --disable-renderer-backgrounding --disable-backgrounding-occluded-windows --user-data-dir="$HOME/.config/ResumeTailorEdge"`,
   },
 };
 

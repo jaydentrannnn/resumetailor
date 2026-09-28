@@ -204,8 +204,10 @@ def cdp_browser() -> Iterator[Any]:
         raise RuntimeError(
             f"Browser CDP unreachable at {status.cdp_url}: {status.error}. "
             "Launch a debug-enabled browser (Edge recommended) with "
-            "--remote-debugging-port=9222 and a dedicated --user-data-dir "
-            "(see README Automation)."
+            "--remote-debugging-port=9222, --disable-background-timer-throttling "
+            "--disable-renderer-backgrounding "
+            "--disable-backgrounding-occluded-windows and a dedicated "
+            "--user-data-dir (see README Automation)."
         )
     try:
         from playwright.sync_api import sync_playwright

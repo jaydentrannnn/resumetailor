@@ -217,10 +217,10 @@ browser, the same applies to Edge; use whichever you use less.) The Apply page's
 card shows the exact command; for a shortcut or a Task Scheduler "At log on" action:
 
 ```text
-"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --remote-debugging-port=9222 --user-data-dir="%LOCALAPPDATA%\ResumeTailorEdge"
+"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --remote-debugging-port=9222 --disable-background-timer-throttling --disable-renderer-backgrounding --disable-backgrounding-occluded-windows --user-data-dir="%LOCALAPPDATA%\ResumeTailorEdge"
 ```
 
-macOS: `"/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge" --remote-debugging-port=9222 --user-data-dir="$HOME/Library/Application Support/ResumeTailorEdge"`.
+macOS: `"/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge" --remote-debugging-port=9222 --disable-background-timer-throttling --disable-renderer-backgrounding --disable-backgrounding-occluded-windows --user-data-dir="$HOME/Library/Application Support/ResumeTailorEdge"`.
 Do not add `--remote-allow-origins=*`: it lets any web page open in that browser drive your
 logged-in sessions, and the app does not need it. The debugging port is open to any local
 process, so keep it on localhost and use only job-site logins in that profile. Log into

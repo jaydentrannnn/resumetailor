@@ -1384,3 +1384,21 @@ Classify school-issued email separately from personal email so a missing school 
 
 ## 2026-09-28: duplicate spellings in a prompt search are one answer
 American Century School search returned "University of California, Irvine" and "University of California-Irvine"; normalize() makes them equal, so match_option returned ambiguous and School stayed blank. Now the exact spelling wins, else the first of distinct spellings; identical labels remain a tie. Cencora "How Did You Hear = LinkedIn" (hierarchical list: Job Board, Social Media, ...) is still open: the tab session expired (prompts stay aria-busy), so the category tree could not be captured.
+
+## 2026-09-28 — Workday "applyManually ... element is not stable" under parallel fills
+
+- Started with 43f78df (parallel fill tabs, `max_parallel_fills` = 2). A background tab gets
+  its animation frames throttled by Edge, so Playwright's "stable" actionability check never
+  passes while the start dialog animates in. A longer timeout would not help.
+- `workday_flow._follow_href_or_click`: Apply / Continue and Apply Manually read the link's
+  own `href` (no actionability check) and `page.goto()` it, resolved with `urljoin` against
+  `page.url`. A missing, empty, `#` or `javascript:` href falls back to `clicks.safe_click`.
+  `_new_tab` still returns the same page when no tab opened, so in-place navigation is safe.
+- The Edge launch command (`frontend/src/lib/browserCommand.ts`, the `apply/browser.py` CDP
+  hint, README) now adds `--disable-background-timer-throttling
+  --disable-renderer-backgrounding --disable-backgrounding-occluded-windows`, so the
+  remaining click paths in background tabs are not throttled either. Edge must be restarted
+  with the new command for these flags to take effect.
+- Pre-existing and environmental, not caused by this change: test_config::test_local_ollama_needs_no_key,
+  test_estimate::test_local_and_unknown_models and test_setup_status::test_checklist_reports_each_prerequisite
+  fail on a clean tree on this machine; the setup-status one hit a live ollama.com request.

@@ -9,6 +9,14 @@ describe("EDGE_DEBUG_COMMAND", () => {
     expect(EDGE_DEBUG_COMMAND).toContain(String.raw`$env:LOCALAPPDATA\ResumeTailorEdge`);
   });
 
+  it("disables background throttling on every platform", () => {
+    for (const { command } of Object.values(EDGE_DEBUG_COMMANDS)) {
+      expect(command).toContain("--disable-background-timer-throttling");
+      expect(command).toContain("--disable-renderer-backgrounding");
+      expect(command).toContain("--disable-backgrounding-occluded-windows");
+    }
+  });
+
   it("never lets arbitrary web pages attach to the debugging port", () => {
     for (const { command } of Object.values(EDGE_DEBUG_COMMANDS)) {
       expect(command).not.toContain("remote-allow-origins");

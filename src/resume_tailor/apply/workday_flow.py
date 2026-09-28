@@ -14,6 +14,7 @@ import time
 from collections.abc import Callable, Iterable
 from datetime import date
 from typing import Any, Literal
+from urllib.parse import urljoin
 
 from resume_tailor.apply import clicks, field_matcher, questions
 
@@ -393,6 +394,22 @@ def _new_tab(page: Any, context: Any, before: list[Any], deadline: float) -> Any
     return opened[0]
 
 
+def _follow_href_or_click(page: Any, locator: Any, *, deadline: float) -> None:
+    """Navigate to a link's own href, else click it.
+
+    A parallel fill's tab sits in the background, where Edge throttles animation frames and
+    Playwright's "stable" check never passes while the start dialog animates in. Reading
+    ``href`` needs no actionability check, so a real link is followed with ``goto``.
+    """
+    href = ""
+    with contextlib.suppress(Exception):  # no attribute: fall back to the click
+        href = (locator.get_attribute("href", timeout=2000) or "").strip()
+    if href and href != "#" and not href.lower().startswith("javascript:"):
+        page.goto(urljoin(page.url, href), timeout=_remaining_ms(deadline, 15000), wait_until="domcontentloaded")
+        return
+    clicks.safe_click(locator, purpose="enter", timeout=_remaining_ms(deadline, 5000))
+
+
 def enter_application(
     page: Any,
     context: Any,
@@ -422,7 +439,7 @@ def enter_application(
         entry = draft if _visible(draft) else page.locator("[data-automation-id='adventureButton']")
         if _visible(draft):
             progress("Workday: resuming the saved application draft")
-        clicks.safe_click(entry.first, purpose="enter", timeout=_remaining_ms(deadline, 5000))
+        _follow_href_or_click(page, entry.first, deadline=deadline)
         page.wait_for_timeout(300)
         if context is not None:
             page = _new_tab(page, context, before, deadline)
@@ -432,7 +449,7 @@ def enter_application(
         manual = page.locator("[data-automation-id='applyManually']")
         if not _visible(manual):
             return page, state
-        clicks.safe_click(manual.first, purpose="enter", timeout=_remaining_ms(deadline, 5000))
+        _follow_href_or_click(page, manual.first, deadline=deadline)
         state = wait_for_state(page, terminal, timeout_s=20, deadline=deadline)
     if state not in terminal:
         # The error page can also replace the form right after Apply / Apply Manually.

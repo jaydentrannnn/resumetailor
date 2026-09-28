@@ -105,8 +105,8 @@ class _FakeLocator:
         if self.aid not in self.page.stuck_checkboxes:
             self.page.checked.add(self.aid)
 
-    def get_attribute(self, name: str) -> str | None:
-        return None
+    def get_attribute(self, name: str, timeout: int | None = None) -> str | None:
+        return self.page.hrefs.get(self.aid) if name == "href" else None
 
     def inner_text(self, timeout: int | None = None) -> str:
         return _LABELS.get(self.aid, "")
@@ -139,6 +139,15 @@ class _FakePage:
         #: Screens shown by successive reloads; an empty queue reloads the same screen.
         self.after_reload: list[str] = []
         self.reloads = 0
+        #: href of a link by automation id; a link listed here is followed, not clicked.
+        self.hrefs: dict[str, str] = {}
+        self.gotos: list[str] = []
+
+    def goto(self, url: str, **_kwargs: object) -> None:
+        self.gotos.append(url)
+        nxt = self.transitions.get((self.screen, f"goto:{url}"))
+        if nxt:
+            self.screen = nxt
 
     def reload(self, **_kwargs: object) -> None:
         self.reloads += 1
@@ -278,6 +287,43 @@ def test_enter_application_resumes_from_the_open_dialog(clock):
     _page, state = workday_flow.enter_application(page, None, deadline=clock.now + 60)
     assert state == "sign_in"
     assert page.clicks == ["applyManually"]
+
+
+def test_apply_manually_href_is_navigated_not_clicked(clock):
+    """A background tab never sees the animating dialog stable, so the link is followed."""
+    page = _FakePage("start_dialog", {
+        ("start_dialog", "goto:https://tenant.wd5.myworkdayjobs.com/site/job/City/R1/apply/applyManually"): "sign_in",
+    }, clock=clock)
+    page.hrefs["applyManually"] = "/site/job/City/R1/apply/applyManually"  # relative: resolved
+    _page, state = workday_flow.enter_application(page, None, deadline=clock.now + 60)
+    assert state == "sign_in"
+    assert page.gotos == ["https://tenant.wd5.myworkdayjobs.com/site/job/City/R1/apply/applyManually"]
+    assert page.clicks == []
+
+
+@pytest.mark.parametrize("href", [None, "", "#", "javascript:void(0)"])
+def test_apply_manually_without_a_usable_href_is_clicked(clock, href):
+    page = _FakePage("start_dialog", {("start_dialog", "applyManually"): "sign_in"}, clock=clock)
+    if href is not None:
+        page.hrefs["applyManually"] = href
+    _page, state = workday_flow.enter_application(page, None, deadline=clock.now + 60)
+    assert state == "sign_in"
+    assert page.gotos == []
+    assert page.clicks == ["applyManually"]
+
+
+@pytest.mark.parametrize(("screen", "aid"), [
+    ("posting_signed_in", "adventureButton"),
+    ("posting_with_draft", "continueButton"),
+])
+def test_apply_entry_href_is_navigated_not_clicked(clock, screen, aid):
+    url = "https://tenant.wd5.myworkdayjobs.com/site/job/City/R1/apply"
+    page = _FakePage(screen, {(screen, f"goto:{url}"): "my_information"}, clock=clock)
+    page.hrefs[aid] = url
+    _page, state = workday_flow.enter_application(page, None, deadline=clock.now + 60)
+    assert state == "apply_form"
+    assert page.gotos == [url]
+    assert page.clicks == []
 
 
 def test_enter_application_leaves_a_form_alone(clock):
