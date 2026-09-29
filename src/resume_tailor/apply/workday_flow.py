@@ -970,7 +970,11 @@ CHECKBOX_GROUPS_JS = r"""() => {
     groups.get(container).push({id: box.id, label: label ? (label.innerText || '').trim() : '', checked: box.checked});
   }
   return [...groups].filter(([, options]) => options.length > 1).map(([container, options]) => {
-    const legend = container.querySelector("legend, label:not([for])");
+    // American Century's "-CheckboxGroup" fieldset holds only the boxes; its question is
+    // the legend of the enclosing form field (2026-09).
+    const field = container.closest("[data-automation-id^='formField-']");
+    const legend = container.querySelector("legend, label:not([for])")
+      || (field && field.querySelector("legend, label:not([for])"));
     return {question: (legend ? legend.innerText : '').replace(/\*\s*$/, '').trim(), options};
   });
 }"""
@@ -1423,22 +1427,45 @@ def remove_duplicate_chips(page: Any, input_id: str, progress: Callable[[str], N
     for _ in range(20):
         chips = _chips(page, input_id)
         duplicate = next((index for index, chip in enumerate(chips) if same_skill_in(chips[:index], chip)), None)
-        if duplicate is None:
-            break
-        try:
-            if not page.evaluate(_CHIP_AT_JS, [input_id, duplicate]):
-                break
-            chip = page.locator("[data-rt-chip]").first
-            chip.focus(timeout=2000)
-            chip.press("Delete", timeout=2000)
-            page.wait_for_timeout(300)
-        except Exception:  # noqa: BLE001 - left for the applicant
-            break
-        if len(_chips(page, input_id)) != len(chips) - 1:
+        if duplicate is None or not _remove_chip(page, input_id, duplicate):
             break
         removed += 1
         progress(f"Workday: removed a duplicate skill chip ({chips[duplicate]})")
     return removed
+
+
+def _remove_chip(page: Any, input_id: str, index: int) -> bool:
+    """Delete the ``index``-th chip of one prompt; True when exactly one chip went."""
+    before = len(_chips(page, input_id))
+    try:
+        if not page.evaluate(_CHIP_AT_JS, [input_id, index]):
+            return False
+        chip = page.locator("[data-rt-chip]").first
+        chip.focus(timeout=2000)
+        chip.press("Delete", timeout=2000)
+        page.wait_for_timeout(300)
+    except Exception:  # noqa: BLE001 - left for the applicant
+        return False
+    return len(_chips(page, input_id)) == before - 1
+
+
+def _entered_chip(page: Any, input_id: str, before: list[str]) -> str | None:
+    """The chip Enter committed by itself, when the search had a single result.
+
+    Workday commits a lone result on Enter while still listing it, ticked; clicking that
+    option then *un*-selects it. American Century (2026-09): every skill was added by the
+    Enter and removed by the click, and the step ended with none.
+    """
+    after = _chips(page, input_id)
+    if len(after) != len(before) + 1:
+        return None
+    remaining = list(before)
+    for chip in after:
+        if chip in remaining:
+            remaining.remove(chip)
+        else:
+            return chip
+    return after[-1]
 
 
 def _search_prompt(page: Any, input_id: str, term: str) -> list[str]:
@@ -1462,7 +1489,14 @@ def _search_prompt(page: Any, input_id: str, term: str) -> list[str]:
 
 
 def _click_option(page: Any, input_id: str, texts: list[str], option: str, before: int) -> bool:
-    """Click ``option`` in the open results; verified by exactly one new chip."""
+    """Click ``option`` in the open results; verified by exactly one new chip.
+
+    Not clicked when a chip has already appeared: the option is then ticked, and a
+    click would un-select it (`_entered_chip`).
+    """
+    now = _chips(page, input_id)
+    if len(now) != before:
+        return len(now) == before + 1 and option in now
     clicks.safe_click(page.locator(_OPEN_PROMPT_OPTIONS).nth(texts.index(option)), purpose="select", timeout=3000)
     for _ in range(8):
         page.wait_for_timeout(250)
@@ -1473,9 +1507,23 @@ def _click_option(page: Any, input_id: str, texts: list[str], option: str, befor
 
 def _commit_skill(page: Any, input_id: str, term: str, option: str) -> bool:
     """Search ``term`` again and commit ``option`` from its results."""
-    before = len(_chips(page, input_id))
+    before = _chips(page, input_id)
     texts = _search_prompt(page, input_id, term)
-    return option in texts and _click_option(page, input_id, texts, option, before)
+    entered = _entered_chip(page, input_id, before)
+    if entered is not None:
+        if entered == option:
+            return True
+        _drop_chip(page, input_id, entered)
+        return False
+    return option in texts and _click_option(page, input_id, texts, option, len(before))
+
+
+def _drop_chip(page: Any, input_id: str, text: str) -> bool:
+    """Remove the last chip reading ``text`` (one Enter committed without our choosing)."""
+    chips = _chips(page, input_id)
+    if text not in chips:
+        return False
+    return _remove_chip(page, input_id, len(chips) - 1 - chips[::-1].index(text))
 
 
 def fill_skills(
@@ -1535,6 +1583,18 @@ def fill_skills(
             continue  # already on the form
         try:
             texts = _search_prompt(page, input_id, skill)
+            entered = _entered_chip(page, input_id, chips)
+            if entered is not None:
+                # Enter committed the single result: keep it when it names the skill,
+                # never click it (that would un-select it); otherwise take it back off
+                # and let the model judge it like any other near miss.
+                if match_skill_option([entered], skill) and not same_skill_in(chips, entered):
+                    record(skill, entered, "exact")
+                    continue
+                _drop_chip(page, input_id, entered)
+                if not same_skill_in(chips, entered):
+                    unmatched[skill] = [entered]
+                continue
             chosen = match_skill_option(texts, skill)
             if chosen and same_skill_in(chips, chosen):
                 continue  # this option is already a chip, under another skill's name

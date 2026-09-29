@@ -1441,3 +1441,21 @@ Considered and rejected for the resolver: Jev (hosted API: applicant PII to a th
 party) and Laya (local, deterministic encoder, but its base checkpoints are near chance
 zero-shot on typed decisions per its own model card; would need fine-tuning on our own
 question/answer pairs, which `resolver-choices.json` could later supply).
+
+## 2026-09-29 — Workday skills: Enter already committed the lone result
+
+American Century's Enterprise Data Intern fill added every skill and then removed it again. On
+a real Workday multiselect, Enter on a search with a single result commits that result as a
+chip immediately and keeps the option listed, ticked; the click `fill_skills` then made on
+that option *toggled it off*. `_search_prompt` is now followed by `_entered_chip` (the one
+chip that appeared during the search): the right skill → recorded, no click; a wrong one
+(e.g. "PyTorch Lightning" for "torch") → `_drop_chip` takes it back off and it goes to the
+near-miss judge like any other. `_click_option` also accepts only a +1 chip change that
+includes the option, so a toggle-off is never counted as a commit.
+
+Same tab: the listed-firms `-CheckboxGroup` fieldset holds only the boxes, and the question is
+the enclosing `formField-` legend. `CHECKBOX_GROUPS_JS` read a blank question, skipped the
+required group, and the wizard never left page 1, so the page-2 graduation date was never
+reached. The legend now falls back to the form field. `salary.pick_range` ties (60k–80k
+against "$60,000 - $70,000" / "$70,000 - $80,000") go to the band holding the applicant's
+top, which matches the number answered everywhere else.

@@ -130,6 +130,13 @@ def test_pick_range_puts_a_single_figure_in_the_range_that_holds_it():
     assert salary.pick_range(_YEARLY_OPTIONS, "80000-80000/year") == "$80,000 - $99,999"
 
 
+def test_pick_range_on_a_tie_takes_the_range_holding_the_applicants_top():
+    """American Century (2026-09): $60k-80k overlaps both $10k bands equally; the top is
+    the answer everywhere else, so the band holding it wins, not the first listed."""
+    options = ["$40,000 - $50,000", "$50,000 - $60,000", "$60,000 - $70,000", "$70,000 - $80,000", "Over $200,000"]
+    assert salary.pick_range(options, "60000-80000/year") == "$70,000 - $80,000"
+
+
 def test_pick_range_with_no_overlap_takes_the_nearest_range():
     options = ["$40,000 - $59,999", "$60,000 - $79,999"]
     assert salary.pick_range(options, "100000-120000/year") == "$60,000 - $79,999"

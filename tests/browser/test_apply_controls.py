@@ -919,6 +919,79 @@ def test_duplicate_chips_from_an_earlier_draft_are_removed():
             browser.close()
 
 
+#: Workday's real multiselect behaviour (American Century, 2026-09): Enter on a search with
+#: a single result commits it at once and lists it ticked; clicking a ticked option
+#: removes its chip.
+_TOGGLING_SKILLS_PROMPT = _SKILLS_PROMPT.replace(
+    '''            option.onclick = () => {
+              list.insertAdjacentHTML("beforeend", `<li><div data-automation-id="selectedItem">${text}</div></li>`);
+            };''',
+    '''            option.onclick = () => {
+              const chip = [...list.querySelectorAll("[data-automation-id=selectedItem]")].find(c => c.textContent === text);
+              if (chip) chip.parentElement.remove();
+              else list.insertAdjacentHTML("beforeend", `<li><div data-automation-id="selectedItem">${text}</div></li>`);
+            };''',
+).replace(
+    "        }, 300);",
+    '''          if (found.length === 1) {
+            list.insertAdjacentHTML("beforeend", `<li><div data-automation-id="selectedItem" tabindex="-1"
+              onkeydown="if (event.key === 'Delete') this.parentElement.remove()">${found[0]}</div></li>`);
+          }
+        }, 300);''',
+).replace('"sql": ["SQL"],', '"sql": ["SQL"], "pandas": ["Pandas"], "torch": ["PyTorch Lightning"],')
+
+
+def test_a_skill_enter_already_committed_is_kept_not_clicked_off():
+    """American Century (2026-09): every skill was added by Enter and removed again by
+    the click that followed, so the step ended with no skills at all."""
+    from resume_tailor.apply import workday_flow
+
+    asked: list[dict[str, list[str]]] = []
+
+    def choose_many(unmatched):
+        asked.append(unmatched)
+        return {"torch": None}  # "PyTorch Lightning" is not the same skill
+
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=str(_EDGE), headless=True)
+        try:
+            page = browser.new_page()
+            page.set_content(_TOGGLING_SKILLS_PROMPT)
+            committed, review = workday_flow.fill_skills(page, ["Pandas", "torch", "Python"], choose_many=choose_many)
+            chips = page.locator("[data-automation-id=selectedItem]").all_inner_texts()
+            assert chips == ["SQL", "Pandas", "Python"]
+            assert [c["value"] for c in committed] == ["Pandas", "Python"]
+            # The wrong lone result Enter committed was taken back off and judged like
+            # any other near miss.
+            assert asked == [{"torch": ["PyTorch Lightning"]}]
+            assert review == ["torch"]
+        finally:
+            browser.close()
+
+
+def test_listed_firms_checkboxes_read_their_question_outside_the_group_fieldset():
+    """American Century's group fieldset holds only the boxes; the question is the form
+    field's legend. Read from the group alone it was blank and the group was skipped,
+    which left the required field empty and the step unable to advance."""
+    from resume_tailor.apply import workday_flow
+
+    html = '<div data-automation-id="applyFlowPage">' + _workday_checkbox_group(
+        "cec2firms",
+        "Are you currently employed by, or have you previously worked for, any of the listed firms?*",
+        ["Grant Thornton", "FORVIS", "Deloitte and Touche", "No"],
+    ) + "</div>"
+    with sync_playwright() as playwright:
+        browser = playwright.chromium.launch(executable_path=str(_EDGE), headless=True)
+        try:
+            page = browser.new_page()
+            page.set_content(html)
+            committed = workday_flow.fill_choice_checkboxes(page, {}, employers=["Age of Learning Inc."])
+            assert [c["value"] for c in committed] == ["No"]
+            assert page.is_checked("[id='cec2firms-3']") and not page.is_checked("[id='cec2firms-0']")
+        finally:
+            browser.close()
+
+
 #: My Experience with a hidden template Add button ahead of the visible ones.
 _EXPERIENCE_STEP = '''
     <div data-automation-id="applyFlowPage">

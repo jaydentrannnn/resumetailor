@@ -241,9 +241,11 @@ def pick_range(options: list[str], spec: str) -> str | None:
     """The option whose range best covers the applicant's (`range_spec`).
 
     Most overlap wins; an applicant's single figure counts inside a range that holds it;
-    with no overlap the nearest range wins; ties go to the first listed. None unless at
-    least two options read as ranges, so a dropdown that is not a range list is never
-    matched this way.
+    with no overlap the nearest range wins. On a tie the range holding the applicant's
+    top wins ($60k-80k against "$60,000 - $70,000" / "$70,000 - $80,000", American
+    Century 2026-09: the top is the answer everywhere else), then the first listed. None
+    unless at least two options read as ranges, so a dropdown that is not a range list is
+    never matched this way.
     """
     parsed = _SPEC.match(spec.strip())
     if not parsed:
@@ -252,13 +254,13 @@ def pick_range(options: list[str], spec: str) -> str | None:
     ranges = [(label, found) for label in options if (found := option_range(label))]
     if len(ranges) < 2:
         return None
-    best: tuple[float, str] | None = None
+    best: tuple[tuple[float, bool], str] | None = None
     for label, (low, high, unit) in ranges:
         target = unit or want_unit
         lo = _convert(want_low, want_unit, target)  # type: ignore[arg-type]
         hi = _convert(want_high, want_unit, target)  # type: ignore[arg-type]
         # Negative when the ranges do not meet: minus the gap to the nearest end.
-        overlap = min(high, hi) - max(low, lo)
-        if best is None or overlap > best[0]:
-            best = (overlap, label)
+        score = (min(high, hi) - max(low, lo), low <= hi <= high)
+        if best is None or score > best[0]:
+            best = (score, label)
     return best[1] if best else None
