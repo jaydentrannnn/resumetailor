@@ -156,18 +156,22 @@ test("header: pause and resume all automation", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Pause automation" })).toBeVisible();
 });
 
-test("apply settings: build a company watchlist", async ({ page }) => {
-  await page.goto("/applications");
-  await page.getByRole("button", { name: "Apply settings" }).click();
-  await page.getByRole("button", { name: "Add a company watchlist" }).click();
-  const link = page.getByLabel("Job board link");
+test("sources: build a company watchlist", async ({ page }) => {
+  await page.goto("/applications?tab=sources");
+  await page.getByRole("button", { name: "Add source" }).click();
+  const dialog = page.getByRole("dialog", { name: "Add a job source" });
+  await dialog.getByRole("tab", { name: "Company watchlist" }).click();
+  const link = dialog.getByLabel("Job board link");
   await link.fill("https://boards.greenhouse.io/nope");
-  await page.getByRole("button", { name: "Add company" }).click();
-  await expect(page.getByRole("alert")).toContainText("No greenhouse job board");
+  await dialog.getByRole("button", { name: "Add company" }).click();
+  await expect(dialog.getByRole("alert")).toContainText("No greenhouse job board");
   await link.fill("https://boards.greenhouse.io/acme");
-  await page.getByRole("button", { name: "Add company" }).click();
-  await expect(page.getByRole("button", { name: "Remove Acme Capital" })).toBeVisible();
+  await dialog.getByRole("button", { name: "Add company" }).click();
+  await expect(dialog.getByRole("button", { name: "Remove Acme Capital" })).toBeVisible();
   await expectAccessible(page);
+  await dialog.getByRole("button", { name: "Add watchlist" }).click();
+  await expect(dialog).toBeHidden();
+  await expect(page.getByRole("tab", { name: "Sources (4)" })).toBeVisible();
 });
 
 test("apply settings: nightly run first, auto-submit limits off until auto-submit is on", async ({
