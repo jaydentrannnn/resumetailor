@@ -113,9 +113,21 @@ export type BoardAts = "greenhouse" | "lever" | "ashby" | "smartrecruiters" | "w
 /** One company job board on a watchlist source. */
 export type BoardConfig = { ats: BoardAts; slug: string; company: string };
 
+export type SourceKind =
+  | "simplify_html"
+  | "pipe_table"
+  | "company_link_table"
+  | "ats_board"
+  | "job_search";
+
 export type SourceConfig = {
   id: string;
-  kind: "simplify_html" | "pipe_table" | "ats_board" | "job_search";
+  kind: SourceKind;
+  /** Display name; falls back to `id` when empty. */
+  name?: string;
+  /** Source-catalog entry this source was added from, and that entry's version then. */
+  catalog_id?: string | null;
+  catalog_version?: string | null;
   url: string;
   categories: string[];
   enabled: boolean;
@@ -128,6 +140,7 @@ export type SourceConfig = {
   max_age_days?: number | null;
   /** Keyword job search (`job_search`) sources only. */
   provider?: "adzuna" | "usajobs" | null;
+  /** One or more comma-separated phrases (max 5), each searched separately. */
   query?: string;
   location?: string;
   country?: string;
@@ -2334,4 +2347,82 @@ export async function fetchSourceSections(url: string): Promise<string[]> {
       `/api/apply/sources/sections?url=${encodeURIComponent(url)}`,
     )
   ).sections;
+}
+
+// --- Source catalog, inspect and test (user-managed sources) ----------------------------
+
+/** Field tags a catalog entry can carry; onboarding's field picker uses the same set. */
+export type SourceField =
+  | "swe"
+  | "data"
+  | "quant"
+  | "finance"
+  | "consulting"
+  | "product"
+  | "business"
+  | "hardware"
+  | "government";
+
+/** One curated source in the catalog. `template` is copied into `ApplySettings.sources`. */
+export type CatalogEntry = {
+  id: string;
+  name: string;
+  description: string;
+  fields: SourceField[];
+  version: string;
+  /** A ready-to-add source; `id` is regenerated if it collides with an existing source. */
+  template: SourceConfig;
+};
+
+export type SourceCatalog = {
+  schema_version: number;
+  entries: CatalogEntry[];
+  /** Where this copy came from: fetched now, the on-disk cache, or the app's bundled copy. */
+  origin: "remote" | "cache" | "bundled";
+};
+
+export function fetchSourceCatalog(): Promise<SourceCatalog> {
+  return request<SourceCatalog>("/api/apply/catalog");
+}
+
+export type SourceInspection = {
+  /** The detected README format, or null when no parser found any rows. */
+  kind: "simplify_html" | "pipe_table" | "company_link_table" | null;
+  sections: string[];
+  row_count: number;
+};
+
+/** Fetch a README URL once and detect its format and category headings. */
+export function inspectSource(url: string): Promise<SourceInspection> {
+  return request<SourceInspection>("/api/apply/sources/inspect", {
+    method: "POST",
+    body: JSON.stringify({ url }),
+  });
+}
+
+/** A subset of the backend's `sources.SourceRow`. */
+export type SourceTestRow = {
+  company: string;
+  role: string;
+  location: string;
+  age: string;
+  posted_at: string;
+  application_link: string | null;
+};
+
+export type SourceTestResult = {
+  /** Rows the source returned before the funnel's filters. */
+  rows_total: number;
+  /** Rows the daily funnel's filters would keep (ignoring what is already tracked). */
+  rows_kept: number;
+  sample: SourceTestRow[];
+  errors: string[];
+};
+
+/** Run one source once without the funnel (no LLM, nothing saved). */
+export function testSource(source: SourceConfig): Promise<SourceTestResult> {
+  return request<SourceTestResult>("/api/apply/sources/test", {
+    method: "POST",
+    body: JSON.stringify({ source }),
+  });
 }

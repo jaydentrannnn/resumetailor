@@ -70,11 +70,18 @@ class SourceConfig(BaseModel):
     everywhere when empty). ``max_age_days`` widens the funnel-wide age limit for this
     source (the longer of the two wins); watchlists default to 7 days, since finance
     recruiting opens months ahead and a board posting stays relevant for longer than a
-    README row.
+    README row. ``company_link_table`` reads a README of per-company ``|Role|Links|``
+    tables (northwesternfintech-style). ``job_search``'s ``query`` holds one or more
+    comma-separated phrases, each searched separately. ``catalog_id``/``catalog_version``
+    record which source-catalog entry (``apply/source_catalog.py``) this was added from.
     """
 
     id: str
-    kind: Literal["simplify_html", "pipe_table", "ats_board", "job_search"]
+    kind: Literal["simplify_html", "pipe_table", "company_link_table", "ats_board", "job_search"]
+    #: Display name; the UI falls back to ``id`` when empty.
+    name: str = ""
+    catalog_id: str | None = None
+    catalog_version: str | None = None
     url: str = ""
     categories: list[str] = Field(default_factory=list)
     enabled: bool = True
