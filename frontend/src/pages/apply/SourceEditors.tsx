@@ -1,16 +1,207 @@
-import { useEffect, useState } from "react";
-import { Link } from "react-router-dom";
+import { useCallback, useEffect, useId, useState } from "react";
 import {
   fetchSecrets,
   fetchSourceSections,
   fetchWatchlists,
+  inspectSource,
   resolveBoard,
+  saveSecret,
   type BoardConfig,
   type SecretState,
   type SourceConfig,
 } from "../../api";
 import { describe } from "../../lib/errors";
+import { joinPhrases, MAX_PHRASES, PROVIDER_KEYS, splitPhrases } from "../../lib/sources";
 import { addBoard, ATS_LABELS, hasBoard, parseWords, removeBoard } from "../../lib/watchlist";
+
+/**
+ * Search phrases as removable chips (at most five). Each phrase is one search; the list is
+ * stored comma-joined in `SourceConfig.query`. Enter or a comma adds the typed phrase.
+ */
+export function PhraseChips({
+  query,
+  onChange,
+}: {
+  query: string;
+  onChange: (query: string) => void;
+}) {
+  const inputId = useId();
+  const hintId = useId();
+  const phrases = splitPhrases(query);
+  const [text, setText] = useState("");
+  const full = phrases.length >= MAX_PHRASES;
+
+  function add() {
+    const next = joinPhrases([...phrases, ...text.split(",")]);
+    if (next !== query) onChange(next);
+    setText("");
+  }
+
+  return (
+    <div className="text-xs">
+      <label htmlFor={inputId} className="font-medium">
+        Search phrases
+      </label>
+      {phrases.length > 0 && (
+        <ul aria-label="Search phrases" className="mt-1 flex flex-wrap gap-1.5">
+          {phrases.map((phrase) => (
+            <li
+              key={phrase}
+              className="flex items-center gap-1 rounded-full border border-line bg-paper px-2 py-0.5"
+            >
+              {phrase}
+              <button
+                type="button"
+                aria-label={`Remove phrase ${phrase}`}
+                className="ml-0.5 text-ink-muted hover:text-danger"
+                onClick={() => onChange(joinPhrases(phrases.filter((p) => p !== phrase)))}
+              >
+                ×
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <div className="mt-1 flex gap-2">
+        <input
+          id={inputId}
+          aria-describedby={hintId}
+          className="field min-w-0 flex-1 text-sm"
+          placeholder={full ? "Five phrases is the most" : "e.g. financial analyst"}
+          disabled={full}
+          value={text}
+          onChange={(e) => {
+            const value = e.target.value;
+            if (value.includes(",")) {
+              const parts = value.split(",");
+              const rest = parts.pop() ?? "";
+              const next = joinPhrases([...phrases, ...parts]);
+              if (next !== query) onChange(next);
+              setText(rest);
+            } else setText(value);
+          }}
+          onKeyDown={(e) => {
+            if (e.key === "Enter") {
+              e.preventDefault();
+              if (text.trim()) add();
+            } else if (e.key === "Backspace" && !text && phrases.length) {
+              onChange(joinPhrases(phrases.slice(0, -1)));
+            }
+          }}
+          onBlur={() => {
+            if (text.trim()) add();
+          }}
+        />
+        <button
+          type="button"
+          className="rounded-md border border-line px-3 py-1 text-xs font-medium disabled:opacity-50"
+          disabled={full || !text.trim()}
+          onClick={add}
+        >
+          Add
+        </button>
+      </div>
+      <p id={hintId} className="mt-1 text-ink-muted">
+        Each phrase is searched on its own ({phrases.length}/{MAX_PHRASES}).
+      </p>
+      {phrases.length === 0 && (
+        <p className="mt-1 text-warn">Add at least one phrase; an empty search can't be saved.</p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * The keys a keyword-search provider needs, entered right here and saved to the OS
+ * keychain through `/api/secrets` (values are never read back).
+ */
+export function ProviderKeys({ provider }: { provider: "adzuna" | "usajobs" }) {
+  const [secrets, setSecrets] = useState<SecretState[] | null>(null);
+  const [values, setValues] = useState<Record<string, string>>({});
+  const [saving, setSaving] = useState(false);
+  const [error, setError] = useState("");
+
+  const load = useCallback(() => {
+    fetchSecrets()
+      .then((res) => setSecrets(res.secrets))
+      .catch(() => setSecrets([]));
+  }, []);
+  useEffect(load, [load]);
+
+  if (secrets === null) return null;
+  const keys = PROVIDER_KEYS[provider];
+  const isSet = (name: string) => secrets.some((s) => s.name === name && s.set);
+  const missing = keys.filter((k) => !isSet(k.name));
+  if (missing.length === 0)
+    return (
+      <p className="text-xs text-ink-muted">
+        ✓ {provider === "adzuna" ? "Adzuna" : "USAJobs"} keys are saved.
+      </p>
+    );
+
+  async function save() {
+    setSaving(true);
+    setError("");
+    try {
+      for (const key of missing) {
+        const value = values[key.name]?.trim();
+        if (value) await saveSecret(key.name, value);
+      }
+      setValues({});
+      load();
+    } catch (reason) {
+      setError(describe(reason).detail);
+    } finally {
+      setSaving(false);
+    }
+  }
+
+  return (
+    <div
+      role="group"
+      aria-label={`${provider === "adzuna" ? "Adzuna" : "USAJobs"} keys`}
+      className="space-y-2 rounded-md bg-warn-soft p-2.5 text-xs"
+    >
+      <p role="alert" className="text-warn">
+        Missing credentials: {missing.map((k) => k.name).join(", ")}. Searches return nothing until
+        they are saved.{" "}
+        <a
+          className="text-accent underline"
+          href={
+            provider === "adzuna"
+              ? "https://developer.adzuna.com/signup"
+              : "https://developer.usajobs.gov/apirequest/"
+          }
+          target="_blank"
+          rel="noreferrer"
+        >
+          Get a free key
+        </a>
+      </p>
+      {missing.map((key) => (
+        <label key={key.name} className="block">
+          <span className="font-medium">{key.label}</span>
+          <input
+            className="field mt-1 w-full text-sm"
+            type={key.name.endsWith("EMAIL") ? "email" : "password"}
+            autoComplete="off"
+            value={values[key.name] ?? ""}
+            onChange={(e) => setValues((prev) => ({ ...prev, [key.name]: e.target.value }))}
+          />
+        </label>
+      ))}
+      <button
+        type="button"
+        className="rounded-md border border-line bg-panel px-3 py-1 font-medium disabled:opacity-50"
+        disabled={saving || !missing.some((k) => values[k.name]?.trim())}
+        onClick={() => void save()}
+      >
+        {saving ? "Saving…" : "Save keys"}
+      </button>
+      {error && <p className="text-danger">{error}</p>}
+    </div>
+  );
+}
 
 /**
  * The categories a README source offers, as checkboxes. The headings are read from the
@@ -19,11 +210,14 @@ import { addBoard, ATS_LABELS, hasBoard, parseWords, removeBoard } from "../../l
 export function CategoryPicker({
   source,
   onChange,
+  initialSections = null,
 }: {
   source: SourceConfig;
   onChange: (next: SourceConfig) => void;
+  /** Headings already read (the Add source dialog's inspect step); skips the fetch. */
+  initialSections?: string[] | null;
 }) {
-  const [sections, setSections] = useState<string[] | null>(null);
+  const [sections, setSections] = useState<string[] | null>(initialSections);
   const [loading, setLoading] = useState(false);
   const [error, setError] = useState("");
 
@@ -31,7 +225,12 @@ export function CategoryPicker({
     setLoading(true);
     setError("");
     try {
-      setSections(await fetchSourceSections(source.url));
+      // The inspect endpoint knows every README format, including per-company link tables.
+      setSections(
+        source.kind === "company_link_table"
+          ? (await inspectSource(source.url)).sections
+          : await fetchSourceSections(source.url),
+      );
     } catch (reason) {
       setError(describe(reason).detail);
     } finally {
@@ -63,6 +262,11 @@ export function CategoryPicker({
   return (
     <fieldset className="mt-2 space-y-1">
       <legend className="text-xs font-medium">Categories</legend>
+      {sections.length === 0 && (
+        <p className="text-xs text-ink-muted">
+          This list has no category headings; every posting on it is searched.
+        </p>
+      )}
       {sections.map((name) => (
         <label key={name} className="flex items-center gap-2 text-xs">
           <input
@@ -292,7 +496,7 @@ export function WatchlistEditor({
 
 /**
  * A keyword job-search source (`job_search` source): queries Adzuna or USAJobs by
- * keyword, location, and recency. Checks for required credentials and links to Settings.
+ * phrase (each searched separately), location, and recency. Missing keys are entered inline.
  */
 export function JobSearchEditor({
   source,
@@ -301,37 +505,11 @@ export function JobSearchEditor({
   source: SourceConfig;
   onChange: (next: SourceConfig) => void;
 }) {
-  const [secrets, setSecrets] = useState<SecretState[] | null>(null);
   const provider = source.provider ?? "adzuna";
-
-  useEffect(() => {
-    fetchSecrets()
-      .then((res) => setSecrets(res.secrets))
-      .catch(() => setSecrets([]));
-  }, []);
-
-  const neededKeys =
-    provider === "adzuna"
-      ? ["ADZUNA_APP_ID", "ADZUNA_APP_KEY"]
-      : ["USAJOBS_API_KEY", "USAJOBS_EMAIL"];
-  const missingKeys = secrets
-    ? neededKeys.filter((k) => !secrets.some((s) => s.name === k && s.set))
-    : [];
 
   return (
     <div className="mt-2 space-y-3 rounded-md border border-line p-3">
-      {missingKeys.length > 0 && (
-        <div role="alert" className="rounded-md bg-warn-soft p-2.5 text-xs text-warn">
-          Missing credentials: {missingKeys.join(", ")}. Add them in{" "}
-          <Link
-            to="/settings?tab=models"
-            className="text-accent underline font-medium hover:text-accent-hover"
-          >
-            Settings → Models
-          </Link>{" "}
-          before running discovery.
-        </div>
-      )}
+      <ProviderKeys key={provider} provider={provider} />
 
       <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
         <label className="block text-xs">
@@ -368,23 +546,17 @@ export function JobSearchEditor({
         )}
       </div>
 
-      <label className="block text-xs">
-        <span className="font-medium">Keywords</span>
-        <input
-          aria-label="Search keywords"
-          className="field mt-1 text-sm w-full"
-          placeholder='e.g. "software engineer", "data scientist"'
-          value={source.query ?? ""}
-          onChange={(e) => onChange({ ...source, query: e.target.value })}
-        />
-      </label>
+      <PhraseChips
+        query={source.query ?? ""}
+        onChange={(query) => onChange({ ...source, query })}
+      />
 
       <label className="block text-xs">
         <span className="font-medium">Location</span>
         <input
           aria-label="Search location"
           className="field mt-1 text-sm w-full"
-          placeholder='e.g. "San Francisco", "Remote", "Washington, DC"'
+          placeholder="e.g. Chicago, IL (leave empty for anywhere)"
           value={source.location ?? ""}
           onChange={(e) => onChange({ ...source, location: e.target.value })}
         />

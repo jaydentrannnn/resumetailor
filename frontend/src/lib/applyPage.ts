@@ -8,8 +8,8 @@ import type {
 import { runProgress } from "./runProgress";
 import { runSteps } from "./runSteps";
 
-/** The Apply page's three tabs, in the URL as `?tab=`. */
-export type ApplyTab = "needs" | "progress" | "done";
+/** The Apply page's tabs, in the URL as `?tab=`. */
+export type ApplyTab = "needs" | "progress" | "done" | "sources";
 
 export const REVIEW_STATUSES = new Set([
   "awaiting_review",
@@ -36,7 +36,8 @@ const PRE_READY = new Set([
 
 /** The tab named in the URL, else "Needs you" when anything is waiting, else "In progress". */
 export function resolveApplyTab(param: string | null, needsYou: number | null): ApplyTab {
-  if (param === "needs" || param === "progress" || param === "done") return param;
+  if (param === "needs" || param === "progress" || param === "done" || param === "sources")
+    return param;
   return needsYou ? "needs" : "progress";
 }
 

@@ -197,9 +197,7 @@ def filter_rows(
 
     total_candidates = len(rows)
     age_filtered = [
-        row
-        for row in rows
-        if row.age_days is not None and row.age_days <= max_age_days
+        row for row in rows if row.age_days is not None and row.age_days <= max_age_days
     ]
 
     excluded_title = 0
@@ -214,9 +212,7 @@ def filter_rows(
             row.flags = list(dict.fromkeys([*row.flags, *result.flags]))
         after_title.append(row)
 
-    excluded_citizenship = [
-        row for row in after_title if row.citizenship_required == "Yes"
-    ]
+    excluded_citizenship = [row for row in after_title if row.citizenship_required == "Yes"]
     after_citizenship = (
         [row for row in after_title if row.citizenship_required != "Yes"]
         if exclude_citizenship
@@ -259,6 +255,29 @@ def filter_rows(
     )
 
 
+_GITHUB_PAGE_RE = re.compile(
+    r"^https?://(?:www\.)?github\.com/([^/\s]+)/([^/\s#?]+?)(?:\.git)?"
+    r"(?:/(blob|tree)/([^/\s]+)(/[^\s#?]*)?)?/?(?:[#?].*)?$"
+)
+
+
+def raw_readme_url(url: str) -> str:
+    """The raw README behind a github.com repository or file link; ``url`` otherwise.
+
+    People paste the page they see (``github.com/owner/repo``, or ``.../blob/dev/README.md``),
+    and fetching that returns GitHub's HTML page, whose ``<table>`` markup the Simplify
+    parser happily misreads. A bare repo maps to ``HEAD``, which raw.githubusercontent.com
+    resolves to the default branch; a ``tree`` link means that branch's README.
+    """
+    match = _GITHUB_PAGE_RE.match(url.strip())
+    if not match:
+        return url
+    owner, repo, view, ref, path = match.groups()
+    if not path or view == "tree":
+        path = (path or "").rstrip("/") + "/README.md"
+    return f"https://raw.githubusercontent.com/{owner}/{repo}/{ref or 'HEAD'}{path}"
+
+
 def fetch_readme(url: str) -> str:
     """Download a README body from ``url``, using an ETag cache when possible.
 
@@ -272,6 +291,7 @@ def fetch_readme(url: str) -> str:
     from resume_tailor import config
 
     log = logging.getLogger(__name__)
+    url = raw_readme_url(url)
     digest = hashlib.sha1(url.encode("utf-8")).hexdigest()
     cache_dir = config.APPLICATIONS_OUTPUT_DIR / "readme_cache"
     cache_path = cache_dir / f"{digest}.json"
@@ -289,9 +309,7 @@ def fetch_readme(url: str) -> str:
         headers["If-None-Match"] = cached["etag"]
 
     try:
-        response = httpx.get(
-            url, follow_redirects=True, timeout=30.0, headers=headers
-        )
+        response = httpx.get(url, follow_redirects=True, timeout=30.0, headers=headers)
         if response.status_code == 304 and cached is not None:
             return cached["body"]
         response.raise_for_status()

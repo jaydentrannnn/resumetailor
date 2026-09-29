@@ -1,4 +1,5 @@
 import { useState, type ReactNode } from "react";
+import { CapturedBadge } from "../CapturedStubs";
 import { Link, useNavigate, type To } from "react-router-dom";
 import type { ApplicationRow } from "../../api";
 import {
@@ -300,7 +301,12 @@ export function ApplicationsTable({
       heading: "Company",
       sortable: true,
       className: "w-[17%]",
-      cell: (row) => <strong className="font-medium">{row.company}</strong>,
+      cell: (row) => (
+        <span className="flex flex-wrap items-center gap-1.5">
+          <strong className="font-medium">{row.company}</strong>
+          <CapturedBadge row={row} />
+        </span>
+      ),
     },
     {
       id: "role",

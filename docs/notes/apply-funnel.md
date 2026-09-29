@@ -1459,3 +1459,29 @@ required group, and the wizard never left page 1, so the page-2 graduation date 
 reached. The legend now falls back to the form field. `salary.pick_range` ties (60k–80k
 against "$60,000 - $70,000" / "$70,000 - $80,000") go to the band holding the applicant's
 top, which matches the number answered everywhere else.
+
+## 2026-09-29 — User-managed sources and the complete extension
+
+- **Sources are fully user-managed, per profile.** Built-ins became catalog entries; any source
+  can be removed, and an explicitly empty list stays empty (the old legacy-field synthesis only
+  ever fired for a hand-written `sources: []`, so it was removed rather than flagged).
+- **Catalog is remote-refreshable from this repo's `main`**, bundled copy as fallback, never
+  auto-applied to a user's settings — the SPA offers an update when the catalog version is newer.
+  Repo names roll over each season (`Summer2027-` → `Summer2028-`); `scripts/refresh_source_catalog.py`
+  proposes the new URLs after parsing them. jobright-ai lists are daily rolling windows and still
+  carry a `2026-` prefix; their links open jobright.ai rather than the ATS.
+- **Pre-catalog sources are linked on load** (`_link_catalog_sources`) only when id *and* url match
+  a bundled entry. The SPA's `runState` defaults and older app versions saved them without a name
+  or `catalog_id`, so they showed raw ids and could never be offered updates.
+- **A pasted github.com link is mapped to the raw README** (`sources.raw_readme_url`); fetching the
+  GitHub page itself returned HTML whose `<table>` markup the Simplify parser misread as a
+  600-row job table with no categories (seen live on zapplyjobs).
+- **Keyword `query` is comma-separated phrases** (max 5), each its own search — users read the
+  old single-string field as a list because of its placeholder.
+- **LinkedIn/Indeed are capture-while-browsing only.** No background fetching with the user's
+  session (account-restriction risk and ToS), no auto-clicking through cards. Search cards become
+  `capture_stub` items completed when the user opens each job. Email job alerts were considered
+  and declined by the user.
+- Live-verified in a browser against an isolated data dir: Sources tab, catalog add, per-source
+  Test (Simplify 1412 rows; Adzuna two phrases 412 rows), README link inspect. LinkedIn/Indeed
+  live capture still needs a pass with the user logged in (checklist: docs/GUIDE.md §2.4).

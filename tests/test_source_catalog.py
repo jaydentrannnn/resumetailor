@@ -64,7 +64,14 @@ def test_bundled_catalog_validates_and_templates_are_sources():
         assert template.name
         fields.update(entry.fields)
     assert fields == {
-        "swe", "data", "quant", "finance", "consulting", "product", "business", "hardware",
+        "swe",
+        "data",
+        "quant",
+        "finance",
+        "consulting",
+        "product",
+        "business",
+        "hardware",
         "government",
     }
     kinds = {entry.template.kind for entry in catalog.entries}
@@ -210,7 +217,9 @@ def test_inspect_endpoint(client, monkeypatch):
     monkeypatch.setattr(sources, "fetch_readme", lambda url: text)
     body = c.post(
         "/api/apply/sources/inspect",
-        json={"url": "https://raw.githubusercontent.com/zapplyjobs/Internships-2027/main/README.md"},
+        json={
+            "url": "https://raw.githubusercontent.com/zapplyjobs/Internships-2027/main/README.md"
+        },
     ).json()
     assert body["kind"] == "pipe_table"
     assert "Software Engineering" in body["sections"]
@@ -233,7 +242,8 @@ def test_source_test_endpoint_uses_profile_filters(client, monkeypatch):
     text = (_FIXTURES / "zapplyjobs_readme.md").read_text(encoding="utf-8")
     monkeypatch.setattr(sources, "fetch_readme", lambda url: text)
     source = {
-        "id": "z", "kind": "pipe_table",
+        "id": "z",
+        "kind": "pipe_table",
         "url": "https://raw.githubusercontent.com/zapplyjobs/Internships-2027/main/README.md",
         "categories": ["Software Engineering"],
     }
@@ -243,7 +253,12 @@ def test_source_test_endpoint_uses_profile_filters(client, monkeypatch):
     assert body["rows_kept"] == 2
     assert [r["company"] for r in body["sample"]] == ["LabCorp", "Cisco"]
     assert set(body["sample"][0]) == {
-        "company", "role", "location", "age", "posted_at", "application_link",
+        "company",
+        "role",
+        "location",
+        "age",
+        "posted_at",
+        "application_link",
     }
     assert body["errors"] == []
 
@@ -263,3 +278,26 @@ def test_source_test_endpoint_reports_failure(client, monkeypatch):
     source = {"id": "z", "kind": "pipe_table", "url": "https://example.com/README.md"}
     body = c.post("/api/apply/sources/test", json={"source": source}).json()
     assert body == {"rows_total": 0, "rows_kept": 0, "sample": [], "errors": ["offline"]}
+
+
+def test_saved_default_without_catalog_id_is_linked_to_its_entry():
+    """Sources saved before the catalog (no name, no catalog_id) get linked on load."""
+    entry = source_catalog.bundled_template("simplify-newgrad")
+    legacy = {
+        "id": "simplify-newgrad",
+        "kind": "simplify_html",
+        "url": entry.url,
+        "categories": list(entry.categories),
+    }
+    moved = {
+        "id": "speedyapply",
+        "kind": "pipe_table",
+        "url": "https://example.com/README.md",
+        "categories": [],
+    }
+    settings = ApplySettings.model_validate({"sources": [legacy, moved]})
+    linked, untouched = settings.sources
+    assert linked.catalog_id == "simplify-newgrad"
+    assert linked.catalog_version == entry.catalog_version
+    assert linked.name == entry.name
+    assert untouched.catalog_id is None and untouched.name == ""

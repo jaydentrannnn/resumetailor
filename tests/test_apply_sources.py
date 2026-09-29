@@ -45,9 +45,7 @@ def test_filter_rows_applies_age_citizenship_degree_and_dedupe(readme_text):
         exclude_no_sponsorship=True,
         known_ids={"fff66666-6666-6666-6666-666666666666"},
     )
-    assert [row.job_id for row in result.new_rows] == [
-        "aaa11111-1111-1111-1111-111111111111"
-    ]
+    assert [row.job_id for row in result.new_rows] == ["aaa11111-1111-1111-1111-111111111111"]
     assert result.total_candidates == 6
     assert result.age_filtered_count == 5
     assert result.excluded_citizenship == 1
@@ -138,9 +136,7 @@ _SPEEDY = Path(__file__).resolve().parent / "fixtures" / "speedyapply_readme.md"
 
 def test_parse_pipe_table_readme_extracts_usa_rows():
     text = _SPEEDY.read_text(encoding="utf-8")
-    rows = sources.parse_pipe_table_readme(
-        text, ["2027 USA SWE Internships", "USA Positions"]
-    )
+    rows = sources.parse_pipe_table_readme(text, ["2027 USA SWE Internships", "USA Positions"])
     companies = {row.company for row in rows}
     assert companies == {"Microsoft", "DoorDash", "Figma", "Lyft", "Acme NewGrad"}
     assert "ForeignCo" not in companies
@@ -233,7 +229,11 @@ def test_jobright_rows_link_from_the_title_and_dates_resolve():
 def test_vanshb03_rows_carry_flags_and_locations():
     text = _fixture("vanshb03_readme.md")
     rows = sources.parse_pipe_table_readme(text, ["The List"], today=_TODAY)
-    assert [r.company for r in rows] == ["Quora", "Chicago Trading Company", "Chicago Trading Company"]
+    assert [r.company for r in rows] == [
+        "Quora",
+        "Chicago Trading Company",
+        "Chicago Trading Company",
+    ]
     quora, ctc, quant = rows
     assert quora.application_link == "https://jobs.ashbyhq.com/quora/452afc2e"
     assert (quora.age_days, quora.posted_at) == (55, "2026-08-05")
@@ -256,7 +256,9 @@ def test_company_link_table_one_row_per_link():
     assert rows[0].location == "Chicago"
     assert rows[0].application_link.endswith("?gh_jid=8021481")
     assert rows[3].advanced_degree is True
-    assert rows[4].application_link == "https://www.citadel.com/careers/details/quant-trader-intern/"
+    assert (
+        rows[4].application_link == "https://www.citadel.com/careers/details/quant-trader-intern/"
+    )
     assert all(r.age_days == 0 and "age_unknown" in r.flags for r in rows)
     assert len({r.job_id for r in rows}) == 5
     only = sources.parse_company_link_table(text, ["Citadel"])
@@ -332,8 +334,42 @@ def test_fetch_source_rows_dispatches_every_kind(monkeypatch):
     assert len(rows) == 5 and errors == []
     assert {r.source_id for r in rows} == {"nwf"}
 
-    monkeypatch.setattr(sources, "board_rows", lambda s: ([sources.SourceRow(
-        company="A", role="R", location="", age="", job_id="x")], ["board B: gone"]))
+    monkeypatch.setattr(
+        sources,
+        "board_rows",
+        lambda s: (
+            [sources.SourceRow(company="A", role="R", location="", age="", job_id="x")],
+            ["board B: gone"],
+        ),
+    )
     board = SourceConfig(id="wl", kind="ats_board")
     rows, errors = sources.fetch_source_rows(board)
     assert rows[0].source_id == "wl" and errors == ["board B: gone"]
+
+
+@pytest.mark.parametrize(
+    ("pasted", "raw"),
+    [
+        (
+            "https://github.com/zapplyjobs/Internships-2027",
+            "https://raw.githubusercontent.com/zapplyjobs/Internships-2027/HEAD/README.md",
+        ),
+        (
+            "https://github.com/SimplifyJobs/New-Grad-Positions/blob/dev/README.md",
+            "https://raw.githubusercontent.com/SimplifyJobs/New-Grad-Positions/dev/README.md",
+        ),
+        (
+            "https://github.com/a/b/tree/main/",
+            "https://raw.githubusercontent.com/a/b/main/README.md",
+        ),
+        ("https://github.com/a/b.git", "https://raw.githubusercontent.com/a/b/HEAD/README.md"),
+        ("https://github.com/a/b#readme", "https://raw.githubusercontent.com/a/b/HEAD/README.md"),
+        (
+            "https://raw.githubusercontent.com/a/b/main/README.md",
+            "https://raw.githubusercontent.com/a/b/main/README.md",
+        ),
+        ("https://example.com/jobs.md", "https://example.com/jobs.md"),
+    ],
+)
+def test_raw_readme_url_maps_github_pages_to_raw(pasted, raw):
+    assert sources.raw_readme_url(pasted) == raw

@@ -1,4 +1,5 @@
 import type { BoardConfig, SourceConfig } from "../api";
+import { uniqueSourceId } from "./sources";
 
 /** Title words a business watchlist starts with; the student edits them freely. */
 export const BUSINESS_INCLUDE = [
@@ -14,11 +15,16 @@ export const BUSINESS_INCLUDE = [
 ];
 export const DEFAULT_EXCLUDE = ["senior", "director", "principal", "phd", "vice president"];
 
+/** The first watchlist's id (older profiles have exactly this one); later ones get `-2`, `-3`… */
 export const WATCHLIST_ID = "company-watchlist";
 
-export function newWatchlistSource(include: string[] = BUSINESS_INCLUDE): SourceConfig {
+/** A new, empty watchlist whose id no source in ``existing`` uses. */
+export function newWatchlistSource(
+  include: string[] = BUSINESS_INCLUDE,
+  existing: Pick<SourceConfig, "id">[] = [],
+): SourceConfig {
   return {
-    id: WATCHLIST_ID,
+    id: uniqueSourceId(WATCHLIST_ID, existing),
     kind: "ats_board",
     url: "",
     categories: [],

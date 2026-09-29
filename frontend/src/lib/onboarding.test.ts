@@ -1,11 +1,14 @@
 import { describe, expect, it } from "vitest";
-import type { OnboardingState, SourceConfig } from "../api";
+import type { CatalogEntry, OnboardingState, SourceCatalog, SourceConfig } from "../api";
 import {
   ONBOARDING_STEPS,
   needsWelcome,
   packsForField,
   reviewResume,
+  sourceFieldsFor,
   sourcesForField,
+  sourcesFromCatalogPicks,
+  suggestedEntries,
   stepIndex,
 } from "./onboarding";
 import type { MasterResume } from "./resumeEdit";
@@ -77,6 +80,38 @@ describe("onboarding helpers", () => {
     expect(sourcesForField(out, "business").filter((s) => s.kind === "ats_board")).toHaveLength(1);
     expect(sourcesForField(SOURCES, "cs").some((s) => s.kind === "ats_board")).toBe(false);
     expect(sourcesForField(SOURCES, "other")).toBe(SOURCES);
+  });
+
+  it("maps a study field to catalog entries and writes them as the sources", () => {
+    const entry = (id: string, fields: CatalogEntry["fields"]): CatalogEntry => ({
+      id,
+      name: id,
+      description: "",
+      fields,
+      version: "1",
+      template: { id, kind: "pipe_table", url: `u-${id}`, categories: [], enabled: true },
+    });
+    const catalog: SourceCatalog = {
+      schema_version: 1,
+      origin: "bundled",
+      entries: [
+        entry("fin", ["finance"]),
+        entry("swe", ["swe"]),
+        entry("cons", ["consulting", "business"]),
+      ],
+    };
+    expect(sourceFieldsFor("business")).toContain("finance");
+    expect(sourceFieldsFor("other")).toEqual([]);
+    expect(sourceFieldsFor("")).toEqual([]);
+    const picked = suggestedEntries(catalog, sourceFieldsFor("business"));
+    expect(picked.map((e) => e.id)).toEqual(["fin", "cons"]);
+    const out = sourcesFromCatalogPicks(SOURCES, picked, "business");
+    // Built-in defaults are replaced, the student's own source stays, business gets a watchlist.
+    expect(out.map((s) => s.id)).toEqual(["mine", "fin", "cons", "company-watchlist"]);
+    expect(out[1]).toMatchObject({ catalog_id: "fin", catalog_version: "1" });
+    expect(sourcesFromCatalogPicks(SOURCES, picked, "cs").some((s) => s.kind === "ats_board")).toBe(
+      false,
+    );
   });
 
   it("summarises the resume and flags gaps", () => {

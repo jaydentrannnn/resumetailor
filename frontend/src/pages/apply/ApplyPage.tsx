@@ -54,6 +54,8 @@ import { ApplicationsTable, type TableActions } from "./ApplicationsTable";
 import { ApplySettingsDrawer } from "./ApplySettingsDrawer";
 import { ConnectionStatus } from "./BrowserConnection";
 import { OperationBanner, type OperationControl } from "./OperationBanner";
+import { SourcesTab } from "./SourcesTab";
+import { NeedsDescriptionGroup } from "../CapturedStubs";
 import { useApplicationTable } from "./useApplicationTable";
 
 const ACTIVE_STATES = ["queued", "running", "paused"];
@@ -64,7 +66,7 @@ const notificationsSupported = () => typeof window !== "undefined" && "Notificat
  * with the current Apply task pinned on top and every setting in a side drawer.
  */
 export function ApplyPage() {
-  const { settings, setSettings, config } = useRunState();
+  const { settings, setSettings, config, settingsSaveError } = useRunState();
   const { activeId } = useWorkspaceState();
   const { confirm } = useConfirm();
   const toast = useToast();
@@ -569,11 +571,13 @@ export function ApplyPage() {
               { id: "needs", label: `Needs you (${review.data?.total ?? 0})` },
               { id: "progress", label: `In progress (${queue.data?.total ?? 0})` },
               { id: "done", label: `Done (${archiveTotal})` },
+              { id: "sources", label: `Sources (${settings.apply.sources.length})` },
             ]}
             value={tab}
             onChange={setTab}
           />
           <div role="tabpanel">
+            {tab === "needs" && <NeedsDescriptionGroup />}
             {tab === "needs" && (
               <ApplicationsTable
                 scope="review"
@@ -599,8 +603,8 @@ export function ApplyPage() {
                     <EmptyState
                       title="Choose what to search for"
                       action={
-                        <Button variant="primary" onClick={() => setDrawerOpen(true)}>
-                          Pick job boards
+                        <Button variant="primary" onClick={() => setTab("sources")}>
+                          Pick job sources
                         </Button>
                       }
                     >
@@ -636,6 +640,15 @@ export function ApplyPage() {
                       )}
                     </EmptyState>
                   )
+                }
+              />
+            )}
+            {tab === "sources" && (
+              <SourcesTab
+                sources={settings.apply.sources}
+                saveError={settingsSaveError}
+                onChange={(sources) =>
+                  setSettings({ ...settings, apply: { ...settings.apply, sources } })
                 }
               />
             )}

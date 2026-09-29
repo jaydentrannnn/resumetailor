@@ -1,12 +1,28 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
-import { fetchSetupStatus, type OnboardingField, type SetupStatus } from "../../api";
+import {
+  fetchSetupStatus,
+  fetchSourceCatalog,
+  type OnboardingField,
+  type SetupStatus,
+  type SourceCatalog,
+  type SourceField,
+} from "../../api";
 import { ImportResumePanel } from "../../components/ImportResumePanel";
 import { TemplateImportWizard } from "../../components/template/TemplateImportWizard";
 import { StarterTemplatesPanel } from "../../components/template/StarterTemplatesPanel";
 import { Button, Card, Field } from "../../components/ui";
 import { describe } from "../../lib/errors";
-import { FIELDS, packsForField, reviewResume, sourcesForField } from "../../lib/onboarding";
+import {
+  FIELDS,
+  packsForField,
+  reviewResume,
+  sourceFieldsFor,
+  sourcesForField,
+  sourcesFromCatalogPicks,
+  suggestedEntries,
+} from "../../lib/onboarding";
+import { FIELD_LABELS, SOURCE_FIELDS } from "../../lib/sources";
 import { useToast } from "../../lib/toast";
 import { useApplicantProfile } from "../../state/applicantProfileState";
 import { useEditorState } from "../../state/editorState";
@@ -28,6 +44,28 @@ export function FieldStep({
   const { settings, setSettings, settingsLoaded } = useRunState();
   const [picked, setPicked] = useState<OnboardingField>(field);
   const [applying, setApplying] = useState(false);
+  const [catalog, setCatalog] = useState<SourceCatalog | null>(null);
+  const [catalogFailed, setCatalogFailed] = useState(false);
+  const [jobFields, setJobFields] = useState<SourceField[]>(() => sourceFieldsFor(field));
+  const [skipped, setSkipped] = useState<Set<string>>(new Set());
+
+  useEffect(() => {
+    let live = true;
+    fetchSourceCatalog()
+      .then((c) => live && setCatalog(c))
+      .catch(() => live && setCatalogFailed(true));
+    return () => {
+      live = false;
+    };
+  }, []);
+
+  function pickField(next: Exclude<OnboardingField, "">) {
+    setPicked(next);
+    setJobFields(sourceFieldsFor(next));
+    setSkipped(new Set());
+  }
+
+  const suggestions = catalog ? suggestedEntries(catalog, jobFields) : [];
 
   async function choose() {
     if (!picked) return;
@@ -42,10 +80,15 @@ export function FieldStep({
             packs.map((p) => p.id),
           ),
         );
-        setSettings({
-          ...settings,
-          apply: { ...settings.apply, sources: sourcesForField(settings.apply.sources, picked) },
-        });
+        const sources =
+          catalog && !catalogFailed
+            ? sourcesFromCatalogPicks(
+                settings.apply.sources,
+                suggestions.filter((entry) => !skipped.has(entry.id)),
+                picked,
+              )
+            : sourcesForField(settings.apply.sources, picked);
+        setSettings({ ...settings, apply: { ...settings.apply, sources } });
       } catch (err) {
         toast.error("Could not apply your field", describe(err).detail);
         return;
@@ -80,7 +123,7 @@ export function FieldStep({
               name="field"
               className="mt-1"
               checked={picked === option.id}
-              onChange={() => setPicked(option.id)}
+              onChange={() => pickField(option.id)}
             />
             <span>
               <span className="block font-semibold text-ink">{option.label}</span>
@@ -89,6 +132,24 @@ export function FieldStep({
           </label>
         ))}
       </div>
+      {picked && catalog && !catalogFailed && (
+        <JobSourcePicker
+          fields={jobFields}
+          onFields={(next) => {
+            setJobFields(next);
+            setSkipped(new Set());
+          }}
+          suggestions={suggestions}
+          skipped={skipped}
+          onToggle={(id) =>
+            setSkipped((prev) => {
+              const next = new Set(prev);
+              if (!next.delete(id)) next.add(id);
+              return next;
+            })
+          }
+        />
+      )}
       <div className="flex justify-end border-t border-line pt-4">
         <Button
           variant="primary"
@@ -100,6 +161,75 @@ export function FieldStep({
         </Button>
       </div>
     </section>
+  );
+}
+
+/** Which job fields to search and the catalog sources that come with them, for review. */
+function JobSourcePicker({
+  fields,
+  onFields,
+  suggestions,
+  skipped,
+  onToggle,
+}: {
+  fields: SourceField[];
+  onFields: (next: SourceField[]) => void;
+  suggestions: ReturnType<typeof suggestedEntries>;
+  skipped: Set<string>;
+  onToggle: (id: string) => void;
+}) {
+  return (
+    <div className="space-y-3 rounded-xl border border-line bg-panel p-4">
+      <fieldset>
+        <legend className="text-sm font-semibold text-ink">Which jobs should we look for?</legend>
+        <div className="mt-2 flex flex-wrap gap-2">
+          {SOURCE_FIELDS.map((f) => (
+            <label
+              key={f}
+              className={`flex cursor-pointer items-center gap-1.5 rounded-full border px-3 py-1 text-xs ${
+                fields.includes(f) ? "border-accent bg-accent-soft/40" : "border-line"
+              }`}
+            >
+              <input
+                type="checkbox"
+                checked={fields.includes(f)}
+                onChange={(e) =>
+                  onFields(e.target.checked ? [...fields, f] : fields.filter((x) => x !== f))
+                }
+              />
+              {FIELD_LABELS[f]}
+            </label>
+          ))}
+        </div>
+      </fieldset>
+      {suggestions.length === 0 ? (
+        <p className="text-sm text-ink-muted">
+          No job lists selected. You can add some later on the Applications page.
+        </p>
+      ) : (
+        <fieldset>
+          <legend className="text-sm font-medium text-ink">Job lists to search</legend>
+          <ul className="mt-1 space-y-1">
+            {suggestions.map((entry) => (
+              <li key={entry.id}>
+                <label className="flex items-start gap-2 text-sm">
+                  <input
+                    type="checkbox"
+                    className="mt-1"
+                    checked={!skipped.has(entry.id)}
+                    onChange={() => onToggle(entry.id)}
+                  />
+                  <span>
+                    {entry.name}
+                    <span className="block text-xs text-ink-muted">{entry.description}</span>
+                  </span>
+                </label>
+              </li>
+            ))}
+          </ul>
+        </fieldset>
+      )}
+    </div>
   );
 }
 

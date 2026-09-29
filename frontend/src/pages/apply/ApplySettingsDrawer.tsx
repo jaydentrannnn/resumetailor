@@ -1,31 +1,14 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
-import type { AppConfig, JobSettings, SchedulerStatus, SourceConfig } from "../../api";
+import type { AppConfig, JobSettings, SchedulerStatus } from "../../api";
 import { Modal } from "../../components/Modal";
 import { Button } from "../../components/ui";
 import { autoSubmitCapLabel, autoSubmitSummary } from "../../lib/applyPage";
 import { tailorModelLabel } from "../../lib/modelLabel";
-import { newWatchlistSource, WATCHLIST_ID } from "../../lib/watchlist";
+import { sourcesSummary } from "../../lib/sources";
 import { useConfirm } from "../../state/confirmState";
 import { AgeWindowPicker } from "./AgeWindowPicker";
 import { BrowserCommand, ConnectionStatus } from "./BrowserConnection";
-import { CategoryPicker, JobSearchEditor, WatchlistEditor } from "./SourceEditors";
-
-function sourceLabel(source: SourceConfig): string {
-  if (source.kind === "ats_board") {
-    return source.id === WATCHLIST_ID ? "Company watchlist" : source.id;
-  }
-  if (source.kind === "job_search") {
-    const prov =
-      source.provider === "adzuna"
-        ? "Adzuna"
-        : source.provider === "usajobs"
-          ? "USAJobs"
-          : "Job search";
-    return source.query ? `${prov}: "${source.query}"` : `${prov} search`;
-  }
-  return source.id;
-}
 
 /**
  * Platforms that may auto-submit. Workday, LinkedIn, Indeed, Handshake and SmartRecruiters
@@ -72,8 +55,6 @@ export function ApplySettingsDrawer({
   const apply = settings.apply;
   const patch = (fields: Partial<JobSettings["apply"]>) =>
     setSettings({ ...settings, apply: { ...apply, ...fields } });
-  const updateSource = (index: number, next: SourceConfig) =>
-    patch({ sources: apply.sources.map((s, i) => (i === index ? next : s)) });
   const allowed = new Set(apply.auto_submit_ats.map((a) => a.toLowerCase()));
 
   async function toggleAutoSubmit(on: boolean) {
@@ -175,107 +156,16 @@ export function ApplySettingsDrawer({
         </Section>
 
         <Section title="What to search">
-          <ul className="space-y-2">
-            {apply.sources.map((source, index) => (
-              <li key={source.id} className="flex items-start gap-2">
-                <input
-                  id={`source-${source.id}`}
-                  type="checkbox"
-                  className="mt-1"
-                  checked={source.enabled}
-                  onChange={(e) =>
-                    patch({
-                      sources: apply.sources.map((s, i) =>
-                        i === index ? { ...s, enabled: e.target.checked } : s,
-                      ),
-                    })
-                  }
-                />
-                <div className="min-w-0 flex-1">
-                  <div className="flex items-center justify-between">
-                    <label htmlFor={`source-${source.id}`}>
-                      <span className="font-medium">{sourceLabel(source)}</span>
-                      {source.kind !== "ats_board" &&
-                        source.kind !== "job_search" &&
-                        source.categories.length > 0 && (
-                          <span className="block text-xs text-ink-muted">
-                            {source.categories.join(" · ")}
-                          </span>
-                        )}
-                    </label>
-                    {source.kind === "job_search" && (
-                      <button
-                        type="button"
-                        className="text-xs text-ink-muted hover:text-danger"
-                        onClick={() =>
-                          patch({
-                            sources: apply.sources.filter((_, i) => i !== index),
-                          })
-                        }
-                      >
-                        Remove
-                      </button>
-                    )}
-                  </div>
-                  {source.kind === "ats_board" ? (
-                    <WatchlistEditor
-                      source={source}
-                      onChange={(next) => updateSource(index, next)}
-                    />
-                  ) : source.kind === "job_search" ? (
-                    <JobSearchEditor
-                      source={source}
-                      onChange={(next) => updateSource(index, next)}
-                    />
-                  ) : (
-                    <CategoryPicker
-                      source={source}
-                      onChange={(next) => updateSource(index, next)}
-                    />
-                  )}
-                </div>
-              </li>
-            ))}
-          </ul>
-          <div className="mt-2 flex flex-wrap items-center gap-3">
-            {!apply.sources.some((source) => source.kind === "ats_board") && (
-              <button
-                type="button"
-                className="text-xs text-accent underline"
-                onClick={() => patch({ sources: [...apply.sources, newWatchlistSource()] })}
-              >
-                Add a company watchlist
-              </button>
-            )}
-            <button
-              type="button"
-              className="text-xs text-accent underline"
-              onClick={() =>
-                patch({
-                  sources: [
-                    ...apply.sources,
-                    {
-                      id: `job-search-${Date.now().toString(36)}`,
-                      kind: "job_search",
-                      url: "",
-                      categories: [],
-                      enabled: true,
-                      provider: "adzuna",
-                      query: "",
-                      location: "",
-                      country: "us",
-                      include: [],
-                      exclude: [],
-                      locations: [],
-                      max_age_days: 14,
-                    },
-                  ],
-                })
-              }
-            >
-              Add a keyword search
-            </button>
-          </div>
+          <p className="text-sm" aria-live="polite">
+            {sourcesSummary(apply.sources)}
+          </p>
+          <Link
+            className="mt-1 inline-block text-xs text-accent underline"
+            to="/applications?tab=sources"
+            onClick={onClose}
+          >
+            Manage sources
+          </Link>
         </Section>
 
         <Section title="Auto-submit">

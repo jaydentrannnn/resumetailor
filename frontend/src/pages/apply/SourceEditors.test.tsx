@@ -47,18 +47,16 @@ describe("JobSearchEditor", () => {
     expect((screen.getByLabelText("Job search provider") as HTMLSelectElement).value).toBe(
       "adzuna",
     );
-    expect((screen.getByLabelText("Search keywords") as HTMLInputElement).value).toBe(
-      "python developer",
-    );
+    expect(screen.getByText("python developer")).toBeTruthy();
     expect((screen.getByLabelText("Search location") as HTMLInputElement).value).toBe("Austin, TX");
     expect((screen.getByLabelText("Adzuna country code") as HTMLInputElement).value).toBe("us");
 
-    fireEvent.change(screen.getByLabelText("Search keywords"), {
-      target: { value: "golang engineer" },
-    });
+    const phrase = screen.getByLabelText("Search phrases", { selector: "input" });
+    fireEvent.change(phrase, { target: { value: "golang engineer" } });
+    fireEvent.keyDown(phrase, { key: "Enter" });
     expect(onChange).toHaveBeenCalledWith({
       ...defaultSource,
-      query: "golang engineer",
+      query: "python developer, golang engineer",
     });
   });
 
@@ -89,7 +87,7 @@ describe("JobSearchEditor", () => {
     expect(screen.queryByLabelText("Adzuna country code")).toBeNull();
   });
 
-  it("displays missing credentials warning with link when keys are not set", async () => {
+  it("saves missing credentials inline", async () => {
     vi.spyOn(api, "fetchSecrets").mockResolvedValue({
       backend: "keyring",
       secrets: [
@@ -104,12 +102,18 @@ describe("JobSearchEditor", () => {
       </MemoryRouter>,
     );
 
-    await waitFor(() => {
-      const alert = screen.getByRole("alert");
-      expect(alert.textContent).toContain("Missing credentials: ADZUNA_APP_ID, ADZUNA_APP_KEY");
-      expect(screen.getByText("Settings → Models").getAttribute("href")).toBe(
-        "/settings?tab=models",
-      );
+    const save = vi.spyOn(api, "saveSecret").mockResolvedValue({
+      name: "ADZUNA_APP_ID",
+      set: true,
+      source: "saved",
     });
+    const alert = await screen.findByRole("alert");
+    expect(alert.textContent).toContain("Missing credentials: ADZUNA_APP_ID, ADZUNA_APP_KEY");
+    fireEvent.change(screen.getByLabelText("Adzuna app ID"), { target: { value: "id1" } });
+    fireEvent.change(screen.getByLabelText("Adzuna app key"), { target: { value: "key1" } });
+    fireEvent.click(screen.getByRole("button", { name: "Save keys" }));
+    await waitFor(() => expect(save).toHaveBeenCalledTimes(2));
+    expect(save).toHaveBeenCalledWith("ADZUNA_APP_ID", "id1");
+    expect(save).toHaveBeenCalledWith("ADZUNA_APP_KEY", "key1");
   });
 });

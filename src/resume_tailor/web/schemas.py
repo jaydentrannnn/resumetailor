@@ -192,6 +192,31 @@ class ApplySettings(BaseModel):
             return f"ollama:{self.model_name}@{config.OLLAMA_CLOUD_BASE_URL}"
         return f"{self.model_provider}:{self.model_name}"
 
+    @model_validator(mode="after")
+    def _link_catalog_sources(self) -> ApplySettings:
+        """Link sources saved before the catalog existed to their bundled catalog entry.
+
+        A source with no ``catalog_id`` whose id and url both match a bundled entry is
+        that entry (the old built-in defaults, as the SPA and older versions saved them),
+        so it gets the entry's id, version and display name — without which it would show
+        its raw id and never be offered catalog updates. Anything else is left alone.
+        """
+        from ..apply import source_catalog
+
+        entries = {entry.id: entry for entry in source_catalog.bundled().entries}
+        for index, src in enumerate(self.sources):
+            entry = entries.get(src.id)
+            if src.catalog_id or entry is None or entry.template.url != src.url:
+                continue
+            self.sources[index] = src.model_copy(
+                update={
+                    "catalog_id": entry.id,
+                    "catalog_version": entry.version,
+                    "name": src.name or entry.template.name,
+                }
+            )
+        return self
+
 
 class JobSettings(BaseModel):
     """Per-run knobs, mirroring the CLI flags in `tailor.py`."""

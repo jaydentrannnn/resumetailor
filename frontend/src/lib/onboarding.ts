@@ -1,5 +1,13 @@
-import type { OnboardingField, OnboardingState, SourceConfig } from "../api";
+import type {
+  CatalogEntry,
+  OnboardingField,
+  OnboardingState,
+  SourceCatalog,
+  SourceConfig,
+  SourceField,
+} from "../api";
 import type { Bullet, MasterResume } from "./resumeEdit";
+import { DEFAULT_CATALOG_IDS, entriesForFields, sourceFromCatalog } from "./sources";
 import { newWatchlistSource } from "./watchlist";
 
 export const ONBOARDING_STEPS = [
@@ -57,7 +65,44 @@ export function packsForField(
   return [...wanted, ...kept];
 }
 
-/** Job-board categories per field. Names match the Simplify README headings exactly
+/** The job-source fields each study field starts with; the student adds or drops any. */
+const FIELD_SOURCE_FIELDS: Record<Exclude<OnboardingField, "">, SourceField[]> = {
+  business: ["finance", "consulting", "product", "business", "quant"],
+  cs: ["swe", "data"],
+  engineering: ["hardware", "swe"],
+  other: [],
+};
+
+/** Source fields preselected for ``field`` (empty for "something else" or no choice). */
+export function sourceFieldsFor(field: OnboardingField): SourceField[] {
+  return field ? [...FIELD_SOURCE_FIELDS[field]] : [];
+}
+
+/** Catalog entries a set of source fields preselects, in catalog order. */
+export function suggestedEntries(catalog: SourceCatalog, fields: SourceField[]): CatalogEntry[] {
+  return entriesForFields(catalog, fields);
+}
+
+/**
+ * The profile's sources after onboarding picks catalog entries: the catalog-managed ones
+ * (the built-in defaults and earlier catalog picks) are replaced by ``chosen``; sources
+ * the student made themselves stay. Business also gets an empty company watchlist.
+ */
+export function sourcesFromCatalogPicks(
+  existing: SourceConfig[],
+  chosen: CatalogEntry[],
+  field: OnboardingField,
+): SourceConfig[] {
+  const kept = existing.filter((s) => !s.catalog_id && !DEFAULT_CATALOG_IDS.includes(s.id));
+  const out = [...kept];
+  for (const entry of chosen) out.push(sourceFromCatalog(entry, out));
+  if (field === "business" && !out.some((s) => s.kind === "ats_board")) {
+    out.push(newWatchlistSource(undefined, out));
+  }
+  return out;
+}
+
+/** Job-board categories per field (fallback when the catalog cannot be fetched). Names match the Simplify README headings exactly
  * (checked against both READMEs); a category that is not in the README finds nothing. */
 const FIELD_CATEGORIES: Partial<
   Record<Exclude<OnboardingField, "">, Record<string, string[] | false>>

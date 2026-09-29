@@ -201,8 +201,38 @@ marks Fill failed. The relay is local-only and requires manual startup and attac
 Cross-origin iCIMS iframe text needs selection capture or opening
 the iframe in its own tab.
 
-Discovery is multi-source (`ApplySettings.sources`): SimplifyJobs Summer2027-Internships,
-New-Grad-Positions, and speedyapply 2027-SWE-College-Jobs (pipe tables). Dedupe is by **ATS
+The extension never clicks, scrolls, navigates or crawls on LinkedIn/Indeed, and the backend
+never fetches those sites. On a search page the popup's **Save cards** lists the visible cards
+(selectors live only in `extension/lib/sites.js`); `POST /api/extension/capture-stubs` stores
+each as a `discovered` application with `capture_stub=true`, which the daily fetch, Prepare
+and retry all skip. When the user later opens that job, the content script sends the full
+capture once and the stub becomes `jd_fetched` (prefilter runs as usual); the SPA lists open
+stubs under **Needs description** (`GET /api/extension-captures`). Identity keys Indeed on
+`jk` *or* `vjk` and LinkedIn on `/jobs/view/<id>` *or* `currentJobId`. LinkedIn/Indeed
+captures record `apply_kind` (`easy_apply` disables Fill); capturing an ATS page whose
+company+role matches a board item without an apply URL merges into it instead of creating a
+second application. Board host access and `debugger` (relay) are optional permissions
+requested at first use; `extension/build_zip.py` builds the release zip, and
+`extension/store/` holds the store-submission material.
+
+Discovery is multi-source (`ApplySettings.sources`, per profile, fully user-managed on the
+Apply page's **Sources** tab). The defaults are three entries of the **source catalog**
+(`apply/source_catalog.py`, bundled `apply/catalog/sources.json`, refreshed every 12h from
+this repo's `main` or `RESUME_TAILOR_CATALOG_URL`, cached under `DATA_ROOT`, falling back to
+the bundled copy on any failure or a newer `schema_version`). Catalog entries carry field
+tags (swe, data, quant, finance, consulting, product, business, hardware, government) used by
+onboarding's field picker; a source keeps `catalog_id`/`catalog_version`, and the SPA offers
+an update only when the catalog's version is newer — settings never change unasked. Sources
+saved before the catalog are linked back on load when id *and* url match a bundled entry
+(`ApplySettings._link_catalog_sources`). An explicitly empty `sources` list stays empty.
+README kinds: `simplify_html`, `pipe_table` (also `<summary><h3>` headings), and
+`company_link_table` (one `##` per company, northwesternfintech); `sources.detect_format`
+picks one for a pasted link, and `sources.raw_readme_url` maps a github.com page link to its
+raw README. `sources.fetch_source_rows` is the one fetch path for every kind, shared by the
+daily run and `POST /api/apply/sources/test` (no LLM, nothing saved); `GET /api/apply/catalog`
+and `POST /api/apply/sources/inspect` complete the set. Season rollover (repo names carry the
+year) is handled by `scripts/refresh_source_catalog.py`, which proposes new URLs and never
+commits. Dedupe is by **ATS
 requisition** (`identity.canonical_key`); same-company same-role across locations share a
 `group_key` and reuse one tailor run. Application rows (the `applications` table of the
 workspace's `app.db`) are keyed by canonical key, with `source_refs` listing every sighting.
@@ -215,7 +245,8 @@ ATS's own job URL, so they merge with Simplify sightings of the same job. A wron
 is one run error, not a failed source. `POST /api/apply/boards/resolve` checks a board
 before the settings add it. `apply/watchlists/*.json` are suggestions, checked the same way.
 A keyword search (`kind="job_search"`, `apply/job_apis.py`) queries Adzuna or USAJobs by
-`query`/`location` (`country` for Adzuna) across any industry, then applies the same
+`query`/`location` (`country` for Adzuna) across any industry — `query` holds up to 5
+comma-separated phrases, each searched on its own and merged by `job_id` — then applies the same
 `include`/`exclude`/`locations` filters (`sources.matches_filters`) and its own
 `max_age_days` (default 14). Paging stops at `MAX_PAGES` with a polite delay between pages.
 Keys (`ADZUNA_APP_ID`, `ADZUNA_APP_KEY`, `USAJOBS_API_KEY`, `USAJOBS_EMAIL`) are
