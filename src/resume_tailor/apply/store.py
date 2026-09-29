@@ -88,6 +88,10 @@ AtsKind = Literal[
     "unknown",
 ]
 
+#: How a LinkedIn/Indeed posting is applied to: on the board itself ("Easy Apply",
+#: "Apply now" — Fill cannot drive it), on the employer's own site, or not yet known.
+ApplyKind = Literal["easy_apply", "external", "unknown"]
+
 #: Statuses that close the funnel — must not revert to pre-ready states. The only
 #: definition: `preparation.check` reports these as `terminal_application`, which is
 #: what the SPA reads rather than keeping its own copy.
@@ -198,6 +202,12 @@ class Application(BaseModel):
     eligibility_flags: list[str] = Field(default_factory=list)
     otp_prompt: str | None = None
     archived_at: str | None = None
+    #: Set by the browser extension on a LinkedIn/Indeed capture (see `ApplyKind`).
+    apply_kind: ApplyKind = "unknown"
+    #: A card saved from a search page without its description (status ``discovered``).
+    #: Nothing fetches it server-side: the extension completes it when the user opens
+    #: the job, and the daily funnel and Prepare skip it until then.
+    capture_stub: bool = False
     #: Bumped on every write of this row; lets a client tell that a row changed.
     revision: int = 0
 

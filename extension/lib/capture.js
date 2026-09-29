@@ -1,25 +1,33 @@
 import { capture, lookup } from "./api.js";
 
+//: Classic scripts injected in order; the last one's completion value is the result.
+export const EXTRACT_FILES = ["lib/sites.js", "lib/applyLink.js", "extract.js"];
+const LIB_FILES = ["lib/sites.js", "lib/applyLink.js"];
+
+function httpTab(tab, message) {
+  if (!tab?.id || !/^https?:\/\//.test(tab.url || "")) throw new Error(message);
+}
+
 export async function extractTab(tabId) {
-  const frames = await chrome.scripting.executeScript({ target: { tabId }, files: ["extract.js"] });
+  const frames = await chrome.scripting.executeScript({ target: { tabId }, files: EXTRACT_FILES });
   const result = frames[0]?.result;
   if (!result?.url) throw new Error("This page cannot be read. Open a job posting and try again.");
   return result;
 }
 
-export async function captureTab(tab, selectionText = "") {
-  if (!tab?.id || !/^https?:\/\//.test(tab.url || "")) {
-    throw new Error("Open an HTTP job posting to capture it.");
-  }
-  let data;
-  try {
-    data = await extractTab(tab.id);
-  } catch (error) {
-    if (!selectionText) throw error;
-    data = {
-      url: tab.url, final_url: tab.url, apply_url: "", company: "", role: tab.title || "",
-      location: "", jd_text: "", ats_guess: "",
-    };
+// Extract the page and send it. ``data`` may be passed when it was already extracted.
+export async function captureTab(tab, selectionText = "", data = null) {
+  httpTab(tab, "Open an HTTP job posting to capture it.");
+  if (!data) {
+    try {
+      data = await extractTab(tab.id);
+    } catch (error) {
+      if (!selectionText) throw error;
+      data = {
+        url: tab.url, final_url: tab.url, apply_url: "", company: "", role: tab.title || "",
+        location: "", jd_text: "", ats_guess: "", apply_kind: "unknown",
+      };
+    }
   }
   if (selectionText) data.jd_text = selectionText;
   if (data.jd_text.length > 200_000) {
@@ -33,35 +41,43 @@ export async function captureTab(tab, selectionText = "") {
   return { result, data };
 }
 
-export async function lookupTab(tab) {
-  if (!tab?.id || !/^https?:\/\//.test(tab.url || "")) {
-    throw new Error("Open an HTTP job posting first.");
-  }
-  let data = null;
+async function inTab(tabId, func) {
+  await chrome.scripting.executeScript({ target: { tabId }, files: LIB_FILES });
+  const [frame] = await chrome.scripting.executeScript({ target: { tabId }, func });
+  return frame?.result ?? null;
+}
+
+// What the page is (board job, search page, other) and its apply link, both read from
+// the open job's detail container only (lib/applyLink.js).
+export async function pageFacts(tab) {
   try {
-    const [frame] = await chrome.scripting.executeScript({
-      target: { tabId: tab.id },
-      func: () => {
-        const link = [...document.querySelectorAll("a[href]")].find((item) =>
-          /\bapply\b/i.test(item.textContent || ""),
-        );
-        if (!link) return { apply_url: "" };
-        try {
-          const url = new URL(link.getAttribute("href"), location.href);
-          const nested = location.hostname.includes("linkedin.com") && url.pathname.includes("/redir/redirect")
-            ? url.searchParams.get("url") : null;
-          const result = nested ? new URL(nested) : url;
-          return { apply_url: ["http:", "https:"].includes(result.protocol) ? result.href : "" };
-        } catch {
-          return { apply_url: "" };
-        }
-      },
+    return await inTab(tab.id, () => {
+      const sites = globalThis.RTSites;
+      const site = sites.siteOf(location.href);
+      const job = sites.jobFromUrl(location.href);
+      return {
+        site,
+        job_key: job?.key || "",
+        apply_url: globalThis.RTApplyLink.findApplyLink(document, { site, baseUrl: location.href }),
+        apply_kind: site ? sites.applyKind(document, site) : "unknown",
+        card_count: site ? sites.readCards(document, location.href).length : 0,
+      };
     });
-    data = frame?.result || null;
   } catch {
-    // Lookup can still use the URL of a protected page.
+    return null; // a protected page (store, settings) can still be looked up by URL
   }
+}
+
+export async function lookupTab(tab) {
+  httpTab(tab, "Open an HTTP job posting first.");
+  const data = await pageFacts(tab);
   let found = await lookup(tab.url);
   if (!found.application && data?.apply_url) found = await lookup(data.apply_url);
   return { lookup: found, data };
+}
+
+export async function readTabCards(tab) {
+  httpTab(tab, "Open a LinkedIn or Indeed search page first.");
+  const cards = await inTab(tab.id, () => globalThis.RTSites.readCards(document, location.href));
+  return cards || [];
 }

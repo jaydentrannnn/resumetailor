@@ -366,9 +366,15 @@ def test_old_settings_json_shapes_still_validate():
         "sources": [],
     }
     loaded_legacy = ApplySettings.model_validate(legacy)
-    assert len(loaded_legacy.sources) == 1
-    assert loaded_legacy.sources[0].kind == "simplify_html"
-    assert loaded_legacy.sources[0].url == legacy["readme_url"]
+    # An explicitly empty list means the user removed every source: it stays empty.
+    assert loaded_legacy.sources == []
+    # Without a ``sources`` key the built-in defaults apply.
+    no_key = {k: v for k, v in legacy.items() if k != "sources"}
+    assert [s.id for s in ApplySettings.model_validate(no_key).sources] == [
+        "simplify-internships",
+        "simplify-newgrad",
+        "speedyapply",
+    ]
 
     # Modern multi-source shape with ats_board, pipe_table, simplify_html
     multi = {
@@ -455,3 +461,76 @@ def test_transport_errors_never_leak_credentials(monkeypatch, provider, secrets)
     assert "***" in errors[0]
     for secret in secrets:
         assert secret not in errors[0]
+
+
+def test_split_phrases_strips_dedupes_and_caps():
+    assert job_apis.split_phrases(" analyst, ,program specialist,analyst ") == [
+        "analyst",
+        "program specialist",
+    ]
+    assert job_apis.split_phrases("a,b,c,d,e,f,g") == ["a", "b", "c", "d", "e"]
+    assert job_apis.split_phrases("") == []
+
+
+def test_multi_phrase_search_merges_and_dedupes(monkeypatch):
+    """Each comma-separated phrase is its own search; a job found twice is kept once."""
+    monkeypatch.setattr(config, "credential", lambda key: "fake-" + key)
+    sleeps: list[float] = []
+    monkeypatch.setattr(job_apis, "_sleep", sleeps.append)
+    now = datetime(2026, 9, 27, 12, 0, 0, tzinfo=UTC)
+    created = (now - timedelta(days=1)).isoformat()
+    by_phrase = {
+        "financial analyst": ["job-1", "job-2"],
+        "investment banking": ["job-2", "job-3"],
+    }
+    seen_queries: list[str] = []
+
+    def fake_get(url: str, **kwargs):
+        what = kwargs["params"]["what"]
+        seen_queries.append(what)
+        if what == "audit":
+            return _FakeResponse({}, status_code=503)
+        return _FakeResponse({
+            "count": len(by_phrase[what]),
+            "results": [
+                {
+                    "id": job_id,
+                    "title": f"Analyst {job_id}",
+                    "company": {"display_name": "Bank"},
+                    "location": {"display_name": "New York, NY"},
+                    "redirect_url": f"https://adzuna.com/land/{job_id}",
+                    "created": created,
+                }
+                for job_id in by_phrase[what]
+            ],
+        })
+
+    source = SourceConfig(
+        id="finance",
+        kind="job_search",
+        provider="adzuna",
+        query="financial analyst, investment banking,audit",
+    )
+    rows, errors = job_apis.job_search_rows(source, get=fake_get, now=now)
+
+    assert seen_queries == ["financial analyst", "investment banking", "audit"]
+    assert [r.job_id for r in rows] == ["adzuna:job-1", "adzuna:job-2", "adzuna:job-3"]
+    assert errors == ["audit: api.adzuna.com answered 503"]
+    assert len(sleeps) == 2  # a polite pause between phrases
+
+
+def test_usajobs_searches_each_phrase(monkeypatch):
+    monkeypatch.setattr(config, "credential", lambda key: "fake-" + key)
+    monkeypatch.setattr(job_apis, "_sleep", lambda _s: None)
+    keywords: list[str] = []
+
+    def fake_get(url: str, **kwargs):
+        keywords.append(kwargs["params"]["Keyword"])
+        return _FakeResponse({"SearchResult": {"SearchResultItems": [], "SearchResultCountAll": 0}})
+
+    source = SourceConfig.model_validate({
+        "id": "gov", "kind": "job_search", "provider": "usajobs",
+        "query": "analyst, program specialist",
+    })
+    assert job_apis.job_search_rows(source, get=fake_get) == ([], [])
+    assert keywords == ["analyst", "program specialist"]

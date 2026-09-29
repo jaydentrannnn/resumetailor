@@ -83,13 +83,17 @@ jobs:
         with:
           python-version: "3.13"
       - run: uv pip install -r requirements-dev.lock -e .
+      - run: npm ci
+        working-directory: extension
       - run: npm test
         working-directory: extension
       - run: python -m pytest tests/test_extension_manifest.py -q
+      - name: Extension zip (as release.yml builds it)
+        run: python extension/build_zip.py --out dist-extension
       - uses: actions/upload-artifact@v4
         with:
           name: resumetailor-extension
-          path: extension/
+          path: dist-extension/*.zip
 
   e2e:
     name: Browser end-to-end

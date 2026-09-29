@@ -189,3 +189,151 @@ def test_fetch_readme_etag_cache(tmp_path, monkeypatch):
     assert first == "# cached body\n"
     assert second == first
     assert bodies["count"] == 2
+
+
+# --- more README formats, format detection, one-call fetch -------------------------
+
+_FIXTURES = Path(__file__).resolve().parent / "fixtures"
+_TODAY = __import__("datetime").date(2026, 9, 29)
+
+
+def _fixture(name: str) -> str:
+    return (_FIXTURES / name).read_text(encoding="utf-8")
+
+
+def test_summary_h3_headings_are_sections():
+    """zapplyjobs titles its sections ``<summary><h3>…</h3></summary>``."""
+    text = _fixture("zapplyjobs_readme.md")
+    assert (3, "Software Engineering") in sources.list_sections(text)
+    assert (3, "Business & Operations") in sources.list_sections(text)
+    rows = sources.parse_pipe_table_readme(text, ["Software Engineering"])
+    assert [r.company for r in rows] == ["LabCorp", "Cisco", "Parsons"]
+    labcorp, cisco, parsons = rows
+    assert labcorp.application_link == "https://zapply.jobs/l/d/workday-labcorp-2632795"
+    assert labcorp.age_days == 0 and cisco.age_days == 3
+    assert parsons.age_days is None  # "Date unknown"
+    business = sources.parse_pipe_table_readme(text, ["Business & Operations"])
+    assert [r.company for r in business] == ["Deloitte"]
+
+
+def test_jobright_rows_link_from_the_title_and_dates_resolve():
+    text = _fixture("jobright_readme.md")
+    rows = sources.parse_pipe_table_readme(text, ["Daily Job List"], today=_TODAY)
+    assert [r.company for r in rows] == ["IBM", "IBM", "Nuclear Promise X"]
+    first, second, third = rows
+    assert first.role == "Delivery Consultant Intern"
+    assert first.application_link == "https://jobright.ai/jobs/info/6a9e2880"
+    assert (first.age_days, first.posted_at) == (0, "2026-09-29")
+    assert (second.age_days, second.posted_at) == (2, "2026-09-27")
+    # A date after today is last year's.
+    assert third.posted_at == "2025-12-30"
+    assert first.location == "Austin, TX, United States"
+
+
+def test_vanshb03_rows_carry_flags_and_locations():
+    text = _fixture("vanshb03_readme.md")
+    rows = sources.parse_pipe_table_readme(text, ["The List"], today=_TODAY)
+    assert [r.company for r in rows] == ["Quora", "Chicago Trading Company", "Chicago Trading Company"]
+    quora, ctc, quant = rows
+    assert quora.application_link == "https://jobs.ashbyhq.com/quora/452afc2e"
+    assert (quora.age_days, quora.posted_at) == (55, "2026-08-05")
+    assert ctc.sponsorship_ok == "No" and ctc.role == "New Grad 2027: Associate Engineer"
+    assert ctc.location == "Chicago, IL | New York, NY"
+    assert quant.citizenship_required == "Yes"
+    assert quant.location == "Chicago, IL | Austin, TX | NYC"
+
+
+def test_company_link_table_one_row_per_link():
+    text = _fixture("nwfintech_readme.md")
+    rows = sources.parse_company_link_table(text, [])
+    assert [(r.company, r.role) for r in rows] == [
+        ("Akuna Capital", "Quant Developer"),
+        ("Akuna Capital", "Software Engineer (C++)"),
+        ("Akuna Capital", "Software Engineer (Python)"),
+        ("Citadel", "Quant Researcher (PhD)"),
+        ("Citadel", "Quant Trader"),
+    ]
+    assert rows[0].location == "Chicago"
+    assert rows[0].application_link.endswith("?gh_jid=8021481")
+    assert rows[3].advanced_degree is True
+    assert rows[4].application_link == "https://www.citadel.com/careers/details/quant-trader-intern/"
+    assert all(r.age_days == 0 and "age_unknown" in r.flags for r in rows)
+    assert len({r.job_id for r in rows}) == 5
+    only = sources.parse_company_link_table(text, ["Citadel"])
+    assert {r.company for r in only} == {"Citadel"}
+    assert sources.company_link_sections(text) == ["Akuna Capital", "Ansatz Capital", "Citadel"]
+
+
+@pytest.mark.parametrize(
+    ("name", "kind"),
+    [
+        ("simplify_readme.md", "simplify_html"),
+        ("speedyapply_readme.md", "pipe_table"),
+        ("zapplyjobs_readme.md", "pipe_table"),
+        ("jobright_readme.md", "pipe_table"),
+        ("vanshb03_readme.md", "pipe_table"),
+        ("nwfintech_readme.md", "company_link_table"),
+    ],
+)
+def test_detect_format(name, kind):
+    assert sources.detect_format(_fixture(name)) == kind
+
+
+def test_detect_format_none_and_fallback():
+    assert sources.detect_format("# Nothing\n\nJust prose.\n") is None
+    # The only signal (a legend's ``|---|``) reads no rows, and the Simplify rows carry
+    # no ``<tr><td>`` signal: the fallback runs every parser and keeps the one with rows.
+    html = (
+        "## Legend\n| Key | Meaning |\n|---|---|\n| X | closed |\n"
+        '## Roles\n<table><tbody>\n<tr class="row"><td>Acme</td><td>Intern</td><td>NYC</td>'
+        '<td><a href="https://acme.com/job/1">Apply</a></td><td>1d</td></tr>\n</tbody></table>\n'
+    )
+    assert sources.detect_format(html) == "simplify_html"
+
+
+def test_source_sections_lists_only_sections_with_rows():
+    text = _fixture("zapplyjobs_readme.md")
+    names = sources.source_sections("pipe_table", text)
+    assert "Software Engineering" in names and "Business & Operations" in names
+    assert "Live Job Boards" not in names
+
+
+@pytest.mark.parametrize(
+    ("raw", "expected"),
+    [
+        ("3d", (3, "")),
+        ("2026-08-30", (30, "2026-08-30")),
+        ("Aug 01", (59, "2026-08-01")),
+        ("Oct 01", (0, "2026-10-01")),  # two days ahead: a time-zone skew, this year
+        ("Oct 05", (359, "2025-10-05")),
+        ("Feb 30", (None, "")),
+        ("soon", (None, "")),
+        ("", (None, "")),
+    ],
+)
+def test_parse_posted(raw, expected):
+    assert sources.parse_posted(raw, today=_TODAY) == expected
+
+
+def test_empty_categories_read_the_whole_readme():
+    speedy = _fixture("speedyapply_readme.md")
+    companies = {r.company for r in sources.parse_pipe_table_readme(speedy, [])}
+    assert "Microsoft" in companies and "Acme NewGrad" in companies
+    assert "ForeignCo" not in companies  # International sections stay out
+    assert sources.parse_readme(_fixture("simplify_readme.md"), [])
+
+
+def test_fetch_source_rows_dispatches_every_kind(monkeypatch):
+    from resume_tailor.web.schemas import SourceConfig
+
+    monkeypatch.setattr(sources, "fetch_readme", lambda url: _fixture("nwfintech_readme.md"))
+    src = SourceConfig(id="nwf", kind="company_link_table", url="https://example.com/r.md")
+    rows, errors = sources.fetch_source_rows(src)
+    assert len(rows) == 5 and errors == []
+    assert {r.source_id for r in rows} == {"nwf"}
+
+    monkeypatch.setattr(sources, "board_rows", lambda s: ([sources.SourceRow(
+        company="A", role="R", location="", age="", job_id="x")], ["board B: gone"]))
+    board = SourceConfig(id="wl", kind="ats_board")
+    rows, errors = sources.fetch_source_rows(board)
+    assert rows[0].source_id == "wl" and errors == ["board B: gone"]

@@ -161,8 +161,10 @@ def _parse_section(
 
 
 def parse_readme(text: str, categories: list[str]) -> list[SourceRow]:
-    """Parse requested category sections from a SimplifyJobs-style README."""
+    """Parse requested category sections from a SimplifyJobs-style README (empty = all)."""
     lines = text.splitlines(keepends=True)
+    if not categories:
+        return _parse_section(lines, 0, len(lines))
     sections = _find_sections(lines)
     rows: list[SourceRow] = []
     for category in categories:
@@ -314,31 +316,42 @@ def _normalize_heading_name(raw: str) -> str:
     return re.sub(r"[^\w,&\s]", "", cleaned).strip()
 
 
-def list_sections(text: str) -> list[tuple[int, str]]:
-    """Return ``(heading_level, cleaned_name)`` for every ``##``–``####`` header."""
-    out: list[tuple[int, str]] = []
-    for line in text.splitlines():
-        match = re.match(r"^(#{2,4})\s+(.*)$", line)
+#: ``## Heading`` through ``#### Heading``.
+_MD_HEADING_RE = re.compile(r"^(#{2,4})\s+(.*)$")
+#: A collapsible section title, e.g. zapplyjobs'
+#: ``<summary><h3>💻 <strong>SWE</strong></h3></summary>``.
+_SUMMARY_HEADING_RE = re.compile(r"<summary>\s*<h([2-4])[^>]*>(.*?)</h\1>", re.IGNORECASE)
+
+
+def _heading(line: str) -> tuple[int, str] | None:
+    """``(level, cleaned_name)`` when ``line`` is a section heading, else None."""
+    match = _MD_HEADING_RE.match(line)
+    if match:
+        level, raw = len(match.group(1)), match.group(2)
+    else:
+        match = _SUMMARY_HEADING_RE.search(line)
         if not match:
-            continue
-        level = len(match.group(1))
-        name = _normalize_heading_name(match.group(2))
-        if name:
-            out.append((level, name))
-    return out
+            return None
+        level, raw = int(match.group(1)), re.sub(r"<[^>]+>", "", match.group(2))
+    name = _normalize_heading_name(raw)
+    return (level, name) if name else None
+
+
+def list_sections(text: str) -> list[tuple[int, str]]:
+    """Return ``(heading_level, cleaned_name)`` for every ``##``–``####`` header.
+
+    A ``<summary><h3>…</h3></summary>`` title counts as a heading of that level.
+    """
+    return [found for line in text.splitlines() if (found := _heading(line))]
 
 
 def _depth_sections(lines: list[str]) -> list[tuple[int, str, int, int]]:
     """Build ``(level, name, start, end)`` ranges for depth-aware headers."""
     headers: list[tuple[int, str, int]] = []
     for index, line in enumerate(lines):
-        match = re.match(r"^(#{2,4})\s+(.*)$", line)
-        if not match:
-            continue
-        level = len(match.group(1))
-        name = _normalize_heading_name(match.group(2))
-        if name:
-            headers.append((level, name, index))
+        found = _heading(line)
+        if found:
+            headers.append((found[0], found[1], index))
     ranges: list[tuple[int, str, int, int]] = []
     for index, (level, name, start) in enumerate(headers):
         end = len(lines)
@@ -350,144 +363,441 @@ def _depth_sections(lines: list[str]) -> list[tuple[int, str, int, int]]:
     return ranges
 
 
+_MONTHS = {
+    name: number
+    for number, name in enumerate(
+        ("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"),
+        start=1,
+    )
+}
+_MONTH_DAY_RE = re.compile(r"^([A-Za-z]{3,9})\.?\s+(\d{1,2})(?:,?\s+(\d{4}))?$")
+_ISO_DATE_RE = re.compile(r"^(\d{4})-(\d{2})-(\d{2})")
+
+
+def parse_posted(text: str, *, today: Any = None) -> tuple[int | None, str]:
+    """``(age_days, iso_date)`` for a README "posted" cell.
+
+    Accepts an age token (``3d``, ``15m`` — no date), an ISO date (``2026-08-30``),
+    or a month-day date (``Aug 01``, ``Sep 29``) read as its most recent past
+    occurrence; a date up to two days ahead is taken as this year (time zones).
+    Returns ``(None, "")`` when the cell does not parse.
+    """
+    from datetime import date, timedelta
+
+    cleaned = re.sub(r"<[^>]+>|\*", "", text or "").strip()
+    age = parse_age(cleaned)
+    if age is not None:
+        return age, ""
+    today = today or date.today()
+    iso = _ISO_DATE_RE.match(cleaned)
+    try:
+        if iso:
+            when = date(int(iso.group(1)), int(iso.group(2)), int(iso.group(3)))
+        else:
+            match = _MONTH_DAY_RE.match(cleaned)
+            month = _MONTHS.get(match.group(1)[:3].lower()) if match else None
+            if not match or not month:
+                return None, ""
+            day = int(match.group(2))
+            year = int(match.group(3)) if match.group(3) else today.year
+            when = date(year, month, day)
+            if not match.group(3) and when > today + timedelta(days=2):
+                when = date(year - 1, month, day)
+    except ValueError:
+        return None, ""
+    return max(0, (today - when).days), when.isoformat()
+
+
 def _pipe_cell_href(cell: str) -> str | None:
     """Extract the first href or markdown link URL from a pipe-table cell."""
     html_match = re.search(r'href=["\']([^"\']+)["\']', cell, re.I)
     if html_match:
         return html_match.group(1)
-    md_match = re.search(r"\]\(([^)]+)\)", cell)
+    md_match = re.search(r"\]\(([^)\s]+)\)", cell)
     if md_match:
         return md_match.group(1)
     return None
 
 
+def _clean_pipe_text(cell: str) -> str:
+    """Plain text of a pipe-table cell: markdown links keep their label, tags go."""
+    text = re.sub(r"!?\[([^\]]*)\]\([^)]*\)", r"\1", cell)
+    text = re.sub(r"<[^>]+>", "", text)
+    text = text.replace("**", "").replace("__", "")
+    return re.sub(r"\s+", " ", text).strip()
+
+
 def _clean_pipe_company(cell: str) -> str:
-    """Strip HTML / markdown emphasis from a company cell."""
-    text = re.sub(r"<[^>]+>", "", cell)
-    text = re.sub(r"\*\*([^*]+)\*\*", r"\1", text)
-    return text.strip()
+    """Strip HTML / markdown emphasis and links from a company cell."""
+    return _clean_pipe_text(cell)
+
+
+def _clean_pipe_location(cell: str) -> str:
+    """A location cell as ``A | B``: ``<br>`` separates places, "N locations" goes."""
+    text = re.sub(r"<summary>.*?</summary>", "", cell, flags=re.I | re.S)
+    text = re.sub(r"<\s*/?\s*br\s*/?\s*>", " | ", text, flags=re.I)
+    parts = [_clean_pipe_text(part) for part in text.split(" | ")]
+    return " | ".join(part for part in parts if part)
+
+
+#: Header text (lowercased, markup stripped) -> column role. Other columns
+#: ("Work Model", "Visa", …) are ignored.
+_PIPE_HEADER_ALIASES: dict[str, str] = {
+    "company": "company",
+    "employer": "company",
+    "role": "role",
+    "position": "role",
+    "job title": "role",
+    "title": "role",
+    "location": "location",
+    "locations": "location",
+    "salary": "salary",
+    "posting": "apply",
+    "apply": "apply",
+    "application": "apply",
+    "application/link": "apply",
+    "link": "apply",
+    "apply link": "apply",
+    "age": "age",
+    "posted": "age",
+    "date posted": "age",
+    "added": "age",
+    "date added": "age",
+    "date": "age",
+}
+
+#: Query parameters that only track the click; dropped so ids stay stable.
+_TRACKING_PARAMS = re.compile(
+    r"^(utm_\w+|ref|source|src|s|gh_src|lever-source|lever-origin|trk)$", re.I
+)
 
 
 def _map_pipe_headers(cells: list[str]) -> dict[str, int]:
-    """Map canonical column roles to indices from a header row."""
+    """Map canonical column roles to indices from a header row (first match wins)."""
     mapping: dict[str, int] = {}
     for index, cell in enumerate(cells):
-        key = cell.strip().lower()
-        if key in {"company"}:
-            mapping["company"] = index
-        elif key in {"position", "role"}:
-            mapping["role"] = index
-        elif key in {"location"}:
-            mapping["location"] = index
-        elif key in {"salary"}:
-            mapping["salary"] = index
-        elif key in {"posting", "apply", "application", "link"}:
-            mapping["apply"] = index
-        elif key in {"age", "posted"}:
-            mapping["age"] = index
+        role = _PIPE_HEADER_ALIASES.get(_clean_pipe_text(cell).lower())
+        if role and role not in mapping:
+            mapping[role] = index
     return mapping
 
 
-def _parse_pipe_rows(lines: list[str], start: int, end: int) -> list[SourceRow]:
-    """Parse markdown pipe-table rows inside one section range."""
+def _split_pipe_row(line: str) -> list[str]:
+    """Cells of one ``| a | b |`` line."""
+    return [c.strip() for c in line.strip().strip("|").split("|")]
+
+
+def _is_separator(line: str) -> bool:
+    """True for a ``|---|:---:|`` table separator line."""
+    cells = [c for c in _split_pipe_row(line) if c]
+    return bool(cells) and all(re.fullmatch(r":?-{2,}:?", c) for c in cells)
+
+
+def _clean_apply_href(href: str) -> str:
+    """Drop tracking query parameters; a ``gh_jid`` link is kept whole (stable ids)."""
+    if "gh_jid=" in href or "?" not in href:
+        return href
+    base, _, query = href.partition("?")
+    kept = [
+        part
+        for part in query.split("&")
+        if part and not _TRACKING_PARAMS.match(part.split("=", 1)[0])
+    ]
+    return f"{base}?{'&'.join(kept)}" if kept else base
+
+
+def _strip_title_flags(text: str) -> str:
+    """A role without the Simplify-style emoji flags."""
+    for flag in (GRAD_FLAG, US_CITIZEN_FLAG, NO_SPONSOR_FLAG, FAANG_FLAG):
+        text = text.replace(flag, "")
+    return re.sub(r"\s+", " ", text).strip()
+
+
+def _parse_pipe_rows(
+    lines: list[str], start: int, end: int, *, today: Any = None
+) -> list[SourceRow]:
+    """Parse markdown pipe-table rows inside one section range.
+
+    Each table's header row (the line above its ``|---|`` separator) maps that
+    table's columns, so tables with different layouts can share a section. The apply
+    link comes from the apply column, else from a link on the role (jobright-style).
+    A ``↳`` company repeats the row above; Simplify's title flags (🛂 🇺🇸 🎓) count.
+    """
     import hashlib
 
-    table_lines = [
-        line for line in lines[start:end] if line.strip().startswith("|")
-    ]
-    if len(table_lines) < 2:
-        return []
-    header_cells = [c.strip() for c in table_lines[0].strip("|").split("|")]
-    col = _map_pipe_headers(header_cells)
-    if "company" not in col or "apply" not in col:
-        return []
     out: list[SourceRow] = []
-    for line in table_lines[1:]:
-        cells = [c.strip() for c in line.strip().strip("|").split("|")]
-        if not cells or all(re.fullmatch(r"[:\-]+", c or "") for c in cells):
+    col: dict[str, int] | None = None
+    last_company = ""
+    chunk = lines[start:end]
+    for index, line in enumerate(chunk):
+        if not line.strip().startswith("|") or _is_separator(line):
             continue
-        if len(cells) < len(header_cells):
-            cells.extend([""] * (len(header_cells) - len(cells)))
+        if index + 1 < len(chunk) and _is_separator(chunk[index + 1]):
+            mapped = _map_pipe_headers(_split_pipe_row(line))
+            usable = "company" in mapped and ("apply" in mapped or "role" in mapped)
+            col = mapped if usable else None
+            last_company = ""
+            continue
+        if col is None:
+            continue
+        cells = _split_pipe_row(line)
+        columns = col
 
-        def _cell(name: str) -> str:
+        def _cell(name: str, cells: list[str] = cells, columns: dict[str, int] = columns) -> str:
             """Return the cell for a mapped column name, or empty."""
-            idx = col.get(name)
+            idx = columns.get(name)
             if idx is None or idx >= len(cells):
                 return ""
             return cells[idx]
 
+        raw_role = _cell("role")
         company = _clean_pipe_company(_cell("company"))
-        role = _cell("role")
-        location = _cell("location")
-        salary = _cell("salary")
-        age = _cell("age")
-        apply_cell = _cell("apply")
-        href = _pipe_cell_href(apply_cell)
+        if company in ("↳", ""):
+            company = last_company
+        else:
+            last_company = company
+        href = _pipe_cell_href(_cell("apply")) if "apply" in col else None
         if not href:
+            href = _pipe_cell_href(raw_role)
+        if not href or not company:
             continue
-        # Keep gh_jid; otherwise drop the query string.
-        if "gh_jid=" not in href and "?" in href:
-            href = href.split("?", 1)[0]
-        job_id = hashlib.sha1(href.encode("utf-8")).hexdigest()[:16]
+        href = _clean_apply_href(href)
+        age_days, posted_at = parse_posted(_cell("age"), today=today)
         out.append(
             SourceRow(
-                company=company,
-                role=role,
-                location=location,
-                age=age,
-                age_days=parse_age(age),
-                job_id=job_id,
+                company=_strip_title_flags(company),
+                role=_strip_title_flags(_clean_pipe_text(raw_role)),
+                location=_clean_pipe_location(_cell("location")),
+                age=_clean_pipe_text(_cell("age")),
+                age_days=age_days,
+                posted_at=posted_at,
+                job_id=hashlib.sha1(href.encode("utf-8")).hexdigest()[:16],
                 application_link=href,
-                salary=salary,
-                advanced_degree=False,
+                salary=_clean_pipe_text(_cell("salary")),
+                sponsorship_ok="No" if NO_SPONSOR_FLAG in raw_role else "Unknown",
+                citizenship_required="Yes" if US_CITIZEN_FLAG in raw_role else "No",
+                advanced_degree=GRAD_FLAG in raw_role,
             )
         )
     return out
 
 
-def parse_pipe_table_readme(text: str, categories: list[str]) -> list[SourceRow]:
+def _without_international(
+    ranges: list[tuple[int, str, int, int]], level: int, start: int, end: int
+) -> list[tuple[int, int]]:
+    """``(start, end)`` segments of a range with nested International sections cut out."""
+    skip_ranges = [
+        (s, e)
+        for lvl, name, s, e in ranges
+        if s > start and e <= end and lvl > level and "international" in name.casefold()
+    ]
+    keep_segments: list[tuple[int, int]] = [(start, end)]
+    for skip_start, skip_end in sorted(skip_ranges):
+        next_segments: list[tuple[int, int]] = []
+        for seg_start, seg_end in keep_segments:
+            if skip_end <= seg_start or skip_start >= seg_end:
+                next_segments.append((seg_start, seg_end))
+                continue
+            if seg_start < skip_start:
+                next_segments.append((seg_start, skip_start))
+            if skip_end < seg_end:
+                next_segments.append((skip_end, seg_end))
+        keep_segments = next_segments
+    return keep_segments
+
+
+def parse_pipe_table_readme(
+    text: str, categories: list[str], *, today: Any = None
+) -> list[SourceRow]:
     """Parse requested categories from a speedyapply-style pipe-table README.
 
     Section ranges are depth-aware: a category matches by normalized name and
     ends at the next header of equal or higher level. Nested sections whose
     names contain ``International`` are skipped even when under a matched parent.
+    Empty ``categories`` reads the whole README (still skipping International).
     """
     lines = text.splitlines(keepends=True)
     ranges = _depth_sections(lines)
     by_name = {name: (level, start, end) for level, name, start, end in ranges}
+    if categories:
+        targets = [by_name[c] for c in categories if c in by_name]
+    else:
+        targets = [(1, 0, len(lines))]
     rows: list[SourceRow] = []
-    for category in categories:
-        bounds = by_name.get(category)
-        if bounds is None:
-            continue
-        level, start, end = bounds
-        # Collect child International ranges to skip.
-        skip_ranges = [
-            (s, e)
-            for lvl, name, s, e in ranges
-            if s > start
-            and e <= end
-            and lvl > level
-            and "international" in name.casefold()
-        ]
-        # Parse the parent chunk but also walk non-International children
-        # individually when the parent itself is requested — rows under an
-        # International child are excluded by splicing those ranges out.
-        keep_segments: list[tuple[int, int]] = [(start, end)]
-        for skip_start, skip_end in sorted(skip_ranges):
-            next_segments: list[tuple[int, int]] = []
-            for seg_start, seg_end in keep_segments:
-                if skip_end <= seg_start or skip_start >= seg_end:
-                    next_segments.append((seg_start, seg_end))
-                    continue
-                if seg_start < skip_start:
-                    next_segments.append((seg_start, skip_start))
-                if skip_end < seg_end:
-                    next_segments.append((skip_end, seg_end))
-            keep_segments = next_segments
-        for seg_start, seg_end in keep_segments:
-            rows.extend(_parse_pipe_rows(lines, seg_start, seg_end))
+    for level, start, end in targets:
+        for seg_start, seg_end in _without_international(ranges, level, start, end):
+            rows.extend(_parse_pipe_rows(lines, seg_start, seg_end, today=today))
     return rows
+
+
+# --- per-company link tables (``kind="company_link_table"``) ----------------------
+
+#: ``##`` headings in a company-link README that are not companies.
+_NON_COMPANY_HEADINGS = {"contributing", "using this repository"}
+#: Role abbreviations used by northwesternfintech's tables.
+_ROLE_ABBREVIATIONS = {
+    "qt": "Quant Trader",
+    "qr": "Quant Researcher",
+    "qd": "Quant Developer",
+    "swe": "Software Engineer",
+    "hw": "Hardware Engineer",
+    "ml": "Machine Learning",
+}
+
+
+def _company_sections(lines: list[str]) -> list[tuple[str, int, int]]:
+    """``(company, start, end)`` for every ``##`` company heading."""
+    heads = [
+        (index, _normalize_heading_name(line[3:]))
+        for index, line in enumerate(lines)
+        if line.startswith("## ")
+    ]
+    out: list[tuple[str, int, int]] = []
+    for position, (start, name) in enumerate(heads):
+        end = heads[position + 1][0] if position + 1 < len(heads) else len(lines)
+        if name and name.casefold() not in _NON_COMPANY_HEADINGS:
+            out.append((name, start, end))
+    return out
+
+
+def company_link_sections(text: str) -> list[str]:
+    """Company names (the ``##`` headings) of a company-link-table README."""
+    return [name for name, _s, _e in _company_sections(text.splitlines(keepends=True))]
+
+
+def parse_company_link_table(text: str, categories: list[str]) -> list[SourceRow]:
+    """Parse a README of per-company ``|Role|Links|`` tables (northwesternfintech-style).
+
+    The company is the ``##`` heading; each markdown link in a Links cell is its own
+    row, its label (``C++``, ``PhD``) appended to the role. ``categories`` are company
+    names; empty reads every company. These lists carry no dates and only list open
+    postings, so rows are kept as new (``age_days=0``, flag ``age_unknown``), the way
+    company watchlists treat an undated posting.
+    """
+    import hashlib
+
+    lines = text.splitlines(keepends=True)
+    wanted = {c.casefold() for c in categories}
+    rows: list[SourceRow] = []
+    for company, start, end in _company_sections(lines):
+        if wanted and company.casefold() not in wanted:
+            continue
+        location = ""
+        in_table = False
+        for line in lines[start + 1 : end]:
+            stripped = line.strip()
+            loc = re.match(r"^\*\*Locations?\*\*:\s*(.*)$", stripped, re.I)
+            if loc:
+                location = _clean_pipe_text(loc.group(1))
+                continue
+            if not stripped.startswith("|"):
+                continue
+            cells = _split_pipe_row(stripped)
+            if [c.lower() for c in cells[:2]] == ["role", "links"]:
+                in_table = True
+                continue
+            if not in_table or _is_separator(stripped) or len(cells) < 2:
+                continue
+            raw_role = _clean_pipe_text(cells[0])
+            role = _ROLE_ABBREVIATIONS.get(raw_role.casefold(), raw_role)
+            for label, href in re.findall(r"\[([^\]]*)\]\(([^)\s]+)\)", cells[1]):
+                label = re.sub(r"[^\w+#./\s-]", "", label).strip()
+                link = _clean_apply_href(href)
+                rows.append(
+                    SourceRow(
+                        company=company,
+                        role=f"{role} ({label})" if label else role,
+                        location=location,
+                        age="",
+                        age_days=0,
+                        job_id=hashlib.sha1(link.encode("utf-8")).hexdigest()[:16],
+                        application_link=link,
+                        advanced_degree=bool(re.search(r"\bph\.?d\b", label, re.I)),
+                        flags=["age_unknown"],
+                    )
+                )
+    return rows
+
+
+# --- format detection and one-call fetch ------------------------------------------
+
+ReadmeKind = Literal["simplify_html", "pipe_table", "company_link_table"]
+README_KINDS: tuple[ReadmeKind, ...] = ("simplify_html", "pipe_table", "company_link_table")
+
+
+def parse_source_text(kind: str, text: str, categories: list[str]) -> list[SourceRow]:
+    """Rows of a README body for a README ``kind`` (empty categories = everything)."""
+    if kind == "simplify_html":
+        return parse_readme(text, categories)
+    if kind == "pipe_table":
+        return parse_pipe_table_readme(text, categories)
+    if kind == "company_link_table":
+        return parse_company_link_table(text, categories)
+    raise ValueError(f"unknown source kind {kind!r}")
+
+
+def _format_signals(text: str) -> list[ReadmeKind]:
+    """README kinds suggested by cheap text signals, most specific first."""
+    signals: list[ReadmeKind] = []
+    if re.search(r"<tr>\s*<td", text, re.I):
+        signals.append("simplify_html")
+    if re.search(r"^\|\s*Role\s*\|\s*Links\s*\|", text, re.I | re.M):
+        signals.append("company_link_table")
+    if re.search(r"^\|?\s*:?-{3,}:?\s*\|", text, re.M):
+        signals.append("pipe_table")
+    return signals
+
+
+def detect_format(text: str) -> ReadmeKind | None:
+    """The README kind whose parser reads rows from ``text``, or None when none does.
+
+    Cheap signals are tried first (``<tr><td>`` rows, ``|Role|Links|`` tables, a
+    ``|---|`` separator) and the first whose parser returns rows wins; otherwise every
+    parser runs over the whole README and the one with the most rows wins.
+    """
+    signals = _format_signals(text)
+    for kind in signals:
+        if parse_source_text(kind, text, []):
+            return kind
+    counts = {
+        kind: len(parse_source_text(kind, text, [])) for kind in README_KINDS if kind not in signals
+    }
+    best = max(counts, key=lambda k: counts[k], default=None)
+    return best if best and counts[best] else None
+
+
+def source_sections(kind: str, text: str) -> list[str]:
+    """Category names a README offers for ``kind``: headings whose section has rows."""
+    if kind == "company_link_table":
+        return [
+            name for name in company_link_sections(text) if parse_company_link_table(text, [name])
+        ]
+    names = list(dict.fromkeys(name for _level, name in list_sections(text)))
+    return [name for name in names if parse_source_text(kind, text, [name])]
+
+
+def fetch_source_rows(src: Any) -> tuple[list[SourceRow], list[str]]:
+    """Postings from one `SourceConfig` and its per-part errors, for every kind.
+
+    README kinds fetch the body (ETag-cached) and parse ``categories``; watchlists and
+    keyword searches report a failed board or phrase as an error and keep the rest.
+    Rows are stamped with ``src.id``. Raises when the whole source fails (README
+    unreachable, missing API keys, unknown kind).
+    """
+    errors: list[str] = []
+    if src.kind == "ats_board":
+        rows, errors = board_rows(src)
+    elif src.kind == "job_search":
+        from resume_tailor.apply import job_apis
+
+        rows, errors = job_apis.job_search_rows(src)
+    elif src.kind in README_KINDS:
+        rows = parse_source_text(src.kind, fetch_readme(src.url), src.categories)
+    else:
+        raise ValueError(f"unknown source kind {src.kind!r}")
+    for row in rows:
+        row.source_id = src.id
+    return rows, errors
 
 
 # --- company watchlists (``kind="ats_board"``, plan P4-D2) -------------------------

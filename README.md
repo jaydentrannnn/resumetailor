@@ -271,27 +271,42 @@ To look at a job list's section headings before enabling its categories:
 
 ### Browser extension
 
-The unpacked Chrome/Edge extension in [`extension/`](extension/) captures the job page
-you choose. In `chrome://extensions` or `edge://extensions`, enable **Developer mode**,
-select **Load unpacked**, and choose the `extension/` folder. Open ResumeTailor
-**Settings → Browser**, generate a six-digit code, and enter it in the extension popup.
-You can revoke a paired browser in Settings.
+The Chrome/Edge extension in [`extension/`](extension/) captures the job page you
+choose. **Install:** download `resumetailor-extension-<version>.zip` from the
+[latest release](https://github.com/jaydentrannnn/resumetailor/releases/latest) and unzip
+it (or use the repo's `extension/` folder), then in `chrome://extensions` or
+`edge://extensions` enable **Developer mode**, select **Load unpacked**, and choose that
+folder. Open ResumeTailor **Settings → Browser**, generate a six-digit code, and enter it
+in the extension popup. You can revoke a paired browser in Settings.
 
-**Send to ResumeTailor** captures the current job; **Tailor now** prepares it. **Fill this
-page** starts Fill when preparation is ready. Extension requests always disable automatic
-submission: inspect the completed form and submit it yourself. LinkedIn, Indeed,
-Handshake, and Workday remain assist-only platforms. If the description is behind a
-login wall or an inaccessible iCIMS iframe, select the JD and use **Send selection to
-ResumeTailor** from the context menu. An iCIMS iframe may also be opened as its own tab.
+**Send to ResumeTailor** (popup, right-click menu, or **Alt+Shift+S**) captures the current
+job; **Tailor now** prepares it. **Fill this page** starts Fill when preparation is ready.
+Extension requests always disable automatic submission: inspect the completed form and
+submit it yourself. LinkedIn, Indeed, Handshake, and Workday remain assist-only
+platforms, and LinkedIn Easy Apply / Indeed Apply jobs can be tailored but not filled.
+If the description is behind a login wall or an inaccessible iCIMS iframe, select the
+JD and use **Send selection to ResumeTailor** from the context menu.
+
+On a LinkedIn or Indeed search page, the popup lists the visible job cards: tick the ones
+you want and **Save** them. They appear under **Needs description** in the app. After you
+allow LinkedIn and Indeed in the extension options, opening a saved job completes it
+automatically, and a small chip on job pages shows whether a job is already in your
+queue. Clicking **Apply** on a board and capturing the employer's page links that page to
+the same job. The extension never clicks, scrolls or opens pages by itself, and the app
+never fetches LinkedIn or Indeed. The options page also sets the app port, what a quick
+capture does next (send, or send and tailor), and the chip.
 
 CDP remains the default Fill browser. To fill the selected tab through the extension,
 start the optional loopback relay with `python -m resume_tailor.apply.cdp_relay`, set
 `BROWSER_MODE=extension` and `EXTENSION_CDP_URL` to the printed URL before starting the
-app, then choose **Use this tab for Fill (relay)** in the popup. See
-[`extension/README.md`](extension/README.md) for setup. The extension contacts the local ResumeTailor server on
-127.0.0.1 ports 8000–8010. Opening its popup sends the current page URL for lookup;
-description text is sent only when you choose a capture action. The extension itself
-does not contact job sites or model providers.
+app, turn on **Fill relay** under Advanced in the extension options (this is the only
+time it asks for the `debugger` permission), then choose **Use this tab for Fill
+(relay)** in the popup. See [`extension/README.md`](extension/README.md) for setup. The
+extension contacts the local ResumeTailor server on 127.0.0.1 ports 8000–8010. Opening
+its popup sends the current page URL for lookup; with LinkedIn/Indeed allowed, the job
+you open there is looked up too. Description text is sent only when you choose a capture
+action, or when you open a job you saved. The extension itself does not contact job sites
+or model providers ([privacy policy](extension/store/PRIVACY.md)).
 
 ### Remote access (Cloudflare Tunnel)
 

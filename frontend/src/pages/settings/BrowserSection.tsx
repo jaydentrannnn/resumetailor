@@ -10,6 +10,10 @@ import { describe } from "../../lib/errors";
 import { useToast } from "../../lib/toast";
 import { pairingCountdown, pairingDate, secondsRemaining } from "./browserPairing";
 
+const RELEASES_URL = "https://github.com/jaydentrannnn/resumetailor/releases/latest";
+/** Chrome Web Store / Edge Add-ons pages, once published (extension/store/SUBMITTING.md). */
+const STORE_LINKS: { label: string; url: string }[] = [];
+
 export function BrowserSection() {
   const toast = useToast();
   const [pairings, setPairings] = useState<ExtensionPairing[]>([]);
@@ -82,11 +86,47 @@ export function BrowserSection() {
     <div className="space-y-6">
       <Card
         title="Browser extension"
-        description="Capture job descriptions from the page you are viewing."
+        description="Capture the job you are viewing, save jobs from LinkedIn and Indeed search results, and see what is already in your queue."
       >
-        <p className="text-sm text-ink-muted">
-          In Chrome or Edge, open Extensions, turn on Developer mode, choose Load unpacked, and
-          select this project&apos;s extension folder.
+        {STORE_LINKS.length > 0 && (
+          <div className="mb-3 flex flex-wrap gap-2">
+            {STORE_LINKS.map((store) => (
+              <a
+                key={store.label}
+                className="rounded-md border border-line px-3 py-2 text-sm"
+                href={store.url}
+                target="_blank"
+                rel="noreferrer"
+              >
+                {store.label} ↗
+              </a>
+            ))}
+          </div>
+        )}
+        <ol className="list-decimal space-y-1 pl-5 text-sm">
+          <li>
+            Download <span className="font-mono">resumetailor-extension-&lt;version&gt;.zip</span>{" "}
+            from the{" "}
+            <a
+              className="text-accent underline"
+              href={RELEASES_URL}
+              target="_blank"
+              rel="noreferrer"
+            >
+              latest release
+            </a>{" "}
+            and unzip it.
+          </li>
+          <li>
+            In Chrome open <span className="font-mono">chrome://extensions</span> (Edge:{" "}
+            <span className="font-mono">edge://extensions</span>) and turn on Developer mode.
+          </li>
+          <li>Choose Load unpacked and select the unzipped folder.</li>
+          <li>Pin ResumeTailor to the toolbar, then pair it below.</li>
+        </ol>
+        <p className="mt-3 text-sm text-ink-muted">
+          In the extension&apos;s options, allow LinkedIn and Indeed to save jobs from search
+          results and complete them when you open them. Everything stays on this computer.
         </p>
       </Card>
       <Card

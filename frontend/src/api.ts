@@ -114,11 +114,7 @@ export type BoardAts = "greenhouse" | "lever" | "ashby" | "smartrecruiters" | "w
 export type BoardConfig = { ats: BoardAts; slug: string; company: string };
 
 export type SourceKind =
-  | "simplify_html"
-  | "pipe_table"
-  | "company_link_table"
-  | "ats_board"
-  | "job_search";
+  "simplify_html" | "pipe_table" | "company_link_table" | "ats_board" | "job_search";
 
 export type SourceConfig = {
   id: string;
@@ -374,6 +370,10 @@ export type ApplicationRow = {
   screen_label?: string | null;
   /** What a "Needs your review" row is waiting on (`store.review_summary`). */
   review_summary?: string | null;
+  /** LinkedIn/Indeed apply path recorded by the browser extension. */
+  apply_kind?: ApplyKind;
+  /** Saved from search results by the extension, description not captured yet. */
+  capture_stub?: boolean;
   screen: {
     passed: boolean;
     coverage: number;
@@ -2145,6 +2145,31 @@ export function listExtensionPairings(): Promise<ExtensionPairing[]> {
 
 export function revokeExtensionPairing(id: string): Promise<void> {
   return request(`/api/extension-pairings/${encodeURIComponent(id)}`, { method: "DELETE" });
+}
+
+/** How a LinkedIn/Indeed job is applied to (`store.ApplyKind`). */
+export type ApplyKind = "easy_apply" | "external" | "unknown";
+
+/** A row the browser extension captured (`GET /api/extension-captures`). */
+export type CapturedItem = {
+  id: string;
+  /** Colon-free id for `/applications/<id>` links (the row's source id). */
+  link_id: string;
+  company: string;
+  role: string;
+  location: string;
+  status: string;
+  /** "linkedin" / "indeed" for board jobs, else the ATS. */
+  site: string;
+  posting_url: string;
+  /** Saved from search results without its description ("Needs description"). */
+  capture_stub: boolean;
+  apply_kind: ApplyKind;
+  discovered_at: string;
+};
+
+export function listExtensionCaptures(stubsOnly = false): Promise<CapturedItem[]> {
+  return request(`/api/extension-captures${stubsOnly ? "?stubs_only=true" : ""}`);
 }
 
 /** Open browser tab ids; `reachable: false` means tab state is unknown. */

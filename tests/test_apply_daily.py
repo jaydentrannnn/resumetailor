@@ -1745,3 +1745,48 @@ def test_new_application_keeps_the_sources_posted_date():
     app = daily._application_from_row(row, canonical_key="greenhouse:acme:1", group_key="g", final_url="")
     assert app.posted_at == "2026-09-01"
     assert app.age_days == 4
+
+
+def test_run_daily_reads_company_link_tables_and_reports_part_errors(
+    stub_pipeline, apply_paths, monkeypatch
+):
+    """The loop goes through ``sources.fetch_source_rows`` for every kind: a
+    ``company_link_table`` README yields rows tagged with its id, and a keyword
+    search's per-phrase errors land in the summary while its rows still count."""
+    from resume_tailor.apply import job_apis
+    from resume_tailor.web.schemas import SourceConfig
+
+    readme = (Path(__file__).resolve().parent / "fixtures" / "nwfintech_readme.md").read_text(
+        encoding="utf-8"
+    )
+    monkeypatch.setattr(sources, "fetch_readme", lambda url: readme)
+    monkeypatch.setattr(
+        job_apis,
+        "job_search_rows",
+        lambda src: (
+            [_sample_row(job_id="adzuna:1", company="Bank", source_id="")],
+            ["audit: api.adzuna.com answered 503"],
+        ),
+    )
+    seen: dict[str, int] = {}
+
+    def _pass_through(rows, **kwargs):
+        for row in rows:
+            seen[row.source_id] = seen.get(row.source_id, 0) + 1
+        return sources.FilterResult(new_rows=list(rows), total_candidates=len(rows))
+
+    monkeypatch.setattr(sources, "filter_rows", _pass_through)
+    settings = ApplySettings(
+        enabled=True,
+        max_new_per_day=20,
+        sources=[
+            SourceConfig(id="nwf", kind="company_link_table", url="https://example.com/r.md"),
+            SourceConfig(id="kw", kind="job_search", provider="adzuna", query="analyst, audit"),
+        ],
+    )
+    summary = daily.run_daily(settings=settings, dry_run=True)
+    assert seen == {"nwf": 5, "kw": 1}  # five links in the fixture, each tagged
+    assert summary.new_rows == 6
+    assert summary.errors == ["kw: audit: api.adzuna.com answered 503"]
+    log = Path(summary.log_path).read_text(encoding="utf-8")
+    assert "[source nwf] candidates=5 new=5" in log

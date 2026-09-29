@@ -27,7 +27,21 @@ async function health(port) {
   }
 }
 
+export class AppNotRunning extends ExtensionApiError {
+  constructor(port = 0) {
+    super(port
+      ? `ResumeTailor is not answering on port ${port}. Start it, or clear the port in the extension options.`
+      : "Start ResumeTailor first.", 0, "app_not_running");
+  }
+}
+
 export async function findPort() {
+  const { options } = await chrome.storage.local.get("options");
+  const fixed = Number(options?.port) || 0;
+  if (fixed) {
+    if (await health(fixed)) return fixed;
+    throw new AppNotRunning(fixed);
+  }
   const saved = await chrome.storage.local.get("port");
   if (Number.isInteger(saved.port) && saved.port >= FIRST_PORT && saved.port <= LAST_PORT) {
     if (await health(saved.port)) return saved.port;
@@ -43,7 +57,11 @@ export async function findPort() {
     }
   }
   await chrome.storage.local.remove("port");
-  throw new ExtensionApiError("Start ResumeTailor first.");
+  throw new AppNotRunning();
+}
+
+export async function appUrl(path = "/") {
+  return `http://127.0.0.1:${await findPort()}${path}`;
 }
 
 function detailText(body, fallback) {
@@ -71,7 +89,7 @@ export async function request(path, { method = "GET", body, paired = true } = {}
       redirect: "error",
     });
   } catch {
-    throw new ExtensionApiError("Cannot reach ResumeTailor. Check that it is running.");
+    throw new ExtensionApiError("Cannot reach ResumeTailor. Check that it is running.", 0, "app_not_running");
   }
   let payload = {};
   try {
@@ -103,5 +121,11 @@ export async function pair(code, label) {
 export const status = () => request("/api/extension/status");
 export const lookup = (url) => request(`/api/extension/lookup?url=${encodeURIComponent(url)}`);
 export const capture = (data) => request("/api/extension/capture", { method: "POST", body: data });
+//: Server cap per batch request (routes/extension.MAX_BATCH).
+export const MAX_BATCH = 50;
+export const lookupBatch = (urls) =>
+  request("/api/extension/lookup-batch", { method: "POST", body: { urls: urls.slice(0, MAX_BATCH) } });
+export const captureStubs = (cards) =>
+  request("/api/extension/capture-stubs", { method: "POST", body: { cards: cards.slice(0, MAX_BATCH) } });
 export const operation = (id, action) =>
   request(`/api/extension/applications/${encodeURIComponent(id)}/${action}`, { method: "POST" });

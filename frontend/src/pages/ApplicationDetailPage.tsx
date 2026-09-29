@@ -27,6 +27,7 @@ import { isTabClosed } from "../lib/applicationRows";
 import { useOpenTabs } from "../lib/useOpenTabs";
 import { useToast } from "../lib/toast";
 import { describe } from "../lib/errors";
+import { CapturedBadge, siteName } from "./CapturedStubs";
 import { BulletReview } from "./run/BulletReview";
 import { ReportCard } from "./run/ReportCard";
 
@@ -196,10 +197,25 @@ export function ApplicationDetailPage() {
             {app.company} · {app.role}
           </h1>
           <p className="text-sm text-ink-muted">{app.location}</p>
-          <p className="mt-2 text-sm">
-            {applicationStatusLabel(app.status)}
-            {app.archived_at ? " · Archived" : ""}
+          <p className="mt-2 flex flex-wrap items-center gap-2 text-sm">
+            <span>
+              {app.capture_stub ? "Needs description" : applicationStatusLabel(app.status)}
+              {app.archived_at ? " · Archived" : ""}
+            </span>
+            <CapturedBadge row={app} />
           </p>
+          {app.capture_stub && (
+            <p className="mt-2 text-sm text-ink-muted">
+              Saved from search results. Open it on {siteName(app.ats)} with the ResumeTailor
+              extension installed and its description is saved automatically.
+            </p>
+          )}
+          {app.apply_kind === "easy_apply" && (
+            <p className="mt-2 text-sm text-ink-muted">
+              Apply on {siteName(app.ats)}: this job uses {siteName(app.ats)}&apos;s own application
+              form. Tailoring works; Fill can&apos;t drive that form.
+            </p>
+          )}
         </div>
         <div className="flex gap-2">
           {app.posting_url && (
@@ -209,7 +225,7 @@ export function ApplicationDetailPage() {
               target="_blank"
               rel="noreferrer"
             >
-              Posting ↗
+              {app.capture_stub ? `Open on ${siteName(app.ats)} ↗` : "Posting ↗"}
             </a>
           )}
           {app.fill?.browser_target_id && !app.archived_at && !isTabClosed(app, openTabs) && (

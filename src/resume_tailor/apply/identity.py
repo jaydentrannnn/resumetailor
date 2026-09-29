@@ -218,14 +218,18 @@ def canonical_key(final_url: str) -> str:
         job = bamboo.group("id") if bamboo else first("id")
         if job.isdigit():
             return f"bamboohr:{tenant}:{job}"
-    # Job boards: one global id space, so the slug is the board itself.
+    # Job boards: one global id space, so the slug is the board itself. A search or
+    # collections page names the job open in its detail pane by query parameter
+    # (LinkedIn ``currentJobId``, Indeed ``vjk``), so that page keys as the job itself.
     if host == "linkedin.com" or host.endswith(".linkedin.com"):
         linkedin = _LINKEDIN.search(path)
         job = linkedin.group("id") if linkedin else first("currentJobId")
         if job.isdigit():
             return f"linkedin:jobs:{job}"
-    if (host == "indeed.com" or host.endswith(".indeed.com")) and first("jk"):
-        return f"indeed:jobs:{first('jk').lower()}"
+    if host == "indeed.com" or host.endswith(".indeed.com"):
+        job = first("jk") or first("vjk")
+        if job:
+            return f"indeed:jobs:{job.lower()}"
     if host.endswith("joinhandshake.com"):
         handshake = _HANDSHAKE.search(path)
         if handshake:

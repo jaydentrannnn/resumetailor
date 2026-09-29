@@ -3,10 +3,19 @@
   "name": "ResumeTailor",
   "version": "0.1.0",
   "description": "Capture the job page you choose and send it to your local ResumeTailor app.",
-  "permissions": ["storage", "activeTab", "scripting", "contextMenus", "alarms", "debugger"],
+  "permissions": ["storage", "activeTab", "scripting", "contextMenus", "alarms", "notifications"],
+  "optional_permissions": ["debugger"],
   "host_permissions": ["http://127.0.0.1/*", "http://localhost/*"],
+  "optional_host_permissions": ["https://www.linkedin.com/*", "https://*.indeed.com/*"],
   "background": { "service_worker": "background.js", "type": "module" },
-  "action": { "default_popup": "popup.html", "default_icon": "icons/icon32.png" },
+  "action": { "default_popup": "popup.html", "default_icon": { "16": "icons/icon16.png", "32": "icons/icon32.png" } },
+  "options_ui": { "page": "options.html", "open_in_tab": true },
+  "commands": {
+    "capture-page": {
+      "suggested_key": { "default": "Alt+Shift+S", "mac": "Alt+Shift+S" },
+      "description": "Send this page to ResumeTailor"
+    }
+  },
   "icons": {
     "16": "icons/icon16.png",
     "32": "icons/icon32.png",

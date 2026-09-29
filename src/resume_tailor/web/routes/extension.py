@@ -12,12 +12,20 @@ Capture turns the page the student is looking at into a tracked application: the
 extension extracts the description text in the tab (so LinkedIn and Handshake, which
 need a login to read, work), and Prepare later reuses that text instead of fetching
 the page again (`daily._captured_jd`).
+
+Batch capture (``capture-stubs``) saves LinkedIn/Indeed search-result cards as
+``capture_stub`` rows with no description. Nothing here or in the daily funnel ever
+fetches those boards: a stub is completed by an ordinary ``capture`` of the same job,
+which the extension sends when the user opens it. Capturing an employer's ATS page
+whose company and role match a board row that has no apply URL yet attaches that URL
+to the board row (``merged``) instead of tracking the job twice.
 """
 
 from __future__ import annotations
 
 import hashlib
 from typing import Literal, get_args
+from urllib.parse import urlparse
 
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
@@ -71,6 +79,15 @@ class TrackedApplication(BaseModel):
     archived: bool = False
     needs_you: str = ""
     screen_reasons: list[str] = Field(default_factory=list)
+    apply_kind: store.ApplyKind = "unknown"
+    capture_stub: bool = False
+    #: Where the job was captured (the board page for a LinkedIn/Indeed row).
+    posting_url: str = ""
+    #: The employer's application page, when known (differs from ``posting_url``).
+    apply_url: str = ""
+    #: The id for ``/applications/<id>`` links: the source id, which has no ``:``
+    #: (a canonical key in a path breaks the SPA's static-file lookup on Windows).
+    link_id: str = ""
 
 
 class OperationSummary(BaseModel):
@@ -106,17 +123,94 @@ class CaptureRequest(BaseModel):
     location: str = Field(default="", max_length=300)
     jd_text: str = Field(max_length=200_000)
     ats_guess: str = Field(default="", max_length=40)
+    #: How the LinkedIn/Indeed page applies; ignored on other sites.
+    apply_kind: store.ApplyKind = "unknown"
 
 
 class CaptureResponse(BaseModel):
-    result: Literal["created", "exists"]
+    #: ``completed``: a saved card got its description; ``merged``: this ATS page was
+    #: attached to the board row already tracking the job.
+    result: Literal["created", "exists", "completed", "merged"]
     application: TrackedApplication
     warnings: list[str] = Field(default_factory=list)
 
 
+#: Cards per ``lookup-batch`` / ``capture-stubs`` request: one screen of search results.
+MAX_BATCH = 50
+
+_BOARDS = frozenset({"linkedin", "indeed"})
+
+
+class LookupBatchRequest(BaseModel):
+    urls: list[str] = Field(max_length=MAX_BATCH)
+
+
+class LookupBatchItem(BaseModel):
+    url: str
+    exists: bool
+    id: str = ""
+    status: str = ""
+    stub: bool = False
+
+
+class LookupBatchResponse(BaseModel):
+    results: list[LookupBatchItem]
+
+
+class StubCard(BaseModel):
+    url: str = Field(min_length=1, max_length=4000)
+    job_id: str = Field(default="", max_length=100)
+    company: str = Field(default="", max_length=200)
+    role: str = Field(default="", max_length=300)
+    location: str = Field(default="", max_length=300)
+    site: Literal["linkedin", "indeed"]
+
+
+class CaptureStubsRequest(BaseModel):
+    cards: list[StubCard] = Field(min_length=1, max_length=MAX_BATCH)
+
+
+class StubResult(BaseModel):
+    url: str
+    result: Literal["created", "exists", "invalid"]
+    application: TrackedApplication | None = None
+    error: str = ""
+
+
+class CaptureStubsResponse(BaseModel):
+    results: list[StubResult]
+
+
+class CapturedItem(BaseModel):
+    """One row the extension captured, for the app's Applications page."""
+
+    id: str
+    #: See `TrackedApplication.link_id`.
+    link_id: str
+    company: str
+    role: str
+    location: str = ""
+    status: str
+    site: str
+    posting_url: str
+    capture_stub: bool
+    apply_kind: store.ApplyKind
+    discovered_at: str = ""
+
+
+def _app_id(app: store.Application) -> str:
+    return app.canonical_key or app.source_job_id
+
+
+def _apply_url(app: store.Application) -> str:
+    """The employer's apply page when it differs from where the job was captured."""
+    final = app.final_url or ""
+    return final if final and final != app.posting_url else ""
+
+
 def _tracked(app: store.Application) -> TrackedApplication:
     return TrackedApplication(
-        id=app.canonical_key or app.source_job_id,
+        id=_app_id(app),
         company=app.company,
         role=app.role,
         status=app.status,
@@ -124,6 +218,11 @@ def _tracked(app: store.Application) -> TrackedApplication:
         archived=bool(app.archived_at),
         needs_you=store.review_summary(app) or "",
         screen_reasons=list(app.screen.reasons) if app.screen else [],
+        apply_kind=app.apply_kind,
+        capture_stub=app.capture_stub,
+        posting_url=app.posting_url,
+        apply_url=_apply_url(app),
+        link_id=app.source_job_id,
     )
 
 
@@ -133,6 +232,23 @@ def _find(*urls: str) -> store.Application | None:
         if found is not None:
             return found
     return None
+
+
+def _board_of(key: str) -> str:
+    """``linkedin``/``indeed`` for a board job key, else ''."""
+    board = key.split(":", 1)[0]
+    return board if board in _BOARDS and key.startswith(f"{board}:jobs:") else ""
+
+
+def _board_url(board: str, job_id: str, host: str) -> str:
+    """The one URL a board job is stored under, whatever page it was seen on."""
+    if board == "linkedin":
+        return f"https://www.linkedin.com/jobs/view/{job_id}/"
+    return f"https://{host}/viewjob?jk={job_id}"
+
+
+def _is_captured(app: store.Application) -> bool:
+    return app.source == "extension" or any(ref.source == "extension" for ref in app.source_refs)
 
 
 def _apply_settings() -> ApplySettings:
@@ -156,6 +272,37 @@ def list_pairings() -> list[Pairing]:
 def revoke_pairing(pairing_id: str) -> None:
     if not extension.revoke(pairing_id):
         raise HTTPException(status_code=404, detail="No such paired browser.")
+
+
+@router.get("/api/extension-captures", response_model=list[CapturedItem])
+def list_captures(stubs_only: bool = False) -> list[CapturedItem]:
+    """Rows the extension captured (not archived), newest first, for the app's own pages.
+
+    ``stubs_only`` lists the "Needs description" cards: each links to its board page,
+    where opening it lets the extension complete it.
+    """
+    rows = [
+        app
+        for app in store.load_all().values()
+        if _is_captured(app) and not app.archived_at and (app.capture_stub or not stubs_only)
+    ]
+    rows.sort(key=lambda app: app.discovered_at, reverse=True)
+    return [
+        CapturedItem(
+            id=_app_id(app),
+            link_id=app.source_job_id,
+            company=app.company,
+            role=app.role,
+            location=app.location,
+            status=app.status,
+            site=_board_of(app.canonical_key) or app.ats,
+            posting_url=app.posting_url,
+            capture_stub=app.capture_stub,
+            apply_kind=app.apply_kind,
+            discovered_at=app.discovered_at,
+        )
+        for app in rows
+    ]
 
 
 # --- the extension's own routes -----------------------------------------------------
@@ -203,18 +350,13 @@ def lookup(url: str = Query(min_length=1, max_length=4000)) -> LookupResponse:
     )
 
 
-@router.post("/api/extension/capture", response_model=CaptureResponse)
-def capture(body: CaptureRequest) -> CaptureResponse:
-    page_url = (body.final_url or body.url).strip()
-    target = identity.resolve_final_url(body.apply_url.strip()) if body.apply_url else ""
-    target = target or page_url
+def _source_job_id(key: str) -> str:
+    return "ext-" + hashlib.sha1(key.encode("utf-8")).hexdigest()[:16]
 
-    existing = _find(target, page_url, body.url)
-    if existing is not None:
-        return CaptureResponse(result="exists", application=_tracked(existing))
 
+def _clean_description(jd_text: str) -> jd_input.JdText:
     try:
-        cleaned = jd_input.from_text(body.jd_text, "extension")
+        return jd_input.from_text(jd_text, "extension")
     except jd_input.JdInputError as exc:
         raise HTTPException(
             status_code=422,
@@ -224,22 +366,146 @@ def capture(body: CaptureRequest) -> CaptureResponse:
             ),
         ) from exc
 
+
+def _settings_or_none() -> ApplySettings | None:
+    try:
+        return _apply_settings()
+    except Exception:  # noqa: BLE001 - a capture must never fail on broken settings
+        return None
+
+
+def _screen(app: store.Application, text: str, settings: ApplySettings | None) -> None:
+    """The no-LLM prefilter every capture runs, exactly as the daily funnel does."""
+    if settings is None:
+        return
+    screen = apply_daily.prefilter_screen(text, app.role, settings)
+    app.eligibility_flags = list(screen.flags)
+    if not screen.passed:
+        app.screen = screen
+        store.set_status(app, "screened_out", note="prefilter: " + "; ".join(screen.reasons))
+
+
+def _attach_apply_url(app: store.Application, target: str, now: str) -> None:
+    """Point a board row at the employer's application page (its key is unchanged).
+
+    The ATS page's own key is added as a source ref, so a later lookup or capture of
+    that page finds this row (`store._locate` matches source ids).
+    """
+    app.final_url = target
+    app.ats = fetch_jd.detect_ats(target)
+    app.apply_kind = "external"
+    store.add_source_ref(
+        app,
+        store.SourceRef(
+            source="extension",
+            source_job_id=identity.canonical_key(target),
+            url=target,
+            first_seen=now,
+        ),
+    )
+
+
+def _describe(
+    app: store.Application,
+    body: CaptureRequest,
+    text: str,
+    settings: ApplySettings | None,
+    *,
+    note: str,
+) -> None:
+    """Give a saved card its description: it becomes an ordinary ``jd_fetched`` row."""
+    app.capture_stub = False
+    app.company = body.company.strip() or app.company
+    app.role = body.role.strip() or app.role
+    app.location = body.location.strip() or app.location
+    app.group_key = identity.group_key(app.company, app.role)
+    app.jd_text_path = apply_daily._save_jd(app.source_job_id, text)
+    store.set_status(app, "jd_fetched", note=note)
+    _screen(app, text, settings)
+
+
+def _merge_candidate(group: str, index: store.Index) -> store.Application | None:
+    """A LinkedIn/Indeed row for the same job that has no employer apply URL yet."""
+    for key in index.by_group.get(group, []):
+        other = index.by_canonical.get(key)
+        if (
+            other is not None
+            and _board_of(other.canonical_key)
+            and not _apply_url(other)
+            and not other.archived_at
+            and other.status not in store.TERMINAL_STATUSES
+        ):
+            return other
+    return None
+
+
+@router.post("/api/extension/capture", response_model=CaptureResponse)
+def capture(body: CaptureRequest) -> CaptureResponse:
+    page_url = (body.final_url or body.url).strip()
+    target = identity.resolve_final_url(body.apply_url.strip()) if body.apply_url else ""
+    target = target or page_url
+    page_key = identity.canonical_key(page_url)
+    board = _board_of(page_key)
+    now = apply_daily._now_iso()
+
+    existing = _find(target, page_url, body.url)
+    if existing is not None and not existing.capture_stub:
+        return CaptureResponse(result="exists", application=_tracked(existing))
+
+    cleaned = _clean_description(body.jd_text)
+    settings = _settings_or_none()
+
+    if existing is not None:  # a saved search card, now opened: complete it
+        def complete(app: store.Application) -> None:
+            if target != page_url and not _apply_url(app):
+                _attach_apply_url(app, target, now)
+            elif board and body.apply_kind != "unknown":
+                app.apply_kind = body.apply_kind
+            _describe(app, body, cleaned.text, settings, note="description captured when the job was opened")
+
+        done = store.update(_app_id(existing), complete)
+        return CaptureResponse(
+            result="completed", application=_tracked(done), warnings=list(cleaned.warnings)
+        )
+
     ats: str = fetch_jd.detect_ats(target)
     if ats in {"other", "unknown"} and body.ats_guess.lower() in _ATS_KINDS:
         ats = body.ats_guess.lower()
     key = identity.canonical_key(target)
-    source_job_id = "ext-" + hashlib.sha1(key.encode("utf-8")).hexdigest()[:16]
+    source_job_id = _source_job_id(key)
     group = identity.group_key(body.company, body.role)
-    now = apply_daily._now_iso()
+    index = store.build_index()
+
+    # An employer's page for a job already tracked from LinkedIn/Indeed: clicking Apply
+    # on the board and capturing the ATS tab links the two instead of tracking it twice.
+    candidate = (
+        _merge_candidate(group, index)
+        if body.company and body.role and not _board_of(key) and ats != "handshake"
+        else None
+    )
+    if candidate is not None:
+        def merge(app: store.Application) -> None:
+            _attach_apply_url(app, target, now)
+            if app.capture_stub:
+                _describe(app, body, cleaned.text, settings, note="description captured from the employer's page")
+
+        merged = store.update(_app_id(candidate), merge)
+        return CaptureResponse(
+            result="merged",
+            application=_tracked(merged),
+            warnings=[f"Linked to {merged.company} · {merged.role}, already tracked from {candidate.ats.title()}."],
+        )
 
     warnings = list(cleaned.warnings)
-    index = store.build_index()
     for other_key in index.by_group.get(group, []) if body.company and body.role else []:
         other = index.by_canonical.get(other_key)
         if other is not None:
             warnings.append(f"You already track {other.company} · {other.role} ({other.status}).")
             break
 
+    apply_kind: store.ApplyKind = "unknown"
+    if board:
+        apply_kind = "external" if target != page_url else body.apply_kind
     app = store.Application(
         source="extension",
         source_job_id=source_job_id,
@@ -252,6 +518,7 @@ def capture(body: CaptureRequest) -> CaptureResponse:
         discovered_at=now,
         canonical_key=key,
         group_key=group,
+        apply_kind=apply_kind,
         source_refs=[
             store.SourceRef(
                 source="extension", source_job_id=source_job_id, url=body.url, first_seen=now
@@ -260,25 +527,104 @@ def capture(body: CaptureRequest) -> CaptureResponse:
     )
     app.jd_text_path = apply_daily._save_jd(source_job_id, cleaned.text)
     store.set_status(app, "jd_fetched", note="captured by the browser extension")
-
-    try:
-        settings = _apply_settings()
-    except Exception:  # noqa: BLE001 - a capture must never fail on broken settings
-        settings = None
-    if settings is not None:
-        screen = apply_daily.prefilter_screen(cleaned.text, app.role, settings)
-        app.eligibility_flags = list(screen.flags)
-        if not screen.passed:
-            app.screen = screen
-            store.set_status(app, "screened_out", note="prefilter: " + "; ".join(screen.reasons))
+    _screen(app, cleaned.text, settings)
     store.upsert(app)
     return CaptureResponse(result="created", application=_tracked(app), warnings=warnings)
+
+
+def _index_find(index: store.Index, key: str) -> store.Application | None:
+    """`store.get` against an index built once for a whole batch."""
+    found = index.by_canonical.get(key)
+    if found is not None:
+        return found
+    for (_source, source_job_id), ckey in index.by_source_ref.items():
+        if source_job_id == key:
+            return index.by_canonical.get(ckey)
+    return None
+
+
+@router.post("/api/extension/lookup-batch", response_model=LookupBatchResponse)
+def lookup_batch(body: LookupBatchRequest) -> LookupBatchResponse:
+    """In-queue status for each visible search-result card (read-only)."""
+    index = store.build_index()
+    results: list[LookupBatchItem] = []
+    for url in body.urls:
+        app = _index_find(index, identity.canonical_key(url[:4000]))
+        if app is None:
+            results.append(LookupBatchItem(url=url, exists=False))
+        else:
+            results.append(
+                LookupBatchItem(
+                    url=url, exists=True, id=_app_id(app), status=app.status, stub=app.capture_stub
+                )
+            )
+    return LookupBatchResponse(results=results)
+
+
+@router.post("/api/extension/capture-stubs", response_model=CaptureStubsResponse)
+def capture_stubs(body: CaptureStubsRequest) -> CaptureStubsResponse:
+    """Save search-result cards the user ticked, without their descriptions.
+
+    Only LinkedIn/Indeed job URLs are accepted; each is stored under the job's own
+    board URL so opening it from any search page later finds the same row.
+    """
+    now = apply_daily._now_iso()
+    results: list[StubResult] = []
+    for card in body.cards:
+        key = identity.canonical_key(card.url)
+        if _board_of(key) != card.site or (card.job_id and not key.endswith(f":{card.job_id.lower()}")):
+            results.append(
+                StubResult(url=card.url, result="invalid", error="Not a LinkedIn or Indeed job link.")
+            )
+            continue
+        existing = store.get(key)
+        if existing is not None:
+            results.append(StubResult(url=card.url, result="exists", application=_tracked(existing)))
+            continue
+        job_id = key.rsplit(":", 1)[1]
+        host = (urlparse(card.url).hostname or "www.indeed.com").lower()
+        posting = _board_url(card.site, job_id, host)
+        source_job_id = _source_job_id(key)
+        app = store.Application(
+            source="extension",
+            source_job_id=source_job_id,
+            company=card.company.strip() or "Unknown company",
+            role=card.role.strip() or "Unknown role",
+            location=card.location.strip(),
+            posting_url=posting,
+            final_url=posting,
+            ats=card.site,
+            discovered_at=now,
+            canonical_key=key,
+            group_key=identity.group_key(card.company, card.role),
+            capture_stub=True,
+            source_refs=[
+                store.SourceRef(
+                    source="extension", source_job_id=source_job_id, url=card.url, first_seen=now
+                )
+            ],
+        )
+        store.set_status(app, "discovered", note="saved from search results; opens to complete")
+        store.upsert(app)
+        results.append(StubResult(url=card.url, result="created", application=_tracked(app)))
+    return CaptureStubsResponse(results=results)
 
 
 def _start(application_id: str, action: Literal["prepare", "fill"]) -> ApplyOperationResponse:
     app = store.get(application_id)
     if app is None:
         raise HTTPException(status_code=404, detail="That page is not tracked yet.")
+    if app.capture_stub:
+        raise HTTPException(
+            status_code=409,
+            detail="This job has no description yet. Open it on the job board to capture it first.",
+        )
+    if action == "fill" and app.apply_kind == "easy_apply":
+        board = "LinkedIn" if app.ats == "linkedin" else "Indeed"
+        raise HTTPException(
+            status_code=422,
+            detail=f"This job uses {board}'s own apply form. Tailor it here, then apply on {board}.",
+        )
     settings = _apply_settings()
     request = ApplyOperationRequest(
         action=action,

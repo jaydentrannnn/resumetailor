@@ -292,6 +292,284 @@ def test_prepare_and_fill_build_the_request_from_settings(client, monkeypatch):
     assert busy.status_code == 409
 
 
+def _cards(*ids: str, site: str = "linkedin") -> list[dict[str, str]]:
+    def url(job: str) -> str:
+        if site == "linkedin":
+            return f"https://www.linkedin.com/jobs/view/{job}/?trk=search"
+        return f"https://www.indeed.com/viewjob?jk={job}"
+
+    return [
+        {"url": url(job), "job_id": job, "company": "Acme", "role": f"Analyst {job}", "site": site}
+        for job in ids
+    ]
+
+
+# --- batch capture: stubs -----------------------------------------------------------
+
+
+def test_capture_stubs_saves_cards_without_descriptions(client):
+    headers = _pair(client)
+    cards = [*_cards("111", "222"), {"url": "https://example.com/job/3", "site": "linkedin"}]
+    body = client.post("/api/extension/capture-stubs", json={"cards": cards}, headers=headers).json()
+    assert [r["result"] for r in body["results"]] == ["created", "created", "invalid"]
+    stub = store.get("linkedin:jobs:111")
+    assert stub is not None and stub.capture_stub and stub.status == "discovered"
+    assert stub.posting_url == "https://www.linkedin.com/jobs/view/111/"  # tracking dropped
+    assert stub.jd_text_path is None
+    assert body["results"][0]["application"]["capture_stub"] is True
+
+    again = client.post("/api/extension/capture-stubs", json={"cards": cards[:1]}, headers=headers)
+    assert again.json()["results"][0]["result"] == "exists"
+    assert len(store.load_all()) == 2
+
+    # One screen of results per request.
+    too_many = client.post(
+        "/api/extension/capture-stubs",
+        json={"cards": _cards(*[str(n) for n in range(1000, 1051)])},
+        headers=headers,
+    )
+    assert too_many.status_code == 422
+    # A card id that disagrees with its URL is not trusted.
+    wrong = client.post(
+        "/api/extension/capture-stubs",
+        json={"cards": [{**_cards("333")[0], "job_id": "999"}]},
+        headers=headers,
+    )
+    assert wrong.json()["results"][0]["result"] == "invalid"
+
+
+def test_indeed_stub_keys_on_the_job_not_the_search_page(client):
+    headers = _pair(client)
+    card = {
+        "url": "https://www.indeed.com/jobs?q=analyst&vjk=AbC123",
+        "company": "Acme",
+        "role": "Analyst",
+        "site": "indeed",
+    }
+    client.post("/api/extension/capture-stubs", json={"cards": [card]}, headers=headers)
+    stub = store.get("indeed:jobs:abc123")
+    assert stub is not None and stub.posting_url == "https://www.indeed.com/viewjob?jk=abc123"
+
+
+def test_lookup_batch_reports_queue_status(client):
+    headers = _pair(client)
+    client.post("/api/extension/capture-stubs", json={"cards": _cards("111")}, headers=headers)
+    client.post(
+        "/api/extension/capture",
+        json={"url": "https://boards.greenhouse.io/acme/jobs/9", "jd_text": _JD},
+        headers=headers,
+    )
+    urls = [
+        "https://www.linkedin.com/jobs/search/?currentJobId=111&keywords=x",
+        "https://boards.greenhouse.io/acme/jobs/9",
+        "https://www.linkedin.com/jobs/view/404/",
+    ]
+    results = client.post(
+        "/api/extension/lookup-batch", json={"urls": urls}, headers=headers
+    ).json()["results"]
+    assert [(r["exists"], r["stub"]) for r in results] == [(True, True), (True, False), (False, False)]
+    assert results[0]["id"] == "linkedin:jobs:111" and results[0]["status"] == "discovered"
+    assert results[1]["status"] == "jd_fetched"
+    too_many = client.post(
+        "/api/extension/lookup-batch", json={"urls": ["https://x.test"] * 51}, headers=headers
+    )
+    assert too_many.status_code == 422
+
+
+def test_opening_a_stub_completes_it(client):
+    headers = _pair(client)
+    client.post("/api/extension/capture-stubs", json={"cards": _cards("111")}, headers=headers)
+    # The user opens the job in the search page's detail pane.
+    body = {
+        "url": "https://www.linkedin.com/jobs/search/?currentJobId=111",
+        "company": "Acme Inc",
+        "role": "Summer Analyst",
+        "location": "New York, NY",
+        "jd_text": _JD,
+        "apply_kind": "easy_apply",
+    }
+    done = client.post("/api/extension/capture", json=body, headers=headers).json()
+    assert done["result"] == "completed"
+    assert done["application"]["id"] == "linkedin:jobs:111"
+    row = store.get("linkedin:jobs:111")
+    assert row is not None and not row.capture_stub
+    assert row.status == "jd_fetched"
+    assert (row.role, row.location, row.apply_kind) == ("Summer Analyst", "New York, NY", "easy_apply")
+    assert Path(row.jd_text_path).read_text(encoding="utf-8") == _JD.strip()
+    assert len(store.load_all()) == 1
+    # Once complete, the same page is simply tracked.
+    again = client.post("/api/extension/capture", json=body, headers=headers).json()
+    assert again["result"] == "exists"
+
+
+def test_completed_stub_runs_the_prefilter(client):
+    headers = _pair(client)
+    client.post("/api/extension/capture-stubs", json={"cards": _cards("111")}, headers=headers)
+    body = {
+        "url": "https://www.linkedin.com/jobs/view/111/",
+        "jd_text": _JD + " An active security clearance is required.",
+    }
+    done = client.post("/api/extension/capture", json=body, headers=headers).json()
+    assert done["result"] == "completed"
+    assert done["application"]["status"] == "screened_out"
+    assert done["application"]["screen_reasons"]
+
+
+def test_stub_completed_with_an_external_apply_link_keeps_its_key(client):
+    headers = _pair(client)
+    client.post("/api/extension/capture-stubs", json={"cards": _cards("111")}, headers=headers)
+    body = {
+        "url": "https://www.linkedin.com/jobs/view/111/",
+        "apply_url": "https://boards.greenhouse.io/acme/jobs/4455",
+        "jd_text": _JD,
+    }
+    done = client.post("/api/extension/capture", json=body, headers=headers).json()
+    app = done["application"]
+    assert (done["result"], app["id"], app["ats"]) == ("completed", "linkedin:jobs:111", "greenhouse")
+    assert app["apply_kind"] == "external"
+    assert app["apply_url"] == "https://boards.greenhouse.io/acme/jobs/4455"
+    # The ATS page now finds the same row.
+    lookup = client.get(
+        "/api/extension/lookup", params={"url": body["apply_url"]}, headers=headers
+    ).json()
+    assert lookup["application"]["id"] == "linkedin:jobs:111"
+
+
+def test_capturing_the_ats_page_merges_into_the_board_row(client):
+    headers = _pair(client)
+    board = {
+        "url": "https://www.linkedin.com/jobs/view/555/",
+        "company": "Acme, Inc.",
+        "role": "Summer Analyst (2027)",
+        "jd_text": _JD,
+        "apply_kind": "external",
+    }
+    created = client.post("/api/extension/capture", json=board, headers=headers).json()
+    assert created["result"] == "created"
+    assert created["application"]["apply_kind"] == "external"
+    ats = {
+        "url": "https://boards.greenhouse.io/acme/jobs/777",
+        "company": "Acme",
+        "role": "Summer Analyst",
+        "jd_text": _JD,
+    }
+    merged = client.post("/api/extension/capture", json=ats, headers=headers).json()
+    assert merged["result"] == "merged"
+    assert merged["application"]["id"] == "linkedin:jobs:555"
+    assert merged["application"]["apply_url"] == ats["url"]
+    assert len(store.load_all()) == 1
+    row = store.get("linkedin:jobs:555")
+    assert row is not None and row.final_url == ats["url"] and row.ats == "greenhouse"
+    assert row.posting_url == "https://www.linkedin.com/jobs/view/555/"
+    # Captured again, the ATS page is the same tracked job, not a new one.
+    again = client.post("/api/extension/capture", json=ats, headers=headers).json()
+    assert (again["result"], again["application"]["id"]) == ("exists", "linkedin:jobs:555")
+    # A second posting at the same company for the same role is not merged again.
+    other = {**ats, "url": "https://boards.greenhouse.io/acme/jobs/778"}
+    assert client.post("/api/extension/capture", json=other, headers=headers).json()["result"] == "created"
+
+
+def test_ats_capture_completes_a_matching_stub(client):
+    headers = _pair(client)
+    cards = [{**_cards("111")[0], "company": "Acme", "role": "Analyst"}]
+    client.post("/api/extension/capture-stubs", json={"cards": cards}, headers=headers)
+    ats = {
+        "url": "https://jobs.lever.co/acme/0f1e2d3c-aaaa-bbbb-cccc-1234567890ab",
+        "company": "Acme",
+        "role": "Analyst",
+        "jd_text": _JD,
+    }
+    merged = client.post("/api/extension/capture", json=ats, headers=headers).json()
+    assert merged["result"] == "merged"
+    row = store.get("linkedin:jobs:111")
+    assert row is not None and not row.capture_stub and row.status == "jd_fetched"
+    assert row.ats == "lever"
+
+
+def test_board_capture_records_how_to_apply(client):
+    headers = _pair(client)
+    body = {"url": "https://www.indeed.com/viewjob?jk=abc", "jd_text": _JD, "apply_kind": "easy_apply"}
+    row = client.post("/api/extension/capture", json=body, headers=headers).json()["application"]
+    assert row["apply_kind"] == "easy_apply"
+    # apply_kind only describes LinkedIn/Indeed pages.
+    ats = {"url": "https://boards.greenhouse.io/acme/jobs/1", "jd_text": _JD, "apply_kind": "easy_apply"}
+    other = client.post("/api/extension/capture", json=ats, headers=headers).json()["application"]
+    assert other["apply_kind"] == "unknown"
+
+
+def test_easy_apply_blocks_fill_and_stubs_block_prepare(client, monkeypatch):
+    headers = _pair(client)
+    body = {"url": "https://www.indeed.com/viewjob?jk=abc", "jd_text": _JD, "apply_kind": "easy_apply"}
+    row = client.post("/api/extension/capture", json=body, headers=headers).json()["application"]
+    monkeypatch.setattr(
+        apply_operations,
+        "start",
+        lambda request: apply_operations.ApplyOperation(
+            operation_id="op1", action=request.action, application_ids=request.application_ids
+        ),
+    )
+    fill = client.post(f"/api/extension/applications/{row['id']}/fill", headers=headers)
+    assert fill.status_code == 422 and "Indeed" in fill.json()["detail"]
+    assert client.post(f"/api/extension/applications/{row['id']}/prepare", headers=headers).status_code == 202
+
+    client.post("/api/extension/capture-stubs", json={"cards": _cards("111")}, headers=headers)
+    stub = client.post("/api/extension/applications/linkedin:jobs:111/prepare", headers=headers)
+    assert stub.status_code == 409 and "no description" in stub.json()["detail"]
+
+
+def test_app_lists_captures_and_stubs(client):
+    headers = _pair(client)
+    client.post("/api/extension/capture-stubs", json={"cards": _cards("111")}, headers=headers)
+    client.post(
+        "/api/extension/capture",
+        json={"url": "https://boards.greenhouse.io/acme/jobs/9", "jd_text": _JD},
+        headers=headers,
+    )
+    other = store.Application(source="simplify", source_job_id="s1", company="B", role="C")
+    store.upsert(other)
+    rows = client.get("/api/extension-captures").json()
+    assert {r["id"] for r in rows} == {"linkedin:jobs:111", "greenhouse:acme:9"}
+    stubs = client.get("/api/extension-captures", params={"stubs_only": True}).json()
+    assert [(r["id"], r["site"], r["posting_url"]) for r in stubs] == [
+        ("linkedin:jobs:111", "linkedin", "https://www.linkedin.com/jobs/view/111/")
+    ]
+    # Links use the colon-free source id: a canonical key in a URL path breaks the SPA's
+    # static-file fallback on Windows.
+    assert stubs[0]["link_id"].startswith("ext-") and ":" not in stubs[0]["link_id"]
+    assert client.get(f"/api/applications/{stubs[0]['link_id']}").status_code == 200
+    # The regular application API carries the new fields too.
+    listed = client.get("/api/applications").json()["applications"]
+    assert {a["source_job_id"]: a["capture_stub"] for a in listed}[store.get("linkedin:jobs:111").source_job_id]
+
+
+def test_daily_funnel_and_prepare_skip_stubs(client, monkeypatch):
+    from resume_tailor.web.schemas import ApplySettings as Settings
+    from tests.fixtures import synthetic_resume
+
+    headers = _pair(client)
+    client.post("/api/extension/capture-stubs", json={"cards": _cards("111")}, headers=headers)
+    plain = store.Application(
+        source="simplify", source_job_id="s1", company="B", role="C",
+        posting_url="https://boards.greenhouse.io/b/jobs/1", canonical_key="greenhouse:b:1",
+    )
+    store.upsert(plain)
+    stub = store.get("linkedin:jobs:111")
+    assert stub is not None
+    assert daily.retry_kind(stub) is None
+    with pytest.raises(RuntimeError, match="no description"):
+        daily.prepare_application("linkedin:jobs:111", settings=Settings())
+
+    processed: list[str] = []
+    monkeypatch.setattr(daily, "_process_one", lambda row, **_kw: processed.append(row.job_id))
+    monkeypatch.setattr(daily.data, "load", synthetic_resume)
+    settings = Settings(enabled=True)
+    settings.sources = []  # no discovery: only the rows already pending
+    summary = daily.run_daily(settings=settings, log=lambda _m: None)
+    assert not summary.already_running
+    assert processed == ["s1"]
+    assert store.get("linkedin:jobs:111").status == "discovered"
+
+
 def test_status_counts_rows_that_need_you(client):
     headers = _pair(client)
     for n, status in enumerate(["awaiting_otp", "ready", "fill_failed"]):

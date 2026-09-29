@@ -175,7 +175,7 @@ cd frontend
 npm run lint; npx tsc -b; npm run test; npm run format:check
 npx playwright install chromium                           # once
 $env:E2E_PYTHON = "..\.venv\Scripts\python.exe"; npm run e2e   # browser end-to-end on a fake model
-cd ..\extension; npm test; cd ..
+cd ..\extension; npm ci; npm test; cd ..                 # npm ci once (jsdom for the page tests)
 pytest -m owner                                           # the tests that use your real master_resume.json
 ```
 
@@ -251,10 +251,28 @@ Tick these off in the running app. Each line says what to do and what should hap
 
 **Browser extension**
 - [ ] `edge://extensions` → Developer mode → **Load unpacked** → the repo's `extension\`
-      folder.
+      folder (or the unzipped `resumetailor-extension-<version>.zip` from a release).
 - [ ] Settings → Browser → **Pair**, then type the 6-digit code in the extension popup.
-- [ ] On a job posting: **Send to ResumeTailor** captures it, and a second send says
-      "Already tracked". **Tailor now** starts tailoring.
+- [ ] On a job posting: **Send to ResumeTailor** captures it, and the popup then shows it
+      as tracked with **Open in app**. **Tailor now** starts tailoring.
+- [ ] Stop the app: the popup says "ResumeTailor is not running" with how to start it.
+- [ ] **Alt+Shift+S** on a job page captures it and shows a notification; so does the
+      right-click **Send this page to ResumeTailor**.
+- [ ] Extension options: set a wrong port → **Test** says it is not answering; clear it.
+      Switch "After a capture" to **Send it and start tailoring** and capture again.
+- [ ] Options → **Allow on LinkedIn and Indeed**. Then, logged in to LinkedIn:
+  - [ ] Search for jobs; the popup lists the visible cards. Save three; they appear
+        under **Needs description** in the app, each with **Open on LinkedIn**.
+  - [ ] Open one of them: within a few seconds the chip reads "✓ Description saved" and
+        the app shows it as jd fetched (or screened out, with reasons).
+  - [ ] Click the job's **Apply** (company site), then capture the employer's tab: the
+        popup says it was linked to the job you already track (no second row).
+  - [ ] An Easy Apply job: popup and app say Fill is unavailable; Tailor works.
+  - [ ] The chip shows "✓ In queue · <status>" on tracked jobs and **Save to
+        ResumeTailor** on others; ✕ hides it; the options toggle turns it off.
+- [ ] Repeat on an Indeed search (the `?vjk=` pane) and an Indeed `viewjob` page.
+- [ ] Options → Advanced → **Fill relay**: only now does the browser ask for the
+      debugger permission; turning it off removes it.
 - [ ] Revoke the pairing in Settings → Browser: the popup asks you to pair again.
 - [ ] Optional relay mode, dev checkout only because it needs a separate Python process:
       follow `extension/README.md` → "Fill the selected tab through the relay".
@@ -523,7 +541,9 @@ yet. On your first install, check:
 - LibreOffice detection and font installation (DK5);
 - importing an old data folder from inside the app (DK6; section 5 is the manual
   version);
-- publishing the extension to the Chrome and Edge stores (DK8);
+- publishing the extension to the Chrome and Edge stores (DK8): each release attaches
+  the store-ready zip, and `extension/store/` has the listing, privacy policy, permission
+  justifications and submission steps; the submission itself is yours;
 - an Intel Mac build;
 - testing on clean Windows and macOS machines.
 

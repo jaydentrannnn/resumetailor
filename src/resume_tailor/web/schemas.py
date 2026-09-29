@@ -113,43 +113,19 @@ class SourceConfig(BaseModel):
         return self
 
 
+#: Catalog ids of the built-in sources a new profile starts with.
+DEFAULT_SOURCE_IDS = ("simplify-internships", "simplify-newgrad", "speedyapply")
+
+
 def _default_apply_sources() -> list[SourceConfig]:
-    """Built-in sources: Simplify internships, Simplify new-grad, and speedyapply."""
-    return [
-        SourceConfig(
-            id="simplify-internships",
-            kind="simplify_html",
-            url=(
-                "https://raw.githubusercontent.com/SimplifyJobs/"
-                "Summer2027-Internships/dev/README.md"
-            ),
-            categories=[
-                "Software Engineering Internship Roles",
-                "Data Science, AI & Machine Learning Internship Roles",
-            ],
-        ),
-        SourceConfig(
-            id="simplify-newgrad",
-            kind="simplify_html",
-            url=("https://raw.githubusercontent.com/SimplifyJobs/New-Grad-Positions/dev/README.md"),
-            categories=[
-                "Software Engineering New Grad Roles",
-                "Data Science, AI & Machine Learning New Grad Roles",
-            ],
-        ),
-        SourceConfig(
-            id="speedyapply",
-            kind="pipe_table",
-            url=(
-                "https://raw.githubusercontent.com/speedyapply/2027-SWE-College-Jobs/main/README.md"
-            ),
-            categories=[
-                "2027 USA SWE Internships",
-                "USA Positions",
-            ],
-            enabled=True,
-        ),
-    ]
+    """Built-in sources: Simplify internships, Simplify new-grad, and speedyapply.
+
+    Built from the bundled source catalog (never the network), so each default carries
+    its ``catalog_id``/``catalog_version`` and can be offered catalog updates.
+    """
+    from ..apply import source_catalog
+
+    return [source_catalog.bundled_template(entry_id) for entry_id in DEFAULT_SOURCE_IDS]
 
 
 class ApplySettings(BaseModel):
@@ -158,7 +134,8 @@ class ApplySettings(BaseModel):
     enabled: bool = False
     schedule_time: str = "02:00"
     #: Legacy single-source fields — kept so existing settings.json still loads.
-    #: When ``sources`` is empty the validator synthesizes one entry from these.
+    #: They are no longer read: a missing ``sources`` key gets the built-in defaults, and
+    #: an explicitly empty list stays empty (the user removed every source).
     readme_url: str = (
         "https://raw.githubusercontent.com/SimplifyJobs/Summer2027-Internships/dev/README.md"
     )
@@ -214,21 +191,6 @@ class ApplySettings(BaseModel):
         if self.model_provider == "ollama-cloud":
             return f"ollama:{self.model_name}@{config.OLLAMA_CLOUD_BASE_URL}"
         return f"{self.model_provider}:{self.model_name}"
-
-    @model_validator(mode="after")
-    def _ensure_sources(self) -> ApplySettings:
-        """Synthesize a simplify_html source from legacy fields when ``sources`` is empty."""
-        if self.sources:
-            return self
-        self.sources = [
-            SourceConfig(
-                id="simplify-internships",
-                kind="simplify_html",
-                url=self.readme_url,
-                categories=list(self.categories),
-            )
-        ]
-        return self
 
 
 class JobSettings(BaseModel):
@@ -1218,6 +1180,10 @@ class ApplicationOut(BaseModel):
     screen_label: str | None = None
     #: What a row in the "Needs your review" table is waiting on (`store.review_summary`).
     review_summary: str | None = None
+    #: LinkedIn/Indeed apply path recorded by the browser extension (`store.ApplyKind`).
+    apply_kind: Literal["easy_apply", "external", "unknown"] = "unknown"
+    #: A search-result card saved without its description (`store.Application.capture_stub`).
+    capture_stub: bool = False
 
 
 class ApplicationsListResponse(BaseModel):

@@ -6,6 +6,11 @@
   into a checked board before it joins a watchlist. A wrong name answers 404 here,
   when the student can fix it, rather than failing silently every night.
 - ``GET /api/apply/watchlists``: the suggested boards per field.
+- ``GET /api/apply/catalog``: the curated source catalog (remote, cached, or bundled).
+- ``POST /api/apply/sources/inspect``: fetch a README once and report its detected
+  format, categories and row count.
+- ``POST /api/apply/sources/test``: run one source once through the funnel's filters
+  (nothing saved, no LLM) so the student sees what it would bring in.
 """
 
 from __future__ import annotations
@@ -13,13 +18,16 @@ from __future__ import annotations
 from collections import Counter
 from html.parser import HTMLParser
 from ipaddress import ip_address
+from typing import Literal
 from urllib.parse import urljoin, urlsplit
 
 import httpx
 from fastapi import APIRouter, HTTPException, Query
-from pydantic import BaseModel
+from pydantic import BaseModel, Field
 
-from resume_tailor.apply import boards, sources
+from resume_tailor import workspace
+from resume_tailor.apply import boards, source_catalog, sources
+from resume_tailor.web.schemas import JobSettings, SourceConfig
 
 router = APIRouter()
 _PAGE_LIMIT = 2 * 1024 * 1024
@@ -67,20 +75,26 @@ def _fetch_career_page(url: str) -> str:
         raise ValueError(f"Could not read the careers page: {exc}") from exc
 
 
-def _embedded_board(url: str) -> tuple[boards.BoardAts, str]:
+def _require_public_url(url: str, *, what: str = "careers page") -> str:
+    """``url`` with a scheme, or 400 when it is not a public http(s) address."""
     if "://" not in url:
         url = "https://" + url
     parts = urlsplit(url)
     if parts.scheme not in {"http", "https"} or not parts.hostname:
-        raise HTTPException(status_code=400, detail="Enter a careers page web address.")
+        raise HTTPException(status_code=400, detail=f"Enter a {what} web address.")
     host = parts.hostname.lower()
     if host == "localhost" or host.endswith(".localhost") or host.endswith(".local"):
-        raise HTTPException(status_code=400, detail="Enter a public careers page web address.")
+        raise HTTPException(status_code=400, detail=f"Enter a public {what} web address.")
     try:
         if not ip_address(host).is_global:
-            raise HTTPException(status_code=400, detail="Enter a public careers page web address.")
+            raise HTTPException(status_code=400, detail=f"Enter a public {what} web address.")
     except ValueError:
         pass
+    return url
+
+
+def _embedded_board(url: str) -> tuple[boards.BoardAts, str]:
+    url = _require_public_url(url)
     try:
         html = _fetch_career_page(url)
     except ValueError as exc:
@@ -174,4 +188,96 @@ def list_watchlists() -> WatchlistsResponse:
             name: [WatchlistBoard(**board) for board in entries]
             for name, entries in boards.watchlists().items()
         }
+    )
+
+
+# --- source catalog, inspect, test (Sources tab) ------------------------------------
+
+#: Rows shown in a Test result.
+_TEST_SAMPLE = 5
+
+
+class SourceInspectRequest(BaseModel):
+    url: str = Field(min_length=8, max_length=2000)
+
+
+class SourceInspection(BaseModel):
+    kind: Literal["simplify_html", "pipe_table", "company_link_table"] | None
+    sections: list[str]
+    row_count: int
+
+
+class SourceTestRequest(BaseModel):
+    source: SourceConfig
+
+
+class SourceTestRow(BaseModel):
+    company: str
+    role: str
+    location: str
+    age: str
+    posted_at: str
+    application_link: str | None
+
+
+class SourceTestResult(BaseModel):
+    rows_total: int
+    rows_kept: int
+    sample: list[SourceTestRow]
+    errors: list[str]
+
+
+@router.get("/api/apply/catalog", response_model=source_catalog.CatalogResponse)
+def get_catalog() -> source_catalog.CatalogResponse:
+    return source_catalog.load_catalog()
+
+
+@router.post("/api/apply/sources/inspect", response_model=SourceInspection)
+def inspect_source(body: SourceInspectRequest) -> SourceInspection:
+    url = _require_public_url(body.url.strip(), what="README")
+    try:
+        readme = sources.fetch_readme(url)
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=502, detail=f"Could not read the list: {exc}") from exc
+    kind = sources.detect_format(readme)
+    if kind is None:
+        return SourceInspection(kind=None, sections=[], row_count=0)
+    return SourceInspection(
+        kind=kind,
+        sections=sources.source_sections(kind, readme),
+        row_count=len(sources.parse_source_text(kind, readme, [])),
+    )
+
+
+@router.post("/api/apply/sources/test", response_model=SourceTestResult)
+def test_source(body: SourceTestRequest) -> SourceTestResult:
+    src = body.source
+    if src.kind in sources.README_KINDS:
+        _require_public_url(src.url.strip(), what="README")
+    try:
+        rows, errors = sources.fetch_source_rows(src)
+    except Exception as exc:  # noqa: BLE001 - a failed source is a result, not a 500
+        return SourceTestResult(rows_total=0, rows_kept=0, sample=[], errors=[str(exc)])
+    settings = JobSettings.model_validate(workspace.load_settings()["defaults"]).apply
+    filtered = sources.filter_rows(
+        rows,
+        max_age_days=(
+            max(src.max_age_days, settings.max_age_days)
+            if src.max_age_days is not None
+            else settings.max_age_days
+        ),
+        exclude_advanced_degree=settings.exclude_advanced_degree,
+        exclude_citizenship=settings.exclude_citizenship_required,
+        exclude_no_sponsorship=settings.exclude_no_sponsorship,
+        known_ids=set(),
+        eligibility=settings.eligibility,
+    )
+    return SourceTestResult(
+        rows_total=len(rows),
+        rows_kept=len(filtered.new_rows),
+        sample=[
+            SourceTestRow(**row.model_dump(include=set(SourceTestRow.model_fields)))
+            for row in filtered.new_rows[:_TEST_SAMPLE]
+        ],
+        errors=errors,
     )

@@ -365,6 +365,13 @@ def prepare_application(
         raise RuntimeError("cannot prepare an archived application")
     if app.status in store.TERMINAL_STATUSES:
         raise RuntimeError(f"cannot prepare terminal application {app.status!r}")
+    if app.capture_stub:
+        # LinkedIn/Indeed are never fetched server-side; the description arrives when
+        # the user opens the job with the browser extension installed.
+        raise RuntimeError(
+            "This job has no description yet. Open it on the job board with the "
+            "ResumeTailor extension installed to capture it."
+        )
     from resume_tailor.apply import preparation
 
     existing_preparation = preparation.check(app, require_cover=settings.cover_letter)
@@ -507,7 +514,7 @@ def _process_one(
             if existing.archived_at:
                 _bump(summary, "already_known")
                 return
-            if existing.status == "discovered" and not fetch_only:
+            if existing.status == "discovered" and not fetch_only and not existing.capture_stub:
                 app = existing
             else:
                 _bump(summary, "already_known")
@@ -839,28 +846,10 @@ def run_daily(
                 or (f"{src.provider}: {src.query}" if src.kind == "job_search" else ""),
             )
             try:
-                if src.kind == "ats_board":
-                    rows, board_errors = sources.board_rows(src)
-                    for message in board_errors:
-                        summary.errors.append(f"{src.id}: {message}")
-                        _append_log(log_file, f"[source {src.id}] {message}", log)
-                elif src.kind == "job_search":
-                    from resume_tailor.apply import job_apis
-
-                    rows, search_errors = job_apis.job_search_rows(src)
-                    for message in search_errors:
-                        summary.errors.append(f"{src.id}: {message}")
-                        _append_log(log_file, f"[source {src.id}] {message}", log)
-                else:
-                    readme = sources.fetch_readme(src.url)
-                    if src.kind == "simplify_html":
-                        rows = sources.parse_readme(readme, src.categories)
-                    elif src.kind == "pipe_table":
-                        rows = sources.parse_pipe_table_readme(readme, src.categories)
-                    else:
-                        raise ValueError(f"unknown source kind {src.kind!r}")
-                for row in rows:
-                    row.source_id = src.id
+                rows, source_errors = sources.fetch_source_rows(src)
+                for message in source_errors:
+                    summary.errors.append(f"{src.id}: {message}")
+                    _append_log(log_file, f"[source {src.id}] {message}", log)
                 filtered = sources.filter_rows(
                     rows,
                     # A source's own limit only widens the funnel-wide one, so a
@@ -914,7 +903,12 @@ def run_daily(
         if not fetch_only:
             pending_discovered: list[sources.SourceRow] = []
             for app in store.load_all().values():
-                if app.status == "discovered" and app.source_job_id and not app.archived_at:
+                if (
+                    app.status == "discovered"
+                    and app.source_job_id
+                    and not app.archived_at
+                    and not app.capture_stub  # the extension completes it, never a fetch
+                ):
                     pending_discovered.append(
                         sources.SourceRow(
                             company=app.company,
@@ -1142,6 +1136,8 @@ def retry_kind(app: store.Application) -> RetryKind | None:
         return "prefilter" if app.jd_text_path else None
     if app.status == "tailor_failed":
         return "tailor"
+    if app.capture_stub:
+        return None  # only the extension can fetch it: open the job on the board
     if app.status in {"discovered", "needs_browser", "jd_fetched"}:
         return "fetch"
     return None

@@ -24,6 +24,8 @@ JOB_PROVIDERS: tuple[JobProvider, ...] = ("adzuna", "usajobs")
 JOB_SEARCH_DELAY_SECONDS = 1.0
 #: Stop after this many pages for any single source.
 MAX_PAGES = 5
+#: A job_search source's query is split on commas into at most this many phrases.
+MAX_PHRASES = 5
 
 _sleep: Callable[[float], None] = time.sleep
 
@@ -110,6 +112,7 @@ def _format_usajobs_salary(desc: dict[str, Any]) -> str:
 def _search_adzuna(
     source: Any,
     *,
+    query: str,
     get: Callable[..., Any],
     now: datetime,
 ) -> tuple[list[SourceRow], list[str]]:
@@ -143,8 +146,8 @@ def _search_adzuna(
             "results_per_page": 50,
             "content-type": "application/json",
         }
-        if source.query:
-            params["what"] = source.query
+        if query:
+            params["what"] = query
         if source.location:
             params["where"] = source.location
         if source.max_age_days is not None:
@@ -199,7 +202,7 @@ def _search_adzuna(
 
             rows.append(
                 SourceRow(
-                    company=company or source.query,
+                    company=company or query,
                     role=title,
                     location=location,
                     age=f"{age}d" if age is not None else "",
@@ -225,6 +228,7 @@ def _search_adzuna(
 def _search_usajobs(
     source: Any,
     *,
+    query: str,
     get: Callable[..., Any],
     now: datetime,
 ) -> tuple[list[SourceRow], list[str]]:
@@ -261,8 +265,8 @@ def _search_usajobs(
             "ResultsPerPage": 100,
             "Page": page,
         }
-        if source.query:
-            params["Keyword"] = source.query
+        if query:
+            params["Keyword"] = query
         if source.location:
             params["LocationName"] = source.location
         if source.max_age_days is not None:
@@ -335,7 +339,7 @@ def _search_usajobs(
 
             rows.append(
                 SourceRow(
-                    company=company or source.query,
+                    company=company or query,
                     role=title,
                     location=location,
                     age=f"{age}d" if age is not None else "",
@@ -362,6 +366,12 @@ def _search_usajobs(
     return rows, errors
 
 
+def split_phrases(query: str) -> list[str]:
+    """The distinct comma-separated phrases in ``query``, at most `MAX_PHRASES`."""
+    phrases = [p.strip() for p in (query or "").split(",")]
+    return list(dict.fromkeys(p for p in phrases if p))[:MAX_PHRASES]
+
+
 def job_search_rows(
     source: Any,
     *,
@@ -369,6 +379,10 @@ def job_search_rows(
     now: datetime | None = None,
 ) -> tuple[list[SourceRow], list[str]]:
     """Fetch postings for a kind='job_search' source, returning (rows, errors).
+
+    ``source.query`` holds one or more comma-separated phrases (at most
+    `MAX_PHRASES`); each is searched separately, the results are merged and
+    deduplicated by ``job_id``, and each error names the phrase it came from.
 
     Raises:
         MissingCredentialsError: provider API keys are not set.
@@ -379,7 +393,24 @@ def job_search_rows(
 
     provider = source.provider
     if provider == "adzuna":
-        return _search_adzuna(source, get=getter, now=current_time)
-    if provider == "usajobs":
-        return _search_usajobs(source, get=getter, now=current_time)
-    raise ValueError(f"unsupported job search provider {provider!r}")
+        search = _search_adzuna
+    elif provider == "usajobs":
+        search = _search_usajobs
+    else:
+        raise ValueError(f"unsupported job search provider {provider!r}")
+
+    rows: list[SourceRow] = []
+    errors: list[str] = []
+    seen: set[str] = set()
+    for position, phrase in enumerate(split_phrases(source.query)):
+        if position:
+            _sleep(JOB_SEARCH_DELAY_SECONDS)
+        phrase_rows, phrase_errors = search(source, query=phrase, get=getter, now=current_time)
+        errors.extend(f"{phrase}: {message}" for message in phrase_errors)
+        for row in phrase_rows:
+            if row.job_id in seen:
+                continue
+            if row.job_id:
+                seen.add(row.job_id)
+            rows.append(row)
+    return rows, errors

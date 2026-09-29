@@ -19,7 +19,7 @@ where = ["src"]
 
 [tool.setuptools.package-data]
 "resume_tailor.library_seeds" = ["*.json"]
-"resume_tailor.apply" = ["*.js", "*.json", "watchlists/*.json"]
+"resume_tailor.apply" = ["*.js", "*.json", "watchlists/*.json", "catalog/*.json"]
 
 [tool.pytest.ini_options]
 testpaths = ["tests"]

@@ -1,4 +1,8 @@
+// Read the job on the current page. Injected after lib/sites.js and lib/applyLink.js
+// (see lib/capture.js EXTRACT_FILES); its completion value is the capture payload.
 (() => {
+  const sites = globalThis.RTSites;
+  const applyLinks = globalThis.RTApplyLink;
   const page = new URL(location.href);
   const host = page.hostname.toLowerCase();
   const visible = (element) => {
@@ -6,7 +10,7 @@
     const style = getComputedStyle(element);
     return style.display !== "none" && style.visibility !== "hidden";
   };
-  const text = (element) => visible(element) ? (element.innerText || element.textContent || "").replace(/\u00a0/g, " ").trim() : "";
+  const text = (element) => visible(element) ? (element.innerText || element.textContent || "").replace(/ /g, " ").trim() : "";
   const firstText = (...selectors) => {
     for (const selector of selectors) {
       for (const element of document.querySelectorAll(selector)) {
@@ -18,34 +22,37 @@
   };
   const meta = (name) => document.querySelector(`meta[property='${name}'],meta[name='${name}']`)?.content?.trim() || "";
   const hostname = (part) => host === part || host.endsWith(`.${part}`);
+  const board = sites?.siteOf(location.href) || "";
   let ats = "unknown";
   let description = "";
   let role = "";
   let company = "";
   let jobLocation = "";
-  if (hostname("linkedin.com")) {
-    ats = "linkedin";
-    description = firstText(".jobs-description", ".jobs-description-content__text", "#job-details");
-    role = firstText(".job-details-jobs-unified-top-card__job-title", ".jobs-unified-top-card__job-title", "h1");
-    company = firstText(".job-details-jobs-unified-top-card__company-name", ".jobs-unified-top-card__company-name");
-    jobLocation = firstText(".job-details-jobs-unified-top-card__tertiary-description-container", ".jobs-unified-top-card__bullet");
+  let applyKind = "unknown";
+  if (board) {
+    // LinkedIn/Indeed: only the open job's detail pane, never the result list beside it.
+    ats = board;
+    const detail = sites.readDetail(document, board);
+    if (detail) {
+      ({ description, role, company } = detail);
+      jobLocation = detail.location;
+      applyKind = detail.apply_kind;
+    }
   } else if (hostname("joinhandshake.com")) {
     ats = "handshake";
     description = firstText("[data-hook='job-description']", "[data-testid='job-description']", ".job-description");
     role = firstText("h1");
     company = firstText("[data-hook='job-employer-name']", "[data-testid='employer-name']");
     jobLocation = firstText("[data-hook='job-location']", "[data-testid='job-location']");
-  } else if (hostname("indeed.com")) {
-    ats = "indeed";
-    description = firstText("#jobDescriptionText", "[data-testid='jobDescription']");
-    role = firstText("[data-testid='jobsearch-JobInfoHeader-title']", "h1");
-    company = firstText("[data-testid='inlineHeader-companyName']", "[data-company-name]");
-    jobLocation = firstText("[data-testid='job-location']", "[data-testid='jobsearch-JobInfoHeader-companyLocation']");
   } else if (host.includes("greenhouse.io")) {
     ats = "greenhouse";
     description = firstText("#content", ".job-post-content", "[data-testid='job-description']");
     role = firstText("h1");
-    company = firstText(".company-name", ".employer-name");
+    // job-boards.greenhouse.io/<board>/jobs/<id>: the board slug names the company
+    // when the page does not.
+    const slug = page.pathname.match(/^\/([^/]+)\/jobs\//)?.[1] || "";
+    company = firstText(".company-name", ".employer-name") ||
+      slug.replace(/[-_]+/g, " ").replace(/\b\w/g, (letter) => letter.toUpperCase());
     jobLocation = firstText(".location", "[data-testid='location']");
   } else if (host.includes("lever.co")) {
     ats = "lever";
@@ -75,7 +82,7 @@
       // A cross-origin frame cannot be read with activeTab. Selection capture remains available.
     }
   }
-  if (!description) {
+  if (!description && !board) {
     const candidates = [...document.querySelectorAll("main,article,section,[role='main']")]
       .filter(visible)
       .map((element) => {
@@ -90,24 +97,13 @@
   if (/^(sign in|log in|create an account|join now)/i.test(description) && description.length < 400) {
     description = "";
   }
-  role ||= firstText("h1") || meta("og:title");
-  company ||= meta("og:site_name");
-  jobLocation ||= firstText("[data-testid='location']", ".location");
-  const applyLink = [...document.querySelectorAll("a[href]")]
-    .filter(visible)
-    .find((anchor) => /\bapply\b/i.test(text(anchor)) && !/privacy|policy/i.test(text(anchor)));
-  let applyUrl = "";
-  if (applyLink) {
-    try {
-      const candidate = new URL(applyLink.getAttribute("href"), location.href);
-      const nested = hostname("linkedin.com") && candidate.pathname.includes("/redir/redirect")
-        ? candidate.searchParams.get("url") : null;
-      const resolved = nested ? new URL(nested) : candidate;
-      if (["http:", "https:"].includes(resolved.protocol)) applyUrl = resolved.href;
-    } catch {
-      // Invalid links are ignored.
-    }
+  if (!board) {
+    role ||= firstText("h1") || meta("og:title");
+    company ||= meta("og:site_name");
+    jobLocation ||= firstText("[data-testid='location']", ".location");
   }
+  const applyUrl = applyLinks ? applyLinks.findApplyLink(document, { site: board, baseUrl: location.href }) : "";
+  if (applyUrl && board) applyKind = "external";
   return {
     url: location.href,
     final_url: document.URL,
@@ -117,5 +113,6 @@
     location: jobLocation.slice(0, 300),
     jd_text: description,
     ats_guess: ats,
+    apply_kind: applyKind,
   };
 })()

@@ -195,6 +195,24 @@ def test_resolve_final_url_passthrough_for_direct_ats():
             "linkedin",
         ),
         ("https://www.indeed.com/viewjob?jk=AB12cd34ef56&from=serp", "indeed:jobs:ab12cd34ef56", "indeed"),
+        # Search panes name the open job by query parameter: Indeed `vjk`, LinkedIn
+        # `currentJobId` (search and collections pages alike).
+        (
+            "https://www.indeed.com/jobs?q=analyst&l=Remote&vjk=AB12cd34ef56",
+            "indeed:jobs:ab12cd34ef56",
+            "indeed",
+        ),
+        ("https://ca.indeed.com/jobs?q=analyst&vjk=ff00aa", "indeed:jobs:ff00aa", "indeed"),
+        (
+            "https://www.linkedin.com/jobs/search/?currentJobId=4012345678&keywords=analyst",
+            "linkedin:jobs:4012345678",
+            "linkedin",
+        ),
+        (
+            "https://www.linkedin.com/jobs/collections/similar-jobs/?currentJobId=4012345678&referenceJobId=1",
+            "linkedin:jobs:4012345678",
+            "linkedin",
+        ),
         ("https://app.joinhandshake.com/stu/jobs/9876543", "handshake:jobs:9876543", "handshake"),
         ("https://uci.joinhandshake.com/jobs/9876543", "handshake:jobs:9876543", "handshake"),
     ],
@@ -209,6 +227,11 @@ def test_platform_pages_without_a_job_id_fall_back_to_the_path_digest():
         "other:jpmc.taleo.net:"
     )
     assert identity.canonical_key("https://www.linkedin.com/jobs/").startswith("other:")
+    # A search page with no job open in its pane is not a posting either.
+    assert identity.canonical_key("https://www.indeed.com/jobs?q=analyst").startswith("other:")
+    assert identity.canonical_key(
+        "https://www.linkedin.com/jobs/search/?keywords=analyst"
+    ).startswith("other:")
     # An Oracle Cloud page that is not the candidate site is not an Oracle posting.
     assert fetch_jd.detect_ats("https://docs.oraclecloud.com/en/cloud/") != "oracle"
 

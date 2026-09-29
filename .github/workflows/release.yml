@@ -151,6 +151,40 @@ jobs:
           draft: true
           files: dist-installers/*
 
+  extension:
+    # The browser extension zip, one per release (it is the same on every platform).
+    # Its manifest version is stamped from the tag so the extension and app match.
+    name: Browser extension zip
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: actions/setup-node@v4
+        with:
+          node-version: "22"
+      - uses: actions/setup-python@v5
+        with:
+          python-version: "3.13"
+      - name: Extension tests
+        working-directory: extension
+        run: npm ci && npm test
+      - name: Build the zip
+        shell: bash
+        run: |
+          version=""
+          if [[ "$GITHUB_REF" == refs/tags/v* ]]; then version="${GITHUB_REF_NAME#v}"; fi
+          python extension/build_zip.py ${version:+--version "$version"} --out dist-extension
+          ls -l dist-extension
+      - uses: actions/upload-artifact@v4
+        with:
+          name: resumetailor-extension
+          path: dist-extension/*.zip
+      - name: Attach to the draft release
+        if: startsWith(github.ref, 'refs/tags/v')
+        uses: softprops/action-gh-release@v2
+        with:
+          draft: true
+          files: dist-extension/*.zip
+
   manifest:
     # latest.json for in-app updates, from every platform's signed bundles.
     name: Updater manifest

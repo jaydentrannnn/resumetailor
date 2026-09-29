@@ -1,0 +1,488 @@
+{
+  "schema_version": 1,
+  "entries": [
+    {
+      "id": "simplify-internships",
+      "name": "Simplify internships: software & data",
+      "description": "SimplifyJobs' Summer 2027 internship list, software engineering and data science / AI / ML sections. Updated several times a day.",
+      "fields": ["swe", "data"],
+      "version": "2026.09.29",
+      "template": {
+        "id": "simplify-internships",
+        "kind": "simplify_html",
+        "url": "https://raw.githubusercontent.com/SimplifyJobs/Summer2027-Internships/dev/README.md",
+        "categories": [
+          "Software Engineering Internship Roles",
+          "Data Science, AI & Machine Learning Internship Roles"
+        ]
+      }
+    },
+    {
+      "id": "simplify-internships-pm",
+      "name": "Simplify internships: product management",
+      "description": "SimplifyJobs' Summer 2027 internship list, product management section.",
+      "fields": ["product"],
+      "version": "2026.09.29",
+      "template": {
+        "id": "simplify-internships-pm",
+        "kind": "simplify_html",
+        "url": "https://raw.githubusercontent.com/SimplifyJobs/Summer2027-Internships/dev/README.md",
+        "categories": ["Product Management Internship Roles"]
+      }
+    },
+    {
+      "id": "simplify-internships-quant",
+      "name": "Simplify internships: quantitative finance",
+      "description": "SimplifyJobs' Summer 2027 internship list, quantitative finance section (trading, research, quant development).",
+      "fields": ["quant", "finance"],
+      "version": "2026.09.29",
+      "template": {
+        "id": "simplify-internships-quant",
+        "kind": "simplify_html",
+        "url": "https://raw.githubusercontent.com/SimplifyJobs/Summer2027-Internships/dev/README.md",
+        "categories": ["Quantitative Finance Internship Roles"]
+      }
+    },
+    {
+      "id": "simplify-internships-hardware",
+      "name": "Simplify internships: hardware engineering",
+      "description": "SimplifyJobs' Summer 2027 internship list, hardware engineering section.",
+      "fields": ["hardware"],
+      "version": "2026.09.29",
+      "template": {
+        "id": "simplify-internships-hardware",
+        "kind": "simplify_html",
+        "url": "https://raw.githubusercontent.com/SimplifyJobs/Summer2027-Internships/dev/README.md",
+        "categories": ["Hardware Engineering Internship Roles"]
+      }
+    },
+    {
+      "id": "simplify-newgrad",
+      "name": "Simplify new grad: software & data",
+      "description": "SimplifyJobs' new-grad list, software engineering and data science / AI / ML sections.",
+      "fields": ["swe", "data"],
+      "version": "2026.09.29",
+      "template": {
+        "id": "simplify-newgrad",
+        "kind": "simplify_html",
+        "url": "https://raw.githubusercontent.com/SimplifyJobs/New-Grad-Positions/dev/README.md",
+        "categories": [
+          "Software Engineering New Grad Roles",
+          "Data Science, AI & Machine Learning New Grad Roles"
+        ]
+      }
+    },
+    {
+      "id": "simplify-newgrad-pm",
+      "name": "Simplify new grad: product management",
+      "description": "SimplifyJobs' new-grad list, product management section.",
+      "fields": ["product"],
+      "version": "2026.09.29",
+      "template": {
+        "id": "simplify-newgrad-pm",
+        "kind": "simplify_html",
+        "url": "https://raw.githubusercontent.com/SimplifyJobs/New-Grad-Positions/dev/README.md",
+        "categories": ["Product Management New Grad Roles"]
+      }
+    },
+    {
+      "id": "simplify-newgrad-quant",
+      "name": "Simplify new grad: quantitative finance",
+      "description": "SimplifyJobs' new-grad list, quantitative finance section.",
+      "fields": ["quant", "finance"],
+      "version": "2026.09.29",
+      "template": {
+        "id": "simplify-newgrad-quant",
+        "kind": "simplify_html",
+        "url": "https://raw.githubusercontent.com/SimplifyJobs/New-Grad-Positions/dev/README.md",
+        "categories": ["Quantitative Finance New Grad Roles"]
+      }
+    },
+    {
+      "id": "simplify-newgrad-hardware",
+      "name": "Simplify new grad: hardware engineering",
+      "description": "SimplifyJobs' new-grad list, hardware engineering section.",
+      "fields": ["hardware"],
+      "version": "2026.09.29",
+      "template": {
+        "id": "simplify-newgrad-hardware",
+        "kind": "simplify_html",
+        "url": "https://raw.githubusercontent.com/SimplifyJobs/New-Grad-Positions/dev/README.md",
+        "categories": ["Hardware Engineering New Grad Roles"]
+      }
+    },
+    {
+      "id": "speedyapply",
+      "name": "speedyapply: software engineering",
+      "description": "speedyapply's 2027 software engineering internships and new-grad roles in the USA, with salaries where listed.",
+      "fields": ["swe"],
+      "version": "2026.09.29",
+      "template": {
+        "id": "speedyapply",
+        "kind": "pipe_table",
+        "url": "https://raw.githubusercontent.com/speedyapply/2027-SWE-College-Jobs/main/README.md",
+        "categories": ["2027 USA SWE Internships", "USA Positions"]
+      }
+    },
+    {
+      "id": "speedyapply-ai",
+      "name": "speedyapply: AI & machine learning",
+      "description": "speedyapply's 2027 AI / machine learning internships in the USA.",
+      "fields": ["data", "swe"],
+      "version": "2026.09.29",
+      "template": {
+        "id": "speedyapply-ai",
+        "kind": "pipe_table",
+        "url": "https://raw.githubusercontent.com/speedyapply/2027-AI-College-Jobs/main/README.md",
+        "categories": ["2027 USA AI Internships"]
+      }
+    },
+    {
+      "id": "northwesternfintech-quant",
+      "name": "Northwestern FinTech: quant internships",
+      "description": "Northwestern FinTech's 2027 quant internship tracker: trading, research and developer roles at trading firms and hedge funds. Postings carry no dates.",
+      "fields": ["quant", "finance"],
+      "version": "2026.09.29",
+      "template": {
+        "id": "northwesternfintech-quant",
+        "kind": "company_link_table",
+        "url": "https://raw.githubusercontent.com/northwesternfintech/2027QuantInternships/main/README.md",
+        "categories": []
+      }
+    },
+    {
+      "id": "zapply-internships-tech",
+      "name": "zapplyjobs internships: tech",
+      "description": "zapplyjobs' 2027 internships: software, data & AI, hardware, and product / design / research. Apply links go through zapply.jobs.",
+      "fields": ["swe", "data", "hardware", "product"],
+      "version": "2026.09.29",
+      "template": {
+        "id": "zapply-internships-tech",
+        "kind": "pipe_table",
+        "url": "https://raw.githubusercontent.com/zapplyjobs/Internships-2027/main/README.md",
+        "categories": [
+          "Software Engineering",
+          "Data Science & AI",
+          "Hardware & Engineering",
+          "Product, Design & Research"
+        ]
+      }
+    },
+    {
+      "id": "zapply-internships-business",
+      "name": "zapplyjobs internships: business & operations",
+      "description": "zapplyjobs' 2027 business and operations internships. Apply links go through zapply.jobs.",
+      "fields": ["business"],
+      "version": "2026.09.29",
+      "template": {
+        "id": "zapply-internships-business",
+        "kind": "pipe_table",
+        "url": "https://raw.githubusercontent.com/zapplyjobs/Internships-2027/main/README.md",
+        "categories": ["Business & Operations"]
+      }
+    },
+    {
+      "id": "zapply-newgrad-tech",
+      "name": "zapplyjobs new grad: tech",
+      "description": "zapplyjobs' 2027 new-grad jobs: software, data / AI / research, security, and hardware & systems. Apply links go through zapply.jobs.",
+      "fields": ["swe", "data", "hardware"],
+      "version": "2026.09.29",
+      "template": {
+        "id": "zapply-newgrad-tech",
+        "kind": "pipe_table",
+        "url": "https://raw.githubusercontent.com/zapplyjobs/New-Grad-Jobs-2027/main/README.md",
+        "categories": [
+          "Software Engineering",
+          "Data, AI & Research",
+          "Security Engineering",
+          "Hardware & Systems Engineering"
+        ]
+      }
+    },
+    {
+      "id": "zapply-newgrad-business",
+      "name": "zapplyjobs new grad: business & operations",
+      "description": "zapplyjobs' 2027 new-grad business and operations jobs. Apply links go through zapply.jobs.",
+      "fields": ["business"],
+      "version": "2026.09.29",
+      "template": {
+        "id": "zapply-newgrad-business",
+        "kind": "pipe_table",
+        "url": "https://raw.githubusercontent.com/zapplyjobs/New-Grad-Jobs-2027/main/README.md",
+        "categories": ["Business & Operations"]
+      }
+    },
+    {
+      "id": "zapply-newgrad-hardware",
+      "name": "zapplyjobs new grad: hardware engineering",
+      "description": "zapplyjobs' 2027 new-grad hardware jobs: hardware, FPGA/ASIC, embedded, electrical and validation engineering.",
+      "fields": ["hardware"],
+      "version": "2026.09.29",
+      "template": {
+        "id": "zapply-newgrad-hardware",
+        "kind": "pipe_table",
+        "url": "https://raw.githubusercontent.com/zapplyjobs/New-Grad-Hardware-Engineering-Jobs-2027/main/README.md",
+        "categories": [
+          "Hardware Engineer",
+          "FPGAASIC",
+          "Embedded Systems",
+          "Electrical Engineer",
+          "Validation Engineer"
+        ]
+      }
+    },
+    {
+      "id": "zapply-newgrad-data",
+      "name": "zapplyjobs new grad: data science",
+      "description": "zapplyjobs' 2027 new-grad data jobs: data science, data analysis, data engineering, business intelligence and machine learning.",
+      "fields": ["data"],
+      "version": "2026.09.29",
+      "template": {
+        "id": "zapply-newgrad-data",
+        "kind": "pipe_table",
+        "url": "https://raw.githubusercontent.com/zapplyjobs/New-Grad-Data-Science-Jobs-2027/main/README.md",
+        "categories": [
+          "Data Scientist",
+          "Data Analyst",
+          "Data Engineer",
+          "Business Intelligence",
+          "Machine Learning"
+        ]
+      }
+    },
+    {
+      "id": "jobright-consultant-internship",
+      "name": "Jobright internships: consulting",
+      "description": "Jobright.ai's daily consulting internship list. Links open the posting on jobright.ai, which links on to the employer.",
+      "fields": ["consulting"],
+      "version": "2026.09.29",
+      "template": {
+        "id": "jobright-consultant-internship",
+        "kind": "pipe_table",
+        "url": "https://raw.githubusercontent.com/jobright-ai/2026-Consultant-Internship/master/README.md",
+        "categories": ["Daily Job List"]
+      }
+    },
+    {
+      "id": "jobright-consultant-newgrad",
+      "name": "Jobright new grad: consulting",
+      "description": "Jobright.ai's daily new-grad consulting list. Links open the posting on jobright.ai.",
+      "fields": ["consulting"],
+      "version": "2026.09.29",
+      "template": {
+        "id": "jobright-consultant-newgrad",
+        "kind": "pipe_table",
+        "url": "https://raw.githubusercontent.com/jobright-ai/2026-Consultant-New-Grad/master/README.md",
+        "categories": ["Daily Job List"]
+      }
+    },
+    {
+      "id": "jobright-pm-internship",
+      "name": "Jobright internships: product management",
+      "description": "Jobright.ai's daily product management internship list. Links open the posting on jobright.ai.",
+      "fields": ["product"],
+      "version": "2026.09.29",
+      "template": {
+        "id": "jobright-pm-internship",
+        "kind": "pipe_table",
+        "url": "https://raw.githubusercontent.com/jobright-ai/2026-Product-Management-Internship/master/README.md",
+        "categories": ["Daily Job List"]
+      }
+    },
+    {
+      "id": "jobright-pm-newgrad",
+      "name": "Jobright new grad: product management",
+      "description": "Jobright.ai's daily new-grad product management list. Links open the posting on jobright.ai.",
+      "fields": ["product"],
+      "version": "2026.09.29",
+      "template": {
+        "id": "jobright-pm-newgrad",
+        "kind": "pipe_table",
+        "url": "https://raw.githubusercontent.com/jobright-ai/2026-Product-Management-New-Grad/master/README.md",
+        "categories": ["Daily Job List"]
+      }
+    },
+    {
+      "id": "jobright-business-analyst-internship",
+      "name": "Jobright internships: business analyst",
+      "description": "Jobright.ai's daily business analyst internship list. Links open the posting on jobright.ai.",
+      "fields": ["business", "data"],
+      "version": "2026.09.29",
+      "template": {
+        "id": "jobright-business-analyst-internship",
+        "kind": "pipe_table",
+        "url": "https://raw.githubusercontent.com/jobright-ai/2026-Business-Analyst-Internship/master/README.md",
+        "categories": ["Daily Job List"]
+      }
+    },
+    {
+      "id": "jobright-business-analyst-newgrad",
+      "name": "Jobright new grad: business analyst",
+      "description": "Jobright.ai's daily new-grad business analyst list. Links open the posting on jobright.ai.",
+      "fields": ["business", "data"],
+      "version": "2026.09.29",
+      "template": {
+        "id": "jobright-business-analyst-newgrad",
+        "kind": "pipe_table",
+        "url": "https://raw.githubusercontent.com/jobright-ai/2026-Business-Analyst-New-Grad/master/README.md",
+        "categories": ["Daily Job List"]
+      }
+    },
+    {
+      "id": "jobright-accounting-internship",
+      "name": "Jobright internships: accounting & finance",
+      "description": "Jobright.ai's daily accounting and finance internship list. Links open the posting on jobright.ai.",
+      "fields": ["finance"],
+      "version": "2026.09.29",
+      "template": {
+        "id": "jobright-accounting-internship",
+        "kind": "pipe_table",
+        "url": "https://raw.githubusercontent.com/jobright-ai/2026-Account-Internship/master/README.md",
+        "categories": ["Daily Job List"]
+      }
+    },
+    {
+      "id": "jobright-accounting-newgrad",
+      "name": "Jobright new grad: accounting & finance",
+      "description": "Jobright.ai's daily new-grad accounting and finance list (large). Links open the posting on jobright.ai.",
+      "fields": ["finance"],
+      "version": "2026.09.29",
+      "template": {
+        "id": "jobright-accounting-newgrad",
+        "kind": "pipe_table",
+        "url": "https://raw.githubusercontent.com/jobright-ai/2026-Account-New-Grad/master/README.md",
+        "categories": ["Daily Job List"]
+      }
+    },
+    {
+      "id": "jobright-marketing-internship",
+      "name": "Jobright internships: marketing",
+      "description": "Jobright.ai's daily marketing internship list. Links open the posting on jobright.ai.",
+      "fields": ["business"],
+      "version": "2026.09.29",
+      "template": {
+        "id": "jobright-marketing-internship",
+        "kind": "pipe_table",
+        "url": "https://raw.githubusercontent.com/jobright-ai/2026-Marketing-Internship/master/README.md",
+        "categories": ["Daily Job List"]
+      }
+    },
+    {
+      "id": "jobright-marketing-newgrad",
+      "name": "Jobright new grad: marketing",
+      "description": "Jobright.ai's daily new-grad marketing list. Links open the posting on jobright.ai.",
+      "fields": ["business"],
+      "version": "2026.09.29",
+      "template": {
+        "id": "jobright-marketing-newgrad",
+        "kind": "pipe_table",
+        "url": "https://raw.githubusercontent.com/jobright-ai/2026-Marketing-New-Grad/master/README.md",
+        "categories": ["Daily Job List"]
+      }
+    },
+    {
+      "id": "jobright-data-analysis-internship",
+      "name": "Jobright internships: data analysis",
+      "description": "Jobright.ai's daily data analysis internship list. Links open the posting on jobright.ai.",
+      "fields": ["data"],
+      "version": "2026.09.29",
+      "template": {
+        "id": "jobright-data-analysis-internship",
+        "kind": "pipe_table",
+        "url": "https://raw.githubusercontent.com/jobright-ai/2026-Data-Analysis-Internship/master/README.md",
+        "categories": ["Daily Job List"]
+      }
+    },
+    {
+      "id": "jobright-data-analysis-newgrad",
+      "name": "Jobright new grad: data analysis",
+      "description": "Jobright.ai's daily new-grad data analysis list. Links open the posting on jobright.ai.",
+      "fields": ["data"],
+      "version": "2026.09.29",
+      "template": {
+        "id": "jobright-data-analysis-newgrad",
+        "kind": "pipe_table",
+        "url": "https://raw.githubusercontent.com/jobright-ai/2026-Data-Analysis-New-Grad/master/README.md",
+        "categories": ["Daily Job List"]
+      }
+    },
+    {
+      "id": "jobright-management-internship",
+      "name": "Jobright internships: management & operations",
+      "description": "Jobright.ai's daily management, strategy and operations internship list. Links open the posting on jobright.ai.",
+      "fields": ["business"],
+      "version": "2026.09.29",
+      "template": {
+        "id": "jobright-management-internship",
+        "kind": "pipe_table",
+        "url": "https://raw.githubusercontent.com/jobright-ai/2026-Management-Internship/master/README.md",
+        "categories": ["Daily Job List"]
+      }
+    },
+    {
+      "id": "jobright-management-newgrad",
+      "name": "Jobright new grad: management & operations",
+      "description": "Jobright.ai's daily new-grad management, strategy and operations list (large). Links open the posting on jobright.ai.",
+      "fields": ["business"],
+      "version": "2026.09.29",
+      "template": {
+        "id": "jobright-management-newgrad",
+        "kind": "pipe_table",
+        "url": "https://raw.githubusercontent.com/jobright-ai/2026-Management-New-Grad/master/README.md",
+        "categories": ["Daily Job List"]
+      }
+    },
+    {
+      "id": "vanshb03-newgrad",
+      "name": "vanshb03 new grad",
+      "description": "Vansh's 2027 new-grad list, mostly software engineering with some quant and analyst roles.",
+      "fields": ["swe"],
+      "version": "2026.09.29",
+      "template": {
+        "id": "vanshb03-newgrad",
+        "kind": "pipe_table",
+        "url": "https://raw.githubusercontent.com/vanshb03/New-Grad-2027/dev/README.md",
+        "categories": ["The List"]
+      }
+    },
+    {
+      "id": "vanshb03-internships",
+      "name": "vanshb03 internships",
+      "description": "Vansh & Ouckah's Summer 2027 tech internship list, mostly software engineering.",
+      "fields": ["swe"],
+      "version": "2026.09.29",
+      "template": {
+        "id": "vanshb03-internships",
+        "kind": "pipe_table",
+        "url": "https://raw.githubusercontent.com/vanshb03/Summer2027-Internships/dev/README.md",
+        "categories": ["The List"]
+      }
+    },
+    {
+      "id": "drewdavis-finance-internships",
+      "name": "Finance internships 2027",
+      "description": "A community list of Summer 2027 finance internships: financial analyst, audit, banking and corporate finance programs.",
+      "fields": ["finance"],
+      "version": "2026.09.29",
+      "template": {
+        "id": "drewdavis-finance-internships",
+        "kind": "pipe_table",
+        "url": "https://raw.githubusercontent.com/drewdavis0302/finance-summer-2027/main/README.md",
+        "categories": []
+      }
+    },
+    {
+      "id": "usajobs-government",
+      "name": "USAJobs: federal government",
+      "description": "Keyword search of USAJobs, the US federal job board. Needs a free USAJobs API key and your email; edit the phrases to suit your field.",
+      "fields": ["government"],
+      "version": "2026.09.29",
+      "template": {
+        "id": "usajobs-government",
+        "kind": "job_search",
+        "provider": "usajobs",
+        "query": "analyst, program specialist"
+      }
+    }
+  ]
+}
