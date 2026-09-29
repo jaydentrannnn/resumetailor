@@ -156,6 +156,8 @@ export type ApplySettings = {
   categories: string[];
   sources: SourceConfig[];
   max_age_days: number;
+  /** Job fields this profile searches for; drives "Recommended for your fields". */
+  fields?: SourceField[];
   exclude_advanced_degree: boolean;
   exclude_citizenship_required: boolean;
   exclude_no_sponsorship: boolean;
@@ -2450,4 +2452,28 @@ export function testSource(source: SourceConfig): Promise<SourceTestResult> {
     method: "POST",
     body: JSON.stringify({ source }),
   });
+}
+
+/** How one source did on its most recent run (daily run or Find jobs). */
+export type SourceRunStatus = {
+  /** Postings the source returned. */
+  found: number;
+  /** Postings the funnel's filters kept. */
+  kept: number;
+  /** Short reason the source failed or found nothing useful; null when fine. */
+  error: string | null;
+  /** ISO timestamp of that run. */
+  at: string;
+};
+
+export type SourcesStatus = {
+  /** Keyed by `SourceConfig.id`; a source that has never run is absent. */
+  sources: Record<string, SourceRunStatus>;
+  /** When the last run that touched sources finished; null before the first. */
+  last_run_at: string | null;
+};
+
+/** Per-source results of the latest run, for the Sources tab's health line. */
+export function fetchSourcesStatus(): Promise<SourcesStatus> {
+  return request<SourcesStatus>("/api/apply/sources/status");
 }

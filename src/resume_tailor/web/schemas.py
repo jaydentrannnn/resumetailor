@@ -43,6 +43,14 @@ class CoverAnglesIn(BaseModel):
     tone: Literal["", "formal", "direct", "conversational", "mirror"] = ""
 
 
+#: Job fields a catalog entry is tagged with and a profile picks at onboarding
+#: (`apply/source_catalog.py`); mirrors the SPA's `SourceField`.
+SourceField = Literal[
+    "swe", "data", "quant", "finance", "consulting", "product", "business", "hardware",
+    "government",
+]
+
+
 class BoardConfig(BaseModel):
     """One company job board on a watchlist source (`apply/boards.py`)."""
 
@@ -147,6 +155,9 @@ class ApplySettings(BaseModel):
     )
     sources: list[SourceConfig] = Field(default_factory=_default_apply_sources)
     max_age_days: int = 1
+    #: The job fields this profile searches for (onboarding's picker, the Sources tab's
+    #: "Recommended for your fields"); empty until the user picks some.
+    fields: list[SourceField] = Field(default_factory=list)
     exclude_advanced_degree: bool = True
     exclude_citizenship_required: bool = True
     exclude_no_sponsorship: bool = False

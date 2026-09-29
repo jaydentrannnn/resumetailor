@@ -25,7 +25,7 @@ import httpx
 from pydantic import BaseModel, Field, ValidationError, model_validator
 
 from resume_tailor import config
-from resume_tailor.web.schemas import SourceConfig
+from resume_tailor.web.schemas import SourceConfig, SourceField
 
 log = logging.getLogger(__name__)
 
@@ -39,10 +39,6 @@ DEFAULT_CATALOG_URL = (
 REFRESH_SECONDS = 12 * 60 * 60
 CACHE_FILENAME = "source_catalog_cache.json"
 
-SourceField = Literal[
-    "swe", "data", "quant", "finance", "consulting", "product", "business", "hardware",
-    "government",
-]
 CatalogOrigin = Literal["remote", "cache", "bundled"]
 
 
