@@ -43,14 +43,26 @@ class _Control:
         self.page.values[self.id] = value
         self.page.writes.append(self.id)
 
+    def focus(self) -> None:
+        self.page.focused = self.id
+
 
 class _Keyboard:
     def __init__(self, page: _Page) -> None:
         self.page = page
 
     def type(self, text: str, delay: int = 0) -> None:
+        self.page.typed.append(text)
+        if self.page.drop_typing:  # the keys land nowhere (focus was elsewhere)
+            self.page.drop_typing -= 1
+            return
         self.page.values[self.page.focused] = text
         self.page.writes.append(self.page.focused)
+
+    def press(self, key: str) -> None:
+        self.page.pressed.append(key)
+        if key == "Backspace":  # after select-all: empties the focused input
+            self.page.values[self.page.focused] = ""
 
 
 class _Page:
@@ -58,6 +70,9 @@ class _Page:
         self.values = dict(values)
         self.writes: list[str] = []
         self.focused = ""
+        self.typed: list[str] = []
+        self.pressed: list[str] = []
+        self.drop_typing = 0  # how many `keyboard.type` calls to lose
         self.keyboard = _Keyboard(self)
 
     def locator(self, selector: str) -> _Control:
@@ -136,6 +151,54 @@ def test_split_date_types_month_and_year_and_keeps_existing():
     # A different existing end date is the applicant's; it is kept and flagged.
     assert not repeaters._fill_date(page, prefix, "endDate", "2025-06", with_month=True)  # noqa: SLF001
     assert page.values[f"{prefix}endDate-dateSectionYear-input"] == "2024"
+
+
+_START = "workExperience-1--startDate-dateSection"
+
+
+def _start_page(month: str = "", year: str = "") -> _Page:
+    return _Page({f"{_START}Month-input": month, f"{_START}Year-input": year})
+
+
+def test_a_date_typed_into_nothing_is_typed_again():
+    # CACI (2026-09): the keys went to whatever held focus and the section stayed empty.
+    page = _start_page()
+    page.drop_typing = 1
+    assert repeaters._fill_date(page, "workExperience-1--", "startDate", "2025-01", with_month=True)  # noqa: SLF001
+    assert page.values[f"{_START}Month-input"] == "01"
+    assert page.values[f"{_START}Year-input"] == "2025"
+    assert page.typed == ["01", "01", "2025"]  # the month twice, the year once
+    assert "Backspace" in page.pressed  # the retry clears the section before typing
+
+
+def test_a_date_that_never_lands_is_reported_not_claimed():
+    page = _start_page()
+    page.drop_typing = 2  # both attempts at the month are lost
+    assert not repeaters._fill_date(page, "workExperience-1--", "startDate", "2025-01", with_month=True)  # noqa: SLF001
+    assert page.values[f"{_START}Month-input"] == ""
+    assert page.typed.count("01") == 2  # retried once, not forever
+
+
+def test_a_partial_month_is_retyped_not_taken_for_the_applicants_own_date():
+    page = _start_page(month="0")  # one keystroke of "03" landed
+    assert repeaters._fill_date(page, "workExperience-1--", "startDate", "2025-03", with_month=True)  # noqa: SLF001
+    assert page.values[f"{_START}Month-input"] == "03"
+    assert page.values[f"{_START}Year-input"] == "2025"
+    assert "Backspace" in page.pressed  # the stray "0" is cleared first
+
+
+def test_an_existing_matching_date_is_not_typed_again():
+    page = _start_page(month="03", year="2025")
+    assert repeaters._fill_date(page, "workExperience-1--", "startDate", "2025-03", with_month=True)  # noqa: SLF001
+    assert page.typed == [] and page.pressed == []
+
+
+def test_an_existing_different_date_is_kept_even_when_it_looks_partial():
+    page = _start_page(month="1", year="2024")  # "1" is not the start of "03"
+    assert not repeaters._fill_date(page, "workExperience-1--", "startDate", "2025-03", with_month=True)  # noqa: SLF001
+    assert page.values[f"{_START}Month-input"] == "1"
+    assert page.values[f"{_START}Year-input"] == "2024"
+    assert page.typed == []
 
 
 def test_a_row_started_by_an_earlier_run_is_completed_not_duplicated():

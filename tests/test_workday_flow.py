@@ -1112,3 +1112,353 @@ def test_new_tab_ignores_a_tab_another_fill_opened(clock):
     own = _Tab(opener=page)
     context = SimpleNamespace(pages=[*before, _Tab(opener=other_fill), own])
     assert workday_flow._new_tab(page, context, before, clock.now + 60) is own  # noqa: SLF001
+
+
+# -- salary range dropdowns ------------------------------------------------------------
+
+_ANNUAL_LABEL = "What is your desired annual base salary range for this position?"
+
+
+def test_salary_range_spec_uses_the_unit_the_question_names():
+    fields = {"salary_yearly_number": "80000", "salary_yearly_low_number": "60000"}
+    assert workday_flow.salary_range_spec(_ANNUAL_LABEL, fields) == "60000-80000/year"
+
+
+def test_salary_range_spec_without_a_low_end_is_a_single_figure():
+    assert workday_flow.salary_range_spec(_ANNUAL_LABEL, {"salary_yearly_number": "80000"}) == "80000-80000/year"
+
+
+def test_salary_range_spec_is_none_without_a_salary_range():
+    assert workday_flow.salary_range_spec(_ANNUAL_LABEL, {}) is None
+    assert workday_flow.salary_range_spec(_ANNUAL_LABEL, {"salary_hourly_number": "45"}) is None
+
+
+def test_salary_range_spec_without_a_unit_follows_the_default_unit_of_the_expectation():
+    hourly = {
+        "salary_expectation": "$45/hour", "salary_expectation_number": "45",
+        "salary_expectation_low_number": "40",
+    }
+    label = "Select the range that best matches your salary expectations"
+    assert workday_flow.salary_range_spec(label, hourly) == "40-45/hour"
+    yearly = {"salary_expectation": "$80,000/year", "salary_expectation_number": "80000"}
+    assert workday_flow.salary_range_spec(label, yearly) == "80000-80000/year"
+
+
+def test_fill_dropdowns_picks_the_range_covering_the_applicants_own(monkeypatch):
+    page = _DropdownPage([{"selector": "#q-salary", "label": _ANNUAL_LABEL, "current": "Select One"}])
+    calls: list[tuple[str, str, str]] = []
+
+    def select(_page, selector, value, *, key):
+        calls.append((selector, value, key))
+        monkeypatch.setitem(workday_flow.last_listbox, "chosen", "$60,000 - $79,999")
+        return True
+
+    fields = {
+        "salary_expectation": "$80,000/year", "salary_expectation_number": "80000",
+        "salary_yearly": "$80,000/year", "salary_yearly_number": "80000", "salary_yearly_low_number": "60000",
+    }
+    committed = workday_flow.fill_dropdowns(page, fields, select=select)
+    assert calls == [("#q-salary", "60000-80000/year", workday_flow.SALARY_RANGE_KEY)]
+    assert [(c["key"], c["value"], c["selector"]) for c in committed] == [
+        ("salary_expectation", "$60,000 - $79,999", "#q-salary"),
+    ]
+
+
+def test_fill_dropdowns_leaves_a_salary_dropdown_that_lists_no_range_uncommitted():
+    page = _DropdownPage([{"selector": "#q-salary", "label": _ANNUAL_LABEL, "current": "Select One"}])
+    calls: list[str] = []
+
+    def select(_page, selector, value, *, key):
+        calls.append(key)
+        return False  # the options were not ranges: `select_listbox` matches nothing
+
+    fields = {"salary_yearly_number": "80000", "salary_yearly_low_number": "60000"}
+    assert workday_flow.fill_dropdowns(page, fields, select=select) == []
+    assert calls == [workday_flow.SALARY_RANGE_KEY]  # tried once, never retried with another key
+
+
+def test_fill_dropdowns_keeps_an_answered_salary_range():
+    page = _DropdownPage([{"selector": "#q-salary", "label": _ANNUAL_LABEL, "current": "$80,000 - $99,999"}])
+    calls: list = []
+    fields = {"salary_yearly_number": "80000", "salary_yearly_low_number": "60000"}
+    workday_flow.fill_dropdowns(page, fields, select=lambda *a, **k: calls.append(a) or True)
+    assert calls == []
+
+
+def _listbox_options(*labels: str) -> list[dict]:
+    return [{"id": f"opt-{i}", "label": label, "disabled": False} for i, label in enumerate(labels)]
+
+
+def test_pick_listbox_option_takes_the_range_covering_the_spec():
+    options = _listbox_options(
+        "Select One", "Less than $40,000", "$40,000 - $59,999", "$60,000 - $79,999", "$80,000 - $99,999",
+    )
+    options[0]["disabled"] = True
+    picked = workday_flow._pick_listbox_option(  # noqa: SLF001
+        options, "60000-80000/year", workday_flow.SALARY_RANGE_KEY,
+    )
+    assert picked == ("$60,000 - $79,999", "opt-3")
+
+
+def test_pick_listbox_option_finds_no_range_in_a_yes_no_list():
+    options = _listbox_options("Yes", "No")
+    assert workday_flow._pick_listbox_option(  # noqa: SLF001
+        options, "60000-80000/year", workday_flow.SALARY_RANGE_KEY,
+    ) is None
+
+
+# -- "any reasonable option" for a source question ------------------------------------
+
+
+def test_any_option_prefers_the_named_source_then_other_then_the_first():
+    assert workday_flow.any_option(["Job Board", "Social Media - LinkedIn", "Other"], "LinkedIn") == "Social Media - LinkedIn"
+    assert workday_flow.any_option(["Job Board", "Other (please specify)", "Referral"], "LinkedIn") == "Other (please specify)"
+    assert workday_flow.any_option(["Job Board", "Referral"], "LinkedIn") == "Job Board"
+
+
+def test_any_option_ignores_empty_search_rows():
+    assert workday_flow.any_option(["No Items."], "LinkedIn") is None
+    assert workday_flow.any_option(["No Items.", "Referral"], "LinkedIn") == "Referral"
+    assert workday_flow.any_option([], "LinkedIn") is None
+
+
+def test_pick_listbox_option_any_option_key_takes_the_closest_option():
+    options = _listbox_options("Job Board", "Other", "Referral")
+    assert workday_flow._pick_listbox_option(  # noqa: SLF001
+        options, "LinkedIn", workday_flow.ANY_OPTION_KEY,
+    ) == ("Other", "opt-1")
+
+
+def test_fill_dropdowns_settles_for_any_option_when_the_source_is_not_listed(monkeypatch):
+    page = _DropdownPage([
+        {"selector": "#source--source", "label": "How Did You Hear About Us?", "current": "Select One"},
+    ])
+    tried: list[tuple[str, str]] = []
+
+    def select(_page, selector, value, *, key):
+        tried.append((value, key))
+        if key == workday_flow.ANY_OPTION_KEY:
+            monkeypatch.setitem(workday_flow.last_listbox, "chosen", "Other")
+            return True
+        return False
+
+    committed = workday_flow.fill_dropdowns(page, {"how_heard": "LinkedIn"}, select=select)
+    assert tried[-1] == ("LinkedIn", workday_flow.ANY_OPTION_KEY)
+    assert all(key != workday_flow.ANY_OPTION_KEY for _v, key in tried[:-1])
+    assert [(c["key"], c["value"]) for c in committed] == [("how_heard", "Other")]
+
+
+def test_fill_dropdowns_does_not_settle_for_any_option_on_other_questions():
+    page = _DropdownPage([{"selector": "#q-state", "label": "State", "current": "Select One"}])
+    keys: list[str] = []
+
+    def select(_page, selector, value, *, key):
+        keys.append(key)
+        return False
+
+    assert workday_flow.fill_dropdowns(page, {"state": "California"}, select=select) == []
+    assert workday_flow.ANY_OPTION_KEY not in keys
+
+
+class _HierarchyPromptPage:
+    """A prompt whose sources sit under categories: clicking a category lists its children,
+    clicking a leaf commits a chip (Cencora's "How Did You Hear About Us?")."""
+
+    def __init__(self, tree: dict[str, list[str]]) -> None:
+        self.tree = tree  # "" is the top level; the other keys are categories
+        self.level = ""
+        self.chips: list[str] = []
+        self.filled: list[str] = []
+        self.pressed: list[str] = []
+        self.clicked: list[str] = []
+
+    def evaluate(self, script: str, arg: object = None) -> object:
+        assert script == workday_flow._PROMPT_STATE_JS  # noqa: SLF001
+        return list(self.chips)
+
+    def wait_for_timeout(self, _ms: int) -> None:
+        pass
+
+    def _shown(self) -> list[str]:
+        return list(self.tree[self.level])
+
+    def _click(self, index: int) -> None:
+        text = self._shown()[index]
+        self.clicked.append(text)
+        if text in self.tree:
+            self.level = text
+        else:
+            self.chips.append(text)
+
+    def locator(self, selector: str) -> SimpleNamespace:
+        page = self
+        if "promptOption" in selector:
+            return SimpleNamespace(
+                all_inner_texts=page._shown,
+                nth=lambda i: SimpleNamespace(click=lambda timeout=None: page._click(i)),
+            )
+        box = SimpleNamespace(
+            fill=lambda value, timeout=None: page.filled.append(value),
+            press=lambda key: page.pressed.append(key),
+            click=lambda timeout=None: None,
+        )
+        return SimpleNamespace(first=box)
+
+
+def test_select_prompt_any_walks_down_to_a_leaf_when_the_source_is_not_listed():
+    page = _HierarchyPromptPage({
+        "": ["Job Board", "Other", "Social Media"],
+        "Other": ["Career Fair", "Other Source"],
+    })
+    assert workday_flow.select_prompt_any(page, "source--source", "LinkedIn") == "Other Source"
+    assert page.clicked == ["Other", "Other Source"]
+    assert page.chips == ["Other Source"]
+
+
+def test_select_prompt_any_takes_the_named_source_when_it_is_listed():
+    page = _HierarchyPromptPage({"": ["Job Board", "LinkedIn", "Other"]})
+    assert workday_flow.select_prompt_any(page, "source--source", "LinkedIn") == "LinkedIn"
+    assert page.clicked == ["LinkedIn"]
+
+
+def test_select_prompt_any_leaves_an_answered_prompt_alone():
+    page = _HierarchyPromptPage({"": ["Job Board", "LinkedIn"]})
+    page.chips.append("Referral")
+    assert workday_flow.select_prompt_any(page, "source--source", "LinkedIn") is None
+    assert page.clicked == []
+
+
+def test_fill_prompts_falls_back_to_any_option_when_every_candidate_fails():
+    page = _PromptPage([{"input_id": "source--source", "label": "How Did You Hear About Us?", "chips": 0}])
+    tried: list[str] = []
+    any_calls: list[tuple[str, str]] = []
+
+    def select(_page, _input_id, value, *, key):
+        tried.append(value)
+        return False
+
+    def select_any(_page, input_id, value):
+        any_calls.append((input_id, value))
+        return "Other Source"
+
+    committed = workday_flow.fill_prompts(page, {"how_heard": "LinkedIn"}, select=select, select_any=select_any)
+    assert tried == ["LinkedIn", "Other"]
+    assert any_calls == [("source--source", "LinkedIn")]
+    assert [(c["key"], c["value"], c["selector"]) for c in committed] == [
+        ("how_heard", "Other Source", "[id='source--source']"),
+    ]
+
+
+def test_fill_prompts_leaves_a_source_for_review_when_no_option_commits():
+    page = _PromptPage([{"input_id": "source--source", "label": "How Did You Hear About Us?", "chips": 0}])
+    committed = workday_flow.fill_prompts(
+        page, {"how_heard": "LinkedIn"}, select=lambda *a, **k: False, select_any=lambda *a, **k: None,
+    )
+    assert committed == []
+
+
+def test_fill_prompts_never_asks_for_any_option_on_a_question_that_is_not_a_source(monkeypatch):
+    from resume_tailor.apply import questions
+
+    monkeypatch.setattr(workday_flow.questions, "classify", lambda _q: questions.Match("school"))
+    page = _PromptPage([{"input_id": "edu--school", "label": "School or University", "chips": 0}])
+    any_calls: list = []
+    committed = workday_flow.fill_prompts(
+        page, {"school": "State University"},
+        select=lambda *a, **k: False, select_any=lambda *a, **k: any_calls.append(a) or "X",
+    )
+    assert any_calls == [] and committed == []
+
+
+# -- "worked for any of the listed firms?" checkboxes -------------------------------------
+
+_FIRMS_QUESTION = (
+    "Are you currently employed by, or have you previously worked for, any of the listed firms "
+    "or any of their subsidiaries"
+)
+
+
+class _CheckboxPage:
+    """CHECKBOX_GROUPS_JS groups, with a label click that ticks the box."""
+
+    def __init__(self, groups: list[dict]) -> None:
+        self.groups = groups
+        self.ticked: list[str] = []
+
+    def evaluate(self, script: str, arg: object = None) -> object:
+        assert script == workday_flow.CHECKBOX_GROUPS_JS
+        return [
+            {"question": g["question"], "options": [
+                {"id": o["id"], "label": o["label"], "checked": o["id"] in self.ticked} for o in g["options"]
+            ]}
+            for g in self.groups
+        ]
+
+    def locator(self, selector: str) -> SimpleNamespace:
+        page = self
+        box_id = re.search(r"\[(?:id|for)='([^']+)'\]", selector).group(1)
+        if selector.startswith("label"):
+            first = SimpleNamespace(click=lambda timeout=None: page.ticked.append(box_id))
+        else:
+            first = SimpleNamespace(
+                is_checked=lambda: box_id in page.ticked,
+                check=lambda timeout=None: page.ticked.append(box_id),
+            )
+        return SimpleNamespace(first=first)
+
+
+def _firms_page() -> _CheckboxPage:
+    labels = ["Grant Thornton", "FORVIS", "Deloitte and Touche", "No"]
+    return _CheckboxPage([{
+        "question": _FIRMS_QUESTION,
+        "options": [{"id": f"firm-{i}", "label": label} for i, label in enumerate(labels)],
+    }])
+
+
+def _ticked_labels(page: _CheckboxPage) -> list[str]:
+    labels = {o["id"]: o["label"] for g in page.groups for o in g["options"]}
+    return [labels[box_id] for box_id in page.ticked]
+
+
+def test_listed_firms_checkboxes_tick_only_none_when_the_applicant_worked_for_none():
+    page = _firms_page()
+    committed = workday_flow.fill_choice_checkboxes(
+        page, {}, employers=["Age of Learning Inc.", "VNPT Group"],
+    )
+    assert _ticked_labels(page) == ["No"]
+    assert [(c["key"], c["value"]) for c in committed] == [("previous_worker", "No")]
+
+
+def test_listed_firms_checkboxes_tick_the_firm_the_applicant_worked_for_and_not_none():
+    page = _firms_page()
+    committed = workday_flow.fill_choice_checkboxes(
+        page, {}, employers=["Deloitte and Touche LLP", "Age of Learning Inc."],
+    )
+    assert _ticked_labels(page) == ["Deloitte and Touche"]
+    assert [c["value"] for c in committed] == ["Deloitte and Touche"]
+
+
+def test_listed_firms_checkboxes_tick_every_firm_worked_for():
+    page = _firms_page()
+    workday_flow.fill_choice_checkboxes(page, {}, employers=["FORVIS, LLP", "Grant Thornton LLP"])
+    assert sorted(_ticked_labels(page)) == ["FORVIS", "Grant Thornton"]
+
+
+def test_listed_firms_checkboxes_are_left_alone_without_a_single_none_option():
+    labels = ["Grant Thornton", "FORVIS"]
+    page = _CheckboxPage([{
+        "question": _FIRMS_QUESTION,
+        "options": [{"id": f"firm-{i}", "label": label} for i, label in enumerate(labels)],
+    }])
+    review: list[str] = []
+    assert workday_flow.fill_choice_checkboxes(page, {}, employers=["VNPT Group"], review=review) == []
+    assert page.ticked == [] and review == []
+
+
+def test_listed_firms_match_an_ampersand_spelling_of_the_employer():
+    # "Deloitte & Touche LLP" on the resume is the listed "Deloitte and Touche": ticking
+    # "No" instead would misstate the applicant's history.
+    page = _firms_page()
+    workday_flow.fill_choice_checkboxes(page, {}, employers=["Deloitte & Touche LLP"])
+    assert _ticked_labels(page) == ["Deloitte and Touche"]
+    assert workday_flow.previously_employed("Deloitte and Touche", ["Deloitte & Touche LLP"])

@@ -86,3 +86,100 @@ def test_packet_flags_a_preferred_name_that_differs_from_the_first_name():
     same = packet.build_fields(ApplicantProfile(first_name="Alex", preferred_name="alex"), resume)
     assert "has_preferred_name" not in same
     assert "salary_expectation" not in fields  # added per posting by the fill runner
+
+
+# --- range options and the applicant's minimum -----------------------------------------
+
+_YEARLY_OPTIONS = [
+    "Select One",
+    "Less than $40,000",
+    "$40,000 - $59,999",
+    "$60,000 - $79,999",
+    "$80,000 - $99,999",
+    "$100,000+",
+]
+
+
+@pytest.mark.parametrize(
+    ("label", "expected"),
+    [
+        ("$60,000 - $79,999", (60_000, 79_999, "year")),
+        ("Less than $40,000", (0, 40_000, "year")),
+        ("$100,000+", (100_000, float("inf"), "year")),
+        ("$60-80k", (60_000, 80_000, "year")),
+        ("$18 - $20 per hour", (18, 20, "hour")),
+        ("Select One", None),
+        ("Prefer not to say", None),
+    ],
+)
+def test_option_range_reads_bounds_open_ends_and_unit(label, expected):
+    assert salary.option_range(label) == expected
+
+
+def test_range_spec_is_one_string_a_select_call_can_carry():
+    assert salary.range_spec(60_000, 80_000, "year") == "60000-80000/year"
+    assert salary.range_spec(18.5, 20, "hour") == "18.5-20/hour"
+
+
+def test_pick_range_takes_the_range_with_most_overlap_not_the_one_starting_at_the_top():
+    assert salary.pick_range(_YEARLY_OPTIONS, "60000-80000/year") == "$60,000 - $79,999"
+
+
+def test_pick_range_puts_a_single_figure_in_the_range_that_holds_it():
+    assert salary.pick_range(_YEARLY_OPTIONS, "70000-70000/year") == "$60,000 - $79,999"
+    assert salary.pick_range(_YEARLY_OPTIONS, "80000-80000/year") == "$80,000 - $99,999"
+
+
+def test_pick_range_with_no_overlap_takes_the_nearest_range():
+    options = ["$40,000 - $59,999", "$60,000 - $79,999"]
+    assert salary.pick_range(options, "100000-120000/year") == "$60,000 - $79,999"
+    assert salary.pick_range(options, "10000-20000/year") == "$40,000 - $59,999"
+
+
+def test_pick_range_open_ended_options_cover_the_extremes():
+    assert salary.pick_range(_YEARLY_OPTIONS, "150000-180000/year") == "$100,000+"
+    assert salary.pick_range(_YEARLY_OPTIONS, "20000-30000/year") == "Less than $40,000"
+
+
+def test_pick_range_converts_a_yearly_spec_to_hourly_options_at_2080_hours():
+    options = ["$15 - $20 per hour", "$20 - $25 per hour", "$25 - $30 per hour"]
+    # 50,000-52,000/year is 24.04-25.00/hour.
+    assert salary.pick_range(options, "50000-52000/year") == "$20 - $25 per hour"
+    assert salary.pick_range(options, "27-28/hour") == "$25 - $30 per hour"
+
+
+def test_pick_range_needs_two_range_options_and_a_readable_spec():
+    assert salary.pick_range(["Yes", "No"], "60000-80000/year") is None
+    assert salary.pick_range(["Select One", "$60,000 - $79,999"], "60000-80000/year") is None
+    assert salary.pick_range(_YEARLY_OPTIONS, "about 70k") is None
+
+
+def test_salary_fields_emit_the_low_end_beside_each_top():
+    fields = salary.salary_fields(
+        role="Engineer", listing_salary="", jd_text="", hourly_max=45, yearly_max=80_000,
+        hourly_min=40, yearly_min=60_000,
+    )
+    assert fields["salary_yearly_number"] == "80000"
+    assert fields["salary_yearly_low_number"] == "60000"
+    assert fields["salary_hourly_low_number"] == "40"
+    assert fields["salary_expectation_low_number"] == "60000"  # the default unit for a non-intern
+
+
+def test_salary_fields_omit_the_low_end_without_a_minimum():
+    fields = salary.salary_fields(
+        role="Engineer", listing_salary="", jd_text="", hourly_max=45, yearly_max=80_000,
+    )
+    assert fields["salary_yearly_number"] == "80000"
+    assert not any(key.endswith("_low_number") for key in fields)
+
+
+def test_salary_fields_cap_the_low_end_at_the_top_and_convert_the_other_unit():
+    capped = salary.salary_fields(
+        role="Engineer", listing_salary="", jd_text="", hourly_max=None, yearly_max=80_000, yearly_min=90_000,
+    )
+    assert capped["salary_yearly_low_number"] == "80000"
+    # Only a yearly minimum: the hourly answer's bottom is that figure at 2080 h/yr.
+    converted = salary.salary_fields(
+        role="Engineer", listing_salary="", jd_text="", hourly_max=45, yearly_max=80_000, yearly_min=41_600,
+    )
+    assert converted["salary_hourly_low_number"] == "20"

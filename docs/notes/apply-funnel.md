@@ -1402,3 +1402,42 @@ American Century School search returned "University of California, Irvine" and "
 - Pre-existing and environmental, not caused by this change: test_config::test_local_ollama_needs_no_key,
   test_estimate::test_local_and_unknown_models and test_setup_status::test_checklist_reports_each_prerequisite
   fail on a clean tree on this machine; the setup-status one hit a live ollama.com request.
+
+## 2026-09-29 — Consistent Workday answers: rules first, one answer per question
+
+Live run (5 Workday tabs, gemini-3.5-flash-lite as the Autofill model). Two American
+Century postings asked the same ~20 questions and ended with *different* blanks. Causes,
+none of them sampling (temperature is already 0 on every backend, `llm.py`):
+- `questions._DERIVED` read "current or former" anywhere as `previous_worker`, so the
+  non-compete question ("...with a current or former employer?") took that key instead of
+  `noncompete`. Now "former" must be followed by employee/worker/intern/contractor.
+- The "worked for any of the listed firms?" checkbox group (Grant Thornton / FORVIS /
+  Deloitte / No) was self-identification-only in `fill_choice_checkboxes`; it is now
+  answered from the applicant's employers (`_previous_employer_options`: a listed firm
+  they worked for, else the one "No").
+- Salary range dropdowns were answered by nobody: `_BLANK_EXEMPT` skips salary in the
+  rule pass and the resolver reserves salary from the model. `salary.pick_range` picks the
+  option with the most overlap with the applicant's range (min .. min(posted top, own top));
+  `salary_fields` now also emits `<key>_low_number`. Needs >= 2 range-looking options.
+- The resolver's model call returned a list of actions and could silently omit controls;
+  every control was then marked asked, and the step was called "cleared" because Workday
+  shows no error before Save. Now the prompt demands one decision per control ("unknown"
+  allowed and final), an omitted control is sent once more alone (`_MAX_ASKS`), a choice
+  that did not stick is retried once, and "skipped but still blank" keeps the loop going.
+- Choice answers are remembered in `CACHE_DIR/resolver-choices.json`, keyed by prompt
+  version + `config.fingerprint("answer")` + profile digest + control type + normalised
+  label + options (not packet fields, so one employer's postings share answers). A tab
+  that meets a question another tab is asking right now waits for that answer
+  (`_IN_FLIGHT`, per question — unrelated questions never wait). "unknown" is not cached.
+- "How Did You Hear About Us?" (Cencora): sources exist only under categories, so no
+  search finds "LinkedIn". Source questions (`_ANY_OPTION_KEYS`) now take the option naming
+  the profile's value, else "Other...", else the first, walking categories
+  (`select_prompt_any`; `any_option` for listbox dropdowns).
+- CACI: one experience row's From month/year stayed empty (data was a normal 2025-03).
+  `fill_date_sections` typed into whatever held focus and read back only at the end; it now
+  focuses the input, reads each section back, and retypes once (a partial "0" is retyped).
+
+Considered and rejected for the resolver: Jev (hosted API: applicant PII to a third
+party) and Laya (local, deterministic encoder, but its base checkpoints are near chance
+zero-shot on typed decisions per its own model card; would need fine-tuning on our own
+question/answer pairs, which `resolver-choices.json` could later supply).

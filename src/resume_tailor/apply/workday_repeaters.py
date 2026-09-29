@@ -9,6 +9,7 @@ answers are never replaced, and anything that cannot be verified is reported for
 
 from __future__ import annotations
 
+import contextlib
 import re
 from collections.abc import Callable
 from typing import Any
@@ -366,29 +367,46 @@ def _date_absent(page: Any, prefix: str, field: str) -> bool:
 def fill_date_sections(page: Any, control: str, parts: list[tuple[str, str]]) -> bool:
     """Type Workday's split date sections (``<control>-dateSectionMonth/Day/Year``).
 
-    An existing section is kept (ok only when equal); the result is read back.
+    An existing section is kept (ok only when equal); a partial one ("0" of "03", a
+    keystroke that landed) is retyped. Each section is read back as it is typed and
+    typed once more when the keys did not land: CACI (2026-09) left one row's From month
+    and year empty while every other date filled, because the typing went to whatever
+    held focus and nothing checked the section until the end.
     """
+    def value_of(section: str) -> str:
+        return str(page.locator(f"[id='{control}-{section}-input']").first.input_value() or "").strip()
+
+    def same(current: str, text: str) -> bool:
+        return current.lstrip("0") == text.lstrip("0")
+
     for section, text in parts:
         if not text:
             return False
         box = page.locator(f"[id='{control}-{section}-input']")
         if box.count() != 1:
             return False
-        current = str(box.first.input_value() or "").strip()
-        if current:
-            if current.lstrip("0") != text.lstrip("0"):
-                return False
+        current = value_of(section)
+        if current and same(current, text):
             continue
-        # The real spinbutton input is a 0px overlay; its visible "MM"/"DD"/"YYYY"
-        # display div takes the click and focuses it.
-        clicks.safe_click(page.locator(f"[id='{control}-{section}-display']").first, purpose="select", timeout=3000)
-        page.keyboard.type(text, delay=40)
+        if current and not text.startswith(current):
+            return False  # the applicant's own date
+        for attempt in range(2):
+            # The real spinbutton input is a 0px overlay; its visible "MM"/"DD"/"YYYY"
+            # display div takes the click. The input is also focused directly, so the
+            # keys cannot go to the control that had focus before.
+            clicks.safe_click(page.locator(f"[id='{control}-{section}-display']").first, purpose="select", timeout=3000)
+            with contextlib.suppress(Exception):
+                box.first.focus()
+            if attempt or value_of(section):
+                with contextlib.suppress(Exception):
+                    page.keyboard.press("ControlOrMeta+A")  # Cmd+A on macOS
+                    page.keyboard.press("Backspace")
+            page.keyboard.type(text, delay=40)
+            page.wait_for_timeout(150)
+            if same(value_of(section), text):
+                break
     page.wait_for_timeout(150)
-    return all(
-        str(page.locator(f"[id='{control}-{section}-input']").first.input_value() or "").strip().lstrip("0")
-        == text.lstrip("0")
-        for section, text in parts
-    )
+    return all(same(value_of(section), text) for section, text in parts)
 
 
 def _attempt(action: Callable[[], bool]) -> bool:

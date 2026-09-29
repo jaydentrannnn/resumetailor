@@ -150,6 +150,17 @@ def format_value(value: float, unit: Unit, *, numeric: bool) -> str:
     return f"${shown}/{unit}"
 
 
+def _low_value(unit: Unit, my_min: dict[Unit, float | None], top: float) -> float | None:
+    """The applicant's bottom in ``unit`` (converted from the other unit if needed), never above ``top``."""
+    mine = my_min.get(unit)
+    if mine is None:
+        other: Unit = "year" if unit == "hour" else "hour"
+        if my_min.get(other) is None:
+            return None
+        mine = _convert(float(my_min[other]), other, unit)  # type: ignore[arg-type]
+    return min(float(mine), top)
+
+
 def salary_fields(
     *,
     role: str,
@@ -157,14 +168,19 @@ def salary_fields(
     jd_text: str,
     hourly_max: float | None,
     yearly_max: float | None,
+    hourly_min: float | None = None,
+    yearly_min: float | None = None,
 ) -> dict[str, str]:
     """Packet keys for salary questions, or ``{}`` when the applicant set no range.
 
     ``salary_expectation[_number]`` answer in the default unit (the posting's, else
     hourly for intern/co-op titles and yearly otherwise); ``salary_hourly[_number]`` and
-    ``salary_yearly[_number]`` answer a question that names its unit.
+    ``salary_yearly[_number]`` answer a question that names its unit. With a minimum,
+    ``<key>_low_number`` is the bottom of the applicant's range in that unit, for a
+    question that offers ranges (`pick_range`).
     """
     my_max: dict[Unit, float | None] = {"hour": hourly_max, "year": yearly_max}
+    my_min: dict[Unit, float | None] = {"hour": hourly_min, "year": yearly_min}
     posted = posted_pay(listing_salary, jd_text)
     default: Unit = posted.unit if posted else ("hour" if _EARLY_CAREER.search(role or "") else "year")
     fields: dict[str, str] = {}
@@ -174,4 +190,75 @@ def salary_fields(
             continue
         fields[key] = format_value(value, unit, numeric=False)  # type: ignore[arg-type]
         fields[f"{key}_number"] = format_value(value, unit, numeric=True)  # type: ignore[arg-type]
+        low = _low_value(unit, my_min, value)  # type: ignore[arg-type]
+        if low is not None:
+            fields[f"{key}_low_number"] = format_value(low, unit, numeric=True)  # type: ignore[arg-type]
     return fields
+
+
+# --- range options ("$60,000 - $79,999", "Less than $40,000", "$100,000+") -------------
+
+_OPTION_NUMBER = re.compile(r"(?<![\w.])\$?\s?(\d{1,3}(?:,\d{3})+|\d+(?:\.\d+)?)\s?([kK])?(?![\w.])")
+_OPEN_BELOW = re.compile(r"\b(?:less than|under|below|up to|no more than)\b|<|\bor (?:less|below|under)\b", re.I)
+_OPEN_ABOVE = re.compile(
+    r"\+|>|\b(?:above|over|more than|greater than|at least)\b|\b(?:or|and) (?:more|above|higher|over|up)\b", re.I,
+)
+#: "$18 - $20 per hour" / "$60k to $80k": a range question's spec, as `range_spec` writes it.
+_SPEC = re.compile(r"^(\d+(?:\.\d+)?)-(\d+(?:\.\d+)?)/(hour|year)$")
+
+
+def option_range(label: str) -> tuple[float, float, Unit | None] | None:
+    """(low, high, unit) of one range option; open ends are 0 / infinity. None when the
+    option names no amount ("Prefer not to say")."""
+    found = [(_number(digits, k), bool(k)) for digits, k in _OPTION_NUMBER.findall(label)]
+    if not found:
+        return None
+    if len(found) >= 2:
+        (low, low_k), (high, high_k) = found[0], found[1]
+        if high_k and not low_k and low < 1000:
+            low *= 1000  # "$60-80k"
+        low, high = min(low, high), max(low, high)
+    elif _OPEN_BELOW.search(label):
+        low, high = 0.0, found[0][0]
+    elif _OPEN_ABOVE.search(label):
+        low, high = found[0][0], float("inf")
+    else:
+        low = high = found[0][0]
+    hour, year = _HOUR.search(label), _YEAR.search(label)
+    top = low if high == float("inf") else high
+    unit: Unit | None = "hour" if hour and not year else "year" if year and not hour else (
+        "hour" if 7 <= top <= 300 else "year" if top >= 15_000 else None
+    )
+    return low, high, unit
+
+
+def range_spec(low: float, high: float, unit: Unit) -> str:
+    """The applicant's range as one string a select call can carry ("60000-80000/year")."""
+    return f"{low:g}-{high:g}/{unit}"
+
+
+def pick_range(options: list[str], spec: str) -> str | None:
+    """The option whose range best covers the applicant's (`range_spec`).
+
+    Most overlap wins; an applicant's single figure counts inside a range that holds it;
+    with no overlap the nearest range wins; ties go to the first listed. None unless at
+    least two options read as ranges, so a dropdown that is not a range list is never
+    matched this way.
+    """
+    parsed = _SPEC.match(spec.strip())
+    if not parsed:
+        return None
+    want_low, want_high, want_unit = float(parsed.group(1)), float(parsed.group(2)), parsed.group(3)
+    ranges = [(label, found) for label in options if (found := option_range(label))]
+    if len(ranges) < 2:
+        return None
+    best: tuple[float, str] | None = None
+    for label, (low, high, unit) in ranges:
+        target = unit or want_unit
+        lo = _convert(want_low, want_unit, target)  # type: ignore[arg-type]
+        hi = _convert(want_high, want_unit, target)  # type: ignore[arg-type]
+        # Negative when the ranges do not meet: minus the gap to the nearest end.
+        overlap = min(high, hi) - max(low, lo)
+        if best is None or overlap > best[0]:
+            best = (overlap, label)
+    return best[1] if best else None

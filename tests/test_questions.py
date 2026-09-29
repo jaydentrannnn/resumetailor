@@ -314,3 +314,29 @@ def test_plan_for_asks_the_classifier_only_about_unkeyed_choices():
     # "gpa" is not a classifier key (and a Yes/No question cannot be a GPA).
     assert plan["f"]["key"] is None
     assert plan["e"]["key"] == "over_18"
+
+
+def test_a_non_compete_question_mentioning_a_current_or_former_employer_is_noncompete():
+    # American Century (Workday, 2026-09): "current or former employer" is not a
+    # question about the applicant having worked for the posting company.
+    question = Question(
+        "Are you currently subject to a non-solicitation or non-compete agreement with a current "
+        "or former employer? This question is intended to capture any such restrictions included "
+        "in agreements you may have signed for a current or former employer.",
+        kind="choice", options=YES_NO,
+    )
+    match = q.classify(question)
+    assert match is not None and match.key == "noncompete"
+    assert _answer(question) == ("noncompete", "No")
+
+
+@pytest.mark.parametrize(
+    "text",
+    [
+        "Are you a current or former employee of Acme?",
+        "Are you a former contractor of Acme?",
+    ],
+)
+def test_a_current_or_former_employee_question_is_still_previous_worker(text):
+    match = q.classify(Question(text, kind="choice", options=YES_NO))
+    assert match is not None and match.key == "previous_worker"

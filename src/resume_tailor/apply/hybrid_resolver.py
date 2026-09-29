@@ -9,9 +9,11 @@ blockers, consults the LLM, and executes targeted actions.
 from __future__ import annotations
 
 import contextlib
+import hashlib
 import json
 import logging
 import re
+import threading
 import time
 from collections.abc import Callable
 from dataclasses import dataclass
@@ -59,8 +61,14 @@ Rules:
 - For 'How did you hear about us?' or sources, pick 'Job Board', 'LinkedIn', 'Online', or 'Other' if exact text isn't listed.
 - For demographic / EEO questions (Gender, Race, Veteran, Disability): if the applicant declined or preferred not to say, choose 'Decline to self-identify', 'I prefer not to say', or similar.
 - For a checkbox group, use check_options and tick only options the profile supports (a location question: the applicant's location or stated relocation preferences). When none applies, tick the one explicit 'No', 'None of the above' or 'Not Available' option on its own.
-- Return actions for each unresolved control.
+- Return exactly one action for EVERY unresolved control, using its selector. When the \
+profile does not answer a control, still return an action for it with value "unknown"; \
+never leave a control out.
+- A value must be one of that control's listed options, copied exactly (or "unknown").
 """
+
+#: A decision the model returns when the profile does not answer a control.
+_UNKNOWN = "unknown"
 
 
 _INSPECT_PAGE_JS = """
@@ -549,7 +557,98 @@ class StepLedger:
     options: dict[str, list[str]] = dc_field(default_factory=dict)
     asked: set[str] = dc_field(default_factory=set)
     done: set[str] = dc_field(default_factory=set)
+    #: Model calls a control was sent in; one the model skipped is sent once more.
+    tries: dict[str, int] = dc_field(default_factory=dict)
     model_unavailable: bool = False
+
+
+#: Bump when `_SYSTEM_PROMPT` or the payload changes: cached choices are keyed on it.
+_RESOLVER_PROMPT_VERSION = "resolver-v1"
+#: Model calls one control may be sent in before it is left for the applicant. The
+#: prompt asks for a decision per control; a control the model still leaves out is sent
+#: once more, alone.
+_MAX_ASKS = 2
+#: Guards `_IN_FLIGHT` and the cache file's read-modify-write (held only briefly).
+_CHOICES_LOCK = threading.Lock()
+#: Choice keys a tab is asking the model about right now. Another tab showing the same
+#: question waits for that answer instead of asking again; unrelated questions never wait.
+_IN_FLIGHT: dict[str, threading.Event] = {}
+#: Longest a tab waits for another tab's answer to the same question.
+_IN_FLIGHT_WAIT = 30.0
+
+
+def _choices_path() -> Any:
+    return config.CACHE_DIR / "resolver-choices.json"
+
+
+def _choice_key(field: dict[str, Any], profile_digest: str) -> str:
+    """Identity of one choice question: the same question, options, applicant and model
+    get the same answer on every posting and every run (parallel tabs included)."""
+    options = sorted(_norm(str(option)) for option in field.get("options") or [])
+    payload = "\n".join([
+        _RESOLVER_PROMPT_VERSION, config.fingerprint("answer"), profile_digest,
+        str(field.get("type") or ""), _norm(str(field.get("label") or "")), *options,
+    ])
+    return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
+
+
+def _read_choices() -> dict[str, dict[str, str]]:
+    try:
+        data = json.loads(_choices_path().read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return {}
+    return data if isinstance(data, dict) else {}
+
+
+def _write_choices(new: dict[str, dict[str, str]]) -> None:
+    """Merge ``new`` into the cache file (read-modify-write under `_CHOICES_LOCK`)."""
+    if not new:
+        return
+    with _CHOICES_LOCK, contextlib.suppress(OSError):
+        path = _choices_path()
+        path.parent.mkdir(parents=True, exist_ok=True)
+        merged = _read_choices() | new
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(merged, indent=1, ensure_ascii=False), encoding="utf-8")
+        tmp.replace(path)
+
+
+def _remembered(keys: dict[str, str], observed: dict[str, dict[str, Any]]) -> list[FieldAction]:
+    """Choices already made for these very questions (another tab, an earlier run), as
+    actions on this page's selectors; one whose option this form does not list is skipped."""
+    known = _read_choices()
+    hits = []
+    for selector, key in keys.items():
+        hit = known.get(key)
+        if not isinstance(hit, dict) or not hit.get("action") or not hit.get("value"):
+            continue
+        with contextlib.suppress(Exception):
+            action = FieldAction(
+                label=str(observed[selector].get("label") or ""), selector=selector,
+                action=hit["action"], value=hit["value"], rationale="same question, same answer",
+            )
+            if _usable(action, observed[selector]):
+                hits.append(action)
+    return hits
+
+
+def _usable(action: FieldAction, field: dict[str, Any] | None) -> bool:
+    """Whether ``action`` answers ``field`` with one of the options the form rendered."""
+    if field is None or field.get("phone_code_menu"):
+        return False
+    offered = {_norm(str(value)) for value in field.get("options", [])}
+    if action.action in {"select_combobox", "choose_radio"} and _norm(action.value) not in offered:
+        return False
+    if action.action == "fill_text" or action.action == "select_combobox" and field.get("type") != "combobox":
+        return False
+    if action.action == "check_options":
+        picked = checked_values(action.value)
+        return not (
+            field.get("type") != "checkboxgroup" or not picked
+            or any(_norm(value) not in offered for value in picked)
+            or len(picked) > 1 and any(_EXCLUSIVE_OPTION.match(value) for value in picked)
+        )
+    return field.get("type") != "checkboxgroup"
 
 
 def resolve_step_blockers(
@@ -670,78 +769,130 @@ def resolve_step_blockers(
             exclude={"workday_password", "workday_email"},
             mode="json",
         )
-        user_content = [
-            f"<unresolved_controls>\n{json.dumps(unresolved, indent=2)}\n</unresolved_controls>",
-            f"<validation_errors>\n{json.dumps(errors, indent=2)}\n</validation_errors>",
-            f"<candidate_profile>\n{json.dumps(safe_profile, indent=2)}\n</candidate_profile>",
-            f"<packet_fields>\n{json.dumps(packet.fields, indent=2)}\n</packet_fields>",
-        ]
+        profile_digest = hashlib.sha256(json.dumps(safe_profile, sort_keys=True).encode("utf-8")).hexdigest()
+        observed = {str(item.get("selector")): item for item in unresolved if item.get("selector")}
+        keys = {selector: _choice_key(field, profile_digest) for selector, field in observed.items()}
 
-        try:
-            client = llm.client_for("answer")
+        actions = _remembered(keys, observed)
+        answered = {action.selector for action in actions}
+        # A question another tab is asking right now: wait for its answer rather than ask
+        # the same thing twice (parallel fills of one employer's postings, 2026-09).
+        with _CHOICES_LOCK:
+            waiting = {
+                selector: _IN_FLIGHT[key] for selector, key in keys.items()
+                if selector not in answered and key in _IN_FLIGHT
+            }
+        if waiting:
+            wait_until = time.monotonic() + _IN_FLIGHT_WAIT
             if deadline is not None:
-                timeout = max(1.0, min(60.0, deadline - time.monotonic()))
-                if hasattr(client, "timeout"):
-                    client.timeout = min(float(client.timeout), timeout)
-                elif hasattr(client, "with_options"):
-                    client = client.with_options(timeout=timeout)
-            response = client.messages.parse(
-                model=config.model_for("answer"),
-                max_tokens=config.max_tokens_for("answer"),
-                system=_SYSTEM_PROMPT,
-                messages=[{"role": "user", "content": "\n\n".join(user_content)}],
-                output_format=StepResolution,
-            )
-            resolution: StepResolution = response.parsed_output
-        except llm.LLMError as exc:
-            status = re.search(r"\bHTTP (429|5\d\d)\b", str(exc))
-            if status:
-                ledger.model_unavailable = True
-                log(f"Autofill model unavailable (HTTP {status.group(1)}); leaving {len(unresolved)} question(s) for review")
-            else:
-                log(f"LLM call failed: {exc}")
-            return False
-        except Exception as exc:  # noqa: BLE001
-            log(f"LLM call failed: {exc}")
-            return False
+                wait_until = min(wait_until, deadline - 5)
+            for event in set(waiting.values()):
+                event.wait(max(0.0, wait_until - time.monotonic()))
+            actions = _remembered(keys, observed)
+            answered = {action.selector for action in actions}
+        if actions:
+            log(f"reusing {len(actions)} earlier answer(s) to the same question(s)")
+        to_ask = [field for field in unresolved if str(field.get("selector")) not in answered]
+        mine: dict[str, threading.Event] = {}
+        with _CHOICES_LOCK:
+            for field in to_ask:
+                key = keys[str(field.get("selector"))]
+                if key not in _IN_FLIGHT:
+                    mine[key] = _IN_FLIGHT[key] = threading.Event()
+        model_actions: list[FieldAction] = []
+        responded: set[str] = set()
+        try:
+            if to_ask:
+                user_content = [
+                    f"<unresolved_controls>\n{json.dumps(to_ask, indent=2)}\n</unresolved_controls>",
+                    f"<validation_errors>\n{json.dumps(errors, indent=2)}\n</validation_errors>",
+                    f"<candidate_profile>\n{json.dumps(safe_profile, indent=2)}\n</candidate_profile>",
+                    f"<packet_fields>\n{json.dumps(packet.fields, indent=2)}\n</packet_fields>",
+                ]
+                try:
+                    client = llm.client_for("answer")
+                    if deadline is not None:
+                        timeout = max(1.0, min(60.0, deadline - time.monotonic()))
+                        if hasattr(client, "timeout"):
+                            client.timeout = min(float(client.timeout), timeout)
+                        elif hasattr(client, "with_options"):
+                            client = client.with_options(timeout=timeout)
+                    response = client.messages.parse(
+                        model=config.model_for("answer"),
+                        max_tokens=config.max_tokens_for("answer"),
+                        system=_SYSTEM_PROMPT,
+                        messages=[{"role": "user", "content": "\n\n".join(user_content)}],
+                        output_format=StepResolution,
+                    )
+                    resolution: StepResolution = response.parsed_output
+                except llm.LLMError as exc:
+                    status = re.search(r"\bHTTP (429|5\d\d)\b", str(exc))
+                    if status:
+                        ledger.model_unavailable = True
+                        log(f"Autofill model unavailable (HTTP {status.group(1)}); leaving {len(to_ask)} question(s) for review")
+                    else:
+                        log(f"LLM call failed: {exc}")
+                    return False
+                except Exception as exc:  # noqa: BLE001
+                    log(f"LLM call failed: {exc}")
+                    return False
+                asked_now = {str(field.get("selector")) for field in to_ask}
+                responded = {action.selector for action in resolution.actions if action.selector in asked_now}
+                unknown = sorted(
+                    str(observed[action.selector].get("label") or action.selector)[:40]
+                    for action in resolution.actions
+                    if action.selector in asked_now and _norm(action.value) == _UNKNOWN
+                )
+                if unknown:
+                    log(f"the profile does not answer {len(unknown)} question(s): {', '.join(unknown)}")
+                model_actions = [
+                    action for action in resolution.actions
+                    if action.selector in asked_now and _usable(action, observed.get(action.selector))
+                ]
+                _write_choices({
+                    keys[action.selector]: {"action": action.action, "value": action.value,
+                                            "label": str(observed[action.selector].get("label") or "")[:200]}
+                    for action in model_actions
+                    if action.action in {"select_combobox", "choose_radio", "check_options"}
+                })
+        finally:
+            with _CHOICES_LOCK:
+                for key, event in mine.items():
+                    _IN_FLIGHT.pop(key, None)
+                    event.set()
 
-        # Asked once per step: whatever the model did or did not answer is final here.
-        ledger.asked |= {str(f.get("selector")) for f in unresolved if f.get("selector")}
-        if not resolution.actions:
-            log("LLM returned no actions")
-            break
+        # A control the model decided on (an option, "unknown", or an option the form does
+        # not list) is final on this step; one it left out entirely goes into the next,
+        # smaller call, up to `_MAX_ASKS` calls.
+        answered |= responded
+        for field in to_ask:
+            selector = str(field.get("selector") or "")
+            if selector:
+                ledger.tries[selector] = ledger.tries.get(selector, 0) + 1
+        ledger.asked |= {
+            selector for selector in observed
+            if selector in answered or ledger.tries.get(selector, 0) >= _MAX_ASKS
+        }
+        actions += model_actions
+        if not actions:
+            if not responded:
+                log("LLM returned no actions")
+            continue
 
         executed = 0
-        observed = {str(item.get("selector")): item for item in unresolved if item.get("selector")}
-        for action in resolution.actions:
-            field = observed.get(action.selector)
-            if field is None:
-                continue
-            if field.get("phone_code_menu"):
-                continue
-            if action.action in {"select_combobox", "choose_radio"} and _norm(action.value) not in {
-                _norm(str(value)) for value in field.get("options", [])
-            }:
-                continue
-            if action.action == "fill_text" or action.action == "select_combobox" and field.get("type") != "combobox":
-                continue
-            if action.action == "check_options":
-                picked = checked_values(action.value)
-                offered = {_norm(str(value)) for value in field.get("options", [])}
-                if (
-                    field.get("type") != "checkboxgroup" or not picked
-                    or any(_norm(value) not in offered for value in picked)
-                    or len(picked) > 1 and any(_EXCLUSIVE_OPTION.match(value) for value in picked)
-                ):
-                    continue
-            elif field.get("type") == "checkboxgroup":
-                continue
+        for action in actions:
             log(f"executing action: {action.action} on '{action.label}' -> '{action.value}'")
-            if execute_action(page, action):
+            ok = execute_action(page, action)
+            if not ok:
+                # A choice that did not stick (a list still opening, a repaint) is
+                # retried once rather than left blank on this tab only.
+                page.wait_for_timeout(500)
+                ok = execute_action(page, action)
+            if ok:
                 executed += 1
                 ledger.done.add(action.selector)
 
-        log(f"successfully applied {executed}/{len(resolution.actions)} actions")
+        log(f"successfully applied {executed}/{len(actions)} actions")
         page.wait_for_timeout(1000)
 
         updated = extract_page_blockers(page)
@@ -757,6 +908,14 @@ def resolve_step_blockers(
             reveal_rounds += 1
             revealed = new
             log(f"answer revealed {len(new)} new question(s)")
+            continue
+        skipped = [
+            f for f in updated.get("unresolved") or []
+            if str(f.get("selector")) in observed and str(f.get("selector")) not in ledger.asked | ledger.done
+        ]
+        if skipped and attempt < max_retries:
+            # The page shows no error yet, but a question the model skipped is still
+            # blank: ask about it again rather than call the step cleared.
             continue
         if not updated.get("advance_disabled") and not updated.get("errors"):
             log("validation blockers cleared!")

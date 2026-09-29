@@ -9,6 +9,7 @@ import pytest
 
 from resume_tailor import config, llm
 from resume_tailor.apply import hybrid_resolver, workday_auth
+from resume_tailor.apply.packet import Packet
 from resume_tailor.apply.profile import ApplicantProfile
 
 
@@ -276,11 +277,18 @@ def test_a_second_pass_on_the_step_touches_only_the_new_gap(resolver_page):
     assert len(state.calls) == 1
     assert state.opened == ["#vet"]  # State's options were already known
 
-    # Same step, same stuck field: nothing is reopened and the model is not asked again.
+    # Same step, the field the model skipped: sent once more, alone; nothing is reopened.
+    state.replies.append(hybrid_resolver.StepResolution(actions=[]))
+    _resolve(state, ledger)
+    assert len(state.calls) == 2
+    sent = state.calls[1]["messages"][0]["content"]
+    assert "#vet" in sent and "#state" not in sent
+    assert state.opened == ["#vet"]
+
+    # Skipped twice: it is the applicant's; the model is not asked a third time.
     messages: list[str] = []
     _resolve(state, ledger, messages)
-    assert len(state.calls) == 1
-    assert state.opened == ["#vet"]
+    assert len(state.calls) == 2
     assert any("still need input" in m for m in messages)
 
     # A field revealed later on the same step is the only thing sent.
@@ -288,10 +296,171 @@ def test_a_second_pass_on_the_step_touches_only_the_new_gap(resolver_page):
     state.replies.append(hybrid_resolver.StepResolution(actions=[]))
     messages = []
     _resolve(state, ledger, messages)
-    assert len(state.calls) == 2
-    sent = state.calls[1]["messages"][0]["content"]
+    assert len(state.calls) == 3
+    sent = state.calls[2]["messages"][0]["content"]
     assert "#reloc" in sent and "#vet" not in sent and "#state" not in sent
     assert any("retrying 1 unfilled field(s): Willing to relocate" in m for m in messages)
+
+
+def _yes_no(selector: str, label: str) -> dict:
+    return _field(selector, label)
+
+
+def _choose(selector: str, label: str, value: str) -> hybrid_resolver.FieldAction:
+    return hybrid_resolver.FieldAction(label=label, selector=selector, action="select_combobox", value=value)
+
+
+def test_a_question_the_model_skips_is_asked_again_in_the_same_call(resolver_page):
+    """American Century (2026-09): of 12 questions the model answered 10; the page showed
+    no error yet, so the step was called cleared and two stayed blank on that tab only."""
+    state = resolver_page
+    board = "Are you a board member of any outside organization?"
+    state.unresolved = [_yes_no("#ref", "Were you referred?"), _yes_no("#board", board)]
+    state.replies.append(hybrid_resolver.StepResolution(actions=[_choose("#ref", "Were you referred?", "No")]))
+    state.replies.append(hybrid_resolver.StepResolution(actions=[_choose("#board", board, "No")]))
+    ledger = hybrid_resolver.StepLedger(options={"#ref": ["Yes", "No"], "#board": ["Yes", "No"]})
+
+    messages: list[str] = []
+    assert hybrid_resolver.resolve_step_blockers(
+        state.page, Packet.model_construct(fields={}), ApplicantProfile(),
+        ledger=ledger, on_progress=messages.append,
+    )
+    assert len(state.calls) == 2
+    retry = state.calls[1]["messages"][0]["content"]
+    assert "#board" in retry and "#ref" not in retry
+    assert state.unresolved == []
+
+
+def test_the_same_question_gets_the_same_answer_on_another_tab(resolver_page):
+    """A second posting (another tab, or a later run) with the same question and options
+    reuses the first answer instead of asking the model again."""
+    state = resolver_page
+    question = "Have you ever applied for registration with any regulatory authority?"
+    state.unresolved = [_yes_no("#reg", question)]
+    state.replies.append(hybrid_resolver.StepResolution(actions=[_choose("#reg", question, "No")]))
+    _resolve(state, hybrid_resolver.StepLedger(options={"#reg": ["Yes", "No"]}))
+    assert len(state.calls) == 1
+
+    executed: list[str] = []
+    state.unresolved = [_yes_no("#reg-2", question)]
+    original = hybrid_resolver.execute_action
+
+    def record(page, action):
+        executed.append(f"{action.selector}={action.value}")
+        return original(page, action)
+
+    with pytest.MonkeyPatch.context() as mp:
+        mp.setattr(hybrid_resolver, "execute_action", record)
+        messages: list[str] = []
+        _resolve(state, hybrid_resolver.StepLedger(options={"#reg-2": ["Yes", "No"]}), messages)
+    assert len(state.calls) == 1  # no second model call
+    assert executed == ["#reg-2=No"]
+    assert any("reusing 1 earlier answer" in m for m in messages)
+
+
+def test_a_remembered_answer_needs_the_same_options(resolver_page):
+    state = resolver_page
+    question = "Do you hold a securities license?"
+    state.unresolved = [_yes_no("#lic", question)]
+    state.replies.append(hybrid_resolver.StepResolution(actions=[_choose("#lic", question, "No")]))
+    _resolve(state, hybrid_resolver.StepLedger(options={"#lic": ["Yes", "No"]}))
+
+    # Other options make it another question: the model is asked.
+    state.unresolved = [_yes_no("#lic", question)]
+    state.replies.append(hybrid_resolver.StepResolution(actions=[_choose("#lic", question, "No, never")]))
+    _resolve(state, hybrid_resolver.StepLedger(options={"#lic": ["Yes, active", "No, never"]}))
+    assert len(state.calls) == 2
+
+
+def test_an_unknown_decision_is_final_and_never_remembered(resolver_page):
+    """"unknown" is the model's answer, not an omission: the field is left for the
+    applicant without a second call, and nothing is cached for the next posting."""
+    state = resolver_page
+    question = "Do you serve on a municipal retirement plan board?"
+    state.unresolved = [_yes_no("#board", question)]
+    state.replies.append(hybrid_resolver.StepResolution(actions=[_choose("#board", question, "unknown")]))
+    ledger = hybrid_resolver.StepLedger(options={"#board": ["Yes", "No"]})
+    messages: list[str] = []
+    hybrid_resolver.resolve_step_blockers(
+        state.page, Packet.model_construct(fields={}), ApplicantProfile(),
+        ledger=ledger, on_progress=messages.append,
+    )
+    assert len(state.calls) == 1
+    assert "#board" in ledger.asked and "#board" not in ledger.done
+    assert any("does not answer 1 question(s)" in m for m in messages)
+    assert hybrid_resolver._read_choices() == {}  # noqa: SLF001
+
+
+def test_a_tab_waits_for_the_answer_another_tab_is_fetching(resolver_page):
+    """Two tabs, one question: the second waits for the first tab's call and reuses it."""
+    import threading
+
+    state = resolver_page
+    question = "Is any immediate family member employed by a competitor?"
+    profile = ApplicantProfile()
+    digest = hybrid_resolver.hashlib.sha256(
+        hybrid_resolver.json.dumps(profile.model_dump(exclude={"workday_password", "workday_email"}, mode="json"),
+                                   sort_keys=True).encode("utf-8"),
+    ).hexdigest()
+    field = {**_yes_no("#fam", question), "options": ["Yes", "No"]}
+    key = hybrid_resolver._choice_key(field, digest)  # noqa: SLF001
+    event = threading.Event()
+    hybrid_resolver._IN_FLIGHT[key] = event  # noqa: SLF001 - "another tab" is asking it
+
+    def other_tab_answers() -> None:
+        hybrid_resolver._write_choices({key: {"action": "select_combobox", "value": "No", "label": question}})  # noqa: SLF001
+        hybrid_resolver._IN_FLIGHT.pop(key, None)  # noqa: SLF001
+        event.set()
+
+    timer = threading.Timer(0.05, other_tab_answers)
+    timer.start()
+    try:
+        state.unresolved = [_yes_no("#fam", question)]
+        messages: list[str] = []
+        assert hybrid_resolver.resolve_step_blockers(
+            state.page, Packet.model_construct(fields={}), profile,
+            ledger=hybrid_resolver.StepLedger(options={"#fam": ["Yes", "No"]}), on_progress=messages.append,
+        )
+    finally:
+        timer.join()
+        hybrid_resolver._IN_FLIGHT.pop(key, None)  # noqa: SLF001
+    assert state.calls == []  # this tab never asked the model
+    assert any("reusing 1 earlier answer" in m for m in messages)
+
+
+def test_unrelated_questions_do_not_wait_on_another_tab(resolver_page):
+    state = resolver_page
+    hybrid_resolver._IN_FLIGHT["someone-elses-question"] = hybrid_resolver.threading.Event()  # noqa: SLF001
+    try:
+        state.unresolved = [_yes_no("#q", "Do you have outside employment?")]
+        state.replies.append(hybrid_resolver.StepResolution(actions=[_choose("#q", "Outside", "No")]))
+        started = hybrid_resolver.time.monotonic()
+        assert _resolve(state, hybrid_resolver.StepLedger(options={"#q": ["Yes", "No"]}))
+        assert hybrid_resolver.time.monotonic() - started < 5
+    finally:
+        hybrid_resolver._IN_FLIGHT.pop("someone-elses-question", None)  # noqa: SLF001
+    assert len(state.calls) == 1
+    assert hybrid_resolver._IN_FLIGHT == {}  # noqa: SLF001 - its own key was released
+
+
+def test_a_choice_that_did_not_stick_is_retried_once(resolver_page, monkeypatch):
+    state = resolver_page
+    state.unresolved = [_yes_no("#q", "Do you have outside employment?")]
+    state.replies.append(hybrid_resolver.StepResolution(actions=[_choose("#q", "Outside", "No")]))
+    attempts: list[str] = []
+
+    def flaky(_page, action):
+        attempts.append(action.selector)
+        if len(attempts) == 1:
+            return False  # the list was still opening
+        state.unresolved = []
+        return True
+
+    monkeypatch.setattr(hybrid_resolver, "execute_action", flaky)
+    ledger = hybrid_resolver.StepLedger(options={"#q": ["Yes", "No"]})
+    assert _resolve(state, ledger)
+    assert attempts == ["#q", "#q"]
+    assert "#q" in ledger.done
 
 
 def test_after_a_rejected_advance_only_invalid_fields_are_retried(resolver_page):

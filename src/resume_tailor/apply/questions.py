@@ -151,7 +151,10 @@ _DERIVED: tuple[tuple[str, str], ...] = (
     (
         r"\bhave you (?:ever )?(?:previously )?(?:worked|been employed)\s+(?:at|for|by|with)\b"
         r"|previous(?:ly)?\s+(?:worked|employed)|ever\s+(?:been\s+)?(?:worked|employed)"
-        r"|former\s+employee|current\s+or\s+former|worked\s+(?:for|at)\s+.{0,40}before",
+        # "current or former" alone is not enough: American Century's non-compete question
+        # ("...agreement with a current or former employer?") is the noncompete fact.
+        r"|(?:current\s+or\s+)?former\s+(?:employee|worker|intern|contractor)"
+        r"|worked\s+(?:for|at)\s+.{0,40}before",
         "previous_worker",
     ),
 )

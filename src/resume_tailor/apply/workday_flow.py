@@ -16,7 +16,7 @@ from datetime import date
 from typing import Any, Literal
 from urllib.parse import urljoin
 
-from resume_tailor.apply import clicks, field_matcher, questions
+from resume_tailor.apply import clicks, field_matcher, questions, salary
 
 WorkdayState = Literal[
     "posting", "start_dialog", "auth_chooser", "sign_in", "create_account", "otp", "verify_email",
@@ -580,6 +580,10 @@ def _pick_listbox_option(options: list[dict[str, Any]], value: str, key: str) ->
     from resume_tailor.apply.hybrid_resolver import _option_match  # noqa: PLC0415
 
     usable = [o for o in options if not o["disabled"] and not _PLACEHOLDER.match(o["label"])]
+    if key in {SALARY_RANGE_KEY, ANY_OPTION_KEY}:
+        labels = [o["label"] for o in usable]
+        chosen = salary.pick_range(labels, value) if key == SALARY_RANGE_KEY else any_option(labels, value)
+        return (chosen, next(o["id"] for o in usable if o["label"] == chosen)) if chosen else None
     # "Bachelor of Science (B.S)" is matched on its name; the abbreviation is decoration.
     bare = [re.sub(r"\s*\([^)]*\)\s*$", "", o["label"]) for o in usable]
     chosen = _option_match([o["label"] for o in usable], value, key=key)
@@ -638,6 +642,7 @@ def select_listbox(page: Any, selector: str, value: str, *, key: str = "") -> bo
             return False
         last_listbox["status"] = "unverified"
         chosen, option_id = picked
+        last_listbox["chosen"] = chosen
         clicks.safe_click(page.locator(f"[id='{option_id}']").first, purpose="select", timeout=3000)
         for _ in range(12):
             if (trigger.inner_text() or "").strip() == chosen:
@@ -683,8 +688,51 @@ def country_mismatch(page: Any, fields: dict[str, str]) -> str | None:
 
 
 #: Keys these passes leave alone on purpose: salary is a per-posting answer, and the
-#: phone code has its own step (`ensure_phone_code`).
+#: phone code has its own step (`ensure_phone_code`). A salary *range* dropdown is the
+#: exception (`salary_range_spec`).
 _BLANK_EXEMPT = frozenset({"salary_expectation", "phone_country_code"})
+
+#: The key a select call carries for a range dropdown; its value is a `salary.range_spec`.
+SALARY_RANGE_KEY = "salary_range"
+#: The key a select call carries for "any reasonable option" (`_ANY_OPTION_KEYS`).
+ANY_OPTION_KEY = "any_option"
+#: Questions whose exact answer the applicant does not mind: when no option names the
+#: profile's answer, any reasonable option beats leaving a required field blank.
+_ANY_OPTION_KEYS = frozenset({"how_heard"})
+_OTHER_OPTION = re.compile(r"^other\b", re.I)
+
+
+def any_option(options: list[str], value: str) -> str | None:
+    """The option naming ``value`` ("LinkedIn" in "Social Media - LinkedIn"), else the
+    first starting with "Other", else the first option."""
+    wanted = field_matcher.normalize(value)
+    usable = [text for text in dict.fromkeys(options) if text and not _NO_ITEMS.match(text)]
+    return (
+        next((t for t in usable if wanted and wanted in field_matcher.normalize(t)), None)
+        or next((t for t in usable if _OTHER_OPTION.match(t)), None)
+        or (usable[0] if usable else None)
+    )
+
+
+def salary_range_spec(label: str, fields: dict[str, str]) -> str | None:
+    """The applicant's range for a salary question, in the unit it asks for (else the
+    posting's default unit), or None when the profile has no salary range.
+
+    The top is the precomputed answer (``min(posted top, applicant top)``,
+    `salary.salary_fields`); the bottom is the applicant's own minimum, capped by it.
+    """
+    unit = salary.question_unit(label)
+    prefix = {"hour": "salary_hourly", "year": "salary_yearly"}.get(unit or "", "salary_expectation")
+    top = fields.get(f"{prefix}_number", "")
+    if not top:
+        return None
+    if unit is None:
+        unit = "hour" if fields.get(prefix, "").endswith("/hour") else "year"
+    low = fields.get(f"{prefix}_low_number") or top
+    try:
+        return salary.range_spec(float(low), float(top), unit)
+    except ValueError:
+        return None
 
 
 def _note_blank(blank: list[dict[str, str]] | None, key: str, label: str, unanswered: bool) -> None:
@@ -733,6 +781,18 @@ def fill_dropdowns(
             value = answers[0] if answers else ""
             current = str(item.get("current") or "")
             is_blank = not current or bool(_PLACEHOLDER.match(current))
+            spec = salary_range_spec(item["label"], fields) if key == "salary_expectation" else None
+            if spec and is_blank:
+                # A dropdown of pay ranges ("Select the range that best matches your
+                # expectations", American Century 2026-09): the range covering the
+                # applicant's own. A dropdown that lists no ranges matches nothing.
+                tried.add(selector)
+                if select(page, selector, spec, key=SALARY_RANGE_KEY):
+                    chosen = str(last_listbox.get("chosen") or spec)
+                    progress(f"Workday: selected {item['label'][:60]} = {chosen}")
+                    committed.append({"key": key, "label": item["label"], "value": chosen, "selector": selector})
+                    progressed = True
+                continue
             if not key or key in _BLANK_EXEMPT:
                 continue
             if not value:
@@ -749,6 +809,12 @@ def fill_dropdowns(
                     )
                     progressed = True
                     break
+            else:
+                if is_blank and key in _ANY_OPTION_KEYS and select(page, selector, value, key=ANY_OPTION_KEY):
+                    chosen = str(last_listbox.get("chosen") or value)
+                    progress(f"Workday: no exact option for {item['label']} = {value}; chose {chosen}")
+                    committed.append({"key": key, "label": item["label"], "value": chosen, "selector": selector})
+                    progressed = True
             if key == "country" and not progressed and review is not None:
                 # A wrong country re-labels every name/address field and empties the
                 # phone code; it must not pass silently.
@@ -798,8 +864,9 @@ RADIOS_JS = r"""() => {
 }"""
 
 def _norm_company(value: str) -> str:
-    value = re.sub(r"[^a-z0-9 ]+", " ", value.casefold())
-    value = re.sub(r"\b(inc|llc|ltd|corp|corporation|company|co|group)\b", " ", value)
+    # "Deloitte & Touche LLP" and "Deloitte and Touche" are one firm.
+    value = re.sub(r"[^a-z0-9 ]+", " ", value.casefold().replace("&", " and "))
+    value = re.sub(r"\b(inc|llc|llp|lp|plc|ltd|corp|corporation|company|co|group)\b", " ", value)
     return re.sub(r"\s+", " ", value).strip()
 
 
@@ -944,7 +1011,24 @@ def _group_key(group: dict[str, Any]) -> str | None:
     if sum(bool(_DISABILITY_OPTION.search(label)) for label in labels) >= 2:
         return "disability_status"
     key = key_for_label(str(group.get("question") or ""))
-    return key if key in field_matcher.EEO_KEYS else None
+    return key if key in field_matcher.EEO_KEYS or key == "previous_worker" else None
+
+
+#: The "none of these" option of a checkbox group ("No", "None of the above").
+_NONE_OPTION = re.compile(r"^(?:no|none(?: of the above| of these)?|not applicable|n/?a)\.?$", re.I)
+
+
+def _previous_employer_options(labels: list[str], employers: Iterable[str]) -> list[str]:
+    """"Have you worked for any of the listed firms?" as checkboxes (American Century,
+    2026-09): the listed firms the applicant worked for, else the one "No" option."""
+    names = [_norm_company(name) for name in employers if _norm_company(name)]
+    worked = [label for label in labels if (firm := _norm_company(label)) and any(
+        firm == name or re.search(rf"\b{re.escape(firm)}\b", name) for name in names
+    )]
+    if worked:
+        return worked
+    none = [label for label in labels if _NONE_OPTION.match(label.strip())]
+    return none if len(none) == 1 else []
 
 
 def _tick(page: Any, box_id: str) -> bool:
@@ -963,12 +1047,18 @@ def fill_choice_checkboxes(
     *,
     progress: Callable[[str], None] = lambda _msg: None,
     review: list[str] | None = None,
+    employers: Iterable[str] = (),
 ) -> list[dict[str, Any]]:
     """Tick the one option of each self-identification checkbox group that means the
     profile's answer (`field_matcher.eeo_pattern`: "No" -> "No, I do not have a
     disability..."). A group with a ticked box is the applicant's answer and is kept; no
     unique option is left for review, never guessed.
+
+    A "worked for any of the listed firms?" group is answered from ``employers``
+    (`_previous_employer_options`), not left to the model: the same question then gets
+    the same answer on every posting.
     """
+    employers = list(employers)
     try:
         groups = page.evaluate(CHECKBOX_GROUPS_JS) or []
     except Exception:  # noqa: BLE001
@@ -981,25 +1071,30 @@ def fill_choice_checkboxes(
             continue
         question = str(group.get("question") or "") or key.replace("_", " ").capitalize()
         labels = [str(option.get("label") or "") for option in options]
-        chosen = None
-        for candidate in field_matcher.choice_values(key, fields):
-            chosen = field_matcher.closest_option(labels, candidate, key=key)
-            if chosen:
-                break
-        if chosen is None:
-            if fields.get(key) and review is not None:
+        if key == "previous_worker":
+            picks = _previous_employer_options(labels, employers)
+        else:
+            chosen = None
+            for candidate in field_matcher.choice_values(key, fields):
+                chosen = field_matcher.closest_option(labels, candidate, key=key)
+                if chosen:
+                    break
+            picks = [chosen] if chosen else []
+        if not picks:
+            if key != "previous_worker" and fields.get(key) and review is not None:
                 review.append(choice_failure(question, fields[key], labels))
             continue
-        box_id = next(str(option["id"]) for option in options if option.get("label") == chosen)
-        try:
-            ticked = _tick(page, box_id)
-        except Exception:  # noqa: BLE001
-            ticked = False
-        if ticked:
-            progress(f"Workday: ticked {chosen[:70]}")
-            committed.append({"key": key, "label": question, "value": chosen, "selector": f"[id='{box_id}']"})
-        elif review is not None:
-            review.append(f"{question}: could not tick {chosen}")
+        for chosen in picks:
+            box_id = next(str(option["id"]) for option in options if option.get("label") == chosen)
+            try:
+                ticked = _tick(page, box_id)
+            except Exception:  # noqa: BLE001
+                ticked = False
+            if ticked:
+                progress(f"Workday: ticked {chosen[:70]}")
+                committed.append({"key": key, "label": question, "value": chosen, "selector": f"[id='{box_id}']"})
+            elif review is not None:
+                review.append(f"{question}: could not tick {chosen}")
     return committed
 
 
@@ -1162,6 +1257,54 @@ def select_prompt(page: Any, input_id: str, value: str, *, key: str = "") -> boo
         return False
 
 
+def select_prompt_any(page: Any, input_id: str, value: str, *, max_depth: int = 3) -> str | None:
+    """Commit *some* option of a (hierarchical) prompt; the committed chip, or None.
+
+    Cencora's "How Did You Hear About Us?" (2026-09) lists sources only under categories,
+    so no search finds "LinkedIn" as a choice. The list is opened unfiltered and, at each
+    level, `any_option` is clicked; a category opens its children, a leaf commits.
+    """
+    def pick(texts: list[str]) -> str | None:
+        return any_option(texts, value)
+
+    def read_options(previous: list[str] | None) -> tuple[Any, list[str]]:
+        options, texts = page.locator(_OPEN_PROMPT_OPTIONS), []
+        for _ in range(12):
+            texts = [str(text).strip() for text in options.all_inner_texts()]
+            if pick(texts) and texts != previous:
+                break
+            page.wait_for_timeout(250)
+        return options, texts
+
+    try:
+        if page.evaluate(_PROMPT_STATE_JS, input_id):
+            return None
+        box = page.locator(f"[id='{input_id}']").first
+        box.fill("", timeout=3000)
+        clicks.safe_click(box, purpose="select", timeout=3000)
+        options, texts = read_options(None)
+        if not pick(texts):
+            box.press("Enter")  # tenants that list only after a (blank) search
+            options, texts = read_options(None)
+        for _level in range(max_depth):
+            choice = pick(texts)
+            if not choice:
+                break
+            clicks.safe_click(options.nth(texts.index(choice)), purpose="select", timeout=3000)
+            for _ in range(8):
+                page.wait_for_timeout(250)
+                chips = page.evaluate(_PROMPT_STATE_JS, input_id) or []
+                if chips:
+                    return str(chips[0]) if len(chips) == 1 else None
+                if [str(t).strip() for t in options.all_inner_texts()] != texts:
+                    break  # a category opened its children
+            options, texts = read_options(texts)
+        box.press("Escape")
+    except Exception:  # noqa: BLE001 - an unverified prompt is left for review
+        pass
+    return None
+
+
 #: Empty-or-not multiselect prompts on the current step, outside the My Experience rows
 #: (those belong to ``workday_repeaters``) and the phone code (``ensure_phone_code``).
 PROMPTS_JS = r"""() => {
@@ -1189,15 +1332,18 @@ def fill_prompts(
     fields: dict[str, str],
     *,
     select: Callable[..., bool] | None = None,
+    select_any: Callable[..., str | None] | None = None,
     progress: Callable[[str], None] = lambda _msg: None,
 ) -> list[dict[str, Any]]:
     """Commit known profile facts in empty prompts ("How Did You Hear About Us?").
 
     A prompt that already holds a chip is the applicant's answer and is left alone; one
     whose label maps to no profile fact, or whose search finds no exact option, is left
-    for review.
+    for review — except a source question (`_ANY_OPTION_KEYS`), which takes the closest
+    available option (`select_prompt_any`).
     """
     choose = select or select_prompt
+    choose_any = select_any or select_prompt_any
     try:
         found = page.evaluate(PROMPTS_JS) or []
     except Exception:  # noqa: BLE001
@@ -1222,7 +1368,15 @@ def fill_prompts(
                 })
                 break
         else:
-            progress(f"Workday: no exact option for {item['label']} = {value}; left for review")
+            chip = choose_any(page, item["input_id"], value) if key in _ANY_OPTION_KEYS else None
+            if chip:
+                progress(f"Workday: no exact option for {item['label']} = {value}; chose {chip}")
+                committed.append({
+                    "key": key, "label": item["label"], "value": chip,
+                    "selector": f"[id='{item['input_id']}']",
+                })
+            else:
+                progress(f"Workday: no exact option for {item['label']} = {value}; left for review")
     return committed
 
 

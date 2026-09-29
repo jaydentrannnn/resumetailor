@@ -148,6 +148,15 @@ def _isolated_apply_paths(tmp_path, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _isolated_resolver_choices(tmp_path, monkeypatch):
+    """Per-test store of the resolver's remembered choices: one test's model answer must
+    not be replayed into another (`CACHE_DIR` is shared by the whole session)."""
+    from resume_tailor.apply import hybrid_resolver
+
+    monkeypatch.setattr(hybrid_resolver, "_choices_path", lambda: tmp_path / "resolver-choices.json")
+
+
+@pytest.fixture(autouse=True)
 def _isolated_submit_guard(tmp_path, monkeypatch):
     """Keep the pause switch, blocked hosts and extension pairings per test; never sleep."""
     monkeypatch.setattr(submit_guard, "pause_path", lambda: tmp_path / "automation.json")

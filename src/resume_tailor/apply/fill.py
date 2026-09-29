@@ -851,6 +851,7 @@ def fill_application(
     fields.update(salary_mod.salary_fields(
         role=app.role or pkt.role or "", listing_salary=app.salary or "", jd_text=jd_text or "",
         hourly_max=profile.salary_hourly_max, yearly_max=profile.salary_yearly_max,
+        hourly_min=profile.salary_hourly_min, yearly_min=profile.salary_yearly_min,
     ))
     applicant_name = str(
         fields.get("full_name")
@@ -1109,6 +1110,7 @@ def fill_application(
                     self_id_review: list[str] = []
                     ticked = workday_flow.fill_choice_checkboxes(
                         page, fields, progress=progress, review=self_id_review,
+                        employers=[entry.company for entry in getattr(resume, "experience", []) or []],
                     )
                     wd_filled += ticked
                     if ticked or workday_flow.is_self_identify_step(workday_flow.snapshot(page)):
