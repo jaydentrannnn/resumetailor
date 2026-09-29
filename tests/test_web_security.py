@@ -83,6 +83,18 @@ def test_sign_in_link_sets_cookie(client, monkeypatch):
     assert client.get("/api/config").status_code == 200  # TestClient kept the cookie
 
 
+def test_sign_in_redirect_carries_the_app_version(client, monkeypatch):
+    """`/?v=<version>` is a fresh cache key, so a webview holding a stale `/` from an
+    older release loads the current page after an update."""
+    from resume_tailor import desktop_update
+
+    monkeypatch.setenv("RESUME_TAILOR_TOKEN", "tok-123456789")
+    monkeypatch.setattr(desktop_update, "CURRENT", "0.2.10+beta 1")
+    response = client.get("/?t=tok-123456789", follow_redirects=False)
+    assert response.headers["location"] == "/?v=0.2.10%2Bbeta%201"
+    assert client.get("/api/health").json()["version"] == "0.2.10+beta 1"
+
+
 def test_auto_token_is_written_for_local_clients(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "DATA_ROOT", tmp_path)
     monkeypatch.setenv("RESUME_TAILOR_TOKEN", "auto")

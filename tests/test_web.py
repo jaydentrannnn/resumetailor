@@ -4311,3 +4311,51 @@ def test_job_start_event_is_not_a_fit_stage(tmp_path, monkeypatch):
     events = q.get(job.job_id).events
     assert events[0].stage == "start"
     assert all(e.stage != "fit" for e in events)
+
+
+@pytest.fixture
+def spa_client(tmp_path):
+    """A fresh `_SPAStaticFiles` over a tiny fake dist, independent of any built frontend."""
+    from fastapi import FastAPI
+
+    from resume_tailor.web.app import _SPAStaticFiles
+
+    dist = tmp_path / "dist"
+    (dist / "assets").mkdir(parents=True)
+    (dist / "index.html").write_text("<html>app</html>", encoding="utf-8")
+    (dist / "favicon.svg").write_text("<svg/>", encoding="utf-8")
+    (dist / "assets" / "index-abc123.js").write_text("console.log(1)", encoding="utf-8")
+    spa = FastAPI()
+    spa.mount("/", _SPAStaticFiles(directory=str(dist), html=True))
+    with TestClient(spa) as test_client:
+        yield test_client
+
+
+def test_spa_index_and_client_routes_are_revalidated(spa_client):
+    """A webview must never reuse a stale index.html after an update."""
+    for path in ("/", "/index.html", "/applications", "/apply/settings"):
+        response = spa_client.get(path)
+        assert response.status_code == 200, path
+        assert "<html>app</html>" in response.text
+        assert response.headers["cache-control"] == "no-cache", path
+
+
+def test_spa_hashed_assets_are_immutable_and_other_files_revalidated(spa_client):
+    asset = spa_client.get("/assets/index-abc123.js")
+    assert asset.headers["cache-control"] == "public, max-age=31536000, immutable"
+    assert spa_client.get("/favicon.svg").headers["cache-control"] == "no-cache"
+
+
+def test_spa_missing_asset_falls_back_to_index_without_immutable_caching(spa_client):
+    """A bundle name that is not on disk gets index.html; caching that for a year would
+    pin the bad response even after the real bundle appears."""
+    response = spa_client.get("/assets/index-gone.js")
+    assert response.status_code == 200
+    assert response.headers["cache-control"] == "no-cache"
+
+
+def test_spa_revalidation_answers_304_with_the_same_policy(spa_client):
+    first = spa_client.get("/")
+    again = spa_client.get("/", headers={"if-none-match": first.headers["etag"]})
+    assert again.status_code == 304
+    assert again.headers["cache-control"] == "no-cache"

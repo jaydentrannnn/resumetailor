@@ -11,6 +11,8 @@
   format, categories and row count.
 - ``POST /api/apply/sources/test``: run one source once through the funnel's filters
   (nothing saved, no LLM) so the student sees what it would bring in.
+- ``GET /api/apply/sources/status``: each source's result from the latest run
+  (``source_status.json``), for the Sources tab's health line.
 """
 
 from __future__ import annotations
@@ -230,6 +232,23 @@ class SourceTestResult(BaseModel):
 @router.get("/api/apply/catalog", response_model=source_catalog.CatalogResponse)
 def get_catalog() -> source_catalog.CatalogResponse:
     return source_catalog.load_catalog()
+
+
+class SourceRunStatus(BaseModel):
+    found: int
+    kept: int
+    error: str | None = None
+    at: str
+
+
+class SourcesStatus(BaseModel):
+    sources: dict[str, SourceRunStatus]
+    last_run_at: str | None = None
+
+
+@router.get("/api/apply/sources/status", response_model=SourcesStatus)
+def get_sources_status() -> SourcesStatus:
+    return SourcesStatus.model_validate(sources.load_source_status())
 
 
 @router.post("/api/apply/sources/inspect", response_model=SourceInspection)

@@ -777,6 +777,14 @@ def _process_one(
     _bump(summary, "processed")
 
 
+def _source_status_entry(found: int, kept: int, error: str) -> dict[str, object]:
+    """One source's row in `source_status.json`; an empty source with no error says so."""
+    reason = sources.short_reason(error) if error else None
+    if reason is None and found == 0:
+        reason = "No postings found"
+    return {"found": found, "kept": kept, "error": reason, "at": _now_iso()}
+
+
 def run_daily(
     *,
     settings: ApplySettings | None = None,
@@ -838,7 +846,12 @@ def run_daily(
         already_known = 0
         known_ids: set[tuple[str, str]] = set(store.all_ids())
         seen_job_ids: set[str] = {job_id for _src, job_id in known_ids}
+        # Per-source health for the Sources tab: found = rows the source returned, kept =
+        # rows surviving the funnel filters (counted before the already-known dedupe, so a
+        # healthy source that has nothing new still reads as working).
+        status_entries: dict[str, dict[str, object]] = {}
         for src in [s for s in settings.sources if s.enabled]:
+            rows: list[sources.SourceRow] = []
             _progress_set(
                 phase="discovering",
                 source_id=src.id,
@@ -869,11 +882,22 @@ def run_daily(
             except NotImplementedError as exc:
                 summary.errors.append(f"{src.id}: {exc}")
                 _append_log(log_file, f"[source {src.id}] error: {exc}", log)
+                status_entries[src.id] = _source_status_entry(
+                    len(rows), 0, sources.failure_reason(exc)
+                )
                 continue
             except Exception as exc:  # noqa: BLE001
                 summary.errors.append(f"{src.id}: {exc}")
                 _append_log(log_file, f"[source {src.id}] error: {exc}", log)
+                status_entries[src.id] = _source_status_entry(
+                    len(rows), 0, sources.failure_reason(exc)
+                )
                 continue
+            status_entries[src.id] = _source_status_entry(
+                len(rows),
+                len(filtered.new_rows) + filtered.already_known,
+                "; ".join(source_errors),
+            )
             total_candidates += filtered.total_candidates
             already_known += filtered.already_known
             for row in filtered.new_rows:
@@ -890,6 +914,8 @@ def run_daily(
                 f"new={len(filtered.new_rows)}",
                 log,
             )
+        if status_entries:
+            sources.record_source_status(status_entries, _now_iso())
         summary.total_candidates = total_candidates
         summary.new_rows = len(all_new)
         summary.already_known = already_known

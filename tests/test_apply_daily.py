@@ -56,6 +56,7 @@ def apply_paths(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "APPLICATIONS_OUTPUT_DIR", tmp_path / "applications")
     monkeypatch.setattr(config, "OUTPUT_DIR", tmp_path / "output")
     monkeypatch.setattr(config, "CACHE_DIR", tmp_path / "cache")
+    monkeypatch.setattr(config, "SOURCE_STATUS_PATH", tmp_path / "source_status.json")
     (tmp_path / "output" / "jobs").mkdir(parents=True)
     return tmp_path
 
@@ -1790,3 +1791,83 @@ def test_run_daily_reads_company_link_tables_and_reports_part_errors(
     assert summary.errors == ["kw: audit: api.adzuna.com answered 503"]
     log = Path(summary.log_path).read_text(encoding="utf-8")
     assert "[source nwf] candidates=5 new=5" in log
+
+
+def _watch(source_id: str, *, enabled: bool = True) -> dict[str, Any]:
+    return {
+        "id": source_id, "kind": "ats_board", "enabled": enabled,
+        "boards": [{"ats": "greenhouse", "slug": source_id, "company": source_id.title()}],
+    }
+
+
+def _status_run(apply_paths, monkeypatch, fetch, source_ids, *, disabled=()):
+    from tests.fixtures import synthetic_resume
+
+    monkeypatch.setattr(daily.data, "load", synthetic_resume)
+    monkeypatch.setattr(sources, "fetch_source_rows", fetch)
+    settings = ApplySettings(
+        enabled=True,
+        sources=[_watch(sid) for sid in source_ids] + [_watch(sid, enabled=False) for sid in disabled],
+    )
+    return daily.run_daily(settings=settings, fetch_only=True)
+
+
+def test_source_status_records_found_kept_and_error(apply_paths, monkeypatch):
+    """Each enabled source gets `{found, kept, error, at}`: a healthy one, a failing one,
+    and one that returned nothing (which says so rather than reading as fine)."""
+    import httpx
+
+    stale = _sample_row(job_id="old", age="90d", age_days=90)
+    fresh = _sample_row(job_id="new", age="0d", age_days=0)
+
+    def fetch(src):
+        if src.id == "good":
+            return [fresh, stale], []
+        if src.id == "broken":
+            raise httpx.ConnectError("boom", request=httpx.Request("GET", "https://x.example/list"))
+        return [], []
+
+    _status_run(apply_paths, monkeypatch, fetch, ["good", "broken", "empty"])
+    saved = json.loads(config.SOURCE_STATUS_PATH.read_text(encoding="utf-8"))
+    entries = saved["sources"]
+    assert entries["good"]["found"] == 2 and entries["good"]["kept"] == 1
+    assert entries["good"]["error"] is None
+    assert entries["broken"]["found"] == 0 and entries["broken"]["kept"] == 0
+    assert entries["broken"]["error"] == "could not reach x.example"
+    assert entries["empty"]["found"] == 0 and entries["empty"]["error"] == "No postings found"
+    assert saved["last_run_at"] and all(e["at"] for e in entries.values())
+
+
+def test_source_status_keeps_partial_fetch_errors(apply_paths, monkeypatch):
+    fresh = _sample_row(job_id="new", age="0d", age_days=0)
+    _status_run(
+        apply_paths, monkeypatch, lambda src: ([fresh], ["gone: no greenhouse board named 'gone'"]),
+        ["watch"],
+    )
+    entry = sources.load_source_status()["sources"]["watch"]
+    assert entry["found"] == 1 and entry["error"] == "gone: no greenhouse board named 'gone'"
+
+
+def test_source_status_leaves_disabled_and_absent_sources_alone(apply_paths, monkeypatch):
+    old = {"found": 7, "kept": 3, "error": None, "at": "2026-01-01T00:00:00+00:00"}
+    config.SOURCE_STATUS_PATH.write_text(
+        json.dumps({"sources": {"off": old, "gone": old}, "last_run_at": "2026-01-01T00:00:00+00:00"}),
+        encoding="utf-8",
+    )
+    fresh = _sample_row(job_id="new", age="0d", age_days=0)
+    _status_run(apply_paths, monkeypatch, lambda src: ([fresh], []), ["on"], disabled=["off"])
+    status = sources.load_source_status()
+    assert status["sources"]["off"] == old and status["sources"]["gone"] == old
+    assert status["sources"]["on"]["found"] == 1
+    assert status["last_run_at"] != "2026-01-01T00:00:00+00:00"
+
+
+def test_source_status_write_failure_never_breaks_the_run(apply_paths, monkeypatch):
+    fresh = _sample_row(job_id="new", age="0d", age_days=0)
+
+    def broken_replace(*_a, **_k):
+        raise OSError("disk full")
+
+    monkeypatch.setattr("os.replace", broken_replace)
+    summary = _status_run(apply_paths, monkeypatch, lambda src: ([fresh], []), ["watch"])
+    assert summary.new_rows == 1

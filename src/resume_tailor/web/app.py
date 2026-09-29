@@ -272,13 +272,27 @@ class _SPAStaticFiles(StaticFiles):
     """
 
     async def get_response(self, path: str, scope):
+        served = path
         try:
-            return await super().get_response(path, scope)
+            response = await super().get_response(path, scope)
         except StarletteHTTPException as exc:
             first_segment = path.split(os.sep, 1)[0]
             if exc.status_code != 404 or first_segment == "api":
                 raise
-            return await super().get_response("index.html", scope)
+            served = "index.html"  # a missing bundle name must not be cached as immutable
+            response = await super().get_response(served, scope)
+        if response.status_code in (200, 304):
+            response.headers["Cache-Control"] = self._cache_control(served)
+        return response
+
+    @staticmethod
+    def _cache_control(path: str) -> str:
+        """Hashed bundles never change; everything else (index.html above all) must be
+        revalidated, or a webview heuristically reuses a stale page after an update."""
+        normalised = path.replace(os.sep, "/")
+        if normalised.startswith("assets/"):
+            return "public, max-age=31536000, immutable"
+        return "no-cache"
 
 
 # Serve the built SPA when it exists (production / Docker). The Vite dev server handles

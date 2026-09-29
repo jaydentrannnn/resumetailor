@@ -173,6 +173,7 @@ def workspace_paths(workspace_id: str) -> dict[str, Path]:
         "CALIBRATION_DIR": calibration,
         "MASTER_RESUME_PATH": data / "master_resume.json",
         "SETTINGS_PATH": data / "settings.json",
+        "SOURCE_STATUS_PATH": data / "source_status.json",
         "LIBRARIES_PATH": data / "libraries.json",
         "APPLICATIONS_PATH": data / "applications.json",
         "APPLICANT_PROFILE_PATH": data / "applicant_profile.json",
@@ -1158,7 +1159,8 @@ def _load_calibration(
 #: template, or the converter — these numbers describe one engine rendering one document.
 _PATH_NAMES = (
     "DATA_DIR", "TEMPLATES_DIR", "OUTPUT_DIR", "CACHE_DIR", "CALIBRATION_DIR",
-    "MASTER_RESUME_PATH", "SETTINGS_PATH", "LIBRARIES_PATH", "APPLICATIONS_PATH",
+    "MASTER_RESUME_PATH", "SETTINGS_PATH", "SOURCE_STATUS_PATH", "LIBRARIES_PATH",
+    "APPLICATIONS_PATH",
     "APPLICANT_PROFILE_PATH", "APPLICATIONS_OUTPUT_DIR", "DEFAULT_TEMPLATE_PATH",
     "BASELINE_TEMPLATE_PATH", "TEMPLATE_PROFILE_PATH", "TEMPLATE_LIBRARY_DIR",
     "COVER_TEMPLATE_PATH", "COVER_TEMPLATE_META_PATH",
@@ -1189,6 +1191,7 @@ def _legacy_paths() -> dict[str, Path]:
         "CALIBRATION_DIR": _dir_from_env("RESUME_TAILOR_CALIBRATION_DIR", data / "calibration"),
         "MASTER_RESUME_PATH": data / "master_resume.json",
         "SETTINGS_PATH": data / "settings.json",
+        "SOURCE_STATUS_PATH": data / "source_status.json",
         "LIBRARIES_PATH": data / "libraries.json",
         "APPLICATIONS_PATH": data / "applications.json",
         "APPLICANT_PROFILE_PATH": data / "applicant_profile.json",

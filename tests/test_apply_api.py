@@ -475,3 +475,36 @@ def test_portfolio_upload_is_server_owned_and_separate(client):
     gone = c.delete("/api/applicant-profile/portfolio")
     assert gone.json()["profile"]["portfolio_path"] == ""
     assert not Path(stored).exists()
+
+
+def test_sources_status_shape_and_missing_file(client, tmp_path, monkeypatch):
+    """No run yet (no file) is an empty result, not an error."""
+    c, _q = client
+    monkeypatch.setattr(config, "SOURCE_STATUS_PATH", tmp_path / "source_status.json")
+    assert c.get("/api/apply/sources/status").json() == {"sources": {}, "last_run_at": None}
+
+
+def test_sources_status_serves_the_recorded_entries(client, tmp_path, monkeypatch):
+    c, _q = client
+    path = tmp_path / "source_status.json"
+    monkeypatch.setattr(config, "SOURCE_STATUS_PATH", path)
+    entry = {"found": 4, "kept": 2, "error": None, "at": "2026-09-29T10:00:00+00:00"}
+    failed = {"found": 0, "kept": 0, "error": "could not reach api.adzuna.com", "at": entry["at"]}
+    path.write_text(
+        json.dumps({"sources": {"a": entry, "b": failed}, "last_run_at": entry["at"]}),
+        encoding="utf-8",
+    )
+    assert c.get("/api/apply/sources/status").json() == {
+        "sources": {"a": entry, "b": failed}, "last_run_at": entry["at"],
+    }
+
+
+@pytest.mark.parametrize("content", ["{not json", "[]", '{"sources": []}', '{"sources": {"a": {"found": "x"}}}'])
+def test_sources_status_tolerates_a_corrupt_file(client, tmp_path, monkeypatch, content):
+    c, _q = client
+    path = tmp_path / "source_status.json"
+    path.write_text(content, encoding="utf-8")
+    monkeypatch.setattr(config, "SOURCE_STATUS_PATH", path)
+    res = c.get("/api/apply/sources/status")
+    assert res.status_code == 200
+    assert res.json() == {"sources": {}, "last_run_at": None}

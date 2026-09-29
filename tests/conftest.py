@@ -137,13 +137,15 @@ def _pinned_calibration(monkeypatch):
 
 @pytest.fixture(autouse=True)
 def _isolated_apply_paths(tmp_path, monkeypatch):
-    """Redirect apply-funnel paths so tests never touch a developer's applications.json."""
+    """Redirect apply-funnel paths so tests never touch a developer's applications.json
+    or the per-source run status a daily run records."""
     apply_dir = tmp_path / "apply_workspace"
     apply_dir.mkdir(exist_ok=True)
     paths = {**config._DEFAULT.paths,
              "APPLICATIONS_PATH": apply_dir / "applications.json",
              "APPLICANT_PROFILE_PATH": apply_dir / "applicant_profile.json",
-             "APPLICATIONS_OUTPUT_DIR": apply_dir / "applications_out"}
+             "APPLICATIONS_OUTPUT_DIR": apply_dir / "applications_out",
+             "SOURCE_STATUS_PATH": apply_dir / "source_status.json"}
     monkeypatch.setattr(config, "_DEFAULT", replace(config._DEFAULT, paths=paths))
 
 

@@ -35,7 +35,7 @@ import secrets
 from http.cookies import SimpleCookie
 from pathlib import Path
 from typing import Any
-from urllib.parse import parse_qs, urlsplit
+from urllib.parse import parse_qs, quote, urlsplit
 
 from resume_tailor import config
 from resume_tailor.web import extension
@@ -189,10 +189,16 @@ class RequestGateMiddleware:
                 cookie = (
                     f"{COOKIE_NAME}={token}; HttpOnly; SameSite=Strict; Path=/"
                 ).encode("latin-1")
+                # `?v=<version>` is a fresh cache key for `/`, so a webview holding a
+                # stale index.html from an older release loads the new one exactly once
+                # (the SPA strips the param on boot).
+                from resume_tailor.web.routes.diagnostics import _version
+
+                location = f"/?v={quote(_version(), safe='')}".encode("latin-1")
                 await send({
                     "type": "http.response.start",
                     "status": 303,
-                    "headers": [(b"location", b"/"), (b"set-cookie", cookie),
+                    "headers": [(b"location", location), (b"set-cookie", cookie),
                                 (b"content-length", b"0")],
                 })
                 await send({"type": "http.response.body", "body": b""})
