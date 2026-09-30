@@ -33,7 +33,9 @@ export function useApplicationTable(
   const size = [25, 50, 100].includes(Number(params.get(key("size"))))
     ? Number(params.get(key("size")))
     : 25;
-  const sort = params.get(key("sort")) ?? (scope === "archive" ? "archived_at" : scope === "review" ? "status_at" : "posted_at");
+  const sort =
+    params.get(key("sort")) ??
+    (scope === "archive" ? "archived_at" : scope === "review" ? "status_at" : "posted_at");
   const direction: "asc" | "desc" = params.get(key("direction")) === "asc" ? "asc" : "desc";
   const [search, setSearch] = useState(q);
   useEffect(() => {

@@ -581,8 +581,13 @@ export function ApplyPage() {
 
       {operation && <OperationBanner operation={operation} onControl={control} />}
       {daily?.summary && (daily.running || daily.finished_at) && (
-        <section className="rounded-lg border border-line bg-panel p-4 shadow-sm" aria-live="polite">
-          <h2 className="text-lg font-semibold">Nightly run {daily.running ? "in progress" : "finished"}</h2>
+        <section
+          className="rounded-lg border border-line bg-panel p-4 shadow-sm"
+          aria-live="polite"
+        >
+          <h2 className="text-lg font-semibold">
+            Nightly run {daily.running ? "in progress" : "finished"}
+          </h2>
           <p className="mt-1 text-sm text-ink-muted">
             {daily.processed} of {daily.total} processed{daily.current ? ` · ${daily.current}` : ""}
           </p>

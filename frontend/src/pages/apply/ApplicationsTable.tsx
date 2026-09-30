@@ -594,7 +594,15 @@ function WaitingSince({ at }: { at: string }) {
   if (!at || Number.isNaN(date.getTime())) return <>—</>;
   const elapsed = Math.max(0, Date.now() - date.getTime());
   const minutes = Math.floor(elapsed / 60000);
-  const label = minutes < 60 ? `${minutes} min ago` : minutes < 1440
-    ? `${Math.floor(minutes / 60)} h ago` : `${Math.floor(minutes / 1440)} d ago`;
-  return <time dateTime={at} title={date.toLocaleString()}>{label}</time>;
+  const label =
+    minutes < 60
+      ? `${minutes} min ago`
+      : minutes < 1440
+        ? `${Math.floor(minutes / 60)} h ago`
+        : `${Math.floor(minutes / 1440)} d ago`;
+  return (
+    <time dateTime={at} title={date.toLocaleString()}>
+      {label}
+    </time>
+  );
 }
