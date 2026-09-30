@@ -853,6 +853,7 @@ def test_job_runs_to_success_with_stubbed_pipeline(client, monkeypatch, tmp_path
         initial_bullet_share=None,
         experience_bullet_share=None,
         max_bullets_per_entry=None,
+        coursework_pool=None,
         on_event=None,
     ):
         """Stub fit and record polish/merge/link knobs from JobSettings."""

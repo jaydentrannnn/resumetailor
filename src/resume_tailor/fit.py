@@ -655,6 +655,7 @@ def fit(
     initial_bullet_share: float | None = None,
     experience_bullet_share: float | None = None,
     max_bullets_per_entry: int | None = None,
+    coursework_pool: list[str] | None = None,
     on_event: events.ProgressCallback | None = None,
 ) -> FitResult:
     """Select, rewrite, render, and measure until the resume fits `target_pages`.
@@ -682,6 +683,8 @@ def fit(
     `repair_widows` enables one post-render pass using PDF line boxes. It matters to the
     loop because a short final line wastes space and can push a fitting resume onto two
     pages. Without PDF measurement, the pass uses the conservative character estimate.
+    `coursework_pool` (the education pool `facets` chose from) lets that pass top up or
+    trim the coursework line; without it, coursework is left as `facets` selected it.
 
     `repair_verbs` is passed through the same way and shares that call. It does not affect
     fitting at all — a repeated opening verb costs no space — so it is purely a readability
@@ -1025,9 +1028,9 @@ def fit(
                 )
                 rewritten = outcome.texts = repaired
                 outcome.widow_repairs_rejected.update(rejected)
-            if repair_widows and course_edu and getattr(resume, "_coursework_pool", None):
+            if repair_widows and course_edu and coursework_pool:
                 course_edu.coursework = facets.fit_coursework_to_budget(
-                    old_courses, pool=resume._coursework_pool,
+                    old_courses, pool=coursework_pool,
                     jd_keywords=[k.phrase for k in requirements.keywords],
                     chars_per_line=layout["__coursework__"].chars_per_line,
                     last_fill=(layout["__coursework__"].last_fill

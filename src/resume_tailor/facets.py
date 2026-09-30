@@ -600,7 +600,6 @@ def apply(
     has no id and `zip` degrades safely if a hand-built `FacetResult` omits skills.
     """
     copy = resume.model_copy(deep=True)
-    object.__setattr__(copy, "_coursework_pool", list(result.coursework_pool))
     for proj in copy.projects:
         if proj.id in result.projects:
             proj.tech = list(result.projects[proj.id])

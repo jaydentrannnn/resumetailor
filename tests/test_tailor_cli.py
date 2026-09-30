@@ -281,7 +281,7 @@ def test_pages_and_template_flags_reach_the_fit_loop(cli, jd_file, tmp_path, mon
         resume_arg, reqs, *, target_pages, template, out, max_experience, max_projects,
         semantic=None, repair_widows=True, repair_verbs=True, merge_bullets=False,
         include_project_links=True, contact_fields=None, fill_target=None,
-        initial_bullet_share=None, experience_bullet_share=None, max_bullets_per_entry=None,
+        initial_bullet_share=None, experience_bullet_share=None, max_bullets_per_entry=None, coursework_pool=None,
     ):
         """Capture fit kwargs so CLI flag plumbing can be asserted."""
         seen.update(
@@ -322,7 +322,7 @@ def test_defaults_match_config(cli, jd_file, tmp_path, monkeypatch):
         resume_arg, reqs, *, target_pages, template, out, max_experience, max_projects,
         semantic=None, repair_widows=True, repair_verbs=True, merge_bullets=False,
         include_project_links=True, contact_fields=None, fill_target=None,
-        initial_bullet_share=None, experience_bullet_share=None, max_bullets_per_entry=None,
+        initial_bullet_share=None, experience_bullet_share=None, max_bullets_per_entry=None, coursework_pool=None,
     ):
         """Capture defaults so they stay owned by fit(), not the CLI."""
         seen.update(

@@ -634,6 +634,7 @@ def main(argv: list[str] | None = None) -> int:
             initial_bullet_share=args.initial_bullet_share,
             experience_bullet_share=args.experience_bullet_share,
             max_bullets_per_entry=args.max_bullets_per_entry,
+            coursework_pool=facet_result.coursework_pool,
         )
     except FabricationError as exc:
         print(f"error: {exc}", file=sys.stderr)

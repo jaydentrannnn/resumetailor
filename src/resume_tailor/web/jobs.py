@@ -601,6 +601,7 @@ class JobQueue:
                 initial_bullet_share=settings.initial_bullet_share,
                 experience_bullet_share=settings.experience_bullet_share,
                 max_bullets_per_entry=settings.max_bullets_per_entry,
+                coursework_pool=facet_result.coursework_pool,
                 on_event=on_event,
             )
         except FabricationError as exc:

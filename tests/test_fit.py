@@ -451,6 +451,36 @@ def test_measured_widow_pass_reverts_when_repair_overflows(monkeypatch, tmp_path
     assert any("Widow repair overflowed" in warning for warning in result.warnings)
 
 
+def test_measured_pass_refits_coursework_only_from_the_pool_it_is_given(monkeypatch, tmp_path):
+    """The coursework pool reaches the measured pass as an argument, never via the resume."""
+    monkeypatch.setattr(fit_mod, "rewrite_bullets", _identity_rewrite)
+    _stub_render(
+        monkeypatch, tmp_path,
+        pages_for=lambda texts: (1, _FULL_LINES),
+        layout_for=lambda texts: {
+            **{bid: fit_mod.render.LineFit(1, 1.0, 100) for bid in texts},
+            "__coursework__": fit_mod.render.LineFit(2, 0.2, 100),
+        },
+    )
+    pools: list[list[str]] = []
+
+    def fake_fit_coursework(ordered, *args, pool=None, **kwargs):
+        pools.append(list(pool))
+        return [*ordered, "Operating Systems"]
+
+    monkeypatch.setattr(fit_mod.facets, "fit_coursework_to_budget", fake_fit_coursework)
+    pool = ["Algorithms", "Databases", "Operating Systems"]
+
+    fit_mod.fit(
+        _test_resume(), _requirements(), target_pages=1, fill_target=0, coursework_pool=pool
+    )
+    assert pools == [pool]
+
+    pools.clear()
+    fit_mod.fit(_test_resume(), _requirements(), target_pages=1, fill_target=0)
+    assert pools == [], "without a pool, coursework is left as facets selected it"
+
+
 def test_measured_widow_targets_choose_shortening_extension_and_merged_shortening():
     source = Bullet(id="a", text="x" * 220, tags=["python"])
     sources = {"a": source, "b": Bullet(id="b", text="y" * 220, tags=["python"])}
