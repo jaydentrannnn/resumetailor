@@ -870,6 +870,7 @@ def test_lower_bound_equivalence_preserves_rebound_detection():
     plus = bullet("b", "Trained 30+ staff.", ["support"], metric=True)
     assert guard_offenders([plus], "Trained over 30 staff.") == []
     assert rewrite.numbers_dropped([plus], "Trained more than 30 staff.") == []
+    assert check_fabrication(plus, "Trained 30 staff.") == ["30"]
     bare = bullet("c", "Trained 30 staff.", ["support"], metric=True)
     assert check_fabrication(bare, "Trained over 30 staff.") == ["30"]
 

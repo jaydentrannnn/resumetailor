@@ -767,7 +767,8 @@ def _check_fabrication(sources: Sequence[Bullet], rewritten: str) -> list[str]:
                      for m in _TOKEN.finditer(source.text)
                      if _NUMBER_PLUS.fullmatch(m.group(0))}
     for number in source_pluses:
-        allowed.add(number)
+        if number in _lower_bounds(rewritten):
+            allowed.add(number)
 
     offenders: list[str] = []
     for match in _TOKEN.finditer(rewritten):
