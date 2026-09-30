@@ -537,6 +537,14 @@ def format_report(
             if m.reason:
                 lines.append(f"    {m.reason}")
 
+    if result.pulled_back or result.dropped:
+        lines.append("")
+        lines.append("Trimmed to fit the page:")
+        if result.pulled_back:
+            lines.append(f"  - {result.pulled_back} bullet(s) shortened by a line")
+        if result.dropped:
+            lines.append(f"  - {len(result.dropped)} bullet(s) dropped: {', '.join(result.dropped)}")
+
     page_note = " (estimated — Word unavailable)" if result.pages_are_estimated else ""
     lines += [
         "",

@@ -1081,15 +1081,15 @@ SOFFICE_TIMEOUT = float(os.environ.get("SOFFICE_TIMEOUT", "120"))
 
 DEFAULT_PAGE_TARGET = 1
 
-#: Maximum fill→render→measure cycles before failing loudly. The plan's rule is that we
-#: never silently truncate, so exhausting this is an error, not a fallback.
-MAX_FIT_ATTEMPTS = 3
+#: Overflow ladder limits (see `fit.fit`). Combine and pull-back each run once per bullet
+#: set; whole-bullet drops are deterministic and cost only a render, so they get a few
+#: rounds. Exhausting them is an error, never a silent truncation.
+MAX_DROP_ROUNDS = 3
 
-#: How much to ask the rewriter to shorten by on each successive overflow, in percent.
-#: Escalating rather than fixed, because a bullet set that overflows twice needs a bigger
-#: cut than the first attempt gave it. First step lowered from 15 to 5 so a
-#: barely-over-budget draft isn't cut as hard as one that's badly over.
-SHORTEN_SCHEDULE = (5, 15, 25)
+#: A multi-line bullet is a pull-back candidate when its final line is at most this
+#: fraction full. Wider than `WIDOW_MIN_FILL`: a bullet at 35% is not a widow, but a
+#: one-line cut still frees its whole last line.
+PULLBACK_MAX_FILL = 0.40
 
 #: Where `scripts/calibrate.py` writes its measurements, one file per PDF backend.
 

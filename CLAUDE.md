@@ -147,7 +147,7 @@ master_resume.json + jd.txt
   → rewrite._merge_bullets() / _polish()   (LLM, optional/bounded)
   → render.build_context() + docxtpl fill  (no LLM, ever)
   → render.measure_detail() → (pages, lines) via convert.py
-fit.fit(): over → re-rewrite shorter (SHORTEN_SCHEDULE, else FitError)
+fit.fit(): over → combine → pull back near-widows → drop weakest (else FitError)
            under → restore bullets and retry (MAX_GROW_ATTEMPTS, then warn)
   → expand / skills / coverletter / review   (opt-in stages)
   → report.format_report()  ← tailor.py prints this and sets the exit code

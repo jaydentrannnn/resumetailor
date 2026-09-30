@@ -285,7 +285,7 @@ export function RunOptions({
               </Field>
               <Toggle
                 label="Merge redundant bullets"
-                help="Only after a measured page overflow; combines near-duplicate lines."
+                help="Only after a measured page overflow; the first thing tried before shortening or dropping bullets."
                 checked={settings.merge}
                 onChange={(v) => set("merge", v)}
               />

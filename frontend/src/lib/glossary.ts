@@ -59,7 +59,7 @@ export const GLOSSARY = {
   },
   merge: {
     label: "Combine similar bullets",
-    help: "When the page overflows, allow two closely related bullets to be merged into one.",
+    help: "When the page overflows, first try merging two closely related bullets into one.",
   },
   fillTarget: {
     label: "Page fill goal",

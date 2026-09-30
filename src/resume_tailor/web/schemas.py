@@ -261,7 +261,7 @@ class JobSettings(BaseModel):
     no_semantic: bool = False
     no_widow_repair: bool = False
     no_verb_repair: bool = False
-    merge: bool = False
+    merge: bool = True
     no_cache: bool = False
     #: How many independent JD extractions to vote over (`jd.extract_consensus`);
     #: 0 = automatic (`config.extract_runs`: 1 on Anthropic/Gemini, 3 on local models).

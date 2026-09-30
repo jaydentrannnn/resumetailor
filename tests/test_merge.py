@@ -104,7 +104,6 @@ def test_propose_respects_same_entry_constraint():
         reqs,
         semantic={b1.id: 1.0, b2.id: 1.0, c1.id: 1.0, c2.id: 1.0},
         char_budget=2 * config.CHARS_PER_LINE,
-        shorten_pct=0,
         attempt=0,
     )
 
@@ -128,7 +127,6 @@ def test_propose_chooses_earliest_member_as_survivor():
         reqs,
         semantic={b.id: 1.0 for b in selected},
         char_budget=2 * config.CHARS_PER_LINE,
-        shorten_pct=0,
         attempt=1,  # allows 3-member groups
     )
 
@@ -151,7 +149,6 @@ def test_propose_rejects_when_source_is_too_long_for_hard_max():
         requirements(("python", "must_have")),
         semantic={b1.id: 1.0, b2.id: 1.0},
         char_budget=2 * CPL,
-        shorten_pct=0,
         attempt=0,
     )
 
@@ -173,7 +170,6 @@ def test_propose_allows_3_member_groups_only_after_first_overflow_rung():
         reqs,
         semantic=semantic,
         char_budget=2 * config.CHARS_PER_LINE,
-        shorten_pct=0,
         attempt=0,
     )
     assert all(len(g.member_ids) == 2 for g in groups0)
@@ -184,7 +180,6 @@ def test_propose_allows_3_member_groups_only_after_first_overflow_rung():
         reqs,
         semantic=semantic,
         char_budget=2 * config.CHARS_PER_LINE,
-        shorten_pct=0,
         attempt=1,
     )
     assert any(len(g.member_ids) == 3 for g in groups1)
@@ -243,7 +238,6 @@ def test_merge_acceptance_collapses_ids_but_keeps_entry_renderable(monkeypatch, 
         [a, b],
         reqs,
         char_budget=char_budget,
-        shorten_pct=0,
         repair_widows=False,
         merge_groups=groups,
     )
@@ -297,7 +291,6 @@ def test_merge_rejects_when_numbers_are_dropped(monkeypatch, rewrite_calls):
         [a, b],
         reqs,
         char_budget=char_budget,
-        shorten_pct=0,
         repair_widows=False,
         merge_groups=groups,
     )
@@ -361,7 +354,6 @@ def test_merge_rejects_when_number_is_rebound(monkeypatch, rewrite_calls):
         [a, b],
         reqs,
         char_budget=char_budget,
-        shorten_pct=0,
         repair_widows=False,
         merge_groups=groups,
     )

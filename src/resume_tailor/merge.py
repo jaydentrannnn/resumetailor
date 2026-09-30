@@ -139,7 +139,6 @@ def propose(
     *,
     semantic: dict[str, float] | None,
     char_budget: int,
-    shorten_pct: int,
     attempt: int,
 ) -> list[MergeGroup]:
     """Propose redundant bullet groups for merging (pure, deterministic).
@@ -154,7 +153,7 @@ def propose(
     selected_ids = {b.id for b in selected}
     order_map = {b.id: i for i, b in enumerate(selected)}
 
-    budget = max(40, int(char_budget * (1 - shorten_pct / 100)))
+    budget = max(40, char_budget)
     hard_max = max(40, budget - config.WIDOW_SAFETY)
 
     affinity_threshold = config.MERGE_AFFINITY_SCHEDULE[

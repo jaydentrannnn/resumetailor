@@ -6,9 +6,10 @@ and produces the file the user actually gets. `estimate_lines` is also the fallb
 when Word/COM is unavailable, so a run can still finish (with a warning) without ever
 generating XML or layout logic outside `render.py`.
 
-Never silently truncates: after `config.MAX_FIT_ATTEMPTS` overflowing rewrites, `fit()`
-raises `FitError` naming which sections are still over budget instead of cutting content
-on its own.
+Never silently truncates: an overflowing draft climbs a fixed ladder (combine, pull back
+near-widowed bullets, drop the weakest bullets), and if that cannot fit the page `fit()`
+raises `FitError` naming which sections are still over budget. Every merge, pull-back and
+drop is reported, never silent.
 """
 
 from __future__ import annotations
@@ -18,11 +19,21 @@ from dataclasses import dataclass, field
 from pathlib import Path
 
 from . import config, events, render
-from .data import Experience, MasterResume, Project
+from .data import Bullet, Experience, MasterResume, Project
 from .jd import JobRequirements
 from .merge import MergeGroup
 from .merge import propose as propose_merges
-from .rewrite import rewrite_bullets, select_entries, select_within_entries, selectable_total
+from .rewrite import (
+    merge_into,
+    pull_back,
+    rewrite_bullets,
+    select_entries,
+    select_within_entries,
+    selectable_total,
+    widowed,
+)
+from .rewrite import RewriteOutcome
+from .rewrite import score as score_bullet
 from .template_profile import ContactField, active_layout
 
 #: How many physical lines a bullet's rewritten text is targeted at, on average. Passed
@@ -77,7 +88,25 @@ class FitResult:
     #: Merge groups successfully accepted and applied during rewriting.
     merges: list[MergeGroup] = field(default_factory=list)
 
+    #: Bullets the overflow ladder pulled back by a line, and bullet ids it dropped whole.
+    #: Reported because both change the resume's content, not just its length.
+    pulled_back: int = 0
+    dropped: list[str] = field(default_factory=list)
+
     warnings: list[str] = field(default_factory=list)
+
+
+@dataclass
+class _Draft:
+    """A bullet set that fit its page target, kept so a later, fuller set that cannot be
+    trimmed to fit can fall back to it instead of failing the run."""
+
+    texts: dict[str, str]
+    selected: list[Bullet]
+    outcome: RewriteOutcome
+    pulled: int
+    dropped: list[str]
+    members: dict[str, tuple[str, ...]]
 
 
 # --------------------------------------------------------------------------------------
@@ -425,9 +454,18 @@ def _section_pools(
     return pools, weights
 
 
-def _overflow_report(resume: MasterResume, bullets: dict[str, str], target_pages: int) -> str:
+def _overflow_report(
+    resume: MasterResume, bullets: dict[str, str], target_pages: int, measured_lines: int
+) -> str:
+    """Why the page is over, in *measured* lines.
+
+    The character-budget estimate undercounts real output by several lines on some
+    templates, so quoting it produced "over by ~-4" for a page that plainly overflowed.
+    The per-entry contributions below are still estimates; they only rank which entries
+    are largest.
+    """
     capacity = target_pages * config.LINES_PER_PAGE
-    total = estimate_lines(resume, bullets)
+    over = measured_lines - capacity
 
     contributions: list[tuple[int, str]] = []
     for section in resume.entry_sections:
@@ -439,10 +477,111 @@ def _overflow_report(resume: MasterResume, bullets: dict[str, str], target_pages
     contributions.sort(reverse=True)
     top = "\n".join(f"  - {desc}" for _, desc in contributions[:5]) or "  (none)"
 
-    return (
-        f"~{total} estimated lines vs a {capacity}-line budget for {target_pages} page(s), "
-        f"over by ~{total - capacity}. Largest contributors:\n{top}"
+    if over > 0:
+        head = (
+            f"Measured {measured_lines} lines vs a {capacity}-line budget for "
+            f"{target_pages} page(s), over by {over}."
+        )
+    else:
+        head = (
+            f"Measured {measured_lines} lines, within the {capacity}-line budget, but the "
+            f"content still spilled onto another page (a page break or keep-together rule "
+            f"moved it)."
+        )
+    return f"{head} Largest contributors:\n{top}"
+
+
+def _bullet_score(
+    bullet_id: str,
+    sources: dict[str, Bullet],
+    requirements: JobRequirements,
+    semantic: dict[str, float] | None,
+    members: dict[str, tuple[str, ...]],
+) -> float:
+    """Relevance of a rendered bullet. A merged survivor is as relevant as its best
+    member: merging must not make the strongest claim in a group easier to drop."""
+    ids = members.get(bullet_id, (bullet_id,))
+    return max(
+        score_bullet(sources[m], requirements, semantic=semantic) for m in ids if m in sources
     )
+
+
+def _choose_pullbacks(
+    texts: dict[str, str],
+    sources: dict[str, Bullet],
+    requirements: JobRequirements,
+    semantic: dict[str, float] | None,
+    members: dict[str, tuple[str, ...]],
+    *,
+    count: int,
+) -> dict[str, int]:
+    """`{bullet id: character ceiling}` for the bullets worth a one-line pull-back.
+
+    Eligible: multi-line bullets whose last line is at most `config.PULLBACK_MAX_FILL`
+    full — cutting a few words frees a whole line. Emptiest last line first (the smallest
+    cut), ties to the lower relevance. Merged survivors are excluded: they were just
+    condensed from several sources, and a single-source guard check would misread them.
+    """
+    eligible = widowed(texts, max_fill=config.PULLBACK_MAX_FILL)
+    ranked = sorted(
+        (bid for bid in eligible if bid not in members),
+        key=lambda bid: (
+            config.last_line_fill(texts[bid]),
+            _bullet_score(bid, sources, requirements, semantic, members),
+        ),
+    )
+    return {bid: eligible[bid] for bid in ranked[: max(0, count)]}
+
+
+def _choose_drops(
+    entries: list[Experience | Project],
+    texts: dict[str, str],
+    sources: dict[str, Bullet],
+    requirements: JobRequirements,
+    semantic: dict[str, float] | None,
+    members: dict[str, tuple[str, ...]],
+    *,
+    overflow: int,
+) -> list[str]:
+    """Bullet ids to drop whole, lowest relevance first, until `overflow` lines are freed.
+
+    Pure and deterministic. Never takes an entry's last rendered bullet — the same floor
+    `select_within_entries` keeps, because `render.build_context` omits an entry with no
+    bullets and the loop must not silently delete a job it decided to keep. Prefers the
+    weakest bullet tall enough to cover what remains; when none is, takes the weakest and
+    repeats.
+    """
+    owner = {b.id: e for e in entries for b in e.bullets}
+    remaining_in_entry: dict[int, int] = {}
+    for bid in texts:
+        entry = owner.get(bid)
+        if entry is not None:
+            remaining_in_entry[id(entry)] = remaining_in_entry.get(id(entry), 0) + 1
+
+    chosen: list[str] = []
+    remaining = overflow
+    while remaining > 0:
+        candidates = [
+            bid
+            for bid in texts
+            if bid not in chosen
+            and bid in owner
+            and remaining_in_entry.get(id(owner[bid]), 0) > 1
+        ]
+        if not candidates:
+            break
+        covering = [bid for bid in candidates if _bullet_lines(texts[bid]) >= remaining]
+        pick = min(
+            covering or candidates,
+            key=lambda bid: (
+                _bullet_score(bid, sources, requirements, semantic, members),
+                -remaining_in_entry[id(owner[bid])],
+            ),
+        )
+        chosen.append(pick)
+        remaining_in_entry[id(owner[pick])] -= 1
+        remaining -= _bullet_lines(texts[pick])
+    return chosen
 
 
 # --------------------------------------------------------------------------------------
@@ -462,7 +601,7 @@ def fit(
     semantic: dict[str, float] | None = None,
     repair_widows: bool = True,
     repair_verbs: bool = True,
-    merge_bullets: bool = False,
+    merge_bullets: bool = True,
     include_project_links: bool = True,
     contact_fields: list[ContactField] | None = None,
     fill_target: float | None = None,
@@ -484,9 +623,14 @@ def fit(
     per iteration: a table that shifted between grow steps could swap bullets rather than
     add them, which is the one thing the estimate/measure relationship depends on.
 
-    Overflow (measured page count above target) escalates through
-    `config.SHORTEN_SCHEDULE`, re-rewriting the same bullet set at most
-    `config.MAX_FIT_ATTEMPTS` times before raising `FitError`.
+    Overflow (measured page count above target) climbs a ladder on the *same* draft, one
+    rung at a time, stopping as soon as it fits: combine redundant bullets
+    (`merge_bullets`), pull back bullets whose last line is nearly empty by one line
+    (`config.PULLBACK_MAX_FILL`), then drop the weakest bullets whole (at most
+    `config.MAX_DROP_ROUNDS` rounds, never an entry's last bullet). Only the first rung
+    and the pull-back call the model, each once; drops cost a render. A ladder that still
+    cannot fit raises `FitError` — unless an earlier, smaller draft already fit, in which
+    case that draft is returned with a warning instead of being thrown away.
 
     `repair_widows` is passed through to `rewrite_bullets`; see there. It matters to the
     loop because a widowed bullet inflates the measured line count with space that holds
@@ -496,9 +640,9 @@ def fit(
     fitting at all — a repeated opening verb costs no space — so it is purely a readability
     pass the loop carries rather than owns.
 
-    `merge_bullets` enables the merge proposal step, which fires only after a measured
-    overflow: merging is a space lever, and one applied to a page that already fit combined
-    bullets for no reason.
+    `merge_bullets` enables the combine rung, which fires only after a measured overflow:
+    merging is a space lever, and one applied to a page that already fit combined bullets
+    for no reason.
 
     `include_project_links` is passed straight to `render.render`. It is not a fit lever:
     the link sits inline in a project's header line, so hiding it frees no lines.
@@ -557,6 +701,10 @@ def fit(
     warnings: list[str] = []
     iterations = 0
     grow_attempts = 0
+    # Set the first time a bullet set overflows; growing back to (or past) it would only
+    # re-add what the ladder just removed and overflow again.
+    grow_cap: int | None = None
+    best: _Draft | None = None
 
     # A resume section whose kind the active template has no prototype for is skipped by
     # `render.build_context` silently (it has no result channel of its own to carry a
@@ -611,6 +759,43 @@ def fit(
         max_bullets_per_entry=entry_cap,
     )
 
+    by_id: dict[str, Bullet] = {b.id: b for e in entries for b in e.bullets}
+    capacity = target_pages * config.LINES_PER_PAGE
+
+    def draw(texts: dict[str, str]) -> tuple[Path, int, int, bool]:
+        """Render `texts`, then measure: `(doc path, pages, lines, measurement estimated)`."""
+        nonlocal iterations
+        iterations += 1
+        events.emit(on_event, "render", f"Rendering draft {iterations}", iteration=iterations)
+        path = render.render(
+            resume,
+            bullets=texts,
+            template=template,
+            out=out,
+            include_project_links=include_project_links,
+            contact_fields=contact_fields,
+        )
+        try:
+            # Keep Word alive across retries within this run; the caller gets the
+            # final measurement (and Word is released) once the loop concludes.
+            pages_, lines_ = render.measure_detail(path, keep_active=True)
+            estimated = False
+        except RuntimeError as exc:
+            warnings.append(f"PDF measurement unavailable, using budget estimate: {exc}")
+            lines_ = estimate_lines(resume, texts)
+            pages_ = math.ceil(lines_ / config.LINES_PER_PAGE)
+            estimated = True
+        events.emit(
+            on_event,
+            "measure",
+            f"Draft {iterations}: {pages_} page(s), {lines_} line(s)",
+            iteration=iterations,
+            pages=pages_,
+            lines=lines_,
+            estimated=estimated,
+        )
+        return path, pages_, lines_, estimated
+
     while True:
         selected = select_within_entries(
             entries, requirements, limit=limit, semantic=semantic,
@@ -618,111 +803,164 @@ def fit(
         )
         char_budget = _TARGET_LINES_PER_BULLET * config.CHARS_PER_LINE
 
-        shorten_pct = 0
-        attempt = 0
-        while True:
-            iterations += 1
-            # Merging is a space lever, so it fires only once the page has actually
-            # measured over — never on the first draft. Proposing at `attempt == 0` merged
-            # bullets the page had room for, and because affinity ranks the *most similar*
-            # adjacent pair first, those gratuitous merges were exactly the ones that read
-            # repetitively. Waiting for overflow makes every merge attributable to a
-            # measured shortfall.
-            merge_groups = (
-                propose_merges(
-                    entries,
-                    selected,
-                    requirements,
-                    semantic=semantic,
-                    char_budget=char_budget,
-                    shorten_pct=shorten_pct,
-                    attempt=attempt,
+        # One rewrite per bullet set. Overflow is relieved on this draft by the ladder
+        # below — never by re-rewriting every bullet, which only freed a line when a
+        # bullet happened to cross a wrap boundary.
+        outcome = rewrite_bullets(
+            selected,
+            requirements,
+            char_budget=char_budget,
+            repair_widows=repair_widows,
+            repair_verbs=repair_verbs,
+            on_event=on_event,
+        )
+        rewritten = outcome.texts
+        doc_path, pages, measured_lines, pages_are_estimated = draw(rewritten)
+
+        members: dict[str, tuple[str, ...]] = {}
+        pulled = 0
+        dropped: list[str] = []
+        restored = False
+
+        if pages > target_pages:
+            grow_cap = limit if grow_cap is None else min(grow_cap, limit)
+
+            def over_by() -> int:
+                return max(1, measured_lines - capacity)
+
+            # Rung 1 — combine. One call over the current texts only, so every other
+            # bullet keeps its exact wording and each merge is attributable to this
+            # measured overflow.
+            if merge_bullets:
+                live = [b for b in selected if b.id in rewritten]
+                groups = propose_merges(
+                    entries, live, requirements,
+                    semantic=semantic, char_budget=char_budget, attempt=1,
                 )
-                if merge_bullets and attempt >= 1
-                else []
-            )
-            outcome = rewrite_bullets(
-                selected,
-                requirements,
-                char_budget=char_budget,
-                shorten_pct=shorten_pct,
-                repair_widows=repair_widows,
-                repair_verbs=repair_verbs,
-                merge_groups=merge_groups,
-                on_event=on_event,
-            )
-            rewritten = outcome.texts
-            events.emit(
-                on_event, "render", f"Rendering draft {iterations}", iteration=iterations
-            )
-            doc_path = render.render(
-                resume,
-                bullets=rewritten,
-                template=template,
-                out=out,
-                include_project_links=include_project_links,
-                contact_fields=contact_fields,
-            )
+                if groups:
+                    events.emit(
+                        on_event, "fit",
+                        f"Over by ~{over_by()} line(s); combining bullets",
+                        rung="combine", groups=len(groups),
+                    )
+                    merged, accepted = merge_into(
+                        rewritten, by_id, groups, requirements, char_budget=char_budget
+                    )
+                    if accepted:
+                        rewritten = outcome.texts = merged
+                        outcome.merges.extend(accepted)
+                        for group in accepted:
+                            members[group.survivor_id] = group.member_ids
+                        doc_path, pages, measured_lines, pages_are_estimated = draw(rewritten)
 
-            try:
-                # Keep Word alive across retries within this run; the caller gets the
-                # final measurement (and Word is released) once the loop concludes.
-                pages, measured_lines = render.measure_detail(doc_path, keep_active=True)
-                pages_are_estimated = False
-            except RuntimeError as exc:
-                warnings.append(f"PDF measurement unavailable, using budget estimate: {exc}")
-                measured_lines = estimate_lines(resume, rewritten)
-                pages = math.ceil(measured_lines / config.LINES_PER_PAGE)
-                pages_are_estimated = True
-
-            events.emit(
-                on_event,
-                "measure",
-                f"Draft {iterations}: {pages} page(s), {measured_lines} line(s)",
-                iteration=iterations,
-                pages=pages,
-                lines=measured_lines,
-                estimated=pages_are_estimated,
-            )
-
-            if pages <= target_pages:
-                break
-
-            attempt += 1
-            if attempt >= config.MAX_FIT_ATTEMPTS:
-                if not pages_are_estimated:
-                    render.to_pdf(doc_path, keep_active=False)  # release Word before failing
-                raise FitError(
-                    f"Could not fit the resume to {target_pages} page(s) after {attempt} "
-                    f"rewrite attempt(s) (last measured at {pages} page(s)). "
-                    f"{_overflow_report(resume, rewritten, target_pages)}"
+            # Rung 2 — pull back the bullets a few words from saving a whole line: one
+            # call, only as many as the overflow needs plus one spare for wrap error.
+            if pages > target_pages:
+                targets = _choose_pullbacks(
+                    rewritten, by_id, requirements, semantic, members, count=over_by() + 1
                 )
-            shorten_pct = config.SHORTEN_SCHEDULE[
-                min(attempt - 1, len(config.SHORTEN_SCHEDULE) - 1)
-            ]
-            events.emit(
-                on_event,
-                "fit",
-                f"Over by {pages - target_pages} page(s); retrying {shorten_pct}% shorter",
-                attempt=attempt,
-                shorten_pct=shorten_pct,
+                if targets:
+                    events.emit(
+                        on_event, "fit",
+                        f"Over by ~{over_by()} line(s); pulling back {len(targets)} bullet(s)",
+                        rung="pullback", bullets=len(targets),
+                    )
+                    pulled_texts, n_pulled, rejected = pull_back(
+                        rewritten, by_id, requirements, targets
+                    )
+                    outcome.widow_repairs_rejected.update(rejected)
+                    if n_pulled:
+                        rewritten = outcome.texts = pulled_texts
+                        pulled += n_pulled
+                        doc_path, pages, measured_lines, pages_are_estimated = draw(rewritten)
+
+            # Rung 3 — drop the weakest bullets whole. Deterministic, no model call.
+            drop_rounds = 0
+            while pages > target_pages and drop_rounds < config.MAX_DROP_ROUNDS:
+                doomed = _choose_drops(
+                    entries, rewritten, by_id, requirements, semantic, members,
+                    overflow=over_by(),
+                )
+                if not doomed:
+                    break
+                drop_rounds += 1
+                events.emit(
+                    on_event, "fit",
+                    f"Over by ~{over_by()} line(s); dropping {len(doomed)} bullet(s)",
+                    rung="drop", bullets=len(doomed), dropped=list(doomed),
+                )
+                dropped.extend(doomed)
+                rewritten = outcome.texts = {
+                    bid: text for bid, text in rewritten.items() if bid not in doomed
+                }
+                doc_path, pages, measured_lines, pages_are_estimated = draw(rewritten)
+
+            if pages > target_pages:
+                if best is None:
+                    if not pages_are_estimated:
+                        render.to_pdf(doc_path, keep_active=False)  # release Word before failing
+                    raise FitError(
+                        f"Could not fit the resume to {target_pages} page(s) after combining, "
+                        f"pulling back and dropping bullets (last measured at {pages} "
+                        f"page(s)). "
+                        f"{_overflow_report(resume, rewritten, target_pages, measured_lines)}"
+                    )
+                # A smaller draft already fit. Bring it back rather than fail: re-render
+                # it (the render overwrites the same output file) and say so.
+                outcome, selected = best.outcome, best.selected
+                rewritten, pulled = best.texts, best.pulled
+                dropped, members = best.dropped, best.members
+                doc_path, pages, measured_lines, pages_are_estimated = draw(rewritten)
+                if pages > target_pages:
+                    if not pages_are_estimated:
+                        render.to_pdf(doc_path, keep_active=False)
+                    raise FitError(
+                        f"Could not fit the resume to {target_pages} page(s): a larger draft "
+                        f"overflowed and the earlier draft that fit re-measured at {pages} "
+                        f"page(s). "
+                        f"{_overflow_report(resume, rewritten, target_pages, measured_lines)}"
+                    )
+                restored = True
+                warnings.append(
+                    f"A fuller draft overflowed {target_pages} page(s) and could not be "
+                    f"trimmed to fit; kept the earlier {len(rewritten)}-bullet draft that fit."
+                )
+            else:
+                events.emit(
+                    on_event, "fit",
+                    f"Fit after trimming: {len(outcome.merges)} merged, {pulled} pulled "
+                    f"back, {len(dropped)} dropped",
+                    merges=len(outcome.merges), pulled_back=pulled, dropped=len(dropped),
+                )
+
+        if not restored:
+            best = _Draft(
+                texts=rewritten, selected=selected, outcome=outcome,
+                pulled=pulled, dropped=dropped, members=members,
             )
 
         # Underflow is judged on the same measurement overflow is, not on the estimate:
         # the budget model over-predicted a real run into skipping a page that was only
         # 82% full. `measured_lines` is the estimate only when Word was unavailable.
-        capacity = target_pages * config.LINES_PER_PAGE
         fill_ratio = measured_lines / capacity
 
         underfull = fill_ratio < underflow
-        can_grow = limit < growth_ceiling and grow_attempts < config.MAX_GROW_ATTEMPTS
+        # `grow_cap` is the first limit that overflowed: growing back to it would only
+        # re-add what the ladder just removed.
+        grow_limit = growth_ceiling if grow_cap is None else min(growth_ceiling, grow_cap)
+        can_grow = limit < grow_limit and grow_attempts < config.MAX_GROW_ATTEMPTS
 
         if not underfull or not can_grow:
             if underfull:
+                if limit >= growth_ceiling:
+                    reason = "reached the selectable bullet cap"
+                elif limit >= grow_limit:
+                    reason = "a fuller draft overflowed, so the page was kept as trimmed"
+                else:
+                    reason = f"stopped growing after {grow_attempts} attempt(s)"
                 warnings.append(
                     f"Page is only {fill_ratio:.0%} full (target {underflow:.0%}); "
-                    f"{'reached the selectable bullet cap' if limit >= growth_ceiling
-                       else f'stopped growing after {grow_attempts} attempt(s)'}."
+                    f"{reason}."
                 )
             if outcome.widow_repairs_rejected:
                 detail = "; ".join(
@@ -744,15 +982,16 @@ def fit(
                     f"{outcome.verb_collisions_remaining} bullet(s) still open with a verb "
                     f"another bullet already used, or a near-synonym of one."
                 )
+            kept = len(selected) - len(dropped)
             if not pages_are_estimated:
                 render.to_pdf(doc_path, keep_active=False)  # release Word on the way out
             events.emit(
                 on_event,
                 "fit",
-                f"Done: {pages} page(s), {fill_ratio:.0%} full, {len(selected)} bullet(s)",
+                f"Done: {pages} page(s), {fill_ratio:.0%} full, {kept} bullet(s)",
                 pages=pages,
                 fill_ratio=round(fill_ratio, 3),
-                bullets=len(selected),
+                bullets=kept,
                 iterations=iterations,
             )
             return FitResult(
@@ -760,7 +999,7 @@ def fit(
                 pages=pages,
                 pages_are_estimated=pages_are_estimated,
                 iterations=iterations,
-                bullets_selected=len(selected),
+                bullets_selected=kept,
                 bullets_total=total_bullets,
                 bullets=rewritten,
                 semantic_used=bool(semantic),
@@ -769,6 +1008,8 @@ def fit(
                 verbs_diversified=outcome.verbs_diversified,
                 verb_collisions_remaining=outcome.verb_collisions_remaining,
                 merges=outcome.merges,
+                pulled_back=pulled,
+                dropped=dropped,
                 warnings=warnings,
             )
 

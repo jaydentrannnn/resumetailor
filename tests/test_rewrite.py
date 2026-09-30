@@ -1458,3 +1458,58 @@ def test_widow_and_verb_defects_share_one_polish_call(rewrite_calls):
     assert outcome.widows_repaired == 1
     assert outcome.verbs_diversified == 1
     assert outcome.verb_collisions_remaining == 0
+
+
+# --- fit-loop pull-back ---------------------------------------------------------------
+
+
+def test_widowed_max_fill_widens_the_net_without_changing_the_default():
+    width = config.CHARS_PER_LINE
+    # 38% of a last line: not a widow by default, but inside a 40% pull-back net.
+    texts = {"a": "x" * (width + int(width * 0.38))}
+
+    assert rewrite.widowed(texts) == {}
+    assert rewrite.widowed(texts, max_fill=0.40) == {"a": width - config.WIDOW_SAFETY}
+
+
+def test_pull_back_accepts_only_a_reply_that_saves_a_line(rewrite_calls):
+    width = config.CHARS_PER_LINE
+    long_text = "x" * (width + int(width * 0.38))
+    src = {
+        "a": bullet("a", "Built a Python service.", ["python"]),
+        "b": bullet("b", "Shipped a Python tool.", ["python"]),
+    }
+    texts = {"a": long_text, "b": long_text}
+    ceiling = width - config.WIDOW_SAFETY
+    # "a" comes back under one line; "b" is shorter but still wraps, so it frees nothing.
+    calls = rewrite_calls(_reply(a="y" * (ceiling - 1), b="y" * (width + 5)))
+
+    out, pulled, rejected = rewrite.pull_back(
+        texts, src, _reqs(), {"a": ceiling, "b": ceiling}
+    )
+
+    assert len(calls) == 1
+    assert pulled == 1 and rejected == {}
+    assert out["a"] == "y" * (ceiling - 1)
+    assert out["b"] == long_text, "a cut that keeps the line count is discarded"
+
+
+def test_pull_back_sends_only_the_requested_bullets(rewrite_calls):
+    width = config.CHARS_PER_LINE
+    src = {
+        "a": bullet("a", "Built a Python service.", ["python"]),
+        "b": bullet("b", "Shipped a Python tool.", ["python"]),
+    }
+    texts = {"a": "x" * (width + 10), "b": "x" * (width + 10)}
+    calls = rewrite_calls(_reply(a="y" * 50))
+
+    rewrite.pull_back(texts, src, _reqs(), {"a": width - config.WIDOW_SAFETY})
+
+    sent = calls[0]["messages"][0]["content"]
+    assert "'a'" in sent and "'b'" not in sent
+
+
+def test_pull_back_with_no_targets_makes_no_call(rewrite_calls):
+    calls = rewrite_calls()
+    out, pulled, rejected = rewrite.pull_back({"a": "x"}, {}, _reqs(), {})
+    assert calls == [] and pulled == 0 and out == {"a": "x"}

@@ -553,14 +553,14 @@ def test_no_widow_repair_flag_reaches_the_fit_loop(cli, jd_file, tmp_path, monke
 
 
 def test_merge_flag_reaches_the_fit_loop(cli, jd_file, tmp_path, monkeypatch):
-    """--merge is opt-in; the default must leave merge_bullets False."""
+    """Merging is on by default (first rung of the overflow ladder); --no-merge opts out."""
     resume = synthetic_resume()
     seen: dict = {}
 
     monkeypatch.setattr(cli.jd, "extract", lambda text, **kw: _requirements())
     monkeypatch.setattr(cli.jd, "verify_verbatim", lambda reqs, text: [])
 
-    def capture(*a, merge_bullets=False, **k):
+    def capture(*a, merge_bullets=None, **k):
         """Record whether merging was requested."""
         seen["merge_bullets"] = merge_bullets
         return _fit_result(resume, tmp_path / "tailored.docx")
@@ -568,6 +568,9 @@ def test_merge_flag_reaches_the_fit_loop(cli, jd_file, tmp_path, monkeypatch):
     monkeypatch.setattr(cli.fit, "fit", capture)
 
     cli.main(["--jd", str(jd_file)])
+    assert seen["merge_bullets"] is True
+
+    cli.main(["--jd", str(jd_file), "--no-merge"])
     assert seen["merge_bullets"] is False
 
     cli.main(["--jd", str(jd_file), "--merge"])

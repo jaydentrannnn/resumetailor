@@ -74,7 +74,7 @@ export const DEFAULT_SETTINGS: JobSettings = {
   no_semantic: false,
   no_widow_repair: false,
   no_verb_repair: false,
-  merge: false,
+  merge: true,
   no_cache: false,
   // Matches `config.EXTRACT_CONSENSUS_RUNS` server-side. No UI control exposes this;
   // it exists here only so "Reset to defaults" round-trips it instead of dropping it.

@@ -374,3 +374,10 @@ the first measure and skips an extra rewrite pass.
 - `RESUME_TAILOR_SOFFICE_PARALLEL=1` restores throwaway per-call profiles with no lock, now cleaned up.
 - B5: the profile URI comes from `Path.as_uri()`. `file://` plus a posix path gave `file://C:/...` on Windows.
 - PF1 result (Ubuntu, LibreOffice 24.2, small docx): about 1.25 s to 1.1 s per conversion, about 10%, short of the 40% target. Process start-up dominates, not profile creation, so the bigger win is PF2 (a long-lived `unoserver`).
+
+## 2026-09-30 - overflow ladder replaces the blanket shorten (supersedes `SHORTEN_SCHEDULE`)
+
+- **What:** an overflowing draft is relieved on the *same* bullet set by a ladder, stopping at the first rung that fits: (1) combine via `rewrite.merge_into` (merge now on by default; still only after a measured overflow), (2) `rewrite.pull_back` — one call over only multi-line bullets whose last line is <= `PULLBACK_MAX_FILL` (0.40) full, count = overflow lines + 1, emptiest first, accepted only if shorter *and* one line fewer, (3) `fit._choose_drops` — deterministic, weakest relevance first, never an entry's last bullet, <= `MAX_DROP_ROUNDS` (3). `SHORTEN_SCHEDULE`, `MAX_FIT_ATTEMPTS` and `shorten_pct` are gone.
+- **Why:** 24 of 220 live runs failed to fit, every one by 1-3 lines (Skills tail on page 2). Re-rewriting every bullet 5/15/25% shorter only freed a line when a bullet crossed a wrap boundary. 16 of 24 errors also quoted a negative "over by" because the char-budget estimate undercounts this template by 6-9 lines; `_overflow_report` now quotes measured lines.
+- **Also:** the last draft that fit is kept (`_Draft`); if a fuller draft cannot be trimmed, it is returned with a warning instead of `FitError`. `grow_cap` stops the grow step re-adding what the ladder removed. `FitResult.dropped` / `.pulled_back` are reported.
+- **Not verified live:** no end-to-end run (no model available in the session: Anthropic credit exhausted, Ollama down). Saved Tailor settings that stored `merge: false` still override the new default.

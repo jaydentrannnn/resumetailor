@@ -1261,7 +1261,9 @@ def _format_keywords(requirements: JobRequirements) -> str:
 # part — separating them would double the cost of a run that has one of each.
 
 
-def widowed(texts: dict[str, str]) -> dict[str, int]:
+def widowed(
+    texts: dict[str, str], *, max_fill: float | None = None
+) -> dict[str, int]:
     """`{bullet id: hard character ceiling}` for every bullet ending on a near-empty line.
 
     The ceiling is one full line below where the text currently ends, less
@@ -1270,8 +1272,13 @@ def widowed(texts: dict[str, str]) -> dict[str, int]:
 
     Single-line bullets are never widows: there is no earlier line for them to fall back
     onto, and a short one-line bullet is simply a short bullet.
+
+    `max_fill` widens the net (default `config.WIDOW_MIN_FILL`): the fit loop's pull-back
+    asks for every bullet whose last line is at most that fraction full.
     """
-    floor = config.WIDOW_MIN_FILL * config.CHARS_PER_LINE
+    if max_fill is None:
+        max_fill = config.WIDOW_MIN_FILL
+    floor = max_fill * config.CHARS_PER_LINE
     ceilings: dict[str, int] = {}
     for bullet_id, text in texts.items():
         span = config.line_span(text)
@@ -1553,8 +1560,14 @@ def _polish(
     *,
     repair_widows: bool = True,
     repair_verbs: bool = True,
+    ceilings: dict[str, int] | None = None,
 ) -> tuple[dict[str, str], int, int, dict[str, list[str]]]:
     """Re-request only the defective bullets.
+
+    `ceilings` replaces the widow detection with a caller-chosen `{id: character ceiling}`
+    (the fit loop's targeted pull-back of bullets that are not quite widows). Each such
+    bullet is accepted only if it is shorter *and* spans fewer lines — a cut that stays on
+    the same line count frees nothing, which is the whole point of the call.
 
     Returns ``(texts, widows fixed, verbs changed, widow repairs rejected)`` where the
     last mapping is bullet id to offending terms for shorten candidates discarded by the
@@ -1580,7 +1593,9 @@ def _polish(
     when a model compresses a claim into something the source never said — the guard still
     binds — but a cosmetic pass must not kill an otherwise-good run.
     """
-    ceilings = widowed(texts) if repair_widows else {}
+    pullback = ceilings is not None
+    if ceilings is None:
+        ceilings = widowed(texts) if repair_widows else {}
     collisions = (
         {bid: avoid for bid, avoid in verb_collisions(texts).items() if bid not in ceilings}
         if repair_verbs
@@ -1640,7 +1655,14 @@ def _polish(
             if offenders:
                 rejected[item.id] = offenders
                 continue
-            if len(candidate) < len(texts[item.id]) and not widowed({item.id: candidate}):
+            original = texts[item.id]
+            if pullback:
+                improved = len(candidate) < len(original) and (
+                    config.line_span(candidate) < config.line_span(original)
+                )
+            else:
+                improved = len(candidate) < len(original) and not widowed({item.id: candidate})
+            if improved:
                 repaired[item.id] = candidate
                 tightened += 1
         elif item.id in collisions:
@@ -1694,17 +1716,12 @@ def rewrite_bullets(
     requirements: JobRequirements,
     *,
     char_budget: int,
-    shorten_pct: int = 0,
     repair_widows: bool = True,
     repair_verbs: bool = True,
     merge_groups: list[MergeGroup] | None = None,
     on_event: events.ProgressCallback | None = None,
 ) -> RewriteOutcome:
     """Rewrite `bullets` to surface the posting's keywords.
-
-    `shorten_pct` is the fit loop's lever: it tightens the character budget and tells the
-    model explicitly to cut, so successive overflow attempts get progressively terser
-    output rather than the same length again.
 
     `repair_widows` and `repair_verbs` each allow one *shared* follow-up call carrying only
     the defective bullets — those that ended on a near-empty line, and those whose opening
@@ -1724,16 +1741,7 @@ def rewrite_bullets(
     if not bullets:
         return RewriteOutcome(texts={})
 
-    budget = max(40, int(char_budget * (1 - shorten_pct / 100)))
-
-    instruction = ""
-    if shorten_pct:
-        instruction = (
-            f"\n\nThe previous draft overflowed the page. Shorten every bullet by roughly "
-            f"{shorten_pct}% relative to its current text. Cut hedges, redundant context, "
-            f"and secondary detail first; keep every number and the required "
-            f"technical keywords."
-        )
+    budget = max(40, char_budget)
 
     user = (
         f"<role>{requirements.title} ({requirements.seniority})</role>\n\n"
@@ -1742,18 +1750,13 @@ def rewrite_bullets(
         + "\n".join(f"  - {n}" for n in requirements.domain_notes)
         + "\n</context>\n\n"
         f"<bullets_to_rewrite>\n{_format_bullets(bullets, budget)}\n</bullets_to_rewrite>"
-        f"{instruction}"
     )
 
     events.emit(
         on_event,
         "rewrite",
-        (
-            f"Rewriting {len(bullets)} bullet(s)"
-            + (f", {shorten_pct}% shorter" if shorten_pct else "")
-        ),
+        f"Rewriting {len(bullets)} bullet(s)",
         bullets=len(bullets),
-        shorten_pct=shorten_pct,
         model=config.model_for("rewrite"),
     )
     client = llm.client_for("rewrite")
@@ -1988,6 +1991,43 @@ def _merge_bullets(
         accepted.append(group)
 
     return merged, accepted
+
+
+def merge_into(
+    texts: dict[str, str],
+    sources: dict[str, Bullet],
+    groups: list[MergeGroup],
+    requirements: JobRequirements,
+    *,
+    char_budget: int,
+) -> tuple[dict[str, str], list[MergeGroup]]:
+    """Apply `groups` to already-rewritten `texts`, leaving every other bullet untouched.
+
+    The fit loop's combine step: one call carrying only the proposed groups, through the
+    same acceptance gates as a merge inside `rewrite_bullets`. Public so `fit.py` need
+    not reach for a private name.
+    """
+    return _merge_bullets(texts, sources, groups, requirements, budget=char_budget)
+
+
+def pull_back(
+    texts: dict[str, str],
+    sources: dict[str, Bullet],
+    requirements: JobRequirements,
+    ceilings: dict[str, int],
+) -> tuple[dict[str, str], int, dict[str, list[str]]]:
+    """Ask for `ceilings` (`{bullet id: max characters}`) on just those bullets.
+
+    The fit loop's targeted shorten: a bullet is replaced only when the reply is shorter,
+    spans fewer lines, and passes the fabrication guard. Returns `(texts, bullets pulled
+    back, rejected)` where `rejected` maps id to the terms the guard refused.
+    """
+    if not ceilings:
+        return texts, 0, {}
+    out, pulled, _, rejected = _polish(
+        texts, sources, requirements, repair_widows=False, repair_verbs=False, ceilings=ceilings
+    )
+    return out, pulled, rejected
 
 
 def keyword_coverage(

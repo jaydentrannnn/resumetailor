@@ -22,7 +22,7 @@ full (§11).
 | `--no-cache` | Force re-extraction |
 | `--no-semantic` | Tag-overlap-only ranking (`SEMANTIC_WEIGHT = 0.0`) — the control for an A/B on a surprising ranking |
 | `--no-widow-repair` / `--no-verb-repair` | Disable the corresponding `_polish` repair |
-| `--merge` | Opt-in: propose merges only after a measured page overflow |
+| `--merge` / `--no-merge` | On by default: first rung of the overflow ladder (combine, then pull back near-widowed bullets, then drop the weakest); fires only after a measured overflow |
 | `--no-expand` | Skip application-form experience expansion |
 | `--no-skills` | Skip tailored skills-list stage |
 | `--no-facets` | Skip project-tech/coursework selection |
@@ -1081,7 +1081,7 @@ fixed overhead the fit loop never trims.
   `tests/test_web.py` stubs the same seams on the job path (the `client` fixture's
   default `skills.select_skills` and `coverletter.draft_letter` stubs in particular — a
   per-test stub still wins by overriding it after fixture setup).
-- **Word/COM is monkeypatched at `fit_mod.render`** so the loop's shorten/underflow logic
+- **Word/COM is monkeypatched at `fit_mod.render`** so the loop's overflow-ladder/underflow logic
   is testable in isolation. `tests/test_render.py` is the exception — it renders a real
   `.docx` and parses it back, never converting to PDF.
 - **Assert on the specific warning, not on `result.warnings` being empty** — `FitResult`

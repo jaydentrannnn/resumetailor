@@ -1,7 +1,7 @@
 """Tests for the fit loop.
 
 No test here exercises a live API call or Word/COM — `rewrite_bullets` and the
-`render` module are monkeypatched so the loop's selection/shorten/underflow logic is
+`render` module are monkeypatched so the loop's selection/overflow-ladder/underflow logic is
 verified in isolation, matching the rest of the suite's no-network convention.
 """
 
@@ -38,7 +38,6 @@ def _identity_rewrite(
     requirements,
     *,
     char_budget,
-    shorten_pct=0,
     repair_widows=True,
     repair_verbs=True,
     merge_groups=None,
@@ -399,74 +398,276 @@ _FULL_LINES = config.LINES_PER_PAGE
 _SPARSE_LINES = int(config.LINES_PER_PAGE * config.UNDERFLOW_THRESHOLD) - 5
 
 
-def test_fit_escalates_shorten_schedule_on_overflow(monkeypatch, tmp_path):
-    resume = _test_resume()
-    requirements = _requirements()
+def _stub_render(monkeypatch, tmp_path, *, pages_for, renders=None):
+    """Stub render/measure; `pages_for(texts)` returns the `(pages, lines)` a draft measures.
 
-    calls: list[int] = []
+    Measuring by the *content* of the last render (not by call order) keeps a test valid
+    however many renders the ladder chooses to do.
+    """
+    last: dict[str, dict] = {}
 
-    def fake_rewrite(
-        bullets,
-        requirements,
-        *,
-        char_budget,
-        shorten_pct=0,
-        repair_widows=True,
-        repair_verbs=True,
-        merge_groups=None,
-        on_event=None,
-    ):
-        """Record shorten_pct so the overflow schedule can be asserted."""
-        calls.append(shorten_pct)
-        return _identity_rewrite(bullets, requirements, char_budget=char_budget, shorten_pct=shorten_pct)
+    def fake_render(*a, **k):
+        last["texts"] = dict(k["bullets"])
+        if renders is not None:
+            renders.append(dict(k["bullets"]))
+        return tmp_path / "out.docx"
 
-    pages = iter([2, 2, 1])  # overflow, overflow, fits on the third attempt
-
-    monkeypatch.setattr(fit_mod, "rewrite_bullets", fake_rewrite)
-    monkeypatch.setattr(fit_mod.render, "render", lambda *a, **k: tmp_path / "out.docx")
+    monkeypatch.setattr(fit_mod.render, "render", fake_render)
     monkeypatch.setattr(
-        fit_mod.render, "measure_detail", lambda *a, **k: (next(pages), _FULL_LINES)
+        fit_mod.render, "measure_detail", lambda *a, **k: pages_for(last["texts"])
     )
     monkeypatch.setattr(fit_mod.render, "to_pdf", lambda *a, **k: tmp_path / "out.pdf")
 
-    result = fit_mod.fit(resume, requirements, target_pages=1)
 
-    assert calls == [0, *config.SHORTEN_SCHEDULE[:2]]
-    assert result.pages == 1
-    assert result.iterations == 3
-
-
-def test_fit_raises_after_max_attempts_without_truncating(monkeypatch, tmp_path):
+def test_fit_drops_weakest_bullets_on_overflow_without_another_rewrite(monkeypatch, tmp_path):
+    """Overflow is relieved on the same draft: one rewrite call, bullets dropped whole."""
     resume = _test_resume()
     requirements = _requirements()
-
     calls: list[int] = []
 
-    def fake_rewrite(
-        bullets,
-        requirements,
-        *,
-        char_budget,
-        shorten_pct=0,
-        repair_widows=True,
-        repair_verbs=True,
-        merge_groups=None,
-        on_event=None,
-    ):
-        """Record shorten_pct so exhausting MAX_FIT_ATTEMPTS can be asserted."""
-        calls.append(shorten_pct)
-        return _identity_rewrite(bullets, requirements, char_budget=char_budget, shorten_pct=shorten_pct)
+    def fake_rewrite(bullets, requirements, **kwargs):
+        calls.append(len(bullets))
+        return _identity_rewrite(bullets, requirements, **kwargs)
 
     monkeypatch.setattr(fit_mod, "rewrite_bullets", fake_rewrite)
-    monkeypatch.setattr(fit_mod.render, "render", lambda *a, **k: tmp_path / "out.docx")
-    monkeypatch.setattr(fit_mod.render, "measure_detail", lambda *a, **k: (2, _FULL_LINES))
-    monkeypatch.setattr(fit_mod.render, "to_pdf", lambda *a, **k: tmp_path / "out.pdf")
+    first: dict[str, dict] = {}
 
-    with pytest.raises(fit_mod.FitError, match="Could not fit"):
-        fit_mod.fit(resume, requirements, target_pages=1)
+    def pages_for(texts):
+        first.setdefault("n", len(texts))
+        return (1, _FULL_LINES) if len(texts) < first["n"] else (2, _FULL_LINES)
 
-    assert len(calls) == config.MAX_FIT_ATTEMPTS
-    assert calls == [0, *config.SHORTEN_SCHEDULE[: config.MAX_FIT_ATTEMPTS - 1]]
+    _stub_render(monkeypatch, tmp_path, pages_for=pages_for)
+
+    result = fit_mod.fit(resume, requirements, target_pages=1, merge_bullets=False)
+
+    assert result.pages == 1
+    assert len(calls) == 1, "dropping must not trigger a second rewrite"
+    assert result.dropped, "the dropped bullets must be reported"
+    assert len(result.dropped) == first["n"] - len(result.bullets)
+    assert not set(result.dropped) & set(result.bullets)
+
+
+def test_fit_ladder_order_is_combine_then_pullback_then_drop(monkeypatch, tmp_path):
+    resume = _test_resume()
+    requirements = _requirements()
+    order: list[str] = []
+    monkeypatch.setattr(fit_mod, "rewrite_bullets", _identity_rewrite)
+
+    def fake_propose(entries, selected, *a, **k):
+        order.append("propose")
+        ids = [b.id for b in selected[:2]]
+        return [fit_mod.MergeGroup(ids[0], tuple(ids), 1.0, "test")]
+
+    def fake_merge(texts, sources, groups, requirements, *, char_budget):
+        order.append("merge")
+        return dict(texts), []  # rejected: nothing merged, so no extra render
+
+    def fake_choose_pullbacks(texts, *a, **k):
+        order.append("choose_pullbacks")
+        return {next(iter(texts)): 10}
+
+    def fake_pull_back(texts, sources, requirements, ceilings):
+        order.append("pull_back")
+        return dict(texts), 0, {}  # nothing shortened
+
+    monkeypatch.setattr(fit_mod, "propose_merges", fake_propose)
+    monkeypatch.setattr(fit_mod, "merge_into", fake_merge)
+    monkeypatch.setattr(fit_mod, "_choose_pullbacks", fake_choose_pullbacks)
+    monkeypatch.setattr(fit_mod, "pull_back", fake_pull_back)
+    sizes: dict[str, int] = {}
+
+    def pages_for(texts):
+        sizes.setdefault("n", len(texts))
+        if len(texts) < sizes["n"]:
+            order.append("drop")
+            return 1, _FULL_LINES
+        return 2, _FULL_LINES
+
+    _stub_render(monkeypatch, tmp_path, pages_for=pages_for)
+
+    result = fit_mod.fit(resume, requirements, target_pages=1)
+
+    assert order == ["propose", "merge", "choose_pullbacks", "pull_back", "drop"]
+    assert result.pages == 1 and result.dropped
+
+
+def test_fit_stops_the_ladder_once_a_rung_fits(monkeypatch, tmp_path):
+    resume = _test_resume()
+    requirements = _requirements()
+    monkeypatch.setattr(fit_mod, "rewrite_bullets", _identity_rewrite)
+
+    def fake_propose(entries, selected, *a, **k):
+        ids = [b.id for b in selected[:2]]
+        return [fit_mod.MergeGroup(ids[0], tuple(ids), 1.0, "test")]
+
+    def fake_merge(texts, sources, groups, requirements, *, char_budget):
+        merged = {k: v for k, v in texts.items() if k != groups[0].member_ids[1]}
+        return merged, list(groups)
+
+    def boom(*a, **k):
+        raise AssertionError("pull-back must not run once the merge fit")
+
+    monkeypatch.setattr(fit_mod, "propose_merges", fake_propose)
+    monkeypatch.setattr(fit_mod, "merge_into", fake_merge)
+    monkeypatch.setattr(fit_mod, "pull_back", boom)
+    sizes: dict[str, int] = {}
+
+    def pages_for(texts):
+        sizes.setdefault("n", len(texts))
+        return (1, _FULL_LINES) if len(texts) < sizes["n"] else (2, _FULL_LINES)
+
+    _stub_render(monkeypatch, tmp_path, pages_for=pages_for)
+
+    result = fit_mod.fit(resume, requirements, target_pages=1)
+
+    assert len(result.merges) == 1
+    assert result.dropped == [] and result.pulled_back == 0
+
+
+def test_fit_raises_when_the_ladder_is_exhausted_and_nothing_ever_fit(monkeypatch, tmp_path):
+    resume = _test_resume()
+    requirements = _requirements()
+    renders: list[dict] = []
+    monkeypatch.setattr(fit_mod, "rewrite_bullets", _identity_rewrite)
+    _stub_render(monkeypatch, tmp_path, pages_for=lambda t: (2, _FULL_LINES + 4), renders=renders)
+
+    with pytest.raises(fit_mod.FitError, match="Could not fit") as excinfo:
+        fit_mod.fit(resume, requirements, target_pages=1, merge_bullets=False)
+
+    # First draft plus at most MAX_DROP_ROUNDS drop renders; no unbounded retrying.
+    assert 1 < len(renders) <= 1 + config.MAX_DROP_ROUNDS
+    assert "Measured" in str(excinfo.value)
+    assert "~-" not in str(excinfo.value), "the report must never quote a negative overflow"
+
+
+def test_fit_keeps_an_earlier_draft_that_fit_instead_of_failing(monkeypatch, tmp_path):
+    """Grow → overflow → ladder exhausted: return the draft that fit, with a warning."""
+    resume = _test_resume()
+    requirements = _requirements()
+    monkeypatch.setattr(fit_mod, "rewrite_bullets", _identity_rewrite)
+    first: dict[str, dict] = {}
+
+    def pages_for(texts):
+        first.setdefault("texts", dict(texts))
+        return (1, _SPARSE_LINES) if texts == first["texts"] else (2, _FULL_LINES + 4)
+
+    _stub_render(monkeypatch, tmp_path, pages_for=pages_for)
+
+    result = fit_mod.fit(resume, requirements, target_pages=1, merge_bullets=False)
+
+    assert result.pages == 1
+    assert result.bullets == first["texts"]
+    assert any("kept the earlier" in w for w in result.warnings)
+
+
+def test_fit_does_not_regrow_bullets_the_ladder_just_removed(monkeypatch, tmp_path):
+    """A draft trimmed to fit, and then underfull, must not grow back into the overflow."""
+    resume = _test_resume()
+    requirements = _requirements()
+    calls: list[int] = []
+
+    def fake_rewrite(bullets, requirements, **kwargs):
+        calls.append(len(bullets))
+        return _identity_rewrite(bullets, requirements, **kwargs)
+
+    monkeypatch.setattr(fit_mod, "rewrite_bullets", fake_rewrite)
+    sizes: dict[str, int] = {}
+
+    def pages_for(texts):
+        sizes.setdefault("n", len(texts))
+        return (1, _SPARSE_LINES) if len(texts) < sizes["n"] else (2, _FULL_LINES)
+
+    _stub_render(monkeypatch, tmp_path, pages_for=pages_for)
+
+    result = fit_mod.fit(resume, requirements, target_pages=1, merge_bullets=False)
+
+    assert len(calls) == 1
+    assert any("fuller draft overflowed" in w for w in result.warnings)
+
+
+def _bullet_fixture(ids):
+    return {i: Bullet(id=i, text="x", tags=["python"]) for i in ids}
+
+
+def test_choose_pullbacks_only_takes_multiline_bullets_with_an_emptyish_last_line():
+    width = config.CHARS_PER_LINE
+    texts = {
+        "half": "a" * (width + int(width * 0.5)),       # 50% last line: too full
+        "fifth": "a" * (width + int(width * 0.2)),      # 20%: eligible
+        "third": "a" * (width + int(width * 0.38)),     # 38%: eligible
+        "one_line": "a" * 30,                           # single line: never
+        "tenth": "a" * (2 * width + int(width * 0.1)),  # 3 lines, 10%: emptiest
+    }
+    requirements = _requirements()
+    sources = _bullet_fixture(texts)
+
+    picked = fit_mod._choose_pullbacks(texts, sources, requirements, None, {}, count=2)
+
+    assert list(picked) == ["tenth", "fifth"], "emptiest last line first, limited to count"
+    assert picked["tenth"] == 2 * width - config.WIDOW_SAFETY
+    assert picked["fifth"] == width - config.WIDOW_SAFETY
+
+    everything = fit_mod._choose_pullbacks(texts, sources, requirements, None, {}, count=10)
+    assert set(everything) == {"tenth", "fifth", "third"}
+
+
+def test_choose_pullbacks_skips_merged_survivors():
+    width = config.CHARS_PER_LINE
+    texts = {"m": "a" * (width + 5), "p": "a" * (width + 6)}
+    picked = fit_mod._choose_pullbacks(
+        texts, _bullet_fixture(texts), _requirements(), None, {"m": ("m", "z")}, count=5
+    )
+    assert list(picked) == ["p"]
+
+
+def test_choose_drops_never_removes_an_entrys_last_bullet():
+    resume = _test_resume()
+    requirements = _requirements()
+    entries = fit_mod.choose_entries(resume, requirements)
+    sources = {b.id: b for e in entries for b in e.bullets}
+    # Exactly one rendered bullet per entry: nothing may be dropped, however large the overflow.
+    texts = {e.bullets[0].id: e.bullets[0].text for e in entries}
+
+    assert fit_mod._choose_drops(entries, texts, sources, requirements, None, {}, overflow=50) == []
+
+    # Two per entry: at most one per entry can go, and the weakest goes first.
+    texts = {b.id: b.text for e in entries for b in e.bullets[:2]}
+    doomed = fit_mod._choose_drops(entries, texts, sources, requirements, None, {}, overflow=500)
+    per_entry = {id(e): sum(1 for b in e.bullets if b.id in texts and b.id not in doomed) for e in entries}
+    assert all(n >= 1 for n in per_entry.values())
+    assert len(doomed) == len(entries)
+
+
+def test_choose_drops_prefers_the_weakest_bullet_tall_enough_to_cover_the_overflow():
+    resume = _test_resume()
+    requirements = _requirements()
+    entries = fit_mod.choose_entries(resume, requirements)
+    entry = entries[0]
+    ids = [b.id for b in entry.bullets[:3]]
+    sources = {b.id: b for b in entry.bullets}
+    width = config.CHARS_PER_LINE
+    texts = {ids[0]: "a" * 10, ids[1]: "a" * (2 * width - 5), ids[2]: "a" * (2 * width - 5)}
+    # ids[0] is one line, the others two. Overflow 2: a one-line bullet cannot cover it,
+    # so the pick must come from the two-line bullets even though ids[0] scores no higher.
+    semantic = {ids[0]: 0.0, ids[1]: 5.0, ids[2]: 9.0}
+
+    doomed = fit_mod._choose_drops(
+        [entry], texts, sources, requirements, semantic, {}, overflow=2
+    )
+
+    assert doomed == [ids[1]]
+
+
+def test_overflow_report_quotes_measured_lines_and_is_never_negative():
+    resume = _test_resume()
+    capacity = config.LINES_PER_PAGE
+    bullets = {b.id: b.text for b in resume.all_bullets()}
+
+    over = fit_mod._overflow_report(resume, bullets, 1, capacity + 3)
+    assert f"Measured {capacity + 3} lines" in over and "over by 3" in over
+
+    within = fit_mod._overflow_report(resume, bullets, 1, capacity - 4)
+    assert "within the" in within and "over by" not in within
 
 
 def test_fit_restores_bullets_on_underflow(monkeypatch, tmp_path):
@@ -485,7 +686,6 @@ def test_fit_restores_bullets_on_underflow(monkeypatch, tmp_path):
         requirements,
         *,
         char_budget,
-        shorten_pct=0,
         repair_widows=True,
         repair_verbs=True,
         merge_groups=None,
@@ -493,7 +693,7 @@ def test_fit_restores_bullets_on_underflow(monkeypatch, tmp_path):
     ):
         """Track selection size so underflow growth can be asserted."""
         seen["count"] = len(bullets)
-        return _identity_rewrite(bullets, requirements, char_budget=char_budget, shorten_pct=shorten_pct)
+        return _identity_rewrite(bullets, requirements, char_budget=char_budget)
 
     # Underfull while the selection is at its starting size; full once it has grown.
     def fake_measure(*a, **k):
@@ -539,7 +739,6 @@ def test_fit_warns_when_widow_repair_fabrication_is_discarded(monkeypatch, tmp_p
         requirements,
         *,
         char_budget,
-        shorten_pct=0,
         repair_widows=True,
         repair_verbs=True,
         merge_groups=None,
@@ -654,46 +853,3 @@ def test_fit_falls_back_to_budget_estimate_when_word_unavailable(monkeypatch, tm
     assert any("Word is not installed" in w for w in result.warnings)
 
 
-def test_merge_proposals_wait_until_measured_overflow(monkeypatch, tmp_path):
-    """With merge_bullets on, attempt 0 must not propose; overflow attempts may."""
-    resume = _test_resume()
-    requirements = _requirements()
-    seen_groups: list[list] = []
-
-    def fake_rewrite(
-        bullets,
-        requirements,
-        *,
-        char_budget,
-        shorten_pct=0,
-        repair_widows=True,
-        repair_verbs=True,
-        merge_groups=None,
-        on_event=None,
-    ):
-        """Capture merge_groups passed on each rewrite attempt."""
-        seen_groups.append(list(merge_groups or []))
-        return RewriteOutcome({b.id: b.text for b in bullets})
-
-    pages = iter([2, 1])  # first measure overflows, second fits
-
-    monkeypatch.setattr(fit_mod, "rewrite_bullets", fake_rewrite)
-    monkeypatch.setattr(fit_mod.render, "render", lambda *a, **k: tmp_path / "out.docx")
-    monkeypatch.setattr(
-        fit_mod.render, "measure_detail", lambda *a, **k: (next(pages), _FULL_LINES)
-    )
-    monkeypatch.setattr(fit_mod.render, "to_pdf", lambda *a, **k: tmp_path / "out.pdf")
-
-    # Force a deterministic non-empty proposal after overflow so the gate is visible.
-    sentinel = object()
-
-    def fake_propose(*a, **k):
-        """Return a sentinel group list whenever propose is reached."""
-        return [sentinel]
-
-    monkeypatch.setattr(fit_mod, "propose_merges", fake_propose)
-
-    fit_mod.fit(resume, requirements, target_pages=1, merge_bullets=True)
-
-    assert seen_groups[0] == [], "first draft must not merge"
-    assert seen_groups[1] == [sentinel], "overflow attempt must be allowed to merge"

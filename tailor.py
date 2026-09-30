@@ -135,11 +135,13 @@ def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:
     )
     parser.add_argument(
         "--merge",
-        action="store_true",
+        action=argparse.BooleanOptionalAction,
+        default=True,
         help=(
-            "Enable merging redundant bullet points within a single entry, using an "
-            "additional non-regressive merge pass. Proposals fire only after the page has "
-            "measured over its target, so a resume that already fits is never merged."
+            "Merge redundant bullet points within a single entry (on by default; "
+            "--no-merge opts out). It is the first rung of the overflow ladder and fires "
+            "only after the page has measured over its target, so a resume that already "
+            "fits is never merged."
         ),
     )
     parser.add_argument(
