@@ -1485,3 +1485,20 @@ top, which matches the number answered everywhere else.
 - Live-verified in a browser against an isolated data dir: Sources tab, catalog add, per-source
   Test (Simplify 1412 rows; Adzuna two phrases 412 rows), README link inspect. LinkedIn/Indeed
   live capture still needs a pass with the user logged in (checklist: docs/GUIDE.md §2.4).
+
+## 2026-09-29 — Stale desktop page; Sources tab regrouped by type
+
+- **The desktop window kept showing the previous release's UI after an update.** The window signs
+  in via `/?t=`, which 303'd to `/`, and index.html had no Cache-Control, so WebView2 reused its
+  heuristically cached copy; the old hashed bundles it references are never deleted from
+  `server/_internal/frontend/dist/assets`, so the stale page worked perfectly. Fix: the redirect goes
+  to `/?v=<version>` (a new cache key once per release; the SPA strips it), index.html / SPA
+  fallback are `no-cache`, hashed `assets/*` are `immutable`. Takes effect from the release after
+  v0.2.9 with no manual step.
+- **Sources tab regrouped** after the user found it unintuitive (search engines invisible until
+  adding one, identical rows, no health). Three always-visible groups; Adzuna/USAJobs connected once
+  per provider (keys never inside a search); identical rows with a ⋯ menu for every source;
+  side-panel edit with autosave; Undo toast instead of confirm; per-source health from
+  `source_status.json` (`found`/`kept` counted after filters, before known-id dedupe).
+- The row's on/off control is a drawn pill inside a full-size button: the global 36px control floor
+  in `index.css` is unlayered, so a Tailwind `h-5` on a `<button>` rendered a circle.
