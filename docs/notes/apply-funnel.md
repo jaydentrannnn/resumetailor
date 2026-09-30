@@ -1532,3 +1532,6 @@ top, which matches the number answered everywhere else.
 - **Not a bug**: the panel's Close button "timing out" under Playwright MCP was the automation tab
   being in the background (`requestAnimationFrame` never fires, so Playwright's stability check
   hangs); `evaluate`-driven clicks work. No Modal change was made.
+
+## 2026-09-30 — Apply attention and mistaken submitted marks
+Needs you sorts by the latest status timestamp, so recently changed rows appear first. Apply operations and nightly runs retain one latest attention outcome per application with the real failure or hand-off reason and a review-tab link. Restoring a submitted/skipped Done row now undoes that mark using its last non-terminal status; undo_terminal is the only bypass of set_status's terminal guard, and an explicit undo route covers already-restored rows.

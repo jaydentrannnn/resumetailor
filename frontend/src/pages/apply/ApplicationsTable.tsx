@@ -79,6 +79,7 @@ export interface TableActions {
   ) => void;
   reopen: (rows: ApplicationRow[]) => void;
   move: (ids: string[], archived: boolean) => void;
+  undo: (row: ApplicationRow) => void;
   retry: (row: ApplicationRow) => void;
   mark: (row: ApplicationRow, status: "submitted" | "skipped") => void;
   focusTab: (row: ApplicationRow) => void;
@@ -113,7 +114,7 @@ export function ApplicationsTable({
   const selectedIds = rows
     .filter((row) => state.selected.has(row.source_job_id))
     .map((row) => row.source_job_id);
-  const dateColumn = archived ? "archived_at" : "posted_at";
+  const dateColumn = archived ? "archived_at" : scope === "review" ? "status_at" : "posted_at";
 
   function menu(row: ApplicationRow): MenuItem[] {
     const items: MenuItem[] = [];
@@ -127,12 +128,18 @@ export function ApplicationsTable({
       return [
         ...items,
         {
-          label: "Restore",
+          label: row.status === "submitted" ? "Restore (undo submitted)" : "Restore",
           disabled: busy || active,
           action: () => actions.move([row.source_job_id], false),
           description: "Available when Apply is idle",
         },
       ];
+    if (["submitted", "skipped"].includes(row.status))
+      items.push({
+        label: "Not submitted — move back",
+        disabled: busy || active,
+        action: () => actions.undo(row),
+      });
     if (row.job_id && !row.preparation_eligible && !TERMINAL_STATUSES.has(row.status))
       items.push({
         label: "Tailor files again",
@@ -399,10 +406,11 @@ export function ApplicationsTable({
       : []),
     {
       id: dateColumn,
-      heading: archived ? "Done on" : "Posted",
+      heading: archived ? "Done on" : scope === "review" ? "Waiting since" : "Posted",
       sortable: true,
       className: "w-[10%]",
       cell: (row) => {
+        if (scope === "review") return <WaitingSince at={row.status_at || row.discovered_at} />;
         if (!archived) return <PostedDate row={row} />;
         return row.archived_at ? new Date(row.archived_at).toLocaleDateString() : "—";
       },
@@ -579,4 +587,14 @@ export function PostedDate({ row }: { row: ApplicationRow }) {
       ~{localDate(value)}
     </span>
   );
+}
+
+function WaitingSince({ at }: { at: string }) {
+  const date = new Date(at);
+  if (!at || Number.isNaN(date.getTime())) return <>—</>;
+  const elapsed = Math.max(0, Date.now() - date.getTime());
+  const minutes = Math.floor(elapsed / 60000);
+  const label = minutes < 60 ? `${minutes} min ago` : minutes < 1440
+    ? `${Math.floor(minutes / 60)} h ago` : `${Math.floor(minutes / 1440)} d ago`;
+  return <time dateTime={at} title={date.toLocaleString()}>{label}</time>;
 }

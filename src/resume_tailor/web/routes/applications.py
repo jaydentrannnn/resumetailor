@@ -74,6 +74,7 @@ def _application_out(
     )
     payload["group_size"] = group_size
     payload["posted_at"], payload["posted_known"] = apply_store.posted_date(app)
+    payload["status_at"] = apply_store.status_at(app)
     from resume_tailor.apply import preparation
 
     apply_settings = JobSettings.model_validate(workspace.load_settings()["defaults"]).apply
@@ -358,7 +359,7 @@ def list_applications(
     offset: int = 0,
     q: str = "",
     archive: Literal["active", "archived", "all"] = "all",
-    sort: Literal["posted_at", "discovered_at", "archived_at", "company", "role", "location", "status", "coverage", "salary", "ats", "sources"] = "discovered_at",
+    sort: Literal["posted_at", "status_at", "discovered_at", "archived_at", "company", "role", "location", "status", "coverage", "salary", "ats", "sources"] = "discovered_at",
     direction: Literal["asc", "desc"] = "desc",
     group: Literal["review", "working"] | None = None,
 ) -> ApplicationsListResponse:
@@ -410,7 +411,7 @@ def list_applications(
 
 @router.post("/api/applications/archive", response_model=ArchiveApplicationsResponse)
 def archive_applications(body: ArchiveApplicationsRequest) -> ArchiveApplicationsResponse:
-    """Move records between the working and archived tables without changing status."""
+    """Move records between tables; restoring undoes submitted/skipped marks."""
     try:
         with apply_operations.registry_edit_idle():
             with template_ops.LOCK:
@@ -420,6 +421,26 @@ def archive_applications(body: ArchiveApplicationsRequest) -> ArchiveApplication
     except RuntimeError as exc:
         raise HTTPException(status_code=409, detail=str(exc)) from exc
     return ArchiveApplicationsResponse(updated=updated, errors=errors)
+
+
+@router.post("/api/applications/{source_job_id}/undo-submitted", response_model=ApplicationOut)
+def undo_submitted(source_job_id: str) -> ApplicationOut:
+    """Correct a mistaken submitted/skipped mark on a restored application."""
+    try:
+        with apply_operations.registry_edit_idle():
+            with template_ops.LOCK:
+                if get_queue().busy():
+                    raise HTTPException(status_code=409, detail="Tailoring is running; try again when it finishes")
+                app = apply_store.get(source_job_id)
+                if app is None:
+                    raise HTTPException(status_code=404, detail="Unknown application")
+                if app.archived_at:
+                    raise HTTPException(status_code=409, detail="Restore it first")
+                if not apply_store.undo_terminal(app, "Submitted mark undone by user"):
+                    raise HTTPException(status_code=409, detail="Application is not submitted or skipped")
+                return _application_out(apply_store.upsert(app))
+    except RuntimeError as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
 def _operation_out(operation: apply_operations.ApplyOperation) -> ApplyOperationResponse:

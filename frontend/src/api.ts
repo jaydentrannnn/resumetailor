@@ -358,6 +358,7 @@ export type ApplicationRow = {
   ats: string;
   status: string;
   status_history?: Array<{ status: string; at: string; note?: string }>;
+  status_at?: string;
   discovered_at: string;
   /** Posting date (ISO date); the date found instead when `posted_known` is false. */
   posted_at?: string;
@@ -446,6 +447,14 @@ export type InFlightItem = {
   deadline_at: string;
 };
 
+export type AttentionItem = {
+  application_id: string;
+  label: string;
+  kind: "failed" | "needs_input" | "ready_for_review" | "blocked";
+  message: string;
+  at: string;
+};
+
 export type ApplyOperation = {
   operation_id: string;
   action: "find" | "prepare" | "fill" | "inspect" | "correct";
@@ -479,6 +488,7 @@ export type ApplyOperation = {
   application_deadline_at?: string;
   ready_for_review?: number;
   needs_input?: number;
+  attention?: AttentionItem[];
   finished_at: string;
   effective_model: string;
   auto_submit: boolean;
@@ -2050,6 +2060,12 @@ export function archiveApplications(
   });
 }
 
+export function undoSubmitted(sourceJobId: string): Promise<ApplicationRow> {
+  return request(`/api/applications/${encodeURIComponent(sourceJobId)}/undo-submitted`, {
+    method: "POST",
+  });
+}
+
 /** Load one application plus packet and JD when available. */
 export function getApplication(sourceJobId: string): Promise<{
   application: ApplicationRow;
@@ -2092,7 +2108,7 @@ export type DailyStatus = {
   started_at: string;
   finished_at: string;
   date: string;
-  summary: Record<string, unknown> | null;
+  summary: (Record<string, unknown> & { attention?: AttentionItem[] }) | null;
   scheduler?: SchedulerStatus | null;
 };
 

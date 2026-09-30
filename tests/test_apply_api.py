@@ -156,7 +156,27 @@ def test_archive_endpoint_and_scoped_listing(client):
     assert c.post("/api/applications/a/status", json={"status": "interview"}).status_code == 409
     assert c.get("/api/applications").json()["total"] == 2
     assert c.post("/api/applications/archive", json={"application_ids": ["a"], "archived": False}).status_code == 200
-    assert c.get("/api/applications/a").json()["application"]["status"] == "submitted"
+    assert c.get("/api/applications/a").json()["application"]["status"] == "jd_fetched"
+
+
+def test_undo_submitted_route_conflicts_and_success(client):
+    c, _q = client
+    assert c.post("/api/applications/unknown/undo-submitted").status_code == 404
+    row = apply_store.Application(source="test", source_job_id="one", company="Acme", role="Engineer", job_id="run-1")
+    apply_store.set_status(row, "ready")
+    apply_store.set_status(row, "submitted")
+    apply_store.upsert(row)
+    assert c.post("/api/applications/one/undo-submitted").status_code == 409
+    c.post("/api/applications/archive", json={"application_ids": ["one"], "archived": False})
+    # Restore already undoes the mark, so mark again while the row is active.
+    row = apply_store.get("one")
+    row.status = "submitted"
+    apply_store.upsert(row)
+    response = c.post("/api/applications/one/undo-submitted")
+    assert response.status_code == 200
+    assert response.json()["status"] == "ready"
+    assert response.json()["status_at"]
+    assert c.post("/api/applications/one/undo-submitted").status_code == 409
 
 
 def test_screened_out_row_moves_from_working_to_archived_listing(client):

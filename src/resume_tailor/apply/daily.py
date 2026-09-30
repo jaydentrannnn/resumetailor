@@ -15,7 +15,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from resume_tailor import config, data, jd, runs, workspace
-from resume_tailor.apply import browser, fetch_jd, fill, identity, sources, store, submit_guard
+from resume_tailor.apply import attention as attention_mod, browser, fetch_jd, fill, identity, sources, store, submit_guard
 from resume_tailor.apply import eligibility as eligibility_mod
 from resume_tailor.apply import screen as screen_mod
 from resume_tailor.apply.screen import ScreenResult, screen
@@ -105,6 +105,7 @@ class DailySummary(BaseModel):
     submit_failed: int = 0
     submit_skipped_no_browser: bool = False
     errors: list[str] = Field(default_factory=list)
+    attention: list[attention_mod.AttentionItem] = Field(default_factory=list)
     log_path: str = ""
 
 
@@ -154,9 +155,16 @@ def _bump(summary: DailySummary, field: str) -> None:
         setattr(summary, field, getattr(summary, field) + 1)
 
 
-def _row_error(summary: DailySummary, message: str) -> None:
+def _row_error(summary: DailySummary, message: str, app: store.Application | None = None) -> None:
     with _PROGRESS_LOCK:
         summary.errors.append(message)
+        if app is not None:
+            attention_mod.record(summary.attention, app.canonical_key or app.source_job_id, f"{app.company} — {app.role}", "failed", message)
+
+
+def _row_attention(summary: DailySummary, app: store.Application, kind: attention_mod.AttentionKind, message: str) -> None:
+    with _PROGRESS_LOCK:
+        attention_mod.record(summary.attention, app.canonical_key or app.source_job_id, f"{app.company} — {app.role}", kind, message)
 
 
 def daily_status() -> DailyProgress:
@@ -638,6 +646,7 @@ def _process_one(
         store.set_status(app, "needs_browser", note=fetch.error or "jd too short")
         store.upsert(app)
         _bump(summary, "needs_browser")
+        _row_attention(summary, app, "needs_input", fetch.error or "Job description unavailable; open this posting in your browser")
         _append_log(log_path, f"[needs_browser] {app.company}: {fetch.error}", log)
         _bump(summary, "processed")
         return
@@ -686,7 +695,7 @@ def _process_one(
         store.set_status(app, "tailor_failed", note=f"extract failed: {exc}")
         store.upsert(app)
         _bump(summary, "tailor_failed")
-        _row_error(summary, f"{app.company}: extract {exc}")
+        _row_error(summary, f"{app.company}: extract {exc}", app)
         _append_log(log_path, f"[tailor_failed] {app.company}: extract failed: {exc}", log)
         _bump(summary, "processed")
         return
@@ -765,7 +774,7 @@ def _process_one(
         app.error = err
         store.upsert(app)
         _bump(summary, "tailor_failed")
-        _row_error(summary, f"{app.company}: tailor {err}")
+        _row_error(summary, f"{app.company}: tailor {err}", app)
         _append_log(log_path, f"[tailor_failed] {app.company}: {err}", log)
     else:
         store.set_status(app, "ready", note=f"tailored as {job.job_id}")
@@ -990,7 +999,7 @@ def run_daily(
                         index_lock=index_lock,
                     )
                 except Exception as exc:  # noqa: BLE001
-                    _row_error(summary, f"{row.company}: {exc}")
+                    _row_error(summary, f"{row.company}: {exc}", store.get(row.job_id) if row.job_id else None)
                     _append_log(log_file, f"[error] {row.company}: {exc}", log)
 
         for row in to_process:
@@ -1122,10 +1131,17 @@ def _run_batch_submit(
                 )
             except Exception as exc:  # noqa: BLE001 - one bad posting must not sink the batch
                 _bump(summary, "submit_failed")
+                _row_attention(summary, app, "failed", str(exc))
                 with log_lock:
                     _append_log(log_path, f"[batch-submit] {label}: {exc}", log)
                 continue
             _bump(summary, "submitted" if result.status == "submitted" else "submit_failed")
+            if result.status == "awaiting_review" and result.ready_to_submit:
+                _row_attention(summary, app, "ready_for_review", "Ready to submit — final check")
+            elif result.status in {"awaiting_review", "awaiting_otp"}:
+                _row_attention(summary, app, "needs_input", result.handoff_reason or result.error or store.review_summary(store.get(app.source_job_id) or app) or result.status.replace("_", " "))
+            elif result.status != "submitted":
+                _row_attention(summary, app, "failed", result.error or result.handoff_reason or result.status.replace("_", " "))
             with log_lock:
                 _append_log(log_path, f"[batch-submit] {label}: {result.status}", log)
 

@@ -11,6 +11,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, model_validator
 
 from .. import config
+from ..apply.attention import AttentionItem
 from ..apply.eligibility import EligibilitySettings
 from ..apply.profile import ApplicantProfile
 from ..apply.screen import ScreenResult, ScreenSettings
@@ -1187,6 +1188,7 @@ class ApplicationOut(BaseModel):
     notes: str = ""
     status: ApplicationStatus = "discovered"
     status_history: list[StatusChange] = Field(default_factory=list)
+    status_at: str = ""
     discovered_at: str = ""
     #: When the posting was published (`store.posted_date`); when ``posted_known`` is
     #: false this is the date it was found instead.
@@ -1345,6 +1347,7 @@ class ApplyOperationResponse(BaseModel):
     application_deadline_at: str = ""
     ready_for_review: int = 0
     needs_input: int = 0
+    attention: list[AttentionItem] = Field(default_factory=list)
     finished_at: str = ""
     effective_model: str = ""
     auto_submit: bool = False

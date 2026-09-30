@@ -113,6 +113,42 @@ def test_raising_fill_does_not_stop_other_rows(batch, monkeypatch):
     monkeypatch.setattr(operations.fill, "fill_application", fake_fill)
     operation = batch()
     assert (operation.processed, operation.completed, operation.failed) == (4, 3, 1)
+    assert [(item.application_id, item.kind, item.message) for item in operation.attention if item.kind == "failed"] == [("one", "failed", "site failed")]
+
+
+@pytest.mark.parametrize("result,kind,message", [
+    (store.FillResult(status="awaiting_review", ready_to_submit=True), "ready_for_review", "Ready to submit — final check"),
+    (store.FillResult(status="awaiting_otp", handoff_reason="Email code required"), "needs_input", "Email code required"),
+    (store.FillResult(status="fill_failed", error="Form crashed"), "failed", "Form crashed"),
+])
+def test_fill_attention_records_real_outcome(batch, monkeypatch, result, kind, message):
+    monkeypatch.setattr(operations.fill, "fill_application", lambda *_args, **_kwargs: result)
+    operation = batch(ids=("one",))
+    assert len(operation.attention) == 1
+    assert (operation.attention[0].kind, operation.attention[0].message) == (kind, message)
+
+
+def test_prepare_attention_records_blocked_and_missing(batch, monkeypatch):
+    monkeypatch.setattr(operations.daily, "prepare_application", lambda *_args, **_kwargs: store.Application(
+        source="test", source_job_id="one", company="one", role="Engineer", status="needs_browser", error="Sign in first",
+    ))
+    operation = batch(action="prepare", ids=("one", "missing"))
+    assert {(item.application_id, item.kind, item.message) for item in operation.attention} == {
+        ("one", "blocked", "Sign in first"),
+        ("missing", "failed", "Application no longer exists"),
+    }
+
+
+def test_pause_resume_removes_attention_for_retried_item(batch, monkeypatch):
+    replies = iter([
+        store.FillResult(status="awaiting_otp", handoff_reason="Email code required"),
+        store.FillResult(status="submitted"),
+    ])
+    monkeypatch.setattr(operations.fill, "fill_application", lambda *_args, **_kwargs: next(replies))
+    monkeypatch.setattr(operations, "_wait_if_paused", lambda _operation: "resume")
+    operation = batch(ids=("one",), blocker_mode="pause")
+    assert operation.needs_input == operation.blocked == 0
+    assert operation.attention == []
 
 
 def test_auto_submit_reservation_caps_parallel_fills(batch, monkeypatch):

@@ -77,10 +77,44 @@ def test_archive_round_trip_is_idempotent_and_preserves_workflow(apps_path):
     assert store.get("job-1").archived_at == first.archived_at
     store.set_archived(["job-1"], False)
     restored = store.get("key-1")
-    assert restored.status == "submitted"
+    assert restored.status == "ready"
     assert restored.job_id == "run-1"
-    assert restored.status_history == first.status_history
+    assert restored.status_history[:-1] == first.status_history
+    assert restored.status_history[-1].note == "Restored from Done; submitted mark undone"
     assert restored.archived_at is None
+
+
+def test_status_at_sort_uses_latest_status_change():
+    old = _sample_app(source_job_id="old", discovered_at="2026-09-01T00:00:00+00:00")
+    fresh = _sample_app(source_job_id="fresh", discovered_at="2026-09-02T00:00:00+00:00")
+    old.status_history = [store.StatusChange(status="awaiting_review", at="2026-09-03T00:00:00+00:00")]
+    rows = store.list_applications(sort="status_at", applications=[fresh, old])
+    assert [row.source_job_id for row in rows] == ["old", "fresh"]
+    assert store.status_at(fresh) == fresh.discovered_at
+    offset = _sample_app(source_job_id="offset", discovered_at="2026-09-03T01:00:00-07:00")
+    assert [row.source_job_id for row in store.list_applications(sort="status_at", applications=[old, offset])] == ["offset", "old"]
+
+
+@pytest.mark.parametrize("previous,expected", [("filling", "ready"), ("tailoring", "tailor_failed"), ("awaiting_review", "awaiting_review")])
+def test_undo_terminal_uses_history_and_maps_transients(previous, expected):
+    app = _sample_app(status="submitted", job_id="run-1", status_history=[
+        store.StatusChange(status=previous, at="2026-09-01T00:00:00+00:00"),
+        store.StatusChange(status="submitted", at="2026-09-02T00:00:00+00:00"),
+    ])
+    assert store.undo_terminal(app, "mistake")
+    assert app.status == expected
+    assert app.status_history[-1].status == expected
+    assert app.status_history[-1].note == "mistake"
+    assert app.revision == 1
+
+
+def test_undo_terminal_fallback_and_interview_untouched():
+    app = _sample_app(status="skipped")
+    assert store.undo_terminal(app, "mistake")
+    assert app.status == "jd_fetched"
+    app = _sample_app(status="interview")
+    assert not store.undo_terminal(app, "mistake")
+    assert app.status == "interview" and app.status_history == []
 
 
 def test_archive_search_sort_and_missing_last(apps_path):

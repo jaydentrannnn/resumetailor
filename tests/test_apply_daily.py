@@ -16,6 +16,17 @@ import pytest
 
 from resume_tailor import config, jd
 from resume_tailor.apply import browser, daily, fetch_jd, fill, sources, store, submit_guard
+
+
+def test_daily_attention_tracks_known_row_errors_and_latest_outcome():
+    summary = daily.DailySummary()
+    app = store.Application(source="test", source_job_id="one", company="Acme", role="Engineer")
+    daily._row_error(summary, "Acme: fetch failed", app)
+    daily._row_attention(summary, app, "needs_input", "Open the posting")
+    assert summary.errors == ["Acme: fetch failed"]
+    assert [(item.application_id, item.kind, item.message) for item in summary.attention] == [
+        ("one", "needs_input", "Open the posting")
+    ]
 from resume_tailor.apply.sources import SourceRow
 from resume_tailor.jd import JobRequirements, Keyword
 from resume_tailor.web import jobs as jobs_mod

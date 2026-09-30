@@ -1,5 +1,6 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
+import { AttentionList } from "./AttentionList";
 import { type ApplyOperation, type JobStatus, fetchJob } from "../../api";
 import {
   formatEta,
@@ -251,6 +252,7 @@ export function OperationBanner({
           </p>
         )}
       </details>
+      <AttentionList items={operation.attention} />
     </section>
   );
 }

@@ -734,7 +734,7 @@ def restore(previous: Application) -> Application:
 
 
 def set_archived(application_ids: list[str], archived: bool) -> tuple[list[str], dict[str, str]]:
-    """Change archive state in one registry write, accepting canonical or source IDs."""
+    """Change archive state in one write; restoring also undoes submitted/skipped."""
     with _txn():
         apps = load_all()
         updated: list[str] = []
@@ -753,6 +753,7 @@ def set_archived(application_ids: list[str], archived: bool) -> tuple[list[str],
             elif not archived and app.archived_at:
                 app.archived_at = None
                 app.revision += 1
+                undo_terminal(app, "Restored from Done; submitted mark undone")
                 changed = True
             updated.append(requested_id)
         if changed:
@@ -800,6 +801,11 @@ def posted_date(app: Application) -> tuple[str, bool]:
     return found.date().isoformat(), False
 
 
+def status_at(app: Application) -> str:
+    """Timestamp of the latest status change, or discovery for legacy rows."""
+    return app.status_history[-1].at if app.status_history else app.discovered_at
+
+
 def list_applications(
     *,
     status: ApplicationStatus | None = None,
@@ -807,7 +813,7 @@ def list_applications(
     offset: int = 0,
     q: str = "",
     archive: Literal["active", "archived", "all"] = "all",
-    sort: Literal["posted_at", "discovered_at", "archived_at", "company", "role", "location", "status", "coverage", "salary", "ats", "sources"] = "discovered_at",
+    sort: Literal["posted_at", "status_at", "discovered_at", "archived_at", "company", "role", "location", "status", "coverage", "salary", "ats", "sources"] = "discovered_at",
     direction: Literal["asc", "desc"] = "desc",
     group: Literal["review", "working"] | None = None,
     applications: list[Application] | None = None,
@@ -828,6 +834,15 @@ def list_applications(
     def sort_value(row: Application) -> str | float | None:
         if sort == "posted_at":
             return posted_date(row)[0] or None
+        if sort == "status_at":
+            raw_at = status_at(row)
+            if not raw_at:
+                return None
+            try:
+                parsed = datetime.fromisoformat(raw_at.replace("Z", "+00:00"))
+                return parsed.replace(tzinfo=UTC).timestamp() if parsed.tzinfo is None else parsed.timestamp()
+            except ValueError:
+                return None
         if sort == "status":
             return _STATUS_RANK.get(row.status, len(_STATUS_RANK))
         if sort == "coverage":
@@ -839,7 +854,7 @@ def list_applications(
         raw = getattr(row, sort, None)
         return str(raw).strip().casefold() if raw else None
     values = {id(row): sort_value(row) for row in apps}
-    apps.sort(key=lambda row: values[id(row)] if values[id(row)] is not None else (0.0 if sort == "coverage" else ""), reverse=direction == "desc")
+    apps.sort(key=lambda row: values[id(row)] if values[id(row)] is not None else (0.0 if sort in {"coverage", "status_at"} else ""), reverse=direction == "desc")
     apps.sort(key=lambda row: values[id(row)] is None)
     apps = apps[max(0, offset):]
     if limit is not None:
@@ -935,12 +950,35 @@ def export_csv() -> str:
     return buffer.getvalue()
 
 
+def undo_terminal(app: Application, note: str) -> bool:
+    """Undo a submitted/skipped mark, the one sanctioned bypass of `set_status`'s terminal guard."""
+    if app.status not in {"submitted", "skipped"}:
+        return False
+    mark = next(
+        (index for index in range(len(app.status_history) - 1, -1, -1)
+         if app.status_history[index].status in {"submitted", "skipped"}),
+        len(app.status_history),
+    )
+    previous = next(
+        (change.status for change in reversed(app.status_history[:mark])
+         if change.status not in TERMINAL_STATUSES),
+        "ready" if app.job_id else "jd_fetched",
+    )
+    app.status = {"filling": "ready", "tailoring": "tailor_failed"}.get(previous, previous)
+    app.status_history.append(StatusChange(status=app.status, at=_now_iso(), note=note))
+    app.revision += 1
+    return True
+
+
 def set_status(
     app: Application,
     new_status: ApplicationStatus,
     note: str = "",
 ) -> Application:
     """Append a status change and enforce terminal-state guards.
+
+    `undo_terminal` is the one sanctioned bypass of this guard for mistaken
+    submitted/skipped marks.
 
     Raises:
         ValueError: When ``app.status`` is terminal and ``new_status`` is pre-ready.

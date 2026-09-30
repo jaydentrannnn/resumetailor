@@ -14,6 +14,7 @@ import {
   runDailyNow,
   setApplicationStatus,
   startApplyOperation,
+  undoSubmitted,
   type ApplicationRow,
   type ApplyOperation,
   type DailyStatus,
@@ -56,6 +57,7 @@ import { ApplicationsTable, type TableActions } from "./ApplicationsTable";
 import { ApplySettingsDrawer } from "./ApplySettingsDrawer";
 import { ConnectionStatus } from "./BrowserConnection";
 import { OperationBanner, type OperationControl } from "./OperationBanner";
+import { AttentionList } from "./AttentionList";
 import { useSourcesStatus } from "./sourceHooks";
 import { NeedsDescriptionGroup } from "../CapturedStubs";
 import { useApplicationTable } from "./useApplicationTable";
@@ -346,6 +348,18 @@ export function ApplyPage() {
     }
   }
 
+  async function undo(row: ApplicationRow) {
+    setBusy(true);
+    try {
+      await undoSubmitted(row.source_job_id);
+      refresh();
+    } catch (reason) {
+      showError("Could not move application back", reason);
+    } finally {
+      setBusy(false);
+    }
+  }
+
   function control(action: OperationControl) {
     if (!operation) return;
     void controlApplyOperation(operation.operation_id, action)
@@ -373,6 +387,7 @@ export function ApplyPage() {
     start: (action, ids, mode, force) => void start(action, ids, mode, force),
     reopen,
     move: (ids, archived) => void move(ids, archived),
+    undo: (row) => void undo(row),
     retry: (row) => void retry(row),
     mark: (row, status) => void mark(row, status),
     focusTab: (row) =>
@@ -565,6 +580,15 @@ export function ApplyPage() {
       <ProfileGapsNotice gaps={profileGaps} />
 
       {operation && <OperationBanner operation={operation} onControl={control} />}
+      {daily?.summary && (daily.running || daily.finished_at) && (
+        <section className="rounded-lg border border-line bg-panel p-4 shadow-sm" aria-live="polite">
+          <h2 className="text-lg font-semibold">Nightly run {daily.running ? "in progress" : "finished"}</h2>
+          <p className="mt-1 text-sm text-ink-muted">
+            {daily.processed} of {daily.total} processed{daily.current ? ` · ${daily.current}` : ""}
+          </p>
+          <AttentionList items={daily.summary.attention} />
+        </section>
+      )}
 
       {!browserConnected && readyCount > 0 && (
         <div className="flex flex-wrap items-center gap-3 rounded-lg border border-warn/40 bg-warn-soft/30 p-3 text-sm">

@@ -19,6 +19,7 @@ from pydantic import BaseModel, Field
 
 from resume_tailor import config, logs, workspace
 from resume_tailor.apply import (
+    attention as attention_mod,
     browser,
     daily,
     fill,
@@ -111,6 +112,7 @@ class ApplyOperation(BaseModel):
     application_deadline_at: str = ""
     ready_for_review: int = 0
     needs_input: int = 0
+    attention: list[attention_mod.AttentionItem] = Field(default_factory=list)
     dry_run: bool = False
     limit: int | None = None
     max_age_days: int | None = None
@@ -480,6 +482,7 @@ def _process_item(
         if app is None:
             with _LOCK:
                 operation.failed += 1
+                attention_mod.record(operation.attention, application_id, item.label, "failed", "Application no longer exists")
             _event(operation, "failed", "Application no longer exists", application_id)
             return
         if app.archived_at:
@@ -502,8 +505,17 @@ def _process_item(
                     operation.completed += 1
                 elif result_app.status in {"needs_browser", "screened_out"}:
                     operation.blocked += 1
+                    attention_mod.record(
+                        operation.attention, application_id, item.label, "blocked",
+                        result_app.error
+                        or ("; ".join(result_app.screen.reasons) if result_app.screen else "")
+                        or store.review_summary(result_app)
+                        or (result_app.status_history[-1].note if result_app.status_history else "")
+                        or result_app.status.replace("_", " "),
+                    )
                 else:
                     operation.failed += 1
+                    attention_mod.record(operation.attention, application_id, item.label, "failed", result_app.error or result_app.status.replace("_", " "))
             if result_app.status in daily.RETAINED_TAB_STATUSES:
                 _event(
                     operation,
@@ -542,11 +554,13 @@ def _process_item(
                 with _LOCK:
                     operation.completed += 1
                     operation.ready_for_review += 1
+                    attention_mod.record(operation.attention, application_id, item.label, "ready_for_review", "Ready to submit — final check")
                 break
             if result.status in {"awaiting_review", "awaiting_otp"}:
                 with _LOCK:
                     operation.blocked += 1
                     operation.needs_input += 1
+                    attention_mod.record(operation.attention, application_id, item.label, "needs_input", result.handoff_reason or result.error or store.review_summary(store.get(application_id) or app) or result.status.replace("_", " "))
                 if request.blocker_mode != "pause":
                     break
                 with _LOCK:
@@ -557,6 +571,7 @@ def _process_item(
                     with _LOCK:
                         operation.blocked -= 1
                         operation.needs_input -= 1
+                        attention_mod.remove(operation.attention, application_id)
                         item.started_at = _now()
                         item.deadline_at = _deadline_iso()
                         _mirror_item(operation, item)
@@ -565,10 +580,12 @@ def _process_item(
                 break
             with _LOCK:
                 operation.failed += 1
+                attention_mod.record(operation.attention, application_id, item.label, "failed", result.error or result.handoff_reason or result.status.replace("_", " "))
             break
     except Exception as exc:  # noqa: BLE001 - one item must not erase batch evidence
         with _LOCK:
             operation.failed += 1
+            attention_mod.record(operation.attention, application_id, item.label, "failed", str(exc))
         _event(operation, "failed", str(exc), application_id)
     finally:
         with _LOCK:
@@ -727,6 +744,7 @@ def _worker(
                 log=lambda message: _event(operation, "discovering", message),
             )
             operation.processed = operation.completed = 1
+            operation.attention = result.attention
             if result.errors:
                 operation.failed = len(result.errors)
         else:
@@ -748,6 +766,10 @@ def _worker(
         operation.state = "failed"
         operation.current_job_id = ""
         operation.failed += 1
+        if operation.current_application_id:
+            application_id = operation.current_application_id
+            app = store.get(application_id)
+            attention_mod.record(operation.attention, application_id, f"{app.company} — {app.role}" if app else application_id, "failed", str(exc))
         operation.finished_at = _now()
         _event(operation, "failed", str(exc))
     finally:
