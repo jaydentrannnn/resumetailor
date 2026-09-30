@@ -794,15 +794,28 @@ def source_sections(kind: str, text: str) -> list[str]:
     return [name for name in names if parse_source_text(kind, text, [name])]
 
 
+def source_keyword_filters(
+    src: Any,
+) -> tuple[re.Pattern[str] | None, re.Pattern[str] | None, re.Pattern[str] | None]:
+    """A source's (include, exclude, locations) patterns, as `matches_filters` takes them.
+
+    The one place the three filters are derived, shared by watchlists, keyword searches and
+    README lists so they cannot drift apart.
+    """
+    return (
+        _keyword_re(src.include, whole=False),
+        _keyword_re(src.exclude, whole=False),
+        _keyword_re(src.locations, whole=True),
+    )
+
+
 def _apply_source_filters(src: Any, rows: list[SourceRow]) -> list[SourceRow]:
     """Keep README rows whose title and location satisfy the source's own filters.
 
     Watchlists and keyword searches apply the same three filters while they read; a job
     list reads whole sections, so the filters run here. No filters set keeps every row.
     """
-    include = _keyword_re(src.include, whole=False)
-    exclude = _keyword_re(src.exclude, whole=False)
-    places = _keyword_re(src.locations, whole=True)
+    include, exclude, places = source_keyword_filters(src)
     if not (include or exclude or places):
         return rows
     return [
@@ -915,9 +928,7 @@ def board_rows(
 
     list_board = list_board or boards.list_board
     now = now or datetime.now(UTC)
-    include = _keyword_re(source.include, whole=False)
-    exclude = _keyword_re(source.exclude, whole=False)
-    places = _keyword_re(source.locations, whole=True)
+    include, exclude, places = source_keyword_filters(source)
     rows: list[SourceRow] = []
     errors: list[str] = []
     for position, board in enumerate(source.boards):

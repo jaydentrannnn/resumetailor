@@ -267,7 +267,8 @@ def test_source_test_endpoint_uses_profile_filters(client, monkeypatch):
     body = c.post("/api/apply/sources/test", json={"source": source}).json()
     assert body["rows_kept"] == 1
     # ...and the result says why the other rows dropped, and which limit did it.
-    assert body["dropped"] == {"too_old": 2}
+    # The "Date unknown" row is counted apart from the genuinely old one.
+    assert body["dropped"] == {"no_date": 1, "too_old": 1}
     assert body["max_age_days"] == 1
 
 

@@ -227,8 +227,8 @@ class SourceTestResult(BaseModel):
     rows_kept: int
     sample: list[SourceTestRow]
     errors: list[str]
-    #: Why postings fell out of ``rows_total``: too_old, title, citizenship, advanced_degree,
-    #: no_sponsorship. Only reasons that dropped at least one appear.
+    #: Why postings fell out of ``rows_total``: no_date, too_old, title, citizenship,
+    #: advanced_degree, no_sponsorship. Only reasons that dropped at least one appear.
     dropped: dict[str, int] = Field(default_factory=dict)
     #: The posting-age limit the test applied, in days (the source's or Apply's, the longer).
     max_age_days: int = 0
@@ -297,8 +297,12 @@ def test_source(body: SourceTestRequest) -> SourceTestResult:
         known_ids=set(),
         eligibility=settings.eligibility,
     )
+    # A row whose posting date could not be read is dropped by the age filter too, but it
+    # is not "too old": count it apart so a student does not blame the age limit for it.
+    no_date = sum(1 for row in rows if row.age_days is None)
     dropped = {
-        "too_old": filtered.total_candidates - filtered.age_filtered_count,
+        "no_date": no_date,
+        "too_old": filtered.total_candidates - filtered.age_filtered_count - no_date,
         "title": filtered.excluded_title,
         "citizenship": filtered.excluded_citizenship,
         "advanced_degree": filtered.excluded_advanced_degree,

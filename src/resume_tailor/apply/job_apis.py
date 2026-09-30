@@ -15,7 +15,13 @@ from typing import Any, Literal
 import httpx
 
 from resume_tailor import config
-from resume_tailor.apply.sources import SourceRow, _age_days, _keyword_re, iso_date, matches_filters
+from resume_tailor.apply.sources import (
+    SourceRow,
+    _age_days,
+    iso_date,
+    matches_filters,
+    source_keyword_filters,
+)
 
 JobProvider = Literal["adzuna", "usajobs"]
 JOB_PROVIDERS: tuple[JobProvider, ...] = ("adzuna", "usajobs")
@@ -129,9 +135,7 @@ def _search_adzuna(
         )
 
     country = (source.country or "us").strip().lower()
-    include = _keyword_re(source.include, whole=False)
-    exclude = _keyword_re(source.exclude, whole=False)
-    places = _keyword_re(source.locations, whole=True)
+    include, exclude, places = source_keyword_filters(source)
 
     rows: list[SourceRow] = []
     errors: list[str] = []
@@ -250,9 +254,7 @@ def _search_usajobs(
         "Authorization-Key": api_key,
     }
 
-    include = _keyword_re(source.include, whole=False)
-    exclude = _keyword_re(source.exclude, whole=False)
-    places = _keyword_re(source.locations, whole=True)
+    include, exclude, places = source_keyword_filters(source)
 
     rows: list[SourceRow] = []
     errors: list[str] = []
