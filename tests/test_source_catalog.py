@@ -266,6 +266,24 @@ def test_source_test_endpoint_uses_profile_filters(client, monkeypatch):
     settings["defaults"]["apply"]["max_age_days"] = 1
     body = c.post("/api/apply/sources/test", json={"source": source}).json()
     assert body["rows_kept"] == 1
+    # ...and the result says why the other rows dropped, and which limit did it.
+    assert body["dropped"] == {"too_old": 2}
+    assert body["max_age_days"] == 1
+
+
+def test_source_test_endpoint_applies_the_sources_own_filters(client, monkeypatch):
+    c, _settings = client
+    text = (_FIXTURES / "zapplyjobs_readme.md").read_text(encoding="utf-8")
+    monkeypatch.setattr(sources, "fetch_readme", lambda url: text)
+    source = {
+        "id": "z",
+        "kind": "pipe_table",
+        "url": "https://raw.githubusercontent.com/zapplyjobs/Internships-2027/main/README.md",
+        "categories": ["Software Engineering"],
+        "exclude": ["engineer"],
+    }
+    body = c.post("/api/apply/sources/test", json={"source": source}).json()
+    assert body["rows_total"] < 3
 
 
 def test_source_test_endpoint_reports_failure(client, monkeypatch):
@@ -277,7 +295,8 @@ def test_source_test_endpoint_reports_failure(client, monkeypatch):
     monkeypatch.setattr(sources, "fetch_readme", offline)
     source = {"id": "z", "kind": "pipe_table", "url": "https://example.com/README.md"}
     body = c.post("/api/apply/sources/test", json={"source": source}).json()
-    assert body == {"rows_total": 0, "rows_kept": 0, "sample": [], "errors": ["offline"]}
+    assert body["errors"] == ["offline"]
+    assert (body["rows_total"], body["rows_kept"], body["sample"]) == (0, 0, [])
 
 
 def test_saved_default_without_catalog_id_is_linked_to_its_entry():

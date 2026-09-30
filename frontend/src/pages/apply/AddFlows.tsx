@@ -1,7 +1,8 @@
 import { useState } from "react";
 import {
+  inspectSource,
+  resolveBoard,
   saveSecret,
-  type BoardConfig,
   type ResolvedBoard,
   type SourceCatalog,
   type SourceConfig,
@@ -13,35 +14,22 @@ import { describe } from "../../lib/errors";
 import {
   catalogAdded,
   FIELD_LABELS,
-  newJobSearchSource,
-  newReadmeSource,
   PROVIDER_KEYS,
   PROVIDER_LABELS,
   SOURCE_FIELDS,
   sourceDisplayName,
   sourceFromCatalog,
-  splitPhrases,
   type SearchProvider,
 } from "../../lib/sources";
-import { newWatchlistSource } from "../../lib/watchlist";
-import { CategoryPicker, JobSearchEditor, WatchlistEditor } from "./SourceEditors";
-import { SourceTest } from "./SourceTest";
 
 /**
- * The per-group "add" flows of the Sources tab: the catalog for job lists, a keyword
- * search per provider, a company watchlist, and the two flows the "paste a link" bar
- * opens (a README that was just inspected, a careers page that was just resolved). Each
- * is a dialog; nothing is added until its own Add button.
+ * The dialogs around the source panel: the catalog (with a paste-a-link field) for job
+ * lists, the chooser for which watchlist a pasted careers link joins, and Connect for a
+ * search engine's keys. Adding a source itself happens in `SourcePanel`.
  */
 
 /** An inspection that recognised a README format. */
 export type KnownInspection = SourceInspection & { kind: NonNullable<SourceInspection["kind"]> };
-
-const FORMAT_LABELS: Record<NonNullable<SourceInspection["kind"]>, string> = {
-  simplify_html: "HTML job table (Simplify style)",
-  pipe_table: "Markdown job table",
-  company_link_table: "Per-company role tables",
-};
 
 export function NameField({
   value,
@@ -72,6 +60,8 @@ export function CatalogDialog({
   catalogError,
   fields: initialFields,
   onAdd,
+  onReadme,
+  onBoard,
   onClose,
 }: {
   sources: SourceConfig[];
@@ -79,13 +69,17 @@ export function CatalogDialog({
   catalogError: string;
   fields: SourceField[];
   onAdd: (source: SourceConfig) => void;
+  onReadme: (url: string, inspection: KnownInspection) => void;
+  onBoard: (board: ResolvedBoard) => void;
   onClose: () => void;
 }) {
   const [fields, setFields] = useState<SourceField[]>(initialFields);
   const [search, setSearch] = useState("");
   return (
-    <Modal title="Add a job list from the catalog" onClose={onClose} wide>
+    <Modal title="Add a job list" onClose={onClose} wide>
       <div className="mt-4 space-y-3 text-sm">
+        <PasteLinkField sources={sources} onReadme={onReadme} onBoard={onBoard} />
+        <h3 className="pt-1 text-sm font-semibold">Or pick from the catalog</h3>
         {!catalog ? (
           catalogError ? (
             <p role="alert" className="text-sm text-danger">
@@ -210,142 +204,92 @@ function CatalogList({
   );
 }
 
-/** A pasted job-list link whose format was detected: name it, pick categories, test, add. */
-export function ReadmeFlowDialog({
+/**
+ * "Paste a link to any GitHub job list": a README is read first (its format is detected),
+ * then the link is tried as a company careers page. Whichever it is, the matching add
+ * panel opens prefilled.
+ */
+export function PasteLinkField({
   sources,
-  url,
-  inspection,
-  onAdd,
-  onClose,
+  onReadme,
+  onBoard,
 }: {
   sources: SourceConfig[];
-  url: string;
-  inspection: KnownInspection;
-  onAdd: (source: SourceConfig) => void;
-  onClose: () => void;
+  onReadme: (url: string, inspection: KnownInspection) => void;
+  onBoard: (board: ResolvedBoard) => void;
 }) {
-  const [draft, setDraft] = useState<SourceConfig>(() =>
-    newReadmeSource(sources, url, inspection.kind, "", []),
-  );
+  const [url, setUrl] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function submit() {
+    const link = url.trim();
+    if (!link) return;
+    const same = (a: string) => a.replace(/\/+$/, "") === link.replace(/\/+$/, "");
+    const dup = sources.find((s) => s.url && same(s.url));
+    if (dup) {
+      setError(`Already in your sources as ${sourceDisplayName(dup)}.`);
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      let inspection = null;
+      try {
+        inspection = await inspectSource(link);
+      } catch {
+        /* not a README we can read; try it as a careers page */
+      }
+      if (inspection?.kind) {
+        onReadme(link, inspection as KnownInspection);
+        return;
+      }
+      try {
+        onBoard(await resolveBoard({ url: link }));
+      } catch (reason) {
+        const detail = describe(reason)
+          .detail.replace(/\s*For more information check:.*$/s, "")
+          .replace(/^Could not read the careers page:\s*/, "");
+        setError(`That link is not a job list or a careers page we can read (${detail}).`);
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
   return (
-    <Modal title="Add a job list" onClose={onClose} wide>
-      <div className="mt-4 space-y-3 text-sm">
-        <p className="text-xs" aria-live="polite">
-          <span className="font-medium">Format:</span> {FORMAT_LABELS[inspection.kind]} ·{" "}
-          {inspection.row_count} posting{inspection.row_count === 1 ? "" : "s"}
+    <form
+      aria-label="Paste a link"
+      className="space-y-2 rounded-lg border border-line bg-paper p-3"
+      onSubmit={(e) => {
+        e.preventDefault();
+        void submit();
+      }}
+    >
+      <label htmlFor="sources-paste-link" className="text-sm font-medium">
+        Paste a link to any job list
+      </label>
+      <p className="text-xs text-ink-muted">
+        A GitHub repo or README with a table of postings. A company careers page works too.
+      </p>
+      <div className="flex flex-wrap gap-2">
+        <input
+          id="sources-paste-link"
+          className="field min-w-0 flex-1 text-sm"
+          placeholder="https://github.com/owner/repo"
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+        />
+        <Button type="submit" size="sm" variant="secondary" loading={busy} disabled={!url.trim()}>
+          Add
+        </Button>
+      </div>
+      {error && (
+        <p role="alert" className="text-xs text-danger">
+          {error}
         </p>
-        <NameField
-          value={draft.name ?? ""}
-          placeholder={sourceDisplayName(draft)}
-          onChange={(name) => setDraft({ ...draft, name })}
-        />
-        <CategoryPicker source={draft} initialSections={inspection.sections} onChange={setDraft} />
-        <div className="flex flex-wrap items-start justify-between gap-2">
-          <SourceTest source={draft} />
-          <Button
-            variant="primary"
-            size="sm"
-            onClick={() =>
-              onAdd(
-                newReadmeSource(
-                  sources,
-                  draft.url,
-                  inspection.kind,
-                  draft.name ?? "",
-                  draft.categories,
-                ),
-              )
-            }
-          >
-            Add source
-          </Button>
-        </div>
-      </div>
-    </Modal>
-  );
-}
-
-/** "+ New <provider> search": phrases, location and filters; keys live in the Connect dialog. */
-export function SearchFlowDialog({
-  provider,
-  sources,
-  connected,
-  onConnect,
-  onAdd,
-  onClose,
-}: {
-  provider: SearchProvider;
-  sources: SourceConfig[];
-  connected: boolean | null;
-  onConnect: () => void;
-  onAdd: (source: SourceConfig) => void;
-  onClose: () => void;
-}) {
-  const [draft, setDraft] = useState(() => newJobSearchSource(sources, { provider }));
-  const ready = splitPhrases(draft.query ?? "").length > 0;
-  return (
-    <Modal title={`New ${PROVIDER_LABELS[provider]} search`} onClose={onClose} wide>
-      <div className="mt-4 space-y-3 text-sm">
-        <NameField
-          value={draft.name ?? ""}
-          placeholder={sourceDisplayName(draft)}
-          onChange={(name) => setDraft({ ...draft, name })}
-        />
-        <JobSearchEditor
-          source={draft}
-          onChange={setDraft}
-          connected={connected}
-          onConnect={onConnect}
-        />
-        <div className="flex flex-wrap items-start justify-between gap-2">
-          <SourceTest source={draft} disabled={!ready} />
-          <Button
-            variant="primary"
-            size="sm"
-            disabled={!ready}
-            title={ready ? undefined : "Add at least one search phrase first"}
-            onClick={() => onAdd(draft)}
-          >
-            Add search
-          </Button>
-        </div>
-      </div>
-    </Modal>
-  );
-}
-
-/** "+ New watchlist" (empty, or with the company a pasted careers link resolved to). */
-export function WatchlistFlowDialog({
-  sources,
-  board,
-  onAdd,
-  onClose,
-}: {
-  sources: SourceConfig[];
-  board?: BoardConfig;
-  onAdd: (source: SourceConfig) => void;
-  onClose: () => void;
-}) {
-  const [draft, setDraft] = useState<SourceConfig>(() => {
-    const count = sources.filter((s) => s.kind === "ats_board").length;
-    return {
-      ...newWatchlistSource(undefined, sources),
-      name: count ? `Company watchlist ${count + 1}` : "Company watchlist",
-      boards: board ? [{ ats: board.ats, slug: board.slug, company: board.company }] : [],
-    };
-  });
-  return (
-    <Modal title="New company watchlist" onClose={onClose} wide>
-      <div className="mt-4 space-y-3 text-sm">
-        <NameField value={draft.name ?? ""} onChange={(name) => setDraft({ ...draft, name })} />
-        <WatchlistEditor source={draft} onChange={setDraft} />
-        <div className="flex justify-end">
-          <Button variant="primary" size="sm" onClick={() => onAdd(draft)}>
-            Add watchlist
-          </Button>
-        </div>
-      </div>
-    </Modal>
+      )}
+    </form>
   );
 }
 

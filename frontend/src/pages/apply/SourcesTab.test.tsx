@@ -204,36 +204,34 @@ describe("groups", () => {
     renderTab([]);
     for (const title of ["Job lists", "Search engines", "Company watchlists"])
       expect(screen.getByRole("heading", { name: title })).toBeTruthy();
-    expect(screen.getByText(/Curated GitHub lists/)).toBeTruthy();
+    expect(screen.getByText(/GitHub lists of internships/)).toBeTruthy();
     expect(screen.getByText(/Keyword searches through Adzuna or USAJobs/)).toBeTruthy();
     expect(screen.getByText(/Companies whose careers pages/)).toBeTruthy();
-    expect(screen.getByRole("button", { name: "+ Add from catalog" })).toBeTruthy();
-    expect(screen.getByRole("button", { name: "+ New watchlist" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "+ Add job list" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "+ Add search" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "+ Add watchlist" })).toBeTruthy();
     expect(screen.getByText("No job lists yet.")).toBeTruthy();
+    expect(screen.getByText("No searches yet.")).toBeTruthy();
     expect(screen.getByText("No watchlists yet.")).toBeTruthy();
   });
 
-  it("shows Adzuna and USAJobs before any search exists", () => {
+  it("shows Adzuna and USAJobs and how to connect them before any search exists", async () => {
     renderTab([]);
     const adzuna = screen.getByRole("group", { name: "Adzuna" });
     const usajobs = screen.getByRole("group", { name: "USAJobs" });
-    expect(within(adzuna).getByRole("button", { name: "+ New Adzuna search" })).toBeTruthy();
-    expect(within(usajobs).getByRole("button", { name: "+ New USAJobs search" })).toBeTruthy();
-    expect(within(adzuna).getByText("No Adzuna searches yet.")).toBeTruthy();
+    expect(await within(adzuna).findByRole("button", { name: "Connect Adzuna" })).toBeTruthy();
+    expect(within(usajobs).getByRole("button", { name: "Connect USAJobs" })).toBeTruthy();
+    expect(screen.getByRole("button", { name: "+ Add search" })).toBeTruthy();
   });
 
   it("lists each source in its own group", () => {
     renderTab(LEGACY);
     const lists = screen.getByRole("region", { name: "Job lists" });
     expect(within(lists).getAllByRole("listitem")).toHaveLength(3);
-    expect(
-      within(screen.getByRole("group", { name: "Adzuna" })).getByText(
-        "Adzuna: financial analyst, risk",
-      ),
-    ).toBeTruthy();
-    expect(
-      within(screen.getByRole("group", { name: "USAJobs" })).queryAllByRole("listitem"),
-    ).toHaveLength(0);
+    const searches = screen.getByRole("region", { name: "Search engines" });
+    expect(within(searches).getAllByRole("listitem")).toHaveLength(1);
+    expect(within(searches).getByText("Adzuna: financial analyst, risk")).toBeTruthy();
+    expect(within(searches).getByText("Adzuna search")).toBeTruthy();
     expect(
       within(screen.getByRole("region", { name: "Company watchlists" })).getByText(
         "Watchlist: Acme Capital, Globex",
@@ -257,9 +255,9 @@ describe("connecting a search engine", () => {
     const adzuna = screen.getByRole("group", { name: "Adzuna" });
     const usajobs = screen.getByRole("group", { name: "USAJobs" });
     await within(adzuna).findByText("● Connected");
-    expect(within(adzuna).getByRole("button", { name: "Change keys" })).toBeTruthy();
+    expect(within(adzuna).getByRole("button", { name: "Change Adzuna keys" })).toBeTruthy();
     expect(within(usajobs).getByText("○ Not connected")).toBeTruthy();
-    expect(within(usajobs).getByRole("button", { name: "Connect" })).toBeTruthy();
+    expect(within(usajobs).getByRole("button", { name: "Connect USAJobs" })).toBeTruthy();
   });
 
   it("saves the keys once and flips to Connected", async () => {
@@ -277,7 +275,7 @@ describe("connecting a search engine", () => {
       .mockResolvedValue({ name: "x", set: true, source: "saved" });
     renderTab([]);
     const adzuna = screen.getByRole("group", { name: "Adzuna" });
-    fireEvent.click(await within(adzuna).findByRole("button", { name: "Connect" }));
+    fireEvent.click(await within(adzuna).findByRole("button", { name: "Connect Adzuna" }));
     const dialog = await screen.findByRole("dialog", { name: "Connect Adzuna" });
     const submit = within(dialog).getByRole("button", { name: "Save keys" }) as HTMLButtonElement;
     expect(submit.disabled).toBe(true);
@@ -295,7 +293,7 @@ describe("connecting a search engine", () => {
     const { onChange } = renderTab([]);
     const adzuna = screen.getByRole("group", { name: "Adzuna" });
     await within(adzuna).findByText("○ Not connected");
-    fireEvent.click(within(adzuna).getByRole("button", { name: "+ New Adzuna search" }));
+    fireEvent.click(screen.getByRole("button", { name: "+ Add search" }));
     const dialog = await screen.findByRole("dialog", { name: "New Adzuna search" });
     expect(within(dialog).queryByLabelText("Adzuna app key")).toBeNull();
     expect(within(dialog).getByRole("alert").textContent).toContain("Connect Adzuna first");
@@ -312,13 +310,17 @@ describe("connecting a search engine", () => {
       query: "analyst",
     });
     await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
-    expect(within(adzuna).getByText("Adzuna: analyst")).toBeTruthy();
+    expect(screen.getByText("Adzuna: analyst")).toBeTruthy();
   });
 
   it("starts a USAJobs search on USAJobs", async () => {
     const { onChange } = renderTab([]);
-    fireEvent.click(screen.getByRole("button", { name: "+ New USAJobs search" }));
-    const dialog = await screen.findByRole("dialog", { name: "New USAJobs search" });
+    fireEvent.click(screen.getByRole("button", { name: "+ Add search" }));
+    let dialog = await screen.findByRole("dialog", { name: "New Adzuna search" });
+    fireEvent.change(within(dialog).getByLabelText("Search engine"), {
+      target: { value: "usajobs" },
+    });
+    dialog = await screen.findByRole("dialog", { name: "New USAJobs search" });
     const input = within(dialog).getByLabelText("Search phrases", { selector: "input" });
     fireEvent.change(input, { target: { value: "policy" } });
     fireEvent.keyDown(input, { key: "Enter" });
@@ -343,8 +345,9 @@ describe("rows", () => {
       const edit = await menuItem(name, "Edit");
       expect(edit).toBeTruthy();
       expect(screen.getByRole("menuitem", { name: "Remove" })).toBeTruthy();
-      for (const item of ["Test now", "Rename", "Duplicate"])
+      for (const item of ["Rename", "Duplicate"])
         expect(screen.getByRole("menuitem", { name: item })).toBeTruthy();
+      expect(screen.queryByRole("menuitem", { name: "Test now" })).toBeNull();
       fireEvent.keyDown(screen.getByRole("menu"), { key: "Escape" });
     }
     // No raw ids leak into the rows.
@@ -571,13 +574,15 @@ describe("the edit panel", () => {
 
 describe("paste a link", () => {
   async function paste(link: string) {
-    fireEvent.change(screen.getByLabelText("Paste a link to any job list or careers page"), {
+    fireEvent.click(screen.getByRole("button", { name: "+ Add job list" }));
+    const dialog = await screen.findByRole("dialog", { name: "Add a job list" });
+    fireEvent.change(within(dialog).getByLabelText("Paste a link to any job list"), {
       target: { value: link },
     });
-    fireEvent.click(screen.getByRole("button", { name: "Add" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add" }));
   }
 
-  it("opens the job-list flow for a README", async () => {
+  it("opens the same panel, prefilled, for a README", async () => {
     vi.spyOn(api, "inspectSource").mockResolvedValue({
       kind: "company_link_table",
       sections: ["Acme"],
@@ -586,10 +591,12 @@ describe("paste a link", () => {
     const resolve = vi.spyOn(api, "resolveBoard");
     const { onChange } = renderTab([]);
     await paste("https://github.com/o/r");
-    const dialog = await screen.findByRole("dialog", { name: "Add a job list" });
-    expect(within(dialog).getByText(/Per-company role tables/)).toBeTruthy();
+    const dialog = await screen.findByRole("dialog", { name: "New job list" });
+    // The same filters block every other source has.
+    expect(within(dialog).getByLabelText("Keep titles containing")).toBeTruthy();
+    expect(onChange).not.toHaveBeenCalled();
     fireEvent.click(within(dialog).getByLabelText("Acme"));
-    fireEvent.click(within(dialog).getByRole("button", { name: "Add source" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add job list" }));
     expect(onChange.mock.lastCall![0][0]).toMatchObject({
       kind: "company_link_table",
       url: "https://github.com/o/r",
@@ -644,7 +651,8 @@ describe("paste a link", () => {
     await paste("https://example.com/nothing");
     const alert = await screen.findByRole("alert");
     expect(alert.textContent).toContain("not a job list or a careers page");
-    expect(screen.queryByRole("dialog")).toBeNull();
+    // The catalog stays open so another link can be tried.
+    expect(screen.getByRole("dialog", { name: "Add a job list" })).toBeTruthy();
   });
 
   it("refuses a link that is already a source", async () => {
@@ -716,8 +724,8 @@ describe("the catalog", () => {
   it("opens prefiltered to your fields and adds an entry", async () => {
     const { onChange } = renderTab([SRC], { fields: ["finance"] });
     await act(async () => {});
-    fireEvent.click(screen.getByRole("button", { name: "+ Add from catalog" }));
-    const dialog = await screen.findByRole("dialog", { name: "Add a job list from the catalog" });
+    fireEvent.click(screen.getByRole("button", { name: "+ Add job list" }));
+    const dialog = await screen.findByRole("dialog", { name: "Add a job list" });
     expect(
       within(dialog).getByRole("button", { name: "Finance" }).getAttribute("aria-pressed"),
     ).toBe("true");
@@ -736,7 +744,14 @@ describe("the catalog", () => {
 });
 
 describe("watchlists", () => {
-  it("names each new watchlist and gives it its own id", async () => {
+  it("needs a company, then names the new watchlist and gives it its own id", async () => {
+    vi.spyOn(api, "resolveBoard").mockResolvedValue({
+      ats: "greenhouse",
+      slug: "acme",
+      company: "Acme Capital",
+      jobs: 4,
+      url: "u",
+    });
     const existing: SourceConfig = {
       id: "company-watchlist",
       kind: "ats_board",
@@ -746,13 +761,113 @@ describe("watchlists", () => {
       boards: [],
     };
     const { onChange } = renderTab([existing]);
-    fireEvent.click(screen.getByRole("button", { name: "+ New watchlist" }));
+    fireEvent.click(screen.getByRole("button", { name: "+ Add watchlist" }));
     const dialog = await screen.findByRole("dialog", { name: "New company watchlist" });
-    fireEvent.click(within(dialog).getByRole("button", { name: "Add watchlist" }));
+    const add = within(dialog).getByRole("button", { name: "Add watchlist" }) as HTMLButtonElement;
+    expect(add.disabled).toBe(true);
+    fireEvent.change(within(dialog).getByLabelText("Company careers page or job board link"), {
+      target: { value: "https://acme.com/careers" },
+    });
+    fireEvent.click(within(dialog).getByRole("button", { name: "Add company" }));
+    await waitFor(() => expect(add.disabled).toBe(false));
+    fireEvent.click(add);
     expect(onChange.mock.lastCall![0][1]).toMatchObject({
       id: "company-watchlist-2",
       kind: "ats_board",
-      name: "Company watchlist 2",
+      boards: [{ slug: "acme" }],
     });
+  });
+});
+
+describe("one panel for new and saved sources", () => {
+  it("adding a source saves nothing until Add, and Cancel drops it", async () => {
+    const { onChange } = renderTab([]);
+    fireEvent.click(screen.getByRole("button", { name: "+ Add search" }));
+    let dialog = await screen.findByRole("dialog", { name: "New Adzuna search" });
+    const input = within(dialog).getByLabelText("Search phrases", { selector: "input" });
+    fireEvent.change(input, { target: { value: "analyst" } });
+    fireEvent.keyDown(input, { key: "Enter" });
+    expect(onChange).not.toHaveBeenCalled();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    expect(onChange).not.toHaveBeenCalled();
+
+    fireEvent.click(screen.getByRole("button", { name: "+ Add search" }));
+    dialog = await screen.findByRole("dialog", { name: "New Adzuna search" });
+    expect(within(dialog).queryByText("analyst")).toBeNull();
+  });
+
+  it("has the same fields whether the source is new or saved", async () => {
+    renderTab(LEGACY);
+    const fieldsOf = (dialog: HTMLElement) =>
+      [
+        "Search phrases",
+        "Keep titles containing",
+        "Skip titles containing",
+        "Only these locations",
+      ].map((label) => within(dialog).queryByLabelText(label, { selector: "input" }) !== null);
+    fireEvent.click(screen.getByRole("button", { name: "+ Add search" }));
+    const fresh = await screen.findByRole("dialog", { name: "New Adzuna search" });
+    const newFields = fieldsOf(fresh);
+    fireEvent.click(within(fresh).getByRole("button", { name: "Cancel" }));
+    await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    fireEvent.click(await menuItem("Adzuna: financial analyst, risk", "Edit"));
+    const saved = await screen.findByRole("dialog", { name: "Adzuna: financial analyst, risk" });
+    expect(fieldsOf(saved)).toEqual(newFields);
+    expect(newFields.every(Boolean)).toBe(true);
+  });
+
+  it("gives job lists and watchlists the same filters as searches", async () => {
+    renderTab(LEGACY);
+    for (const name of ["o/my-list", "Watchlist: Acme Capital, Globex"]) {
+      fireEvent.click(await menuItem(name, "Edit"));
+      const panel = await screen.findByRole("dialog", { name });
+      for (const label of [
+        "Keep titles containing",
+        "Skip titles containing",
+        "Only these locations",
+      ])
+        expect(within(panel).getByLabelText(label, { selector: "input" })).toBeTruthy();
+      expect(within(panel).getByLabelText("Days old limit")).toBeTruthy();
+      fireEvent.click(within(panel).getByRole("button", { name: "Close" }));
+      await waitFor(() => expect(screen.queryByRole("dialog")).toBeNull());
+    }
+  });
+
+  it("filters are chips: a comma or paste makes several", async () => {
+    const { onChange } = renderTab([SRC]);
+    fireEvent.click(await menuItem("Internships", "Edit"));
+    const panel = await screen.findByRole("dialog", { name: "Internships" });
+    const input = within(panel).getByLabelText("Keep titles containing", { selector: "input" });
+    fireEvent.change(input, { target: { value: "analyst, associate," } });
+    expect(onChange.mock.lastCall![0][0].include).toEqual(["analyst", "associate"]);
+    fireEvent.click(within(panel).getByLabelText("Remove keyword analyst"));
+    expect(onChange.mock.lastCall![0][0].include).toEqual(["associate"]);
+  });
+
+  it("does not show a stale key error once the keys are saved", async () => {
+    vi.mocked(api.fetchSecrets).mockResolvedValue({
+      backend: "keyring",
+      secrets: [
+        { name: "ADZUNA_APP_ID", set: true, source: "saved" },
+        { name: "ADZUNA_APP_KEY", set: true, source: "saved" },
+      ],
+    });
+    renderTab(LEGACY, {
+      status: {
+        last_run_at: ago(3600_000),
+        sources: {
+          "keyword-search": {
+            found: 0,
+            kept: 0,
+            error: "needs ADZUNA_APP_KEY",
+            at: ago(3600_000),
+          },
+        },
+      },
+    });
+    await screen.findByText("● Connected");
+    expect(await screen.findByText(/Keys saved since the last run/)).toBeTruthy();
+    expect(screen.queryByText(/needs ADZUNA_APP_KEY/)).toBeNull();
   });
 });

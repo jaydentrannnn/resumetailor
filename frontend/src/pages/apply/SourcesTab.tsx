@@ -1,8 +1,6 @@
 import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   fetchSourceCatalog,
-  inspectSource,
-  resolveBoard,
   type ResolvedBoard,
   type SourceCatalog,
   type SourceConfig,
@@ -17,6 +15,8 @@ import {
   duplicateSource,
   FIELD_LABELS,
   groupOf,
+  newJobSearchSource,
+  newReadmeSource,
   PROVIDER_LABELS,
   providerOf,
   recommendedEntries,
@@ -30,16 +30,8 @@ import {
   type SearchProvider,
 } from "../../lib/sources";
 import { useToast } from "../../lib/toast";
-import { addBoard } from "../../lib/watchlist";
-import {
-  BoardTargetDialog,
-  CatalogDialog,
-  ConnectDialog,
-  ReadmeFlowDialog,
-  SearchFlowDialog,
-  WatchlistFlowDialog,
-  type KnownInspection,
-} from "./AddFlows";
+import { addBoard, newWatchlistSource } from "../../lib/watchlist";
+import { BoardTargetDialog, CatalogDialog, ConnectDialog, type KnownInspection } from "./AddFlows";
 import { useProviderConnections } from "./sourceHooks";
 import { SourcePanel, type SaveState } from "./SourcePanel";
 import { SourceRow } from "./SourceRow";
@@ -48,9 +40,8 @@ const DISMISS_KEY = "rt:sources-recommended-dismissed";
 
 type Flow =
   | { type: "catalog" }
-  | { type: "readme"; url: string; inspection: KnownInspection }
-  | { type: "search"; provider: SearchProvider }
-  | { type: "watchlist"; board?: ResolvedBoard }
+  /** A source being added: the panel opens on this draft; nothing is saved until Add. */
+  | { type: "new"; source: SourceConfig; sections: string[] | null }
   | { type: "board"; board: ResolvedBoard };
 
 function readDismissed(): boolean {
@@ -71,10 +62,10 @@ function writeDismissed(on: boolean) {
 }
 
 /**
- * The Apply page's Sources tab: every place the nightly run looks for jobs, in three
+ * The job-sources page body: every place the nightly run looks for jobs, in three
  * always-visible groups (job lists, search engines, company watchlists). Every row has the
- * same controls; editing opens a side panel. Changes go through `onChange` (the settings
- * autosave); `saveError` shows a server validation error.
+ * same controls, and adding or editing opens the same side panel. Changes go through
+ * `onChange` (the settings autosave); `saveError` shows a server validation error.
  */
 export function SourcesTab({
   sources,
@@ -162,6 +153,36 @@ export function SourcesTab({
     if (close) setFlow(null);
   }
 
+  const connections = providers.connected;
+  function newSearch() {
+    // Start on an engine that is connected, so the first search can run right away.
+    const provider =
+      connections && !connections.adzuna && connections.usajobs ? "usajobs" : "adzuna";
+    setFlow({
+      type: "new",
+      source: newJobSearchSource(sourcesRef.current, { provider }),
+      sections: null,
+    });
+  }
+  function newWatchlist(board?: ResolvedBoard) {
+    setFlow({
+      type: "new",
+      source: {
+        ...newWatchlistSource(undefined, sourcesRef.current),
+        name: "",
+        boards: board ? [{ ats: board.ats, slug: board.slug, company: board.company }] : [],
+      },
+      sections: null,
+    });
+  }
+  function newList(url: string, inspection: KnownInspection) {
+    setFlow({
+      type: "new",
+      source: newReadmeSource(sourcesRef.current, url, inspection.kind, "", []),
+      sections: inspection.sections,
+    });
+  }
+
   function restore() {
     if (!catalog) {
       toast.error("Could not restore defaults", catalogError || "The catalog is still loading.");
@@ -203,6 +224,9 @@ export function SourcesTab({
         selected={selectedIds.has(source.id)}
         update={availableUpdate(source, catalog)}
         notice={searchNotice(source)}
+        keysSaved={
+          source.kind === "job_search" && connections ? connections[providerOf(source)] : null
+        }
         onSelect={(on) =>
           setSelected((prev) => {
             const next = new Set(prev);
@@ -328,61 +352,52 @@ export function SourcesTab({
       <Group
         id="lists"
         title="Job lists"
-        explanation="Curated GitHub lists of internships and new-grad roles that are updated daily. Pick the categories you want from each."
+        explanation="GitHub lists of internships and new-grad roles, from the catalog or any repo you paste."
         action={
           <Button size="sm" variant="secondary" onClick={() => setFlow({ type: "catalog" })}>
-            + Add from catalog
+            + Add job list
           </Button>
         }
         empty="No job lists yet."
         rows={lists.map(renderRow)}
       />
 
-      <section aria-labelledby="sources-group-search" className="space-y-2">
-        <div>
-          <h3 id="sources-group-search" className="font-semibold">
-            Search engines
-          </h3>
-          <p className="text-sm text-ink-muted">
-            Keyword searches through Adzuna or USAJobs. Connect a free API key once, then add as
-            many searches as you like.
-          </p>
-        </div>
-        {(["adzuna", "usajobs"] as const).map((provider) => (
-          <ProviderBlock
-            key={provider}
-            provider={provider}
-            connected={providers.connected ? providers.connected[provider] : null}
-            onConnect={() => setConnecting(provider)}
-            onNew={() => setFlow({ type: "search", provider })}
-            rows={searches.filter((s) => providerOf(s) === provider).map(renderRow)}
-          />
-        ))}
-      </section>
+      <Group
+        id="search"
+        title="Search engines"
+        explanation="Keyword searches through Adzuna or USAJobs. Connect a free API key once, then add as many searches as you like."
+        action={
+          <Button size="sm" variant="secondary" onClick={newSearch}>
+            + Add search
+          </Button>
+        }
+        extra={
+          <div className="flex flex-wrap gap-x-5 gap-y-1 text-xs">
+            {(["adzuna", "usajobs"] as const).map((provider) => (
+              <ProviderStatus
+                key={provider}
+                provider={provider}
+                connected={connections ? connections[provider] : null}
+                onConnect={() => setConnecting(provider)}
+              />
+            ))}
+          </div>
+        }
+        empty="No searches yet."
+        rows={searches.map(renderRow)}
+      />
 
       <Group
         id="watchlists"
         title="Company watchlists"
         explanation="Companies whose careers pages are read directly (Greenhouse, Lever, Ashby and more). The best way to catch finance and consulting roles."
         action={
-          <Button size="sm" variant="secondary" onClick={() => setFlow({ type: "watchlist" })}>
-            + New watchlist
+          <Button size="sm" variant="secondary" onClick={() => newWatchlist()}>
+            + Add watchlist
           </Button>
         }
         empty="No watchlists yet."
         rows={watchlists.map(renderRow)}
-      />
-
-      <PasteLink
-        sources={sources}
-        onReadme={(url, inspection) => setFlow({ type: "readme", url, inspection })}
-        onBoard={(board) =>
-          setFlow(
-            sourcesRef.current.some((s) => s.kind === "ats_board")
-              ? { type: "board", board }
-              : { type: "watchlist", board },
-          )
-        }
       />
 
       {flow?.type === "catalog" && (
@@ -392,33 +407,12 @@ export function SourcesTab({
           catalogError={catalogError}
           fields={fields}
           onAdd={(source) => added(source, false)}
-          onClose={() => setFlow(null)}
-        />
-      )}
-      {flow?.type === "readme" && (
-        <ReadmeFlowDialog
-          sources={sources}
-          url={flow.url}
-          inspection={flow.inspection}
-          onAdd={added}
-          onClose={() => setFlow(null)}
-        />
-      )}
-      {flow?.type === "search" && (
-        <SearchFlowDialog
-          provider={flow.provider}
-          sources={sources}
-          connected={providers.connected ? providers.connected[flow.provider] : null}
-          onConnect={() => setConnecting(flow.provider)}
-          onAdd={added}
-          onClose={() => setFlow(null)}
-        />
-      )}
-      {flow?.type === "watchlist" && (
-        <WatchlistFlowDialog
-          sources={sources}
-          board={flow.board}
-          onAdd={added}
+          onReadme={newList}
+          onBoard={(board) =>
+            sourcesRef.current.some((s) => s.kind === "ats_board")
+              ? setFlow({ type: "board", board })
+              : newWatchlist(board)
+          }
           onClose={() => setFlow(null)}
         />
       )}
@@ -426,7 +420,7 @@ export function SourcesTab({
         <BoardTargetDialog
           board={flow.board}
           watchlists={watchlists}
-          onNew={() => setFlow({ type: "watchlist", board: flow.board })}
+          onNew={() => newWatchlist(flow.board)}
           onAddTo={(id) => {
             const target = sourcesRef.current.find((s) => s.id === id);
             if (target) {
@@ -442,17 +436,24 @@ export function SourcesTab({
           onClose={() => setFlow(null)}
         />
       )}
+      {flow?.type === "new" && (
+        <SourcePanel
+          mode="new"
+          source={flow.source}
+          initialSections={flow.sections}
+          connections={connections}
+          onConnect={setConnecting}
+          onAdd={added}
+          onClose={() => setFlow(null)}
+        />
+      )}
       {editingSource && (
         <SourcePanel
           source={editingSource}
           saveState={saveState}
           saveError={saveError}
-          connected={
-            editingSource.kind === "job_search" && providers.connected
-              ? providers.connected[providerOf(editingSource)]
-              : null
-          }
-          onConnect={() => setConnecting(providerOf(editingSource))}
+          connections={connections}
+          onConnect={setConnecting}
           onChange={(next) => update(editingSource.id, next)}
           onRemove={() => remove(new Set([editingSource.id]))}
           onClose={() => {
@@ -479,6 +480,7 @@ function Group({
   title,
   explanation,
   action,
+  extra,
   empty,
   rows,
 }: {
@@ -486,6 +488,8 @@ function Group({
   title: string;
   explanation: string;
   action: ReactNode;
+  /** A line between the heading and the rows (the search engines' connection status). */
+  extra?: ReactNode;
   empty: string;
   rows: ReactNode[];
 }) {
@@ -500,6 +504,7 @@ function Group({
         </div>
         {action}
       </div>
+      {extra}
       {rows.length === 0 ? (
         <p className="rounded-lg border border-dashed border-line px-3 py-2 text-sm text-ink-muted">
           {empty}
@@ -511,45 +516,38 @@ function Group({
   );
 }
 
-/** One search engine: whether it is connected, how to connect, and its searches. */
-function ProviderBlock({
+/** One search engine's connection: whether its keys are saved, and how to change them. */
+function ProviderStatus({
   provider,
   connected,
   onConnect,
-  onNew,
-  rows,
 }: {
   provider: SearchProvider;
   connected: boolean | null;
   onConnect: () => void;
-  onNew: () => void;
-  rows: ReactNode[];
 }) {
   const label = PROVIDER_LABELS[provider];
   return (
-    <div role="group" aria-label={label} className="space-y-2 rounded-lg border border-line p-3">
-      <div className="flex flex-wrap items-center gap-2">
-        <h4 className="font-medium">{label}</h4>
-        <span
-          className={`text-xs ${connected ? "text-success" : connected === false ? "text-warn" : "text-ink-muted"}`}
+    <span role="group" aria-label={label} className="flex items-center gap-1.5">
+      <span className="font-medium">{label}</span>
+      <span
+        className={
+          connected ? "text-success" : connected === false ? "text-warn" : "text-ink-muted"
+        }
+      >
+        {connected ? "● Connected" : connected === false ? "○ Not connected" : "Checking…"}
+      </span>
+      {connected !== null && (
+        <button
+          type="button"
+          className="text-accent underline"
+          aria-label={connected ? `Change ${label} keys` : `Connect ${label}`}
+          onClick={onConnect}
         >
-          {connected ? "● Connected" : connected === false ? "○ Not connected" : "Checking…"}
-        </span>
-        {connected !== null && (
-          <Button size="sm" variant={connected ? "ghost" : "secondary"} onClick={onConnect}>
-            {connected ? "Change keys" : "Connect"}
-          </Button>
-        )}
-        <Button className="ml-auto" size="sm" variant="secondary" onClick={onNew}>
-          + New {label} search
-        </Button>
-      </div>
-      {rows.length === 0 ? (
-        <p className="text-sm text-ink-muted">No {label} searches yet.</p>
-      ) : (
-        <ul className="space-y-2">{rows}</ul>
+          {connected ? "Change keys" : "Connect"}
+        </button>
       )}
-    </div>
+    </span>
   );
 }
 
@@ -644,88 +642,5 @@ function RecommendedStrip({
         </ul>
       )}
     </div>
-  );
-}
-
-/** "Paste a link to any job list or careers page": a README first, then a careers page. */
-function PasteLink({
-  sources,
-  onReadme,
-  onBoard,
-}: {
-  sources: SourceConfig[];
-  onReadme: (url: string, inspection: KnownInspection) => void;
-  onBoard: (board: ResolvedBoard) => void;
-}) {
-  const [url, setUrl] = useState("");
-  const [busy, setBusy] = useState(false);
-  const [error, setError] = useState("");
-
-  async function submit() {
-    const link = url.trim();
-    if (!link) return;
-    const same = (a: string) => a.replace(/\/+$/, "") === link.replace(/\/+$/, "");
-    const dup = sources.find((s) => s.url && same(s.url));
-    if (dup) {
-      setError(`Already in your sources as ${sourceDisplayName(dup)}.`);
-      return;
-    }
-    setBusy(true);
-    setError("");
-    try {
-      let inspection = null;
-      try {
-        inspection = await inspectSource(link);
-      } catch {
-        /* not a README we can read; try it as a careers page */
-      }
-      if (inspection?.kind) {
-        onReadme(link, inspection as KnownInspection);
-        setUrl("");
-        return;
-      }
-      try {
-        onBoard(await resolveBoard({ url: link }));
-        setUrl("");
-      } catch (reason) {
-        setError(
-          `That link is not a job list or a careers page we can read. ${describe(reason).detail}`,
-        );
-      }
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  return (
-    <form
-      aria-label="Paste a link"
-      className="space-y-2 rounded-lg border border-line bg-panel p-3"
-      onSubmit={(e) => {
-        e.preventDefault();
-        void submit();
-      }}
-    >
-      <label htmlFor="sources-paste-link" className="text-sm font-medium">
-        Paste a link to any job list or careers page
-      </label>
-      <div className="flex flex-wrap gap-2">
-        <input
-          id="sources-paste-link"
-          className="field min-w-0 flex-1 text-sm"
-          placeholder="https://github.com/owner/repo or https://company.com/careers"
-          value={url}
-          onChange={(e) => setUrl(e.target.value)}
-        />
-        <Button type="submit" size="sm" variant="secondary" loading={busy} disabled={!url.trim()}>
-          Add
-        </Button>
-      </div>
-      {error && (
-        <p role="alert" className="text-xs text-danger">
-          {error}
-        </p>
-      )}
-    </form>
   );
 }

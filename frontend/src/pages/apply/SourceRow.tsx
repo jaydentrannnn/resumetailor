@@ -7,8 +7,8 @@ import {
   catalogDiff,
   FIELD_LABELS,
   sourceDisplayName,
+  sourceBadge,
   sourceHealth,
-  sourceKindLabel,
   sourceSummary,
 } from "../../lib/sources";
 
@@ -20,7 +20,7 @@ const HEALTH_TONE = {
 
 /**
  * One source, identical for every kind and every age of entry: select box, on/off switch,
- * name, a one-line summary, how its last run went, and a ⋯ menu (Edit, Test now, Rename,
+ * name, a one-line summary, how its last run went, and a ⋯ menu (Edit, Rename,
  * Duplicate, Remove). Editing happens in the side panel, never inline.
  */
 export function SourceRow({
@@ -29,6 +29,7 @@ export function SourceRow({
   selected,
   update,
   notice,
+  keysSaved = null,
   onSelect,
   onChange,
   onEdit,
@@ -42,6 +43,8 @@ export function SourceRow({
   update: CatalogEntry | null;
   /** A problem known without running (a search engine that is not connected). */
   notice?: string;
+  /** Whether this search's engine has its keys saved now (null: not a search, or unknown). */
+  keysSaved?: boolean | null;
   onSelect: (on: boolean) => void;
   onChange: (next: SourceConfig) => void;
   onEdit: () => void;
@@ -52,7 +55,7 @@ export function SourceRow({
   const [renaming, setRenaming] = useState(false);
   const [draftName, setDraftName] = useState(name);
   const [reviewing, setReviewing] = useState(false);
-  const health = sourceHealth(source, run);
+  const health = sourceHealth(source, run, Date.now(), keysSaved);
 
   function commitName() {
     setRenaming(false);
@@ -123,7 +126,7 @@ export function SourceRow({
                 {name}
               </button>
               <span className="rounded-full bg-paper px-2 py-0.5 text-micro font-normal text-ink-muted">
-                {sourceKindLabel(source.kind)}
+                {sourceBadge(source)}
               </span>
               {update && (
                 <span className="rounded-full bg-warn-soft px-2 py-0.5 text-micro font-semibold text-warn">
@@ -143,7 +146,6 @@ export function SourceRow({
           label={`Actions for ${name}`}
           items={[
             { label: "Edit", action: onEdit },
-            { label: "Test now", action: onEdit },
             {
               label: "Rename",
               action: () => {

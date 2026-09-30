@@ -215,8 +215,8 @@ second application. Board host access and `debugger` (relay) are optional permis
 requested at first use; `extension/build_zip.py` builds the release zip, and
 `extension/store/` holds the store-submission material.
 
-Discovery is multi-source (`ApplySettings.sources`, per profile, fully user-managed on the
-Apply page's **Sources** tab). The defaults are three entries of the **source catalog**
+Discovery is multi-source (`ApplySettings.sources`, per profile, fully user-managed on its
+own **Job sources** page, `/applications/sources`, opened from Apply settings). The defaults are three entries of the **source catalog**
 (`apply/source_catalog.py`, bundled `apply/catalog/sources.json`, refreshed every 12h from
 this repo's `main` or `RESUME_TAILOR_CATALOG_URL`, cached under `DATA_ROOT`, falling back to
 the bundled copy on any failure or a newer `schema_version`). Catalog entries carry field

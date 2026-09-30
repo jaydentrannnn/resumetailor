@@ -373,3 +373,18 @@ def test_fetch_source_rows_dispatches_every_kind(monkeypatch):
 )
 def test_raw_readme_url_maps_github_pages_to_raw(pasted, raw):
     assert sources.raw_readme_url(pasted) == raw
+
+
+def test_job_list_rows_honour_the_sources_title_filters(monkeypatch):
+    from resume_tailor.web.schemas import SourceConfig
+
+    monkeypatch.setattr(sources, "fetch_readme", lambda url: _fixture("nwfintech_readme.md"))
+    base = {"id": "nwf", "kind": "company_link_table", "url": "https://example.com/r.md"}
+    everything, _ = sources.fetch_source_rows(SourceConfig(**base))
+    assert everything
+
+    word = everything[0].role.split()[0]
+    kept, _ = sources.fetch_source_rows(SourceConfig(**base, include=[word]))
+    skipped, _ = sources.fetch_source_rows(SourceConfig(**base, exclude=[word]))
+    assert kept and all(word.lower() in r.role.lower() for r in kept)
+    assert len(kept) + len(skipped) == len(everything)

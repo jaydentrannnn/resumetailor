@@ -3,6 +3,28 @@ import { testSource, type SourceConfig, type SourceTestResult } from "../../api"
 import { Button } from "../../components/ui";
 import { describe } from "../../lib/errors";
 
+const DROPPED_REASONS: Record<string, (result: SourceTestResult) => string> = {
+  too_old: (r) => {
+    const days = r.max_age_days ?? 0;
+    return `older than ${days} day${days === 1 ? "" : "s"} (this list's limit or Apply settings)`;
+  },
+  title: () => "titles your profile rules out",
+  citizenship: () => "needing US citizenship",
+  advanced_degree: () => "needing an advanced degree",
+  no_sponsorship: () => "with no visa sponsorship",
+};
+
+/** "Dropped: 593 older than 1 day (…), 2 needing US citizenship" - why found is not kept. */
+function droppedNote(result: SourceTestResult): string {
+  const parts = Object.entries(result.dropped ?? {})
+    .filter(([, n]) => n > 0)
+    .map(
+      ([reason, n]) =>
+        `${n.toLocaleString("en-US")} ${DROPPED_REASONS[reason]?.(result) ?? reason}`,
+    );
+  return parts.length ? `Dropped: ${parts.join(", ")}.` : "";
+}
+
 /** Test result panel: counts, up to five sample rows and any per-source errors. */
 export function SourceTestPanel({
   result,
@@ -36,6 +58,7 @@ export function SourceTestPanel({
         {result.rows_total} posting{result.rows_total === 1 ? "" : "s"} found · {result.rows_kept}{" "}
         would be kept by your filters
       </p>
+      {droppedNote(result) && <p className="text-ink-muted">{droppedNote(result)}</p>}
       {result.errors.length > 0 && (
         <ul role="alert" className="list-disc space-y-0.5 pl-4 text-danger">
           {result.errors.map((message) => (

@@ -1,5 +1,5 @@
 import { useCallback, useEffect, useRef, useState } from "react";
-import { useLocation, useSearchParams } from "react-router-dom";
+import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import {
   archiveApplications,
   applicationsExportUrl,
@@ -37,6 +37,7 @@ import {
   fillBlockers,
   nightlyRunLabel,
   resolveApplyTab,
+  SOURCES_PATH,
   TERMINAL_STATUSES,
   type ApplyTab,
 } from "../../lib/applyPage";
@@ -56,7 +57,6 @@ import { ApplySettingsDrawer } from "./ApplySettingsDrawer";
 import { ConnectionStatus } from "./BrowserConnection";
 import { OperationBanner, type OperationControl } from "./OperationBanner";
 import { useSourcesStatus } from "./sourceHooks";
-import { SourcesTab } from "./SourcesTab";
 import { NeedsDescriptionGroup } from "../CapturedStubs";
 import { useApplicationTable } from "./useApplicationTable";
 
@@ -68,14 +68,18 @@ const notificationsSupported = () => typeof window !== "undefined" && "Notificat
  * with the current Apply task pinned on top and every setting in a side drawer.
  */
 export function ApplyPage() {
-  const { settings, setSettings, config, settingsSaveError, settingsSaveState, flushSettings } =
-    useRunState();
+  const { settings, setSettings, config } = useRunState();
   const { activeId } = useWorkspaceState();
   const { confirm } = useConfirm();
   const toast = useToast();
   const profileGaps = useProfileGaps();
   const location = useLocation();
+  const navigate = useNavigate();
   const [params, setParams] = useSearchParams();
+  // Sources used to be a tab here; old links and bookmarks land on its own page.
+  useEffect(() => {
+    if (params.get("tab") === "sources") navigate(SOURCES_PATH, { replace: true });
+  }, [params, navigate]);
   const workspaceId = activeId ?? "";
   const review = useApplicationTable("review", workspaceId, params, setParams, true);
   const queue = useApplicationTable("queue", workspaceId, params, setParams, true);
@@ -418,7 +422,11 @@ export function ApplyPage() {
       </Button>
       <span className="text-xs text-ink-muted">
         {sourcesHeadline(settings.apply.sources, sourcesStatus?.last_run_at)} ·{" "}
-        <button type="button" className="text-accent underline" onClick={() => setTab("sources")}>
+        <button
+          type="button"
+          className="text-accent underline"
+          onClick={() => navigate(SOURCES_PATH)}
+        >
           Manage
         </button>
       </span>
@@ -582,7 +590,6 @@ export function ApplyPage() {
               { id: "needs", label: `Needs you (${review.data?.total ?? 0})` },
               { id: "progress", label: `In progress (${queue.data?.total ?? 0})` },
               { id: "done", label: `Done (${archiveTotal})` },
-              { id: "sources", label: `Sources (${settings.apply.sources.length})` },
             ]}
             value={tab}
             onChange={setTab}
@@ -614,7 +621,7 @@ export function ApplyPage() {
                     <EmptyState
                       title="Choose what to search for"
                       action={
-                        <Button variant="primary" onClick={() => setTab("sources")}>
+                        <Button variant="primary" onClick={() => navigate(SOURCES_PATH)}>
                           Pick job sources
                         </Button>
                       }
@@ -651,22 +658,6 @@ export function ApplyPage() {
                       )}
                     </EmptyState>
                   )
-                }
-              />
-            )}
-            {tab === "sources" && (
-              <SourcesTab
-                sources={settings.apply.sources}
-                saveError={settingsSaveError}
-                saveState={settingsSaveState}
-                onFlush={flushSettings}
-                status={sourcesStatus}
-                fields={settings.apply.fields ?? []}
-                onFieldsChange={(fields) =>
-                  setSettings({ ...settings, apply: { ...settings.apply, fields } })
-                }
-                onChange={(sources) =>
-                  setSettings({ ...settings, apply: { ...settings.apply, sources } })
                 }
               />
             )}

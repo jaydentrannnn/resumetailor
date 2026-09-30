@@ -14,50 +14,81 @@ import {
   PROVIDER_LABELS,
   providerOf,
   splitPhrases,
+  type SearchProvider,
 } from "../../lib/sources";
-import { addBoard, ATS_LABELS, hasBoard, parseWords, removeBoard } from "../../lib/watchlist";
+import { addBoard, ATS_LABELS, hasBoard, removeBoard } from "../../lib/watchlist";
+
+/** Trim, drop blanks and case-insensitive repeats; keeps the first spelling. */
+function cleanChips(items: string[], max = Infinity): string[] {
+  const seen = new Set<string>();
+  const out: string[] = [];
+  for (const item of items) {
+    const text = item.trim();
+    const key = text.toLowerCase();
+    if (!text || seen.has(key)) continue;
+    seen.add(key);
+    out.push(text);
+    if (out.length >= max) break;
+  }
+  return out;
+}
 
 /**
- * Search phrases as removable chips (at most five). Each phrase is one search; the list is
- * stored comma-joined in `SourceConfig.query`. Enter or a comma adds the typed phrase.
+ * The one list input every source editor uses: removable chips plus a box. Enter, a
+ * comma or leaving the box adds what was typed (pasting "a, b, c" adds three);
+ * Backspace on an empty box removes the last chip.
  */
-export function PhraseChips({
-  query,
+export function ChipInput({
+  label,
+  chips,
   onChange,
+  noun,
+  placeholder,
+  hint,
+  max,
 }: {
-  query: string;
-  onChange: (query: string) => void;
+  label: string;
+  chips: string[];
+  onChange: (chips: string[]) => void;
+  /** Singular name used in each chip's "Remove <noun> <chip>" button. */
+  noun: string;
+  placeholder?: string;
+  hint?: string;
+  /** The most chips allowed; the box is disabled once reached. */
+  max?: number;
 }) {
   const inputId = useId();
   const hintId = useId();
-  const phrases = splitPhrases(query);
   const [text, setText] = useState("");
-  const full = phrases.length >= MAX_PHRASES;
+  const full = max !== undefined && chips.length >= max;
 
-  function add() {
-    const next = joinPhrases([...phrases, ...text.split(",")]);
-    if (next !== query) onChange(next);
+  const commit = (extra: string[]) => {
+    const next = cleanChips([...chips, ...extra], max);
+    if (next.length !== chips.length) onChange(next);
+  };
+  const add = () => {
+    commit(text.split(","));
     setText("");
-  }
+  };
 
   return (
     <div className="text-xs">
       <label htmlFor={inputId} className="font-medium">
-        Search phrases
+        {label}
       </label>
-      {phrases.length > 0 && (
-        <ul aria-label="Search phrases" className="mt-1 flex flex-wrap gap-1.5">
-          {phrases.map((phrase) => (
+      {chips.length > 0 && (
+        <ul aria-label={label} className="mt-1 flex flex-wrap gap-1.5">
+          {chips.map((chip) => (
             <li
-              key={phrase}
+              key={chip}
               className="flex items-center gap-1 rounded-full border border-line bg-paper px-2 py-0.5"
             >
-              {phrase}
+              {chip}
               <button
                 type="button"
-                aria-label={`Remove phrase ${phrase}`}
+                aria-label={`Remove ${noun} ${chip}`}
                 className="ml-0.5 text-ink-muted hover:text-danger"
-                onClick={() => onChange(joinPhrases(phrases.filter((p) => p !== phrase)))}
+                onClick={() => onChange(chips.filter((c) => c !== chip))}
               >
                 ×
               </button>
@@ -68,9 +99,9 @@ export function PhraseChips({
       <div className="mt-1 flex gap-2">
         <input
           id={inputId}
-          aria-describedby={hintId}
+          aria-describedby={hint ? hintId : undefined}
           className="field min-w-0 flex-1 text-sm"
-          placeholder={full ? "Five phrases is the most" : "e.g. financial analyst"}
+          placeholder={full ? `${max} is the most` : placeholder}
           disabled={full}
           value={text}
           onChange={(e) => {
@@ -78,8 +109,7 @@ export function PhraseChips({
             if (value.includes(",")) {
               const parts = value.split(",");
               const rest = parts.pop() ?? "";
-              const next = joinPhrases([...phrases, ...parts]);
-              if (next !== query) onChange(next);
+              commit(parts);
               setText(rest);
             } else setText(value);
           }}
@@ -87,8 +117,8 @@ export function PhraseChips({
             if (e.key === "Enter") {
               e.preventDefault();
               if (text.trim()) add();
-            } else if (e.key === "Backspace" && !text && phrases.length) {
-              onChange(joinPhrases(phrases.slice(0, -1)));
+            } else if (e.key === "Backspace" && !text && chips.length) {
+              onChange(chips.slice(0, -1));
             }
           }}
           onBlur={() => {
@@ -104,11 +134,42 @@ export function PhraseChips({
           Add
         </button>
       </div>
-      <p id={hintId} className="mt-1 text-ink-muted">
-        Each phrase is searched on its own ({phrases.length}/{MAX_PHRASES}).
-      </p>
+      {hint && (
+        <p id={hintId} className="mt-1 text-ink-muted">
+          {hint}
+        </p>
+      )}
+    </div>
+  );
+}
+
+/**
+ * Search phrases (at most five). Each phrase is one search; the list is stored
+ * comma-joined in `SourceConfig.query`.
+ */
+export function PhraseChips({
+  query,
+  onChange,
+}: {
+  query: string;
+  onChange: (query: string) => void;
+}) {
+  const phrases = splitPhrases(query);
+  return (
+    <div>
+      <ChipInput
+        label="Search phrases"
+        noun="phrase"
+        chips={phrases}
+        max={MAX_PHRASES}
+        placeholder="e.g. financial analyst"
+        hint={`Each phrase is searched on its own (${phrases.length}/${MAX_PHRASES}).`}
+        onChange={(next) => onChange(joinPhrases(next))}
+      />
       {phrases.length === 0 && (
-        <p className="mt-1 text-warn">Add at least one phrase; an empty search can't be saved.</p>
+        <p className="mt-1 text-xs text-warn">
+          Add at least one phrase; an empty search can&apos;t be saved.
+        </p>
       )}
     </div>
   );
@@ -204,33 +265,72 @@ export function CategoryPicker({
   );
 }
 
-function WordsField({
-  label,
-  hint,
-  words,
+/**
+ * The filters every source has, the same for a job list, a search and a watchlist:
+ * titles to keep, titles to skip, places, and how old a posting may be.
+ */
+export function FiltersEditor({
+  source,
   onChange,
+  defaultDays,
 }: {
-  label: string;
-  hint: string;
-  words: string[];
-  onChange: (words: string[]) => void;
+  source: SourceConfig;
+  onChange: (next: SourceConfig) => void;
+  /** The limit when the box is empty: a number for searches and watchlists; null for a list (Apply settings' limit). */
+  defaultDays: number | null;
 }) {
-  const [text, setText] = useState(words.join(", "));
   return (
-    <label className="block text-xs">
-      <span className="font-medium">{label}</span>
-      <input
-        className="field mt-1 text-sm"
-        value={text}
-        onChange={(e) => setText(e.target.value)}
-        onBlur={() => {
-          const next = parseWords(text);
-          setText(next.join(", "));
-          onChange(next);
-        }}
+    <fieldset className="space-y-3 rounded-md border border-line p-3">
+      <legend className="px-1 text-xs font-medium">Filters</legend>
+      <ChipInput
+        label="Keep titles containing"
+        noun="keyword"
+        chips={source.include ?? []}
+        placeholder="e.g. analyst (empty keeps every title)"
+        onChange={(include) => onChange({ ...source, include })}
       />
-      <span className="text-ink-muted">{hint}</span>
-    </label>
+      <ChipInput
+        label="Skip titles containing"
+        noun="skipped word"
+        chips={source.exclude ?? []}
+        placeholder="e.g. senior"
+        onChange={(exclude) => onChange({ ...source, exclude })}
+      />
+      <ChipInput
+        label="Only these locations"
+        noun="location"
+        chips={source.locations ?? []}
+        placeholder="e.g. New York, Remote (empty means anywhere)"
+        onChange={(locations) => onChange({ ...source, locations })}
+      />
+      <label className="block text-xs">
+        <span className="font-medium">Only postings from the last</span>
+        <input
+          aria-label="Days old limit"
+          className="field mx-1 inline-block w-16"
+          type="number"
+          min={0}
+          max={365}
+          placeholder={defaultDays === null ? "any" : String(defaultDays)}
+          value={source.max_age_days ?? ""}
+          onChange={(e) =>
+            onChange({
+              ...source,
+              max_age_days:
+                e.target.value === ""
+                  ? defaultDays
+                  : Math.min(365, Math.max(0, Number(e.target.value) || 0)),
+            })
+          }
+        />
+        days
+        {defaultDays === null && (
+          <span className="block text-ink-muted">
+            Empty follows the Apply settings limit; a longer limit here widens it for this list.
+          </span>
+        )}
+      </label>
+    </fieldset>
   );
 }
 
@@ -279,7 +379,8 @@ export function WatchlistEditor({
   }
 
   return (
-    <div className="mt-2 space-y-3 rounded-md border border-line p-3">
+    <div className="space-y-3">
+      <p className="text-xs font-medium">Companies</p>
       {boards.length === 0 ? (
         <p className="text-xs text-ink-muted">
           No companies yet. Paste a company's careers page, job board, or job link.
@@ -366,41 +467,6 @@ export function WatchlistEditor({
           </div>
         ))
       )}
-      <WordsField
-        label="Titles must contain one of"
-        hint="Comma-separated. Leave empty to keep every title."
-        words={source.include ?? []}
-        onChange={(include) => onChange({ ...source, include })}
-      />
-      <WordsField
-        label="Skip titles containing"
-        hint="Comma-separated."
-        words={source.exclude ?? []}
-        onChange={(exclude) => onChange({ ...source, exclude })}
-      />
-      <WordsField
-        label="Locations"
-        hint='Comma-separated, e.g. "NY, Chicago, Remote". Leave empty for anywhere.'
-        words={source.locations ?? []}
-        onChange={(locations) => onChange({ ...source, locations })}
-      />
-      <label className="block text-xs">
-        Postings updated in the last{" "}
-        <input
-          className="field mx-1 inline-block w-16"
-          type="number"
-          min={0}
-          max={365}
-          value={source.max_age_days ?? 7}
-          onChange={(e) =>
-            onChange({
-              ...source,
-              max_age_days: Math.min(365, Math.max(0, Number(e.target.value) || 0)),
-            })
-          }
-        />{" "}
-        days
-      </label>
     </div>
   );
 }
@@ -416,18 +482,42 @@ export function JobSearchEditor({
   onChange,
   connected = true,
   onConnect,
+  onProvider,
 }: {
   source: SourceConfig;
   onChange: (next: SourceConfig) => void;
   /** False when the provider's keys are not saved yet; null while that is being checked. */
   connected?: boolean | null;
   onConnect?: () => void;
+  /** Given for a search that is not saved yet: the engine can still be chosen. */
+  onProvider?: (provider: SearchProvider) => void;
 }) {
   const provider = providerOf(source);
   const label = PROVIDER_LABELS[provider];
 
   return (
-    <div className="mt-2 space-y-3 rounded-md border border-line p-3">
+    <div className="space-y-3">
+      {onProvider ? (
+        <label className="block text-xs">
+          <span className="font-medium">Search engine</span>
+          <select
+            aria-label="Search engine"
+            className="field mt-1 w-full text-sm"
+            value={provider}
+            onChange={(e) => onProvider(e.target.value as SearchProvider)}
+          >
+            {(Object.keys(PROVIDER_LABELS) as SearchProvider[]).map((key) => (
+              <option key={key} value={key}>
+                {PROVIDER_LABELS[key]}
+              </option>
+            ))}
+          </select>
+        </label>
+      ) : (
+        <p className="text-xs">
+          <span className="font-medium">Search engine:</span> {label}
+        </p>
+      )}
       {connected === false && (
         <p role="alert" className="rounded-md bg-warn-soft p-2.5 text-xs text-warn">
           Connect {label} first: searches return nothing until its keys are saved.{" "}
@@ -439,74 +529,71 @@ export function JobSearchEditor({
         </p>
       )}
 
-      <p className="text-xs">
-        <span className="font-medium">Search engine:</span> {label}
-      </p>
-      {provider === "adzuna" && (
-        <label className="block text-xs">
-          <span className="font-medium">Country code</span>
-          <input
-            aria-label="Adzuna country code"
-            className="field mt-1 w-full text-sm"
-            placeholder="us"
-            value={source.country ?? "us"}
-            onChange={(e) => onChange({ ...source, country: e.target.value.toLowerCase().trim() })}
-          />
-        </label>
-      )}
-
       <PhraseChips
         query={source.query ?? ""}
         onChange={(query) => onChange({ ...source, query })}
       />
 
       <label className="block text-xs">
-        <span className="font-medium">Location</span>
+        <span className="font-medium">Search near</span>
         <input
           aria-label="Search location"
-          className="field mt-1 text-sm w-full"
+          className="field mt-1 w-full text-sm"
           placeholder="e.g. Chicago, IL (leave empty for anywhere)"
           value={source.location ?? ""}
           onChange={(e) => onChange({ ...source, location: e.target.value })}
         />
+        <span className="text-ink-muted">
+          Sent to {label}; the location filter below narrows further.
+        </span>
       </label>
-
-      <WordsField
-        label="Titles must contain one of"
-        hint="Comma-separated. Leave empty to keep every title."
-        words={source.include ?? []}
-        onChange={(include) => onChange({ ...source, include })}
-      />
-      <WordsField
-        label="Skip titles containing"
-        hint="Comma-separated."
-        words={source.exclude ?? []}
-        onChange={(exclude) => onChange({ ...source, exclude })}
-      />
-      <WordsField
-        label="Locations"
-        hint='Comma-separated, e.g. "NY, Chicago, Remote". Leave empty for anywhere.'
-        words={source.locations ?? []}
-        onChange={(locations) => onChange({ ...source, locations })}
-      />
-      <label className="block text-xs">
-        Postings updated in the last{" "}
-        <input
-          aria-label="Days old limit"
-          className="field mx-1 inline-block w-16"
-          type="number"
-          min={0}
-          max={365}
-          value={source.max_age_days ?? 14}
-          onChange={(e) =>
-            onChange({
-              ...source,
-              max_age_days: Math.min(365, Math.max(0, Number(e.target.value) || 0)),
-            })
-          }
-        />{" "}
-        days
-      </label>
+      {provider === "adzuna" && (
+        <label className="block text-xs">
+          <span className="font-medium">Country</span>
+          <select
+            aria-label="Adzuna country code"
+            className="field mt-1 w-full text-sm"
+            value={source.country || "us"}
+            onChange={(e) => onChange({ ...source, country: e.target.value })}
+          >
+            {adzunaCountries(source.country).map(([code, name]) => (
+              <option key={code} value={code}>
+                {name}
+              </option>
+            ))}
+          </select>
+        </label>
+      )}
     </div>
   );
+}
+
+/** Countries Adzuna serves (code, name); a saved code outside the list stays selectable. */
+const ADZUNA_COUNTRIES: [string, string][] = [
+  ["us", "United States"],
+  ["gb", "United Kingdom"],
+  ["ca", "Canada"],
+  ["au", "Australia"],
+  ["at", "Austria"],
+  ["be", "Belgium"],
+  ["br", "Brazil"],
+  ["ch", "Switzerland"],
+  ["de", "Germany"],
+  ["es", "Spain"],
+  ["fr", "France"],
+  ["in", "India"],
+  ["it", "Italy"],
+  ["mx", "Mexico"],
+  ["nl", "Netherlands"],
+  ["nz", "New Zealand"],
+  ["pl", "Poland"],
+  ["sg", "Singapore"],
+  ["za", "South Africa"],
+];
+
+function adzunaCountries(current: string | undefined): [string, string][] {
+  const code = (current || "us").toLowerCase();
+  return ADZUNA_COUNTRIES.some(([c]) => c === code)
+    ? ADZUNA_COUNTRIES
+    : [[code, code.toUpperCase()], ...ADZUNA_COUNTRIES];
 }

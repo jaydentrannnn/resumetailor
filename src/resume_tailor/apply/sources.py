@@ -794,6 +794,26 @@ def source_sections(kind: str, text: str) -> list[str]:
     return [name for name in names if parse_source_text(kind, text, [name])]
 
 
+def _apply_source_filters(src: Any, rows: list[SourceRow]) -> list[SourceRow]:
+    """Keep README rows whose title and location satisfy the source's own filters.
+
+    Watchlists and keyword searches apply the same three filters while they read; a job
+    list reads whole sections, so the filters run here. No filters set keeps every row.
+    """
+    include = _keyword_re(src.include, whole=False)
+    exclude = _keyword_re(src.exclude, whole=False)
+    places = _keyword_re(src.locations, whole=True)
+    if not (include or exclude or places):
+        return rows
+    return [
+        row
+        for row in rows
+        if matches_filters(
+            row.role, row.location, include=include, exclude=exclude, locations=places
+        )
+    ]
+
+
 def fetch_source_rows(src: Any) -> tuple[list[SourceRow], list[str]]:
     """Postings from one `SourceConfig` and its per-part errors, for every kind.
 
@@ -811,6 +831,7 @@ def fetch_source_rows(src: Any) -> tuple[list[SourceRow], list[str]]:
         rows, errors = job_apis.job_search_rows(src)
     elif src.kind in README_KINDS:
         rows = parse_source_text(src.kind, fetch_readme(src.url), src.categories)
+        rows = _apply_source_filters(src, rows)
     else:
         raise ValueError(f"unknown source kind {src.kind!r}")
     for row in rows:

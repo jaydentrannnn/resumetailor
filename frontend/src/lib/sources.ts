@@ -40,6 +40,13 @@ export function sourceKindLabel(kind: SourceKind): string {
   return KIND_LABELS[kind] ?? kind;
 }
 
+/** The badge on a row: "Adzuna search" for a keyword search, else the kind's label. */
+export function sourceBadge(source: SourceConfig): string {
+  if (source.kind === "job_search")
+    return `${PROVIDER_LABELS[source.provider === "usajobs" ? "usajobs" : "adzuna"]} search`;
+  return sourceKindLabel(source.kind);
+}
+
 /** A README-backed source (the ones with categories to pick). */
 export function isReadmeKind(kind: SourceKind): boolean {
   return kind === "simplify_html" || kind === "pipe_table" || kind === "company_link_table";
@@ -75,6 +82,14 @@ export function repoNameFromUrl(url: string): string {
   const hit = raw ?? hub;
   if (hit) return `${hit[1]}/${hit[2].replace(/\.git$/i, "")}`;
   return text.replace(/^https?:\/\/(www\.)?/i, "").replace(/[/?#].*$/, "") || text;
+}
+
+/** The GitHub page of a list, for "View on GitHub"; "" when the link is not a GitHub one. */
+export function githubPageUrl(url: string): string {
+  const name = repoNameFromUrl(url);
+  return /^https?:\/\/(?:raw\.githubusercontent\.com|(?:www\.)?github\.com)\//i.test(url.trim())
+    ? `https://github.com/${name}`
+    : "";
 }
 
 /** Company names on a watchlist (the board's slug when it has no name). */
@@ -402,10 +417,19 @@ export function sourceHealth(
   source: SourceConfig,
   run: SourceRunStatus | undefined,
   now = Date.now(),
+  /** Whether this search's provider has its keys saved now (null/undefined: unknown). */
+  keysSaved?: boolean | null,
 ): SourceHealth {
   if (!source.enabled) return { text: "Off", tone: "muted" };
   if (!run) return { text: "Not run yet", tone: "muted" };
   const when = relativeTime(run.at, now);
+  // A "needs <KEY>" failure from before the keys were saved is stale, not a problem now.
+  if (
+    run.error &&
+    keysSaved &&
+    /(?:needs|requires credentials:?)\s.*[A-Z]_(?:KEY|EMAIL|ID)/.test(run.error)
+  )
+    return { text: "Keys saved since the last run · runs next time", tone: "muted" };
   if (run.error) return { text: when ? `${run.error} · ${when}` : run.error, tone: "error" };
   const counts = `${run.found.toLocaleString("en-US")} found · ${run.kept.toLocaleString("en-US")} kept`;
   return { text: when ? `${counts} · ${when}` : counts, tone: "ok" };

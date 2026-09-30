@@ -227,6 +227,11 @@ class SourceTestResult(BaseModel):
     rows_kept: int
     sample: list[SourceTestRow]
     errors: list[str]
+    #: Why postings fell out of ``rows_total``: too_old, title, citizenship, advanced_degree,
+    #: no_sponsorship. Only reasons that dropped at least one appear.
+    dropped: dict[str, int] = Field(default_factory=dict)
+    #: The posting-age limit the test applied, in days (the source's or Apply's, the longer).
+    max_age_days: int = 0
 
 
 @router.get("/api/apply/catalog", response_model=source_catalog.CatalogResponse)
@@ -278,22 +283,32 @@ def test_source(body: SourceTestRequest) -> SourceTestResult:
     except Exception as exc:  # noqa: BLE001 - a failed source is a result, not a 500
         return SourceTestResult(rows_total=0, rows_kept=0, sample=[], errors=[str(exc)])
     settings = JobSettings.model_validate(workspace.load_settings()["defaults"]).apply
+    age_limit = (
+        max(src.max_age_days, settings.max_age_days)
+        if src.max_age_days is not None
+        else settings.max_age_days
+    )
     filtered = sources.filter_rows(
         rows,
-        max_age_days=(
-            max(src.max_age_days, settings.max_age_days)
-            if src.max_age_days is not None
-            else settings.max_age_days
-        ),
+        max_age_days=age_limit,
         exclude_advanced_degree=settings.exclude_advanced_degree,
         exclude_citizenship=settings.exclude_citizenship_required,
         exclude_no_sponsorship=settings.exclude_no_sponsorship,
         known_ids=set(),
         eligibility=settings.eligibility,
     )
+    dropped = {
+        "too_old": filtered.total_candidates - filtered.age_filtered_count,
+        "title": filtered.excluded_title,
+        "citizenship": filtered.excluded_citizenship,
+        "advanced_degree": filtered.excluded_advanced_degree,
+        "no_sponsorship": filtered.excluded_no_sponsorship,
+    }
     return SourceTestResult(
         rows_total=len(rows),
         rows_kept=len(filtered.new_rows),
+        dropped={reason: n for reason, n in dropped.items() if n},
+        max_age_days=age_limit,
         sample=[
             SourceTestRow(**row.model_dump(include=set(SourceTestRow.model_fields)))
             for row in filtered.new_rows[:_TEST_SAMPLE]

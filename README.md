@@ -195,15 +195,15 @@ by the date each job was posted.
 
 ### Where postings come from
 
-Add and edit sources in the Apply settings drawer (**What to search**):
+Add, edit and remove sources on their own **Job sources** page: Apply settings → **Job sources**, or the **Manage** link beside Find jobs. Sources are saved per profile.
 
 | Source | What it reads |
 | --- | --- |
-| **Job lists** | Curated GitHub README lists, e.g. SimplifyJobs internships / new-grad and speedyapply (enabled by default for tech; the setup screen picks lists for your field) |
+| **Job lists** | GitHub README lists: pick from the catalog (SimplifyJobs, speedyapply and more, tagged by field) or paste a link to any repo. Tech lists are on by default; the setup screen picks lists for your field |
 | **Company watchlist** | Paste a company's careers page or job-board link; it finds the Greenhouse, Lever, Ashby, SmartRecruiters or Workday board behind it and watches every posting there |
-| **Keyword search** | Adzuna or USAJobs by keywords and location, for any industry. Needs free API keys, entered in Settings → Models |
+| **Keyword search** | Adzuna or USAJobs by keywords and location, for any industry. Needs free API keys, connected once on the Job sources page |
 
-Every source can filter titles (must contain / skip) and locations, and has a maximum
+Every source, of every kind, has the same filters (keep titles containing, skip titles containing, only these locations) and a maximum
 posting age. Postings that duplicate one you already have are merged, and eligibility
 rules screen out senior roles, graduate-degree-only roles, and citizenship requirements
 you don't meet.

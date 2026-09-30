@@ -7,6 +7,7 @@ import {
   catalogDiff,
   compareVersions,
   duplicateSource,
+  githubPageUrl,
   groupOf,
   joinPhrases,
   recommendedEntries,
@@ -14,6 +15,7 @@ import {
   repoNameFromUrl,
   restoreDefaults,
   restoreRemoved,
+  sourceBadge,
   sourceDisplayName,
   sourceFromCatalog,
   sourceHealth,
@@ -295,5 +297,58 @@ describe("editing the list", () => {
     expect(recommendedEntries(cat, have, ["finance"]).map((e) => e.id)).toEqual(["fin"]);
     expect(recommendedEntries(cat, have, [])).toEqual([]);
     expect(recommendedEntries(null, have, ["finance"])).toEqual([]);
+  });
+});
+
+describe("githubPageUrl / sourceBadge", () => {
+  it("maps a raw README link back to the repo page, and only for GitHub", () => {
+    expect(
+      githubPageUrl(
+        "https://raw.githubusercontent.com/SimplifyJobs/Summer2026-Internships/dev/README.md",
+      ),
+    ).toBe("https://github.com/SimplifyJobs/Summer2026-Internships");
+    expect(githubPageUrl("https://github.com/o/r/blob/main/README.md")).toBe(
+      "https://github.com/o/r",
+    );
+    expect(githubPageUrl("https://example.com/jobs.md")).toBe("");
+    expect(githubPageUrl("")).toBe("");
+  });
+
+  it("badges a search with its engine", () => {
+    const base = { id: "a", url: "", categories: [], enabled: true } as const;
+    expect(sourceBadge({ ...base, kind: "job_search", provider: "usajobs" })).toBe(
+      "USAJobs search",
+    );
+    expect(sourceBadge({ ...base, kind: "job_search" })).toBe("Adzuna search");
+    expect(sourceBadge({ ...base, kind: "pipe_table" })).toBe("Job list");
+  });
+});
+
+describe("sourceHealth with saved keys", () => {
+  const NOW = Date.parse("2026-09-29T12:00:00Z");
+  const search: SourceConfig = {
+    id: "k",
+    kind: "job_search",
+    provider: "adzuna",
+    query: "analyst",
+    url: "",
+    categories: [],
+    enabled: true,
+  };
+  const failed = {
+    found: 0,
+    kept: 0,
+    error: "Adzuna requires credentials: ADZUNA_APP_KEY",
+    at: null,
+  };
+
+  it("calls a missing-keys failure stale once the keys are saved, and only then", () => {
+    expect(sourceHealth(search, failed, NOW, true).tone).toBe("muted");
+    expect(sourceHealth(search, failed, NOW, true).text).toContain("Keys saved");
+    expect(sourceHealth(search, failed, NOW, false).tone).toBe("error");
+    expect(sourceHealth(search, failed, NOW).tone).toBe("error");
+    // Any other failure stays a failure.
+    const other = { ...failed, error: "HTTP 500 from api.adzuna.com" };
+    expect(sourceHealth(search, other, NOW, true).tone).toBe("error");
   });
 });

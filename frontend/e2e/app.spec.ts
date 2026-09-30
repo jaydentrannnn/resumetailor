@@ -156,21 +156,38 @@ test("header: pause and resume all automation", async ({ page }) => {
   await expect(page.getByRole("button", { name: "Pause automation" })).toBeVisible();
 });
 
-test("sources: three groups are always visible, search engines included", async ({ page }) => {
+test("sources: their own page, reached from Apply settings, not a tab", async ({ page }) => {
+  await page.goto("/applications");
+  await expect(page.getByRole("tab", { name: /^Sources/ })).toHaveCount(0);
+  await page.getByRole("button", { name: "Apply settings" }).click();
+  const drawer = page.getByRole("dialog", { name: "Apply settings" });
+  await drawer.getByRole("link", { name: "Job sources →" }).click();
+  await expect(page).toHaveURL(/\/applications\/sources$/);
+  await expect(page.getByRole("heading", { name: "Job sources", level: 1 })).toBeVisible();
+  await page.getByRole("link", { name: "← Applications" }).click();
+  await expect(page).toHaveURL(/\/applications$/);
+  // An old link to the tab lands on the page.
   await page.goto("/applications?tab=sources");
+  await expect(page).toHaveURL(/\/applications\/sources$/);
+});
+
+test("sources: three groups are always visible, search engines included", async ({ page }) => {
+  await page.goto("/applications/sources");
   for (const name of ["Job lists", "Search engines", "Company watchlists"])
     await expect(page.getByRole("heading", { name })).toBeVisible();
-  await expect(page.getByRole("button", { name: "+ Add from catalog" })).toBeVisible();
-  await expect(page.getByRole("button", { name: "+ New watchlist" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "+ Add job list" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "+ Add search" })).toBeVisible();
+  await expect(page.getByRole("button", { name: "+ Add watchlist" })).toBeVisible();
   await expect(page.getByRole("group", { name: "Adzuna" })).toBeVisible();
   await expect(page.getByRole("group", { name: "USAJobs" })).toBeVisible();
   await expectAccessible(page);
 });
 
 test("sources: build a company watchlist", async ({ page }) => {
-  await page.goto("/applications?tab=sources");
-  await page.getByRole("button", { name: "+ New watchlist" }).click();
+  await page.goto("/applications/sources");
+  await page.getByRole("button", { name: "+ Add watchlist" }).click();
   const dialog = page.getByRole("dialog", { name: "New company watchlist" });
+  await expect(dialog.getByRole("button", { name: "Add watchlist" })).toBeDisabled();
   const link = dialog.getByLabel("Company careers page or job board link");
   await link.fill("https://boards.greenhouse.io/nope");
   await dialog.getByRole("button", { name: "Add company" }).click();
@@ -181,20 +198,19 @@ test("sources: build a company watchlist", async ({ page }) => {
   await expectAccessible(page);
   await dialog.getByRole("button", { name: "Add watchlist" }).click();
   await expect(dialog).toBeHidden();
-  await expect(page.getByRole("tab", { name: "Sources (4)" })).toBeVisible();
   await expect(
     page
       .getByRole("region", { name: "Company watchlists" })
-      .getByRole("button", { name: "Company watchlist", exact: true }),
+      .getByRole("button", { name: "Watchlist: Acme Capital", exact: true }),
   ).toBeVisible();
 });
 
-test("sources: a keyword search lives under its search engine", async ({ page }) => {
-  await page.goto("/applications?tab=sources");
+test("sources: a keyword search is added in the same panel as it is edited", async ({ page }) => {
+  await page.goto("/applications/sources");
   const adzuna = page.getByRole("group", { name: "Adzuna" });
   // Keys are saved once per engine, never inside a search.
   const connected = await adzuna.getByText("● Connected").isVisible();
-  await adzuna.getByRole("button", { name: "+ New Adzuna search" }).click();
+  await page.getByRole("button", { name: "+ Add search" }).click();
   const dialog = page.getByRole("dialog", { name: "New Adzuna search" });
   await expect(dialog.getByLabel("Adzuna app key")).toHaveCount(0);
   if (!connected) await expect(dialog.getByRole("alert")).toContainText("Connect Adzuna first");
@@ -203,13 +219,20 @@ test("sources: a keyword search lives under its search engine", async ({ page })
   await phrases.press("Enter");
   await dialog.getByRole("button", { name: "Add search" }).click();
   await expect(dialog).toBeHidden();
-  await expect(adzuna.getByText("Adzuna: financial analyst")).toBeVisible();
+  const row = page.getByRole("region", { name: "Search engines" }).getByRole("listitem");
+  await expect(row.getByText("Adzuna: financial analyst")).toBeVisible();
+  // Opening it shows the same fields the new-search panel had.
+  await row.locator('button[title="Edit"]').click();
+  const panel = page.getByRole("dialog", { name: "Adzuna: financial analyst" });
+  await expect(panel.getByRole("textbox", { name: "Search phrases" })).toBeVisible();
+  await expect(panel.getByRole("textbox", { name: "Keep titles containing" })).toBeVisible();
+  await expect(panel.getByRole("textbox", { name: "Skip titles containing" })).toBeVisible();
 });
 
 test("sources: remove a source, then undo", async ({ page }) => {
-  await page.goto("/applications?tab=sources");
-  const tab = page.getByRole("tab", { name: /^Sources \(/ });
-  const before = (await tab.textContent()) ?? "";
+  await page.goto("/applications/sources");
+  const headline = page.getByText(/^Searching \d+ sources?/);
+  const before = (await headline.textContent()) ?? "";
   const first = page.getByRole("region", { name: "Job lists" }).getByRole("listitem").first();
   const name = (await first.locator('button[title="Edit"]').textContent()) ?? "";
   // The menu closes on any scroll, and a scroll event lands a frame after scrollIntoView.
@@ -221,10 +244,10 @@ test("sources: remove a source, then undo", async ({ page }) => {
   await page.getByRole("menuitem", { name: "Remove" }).click();
   // No confirm dialog: a toast with Undo instead.
   await expect(page.getByRole("dialog")).toHaveCount(0);
-  await expect(tab).not.toHaveText(before);
+  await expect(headline).not.toHaveText(before);
   await expect(page.getByText(`Removed ${name}`)).toBeVisible();
   await page.getByRole("button", { name: "Undo" }).click();
-  await expect(tab).toHaveText(before);
+  await expect(headline).toHaveText(before);
   await expect(page.getByRole("switch", { name: `${name} on` })).toBeVisible();
 });
 

@@ -1502,3 +1502,33 @@ top, which matches the number answered everywhere else.
   `source_status.json` (`found`/`kept` counted after filters, before known-id dedupe).
 - The row's on/off control is a drawn pill inside a full-size button: the global 36px control floor
   in `index.css` is unlayered, so a Tailwind `h-5` on a `<button>` rendered a circle.
+
+## 2026-09-30 — Job sources moved to their own page; one panel and one filters block for every kind
+
+- **Why**: the Sources tab sat beside the application tables it has nothing to do with, and a walk
+  through the running app showed inconsistencies: "+ New Adzuna search" opened a dialog (Add
+  button) while an existing search opened a side panel (autosave); search phrases were chips but
+  titles/locations were comma boxes; job lists had no filters and no way to add your own list
+  except a paste bar at the bottom.
+- **Page**: `/applications/sources` (`pages/apply/SourcesPage.tsx`), opened from Apply settings
+  ("Job sources →") and the Manage link beside Find jobs. `?tab=sources` redirects there.
+  Applications lost its fourth tab.
+- **One panel**: `SourcePanel` has `mode="new" | "edit"`. Edit autosaves as before; new holds a local
+  draft that only `onAdd` saves (Cancel drops it). The three add dialogs are gone. Same body for
+  every kind: name, what to read, `FiltersEditor`, test. A watchlist needs a company and a search
+  needs a phrase before Add.
+- **Filters for every kind**: `include` / `exclude` / `locations` / `max_age_days` on `SourceConfig`
+  already existed for watchlists and searches; `sources._apply_source_filters` now applies the first
+  three to README rows in `fetch_source_rows`, so job lists get them for the nightly run and the
+  test. `ChipInput` is the one list input (comma, paste and Backspace); `WordsField` is deleted.
+- **Adding a list**: "+ Add job list" opens the catalog with a paste-a-link field on top (README
+  first, then careers page). The bottom paste bar is gone.
+- **Test result says why**: `SourceTestResult.dropped` (too_old, title, citizenship, advanced_degree,
+  no_sponsorship) and `max_age_days`. The old "596 found · 3 kept" hid that Apply's 1-day limit
+  did it.
+- **Stale health**: a "requires credentials"/"needs <KEY>" failure recorded before the keys were
+  saved shows as "Keys saved since the last run" once the provider is connected (the block said
+  Connected while its row said needs ADZUNA_APP_KEY).
+- **Not a bug**: the panel's Close button "timing out" under Playwright MCP was the automation tab
+  being in the background (`requestAnimationFrame` never fires, so Playwright's stability check
+  hangs); `evaluate`-driven clicks work. No Modal change was made.

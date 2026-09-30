@@ -166,6 +166,7 @@ function Shell() {
           <Routes>
             <Route path="/" element={<RunPage />} />
             <Route path="/applications" element={<ApplyPage />} />
+            <Route path="/applications/sources" element={<SourcesPage />} />
             <Route path="/applications/:applicationId" element={<ApplicationDetailPage />} />
             <Route path="/profile" element={<Navigate to="/profile/personal" replace />} />
             <Route path="/profile/personal" element={<ProfilePage />} />
@@ -187,6 +188,9 @@ function Shell() {
 // the first paint does not wait for the editor, Apply dashboard and template wizard.
 const ApplyPage = lazy(() =>
   import("./pages/apply/ApplyPage").then((m) => ({ default: m.ApplyPage })),
+);
+const SourcesPage = lazy(() =>
+  import("./pages/apply/SourcesPage").then((m) => ({ default: m.SourcesPage })),
 );
 const ApplicationDetailPage = lazy(() =>
   import("./pages/ApplicationDetailPage").then((m) => ({ default: m.ApplicationDetailPage })),

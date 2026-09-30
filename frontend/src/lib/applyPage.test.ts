@@ -68,7 +68,7 @@ const op = (patch: Partial<ApplyOperation>): ApplyOperation =>
 describe("resolveApplyTab", () => {
   it("honours the URL, else prefers Needs you when anything waits", () => {
     expect(resolveApplyTab("done", 3)).toBe("done");
-    expect(resolveApplyTab("sources", 3)).toBe("sources");
+    expect(resolveApplyTab("sources", 3)).toBe("needs");
     expect(resolveApplyTab(null, 2)).toBe("needs");
     expect(resolveApplyTab("bogus", 0)).toBe("progress");
     expect(resolveApplyTab(null, null)).toBe("progress");

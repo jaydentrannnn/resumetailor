@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import type { AppConfig, JobSettings, SchedulerStatus } from "../../api";
 import { Modal } from "../../components/Modal";
 import { Button } from "../../components/ui";
-import { autoSubmitCapLabel, autoSubmitSummary } from "../../lib/applyPage";
+import { autoSubmitCapLabel, autoSubmitSummary, SOURCES_PATH } from "../../lib/applyPage";
 import { tailorModelLabel } from "../../lib/modelLabel";
 import { sourcesSummary } from "../../lib/sources";
 import { useConfirm } from "../../state/confirmState";
@@ -160,11 +160,11 @@ export function ApplySettingsDrawer({
             {sourcesSummary(apply.sources)}
           </p>
           <Link
-            className="mt-1 inline-block text-xs text-accent underline"
-            to="/applications?tab=sources"
+            className="rt-control mt-2 inline-flex items-center rounded-md border border-line bg-panel px-3 text-sm font-medium hover:border-accent"
+            to={SOURCES_PATH}
             onClick={onClose}
           >
-            Manage sources
+            Job sources →
           </Link>
         </Section>
 
