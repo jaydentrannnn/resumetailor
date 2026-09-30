@@ -555,7 +555,7 @@ def format_report(
     # hit its page target while throwing away several lines to bullets that wrapped onto a
     # final line holding one word.
     tightened = (
-        f" ({result.widows_repaired} bullet(s) tightened)" if result.widows_repaired else ""
+        f" ({result.widows_repaired} bullet(s) repaired)" if result.widows_repaired else ""
     )
     lines.append(f"Line waste: {result.widows_remaining} widowed line(s){tightened}")
 

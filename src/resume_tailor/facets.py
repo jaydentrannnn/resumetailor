@@ -13,6 +13,7 @@ Called once per run, before the fit loop — same placement as ``rewrite.score_t
 from __future__ import annotations
 
 import hashlib
+import math
 import re
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -65,6 +66,7 @@ class FacetResult:
 
     projects: dict[str, list[str]] = field(default_factory=dict)
     coursework: list[str] = field(default_factory=list)
+    coursework_pool: list[str] = field(default_factory=list)
     #: One entry per `resume.skills` group, same order. Positional (not keyed by label)
     #: since `SkillGroup` has no id and `label` is not guaranteed unique.
     skills: list[list[str]] = field(default_factory=list)
@@ -172,17 +174,62 @@ def fit_tech_to_budget(
 def fit_coursework_to_budget(
     ordered: list[str],
     budget: int | None = None,
+    *,
+    pool: list[str] | None = None,
+    jd_keywords: list[str] | None = None,
+    chars_per_line: float | None = None,
+    last_fill: float | None = None,
+    rendered_lines: int | None = None,
 ) -> list[str]:
-    """Keep best-first courses while 'Relevant Coursework: …' stays within `budget`."""
-    limit = coursework_char_budget() if budget is None else budget
+    """Fill coursework from its source pool, then trim a stranded short final line."""
+    span = chars_per_line or config.CHARS_PER_LINE
+    limit = (coursework_char_budget() if budget is None else budget)
+    if chars_per_line is not None and budget is None:
+        limit = max(0, int(config.COURSEWORK_MAX_LINES * span - len(_COURSEWORK_PREFIX)
+                           - config.WIDOW_SAFETY))
+    source_pool = list(dict.fromkeys(pool if pool is not None else ordered))
+    keyword_words = _token_set(" ".join(jd_keywords or []))
+    remainder = [course for course in source_pool if course not in ordered]
+    remainder.sort(key=lambda course: -len(_token_set(course) & keyword_words))
+    ordered = list(dict.fromkeys(course for course in ordered if course in source_pool))
+    # Translate the measured physical fill into equivalent character capacity.
+    # Retaining this offset while adding/removing courses keeps the baseline tied
+    # to the PDF rather than replacing its short-line measurement with len % width.
+    offset = 0.0
+    if last_fill is not None and rendered_lines is not None and ordered:
+        offset = ((rendered_lines - 1 + last_fill) * span
+                  - len(_COURSEWORK_PREFIX + ", ".join(ordered)))
+
+    def length(courses: list[str]) -> float:
+        return len(_COURSEWORK_PREFIX + ", ".join(courses)) + offset if courses else 0
+
+    def fill(courses: list[str]) -> float:
+        remainder_chars = length(courses) % span
+        return (remainder_chars / span) if remainder_chars else 1.0
+
     kept: list[str] = []
     for course in ordered:
         if not course or course in kept:
             continue
         candidate = kept + [course]
-        if len(", ".join(candidate)) > limit:
-            break
+        if length(candidate) > len(_COURSEWORK_PREFIX) + limit:
+            continue
         kept = candidate
+    if kept and math.ceil(length(kept) / span) > 1 and fill(kept) < 0.50:
+        for course in ordered + remainder:
+            if not course or course in kept:
+                continue
+            candidate = kept + [course]
+            if length(candidate) > len(_COURSEWORK_PREFIX) + limit:
+                continue
+            kept = candidate
+            if fill(kept) >= 0.80:
+                break
+    if kept and fill(kept) < 0.50:
+        original_lines = math.ceil(length(kept) / span)
+        if original_lines > 1:
+            while kept and math.ceil(length(kept) / span) >= original_lines:
+                kept.pop()
     return kept
 
 
@@ -426,6 +473,7 @@ def _resolve_coursework(
     pool: list[str],
     proposed: list[str],
     warnings: list[str],
+    requirements: JobRequirements | None = None,
 ) -> list[str]:
     """Validate coursework against the pool and trim to the two-line budget."""
     pool_map = _pool_lookup(pool)
@@ -440,7 +488,10 @@ def _resolve_coursework(
             ordered.append(original)
     if not ordered:
         ordered = list(pool)
-    return fit_coursework_to_budget(ordered)
+    return fit_coursework_to_budget(
+        ordered, pool=pool,
+        jd_keywords=[k.phrase for k in requirements.keywords] if requirements else [],
+    )
 
 
 def _resolve_skill_group(
@@ -515,6 +566,7 @@ def finalise_selection(
         coursework_pool,
         list(raw.coursework) if raw else [],
         warnings,
+        requirements,
     )
 
     skill_renames = {_norm_ws(k): v for k, v in (raw.skill_renames if raw else {}).items()}
@@ -530,7 +582,8 @@ def finalise_selection(
             warnings.append(f"facets: skill rename key {key!r} matched no item; ignored")
 
     return FacetResult(
-        projects=projects, coursework=coursework, skills=skills, warnings=warnings
+        projects=projects, coursework=coursework, coursework_pool=coursework_pool,
+        skills=skills, warnings=warnings
     )
 
 
@@ -547,6 +600,7 @@ def apply(
     has no id and `zip` degrades safely if a hand-built `FacetResult` omits skills.
     """
     copy = resume.model_copy(deep=True)
+    object.__setattr__(copy, "_coursework_pool", list(result.coursework_pool))
     for proj in copy.projects:
         if proj.id in result.projects:
             proj.tech = list(result.projects[proj.id])

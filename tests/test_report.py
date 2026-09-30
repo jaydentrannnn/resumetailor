@@ -453,7 +453,7 @@ def test_report_credits_the_bullets_the_widow_pass_tightened():
 
     text = report.format_report(resume, reqs, result)
 
-    assert "Line waste: 0 widowed line(s) (3 bullet(s) tightened)" in text
+    assert "Line waste: 0 widowed line(s) (3 bullet(s) repaired)" in text
 
 
 def test_report_shows_a_surviving_widow():

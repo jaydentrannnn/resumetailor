@@ -28,6 +28,27 @@ W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
 NOTO_MARKER_FONT = "Noto Sans Symbols"
 
 
+def test_line_layout_matches_bullet_glyph_hyphenation_and_omits_unknown():
+    def word(text, top, x0, x1):
+        return {"text": text, "top": top, "x0": x0, "x1": x1}
+
+    boxes = [
+        word("\uf0b7", 10, 0, 5), word("Built", 10, 10, 35),
+        word("an", 10, 40, 50), word("efficient", 10, 55, 100),
+        word("work-", 20, 10, 38), word("flow", 30, 10, 35),
+        word("Shipped", 50, 10, 45), word("ﬁnal", 50, 50, 75),
+    ]
+    layout = render._layout_from_words(
+        boxes, {"b1": "Built an efficient workflow", "b2": "Shipped final",
+                "missing": "No such paragraph"}
+    )
+    assert set(layout) == {"b1", "b2"}
+    assert layout["b1"].lines == 3
+    assert layout["b1"].last_fill < 0.5
+    assert layout["b1"].chars_per_line > 0
+    assert layout["b2"].lines == 1
+
+
 @pytest.fixture
 def rendered_docx(built_template, tmp_path) -> zipfile.ZipFile:
     """Render the synthetic resume and return the output package.

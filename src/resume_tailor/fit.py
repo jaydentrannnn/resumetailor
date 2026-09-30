@@ -18,7 +18,7 @@ import math
 from dataclasses import dataclass, field
 from pathlib import Path
 
-from . import config, events, render
+from . import config, events, facets, render
 from .data import Bullet, Experience, MasterResume, Project
 from .jd import JobRequirements
 from .merge import MergeGroup
@@ -33,6 +33,7 @@ from .rewrite import (
     widowed,
 )
 from .rewrite import RewriteOutcome
+from .rewrite import _polish
 from .rewrite import score as score_bullet
 from .template_profile import ContactField, active_layout
 
@@ -72,7 +73,7 @@ class FitResult:
     #: how a surprising ranking should be read: with it off, ranking is pure tag overlap.
     semantic_used: bool = False
 
-    #: Bullets the widow pass successfully tightened, and bullets still ending on a
+    #: Bullets the widow pass successfully repaired, and bullets still ending on a
     #: near-empty line. Reported because a wasted line is invisible in a page count — a
     #: resume can fit its target and still be throwing away half an entry's worth of space.
     widows_repaired: int = 0
@@ -107,6 +108,52 @@ class _Draft:
     pulled: int
     dropped: list[str]
     members: dict[str, tuple[str, ...]]
+    coursework: list[list[str]] = field(default_factory=list)
+
+
+def _widow_fits(
+    path: Path, texts: dict[str, str], *, estimated: bool
+) -> tuple[dict[str, render.LineFit], set[str]]:
+    measured: dict[str, render.LineFit] = {}
+    pdf = path.with_suffix(".pdf")
+    if not estimated and pdf.exists():
+        measured = render.line_layout(pdf, texts)
+    measured_ids = set(measured)
+    for bid, text in texts.items():
+        if bid not in measured:
+            measured[bid] = render.LineFit(
+                config.line_span(text),
+                config.last_line_fill(text) / config.CHARS_PER_LINE,
+                float(config.CHARS_PER_LINE),
+            )
+    return measured, measured_ids
+
+
+def _widow_targets(
+    texts: dict[str, str], sources: dict[str, Bullet],
+    layout: dict[str, render.LineFit], *, measured_lines: int, capacity: int,
+    members: dict[str, tuple[str, ...]], estimated: bool,
+    measured_ids: set[str] | None = None,
+) -> dict[str, tuple[int, int]]:
+    targets: dict[str, tuple[int, int]] = {}
+    measured_ids = measured_ids if measured_ids is not None else set(layout)
+    for bid, text in texts.items():
+        fit = layout[bid]
+        floor = (config.WIDOW_MIN_FILL if not estimated and bid in measured_ids
+                 else config.WIDOW_EST_FILL)
+        if fit.lines <= 1 or fit.last_fill >= floor or bid not in sources:
+            continue
+        span = fit.chars_per_line
+        if fit.last_fill <= config.WIDOW_SHORTEN_MAX or measured_lines >= capacity or bid in members:
+            high = int((fit.lines - 1) * span - config.WIDOW_SAFETY)
+            if high >= 1:
+                targets[bid] = (0, high)
+        elif len(sources[bid].text) > len(text):
+            low = math.ceil(len(text) + (0.80 - fit.last_fill) * span)
+            high = int(fit.lines * span - config.WIDOW_SAFETY)
+            if low <= high:
+                targets[bid] = (low, high)
+    return targets
 
 
 # --------------------------------------------------------------------------------------
@@ -632,9 +679,9 @@ def fit(
     cannot fit raises `FitError` — unless an earlier, smaller draft already fit, in which
     case that draft is returned with a warning instead of being thrown away.
 
-    `repair_widows` is passed through to `rewrite_bullets`; see there. It matters to the
-    loop because a widowed bullet inflates the measured line count with space that holds
-    one word, which both hides real capacity and can push a fitting resume onto two pages.
+    `repair_widows` enables one post-render pass using PDF line boxes. It matters to the
+    loop because a short final line wastes space and can push a fitting resume onto two
+    pages. Without PDF measurement, the pass uses the conservative character estimate.
 
     `repair_verbs` is passed through the same way and shares that call. It does not affect
     fitting at all — a repeated opening verb costs no space — so it is purely a readability
@@ -910,6 +957,8 @@ def fit(
                 outcome, selected = best.outcome, best.selected
                 rewritten, pulled = best.texts, best.pulled
                 dropped, members = best.dropped, best.members
+                for edu, courses in zip(resume.education, best.coursework, strict=False):
+                    edu.coursework = list(courses)
                 doc_path, pages, measured_lines, pages_are_estimated = draw(rewritten)
                 if pages > target_pages:
                     if not pages_are_estimated:
@@ -933,10 +982,93 @@ def fit(
                     merges=len(outcome.merges), pulled_back=pulled, dropped=len(dropped),
                 )
 
+        # One bounded layout pass on a draft that already fits. Keep the pre-pass
+        # document available so any unexpected page growth can be reverted exactly.
+        if pages <= target_pages:
+            course_edu = next((edu for edu in resume.education if edu.coursework), None)
+            course_text = (
+                "Relevant Coursework: " + ", ".join(course_edu.coursework)
+                if course_edu else None
+            )
+            requested = dict(rewritten)
+            if course_text:
+                requested["__coursework__"] = course_text
+            layout, measured_ids = _widow_fits(
+                doc_path, requested, estimated=pages_are_estimated
+            )
+            before_widows = {
+                bid for bid in rewritten
+                if layout[bid].lines > 1 and layout[bid].last_fill < (
+                    config.WIDOW_MIN_FILL if bid in measured_ids else config.WIDOW_EST_FILL
+                )
+            }
+            targets = _widow_targets(
+                rewritten, by_id, layout, measured_lines=measured_lines,
+                capacity=capacity, members=members, estimated=pages_are_estimated,
+                measured_ids=measured_ids,
+            ) if repair_widows else {}
+            old_texts = dict(rewritten)
+            old_courses = list(course_edu.coursework) if course_edu else []
+            if targets:
+                repair_sources = dict(by_id)
+                for survivor, member_ids in members.items():
+                    if survivor in targets:
+                        originals = [by_id[mid] for mid in member_ids]
+                        repair_sources[survivor] = Bullet(
+                            id=survivor,
+                            text=" ".join(item.text for item in originals),
+                            tags=list({tag for item in originals for tag in item.tags}),
+                        )
+                repaired, _, _, rejected = _polish(
+                    rewritten, repair_sources, requirements, repair_widows=False,
+                    repair_verbs=False, targets=targets,
+                )
+                rewritten = outcome.texts = repaired
+                outcome.widow_repairs_rejected.update(rejected)
+            if repair_widows and course_edu and getattr(resume, "_coursework_pool", None):
+                course_edu.coursework = facets.fit_coursework_to_budget(
+                    old_courses, pool=resume._coursework_pool,
+                    jd_keywords=[k.phrase for k in requirements.keywords],
+                    chars_per_line=layout["__coursework__"].chars_per_line,
+                    last_fill=(layout["__coursework__"].last_fill
+                               if "__coursework__" in measured_ids else None),
+                    rendered_lines=(layout["__coursework__"].lines
+                                    if "__coursework__" in measured_ids else None),
+                )
+            changed = rewritten != old_texts or (
+                course_edu is not None and course_edu.coursework != old_courses
+            )
+            if changed:
+                doc_path, pages, measured_lines, pages_are_estimated = draw(rewritten)
+                if pages > target_pages:
+                    rewritten = outcome.texts = old_texts
+                    if course_edu:
+                        course_edu.coursework = old_courses
+                    doc_path, pages, measured_lines, pages_are_estimated = draw(rewritten)
+                    warnings.append("Widow repair overflowed the page; kept the fitting draft.")
+                    changed = False
+            if changed:
+                final_layout, final_measured_ids = _widow_fits(
+                    doc_path, rewritten, estimated=pages_are_estimated
+                )
+            else:
+                final_layout, final_measured_ids = layout, measured_ids
+            remaining = {
+                bid for bid in rewritten
+                if final_layout[bid].lines > 1 and final_layout[bid].last_fill < (
+                    config.WIDOW_MIN_FILL if bid in final_measured_ids else config.WIDOW_EST_FILL
+                )
+            }
+            outcome.widows_repaired = len(before_widows - remaining)
+            outcome.measured_widows_remaining = len(remaining)
+        else:
+            outcome.measured_widows_remaining = 0
+
         if not restored:
             best = _Draft(
                 texts=rewritten, selected=selected, outcome=outcome,
                 pulled=pulled, dropped=dropped, members=members,
+                coursework=[list(edu.coursework) for edu in resume.education],
             )
 
         # Underflow is judged on the same measurement overflow is, not on the estimate:
@@ -969,7 +1101,7 @@ def fit(
                 )
                 warnings.append(
                     f"Widow repair was discarded for {len(outcome.widow_repairs_rejected)} "
-                    f"bullet(s) whose shortened text introduced content absent from the "
+                    f"bullet(s) whose repair text introduced content absent from the "
                     f"master resume ({detail}); the original wording was kept."
                 )
             if outcome.widows_remaining:

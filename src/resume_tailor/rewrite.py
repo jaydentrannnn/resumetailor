@@ -612,6 +612,17 @@ _INTERNAL_CAPS = re.compile(r"^.*[a-z].*[A-Z].*$")
 _HAS_DIGIT = re.compile(r"\d")
 _HAS_LETTER = re.compile(r"[A-Za-z]")
 _CAPITALISED = re.compile(r"^[A-Z]")
+_NUMBER_PLUS = re.compile(r"\d[\d,]*(?:\.\d+)?\+")
+_LOWER_BOUND = re.compile(
+    r"\b(?:over|more than|at least)\s+(\d[\d,]*(?:\.\d+)?)\b"
+    r"|\b(\d[\d,]*(?:\.\d+)?)\s+(?:or more)\b"
+    r"|\b(\d[\d,]*(?:\.\d+)?)\+"
+)
+
+
+def _lower_bounds(text: str) -> set[str]:
+    return {next(group for group in match.groups() if group is not None)
+            for match in _LOWER_BOUND.finditer(text)}
 
 
 def _vocabulary(bullet: Bullet) -> set[str]:
@@ -634,6 +645,9 @@ def _vocabulary(bullet: Bullet) -> set[str]:
             words.add(token)
             for pattern in _SPLIT_PATTERNS:
                 words.update(p for p in pattern.split(token) if p and _HAS_LETTER.search(p))
+    # A plus suffix asserts a lower bound. License it only when the source itself
+    # states that bound, never merely because it contains the same number.
+    words.update(f"{number}+" for number in _lower_bounds(bullet.text))
     return words
 
 
@@ -748,6 +762,13 @@ def _check_fabrication(sources: Sequence[Bullet], rewritten: str) -> list[str]:
         allowed.update(_vocabulary(source))
         initialisms.update(_initialisms(source))
 
+    # A source's N+ also licenses the equivalent prose "over N" / "more than N".
+    source_pluses = {m.group(0)[:-1] for source in sources
+                     for m in _TOKEN.finditer(source.text)
+                     if _NUMBER_PLUS.fullmatch(m.group(0))}
+    for number in source_pluses:
+        allowed.add(number)
+
     offenders: list[str] = []
     for match in _TOKEN.finditer(rewritten):
         term = match.group(0)
@@ -758,6 +779,10 @@ def _check_fabrication(sources: Sequence[Bullet], rewritten: str) -> list[str]:
             initialisms=initialisms,
         ):
             offenders.append(term)
+
+    source_bounds = set().union(*(_lower_bounds(source.text) for source in sources))
+    for number in _lower_bounds(rewritten) - source_bounds:
+        offenders.append(number + "+" if number + "+" in rewritten else number)
 
     # Preserve first-seen order without duplicates, for a readable error message.
     return list(dict.fromkeys(offenders))
@@ -774,6 +799,9 @@ def numbers_dropped(sources: Sequence[Bullet], merged: str) -> list[str]:
         term = match.group(0)
         if _HAS_DIGIT.search(term):
             haystack_numbers.add(term.lower())
+            if _NUMBER_PLUS.fullmatch(term):
+                haystack_numbers.add(term[:-1].lower())
+    haystack_numbers.update(_lower_bounds(merged))
 
     dropped: list[str] = []
     seen: set[str] = set()
@@ -784,7 +812,7 @@ def numbers_dropped(sources: Sequence[Bullet], merged: str) -> list[str]:
                 if not _HAS_DIGIT.search(term):
                     continue
                 lowered = term.lower()
-                if lowered in haystack_numbers or lowered in seen:
+                if lowered in haystack_numbers or (_NUMBER_PLUS.fullmatch(lowered) and lowered[:-1] in haystack_numbers) or lowered in seen:
                     continue
                 seen.add(lowered)
                 dropped.append(term)
@@ -855,21 +883,8 @@ def _number_noun_bindings(text: str) -> dict[str, set[str]]:
     engineers" bound to both `remote` and `engineer`, so a faithful restatement
     that inserts an adjective still shares the source noun.
     """
-    tokens = [m.group(0) for m in _TOKEN.finditer(text)]
-    bindings: dict[str, set[str]] = {}
-    for i, term in enumerate(tokens):
-        if not _HAS_DIGIT.search(term):
-            continue
-        key = term.lower()
-        nouns = bindings.setdefault(key, set())
-        for j in range(i + 1, min(i + 1 + _NOUN_BIND_WINDOW, len(tokens))):
-            candidate = tokens[j]
-            if _HAS_DIGIT.search(candidate):
-                break
-            sig = _noun_key(candidate)
-            if sig is not None:
-                nouns.add(sig)
-    return bindings
+    return {number: {key for _surface, key in pairs}
+            for number, pairs in _number_noun_surface(text).items()}
 
 
 def _number_noun_surface(text: str) -> dict[str, list[tuple[str, str]]]:
@@ -879,14 +894,26 @@ def _number_noun_surface(text: str) -> dict[str, list[tuple[str, str]]]:
     wording ("40 hours") rather than the normalised key, and so the nearest bound
     noun — pair index 0 — can be named on its own.
     """
-    tokens = [m.group(0) for m in _TOKEN.finditer(text)]
+    matches = list(_TOKEN.finditer(text))
+    tokens = [m.group(0) for m in matches]
     out: dict[str, list[tuple[str, str]]] = {}
     for i, term in enumerate(tokens):
         if not _HAS_DIGIT.search(term):
             continue
         key = term.lower()
+        if _NUMBER_PLUS.fullmatch(key):
+            key = key[:-1]
         pairs = out.setdefault(key, [])
-        for j in range(i + 1, min(i + 1 + _NOUN_BIND_WINDOW, len(tokens))):
+        # In "cut troubleshooting time by 50-66% by authoring ...", the
+        # percentage belongs to the preceding outcome, not the following action.
+        percent_outcome = (
+            i > 0 and tokens[i - 1].lower() == "by"
+            and text[matches[i].end():].startswith("%")
+        )
+        indices = (range(i - 2, max(-1, i - 2 - _NOUN_BIND_WINDOW), -1)
+                   if percent_outcome else
+                   range(i + 1, min(i + 1 + _NOUN_BIND_WINDOW, len(tokens))))
+        for j in indices:
             candidate = tokens[j]
             if _HAS_DIGIT.search(candidate):
                 break
@@ -1277,7 +1304,7 @@ def widowed(
     asks for every bullet whose last line is at most that fraction full.
     """
     if max_fill is None:
-        max_fill = config.WIDOW_MIN_FILL
+        max_fill = config.WIDOW_EST_FILL
     floor = max_fill * config.CHARS_PER_LINE
     ceilings: dict[str, int] = {}
     for bullet_id, text in texts.items():
@@ -1353,6 +1380,24 @@ at most its `max` characters by cutting hedges, redundant context, and secondary
 Keep every number and every required technical keyword exactly as written.
 """
 
+_REPAIR_PROMPT_VERSION = 2
+_TARGET_INSTRUCTION = """\
+Each bullet has a character window. For SHORTEN, cut secondary detail while preserving
+every number and factual claim. For EXTEND, restore useful detail only from that bullet's
+own source. Stay within min and max, and preserve all numbers. Return plain text strings.
+"""
+
+
+def _format_targets(targets: dict[str, tuple[int, int]], texts: dict[str, str],
+                    sources: dict[str, Bullet]) -> str:
+    return "\n".join(
+        f"<bullet id={bid!r} direction={'EXTEND' if low > len(texts[bid]) else 'SHORTEN'} "
+        f"min={low} max={high}>\n  <current>{texts[bid]}</current>\n"
+        f"  <source>{sources[bid].text}</source>\n"
+        f"  <permitted_skills>{', '.join(sources[bid].tags)}</permitted_skills>\n</bullet>"
+        for bid, (low, high) in targets.items()
+    )
+
 _VERB_INSTRUCTION = """\
 Each bullet below opens with a verb another bullet already used, or with a near-synonym of \
 one. Replace ONLY the opening verb with one that is not in its `avoid` list and does not \
@@ -1372,10 +1417,11 @@ original subject from the source, or drop the number entirely; do not keep the r
 Listed `authorship_claims` escalate delegated work into personal authorship — restore the \
 external party and the delegation verb from the source; do not claim you built what a \
 vendor or agency built. Do not substitute a synonym or a variant for a rejected figure — \
-write a number exactly as the source writes it (if the source says "over 130", do not \
-write "130+"), or leave it out entirely. Do not borrow a metric from any other bullet. \
+write only a number and lower-bound form supported by the source. Do not borrow a metric \
+from any other bullet. \
 Keep the rest of the bullet's meaning.
 """
+_RETRY_PROMPT_VERSION = 2
 
 
 def _format_widows(
@@ -1474,6 +1520,8 @@ def _retry_fabrications(
     rejected: dict[str, tuple[str, list[str]]],
     sources: dict[str, Bullet],
     requirements: JobRequirements,
+    *,
+    targets: dict[str, tuple[int, int]] | None = None,
 ) -> tuple[dict[str, str], dict[str, list[str]]]:
     """Re-request only the fabricating bullets. Returns (accepted, surviving offenders).
 
@@ -1487,11 +1535,17 @@ def _retry_fabrications(
         return {}, {}
 
     user = (
+        f"<retry_prompt_version>{_RETRY_PROMPT_VERSION}</retry_prompt_version>\n"
         f"<role>{requirements.title} ({requirements.seniority})</role>\n\n"
         f"<keywords_to_mirror>\n{_format_keywords(requirements)}\n</keywords_to_mirror>\n\n"
         f"<bullets_to_retry>\n{_format_fabrications(rejected, sources)}\n"
         f"</bullets_to_retry>\n\n{_RETRY_INSTRUCTION}"
     )
+    if targets:
+        user += "\n\nRequired character windows:\n" + "\n".join(
+            f"{bid}: min={low}, max={high}; preserve all source numbers."
+            for bid, (low, high) in targets.items() if bid in rejected
+        )
 
     client = llm.client_for("rewrite")
     response = client.messages.parse(
@@ -1561,6 +1615,7 @@ def _polish(
     repair_widows: bool = True,
     repair_verbs: bool = True,
     ceilings: dict[str, int] | None = None,
+    targets: dict[str, tuple[int, int]] | None = None,
 ) -> tuple[dict[str, str], int, int, dict[str, list[str]]]:
     """Re-request only the defective bullets.
 
@@ -1569,13 +1624,16 @@ def _polish(
     bullet is accepted only if it is shorter *and* spans fewer lines — a cut that stays on
     the same line count frees nothing, which is the whole point of the call.
 
+    `targets` gives measured widow repairs a minimum and maximum character window.
+    The guard and numeric-preservation check apply to both shortening and extension.
+
     Returns ``(texts, widows fixed, verbs changed, widow repairs rejected)`` where the
     last mapping is bullet id to offending terms for shorten candidates discarded by the
     fabrication guard.
 
-    One round trip, never more, and shared between both defects: the same reasoning as
-    `llm._repair`, that a model which cannot hit an explicit ceiling once will not hit it
-    on the third try. Anything still defective afterwards is reported, not retried.
+    One polish round trip is shared between the requested defects. Guard-rejected
+    length candidates get one targeted fabrication retry; anything still defective
+    afterwards keeps the original text and is reported.
 
     A bullet that is both widowed and verb-colliding is sent as a widow only. Two entries
     under one id would make the reply ambiguous, and a wasted line costs real page space
@@ -1594,17 +1652,20 @@ def _polish(
     binds — but a cosmetic pass must not kill an otherwise-good run.
     """
     pullback = ceilings is not None
+    targeted = targets is not None
+    targets = targets or {}
     if ceilings is None:
-        ceilings = widowed(texts) if repair_widows else {}
+        ceilings = widowed(texts) if repair_widows and not targeted else {}
     collisions = (
-        {bid: avoid for bid, avoid in verb_collisions(texts).items() if bid not in ceilings}
+        {bid: avoid for bid, avoid in verb_collisions(texts).items() if bid not in ceilings and bid not in targets}
         if repair_verbs
         else {}
     )
-    if not ceilings and not collisions:
+    if not ceilings and not collisions and not targets:
         return texts, 0, 0, {}
 
     sections = [
+        f"<repair_prompt_version>{_REPAIR_PROMPT_VERSION}</repair_prompt_version>",
         f"<role>{requirements.title} ({requirements.seniority})</role>",
         f"<keywords_to_mirror>\n{_format_keywords(requirements)}\n</keywords_to_mirror>",
     ]
@@ -1612,6 +1673,11 @@ def _polish(
         sections.append(
             f"<bullets_to_shorten>\n{_format_widows(ceilings, texts, sources)}\n"
             f"</bullets_to_shorten>\n\n{_REPAIR_INSTRUCTION}"
+        )
+    if targets:
+        sections.append(
+            f"<bullets_to_fit>\n{_format_targets(targets, texts, sources)}\n"
+            f"</bullets_to_fit>\n\n{_TARGET_INSTRUCTION}"
         )
     if collisions:
         sections.append(
@@ -1638,6 +1704,7 @@ def _polish(
 
     repaired = dict(texts)
     rejected: dict[str, list[str]] = {}
+    retry_candidates: dict[str, tuple[str, list[str]]] = {}
     tightened = 0
     revoiced = 0
     # An accepted swap claims its new opener, so two colliding bullets cannot both be
@@ -1650,13 +1717,17 @@ def _polish(
             continue
         candidate = item.text.strip()
 
-        if item.id in ceilings:
+        if item.id in targets or item.id in ceilings:
             offenders = guard_offenders([source], candidate)
             if offenders:
                 rejected[item.id] = offenders
+                retry_candidates[item.id] = (candidate, offenders)
                 continue
             original = texts[item.id]
-            if pullback:
+            if item.id in targets:
+                low, high = targets[item.id]
+                improved = bool(candidate) and low <= len(candidate) <= high and not numbers_dropped([source], candidate)
+            elif pullback:
                 improved = len(candidate) < len(original) and (
                     config.line_span(candidate) < config.line_span(original)
                 )
@@ -1674,6 +1745,27 @@ def _polish(
                 if verb is not None:
                     claimed.add(verb)
 
+    if retry_candidates:
+        windows = {bid: (0, high) for bid, high in ceilings.items()}
+        windows.update(targets)
+        accepted, survivors = _retry_fabrications(
+            retry_candidates, sources, requirements, targets=windows
+        )
+        rejected = survivors
+        for bid, candidate in accepted.items():
+            if numbers_dropped([sources[bid]], candidate):
+                continue
+            if bid in targets:
+                low, high = targets[bid]
+                valid = bool(candidate) and low <= len(candidate) <= high
+            else:
+                valid = len(candidate) < len(texts[bid]) and (
+                    config.line_span(candidate) < config.line_span(texts[bid])
+                    if pullback else not widowed({bid: candidate})
+                )
+            if valid:
+                repaired[bid] = candidate
+                tightened += 1
     return repaired, tightened, revoiced, rejected
 
 
@@ -1700,9 +1792,12 @@ class RewriteOutcome:
     #: `widow_repairs_rejected`: the document is never wrong, so a hard failure would only
     #: block the whole run over one bullet that's better left untailored.
     fabrications_rejected: dict[str, list[str]] = field(default_factory=dict)
+    measured_widows_remaining: int | None = None
 
     @property
     def widows_remaining(self) -> int:
+        if self.measured_widows_remaining is not None:
+            return self.measured_widows_remaining
         return len(widowed(self.texts))
 
     @property
@@ -1723,13 +1818,8 @@ def rewrite_bullets(
 ) -> RewriteOutcome:
     """Rewrite `bullets` to surface the posting's keywords.
 
-    `repair_widows` and `repair_verbs` each allow one *shared* follow-up call carrying only
-    the defective bullets — those that ended on a near-empty line, and those whose opening
-    verb repeats another's. The call fires only when such a bullet exists, so a clean draft
-    costs exactly one call as it always did, and a draft with one of each still costs two
-    rather than three. Setting either False is the control half of an A/B: `repair_widows`
-    isolates what the prompt's target band achieves alone, `repair_verbs` what its
-    verb-variety rule does.
+    Verb repair can add one follow-up call here. Widow repair waits until fit has a PDF;
+    character estimates at this stage have too many false positives to trim safely.
 
     A first draft that fabricates earns one targeted retry of only the offending ids
     (`_retry_fabrications`). A second fabrication — or an id the model drops on retry —
@@ -1828,7 +1918,9 @@ def rewrite_bullets(
 
     # Both counts are measured before the call so the progress line says what the follow-up
     # is for; the pass itself re-derives them, since merging may have changed either.
-    stranded = len(widowed(out)) if repair_widows else 0
+    # PDF layout is unavailable until fit has rendered this draft. Do not cut here
+    # based on the character estimate; it often flags full physical lines.
+    stranded = 0
     colliding = len(verb_collisions(out)) if repair_verbs else 0
     if stranded or colliding:
         wanted = []
@@ -1847,7 +1939,7 @@ def rewrite_bullets(
         out,
         by_id,
         requirements,
-        repair_widows=repair_widows,
+        repair_widows=False,
         repair_verbs=repair_verbs,
     )
     return RewriteOutcome(

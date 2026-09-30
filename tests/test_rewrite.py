@@ -837,15 +837,64 @@ def test_fabricated_thousands_separated_number_is_caught():
     assert check_fabrication(src, "Reviewed 2,500 daily conversations.") == ["2,500"]
 
 
-def test_trailing_plus_on_a_permitted_number_is_still_rejected():
-    """"at least 9,000" does not license "9,000+" — same class as "over 1,000" vs "1,000+"."""
+def test_lower_bound_plus_requires_exact_number_and_lower_bound_source():
     src = bullet(
         "a",
         "Fine-tuned models on at least 9,000 data points from Spider.",
         ["fine-tuning", "llm"],
     )
     assert check_fabrication(src, "Fine-tuned on 9,000 Spider points.") == []
-    assert check_fabrication(src, "Fine-tuned on 9,000+ Spider points.") == ["9,000+"]
+    assert check_fabrication(src, "Fine-tuned on 9,000+ Spider points.") == []
+    assert check_fabrication(src, "Fine-tuned on 2,000+ Spider points.") == ["2,000+"]
+    assert check_fabrication(bullet("b", "Reviewed 1,000 conversations.", ["review"]),
+                             "Reviewed 1,000+ conversations.") == ["1,000+"]
+    assert check_fabrication(bullet("c", "Reviewed under 1,000 conversations.", ["review"]),
+                             "Reviewed 1,000+ conversations.") == ["1,000+"]
+
+
+def test_logged_lower_bound_rewrites_pass_guard_and_preserve_number():
+    cases = [
+        ("Reviewed over 1,000 daily conversations.", "Reviewed 1,000+ daily conversations."),
+        ("Supported over 130 students/week.", "Supported 130+ students/week."),
+        ("Trained over 30 staff on IT practices.", "Trained 30+ staff on IT practices."),
+    ]
+    for source, rewritten in cases:
+        src = bullet("a", source, ["support"], metric=True)
+        assert guard_offenders([src], rewritten) == []
+        assert rewrite.numbers_dropped([src], rewritten) == []
+
+
+def test_lower_bound_equivalence_preserves_rebound_detection():
+    src = bullet("a", "Trained over 30 staff.", ["support"], metric=True)
+    assert rebound_numbers([src], "Saved 30+ hours.") == ["30 hours"]
+    plus = bullet("b", "Trained 30+ staff.", ["support"], metric=True)
+    assert guard_offenders([plus], "Trained over 30 staff.") == []
+    assert rewrite.numbers_dropped([plus], "Trained more than 30 staff.") == []
+    bare = bullet("c", "Trained 30 staff.", ["support"], metric=True)
+    assert check_fabrication(bare, "Trained over 30 staff.") == ["30"]
+
+
+@pytest.mark.parametrize("bound", ["over 1,000", "more than 1,000", "at least 1,000",
+                                   "1,000 or more", "1,000+"])
+def test_all_source_lower_bound_forms_license_the_same_plus_token(bound):
+    src = bullet("a", f"Reviewed {bound} conversations.", ["review"], metric=True)
+    assert guard_offenders([src], "Reviewed 1,000+ conversations.") == []
+
+
+def test_numeric_plus_equivalence_does_not_strip_a_technology_suffix():
+    src = bullet("a", "Used GPT-4+.", ["language models"])
+    assert "GPT-4" in check_fabrication(src, "Used GPT-4.")
+
+
+def test_percentage_outcome_is_bound_before_the_number():
+    src = bullet(
+        "a", "Cut student troubleshooting time by 50-66% by providing step-by-step "
+        "debugging guides and example solutions for common programming errors.",
+        ["support"], metric=True,
+    )
+    candidate = "Cut student troubleshooting time by 50-66% by authoring debugging guides."
+    assert guard_offenders([src], candidate) == []
+    assert rebound_numbers([src], "Cut office costs by 50-66% by authoring guides.")
 
 
 def test_comma_splitting_does_not_license_a_new_figure():
@@ -1043,7 +1092,7 @@ def test_a_clean_draft_costs_exactly_one_call(rewrite_calls):
     assert outcome.widows_remaining == 0
 
 
-def test_a_widow_triggers_exactly_one_follow_up_carrying_only_the_offender(rewrite_calls):
+def test_rewrite_defers_widow_repair_until_layout_is_measured(rewrite_calls):
     src = [
         bullet("a", "Built a Python service.", ["python"]),
         bullet("b", "Shipped a Python tool.", ["python"]),
@@ -1055,13 +1104,10 @@ def test_a_widow_triggers_exactly_one_follow_up_carrying_only_the_offender(rewri
 
     outcome = rewrite.rewrite_bullets(src, _reqs(), char_budget=202)
 
-    assert len(calls) == 2
-    follow_up = calls[1]["messages"][0]["content"]
-    assert "'a'" in follow_up
-    assert "'b'" not in follow_up, "a bullet that fits must not be re-sent"
-    assert outcome.widows_repaired == 1
-    assert outcome.widows_remaining == 0
-    assert outcome.texts["a"] == _text(190)
+    assert len(calls) == 1
+    assert outcome.widows_repaired == 0
+    assert outcome.widows_remaining == 1
+    assert outcome.texts["a"] == _text(204)
     assert outcome.texts["b"] == _text(150)
 
 
@@ -1072,7 +1118,7 @@ def test_a_repair_that_is_still_widowed_is_discarded(rewrite_calls):
 
     outcome = rewrite.rewrite_bullets(src, _reqs(), char_budget=202)
 
-    assert len(calls) == 2
+    assert len(calls) == 1
     assert outcome.texts["a"] == _text(204), "original kept"
     assert outcome.widows_repaired == 0
     assert outcome.widows_remaining == 1
@@ -1113,7 +1159,7 @@ def test_a_fabricating_widow_repair_is_discarded_not_fatal(rewrite_calls):
     assert outcome.texts["a"] == widowed_draft
     assert outcome.widows_repaired == 0
     assert outcome.widows_remaining == 1
-    assert outcome.widow_repairs_rejected == {"a": ["Kubernetes"]}
+    assert outcome.widow_repairs_rejected == {}
 
 
 # --------------------------------------------------------------------------------------
@@ -1269,9 +1315,7 @@ def test_rebounding_widow_repair_is_discarded_not_fatal(rewrite_calls):
 
     assert outcome.texts["a"] == widowed_draft
     assert outcome.widows_repaired == 0
-    assert any(
-        o.startswith("rebound:") for o in outcome.widow_repairs_rejected.get("a", [])
-    )
+    assert outcome.widow_repairs_rejected == {}
 
 
 def test_no_widow_repair_holds_the_run_to_one_call(rewrite_calls):
@@ -1451,11 +1495,11 @@ def test_widow_and_verb_defects_share_one_polish_call(rewrite_calls):
 
     assert len(calls) == 2
     follow_up = calls[1]["messages"][0]["content"]
-    assert "bullets_to_shorten" in follow_up
-    # a was widowed so it is sent only as a widow; b is the verb-only offender.
+    assert "bullets_to_shorten" not in follow_up
+    # The physical line repair runs in fit; this call only handles the verb.
     assert "bullets_to_revoice" in follow_up
     assert "'b'" in follow_up
-    assert outcome.widows_repaired == 1
+    assert outcome.widows_repaired == 0
     assert outcome.verbs_diversified == 1
     assert outcome.verb_collisions_remaining == 0
 
@@ -1513,3 +1557,39 @@ def test_pull_back_with_no_targets_makes_no_call(rewrite_calls):
     calls = rewrite_calls()
     out, pulled, rejected = rewrite.pull_back({"a": "x"}, {}, _reqs(), {})
     assert calls == [] and pulled == 0 and out == {"a": "x"}
+
+
+def test_measured_target_window_accepts_only_guard_clean_numeric_preserving_reply(rewrite_calls):
+    src = {"a": bullet("a", "Trained over 30 staff on IT practices.", ["support"], metric=True)}
+    current = {"a": "Trained over 30 staff on IT practices and common tools."}
+    calls = rewrite_calls(_reply(a="Trained 30+ staff on IT practices."))
+    out, fixed, _, rejected = rewrite._polish(
+        current, src, _reqs(), repair_widows=False, repair_verbs=False,
+        targets={"a": (30, 40)},
+    )
+    assert out["a"] == "Trained 30+ staff on IT practices."
+    assert fixed == 1 and rejected == {}
+    assert "<repair_prompt_version>2" in calls[0]["messages"][0]["content"]
+
+    rewrite_calls(_reply(a="Trained 30+ staff."))
+    out, fixed, _, _ = rewrite._polish(
+        current, src, _reqs(), repair_widows=False, repair_verbs=False,
+        targets={"a": (30, 40)},
+    )
+    assert out == current and fixed == 0
+
+
+def test_measured_repair_gets_one_fabrication_retry(rewrite_calls):
+    src = {"a": bullet("a", "Built a Python service.", ["python"])}
+    calls = rewrite_calls(
+        _reply(a="Built a Kubernetes service."),
+        _reply(a="Built a Python service."),
+    )
+    out, fixed, _, rejected = rewrite._polish(
+        {"a": "Built a Python service with several extra words."},
+        src, _reqs(), repair_widows=False, repair_verbs=False,
+        targets={"a": (20, 30)},
+    )
+    assert len(calls) == 2
+    assert out["a"] == "Built a Python service."
+    assert fixed == 1 and rejected == {}

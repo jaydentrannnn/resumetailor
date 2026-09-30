@@ -10,6 +10,7 @@ from __future__ import annotations
 import io
 import re
 import zipfile
+from dataclasses import dataclass
 from datetime import datetime
 from pathlib import Path
 
@@ -627,3 +628,97 @@ def measure_detail(docx_path: Path, *, keep_active: bool = False) -> tuple[int, 
     """
     pdf = to_pdf(docx_path, keep_active=keep_active)
     return page_count(pdf), line_count(pdf)
+
+
+@dataclass(frozen=True)
+class LineFit:
+    lines: int
+    last_fill: float
+    chars_per_line: float
+
+
+_LIGATURES = str.maketrans({"ﬀ": "ff", "ﬁ": "fi", "ﬂ": "fl", "ﬃ": "ffi", "ﬄ": "ffl"})
+
+
+def _layout_words(value: str) -> str:
+    """Compare PDF and source text despite bullets, ligatures and word wraps."""
+    value = value.translate(_LIGATURES).lower()
+    value = re.sub(r"[\ue000-\uf8ff•●▪◦·]", "", value)
+    value = re.sub(r"-\s*\n\s*", "", value)
+    return " ".join(re.findall(r"[\w]+", value, re.UNICODE))
+
+
+def _layout_from_words(
+    words: list[dict], texts: dict[str, str], *, top_tolerance: float = 3.0
+) -> dict[str, LineFit]:
+    """Match source paragraphs to consecutive PDF word-box lines."""
+    groups: list[list[dict]] = []
+    for word in sorted(words, key=lambda w: (w.get("page_number", 1), w["top"], w["x0"])):
+        if (
+            not groups
+            or word.get("page_number", 1) != groups[-1][0].get("page_number", 1)
+            or abs(word["top"] - groups[-1][0]["top"]) > top_tolerance
+        ):
+            groups.append([])
+        groups[-1].append(word)
+    lines = [" ".join(w["text"] for w in group) for group in groups]
+    right_edges: dict[int, float] = {}
+    for word in words:
+        if _layout_words(word["text"]):
+            page = word.get("page_number", 1)
+            right_edges[page] = max(right_edges.get(page, 0), word["x1"])
+    used: set[int] = set()
+    found: dict[str, LineFit] = {}
+    for bid, source in texts.items():
+        target = _layout_words(source).replace(" ", "")
+        if not target:
+            continue
+        best: tuple[int, int] | None = None
+        for start in range(len(lines)):
+            if start in used:
+                continue
+            for end in range(start + 1, min(len(lines), start + 7) + 1):
+                if any(i in used for i in range(start, end)):
+                    break
+                candidate = _layout_words("\n".join(lines[start:end])).replace(" ", "")
+                if not candidate:
+                    continue
+                if candidate == target:
+                    best = (start, end)
+                    break
+                if len(candidate) > len(target):
+                    break
+            if best is not None:
+                break
+        if best is None:
+            continue
+        start, end = best
+        para = [[w for w in group if _layout_words(w["text"])]
+                for group in groups[start:end]]
+        if any(not group for group in para):
+            continue
+        left = min(w["x0"] for group in para for w in group)
+        widths = [max(w["x1"] for w in group) - left for group in para]
+        # The rightmost rendered text on the page locates its text margin. A
+        # paragraph's longest line can still stop short of that margin at a word.
+        full_width = max(right_edges[w.get("page_number", 1)] - left
+                         for group in para for w in group)
+        if full_width <= 0 or max(widths) <= 0:
+            continue
+        full_index = widths.index(max(widths))
+        full_chars = len(" ".join(w["text"] for w in para[full_index]))
+        chars_per_line = full_chars * full_width / max(widths)
+        found[bid] = LineFit(end - start, min(1.0, widths[-1] / full_width), chars_per_line)
+        used.update(range(start, end))
+    return found
+
+
+def line_layout(pdf_path: Path, texts: dict[str, str]) -> dict[str, LineFit]:
+    """Measure matched paragraphs in an existing PDF; omit uncertain matches."""
+    import pdfplumber
+
+    words: list[dict] = []
+    with pdfplumber.open(pdf_path) as pdf:
+        for page_number, page in enumerate(pdf.pages, 1):
+            words.extend({**word, "page_number": page_number} for word in page.extract_words())
+    return _layout_from_words(words, texts)

@@ -1539,10 +1539,12 @@ def skill_group_line(label: str, items: list[str]) -> str:
     return f"{label}: {', '.join(items)}"
 
 
-#: A final line filled below this fraction is a widow. 0.30 (~30 characters) sits clear of
-#: both measured populations: real widows filled 2-5 characters of 101, while the tightest
-#: legitimate last line observed held 33.
-WIDOW_MIN_FILL = 0.30
+#: Measured PDF lines below half width are repair candidates. The character estimate is
+#: deliberately more conservative because it disagrees with real layout around wraps.
+WIDOW_MIN_FILL = 0.50
+WIDOW_EST_FILL = 0.30
+#: Below this fill, save a line. Moderately short lines may grow from their own source.
+WIDOW_SHORTEN_MAX = 0.35
 
 #: Characters of headroom held back from a line boundary when setting a ceiling. The
 #: observed overshoot was 2-5 characters, so a ceiling placed exactly on the boundary would

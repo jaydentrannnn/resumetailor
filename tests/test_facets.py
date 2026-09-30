@@ -34,6 +34,35 @@ def _requirements(*phrases: tuple[str, str]) -> JobRequirements:
     )
 
 
+def test_coursework_fills_short_line_and_skips_unfitting_course(monkeypatch):
+    monkeypatch.setattr(config, "CHARS_PER_LINE", 40)
+    pool = ["Algorithms", "A Very Long Course Title That Cannot Fit Within Two Lines",
+            "Data Mining", "Machine Learning", "Networks"]
+    chosen = fit_coursework_to_budget(pool[:3], pool=pool, chars_per_line=40)
+    assert chosen == ["Algorithms", "Data Mining", "Machine Learning", "Networks"]
+    assert all(course in pool for course in chosen)
+
+
+def test_coursework_trims_a_line_when_pool_cannot_fill_it(monkeypatch):
+    monkeypatch.setattr(config, "CHARS_PER_LINE", 40)
+    chosen = fit_coursework_to_budget(
+        ["Algorithms", "Data Mining"], pool=["Algorithms", "Data Mining"],
+        chars_per_line=40,
+    )
+    assert chosen == ["Algorithms"]
+
+
+def test_coursework_uses_measured_fill_instead_of_character_remainder(monkeypatch):
+    monkeypatch.setattr(config, "CHARS_PER_LINE", 40)
+    ordered = ["Algorithms", "Data Mining", "Machine Learning"]
+    pool = ordered + ["Networks", "Statistics", "AI"]
+    assert fit_coursework_to_budget(ordered, pool=pool, chars_per_line=40) == ordered
+    measured = fit_coursework_to_budget(
+        ordered, pool=pool, chars_per_line=40, rendered_lines=2, last_fill=0.19,
+    )
+    assert measured == pool
+
+
 def _project(**kwargs) -> Project:
     """Minimal project with defaults for budget tests."""
     base = dict(

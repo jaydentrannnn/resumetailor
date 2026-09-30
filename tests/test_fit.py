@@ -398,7 +398,7 @@ _FULL_LINES = config.LINES_PER_PAGE
 _SPARSE_LINES = int(config.LINES_PER_PAGE * config.UNDERFLOW_THRESHOLD) - 5
 
 
-def _stub_render(monkeypatch, tmp_path, *, pages_for, renders=None):
+def _stub_render(monkeypatch, tmp_path, *, pages_for, renders=None, layout_for=None):
     """Stub render/measure; `pages_for(texts)` returns the `(pages, lines)` a draft measures.
 
     Measuring by the *content* of the last render (not by call order) keeps a test valid
@@ -408,6 +408,8 @@ def _stub_render(monkeypatch, tmp_path, *, pages_for, renders=None):
 
     def fake_render(*a, **k):
         last["texts"] = dict(k["bullets"])
+        if layout_for is not None:
+            (tmp_path / "out.pdf").touch()
         if renders is not None:
             renders.append(dict(k["bullets"]))
         return tmp_path / "out.docx"
@@ -417,6 +419,71 @@ def _stub_render(monkeypatch, tmp_path, *, pages_for, renders=None):
         fit_mod.render, "measure_detail", lambda *a, **k: pages_for(last["texts"])
     )
     monkeypatch.setattr(fit_mod.render, "to_pdf", lambda *a, **k: tmp_path / "out.pdf")
+    if layout_for is not None:
+        monkeypatch.setattr(
+            fit_mod.render, "line_layout", lambda _pdf, texts: layout_for(last["texts"]),
+        )
+
+
+def test_measured_widow_pass_reverts_when_repair_overflows(monkeypatch, tmp_path):
+    resume = _test_resume()
+    monkeypatch.setattr(fit_mod, "rewrite_bullets", _identity_rewrite)
+    _stub_render(
+        monkeypatch, tmp_path,
+        pages_for=lambda texts: (2, _FULL_LINES + 5) if any(
+            text.endswith(" repair") for text in texts.values()
+        ) else (1, _FULL_LINES),
+        layout_for=lambda texts: {
+            bid: fit_mod.render.LineFit(2, 0.2, 100) if bid == "exp1_b1"
+            else fit_mod.render.LineFit(1, 1.0, 100)
+            for bid in texts
+        },
+    )
+
+    def fake_polish(texts, sources, requirements, **kwargs):
+        assert kwargs["targets"]["exp1_b1"][1] == 95
+        return {**texts, "exp1_b1": texts["exp1_b1"] + " repair"}, 1, 0, {}
+
+    monkeypatch.setattr(fit_mod, "_polish", fake_polish)
+    result = fit_mod.fit(resume, _requirements(), target_pages=1, fill_target=0)
+    assert not result.bullets["exp1_b1"].endswith(" repair")
+    assert result.widows_repaired == 0 and result.widows_remaining == 1
+    assert any("Widow repair overflowed" in warning for warning in result.warnings)
+
+
+def test_measured_widow_targets_choose_shortening_extension_and_merged_shortening():
+    source = Bullet(id="a", text="x" * 220, tags=["python"])
+    sources = {"a": source, "b": Bullet(id="b", text="y" * 220, tags=["python"])}
+    texts = {"a": "x" * 120, "b": "y" * 120}
+    fits = {
+        "a": fit_mod.render.LineFit(2, 0.20, 100),
+        "b": fit_mod.render.LineFit(2, 0.42, 100),
+    }
+    targets = fit_mod._widow_targets(
+        texts, sources, fits, measured_lines=40, capacity=50, members={},
+        estimated=False,
+    )
+    assert targets["a"] == (0, 95)
+    assert targets["b"] == (158, 195)
+    full_page = fit_mod._widow_targets(
+        texts, sources, fits, measured_lines=50, capacity=50, members={},
+        estimated=False,
+    )
+    assert full_page["b"] == (0, 95)
+    merged = fit_mod._widow_targets(
+        texts, sources, fits, measured_lines=40, capacity=50,
+        members={"b": ("a", "b")}, estimated=False,
+    )
+    assert merged["b"] == (0, 95)
+
+
+def test_estimated_widow_uses_conservative_threshold():
+    source = {"a": Bullet(id="a", text="x" * 220, tags=["python"])}
+    fits = {"a": fit_mod.render.LineFit(2, 0.40, 100)}
+    assert fit_mod._widow_targets(
+        {"a": "x" * 120}, source, fits, measured_lines=40, capacity=50,
+        members={}, estimated=True,
+    ) == {}
 
 
 def test_fit_drops_weakest_bullets_on_overflow_without_another_rewrite(monkeypatch, tmp_path):
