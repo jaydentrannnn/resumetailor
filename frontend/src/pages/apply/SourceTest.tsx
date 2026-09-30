@@ -1,4 +1,4 @@
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { testSource, type SourceConfig, type SourceTestResult } from "../../api";
 import { Button } from "../../components/ui";
 import { describe } from "../../lib/errors";
@@ -125,9 +125,28 @@ export function useSourceTest() {
   return { result, error, loading, run, reset };
 }
 
-/** A Test button plus its result panel, for one source. */
-export function SourceTest({ source, disabled }: { source: SourceConfig; disabled?: boolean }) {
+/**
+ * A Test button plus its result panel, for one source. ``autoRun`` also runs it once when
+ * it first appears (the edit panel), unless ``disabled``; edits after that need Test again.
+ */
+export function SourceTest({
+  source,
+  disabled,
+  autoRun,
+}: {
+  source: SourceConfig;
+  disabled?: boolean;
+  autoRun?: boolean;
+}) {
   const test = useSourceTest();
+  const ran = useRef(false);
+  useEffect(() => {
+    if (!autoRun || disabled || ran.current) return;
+    ran.current = true;
+    void test.run(source);
+    // Once per mount: the source object changes on every keystroke in the panel.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, []);
   return (
     <div>
       <Button

@@ -1,4 +1,5 @@
 import type {
+  ApplySettings,
   CatalogEntry,
   OnboardingField,
   OnboardingState,
@@ -100,6 +101,18 @@ export function sourcesFromCatalogPicks(
     out.push(newWatchlistSource(undefined, out));
   }
   return out;
+}
+
+/**
+ * ``apply`` with the chosen sources and the job fields they came from. The fields are what
+ * the Sources tab's "Recommended for your fields" strip reads later.
+ */
+export function withSourceChoice(
+  apply: ApplySettings,
+  sources: SourceConfig[],
+  fields: SourceField[],
+): ApplySettings {
+  return { ...apply, sources, fields: [...fields] };
 }
 
 /** Job-board categories per field (fallback when the catalog cannot be fetched). Names match the Simplify README headings exactly

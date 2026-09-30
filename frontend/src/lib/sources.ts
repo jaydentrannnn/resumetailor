@@ -1,4 +1,11 @@
-import type { CatalogEntry, SourceCatalog, SourceConfig, SourceField, SourceKind } from "../api";
+import type {
+  CatalogEntry,
+  SourceCatalog,
+  SourceConfig,
+  SourceField,
+  SourceKind,
+  SourceRunStatus,
+} from "../api";
 
 /** Most phrases one keyword search holds; the backend searches each one separately. */
 export const MAX_PHRASES = 5;
@@ -38,19 +45,80 @@ export function isReadmeKind(kind: SourceKind): boolean {
   return kind === "simplify_html" || kind === "pipe_table" || kind === "company_link_table";
 }
 
-const PROVIDER_LABELS = { adzuna: "Adzuna", usajobs: "USAJobs" } as const;
+export type SearchProvider = "adzuna" | "usajobs";
 
-/** What the list shows: the user's name, else a description of an unnamed legacy source. */
+export const PROVIDER_LABELS: Record<SearchProvider, string> = {
+  adzuna: "Adzuna",
+  usajobs: "USAJobs",
+};
+
+/** The Sources tab's three groups; every source belongs to exactly one. */
+export type SourceGroup = "lists" | "search" | "watchlists";
+
+export function groupOf(kind: SourceKind): SourceGroup {
+  if (kind === "job_search") return "search";
+  if (kind === "ats_board") return "watchlists";
+  return "lists";
+}
+
+/** The provider a keyword search runs on; older searches without one ran on Adzuna. */
+export function providerOf(source: SourceConfig): SearchProvider {
+  return source.provider === "usajobs" ? "usajobs" : "adzuna";
+}
+
+/** "owner/repo" from a GitHub link (also raw/blob READMEs); the host + path otherwise; "" when empty. */
+export function repoNameFromUrl(url: string): string {
+  const text = url.trim();
+  if (!text) return "";
+  const raw = text.match(/^https?:\/\/raw\.githubusercontent\.com\/([^/]+)\/([^/]+)/i);
+  const hub = text.match(/^https?:\/\/(?:www\.)?github\.com\/([^/?#]+)\/([^/?#]+)/i);
+  const hit = raw ?? hub;
+  if (hit) return `${hit[1]}/${hit[2].replace(/\.git$/i, "")}`;
+  return text.replace(/^https?:\/\/(www\.)?/i, "").replace(/[/?#].*$/, "") || text;
+}
+
+/** Company names on a watchlist (the board's slug when it has no name). */
+function boardNames(source: SourceConfig): string[] {
+  return (source.boards ?? []).map((b) => b.company?.trim() || b.slug);
+}
+
+/** "A, B, C +2": the first ``max`` of ``items``, then how many were left out. */
+export function briefList(items: string[], max = 3): string {
+  if (items.length <= max) return items.join(", ");
+  return `${items.slice(0, max).join(", ")} +${items.length - max}`;
+}
+
+/** What the list shows: the user's name, else a description of an unnamed source (never a raw id). */
 export function sourceDisplayName(source: SourceConfig): string {
   const name = source.name?.trim();
   if (name) return name;
-  if (source.kind === "ats_board") return "Company watchlist";
+  if (source.kind === "ats_board") {
+    const names = boardNames(source);
+    return names.length ? `Watchlist: ${briefList(names)}` : "Company watchlist";
+  }
   if (source.kind === "job_search") {
     const provider = source.provider ? PROVIDER_LABELS[source.provider] : "Job search";
     const phrases = splitPhrases(source.query ?? "");
     return phrases.length ? `${provider}: ${phrases.join(", ")}` : `${provider} search`;
   }
-  return source.id;
+  return repoNameFromUrl(source.url) || "Job list";
+}
+
+/** One line saying what a source looks at: categories, phrases or companies. */
+export function sourceSummary(source: SourceConfig, maxChars = 90): string {
+  let text: string;
+  if (source.kind === "ats_board") {
+    const names = boardNames(source);
+    text = names.length ? names.join(", ") : "No companies yet";
+  } else if (source.kind === "job_search") {
+    const phrases = splitPhrases(source.query ?? "");
+    const where = source.location?.trim();
+    text = phrases.length ? phrases.join(", ") : "No search phrases yet";
+    if (where) text += ` · ${where}`;
+  } else {
+    text = source.categories.length ? source.categories.join(", ") : "Every category";
+  }
+  return text.length > maxChars ? `${text.slice(0, maxChars - 1).trimEnd()}…` : text;
 }
 
 /** "a, b ,, A" → ["a", "b"]: trimmed, no blanks, no case-insensitive repeats, at most 5. */
@@ -257,4 +325,99 @@ export function sourcesSummary(sources: SourceConfig[]): string {
   if (sources.length === 0) return "No sources yet";
   const on = sources.filter((s) => s.enabled).length;
   return `${on} of ${sources.length} source${sources.length === 1 ? "" : "s"} on`;
+}
+
+/** Catalog entries tagged with ``fields`` that ``sources`` does not have yet. */
+export function recommendedEntries(
+  catalog: SourceCatalog | null,
+  sources: SourceConfig[],
+  fields: SourceField[],
+): CatalogEntry[] {
+  if (!catalog || fields.length === 0) return [];
+  return entriesForFields(catalog, fields).filter((entry) => !catalogAdded(entry, sources));
+}
+
+/** ``source`` as a separate copy right after the original (fresh id, no catalog link). */
+export function duplicateSource(source: SourceConfig, sources: SourceConfig[]): SourceConfig[] {
+  const copy: SourceConfig = {
+    ...structuredClone(source),
+    id: uniqueSourceId(source.id, sources),
+    name: `${sourceDisplayName(source)} copy`,
+    catalog_id: null,
+    catalog_version: null,
+  };
+  const at = sources.findIndex((s) => s.id === source.id);
+  const next = [...sources];
+  next.splice(at < 0 ? next.length : at + 1, 0, copy);
+  return next;
+}
+
+/** A removed source and where it sat, so Undo can put it back exactly. */
+export type RemovedSource = { source: SourceConfig; index: number };
+
+/** ``sources`` without the ``ids``, plus what was taken out (in list order). */
+export function withoutSources(
+  sources: SourceConfig[],
+  ids: ReadonlySet<string>,
+): { kept: SourceConfig[]; removed: RemovedSource[] } {
+  const kept: SourceConfig[] = [];
+  const removed: RemovedSource[] = [];
+  sources.forEach((source, index) => {
+    if (ids.has(source.id)) removed.push({ source, index });
+    else kept.push(source);
+  });
+  return { kept, removed };
+}
+
+/** Puts ``removed`` back at their original positions (skipping any id that is present again). */
+export function restoreRemoved(sources: SourceConfig[], removed: RemovedSource[]): SourceConfig[] {
+  const out = [...sources];
+  const have = new Set(out.map((s) => s.id));
+  for (const { source, index } of [...removed].sort((a, b) => a.index - b.index)) {
+    if (have.has(source.id)) continue;
+    out.splice(Math.min(index, out.length), 0, source);
+    have.add(source.id);
+  }
+  return out;
+}
+
+/** "5m ago", "2h ago", "3d ago"; "" when ``iso`` is not a date. */
+export function relativeTime(iso: string | null | undefined, now = Date.now()): string {
+  if (!iso) return "";
+  const then = new Date(iso).getTime();
+  if (Number.isNaN(then)) return "";
+  const seconds = Math.max(0, Math.round((now - then) / 1000));
+  if (seconds < 60) return "just now";
+  const minutes = Math.floor(seconds / 60);
+  if (minutes < 60) return `${minutes}m ago`;
+  const hours = Math.floor(minutes / 60);
+  if (hours < 48) return `${hours}h ago`;
+  return `${Math.floor(hours / 24)}d ago`;
+}
+
+export type SourceHealth = { text: string; tone: "ok" | "error" | "muted" };
+
+/** The health line under a source: last run's counts, its failure reason, or why there is none. */
+export function sourceHealth(
+  source: SourceConfig,
+  run: SourceRunStatus | undefined,
+  now = Date.now(),
+): SourceHealth {
+  if (!source.enabled) return { text: "Off", tone: "muted" };
+  if (!run) return { text: "Not run yet", tone: "muted" };
+  const when = relativeTime(run.at, now);
+  if (run.error) return { text: when ? `${run.error} · ${when}` : run.error, tone: "error" };
+  const counts = `${run.found.toLocaleString("en-US")} found · ${run.kept.toLocaleString("en-US")} kept`;
+  return { text: when ? `${counts} · ${when}` : counts, tone: "ok" };
+}
+
+/** "Searching 5 sources · last run 2h ago". */
+export function sourcesHeadline(
+  sources: SourceConfig[],
+  lastRunAt: string | null | undefined,
+  now = Date.now(),
+): string {
+  const on = sources.filter((s) => s.enabled).length;
+  const when = relativeTime(lastRunAt, now);
+  return `Searching ${on} source${on === 1 ? "" : "s"} · ${when ? `last run ${when}` : "not run yet"}`;
 }

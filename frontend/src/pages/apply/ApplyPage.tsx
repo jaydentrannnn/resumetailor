@@ -43,6 +43,7 @@ import {
 import { IN_FLIGHT_STATUSES, pollSignature, shouldRefreshTables } from "../../lib/applyPoll";
 import { describe } from "../../lib/errors";
 import { GLOSSARY } from "../../lib/glossary";
+import { sourcesHeadline } from "../../lib/sources";
 import { useToast } from "../../lib/toast";
 import { useOpenTabs } from "../../lib/useOpenTabs";
 import { useProfileGaps } from "../../state/applicantProfileState";
@@ -54,6 +55,7 @@ import { ApplicationsTable, type TableActions } from "./ApplicationsTable";
 import { ApplySettingsDrawer } from "./ApplySettingsDrawer";
 import { ConnectionStatus } from "./BrowserConnection";
 import { OperationBanner, type OperationControl } from "./OperationBanner";
+import { useSourcesStatus } from "./sourceHooks";
 import { SourcesTab } from "./SourcesTab";
 import { NeedsDescriptionGroup } from "../CapturedStubs";
 import { useApplicationTable } from "./useApplicationTable";
@@ -66,7 +68,8 @@ const notificationsSupported = () => typeof window !== "undefined" && "Notificat
  * with the current Apply task pinned on top and every setting in a side drawer.
  */
 export function ApplyPage() {
-  const { settings, setSettings, config, settingsSaveError } = useRunState();
+  const { settings, setSettings, config, settingsSaveError, settingsSaveState, flushSettings } =
+    useRunState();
   const { activeId } = useWorkspaceState();
   const { confirm } = useConfirm();
   const toast = useToast();
@@ -97,6 +100,8 @@ export function ApplyPage() {
   const [drawerOpen, setDrawerOpen] = useState(params.get("settings") === "1");
   const [notify, setNotify] = useState(notifyPreference);
   const active = dailyRunning || (!!operation && ACTIVE_STATES.includes(operation.state));
+  // Re-read each source's health whenever a run starts or finishes.
+  const sourcesStatus = useSourcesStatus(active);
 
   const showError = useCallback(
     (title: string, reason: unknown) => toast.error(title, describe(reason).detail),
@@ -411,6 +416,12 @@ export function ApplyPage() {
       >
         Find jobs
       </Button>
+      <span className="text-xs text-ink-muted">
+        {sourcesHeadline(settings.apply.sources, sourcesStatus?.last_run_at)} ·{" "}
+        <button type="button" className="text-accent underline" onClick={() => setTab("sources")}>
+          Manage
+        </button>
+      </span>
       <details className="relative">
         <summary
           className="rt-control inline-flex cursor-pointer items-center rounded-md border border-line bg-panel px-3 text-sm"
@@ -647,6 +658,13 @@ export function ApplyPage() {
               <SourcesTab
                 sources={settings.apply.sources}
                 saveError={settingsSaveError}
+                saveState={settingsSaveState}
+                onFlush={flushSettings}
+                status={sourcesStatus}
+                fields={settings.apply.fields ?? []}
+                onFieldsChange={(fields) =>
+                  setSettings({ ...settings, apply: { ...settings.apply, fields } })
+                }
                 onChange={(sources) =>
                   setSettings({ ...settings, apply: { ...settings.apply, sources } })
                 }

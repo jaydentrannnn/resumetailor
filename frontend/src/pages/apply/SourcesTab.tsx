@@ -1,47 +1,120 @@
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState, type ReactNode } from "react";
 import {
   fetchSourceCatalog,
-  type CatalogEntry,
+  inspectSource,
+  resolveBoard,
+  type ResolvedBoard,
   type SourceCatalog,
   type SourceConfig,
+  type SourceField,
+  type SourcesStatus,
 } from "../../api";
-import { Button, EmptyState } from "../../components/ui";
+import { RowActionsMenu } from "../../components/TableControls";
+import { Button } from "../../components/ui";
 import { describe } from "../../lib/errors";
 import {
-  applyCatalogUpdate,
   availableUpdate,
-  catalogDiff,
-  isReadmeKind,
-  restoreDefaults,
-  sourceDisplayName,
-  sourceKindLabel,
+  duplicateSource,
   FIELD_LABELS,
+  groupOf,
+  PROVIDER_LABELS,
+  providerOf,
+  recommendedEntries,
+  restoreDefaults,
+  restoreRemoved,
+  SOURCE_FIELDS,
+  sourceDisplayName,
+  sourceFromCatalog,
+  sourcesHeadline,
+  withoutSources,
+  type SearchProvider,
 } from "../../lib/sources";
 import { useToast } from "../../lib/toast";
-import { useConfirm } from "../../state/confirmState";
-import { AddSourceDialog } from "./AddSourceDialog";
-import { CategoryPicker, JobSearchEditor, WatchlistEditor } from "./SourceEditors";
-import { SourceTest } from "./SourceTest";
+import { addBoard } from "../../lib/watchlist";
+import {
+  BoardTargetDialog,
+  CatalogDialog,
+  ConnectDialog,
+  ReadmeFlowDialog,
+  SearchFlowDialog,
+  WatchlistFlowDialog,
+  type KnownInspection,
+} from "./AddFlows";
+import { useProviderConnections } from "./sourceHooks";
+import { SourcePanel, type SaveState } from "./SourcePanel";
+import { SourceRow } from "./SourceRow";
+
+const DISMISS_KEY = "rt:sources-recommended-dismissed";
+
+type Flow =
+  | { type: "catalog" }
+  | { type: "readme"; url: string; inspection: KnownInspection }
+  | { type: "search"; provider: SearchProvider }
+  | { type: "watchlist"; board?: ResolvedBoard }
+  | { type: "board"; board: ResolvedBoard };
+
+function readDismissed(): boolean {
+  try {
+    return localStorage.getItem(DISMISS_KEY) === "1";
+  } catch {
+    return false;
+  }
+}
+
+function writeDismissed(on: boolean) {
+  try {
+    if (on) localStorage.setItem(DISMISS_KEY, "1");
+    else localStorage.removeItem(DISMISS_KEY);
+  } catch {
+    /* a per-viewer convenience only */
+  }
+}
 
 /**
- * The Apply page's Sources tab: every place the nightly run looks for jobs. Changes go
- * through `onChange` (the settings autosave); `saveError` shows a server validation error.
+ * The Apply page's Sources tab: every place the nightly run looks for jobs, in three
+ * always-visible groups (job lists, search engines, company watchlists). Every row has the
+ * same controls; editing opens a side panel. Changes go through `onChange` (the settings
+ * autosave); `saveError` shows a server validation error.
  */
 export function SourcesTab({
   sources,
   onChange,
   saveError,
+  saveState = "saved",
+  onFlush,
+  status = null,
+  fields = [],
+  onFieldsChange,
 }: {
   sources: SourceConfig[];
   onChange: (next: SourceConfig[]) => void;
   saveError: string | null;
+  saveState?: SaveState;
+  /** Writes any pending autosave now (the side panel calls it on close). */
+  onFlush?: () => void | Promise<unknown>;
+  /** How each source did on the latest run; null before the first or when unavailable. */
+  status?: SourcesStatus | null;
+  /** The job fields this profile searches for (`apply.fields`). */
+  fields?: SourceField[];
+  onFieldsChange?: (fields: SourceField[]) => void;
 }) {
-  const { confirm } = useConfirm();
   const toast = useToast();
+  const providers = useProviderConnections();
   const [catalog, setCatalog] = useState<SourceCatalog | null>(null);
   const [catalogError, setCatalogError] = useState("");
-  const [adding, setAdding] = useState(false);
+  const [flow, setFlow] = useState<Flow | null>(null);
+  const [connecting, setConnecting] = useState<SearchProvider | null>(null);
   const [editing, setEditing] = useState<string | null>(null);
+  const [selected, setSelected] = useState<Set<string>>(new Set());
+  const [dismissed, setDismissed] = useState(readDismissed);
+  const [pickingFields, setPickingFields] = useState(false);
+
+  // Toast actions outlive the render that created them, so they read the latest values.
+  const sourcesRef = useRef(sources);
+  sourcesRef.current = sources;
+  const onChangeRef = useRef(onChange);
+  onChangeRef.current = onChange;
+  const commit = (next: SourceConfig[]) => onChangeRef.current(next);
 
   useEffect(() => {
     let live = true;
@@ -54,293 +127,605 @@ export function SourcesTab({
   }, []);
 
   const update = (id: string, next: SourceConfig) =>
-    onChange(sources.map((s) => (s.id === id ? next : s)));
+    commit(sourcesRef.current.map((s) => (s.id === id ? next : s)));
+  const append = (source: SourceConfig) => commit([...sourcesRef.current, source]);
+  const selectedIds = new Set(sources.filter((s) => selected.has(s.id)).map((s) => s.id));
+  const editingSource = editing ? sources.find((s) => s.id === editing) : undefined;
 
-  async function remove(source: SourceConfig) {
-    const ok = await confirm({
-      title: `Remove ${sourceDisplayName(source)}?`,
-      message:
-        "It will no longer be searched. Postings already found stay in your applications. You can add it back from the catalog.",
-      confirmLabel: "Remove",
-      tone: "danger",
+  function remove(ids: ReadonlySet<string>) {
+    const { kept, removed } = withoutSources(sourcesRef.current, ids);
+    if (removed.length === 0) return;
+    commit(kept);
+    setSelected(new Set());
+    if (editing && ids.has(editing)) setEditing(null);
+    toast.show({
+      kind: "info",
+      title:
+        removed.length === 1
+          ? `Removed ${sourceDisplayName(removed[0].source)}`
+          : `Removed ${removed.length} sources`,
+      timeoutMs: 10000,
+      action: {
+        label: "Undo",
+        onClick: () => commit(restoreRemoved(sourcesRef.current, removed)),
+      },
     });
-    if (ok) onChange(sources.filter((s) => s.id !== source.id));
   }
 
-  async function restore() {
+  function setEnabled(ids: ReadonlySet<string>, enabled: boolean) {
+    commit(sourcesRef.current.map((s) => (ids.has(s.id) ? { ...s, enabled } : s)));
+  }
+
+  function added(source: SourceConfig, close = true) {
+    append(source);
+    toast.success(`Added ${sourceDisplayName(source)}`);
+    if (close) setFlow(null);
+  }
+
+  function restore() {
     if (!catalog) {
       toast.error("Could not restore defaults", catalogError || "The catalog is still loading.");
       return;
     }
-    const ok = await confirm({
-      title: "Restore the default sources?",
-      message:
-        "Any of the Simplify internships, Simplify new grad and SpeedyApply lists you removed will be added back. Your other sources are untouched.",
-      confirmLabel: "Restore",
-    });
-    if (!ok) return;
-    const result = restoreDefaults(sources, catalog);
-    if (result.added) onChange(result.sources);
+    const before = new Set(sourcesRef.current.map((s) => s.id));
+    const result = restoreDefaults(sourcesRef.current, catalog);
+    if (result.added) {
+      commit(result.sources);
+      const ids = new Set(result.sources.filter((s) => !before.has(s.id)).map((s) => s.id));
+      toast.show({
+        kind: "info",
+        title: `Restored ${result.added} default source${result.added === 1 ? "" : "s"}`,
+        timeoutMs: 10000,
+        action: {
+          label: "Undo",
+          onClick: () => commit(withoutSources(sourcesRef.current, ids).kept),
+        },
+      });
+    }
     if (result.missing.length)
       toast.error("Some defaults are not in the catalog", result.missing.join(", "));
     else if (!result.added)
       toast.info("Nothing to restore", "All default sources are already there.");
   }
 
+  const searchNotice = (source: SourceConfig): string | undefined => {
+    if (source.kind !== "job_search" || providers.connected?.[providerOf(source)] !== false)
+      return undefined;
+    return `Connect ${PROVIDER_LABELS[providerOf(source)]} to run this search.`;
+  };
+
+  function renderRow(source: SourceConfig) {
+    return (
+      <SourceRow
+        key={source.id}
+        source={source}
+        run={status?.sources[source.id]}
+        selected={selectedIds.has(source.id)}
+        update={availableUpdate(source, catalog)}
+        notice={searchNotice(source)}
+        onSelect={(on) =>
+          setSelected((prev) => {
+            const next = new Set(prev);
+            if (on) next.add(source.id);
+            else next.delete(source.id);
+            return next;
+          })
+        }
+        onChange={(next) => update(source.id, next)}
+        onEdit={() => setEditing(source.id)}
+        onDuplicate={() => commit(duplicateSource(source, sourcesRef.current))}
+        onRemove={() => remove(new Set([source.id]))}
+      />
+    );
+  }
+
+  const lists = sources.filter((s) => groupOf(s.kind) === "lists");
+  const searches = sources.filter((s) => groupOf(s.kind) === "search");
+  const watchlists = sources.filter((s) => groupOf(s.kind) === "watchlists");
+  const recommended = recommendedEntries(catalog, sources, fields);
+  const showRecommended =
+    !!onFieldsChange && !dismissed && (fields.length === 0 || recommended.length > 0);
+
   return (
-    <section aria-label="Sources" className="space-y-4">
+    <section aria-label="Sources" className="space-y-5">
       <div className="flex flex-wrap items-center justify-between gap-3">
-        <p className="max-w-xl text-sm text-ink-muted">
-          Where the nightly run and <strong>Find jobs</strong> look for postings. Turn a source off
-          to skip it, or remove it for good.
-        </p>
-        <div className="flex flex-wrap gap-2">
-          <Button variant="secondary" onClick={() => void restore()}>
-            Restore defaults
-          </Button>
-          <Button variant="primary" onClick={() => setAdding(true)}>
-            Add source
-          </Button>
+        <div className="min-w-0">
+          <p className="text-sm font-medium" aria-live="polite">
+            {sourcesHeadline(sources, status?.last_run_at)}
+          </p>
+          <p className="max-w-xl text-sm text-ink-muted">
+            Where the nightly run and <strong>Find jobs</strong> look for postings. Turn a source
+            off to skip it, or remove it (you can undo).
+          </p>
+        </div>
+        <div className="flex items-center gap-2">
+          {sources.length > 0 && (
+            <label className="flex items-center gap-2 text-xs text-ink-muted">
+              <input
+                type="checkbox"
+                aria-label="Select all sources"
+                className="h-4 w-4 accent-[var(--color-accent)]"
+                checked={selectedIds.size === sources.length}
+                onChange={(e) =>
+                  setSelected(e.target.checked ? new Set(sources.map((s) => s.id)) : new Set())
+                }
+              />
+              Select all
+            </label>
+          )}
+          <RowActionsMenu
+            label="More source actions"
+            items={[
+              { label: "Restore defaults", action: restore },
+              ...(onFieldsChange
+                ? [
+                    {
+                      label: "Change fields",
+                      action: () => {
+                        setDismissed(false);
+                        writeDismissed(false);
+                        setPickingFields(true);
+                      },
+                    },
+                    {
+                      label: "Show recommendations",
+                      action: () => {
+                        setDismissed(false);
+                        writeDismissed(false);
+                      },
+                    },
+                  ]
+                : []),
+            ]}
+          />
         </div>
       </div>
 
-      {saveError && (
+      {saveError && !editingSource && (
         <p role="alert" className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">
           Your sources could not be saved: {saveError}
         </p>
       )}
 
-      {sources.length === 0 ? (
-        <EmptyState
-          title="No sources yet"
-          action={
-            <Button variant="primary" onClick={() => setAdding(true)}>
-              Add a source
-            </Button>
-          }
-        >
-          Nothing will be searched until you add one. Pick from the catalog, paste a GitHub job
-          list, or set up a keyword search.
-        </EmptyState>
-      ) : (
-        <ul className="space-y-3">
-          {sources.map((source) => (
-            <SourceRow
-              key={source.id}
-              source={source}
-              update={availableUpdate(source, catalog)}
-              open={editing === source.id}
-              onToggleOpen={() => setEditing(editing === source.id ? null : source.id)}
-              onChange={(next) => update(source.id, next)}
-              onRemove={() => void remove(source)}
-            />
-          ))}
-        </ul>
+      {(showRecommended || pickingFields) && onFieldsChange && (
+        <RecommendedStrip
+          fields={fields}
+          recommended={recommended}
+          picking={pickingFields}
+          onPicking={setPickingFields}
+          onFieldsChange={onFieldsChange}
+          onAdd={(entry) => added(sourceFromCatalog(entry, sourcesRef.current), false)}
+          onDismiss={() => {
+            setDismissed(true);
+            writeDismissed(true);
+            setPickingFields(false);
+          }}
+        />
       )}
 
-      {adding && (
-        <AddSourceDialog
+      {selectedIds.size > 0 && (
+        <div
+          role="toolbar"
+          aria-label="Selected sources"
+          className="flex flex-wrap items-center gap-2 rounded-lg border border-accent/40 bg-accent-soft/40 p-2 text-sm"
+        >
+          <span className="px-1 font-medium">{selectedIds.size} selected</span>
+          <Button size="sm" variant="secondary" onClick={() => setEnabled(selectedIds, true)}>
+            Turn on
+          </Button>
+          <Button size="sm" variant="secondary" onClick={() => setEnabled(selectedIds, false)}>
+            Turn off
+          </Button>
+          <Button size="sm" variant="secondary" onClick={() => remove(selectedIds)}>
+            Remove
+          </Button>
+          <Button size="sm" variant="ghost" onClick={() => setSelected(new Set())}>
+            Clear
+          </Button>
+        </div>
+      )}
+
+      <Group
+        id="lists"
+        title="Job lists"
+        explanation="Curated GitHub lists of internships and new-grad roles that are updated daily. Pick the categories you want from each."
+        action={
+          <Button size="sm" variant="secondary" onClick={() => setFlow({ type: "catalog" })}>
+            + Add from catalog
+          </Button>
+        }
+        empty="No job lists yet."
+        rows={lists.map(renderRow)}
+      />
+
+      <section aria-labelledby="sources-group-search" className="space-y-2">
+        <div>
+          <h3 id="sources-group-search" className="font-semibold">
+            Search engines
+          </h3>
+          <p className="text-sm text-ink-muted">
+            Keyword searches through Adzuna or USAJobs. Connect a free API key once, then add as
+            many searches as you like.
+          </p>
+        </div>
+        {(["adzuna", "usajobs"] as const).map((provider) => (
+          <ProviderBlock
+            key={provider}
+            provider={provider}
+            connected={providers.connected ? providers.connected[provider] : null}
+            onConnect={() => setConnecting(provider)}
+            onNew={() => setFlow({ type: "search", provider })}
+            rows={searches.filter((s) => providerOf(s) === provider).map(renderRow)}
+          />
+        ))}
+      </section>
+
+      <Group
+        id="watchlists"
+        title="Company watchlists"
+        explanation="Companies whose careers pages are read directly (Greenhouse, Lever, Ashby and more). The best way to catch finance and consulting roles."
+        action={
+          <Button size="sm" variant="secondary" onClick={() => setFlow({ type: "watchlist" })}>
+            + New watchlist
+          </Button>
+        }
+        empty="No watchlists yet."
+        rows={watchlists.map(renderRow)}
+      />
+
+      <PasteLink
+        sources={sources}
+        onReadme={(url, inspection) => setFlow({ type: "readme", url, inspection })}
+        onBoard={(board) =>
+          setFlow(
+            sourcesRef.current.some((s) => s.kind === "ats_board")
+              ? { type: "board", board }
+              : { type: "watchlist", board },
+          )
+        }
+      />
+
+      {flow?.type === "catalog" && (
+        <CatalogDialog
           sources={sources}
           catalog={catalog}
           catalogError={catalogError}
-          onAdd={(source) => onChange([...sources, source])}
-          onClose={() => setAdding(false)}
+          fields={fields}
+          onAdd={(source) => added(source, false)}
+          onClose={() => setFlow(null)}
+        />
+      )}
+      {flow?.type === "readme" && (
+        <ReadmeFlowDialog
+          sources={sources}
+          url={flow.url}
+          inspection={flow.inspection}
+          onAdd={added}
+          onClose={() => setFlow(null)}
+        />
+      )}
+      {flow?.type === "search" && (
+        <SearchFlowDialog
+          provider={flow.provider}
+          sources={sources}
+          connected={providers.connected ? providers.connected[flow.provider] : null}
+          onConnect={() => setConnecting(flow.provider)}
+          onAdd={added}
+          onClose={() => setFlow(null)}
+        />
+      )}
+      {flow?.type === "watchlist" && (
+        <WatchlistFlowDialog
+          sources={sources}
+          board={flow.board}
+          onAdd={added}
+          onClose={() => setFlow(null)}
+        />
+      )}
+      {flow?.type === "board" && (
+        <BoardTargetDialog
+          board={flow.board}
+          watchlists={watchlists}
+          onNew={() => setFlow({ type: "watchlist", board: flow.board })}
+          onAddTo={(id) => {
+            const target = sourcesRef.current.find((s) => s.id === id);
+            if (target) {
+              const { ats, slug, company } = flow.board;
+              update(id, {
+                ...target,
+                boards: addBoard(target.boards ?? [], { ats, slug, company }),
+              });
+              toast.success(`Added ${flow.board.company || flow.board.slug}`);
+            }
+            setFlow(null);
+          }}
+          onClose={() => setFlow(null)}
+        />
+      )}
+      {editingSource && (
+        <SourcePanel
+          source={editingSource}
+          saveState={saveState}
+          saveError={saveError}
+          connected={
+            editingSource.kind === "job_search" && providers.connected
+              ? providers.connected[providerOf(editingSource)]
+              : null
+          }
+          onConnect={() => setConnecting(providerOf(editingSource))}
+          onChange={(next) => update(editingSource.id, next)}
+          onRemove={() => remove(new Set([editingSource.id]))}
+          onClose={() => {
+            setEditing(null);
+            void onFlush?.();
+          }}
+        />
+      )}
+      {connecting && (
+        <ConnectDialog
+          provider={connecting}
+          savedKeys={providers.savedKeys}
+          onSaved={providers.refresh}
+          onClose={() => setConnecting(null)}
         />
       )}
     </section>
   );
 }
 
-function SourceRow({
-  source,
-  update,
-  open,
-  onToggleOpen,
-  onChange,
-  onRemove,
+/** A group's heading, one-line explanation and add button; an empty group keeps all three. */
+function Group({
+  id,
+  title,
+  explanation,
+  action,
+  empty,
+  rows,
 }: {
-  source: SourceConfig;
-  update: CatalogEntry | null;
-  open: boolean;
-  onToggleOpen: () => void;
-  onChange: (next: SourceConfig) => void;
-  onRemove: () => void;
+  id: string;
+  title: string;
+  explanation: string;
+  action: ReactNode;
+  empty: string;
+  rows: ReactNode[];
 }) {
-  const name = sourceDisplayName(source);
-  const [renaming, setRenaming] = useState(false);
-  const [draftName, setDraftName] = useState(name);
-  const [reviewing, setReviewing] = useState(false);
-
-  function commitName() {
-    setRenaming(false);
-    const next = draftName.trim();
-    if (next && next !== name) onChange({ ...source, name: next });
-    else setDraftName(name);
-  }
-
   return (
-    <li className="rounded-lg border border-line bg-panel p-3">
-      <div className="flex flex-wrap items-start gap-3">
-        <input
-          type="checkbox"
-          role="switch"
-          aria-label={`${name} on`}
-          aria-checked={source.enabled}
-          className="mt-1 h-4 w-4"
-          checked={source.enabled}
-          onChange={(e) => onChange({ ...source, enabled: e.target.checked })}
-        />
-        <div className="min-w-0 flex-1">
-          {renaming ? (
-            <input
-              autoFocus
-              aria-label={`Name for ${name}`}
-              className="field w-full max-w-sm text-sm"
-              value={draftName}
-              onChange={(e) => setDraftName(e.target.value)}
-              onBlur={commitName}
-              onKeyDown={(e) => {
-                if (e.key === "Enter") commitName();
-                if (e.key === "Escape") {
-                  setDraftName(name);
-                  setRenaming(false);
-                }
-              }}
-            />
-          ) : (
-            <p className="flex flex-wrap items-center gap-2 font-medium">
-              <span className={source.enabled ? "" : "text-ink-muted"}>{name}</span>
-              <button
-                type="button"
-                className="text-xs font-normal text-ink-muted underline hover:text-accent"
-                aria-label={`Rename ${name}`}
-                onClick={() => {
-                  setDraftName(name);
-                  setRenaming(true);
-                }}
-              >
-                Rename
-              </button>
-              {update && (
-                <span className="rounded-full bg-warn-soft px-2 py-0.5 text-micro font-semibold text-warn">
-                  Update available
-                </span>
-              )}
-            </p>
-          )}
-          <div className="mt-1 flex flex-wrap gap-1 text-micro text-ink-muted">
-            <span className="rounded-full bg-paper px-2 py-0.5">
-              {sourceKindLabel(source.kind)}
-            </span>
-            {isReadmeKind(source.kind) && source.categories.length > 0 && (
-              <span className="rounded-full bg-paper px-2 py-0.5">
-                {source.categories.length} categor{source.categories.length === 1 ? "y" : "ies"}
-              </span>
-            )}
-            {source.kind === "ats_board" && (
-              <span className="rounded-full bg-paper px-2 py-0.5">
-                {(source.boards ?? []).length} compan
-                {(source.boards ?? []).length === 1 ? "y" : "ies"}
-              </span>
-            )}
-          </div>
+    <section aria-labelledby={`sources-group-${id}`} className="space-y-2">
+      <div className="flex flex-wrap items-start justify-between gap-2">
+        <div className="min-w-0 max-w-xl">
+          <h3 id={`sources-group-${id}`} className="font-semibold">
+            {title}
+          </h3>
+          <p className="text-sm text-ink-muted">{explanation}</p>
         </div>
-        <div className="flex flex-wrap items-center gap-2">
-          <Button size="sm" variant="secondary" aria-expanded={open} onClick={onToggleOpen}>
-            {open ? "Done" : "Edit"}
-          </Button>
-          <Button size="sm" variant="ghost" aria-label={`Remove ${name}`} onClick={onRemove}>
-            Remove
-          </Button>
-        </div>
+        {action}
       </div>
-
-      {update && (
-        <div className="mt-2">
-          {reviewing ? (
-            <UpdateDiff
-              source={source}
-              entry={update}
-              onCancel={() => setReviewing(false)}
-              onApply={() => {
-                onChange(applyCatalogUpdate(source, update));
-                setReviewing(false);
-              }}
-            />
-          ) : (
-            <button
-              type="button"
-              className="text-xs text-accent underline"
-              onClick={() => setReviewing(true)}
-            >
-              Review update
-            </button>
-          )}
-        </div>
+      {rows.length === 0 ? (
+        <p className="rounded-lg border border-dashed border-line px-3 py-2 text-sm text-ink-muted">
+          {empty}
+        </p>
+      ) : (
+        <ul className="space-y-2">{rows}</ul>
       )}
-
-      {open && (
-        <div className="mt-2">
-          {source.kind === "ats_board" ? (
-            <WatchlistEditor source={source} onChange={onChange} />
-          ) : source.kind === "job_search" ? (
-            <JobSearchEditor source={source} onChange={onChange} />
-          ) : (
-            <CategoryPicker source={source} onChange={onChange} />
-          )}
-        </div>
-      )}
-      <div className="mt-2">
-        <SourceTest source={source} />
-      </div>
-    </li>
+    </section>
   );
 }
 
-function UpdateDiff({
-  source,
-  entry,
-  onApply,
-  onCancel,
+/** One search engine: whether it is connected, how to connect, and its searches. */
+function ProviderBlock({
+  provider,
+  connected,
+  onConnect,
+  onNew,
+  rows,
 }: {
-  source: SourceConfig;
-  entry: CatalogEntry;
-  onApply: () => void;
-  onCancel: () => void;
+  provider: SearchProvider;
+  connected: boolean | null;
+  onConnect: () => void;
+  onNew: () => void;
+  rows: ReactNode[];
 }) {
-  const diff = catalogDiff(source, entry);
-  const nothing = !diff.url && diff.added.length === 0 && diff.removed.length === 0;
+  const label = PROVIDER_LABELS[provider];
+  return (
+    <div role="group" aria-label={label} className="space-y-2 rounded-lg border border-line p-3">
+      <div className="flex flex-wrap items-center gap-2">
+        <h4 className="font-medium">{label}</h4>
+        <span
+          className={`text-xs ${connected ? "text-success" : connected === false ? "text-warn" : "text-ink-muted"}`}
+        >
+          {connected ? "● Connected" : connected === false ? "○ Not connected" : "Checking…"}
+        </span>
+        {connected !== null && (
+          <Button size="sm" variant={connected ? "ghost" : "secondary"} onClick={onConnect}>
+            {connected ? "Change keys" : "Connect"}
+          </Button>
+        )}
+        <Button className="ml-auto" size="sm" variant="secondary" onClick={onNew}>
+          + New {label} search
+        </Button>
+      </div>
+      {rows.length === 0 ? (
+        <p className="text-sm text-ink-muted">No {label} searches yet.</p>
+      ) : (
+        <ul className="space-y-2">{rows}</ul>
+      )}
+    </div>
+  );
+}
+
+/** Catalog lists tagged with the user's fields that they do not have yet, one click each. */
+function RecommendedStrip({
+  fields,
+  recommended,
+  picking,
+  onPicking,
+  onFieldsChange,
+  onAdd,
+  onDismiss,
+}: {
+  fields: SourceField[];
+  recommended: ReturnType<typeof recommendedEntries>;
+  picking: boolean;
+  onPicking: (on: boolean) => void;
+  onFieldsChange: (fields: SourceField[]) => void;
+  onAdd: (entry: ReturnType<typeof recommendedEntries>[number]) => void;
+  onDismiss: () => void;
+}) {
   return (
     <div
       role="region"
-      aria-label={`Update for ${sourceDisplayName(source)}`}
-      className="space-y-2 rounded-md border border-line bg-paper p-3 text-xs"
+      aria-label="Recommended for your fields"
+      className="space-y-2 rounded-lg border border-line bg-paper p-3 text-sm"
     >
-      <p className="font-medium">
-        Version {source.catalog_version || "?"} → {entry.version}
-        {entry.fields.length > 0 && (
-          <span className="ml-2 font-normal text-ink-muted">
-            {entry.fields.map((f) => FIELD_LABELS[f] ?? f).join(" · ")}
-          </span>
+      <div className="flex flex-wrap items-center gap-2">
+        <p className="font-medium">Recommended for your fields</p>
+        {fields.length > 0 && !picking && (
+          <Button size="sm" variant="ghost" onClick={() => onPicking(true)}>
+            Change fields
+          </Button>
         )}
-      </p>
-      {diff.url && (
-        <p className="break-all">
-          <span className="font-medium">Link:</span> <s className="text-danger">{diff.url.from}</s>{" "}
-          → <span className="text-accent">{diff.url.to}</span>
-        </p>
-      )}
-      {diff.added.length > 0 && <p className="text-accent">+ {diff.added.join(" · ")}</p>}
-      {diff.removed.length > 0 && <p className="text-danger">− {diff.removed.join(" · ")}</p>}
-      {nothing && <p className="text-ink-muted">Only the version number changes.</p>}
-      <div className="flex gap-2">
-        <Button size="sm" variant="primary" onClick={onApply}>
-          Update
-        </Button>
-        <Button size="sm" variant="ghost" onClick={onCancel}>
-          Not now
+        <Button
+          className="ml-auto"
+          size="sm"
+          variant="ghost"
+          aria-label="Dismiss recommendations"
+          onClick={onDismiss}
+        >
+          ×
         </Button>
       </div>
+      {(fields.length === 0 || picking) && (
+        <div className="space-y-2">
+          <p className="text-xs text-ink-muted">
+            {fields.length === 0
+              ? "Pick the kinds of jobs you want and we will suggest job lists for them."
+              : "Suggestions follow these fields."}
+          </p>
+          <div role="group" aria-label="Your fields" className="flex flex-wrap gap-1.5">
+            {SOURCE_FIELDS.map((field) => {
+              const on = fields.includes(field);
+              return (
+                <button
+                  key={field}
+                  type="button"
+                  aria-pressed={on}
+                  className={`rounded-full border px-2.5 py-0.5 text-xs ${on ? "border-accent bg-accent-soft text-accent" : "border-line text-ink-muted hover:border-accent"}`}
+                  onClick={() =>
+                    onFieldsChange(on ? fields.filter((f) => f !== field) : [...fields, field])
+                  }
+                >
+                  {FIELD_LABELS[field]}
+                </button>
+              );
+            })}
+          </div>
+          {picking && (
+            <Button size="sm" variant="secondary" onClick={() => onPicking(false)}>
+              Done
+            </Button>
+          )}
+        </div>
+      )}
+      {fields.length > 0 && recommended.length > 0 && (
+        <ul className="flex flex-wrap gap-2">
+          {recommended.map((entry) => (
+            <li key={entry.id}>
+              <Button
+                size="sm"
+                variant="secondary"
+                title={entry.description}
+                aria-label={`Add ${entry.name}`}
+                onClick={() => onAdd(entry)}
+              >
+                + {entry.name}
+              </Button>
+            </li>
+          ))}
+        </ul>
+      )}
     </div>
+  );
+}
+
+/** "Paste a link to any job list or careers page": a README first, then a careers page. */
+function PasteLink({
+  sources,
+  onReadme,
+  onBoard,
+}: {
+  sources: SourceConfig[];
+  onReadme: (url: string, inspection: KnownInspection) => void;
+  onBoard: (board: ResolvedBoard) => void;
+}) {
+  const [url, setUrl] = useState("");
+  const [busy, setBusy] = useState(false);
+  const [error, setError] = useState("");
+
+  async function submit() {
+    const link = url.trim();
+    if (!link) return;
+    const same = (a: string) => a.replace(/\/+$/, "") === link.replace(/\/+$/, "");
+    const dup = sources.find((s) => s.url && same(s.url));
+    if (dup) {
+      setError(`Already in your sources as ${sourceDisplayName(dup)}.`);
+      return;
+    }
+    setBusy(true);
+    setError("");
+    try {
+      let inspection = null;
+      try {
+        inspection = await inspectSource(link);
+      } catch {
+        /* not a README we can read; try it as a careers page */
+      }
+      if (inspection?.kind) {
+        onReadme(link, inspection as KnownInspection);
+        setUrl("");
+        return;
+      }
+      try {
+        onBoard(await resolveBoard({ url: link }));
+        setUrl("");
+      } catch (reason) {
+        setError(
+          `That link is not a job list or a careers page we can read. ${describe(reason).detail}`,
+        );
+      }
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  return (
+    <form
+      aria-label="Paste a link"
+      className="space-y-2 rounded-lg border border-line bg-panel p-3"
+      onSubmit={(e) => {
+        e.preventDefault();
+        void submit();
+      }}
+    >
+      <label htmlFor="sources-paste-link" className="text-sm font-medium">
+        Paste a link to any job list or careers page
+      </label>
+      <div className="flex flex-wrap gap-2">
+        <input
+          id="sources-paste-link"
+          className="field min-w-0 flex-1 text-sm"
+          placeholder="https://github.com/owner/repo or https://company.com/careers"
+          value={url}
+          onChange={(e) => setUrl(e.target.value)}
+        />
+        <Button type="submit" size="sm" variant="secondary" loading={busy} disabled={!url.trim()}>
+          Add
+        </Button>
+      </div>
+      {error && (
+        <p role="alert" className="text-xs text-danger">
+          {error}
+        </p>
+      )}
+    </form>
   );
 }

@@ -1,8 +1,7 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
-import * as api from "../../api";
 import type { SourceConfig } from "../../api";
 import { JobSearchEditor } from "./SourceEditors";
 
@@ -28,15 +27,7 @@ const defaultSource: SourceConfig = {
 };
 
 describe("JobSearchEditor", () => {
-  it("renders inputs for provider, query, location, and country", async () => {
-    vi.spyOn(api, "fetchSecrets").mockResolvedValue({
-      backend: "keyring",
-      secrets: [
-        { name: "ADZUNA_APP_ID", set: true, source: "saved" },
-        { name: "ADZUNA_APP_KEY", set: true, source: "saved" },
-      ],
-    });
-
+  it("renders inputs for query, location and country, with no key inputs", () => {
     const onChange = vi.fn();
     render(
       <MemoryRouter>
@@ -44,12 +35,12 @@ describe("JobSearchEditor", () => {
       </MemoryRouter>,
     );
 
-    expect((screen.getByLabelText("Job search provider") as HTMLSelectElement).value).toBe(
-      "adzuna",
-    );
+    expect(screen.getByText("Search engine:").parentElement!.textContent).toContain("Adzuna");
     expect(screen.getByText("python developer")).toBeTruthy();
     expect((screen.getByLabelText("Search location") as HTMLInputElement).value).toBe("Austin, TX");
     expect((screen.getByLabelText("Adzuna country code") as HTMLInputElement).value).toBe("us");
+    expect(screen.queryByLabelText("Adzuna app ID")).toBeNull();
+    expect(screen.queryByRole("alert")).toBeNull();
 
     const phrase = screen.getByLabelText("Search phrases", { selector: "input" });
     fireEvent.change(phrase, { target: { value: "golang engineer" } });
@@ -60,60 +51,31 @@ describe("JobSearchEditor", () => {
     });
   });
 
-  it("switches provider to usajobs and hides country input", async () => {
-    vi.spyOn(api, "fetchSecrets").mockResolvedValue({
-      backend: "keyring",
-      secrets: [
-        { name: "USAJOBS_API_KEY", set: true, source: "saved" },
-        { name: "USAJOBS_EMAIL", set: true, source: "saved" },
-      ],
-    });
-
-    const onChange = vi.fn();
-    const usajobsSource: SourceConfig = {
-      ...defaultSource,
-      provider: "usajobs",
-    };
-
+  it("hides the country for USAJobs", () => {
     render(
       <MemoryRouter>
-        <JobSearchEditor source={usajobsSource} onChange={onChange} />
+        <JobSearchEditor source={{ ...defaultSource, provider: "usajobs" }} onChange={vi.fn()} />
       </MemoryRouter>,
     );
-
-    expect((screen.getByLabelText("Job search provider") as HTMLSelectElement).value).toBe(
-      "usajobs",
-    );
+    expect(screen.getByText("Search engine:").parentElement!.textContent).toContain("USAJobs");
     expect(screen.queryByLabelText("Adzuna country code")).toBeNull();
   });
 
-  it("saves missing credentials inline", async () => {
-    vi.spyOn(api, "fetchSecrets").mockResolvedValue({
-      backend: "keyring",
-      secrets: [
-        { name: "ADZUNA_APP_ID", set: false, source: "none" },
-        { name: "ADZUNA_APP_KEY", set: false, source: "none" },
-      ],
-    });
-
+  it("points at the Connect dialog instead of asking for keys", () => {
+    const onConnect = vi.fn();
     render(
       <MemoryRouter>
-        <JobSearchEditor source={defaultSource} onChange={vi.fn()} />
+        <JobSearchEditor
+          source={defaultSource}
+          onChange={vi.fn()}
+          connected={false}
+          onConnect={onConnect}
+        />
       </MemoryRouter>,
     );
-
-    const save = vi.spyOn(api, "saveSecret").mockResolvedValue({
-      name: "ADZUNA_APP_ID",
-      set: true,
-      source: "saved",
-    });
-    const alert = await screen.findByRole("alert");
-    expect(alert.textContent).toContain("Missing credentials: ADZUNA_APP_ID, ADZUNA_APP_KEY");
-    fireEvent.change(screen.getByLabelText("Adzuna app ID"), { target: { value: "id1" } });
-    fireEvent.change(screen.getByLabelText("Adzuna app key"), { target: { value: "key1" } });
-    fireEvent.click(screen.getByRole("button", { name: "Save keys" }));
-    await waitFor(() => expect(save).toHaveBeenCalledTimes(2));
-    expect(save).toHaveBeenCalledWith("ADZUNA_APP_ID", "id1");
-    expect(save).toHaveBeenCalledWith("ADZUNA_APP_KEY", "key1");
+    expect(screen.getByRole("alert").textContent).toContain("Connect Adzuna first");
+    fireEvent.click(screen.getByRole("button", { name: "Connect Adzuna" }));
+    expect(onConnect).toHaveBeenCalled();
+    expect(screen.queryByLabelText("Adzuna app key")).toBeNull();
   });
 });

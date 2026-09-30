@@ -1,5 +1,11 @@
 import { describe, expect, it } from "vitest";
-import type { CatalogEntry, OnboardingState, SourceCatalog, SourceConfig } from "../api";
+import type {
+  ApplySettings,
+  CatalogEntry,
+  OnboardingState,
+  SourceCatalog,
+  SourceConfig,
+} from "../api";
 import {
   ONBOARDING_STEPS,
   needsWelcome,
@@ -10,6 +16,7 @@ import {
   sourcesFromCatalogPicks,
   suggestedEntries,
   stepIndex,
+  withSourceChoice,
 } from "./onboarding";
 import type { MasterResume } from "./resumeEdit";
 
@@ -151,6 +158,15 @@ describe("onboarding helpers", () => {
       "1 bullet has no skill tags; untagged bullets rank lower for every job.",
     ]);
     expect(reviewResume(null).entries).toBe(0);
+  });
+
+  it("stores the chosen job fields beside the sources", () => {
+    const apply = { sources: [], fields: ["swe"], max_age_days: 14 } as unknown as ApplySettings;
+    const out = withSourceChoice(apply, SOURCES, ["finance", "quant"]);
+    expect(out.sources).toBe(SOURCES);
+    expect(out.fields).toEqual(["finance", "quant"]);
+    expect(out.max_age_days).toBe(14);
+    expect(apply.fields).toEqual(["swe"]);
   });
 
   it("redirects only an unfinished profile, never from Settings", () => {

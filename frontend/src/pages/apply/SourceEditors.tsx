@@ -1,17 +1,20 @@
-import { useCallback, useEffect, useId, useState } from "react";
+import { useId, useState } from "react";
 import {
-  fetchSecrets,
   fetchSourceSections,
   fetchWatchlists,
   inspectSource,
   resolveBoard,
-  saveSecret,
   type BoardConfig,
-  type SecretState,
   type SourceConfig,
 } from "../../api";
 import { describe } from "../../lib/errors";
-import { joinPhrases, MAX_PHRASES, PROVIDER_KEYS, splitPhrases } from "../../lib/sources";
+import {
+  joinPhrases,
+  MAX_PHRASES,
+  PROVIDER_LABELS,
+  providerOf,
+  splitPhrases,
+} from "../../lib/sources";
 import { addBoard, ATS_LABELS, hasBoard, parseWords, removeBoard } from "../../lib/watchlist";
 
 /**
@@ -107,98 +110,6 @@ export function PhraseChips({
       {phrases.length === 0 && (
         <p className="mt-1 text-warn">Add at least one phrase; an empty search can't be saved.</p>
       )}
-    </div>
-  );
-}
-
-/**
- * The keys a keyword-search provider needs, entered right here and saved to the OS
- * keychain through `/api/secrets` (values are never read back).
- */
-export function ProviderKeys({ provider }: { provider: "adzuna" | "usajobs" }) {
-  const [secrets, setSecrets] = useState<SecretState[] | null>(null);
-  const [values, setValues] = useState<Record<string, string>>({});
-  const [saving, setSaving] = useState(false);
-  const [error, setError] = useState("");
-
-  const load = useCallback(() => {
-    fetchSecrets()
-      .then((res) => setSecrets(res.secrets))
-      .catch(() => setSecrets([]));
-  }, []);
-  useEffect(load, [load]);
-
-  if (secrets === null) return null;
-  const keys = PROVIDER_KEYS[provider];
-  const isSet = (name: string) => secrets.some((s) => s.name === name && s.set);
-  const missing = keys.filter((k) => !isSet(k.name));
-  if (missing.length === 0)
-    return (
-      <p className="text-xs text-ink-muted">
-        ✓ {provider === "adzuna" ? "Adzuna" : "USAJobs"} keys are saved.
-      </p>
-    );
-
-  async function save() {
-    setSaving(true);
-    setError("");
-    try {
-      for (const key of missing) {
-        const value = values[key.name]?.trim();
-        if (value) await saveSecret(key.name, value);
-      }
-      setValues({});
-      load();
-    } catch (reason) {
-      setError(describe(reason).detail);
-    } finally {
-      setSaving(false);
-    }
-  }
-
-  return (
-    <div
-      role="group"
-      aria-label={`${provider === "adzuna" ? "Adzuna" : "USAJobs"} keys`}
-      className="space-y-2 rounded-md bg-warn-soft p-2.5 text-xs"
-    >
-      <p role="alert" className="text-warn">
-        Missing credentials: {missing.map((k) => k.name).join(", ")}. Searches return nothing until
-        they are saved.{" "}
-        <a
-          className="text-accent underline"
-          href={
-            provider === "adzuna"
-              ? "https://developer.adzuna.com/signup"
-              : "https://developer.usajobs.gov/apirequest/"
-          }
-          target="_blank"
-          rel="noreferrer"
-        >
-          Get a free key
-        </a>
-      </p>
-      {missing.map((key) => (
-        <label key={key.name} className="block">
-          <span className="font-medium">{key.label}</span>
-          <input
-            className="field mt-1 w-full text-sm"
-            type={key.name.endsWith("EMAIL") ? "email" : "password"}
-            autoComplete="off"
-            value={values[key.name] ?? ""}
-            onChange={(e) => setValues((prev) => ({ ...prev, [key.name]: e.target.value }))}
-          />
-        </label>
-      ))}
-      <button
-        type="button"
-        className="rounded-md border border-line bg-panel px-3 py-1 font-medium disabled:opacity-50"
-        disabled={saving || !missing.some((k) => values[k.name]?.trim())}
-        onClick={() => void save()}
-      >
-        {saving ? "Saving…" : "Save keys"}
-      </button>
-      {error && <p className="text-danger">{error}</p>}
     </div>
   );
 }
@@ -496,55 +407,53 @@ export function WatchlistEditor({
 
 /**
  * A keyword job-search source (`job_search` source): queries Adzuna or USAJobs by
- * phrase (each searched separately), location, and recency. Missing keys are entered inline.
+ * phrase (each searched separately), location, and recency. The provider is fixed by
+ * where the search was created; its API keys are entered once in the Connect dialog, so
+ * this editor only points there (`onConnect`) when they are missing.
  */
 export function JobSearchEditor({
   source,
   onChange,
+  connected = true,
+  onConnect,
 }: {
   source: SourceConfig;
   onChange: (next: SourceConfig) => void;
+  /** False when the provider's keys are not saved yet; null while that is being checked. */
+  connected?: boolean | null;
+  onConnect?: () => void;
 }) {
-  const provider = source.provider ?? "adzuna";
+  const provider = providerOf(source);
+  const label = PROVIDER_LABELS[provider];
 
   return (
     <div className="mt-2 space-y-3 rounded-md border border-line p-3">
-      <ProviderKeys key={provider} provider={provider} />
+      {connected === false && (
+        <p role="alert" className="rounded-md bg-warn-soft p-2.5 text-xs text-warn">
+          Connect {label} first: searches return nothing until its keys are saved.{" "}
+          {onConnect && (
+            <button type="button" className="font-medium text-accent underline" onClick={onConnect}>
+              Connect {label}
+            </button>
+          )}
+        </p>
+      )}
 
-      <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+      <p className="text-xs">
+        <span className="font-medium">Search engine:</span> {label}
+      </p>
+      {provider === "adzuna" && (
         <label className="block text-xs">
-          <span className="font-medium">Provider</span>
-          <select
-            aria-label="Job search provider"
-            className="field mt-1 text-sm w-full"
-            value={provider}
-            onChange={(e) =>
-              onChange({
-                ...source,
-                provider: e.target.value as "adzuna" | "usajobs",
-              })
-            }
-          >
-            <option value="adzuna">Adzuna</option>
-            <option value="usajobs">USAJobs</option>
-          </select>
+          <span className="font-medium">Country code</span>
+          <input
+            aria-label="Adzuna country code"
+            className="field mt-1 w-full text-sm"
+            placeholder="us"
+            value={source.country ?? "us"}
+            onChange={(e) => onChange({ ...source, country: e.target.value.toLowerCase().trim() })}
+          />
         </label>
-
-        {provider === "adzuna" && (
-          <label className="block text-xs">
-            <span className="font-medium">Country code</span>
-            <input
-              aria-label="Adzuna country code"
-              className="field mt-1 text-sm w-full"
-              placeholder="us"
-              value={source.country ?? "us"}
-              onChange={(e) =>
-                onChange({ ...source, country: e.target.value.toLowerCase().trim() })
-              }
-            />
-          </label>
-        )}
-      </div>
+      )}
 
       <PhraseChips
         query={source.query ?? ""}

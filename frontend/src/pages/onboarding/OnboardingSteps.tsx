@@ -21,6 +21,7 @@ import {
   sourcesForField,
   sourcesFromCatalogPicks,
   suggestedEntries,
+  withSourceChoice,
 } from "../../lib/onboarding";
 import { FIELD_LABELS, SOURCE_FIELDS } from "../../lib/sources";
 import { useToast } from "../../lib/toast";
@@ -88,7 +89,14 @@ export function FieldStep({
                 picked,
               )
             : sourcesForField(settings.apply.sources, picked);
-        setSettings({ ...settings, apply: { ...settings.apply, sources } });
+        setSettings({
+          ...settings,
+          apply: withSourceChoice(
+            settings.apply,
+            sources,
+            catalog && !catalogFailed ? jobFields : sourceFieldsFor(picked),
+          ),
+        });
       } catch (err) {
         toast.error("Could not apply your field", describe(err).detail);
         return;
