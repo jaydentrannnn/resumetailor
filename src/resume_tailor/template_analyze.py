@@ -1693,142 +1693,248 @@ def _analyze_document(
 
     `overrides` (paragraph id -> forced kind, or `None` for "not a section") lets the
     wizard's remap step correct a specific heading's classification without touching
-    any other paragraph's — see the "user-confirmed" branch below. Every heuristic gate
-    (fingerprint corroboration, has-tab exclusion, `_introduces_content`, …) is a
-    signal for *guessing*; a user override is not a guess, so it bypasses all of them.
+    any other paragraph's — see the "user-confirmed" branch in
+    `_Analyzer._heading_candidate`. Every heuristic gate (fingerprint corroboration,
+    has-tab exclusion, `_introduces_content`, …) is a signal for *guessing*; a user
+    override is not a guess, so it bypasses all of them.
     """
-    issues: list[Issue] = []
-    paras = _load_paras(doc)
-    overrides = overrides or {}
+    return _Analyzer(doc, digest, overrides).run()
 
-    # Computed early (usually this sits right before the heading-detection loop below)
-    # specifically so `classify_table_layout` can use the same corroboration signal:
-    # a short all-caps paragraph that merely looks heading-shaped (a state abbreviation
-    # like "CA" in a location cell, say) must not be mistaken for a sidebar heading
-    # just because nothing else disqualifies it — the fingerprint check is what tells
-    # the two apart, since only real headings recur with matching formatting.
-    heading_fp_classes = _heading_classes(paras)
 
-    table_shape: TableShape | None = None
-    if _document_has_tables(doc):
-        table_shape, table_issues = classify_table_layout(doc, paras, heading_fp_classes)
-        issues.extend(table_issues)
-    if _document_has_textboxes(doc):
-        issues.append(
-            Issue(
-                code="textboxes",
-                message=(
-                    "Document puts text inside text boxes, which usually means a "
-                    "multi-column or sidebar layout. Only single-column body text is supported."
-                ),
-                blocking=True,
+class _Analyzer:
+    """One `_analyze_document` pass.
+
+    Each step reads the document's paragraphs and appends to the shared `issues` and
+    `field_candidates` lists, in document-analysis order (the order the wizard shows).
+    """
+
+    def __init__(self, doc, digest: str, overrides: dict[int, str | None] | None) -> None:
+        self.doc = doc
+        self.digest = digest
+        self.issues: list[Issue] = []
+        self.paras = _load_paras(doc)
+        self.overrides = overrides or {}
+        self.field_candidates: list[FieldCandidate] = []
+
+    def run(self) -> AnalyzeResult:
+        paras = self.paras
+        # Computed early (usually this sits right before the heading-detection loop below)
+        # specifically so `classify_table_layout` can use the same corroboration signal:
+        # a short all-caps paragraph that merely looks heading-shaped (a state abbreviation
+        # like "CA" in a location cell, say) must not be mistaken for a sidebar heading
+        # just because nothing else disqualifies it — the fingerprint check is what tells
+        # the two apart, since only real headings recur with matching formatting.
+        self.heading_fp_classes = _heading_classes(paras)
+        self.table_shape = self._check_document_shape()
+        paragraph_infos = [
+            ParagraphInfo(
+                id=p.id,
+                text=p.text,
+                is_bullet=p.is_bullet,
+                is_heading_candidate=bool(_classify_heading(p.text)[0]),
+                has_tab=p.has_tab,
+                has_hyperlink=p.has_hyperlink,
+                run_count=len(p.runs),
+                preview=(p.text[:120] + ("…" if len(p.text) > 120 else "")),
             )
+            for p in paras
+        ]
+
+        self.section_candidates, self.by_kind = _resolve_section_bodies(
+            self._detect_headings(), paras
         )
-    elif _document_has_drawings(doc):
-        issues.append(
-            Issue(
-                code="decorative_drawing",
-                message=(
-                    "Images, icons and lines are kept exactly as they are; only the text "
-                    "around them is tailored."
-                ),
-                blocking=False,
+        # One representative heading per kind — the first found, in document order —
+        # whose `heading_paragraph_id`/`heading_text` become that kind's mapping fields
+        # (what `template_build` anchors the kind's tagged prototype on). `combined_body`
+        # pools every same-kind heading's body for prototype/bullet selection, so the
+        # best entry can come from any of them, not only the first.
+        self.section_by_key: dict[str, SectionCandidate] = {
+            key: candidates[0] for key, candidates in self.by_kind.items()
+        }
+        self.combined_body: dict[str, list[_Para]] = {
+            key: [p for sec in candidates for p in paras[sec.body_start : sec.body_end]]
+            for key, candidates in self.by_kind.items()
+        }
+        self._check_experience_present()
+        self._detect_contact()
+        self._check_manual_bullets()
+
+        found = self.section_by_key
+        self.enabled = EnabledSections(
+            education="education" in found,
+            experience="experience" in found,
+            projects="projects" in found,
+            skills="skills" in found,
+            list_section="list" in found,
+        )
+        self.experience_mapping = self._map_experience() if "experience" in found else None
+        self.education_mapping = self._map_education() if "education" in found else None
+        self.projects_mapping = self._map_projects() if "projects" in found else None
+        self.skills_mapping = self._map_skills() if "skills" in found else None
+        self.list_mapping = self._map_list() if "list" in found else None
+        for key in ("education", "projects", "skills"):
+            if key not in found:
+                self.issues.append(
+                    Issue(
+                        code=f"omit_{key}",
+                        message=(
+                            f"No {key.title()} section detected; it will be omitted from the "
+                            "template."
+                        ),
+                        blocking=False,
+                    )
+                )
+
+        blockers = [i for i in self.issues if i.blocking]
+        suggested = None if blockers else self._suggest_profile()
+        return AnalyzeResult(
+            source_sha256=self.digest,
+            paragraphs=paragraph_infos,
+            sections=self.section_candidates,
+            suggested_profile=suggested,
+            field_candidates=self.field_candidates,
+            issues=self.issues,
+            ready=suggested is not None and not blockers,
+        )
+
+    # -- whole-document checks ---------------------------------------------------------
+
+    def _check_document_shape(self) -> TableShape | None:
+        doc, issues = self.doc, self.issues
+        table_shape: TableShape | None = None
+        if _document_has_tables(doc):
+            table_shape, table_issues = classify_table_layout(
+                doc, self.paras, self.heading_fp_classes
             )
-        )
-
-    if len(paras) < 2:
-        issues.append(
-            Issue(
-                code="too_short",
-                message="Document needs at least a name line and a contact line.",
-                blocking=True,
-            )
-        )
-
-    paragraph_infos = [
-        ParagraphInfo(
-            id=p.id,
-            text=p.text,
-            is_bullet=p.is_bullet,
-            is_heading_candidate=bool(_classify_heading(p.text)[0]),
-            has_tab=p.has_tab,
-            has_hyperlink=p.has_hyperlink,
-            run_count=len(p.runs),
-            preview=(p.text[:120] + ("…" if len(p.text) > 120 else "")),
-        )
-        for p in paras
-    ]
-
-    # Detect every section heading in the document — alias-matched or structurally
-    # inferred — without deduplicating by kind. A resume may have any number of
-    # experience-shaped sections (WORK EXPERIENCE, LEADERSHIP EXPERIENCE, OTHER
-    # ACTIVITIES, …); each becomes its own candidate, and the code below pools same-kind
-    # candidates together when picking that kind's prototype entry.
-    # Structure-first corroboration (see `_heading_classes`'s docstring): a formatting
-    # signature shared by several short, content-introducing paragraphs is what a
-    # resume's own section headings typically look like. `heading_fp_classes` was
-    # already computed above (`classify_table_layout` needs it too) — the alias table
-    # below only *names* a heading's kind; this is what actually decides whether the
-    # structural fallback gets to guess at all, and downgrades a merely-plausible text
-    # match that nothing else in the document agrees with. Empty when nothing qualifies
-    # (too few candidates, or no repeated formatting) — every use below degrades to
-    # today's text-only behavior in that case, exactly as if this feature did not exist.
-
-    raw_headings: list[SectionCandidate] = []
-    for p in paras:
-        if p.is_bullet or not p.text.strip() or _is_chrome(p.text):
-            continue
-        if p.id in overrides:
-            forced = overrides[p.id]
-            if forced is None:
-                continue  # user confirmed: not a section, regardless of the heuristics
-            raw_headings.append(
-                SectionCandidate(
-                    key=forced,
-                    heading_paragraph_id=p.id,
-                    heading_text=p.text.strip(),
-                    body_start=p.id + 1,
-                    body_end=len(paras),
-                    confidence=1.0,
-                    aliases_matched="user-confirmed",
+            issues.extend(table_issues)
+        if _document_has_textboxes(doc):
+            issues.append(
+                Issue(
+                    code="textboxes",
+                    message=(
+                        "Document puts text inside text boxes, which usually means a "
+                        "multi-column or sidebar layout. Only single-column body text is "
+                        "supported."
+                    ),
+                    blocking=True,
                 )
             )
-            continue
+        elif _document_has_drawings(doc):
+            issues.append(
+                Issue(
+                    code="decorative_drawing",
+                    message=(
+                        "Images, icons and lines are kept exactly as they are; only the text "
+                        "around them is tailored."
+                    ),
+                    blocking=False,
+                )
+            )
+        if len(self.paras) < 2:
+            issues.append(
+                Issue(
+                    code="too_short",
+                    message="Document needs at least a name line and a contact line.",
+                    blocking=True,
+                )
+            )
+        return table_shape
+
+    def _check_experience_present(self) -> None:
+        if "experience" in self.section_by_key:
+            return
+        # Blocking only when nothing else can carry entries: a first-year student's
+        # Education + Projects (or Activities) resume is a complete template.
+        has_other_entries = bool({"projects", "list"} & self.section_by_key.keys())
+        self.issues.append(
+            Issue(
+                code="missing_experience",
+                message=(
+                    "No Experience section heading found. The template will show your "
+                    "other sections; add an Experience heading in Word to include jobs."
+                    if has_other_entries
+                    else "Could not find an Experience / Work Experience section heading."
+                ),
+                blocking=not has_other_entries,
+            )
+        )
+
+    def _check_manual_bullets(self) -> None:
+        # Manual bullet glyph warning (non-blocking unless no native bullets in experience).
+        for p in self.paras:
+            stripped = p.text.lstrip()
+            if stripped.startswith(("•", "●", "○", "-", "–", "—")) and not p.is_bullet:
+                self.issues.append(
+                    Issue(
+                        code="manual_bullets",
+                        message=(
+                            f"Paragraph {p.id} looks like a bullet but is not a Word list "
+                            "item. Convert lists to real bullets in Word/Google Docs before "
+                            "uploading."
+                        ),
+                        blocking=False,
+                    )
+                )
+                return
+
+    # -- headings ----------------------------------------------------------------------
+
+    def _detect_headings(self) -> list[SectionCandidate]:
+        """Every section heading in the document, in order.
+
+        Alias-matched or structurally inferred, without deduplicating by kind. A resume
+        may have any number of experience-shaped sections (WORK EXPERIENCE, LEADERSHIP
+        EXPERIENCE, OTHER ACTIVITIES, …); each becomes its own candidate, and `run` pools
+        same-kind candidates together when picking that kind's prototype entry.
+
+        Structure-first corroboration (see `_heading_classes`'s docstring): a formatting
+        signature shared by several short, content-introducing paragraphs is what a
+        resume's own section headings typically look like. The alias table only *names* a
+        heading's kind; `heading_fp_classes` is what actually decides whether the
+        structural fallback gets to guess at all, and downgrades a merely-plausible text
+        match that nothing else in the document agrees with. Empty when nothing qualifies
+        (too few candidates, or no repeated formatting) — every use degrades to text-only
+        behavior in that case, exactly as if the feature did not exist.
+        """
+        raw_headings: list[SectionCandidate] = []
+        for p in self.paras:
+            if p.is_bullet or not p.text.strip() or _is_chrome(p.text):
+                continue
+            candidate = self._heading_candidate(p)
+            if candidate is not None:
+                raw_headings.append(candidate)
+        raw_headings.sort(key=lambda s: s.heading_paragraph_id)
+        return raw_headings
+
+    def _heading_candidate(self, p: _Para) -> SectionCandidate | None:
+        paras, heading_fp_classes = self.paras, self.heading_fp_classes
+        if p.id in self.overrides:
+            forced = self.overrides[p.id]
+            if forced is None:
+                return None  # user confirmed: not a section, regardless of the heuristics
+            return SectionCandidate(
+                key=forced,
+                heading_paragraph_id=p.id,
+                heading_text=p.text.strip(),
+                body_start=p.id + 1,
+                body_end=len(paras),
+                confidence=1.0,
+                aliases_matched="user-confirmed",
+            )
         key, conf, alias = _classify_heading(p.text)
         # `p.id >= 2` keeps the structural fallback off the name/contact lines — both are
         # short, and a name in particular is very often all-caps or Title Case, which
         # would otherwise misclassify paragraph 0 as a heading. Paragraphs 0/1 are name
         # and contact everywhere else in this codebase (`build_name`/`build_contact`
-        # legacy mode, `content_paras[0]`/`[1]` below); an alias match is unaffected by
-        # this guard since a name or contact line never happens to equal a known alias.
+        # legacy mode, `content_paras[0]`/`[1]`); an alias match is unaffected by this
+        # guard since a name or contact line never happens to equal a known alias.
         if key is None and p.id >= 2 and _looks_like_heading(p.text):
-            # Structural fallback: no alias matched, but this looks like a heading. A
-            # user can name a section anything, so no fixed alias list can be complete.
-            #
-            # Two hard gates, both required, neither previously enforced despite this
-            # function's own docstring claiming the first one: the line must actually
-            # introduce something (a bullet, or a tab-aligned entry header) before the
-            # next heading-shaped line — a "PROFESSIONAL SUMMARY" followed only by a
-            # sentence of prose introduces nothing and is not a section. And when the
-            # document has a detectable heading-formatting class at all, an unaliased
-            # candidate must belong to it — this is the "guess" path with zero other
-            # evidence, so structural corroboration is required here, not just
-            # preferred.
-            if not _introduces_content(p, paras, frozenset(heading_fp_classes)):
-                continue
-            if heading_fp_classes and _fingerprint(p) not in heading_fp_classes:
-                continue
-            # Default to "experience" — the common case for an unnamed
-            # achievements-with-employer section — unless it is immediately followed by
-            # bullets with no entry header, which is a plain list-shaped section
-            # (certifications, awards, …).
-            next_content = next(
-                (q for q in paras if q.id > p.id and not _is_chrome(q.text)), None
-            )
-            key = "list" if next_content is not None and next_content.is_bullet else "experience"
+            key = self._structural_heading_kind(p)
+            if key is None:
+                return None
             conf, alias = 0.4, "structural"
         if key is None:
-            continue
+            return None
         uncorroborated = bool(heading_fp_classes) and _fingerprint(p) not in heading_fp_classes
         # The <=0.6-confidence tiers — a keyword appearing anywhere in the lowercased
         # text, with no case requirement at all — are weak enough that an ordinary
@@ -1846,10 +1952,10 @@ def _analyze_document(
         # header line. Exact alias matches (conf == 1.0, e.g. literally "EDUCATION")
         # are trusted on text alone regardless of position or formatting.
         if conf < 1.0 and (_has_tab_like(p) or _immediately_follows_entry_header(p, paras)):
-            continue
+            return None
         if conf < 1.0 and uncorroborated:
             conf = min(conf, 0.4)
-            issues.append(
+            self.issues.append(
                 Issue(
                     code="heading_formatting_mismatch",
                     message=(
@@ -1861,23 +1967,534 @@ def _analyze_document(
                     blocking=False,
                 )
             )
-        raw_headings.append(
-            SectionCandidate(
-                key=key,
-                heading_paragraph_id=p.id,
-                heading_text=p.text.strip(),
-                body_start=p.id + 1,
-                body_end=len(paras),
-                confidence=conf,
-                aliases_matched=alias,
+        return SectionCandidate(
+            key=key,
+            heading_paragraph_id=p.id,
+            heading_text=p.text.strip(),
+            body_start=p.id + 1,
+            body_end=len(self.paras),
+            confidence=conf,
+            aliases_matched=alias,
+        )
+
+    def _structural_heading_kind(self, p: _Para) -> str | None:
+        """The kind of an unaliased heading-shaped line, or None when it is not a heading.
+
+        No alias matched, but this looks like a heading. A user can name a section
+        anything, so no fixed alias list can be complete.
+
+        Two hard gates, both required: the line must actually introduce something (a
+        bullet, or a tab-aligned entry header) before the next heading-shaped line — a
+        "PROFESSIONAL SUMMARY" followed only by a sentence of prose introduces nothing and
+        is not a section. And when the document has a detectable heading-formatting class
+        at all, an unaliased candidate must belong to it — this is the "guess" path with
+        zero other evidence, so structural corroboration is required here, not just
+        preferred.
+        """
+        paras, heading_fp_classes = self.paras, self.heading_fp_classes
+        if not _introduces_content(p, paras, frozenset(heading_fp_classes)):
+            return None
+        if heading_fp_classes and _fingerprint(p) not in heading_fp_classes:
+            return None
+        # Default to "experience" — the common case for an unnamed achievements-with-
+        # employer section — unless it is immediately followed by bullets with no entry
+        # header, which is a plain list-shaped section (certifications, awards, …).
+        next_content = next(
+            (q for q in paras if q.id > p.id and not _is_chrome(q.text)), None
+        )
+        return "list" if next_content is not None and next_content.is_bullet else "experience"
+
+    # -- name and contact --------------------------------------------------------------
+
+    def _detect_contact(self) -> None:
+        issues, paras = self.issues, self.paras
+        # Name + contact: everything above the first detected heading, classified by regex
+        # — see `_detect_name_and_contact` for why "first two non-heading paragraphs" isn't
+        # enough once a table layout spreads the contact block across several paragraphs.
+        first_heading_id = (
+            self.section_candidates[0].heading_paragraph_id if self.section_candidates else None
+        )
+        self.name_id, self.contact_para, self.contact_slots, unmapped_contact_paras = (
+            _detect_name_and_contact(paras, first_heading_id)
+        )
+
+        # A name/contact block in the page header (Insert → Header) is kept as uploaded.
+        body_before_heading = first_heading_id is None or any(
+            p.text.strip() and not p.is_bullet for p in paras if p.id < first_heading_id
+        )
+        header_text = header_identity_text(self.doc)
+        self.contact_in_header = (
+            self.contact_para is None
+            and not self.contact_slots
+            and bool(_EMAIL_RE.search(header_text) or _PHONE_RE.search(header_text))
+        )
+        self.name_in_header = self.contact_in_header and not body_before_heading
+        if self.contact_in_header:
+            issues.append(
+                Issue(
+                    code="contact_in_header",
+                    message=(
+                        "Your name and contact details are in the page header. They'll be "
+                        "kept exactly as they are and won't change when you tailor."
+                        if self.name_in_header
+                        else "Your contact details are in the page header. They'll be kept "
+                        "exactly as they are and won't change when you tailor."
+                    ),
+                    blocking=False,
+                )
+            )
+        elif self.contact_para is None and not self.contact_slots:
+            issues.append(
+                Issue(
+                    code="missing_contact",
+                    message="Could not find a contact line after the name.",
+                    blocking=True,
+                )
+            )
+        for p in unmapped_contact_paras:
+            issues.append(
+                Issue(
+                    code="contact_unmapped_paragraph",
+                    message=(
+                        f"{p.text.strip()!r} (paragraph {p.id}) is part of the contact "
+                        "block but doesn't look like an email, phone, location, or "
+                        "profile link. It will stay a literal in the template."
+                    ),
+                    blocking=False,
+                )
+            )
+
+    # -- per-kind prototype mapping ----------------------------------------------------
+
+    def _add_consistency_issue(
+        self, proto: list[_Para], roles: dict[str, int | None], label: str
+    ) -> None:
+        consistency_issue = _prototype_consistency_issue(proto, roles, label)
+        if consistency_issue is not None:
+            self.issues.append(consistency_issue)
+
+    def _date_issues(
+        self,
+        field_majority: dict[str, bool],
+        field_confidence: dict[str, float],
+        date_field: str,
+        *,
+        code: str,
+        noun: str,
+        lost: str,
+    ) -> None:
+        if not field_majority.get(date_field, True):
+            self.issues.append(
+                Issue(
+                    code=f"{code}_dates_not_detected",
+                    message=(
+                        f"No {noun} entry's header has a detected date. Every "
+                        f"rendered {lost} — map the date span "
+                        "manually or confirm the header format."
+                    ),
+                    blocking=True,
+                )
+            )
+        elif field_confidence.get(date_field, 1.0) < 1.0:
+            self.issues.append(
+                Issue(
+                    code=f"{code}_dates_partial",
+                    message=(
+                        f"Only {field_confidence[date_field]:.0%} of {noun} "
+                        "entries have a detected date; the rest will render "
+                        "without one."
+                    ),
+                    blocking=False,
+                )
+            )
+
+    def _map_experience(self) -> ExperienceMapping | None:
+        issues = self.issues
+        sec = self.section_by_key["experience"]
+        body = self.combined_body["experience"]
+        entries = _split_entries(body)
+        if not entries:
+            issues.append(
+                Issue(
+                    code="empty_experience",
+                    message="Experience section has no entries to use as a prototype.",
+                    blocking=True,
+                )
+            )
+            return None
+        # 4d: reconcile field presence across every entry's own header before picking a
+        # prototype, so an outlier entry — one that scores well on `_exp_score` (more
+        # runs, a title line) but happens to lack a field most other entries have — can
+        # never become the prototype and silently lose that field for the whole section.
+        candidate_entries, field_majority, field_confidence = _reconcile_header_fields(
+            entries, primary="company", secondary="location", date_field="dates"
+        )
+
+        proto = max(candidate_entries, key=_exp_score)
+        header_para = proto[0]
+        header, _hcands = _entry_header_fields(
+            proto, primary="company", secondary="location", date_field="dates"
+        )
+        self.field_candidates.extend(
+            _section_field_candidates(
+                self.paras,
+                self.by_kind["experience"],
+                primary="company",
+                secondary="location",
+                date_field="dates",
+                pick=lambda entries: max(entries, key=_exp_score),
+                include_title=True,
             )
         )
-    raw_headings.sort(key=lambda s: s.heading_paragraph_id)
+        self._date_issues(
+            field_majority, field_confidence, "dates",
+            code="experience", noun="experience", lost="job would lose its dates",
+        )
+        proto_main = _entry_main_paragraphs(proto)
+        titles = [x for x in proto_main[1:] if not x.is_bullet and x.text.strip()]
+        bullets = [x for x in proto[1:] if x.is_bullet]
+        if not bullets:
+            # Fall back to any bullet in the section.
+            bullets = [x for x in body if x.is_bullet]
+        if not bullets:
+            issues.append(
+                Issue(
+                    code="no_experience_bullets",
+                    message=(
+                        "Experience section has no Word list bullets. "
+                        "Entries need real list formatting."
+                    ),
+                    blocking=True,
+                )
+            )
+            return None
+        title_span, title_pid = self._experience_title(titles)
+        mapping = ExperienceMapping(
+            heading_paragraph_id=sec.heading_paragraph_id,
+            heading_text=sec.heading_text,
+            prototype_entry_start=header_para.id,
+            header=header,
+            title=title_span,
+            title_paragraph_id=title_pid,
+            bullet_paragraph_id=bullets[0].id,
+        )
+        self._add_consistency_issue(
+            proto,
+            {"header": header_para.id, "title": title_pid, "bullet": bullets[0].id},
+            "Experience",
+        )
+        return mapping
 
-    # Resolve body_end from the next heading OF ANY KIND, so an embedded same-kind
-    # sub-heading (e.g. "LEADERSHIP EXPERIENCE" after "WORK EXPERIENCE") is never
-    # mis-read as an entry header by `_split_entries` — each heading's slice already
-    # excludes every other heading paragraph by construction.
+    def _experience_title(self, titles: list[_Para]) -> tuple[OptionalSpan, int | None]:
+        if titles:
+            t = titles[0]
+            return OptionalSpan(present=True, span=_span(t.id, 0, len(t.text.strip()))), t.id
+        self.issues.append(
+            Issue(
+                code="inline_title",
+                message=(
+                    "No separate job-title paragraph found under the experience "
+                    "header. Map a title field or ensure each job has a title line."
+                ),
+                blocking=True,
+            )
+        )
+        return OptionalSpan(present=False), None
+
+    def _map_education(self) -> EducationMapping | None:
+        issues = self.issues
+        sec = self.section_by_key["education"]
+        body = self.combined_body["education"]
+        entries = _split_entries(body)
+        if not entries:
+            issues.append(
+                Issue(
+                    code="empty_education",
+                    message="Education heading found but the section has no entries.",
+                    blocking=False,
+                )
+            )
+            self.enabled = self.enabled.model_copy(update={"education": False})
+            return None
+        proto = max(entries, key=_edu_score)
+        header, _hcands = _entry_header_fields(
+            proto, primary="school", secondary="location", date_field="dates"
+        )
+        self.field_candidates.extend(
+            _section_field_candidates(
+                self.paras,
+                self.by_kind["education"],
+                primary="school",
+                secondary="location",
+                date_field="dates",
+                pick=lambda entries: max(entries, key=_edu_score),
+            )
+        )
+        bullets, plain_fallback = _education_bullets(proto, body)
+        if not bullets:
+            issues.append(
+                Issue(
+                    code="no_education_bullets",
+                    message="Education section has no Word list bullets for degree/details.",
+                    blocking=True,
+                )
+            )
+            return None
+        if plain_fallback:
+            issues.append(
+                Issue(
+                    code="education_bullets_not_list",
+                    message=(
+                        "Education degree/detail line is not a Word list bullet; "
+                        "it will be converted to one in the tagged template."
+                    ),
+                    blocking=False,
+                )
+            )
+        degree = bullets[0]
+        detail = bullets[1] if len(bullets) > 1 else bullets[0]
+        mapping = EducationMapping(
+            heading_paragraph_id=sec.heading_paragraph_id,
+            heading_text=sec.heading_text,
+            prototype_entry_start=proto[0].id,
+            header=header,
+            degree_paragraph_id=degree.id,
+            detail_paragraph_id=detail.id,
+        )
+        self._add_consistency_issue(
+            proto,
+            {"header": proto[0].id, "degree": degree.id, "detail": detail.id},
+            "Education",
+        )
+        return mapping
+
+    def _map_projects(self) -> ProjectsMapping | None:
+        sec = self.section_by_key["projects"]
+        body = self.combined_body["projects"]
+        entries = _split_entries(body)
+        if not entries:
+            self.enabled = self.enabled.model_copy(update={"projects": False})
+            return None
+        # 4d: same reconciliation as experience — narrow to the entries agreeing with the
+        # section's own modal field-presence signature before applying the existing
+        # "prefer fewer runs" tie-break.
+        proj_candidate_entries, proj_field_majority, proj_field_confidence = (
+            _reconcile_header_fields(
+                entries, primary="name", secondary="tech", date_field="date"
+            )
+        )
+        proto = min(proj_candidate_entries, key=_proj_score)
+
+        # Detect the link BEFORE splitting name/tech: its own span (not a fixed word list
+        # like "Github"/"Demo"/"Live") comes from the hyperlink itself, so any label
+        # works. `exclude_after` then keeps that label out of `tech` — without it, a
+        # project with a link but no tech ("Name | Github\tdate") reads the label as tech
+        # and the two fields end up with the same span, which the builder rejects as an
+        # overlap.
+        link, exclude_after, link_cand = _detect_project_link(proto)
+        if link_cand is not None:
+            self.field_candidates.append(link_cand)
+
+        # Cross-cell aware (`_entry_header_fields`, not the plain-text-only
+        # `_header_fields_from_text`) so a table-layout Projects section — name/tech in
+        # one cell, date in the row's other cell — reconciles and installs identically
+        # instead of reconciling fine and then losing the date on the actual installed
+        # prototype.
+        header, _hcands = _entry_header_fields(
+            proto,
+            primary="name",
+            secondary="tech",
+            date_field="date",
+            exclude_after=exclude_after,
+        )
+        self.field_candidates.extend(
+            _section_field_candidates(
+                self.paras,
+                self.by_kind["projects"],
+                primary="name",
+                secondary="tech",
+                date_field="date",
+                pick=lambda entries: min(entries, key=_proj_score),
+                include_link=True,
+            )
+        )
+        self._date_issues(
+            proj_field_majority, proj_field_confidence, "date",
+            code="project", noun="project", lost="project would lose its date",
+        )
+        bullets = [x for x in proto[1:] if x.is_bullet] or [
+            x for x in body if x.is_bullet
+        ]
+        if not bullets:
+            self.issues.append(
+                Issue(
+                    code="no_project_bullets",
+                    message="Projects section has no Word list bullets.",
+                    blocking=True,
+                )
+            )
+            return None
+        mapping = ProjectsMapping(
+            heading_paragraph_id=sec.heading_paragraph_id,
+            heading_text=sec.heading_text,
+            prototype_entry_start=proto[0].id,
+            header=header,
+            link=link,
+            bullet_paragraph_id=bullets[0].id,
+        )
+        self._add_consistency_issue(
+            proto, {"header": proto[0].id, "bullet": bullets[0].id}, "Project"
+        )
+        return mapping
+
+    def _map_skills(self) -> SkillsMapping | None:
+        sec = self.section_by_key["skills"]
+        body = [p for p in self.combined_body["skills"] if p.text.strip()]
+        if not body:
+            self.enabled = self.enabled.model_copy(update={"skills": False})
+            return None
+        proto = next((p for p in body if ":" in p.text), body[0])
+        spans = _skills_spans(proto)
+        proto_id = proto.id
+        if spans is None:
+            # Not one paragraph split on a colon — try a table layout's label cell/value
+            # cell pairing before giving up.
+            cross = _skills_pair_across_cells(body)
+            if cross is not None:
+                spans = cross
+                proto_id = cross[0].paragraph_id
+        if spans is None:
+            self.issues.append(
+                Issue(
+                    code="skills_format",
+                    message=(
+                        "Skills lines should look like 'Label: item, item'. "
+                        "Could not split the prototype line."
+                    ),
+                    blocking=True,
+                )
+            )
+            return None
+        label_span, body_span, sep = spans
+        mapping = SkillsMapping(
+            heading_paragraph_id=sec.heading_paragraph_id,
+            heading_text=sec.heading_text,
+            prototype_paragraph_id=proto_id,
+            label_span=label_span,
+            body_span=body_span,
+            separator=sep,
+        )
+        self.field_candidates.append(
+            FieldCandidate(
+                field="skills_label",
+                span=label_span,
+                confidence=0.9,
+                preview=proto.text[label_span.start : label_span.end],
+                section_heading_paragraph_id=sec.heading_paragraph_id,
+            )
+        )
+        return mapping
+
+    def _map_list(self) -> ListMapping | None:
+        sec = self.section_by_key["list"]
+        body = [p for p in self.combined_body["list"] if p.text.strip()]
+        bullets = [p for p in body if p.is_bullet]
+        if not bullets:
+            self.enabled = self.enabled.model_copy(update={"list_section": False})
+            return None
+        return ListMapping(
+            heading_paragraph_id=sec.heading_paragraph_id,
+            heading_text=sec.heading_text,
+            bullet_paragraph_id=bullets[0].id,
+        )
+
+    # -- the suggested profile ---------------------------------------------------------
+
+    def _suggest_profile(self) -> TemplateProfile | None:
+        """The profile the wizard proposes, or None when the analysis cannot build one."""
+        enabled = self.enabled
+        if not (
+            (self.experience_mapping is not None or not enabled.experience)
+            and (enabled.experience or enabled.projects or enabled.list_section)
+            and (self.contact_para is not None or self.contact_slots or self.contact_in_header)
+        ):
+            return None
+        contact: ContactMapping | None = None  # stays None for a header contact block
+        if self.contact_slots:
+            contact = ContactMapping(
+                paragraph_id=self.contact_slots[0].paragraph_id,
+                slots=self.contact_slots,
+            )
+        elif self.contact_para is not None:
+            contact = ContactMapping(
+                paragraph_id=self.contact_para.id,
+                field_order=_contact_field_order(self.contact_para.text),
+                separator=_contact_separator(self.contact_para.text),
+            )
+
+        # Generic mode is needed the moment fixed mode could not represent what was found:
+        # more than one heading of some kind (two experience-shaped sections cannot both
+        # keep their own title/position under one hard-coded heading), a `list`-kind
+        # section (fixed mode has no such prototype at all), or a table layout (always
+        # generic — see `TemplateProfile.layout`'s docstring). Otherwise today's exact
+        # single-heading-per-kind case stays on fixed mode, byte-identical to before this
+        # existed.
+        is_table_layout = self.table_shape is not None
+        needs_generic = (
+            is_table_layout
+            or "list" in self.by_kind
+            or any(len(v) > 1 for v in self.by_kind.values())
+        )
+        detected_sections: list[DetectedSection] = []
+        heading_prototype: HeadingPrototype | None = None
+        spacing = SpacingProfile()
+        if needs_generic:
+            detected_sections = _detected_sections(self.section_candidates)
+            heading_prototype = HeadingPrototype(
+                paragraph_id=self.section_candidates[0].heading_paragraph_id
+            )
+            # A table layout's inter-section gaps come from heading rows' own paragraph
+            # spacing and dedicated spacer rows, not counted blank paragraphs —
+            # `_detect_spacing`'s chrome-run model doesn't translate, and
+            # `TemplateProfile` rejects a table-layout profile carrying spacing donors.
+            spacing = (
+                SpacingProfile() if is_table_layout
+                else _detect_spacing(self.paras, self.section_candidates)
+            )
+
+        return TemplateProfile(
+            source_sha256=self.digest,
+            name_paragraph_id=self.name_id,
+            contact=contact,
+            name_in_header=self.name_in_header,
+            contact_in_header=self.contact_in_header,
+            enabled=enabled,
+            experience=self.experience_mapping if enabled.experience else None,
+            education=self.education_mapping if enabled.education else None,
+            projects=self.projects_mapping if enabled.projects else None,
+            skills=self.skills_mapping if enabled.skills else None,
+            list_section=self.list_mapping if enabled.list_section else None,
+            normalization=NormalizationFlags(),
+            warnings=[i.message for i in self.issues if not i.blocking],
+            section_mode="generic" if needs_generic else "fixed",
+            sections=detected_sections,
+            heading_prototype=heading_prototype,
+            spacing=spacing,
+            layout="table" if is_table_layout else "paragraph",
+            paragraph_count=len(self.paras),
+        )
+
+
+def _resolve_section_bodies(
+    raw_headings: list[SectionCandidate], paras: list[_Para]
+) -> tuple[list[SectionCandidate], dict[str, list[SectionCandidate]]]:
+    """Each heading's body span and entry/bullet counts, plus the headings by kind.
+
+    `body_end` is the next heading OF ANY KIND, so an embedded same-kind sub-heading
+    (e.g. "LEADERSHIP EXPERIENCE" after "WORK EXPERIENCE") is never mis-read as an entry
+    header by `_split_entries` — each heading's slice already excludes every other
+    heading paragraph by construction.
+    """
     section_candidates: list[SectionCandidate] = []
     by_kind: dict[str, list[SectionCandidate]] = {}
     for i, sec in enumerate(raw_headings):
@@ -1894,604 +2511,59 @@ def _analyze_document(
         )
         section_candidates.append(resolved)
         by_kind.setdefault(resolved.key, []).append(resolved)
+    return section_candidates, by_kind
 
-    # One representative heading per kind — the first found, in document order — whose
-    # `heading_paragraph_id`/`heading_text` become that kind's mapping fields (what
-    # `template_build` anchors the kind's tagged prototype on). `combined_body` pools
-    # every same-kind heading's body for prototype/bullet selection, so the best entry
-    # can come from any of them, not only the first.
-    section_by_key: dict[str, SectionCandidate] = {
-        key: candidates[0] for key, candidates in by_kind.items()
-    }
-    combined_body: dict[str, list[_Para]] = {
-        key: [p for sec in candidates for p in paras[sec.body_start : sec.body_end]]
-        for key, candidates in by_kind.items()
-    }
 
-    if "experience" not in section_by_key:
-        # Blocking only when nothing else can carry entries: a first-year student's
-        # Education + Projects (or Activities) resume is a complete template.
-        has_other_entries = bool({"projects", "list"} & section_by_key.keys())
-        issues.append(
-            Issue(
-                code="missing_experience",
-                message=(
-                    "No Experience section heading found. The template will show your "
-                    "other sections; add an Experience heading in Word to include jobs."
-                    if has_other_entries
-                    else "Could not find an Experience / Work Experience section heading."
-                ),
-                blocking=not has_other_entries,
-            )
-        )
+def _education_bullets(proto: list[_Para], body: list[_Para]) -> tuple[list[_Para], bool]:
+    """The education prototype's degree + detail paragraphs, and whether they are plain
+    (non-list) lines that the build will convert to bullets."""
+    proto_main = _entry_main_paragraphs(proto)
+    plain_lines = [x for x in proto_main[1:] if not x.is_bullet and x.text.strip()]
+    real_bullets = [x for x in proto[1:] if x.is_bullet] or [
+        x for x in body if x.is_bullet
+    ]
+    plain_fallback = not real_bullets
+    if plain_lines and real_bullets:
+        # A prose degree line right under the header ("Bachelor of Arts in...", not
+        # itself a Word bullet) followed by separately bulleted detail lines (GPA, Dean's
+        # List, coursework) — distinct from the shape below, where the degree line IS the
+        # first bullet. `edu.degree_line` is a single field, so the prose line is the only
+        # sound choice for it; the real bullets become the `edu.details` loop's prototype
+        # and, at render time, its actual items.
+        return [plain_lines[0]] + real_bullets, plain_fallback
+    if plain_fallback:
+        # No real Word-list bullets under this entry. `retarget_bullet` (called at build
+        # time) creates a paragraph's numbering properties rather than requiring them to
+        # already exist, so a plain degree line still produces a working template — it
+        # becomes a real bullet in the output. A warning, not a blocker: the visual
+        # result is a reasonable, working outcome.
+        return [x for x in proto[1:] if x.text.strip()] or [
+            x for x in body if x.text.strip()
+        ], plain_fallback
+    return real_bullets, plain_fallback
 
-    field_candidates: list[FieldCandidate] = []
-    suggested: TemplateProfile | None = None
 
-    # Name + contact: everything above the first detected heading, classified by regex
-    # — see `_detect_name_and_contact` for why "first two non-heading paragraphs" isn't
-    # enough once a table layout spreads the contact block across several paragraphs.
-    first_heading_id = section_candidates[0].heading_paragraph_id if section_candidates else None
-    name_id, contact_para, contact_slots, unmapped_contact_paras = _detect_name_and_contact(
-        paras, first_heading_id
-    )
-
-    # A name/contact block in the page header (Insert → Header) is kept as uploaded.
-    body_before_heading = first_heading_id is None or any(
-        p.text.strip() and not p.is_bullet for p in paras if p.id < first_heading_id
-    )
-    header_text = header_identity_text(doc)
-    contact_in_header = (
-        contact_para is None
-        and not contact_slots
-        and bool(_EMAIL_RE.search(header_text) or _PHONE_RE.search(header_text))
-    )
-    name_in_header = contact_in_header and not body_before_heading
-    if contact_in_header:
-        issues.append(
-            Issue(
-                code="contact_in_header",
-                message=(
-                    "Your name and contact details are in the page header. They'll be kept "
-                    "exactly as they are and won't change when you tailor."
-                    if name_in_header
-                    else "Your contact details are in the page header. They'll be kept "
-                    "exactly as they are and won't change when you tailor."
-                ),
-                blocking=False,
-            )
-        )
-    elif contact_para is None and not contact_slots:
-        issues.append(
-            Issue(
-                code="missing_contact",
-                message="Could not find a contact line after the name.",
-                blocking=True,
-            )
-        )
-    for p in unmapped_contact_paras:
-        issues.append(
-            Issue(
-                code="contact_unmapped_paragraph",
-                message=(
-                    f"{p.text.strip()!r} (paragraph {p.id}) is part of the contact "
-                    "block but doesn't look like an email, phone, location, or "
-                    "profile link. It will stay a literal in the template."
-                ),
-                blocking=False,
-            )
-        )
-
-    # Manual bullet glyph warning (non-blocking unless no native bullets in experience).
-    for p in paras:
-        stripped = p.text.lstrip()
-        if stripped.startswith(("•", "●", "○", "-", "–", "—")) and not p.is_bullet:
-            issues.append(
-                Issue(
-                    code="manual_bullets",
-                    message=(
-                        f"Paragraph {p.id} looks like a bullet but is not a Word list item. "
-                        "Convert lists to real bullets in Word/Google Docs before uploading."
-                    ),
-                    blocking=False,
-                )
-            )
-            break
-
-    enabled = EnabledSections(
-        education="education" in section_by_key,
-        experience="experience" in section_by_key,
-        projects="projects" in section_by_key,
-        skills="skills" in section_by_key,
-        list_section="list" in section_by_key,
-    )
-
-    experience_mapping: ExperienceMapping | None = None
-    education_mapping: EducationMapping | None = None
-    projects_mapping: ProjectsMapping | None = None
-    skills_mapping: SkillsMapping | None = None
-    list_mapping: ListMapping | None = None
-
-    if "experience" in section_by_key:
-        sec = section_by_key["experience"]
-        body = combined_body["experience"]
-        entries = _split_entries(body)
-        if not entries:
-            issues.append(
-                Issue(
-                    code="empty_experience",
-                    message="Experience section has no entries to use as a prototype.",
-                    blocking=True,
-                )
-            )
-        else:
-            # 4d: reconcile field presence across every entry's own header before
-            # picking a prototype, so an outlier entry — one that scores well on
-            # `_exp_score` (more runs, a title line) but happens to lack a field most
-            # other entries have — can never become the prototype and silently lose
-            # that field for the whole section.
-            candidate_entries, field_majority, field_confidence = _reconcile_header_fields(
-                entries, primary="company", secondary="location", date_field="dates"
-            )
-
-            proto = max(candidate_entries, key=_exp_score)
-            header_para = proto[0]
-            header, _hcands = _entry_header_fields(
-                proto, primary="company", secondary="location", date_field="dates"
-            )
-            field_candidates.extend(
-                _section_field_candidates(
-                    paras,
-                    by_kind["experience"],
-                    primary="company",
-                    secondary="location",
-                    date_field="dates",
-                    pick=lambda entries: max(entries, key=_exp_score),
-                    include_title=True,
-                )
-            )
-            if not field_majority.get("dates", True):
-                issues.append(
-                    Issue(
-                        code="experience_dates_not_detected",
-                        message=(
-                            "No experience entry's header has a detected date. Every "
-                            "rendered job would lose its dates — map the date span "
-                            "manually or confirm the header format."
-                        ),
-                        blocking=True,
-                    )
-                )
-            elif field_confidence.get("dates", 1.0) < 1.0:
-                issues.append(
-                    Issue(
-                        code="experience_dates_partial",
-                        message=(
-                            f"Only {field_confidence['dates']:.0%} of experience "
-                            "entries have a detected date; the rest will render "
-                            "without one."
-                        ),
-                        blocking=False,
-                    )
-                )
-            proto_main = _entry_main_paragraphs(proto)
-            titles = [x for x in proto_main[1:] if not x.is_bullet and x.text.strip()]
-            bullets = [x for x in proto[1:] if x.is_bullet]
-            if not bullets:
-                # Fall back to any bullet in the section.
-                bullets = [x for x in body if x.is_bullet]
-            if not bullets:
-                issues.append(
-                    Issue(
-                        code="no_experience_bullets",
-                        message=(
-                            "Experience section has no Word list bullets. "
-                            "Entries need real list formatting."
-                        ),
-                        blocking=True,
-                    )
-                )
-            else:
-                title_span: OptionalSpan
-                title_pid: int | None
-                if titles:
-                    t = titles[0]
-                    title_span = OptionalSpan(
-                        present=True, span=_span(t.id, 0, len(t.text.strip()))
-                    )
-                    title_pid = t.id
-                else:
-                    title_span = OptionalSpan(present=False)
-                    title_pid = None
-                    issues.append(
-                        Issue(
-                            code="inline_title",
-                            message=(
-                                "No separate job-title paragraph found under the experience "
-                                "header. Map a title field or ensure each job has a title line."
-                            ),
-                            blocking=True,
-                        )
-                    )
-                experience_mapping = ExperienceMapping(
-                    heading_paragraph_id=sec.heading_paragraph_id,
-                    heading_text=sec.heading_text,
-                    prototype_entry_start=header_para.id,
-                    header=header,
-                    title=title_span,
-                    title_paragraph_id=title_pid,
-                    bullet_paragraph_id=bullets[0].id,
-                )
-                consistency_issue = _prototype_consistency_issue(
-                    proto,
-                    {"header": header_para.id, "title": title_pid, "bullet": bullets[0].id},
-                    "Experience",
-                )
-                if consistency_issue is not None:
-                    issues.append(consistency_issue)
-
-    if "education" in section_by_key:
-        sec = section_by_key["education"]
-        body = combined_body["education"]
-        entries = _split_entries(body)
-        if entries:
-            proto = max(entries, key=_edu_score)
-            header, _hcands = _entry_header_fields(
-                proto, primary="school", secondary="location", date_field="dates"
-            )
-            field_candidates.extend(
-                _section_field_candidates(
-                    paras,
-                    by_kind["education"],
-                    primary="school",
-                    secondary="location",
-                    date_field="dates",
-                    pick=lambda entries: max(entries, key=_edu_score),
-                )
-            )
-            proto_main = _entry_main_paragraphs(proto)
-            plain_lines = [x for x in proto_main[1:] if not x.is_bullet and x.text.strip()]
-            real_bullets = [x for x in proto[1:] if x.is_bullet] or [
-                x for x in body if x.is_bullet
-            ]
-            plain_fallback = not real_bullets
-            if plain_lines and real_bullets:
-                # A prose degree line right under the header ("Bachelor of Arts in...",
-                # not itself a Word bullet) followed by separately bulleted detail lines
-                # (GPA, Dean's List, coursework) — distinct from the shape below, where
-                # the degree line IS the first bullet. `edu.degree_line` is a single
-                # field, so the prose line is the only sound choice for it; the real
-                # bullets become the `edu.details` loop's prototype and, at render time,
-                # its actual items.
-                bullets = [plain_lines[0]] + real_bullets
-            elif plain_fallback:
-                # No real Word-list bullets under this entry. `retarget_bullet` (called
-                # at build time) creates a paragraph's numbering properties rather than
-                # requiring them to already exist, so a plain degree line still produces
-                # a working template — it becomes a real bullet in the output. A warning,
-                # not a blocker: the visual result is a reasonable, working outcome.
-                bullets = [x for x in proto[1:] if x.text.strip()] or [
-                    x for x in body if x.text.strip()
-                ]
-            else:
-                bullets = real_bullets
-            if not bullets:
-                issues.append(
-                    Issue(
-                        code="no_education_bullets",
-                        message="Education section has no Word list bullets for degree/details.",
-                        blocking=True,
-                    )
-                )
-            else:
-                if plain_fallback:
-                    issues.append(
-                        Issue(
-                            code="education_bullets_not_list",
-                            message=(
-                                "Education degree/detail line is not a Word list bullet; "
-                                "it will be converted to one in the tagged template."
-                            ),
-                            blocking=False,
-                        )
-                    )
-                degree = bullets[0]
-                detail = bullets[1] if len(bullets) > 1 else bullets[0]
-                education_mapping = EducationMapping(
-                    heading_paragraph_id=sec.heading_paragraph_id,
-                    heading_text=sec.heading_text,
-                    prototype_entry_start=proto[0].id,
-                    header=header,
-                    degree_paragraph_id=degree.id,
-                    detail_paragraph_id=detail.id,
-                )
-                consistency_issue = _prototype_consistency_issue(
-                    proto,
-                    {"header": proto[0].id, "degree": degree.id, "detail": detail.id},
-                    "Education",
-                )
-                if consistency_issue is not None:
-                    issues.append(consistency_issue)
-        else:
-            issues.append(
-                Issue(
-                    code="empty_education",
-                    message="Education heading found but the section has no entries.",
-                    blocking=False,
-                )
-            )
-            enabled = enabled.model_copy(update={"education": False})
-
-    if "projects" in section_by_key:
-        sec = section_by_key["projects"]
-        body = combined_body["projects"]
-        entries = _split_entries(body)
-        if entries:
-            # 4d: same reconciliation as experience — narrow to the entries agreeing
-            # with the section's own modal field-presence signature before applying
-            # the existing "prefer fewer runs" tie-break.
-            proj_candidate_entries, proj_field_majority, proj_field_confidence = (
-                _reconcile_header_fields(
-                    entries, primary="name", secondary="tech", date_field="date"
-                )
-            )
-            proto = min(proj_candidate_entries, key=_proj_score)
-
-            # Detect the link BEFORE splitting name/tech: its own span (not a fixed word
-            # list like "Github"/"Demo"/"Live") comes from the hyperlink itself, so any
-            # label works. `exclude_after` then keeps that label out of `tech` — without
-            # it, a project with a link but no tech ("Name | Github\tdate") reads the
-            # label as tech and the two fields end up with the same span, which the
-            # builder rejects as an overlap.
-            link, exclude_after, link_cand = _detect_project_link(proto)
-            if link_cand is not None:
-                field_candidates.append(link_cand)
-
-            # Cross-cell aware (`_entry_header_fields`, not the plain-text-only
-            # `_header_fields_from_text`) so a table-layout Projects section — name/tech
-            # in one cell, date in the row's other cell — reconciles and installs
-            # identically instead of reconciling fine and then losing the date on the
-            # actual installed prototype.
-            header, _hcands = _entry_header_fields(
-                proto,
-                primary="name",
-                secondary="tech",
-                date_field="date",
-                exclude_after=exclude_after,
-            )
-            field_candidates.extend(
-                _section_field_candidates(
-                    paras,
-                    by_kind["projects"],
-                    primary="name",
-                    secondary="tech",
-                    date_field="date",
-                    pick=lambda entries: min(entries, key=_proj_score),
-                    include_link=True,
-                )
-            )
-            if not proj_field_majority.get("date", True):
-                issues.append(
-                    Issue(
-                        code="project_dates_not_detected",
-                        message=(
-                            "No project entry's header has a detected date. Every "
-                            "rendered project would lose its date — map the date span "
-                            "manually or confirm the header format."
-                        ),
-                        blocking=True,
-                    )
-                )
-            elif proj_field_confidence.get("date", 1.0) < 1.0:
-                issues.append(
-                    Issue(
-                        code="project_dates_partial",
-                        message=(
-                            f"Only {proj_field_confidence['date']:.0%} of project "
-                            "entries have a detected date; the rest will render "
-                            "without one."
-                        ),
-                        blocking=False,
-                    )
-                )
-            bullets = [x for x in proto[1:] if x.is_bullet] or [
-                x for x in body if x.is_bullet
-            ]
-            if not bullets:
-                issues.append(
-                    Issue(
-                        code="no_project_bullets",
-                        message="Projects section has no Word list bullets.",
-                        blocking=True,
-                    )
-                )
-            else:
-                projects_mapping = ProjectsMapping(
-                    heading_paragraph_id=sec.heading_paragraph_id,
-                    heading_text=sec.heading_text,
-                    prototype_entry_start=proto[0].id,
-                    header=header,
-                    link=link,
-                    bullet_paragraph_id=bullets[0].id,
-                )
-                consistency_issue = _prototype_consistency_issue(
-                    proto,
-                    {"header": proto[0].id, "bullet": bullets[0].id},
-                    "Project",
-                )
-                if consistency_issue is not None:
-                    issues.append(consistency_issue)
-        else:
-            enabled = enabled.model_copy(update={"projects": False})
-
-    if "skills" in section_by_key:
-        sec = section_by_key["skills"]
-        body = [p for p in combined_body["skills"] if p.text.strip()]
-        if body:
-            proto = next((p for p in body if ":" in p.text), body[0])
-            spans = _skills_spans(proto)
-            proto_id = proto.id
-            if spans is None:
-                # Not one paragraph split on a colon — try a table layout's label
-                # cell/value cell pairing before giving up.
-                cross = _skills_pair_across_cells(body)
-                if cross is not None:
-                    spans = cross
-                    proto_id = cross[0].paragraph_id
-            if spans is None:
-                issues.append(
-                    Issue(
-                        code="skills_format",
-                        message=(
-                            "Skills lines should look like 'Label: item, item'. "
-                            "Could not split the prototype line."
-                        ),
-                        blocking=True,
-                    )
-                )
-            else:
-                label_span, body_span, sep = spans
-                skills_mapping = SkillsMapping(
-                    heading_paragraph_id=sec.heading_paragraph_id,
-                    heading_text=sec.heading_text,
-                    prototype_paragraph_id=proto_id,
-                    label_span=label_span,
-                    body_span=body_span,
-                    separator=sep,
-                )
-                field_candidates.append(
-                    FieldCandidate(
-                        field="skills_label",
-                        span=label_span,
-                        confidence=0.9,
-                        preview=proto.text[label_span.start : label_span.end],
-                        section_heading_paragraph_id=sec.heading_paragraph_id,
-                    )
-                )
-        else:
-            enabled = enabled.model_copy(update={"skills": False})
-
-    if "list" in section_by_key:
-        sec = section_by_key["list"]
-        body = [p for p in combined_body["list"] if p.text.strip()]
-        bullets = [p for p in body if p.is_bullet]
-        if bullets:
-            list_mapping = ListMapping(
+def _detected_sections(section_candidates: list[SectionCandidate]) -> list[DetectedSection]:
+    """Generic-mode sections, one per heading, with ids unique by heading-text slug."""
+    detected: list[DetectedSection] = []
+    seen_ids: set[str] = set()
+    for sec in section_candidates:
+        base = config.slugify(sec.heading_text) or sec.key
+        candidate_id = base
+        suffix = 2
+        while candidate_id in seen_ids:
+            candidate_id = f"{base}-{suffix}"
+            suffix += 1
+        seen_ids.add(candidate_id)
+        detected.append(
+            DetectedSection(
+                id=candidate_id,
+                title=sec.heading_text,
+                kind=_TO_GENERIC_KIND.get(sec.key, sec.key),  # type: ignore[arg-type]
                 heading_paragraph_id=sec.heading_paragraph_id,
-                heading_text=sec.heading_text,
-                bullet_paragraph_id=bullets[0].id,
             )
-        else:
-            enabled = enabled.model_copy(update={"list_section": False})
-
-    for key in ("education", "projects", "skills"):
-        if key not in section_by_key:
-            issues.append(
-                Issue(
-                    code=f"omit_{key}",
-                    message=(
-                        f"No {key.title()} section detected; it will be omitted from the "
-                        "template."
-                    ),
-                    blocking=False,
-                )
-            )
-
-    blockers = [i for i in issues if i.blocking]
-    if (
-        not blockers
-        and (experience_mapping is not None or not enabled.experience)
-        and (enabled.experience or enabled.projects or enabled.list_section)
-        and (contact_para is not None or contact_slots or contact_in_header)
-    ):
-        contact: ContactMapping | None = None  # stays None for a header contact block
-        if contact_slots:
-            contact = ContactMapping(
-                paragraph_id=contact_slots[0].paragraph_id,
-                slots=contact_slots,
-            )
-        elif contact_para is not None:
-            contact = ContactMapping(
-                paragraph_id=contact_para.id,
-                field_order=_contact_field_order(contact_para.text),
-                separator=_contact_separator(contact_para.text),
-            )
-
-        # Generic mode is needed the moment fixed mode could not represent what was
-        # found: more than one heading of some kind (two experience-shaped sections
-        # cannot both keep their own title/position under one hard-coded heading), a
-        # `list`-kind section (fixed mode has no such prototype at all), or a table
-        # layout (always generic — see `TemplateProfile.layout`'s docstring). Otherwise
-        # today's exact single-heading-per-kind case stays on fixed mode, byte-identical
-        # to before this existed.
-        is_table_layout = table_shape is not None
-        needs_generic = (
-            is_table_layout or "list" in by_kind or any(len(v) > 1 for v in by_kind.values())
         )
-        detected_sections: list[DetectedSection] = []
-        heading_prototype: HeadingPrototype | None = None
-        spacing = SpacingProfile()
-        if needs_generic:
-            seen_ids: set[str] = set()
-            for sec in section_candidates:
-                base = config.slugify(sec.heading_text) or sec.key
-                candidate_id = base
-                suffix = 2
-                while candidate_id in seen_ids:
-                    candidate_id = f"{base}-{suffix}"
-                    suffix += 1
-                seen_ids.add(candidate_id)
-                detected_sections.append(
-                    DetectedSection(
-                        id=candidate_id,
-                        title=sec.heading_text,
-                        kind=_TO_GENERIC_KIND.get(sec.key, sec.key),  # type: ignore[arg-type]
-                        heading_paragraph_id=sec.heading_paragraph_id,
-                    )
-                )
-            heading_prototype = HeadingPrototype(
-                paragraph_id=section_candidates[0].heading_paragraph_id
-            )
-            # A table layout's inter-section gaps come from heading rows' own paragraph
-            # spacing and dedicated spacer rows, not counted blank paragraphs —
-            # `_detect_spacing`'s chrome-run model doesn't translate, and
-            # `TemplateProfile` rejects a table-layout profile carrying spacing donors.
-            spacing = (
-                SpacingProfile() if is_table_layout else _detect_spacing(paras, section_candidates)
-            )
-
-        suggested = TemplateProfile(
-            source_sha256=digest,
-            name_paragraph_id=name_id,
-            contact=contact,
-            name_in_header=name_in_header,
-            contact_in_header=contact_in_header,
-            enabled=enabled,
-            experience=experience_mapping if enabled.experience else None,
-            education=education_mapping if enabled.education else None,
-            projects=projects_mapping if enabled.projects else None,
-            skills=skills_mapping if enabled.skills else None,
-            list_section=list_mapping if enabled.list_section else None,
-            normalization=NormalizationFlags(),
-            warnings=[i.message for i in issues if not i.blocking],
-            section_mode="generic" if needs_generic else "fixed",
-            sections=detected_sections,
-            heading_prototype=heading_prototype,
-            spacing=spacing,
-            layout="table" if is_table_layout else "paragraph",
-            paragraph_count=len(paras),
-        )
-
-    ready = suggested is not None and not blockers
-    return AnalyzeResult(
-        source_sha256=digest,
-        paragraphs=paragraph_infos,
-        sections=section_candidates,
-        suggested_profile=suggested,
-        field_candidates=field_candidates,
-        issues=issues,
-        ready=ready,
-    )
+    return detected
 
 
 def validate_profile_against_doc(
@@ -2500,10 +2572,9 @@ def validate_profile_against_doc(
     raw: bytes,
 ) -> list[Issue]:
     """Re-check a confirmed profile against the exact upload bytes before install."""
-    issues: list[Issue] = []
     digest = sha256_bytes(raw)
     if profile.source_sha256 != digest:
-        issues.append(
+        return [
             Issue(
                 code="hash_mismatch",
                 message=(
@@ -2512,244 +2583,111 @@ def validate_profile_against_doc(
                 ),
                 blocking=True,
             )
-        )
+        ]
+    result = analyze_docx(raw=raw)
+    return _ProfileValidator(profile, {p.id: p for p in result.paragraphs}).run()
+
+
+class _ProfileValidator:
+    """Structural re-validation of a confirmed profile: required paragraphs must still
+    exist and every mapped span must fit."""
+
+    def __init__(self, profile: TemplateProfile, para_by_id: dict[int, ParagraphInfo]) -> None:
+        self.profile = profile
+        self.para_by_id = para_by_id
+        self.issues: list[Issue] = []
+
+    def run(self) -> list[Issue]:
+        profile, issues = self.profile, self.issues
+        if not profile.name_in_header and profile.name_paragraph_id not in self.para_by_id:
+            issues.append(
+                Issue(
+                    code="bad_name",
+                    message=f"Name paragraph {profile.name_paragraph_id} is out of range.",
+                    blocking=True,
+                )
+            )
+        if profile.contact is not None and profile.contact.paragraph_id not in self.para_by_id:
+            issues.append(
+                Issue(
+                    code="bad_contact",
+                    message=f"Contact paragraph {profile.contact.paragraph_id} is out of range.",
+                    blocking=True,
+                )
+            )
+        if not (
+            profile.enabled.experience or profile.enabled.projects or profile.enabled.list_section
+        ):
+            issues.append(
+                Issue(
+                    code="experience_required",
+                    message="Keep at least one of Experience, Projects or a list section enabled.",
+                    blocking=True,
+                )
+            )
+        if profile.enabled.experience and profile.experience is not None:
+            self._check_experience(profile.experience)
+        if profile.enabled.education and profile.education is not None:
+            self._check_education(profile.education)
+        if profile.enabled.projects and profile.projects is not None:
+            self._check_projects(profile.projects)
+        if profile.enabled.skills and profile.skills is not None:
+            self._check_skills(profile.skills)
+        if profile.section_mode == "generic":
+            self._check_generic_sections()
         return issues
 
-    result = analyze_docx(raw=raw)
-    # Structural re-validation: required paragraphs must still exist and spans fit.
-    para_by_id = {p.id: p for p in result.paragraphs}
-    if not profile.name_in_header and profile.name_paragraph_id not in para_by_id:
-        issues.append(
-            Issue(
-                code="bad_name",
-                message=f"Name paragraph {profile.name_paragraph_id} is out of range.",
-                blocking=True,
-            )
-        )
-    if profile.contact is not None and profile.contact.paragraph_id not in para_by_id:
-        issues.append(
-            Issue(
-                code="bad_contact",
-                message=f"Contact paragraph {profile.contact.paragraph_id} is out of range.",
-                blocking=True,
-            )
-        )
+    # -- per-section -------------------------------------------------------------------
 
-    def _check_span(span: CharSpan | None, label: str) -> None:
-        """Blocking issue when `span` is out of range or straddles a tab.
-
-        The tab check matters because `_tag_mapped_header` treats a tab inside a mapped
-        span as a hard error at build time (the tab is what keeps a date right-aligned);
-        catching it here turns that failure into a readable install-time rejection
-        instead of a build crash — or, before that fix existed, a silently garbled
-        template.
-        """
-        if span is None:
-            return
-        para = para_by_id.get(span.paragraph_id)
-        if para is None:
-            issues.append(
-                Issue(
-                    code="bad_span",
-                    message=f"{label}: paragraph {span.paragraph_id} missing.",
-                    blocking=True,
-                )
-            )
-            return
-        if span.end > len(para.text):
-            issues.append(
-                Issue(
-                    code="bad_span",
-                    message=(
-                        f"{label}: span [{span.start}:{span.end}] exceeds paragraph "
-                        f"length {len(para.text)}."
-                    ),
-                    blocking=True,
-                )
-            )
-            return
-        if "\t" in para.text[span.start : span.end]:
-            issues.append(
-                Issue(
-                    code="span_has_tab",
-                    message=(
-                        f"{label}: span [{span.start}:{span.end}] contains a tab. "
-                        "Map date fields after the tab, not through it."
-                    ),
-                    blocking=True,
-                )
-            )
-
-    def _present_spans(fields: dict[str, OptionalSpan]) -> list[tuple[str, CharSpan]]:
-        """(field name, span) pairs for mapped fields that are actually present."""
-        return [
-            (name, field.span)
-            for name, field in fields.items()
-            if field.present and field.span is not None
-        ]
-
-    def _check_no_overlap(spans: list[tuple[str, CharSpan]]) -> None:
-        """Blocking issue when two mapped fields on the same paragraph overlap.
-
-        Grouped by paragraph because header fields occasionally live off the header
-        paragraph (a `date_paragraph_id` on its own line); those never collide.
-        """
-        by_paragraph: dict[int, list[tuple[str, CharSpan]]] = {}
+    def _check_fields(self, spans: list[tuple[str, CharSpan]]) -> None:
         for label, span in spans:
-            by_paragraph.setdefault(span.paragraph_id, []).append((label, span))
-        for paragraph_id, entries in by_paragraph.items():
-            ordered = sorted(entries, key=lambda e: e[1].start)
-            for (label_a, span_a), (label_b, span_b) in zip(ordered, ordered[1:], strict=False):
-                if span_b.start < span_a.end:
-                    issues.append(
-                        Issue(
-                            code="overlapping_spans",
-                            message=(
-                                f"{label_a!r} and {label_b!r} both claim text in "
-                                f"paragraph {paragraph_id}: {label_a} ends at "
-                                f"{span_a.end}, {label_b} starts at {span_b.start}."
-                            ),
-                            blocking=True,
-                        )
-                    )
+            self._check_span(span, label)
+        self._check_no_overlap(spans)
 
-    def _check_bullet(paragraph_id: int | None, label: str, *, strict: bool = True) -> None:
-        """Issue when a bullet-prototype paragraph is missing or not a list item.
-
-        A missing paragraph always blocks. A non-list paragraph blocks only when
-        `strict` — the experience/project bullet loop is the resume's main visual list
-        content, where real Word numbering matters. Education's degree/detail role is not
-        strict: `template_build.retarget_bullet` creates a paragraph's numbering
-        properties rather than requiring them, so a plain degree line still builds fine
-        and only needs a non-blocking heads-up (see `template_analyze`'s
-        `education_bullets_not_list` issue, raised for the same reason at analyze time).
-        """
-        if paragraph_id is None:
-            return
-        para = para_by_id.get(paragraph_id)
-        if para is None:
-            issues.append(
-                Issue(
-                    code="bad_bullet",
-                    message=f"{label}: paragraph {paragraph_id} is missing.",
-                    blocking=True,
-                )
-            )
-        elif not para.is_bullet:
-            issues.append(
-                Issue(
-                    code="bullet_not_list",
-                    message=f"{label}: paragraph {paragraph_id} is not a Word list item.",
-                    blocking=strict,
-                )
-            )
-
-    def _check_header_is_entry_start(paragraph_id: int, label: str) -> None:
-        """Blocking issue when a header prototype paragraph is a bullet or blank — the
-        mapping cannot possibly be pointing at a real entry header in that case."""
-        para = para_by_id.get(paragraph_id)
-        if para is None:
-            return  # already reported by _check_span / the earlier existence checks
-        if para.is_bullet or not para.text.strip():
-            issues.append(
-                Issue(
-                    code="header_not_entry_start",
-                    message=(
-                        f"{label}: paragraph {paragraph_id} is "
-                        f"{'a bullet' if para.is_bullet else 'blank'}, not an entry header."
-                    ),
-                    blocking=True,
-                )
-            )
-
-    def _check_date_span(span: CharSpan | None, label: str) -> None:
-        """Non-blocking warning when a span mapped to a date field does not itself
-        look like a date — confirms the mapping actually landed on a date, not some
-        other text that happened to survive detection."""
-        if span is None:
-            return
-        para = para_by_id.get(span.paragraph_id)
-        if para is None:
-            return  # already reported by _check_span
-        text = para.text[span.start : span.end]
-        if not _DATE_RE.search(text):
-            issues.append(
-                Issue(
-                    code="date_span_not_date_shaped",
-                    message=(
-                        f"{label}: mapped span {text!r} does not look like a date. "
-                        "Confirm this field is mapped correctly."
-                    ),
-                    blocking=False,
-                )
-            )
-
-    if not (
-        profile.enabled.experience or profile.enabled.projects or profile.enabled.list_section
-    ):
-        issues.append(
-            Issue(
-                code="experience_required",
-                message="Keep at least one of Experience, Projects or a list section enabled.",
-                blocking=True,
-            )
-        )
-    if profile.enabled.experience and profile.experience is not None:
-        exp = profile.experience
+    def _check_experience(self, exp: ExperienceMapping) -> None:
         exp_spans = _present_spans(exp.header.fields)
         if exp.title.present and exp.title.span is not None:
             exp_spans.append(("title", exp.title.span))
-        for label, span in exp_spans:
-            _check_span(span, label)
-        _check_no_overlap(exp_spans)
-        _check_bullet(exp.bullet_paragraph_id, "experience bullet prototype")
-        _check_header_is_entry_start(
+        self._check_fields(exp_spans)
+        self._check_bullet(exp.bullet_paragraph_id, "experience bullet prototype")
+        self._check_header_is_entry_start(
             exp.header.header_paragraph_id, "experience header prototype"
         )
         exp_dates = exp.header.fields.get("dates")
         if exp_dates is not None and exp_dates.present:
-            _check_date_span(exp_dates.span, "experience dates")
+            self._check_date_span(exp_dates.span, "experience dates")
 
-    if profile.enabled.education and profile.education is not None:
-        edu = profile.education
-        edu_spans = _present_spans(edu.header.fields)
-        for label, span in edu_spans:
-            _check_span(span, label)
-        _check_no_overlap(edu_spans)
-        _check_bullet(edu.degree_paragraph_id, "education degree paragraph", strict=False)
+    def _check_education(self, edu: EducationMapping) -> None:
+        self._check_fields(_present_spans(edu.header.fields))
+        self._check_bullet(edu.degree_paragraph_id, "education degree paragraph", strict=False)
         if edu.detail_paragraph_id is not None:
-            _check_bullet(edu.detail_paragraph_id, "education detail paragraph", strict=False)
-        _check_header_is_entry_start(
+            self._check_bullet(
+                edu.detail_paragraph_id, "education detail paragraph", strict=False
+            )
+        self._check_header_is_entry_start(
             edu.header.header_paragraph_id, "education header prototype"
         )
         edu_dates = edu.header.fields.get("dates")
         if edu_dates is not None and edu_dates.present:
-            _check_date_span(edu_dates.span, "education dates")
+            self._check_date_span(edu_dates.span, "education dates")
 
-    if profile.enabled.projects and profile.projects is not None:
-        proj = profile.projects
+    def _check_projects(self, proj: ProjectsMapping) -> None:
         proj_spans = _present_spans(proj.header.fields)
         if proj.link.present and proj.link.span is not None:
             proj_spans.append(("link", proj.link.span))
-        for label, span in proj_spans:
-            _check_span(span, label)
-        _check_no_overlap(proj_spans)
-        _check_bullet(proj.bullet_paragraph_id, "project bullet prototype")
-        _check_header_is_entry_start(
+        self._check_fields(proj_spans)
+        self._check_bullet(proj.bullet_paragraph_id, "project bullet prototype")
+        self._check_header_is_entry_start(
             proj.header.header_paragraph_id, "project header prototype"
         )
         proj_date = proj.header.fields.get("date")
         if proj_date is not None and proj_date.present:
-            _check_date_span(proj_date.span, "project date")
+            self._check_date_span(proj_date.span, "project date")
 
-    if profile.enabled.skills and profile.skills is not None:
-        skl = profile.skills
-        skl_spans = [("skills_label", skl.label_span), ("skills_body", skl.body_span)]
-        for label, span in skl_spans:
-            _check_span(span, label)
-        _check_no_overlap(skl_spans)
-        if skl.prototype_paragraph_id not in para_by_id:
-            issues.append(
+    def _check_skills(self, skl: SkillsMapping) -> None:
+        self._check_fields([("skills_label", skl.label_span), ("skills_body", skl.body_span)])
+        if skl.prototype_paragraph_id not in self.para_by_id:
+            self.issues.append(
                 Issue(
                     code="bad_span",
                     message=(
@@ -2760,7 +2698,8 @@ def validate_profile_against_doc(
                 )
             )
 
-    if profile.section_mode == "generic":
+    def _check_generic_sections(self) -> None:
+        profile, para_by_id, issues = self.profile, self.para_by_id, self.issues
         if (
             profile.heading_prototype is not None
             and profile.heading_prototype.paragraph_id not in para_by_id
@@ -2809,4 +2748,154 @@ def validate_profile_against_doc(
                         )
                     )
 
-    return issues
+    # -- single checks -----------------------------------------------------------------
+
+    def _check_span(self, span: CharSpan | None, label: str) -> None:
+        """Blocking issue when `span` is out of range or straddles a tab.
+
+        The tab check matters because `_tag_mapped_header` treats a tab inside a mapped
+        span as a hard error at build time (the tab is what keeps a date right-aligned);
+        catching it here turns that failure into a readable install-time rejection
+        instead of a build crash — or, before that fix existed, a silently garbled
+        template.
+        """
+        if span is None:
+            return
+        para = self.para_by_id.get(span.paragraph_id)
+        if para is None:
+            self.issues.append(
+                Issue(
+                    code="bad_span",
+                    message=f"{label}: paragraph {span.paragraph_id} missing.",
+                    blocking=True,
+                )
+            )
+            return
+        if span.end > len(para.text):
+            self.issues.append(
+                Issue(
+                    code="bad_span",
+                    message=(
+                        f"{label}: span [{span.start}:{span.end}] exceeds paragraph "
+                        f"length {len(para.text)}."
+                    ),
+                    blocking=True,
+                )
+            )
+            return
+        if "\t" in para.text[span.start : span.end]:
+            self.issues.append(
+                Issue(
+                    code="span_has_tab",
+                    message=(
+                        f"{label}: span [{span.start}:{span.end}] contains a tab. "
+                        "Map date fields after the tab, not through it."
+                    ),
+                    blocking=True,
+                )
+            )
+
+    def _check_no_overlap(self, spans: list[tuple[str, CharSpan]]) -> None:
+        """Blocking issue when two mapped fields on the same paragraph overlap.
+
+        Grouped by paragraph because header fields occasionally live off the header
+        paragraph (a `date_paragraph_id` on its own line); those never collide.
+        """
+        by_paragraph: dict[int, list[tuple[str, CharSpan]]] = {}
+        for label, span in spans:
+            by_paragraph.setdefault(span.paragraph_id, []).append((label, span))
+        for paragraph_id, entries in by_paragraph.items():
+            ordered = sorted(entries, key=lambda e: e[1].start)
+            for (label_a, span_a), (label_b, span_b) in zip(ordered, ordered[1:], strict=False):
+                if span_b.start < span_a.end:
+                    self.issues.append(
+                        Issue(
+                            code="overlapping_spans",
+                            message=(
+                                f"{label_a!r} and {label_b!r} both claim text in "
+                                f"paragraph {paragraph_id}: {label_a} ends at "
+                                f"{span_a.end}, {label_b} starts at {span_b.start}."
+                            ),
+                            blocking=True,
+                        )
+                    )
+
+    def _check_bullet(self, paragraph_id: int | None, label: str, *, strict: bool = True) -> None:
+        """Issue when a bullet-prototype paragraph is missing or not a list item.
+
+        A missing paragraph always blocks. A non-list paragraph blocks only when
+        `strict` — the experience/project bullet loop is the resume's main visual list
+        content, where real Word numbering matters. Education's degree/detail role is not
+        strict: `template_build.retarget_bullet` creates a paragraph's numbering
+        properties rather than requiring them, so a plain degree line still builds fine
+        and only needs a non-blocking heads-up (see `template_analyze`'s
+        `education_bullets_not_list` issue, raised for the same reason at analyze time).
+        """
+        if paragraph_id is None:
+            return
+        para = self.para_by_id.get(paragraph_id)
+        if para is None:
+            self.issues.append(
+                Issue(
+                    code="bad_bullet",
+                    message=f"{label}: paragraph {paragraph_id} is missing.",
+                    blocking=True,
+                )
+            )
+        elif not para.is_bullet:
+            self.issues.append(
+                Issue(
+                    code="bullet_not_list",
+                    message=f"{label}: paragraph {paragraph_id} is not a Word list item.",
+                    blocking=strict,
+                )
+            )
+
+    def _check_header_is_entry_start(self, paragraph_id: int, label: str) -> None:
+        """Blocking issue when a header prototype paragraph is a bullet or blank — the
+        mapping cannot possibly be pointing at a real entry header in that case."""
+        para = self.para_by_id.get(paragraph_id)
+        if para is None:
+            return  # already reported by _check_span / the earlier existence checks
+        if para.is_bullet or not para.text.strip():
+            self.issues.append(
+                Issue(
+                    code="header_not_entry_start",
+                    message=(
+                        f"{label}: paragraph {paragraph_id} is "
+                        f"{'a bullet' if para.is_bullet else 'blank'}, not an entry header."
+                    ),
+                    blocking=True,
+                )
+            )
+
+    def _check_date_span(self, span: CharSpan | None, label: str) -> None:
+        """Non-blocking warning when a span mapped to a date field does not itself
+        look like a date — confirms the mapping actually landed on a date, not some
+        other text that happened to survive detection."""
+        if span is None:
+            return
+        para = self.para_by_id.get(span.paragraph_id)
+        if para is None:
+            return  # already reported by _check_span
+        text = para.text[span.start : span.end]
+        if not _DATE_RE.search(text):
+            self.issues.append(
+                Issue(
+                    code="date_span_not_date_shaped",
+                    message=(
+                        f"{label}: mapped span {text!r} does not look like a date. "
+                        "Confirm this field is mapped correctly."
+                    ),
+                    blocking=False,
+                )
+            )
+
+
+def _present_spans(fields: dict[str, OptionalSpan]) -> list[tuple[str, CharSpan]]:
+    """(field name, span) pairs for mapped fields that are actually present."""
+    return [
+        (name, field.span)
+        for name, field in fields.items()
+        if field.present and field.span is not None
+    ]
