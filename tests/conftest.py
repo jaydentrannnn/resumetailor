@@ -83,7 +83,7 @@ from resume_tailor import (  # noqa: E402
     template_build,
     workspace,
 )
-from resume_tailor.apply import form_guards, submit_guard  # noqa: E402
+from resume_tailor.apply.forms import form_guards, submit_guard  # noqa: E402
 from resume_tailor.web import extension as web_extension  # noqa: E402
 from tests.fixtures import _docx_bytes, _full_featured_resume  # noqa: E402
 
@@ -157,7 +157,7 @@ def _isolated_apply_paths(tmp_path, monkeypatch):
 def _isolated_resolver_choices(tmp_path, monkeypatch):
     """Per-test store of the resolver's remembered choices: one test's model answer must
     not be replayed into another (`CACHE_DIR` is shared by the whole session)."""
-    from resume_tailor.apply import hybrid_resolver
+    from resume_tailor.apply.answers import hybrid_resolver
 
     monkeypatch.setattr(hybrid_resolver, "_choices_path", lambda: tmp_path / "resolver-choices.json")
 

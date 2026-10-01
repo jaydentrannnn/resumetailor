@@ -14,10 +14,13 @@ from pathlib import Path
 import pytest
 from playwright.sync_api import sync_playwright
 
-from resume_tailor.apply import ats_hints, field_matcher, packet, questions
+from resume_tailor.apply.answers import questions
+from resume_tailor.apply.ats import ats_hints
+from resume_tailor.apply.forms import field_matcher
+from resume_tailor.apply.funnel import packet
 
 _ROOT = Path(__file__).parents[1]
-_FILLER = (_ROOT / "src/resume_tailor/apply/filler.js").read_text(encoding="utf-8")
+_FILLER = (_ROOT / "src/resume_tailor/apply/forms/filler.js").read_text(encoding="utf-8")
 _FORMS = Path(__file__).parent / "fixtures" / "forms"
 _TODAY = date(2026, 9, 27)
 

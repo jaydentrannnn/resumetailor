@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from resume_tailor.apply import eligibility
+from resume_tailor.apply.funnel import eligibility
 
 
 def test_inclusive_degree_wording_passes():

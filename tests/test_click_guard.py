@@ -7,14 +7,14 @@ from pathlib import Path
 
 import pytest
 
-from resume_tailor.apply import clicks
+from resume_tailor.apply.driver import clicks
 
-APPLY_DIR = Path(clicks.__file__).parent
+APPLY_DIR = Path(clicks.__file__).parent.parent
 
 
 def test_no_raw_click_outside_clicks_module():
     offenders = []
-    for path in sorted(APPLY_DIR.glob("*.py")):
+    for path in sorted(APPLY_DIR.rglob("*.py")):
         if path.name == "clicks.py":
             continue
         for node in ast.walk(ast.parse(path.read_text(encoding="utf-8"))):
@@ -30,7 +30,7 @@ def test_no_raw_click_outside_clicks_module():
 def test_only_fill_presses_submit():
     users = [
         path.name
-        for path in APPLY_DIR.glob("*.py")
+        for path in APPLY_DIR.rglob("*.py")
         if path.name != "clicks.py" and "submit_click(" in path.read_text(encoding="utf-8")
     ]
     assert users == ["fill.py"]

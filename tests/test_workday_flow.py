@@ -14,8 +14,9 @@ from types import SimpleNamespace
 import pytest
 
 from resume_tailor import config
-from resume_tailor.apply import store, workday_auth, workday_flow
-from resume_tailor.apply.profile import ApplicantProfile
+from resume_tailor.apply.answers.profile import ApplicantProfile
+from resume_tailor.apply.ats import workday_auth, workday_flow
+from resume_tailor.apply.funnel import store
 
 _SCREENS = json.loads(
     (Path(__file__).parent / "fixtures" / "workday" / "screens.json").read_text(encoding="utf-8")
@@ -692,7 +693,7 @@ class _DropdownPage:
 
 
 def test_fill_dropdowns_corrects_country_first_and_leaves_unknowns():
-    from resume_tailor.apply import ats_hints
+    from resume_tailor.apply.ats import ats_hints
 
     page = _DropdownPage([
         {"selector": "#source--source", "label": "How Did You Hear About Us?", "current": "Select One"},
@@ -721,7 +722,7 @@ def test_fill_dropdowns_corrects_country_first_and_leaves_unknowns():
 
 
 def test_fill_dropdowns_records_a_blank_profile_fact_instead_of_skipping_silently():
-    from resume_tailor.apply import ats_hints
+    from resume_tailor.apply.ats import ats_hints
 
     page = _DropdownPage([
         {"selector": "#phoneNumber--phoneType", "label": "Phone Device Type", "current": "Select One"},
@@ -740,7 +741,7 @@ def test_fill_dropdowns_records_a_blank_profile_fact_instead_of_skipping_silentl
 def test_an_answer_that_reveals_a_follow_up_is_followed_in_the_same_call():
     """"Legally permitted to work" = Yes reveals "proof of eligibility" (a live Workday
     step, 2026-09); both come from the profile, and neither is read as the Country."""
-    from resume_tailor.apply import ats_hints
+    from resume_tailor.apply.ats import ats_hints
 
     permitted = "Are you legally permitted to work in the country where this job is located?"
     proof = {"selector": "#proof", "label": "If hired, can you provide proof of eligibility?", "current": "Select One"}
@@ -771,7 +772,7 @@ def test_an_answer_that_reveals_a_follow_up_is_followed_in_the_same_call():
 
 
 def test_fill_dropdowns_keeps_an_existing_choice():
-    from resume_tailor.apply import ats_hints
+    from resume_tailor.apply.ats import ats_hints
 
     page = _DropdownPage([{"selector": "#address--countryRegion", "label": "State", "current": "Texas"}])
     calls: list = []
@@ -792,7 +793,7 @@ class _PromptPage:
 
 
 def test_fill_prompts_answers_only_empty_prompts_with_a_profile_fact():
-    from resume_tailor.apply import ats_hints
+    from resume_tailor.apply.ats import ats_hints
 
     page = _PromptPage([
         {"input_id": "source--source", "label": "How Did You Hear About Us?", "chips": 0},
@@ -886,7 +887,7 @@ def test_select_listbox_waits_for_the_list_to_open():
 
 
 def test_fill_prompts_leaves_the_skills_prompt_to_fill_skills(monkeypatch):
-    from resume_tailor.apply import questions
+    from resume_tailor.apply.answers import questions
 
     # Even a Skills prompt keyed to a known fact is `fill_skills`' to fill.
     monkeypatch.setattr(workday_flow.questions, "classify", lambda _q: questions.Match("skills"))
@@ -951,7 +952,7 @@ def test_select_prompt_leaves_a_tie_for_review():
 
 
 def test_fill_prompts_falls_back_to_other_when_the_source_is_not_listed():
-    from resume_tailor.apply import ats_hints
+    from resume_tailor.apply.ats import ats_hints
 
     page = _PromptPage([{"input_id": "source--source", "label": "How Did You Hear About Us?", "chips": 0}])
     tried: list[str] = []
@@ -968,7 +969,7 @@ def test_fill_prompts_falls_back_to_other_when_the_source_is_not_listed():
 
 
 def test_country_mismatch_reads_a_wrong_saved_country():
-    from resume_tailor.apply import ats_hints
+    from resume_tailor.apply.ats import ats_hints
 
     def page_with(current: str) -> SimpleNamespace:
         items = [{"selector": "#country--country", "label": "Country", "current": current, "required": True}]
@@ -982,7 +983,7 @@ def test_country_mismatch_reads_a_wrong_saved_country():
 
 
 def test_fill_dropdowns_reports_a_country_it_could_not_change():
-    from resume_tailor.apply import ats_hints
+    from resume_tailor.apply.ats import ats_hints
 
     class _Page:
         def evaluate(self, script, arg=None):
@@ -1358,7 +1359,7 @@ def test_fill_prompts_leaves_a_source_for_review_when_no_option_commits():
 
 
 def test_fill_prompts_never_asks_for_any_option_on_a_question_that_is_not_a_source(monkeypatch):
-    from resume_tailor.apply import questions
+    from resume_tailor.apply.answers import questions
 
     monkeypatch.setattr(workday_flow.questions, "classify", lambda _q: questions.Match("school"))
     page = _PromptPage([{"input_id": "edu--school", "label": "School or University", "chips": 0}])

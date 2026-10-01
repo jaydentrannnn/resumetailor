@@ -8,7 +8,8 @@ from pathlib import Path
 
 import pytest
 
-from resume_tailor.apply import wizards, workday_flow
+from resume_tailor.apply.ats import workday_flow
+from resume_tailor.apply.forms import wizards
 
 _FIXTURES = Path(__file__).parent / "fixtures"
 _SCREENS = json.loads((_FIXTURES / "wizards" / "screens.json").read_text(encoding="utf-8"))

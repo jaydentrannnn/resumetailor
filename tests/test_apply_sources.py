@@ -6,7 +6,7 @@ from pathlib import Path
 
 import pytest
 
-from resume_tailor.apply import sources
+from resume_tailor.apply.discovery import sources
 
 _FIXTURE = Path(__file__).resolve().parent / "fixtures" / "simplify_readme.md"
 _CATEGORIES = ["Software Engineering Internship Roles"]

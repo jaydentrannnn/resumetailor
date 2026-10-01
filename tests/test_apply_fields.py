@@ -4,17 +4,27 @@ from __future__ import annotations
 
 import pytest
 
-from resume_tailor.apply.field_catalog import classify
-from resume_tailor.apply.field_matcher import (
-    choice_values, closest_option, degree_of, eeo_patterns, fallback_values, match_option,
-    match_skill_option, search_terms,
+from resume_tailor.apply.ats.adapters import GreenhouseAdapter, WorkdayAdapter
+from resume_tailor.apply.driver.controls import _phone_match
+from resume_tailor.apply.forms.engine import (
+    _availability_for_field,
+    _current_outcome,
+    _national_phone_value,
 )
-from resume_tailor.apply.field_types import FieldObservation, FieldOutcome, ObservedOption
-from resume_tailor.apply.preparation import PreparedExpansion
-from resume_tailor.apply.engine import _availability_for_field, _current_outcome, _national_phone_value
-from resume_tailor.apply.controls import _phone_match
-from resume_tailor.apply.adapters import GreenhouseAdapter, WorkdayAdapter
-from resume_tailor.apply.packet import Packet, PacketEducation
+from resume_tailor.apply.forms.field_catalog import classify
+from resume_tailor.apply.forms.field_matcher import (
+    choice_values,
+    closest_option,
+    degree_of,
+    eeo_patterns,
+    fallback_values,
+    match_option,
+    match_skill_option,
+    search_terms,
+)
+from resume_tailor.apply.forms.field_types import FieldObservation, FieldOutcome, ObservedOption
+from resume_tailor.apply.funnel.packet import Packet, PacketEducation
+from resume_tailor.apply.funnel.preparation import PreparedExpansion
 
 
 def option(label: str, *, value: str = "", disabled: bool = False) -> ObservedOption:

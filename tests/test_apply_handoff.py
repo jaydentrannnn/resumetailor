@@ -8,8 +8,10 @@ from unittest.mock import MagicMock
 import pytest
 
 from resume_tailor import config
-from resume_tailor.apply import browser, operations, preparation, store, workday_auth
-from resume_tailor.apply.profile import ApplicantProfile
+from resume_tailor.apply.answers.profile import ApplicantProfile
+from resume_tailor.apply.ats import workday_auth
+from resume_tailor.apply.driver import browser
+from resume_tailor.apply.funnel import operations, preparation, store
 from resume_tailor.web.schemas import ApplyOperationRequest, ApplySettings
 
 

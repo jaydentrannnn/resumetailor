@@ -9,8 +9,8 @@ import threading
 import pytest
 
 from resume_tailor import config
-from resume_tailor.apply import store
-from resume_tailor.apply.screen import ScreenResult
+from resume_tailor.apply.funnel import store
+from resume_tailor.apply.funnel.screen import ScreenResult
 
 
 def _sample_app(**overrides) -> store.Application:

@@ -11,8 +11,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from resume_tailor import config, secret_store
-from resume_tailor.apply import profile as profile_mod
-from resume_tailor.apply import workday_auth
+from resume_tailor.apply.answers import profile as profile_mod
+from resume_tailor.apply.ats import workday_auth
 
 
 def _file_backend(tmp_path):

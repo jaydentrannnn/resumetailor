@@ -15,7 +15,10 @@ from typing import Any
 import pytest
 
 from resume_tailor import config, jd
-from resume_tailor.apply import browser, daily, fetch_jd, fill, sources, store, submit_guard
+from resume_tailor.apply.discovery import fetch_jd, sources
+from resume_tailor.apply.driver import browser
+from resume_tailor.apply.forms import fill, submit_guard
+from resume_tailor.apply.funnel import daily, store
 
 
 def test_daily_attention_tracks_known_row_errors_and_latest_outcome():
@@ -27,7 +30,7 @@ def test_daily_attention_tracks_known_row_errors_and_latest_outcome():
     assert [(item.application_id, item.kind, item.message) for item in summary.attention] == [
         ("one", "needs_input", "Open the posting")
     ]
-from resume_tailor.apply.sources import SourceRow
+from resume_tailor.apply.discovery.sources import SourceRow
 from resume_tailor.jd import JobRequirements, Keyword
 from resume_tailor.web import jobs as jobs_mod
 from resume_tailor.web.jobs import Job, JobQueue
@@ -113,7 +116,7 @@ def _write_prior_run(root: Path, job_id: str, *, company: str, jd_text: str) -> 
 @pytest.fixture
 def stub_pipeline(monkeypatch, apply_paths):
     """Stub external IO and the tailor queue for deterministic daily runs."""
-    from resume_tailor.apply.screen import ScreenResult
+    from resume_tailor.apply.funnel.screen import ScreenResult
     from tests.fixtures import synthetic_resume
 
     row = _sample_row()
@@ -455,7 +458,7 @@ def test_run_daily_loops_multiple_simplify_sources(stub_pipeline, apply_paths, m
 
 def test_canonical_dedupe_merges_source_refs(stub_pipeline, apply_paths, monkeypatch):
     """Simplify wrapper + direct ATS URL for the same requisition share one record."""
-    from resume_tailor.apply import identity
+    from resume_tailor.apply.discovery import identity
     from resume_tailor.web.schemas import SourceConfig
 
     figma = "https://boards.greenhouse.io/figma/jobs/6143238004"
@@ -527,7 +530,7 @@ def test_canonical_dedupe_merges_source_refs(stub_pipeline, apply_paths, monkeyp
 
 def test_group_key_reuses_tailoring(stub_pipeline, apply_paths, monkeypatch):
     """Same company+role across locations reuses the primary's job_id."""
-    from resume_tailor.apply import identity
+    from resume_tailor.apply.discovery import identity
     from resume_tailor.web.schemas import SourceConfig
 
     baltimore = _sample_row(
@@ -656,7 +659,7 @@ def test_work_restriction_is_screened_before_extract_consensus(
 
 
 def test_resume_screen_rejection_is_archived(stub_pipeline, apply_paths, monkeypatch):
-    from resume_tailor.apply.screen import ScreenResult
+    from resume_tailor.apply.funnel.screen import ScreenResult
 
     monkeypatch.setattr(
         daily,
@@ -773,7 +776,7 @@ def test_daily_status_reflects_progress(apply_paths, monkeypatch):
     monkeypatch.setattr(
         jd, "extract_consensus", lambda text, known_tags, **kwargs: requirements
     )
-    from resume_tailor.apply.screen import ScreenResult
+    from resume_tailor.apply.funnel.screen import ScreenResult
     from tests.fixtures import synthetic_resume
 
     monkeypatch.setattr(daily.data, "load", lambda: synthetic_resume())
@@ -1337,7 +1340,7 @@ def _recheck_settings(monkeypatch):
 def test_recheck_clears_a_stale_screen_out(apply_paths, monkeypatch):
     """A row rejected by an old rule (30-year misparse, model seniority on an intern
     title) clears under the current rules and returns to `jd_fetched`."""
-    from resume_tailor.apply.screen import ScreenResult
+    from resume_tailor.apply.funnel.screen import ScreenResult
 
     _recheck_settings(monkeypatch)
     jd_path = apply_paths / "jd.txt"
@@ -1667,7 +1670,7 @@ def test_run_daily_reads_a_company_watchlist(apply_paths, monkeypatch):
     wrong board name without losing the others."""
     from datetime import UTC, datetime, timedelta
 
-    from resume_tailor.apply import boards
+    from resume_tailor.apply.discovery import boards
     from tests.fixtures import synthetic_resume
 
     monkeypatch.setattr(daily.data, "load", synthetic_resume)
@@ -1709,7 +1712,7 @@ def test_watchlist_age_limit_only_widens(apply_paths, monkeypatch, funnel_days, 
     days; a shorter one never narrows it."""
     from datetime import UTC, datetime, timedelta
 
-    from resume_tailor.apply import boards
+    from resume_tailor.apply.discovery import boards
     from tests.fixtures import synthetic_resume
 
     monkeypatch.setattr(daily.data, "load", synthetic_resume)
@@ -1750,7 +1753,7 @@ def test_closed_posting_is_skipped_before_tailoring(stub_pipeline, apply_paths, 
 
 
 def test_new_application_keeps_the_sources_posted_date():
-    from resume_tailor.apply.sources import SourceRow
+    from resume_tailor.apply.discovery.sources import SourceRow
 
     row = SourceRow(company="Acme", role="Analyst", location="", age="4d", age_days=4,
                     posted_at="2026-09-01", job_id="greenhouse:acme:1")
@@ -1765,7 +1768,7 @@ def test_run_daily_reads_company_link_tables_and_reports_part_errors(
     """The loop goes through ``sources.fetch_source_rows`` for every kind: a
     ``company_link_table`` README yields rows tagged with its id, and a keyword
     search's per-phrase errors land in the summary while its rows still count."""
-    from resume_tailor.apply import job_apis
+    from resume_tailor.apply.discovery import job_apis
     from resume_tailor.web.schemas import SourceConfig
 
     readme = (Path(__file__).resolve().parent / "fixtures" / "nwfintech_readme.md").read_text(

@@ -23,7 +23,7 @@ the Claude Desktop fallback for `needs_browser` postings.
 **The LLM produces plain strings and nothing else. It never sees, receives, or emits XML,
 styling, template markup, or anything about layout.** Only `jd.py`, `rewrite.py`,
 `facets.py`, `expand.py`, `skills.py`, `coverletter.py`, `review.py`, `propose.py` — plus
-the apply funnel's `apply/answer.py`, `apply/model_resolver.py`, `apply/hybrid_resolver.py`
+the apply funnel's `apply/answers/` `answer.py`, `model_resolver.py`, `hybrid_resolver.py`
 (form-field labels/options and resume text, never document XML) — call the API,
 exchanging plain text/JSON only. `llm.py` routes which backend; `render.py` is
 the only module that touches the document (mechanically, via `docxtpl`); `convert.py`
@@ -192,7 +192,7 @@ everything *after* the loop prototype stripped (`_wrap_cell_loop`).
 - **`config._ACTIVE` is populated only by `web/jobs.py`'s job runner.** A web route calling
   an LLM outside a job hits the claude fallback; one that must not does
   `config.pinned(config.ONE_OFF_PROFILE)` (ContextVar overlay). Apply's Prepare (screening
-  extraction in `apply/daily.py` + the tailor job) uses the Tailor settings' routing
+  extraction in `apply/funnel/daily.py` + the tailor job) uses the Tailor settings' routing
   (`web.jobs.model_routing`); Fill's answer/resolver calls (`fill.py`, `engine.py`) run under
   `config.pinned(ApplySettings.model_spec)` — the Apply page's "Autofill model".
 - **Structured output**: non-frontier backends may accept a schema and ignore it — `llm.py`

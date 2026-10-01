@@ -20,16 +20,18 @@ packaged desktop app, not this checkout (see the auto-memory note on the live fi
 
 ## Module map
 
-| Area | Modules |
+Six subpackages; module names are unique across them, so `grep -r "def name"` still finds
+anything. Data files live beside the module that loads them (`resources.files` on the
+subpackage).
+
+| Subpackage | Modules |
 |---|---|
-| Orchestration | `daily` (nightly run), `scheduler`, `operations` (Find/Prepare/Fill coordinator), `preparation`, `packet`, `store`, `review`, `attention` |
-| Discovery | `sources` (README tables), `source_catalog` (+ `catalog/sources.json`), `boards` (+ `watchlists/`), `job_apis`, `ats_api`, `fetch_jd`, `identity` |
-| Screening | `screen`, `eligibility`, `form_guards` |
-| Answering | `questions` (one decision layer), `answer`, `answer_memory`, `salary`, `phone`, `profile` |
-| Form filling (generic) | `fill` (CDP fill entrypoint), `engine` (verified engine), `browser`, `cdp_relay`, `controls`, `clicks`, `scanner`, `wizards`, `field_catalog`, `field_matcher`, `field_types`, `form_routes`, `ats_hints`, `adapters`, `attachments`, `submit_guard` |
-| Model assist | `hybrid_resolver`, `model_resolver` |
-| Per-ATS flows | `workday_flow`, `workday_auth`, `workday_repeaters`, `smartrecruiters_flow` |
-| Injected JS | `filler.js` (label reading + fill), `filler_readiness.js`, `dom_scan.js` |
+| `funnel/` — orchestration + state | `daily` (nightly run), `scheduler`, `operations` (Find/Prepare/Fill coordinator), `preparation`, `packet`, `store`, `review`, `attention`, `screen`, `eligibility` |
+| `discovery/` — finding postings | `sources` (README tables), `source_catalog` (+ `catalog/sources.json`), `boards` (+ `watchlists/`), `job_apis`, `ats_api`, `fetch_jd`, `identity` |
+| `answers/` — question answering | `questions` (one decision layer), `answer` (LLM), `answer_memory`, `salary`, `phone`, `profile`, `model_resolver` (LLM), `hybrid_resolver` (LLM) |
+| `driver/` — the browser over CDP | `browser`, `cdp_relay`, `controls`, `clicks`, `scanner` (+ `dom_scan.js`) |
+| `forms/` — generic form filling | `fill` (CDP fill entrypoint), `engine` (verified engine), `wizards`, `field_catalog`, `field_matcher` (+ `school_aliases.json`), `field_types`, `form_routes`, `form_guards`, `attachments`, `submit_guard`, `filler.js`, `filler_readiness.js` |
+| `ats/` — per-ATS flows | `workday_flow`, `workday_auth`, `workday_repeaters`, `smartrecruiters_flow`, `adapters`, `ats_hints` |
 
 ## Tests
 

@@ -20,7 +20,8 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel
 
 from resume_tailor import config, workspace
-from resume_tailor.apply import store, submit_guard
+from resume_tailor.apply.forms import submit_guard
+from resume_tailor.apply.funnel import store
 from resume_tailor.web.schemas import JobSettings
 
 router = APIRouter()

@@ -22,7 +22,8 @@ if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
 from resume_tailor import workspace  # noqa: E402
-from resume_tailor.apply import fetch_jd, store  # noqa: E402
+from resume_tailor.apply.discovery import fetch_jd  # noqa: E402
+from resume_tailor.apply.funnel import store  # noqa: E402
 
 #: Statuses that mean the form was reached, in the order they are printed.
 _COLUMNS = (

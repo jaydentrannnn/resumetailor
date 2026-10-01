@@ -9,7 +9,8 @@ from typing import Any
 import pytest
 
 from resume_tailor import config
-from resume_tailor.apply import daily, job_apis, store
+from resume_tailor.apply.discovery import job_apis
+from resume_tailor.apply.funnel import daily, store
 from resume_tailor.web.schemas import ApplySettings, SourceConfig
 from tests.fixtures import synthetic_resume
 

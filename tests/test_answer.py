@@ -5,8 +5,8 @@ from __future__ import annotations
 import pytest
 
 from resume_tailor import config, llm
-from resume_tailor.apply.answer import AnswerLLM, answer_question, normalize_question
-from resume_tailor.apply.profile import ApplicantProfile
+from resume_tailor.apply.answers.answer import AnswerLLM, answer_question, normalize_question
+from resume_tailor.apply.answers.profile import ApplicantProfile
 from resume_tailor.jd import JobRequirements, Keyword
 from tests.fixtures import synthetic_resume
 
@@ -205,8 +205,8 @@ def test_guard_failure_is_not_cached(answer_calls):
 
 
 def test_classifier_keys_questions_once_and_caches_them(answer_calls):
-    from resume_tailor.apply.answer import ClassifiedLLM, classify_questions
-    from resume_tailor.apply.questions import Question
+    from resume_tailor.apply.answers.answer import ClassifiedLLM, classify_questions
+    from resume_tailor.apply.answers.questions import Question
 
     asked = [
         Question("Will you still be a student during summer 2027?", kind="choice", options=("Yes", "No")),
@@ -225,8 +225,8 @@ def test_classifier_keys_questions_once_and_caches_them(answer_calls):
 
 
 def test_classifier_ignores_made_up_and_misaligned_keys(answer_calls):
-    from resume_tailor.apply.answer import ClassifiedLLM, classify_questions
-    from resume_tailor.apply.questions import Question
+    from resume_tailor.apply.answers.answer import ClassifiedLLM, classify_questions
+    from resume_tailor.apply.answers.questions import Question
 
     one = [Question("Do you have a car?", kind="choice", options=("Yes", "No"))]
     answer_calls(ClassifiedLLM(keys=["owns_car"]))
@@ -239,8 +239,8 @@ def test_classifier_ignores_made_up_and_misaligned_keys(answer_calls):
 
 
 def test_classifier_outage_keys_nothing(answer_calls):
-    from resume_tailor.apply.answer import classify_questions
-    from resume_tailor.apply.questions import Question
+    from resume_tailor.apply.answers.answer import classify_questions
+    from resume_tailor.apply.answers.questions import Question
 
     # No reply queued: the fake raises, as a backend that is down would.
     asked = [Question("Are you a student?", kind="choice", options=("Yes", "No"))]

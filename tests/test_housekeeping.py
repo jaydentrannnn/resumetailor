@@ -6,7 +6,7 @@ import os
 import time
 
 from resume_tailor import config, housekeeping
-from resume_tailor.apply import store
+from resume_tailor.apply.funnel import store
 
 
 def _file(path, size: int, age: float):

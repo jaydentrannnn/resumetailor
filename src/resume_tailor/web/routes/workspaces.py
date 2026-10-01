@@ -9,7 +9,7 @@ from fastapi import APIRouter, HTTPException
 from resume_tailor import (
     workspace,
 )
-from resume_tailor.apply import daily as apply_daily
+from resume_tailor.apply.funnel import daily as apply_daily
 from resume_tailor.web import template_ops
 from resume_tailor.web.jobs import get_queue
 from resume_tailor.web.routes.config import (

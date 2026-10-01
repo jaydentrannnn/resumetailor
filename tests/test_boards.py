@@ -8,7 +8,8 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from resume_tailor.apply import boards, eligibility, identity, sources
+from resume_tailor.apply.discovery import boards, identity, sources
+from resume_tailor.apply.funnel import eligibility
 from resume_tailor.web.app import app as web_app
 from resume_tailor.web.routes import discovery
 from resume_tailor.web.schemas import ApplySettings, SourceConfig

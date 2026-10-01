@@ -9,7 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from resume_tailor import config
-from resume_tailor.apply import source_catalog, sources
+from resume_tailor.apply.discovery import source_catalog, sources
 from resume_tailor.web.schemas import ApplySettings, SourceConfig
 
 _FIXTURES = Path(__file__).resolve().parent / "fixtures"

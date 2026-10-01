@@ -6,7 +6,7 @@ import re
 
 import pytest
 
-from resume_tailor.apply import ats_hints, workday_flow
+from resume_tailor.apply.ats import ats_hints, workday_flow
 
 
 def test_canonical_field_keys_match_plan():

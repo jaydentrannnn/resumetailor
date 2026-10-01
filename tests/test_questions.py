@@ -11,8 +11,8 @@ from datetime import date
 
 import pytest
 
-from resume_tailor.apply import questions as q
-from resume_tailor.apply.questions import Question
+from resume_tailor.apply.answers import questions as q
+from resume_tailor.apply.answers.questions import Question
 
 YES_NO = ("Yes", "No")
 

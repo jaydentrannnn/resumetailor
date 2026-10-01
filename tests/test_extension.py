@@ -9,8 +9,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from resume_tailor import config
-from resume_tailor.apply import daily, store
-from resume_tailor.apply import operations as apply_operations
+from resume_tailor.apply.funnel import daily, store
+from resume_tailor.apply.funnel import operations as apply_operations
 from resume_tailor.web import extension
 from resume_tailor.web.app import app as web_app
 

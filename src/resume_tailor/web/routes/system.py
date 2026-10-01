@@ -16,9 +16,9 @@ from pydantic import BaseModel, Field
 from starlette.background import BackgroundTask
 
 from resume_tailor import config, convert, data_transfer, libraries, llm, workspace
-from resume_tailor.apply import daily as apply_daily
-from resume_tailor.apply import operations as apply_operations
-from resume_tailor.apply import store as apply_store
+from resume_tailor.apply.funnel import daily as apply_daily
+from resume_tailor.apply.funnel import operations as apply_operations
+from resume_tailor.apply.funnel import store as apply_store
 from resume_tailor.web import template_ops
 from resume_tailor.web.jobs import get_queue, model_routing
 from resume_tailor.web.schemas import JobSettings

@@ -7,7 +7,7 @@ from datetime import date, datetime
 import pytest
 
 from resume_tailor import config
-from resume_tailor.apply import scheduler
+from resume_tailor.apply.funnel import scheduler
 
 
 @pytest.fixture(autouse=True)

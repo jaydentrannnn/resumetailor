@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import pytest
 
-from resume_tailor.apply import packet, salary
-from resume_tailor.apply.profile import ApplicantProfile
-from resume_tailor.apply.salary import Pay
+from resume_tailor.apply.answers import salary
+from resume_tailor.apply.answers.profile import ApplicantProfile
+from resume_tailor.apply.answers.salary import Pay
+from resume_tailor.apply.funnel import packet
 from tests.fixtures import synthetic_resume
 
 _SENTENCE = "Open to discussing; otherwise $60k-80k/yr or $40-$45/hour depending on the role."

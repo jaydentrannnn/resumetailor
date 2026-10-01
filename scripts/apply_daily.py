@@ -21,7 +21,7 @@ if str(_SRC) not in sys.path:
     sys.path.insert(0, str(_SRC))
 
 from resume_tailor import config, workspace  # noqa: E402
-from resume_tailor.apply.daily import run_daily  # noqa: E402
+from resume_tailor.apply.funnel.daily import run_daily  # noqa: E402
 from resume_tailor.web.schemas import JobSettings  # noqa: E402
 
 
@@ -56,7 +56,7 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.list_sections:
-        from resume_tailor.apply import sources
+        from resume_tailor.apply.discovery import sources
 
         text = sources.fetch_readme(args.list_sections)
         for level, name in sources.list_sections(text):

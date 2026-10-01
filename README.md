@@ -305,7 +305,7 @@ never fetches LinkedIn or Indeed. The options page also sets the app port, what 
 capture does next (send, or send and tailor), and the chip.
 
 CDP remains the default Fill browser. To fill the selected tab through the extension,
-start the optional loopback relay with `python -m resume_tailor.apply.cdp_relay`, set
+start the optional loopback relay with `python -m resume_tailor.apply.driver.cdp_relay`, set
 `BROWSER_MODE=extension` and `EXTENSION_CDP_URL` to the printed URL before starting the
 app, turn on **Fill relay** under Advanced in the extension options (this is the only
 time it asks for the `debugger` permission), then choose **Use this tab for Fill

@@ -404,12 +404,12 @@ got a proper default stub in the `client` fixture instead of repeating that gap.
      choice over scoping it to the apply funnel only. `FabricationError` itself still
      exists (still importable/catchable by `tailor.py`/`web/jobs.py`) but is no longer
      raised anywhere in `rewrite.py`.
-  2. `apply/screen.py`'s `screen()`: removed both must-have gates
+  2. `apply/funnel/screen.py`'s `screen()`: removed both must-have gates
      (`min_must_have_coverage`, `max_no_evidence_must_haves`) — coverage is still
      computed and surfaced on `ScreenResult`/the application record, but never rejects a
      posting. Both fields dropped from `ScreenSettings` and the frontend's mirrored type/
      defaults (`api.ts`, `runState.tsx`) since nothing else read them.
-  3. `apply/eligibility.py`'s `_YEARS` regex: `\d{1,2}` had no boundary against starting
+  3. `apply/funnel/eligibility.py`'s `_YEARS` regex: `\d{1,2}` had no boundary against starting
      mid-number, so "over **175** years" (company-history boilerplate) matched as "17"
      followed by "5 years", producing a false `requires_17_years` hard-reject. Added
      `(?<!\d)`/`(?!\d)` guards around both digit groups.

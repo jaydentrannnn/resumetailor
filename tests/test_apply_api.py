@@ -9,12 +9,12 @@ import pytest
 from fastapi.testclient import TestClient
 
 from resume_tailor import config
-from resume_tailor.apply import profile as profile_mod
-from resume_tailor.apply import store as apply_store
-from resume_tailor.apply import operations as operations_mod
+from resume_tailor.apply.answers import profile as profile_mod
+from resume_tailor.apply.funnel import operations as operations_mod
+from resume_tailor.apply.funnel import store as apply_store
+from resume_tailor.web import jobs as jobs_mod
 from resume_tailor.web.app import app
 from resume_tailor.web.jobs import JobQueue
-from resume_tailor.web import jobs as jobs_mod
 from tests.fixtures import synthetic_resume
 
 
@@ -250,7 +250,7 @@ def test_browser_status_shape(client):
 ])
 def test_open_tabs_route_separates_no_tabs_from_unknown(client, monkeypatch, ids, expected):
     """An unreachable browser is "unknown", never "every tab closed"."""
-    from resume_tailor.apply import browser as browser_mod
+    from resume_tailor.apply.driver import browser as browser_mod
     c, _q = client
     monkeypatch.setattr(browser_mod, "open_target_ids", lambda: ids)
     res = c.get("/api/applications/open-tabs")
@@ -334,7 +334,7 @@ def test_list_rows_carry_server_retry_kind(client):
 
 def test_screened_out_rows_carry_a_short_reason_label(client):
     """The Status column shows why a row was screened out, including legacy reasons."""
-    from resume_tailor.apply.screen import ScreenResult
+    from resume_tailor.apply.funnel.screen import ScreenResult
 
     c, _q = client
     legacy = _stored_app("a-legacy", "screened_out")

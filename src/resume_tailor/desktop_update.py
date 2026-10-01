@@ -161,8 +161,8 @@ def receive(line: str) -> None:
 
 def busy_reason() -> str | None:
     """Why an install must wait right now, or None when nothing is running."""
-    from resume_tailor.apply import daily as apply_daily
-    from resume_tailor.apply import operations as apply_operations
+    from resume_tailor.apply.funnel import daily as apply_daily
+    from resume_tailor.apply.funnel import operations as apply_operations
     from resume_tailor.web.jobs import get_queue
 
     if get_queue().busy():

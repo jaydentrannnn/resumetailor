@@ -2,7 +2,7 @@
 
 from __future__ import annotations
 
-from resume_tailor.apply import browser
+from resume_tailor.apply.driver import browser
 
 
 def test_effective_cdp_url_leaves_localhost(monkeypatch):

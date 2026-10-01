@@ -7,7 +7,7 @@ earlier ones. Cross-check any number against the code.
 
 ## 2026-09-21 — Apply Phase 1: packet, ats_hints, answer
 
-- **Decision:** Added `apply/packet.py`, `apply/ats_hints.py`, and `apply/answer.py` as pure
+- **Decision:** Added `apply/funnel/packet.py`, `apply/ats/ats_hints.py`, and `apply/answers/answer.py` as pure
   disk assembly plus one guarded `"answer"` LLM stage. Packet booleans serialise as `"Yes"` /
   `"No"` with `None` omitted; `confirmation_text` hint rows carry page text, not field keys;
   F-1/OPT/CPT synonyms precede generic sponsorship in `SYNONYMS`.
@@ -21,8 +21,8 @@ earlier ones. Cross-check any number against the code.
 
 ## 2026-09-21 — Apply Phase 2: store and sources
 
-- **Decision:** Added `apply/store.py` (`applications.json` keyed by `source_job_id`, atomic
-  `.json.tmp` writes) and `apply/sources.py` (SimplifyJobs README parse/filter ported from
+- **Decision:** Added `apply/funnel/store.py` (`applications.json` keyed by `source_job_id`, atomic
+  `.json.tmp` writes) and `apply/discovery/sources.py` (SimplifyJobs README parse/filter ported from
   the internship-tracker script). `ApplySettings` nests on `JobSettings` with
   `exclude_citizenship_required` mapped to `filter_rows(..., exclude_citizenship=...)`.
 - **Why:** Discovery needs a durable funnel registry and deterministic README ingestion
@@ -34,8 +34,8 @@ earlier ones. Cross-check any number against the code.
 
 ## 2026-09-21 — Apply Phase 4–5: filler, fill, daily pipeline
 
-- **Decision:** Added packaged `filler.js` / `filler_readiness.js`, `apply/fill.py` (CDP
-  runner with `decide_submit_action` policy A/B), `apply/daily.py` (discover → fetch →
+- **Decision:** Added packaged `filler.js` / `filler_readiness.js`, `apply/forms/fill.py` (CDP
+  runner with `decide_submit_action` policy A/B), `apply/funnel/daily.py` (discover → fetch →
   screen → reuse or queue tailor), and `scripts/apply_daily.py`. `FillResult.filled` /
   `leftovers` are now `list[Any]` for structured dict rows.
 - **Why:** Deterministic fill must stay in injected JS; Python only orchestrates packet
@@ -131,7 +131,7 @@ earlier ones. Cross-check any number against the code.
 
 - **Decision:** Docs (`README.md`, `CLAUDE.md`) and in-app copy
   (`ApplicationsPage.tsx`'s pill/instructions, `docker-compose.yml`/`requirements.txt`
-  comments, docstrings in `apply/browser.py`/`fill.py`/`__init__.py`/`fetch_jd.py`,
+  comments, docstrings in `apply/driver/browser.py`/`fill.py`/`__init__.py`/`fetch_jd.py`,
   `config.py`) now recommend launching **Microsoft Edge** with
   `--remote-debugging-port=9222` instead of Chrome. `CHROME_CDP_URL`'s name is
   unchanged — it has no `.env.example` entry, so there was nothing to migrate, and the
@@ -843,7 +843,8 @@ eligibility?". The model answered the first two and missed the third. Causes: no
 "permitted"/"proof of eligibility"/"over 18"; the permitted question matched the country rule
 (first match wins), so ill_dropdowns tried "United States" in a Yes/No list and
 country_mismatch read the later "Yes" as a wrong Country; profile.over_18 was never emitted;
-and esolve_step_blockers returned as soon as the page showed no errors, which on Workday is
+and 
+esolve_step_blockers returned as soon as the page showed no errors, which on Workday is
 always true before Save and Continue, so a question revealed by the model's own answer was
 never seen. Fix: ts_hints.AUTHORIZED_TO_WORK/OVER_18 before the Country rule (proof of
 eligibility reads the same fact as authorization: provable follows from authorised; exclusions
@@ -900,7 +901,7 @@ Continue start was rejected: it drops unsaved answers on the current step.
 
 ## Nightly scheduler (B3, 2026-09)
 
-- `apply/scheduler.py` replaces the exact-minute check in `web/app.py`. That check skipped a day whenever a 60 s wake drifted past the scheduled minute, and never ran when the machine was asleep at the time. A run is now due any time from `schedule_time` until 12 hours after it (`CATCH_UP_WINDOW`), including on the first tick after startup. Later than that the day is recorded as missed rather than starting mid-afternoon unannounced.
+- `apply/funnel/scheduler.py` replaces the exact-minute check in `web/app.py`. That check skipped a day whenever a 60 s wake drifted past the scheduled minute, and never ran when the machine was asleep at the time. A run is now due any time from `schedule_time` until 12 hours after it (`CATCH_UP_WINDOW`), including on the first tick after startup. Later than that the day is recorded as missed rather than starting mid-afternoon unannounced.
 - The last run date lives in `<DATA_DIR>/apply_scheduler.json` per profile and is written before the run starts, so a crash mid-run does not restart it on each boot.
 - A tick waits while a daily pass or an Apply operation is running, and retries 30 s later.
 - Only the active profile is scheduled. Scheduling others would rebind config paths under the user; that waits for S6.
@@ -917,13 +918,13 @@ Continue start was rejected: it drops unsaved answers on the current step.
 
 ## Click guard (B13, 2026-09)
 
-- Every Apply click goes through `apply/clicks.py`, and `tests/test_click_guard.py` fails on any `.click(` elsewhere under `apply/`. The 49 call sites were rewritten mechanically (AST) with a purpose each: `enter` (Apply / Apply Manually / resume draft), `advance` (Next / Save and Continue), `dismiss` (stray popup), `select` (options, labels, dropdown triggers, repeater Add), `auth` (Sign In, Create Account, email-route chooser, Workday click-filter overlay).
+- Every Apply click goes through `apply/driver/clicks.py`, and `tests/test_click_guard.py` fails on any `.click(` elsewhere under `apply/`. The 49 call sites were rewritten mechanically (AST) with a purpose each: `enter` (Apply / Apply Manually / resume draft), `advance` (Next / Save and Continue), `dismiss` (stray popup), `select` (options, labels, dropdown triggers, repeater Add), `auth` (Sign In, Create Account, email-route chooser, Workday click-filter overlay).
 - `enter`/`advance`/`dismiss` refuse text, aria-label, value or title matching `SUBMIT_TEXT`, and refuse when the text cannot be read. `select` refuses a submit input or a button-like control whose text reads as submit, but not options: an option may legitimately say "Complete". `auth` is unchecked because some Workday tenants label the sign-in overlay "Submit"; only the auth code uses it.
 - `submit_click(loc, decision=action)` is the only path to a final submit, used once in `fill.py`, and raises unless the decision is `auto_submit`.
 - Checked by hand against Chromium: a Workday Review "Submit" (no form), Greenhouse "Submit Application" and an iCIMS `input[type=submit]` are refused for both `advance` and `select`. The same checks live in the test file and run where Playwright's bundled browser exists.
 
 ## Application store on SQLite (S1–S3, 2026-09)
-`apply/store.py` keeps its whole public API but persists to the `applications` table of
+`apply/funnel/store.py` keeps its whole public API but persists to the `applications` table of
 `<DATA_DIR>/app.db` (`storage/db.py`: per-thread connections, WAL, `BEGIN IMMEDIATE`
 for every read-modify-write, a per-table change counter in `meta`). The DB path derives
 from `config.APPLICATIONS_PATH.parent`, so workspace switches and tests' monkeypatched
@@ -941,7 +942,7 @@ the plan's `application_refs`/`application_events`/`answer_memory` tables are ad
 the tasks that first need them (a new entry in `db.MIGRATIONS`, never an edit).
 
 ## P3-A: answer memory (2026-09)
-- `apply/answer_memory.py` stores in a new `answer_memory` table (db migration 2) in the workspace's `app.db`, next to the applications. It never goes in `applicant_profile.json`: the rows are a log of corrections, not profile facts. Uniqueness is `(label_norm, ats)`, so a second correction to the same question replaces the first.
+- `apply/answers/answer_memory.py` stores in a new `answer_memory` table (db migration 2) in the workspace's `app.db`, next to the applications. It never goes in `applicant_profile.json`: the rows are a log of corrections, not profile facts. Uniqueness is `(label_norm, ats)`, so a second correction to the same question replaces the first.
 - Capture happens only in `review.correct`, after the correction is verified in the browser, and only for questions the field catalog doesn't classify as a profile fact (`policy != "known"`). A wrong phone number is fixed in the profile, not memorised. A failure to remember never fails the correction.
 - Recall runs after the profile/packet value and before the model, at three spots: `engine.py` (verified engine: `answer_source="memory"`), the legacy `fill.py` leftovers (ahead of `custom_answers`), and `fill.py` long-text questions (ahead of `answer_question`). A remembered long answer over the field's `maxlength` goes to review rather than being truncated.
 - Company handling: labels normalise the posting's company to `{company}`, so "Why Acme?" and "Why Beta?" are one question. The answer text is never rewritten. An answer that names a company other than the current posting's comes back `needs_review` and becomes a review item (`saved_answer_other_company` in the engine) instead of being filled.
@@ -978,7 +979,7 @@ the tasks that first need them (a new entry in `db.MIGRATIONS`, never an edit).
 
 ## Company watchlists and business titles (P4-D)
 
-- **Board listings live in `apply/boards.py`, not `ats_api.py`.** `ats_api` fetches one
+- **Board listings live in `apply/discovery/boards.py`, not `ats_api.py`.** `ats_api` fetches one
   posting's text by canonical key. A board listing is a different job with different
   failures, and they need to be told apart: `BoardNotFound` (404: a wrong or retired
   name, so fix the settings) versus `BoardUnavailable` (try again tomorrow). A watchlist
@@ -1007,7 +1008,7 @@ the tasks that first need them (a new entry in `db.MIGRATIONS`, never an edit).
 
 ## Fill edge cases (P4-E)
 
-- **New checks** (`apply/form_guards.py`, pure and hermetically tested):
+- **New checks** (`apply/forms/form_guards.py`, pure and hermetically tested):
   - E13, closed postings: a 404/410, a closing banner in the first 1,500 characters, or a
     redirect to the same site's careers home. `fetch_jd` sets `FetchResult.closed`, and
     `_process_one` marks the row `skipped` before screening or tailoring, so a closed
@@ -1132,7 +1133,7 @@ the tasks that first need them (a new entry in `db.MIGRATIONS`, never an edit).
 
 ## P4-E leftovers: phone shapes, portfolio, location lists, parser overwrites, Lever cards (2026-09-25)
 
-- **E.164 (E16):** `apply/phone.py` is pure string rules, not a phone library: the
+- **E.164 (E16):** `apply/answers/phone.py` is pure string rules, not a phone library: the
   calling code comes from a typed `+`/`00`, else `phone_country_code`; NANP numbers must
   be 10 digits, other codes drop a trunk `0`; 8–15 digits or `None` (the phone is then
   typed as entered). The packet carries `phone_e164` and `phone_national`. filler.js
@@ -1278,7 +1279,7 @@ before skills are entered. CACI could not be re-checked live (already applied).
 
 The generic pass filled none of these five areas on `/oneclick-ui/` (live Resultant 744000151474767 and Wellmark 744000150732768). The causes: the City typeahead (`div[data-test=personal-info-location] spl-autocomplete`) drops typed text on blur and only commits a *clicked* option, stored as the host's `value` object (`city`, `region`, `stateCode`, `country`). Experience/Education are inline editors behind "Add" (`oc-button[data-test=add-experience|add-education]`) with typeaheads for title/company/institution (a `#spl-custom-option` commits the typed text), flatpickr month pickers that accept typed `MM/YYYY` + Enter, and Save/Cancel. Both dropzones' inputs are `#file-input`, so `filler.js` deduped to the *top* "Easy Apply" one, which parses the resume and prefills the form. The message box is `#hiring-manager-message-input` ("Let the company know about your interest…"), which `filler.js` reports as long text.
 
-Built `apply/smartrecruiters_flow.py` on the `workday_repeaters` model: entries are found by `data-test`, and a listed entry with the same title+company (or the same school with a compatible major/degree) is reused. An editor someone already has open is never touched. Answers already present (city, resume file, message) are kept, and whatever can't be verified goes to `needs_review`. City and office locations pick the single option for the city in the profile's state, then verify the committed object; an ambiguous match is cleared and left for review. `fill.py` (legacy engine, the default) calls it after the `filler.js` pass and before attachments. It drops the generic records for City, `#file-input` and the message box, and keeps the flow's records under key `smartrecruiters_entry`, next to `workday_row`. Wellmark has no City field, which is not a gap.
+Built `apply/ats/smartrecruiters_flow.py` on the `workday_repeaters` model: entries are found by `data-test`, and a listed entry with the same title+company (or the same school with a compatible major/degree) is reused. An editor someone already has open is never touched. Answers already present (city, resume file, message) are kept, and whatever can't be verified goes to `needs_review`. City and office locations pick the single option for the city in the profile's state, then verify the committed object; an ambiguous match is cleared and left for review. `fill.py` (legacy engine, the default) calls it after the `filler.js` pass and before attachments. It drops the generic records for City, `#file-input` and the message box, and keeps the flow's records under key `smartrecruiters_entry`, next to `workday_row`. Wellmark has no City field, which is not a gap.
 
 Deviation: clicks go through `_activate`, a real mouse press at the control's centre made only after `elementFromPoint` (followed through shadow roots and slots) confirms it lands on that control. In the applicant's background tab Edge throttles `requestAnimationFrame` to about 1/s, so Playwright's stability wait cost ~2s per click (158s for the form). Dispatched clicks are ignored because the menus need trusted events. The form now takes ~70s. The verified async engine (`engine.py`) is not hooked, since the Workday repeater flow is legacy-only too. Tests: `tests/test_smartrecruiters_flow.py` runs against sanitized captures under `tests/fixtures/smartrecruiters/` plus `behaviour.js`, a component stand-in that commits options only on trusted presses.
 
@@ -1290,7 +1291,7 @@ The unattended batch dispatches oldest ready applications to up to 1-4 workers b
 
 Added `job_search` source kind with providers `"adzuna"` and `"usajobs"` to allow keyword-based searches across any industry.
 - `schemas.SourceConfig` supports `kind="job_search"`, `provider` ("adzuna" | "usajobs"), `query`, `location`, `country` (default "us"), and default `max_age_days=14`. Existing schemas still validate unchanged.
-- `apply/job_apis.py` implements bounded paging (up to 5 pages), polite delay (`JOB_SEARCH_DELAY_SECONDS=1.0`), timeouts, and injectable `get` callable. Results map to `sources.SourceRow` with stable `adzuna:<id>` and `usajobs:<MatchedObjectId>` keys, recency derived from timestamps, and formatted salary when present.
+- `apply/discovery/job_apis.py` implements bounded paging (up to 5 pages), polite delay (`JOB_SEARCH_DELAY_SECONDS=1.0`), timeouts, and injectable `get` callable. Results map to `sources.SourceRow` with stable `adzuna:<id>` and `usajobs:<MatchedObjectId>` keys, recency derived from timestamps, and formatted salary when present.
 - Factored shared `sources.matches_filters` helper to reuse `include`, `exclude`, and `locations` keyword filtering consistently across `ats_board` and `job_search`.
 - Missing API credentials (`ADZUNA_APP_ID`, `ADZUNA_APP_KEY`, `USAJOBS_API_KEY`, `USAJOBS_EMAIL`) raise `MissingCredentialsError` and are recorded per-source by `run_daily` in `summary.errors` without crashing the run.
 - Configured savable credentials in `config.SAVABLE_CREDENTIALS` and updated frontend UI (`providers.ts`, `ModelsSection.tsx`, `SourceEditors.tsx`, `ApplySettingsDrawer.tsx`) with sensible labels, documentation links, inline missing-credential alerts, and drawer "Add a keyword search" integration.
@@ -1305,7 +1306,7 @@ The Found column became Posted. No stored field held a posting date, but `age_da
 The one-click form's second page (`/screening`) filled nothing. The generic pass did see its controls, but every label read as "*": the question text is slotted (`[slot=label-content]`) into a `<label>` inside the control's shadow root, and innerText of that label omits slotted nodes. The Yes/No `spl-radio`s have no native input at all, and the `spl-autocomplete` selects list their options only after ArrowDown. `smartrecruiters_flow.fill_screening` reads each `[data-test=question-container]` itself, keys the question with `workday_flow.key_for_label` (salary by its unit; graduation month/year split from one date), then a remembered answer, and picks options with `field_matcher.closest_option`. Declarations and the privacy consent are never ticked; a question with no profile answer is listed for review, never guessed. The page's `definition` attribute carries every question with its options (72 KB); the fixture drops it and keeps the select options in `screening_options.json`. "How did you learn about" now maps to `how_heard`.
 2026-09-27 - Apply table actions now dispatch selected fills up to max_parallel_fills and prepares up to max_concurrent_jobs. Extension mode and pause-on-blocker stay serial; same-group prepares run in selection order. Each worker records in_flight progress, while the legacy current fields mirror the most recent activity. Submit slots are reserved before fill and returned unless submitted; pause holds new dispatch only.
 
-## 2026-09-28: One decision layer for questions (`apply/questions.py`)
+## 2026-09-28: One decision layer for questions (`apply/answers/questions.py`)
 
 The fill reports for 7 applications (Quora and Ramp on Ashby, AbbVie and RRS on
 SmartRecruiters, GCM on Greenhouse, Atlassian on iCIMS) showed the same four weaknesses in
@@ -1394,7 +1395,7 @@ American Century School search returned "University of California, Irvine" and "
   own `href` (no actionability check) and `page.goto()` it, resolved with `urljoin` against
   `page.url`. A missing, empty, `#` or `javascript:` href falls back to `clicks.safe_click`.
   `_new_tab` still returns the same page when no tab opened, so in-place navigation is safe.
-- The Edge launch command (`frontend/src/lib/browserCommand.ts`, the `apply/browser.py` CDP
+- The Edge launch command (`frontend/src/lib/browserCommand.ts`, the `apply/driver/browser.py` CDP
   hint, README) now adds `--disable-background-timer-throttling
   --disable-renderer-backgrounding --disable-backgrounding-occluded-windows`, so the
   remaining click paths in background tabs are not throttled either. Edge must be restarted

@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from resume_tailor import config, data_transfer, workspace
-from resume_tailor.apply import store
+from resume_tailor.apply.funnel import store
 from resume_tailor.workspace import bootstrap
 from tests.test_workspace import isolated_roots  # noqa: F401 - pytest fixture
 

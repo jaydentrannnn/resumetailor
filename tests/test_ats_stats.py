@@ -5,7 +5,7 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
-from resume_tailor.apply import store
+from resume_tailor.apply.funnel import store
 
 _SPEC = importlib.util.spec_from_file_location(
     "ats_stats", Path(__file__).parents[1] / "scripts" / "ats_stats.py"

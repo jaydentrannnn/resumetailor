@@ -9,7 +9,8 @@ from typing import get_args
 import pytest
 
 from resume_tailor import config
-from resume_tailor.apply import fetch_jd, identity, store
+from resume_tailor.apply.discovery import fetch_jd, identity
+from resume_tailor.apply.funnel import store
 
 
 @pytest.fixture

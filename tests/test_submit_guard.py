@@ -9,7 +9,8 @@ import pytest
 from fastapi.testclient import TestClient
 
 from resume_tailor import config
-from resume_tailor.apply import operations, scheduler, store, submit_guard
+from resume_tailor.apply.forms import submit_guard
+from resume_tailor.apply.funnel import operations, scheduler, store
 from resume_tailor.web.app import app as web_app
 from resume_tailor.web.schemas import ApplySettings
 

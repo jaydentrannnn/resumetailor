@@ -4,7 +4,7 @@ import { resolve } from "node:path";
 import { beforeEach, expect, it } from "vitest";
 
 const script = readFileSync(
-  resolve(process.cwd(), "../src/resume_tailor/apply/dom_scan.js"),
+  resolve(process.cwd(), "../src/resume_tailor/apply/driver/dom_scan.js"),
   "utf8",
 );
 

@@ -11,11 +11,11 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field, field_validator, model_validator
 
 from .. import config, industries
-from ..apply.attention import AttentionItem
-from ..apply.eligibility import EligibilitySettings
-from ..apply.profile import ApplicantProfile
-from ..apply.screen import ScreenResult, ScreenSettings
-from ..apply.store import ApplicationStatus, AtsKind, FillResult, StatusChange
+from ..apply.answers.profile import ApplicantProfile
+from ..apply.funnel.attention import AttentionItem
+from ..apply.funnel.eligibility import EligibilitySettings
+from ..apply.funnel.screen import ScreenResult, ScreenSettings
+from ..apply.funnel.store import ApplicationStatus, AtsKind, FillResult, StatusChange
 from ..include import IncludeOptions
 
 #: Every `source_sha256` request field below is interpolated straight into a filesystem
@@ -62,7 +62,7 @@ class BoardConfig(BaseModel):
 
     @model_validator(mode="after")
     def check_slug(self) -> BoardConfig:
-        from ..apply import boards
+        from ..apply.discovery import boards
 
         if not boards.valid_slug(self.slug, self.ats):
             raise ValueError("Invalid job board slug")
@@ -132,7 +132,7 @@ def _default_apply_sources() -> list[SourceConfig]:
     Built from the bundled source catalog (never the network), so each default carries
     its ``catalog_id``/``catalog_version`` and can be offered catalog updates.
     """
-    from ..apply import source_catalog
+    from ..apply.discovery import source_catalog
 
     return [source_catalog.bundled_template(entry_id) for entry_id in DEFAULT_SOURCE_IDS]
 
@@ -213,7 +213,7 @@ class ApplySettings(BaseModel):
         so it gets the entry's id, version and display name — without which it would show
         its raw id and never be offered catalog updates. Anything else is left alone.
         """
-        from ..apply import source_catalog
+        from ..apply.discovery import source_catalog
 
         entries = {entry.id: entry for entry in source_catalog.bundled().entries}
         for index, src in enumerate(self.sources):

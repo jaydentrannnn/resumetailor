@@ -420,7 +420,7 @@ class JobQueue:
                 _persist_run_record(job, "succeeded")
                 job.status = "succeeded"
                 try:
-                    from resume_tailor.apply import packet as apply_packet
+                    from resume_tailor.apply.funnel import packet as apply_packet
 
                     context = (
                         config.context_for_workspace(job.workspace_id)

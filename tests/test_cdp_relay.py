@@ -5,8 +5,8 @@ from websockets.exceptions import ConnectionClosedError
 from websockets.frames import Close
 from websockets.sync import client as ws_client
 
-from resume_tailor.apply import browser
-from resume_tailor.apply.cdp_relay import Relay
+from resume_tailor.apply.driver import browser
+from resume_tailor.apply.driver.cdp_relay import Relay
 
 
 @pytest.mark.asyncio

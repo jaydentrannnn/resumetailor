@@ -28,7 +28,7 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from resume_tailor import workspace
-from resume_tailor.apply import boards, source_catalog, sources
+from resume_tailor.apply.discovery import boards, source_catalog, sources
 from resume_tailor.web.schemas import JobSettings, SourceConfig
 
 router = APIRouter()

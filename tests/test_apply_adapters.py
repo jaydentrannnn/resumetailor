@@ -1,8 +1,8 @@
 """Scoped ATS adapter interpretation over prepared application records."""
 
-from resume_tailor.apply.adapters import GreenhouseAdapter
-from resume_tailor.apply.field_types import FieldObservation
-from resume_tailor.apply.packet import Packet, PacketEducation
+from resume_tailor.apply.ats.adapters import GreenhouseAdapter
+from resume_tailor.apply.forms.field_types import FieldObservation
+from resume_tailor.apply.funnel.packet import Packet, PacketEducation
 
 
 def _field(label: str, control_id: str, row: str = "0") -> FieldObservation:

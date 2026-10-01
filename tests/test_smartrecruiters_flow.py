@@ -16,8 +16,8 @@ from pathlib import Path
 
 import pytest
 
-from resume_tailor.apply import smartrecruiters_flow as sr
-from resume_tailor.apply.packet import Packet, PacketEducation, PacketExperience
+from resume_tailor.apply.ats import smartrecruiters_flow as sr
+from resume_tailor.apply.funnel.packet import Packet, PacketEducation, PacketExperience
 
 _DIR = Path(__file__).parent / "fixtures" / "smartrecruiters"
 _URL = "https://jobs.smartrecruiters.com/oneclick-ui/company/Acme/publication/abc"
@@ -473,7 +473,7 @@ def test_a_remembered_answer_covers_a_question_the_profile_does_not(browser, mon
     remembered = {"are you currently subject to a non compete agreement": "No"}
 
     def recall(label, **_kwargs):
-        from resume_tailor.apply.answer_memory import Recall, normalize_label
+        from resume_tailor.apply.answers.answer_memory import Recall, normalize_label
 
         answer = remembered.get(normalize_label(label))
         return Recall(answer=answer, id=1) if answer else None

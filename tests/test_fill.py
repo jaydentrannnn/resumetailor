@@ -10,10 +10,13 @@ from unittest.mock import MagicMock
 import pytest
 
 from resume_tailor import config, data
-from resume_tailor.apply import answer, browser, clicks, fill, packet, store, submit_guard, wizards
-from resume_tailor.apply import profile as profile_mod
-from resume_tailor.apply.packet import Packet
-from resume_tailor.apply.profile import ApplicantProfile
+from resume_tailor.apply.answers import answer
+from resume_tailor.apply.answers import profile as profile_mod
+from resume_tailor.apply.answers.profile import ApplicantProfile
+from resume_tailor.apply.driver import browser, clicks
+from resume_tailor.apply.forms import fill, submit_guard, wizards
+from resume_tailor.apply.funnel import packet, store
+from resume_tailor.apply.funnel.packet import Packet
 from resume_tailor.web.schemas import ApplySettings
 
 
@@ -435,7 +438,7 @@ def test_non_english_form_is_handed_over(fill_paths, monkeypatch):
 
 
 def test_blocked_site_hands_over_and_rests_the_host(fill_paths, monkeypatch):
-    from resume_tailor.apply import form_guards
+    from resume_tailor.apply.forms import form_guards
 
     form_guards.reset_hosts()
     page = _stub_greenhouse_form(fill_paths, monkeypatch)
@@ -612,7 +615,7 @@ def test_fill_application_awaiting_review(fill_paths, monkeypatch, model_unavail
         yield browser
 
     monkeypatch.setattr(browser, "cdp_browser", _fake_browser)
-    from resume_tailor.apply import form_routes
+    from resume_tailor.apply.forms import form_routes  # noqa: PLC0415
     monkeypatch.setattr(form_routes, "choose_email_sync", lambda page, *, deadline: "absent")
     if model_unavailable:
         def unavailable_resolver(_page, _packet, _profile, *, ledger, **_kwargs):
@@ -685,7 +688,7 @@ def test_fill_application_answer_stage_pinned_to_apply_settings_model(fill_paths
         yield browser
 
     monkeypatch.setattr(browser, "cdp_browser", _fake_browser)
-    from resume_tailor.apply import form_routes
+    from resume_tailor.apply.forms import form_routes  # noqa: PLC0415
     monkeypatch.setattr(form_routes, "choose_email_sync", lambda page, *, deadline: "absent")
 
     seen: dict[str, str] = {}
@@ -889,7 +892,8 @@ def test_a_page_with_only_its_own_chrome_is_not_ready_for_review(fill_paths, mon
 def test_workday_error_page_that_survives_refreshes_is_handed_over(fill_paths, monkeypatch):
     """Workday's "Something went wrong ... Error Code: VPS|" page is refreshed; if it keeps
     coming back, the tab is handed over for review, not failed as "no form controls"."""
-    from resume_tailor.apply import form_routes, workday_auth, workday_flow  # noqa: PLC0415
+    from resume_tailor.apply.ats import workday_auth, workday_flow  # noqa: PLC0415
+    from resume_tailor.apply.forms import form_routes  # noqa: PLC0415
 
     store.upsert(_ready_app(ats="workday"))
     monkeypatch.setattr(packet, "build_packet", lambda job_id: Packet(

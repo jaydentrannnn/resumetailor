@@ -6,7 +6,7 @@ import threading
 
 import pytest
 
-from resume_tailor.apply import operations, store
+from resume_tailor.apply.funnel import operations, store
 from resume_tailor.web.schemas import ApplyOperationRequest, ApplySettings, JobSettings
 
 

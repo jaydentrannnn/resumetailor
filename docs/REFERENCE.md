@@ -232,7 +232,7 @@ requested at first use; `extension/build_zip.py` builds the release zip, and
 
 Discovery is multi-source (`ApplySettings.sources`, per profile, fully user-managed on its
 own **Job sources** page, `/applications/sources`, opened from Apply settings). The defaults are three entries of the **source catalog**
-(`apply/source_catalog.py`, bundled `apply/catalog/sources.json`, refreshed every 12h from
+(`apply/discovery/source_catalog.py`, bundled `apply/discovery/catalog/sources.json`, refreshed every 12h from
 this repo's `main` or `RESUME_TAILOR_CATALOG_URL`, cached under `DATA_ROOT`, falling back to
 the bundled copy on any failure or a newer `schema_version`). Catalog entries carry field
 tags (swe, data, quant, finance, consulting, product, business, hardware, government) used by
@@ -251,15 +251,15 @@ commits. Dedupe is by **ATS
 requisition** (`identity.canonical_key`); same-company same-role across locations share a
 `group_key` and reuse one tailor run. Application rows (the `applications` table of the
 workspace's `app.db`) are keyed by canonical key, with `source_refs` listing every sighting.
-A company watchlist (`kind="ats_board"`, `apply/boards.py`) reads public Greenhouse, Lever,
+A company watchlist (`kind="ats_board"`, `apply/discovery/boards.py`) reads public Greenhouse, Lever,
 Ashby and SmartRecruiters boards directly. It keeps titles matching `include` and none of
 `exclude`, in `locations`, and applies its own `max_age_days` (default 7), or the funnel-wide
 limit when that is longer (a Find's one-off `max_age_days` replaces the funnel-wide limit
 for that search only). Its rows use the
 ATS's own job URL, so they merge with Simplify sightings of the same job. A wrong board name
 is one run error, not a failed source. `POST /api/apply/boards/resolve` checks a board
-before the settings add it. `apply/watchlists/*.json` are suggestions, checked the same way.
-A keyword search (`kind="job_search"`, `apply/job_apis.py`) queries Adzuna or USAJobs by
+before the settings add it. `apply/discovery/watchlists/*.json` are suggestions, checked the same way.
+A keyword search (`kind="job_search"`, `apply/discovery/job_apis.py`) queries Adzuna or USAJobs by
 `query`/`location` (`country` for Adzuna) across any industry — `query` holds up to 5
 comma-separated phrases, each searched on its own and merged by `job_id` — then applies the same
 `include`/`exclude`/`locations` filters (`sources.matches_filters`) and its own
@@ -305,7 +305,7 @@ Per-workspace state:
   `url_resolve_cache.json`, `readme_cache/`
 
 The SPA starts persistent `find`, `prepare`, and `fill` operations through
-`apply/operations.py`; operation state and a bounded event history live in
+`apply/funnel/operations.py`; operation state and a bounded event history live in
 `output/.../applications/operations.json`, so progress survives page refreshes. Fill verifies
 required fields and each intended attachment before submission. Auto-submit additionally
 requires `auto_submit_enabled`, ATS membership in `auto_submit_ats`, and remaining room under
@@ -340,7 +340,7 @@ The operation records each active row in `in_flight`; legacy current-item fields
 to show the most recently active row. Pause holds new work until resumed, and automatic
 submits reserve a run-limit slot before a fill starts.
 
-**Workday (legacy engine).** `apply/workday_flow.py` recognises each Workday screen from its
+**Workday (legacy engine).** `apply/ats/workday_flow.py` recognises each Workday screen from its
 visible `data-automation-id` markers (`classify` is pure; captured screens live in
 `tests/fixtures/workday/screens.json`) and waits for screen changes instead of sleeping:
 posting (`adventureButton`, or `continueButton` for a saved draft) → Start dialog (only
@@ -430,7 +430,7 @@ are education dates; React Select inputs without `role=combobox` are dropdowns; 
 question never takes a short-field key (school, city, …). Workday's generic "Upload a file"
 input reports its hint key and section heading, so it is attached as the resume.
 
-**What a question asks, and its answer (`apply/questions.py`).** One decision layer
+**What a question asks, and its answer (`apply/answers/questions.py`).** One decision layer
 serves every fill path: the generic filler, SmartRecruiters' screening step, Workday's
 dropdowns, radios and prompts, and answer memory's canonical keys. The fills do not each
 run their own regexes. The layer has three parts:
@@ -475,7 +475,7 @@ control (`WizardAdapter.enter`). A fill that saw only unlabelled chrome hands th
 over with `fill.NO_FORM_MSG`, never "ready for review".
 
 **Salary and revealed fields.** Salary questions are answered deterministically (no LLM) by
-`apply/salary.py`: `min(posted top, applicant top)` in the posting's unit, hourly ↔ yearly at
+`apply/answers/salary.py`: `min(posted top, applicant top)` in the posting's unit, hourly ↔ yearly at
 2,080 h. Posted pay comes from the listing's salary column, else the saved JD text; with none,
 the applicant's top (hourly for intern/co-op titles, yearly otherwise) unless the question
 names a unit. The range is `ApplicantProfile.salary_{hourly,yearly}_{min,max}`, seeded once

@@ -8,7 +8,7 @@ from __future__ import annotations
 import re
 from types import SimpleNamespace
 
-from resume_tailor.apply import workday_repeaters as repeaters
+from resume_tailor.apply.ats import workday_repeaters as repeaters
 
 
 class _Control:
@@ -233,7 +233,7 @@ def test_a_step_without_experience_sections_flags_nothing():
 
 
 def test_a_failed_school_search_still_fills_the_rest_of_the_education_row(monkeypatch):
-    from resume_tailor.apply.packet import PacketEducation
+    from resume_tailor.apply.funnel.packet import PacketEducation
 
     written: list[str] = []
 
@@ -287,7 +287,7 @@ def test_a_committed_school_chip_identifies_its_row():
 
 
 def _edu(school: str, major: str):
-    from resume_tailor.apply.packet import PacketEducation
+    from resume_tailor.apply.funnel.packet import PacketEducation
 
     return PacketEducation(school=school, major=major, start="2023", end="2027")
 

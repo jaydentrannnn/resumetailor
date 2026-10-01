@@ -47,7 +47,7 @@ and relay on the same host and with the same `RESUME_TAILOR_DATA_DIR`. After pai
 
 1. In the extension options, open **Advanced** and turn on **Fill relay**. The browser
    asks for the `debugger` permission only now; turning the relay off removes it.
-2. Start `python -m resume_tailor.apply.cdp_relay` in a separate terminal. It prints a
+2. Start `python -m resume_tailor.apply.driver.cdp_relay` in a separate terminal. It prints a
    one-time `ws://127.0.0.1:8011/cdp/...` URL.
 3. Start ResumeTailor with `BROWSER_MODE=extension` and `EXTENSION_CDP_URL` set to that
    exact URL. Restarting the relay creates a new URL, so restart the app with it.

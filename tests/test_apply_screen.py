@@ -4,9 +4,14 @@ from __future__ import annotations
 
 import pytest
 
-from resume_tailor.apply import screen as screen_mod
-from resume_tailor.apply.eligibility import is_early_career_title
-from resume_tailor.apply.screen import ScreenSettings, check_blocks, screen_label, seniority_reasons
+from resume_tailor.apply.funnel import screen as screen_mod
+from resume_tailor.apply.funnel.eligibility import is_early_career_title
+from resume_tailor.apply.funnel.screen import (
+    ScreenSettings,
+    check_blocks,
+    screen_label,
+    seniority_reasons,
+)
 
 _RTX = (
     "Position Role Type: Onsite. Active and transferable U.S. government issued security "

@@ -6,7 +6,8 @@ from datetime import UTC, datetime, timedelta
 
 import pytest
 
-from resume_tailor.apply import fetch_jd, form_guards
+from resume_tailor.apply.discovery import fetch_jd
+from resume_tailor.apply.forms import form_guards
 
 
 @pytest.fixture(autouse=True)

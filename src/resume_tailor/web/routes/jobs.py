@@ -651,7 +651,7 @@ def rerender_job(job_id: str, body: RerenderRequest) -> dict:
         # The application kit records each file's hash; rebuild it so the next fill
         # uploads the edited resume.
         try:
-            from resume_tailor.apply import packet as apply_packet
+            from resume_tailor.apply.funnel import packet as apply_packet
 
             apply_packet.write_packet(job_id)
         except Exception as exc:  # noqa: BLE001 - the edit is saved either way

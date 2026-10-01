@@ -11,8 +11,8 @@ from pathlib import Path
 
 import pytest
 
-from resume_tailor.apply.field_matcher import closest_option, eeo_patterns, veteran_category
-from resume_tailor.apply.profile import EEOAnswers
+from resume_tailor.apply.answers.profile import EEOAnswers
+from resume_tailor.apply.forms.field_matcher import closest_option, eeo_patterns, veteran_category
 
 _CORPUS = json.loads((Path(__file__).parent / "fixtures" / "eeo" / "veteran_options.json").read_text(encoding="utf-8"))
 _CASES = [

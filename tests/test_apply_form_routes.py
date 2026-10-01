@@ -8,9 +8,9 @@ from pathlib import Path
 import pytest
 from playwright.sync_api import sync_playwright
 
-from resume_tailor.apply import form_routes
-from resume_tailor.apply.packet import Packet, PacketEducation
-from resume_tailor.apply.workday_repeaters import fill_education_years_async
+from resume_tailor.apply.ats.workday_repeaters import fill_education_years_async
+from resume_tailor.apply.forms import form_routes
+from resume_tailor.apply.funnel.packet import Packet, PacketEducation
 
 
 def _launch_sync(playwright):
@@ -50,7 +50,7 @@ def test_preferred_name_context_and_correction(page):
       <fieldset><legend>Legal Name</legend><label for="legal">First Name</label><input id="legal" value="Alex Jordan"></fieldset>
       <fieldset><legend>Preferred Name</legend><label for="preferred">First Name</label><input id="preferred" value="Alex Jordan"></fieldset>
     """)
-    js = (Path(__file__).parents[1] / "src/resume_tailor/apply/filler.js").read_text(encoding="utf-8")
+    js = (Path(__file__).parents[1] / "src/resume_tailor/apply/forms/filler.js").read_text(encoding="utf-8")
     result = page.evaluate(js, {"fields": {"first_name": "Alex Jordan", "preferred_name": "AJ"}, "hints": {}, "synonyms": []})
     assert page.locator("#legal").input_value() == "Alex Jordan"
     assert page.locator("#preferred").input_value() == "AJ"
@@ -63,7 +63,7 @@ def test_education_year_select_uses_year_from_full_resume_date(page):
         <select id="start-year"><option value="">Select</option><option value="2023">2023</option></select>
       </fieldset>
     """)
-    js = (Path(__file__).parents[1] / "src/resume_tailor/apply/filler.js").read_text(encoding="utf-8")
+    js = (Path(__file__).parents[1] / "src/resume_tailor/apply/forms/filler.js").read_text(encoding="utf-8")
     page.evaluate(js, {"fields": {"education_start_month": "2023-09"}, "hints": {}, "synonyms": []})
     assert page.locator("#start-year").input_value() == "2023"
 
@@ -117,6 +117,7 @@ def test_required_consent_that_cannot_be_checked_is_reported(page):
 
 def test_verified_workday_hidden_year_control_uses_matched_education_row():
     import asyncio
+
     from playwright.async_api import async_playwright
 
     async def exercise():

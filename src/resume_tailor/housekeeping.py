@@ -82,7 +82,7 @@ def clear_cache(cache_dir: Path | None = None) -> dict[str, int]:
 
 
 def _referenced_jobs() -> set[str]:
-    from resume_tailor.apply import store
+    from resume_tailor.apply.funnel import store
 
     refs: set[str] = set()
     for app in store.load_all().values():

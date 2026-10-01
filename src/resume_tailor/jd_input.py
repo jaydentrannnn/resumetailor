@@ -13,7 +13,7 @@ from dataclasses import dataclass, field
 from pathlib import PurePath
 from urllib.parse import urlparse
 
-from resume_tailor.apply import fetch_jd, identity
+from resume_tailor.apply.discovery import fetch_jd, identity
 
 #: Same cap as `JobCreateRequest.jd_text`; longer text is cut with a visible warning.
 MAX_CHARS = 50_000

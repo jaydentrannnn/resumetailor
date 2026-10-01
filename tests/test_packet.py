@@ -8,11 +8,20 @@ from pathlib import Path
 import pytest
 
 from resume_tailor import config
-from resume_tailor.apply.packet import (
-    DEFAULTS, PacketEducation, _build_education, authorization_mismatch, build_fields,
-    build_packet, degree_name, job_country, missing_profile, profile_gaps, write_packet,
+from resume_tailor.apply.answers.profile import ApplicantProfile, EEOAnswers, LanguageEntry
+from resume_tailor.apply.funnel.packet import (
+    DEFAULTS,
+    PacketEducation,
+    _build_education,
+    authorization_mismatch,
+    build_fields,
+    build_packet,
+    degree_name,
+    job_country,
+    missing_profile,
+    profile_gaps,
+    write_packet,
 )
-from resume_tailor.apply.profile import ApplicantProfile, EEOAnswers, LanguageEntry
 from tests.fixtures import synthetic_resume
 
 
@@ -225,7 +234,7 @@ def test_missing_profile_groups_questions_by_fact_and_marks_the_ones_answered_an
 
 
 def test_blank_middle_name_and_address_line2_are_not_gaps_unless_required():
-    from resume_tailor.apply.packet import profile_gaps, visible_missing_profile
+    from resume_tailor.apply.funnel.packet import profile_gaps, visible_missing_profile
 
     blank = [
         {"key": "middle_name", "label": "Middle Name"},
@@ -393,7 +402,7 @@ def test_write_packet_never_exposes_a_partial_file(job_dir, monkeypatch):
 def test_write_packet_retries_while_windows_holds_the_file(job_dir, monkeypatch):
     """A reader or another writer holding `packet.json` on Windows fails the rename with
     "Access is denied" for a moment; the write retries instead of failing the request."""
-    import resume_tailor.apply.packet as packet_mod
+    import resume_tailor.apply.funnel.packet as packet_mod
 
     real_replace = packet_mod.os.replace
     calls = []
@@ -414,7 +423,7 @@ def test_write_packet_retries_while_windows_holds_the_file(job_dir, monkeypatch)
 
 
 def test_write_packet_gives_up_after_the_retries(job_dir, monkeypatch):
-    import resume_tailor.apply.packet as packet_mod
+    import resume_tailor.apply.funnel.packet as packet_mod
 
     def denied(src, dst):
         raise PermissionError(5, "Access is denied")
@@ -432,7 +441,7 @@ def _legacy_profile(job_dir, **education):
 
 
 def test_legacy_profile_education_moves_into_the_matching_resume_entry_once(job_dir):
-    from resume_tailor.apply.profile import load_profile
+    from resume_tailor.apply.answers.profile import load_profile
     from resume_tailor.data import load
 
     _legacy_profile(job_dir, school="State University", major="Computer Science", gpa="4.0",
@@ -453,7 +462,7 @@ def test_legacy_profile_education_moves_into_the_matching_resume_entry_once(job_
 
 
 def test_legacy_profile_education_for_another_school_leaves_the_resume_alone(job_dir):
-    from resume_tailor.apply.profile import load_profile
+    from resume_tailor.apply.answers.profile import load_profile
 
     before = config.MASTER_RESUME_PATH.read_text(encoding="utf-8")
     _legacy_profile(job_dir, school="Elsewhere College", major="History")
@@ -468,8 +477,8 @@ def test_packet_records_inputs_digest_and_route_rebuilds_stale(tmp_path, monkeyp
 
     from fastapi.testclient import TestClient
 
-    from resume_tailor.apply import packet as packet_mod
-    from resume_tailor.apply import profile as profile_mod
+    from resume_tailor.apply.answers import profile as profile_mod
+    from resume_tailor.apply.funnel import packet as packet_mod
     from resume_tailor.web.app import app
 
     digest_a = packet_mod.inputs_digest(profile_mod.ApplicantProfile(first_name="A"), synthetic_resume())
@@ -493,7 +502,7 @@ def test_packet_records_inputs_digest_and_route_rebuilds_stale(tmp_path, monkeyp
 
 
 def test_visa_status_implies_sponsorship_only_where_the_profile_is_silent():
-    from resume_tailor.apply.packet import build_fields
+    from resume_tailor.apply.funnel.packet import build_fields
 
     resume = synthetic_resume()
     fields = build_fields(ApplicantProfile(visa_status="f1_opt"), resume)
@@ -510,7 +519,7 @@ def test_visa_status_implies_sponsorship_only_where_the_profile_is_silent():
 
 
 def test_student_profile_fields_override_and_derive():
-    from resume_tailor.apply.packet import build_fields
+    from resume_tailor.apply.funnel.packet import build_fields
 
     resume = synthetic_resume()
     fields = build_fields(
@@ -551,13 +560,13 @@ def test_student_profile_fields_override_and_derive():
 def test_class_year_for(graduation, degree, expected):
     from datetime import date
 
-    from resume_tailor.apply.packet import class_year_for
+    from resume_tailor.apply.funnel.packet import class_year_for
 
     assert class_year_for(graduation, degree, today=date(2026, 6, 15)) == expected
 
 
 def test_profile_path_routes_profile_owned_education_to_application_tab():
-    from resume_tailor.apply.packet import PROFILE_FIELDS, profile_path
+    from resume_tailor.apply.funnel.packet import PROFILE_FIELDS, profile_path
 
     section = PROFILE_FIELDS["school"].section
     assert profile_path(section, "school") == "/profile/resume"

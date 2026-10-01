@@ -7,7 +7,7 @@ from types import SimpleNamespace
 
 import pytest
 
-from resume_tailor.apply import scanner
+from resume_tailor.apply.driver import scanner
 
 
 class _Locator:

@@ -23,9 +23,9 @@ from resume_tailor.events import ProgressEvent
 from resume_tailor.fit import FitResult
 from resume_tailor.web import jobs as jobs_mod
 from resume_tailor.web import template_ops
-from resume_tailor.web.routes import jobs as routes_jobs
 from resume_tailor.web.app import app
 from resume_tailor.web.jobs import JobQueue
+from resume_tailor.web.routes import jobs as routes_jobs
 from resume_tailor.web.schemas import JobSettings
 
 # `bootstrap` is imported directly (not via `resume_tailor.workspace.bootstrap`) because
@@ -4281,7 +4281,7 @@ def test_default_template_install_refused_while_tailoring(client):
 
 
 def test_answer_memory_routes_list_edit_and_forget(client, tmp_path, monkeypatch):
-    from resume_tailor.apply import answer_memory
+    from resume_tailor.apply.answers import answer_memory
 
     c, _ = client
     monkeypatch.setattr(config, "APPLICATIONS_PATH", tmp_path / "apps" / "applications.json")

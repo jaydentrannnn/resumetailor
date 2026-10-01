@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from resume_tailor.apply import model_resolver
-from resume_tailor.apply.field_types import FieldObservation, ObservedOption
+from resume_tailor.apply.answers import model_resolver
+from resume_tailor.apply.forms.field_types import FieldObservation, ObservedOption
 
 
 def _field():

@@ -8,8 +8,9 @@ from types import SimpleNamespace
 import pytest
 
 from resume_tailor import config
-from resume_tailor.apply import review, scanner, store
-from resume_tailor.apply.field_types import FieldObservation
+from resume_tailor.apply.driver import scanner
+from resume_tailor.apply.forms.field_types import FieldObservation
+from resume_tailor.apply.funnel import review, store
 
 
 def _field(value: str = "") -> FieldObservation:
@@ -89,7 +90,7 @@ def _correctable(tmp_path, monkeypatch, label: str):
     with the browser, scanner and control writes faked."""
     from contextlib import asynccontextmanager
 
-    from resume_tailor.apply.field_types import FieldOutcome
+    from resume_tailor.apply.forms.field_types import FieldOutcome
 
     monkeypatch.setattr(config, "APPLICATIONS_PATH", tmp_path / "applications.json")
     url = "https://boards.greenhouse.io/acme/jobs/1"
@@ -135,7 +136,7 @@ def _correct(saved, value):
 
 
 def test_a_verified_correction_to_a_custom_question_is_remembered(tmp_path, monkeypatch):
-    from resume_tailor.apply import answer_memory
+    from resume_tailor.apply.answers import answer_memory
 
     saved = _correctable(tmp_path, monkeypatch, "Which Acme office do you prefer?")
     outcome = _correct(saved, "Irvine")
@@ -149,7 +150,7 @@ def test_a_verified_correction_to_a_custom_question_is_remembered(tmp_path, monk
 
 
 def test_a_correction_to_a_profile_fact_is_not_remembered(tmp_path, monkeypatch):
-    from resume_tailor.apply import answer_memory
+    from resume_tailor.apply.answers import answer_memory
 
     saved = _correctable(tmp_path, monkeypatch, "Phone number")
     _correct(saved, "555 010 0000")
@@ -160,8 +161,8 @@ def test_a_correction_to_a_blank_profile_question_fills_the_profile(tmp_path, mo
     # Workday asked "Middle Name" (a profile field the fill had no value for): the
     # correction belongs in the profile, not in remembered answers as a second copy.
     from resume_tailor import config
-    from resume_tailor.apply import answer_memory
-    from resume_tailor.apply import profile as profile_mod
+    from resume_tailor.apply.answers import answer_memory
+    from resume_tailor.apply.answers import profile as profile_mod
 
     monkeypatch.setattr(config, "APPLICANT_PROFILE_PATH", tmp_path / "applicant_profile.json")
     saved = _correctable(tmp_path, monkeypatch, "Middle Name")

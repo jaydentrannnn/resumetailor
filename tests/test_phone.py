@@ -4,7 +4,7 @@ from __future__ import annotations
 
 import pytest
 
-from resume_tailor.apply import phone
+from resume_tailor.apply.answers import phone
 
 
 @pytest.mark.parametrize(

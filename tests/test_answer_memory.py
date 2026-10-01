@@ -5,7 +5,7 @@ from __future__ import annotations
 import pytest
 
 from resume_tailor import config
-from resume_tailor.apply import answer_memory as memory
+from resume_tailor.apply.answers import answer_memory as memory
 
 
 @pytest.fixture(autouse=True)
@@ -136,7 +136,7 @@ def test_long_questions_that_mention_a_profile_word_are_remembered():
 
 
 def test_a_profile_correction_fills_only_a_blank_profile_field():
-    from resume_tailor.apply import profile as profile_mod
+    from resume_tailor.apply.answers import profile as profile_mod
 
     assert memory.save_to_profile("middle_name", "Quinn")
     assert profile_mod.load_profile()[0].middle_name == "Quinn"
@@ -176,7 +176,7 @@ def test_answers_are_listed_once_per_question_with_their_sites():
 
 
 def test_cleanup_moves_profile_duplicates_out_once_with_a_backup(tmp_path):
-    from resume_tailor.apply import profile as profile_mod
+    from resume_tailor.apply.answers import profile as profile_mod
 
     _insert("Middle Name", "Quinn", "workday", "2026-02-01T00:00:00+00:00")
     _insert("Middle name", "Old", "greenhouse", "2026-01-01T00:00:00+00:00")

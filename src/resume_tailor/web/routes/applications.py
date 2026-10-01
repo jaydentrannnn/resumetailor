@@ -20,14 +20,14 @@ from resume_tailor import (
     jd,
     workspace,
 )
-from resume_tailor.apply import browser as apply_browser
-from resume_tailor.apply import daily as apply_daily
-from resume_tailor.apply import operations as apply_operations
-from resume_tailor.apply import packet as apply_packet
-from resume_tailor.apply import profile as apply_profile
-from resume_tailor.apply import scheduler as apply_scheduler
-from resume_tailor.apply import store as apply_store
-from resume_tailor.apply.answer import answer_question
+from resume_tailor.apply.answers import profile as apply_profile
+from resume_tailor.apply.answers.answer import answer_question
+from resume_tailor.apply.driver import browser as apply_browser
+from resume_tailor.apply.funnel import daily as apply_daily
+from resume_tailor.apply.funnel import operations as apply_operations
+from resume_tailor.apply.funnel import packet as apply_packet
+from resume_tailor.apply.funnel import scheduler as apply_scheduler
+from resume_tailor.apply.funnel import store as apply_store
 from resume_tailor.data import MasterResume
 from resume_tailor.web import template_ops
 from resume_tailor.web.jobs import get_queue
@@ -75,7 +75,7 @@ def _application_out(
     payload["group_size"] = group_size
     payload["posted_at"], payload["posted_known"] = apply_store.posted_date(app)
     payload["status_at"] = apply_store.status_at(app)
-    from resume_tailor.apply import preparation
+    from resume_tailor.apply.funnel import preparation
 
     apply_settings = JobSettings.model_validate(workspace.load_settings()["defaults"]).apply
     eligible = preparation.check(app, require_cover=apply_settings.cover_letter)
@@ -83,7 +83,7 @@ def _application_out(
     payload["preparation_reasons"] = eligible.reasons
     payload["retry_kind"] = apply_daily.retry_kind(app)
     if app.status == "screened_out" and app.screen is not None:
-        from resume_tailor.apply.screen import screen_label
+        from resume_tailor.apply.funnel.screen import screen_label
 
         payload["screen_label"] = screen_label(app.screen.reasons)
     payload["review_summary"] = apply_store.review_summary(app)

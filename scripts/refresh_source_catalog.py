@@ -3,7 +3,7 @@
     python scripts/refresh_source_catalog.py --check
     python scripts/refresh_source_catalog.py [--write proposed.json]
 
-``--check`` fetches every README entry in ``src/resume_tailor/apply/catalog/sources.json``
+``--check`` fetches every README entry in ``src/resume_tailor/apply/discovery/catalog/sources.json``
 and prints how many rows its parser reads with the entry's categories (a 0 is a broken
 entry). Without it, the script lists each README owner's repositories through the GitHub
 API and looks for a newer year of every entry's repo: the repo name with its year
@@ -32,10 +32,10 @@ import httpx
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from resume_tailor.apply import sources  # noqa: E402
+from resume_tailor.apply.discovery import sources  # noqa: E402
 
 ROOT = Path(__file__).resolve().parents[1]
-CATALOG = ROOT / "src" / "resume_tailor" / "apply" / "catalog" / "sources.json"
+CATALOG = ROOT / "src" / "resume_tailor" / "apply" / "discovery" / "catalog" / "sources.json"
 _RAW_RE = re.compile(r"^https://raw\.githubusercontent\.com/([^/]+)/([^/]+)/([^/]+)/(.+)$")
 _YEAR_RE = re.compile(r"20\d\d")
 

@@ -43,7 +43,8 @@ def _seed(base: str) -> None:
     import httpx
 
     sys.path.insert(0, str(ROOT))
-    from resume_tailor.apply import answer_memory, store
+    from resume_tailor.apply.answers import answer_memory
+    from resume_tailor.apply.funnel import store
     from tests.fixtures import synthetic_resume
     from tests.test_web import _resume_upload_with_profile
 
@@ -125,7 +126,7 @@ def main() -> None:
 
     # Test-only: job boards answer from memory (no network), so the watchlist test can
     # add a company. Any board name other than "acme" is "not found".
-    from resume_tailor.apply import boards
+    from resume_tailor.apply.discovery import boards
 
     def _fake_board(ats: str, slug: str, **_kwargs):
         if slug.lower() != "acme":

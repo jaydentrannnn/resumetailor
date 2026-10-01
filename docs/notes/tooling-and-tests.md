@@ -141,7 +141,7 @@ tailor run recreates job artifacts under `output/jobs/`.
 ## E6 app logging (2026-09)
 
 - `logs.py` writes one rotating JSON-lines `app.log` (2 MB x 5) under `RESUME_TAILOR_LOG_DIR` (default `<OUTPUT_ROOT>/logs`, `off` disables). Every record passes `RedactingFilter` before any handler writes it: emails, phones, API keys and `password=`/`token=` style values are replaced, so the file is safe to attach to a bug report.
-- `run_id` comes from a ContextVar set around job (`web/jobs.py`) and operation (`apply/operations.py`) worker threads, so one failed run can be picked out of a shared log.
+- `run_id` comes from a ContextVar set around job (`web/jobs.py`) and operation (`apply/funnel/operations.py`) worker threads, so one failed run can be picked out of a shared log.
 - `GET /api/diagnostics.zip` bundles the log (re-redacted), versions, platform, backend routing and redacted settings. It deliberately omits the master resume, applicant profile, registry and generated documents.
 - Tests: `tests/conftest.py` points `RESUME_TAILOR_OUTPUT_DIR` at a temp dir before importing the package, because job threads that outlive a test wrote `packet.json` into the real `output/` after the monkeypatch was undone.
 

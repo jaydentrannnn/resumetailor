@@ -29,9 +29,9 @@ from resume_tailor import (
     logs,
     workspace,
 )
-from resume_tailor.apply import daily as apply_daily
-from resume_tailor.apply import operations as apply_operations
-from resume_tailor.apply import scheduler as apply_scheduler
+from resume_tailor.apply.funnel import daily as apply_daily
+from resume_tailor.apply.funnel import operations as apply_operations
+from resume_tailor.apply.funnel import scheduler as apply_scheduler
 from resume_tailor.web import security, template_ops
 from resume_tailor.web import state as web_state
 from resume_tailor.web.schemas import (

@@ -7,7 +7,7 @@ from pathlib import Path
 
 import pytest
 
-from resume_tailor.apply import ats_api, fetch_jd
+from resume_tailor.apply.discovery import ats_api, fetch_jd
 
 _FIXTURES = Path(__file__).resolve().parent / "fixtures" / "ats"
 

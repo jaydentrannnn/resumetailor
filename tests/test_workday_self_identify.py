@@ -10,7 +10,7 @@ from types import SimpleNamespace
 import pytest
 from playwright.sync_api import sync_playwright
 
-from resume_tailor.apply import ats_hints, workday_flow, workday_repeaters
+from resume_tailor.apply.ats import ats_hints, workday_flow, workday_repeaters
 
 
 @pytest.fixture

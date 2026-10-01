@@ -4,7 +4,8 @@ from __future__ import annotations
 
 import pytest
 
-from resume_tailor.apply import controls, field_matcher
+from resume_tailor.apply.driver import controls
+from resume_tailor.apply.forms import field_matcher
 
 
 @pytest.mark.parametrize(

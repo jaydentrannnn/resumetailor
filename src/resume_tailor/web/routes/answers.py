@@ -10,7 +10,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from resume_tailor.apply import answer_memory
+from resume_tailor.apply.answers import answer_memory
 
 router = APIRouter()
 

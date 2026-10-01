@@ -11,7 +11,9 @@ import asyncio
 
 import pytest
 
-from resume_tailor.apply import adapters, ats_hints, clicks, fill
+from resume_tailor.apply.ats import adapters, ats_hints
+from resume_tailor.apply.driver import clicks
+from resume_tailor.apply.forms import fill
 from resume_tailor.web.schemas import ApplySettings
 
 _FORM = "https://jobs.smartrecruiters.com/oneclick-ui/company/Acme/publication/abc"
