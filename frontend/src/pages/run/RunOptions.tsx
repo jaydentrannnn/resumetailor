@@ -6,7 +6,7 @@ import { IncludePanel } from "../../components/IncludePanel";
 import { StylePromptField } from "../../components/StylePromptField";
 import { profileDefaultModel } from "../../lib/modelLabel";
 import { providerInfo } from "../../lib/providers";
-import { DEFAULT_SETTINGS } from "../../state/runState";
+import { DEFAULT_SETTINGS } from "../../state/runDefaults";
 
 const OPEN_KEY = "rt.runOptions.open.";
 

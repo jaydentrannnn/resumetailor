@@ -5,13 +5,14 @@ import { MemoryRouter } from "react-router-dom";
 
 vi.mock("../../state/runState", async (importOriginal) => {
   const actual = await importOriginal<typeof import("../../state/runState")>();
+  const { DEFAULT_SETTINGS } = await import("../../state/runDefaults");
   return {
     ...actual,
     useRunState: () => ({
       config: null,
       jdText: "",
       setJdText: () => {},
-      settings: actual.DEFAULT_SETTINGS,
+      settings: DEFAULT_SETTINGS,
       setSettings: () => {},
       jobId: "job-1",
       status: "succeeded",

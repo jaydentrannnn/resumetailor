@@ -1,6 +1,6 @@
 # frontend/ — React + TypeScript SPA (Vite)
 
-Talks only to `/api` (`src/api.ts`, whose types mirror `src/resume_tailor/web/schemas.py`).
+Talks only to `/api` (`src/api/`, whose types mirror `src/resume_tailor/web/schemas.py`).
 It never sees document XML — same invariant as the backend.
 
 ## Commands (run in `frontend/`)
@@ -18,7 +18,10 @@ hermetic backend).
 
 ## Layout
 
-- `src/api.ts` — typed API client + response types.
+- `src/api/` — typed API client + response types, one file per area (`jobs`, `settings`,
+  `resume`, `templates`, `libraries`, `applySettings`, `applications`, `sources`) over
+  `core.ts` (fetch/error/ETag plumbing, not re-exported). Always import from `../api`
+  (the `index.ts` barrel) so `vi.mock("../api")` keeps covering every call.
 - `src/state/` — React context providers (run, template, library, workspace, editor, ...).
 - `src/pages/` — one folder per page area (`apply/`, `run/`, `editor/`, `onboarding/`,
   `profile/`, `settings/`); `src/components/` — shared UI (`ui/` primitives).
@@ -28,7 +31,7 @@ hermetic backend).
 ## Conventions
 
 - Files: aim for ≤ ~400 lines; components ≤ ~150. Extract hooks into `lib/` or `state/`.
-- Polling goes through `lib/adaptivePoll.ts` / `conditionalGet` (in `api.ts`); errors through
+- Polling goes through `lib/adaptivePoll.ts` / `conditionalGet` (in `api/core.ts`); errors through
   `lib/errors.ts`; toasts through `lib/toast.ts`.
 - Don't re-propose declined features: per-stage model overrides, hybrid routing,
   always-on repair toggles, run history.

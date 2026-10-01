@@ -7,7 +7,10 @@ type FillReport = {
   filled: Array<{ key: string; value: string; preserved?: boolean }>;
   leftovers: Array<{ label: string; reason?: string }>;
 };
-const script = readFileSync(resolve(process.cwd(), "../src/resume_tailor/apply/forms/filler.js"), "utf8");
+const script = readFileSync(
+  resolve(process.cwd(), "../src/resume_tailor/apply/forms/filler.js"),
+  "utf8",
+);
 const readinessScript = readFileSync(
   resolve(process.cwd(), "../src/resume_tailor/apply/forms/filler_readiness.js"),
   "utf8",

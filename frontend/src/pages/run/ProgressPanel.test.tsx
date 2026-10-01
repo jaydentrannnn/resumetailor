@@ -8,7 +8,7 @@ vi.mock("../../state/runState", async (importOriginal) => {
   return { ...actual, useRunState: () => state.value };
 });
 
-import { DEFAULT_SETTINGS } from "../../state/runState";
+import { DEFAULT_SETTINGS } from "../../state/runDefaults";
 import { ProgressPanel } from "./ProgressPanel";
 
 afterEach(cleanup);
