@@ -10,7 +10,7 @@ builders describe exactly once per test session.
 The low-level builders (`_add_bullet_numbering`, `_make_bullet`, `_docx_bytes`,
 `_add_hyperlink`) and the four resume-shaped builders below were originally duplicated
 across `test_template_analyze.py` and `test_template_build.py` (the latter importing
-from the former via `from tests.test_template_analyze import ...`); moved here once that
+from the former via `from tests.document.test_template_analyze import ...`); moved here once that
 cross-suite import became indistinguishable from a real shared-fixtures module.
 """
 
@@ -194,7 +194,7 @@ def _spacer_multi_section_resume(document) -> None:
     heading, one right after every heading, and one between entries within a body that
     has more than one entry — exactly the pattern `_detect_spacing` looks for. Unlike
     `_multi_section_resume`/`_standard_resume` (both used by
-    `tests/test_template_build.py` and asserted spacer-free elsewhere), this fixture
+    `tests/document/test_template_build.py` and asserted spacer-free elsewhere), this fixture
     exists solely to exercise spacer detection."""
     num_id = _add_bullet_numbering(document)
     document.add_paragraph("Nina Dao")

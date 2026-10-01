@@ -191,7 +191,7 @@ def _response_format_ladder(  # noqa: UP047 - shares module-level `T` with 3 sib
 #: process and serial jobs (see `config._ACTIVE`), and this is strictly a *measurement*,
 #: not configuration, which is why it lives here rather than growing `config._ACTIVE`.
 #: Tests MUST clear this between cases or a call-count assertion becomes flaky for reasons
-#: that have nothing to do with the test — see the `client` fixture in tests/test_llm.py.
+#: that have nothing to do with the test — see the `client` fixture in tests/infra/test_llm.py.
 _LEARNED_CEILING: dict[tuple[str, str], int] = {}
 _sleep = time.sleep
 _async_sleep = asyncio.sleep

@@ -7,7 +7,7 @@ The owner submits by hand. Each release attaches `resumetailor-extension-<versio
 ## Before each submission
 
 1. Confirm `extension/manifest.json` `version` matches the release tag (the release
-   workflow stamps it; `tests/test_extension_manifest.py` checks the repo copy).
+   workflow stamps it; `tests/extension/test_extension_manifest.py` checks the repo copy).
 2. Load the zip unpacked in a clean profile and walk through the live checklist in
    `docs/GUIDE.md` (pairing, capture, Save cards, chip, shortcut, options, relay).
 3. Publish `store/PRIVACY.md` at a public URL (for example the repo's GitHub page for

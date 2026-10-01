@@ -31,5 +31,5 @@ workspaces: `docs/REFERENCE.md` §2.
 
 ## Tests
 
-`tests/test_web.py` (job path stubs the same LLM seams as the CLI; per-test stubs override
+`tests/web/test_web_*.py` + `conftest.py`/`helpers.py` (job path stubs the same LLM seams as the CLI; per-test stubs override
 the `client` fixture defaults), `test_apply_api.py`, `test_extension*.py`, `test_mcp.py`.

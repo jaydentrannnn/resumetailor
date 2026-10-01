@@ -142,7 +142,7 @@ the first measure and skips an extra rewrite pass.
   the even shift, preserving the existing 10-point escalation between attempts.
   `fit.py`'s `shorten_pct = config.SHORTEN_SCHEDULE[min(attempt - 1, len(...) - 1)]` needed
   no change — it already reads the tuple positionally.
-- **No other file changes needed.** `tests/test_fit.py`'s two assertions
+- **No other file changes needed.** `tests/pipeline/test_fit.py`'s two assertions
   (`test_fit_escalates_shorten_schedule_on_overflow`,
   `test_fit_raises_after_max_attempts_without_truncating`) both read
   `config.SHORTEN_SCHEDULE` rather than hardcoding 15/25/35, so they track the new values
@@ -210,18 +210,18 @@ the first measure and skips an extra rewrite pass.
   toggle that sets the share to `0.65` on / `null` off plus a reveal-on-toggle percentage
   slider, and a plain `<select>` for the per-entry cap (No limit / 2-6). No touch point
   needed in `WorkspaceSettings`/`SettingsResponse` — both wrap `JobSettings` whole.
-- **Impact / tests added:** `tests/test_rewrite.py` gained an explicit equivalence test
+- **Impact / tests added:** `tests/pipeline/test_rewrite.py` gained an explicit equivalence test
   pinning that `experience_share=None, max_per_entry=None` reproduces the original
   floors+select algorithm bullet-for-bullet (not just matching size), plus tests for
   section-share reallocation, floor preservation at the `0.0`/`1.0` extremes, per-entry
   capping with spillover, cross-section spillover when one side can't fill its budget, and
-  `selectable_total` itself. `tests/test_fit.py` gained a regression test proving growth
+  `selectable_total` itself. `tests/pipeline/test_fit.py` gained a regression test proving growth
   stops at `growth_ceiling` (`iterations == 1`) instead of burning `MAX_GROW_ATTEMPTS` when
   a per-entry cap saturates the selection immediately — this is the bug fix in (2) above,
-  pinned so it can't regress silently. `tests/test_tailor_cli.py`'s two `capture()` stubs
+  pinned so it can't regress silently. `tests/cli/test_tailor_cli.py`'s two `capture()` stubs
   that spell out `fit()`'s full keyword signature needed both new kwargs added (else a
   `TypeError`), plus two new flag-plumbing tests mirroring
-  `test_fill_target_flag_reaches_the_fit_loop`. `tests/test_web.py`'s `fake_fit` stub and
+  `test_fill_target_flag_reaches_the_fit_loop`. `tests/web/test_web.py`'s `fake_fit` stub and
   `seen_fit` assertion gained both keys, plus a settings round-trip test. Full suite after
   this change: the same 16 pre-existing failures as a clean `main` checkout, verified
   byte-identical by diffing the failing-test list before/after — none of them are
@@ -297,7 +297,7 @@ the first measure and skips an extra rewrite pass.
   `verify_known_anchors` warned (expected — it checks Jayden-specific bullet ids and a
   39-bullet/3-page anchor against resumes that have since changed shape, nina's
   obviously so; this is the pre-existing soft-warning behavior, not a regression).
-- **`tests/test_calibrate.py` added** (23 tests, no Word/LibreOffice): pins the
+- **`tests/document/test_calibrate.py` added** (23 tests, no Word/LibreOffice): pins the
   collapsed-search guard, the plausibility band, `_static_heading_texts`'s three modes,
   and reproduces the custom-heading-text bug end to end against a stubbed renderer —
   proving both that the old (removed) hardcoded filter would have collapsed on it and
@@ -348,7 +348,7 @@ the first measure and skips an extra rewrite pass.
   `data/workspaces/nina/calibration/soffice.json` has no `anchors` key yet, so
   `_load_previous_anchors` returns `None` and the next real run lands on "baseline
   recorded", never the old hardcoded warning. Backend suite: 689 passed (was 671), 1
-  deselected — 18 new tests in `tests/test_calibrate.py`, all against
+  deselected — 18 new tests in `tests/document/test_calibrate.py`, all against
   `check_render_anchors`/`measure_anchors`/`write_calibration`/`_load_previous_anchors`
   directly, no Word/LibreOffice required.
 

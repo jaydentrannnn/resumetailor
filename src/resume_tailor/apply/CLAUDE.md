@@ -35,6 +35,6 @@ subpackage).
 
 ## Tests
 
-`tests/test_fill.py`, `test_workday_*.py`, `test_smartrecruiters_flow.py`,
+`tests/apply/forms/test_fill.py`, `test_workday_*.py`, `test_smartrecruiters_flow.py`,
 `test_apply_*.py`, `test_filler_dom.py` (runs `filler.js`), `tests/browser/` (real
 browser, opt-in). Browser objects are faked at `browser` / `controls` seams.

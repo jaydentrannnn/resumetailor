@@ -248,13 +248,13 @@ earlier ones. Cross-check any number against the code.
   (already the mechanism for conceptual relatedness no tag encodes, in any domain). The
   fabrication guard also generalises unmodified — it keys on token *shape* (digits,
   acronyms, internal caps), not a CS dictionary, so `P&L`, `SEO`, `B2B` all behave.
-- **Impact / tests added:** `tests/test_facets.py` (rename-guard + `_aligns` regressions,
-  9 new), `tests/test_jd.py` (consensus voting + alias-fingerprint slug sensitivity, 9
-  new), `tests/test_report.py` / `test_report_data.py` (`diagnose_gaps`, the facets-trap
+- **Impact / tests added:** `tests/pipeline/test_facets.py` (rename-guard + `_aligns` regressions,
+  9 new), `tests/pipeline/test_jd.py` (consensus voting + alias-fingerprint slug sensitivity, 9
+  new), `tests/pipeline/test_report.py` / `test_report_data.py` (`diagnose_gaps`, the facets-trap
   regression, 7 new), `tests/test_config.py` (new file — `canonical_tag` and
-  `tag_alias_fingerprint` had no unit test before this), `tests/test_data.py` (new file —
-  `data.py` had no test file before this), `tests/test_tailor_cli.py` /
-  `tests/test_web.py` gained an autouse stub routing `extract_consensus` back to `extract`
+  `tag_alias_fingerprint` had no unit test before this), `tests/content/test_data.py` (new file —
+  `data.py` had no test file before this), `tests/cli/test_tailor_cli.py` /
+  `tests/web/test_web.py` gained an autouse stub routing `extract_consensus` back to `extract`
   so existing wiring tests don't multiply their call counts or touch the real on-disk
   cache. Full suite: 377 collected, 361 passing, 16 pre-existing failures untouched
   (verified identical on `main` before this work — `test_facets`/`test_fit`/`test_merge`/
@@ -290,7 +290,7 @@ package actually being submitted — the opposite of `expand.py`, which delibera
 only for JD *matching* (tiering), never for pool *construction*. Several tests hardcoded
 `len(config.PURPOSES) == 5` or a 4-stage hybrid set and had to be updated for the sixth
 stage — worth grepping for literal stage counts if a seventh stage is ever added. The
-`expand.expand_experience` seam in `tests/test_web.py`'s job tests was already
+`expand.expand_experience` seam in `tests/web/test_web.py`'s job tests was already
 unstubbed-by-default (silently attempting and swallowing a real call); `skills.select_skills`
 got a proper default stub in the `client` fixture instead of repeating that gap.
 
@@ -388,7 +388,7 @@ got a proper default stub in the `client` fixture instead of repeating that gap.
   and a number with no source noun binding is still unjudgeable and silent.
 - **Follow-up:** If `uci_b1` still trips after this, the source text binds `130` to a
   noun the packs don't alias — add the alias in a pack rather than editing the guard.
-  Also fixed `tests/test_web.py::test_ollama_model_setting_repoints_only_the_ollama_stages`,
+  Also fixed `tests/web/test_web.py::test_ollama_model_setting_repoints_only_the_ollama_stages`,
   which predated the `review` stage override.
 
 ## 2026-09-21 — Fabrication guard falls back and warns instead of hard-failing; screening's must-have coverage is informational only; fixed a years-regex false positive
@@ -427,12 +427,12 @@ got a proper default stub in the `client` fixture instead of repeating that gap.
   documented invariant ("never invent resume content") still holds byte-for-byte; a
   run can no longer be blocked by one stubborn bullet, at the cost of that bullet
   possibly reading less tailored to the JD than its neighbors.
-- **Follow-up:** Updated `tests/test_rewrite.py`'s three fabrication tests
+- **Follow-up:** Updated `tests/pipeline/test_rewrite.py`'s three fabrication tests
   (`test_fabrication_retry_still_fabricating_*`, `test_fabrication_retry_missing_id_*`,
   `test_rebound_*`) from `pytest.raises(FabricationError)` to asserting the fallback text
   plus `fabrications_rejected`. Added
   `test_company_history_number_does_not_read_as_years_requirement` to
-  `tests/test_eligibility.py`. Full suite green (983 passed), frontend `tsc -b`/lint/
+  `tests/apply/funnel/test_eligibility.py`. Full suite green (983 passed), frontend `tsc -b`/lint/
   vitest green.
 
 ## P3-V: business vocabulary packs (2026-09)

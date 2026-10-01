@@ -27,7 +27,7 @@ earlier ones. Cross-check any number against the code.
 - **Spacing:** one blank line of the donor's own font size (`_donor_font_size`, read from the first run then the `w:pPr/w:rPr/w:sz` paragraph mark, defaulting to 10pt) rather than a hardcoded gap. Not uniform: the inside address is a tight stack and so are closing/signature, so the gap before the salutation is carried by the salutation's own space-before, because the address line repeats in a `{%p for %}` loop and cannot space only its last iteration.
 - **Why python-docx's `paragraph_format`** instead of appending XML: its `get_or_add_ind`/`get_or_add_spacing` insert into `w:pPr` in OOXML schema order. Hand-appended `w:ind`/`w:spacing` parse fine but Word rejects the file.
 - **Note:** `first_line_indent` is set to `0`, not `None` — `None` removes the element and lets the underlying style's hanging indent apply again.
-- **Tests:** `test_letter_paragraphs_drop_the_bullet_hanging_indent` and `test_letter_blocks_are_separated_but_address_stays_tight` in `tests/test_cover_template.py`.
+- **Tests:** `test_letter_paragraphs_drop_the_bullet_hanging_indent` and `test_letter_blocks_are_separated_but_address_stays_tight` in `tests/document/test_cover_template.py`.
 - **Not a bug:** the resume itself renders fine. `tailored.docx`/`tailored.pdf` are written on every run and `GET /api/jobs/{id}/preview.pdf` serves a valid 1-page `application/pdf` with `Content-Disposition: inline`. `cover-letter.pdf` is served `attachment` and the Cover letter card has no inline iframe, so the rendered letter can only be seen by downloading it — possible follow-up for parity with `ResultPreview`.
 
 ## 2026-08-29 — Cover letter guard, template layout, and inline preview

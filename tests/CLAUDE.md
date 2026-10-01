@@ -12,8 +12,8 @@ detail: `docs/REFERENCE.md` §11.
   affects callers that resolve `module.name` at call time; after moving code, move the
   patch target with it, or the test silently stops covering anything.
 - **`test_tailor_cli.py` autouse-stubs every API stage**; adding an API call to
-  `cli.run.main` means extending them. `test_web.py` stubs the same seams on the job path
-  (per-test stubs override the `client` fixture defaults).
+  `cli.run.main` means extending them. `tests/web/conftest.py` stubs the same seams on the
+  job path (per-test stubs override the `client` fixture defaults).
 - **Word/COM is monkeypatched at `fit_mod.render`** (`test_render.py` is the real-docx
   exception). **Assert on the specific warning**, not on warnings being empty —
   `FitResult` carries underflow *and* widow warnings.
@@ -24,6 +24,12 @@ detail: `docs/REFERENCE.md` §11.
   `RESUME_TAILOR_DATA_DIR=<empty> RESUME_TAILOR_TEMPLATES_DIR=<empty> pytest`.
 - **Real-`master_resume.json` tests are `@pytest.mark.owner`** (excluded by default;
   `pytest -m owner`). Staged template builds fall back in-process when the subprocess
-  fails — see `test_web.py::_resume_upload_with_profile`.
+  fails — see `tests/web/helpers.py::_resume_upload_with_profile`.
+- **Layout mirrors `src/resume_tailor/`**: `pipeline/`, `document/`, `content/`,
+  `importing/`, `infra/`, `cli/`, `web/` (+ `conftest.py` `client` fixture, `helpers.py`),
+  `apply/<subpackage>/`; plus `extension/` (the browser extension), `tooling/` (scripts).
+  Cross-cutting tests (`config`, `workspace`, no-PII, storage) stay at the top. Folders
+  have no `__init__.py`, so **test basenames must stay unique**; shared data lives in
+  `fixtures/` (reach it with `Path(__file__).parents[N]`, N = depth below `tests/`).
 - `browser/` holds real-browser tests (opt-in); `fixtures/forms/` holds captured ATS pages.
 - Test files: aim for ≤ ~800 lines; split by feature/route when a file grows past that.

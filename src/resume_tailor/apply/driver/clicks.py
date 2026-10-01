@@ -16,7 +16,7 @@ three checked what they were about to press. Now:
 - `mouse_click` / `async_mouse_click` wrap coordinate clicks (Workday's click-filter
   overlays) with the same check on whatever element sits at that point.
 
-`tests/test_click_guard.py` fails if a ``.click(`` appears anywhere else under
+`tests/apply/driver/test_click_guard.py` fails if a ``.click(`` appears anywhere else under
 ``apply/``.
 """
 

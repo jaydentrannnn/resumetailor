@@ -21,7 +21,7 @@ Docs export merges them, the one-run fallback clones the label run and forces `b
 rather than failing ? a hardcoded assumption that the plain body is simply "not bold",
 which holds for this resume but would not survive the body run gaining its own styling.
 
-**Follow-up:** No regression test yet; `tests/test_render.py` skips when the template is
+**Follow-up:** No regression test yet; `tests/document/test_render.py` skips when the template is
 unbuilt, so a bolding assertion there would only run on a machine that has `templates/`.
 
 ## 2026-07-27 ? Bullet marker size and experience header bold split
@@ -30,7 +30,7 @@ unbuilt, so a bolding assertion there would only run on a machine that has `temp
 
 **Why:** Google Docs exported six nearly duplicate list defs; `pick_bullet_prototype` chose spacing-tight bullets whose markers drew in Lora (large dots) while education kept Noto (small dots). Experience headers used `min(header_run_count)`, collapsing `{{ job.location }}` into the bold company run.
 
-**Impact:** Re-run `python scripts/build_template.py` after any resume re-export. Education spacing already matched experience at the paragraph-property level once numIds unified ? no education-only spacing rewrite was needed. Regression tests in `tests/test_render.py` cover Noto markers, shared numId, and bold company / plain location.
+**Impact:** Re-run `python scripts/build_template.py` after any resume re-export. Education spacing already matched experience at the paragraph-property level once numIds unified ? no education-only spacing rewrite was needed. Regression tests in `tests/document/test_render.py` cover Noto markers, shared numId, and bold company / plain location.
 
 ## 2026-07-27 ? Force single line spacing in template build
 
@@ -195,7 +195,7 @@ unbuilt, so a bolding assertion there would only run on a machine that has `temp
   known-good legacy build; live template files (`templates/main_template.docx`,
   currently the legacy "Default") were left untouched per the user's choice — re-upload
   through the Template tab to pick up the fix. 15 new tests across
-  `tests/test_template_build.py` / `tests/test_template_analyze.py`; full suite 272 passed.
+  `tests/document/test_template_build.py` / `tests/document/test_template_analyze.py`; full suite 272 passed.
 - **Spec delta:** None — bug fix within the documented profile-mode contract
   (CLAUDE.md "Template generation").
 
@@ -272,7 +272,7 @@ unbuilt, so a bolding assertion there would only run on a machine that has `temp
   web install this path is not staged/atomic, so the just-written file is not rolled
   back — re-run after fixing the mapping, matching how a build failure already
   behaved here.
-- **`tests/test_template_verify.py` added** (13 tests): known-good builds (fixed mode
+- **`tests/document/test_template_verify.py` added** (13 tests): known-good builds (fixed mode
   via the Phase 2 `_full_featured_resume` fixture, generic mode via the pre-existing
   `_multi_section_resume` fixture) verify clean on both checks — regression guard
   against the checks themselves drifting from what tagging emits. Corruption tests
@@ -319,7 +319,7 @@ required or made safe to finally do.
   `Form(None)`) and in `uploadTemplate`'s TypeScript signature. Frontend:
   `uploadLegacy` removed from `templateState.tsx`, "Legacy install (no mapping)"
   button removed from the wizard.
-  - **Real cost, not just a rename**: ~10 `tests/test_web.py` tests had quietly come
+  - **Real cost, not just a rename**: ~10 `tests/web/test_web.py` tests had quietly come
     to depend on the profile-less upload path as a *convenience shortcut* for testing
     unrelated concerns (library snapshots, backup/restore, the calibrate flag, queue-busy
     rejection) — none of them were actually testing legacy-headings behavior on
@@ -391,7 +391,7 @@ required or made safe to finally do.
 ## Decorative drawings (B15, 2026-09)
 
 - `_document_has_textboxes` used to block on any `w:drawing`: a divider line, an icon, a headshot, a logo. It now blocks only when a `w:txbxContent` (DrawingML or VML text box) holds text. Other drawings produce the non-blocking `decorative_drawing` note.
-- The build removed every run but the first when collapsing a paragraph to one tag, which deleted an icon beside the name or contact line. `collapse_runs`/`_drop_run` in `template_build.py` now keep drawing runs (`w:drawing`, `w:pict`, `w:object`) in place, strip only their text, and put the tag in the first text run even when an icon comes first. Covered by `tests/test_template_drawings.py` through analyze, build and render.
+- The build removed every run but the first when collapsing a paragraph to one tag, which deleted an icon beside the name or contact line. `collapse_runs`/`_drop_run` in `template_build.py` now keep drawing runs (`w:drawing`, `w:pict`, `w:object`) in place, strip only their text, and put the tag in the first text run even when an icon comes first. Covered by `tests/document/test_template_drawings.py` through analyze, build and render.
 
 ## Templates without an Experience section (B16, 2026-09)
 A first-year student's resume often has Education, Projects and Activities but no

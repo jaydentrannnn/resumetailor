@@ -2,7 +2,7 @@
 
 The Template page explains each code in plain language (`lib/templateIssues.ts`); a
 vitest checks that every code in this file has an explanation, and
-`tests/test_issue_codes.py` checks this file matches the analyzer. Re-run after adding
+`tests/document/test_issue_codes.py` checks this file matches the analyzer. Re-run after adding
 an `Issue(code=...)`:
 
     python scripts/export_issue_codes.py

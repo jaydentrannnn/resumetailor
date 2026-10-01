@@ -466,7 +466,7 @@ A combobox leftover carries the planned value to `_fill_declared_combobox`.
 answer.
 
 **Adding a case.** A new failure is a captured page in `tests/fixtures/forms/` with rows
-in `tests/test_question_pipeline.py`, plus a rule fix in `questions.py`. It is never a
+in `tests/apply/answers/test_question_pipeline.py`, plus a rule fix in `questions.py`. It is never a
 per-site branch.
 
 **Reaching the form.** A wizard platform's posting page (an Apply control and at most two
@@ -1094,22 +1094,22 @@ fixed overhead the fit loop never trims.
 ## 11. Testing conventions in full
 
 - **API calls are stubbed with hand-written fake clients**, not a mocking library — see
-  `_FakeClient` in `tests/test_jd.py`. A fake exposes `.messages.parse(**kwargs)`
+  `_FakeClient` in `tests/pipeline/test_jd.py`. A fake exposes `.messages.parse(**kwargs)`
   returning an object with `parsed_output`/`stop_reason`; tests assert against recorded
   `kwargs`.
 - **A stage that can call twice needs a *shared* reply queue in its fake** —
   `llm.client_for` is invoked once per call, so a fake that copies its queue per client
   silently replays the first reply on a follow-up call. See the `rewrite_calls` fixture
-  in `tests/test_rewrite.py`.
-- **`tests/test_tailor_cli.py` has autouse fixtures stubbing `rewrite.score_table`,
+  in `tests/pipeline/test_rewrite.py`.
+- **`tests/cli/test_tailor_cli.py` has autouse fixtures stubbing `rewrite.score_table`,
   `facets.select_facets`, `expand.expand_experience`, `skills.select_skills`,
   `coverletter.draft_letter`, `review.review_bullets`.** Adding another API call to
   `cli.run.main` needs those fixtures extended or the CLI tests reach the network.
-  `tests/test_web.py` stubs the same seams on the job path (the `client` fixture's
-  default `skills.select_skills` and `coverletter.draft_letter` stubs in particular — a
+  `tests/web/test_web_*.py` stub the same seams on the job path (`tests/web/conftest.py`'s
+  `client` fixture's default `skills.select_skills` and `coverletter.draft_letter` stubs in particular — a
   per-test stub still wins by overriding it after fixture setup).
 - **Word/COM is monkeypatched at `fit_mod.render`** so the loop's overflow-ladder/underflow logic
-  is testable in isolation. `tests/test_render.py` is the exception — it renders a real
+  is testable in isolation. `tests/document/test_render.py` is the exception — it renders a real
   `.docx` and parses it back, never converting to PDF.
 - **Assert on the specific warning, not on `result.warnings` being empty** — `FitResult`
   carries underflow *and* widow warnings, and identity-rewrite fakes feed master-resume
@@ -1151,7 +1151,7 @@ fixed overhead the fit loop never trims.
   `_run_build` to skip the subprocess (returning e.g. `(1, "stub: subprocess skipped")`
   without writing anything) therefore still exercises a real, verified build via that
   fallback — `_smoke_render`/`_verify_staged_build`/`template_verify` all run for real
-  against it. See `tests/test_web.py::_resume_upload_with_profile` and its callers for
+  against it. See `tests/web/helpers.py::_resume_upload_with_profile` and its callers for
   the pattern: a real analyzable upload + its own suggested profile, not
   `_minimal_docx_bytes()`, since `POST /api/template` requires a profile now.
 

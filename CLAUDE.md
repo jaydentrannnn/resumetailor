@@ -99,7 +99,7 @@ re-run `calibrate.py` and restart the server after any template change.
 
 **Web UI without Docker**: build the frontend (`cd frontend; npm install; npm run build`)
 then run the uvicorn line above; open http://127.0.0.1:8000. Frontend dev/lint/test
-commands: `frontend/CLAUDE.md`. Single Python test: `pytest tests/test_rewrite.py -k
+commands: `frontend/CLAUDE.md`. Single Python test: `pytest tests/pipeline/test_rewrite.py -k
 pattern`. Docker uses LibreOffice for PDF measurement; host Ollama/LM Studio are reachable
 via `host.docker.internal`; first container run: `docker compose run --rm app python
 scripts/calibrate.py`.

@@ -67,7 +67,7 @@ tailor run recreates job artifacts under `output/jobs/`.
   file with `enabled.projects: False` sitting on disk, unrelated to anything this
   session changed, that nothing had ever surfaced before because every prior test
   happened to either override the path or not care whether projects rendered.
-- **A second, subtler instance of the same bug class**: `tests/test_render.py`'s
+- **A second, subtler instance of the same bug class**: `tests/document/test_render.py`'s
   `rendered_docx` fixture was `scope="module"` (render once, reuse across every test in
   the file, since none of them touch Word/LibreOffice). Pytest sets up module-scoped
   fixtures *before* function-scoped ones for a given test, so a module-scoped fixture

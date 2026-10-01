@@ -355,7 +355,7 @@ blank entry headers before the Pydantic path; server validation remains authorit
   placeholder. The thumbnail shows the design only: no tags, no resume content.
 - `lib/templateIssues.ts` explains every analyzer issue code (title, why, steps in Word
   or Google Docs, or a fix in the app). `scripts/export_issue_codes.py` writes
-  `lib/templateIssueCodes.json` from `template_analyze.py`. `tests/test_issue_codes.py`
+  `lib/templateIssueCodes.json` from `template_analyze.py`. `tests/document/test_issue_codes.py`
   fails when that file is out of date, and a vitest fails when a code has no
   explanation. The raw analyzer message stays under "Details".
 - The "Page fit tuning" card calls `POST /api/template/calibrate`

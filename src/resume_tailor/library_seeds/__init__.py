@@ -9,7 +9,7 @@ and shadow the shipped copy (see `libraries.read_pack`).
 Every value here must already satisfy the invariants `libraries.validate_pack` enforces
 on a user pack: alias values are fixed points of the alias table (no `a -> b -> c`
 chains), and a verb appears in exactly one family within a pack. `tests/test_config.py`
-and `tests/test_libraries.py` pin both for this pack specifically.
+and `tests/content/test_libraries.py` pin both for this pack specifically.
 
 **core-tech** — The original single-industry tables, unchanged, as the always-available
 default pack. Every user starts with this enabled and nothing else. Retrieval/LLM
@@ -28,7 +28,7 @@ and "KPIs" — all plausible posting spellings — matched none of its own tag/s
 families are forward-looking rather than a fix for anything already broken on that resume:
 `collaborated` and `received` each open two of its bullets, but `rewrite.verb_collisions`'s
 exact-duplicate rule already catches an identical repeated word with no family table
-involved (see `tests/test_library_seeds.py`) — what these families add is coverage for
+involved (see `tests/content/test_library_seeds.py`) — what these families add is coverage for
 the *near-synonym* rule (three-plus related-but-different openers, e.g. a rewrite that
 lands on "recruited" for one bullet and "sourced" for another), which `core-tech`
 cannot see for any of these verbs today.
@@ -40,7 +40,7 @@ shares (Power BI, EViews), since onboarding enables it for all business students
 
 **accounting**, **marketing**, **ops-supply-chain** — The rest of the Business/Finance/
 Econ launch set, enabled together by onboarding's "Business" field. Three rules keep them
-safe to enable at once, and `tests/test_library_seeds.py` pins all three:
+safe to enable at once, and `tests/content/test_library_seeds.py` pins all three:
 - New verbs join the existing family names (`analyse`, `improve`, `lead`, `write`, …) and
   every verb is claimed by exactly one pack, so enabling several never "moves" a verb.
 - No alias value is another pack's key, so no chain is dropped.

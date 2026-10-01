@@ -1,7 +1,7 @@
 # Permission justifications
 
 Paste these into the store forms ("Privacy practices" on the Chrome Web Store, the
-"Permissions" notes on Edge Add-ons). `tests/test_extension_manifest.py` checks that
+"Permissions" notes on Edge Add-ons). `tests/extension/test_extension_manifest.py` checks that
 every permission in `manifest.json` is listed here.
 
 **Single purpose:** Send the job posting you are viewing to the ResumeTailor app

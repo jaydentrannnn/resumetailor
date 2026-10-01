@@ -128,7 +128,7 @@ to `minimax-m3:cloud` unless `OLLAMA_MODEL` or a per-run model override is set.
 - **Impact:** `ollama_model` is part of `JobSettings`, so it persists per profile via the
   existing `WorkspaceSettings` envelope with no migration — an absent field defaults to
   `None`, which reproduces today's behavior exactly. Also extracted a `_drain(c, job_id)`
-  helper in `tests/test_web.py`: the two new routing tests assert on work the queue's
+  helper in `tests/web/test_web.py`: the two new routing tests assert on work the queue's
   *background thread* does, which without a wait is a race that passes on a fast machine.
   Folded the one pre-existing copy of that poll loop into it.
 - **Not done:** `LMSTUDIO_MODEL` has the identical problem and the identical fix shape
@@ -272,7 +272,7 @@ to `minimax-m3:cloud` unless `OLLAMA_MODEL` or a per-run model override is set.
   `_OpenAICompatClient`, so none of this applies. Its ceiling is a client-side SDK refusal
   above 21,333 tokens for non-streaming requests; raising it means converting the call
   sites to streaming, a separate project, not a constant to tune here.
-- **Impact:** `tests/test_llm.py`'s `client` fixture now clears `llm._LEARNED_CEILING`
+- **Impact:** `tests/infra/test_llm.py`'s `client` fixture now clears `llm._LEARNED_CEILING`
   between cases and accepts `max_token_cap=` — necessary because the dict is module-global
   by design (a measurement, not run configuration, so it deliberately isn't threaded
   through `config._ACTIVE`), and without the clear a call-count assertion in one test could

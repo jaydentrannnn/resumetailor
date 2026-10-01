@@ -2,7 +2,7 @@
 
 `_no_workspace_bootstrap` exists because `web/app.py`'s FastAPI lifespan calls
 `workspace.bootstrap()` on startup, and `TestClient(app)` used as a context manager
-(the pattern every test in `test_web.py` uses) runs that lifespan. Without this stub,
+(the pattern every `tests/web/` test uses) runs that lifespan. Without this stub,
 `bootstrap()` would fire after each test's own `monkeypatch.setattr(config, ...)`
 calls and clobber them — and on a developer's machine, with no other path
 monkeypatched yet, it would migrate the real `data/` and `templates/` trees the very
@@ -30,7 +30,7 @@ test sees match what a fresh checkout with no calibration file at all would comp
 `built_template` (below) exists so tests needing a real, renderable tagged template
 never depend on `config.DEFAULT_TEMPLATE_PATH` — a developer's own upload, which may
 not exist at all on a clean checkout or in CI, and previously forced several tests in
-`tests/test_render.py` into a conditional `pytest.skip`. `tests/fixtures.py` holds the
+`tests/document/test_render.py` into a conditional `pytest.skip`. `tests/fixtures.py` holds the
 synthetic DOCX/`MasterResume` builders this fixture and the tests that use it share.
 
 `_isolated_template_paths` closes a gap the same shape as `_isolated_libraries`, found
@@ -177,7 +177,7 @@ def _isolated_template_paths(tmp_path, monkeypatch):
     """Redirect the template path globals to nonexistent temp paths by default.
 
     A test that genuinely needs a specific value still monkeypatches these itself
-    (`test_web.py`/`test_workspace.py` already do) — those patches win, since they run
+    (`tests/web/`/`test_workspace.py` already do) — those patches win, since they run
     after this one.
     """
     paths = {**config._DEFAULT.paths,

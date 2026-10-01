@@ -278,7 +278,7 @@ described above, which correctly keep one and reject the other. A second, subtle
 issue turned up only once a fixture exercised it: the original `_introduces_content`
 and the original (replacement-based) `_split_entries` each had their own version of
 "stops one line too early" / "merges a boundary that didn't need fixing" — both fixed
-before this entry was written, not after. `tests/test_template_analyze.py` gained 11
+before this entry was written, not after. `tests/document/test_template_analyze.py` gained 11
 regression tests (summary-section exclusion, summary-only blocking, an all-caps
 uncorroborated entry line, the "Experience Designer" and "Advocate of ... Education ..."
 false positives, no-dates/partial-dates blocking for both experience and projects, and
@@ -363,7 +363,7 @@ trip, and preview the installable result before committing to it.
   unknown sha 400s, and — since Word turned out to be available in this environment —
   both preview endpoints returned real, valid PDFs (`%PDF-1.7` headers, hundreds of KB,
   openable), not just the stubbed-render assertions the test suite necessarily uses.
-- **Tests**: 6 new backend tests in `tests/test_web.py` (field candidates present,
+- **Tests**: 6 new backend tests in `tests/web/test_web.py` (field candidates present,
   remap changes section kind, unknown-sha 400, both preview endpoints via the
   established `render`/`to_pdf` monkeypatch seam, install clears the upload cache).
   Frontend: `tsc -b`, `oxlint`, `vitest run`, and `vite build` all clean — no new
@@ -450,17 +450,17 @@ the editor. New `src/resume_tailor/importing/resume_import.py` (Phase 6) turns
   variable a stale closure or React's batching could make wrong — the exact class of
   bug `PreviewCompare`'s manual-refresh design (Phase 5) was already worried about
   avoiding, here on the write side instead of the read side.
-- **Tests**: `tests/test_resume_import.py` (new, 13 tests) — full-fixture round trip
+- **Tests**: `tests/importing/test_resume_import.py` (new, 13 tests) — full-fixture round trip
   through real JSON serialization (not just in-memory construction), entry-id collision
   safety across different section kinds sharing one flat namespace (matching `data.
   MasterResume._fill_entry_ids`'s own suffixing), the multi-experience-section fixture
   importing every section rather than just the first, and a dedicated regression test
-  for each of the three bugs found above. `tests/test_render.py` gained 4 tests for
-  `parse_month`/`parse_range`. `tests/test_propose.py` gained 6 tests for
+  for each of the three bugs found above. `tests/document/test_render.py` gained 4 tests for
+  `parse_month`/`parse_range`. `tests/pipeline/test_propose.py` gained 6 tests for
   `propose_bullet_tags` (prompt contents, dropping an out-of-vocabulary tag, an
   explicit empty-list answer counting as "no tags" rather than being ignored, an
   out-of-range bullet index not crashing, LLM failure propagating normally). 4 new
-  `tests/test_web.py` tests for the API route (draft returned with nothing written to
+  `tests/web/test_web.py` tests for the API route (draft returned with nothing written to
   disk — content and mtime both asserted unchanged, non-docx rejected, the suggest-tags
   pass filling in untagged bullets via a stubbed `propose.propose_bullet_tags`, and a
   stubbed failure there degrading to a warning instead of a 500).
@@ -700,7 +700,7 @@ entry is what actually shipped and what surprised me building it.
   stores education as `"University of California, Irvine"`; Nina's export says
   `"University of California, Irvine --- Paul Merage School of Business"` — a different
   string, so it's correctly treated as a *new* entry (reported in `added`), not merged.
-  Pinned directly in `tests/test_resume_import.py`. The user reconciles the duplicate by
+  Pinned directly in `tests/importing/test_resume_import.py`. The user reconciles the duplicate by
   hand on the Master Resume tab; silently fuzzy-matching schools was rejected as more
   dangerous than an occasional visible duplicate.
 - Verified end to end through the real HTTP endpoint (FastAPI `TestClient`, not just

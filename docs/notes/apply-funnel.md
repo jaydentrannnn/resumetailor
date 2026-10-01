@@ -749,7 +749,7 @@ Create Account. Now, in `workday_auth.handle_workday_auth`:
   account in once with its own password, unless this run already spent its Sign In attempt
   (then it hands over as `verification_needed`, never a second attempt);
 - `classify` reads verify text inside the auth step shell as `verify_email`.
-An unrecognised end screen is now logged. Tests: `tests/test_workday_flow.py`.
+An unrecognised end screen is now logged. Tests: `tests/apply/ats/test_workday_flow.py`.
 
 ### 2026-09-24 — Applications page: tab liveness, review-table bulk actions
 "Continue" used to be offered whenever `fill.browser_target_id` was recorded, so a closed tab
@@ -918,7 +918,7 @@ Continue start was rejected: it drops unsaved answers on the current step.
 
 ## Click guard (B13, 2026-09)
 
-- Every Apply click goes through `apply/driver/clicks.py`, and `tests/test_click_guard.py` fails on any `.click(` elsewhere under `apply/`. The 49 call sites were rewritten mechanically (AST) with a purpose each: `enter` (Apply / Apply Manually / resume draft), `advance` (Next / Save and Continue), `dismiss` (stray popup), `select` (options, labels, dropdown triggers, repeater Add), `auth` (Sign In, Create Account, email-route chooser, Workday click-filter overlay).
+- Every Apply click goes through `apply/driver/clicks.py`, and `tests/apply/driver/test_click_guard.py` fails on any `.click(` elsewhere under `apply/`. The 49 call sites were rewritten mechanically (AST) with a purpose each: `enter` (Apply / Apply Manually / resume draft), `advance` (Next / Save and Continue), `dismiss` (stray popup), `select` (options, labels, dropdown triggers, repeater Add), `auth` (Sign In, Create Account, email-route chooser, Workday click-filter overlay).
 - `enter`/`advance`/`dismiss` refuse text, aria-label, value or title matching `SUBMIT_TEXT`, and refuse when the text cannot be read. `select` refuses a submit input or a button-like control whose text reads as submit, but not options: an option may legitimately say "Complete". `auth` is unchecked because some Workday tenants label the sign-in overlay "Submit"; only the auth code uses it.
 - `submit_click(loc, decision=action)` is the only path to a final submit, used once in `fill.py`, and raises unless the decision is `auto_submit`.
 - Checked by hand against Chromium: a Workday Review "Submit" (no form), Greenhouse "Submit Application" and an iCIMS `input[type=submit]` are refused for both `advance` and `select`. The same checks live in the test file and run where Playwright's bundled browser exists.
@@ -1076,7 +1076,7 @@ the tasks that first need them (a new entry in `db.MIGRATIONS`, never an edit).
   closed roots stay hidden. Playwright CSS locators pierce open roots, so reported
   selectors still resolve. A `<legend>` question with `label[for]` radios was already
   unrecognised in the light DOM (the hybrid resolver handles those groups); unchanged.
-- `tests/test_filler_dom.py` now falls back from Edge to Playwright's Chromium
+- `tests/apply/forms/test_filler_dom.py` now falls back from Edge to Playwright's Chromium
   (`PW_CHROMIUM_PATH`), so these DOM tests run in the container as well as on Windows.
 
 ## P4-X: extension pairing and capture, server side (2026-09-25)
@@ -1281,7 +1281,7 @@ The generic pass filled none of these five areas on `/oneclick-ui/` (live Result
 
 Built `apply/ats/smartrecruiters_flow.py` on the `workday_repeaters` model: entries are found by `data-test`, and a listed entry with the same title+company (or the same school with a compatible major/degree) is reused. An editor someone already has open is never touched. Answers already present (city, resume file, message) are kept, and whatever can't be verified goes to `needs_review`. City and office locations pick the single option for the city in the profile's state, then verify the committed object; an ambiguous match is cleared and left for review. `fill.py` (legacy engine, the default) calls it after the `filler.js` pass and before attachments. It drops the generic records for City, `#file-input` and the message box, and keeps the flow's records under key `smartrecruiters_entry`, next to `workday_row`. Wellmark has no City field, which is not a gap.
 
-Deviation: clicks go through `_activate`, a real mouse press at the control's centre made only after `elementFromPoint` (followed through shadow roots and slots) confirms it lands on that control. In the applicant's background tab Edge throttles `requestAnimationFrame` to about 1/s, so Playwright's stability wait cost ~2s per click (158s for the form). Dispatched clicks are ignored because the menus need trusted events. The form now takes ~70s. The verified async engine (`engine.py`) is not hooked, since the Workday repeater flow is legacy-only too. Tests: `tests/test_smartrecruiters_flow.py` runs against sanitized captures under `tests/fixtures/smartrecruiters/` plus `behaviour.js`, a component stand-in that commits options only on trusted presses.
+Deviation: clicks go through `_activate`, a real mouse press at the control's centre made only after `elementFromPoint` (followed through shadow roots and slots) confirms it lands on that control. In the applicant's background tab Edge throttles `requestAnimationFrame` to about 1/s, so Playwright's stability wait cost ~2s per click (158s for the form). Dispatched clicks are ignored because the menus need trusted events. The form now takes ~70s. The verified async engine (`engine.py`) is not hooked, since the Workday repeater flow is legacy-only too. Tests: `tests/apply/ats/test_smartrecruiters_flow.py` runs against sanitized captures under `tests/fixtures/smartrecruiters/` plus `behaviour.js`, a component stand-in that commits options only on trusted presses.
 
 ## 2026-09-27 - Parallel nightly fills (T7)
 
@@ -1353,7 +1353,7 @@ the wizard read the posting page as the form, and filling that one select report
 - A fill that sees only unlabelled chrome hands over with `NO_FORM_MSG`.
 
 The regression corpus is `tests/fixtures/forms/{ashby_quora,ashby_ramp,greenhouse_gcm}.html`
-with `tests/test_question_pipeline.py`. The captures were sanitized: example.com emails and
+with `tests/apply/answers/test_question_pipeline.py`. The captures were sanitized: example.com emails and
 555 phone numbers.
 
 ## 2026-09-27: A parallel fill adopts only a tab its own page opened

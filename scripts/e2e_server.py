@@ -46,7 +46,7 @@ def _seed(base: str) -> None:
     from resume_tailor.apply.answers import answer_memory
     from resume_tailor.apply.funnel import store
     from tests.fixtures import synthetic_resume
-    from tests.test_web import _resume_upload_with_profile
+    from tests.web.helpers import _resume_upload_with_profile
 
     resume = synthetic_resume().model_dump(mode="json", by_alias=True)
     httpx.put(f"{base}/api/master-resume", json=resume, timeout=60).raise_for_status()
