@@ -21,7 +21,10 @@ export function TargetFieldSection() {
   }
 
   return (
-    <Card title="Target field" description="Saved for this profile and used for every tailoring run.">
+    <Card
+      title="Target field"
+      description="Saved for this profile and used for every tailoring run."
+    >
       <label className="block space-y-2 text-sm">
         <span className="font-medium text-ink">Which field are you targeting?</span>
         <select
@@ -32,7 +35,9 @@ export function TargetFieldSection() {
         >
           <option value="">Existing guidance</option>
           {(config?.target_fields ?? []).map((field) => (
-            <option key={field.id} value={field.id}>{field.label}</option>
+            <option key={field.id} value={field.id}>
+              {field.label}
+            </option>
           ))}
         </select>
       </label>
@@ -40,18 +45,34 @@ export function TargetFieldSection() {
         {saving ? "Saving target field…" : config?.target_field_summary}
       </p>
       <p className="mt-2 text-sm text-ink-muted">
-        Each posting determines which of your experiences matter. Every field uses your
-        source facts and the same length limits. Your custom writing styles are preserved.
+        Each posting determines which of your experiences matter. Every field uses your source facts
+        and the same length limits. Your custom writing styles are preserved.
       </p>
       <dl className="mt-3 space-y-1 text-sm text-ink-muted">
         {(["rewrite", "expand", "cover"] as const).map((stage) => (
           <div key={stage} className="flex justify-between gap-3">
-            <dt>{stage === "rewrite" ? "Resume bullets" : stage === "expand" ? "Experience expansion" : "Cover letter"}</dt>
-            <dd>{settings[`${stage}_style`] !== null ? "Custom style" : config?.target_field ? "Field default" : "Existing default"}</dd>
+            <dt>
+              {stage === "rewrite"
+                ? "Resume bullets"
+                : stage === "expand"
+                  ? "Experience expansion"
+                  : "Cover letter"}
+            </dt>
+            <dd>
+              {settings[`${stage}_style`] !== null
+                ? "Custom style"
+                : config?.target_field
+                  ? "Field default"
+                  : "Existing default"}
+            </dd>
           </div>
         ))}
       </dl>
-      {error && <p role="alert" className="mt-2 text-sm text-danger">{error}</p>}
+      {error && (
+        <p role="alert" className="mt-2 text-sm text-danger">
+          {error}
+        </p>
+      )}
     </Card>
   );
 }

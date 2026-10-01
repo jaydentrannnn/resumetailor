@@ -99,19 +99,30 @@ function SettingsProbe() {
 function TargetFieldProbe() {
   const { config, setTargetField, settingsLoaded, flushSettings } = useRunState();
   const [flushed, setFlushed] = useState(false);
-  return <div>
-    <span data-testid="field-ready">{String(settingsLoaded)}</span>
-    <span data-testid="field">{config?.target_field ?? "legacy"}</span>
-    <span data-testid="flushed">{String(flushed)}</span>
-    <button onClick={() => void setTargetField("finance-consulting")}>save field</button>
-    <button onClick={() => void flushSettings().then(setFlushed)}>flush field</button>
-  </div>;
+  return (
+    <div>
+      <span data-testid="field-ready">{String(settingsLoaded)}</span>
+      <span data-testid="field">{config?.target_field ?? "legacy"}</span>
+      <span data-testid="flushed">{String(flushed)}</span>
+      <button onClick={() => void setTargetField("finance-consulting")}>save field</button>
+      <button onClick={() => void flushSettings().then(setFlushed)}>flush field</button>
+    </div>
+  );
 }
 
 it("waits for the profile field to save before flushing for a new run", async () => {
   let finish!: (config: unknown) => void;
-  saveTargetField.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
-  render(<RunProvider><TargetFieldProbe /></RunProvider>);
+  saveTargetField.mockImplementationOnce(
+    () =>
+      new Promise((resolve) => {
+        finish = resolve;
+      }),
+  );
+  render(
+    <RunProvider>
+      <TargetFieldProbe />
+    </RunProvider>,
+  );
   await waitFor(() => expect(screen.getByTestId("field-ready").textContent).toBe("true"));
   fireEvent.click(screen.getByText("save field"));
   await waitFor(() => expect(saveTargetField).toHaveBeenCalledWith("finance-consulting"));

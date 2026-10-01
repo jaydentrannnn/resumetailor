@@ -34,7 +34,12 @@ export function SettingsPage() {
         onChange={(id) => setParams({ tab: id }, { replace: true })}
       />
       <div role="tabpanel">
-        {tab === "models" && <><TargetFieldSection /><ModelsSection /></>}
+        {tab === "models" && (
+          <>
+            <TargetFieldSection />
+            <ModelsSection />
+          </>
+        )}
         {tab === "documents" && <DocumentsSection />}
         {tab === "data" && <DataSection />}
         {tab === "advanced" && <AdvancedSection />}

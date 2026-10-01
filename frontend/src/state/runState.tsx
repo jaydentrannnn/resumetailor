@@ -312,9 +312,11 @@ export function RunProvider({ children }: { children: ReactNode }) {
   const guidanceWrite = useRef<Promise<void>>(Promise.resolve());
 
   const setTargetField = useCallback((field: string | null): Promise<void> => {
-    const write = guidanceWrite.current.catch(() => undefined).then(async () => {
-      setConfig(await saveTargetField(field));
-    });
+    const write = guidanceWrite.current
+      .catch(() => undefined)
+      .then(async () => {
+        setConfig(await saveTargetField(field));
+      });
     guidanceWrite.current = write;
     return write;
   }, []);

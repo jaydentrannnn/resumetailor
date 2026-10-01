@@ -27,6 +27,7 @@ from resume_tailor import (
 )
 from resume_tailor.data import Bullet
 from resume_tailor.web.app import app
+from resume_tailor.web import jobs as jobs_mod
 from resume_tailor.web.jobs import JobQueue, regenerate_cover_letter
 from resume_tailor.web.schemas import JobSettings
 from tests.fixtures import synthetic_resume
@@ -170,6 +171,7 @@ def test_cover_regeneration_uses_saved_prompts_and_vocabulary(profile, monkeypat
 
     monkeypatch.setattr(coverletter, "draft_letter", draft)
     monkeypatch.setattr(coverletter, "render_cover_letter", lambda *args, **kwargs: None)
+    monkeypatch.setattr(jobs_mod.data, "load", lambda: resume)  # hermetic: no master resume on disk
     regenerate_cover_letter("saved")
     assert seen == [("finance-consulting", snapshot.systems["cover"], "Use direct sentences.")]
     assert industries.active() is None
