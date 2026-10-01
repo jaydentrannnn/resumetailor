@@ -526,7 +526,7 @@ export function ApplyPage() {
         title={idleNote ?? GLOSSARY.prepare.help}
         onClick={() => void start("prepare", prepareIds)}
       >
-        {GLOSSARY.prepare.label} for selected ({prepareIds.length})
+        {GLOSSARY.prepare.label} ({prepareIds.length})
       </Button>
       <Button
         variant="secondary"
@@ -546,7 +546,7 @@ export function ApplyPage() {
         }
         onClick={() => void start("fill", fillIds)}
       >
-        Fill selected ({fillIds.length})
+        Fill ({fillIds.length})
       </Button>
       <span className="ml-auto text-xs text-ink-muted">
         {settings.apply.auto_submit_enabled && allowedAts.length

@@ -537,7 +537,7 @@ export function ApplicationsTable({
             title={active ? "Available when the current Apply task finishes" : undefined}
             onClick={() => actions.move(selectedIds, !archived)}
           >
-            {archived ? "Restore selected" : "Archive selected"}
+            {archived ? "Restore" : "Archive"}
           </button>
         </div>
       )}
