@@ -2079,14 +2079,15 @@ class _Analyzer:
         field_confidence: dict[str, float],
         date_field: str,
         *,
-        code: str,
+        missing_code: str,
+        partial_code: str,
         noun: str,
         lost: str,
     ) -> None:
         if not field_majority.get(date_field, True):
             self.issues.append(
                 Issue(
-                    code=f"{code}_dates_not_detected",
+                    code=missing_code,
                     message=(
                         f"No {noun} entry's header has a detected date. Every "
                         f"rendered {lost} — map the date span "
@@ -2098,7 +2099,7 @@ class _Analyzer:
         elif field_confidence.get(date_field, 1.0) < 1.0:
             self.issues.append(
                 Issue(
-                    code=f"{code}_dates_partial",
+                    code=partial_code,
                     message=(
                         f"Only {field_confidence[date_field]:.0%} of {noun} "
                         "entries have a detected date; the rest will render "
@@ -2148,7 +2149,9 @@ class _Analyzer:
         )
         self._date_issues(
             field_majority, field_confidence, "dates",
-            code="experience", noun="experience", lost="job would lose its dates",
+            missing_code="experience_dates_not_detected",
+            partial_code="experience_dates_partial",
+            noun="experience", lost="job would lose its dates",
         )
         proto_main = _entry_main_paragraphs(proto)
         titles = [x for x in proto_main[1:] if not x.is_bullet and x.text.strip()]
@@ -2320,7 +2323,9 @@ class _Analyzer:
         )
         self._date_issues(
             proj_field_majority, proj_field_confidence, "date",
-            code="project", noun="project", lost="project would lose its date",
+            missing_code="project_dates_not_detected",
+            partial_code="project_dates_partial",
+            noun="project", lost="project would lose its date",
         )
         bullets = [x for x in proto[1:] if x.is_bullet] or [
             x for x in body if x.is_bullet
