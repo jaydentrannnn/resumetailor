@@ -21,7 +21,7 @@ import zipfile
 import pytest
 from lxml import etree
 
-from resume_tailor import render
+from resume_tailor.document import render
 from tests.fixtures import synthetic_resume
 
 W = "{http://schemas.openxmlformats.org/wordprocessingml/2006/main}"
@@ -553,7 +553,7 @@ def test_parse_range_handles_a_bare_year_range_and_missing_separator():
 
 def test_degree_line_and_education_details_helpers():
     """Unit-level helpers used by build_context and fit overhead."""
-    from resume_tailor.data import Education
+    from resume_tailor.content.data import Education
 
     edu = Education(
         school="UCI",

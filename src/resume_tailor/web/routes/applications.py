@@ -14,12 +14,7 @@ from typing import Any, Literal
 from fastapi import APIRouter, File, HTTPException, Request, Response, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
 
-from resume_tailor import (
-    config,
-    data,
-    jd,
-    workspace,
-)
+from resume_tailor import config, workspace
 from resume_tailor.apply.answers import profile as apply_profile
 from resume_tailor.apply.answers.answer import answer_question
 from resume_tailor.apply.driver import browser as apply_browser
@@ -28,7 +23,9 @@ from resume_tailor.apply.funnel import operations as apply_operations
 from resume_tailor.apply.funnel import packet as apply_packet
 from resume_tailor.apply.funnel import scheduler as apply_scheduler
 from resume_tailor.apply.funnel import store as apply_store
-from resume_tailor.data import MasterResume
+from resume_tailor.content import data
+from resume_tailor.content.data import MasterResume
+from resume_tailor.pipeline import jd
 from resume_tailor.web import template_ops
 from resume_tailor.web.jobs import get_queue
 from resume_tailor.web.routes.jobs import _resolve_run

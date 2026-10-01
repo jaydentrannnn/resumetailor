@@ -4,10 +4,11 @@ from __future__ import annotations
 
 import pytest
 
-from resume_tailor import config, llm
+from resume_tailor import config
 from resume_tailor.apply.answers.answer import AnswerLLM, answer_question, normalize_question
 from resume_tailor.apply.answers.profile import ApplicantProfile
-from resume_tailor.jd import JobRequirements, Keyword
+from resume_tailor.infra import llm
+from resume_tailor.pipeline.jd import JobRequirements, Keyword
 from tests.fixtures import synthetic_resume
 
 

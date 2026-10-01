@@ -4,9 +4,10 @@ from __future__ import annotations
 
 import pytest
 
-from resume_tailor import config, review
-from resume_tailor.jd import JobRequirements, Keyword
-from resume_tailor.review import BulletVerdict, ReviewLLM
+from resume_tailor import config
+from resume_tailor.pipeline import review
+from resume_tailor.pipeline.jd import JobRequirements, Keyword
+from resume_tailor.pipeline.review import BulletVerdict, ReviewLLM
 from tests.fixtures import synthetic_resume
 
 

@@ -30,7 +30,7 @@ from dotenv import load_dotenv
 from . import library_seeds
 
 if TYPE_CHECKING:
-    from .industries import GuidanceSnapshot
+    from .content.industries import GuidanceSnapshot
 
 # --------------------------------------------------------------------------------------
 # Paths
@@ -231,7 +231,7 @@ def credential(name: str) -> str:
     value = os.environ.get(name, "")
     if value or name not in SAVABLE_CREDENTIALS:
         return value
-    from resume_tailor import secret_store
+    from resume_tailor.infra import secret_store
 
     try:
         return secret_store.get(f"api_key:{name}") or ""
@@ -1263,7 +1263,7 @@ def use_context(context: RunContext) -> Iterator[RunContext]:
 def context_for_workspace(workspace_id: str) -> RunContext:
     paths = workspace_paths(workspace_id)
     calibration = _load_calibration(PDF_BACKEND, paths["CALIBRATION_DIR"])
-    from . import libraries
+    from .content import libraries
 
     effective = libraries.resolve_effective(workspace_id)
     return RunContext(

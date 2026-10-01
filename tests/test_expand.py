@@ -8,9 +8,11 @@ from __future__ import annotations
 
 import pytest
 
-from resume_tailor import config, expand, llm
-from resume_tailor.data import Bullet, Contact, Experience, MasterResume
-from resume_tailor.expand import (
+from resume_tailor import config
+from resume_tailor.content.data import Bullet, Contact, Experience, MasterResume
+from resume_tailor.infra import llm
+from resume_tailor.pipeline import expand
+from resume_tailor.pipeline.expand import (
     ExpandedEntryLLM,
     ExpansionLLMResult,
     _accept_bullets,
@@ -18,8 +20,8 @@ from resume_tailor.expand import (
     expand_experience,
     format_markdown,
 )
-from resume_tailor.fit import FitResult
-from resume_tailor.jd import JobRequirements, Keyword
+from resume_tailor.pipeline.fit import FitResult
+from resume_tailor.pipeline.jd import JobRequirements, Keyword
 
 
 def _bullet(bid: str, text: str, tags: list[str]) -> Bullet:
@@ -279,7 +281,7 @@ def test_accept_bullets_strips_leading_glyphs():
 
 def test_format_markdown_includes_hard_facts():
     """The copy-all markdown carries title/company/dates for form fields."""
-    from resume_tailor.expand import ExpandedEntry, Expansion
+    from resume_tailor.pipeline.expand import ExpandedEntry, Expansion
 
     expansion = Expansion(
         entries=[
@@ -305,7 +307,7 @@ def test_format_markdown_includes_hard_facts():
 
 def test_default_expand_system_prompt_is_byte_identical_to_the_legacy_string():
     """Splitting core/style must not change output when no override is active."""
-    from resume_tailor import style as style_mod
+    from resume_tailor.content import style as style_mod
 
     style_mod.activate(rewrite=None, expand=None)
     assert expand._system() == expand._SYSTEM
@@ -313,8 +315,8 @@ def test_default_expand_system_prompt_is_byte_identical_to_the_legacy_string():
 
 def test_expand_cache_path_changes_when_style_overrides(tmp_path, monkeypatch):
     """Style text is folded into the expansion cache key."""
-    from resume_tailor import style as style_mod
-    from resume_tailor.expand import _cache_path
+    from resume_tailor.content import style as style_mod
+    from resume_tailor.pipeline.expand import _cache_path
 
     monkeypatch.setattr(config, "CACHE_DIR", tmp_path)
     resume = _tiny_resume()

@@ -8,10 +8,18 @@ from __future__ import annotations
 
 import pytest
 
-from resume_tailor import config, llm
-from resume_tailor.data import Bullet, Contact, Experience, MasterResume, Project, SkillGroup
-from resume_tailor.jd import JobRequirements, Keyword
-from resume_tailor.skills import (
+from resume_tailor import config
+from resume_tailor.content.data import (
+    Bullet,
+    Contact,
+    Experience,
+    MasterResume,
+    Project,
+    SkillGroup,
+)
+from resume_tailor.infra import llm
+from resume_tailor.pipeline.jd import JobRequirements, Keyword
+from resume_tailor.pipeline.skills import (
     SelectedSkillLLM,
     SkillsSelectionLLM,
     _accept,
@@ -425,7 +433,7 @@ def test_empty_pool_returns_empty_plan_without_calling_model(skills_calls):
 
 
 def test_paste_line_and_format_markdown():
-    from resume_tailor.skills import SkillsPlan, SkillSuggestion
+    from resume_tailor.pipeline.skills import SkillsPlan, SkillSuggestion
 
     plan = SkillsPlan(
         skills=[
@@ -447,6 +455,6 @@ def test_paste_line_and_format_markdown():
 
 
 def test_format_markdown_empty_plan():
-    from resume_tailor.skills import SkillsPlan
+    from resume_tailor.pipeline.skills import SkillsPlan
 
     assert format_markdown(SkillsPlan()) == ""

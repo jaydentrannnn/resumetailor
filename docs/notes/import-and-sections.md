@@ -9,7 +9,7 @@ earlier ones. Cross-check any number against the code.
 
 - **Decision:** Added analyze ? confirm ? install for single-column paragraph DOCX
   resumes. Mapping lives in `templates/template_profile.json`. Build logic moved to
-  `src/resume_tailor/template_build.py`; `scripts/build_template.py` is a thin CLI.
+  `src/resume_tailor/document/template_build.py`; `scripts/build_template.py` is a thin CLI.
   Experience required; Education / Projects / Skills optional (omitted, never invented).
 - **Why:** Hard-coded `EDUCATION` / `WORK EXPERIENCES` / ? headings and baked-in ` | `
   separators rejected otherwise-valid single-column exports.
@@ -375,7 +375,7 @@ trip, and preview the installable result before committing to it.
 
 **What:** A Template-tab upload was, until now, a layout donor whose content was
 discarded — a new user uploaded their resume and then retyped every bullet by hand into
-the editor. New `src/resume_tailor/resume_import.py` (Phase 6) turns
+the editor. New `src/resume_tailor/importing/resume_import.py` (Phase 6) turns
 `template_analyze.analyze_docx`'s own structural findings into a `MasterResume` draft;
 `POST /api/master-resume/import` exposes it without writing anything.
 
@@ -751,7 +751,7 @@ from a deliberate `False`) is only adopted alongside a non-empty incoming `gpa`.
 master_resume.json` from the earlier (pre-fix) merge predated this change and would not
 merge themselves, so a one-time script applied the identical `_merge_education_entry` rule
 to collapse them — backed up first (`.bak.json`, the same convention `_write_master_resume`
-uses), then re-validated through the real `python -m resume_tailor.data --validate`. Result:
+uses), then re-validated through the real `python -m resume_tailor.content.data --validate`. Result:
 one EDUCATION entry, coursework populated, `gpa="3.92"`/`show_gpa=True` intact. `data/` is
 gitignored, so this touched no repo state.
 

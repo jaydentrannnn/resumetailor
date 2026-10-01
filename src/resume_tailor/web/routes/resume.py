@@ -14,18 +14,12 @@ import docx
 from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import ValidationError
 
-from resume_tailor import (
-    config,
-    data,
-    edu_dates,
-    propose,
-    resume_import,
-    resume_import_pdf,
-    resume_versions,
-    tag_suggest,
-    template_analyze,
-)
-from resume_tailor.data import MasterResume
+from resume_tailor import config
+from resume_tailor.content import data, edu_dates, resume_versions
+from resume_tailor.content.data import MasterResume
+from resume_tailor.document import template_analyze
+from resume_tailor.importing import resume_import, resume_import_pdf, tag_suggest
+from resume_tailor.pipeline import propose
 from resume_tailor.web import template_ops
 from resume_tailor.web.schemas import (
     MasterResumeImportResponse,

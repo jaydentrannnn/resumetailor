@@ -425,7 +425,7 @@ Full check after any change:
 
 ```powershell
 python scripts\build_template.py
-python -m resume_tailor.data --validate     # expect: 39 bullets, 102 tags
+python -m resume_tailor.content.data --validate     # expect: 39 bullets, 102 tags
 python scripts\render_dummy.py              # expect: 3 pages (full superset)
 pytest                                       # expect: 147 passed
 ```

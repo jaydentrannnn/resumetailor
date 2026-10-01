@@ -12,15 +12,15 @@ import pytest
 from docx.oxml import parse_xml
 from docx.oxml.ns import nsdecls, qn
 
-from resume_tailor import (
+from resume_tailor.document import (
     convert,
     cover_template,
     docx_normalize,
-    resume_import,
     template_analyze,
     template_build,
     template_verify,
 )
+from resume_tailor.importing import resume_import
 from tests.fixtures import (
     _add_bullet_numbering,
     _docx_bytes,

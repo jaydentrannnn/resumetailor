@@ -22,7 +22,7 @@ import docx
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 
-from resume_tailor.data import (
+from resume_tailor.content.data import (
     Bullet,
     Contact,
     Education,

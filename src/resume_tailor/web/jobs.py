@@ -22,33 +22,28 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
-from resume_tailor import (
-    config,
+from resume_tailor import config, workspace
+from resume_tailor.content import data, industries, libraries, style
+from resume_tailor.content.data import MasterResume
+from resume_tailor.document import rerender
+from resume_tailor.document.template_profile import active_layout
+from resume_tailor.infra import housekeeping, logs
+from resume_tailor.infra.llm import LLMError
+from resume_tailor.pipeline import (
     coverletter,
-    data,
     expand,
     facets,
     fit,
-    housekeeping,
     include,
-    industries,
     jd,
-    libraries,
-    logs,
     propose,
     report,
-    rerender,
     rewrite,
     skills,
-    style,
-    workspace,
 )
-from resume_tailor.data import MasterResume
-from resume_tailor.events import ProgressCallback, ProgressEvent
-from resume_tailor.fit import FitError
-from resume_tailor.llm import LLMError
-from resume_tailor.rewrite import FabricationError
-from resume_tailor.template_profile import active_layout
+from resume_tailor.pipeline.events import ProgressCallback, ProgressEvent
+from resume_tailor.pipeline.fit import FitError
+from resume_tailor.pipeline.rewrite import FabricationError
 from resume_tailor.web import template_ops
 from resume_tailor.web.schemas import (
     CoverAnglesIn,
@@ -701,7 +696,7 @@ class _TailorJobRun:
         if pdf_path.exists():
             return
         try:
-            from resume_tailor import render
+            from resume_tailor.document import render
 
             render.to_pdf(self.out_path, pdf_path, keep_active=False)
         except RuntimeError as exc:

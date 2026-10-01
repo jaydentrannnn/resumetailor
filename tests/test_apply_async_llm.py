@@ -10,7 +10,7 @@ import httpx
 import pytest
 from pydantic import BaseModel
 
-from resume_tailor import llm
+from resume_tailor.infra import llm
 
 
 class _Answer(BaseModel):

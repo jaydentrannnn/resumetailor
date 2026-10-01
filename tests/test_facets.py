@@ -2,9 +2,10 @@
 
 from __future__ import annotations
 
-from resume_tailor import config, facets
-from resume_tailor.data import Education, MasterResume, Project, SkillGroup
-from resume_tailor.facets import (
+from resume_tailor import config
+from resume_tailor.content.data import Education, MasterResume, Project, SkillGroup
+from resume_tailor.pipeline import facets
+from resume_tailor.pipeline.facets import (
     FacetResult,
     FacetSelection,
     ProjectTech,
@@ -18,7 +19,7 @@ from resume_tailor.facets import (
     rename_is_jd_anchored,
     select_facets,
 )
-from resume_tailor.jd import JobRequirements, Keyword
+from resume_tailor.pipeline.jd import JobRequirements, Keyword
 from tests.fixtures import synthetic_resume
 
 
@@ -132,7 +133,7 @@ def test_rename_rejects_sql_to_snowflake():
 def test_rename_rejects_sql_to_mysql():
     """Suffix containment must not license claiming MySQL from SQL."""
     assert not labels_are_equivalent("SQL", "MySQL")
-    from resume_tailor.facets import _alnum_compact
+    from resume_tailor.pipeline.facets import _alnum_compact
 
     # sql is only a suffix of mysql — prefix rule correctly rejects both directions.
     assert not _alnum_compact("mysql").startswith(_alnum_compact("sql"))
@@ -171,7 +172,7 @@ def test_aligns_rejects_single_letter_word_prefix():
     for "curiosity". An exact single-letter match (not exercised here) must stay legal;
     only the *prefix* shortcut needed the floor.
     """
-    from resume_tailor.facets import _aligns
+    from resume_tailor.pipeline.facets import _aligns
 
     assert not _aligns("curiosity", "C++")
     assert not _aligns("C++", "curiosity")

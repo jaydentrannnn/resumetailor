@@ -15,7 +15,7 @@ from pathlib import Path
 import pytest
 
 from resume_tailor import config
-from resume_tailor.data import MasterResume, _alias_rewrites, _validate_cli
+from resume_tailor.content.data import MasterResume, _alias_rewrites, _validate_cli
 
 _RESUME_TEMPLATE: dict = {
     "contact": {"name": "Test User", "email": "test@example.com"},

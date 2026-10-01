@@ -9,7 +9,7 @@ import zipfile
 
 import pytest
 
-from resume_tailor import logs
+from resume_tailor.infra import logs
 
 
 @pytest.mark.parametrize(

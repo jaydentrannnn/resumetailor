@@ -27,8 +27,9 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from resume_tailor import config, industries, libraries
-from resume_tailor.labels import label_taken, normalize_label
+from resume_tailor import config
+from resume_tailor.content import industries, libraries
+from resume_tailor.content.labels import label_taken, normalize_label
 
 #: Serialises registry mutations (create/rename/delete/activate) against each other.
 #: Does NOT serialise against Word/LibreOffice — callers needing that also take

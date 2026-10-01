@@ -13,13 +13,13 @@ import httpx
 import pytest
 
 from resume_tailor import config
-from resume_tailor.events import ProgressEvent
-from resume_tailor.expand import ExpandedEntry, Expansion
-from resume_tailor.fit import FitResult
-from resume_tailor.jd import JobRequirements, Keyword
 from resume_tailor.mcp_server import tools
 from resume_tailor.mcp_server.client import BackendClient, BackendError
-from resume_tailor.skills import SkillSuggestion, SkillsPlan
+from resume_tailor.pipeline.events import ProgressEvent
+from resume_tailor.pipeline.expand import ExpandedEntry, Expansion
+from resume_tailor.pipeline.fit import FitResult
+from resume_tailor.pipeline.jd import JobRequirements, Keyword
+from resume_tailor.pipeline.skills import SkillsPlan, SkillSuggestion
 from resume_tailor.web import jobs as jobs_mod
 from resume_tailor.web.app import app
 from resume_tailor.web.jobs import JobQueue
@@ -89,7 +89,7 @@ async def mcp_client(tmp_path, monkeypatch):
 
     def fake_facets(resume_arg, requirements, **kwargs):
         """Budget-only facets so the job never reaches the network."""
-        from resume_tailor import facets as facets_mod
+        from resume_tailor.pipeline import facets as facets_mod
 
         return facets_mod.budget_only(
             resume_arg,

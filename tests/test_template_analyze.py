@@ -8,7 +8,7 @@ import docx
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 
-from resume_tailor import template_analyze
+from resume_tailor.document import template_analyze
 from tests.fixtures import _sidebar_table_resume, _table_resume
 
 
@@ -392,7 +392,7 @@ def test_spacer_donors_absent_under_fixed_mode():
 def test_spacing_profile_accepts_the_legacy_single_id_shape():
     """A `template_profile.json` written by the first cut of this feature stored one int
     (or null) per slot. It must still load rather than 500 the whole app."""
-    from resume_tailor.template_profile import SpacingProfile
+    from resume_tailor.document.template_profile import SpacingProfile
 
     legacy = SpacingProfile.model_validate(
         {"before_heading": 2, "after_heading": None, "between_entries": 13}

@@ -5,7 +5,8 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from resume_tailor import config, logs
+from resume_tailor import config
+from resume_tailor.infra import logs
 from resume_tailor.web import security
 from resume_tailor.web.app import app
 
@@ -86,7 +87,7 @@ def test_sign_in_link_sets_cookie(client, monkeypatch):
 def test_sign_in_redirect_carries_the_app_version(client, monkeypatch):
     """`/?v=<version>` is a fresh cache key, so a webview holding a stale `/` from an
     older release loads the current page after an update."""
-    from resume_tailor import desktop_update
+    from resume_tailor.infra import desktop_update
 
     monkeypatch.setenv("RESUME_TAILOR_TOKEN", "tok-123456789")
     monkeypatch.setattr(desktop_update, "CURRENT", "0.2.10+beta 1")

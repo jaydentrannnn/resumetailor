@@ -12,10 +12,12 @@ from __future__ import annotations
 
 import pytest
 
-from resume_tailor import config, merge, render, report, rewrite
-from resume_tailor import fit as fit_mod
-from resume_tailor.data import Bullet, Contact, Experience, MasterResume
-from resume_tailor.jd import JobRequirements, Keyword
+from resume_tailor import config
+from resume_tailor.content.data import Bullet, Contact, Experience, MasterResume
+from resume_tailor.document import render
+from resume_tailor.pipeline import fit as fit_mod
+from resume_tailor.pipeline import merge, report, rewrite
+from resume_tailor.pipeline.jd import JobRequirements, Keyword
 
 
 def bullet(bid: str, text: str, tags: list[str], metric: bool = False) -> Bullet:

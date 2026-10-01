@@ -54,7 +54,8 @@ def test_no_denylisted_strings_in_tracked_files() -> None:
 
 
 def test_default_cover_style_names_no_candidate() -> None:
-    from resume_tailor import coverletter, style
+    from resume_tailor.content import style
+    from resume_tailor.pipeline import coverletter
 
     for text in (style.DEFAULT_COVER_STYLE, coverletter._SYSTEM):
         assert "Goes by" not in text

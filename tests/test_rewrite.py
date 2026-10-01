@@ -9,10 +9,11 @@ from __future__ import annotations
 
 import pytest
 
-from resume_tailor import config, rewrite
-from resume_tailor.data import Bullet, Contact, Experience, MasterResume, Project
-from resume_tailor.jd import JobRequirements, Keyword
-from resume_tailor.rewrite import (
+from resume_tailor import config
+from resume_tailor.content.data import Bullet, Contact, Experience, MasterResume, Project
+from resume_tailor.pipeline import rewrite
+from resume_tailor.pipeline.jd import JobRequirements, Keyword
+from resume_tailor.pipeline.rewrite import (
     BulletScore,
     ScoreTable,
     check_fabrication,
@@ -1041,7 +1042,7 @@ def test_the_system_prompt_foregrounds_accomplishment_without_inventing_one():
 
 def test_default_rewrite_system_prompt_is_byte_identical_to_the_legacy_string():
     """Splitting core/style must not change output when no override is active."""
-    from resume_tailor import style as style_mod
+    from resume_tailor.content import style as style_mod
 
     style_mod.activate(rewrite=None, expand=None)
     assert rewrite._system() == rewrite._SYSTEM
@@ -1049,7 +1050,7 @@ def test_default_rewrite_system_prompt_is_byte_identical_to_the_legacy_string():
 
 def test_a_custom_rewrite_style_reaches_the_llm_system_prompt(rewrite_calls):
     """User overrides replace the editable block but keep locked core rules."""
-    from resume_tailor import style as style_mod
+    from resume_tailor.content import style as style_mod
 
     style_mod.activate(rewrite="- Write every bullet in ALL CAPS for emphasis.", expand=None)
     calls = rewrite_calls(_reply(a="Built a Python service."))
@@ -1066,7 +1067,7 @@ def test_a_custom_rewrite_style_reaches_the_llm_system_prompt(rewrite_calls):
 
 def test_a_custom_rewrite_style_cannot_drop_locked_core_rules(rewrite_calls):
     """Fabrication guard rules stay in the system prompt even when the style omits them."""
-    from resume_tailor import style as style_mod
+    from resume_tailor.content import style as style_mod
 
     style_mod.activate(rewrite="- Be concise.", expand=None)
     system = rewrite._system()

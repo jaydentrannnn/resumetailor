@@ -20,7 +20,8 @@ from importlib import metadata
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response
 
-from resume_tailor import config, housekeeping, logs, workspace
+from resume_tailor import config, workspace
+from resume_tailor.infra import housekeeping, logs
 from resume_tailor.web.jobs import get_queue
 
 router = APIRouter()
@@ -28,7 +29,7 @@ router = APIRouter()
 
 def _version() -> str:
     # The desktop shell passes the installer's version; it is the one users see.
-    from resume_tailor import desktop_update
+    from resume_tailor.infra import desktop_update
 
     if desktop_update.CURRENT:
         return desktop_update.CURRENT

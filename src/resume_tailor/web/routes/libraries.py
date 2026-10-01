@@ -6,13 +6,9 @@ import logging
 
 from fastapi import APIRouter, HTTPException
 
-from resume_tailor import (
-    config,
-    data,
-    jd,
-    libraries,
-    propose,
-)
+from resume_tailor import config
+from resume_tailor.content import data, libraries
+from resume_tailor.pipeline import jd, propose
 from resume_tailor.web import template_ops
 from resume_tailor.web.jobs import get_queue
 from resume_tailor.web.routes.resume import _backup_master_resume

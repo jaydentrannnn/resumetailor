@@ -17,13 +17,14 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from resume_tailor import config, logs, workspace
+from resume_tailor import config, workspace
 from resume_tailor.apply.answers import profile
 from resume_tailor.apply.discovery import identity
 from resume_tailor.apply.driver import browser
 from resume_tailor.apply.forms import fill, submit_guard
 from resume_tailor.apply.funnel import attention as attention_mod
 from resume_tailor.apply.funnel import daily, preparation, store
+from resume_tailor.infra import logs
 from resume_tailor.web.schemas import ApplyOperationRequest, ApplySettings, JobSettings
 
 OperationState = Literal[

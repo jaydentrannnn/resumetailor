@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi.testclient import TestClient
 
 from resume_tailor import config
-from resume_tailor.tag_suggest import LIMIT, suggest_tags
+from resume_tailor.importing.tag_suggest import LIMIT, suggest_tags
 from resume_tailor.web.app import app
 
 ALIASES = {"dcf": "discounted cash flow", "ms excel": "excel", "ml": "machine learning"}

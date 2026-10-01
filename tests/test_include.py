@@ -6,7 +6,7 @@ no-network convention as the rest of the suite.
 
 from __future__ import annotations
 
-from resume_tailor.include import IncludeOptions, apply, contact_order, validate
+from resume_tailor.pipeline.include import IncludeOptions, apply, contact_order, validate
 from tests.fixtures import synthetic_resume
 
 

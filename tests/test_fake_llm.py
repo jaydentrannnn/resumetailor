@@ -6,7 +6,8 @@ import asyncio
 
 import pytest
 
-from resume_tailor import coverletter, facets, fake_llm, jd, llm, review, rewrite, skills
+from resume_tailor.infra import fake_llm, llm
+from resume_tailor.pipeline import coverletter, facets, jd, review, rewrite, skills
 from tests.fixtures import synthetic_resume
 
 

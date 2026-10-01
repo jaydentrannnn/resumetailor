@@ -17,10 +17,11 @@ from urllib.parse import unquote
 import pytest
 from fastapi.testclient import TestClient
 
-from resume_tailor import config, default_templates, template_profile
-from resume_tailor.data import load
-from resume_tailor.events import ProgressEvent
-from resume_tailor.fit import FitResult
+from resume_tailor import config
+from resume_tailor.content.data import load
+from resume_tailor.document import default_templates, template_profile
+from resume_tailor.pipeline.events import ProgressEvent
+from resume_tailor.pipeline.fit import FitResult
 from resume_tailor.web import jobs as jobs_mod
 from resume_tailor.web import template_ops
 from resume_tailor.web.app import app
@@ -90,8 +91,8 @@ def client(tmp_path, monkeypatch):
     )
     # Review is CLI-only today, but stub the module so a future jobs-path wire-up
     # cannot reach the network from an unstubbed test (same pattern as skills/cover).
-    from resume_tailor import review as review_mod
-    from resume_tailor.review import ReviewResult
+    from resume_tailor.pipeline import review as review_mod
+    from resume_tailor.pipeline.review import ReviewResult
 
     monkeypatch.setattr(
         review_mod,
@@ -817,7 +818,7 @@ def test_job_runs_to_success_with_stubbed_pipeline(client, monkeypatch, tmp_path
     resume = load()
 
     def fake_extract(text, *, known_tags=None, use_cache=True, on_event=None):
-        from resume_tailor.jd import JobRequirements, Keyword
+        from resume_tailor.pipeline.jd import JobRequirements, Keyword
 
         if on_event:
             on_event(ProgressEvent("extract", "stub extract", {}))
@@ -893,7 +894,7 @@ def test_job_runs_to_success_with_stubbed_pipeline(client, monkeypatch, tmp_path
 
     def fake_facets(resume, requirements, **kwargs):
         """Budget-only facets so the job path never reaches the network."""
-        from resume_tailor import facets as facets_mod
+        from resume_tailor.pipeline import facets as facets_mod
 
         return facets_mod.budget_only(
             resume,
@@ -903,7 +904,7 @@ def test_job_runs_to_success_with_stubbed_pipeline(client, monkeypatch, tmp_path
 
     monkeypatch.setattr(jobs_mod.facets, "select_facets", fake_facets)
 
-    from resume_tailor.expand import ExpandedEntry, Expansion
+    from resume_tailor.pipeline.expand import ExpandedEntry, Expansion
 
     def fake_expand(*a, **k):
         """Stub expansion so web tests never reach the network."""
@@ -1170,7 +1171,7 @@ def test_job_honours_exclusions_but_expansion_still_sees_the_excluded_job(
     excluded_id = resume.experience[0].id
 
     def fake_extract(text, *, known_tags=None, use_cache=True, on_event=None):
-        from resume_tailor.jd import JobRequirements, Keyword
+        from resume_tailor.pipeline.jd import JobRequirements, Keyword
 
         return JobRequirements(
             title="Stub Role",
@@ -1207,7 +1208,7 @@ def test_job_honours_exclusions_but_expansion_still_sees_the_excluded_job(
     monkeypatch.setattr(jobs_mod.fit, "fit", fake_fit)
 
     def fake_facets(resume_arg, requirements, **kwargs):
-        from resume_tailor import facets as facets_mod
+        from resume_tailor.pipeline import facets as facets_mod
 
         return facets_mod.budget_only(
             resume_arg, requirements, include_project_links=kwargs.get(
@@ -1219,7 +1220,7 @@ def test_job_honours_exclusions_but_expansion_still_sees_the_excluded_job(
 
     def fake_expand(resume_arg, requirements, **kwargs):
         seen_expand_resume["ids"] = {e.id for e in resume_arg.experience}
-        from resume_tailor.expand import Expansion
+        from resume_tailor.pipeline.expand import Expansion
 
         return Expansion(entries=[], model="stub", char_limit=config.EXPAND_CHAR_LIMIT)
 
@@ -1289,7 +1290,7 @@ def test_skills_selection_resume_is_post_include_pre_facets(client, monkeypatch,
     monkeypatch.setattr(config, "MASTER_RESUME_PATH", resume_path)
 
     def fake_extract(text, *, known_tags=None, use_cache=True, on_event=None):
-        from resume_tailor.jd import JobRequirements, Keyword
+        from resume_tailor.pipeline.jd import JobRequirements, Keyword
 
         return JobRequirements(
             title="Stub Role",
@@ -1322,7 +1323,7 @@ def test_skills_selection_resume_is_post_include_pre_facets(client, monkeypatch,
     monkeypatch.setattr(jobs_mod.fit, "fit", fake_fit)
 
     def fake_facets(resume_arg, requirements, **kwargs):
-        from resume_tailor import facets as facets_mod
+        from resume_tailor.pipeline import facets as facets_mod
 
         return facets_mod.budget_only(
             resume_arg,
@@ -1337,7 +1338,7 @@ def test_skills_selection_resume_is_post_include_pre_facets(client, monkeypatch,
     def fake_select_skills(resume_arg, requirements, **kwargs):
         seen_skills_resume["experience_ids"] = {e.id for e in resume_arg.experience}
         seen_skills_resume["project_tech"] = list(resume_arg.projects[0].tech)
-        from resume_tailor.skills import SkillsPlan
+        from resume_tailor.pipeline.skills import SkillsPlan
 
         return SkillsPlan(skills=[], model="stub", pool_size=0)
 
@@ -1368,7 +1369,7 @@ def test_skills_endpoint_and_status_field(client, monkeypatch):
     load()  # confirms the fixture's resume file is loadable before the job reads it
 
     def fake_extract(text, *, known_tags=None, use_cache=True, on_event=None):
-        from resume_tailor.jd import JobRequirements, Keyword
+        from resume_tailor.pipeline.jd import JobRequirements, Keyword
 
         return JobRequirements(
             title="Stub Role",
@@ -1401,7 +1402,7 @@ def test_skills_endpoint_and_status_field(client, monkeypatch):
     monkeypatch.setattr(jobs_mod.fit, "fit", fake_fit)
 
     def fake_facets(resume_arg, requirements, **kwargs):
-        from resume_tailor import facets as facets_mod
+        from resume_tailor.pipeline import facets as facets_mod
 
         return facets_mod.budget_only(
             resume_arg,
@@ -1411,7 +1412,7 @@ def test_skills_endpoint_and_status_field(client, monkeypatch):
 
     monkeypatch.setattr(jobs_mod.facets, "select_facets", fake_facets)
 
-    from resume_tailor.skills import SkillsPlan, SkillSuggestion
+    from resume_tailor.pipeline.skills import SkillsPlan, SkillSuggestion
 
     def fake_select_skills(*a, **k):
         return SkillsPlan(
@@ -1426,7 +1427,7 @@ def test_skills_endpoint_and_status_field(client, monkeypatch):
 
     monkeypatch.setattr(jobs_mod.skills, "select_skills", fake_select_skills)
 
-    from resume_tailor.expand import Expansion
+    from resume_tailor.pipeline.expand import Expansion
 
     # Was missing entirely — expansion is a real pipeline stage that runs after a
     # successful fit (see CLAUDE.md's six-stage list). Without this stub the worker
@@ -1518,7 +1519,7 @@ def test_skills_download_404s_when_no_skills_produced(client, monkeypatch):
     c, _q = client
 
     def fake_extract(text, *, known_tags=None, use_cache=True, on_event=None):
-        from resume_tailor.jd import JobRequirements, Keyword
+        from resume_tailor.pipeline.jd import JobRequirements, Keyword
 
         return JobRequirements(
             title="Stub Role",
@@ -1551,7 +1552,7 @@ def test_skills_download_404s_when_no_skills_produced(client, monkeypatch):
     monkeypatch.setattr(jobs_mod.fit, "fit", fake_fit)
 
     def fake_facets(resume_arg, requirements, **kwargs):
-        from resume_tailor import facets as facets_mod
+        from resume_tailor.pipeline import facets as facets_mod
 
         return facets_mod.budget_only(
             resume_arg,
@@ -1889,7 +1890,7 @@ def test_import_master_resume_suggest_tags_fills_in_untagged_bullets(client, mon
     ).json()
     assert baseline["untagged_bullet_count"] >= 1
 
-    from resume_tailor import propose as propose_mod
+    from resume_tailor.pipeline import propose as propose_mod
 
     def fake_propose_bullet_tags(bullets, known_tags, **_kwargs):
         return {0: ["python"]}
@@ -1910,7 +1911,7 @@ def test_import_master_resume_suggest_tags_failure_is_a_warning_not_a_500(client
     """The LLM pass must never fail the import itself — a raised error becomes a
     warning in the response, and the deterministic draft is still returned."""
     c, _ = client
-    from resume_tailor import propose as propose_mod
+    from resume_tailor.pipeline import propose as propose_mod
 
     def fake_propose_bullet_tags(bullets, known_tags, **_kwargs):
         raise RuntimeError("model unreachable")
@@ -1939,7 +1940,7 @@ def test_import_master_resume_suggest_tags_is_pinned_to_ollama_regardless_of__ac
     c, _ = client
     config.resolve("claude")
 
-    from resume_tailor import propose as propose_mod
+    from resume_tailor.pipeline import propose as propose_mod
 
     observed: dict[str, object] = {}
 
@@ -1986,7 +1987,7 @@ def test_import_master_resume_suggest_tags_survives_a_non_runtimeerror_failure(
     `anthropic.BadRequestError`, which is neither `LLMError` nor `RuntimeError`) must
     still become a warning, not an unhandled 500."""
     c, _ = client
-    from resume_tailor import propose as propose_mod
+    from resume_tailor.pipeline import propose as propose_mod
 
     def fake_propose_bullet_tags(bullets, known_tags, **_kwargs):
         raise _FakeSDKError("Your credit balance is too low to access the Anthropic API.")
@@ -2240,7 +2241,7 @@ def _resume_upload_with_profile() -> tuple[bytes, str]:
     heading fallback (Phase 7 retired it), so any test exercising the install plumbing
     itself (backup/restore, library recording, busy-queue rejection, …) needs a real
     uploadable file and a profile that actually matches it, not `_minimal_docx_bytes`."""
-    from resume_tailor import template_analyze
+    from resume_tailor.document import template_analyze
 
     raw = _resume_docx_bytes()
     result = template_analyze.analyze_docx(raw=raw)
@@ -2797,7 +2798,7 @@ def test_preview_draft_reports_no_pdf_backend_as_503(client, tmp_path, monkeypat
 def test_install_clears_the_upload_cache(client, tmp_path, monkeypatch):
     """A successful install clears the wizard's cached upload — remap/preview against
     that sha afterward must 400, not silently keep serving a now-stale draft."""
-    from resume_tailor import template_build as tb_mod
+    from resume_tailor.document import template_build as tb_mod
 
     c, _ = client
     _point_templates_at(tmp_path, monkeypatch)
@@ -2875,7 +2876,7 @@ def test_get_template_includes_profile_summary(client, tmp_path, monkeypatch):
 
 def test_upload_template_with_calibrate_flag(client, tmp_path, monkeypatch):
     """calibrate=true runs calibration after a successful build and reloads config."""
-    from resume_tailor.calibrate import CalibrationResult
+    from resume_tailor.document.calibrate import CalibrationResult
 
     c, _ = client
     templates = _point_templates_at(tmp_path, monkeypatch)
@@ -3042,7 +3043,7 @@ def test_api_reads_are_never_cached_by_the_browser(client, tmp_path, monkeypatch
 def test_starter_card_marks_the_copy_that_is_in_use(monkeypatch):
     """Two saved copies of one starter: the card follows the active copy, else the copy
     `install_default` would reactivate (the newest), never an arbitrary one."""
-    from resume_tailor import default_templates
+    from resume_tailor.document import default_templates
 
     name = default_templates.names()[0]
     sha = hashlib.sha256(default_templates.build(name)).hexdigest()
@@ -3431,7 +3432,7 @@ class _FakeProposeClient:
 
 
 def test_generate_proposals_finds_an_unknown_opening_verb(client, tmp_path, monkeypatch):
-    from resume_tailor import propose as propose_mod
+    from resume_tailor.pipeline import propose as propose_mod
 
     c, _ = client
     _write_test_resume(
@@ -3465,7 +3466,7 @@ def test_generate_proposals_finds_an_unknown_opening_verb(client, tmp_path, monk
 
 
 def test_generate_proposals_makes_no_call_when_nothing_to_propose(client, tmp_path, monkeypatch):
-    from resume_tailor import propose as propose_mod
+    from resume_tailor.pipeline import propose as propose_mod
 
     c, _ = client
     _write_test_resume(monkeypatch, tmp_path, bullet_text="Designed a caching layer.", bullet_tags=["python"])
@@ -3482,7 +3483,7 @@ def test_generate_proposals_makes_no_call_when_nothing_to_propose(client, tmp_pa
 
 
 def test_generate_proposals_llm_error_is_not_fatal(client, tmp_path, monkeypatch):
-    from resume_tailor import propose as propose_mod
+    from resume_tailor.pipeline import propose as propose_mod
 
     c, _ = client
     _write_test_resume(
@@ -3506,7 +3507,7 @@ def test_generate_proposals_non_runtimeerror_failure_is_not_fatal(client, tmp_pa
     """Same as `test_generate_proposals_llm_error_is_not_fatal`, but with an exception
     type (like a real backend SDK error) that a narrower `except (LLMError, RuntimeError)`
     would have let escape as a 500 — see `_FakeSDKError` above."""
-    from resume_tailor import propose as propose_mod
+    from resume_tailor.pipeline import propose as propose_mod
 
     c, _ = client
     _write_test_resume(
@@ -3534,7 +3535,7 @@ def test_approve_requires_acknowledgement_when_it_rewrites_an_existing_tag(
     created = c.post("/api/libraries/packs", json={"label": "A"})
     pack_id = created.json()["packs"][-1]["id"]
 
-    from resume_tailor import libraries as libraries_mod
+    from resume_tailor.content import libraries as libraries_mod
 
     state = libraries_mod.read_workspace_state()
     state.proposals = [
@@ -3566,7 +3567,7 @@ def test_approve_requires_acknowledgement_when_it_rewrites_an_existing_tag(
 
 
 def test_approve_into_a_shipped_target_pack_writes_a_shadow(client, tmp_path, monkeypatch):
-    from resume_tailor import libraries as libraries_mod
+    from resume_tailor.content import libraries as libraries_mod
 
     c, _ = client
     _write_test_resume(monkeypatch, tmp_path, bullet_text="Did a thing.", bullet_tags=["python"])
@@ -3636,7 +3637,7 @@ def test_generate_and_reject_proceed_even_when_queue_busy(client, tmp_path, monk
 
 
 def test_reject_moves_ids_to_rejected_and_they_are_never_reproposed(client, tmp_path, monkeypatch):
-    from resume_tailor import libraries as libraries_mod
+    from resume_tailor.content import libraries as libraries_mod
 
     c, _ = client
     _write_test_resume(monkeypatch, tmp_path, bullet_text="Did a thing.", bullet_tags=["python"])
@@ -3956,7 +3957,7 @@ def test_job_artifacts_land_under_active_workspace(client, tmp_path, monkeypatch
     load()  # confirms the copied-over resume file is loadable before the job reads it
 
     def fake_extract(text, *, known_tags=None, use_cache=True, on_event=None):
-        from resume_tailor.jd import JobRequirements, Keyword
+        from resume_tailor.pipeline.jd import JobRequirements, Keyword
 
         return JobRequirements(
             title="Stub Role",
@@ -3985,13 +3986,13 @@ def test_job_artifacts_land_under_active_workspace(client, tmp_path, monkeypatch
         )
 
     def fake_facets(resume, requirements, **kwargs):
-        from resume_tailor import facets as facets_mod
+        from resume_tailor.pipeline import facets as facets_mod
 
         return facets_mod.budget_only(
             resume, requirements, include_project_links=kwargs.get("include_project_links", True)
         )
 
-    from resume_tailor.expand import Expansion
+    from resume_tailor.pipeline.expand import Expansion
 
     monkeypatch.setattr(jobs_mod.jd, "extract", fake_extract)
     monkeypatch.setattr(jobs_mod.rewrite, "score_table", fake_score)
@@ -4038,7 +4039,7 @@ def test_profile_template_install_works_on_a_freshly_created_profile(
     actually-tagged template, not a placeholder, and stay real regression checks
     rather than passing on unverified output.
     """
-    from resume_tailor import template_build as tb_mod
+    from resume_tailor.document import template_build as tb_mod
 
     c, _ = client
     _point_workspaces_at(tmp_path, monkeypatch)
@@ -4137,7 +4138,7 @@ def test_library_thumbnail_route(client, tmp_path, monkeypatch):
     """GET /api/template/library/{id}/thumb.png renders the baseline; unknown ids 404."""
     from pypdf import PdfWriter
 
-    from resume_tailor import thumbnails
+    from resume_tailor.document import thumbnails
 
     c, _ = client
     templates = _point_templates_at(tmp_path, monkeypatch)
@@ -4172,7 +4173,7 @@ def test_library_thumbnail_route(client, tmp_path, monkeypatch):
 
 def test_calibrate_route_reports_result_and_refuses_while_busy(client, tmp_path, monkeypatch):
     """POST /api/template/calibrate runs calibration; failures are ok=False, never 500."""
-    from resume_tailor.calibrate import CalibrationResult
+    from resume_tailor.document.calibrate import CalibrationResult
 
     c, _ = client
     templates = _point_templates_at(tmp_path, monkeypatch)
@@ -4256,7 +4257,7 @@ def test_default_template_label_avoids_a_taken_one(client, tmp_path, monkeypatch
 def test_default_template_thumbnail_route(client, tmp_path, monkeypatch):
     from pypdf import PdfWriter
 
-    from resume_tailor import thumbnails
+    from resume_tailor.document import thumbnails
 
     c, _ = client
 

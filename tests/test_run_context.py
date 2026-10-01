@@ -6,7 +6,8 @@ import json
 import threading
 from concurrent.futures import ThreadPoolExecutor
 
-from resume_tailor import config, style
+from resume_tailor import config
+from resume_tailor.content import style
 
 
 def test_two_workspaces_are_isolated(tmp_path, monkeypatch):

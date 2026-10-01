@@ -6,8 +6,8 @@ import io
 
 import docx
 
-from resume_tailor import config, resume_import, template_analyze
-from resume_tailor.data import (
+from resume_tailor import config
+from resume_tailor.content.data import (
     Bullet,
     Contact,
     Education,
@@ -21,6 +21,8 @@ from resume_tailor.data import (
     SkillsSection,
     SummaryVariant,
 )
+from resume_tailor.document import template_analyze
+from resume_tailor.importing import resume_import
 from tests.fixtures import (
     _add_bullet_numbering,
     _add_hyperlink,

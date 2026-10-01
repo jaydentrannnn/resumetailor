@@ -16,12 +16,13 @@ from types import SimpleNamespace
 from playwright.async_api import async_playwright
 from websockets.asyncio.client import connect
 
-from resume_tailor import config, data
+from resume_tailor import config
 from resume_tailor.apply.answers import profile as profile_mod
 from resume_tailor.apply.answers.profile import ApplicantProfile
 from resume_tailor.apply.forms import fill
 from resume_tailor.apply.funnel import packet, store
 from resume_tailor.apply.funnel.packet import Packet
+from resume_tailor.content import data
 from resume_tailor.web import extension
 from resume_tailor.web.schemas import ApplySettings
 

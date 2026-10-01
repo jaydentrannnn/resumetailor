@@ -10,8 +10,9 @@ from pathlib import Path
 
 import pytest
 
-from resume_tailor import config, data_transfer, workspace
+from resume_tailor import config, workspace
 from resume_tailor.apply.funnel import store
+from resume_tailor.content import data_transfer
 from resume_tailor.workspace import bootstrap
 from tests.test_workspace import isolated_roots  # noqa: F401 - pytest fixture
 
@@ -148,7 +149,7 @@ class _FakeClient:
 def test_model_test_route_reports_success_and_failure(monkeypatch):
     from fastapi.testclient import TestClient
 
-    from resume_tailor import llm
+    from resume_tailor.infra import llm
     from resume_tailor.web.app import app
 
     fake = _FakeClient()
@@ -167,7 +168,7 @@ def test_model_test_route_reports_success_and_failure(monkeypatch):
 def test_pdf_test_route(monkeypatch):
     from fastapi.testclient import TestClient
 
-    from resume_tailor import convert
+    from resume_tailor.document import convert
     from resume_tailor.web.app import app
 
     def _fake_convert(src, dst, **_k):

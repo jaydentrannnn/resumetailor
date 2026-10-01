@@ -25,7 +25,7 @@ earlier ones. Cross-check any number against the code.
 
 ## 2026-07-27 ? Stop forcing soft-skill keywords into bullets
 
-**What:** Four edits in `src/resume_tailor/rewrite.py`. (1) `_SYSTEM`'s mirroring rule now narrows to "only where the posting names something the bullet already does" and states that an unclaimable keyword is meant to go unused. (2) Two new `_SYSTEM` rules: soft skills are demonstrated, never named (with the two live offenders quoted as counter-examples), and bullets must read as plain description rather than assembled vocabulary. (3) `_format_keywords` labels `kind == "soft"` keywords `[soft ? demonstrate, never name]` instead of `[REQUIRED]`. (4) The shorten instruction and `_REPAIR_INSTRUCTION` now preserve "required *technical* keywords" rather than all REQUIRED keywords.
+**What:** Four edits in `src/resume_tailor/pipeline/rewrite.py`. (1) `_SYSTEM`'s mirroring rule now narrows to "only where the posting names something the bullet already does" and states that an unclaimable keyword is meant to go unused. (2) Two new `_SYSTEM` rules: soft skills are demonstrated, never named (with the two live offenders quoted as counter-examples), and bullets must read as plain description rather than assembled vocabulary. (3) `_format_keywords` labels `kind == "soft"` keywords `[soft ? demonstrate, never name]` instead of `[REQUIRED]`. (4) The shorten instruction and `_REPAIR_INSTRUCTION` now preserve "required *technical* keywords" rather than all REQUIRED keywords.
 
 **Why:** A Mistral posting produced "Applied problem-solving skills to a 45% accuracy bottleneck", "Utilized verbal communication skills to facilitate three weekly labs", "Demonstrated attention to detail by...", and "Exercised organizational skills to mentor...". Not a model defect: `_SYSTEM` opened by asking for mirrored JD language, and `_format_keywords` handed the model soft-skill phrases marked `REQUIRED` with no `kind` distinction ? `Keyword.kind` existed but was consumed only by ranking (`_keyword_weight` / `SOFT_SKILL_WEIGHT`), never by the rewrite prompt. The fabrication guard passed these correctly; the phrases trace to the bullets' own tags, so this was never a fabrication failure.
 
@@ -223,7 +223,7 @@ earlier ones. Cross-check any number against the code.
     `data/master_resume.json` (pre-workspaces path) was already stale before this session —
     it still reads `deeplearn`/no-PyTorch — and remains so. `config.MASTER_RESUME_PATH`
     defaults to the *legacy* path unless something calls `workspace.bootstrap()` first, which
-    `python -m resume_tailor.data --validate` does not — so a bare `--validate` with no
+    `python -m resume_tailor.content.data --validate` does not — so a bare `--validate` with no
     `--path`/`--workspace` silently validates the stale copy, not whatever profile is
     actually active. Logged here as a known gap, not fixed: `tailor.py` / `build_template.py`
     / `calibrate.py` all take `--workspace`; `data.py --validate` does not, and adding one

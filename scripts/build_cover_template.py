@@ -13,8 +13,8 @@ from pathlib import Path
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
 from resume_tailor import config, workspace  # noqa: E402
-from resume_tailor.cover_template import ensure_cover_template  # noqa: E402
-from resume_tailor.template_profile import load_profile  # noqa: E402
+from resume_tailor.document.cover_template import ensure_cover_template  # noqa: E402
+from resume_tailor.document.template_profile import load_profile  # noqa: E402
 
 
 def main(argv: list[str] | None = None) -> int:

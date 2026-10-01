@@ -14,7 +14,8 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, model_validator
 
-from resume_tailor import config, secret_store
+from resume_tailor import config
+from resume_tailor.infra import secret_store
 
 _log = logging.getLogger(__name__)
 
@@ -234,8 +235,8 @@ def _migrate_education(path: Path, raw: dict[str, Any]) -> None:
     up first, and the profile is rewritten without the legacy keys. When the resume cannot
     be read, nothing is touched and the next load tries again.
     """
-    from resume_tailor import data
     from resume_tailor.apply.forms import field_matcher
+    from resume_tailor.content import data
 
     try:
         resume = data.load()

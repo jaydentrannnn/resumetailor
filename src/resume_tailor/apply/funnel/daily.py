@@ -14,7 +14,7 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from resume_tailor import config, data, jd, runs, workspace
+from resume_tailor import config, workspace
 from resume_tailor.apply.discovery import fetch_jd, identity, sources
 from resume_tailor.apply.discovery.sources import SourceRow
 from resume_tailor.apply.driver import browser
@@ -24,6 +24,8 @@ from resume_tailor.apply.funnel import eligibility as eligibility_mod
 from resume_tailor.apply.funnel import screen as screen_mod
 from resume_tailor.apply.funnel import store
 from resume_tailor.apply.funnel.screen import ScreenResult, screen
+from resume_tailor.content import data
+from resume_tailor.pipeline import jd, runs
 from resume_tailor.web import template_ops
 from resume_tailor.web.jobs import get_queue, model_routing
 from resume_tailor.web.schemas import ApplySettings, JobSettings, RunMetadata

@@ -5,7 +5,8 @@ from __future__ import annotations
 import pytest
 from fastapi.testclient import TestClient
 
-from resume_tailor import config, estimate
+from resume_tailor import config
+from resume_tailor.pipeline import estimate
 from tests.fixtures import synthetic_resume
 
 

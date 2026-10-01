@@ -74,16 +74,11 @@ os.environ.pop("RESUME_TAILOR_TOKEN", None)
 
 import pytest  # noqa: E402
 
-from resume_tailor import (  # noqa: E402
-    config,
-    libraries,
-    secret_store,
-    style,
-    template_analyze,
-    template_build,
-    workspace,
-)
+from resume_tailor import config, workspace  # noqa: E402
 from resume_tailor.apply.forms import form_guards, submit_guard  # noqa: E402
+from resume_tailor.content import libraries, style  # noqa: E402
+from resume_tailor.document import template_analyze, template_build  # noqa: E402
+from resume_tailor.infra import secret_store  # noqa: E402
 from resume_tailor.web import extension as web_extension  # noqa: E402
 from tests.fixtures import _docx_bytes, _full_featured_resume  # noqa: E402
 

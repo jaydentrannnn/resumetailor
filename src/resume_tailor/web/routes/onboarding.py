@@ -5,7 +5,7 @@ from __future__ import annotations
 from fastapi import APIRouter
 from pydantic import BaseModel
 
-from resume_tailor import onboarding
+from resume_tailor.content import onboarding
 
 router = APIRouter()
 

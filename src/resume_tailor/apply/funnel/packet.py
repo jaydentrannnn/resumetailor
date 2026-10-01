@@ -19,15 +19,16 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from resume_tailor import config, edu_dates
+from resume_tailor import config
 from resume_tailor.apply.answers import phone as phone_mod
 from resume_tailor.apply.answers import profile as profile_mod
 from resume_tailor.apply.answers.profile import ApplicantProfile
 from resume_tailor.apply.ats import ats_hints
 from resume_tailor.apply.forms import field_matcher
-from resume_tailor.data import MasterResume, load
-from resume_tailor.expand import ExpandedEntry, Expansion
-from resume_tailor.render import parse_range
+from resume_tailor.content import edu_dates
+from resume_tailor.content.data import MasterResume, load
+from resume_tailor.document.render import parse_range
+from resume_tailor.pipeline.expand import ExpandedEntry, Expansion
 
 
 class PacketEducation(BaseModel):

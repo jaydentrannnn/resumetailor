@@ -14,11 +14,12 @@ from typing import Any
 
 import pytest
 
-from resume_tailor import config, jd
+from resume_tailor import config
 from resume_tailor.apply.discovery import fetch_jd, sources
 from resume_tailor.apply.driver import browser
 from resume_tailor.apply.forms import fill, submit_guard
 from resume_tailor.apply.funnel import daily, store
+from resume_tailor.pipeline import jd
 
 
 def test_daily_attention_tracks_known_row_errors_and_latest_outcome():
@@ -31,7 +32,7 @@ def test_daily_attention_tracks_known_row_errors_and_latest_outcome():
         ("one", "needs_input", "Open the posting")
     ]
 from resume_tailor.apply.discovery.sources import SourceRow
-from resume_tailor.jd import JobRequirements, Keyword
+from resume_tailor.pipeline.jd import JobRequirements, Keyword
 from resume_tailor.web import jobs as jobs_mod
 from resume_tailor.web.jobs import Job, JobQueue
 from resume_tailor.web.schemas import ApplySettings, JobSettings
@@ -1487,7 +1488,7 @@ def test_wait_for_job_relays_progress_events(monkeypatch):
     """`_wait_for_job`'s ``on_progress`` sees each new tailor-stage message once,
     in order, and stops seeing updates once the job is terminal — the Apply funnel's
     only visibility into what a long single tailor call is doing while it waits."""
-    from resume_tailor.events import ProgressEvent
+    from resume_tailor.pipeline.events import ProgressEvent
 
     job = Job(job_id="job-1", jd_text="jd", settings=JobSettings(), status="queued")
     queue = JobQueue()

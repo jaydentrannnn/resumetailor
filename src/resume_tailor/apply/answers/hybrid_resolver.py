@@ -22,13 +22,14 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from resume_tailor import config, llm
+from resume_tailor import config
 from resume_tailor.apply.answers.profile import ApplicantProfile
 from resume_tailor.apply.driver import clicks
 from resume_tailor.apply.forms import field_matcher
 from resume_tailor.apply.forms.field_matcher import match_option
 from resume_tailor.apply.forms.field_types import ObservedOption
 from resume_tailor.apply.funnel.packet import Packet
+from resume_tailor.infra import llm
 
 _log = logging.getLogger(__name__)
 

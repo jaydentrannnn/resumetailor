@@ -8,8 +8,8 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from fastapi.responses import FileResponse
 from pydantic import ValidationError
 
-from resume_tailor import default_templates
-from resume_tailor.template_profile import TemplateProfile
+from resume_tailor.document import default_templates
+from resume_tailor.document.template_profile import TemplateProfile
 from resume_tailor.web import template_ops
 from resume_tailor.web.jobs import get_queue
 from resume_tailor.web.schemas import (

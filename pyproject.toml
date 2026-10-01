@@ -18,7 +18,7 @@ dependencies = { file = ["requirements.txt"] }
 where = ["src"]
 
 [tool.setuptools.package-data]
-"resume_tailor" = ["industry_presets.json"]
+"resume_tailor.content" = ["industry_presets.json"]
 "resume_tailor.library_seeds" = ["*.json"]
 "resume_tailor.apply.discovery" = ["watchlists/*.json", "catalog/*.json"]
 "resume_tailor.apply.driver" = ["*.js"]

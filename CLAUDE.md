@@ -84,7 +84,7 @@ copy .env.example .env    # ollama is the default backend — no key needed to r
 python tailor.py --jd jd.txt              # CLI: JD in, tailored resume out
 python scripts\build_template.py          # regenerate main_template.docx from the export
 python scripts\calibrate.py               # write <active profile>/calibration/<backend>.json
-python -m resume_tailor.data --validate   # validate master_resume.json
+python -m resume_tailor.content.data --validate   # validate master_resume.json
 pytest                                    # full suite (no Word or API required)
 uvicorn resume_tailor.web.app:app --reload --app-dir src   # API + SPA (build frontend first)
 docker compose up --build                 # one-click: UI at http://localhost:8000
@@ -110,6 +110,22 @@ Each area has its own `CLAUDE.md` (loaded when you work there) with its module m
 local rules: `tests/CLAUDE.md` (testing conventions — the suite runs **without an API key,
 network, or Word**; keep it that way), `src/resume_tailor/apply/CLAUDE.md`,
 `src/resume_tailor/web/CLAUDE.md`, `frontend/CLAUDE.md`.
+
+## Package layout (`src/resume_tailor/`)
+
+Docs cite bare module names (`fit.py`, `render.py`); the few that repeat across packages
+(`review`, `jd`, `config`, `jobs`, `libraries`, `onboarding`, `extension` — usually a
+`web/routes/` twin) are cited with their path.
+
+| Package | Holds |
+|---|---|
+| `config`, `workspace` | top-level modules — config globals rebound per workspace |
+| `pipeline/` | `jd`, `rewrite`, `facets`, `expand`, `skills`, `coverletter`, `review`, `propose` (the LLM callers), `fit`, `merge`, `include`, `report`, `estimate`, `events`, `runs`, `jd_input`, `jdsim` |
+| `document/` | `render`, `convert`, `docx_text`, `docx_normalize`, `template_*`, `cover_template`, `default_templates`, `calibrate`, `rerender`, `thumbnails` — no LLM, ever |
+| `content/` | `data` (the master-resume model), `data_transfer`, `edu_dates`, `libraries`, `industries`, `style`, `labels`, `onboarding`, `resume_versions` |
+| `importing/` | `resume_import`, `resume_import_pdf`, `tag_suggest` |
+| `infra/` | `llm`, `fake_llm`, `logs`, `secret_store`, `housekeeping`, `desktop_main`, `desktop_update` |
+| `apply/`, `web/`, `mcp_server/`, `storage/`, `library_seeds/` | see their own `CLAUDE.md` / docstrings |
 
 ## Code organization
 

@@ -11,14 +11,15 @@ from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
 
-from resume_tailor import config, data
+from resume_tailor import config
 from resume_tailor.apply.answers import answer, answer_memory, model_resolver, profile, salary
 from resume_tailor.apply.ats import adapters, workday_auth, workday_flow, workday_repeaters
 from resume_tailor.apply.driver import browser, clicks, controls, scanner
 from resume_tailor.apply.forms import attachments, field_catalog, form_routes
 from resume_tailor.apply.forms.field_types import FieldObservation, FieldOutcome
 from resume_tailor.apply.funnel import packet, preparation, store
-from resume_tailor.jd import JobRequirements
+from resume_tailor.content import data
+from resume_tailor.pipeline.jd import JobRequirements
 from resume_tailor.web.schemas import ApplySettings
 
 APPLICATION_BUDGET_SECONDS = 240

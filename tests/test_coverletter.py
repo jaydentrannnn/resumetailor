@@ -8,8 +8,12 @@ from __future__ import annotations
 
 import pytest
 
-from resume_tailor import config, coverletter, llm, style
-from resume_tailor.coverletter import (
+from resume_tailor import config
+from resume_tailor.content import style
+from resume_tailor.content.data import Bullet, Contact, Experience, ExperienceSection, MasterResume
+from resume_tailor.infra import llm
+from resume_tailor.pipeline import coverletter
+from resume_tailor.pipeline.coverletter import (
     CoverLetterLLM,
     _accept_letter,
     _cache_path,
@@ -19,8 +23,7 @@ from resume_tailor.coverletter import (
     consecutive_first_person,
     draft_letter,
 )
-from resume_tailor.data import Bullet, Contact, Experience, ExperienceSection, MasterResume
-from resume_tailor.jd import JobRequirements, Keyword
+from resume_tailor.pipeline.jd import JobRequirements, Keyword
 from tests.fixtures import synthetic_resume
 
 

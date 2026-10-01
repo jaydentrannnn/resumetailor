@@ -10,7 +10,7 @@ from pathlib import Path
 
 import pytest
 
-from resume_tailor import convert
+from resume_tailor.document import convert
 
 
 def test_convert_dispatches_to_named_backend(tmp_path, monkeypatch):
@@ -71,7 +71,7 @@ def test_convert_requires_produced_file(tmp_path, monkeypatch):
 
 def test_render_to_pdf_delegates(tmp_path, monkeypatch):
     """render.to_pdf is a thin wrapper over convert.convert."""
-    from resume_tailor import render
+    from resume_tailor.document import render
 
     docx = tmp_path / "tailored.docx"
     docx.write_bytes(b"docx")

@@ -13,9 +13,9 @@ from pathlib import Path
 import pytest
 
 from resume_tailor import config
-from resume_tailor import fit as fit_mod
-from resume_tailor.jd import JobRequirements, Keyword
-from resume_tailor.rewrite import FabricationError
+from resume_tailor.pipeline import fit as fit_mod
+from resume_tailor.pipeline.jd import JobRequirements, Keyword
+from resume_tailor.pipeline.rewrite import FabricationError
 from tests.fixtures import synthetic_resume
 
 _TAILOR_PATH = Path(__file__).resolve().parents[1] / "tailor.py"
@@ -70,7 +70,7 @@ def _stub_expand_api(cli, monkeypatch):
     `tailor.main` expands experience after a successful fit. Without this stub, tests that
     only patch extract/fit would reach the network on the bonus stage.
     """
-    from resume_tailor.expand import Expansion
+    from resume_tailor.pipeline.expand import Expansion
 
     monkeypatch.setattr(
         cli.expand,
@@ -86,7 +86,7 @@ def _stub_skills_api(cli, monkeypatch):
     `tailor.main` selects a tailored skills list after a successful fit. Without this
     stub, tests that only patch extract/fit would reach the network on this bonus stage.
     """
-    from resume_tailor.skills import SkillsPlan
+    from resume_tailor.pipeline.skills import SkillsPlan
 
     monkeypatch.setattr(
         cli.skills,
@@ -121,7 +121,7 @@ def _stub_cover_api(cli, monkeypatch):
     ``tailor.main`` can draft a cover letter after a successful fit when
     ``--cover-letter`` is passed. Without this stub, that path would reach the network.
     """
-    from resume_tailor.coverletter import CoverLetter
+    from resume_tailor.pipeline.coverletter import CoverLetter
 
     monkeypatch.setattr(
         cli.coverletter,
@@ -142,7 +142,7 @@ def _stub_review_api(cli, monkeypatch):
     ``tailor.main`` can run a hiring-manager review after a successful fit when
     ``--review`` is passed. Without this stub, that path would reach the network.
     """
-    from resume_tailor.review import ReviewResult
+    from resume_tailor.pipeline.review import ReviewResult
 
     monkeypatch.setattr(
         cli.review,
@@ -159,7 +159,7 @@ def _stub_facets_api(cli, monkeypatch):
     only patch extract/fit would reach the network. Budget-only truncation matches the
     `--no-facets` path these tests do not care about.
     """
-    from resume_tailor import facets as facets_mod
+    from resume_tailor.pipeline import facets as facets_mod
 
     def fake_select(resume, requirements, **kwargs):
         """Delegate to budget_only so layout guarantees still hold."""
@@ -219,7 +219,8 @@ def test_successful_run_prints_report_and_exits_zero(cli, jd_file, tmp_path, mon
 def test_cli_uses_profile_field_and_archives_the_resolved_guidance(
     cli, jd_file, tmp_path, monkeypatch
 ):
-    from resume_tailor import industries, style, workspace
+    from resume_tailor import workspace
+    from resume_tailor.content import industries, style
 
     resume = synthetic_resume()
     resume.experience[0].bullets[0].tags.append("dcf")

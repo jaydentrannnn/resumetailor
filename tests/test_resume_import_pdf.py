@@ -7,8 +7,9 @@ import io
 import pytest
 from pypdf import PdfReader, PdfWriter
 
-from resume_tailor import config, llm, resume_import_pdf
-from resume_tailor.resume_import_pdf import (
+from resume_tailor import config
+from resume_tailor.importing import resume_import_pdf
+from resume_tailor.importing.resume_import_pdf import (
     ImportEntryLLM,
     ImportLLM,
     ImportSectionLLM,
@@ -17,6 +18,7 @@ from resume_tailor.resume_import_pdf import (
     clean_lines,
     import_pdf,
 )
+from resume_tailor.infra import llm
 from tests.pdf_fixtures import (
     T,
     image_only_pdf,

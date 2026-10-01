@@ -7,7 +7,8 @@ import json
 import pytest
 from fastapi.testclient import TestClient
 
-from resume_tailor import config, onboarding
+from resume_tailor import config
+from resume_tailor.content import onboarding
 from resume_tailor.storage import db
 from resume_tailor.web.app import app
 from tests.fixtures import synthetic_resume

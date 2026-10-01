@@ -30,12 +30,13 @@ from urllib.parse import urlparse
 from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
-from resume_tailor import config, jd_input, workspace
+from resume_tailor import config, workspace
 from resume_tailor.apply.discovery import fetch_jd, identity
 from resume_tailor.apply.forms import fill, submit_guard
 from resume_tailor.apply.funnel import daily as apply_daily
 from resume_tailor.apply.funnel import operations as apply_operations
 from resume_tailor.apply.funnel import store
+from resume_tailor.pipeline import jd_input
 from resume_tailor.web import extension
 from resume_tailor.web.routes.diagnostics import _version
 from resume_tailor.web.schemas import (

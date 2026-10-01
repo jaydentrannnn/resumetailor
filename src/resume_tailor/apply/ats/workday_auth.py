@@ -18,10 +18,11 @@ from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import urlparse
 
-from resume_tailor import config, secret_store
+from resume_tailor import config
 from resume_tailor.apply.answers.profile import ApplicantProfile
 from resume_tailor.apply.driver import clicks
 from resume_tailor.apply.funnel import store
+from resume_tailor.infra import secret_store
 
 _log = logging.getLogger(__name__)
 

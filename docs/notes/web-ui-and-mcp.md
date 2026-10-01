@@ -376,7 +376,7 @@ blank entry headers before the Pydantic path; server validation remains authorit
 ## Desktop packaging, Phase 5 scaffold (2026-09)
 
 - **Shape.** Tauri v2 shell (`desktop/src-tauri/`) + a PyInstaller `--onedir` build of the
-  server (`desktop/sidecar/resumetailor.spec`, entry `src/resume_tailor/desktop_main.py`).
+  server (`desktop/sidecar/resumetailor.spec`, entry `src/resume_tailor/infra/desktop_main.py`).
   The shell spawns the server, reads stdout for `READY <port> <token>`, and navigates its
   window to `http://127.0.0.1:<port>/?t=<token>` — the existing B8 cookie bootstrap, so the
   web UI needs no desktop-specific code. The window starts on a bundled page
@@ -506,11 +506,18 @@ The two legacy tests that assumed process-wide routing/rebound globals were upda
 
  # #   2 0 2 6 - 0 9 - 2 7   -   B o u n d e d   p a r a l l e l   t a i l o r i n g   p i p e l i n e 
  
- J D   c o n s e n s u s   v o t e s   u s e   a   t h r e e - w o r k e r   p o o l   a n d   c o l l e c t   r e s u l t s   i n   s u b m i s s i o n   o r d e r ;   c a c h e   w r i t e s   p u b l i s h   v i a   t e m p o r a r y   f i l e   r e p l a c e m e n t   u n d e r   a   w r i t e   l o c k .   T h e   w e b   q u e u e   d i s p a t c h e s   u p   t o   e a c h   j o b ' s   ` m a x _ c o n c u r r e n t _ j o b s `   l i m i t   ( d e f a u l t   t w o )   w h i l e   c o n v e r s i o n   h a s   o n e   p r o c e s s   l o c k   f o r   W o r d   a n d   L i b r e O f f i c e .   D a i l y   r o w   w o r k e r s   i n h e r i t   R u n C o n t e x t ,   p r e s e r v e   s a m e - r o l e   g r o u p   o r d e r ,   a n d   g u a r d   s h a r e d   c o u n t e r s ,   i n d e x   r e g i s t r a t i o n ,   p r o g r e s s   s n a p s h o t s ,   a n d   l o g   a p p e n d s .   P D F   c o n v e r s i o n   r e m a i n s   s e r i a l i z e d   b e c a u s e   W o r d   C O M   a n d   t h e   s h a r e d   L i b r e O f f i c e   p r o f i l e   a r e   n o t   s a f e   t o   o v e r l a p .  
-  
- # #   2 0 2 6 - 0 9 - 2 8   -   m a c O S   a d   h o c   s i g n i n g   f o r   A p p l e   S i l i c o n   r e l e a s e  
-  
- * * W h a t : * *   T a u r i   n o w   s i g n s   t h e   m a c O S   a p p   a d   h o c   a n d   t h e   r e l e a s e   w o r k f l o w   v e r i f i e s   t h e   r e s u l t i n g   a p p   s i g n a t u r e   b e f o r e   u p l o a d i n g   t h e   D M G .  
- * * W h y : * *   v 0 . 2 . 4   m a c O S   b u n d l e   h a d   n o   T a u r i   s i g n i n g   i d e n t i t y ;   T a u r i   d o c u m e n t s   t h a t   A p p l e   S i l i c o n   d o w n l o a d s   f r o m   G i t H u b   R e l e a s e s   c a n   b e   r e p o r t e d   a s   d a m a g e d   w i t h o u t   a n   a d   h o c   s i g n a t u r e .   T h e   T a u r i   u p d a t e r   a r c h i v e   h a s   a   s e p a r a t e   m i n i s i g n   s i g n a t u r e .  
- * * I m p a c t : * *   T h e   a d   h o c   s i g n a t u r e   c h e c k s   b u n d l e   i n t e g r i t y   a n d   a d d r e s s e s   t h a t   G a t e k e e p e r   s y m p t o m ,   b u t   i t   d o e s   n o t   i d e n t i f y   t h e   d e v e l o p e r   o r   n o t a r i z e   t h e   a p p .   m a c O S   m a y   s t i l l   r e q u i r e   a p p r o v a l   i n   S y s t e m   S e t t i n g s   >   P r i v a c y   &   S e c u r i t y .   D e v e l o p e r   I D   s i g n i n g   a n d   n o t a r i z a t i o n   r e q u i r e   A p p l e   c r e d e n t i a l s .  
+ J D   c o n s e n s u s   v o t e s   u s e   a   t h r e e - w o r k e r   p o o l   a n d   c o l l e c t   r e s u l t s   i n   s u b m i s s i o n   o r d e r ;   c a c h e   w r i t e s   p u b l i s h   v i a   t e m p o r a r y   f i l e   r e p l a c e m e n t   u n d e r   a   w r i t e   l o c k .   T h e   w e b   q u e u e   d i s p a t c h e s   u p   t o   e a c h   j o b ' s   ` m a x _ c o n c u r r e n t _ j o b s `   l i m i t   ( d e f a u l t   t w o )   w h i l e   c o n v e r s i o n   h a s   o n e   p r o c e s s   l o c k   f o r   W o r d   a n d   L i b r e O f f i c e .   D a i l y   r o w   w o r k e r s   i n h e r i t   R u n C o n t e x t ,   p r e s e r v e   s a m e - r o l e   g r o u p   o r d e r ,   a n d   g u a r d   s h a r e d   c o u n t e r s ,   i n d e x   r e g i s t r a t i o n ,   p r o g r e s s   s n a p s h o t s ,   a n d   l o g   a p p e n d s .   P D F   c o n v e r s i o n   r e m a i n s   s e r i a l i z e d   b e c a u s e   W o r d   C O M   a n d   t h e   s h a r e d   L i b r e O f f i c e   p r o f i l e   a r e   n o t   s a f e   t o   o v e r l a p . 
+ 
+ 
+ 
+ # #   2 0 2 6 - 0 9 - 2 8   -   m a c O S   a d   h o c   s i g n i n g   f o r   A p p l e   S i l i c o n   r e l e a s e 
+ 
+ 
+ 
+ * * W h a t : * *   T a u r i   n o w   s i g n s   t h e   m a c O S   a p p   a d   h o c   a n d   t h e   r e l e a s e   w o r k f l o w   v e r i f i e s   t h e   r e s u l t i n g   a p p   s i g n a t u r e   b e f o r e   u p l o a d i n g   t h e   D M G . 
+ 
+ * * W h y : * *   v 0 . 2 . 4   m a c O S   b u n d l e   h a d   n o   T a u r i   s i g n i n g   i d e n t i t y ;   T a u r i   d o c u m e n t s   t h a t   A p p l e   S i l i c o n   d o w n l o a d s   f r o m   G i t H u b   R e l e a s e s   c a n   b e   r e p o r t e d   a s   d a m a g e d   w i t h o u t   a n   a d   h o c   s i g n a t u r e .   T h e   T a u r i   u p d a t e r   a r c h i v e   h a s   a   s e p a r a t e   m i n i s i g n   s i g n a t u r e . 
+ 
+ * * I m p a c t : * *   T h e   a d   h o c   s i g n a t u r e   c h e c k s   b u n d l e   i n t e g r i t y   a n d   a d d r e s s e s   t h a t   G a t e k e e p e r   s y m p t o m ,   b u t   i t   d o e s   n o t   i d e n t i f y   t h e   d e v e l o p e r   o r   n o t a r i z e   t h e   a p p .   m a c O S   m a y   s t i l l   r e q u i r e   a p p r o v a l   i n   S y s t e m   S e t t i n g s   >   P r i v a c y   &   S e c u r i t y .   D e v e l o p e r   I D   s i g n i n g   a n d   n o t a r i z a t i o n   r e q u i r e   A p p l e   c r e d e n t i a l s . 
+ 
  

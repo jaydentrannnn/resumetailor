@@ -88,7 +88,7 @@ unbuilt, so a bolding assertion there would only run on a machine that has `temp
 - **Tradeoff:** Build failures surface stdout/stderr as a string log rather than structured section-missing errors. Fit constants stay module-level; after a template swap the UI flags `calibration.stale` and tells you to run `calibrate.py` + restart ? auto-calibrate from the web process is out of scope.
 - **Spec delta:** Writes to `original_export.docx`. CLAUDE.md hard rule updated to allow
   the documented re-export path (CLI copy or the Template tab); hand-edits remain forbidden.
-- **Follow-up:** Optionally extract build logic into `src/resume_tailor/template_build.py`
+- **Follow-up:** Optionally extract build logic into `src/resume_tailor/document/template_build.py`
   for structured errors.
 
 ## 2026-08-01 ? PDF hyperlinks dead under LibreOffice
@@ -115,7 +115,7 @@ unbuilt, so a bolding assertion there would only run on a machine that has `temp
 ## 2026-08-01 ? Optional calibrate-after-install from the Template tab
 
 - **Decision:** Multipart `calibrate=true` on `POST /api/template` runs
-  `resume_tailor.calibrate.run()` after a successful install, then
+  `resume_tailor.document.calibrate.run()` after a successful install, then
   `config.reload_calibration()` so the live process picks up new CHARS_PER_LINE /
   LINES_PER_PAGE without a restart. UI checkbox defaults **on**.
 - **Why:** User asked for one upload path that does build + calibrate. Leaving it optional
@@ -220,7 +220,7 @@ unbuilt, so a bolding assertion there would only run on a machine that has `temp
   projects (each is a different `{%p for bullet in ... %}` loop's own variable, so
   identical tag *text* is not evidence of a leak) — documented at the constant so
   `expected_tags` doesn't try to assert an exactly-once count for it.
-- **New `src/resume_tailor/template_verify.py`**, two checks:
+- **New `src/resume_tailor/document/template_verify.py`**, two checks:
   - `verify_tagged(tagged, profile)`: `expected_tags(profile)` (every tag a correctly
     built template must contain, derived by walking the profile's own `OptionalSpan.
     present` flags against the same module constants) must all appear somewhere in

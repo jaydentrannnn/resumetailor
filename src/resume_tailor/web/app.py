@@ -21,17 +21,12 @@ from fastapi.responses import JSONResponse
 from fastapi.staticfiles import StaticFiles
 from starlette.exceptions import HTTPException as StarletteHTTPException
 
-from resume_tailor import (
-    config,
-    data_transfer,
-    fake_llm,
-    housekeeping,
-    logs,
-    workspace,
-)
+from resume_tailor import config, workspace
 from resume_tailor.apply.funnel import daily as apply_daily
 from resume_tailor.apply.funnel import operations as apply_operations
 from resume_tailor.apply.funnel import scheduler as apply_scheduler
+from resume_tailor.content import data_transfer
+from resume_tailor.infra import fake_llm, housekeeping, logs
 from resume_tailor.web import security, template_ops
 from resume_tailor.web import state as web_state
 from resume_tailor.web.schemas import (

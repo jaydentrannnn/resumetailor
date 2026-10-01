@@ -13,8 +13,7 @@ from docx.oxml.ns import qn
 from docx.shared import Pt
 from docxtpl import DocxTemplate
 
-from resume_tailor import template_analyze, template_build, template_profile
-from resume_tailor.data import (
+from resume_tailor.content.data import (
     Bullet,
     Experience,
     ExperienceSection,
@@ -22,8 +21,9 @@ from resume_tailor.data import (
     ListSection,
     MasterResume,
 )
-from resume_tailor.render import build_context
-from resume_tailor.template_profile import HeadingPrototype
+from resume_tailor.document import template_analyze, template_build, template_profile
+from resume_tailor.document.render import build_context
+from resume_tailor.document.template_profile import HeadingPrototype
 from tests.fixtures import _table_resume
 from tests.test_template_analyze import (
     _add_bullet_numbering,
@@ -971,7 +971,7 @@ def test_build_generic_renders_spacers_at_the_right_positions(tmp_path: Path):
     src.write_bytes(raw)
     template_build.build_from_profile(src, dst, profile)
 
-    from resume_tailor.data import EducationSection
+    from resume_tailor.content.data import EducationSection
 
     resume = MasterResume(
         contact={"name": "Nina Dao", "email": "nina@example.com"},
@@ -1259,7 +1259,7 @@ def test_build_generic_table_no_leftover_sibling_bullets(tmp_path: Path):
 def test_build_generic_table_verify_tagged_clean(tmp_path: Path):
     """The full `verify_tagged` check (flattened-walk aware, table-mode loop count,
     balanced `{%tr %}`/`{%p %}` control tags, no empty cells) passes with zero issues."""
-    from resume_tailor import template_verify
+    from resume_tailor.document import template_verify
 
     profile, dst = _build_table_resume(tmp_path)
     issues = template_verify.verify_tagged(dst, profile)
@@ -1269,7 +1269,8 @@ def test_build_generic_table_verify_tagged_clean(tmp_path: Path):
 def test_build_generic_table_verify_roundtrip_clean(tmp_path: Path):
     """A real render through the table-layout template reaches every mapped field's
     actual value — the full round-trip signal, not just that tagging looks right."""
-    from resume_tailor import resume_import, template_verify
+    from resume_tailor.document import template_verify
+    from resume_tailor.importing import resume_import
 
     raw = _docx_bytes(_table_resume)
     analysis = template_analyze.analyze_docx(raw=raw)

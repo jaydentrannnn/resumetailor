@@ -5,8 +5,9 @@ from __future__ import annotations
 import os
 import time
 
-from resume_tailor import config, housekeeping
+from resume_tailor import config
 from resume_tailor.apply.funnel import store
+from resume_tailor.infra import housekeeping
 
 
 def _file(path, size: int, age: float):
@@ -46,7 +47,7 @@ def test_prune_jobs_keeps_newest_referenced_and_recent(tmp_path, monkeypatch):
 def test_dedupe_run_templates_moves_legacy_copies_and_drops_unused(tmp_path):
     import json
 
-    from resume_tailor import rerender
+    from resume_tailor.document import rerender
 
     jobs = tmp_path / "jobs"
     for name in ("a", "b"):

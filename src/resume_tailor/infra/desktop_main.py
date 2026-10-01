@@ -1,0 +1,218 @@
+"""Desktop sidecar entry point (plan Phase 5, DK2): the server the Tauri shell launches.
+
+The shell starts this program (a PyInstaller ``--onedir`` build, `resumetailor.spec`),
+reads one line from its stdout, and then points its window at the app::
+
+    READY <port> <token>
+
+→ ``http://127.0.0.1:<port>/?t=<token>``. Before the app is imported this sets up:
+
+- **Storage** in the per-user app-data folder, not next to the program: data,
+  templates, output and cache under ``<app data>/ResumeTailor``. Any
+  ``RESUME_TAILOR_*_DIR`` already set wins, so a developer can point a build at a
+  checkout's folders. ``config`` reads these once, at import, which is why nothing from
+  the app is imported at module level here.
+- **Settings from ``<app data>/.env``** (optional; a copy of a checkout's ``.env``
+  works). The app's own ``.env`` lookup points inside the install folder, so without
+  this file only real environment variables and in-app settings apply. Variables already
+  set win over the file.
+- **The browser address**: ``CHROME_CDP_URL`` defaults to ``http://127.0.0.1:9222``
+  (Edge started with remote debugging on this machine) rather than the Docker default.
+- **A session token** (`web/security.py`): a fresh random one per launch, unless
+  ``RESUME_TAILOR_TOKEN`` is already set.
+- **A port** on 127.0.0.1: the first free one in 8000–8010, where the browser extension
+  looks for the app, else any free port. The socket is bound here and handed to
+  uvicorn, so no other process can take the port in between.
+
+Only loopback is ever bound. The READY line is printed after uvicorn has started, so
+the shell never opens a window onto a server that is not listening yet.
+
+``--exit-with-stdin``: the shell holds this process's stdin open; when the shell goes
+away for any reason (quit, crash, killed at logout) the pipe closes and the server shuts
+down instead of lingering on its port. The shell also writes ``UPDATE <json>`` lines to
+it, and reads ``SHELL <command>`` lines from stdout, for in-app updates
+(`desktop_update`). ``--app-version <x>``: the installed app's version, from the shell.
+"""
+
+from __future__ import annotations
+
+import logging
+import os
+import secrets
+import socket
+import sys
+import threading
+from collections.abc import Callable, Iterable, Mapping
+from pathlib import Path
+
+APP_NAME = "ResumeTailor"
+#: Windows data folder. Not ``%LOCALAPPDATA%\ResumeTailor``: the per-user installer
+#: puts the program there, and data must not share a folder with files an update or
+#: uninstall replaces.
+WINDOWS_DATA_NAME = "ResumeTailorData"
+HOST = "127.0.0.1"
+#: Ports the browser extension scans for the app (`extension/lib/api.js`).
+PREFERRED_PORTS = range(8000, 8011)
+
+_DIR_VARS = {
+    "RESUME_TAILOR_DATA_DIR": "data",
+    "RESUME_TAILOR_TEMPLATES_DIR": "templates",
+    "RESUME_TAILOR_OUTPUT_DIR": "output",
+    "RESUME_TAILOR_CACHE_DIR": "cache",
+}
+
+
+def app_data_dir(
+    platform: str | None = None, env: Mapping[str, str] | None = None, home: Path | None = None
+) -> Path:
+    """The per-user folder the app keeps everything in.
+
+    Windows ``%LOCALAPPDATA%\\ResumeTailorData``, macOS ``~/Library/Application Support/
+    ResumeTailor``, elsewhere ``$XDG_DATA_HOME/resumetailor`` (``~/.local/share``). The
+    same locations `platformdirs` uses, without the dependency.
+    """
+    platform = platform or sys.platform
+    env = os.environ if env is None else env
+    home = home or Path.home()
+    if platform.startswith("win"):
+        base = env.get("LOCALAPPDATA") or str(home / "AppData" / "Local")
+        return Path(base) / WINDOWS_DATA_NAME
+    if platform == "darwin":
+        return home / "Library" / "Application Support" / APP_NAME
+    base = env.get("XDG_DATA_HOME") or str(home / ".local" / "share")
+    return Path(base) / APP_NAME.lower()
+
+
+def prepare_environment(env: dict[str, str], root: Path) -> str:
+    """Fill in the storage folders and session token in ``env``; return the token.
+
+    Values already in ``env`` are kept, then ``<root>/.env`` fills what is still
+    missing. The folders are created so a first launch does not depend on each
+    subsystem making its own.
+    """
+    _load_env_file(env, root / ".env")
+    for var, name in _DIR_VARS.items():
+        if not env.get(var):
+            env[var] = str(root / name)
+        Path(env[var]).mkdir(parents=True, exist_ok=True)
+    if not env.get("CHROME_CDP_URL"):
+        # config's default is the Docker host name; the desktop app runs on the host.
+        env["CHROME_CDP_URL"] = "http://127.0.0.1:9222"
+    token = env.get("RESUME_TAILOR_TOKEN", "").strip()
+    if not token or token.lower() in {"auto", "off", "0", "none"}:
+        # The desktop app always runs with the token check on.
+        token = secrets.token_urlsafe(32)
+        env["RESUME_TAILOR_TOKEN"] = token
+    bundle = getattr(sys, "_MEIPASS", None)
+    if bundle and not env.get("RESUME_TAILOR_FRONTEND_DIST"):
+        # PyInstaller unpacks data files under _MEIPASS (`resumetailor.spec` puts the
+        # built SPA at frontend/dist there).
+        env["RESUME_TAILOR_FRONTEND_DIST"] = str(Path(bundle) / "frontend" / "dist")
+    return token
+
+
+def _load_env_file(env: dict[str, str], path: Path) -> None:
+    """Set each ``KEY=value`` from ``path`` that ``env`` does not already have."""
+    if not path.is_file():
+        return
+    from dotenv import dotenv_values
+
+    for key, value in dotenv_values(path).items():
+        if value is not None and not env.get(key):
+            env[key] = value
+
+
+def bind_socket(
+    preferred: Iterable[int] = PREFERRED_PORTS,
+    make_socket: Callable[[], socket.socket] | None = None,
+) -> socket.socket:
+    """A listening-ready socket on 127.0.0.1: a preferred port if one is free, else any."""
+    make_socket = make_socket or (lambda: socket.socket(socket.AF_INET, socket.SOCK_STREAM))
+    for port in [*preferred, 0]:
+        sock = make_socket()
+        try:
+            sock.bind((HOST, port))
+        except OSError:
+            sock.close()
+            continue
+        return sock
+    raise RuntimeError("No free port on 127.0.0.1")
+
+
+def ready_line(port: int, token: str) -> str:
+    return f"READY {port} {token}"
+
+
+def watch_stdin(
+    on_eof: Callable[[], None],
+    stream=None,
+    on_line: Callable[[str], None] | None = None,
+) -> threading.Thread:
+    """Call ``on_eof`` once ``stream`` (stdin) reaches end of file, from a daemon thread.
+
+    Each line read before that goes to ``on_line``. A line it fails on is logged and
+    skipped: the watcher must keep running, or the server would shut down with it.
+    """
+    stream = sys.stdin if stream is None else stream
+
+    def _wait() -> None:
+        try:
+            for line in iter(stream.readline, ""):
+                if on_line is None:
+                    continue
+                try:
+                    on_line(line.rstrip("\r\n"))
+                except Exception:
+                    logging.getLogger(__name__).exception("stdin line handler failed")
+        except (OSError, ValueError):
+            pass
+        on_eof()
+
+    thread = threading.Thread(target=_wait, name="parent-watch", daemon=True)
+    thread.start()
+    return thread
+
+
+def _flag_value(args: list[str], flag: str) -> str | None:
+    """The value after ``flag`` in ``args`` (``--flag value``), or None."""
+    if flag in args:
+        index = args.index(flag)
+        if index + 1 < len(args):
+            return args[index + 1]
+    return None
+
+
+def main(argv: list[str] | None = None) -> int:
+    args = sys.argv[1:] if argv is None else argv
+    token = prepare_environment(os.environ, app_data_dir())  # type: ignore[arg-type]
+    sock = bind_socket()
+    port = sock.getsockname()[1]
+
+    import uvicorn
+
+    from resume_tailor.web.app import app
+
+    class _Server(uvicorn.Server):
+        async def startup(self, sockets: list[socket.socket] | None = None) -> None:
+            await super().startup(sockets=sockets)
+            if self.started:
+                print(ready_line(port, token), flush=True)
+
+    from resume_tailor.infra import desktop_update
+
+    desktop_update.CURRENT = _flag_value(args, "--app-version")
+    server = _Server(uvicorn.Config(app, log_level="warning", access_log=False))
+    if "--exit-with-stdin" in args:
+        # Launched by the shell: it is on the other end of both pipes.
+        desktop_update.ENABLED = True
+
+        def _parent_gone() -> None:
+            server.should_exit = True
+
+        watch_stdin(_parent_gone, on_line=desktop_update.receive)
+    server.run(sockets=[sock])
+    return 0
+
+
+if __name__ == "__main__":
+    raise SystemExit(main())

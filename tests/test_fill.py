@@ -9,7 +9,7 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from resume_tailor import config, data
+from resume_tailor import config
 from resume_tailor.apply.answers import answer
 from resume_tailor.apply.answers import profile as profile_mod
 from resume_tailor.apply.answers.profile import ApplicantProfile
@@ -17,6 +17,7 @@ from resume_tailor.apply.driver import browser, clicks
 from resume_tailor.apply.forms import fill, submit_guard, wizards
 from resume_tailor.apply.funnel import packet, store
 from resume_tailor.apply.funnel.packet import Packet
+from resume_tailor.content import data
 from resume_tailor.web.schemas import ApplySettings
 
 

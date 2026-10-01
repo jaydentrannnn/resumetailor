@@ -25,10 +25,11 @@ from pathlib import Path
 
 import docx
 
-from resume_tailor import (
+from resume_tailor import config
+from resume_tailor.content import data
+from resume_tailor.content.labels import label_taken, normalize_label
+from resume_tailor.document import (
     calibrate,
-    config,
-    data,
     default_templates,
     docx_normalize,
     render,
@@ -38,8 +39,7 @@ from resume_tailor import (
     template_verify,
     thumbnails,
 )
-from resume_tailor.labels import label_taken, normalize_label
-from resume_tailor.template_profile import TemplateProfile, save_profile
+from resume_tailor.document.template_profile import TemplateProfile, save_profile
 from resume_tailor.web.schemas import (
     CalibrateResponse,
     CalibrationInfo,
@@ -1306,7 +1306,7 @@ def _install_with_profile(
             # function returns — see the docstring above for why the gap mattered.
             _library_record_after_install(label=label, source_filename=Path(filename).name)
             invalidate_preview()
-            from resume_tailor.cover_template import ensure_cover_template
+            from resume_tailor.document.cover_template import ensure_cover_template
 
             ensure_cover_template(src=baseline, profile=confirmed)
             return TemplateBuildResponse(ok=True, log=log.strip(), info=info())

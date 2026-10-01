@@ -20,8 +20,9 @@ from types import SimpleNamespace
 
 import pytest
 
-from resume_tailor import calibrate, config
-from resume_tailor.data import Bullet, Experience, ExperienceSection, MasterResume
+from resume_tailor import config
+from resume_tailor.content.data import Bullet, Experience, ExperienceSection, MasterResume
+from resume_tailor.document import calibrate
 
 
 def _resume() -> MasterResume:

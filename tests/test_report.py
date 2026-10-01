@@ -8,8 +8,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from resume_tailor import facets, report
-from resume_tailor.data import (
+from resume_tailor.content.data import (
     Bullet,
     Contact,
     Education,
@@ -18,8 +17,9 @@ from resume_tailor.data import (
     Project,
     SkillGroup,
 )
-from resume_tailor.fit import FitResult
-from resume_tailor.jd import JobRequirements, Keyword
+from resume_tailor.pipeline import facets, report
+from resume_tailor.pipeline.fit import FitResult
+from resume_tailor.pipeline.jd import JobRequirements, Keyword
 
 
 def _requirements(*pairs: tuple[str, str]) -> JobRequirements:

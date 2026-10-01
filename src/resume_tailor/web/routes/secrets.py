@@ -11,7 +11,8 @@ import os
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from resume_tailor import config, secret_store
+from resume_tailor import config
+from resume_tailor.infra import secret_store
 
 router = APIRouter()
 

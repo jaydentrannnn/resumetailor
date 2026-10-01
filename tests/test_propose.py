@@ -10,14 +10,16 @@ from __future__ import annotations
 
 import pytest
 
-from resume_tailor import config, libraries, propose
-from resume_tailor.data import (
+from resume_tailor import config
+from resume_tailor.content import libraries
+from resume_tailor.content.data import (
     Bullet,
     Contact,
     Experience,
     MasterResume,
 )
-from resume_tailor.jd import JobRequirements, Keyword
+from resume_tailor.pipeline import propose
+from resume_tailor.pipeline.jd import JobRequirements, Keyword
 
 
 def _resume(*, bullet_text: str = "Did a thing.", bullet_tags: tuple[str, ...] = ("python",)) -> MasterResume:

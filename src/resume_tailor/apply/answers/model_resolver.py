@@ -8,10 +8,11 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
-from resume_tailor import config, llm
+from resume_tailor import config
 from resume_tailor.apply.forms.field_catalog import classify
 from resume_tailor.apply.forms.field_matcher import match_option
 from resume_tailor.apply.forms.field_types import FieldObservation
+from resume_tailor.infra import llm
 
 _PROMPT_VERSION = 1
 _SAFE_FACT_KEYS = {

@@ -7,11 +7,12 @@ from unittest.mock import MagicMock
 
 import pytest
 
-from resume_tailor import config, llm
+from resume_tailor import config
 from resume_tailor.apply.answers import hybrid_resolver
 from resume_tailor.apply.answers.profile import ApplicantProfile
 from resume_tailor.apply.ats import workday_auth
 from resume_tailor.apply.funnel.packet import Packet
+from resume_tailor.infra import llm
 
 
 def test_phone_code_choice_requires_explicit_region():

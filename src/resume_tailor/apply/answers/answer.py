@@ -19,12 +19,14 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from resume_tailor import config, events, llm
+from resume_tailor import config
 from resume_tailor.apply.answers import questions
 from resume_tailor.apply.answers.profile import ApplicantProfile
-from resume_tailor.coverletter import check_claims
-from resume_tailor.data import MasterResume
-from resume_tailor.jd import JobRequirements
+from resume_tailor.content.data import MasterResume
+from resume_tailor.infra import llm
+from resume_tailor.pipeline import events
+from resume_tailor.pipeline.coverletter import check_claims
+from resume_tailor.pipeline.jd import JobRequirements
 
 #: Bumped when ``_SYSTEM`` or the request shape changes so cached answers invalidate.
 _ANSWER_PROMPT_VERSION = 2

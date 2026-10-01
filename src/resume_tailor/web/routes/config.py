@@ -8,19 +8,10 @@ from dataclasses import replace
 
 from fastapi import APIRouter
 
-from resume_tailor import (
-    config,
-    coverletter,
-    data,
-    expand,
-    fit,
-    industries,
-    libraries,
-    rewrite,
-    style,
-    workspace,
-)
-from resume_tailor.events import ProgressEvent
+from resume_tailor import config, workspace
+from resume_tailor.content import data, industries, libraries, style
+from resume_tailor.pipeline import coverletter, expand, fit, rewrite
+from resume_tailor.pipeline.events import ProgressEvent
 from resume_tailor.web import state as web_state
 from resume_tailor.web import template_ops
 from resume_tailor.web.schemas import (

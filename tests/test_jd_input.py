@@ -8,8 +8,8 @@ import docx
 import pytest
 from fastapi.testclient import TestClient
 
-from resume_tailor import jd_input
 from resume_tailor.apply.discovery import fetch_jd
+from resume_tailor.pipeline import jd_input
 from resume_tailor.web.app import app
 
 POSTING = (

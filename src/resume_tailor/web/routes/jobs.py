@@ -15,18 +15,12 @@ from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
 from pydantic import BaseModel, Field, ValidationError
 
-from resume_tailor import (
-    config,
-    convert,
-    data,
-    estimate,
-    include,
-    report,
-    rerender,
-    workspace,
-)
-from resume_tailor.events import ProgressEvent
-from resume_tailor.template_profile import active_layout
+from resume_tailor import config, workspace
+from resume_tailor.content import data
+from resume_tailor.document import convert, rerender
+from resume_tailor.document.template_profile import active_layout
+from resume_tailor.pipeline import estimate, include, report
+from resume_tailor.pipeline.events import ProgressEvent
 from resume_tailor.web import jobs as jobs_mod
 from resume_tailor.web import template_ops
 from resume_tailor.web.jobs import Job, get_queue, regenerate_cover_letter, verify_claim

@@ -2,7 +2,7 @@
 
     python scripts/calibrate.py
 
-Logic lives in `resume_tailor.calibrate` so the Template tab can run the same path
+Logic lives in `resume_tailor.document.calibrate` so the Template tab can run the same path
 after an upload without shelling out.
 """
 
@@ -13,7 +13,7 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from resume_tailor.calibrate import main  # noqa: E402
+from resume_tailor.document.calibrate import main  # noqa: E402
 
 if __name__ == "__main__":
     raise SystemExit(main())

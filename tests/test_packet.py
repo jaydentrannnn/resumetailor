@@ -304,7 +304,7 @@ def test_two_degrees_at_one_school_stay_two_rows():
     raw = synthetic_resume().model_dump()
     education = next(section for section in raw["sections"] if section["kind"] == "education")
     education["entries"].append({**education["entries"][0], "degree": "BA Economics", "major": "Economics"})
-    from resume_tailor.data import MasterResume
+    from resume_tailor.content.data import MasterResume
 
     rows = _build_education(MasterResume.model_validate(raw))
     assert [(row.degree_level, row.major) for row in rows] == [("Bachelor of Science", ""), ("Bachelor of Arts", "Economics")]
@@ -442,7 +442,7 @@ def _legacy_profile(job_dir, **education):
 
 def test_legacy_profile_education_moves_into_the_matching_resume_entry_once(job_dir):
     from resume_tailor.apply.answers.profile import load_profile
-    from resume_tailor.data import load
+    from resume_tailor.content.data import load
 
     _legacy_profile(job_dir, school="State University", major="Computer Science", gpa="4.0",
                     degree_level="Bachelors", graduation_month="2023")

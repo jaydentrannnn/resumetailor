@@ -21,28 +21,25 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parent / "src"))
 
-from resume_tailor import (  # noqa: E402
-    config,
+from resume_tailor import config, workspace  # noqa: E402
+from resume_tailor.content import data, industries, style  # noqa: E402
+from resume_tailor.document.template_profile import active_layout  # noqa: E402
+from resume_tailor.infra import logs  # noqa: E402
+from resume_tailor.infra.llm import LLMError  # noqa: E402
+from resume_tailor.pipeline import (  # noqa: E402
     coverletter,
-    data,
     expand,
     facets,
     fit,
     include,
-    industries,
     jd,
-    logs,
     report,
     review,
     rewrite,
     runs,
     skills,
-    style,
-    workspace,
 )
-from resume_tailor.llm import LLMError  # noqa: E402
-from resume_tailor.rewrite import FabricationError  # noqa: E402
-from resume_tailor.template_profile import active_layout  # noqa: E402
+from resume_tailor.pipeline.rewrite import FabricationError  # noqa: E402
 
 
 def _parse_args(argv: list[str] | None = None) -> argparse.Namespace:

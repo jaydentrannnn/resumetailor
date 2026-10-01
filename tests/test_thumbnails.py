@@ -8,7 +8,7 @@ import zlib
 
 from pypdf import PdfWriter
 
-from resume_tailor import thumbnails
+from resume_tailor.document import thumbnails
 
 
 def _blank_pdf(path, width=612, height=792):

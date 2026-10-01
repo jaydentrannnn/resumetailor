@@ -17,8 +17,8 @@ from pathlib import Path
 ROOT = Path(__file__).resolve().parents[1]
 #: Modules that create analyzer issues: the analyzer itself and the upload clean-up.
 SOURCES = (
-    ROOT / "src" / "resume_tailor" / "template_analyze.py",
-    ROOT / "src" / "resume_tailor" / "docx_normalize.py",
+    ROOT / "src" / "resume_tailor" / "document" / "template_analyze.py",
+    ROOT / "src" / "resume_tailor" / "document" / "docx_normalize.py",
 )
 OUT = ROOT / "frontend" / "src" / "lib" / "templateIssueCodes.json"
 

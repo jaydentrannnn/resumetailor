@@ -12,7 +12,7 @@ from fastapi.concurrency import run_in_threadpool
 from fastapi.responses import JSONResponse
 from pydantic import BaseModel, Field
 
-from resume_tailor import jd_input
+from resume_tailor.pipeline import jd_input
 
 router = APIRouter()
 

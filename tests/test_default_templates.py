@@ -7,7 +7,7 @@ import io
 import docx
 import pytest
 
-from resume_tailor import default_templates, render, template_analyze, template_profile
+from resume_tailor.document import default_templates, render, template_analyze, template_profile
 from tests.fixtures import synthetic_resume
 
 

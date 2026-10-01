@@ -9,7 +9,7 @@ import struct
 import zipfile
 import zlib
 
-from resume_tailor import render, template_analyze, template_build
+from resume_tailor.document import render, template_analyze, template_build
 from tests.fixtures import _docx_bytes, _full_featured_resume, synthetic_resume
 
 

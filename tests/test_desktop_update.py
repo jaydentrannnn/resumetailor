@@ -12,7 +12,8 @@ import zipfile
 import pytest
 from fastapi.testclient import TestClient
 
-from resume_tailor import config, desktop_main, desktop_update
+from resume_tailor import config
+from resume_tailor.infra import desktop_main, desktop_update
 from resume_tailor.web.app import app
 
 

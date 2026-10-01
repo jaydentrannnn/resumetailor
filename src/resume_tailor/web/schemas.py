@@ -10,13 +10,14 @@ from typing import Any, Literal
 
 from pydantic import BaseModel, Field, field_validator, model_validator
 
-from .. import config, industries
+from .. import config
 from ..apply.answers.profile import ApplicantProfile
 from ..apply.funnel.attention import AttentionItem
 from ..apply.funnel.eligibility import EligibilitySettings
 from ..apply.funnel.screen import ScreenResult, ScreenSettings
 from ..apply.funnel.store import ApplicationStatus, AtsKind, FillResult, StatusChange
-from ..include import IncludeOptions
+from ..content import industries
+from ..pipeline.include import IncludeOptions
 
 #: Every `source_sha256` request field below is interpolated straight into a filesystem
 #: path in `web/template_ops.py` (`_upload_cache_dir() / f"{sha}.docx"`, etc.). Since

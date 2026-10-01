@@ -12,7 +12,8 @@ from __future__ import annotations
 
 import pytest
 
-from resume_tailor import config, data, libraries, library_seeds
+from resume_tailor import config, library_seeds
+from resume_tailor.content import data, libraries
 
 
 def _pack(pack_id: str, **kwargs) -> libraries.Pack:

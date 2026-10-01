@@ -7,9 +7,9 @@ from dataclasses import dataclass, field
 
 from pydantic import BaseModel, Field
 
-from resume_tailor.data import MasterResume
-from resume_tailor.jd import JobRequirements
-from resume_tailor.report import diagnose_gaps
+from resume_tailor.content.data import MasterResume
+from resume_tailor.pipeline.jd import JobRequirements
+from resume_tailor.pipeline.report import diagnose_gaps
 
 #: Phrases that flag a posting for human review without hard-rejecting it.
 _ENROLLMENT_FLAG_PATTERNS = [

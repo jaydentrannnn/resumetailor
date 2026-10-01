@@ -8,8 +8,10 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 from types import SimpleNamespace
 
-from resume_tailor import config, convert, jd
-from resume_tailor.jd import JobRequirements, Keyword
+from resume_tailor import config
+from resume_tailor.document import convert
+from resume_tailor.pipeline import jd
+from resume_tailor.pipeline.jd import JobRequirements, Keyword
 from resume_tailor.web import jobs as jobs_mod
 from resume_tailor.web.jobs import JobQueue
 from resume_tailor.web.schemas import JobSettings

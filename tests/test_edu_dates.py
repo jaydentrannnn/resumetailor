@@ -7,10 +7,11 @@ import json
 import pytest
 from pydantic import ValidationError
 
-from resume_tailor import config, edu_dates
+from resume_tailor import config
 from resume_tailor.apply.answers.profile import ApplicantProfile
 from resume_tailor.apply.funnel.packet import _build_education, build_fields
-from resume_tailor.data import Education, MasterResume
+from resume_tailor.content import edu_dates
+from resume_tailor.content.data import Education, MasterResume
 from tests.fixtures import synthetic_resume
 
 

@@ -17,7 +17,8 @@ import httpx
 import pytest
 from pydantic import BaseModel
 
-from resume_tailor import config, llm
+from resume_tailor import config
+from resume_tailor.infra import llm
 
 
 class Sample(BaseModel):

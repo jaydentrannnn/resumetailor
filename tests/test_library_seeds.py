@@ -15,7 +15,9 @@ real, verifiable contribution is the alias table and the near-synonym rule, test
 
 from __future__ import annotations
 
-from resume_tailor import config, libraries, library_seeds, rewrite
+from resume_tailor import config, library_seeds
+from resume_tailor.content import libraries
+from resume_tailor.pipeline import rewrite
 
 
 def _effective_for(pack: library_seeds.Pack) -> libraries.EffectiveLibrary:

@@ -14,8 +14,9 @@ import json
 
 import pytest
 
-from resume_tailor import config, jd
-from resume_tailor.jd import JobRequirements, Keyword
+from resume_tailor import config
+from resume_tailor.pipeline import jd
+from resume_tailor.pipeline.jd import JobRequirements, Keyword
 
 
 class _FakeResponse:

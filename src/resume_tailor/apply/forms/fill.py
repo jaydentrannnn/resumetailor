@@ -19,7 +19,7 @@ from importlib import resources
 from pathlib import Path
 from typing import Any, Literal
 
-from resume_tailor import config, data, report
+from resume_tailor import config
 from resume_tailor.apply.answers import answer, answer_memory, hybrid_resolver, questions
 from resume_tailor.apply.answers import profile as profile_mod
 from resume_tailor.apply.answers import salary as salary_mod
@@ -30,7 +30,9 @@ from resume_tailor.apply.forms import field_matcher, form_guards, submit_guard, 
 from resume_tailor.apply.funnel import packet as apply_packet
 from resume_tailor.apply.funnel import store
 from resume_tailor.apply.funnel.store import FillResult
-from resume_tailor.jd import JobRequirements
+from resume_tailor.content import data
+from resume_tailor.pipeline import report
+from resume_tailor.pipeline.jd import JobRequirements
 from resume_tailor.web.schemas import ApplySettings, JobSettings
 
 

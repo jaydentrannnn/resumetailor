@@ -4,8 +4,8 @@ from __future__ import annotations
 
 import json
 
-from resume_tailor import runs
-from resume_tailor.jd import JobRequirements, Keyword
+from resume_tailor.pipeline import runs
+from resume_tailor.pipeline.jd import JobRequirements, Keyword
 
 
 def _write_run(root, job_id: str, *, jd: str, title: str = "T", bullets: dict | None = None):

@@ -13,10 +13,11 @@ import zipfile
 import pytest
 from fastapi.testclient import TestClient
 
-from resume_tailor import config, render, rerender
-from resume_tailor.data import Bullet
-from resume_tailor.merge import MergeGroup
-from resume_tailor.template_profile import active_layout
+from resume_tailor import config
+from resume_tailor.content.data import Bullet
+from resume_tailor.document import render, rerender
+from resume_tailor.document.template_profile import active_layout
+from resume_tailor.pipeline.merge import MergeGroup
 from resume_tailor.web.app import app
 from tests.fixtures import synthetic_resume
 

@@ -9,7 +9,7 @@ from pydantic import BaseModel, ConfigDict, Field, field_validator, model_valida
 
 from resume_tailor import config
 from resume_tailor.apply.funnel import store
-from resume_tailor.expand import ExpandedEntry, Expansion
+from resume_tailor.pipeline.expand import ExpandedEntry, Expansion
 
 
 class PreparationEligibility(BaseModel):

@@ -16,7 +16,7 @@ from pathlib import Path
 
 import docx
 
-from resume_tailor import template_analyze, template_build, template_verify
+from resume_tailor.document import template_analyze, template_build, template_verify
 from tests.fixtures import (
     _docx_bytes,
     _full_featured_resume,

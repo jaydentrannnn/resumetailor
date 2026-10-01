@@ -2,8 +2,8 @@
 
 from __future__ import annotations
 
-from resume_tailor import jdsim
-from resume_tailor.jd import JobRequirements, Keyword
+from resume_tailor.pipeline import jdsim
+from resume_tailor.pipeline.jd import JobRequirements, Keyword
 
 
 def _reqs(seniority: str = "entry") -> JobRequirements:

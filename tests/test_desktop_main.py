@@ -11,7 +11,7 @@ from pathlib import Path
 import httpx
 import pytest
 
-from resume_tailor import desktop_main
+from resume_tailor.infra import desktop_main
 
 
 @pytest.mark.parametrize(
@@ -147,7 +147,7 @@ def test_sidecar_prints_ready_once_it_serves(tmp_path):
     if sys.platform == "darwin":
         env["HOME"] = str(tmp_path / "home")
     proc = subprocess.Popen(
-        [sys.executable, "-m", "resume_tailor.desktop_main", "--exit-with-stdin"],
+        [sys.executable, "-m", "resume_tailor.infra.desktop_main", "--exit-with-stdin"],
         env=env,
         stdin=subprocess.PIPE,
         stdout=subprocess.PIPE,

@@ -8,8 +8,8 @@ import zipfile
 
 import pytest
 
-from resume_tailor import render, template_analyze, template_build
-from resume_tailor.template_profile import EnabledSections, TemplateProfile
+from resume_tailor.document import render, template_analyze, template_build
+from resume_tailor.document.template_profile import EnabledSections, TemplateProfile
 from tests.fixtures import _docx_bytes, _full_featured_resume, synthetic_resume
 
 
@@ -81,8 +81,8 @@ def test_profile_needs_some_entry_section():
 
 @pytest.mark.parametrize("section_mode", ["fixed", "generic"])
 def test_fit_skips_experience_when_template_has_none(section_mode):
-    from resume_tailor import fit
-    from resume_tailor.jd import JobRequirements, Keyword
+    from resume_tailor.pipeline import fit
+    from resume_tailor.pipeline.jd import JobRequirements, Keyword
 
     resume = synthetic_resume()
     requirements = JobRequirements(

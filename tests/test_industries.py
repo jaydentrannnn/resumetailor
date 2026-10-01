@@ -11,23 +11,13 @@ from types import SimpleNamespace
 import pytest
 from fastapi.testclient import TestClient
 
-from resume_tailor import (
-    config,
-    coverletter,
-    expand,
-    facets,
-    industries,
-    jd,
-    libraries,
-    llm,
-    rewrite,
-    skills,
-    style,
-    workspace,
-)
-from resume_tailor.data import Bullet
-from resume_tailor.web.app import app
+from resume_tailor import config, workspace
+from resume_tailor.content import industries, libraries, style
+from resume_tailor.content.data import Bullet
+from resume_tailor.infra import llm
+from resume_tailor.pipeline import coverletter, expand, facets, jd, rewrite, skills
 from resume_tailor.web import jobs as jobs_mod
+from resume_tailor.web.app import app
 from resume_tailor.web.jobs import JobQueue, regenerate_cover_letter
 from resume_tailor.web.schemas import JobSettings
 from tests.fixtures import synthetic_resume

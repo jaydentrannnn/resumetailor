@@ -26,7 +26,8 @@ from pathlib import Path
 
 sys.path.insert(0, str(Path(__file__).resolve().parents[1] / "src"))
 
-from resume_tailor import config, render  # noqa: E402
+from resume_tailor import config  # noqa: E402
+from resume_tailor.document import render  # noqa: E402
 
 
 @dataclass

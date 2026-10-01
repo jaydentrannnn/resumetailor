@@ -9,7 +9,7 @@ from pathlib import Path
 
 import pytest
 
-from resume_tailor import convert
+from resume_tailor.document import convert
 
 
 def test_word_conversion_initialises_com_on_its_own_thread(monkeypatch, tmp_path):

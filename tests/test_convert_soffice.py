@@ -7,7 +7,7 @@ from pathlib import Path, PureWindowsPath
 
 import pytest
 
-from resume_tailor import convert
+from resume_tailor.document import convert
 
 
 class _FakeSoffice:

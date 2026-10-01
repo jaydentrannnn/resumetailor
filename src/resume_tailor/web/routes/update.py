@@ -10,7 +10,7 @@ from typing import Any
 
 from fastapi import APIRouter, HTTPException
 
-from resume_tailor import desktop_update
+from resume_tailor.infra import desktop_update
 
 router = APIRouter()
 

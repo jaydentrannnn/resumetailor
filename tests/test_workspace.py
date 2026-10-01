@@ -94,7 +94,7 @@ def test_bootstrap_with_no_legacy_files_creates_usable_default(isolated_roots):
     404s the editor and fails every template install — see
     `test_create_without_copy_from_seeds_a_loadable_resume`.
     """
-    from resume_tailor import data
+    from resume_tailor.content import data
 
     result = bootstrap()
 
@@ -183,7 +183,7 @@ def test_create_duplicate_copies_resume_and_templates(isolated_roots):
 
 
 def test_create_without_copy_from_writes_a_default_libraries_file(isolated_roots):
-    from resume_tailor import libraries
+    from resume_tailor.content import libraries
 
     bootstrap()
     entry = workspace.create("Nina")
@@ -208,7 +208,7 @@ def test_duplicate_inherits_target_field_and_custom_styles(isolated_roots):
 
 
 def test_create_duplicate_copies_libraries_json(isolated_roots):
-    from resume_tailor import libraries
+    from resume_tailor.content import libraries
 
     bootstrap()  # empty "default"
     libraries.write_pack(libraries.Pack(id="a", label="A", tag_aliases={"x": "y"}))
@@ -229,7 +229,7 @@ def test_create_without_copy_from_seeds_a_loadable_resume(isolated_roots):
     three places at once — the editor 404d, `template_ops._smoke_render` raised
     FileNotFoundError so every template install failed, and no run could start.
     """
-    from resume_tailor import data
+    from resume_tailor.content import data
 
     bootstrap()
     entry = workspace.create("Nina")
@@ -246,7 +246,7 @@ def test_create_without_copy_from_seeds_a_loadable_resume(isolated_roots):
 def test_activate_reloads_the_effective_library(isolated_roots):
     """Switching profiles must rebind config.TAG_ALIASES to the new profile's own
     pack selection, the same way it already rebinds the path globals."""
-    from resume_tailor import libraries
+    from resume_tailor.content import libraries
 
     bootstrap()  # "default", core-tech only
     workspace.create("Nina")
@@ -270,7 +270,7 @@ def test_activate_reloads_the_effective_library(isolated_roots):
 
 def test_activate_heals_a_workspace_missing_its_resume(isolated_roots):
     """Switching to a profile created before seeding existed repairs it in place."""
-    from resume_tailor import data
+    from resume_tailor.content import data
 
     bootstrap()
     workspace.create("Nina")

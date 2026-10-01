@@ -15,10 +15,13 @@ from fastapi.responses import FileResponse
 from pydantic import BaseModel, Field
 from starlette.background import BackgroundTask
 
-from resume_tailor import config, convert, data_transfer, libraries, llm, workspace
+from resume_tailor import config, workspace
 from resume_tailor.apply.funnel import daily as apply_daily
 from resume_tailor.apply.funnel import operations as apply_operations
 from resume_tailor.apply.funnel import store as apply_store
+from resume_tailor.content import data_transfer, libraries
+from resume_tailor.document import convert
+from resume_tailor.infra import llm
 from resume_tailor.web import template_ops
 from resume_tailor.web.jobs import get_queue, model_routing
 from resume_tailor.web.schemas import JobSettings
