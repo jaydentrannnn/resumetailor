@@ -51,7 +51,8 @@ The macOS installer does not run on Intel Macs.
 
 The setup screen walks you through:
 
-1. **What you're studying** — picks the skill words it recognises and which job lists to search.
+1. **What you're studying and targeting** — choose job sources and a target field for
+   tailoring guidance. The target field is saved separately from job discovery.
 2. **Upload your resume** (`.docx`) — the app analyzes its layout and turns it into a
    template. You can also import the content of a PDF resume.
 3. **Your content** — review the sections, entries and bullets it read; this becomes your
@@ -66,6 +67,13 @@ profiles you can switch between, each exported or imported as one `.zip` of up t
 **Template** (install or switch saved templates), **Vocabulary** (the skill and
 action-verb libraries the rewriter uses), **Apply** (see [Automation](#automation-apply-page)),
 and **Settings** (models, browser, extension pairing, updates).
+
+Choose **Target field** in **Settings → AI model** or during setup. Options are General,
+Software & Data, Finance & Consulting, Accounting, Marketing, and Operations & Supply
+Chain. The choice applies to every tailoring run for that profile; each posting determines
+which evidence is most relevant. Custom writing styles stay intact. Existing profiles
+keep their current guidance until you select a field, and new profiles start with General.
+Saved runs retain their original guidance when you regenerate a cover letter.
 
 ---
 

@@ -24,7 +24,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field, PrivateAttr
 
-from . import config, events, llm
+from . import config, events, industries, llm
 
 Importance = Literal["must_have", "nice_to_have"]
 Kind = Literal["technical", "soft"]
@@ -168,7 +168,7 @@ the product, the team's shape, the core responsibilities.
 #: previously this relied on the operator remembering `--no-cache`, and a stale extraction
 #: is invisible rather than merely wrong. Version 3 added band/evidence and the
 #: untrusted-input framing — every prior extraction is intentionally discarded.
-_PROMPT_VERSION = 3
+_PROMPT_VERSION = 4
 _EXTRACT_POOL_SIZE = 3
 _CACHE_WRITE_LOCK = threading.Lock()
 
@@ -284,7 +284,7 @@ def extract(
     response = client.messages.parse(
         model=config.model_for("extract"),
         max_tokens=config.max_tokens_for("extract"),
-        system=_SYSTEM,
+        system=industries.system("extract", _SYSTEM),
         messages=[{"role": "user", "content": _build_user_message(jd_text, known_tags)}],
         output_format=JobRequirements,
         # The SDK merges `format` into `output_config`, so passing both is safe. Ignored

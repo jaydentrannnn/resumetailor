@@ -105,8 +105,12 @@ def _isolated_libraries(tmp_path, monkeypatch):
     resume at its own separately-set path.
     """
     monkeypatch.setattr(libraries, "store_root", lambda: tmp_path / "libraries")
-    paths = {**config._DEFAULT.paths, "LIBRARIES_PATH": tmp_path / "workspace_data" / "libraries.json"}
-    monkeypatch.setattr(config, "_DEFAULT", replace(config._DEFAULT, paths=paths))
+    paths = {
+        **config._DEFAULT.paths,
+        "LIBRARIES_PATH": tmp_path / "workspace_data" / "libraries.json",
+        "SETTINGS_PATH": tmp_path / "workspace_data" / "settings.json",
+    }
+    monkeypatch.setattr(config, "_DEFAULT", replace(config._DEFAULT, paths=paths, guidance=None))
     libraries.reset()
     yield
     libraries.reset()

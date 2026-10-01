@@ -6,6 +6,7 @@ import { DataSection } from "./DataSection";
 import { DocumentsSection } from "./DocumentsSection";
 import { ModelsSection } from "./ModelsSection";
 import { BrowserSection } from "./BrowserSection";
+import { TargetFieldSection } from "./TargetFieldSection";
 
 const TABS = [
   { id: "models", label: "AI model" },
@@ -33,7 +34,7 @@ export function SettingsPage() {
         onChange={(id) => setParams({ tab: id }, { replace: true })}
       />
       <div role="tabpanel">
-        {tab === "models" && <ModelsSection />}
+        {tab === "models" && <><TargetFieldSection /><ModelsSection /></>}
         {tab === "documents" && <DocumentsSection />}
         {tab === "data" && <DataSection />}
         {tab === "advanced" && <AdvancedSection />}

@@ -570,7 +570,8 @@ def _invalidate_memo() -> None:
 
 
 def resolve_effective(
-    workspace_id: str | None = None, *, exclude_pack_id: str | None = None
+    workspace_id: str | None = None, *, exclude_pack_id: str | None = None,
+    state: WorkspaceLibraryState | None = None,
 ) -> EffectiveLibrary:
     """The composed alias/verb tables for `workspace_id`, or the active workspace.
 
@@ -581,8 +582,10 @@ def resolve_effective(
     that old version is still part of `enabled_packs`' composition until the write
     lands. Bypasses the memo like an explicit `workspace_id` does.
     """
-    if workspace_id is not None or exclude_pack_id is not None:
-        return _resolve_effective_uncached(workspace_id, exclude_pack_id=exclude_pack_id)
+    if workspace_id is not None or exclude_pack_id is not None or state is not None:
+        return _resolve_effective_uncached(
+            workspace_id, exclude_pack_id=exclude_pack_id, state=state
+        )
     key = config.LIBRARIES_PATH
     if key not in _ACTIVE_MEMO:
         _ACTIVE_MEMO[key] = _resolve_effective_uncached(None)
@@ -590,9 +593,10 @@ def resolve_effective(
 
 
 def _resolve_effective_uncached(
-    workspace_id: str | None, *, exclude_pack_id: str | None = None
+    workspace_id: str | None, *, exclude_pack_id: str | None = None,
+    state: WorkspaceLibraryState | None = None,
 ) -> EffectiveLibrary:
-    state = read_workspace_state(workspace_id)
+    state = state if state is not None else read_workspace_state(workspace_id)
     diagnostics: list[str] = []
 
     aliases: dict[str, str] = {}

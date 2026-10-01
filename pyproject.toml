@@ -18,6 +18,7 @@ dependencies = { file = ["requirements.txt"] }
 where = ["src"]
 
 [tool.setuptools.package-data]
+"resume_tailor" = ["industry_presets.json"]
 "resume_tailor.library_seeds" = ["*.json"]
 "resume_tailor.apply" = ["*.js", "*.json", "watchlists/*.json", "catalog/*.json"]
 

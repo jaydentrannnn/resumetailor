@@ -67,6 +67,7 @@ def test_bootstrap_migrates_legacy_layout(isolated_roots):
     assert config.MASTER_RESUME_PATH.exists()
     assert json.loads(config.MASTER_RESUME_PATH.read_text())["contact"]["name"] == "Ada Lovelace"
     assert config.DEFAULT_TEMPLATE_PATH.exists()
+    assert workspace.load_settings().get("target_field") is None
     # Legacy files are copied, never moved.
     assert (isolated_roots["data"] / "master_resume.json").exists()
     assert (isolated_roots["templates"] / "main_template.docx").exists()
@@ -101,6 +102,7 @@ def test_bootstrap_with_no_legacy_files_creates_usable_default(isolated_roots):
     assert result.active_id == "default"
     assert config.MASTER_RESUME_PATH.exists()
     assert data.load().contact.name == "Your Name"
+    assert workspace.load_settings()["target_field"] == "general"
 
 
 def test_migration_rolls_back_and_leaves_legacy_on_failure(isolated_roots, monkeypatch):
@@ -190,6 +192,19 @@ def test_create_without_copy_from_writes_a_default_libraries_file(isolated_roots
     assert paths["LIBRARIES_PATH"].exists()
     state = libraries.read_workspace_state(entry.id)
     assert state.enabled_packs == ["core-tech"]
+    assert workspace.load_settings(entry.id)["target_field"] == "general"
+
+
+def test_duplicate_inherits_target_field_and_custom_styles(isolated_roots):
+    bootstrap()
+    defaults = {"rewrite_style": "Preserve my concise wording."}
+    workspace.save_settings(defaults, target_field="finance-consulting")
+
+    duplicate = workspace.create("Finance copy", copy_from="default")
+
+    saved = workspace.load_settings(duplicate.id)
+    assert saved["target_field"] == "finance-consulting"
+    assert saved["defaults"] == defaults
 
 
 def test_create_duplicate_copies_libraries_json(isolated_roots):
@@ -372,6 +387,7 @@ def test_settings_round_trip(isolated_roots):
 
 def test_settings_missing_file_returns_empty_defaults(isolated_roots):
     bootstrap()
+    config.SETTINGS_PATH.unlink()
     assert workspace.load_settings() == {"schema_version": 1, "defaults": {}}
 
 

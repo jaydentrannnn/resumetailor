@@ -29,7 +29,7 @@ from typing import Literal
 
 from pydantic import BaseModel, Field
 
-from . import config, events, llm
+from . import config, events, industries, llm
 from .data import MasterResume
 from .facets import (
     _norm_ws,
@@ -41,7 +41,7 @@ from .jd import JobRequirements, Keyword
 
 #: Bumped when `_SYSTEM` or the request/response shape changes, so cached selections
 #: invalidate on their own rather than relying on `--no-cache`.
-_SKILLS_PROMPT_VERSION = 1
+_SKILLS_PROMPT_VERSION = 2
 
 #: Display precedence when the same normalised skill appears under multiple sources —
 #: lower rank wins. Skills-section items are the only source the user hand-wrote *as a
@@ -458,7 +458,7 @@ def select_skills(
         response = client.messages.parse(
             model=config.model_for("skills"),
             max_tokens=config.max_tokens_for("skills"),
-            system=_SYSTEM,
+            system=industries.system("skills", _SYSTEM),
             messages=[{"role": "user", "content": user}],
             output_format=SkillsSelectionLLM,
             output_config={"effort": config.effort_for("skills")},

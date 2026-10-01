@@ -60,7 +60,8 @@ stop. That is the bug this project exists to avoid.
   the style digest). Keys on `Backend.origin`, not `.provider` — ollama/lmstudio/gemini all
   remap to `provider == "openai"`.
 - **Writing style is user-editable per profile with a locked core** (`style.py`; no
-  override → legacy prompt byte-for-byte; override → locked core prepended;
+  target field or override → legacy prompt byte-for-byte; selected field → resolved
+  defaults, with custom overrides preserved and locked core prepended;
   `style.activate()` beside `config.resolve()` in `web/jobs.py` and `tailor.py`).
 - **A vocabulary-proposal approval that would rewrite an existing bullet tag 409s for
   explicit acknowledgement and backs up the master resume first** — do not weaken that.

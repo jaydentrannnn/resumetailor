@@ -17,7 +17,13 @@
       "Bash(.venv/Scripts/python.exe tailor.py --help)",
       "Bash(.venv/Scripts/python.exe tailor.py --jd \"C:/Users/jayde/AppData/Local/Temp/claude/C--Users-jayde-OneDrive-Documents-ResumeTailor/f41008b1-00bb-45b7-90bf-c44227fdee5d/scratchpad/jd_ml_intern.txt\")",
       "Bash(.venv/Scripts/python.exe tailor.py --no-cache --jd \"C:/Users/jayde/AppData/Local/Temp/claude/C--Users-jayde-OneDrive-Documents-ResumeTailor/f41008b1-00bb-45b7-90bf-c44227fdee5d/scratchpad/jd_ml_intern.txt\")",
-      "Bash(python -c ' *)"
+      "Bash(python -c ' *)",
+      "mcp__plugin_context-mode_context-mode__ctx_execute",
+      "mcp__playwright__browser_navigate",
+      "mcp__playwright__browser_click",
+      "mcp__playwright__browser_press_key",
+      "mcp__playwright__browser_evaluate"
     ]
-  }
+  },
+  "outputStyle": "Concise"
 }

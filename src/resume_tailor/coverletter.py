@@ -22,7 +22,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from . import config, events, llm, style
+from . import config, events, industries, llm, style
 from .data import Bullet, MasterResume
 from .jd import JobRequirements
 from .rewrite import (
@@ -34,7 +34,7 @@ from .rewrite import (
 
 #: Bumped when ``_SYSTEM`` or the cover request shape changes. Version 2 added
 #: ATS/trust keyword split, anti-generic self-check, and optional CoverAngles.
-_COVER_PROMPT_VERSION = 3
+_COVER_PROMPT_VERSION = 4
 
 #: Long dashes the model must never emit. Mechanical replacement is safe when one slips
 #: through after a retry.
@@ -177,7 +177,7 @@ posting. Do not use em dashes or en dashes.
 
 def locked_core_rules() -> str:
     """Return the non-editable cover-letter rules for display in the settings UI."""
-    return _CORE_RULES.strip()
+    return industries.core("cover", _CORE_RULES).strip()
 
 
 def _system() -> str:
@@ -187,7 +187,7 @@ def _system() -> str:
     style_block = style.active("cover").strip()
     if style_block and not style_block.endswith("\n"):
         style_block += "\n"
-    return (
+    return industries.system("cover", (
         "You draft the body paragraphs of a cover letter for one specific job application.\n\n"
         "The candidate's resume content and the job posting are supplied. Select two or three "
         "experiences from what is on the tailored resume and connect them to the employer's "
@@ -196,7 +196,7 @@ def _system() -> str:
         f"{_CORE_RULES}"
         f"{style_block}\n"
         f"{_RETURN_SHAPE}"
-    )
+    ))
 
 
 class CoverLetterLLM(BaseModel):

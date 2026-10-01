@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from resume_tailor import config, libraries
+from resume_tailor import config, industries, libraries
 from resume_tailor.labels import label_taken, normalize_label
 
 #: Serialises registry mutations (create/rename/delete/activate) against each other.
@@ -205,10 +205,12 @@ def _write_meta(workspace_id: str, meta: dict) -> None:
     path.write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
 
 
-def _write_default_settings(path: Path) -> None:
+def _write_default_settings(path: Path, *, target_field: str | None = None) -> None:
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        json.dumps({"schema_version": 1, "defaults": {}}, indent=2) + "\n",
+        json.dumps({"schema_version": 1, "defaults": {},
+                    **({"target_field": target_field} if target_field is not None else {})},
+                   indent=2) + "\n",
         encoding="utf-8",
     )
 
@@ -314,7 +316,7 @@ def create(label: str, *, copy_from: str | None = None) -> WorkspaceEntry:
         if copy_from is not None:
             _copy_workspace_files(config.workspace_paths(copy_from), paths)
         else:
-            _write_default_settings(paths["SETTINGS_PATH"])
+            _write_default_settings(paths["SETTINGS_PATH"], target_field="general")
             _write_default_libraries(paths["LIBRARIES_PATH"])
         # Also covers a duplicate whose *source* had no master resume.
         ensure_master_resume(workspace_id)
@@ -436,17 +438,28 @@ def load_settings(workspace_id: str | None = None) -> dict:
             return {
                 "schema_version": raw.get("schema_version", 1),
                 "defaults": defaults if isinstance(defaults, dict) else {},
+                **({"target_field": industries.validate_target(raw["target_field"])}
+                   if "target_field" in raw else {}),
             }
     return {"schema_version": 1, "defaults": {}}
 
 
-def save_settings(defaults: dict, workspace_id: str | None = None) -> None:
+_KEEP_TARGET = object()
+
+
+def save_settings(
+    defaults: dict, workspace_id: str | None = None, *, target_field=_KEEP_TARGET
+) -> None:
     """Atomically write `defaults` (already-validated, e.g. via `JobSettings`) to disk."""
     path = settings_path(workspace_id)
+    if target_field is _KEEP_TARGET:
+        target_field = load_settings(workspace_id).get("target_field")
+    industries.validate_target(target_field)
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
     tmp.write_text(
-        json.dumps({"schema_version": 1, "defaults": defaults}, indent=2) + "\n",
+        json.dumps({"schema_version": 1, "defaults": defaults, "target_field": target_field},
+                   indent=2) + "\n",
         encoding="utf-8",
     )
     os.replace(tmp, path)
@@ -539,7 +552,9 @@ def _migrate_legacy(default_id: str = _DEFAULT_ID) -> BootstrapResult:
             shutil.copytree(legacy_backups, dest_backups, dirs_exist_ok=True)
             log_lines.append(f"copied {legacy_backups}")
 
-        _write_default_settings(paths["SETTINGS_PATH"])
+        _write_default_settings(
+            paths["SETTINGS_PATH"], target_field=None if log_lines else "general"
+        )
         _write_default_libraries(paths["LIBRARIES_PATH"])
 
         meta = {

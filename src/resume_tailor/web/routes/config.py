@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import logging
 from contextlib import suppress
+from dataclasses import replace
 
 from fastapi import APIRouter
 
@@ -13,6 +14,8 @@ from resume_tailor import (
     data,
     expand,
     fit,
+    industries,
+    libraries,
     rewrite,
     style,
     workspace,
@@ -26,6 +29,7 @@ from resume_tailor.web.schemas import (
     ProgressEventOut,
     SettingsResponse,
     SettingsUpdateRequest,
+    TargetFieldRequest,
     WorkspaceEntryOut,
 )
 
@@ -70,6 +74,21 @@ def _config_response(*, consume_migrated: bool = True) -> ConfigResponse:
         web_state.migrated_from_legacy = False
 
     soft_min, hard_max = rewrite.length_band(fit.default_bullet_char_budget())
+    saved = workspace.load_settings()
+    target_field = saved.get("target_field")
+    snapshot = industries.capture(
+        target_field, {stage: None for stage in ("rewrite", "expand", "cover")},
+        workspace_id=active_id,
+    )
+    defaults = snapshot.default_styles if snapshot else {
+        "rewrite": style.DEFAULT_REWRITE_STYLE, "expand": style.DEFAULT_EXPAND_STYLE,
+        "cover": style.DEFAULT_COVER_STYLE,
+    }
+    with config.use_context(replace(config.default_context(), guidance=snapshot)):
+        core_rules = {
+            "rewrite": rewrite.locked_core_rules(), "expand": expand.locked_core_rules(),
+            "cover": coverletter.locked_core_rules(),
+        }
 
     return ConfigResponse(
         pages=config.DEFAULT_PAGE_TARGET,
@@ -107,12 +126,21 @@ def _config_response(*, consume_migrated: bool = True) -> ConfigResponse:
         initial_bullet_share=config.INITIAL_BULLET_SHARE,
         experience_bullet_share=config.EXPERIENCE_BULLET_SHARE,
         max_bullets_per_entry=config.MAX_BULLETS_PER_ENTRY,
-        rewrite_style_default=style.DEFAULT_REWRITE_STYLE.strip(),
-        expand_style_default=style.DEFAULT_EXPAND_STYLE.strip(),
-        cover_style_default=style.DEFAULT_COVER_STYLE.strip(),
-        rewrite_core_rules=rewrite.locked_core_rules(),
-        expand_core_rules=expand.locked_core_rules(),
-        cover_core_rules=coverletter.locked_core_rules(),
+        rewrite_style_default=defaults["rewrite"].strip(),
+        expand_style_default=defaults["expand"].strip(),
+        cover_style_default=defaults["cover"].strip(),
+        rewrite_core_rules=core_rules["rewrite"],
+        expand_core_rules=core_rules["expand"],
+        cover_core_rules=core_rules["cover"],
+        target_field=target_field,
+        target_field_summary=snapshot.summary if snapshot else "Existing profile guidance.",
+        target_fields=[
+            {key: item[key] for key in ("id", "label", "summary")}
+            for item in industries.catalog().values()
+        ],
+        effective_vocabulary_packs=(
+            snapshot.packs if snapshot else libraries.read_workspace_state().enabled_packs
+        ),
         active_workspace_id=active_id,
         active_workspace_label=active_label,
         migrated_from_legacy=migrated,
@@ -167,6 +195,7 @@ def get_settings() -> SettingsResponse:
         workspace_id=config.active_workspace_id(),
         settings=settings,
         seeded=not raw["defaults"],
+        target_field=raw.get("target_field"),
     )
 
 
@@ -180,9 +209,22 @@ def put_settings(body: SettingsUpdateRequest) -> SettingsResponse:
     workspace's settings file.
     """
     with template_ops.LOCK:
-        workspace.save_settings(body.settings.model_dump())
+        if "target_field" in body.model_fields_set:
+            workspace.save_settings(body.settings.model_dump(), target_field=body.target_field)
+        else:
+            workspace.save_settings(body.settings.model_dump())
     return SettingsResponse(
         workspace_id=config.active_workspace_id(),
         settings=body.settings,
         seeded=False,
+        target_field=workspace.load_settings().get("target_field"),
     )
+
+
+@router.put("/api/settings/target-field", response_model=ConfigResponse)
+def put_target_field(body: TargetFieldRequest) -> ConfigResponse:
+    """Update profile guidance without overwriting pending run-setting edits."""
+    with template_ops.LOCK:
+        raw = workspace.load_settings()
+        workspace.save_settings(raw["defaults"], target_field=body.target_field)
+        return _config_response(consume_migrated=False)

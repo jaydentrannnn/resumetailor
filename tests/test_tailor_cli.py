@@ -216,6 +216,38 @@ def test_successful_run_prints_report_and_exits_zero(cli, jd_file, tmp_path, mon
     assert "2 iteration(s)" in stdout
 
 
+def test_cli_uses_profile_field_and_archives_the_resolved_guidance(
+    cli, jd_file, tmp_path, monkeypatch
+):
+    from resume_tailor import industries, style, workspace
+
+    resume = synthetic_resume()
+    resume.experience[0].bullets[0].tags.append("dcf")
+    config.MASTER_RESUME_PATH.write_text(resume.model_dump_json(), encoding="utf-8")
+    monkeypatch.setattr(config, "OUTPUT_DIR", tmp_path / "output")
+    workspace.save_settings(
+        {"rewrite_style": "Keep my precise wording."}, target_field="finance-consulting"
+    )
+    seen = []
+
+    def extract(text, **kwargs):
+        seen.append((industries.active().target_field, kwargs["known_tags"]))
+        assert style.active("rewrite") == "Keep my precise wording."
+        return _requirements()
+
+    out = tmp_path / "tailored.docx"
+    monkeypatch.setattr(cli.jd, "extract", extract)
+    monkeypatch.setattr(cli.jd, "verify_verbatim", lambda reqs, text: [])
+    monkeypatch.setattr(cli.fit, "fit", lambda *a, **k: _fit_result(resume, out))
+    assert cli.main(["--jd", str(jd_file), "--out", str(out)]) == 0
+
+    assert seen[0][0] == "finance-consulting"
+    assert "discounted cash flow" in seen[0][1]
+    archived = industries.load(config.OUTPUT_DIR / "jobs" / "cli-tailored")
+    assert archived.target_field == "finance-consulting"
+    assert "Keep my precise wording." in archived.systems["rewrite"]
+
+
 def test_fit_failure_exits_one_without_printing_a_report(cli, jd_file, monkeypatch, capsys):
     """An unfittable resume must fail loudly, never emit a half-truncated summary."""
     monkeypatch.setattr(cli.jd, "extract", lambda text, **kw: _requirements())

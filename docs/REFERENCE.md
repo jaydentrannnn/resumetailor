@@ -39,8 +39,8 @@ appears in the application-form expansion output; only the tailored `.docx` omit
 
 **The CLI is entirely flag-driven, on purpose** — every behavior above traces to an
 explicit `--flag`, so a scripted/looped bulk-apply run behaves the same regardless of what
-a profile's web UI saved. `model_name`, `rewrite_style`, `expand_style`, `cover_style` are
-the sole exceptions: `tailor.py` picks those four up from the active profile's saved
+a profile's web UI saved. `model_name`, `rewrite_style`, `expand_style`, `cover_style`, and
+profile-level `target_field` are the exceptions: `tailor.py` picks those up from the saved
 `settings.json` (in `main`, right after `workspace.bootstrap`), so a preference set once in
 the web UI doesn't need retyping as a flag on every run. No other saved setting (`pages`,
 `experience`, `include`, `fill_target`, …) is read from `settings.json` here — those always
@@ -97,6 +97,21 @@ calibration + settings, switched together via the header dropdown. Internally ca
 **workspace** (`profile` was already taken by `TemplateProfile` and `config.MODEL_PROFILES`).
 UI label stays "Profile"; code (`workspace.py`, `config.set_active_workspace`,
 `/api/workspaces`) says `workspace`.
+
+**Target field** is profile metadata in `settings.json`, separate from `JobSettings` and
+job-discovery settings. Missing/null retains legacy guidance; new empty profiles use
+`general`, and duplicates inherit their source's field and custom styles. Settings → AI
+model and setup expose the backend catalog (`industry_presets.json`). Adding a preset
+requires catalog data and existing vocabulary-pack ids, without a pipeline branch or an
+extra model call. Catalog/policy changes must bump their versions.
+
+`industries.capture()` resolves field guidance, custom styles, entry context, and the
+union of preset + profile vocabulary packs (profile order and explicit overrides win).
+It freezes the seven stage system prompts at submission. `RunContext` isolates this
+guidance per job, and cache fingerprints include the snapshot. Each opted-in output job
+archives `tailoring_context.json`; cover-letter regeneration uses it rather than current
+profile defaults. Legacy runs with no snapshot retain the legacy path. Discovery,
+form-fill answering, ranking weights, and layout budgets do not depend on the target field.
 
 Each workspace is a directory tree replicated under the existing storage roots:
 
@@ -1068,8 +1083,9 @@ fixed overhead the fit loop never trims.
 - **Style splitting**: `rewrite._SYSTEM` and `expand._SYSTEM` split into non-editable
   fabrication/number/id/length rules plus an editable style block (`style.py`'s defaults,
   overridable via `JobSettings.rewrite_style` / `expand_style` / `cover_style` in
-  `settings.json`). When no override is set, `_system()` returns the legacy prompt
-  byte-for-byte; when overridden, the locked core is always prepended. Still plain
+  `settings.json`). Without a target field or override, `_system()` returns the legacy
+  prompt byte-for-byte; selected fields use resolved defaults, and custom overrides
+  keep the locked core prepended. Still plain
   strings — the architectural invariant holds. `style.activate()` sits beside
   `config.resolve()` in both `web/jobs.py` and `tailor.py`.
 

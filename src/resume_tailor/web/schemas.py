@@ -8,9 +8,9 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, model_validator
+from pydantic import BaseModel, Field, field_validator, model_validator
 
-from .. import config
+from .. import config, industries
 from ..apply.attention import AttentionItem
 from ..apply.eligibility import EligibilitySettings
 from ..apply.profile import ApplicantProfile
@@ -335,6 +335,9 @@ class WorkspaceSettings(BaseModel):
 
     schema_version: int = 1
     defaults: JobSettings = Field(default_factory=JobSettings)
+    target_field: str | None = None
+
+    _validate_target = field_validator("target_field")(industries.validate_target)
 
 
 class SettingsResponse(BaseModel):
@@ -344,12 +347,22 @@ class SettingsResponse(BaseModel):
     settings: JobSettings
     #: True when settings.json did not exist and JobSettings() defaults were served.
     seeded: bool = False
+    target_field: str | None = None
 
 
 class SettingsUpdateRequest(BaseModel):
     """Body for `PUT /api/settings`."""
 
     settings: JobSettings
+    target_field: str | None = None
+
+    _validate_target = field_validator("target_field")(industries.validate_target)
+
+
+class TargetFieldRequest(BaseModel):
+    target_field: str | None
+
+    _validate_target = field_validator("target_field")(industries.validate_target)
 
 
 class CreateJobRequest(BaseModel):
@@ -660,6 +673,10 @@ class ConfigResponse(BaseModel):
     rewrite_core_rules: str = ""
     expand_core_rules: str = ""
     cover_core_rules: str = ""
+    target_field: str | None = None
+    target_field_summary: str = ""
+    target_fields: list[dict[str, Any]] = Field(default_factory=list)
+    effective_vocabulary_packs: list[str] = Field(default_factory=list)
     active_workspace_id: str | None = None
     active_workspace_label: str | None = None
     #: True on the first response after the legacy single-slot layout was migrated

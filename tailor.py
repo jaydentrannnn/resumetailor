@@ -29,6 +29,7 @@ from resume_tailor import (  # noqa: E402
     facets,
     fit,
     include,
+    industries,
     jd,
     logs,
     report,
@@ -433,7 +434,8 @@ def main(argv: list[str] | None = None) -> int:
     # set once in the web UI doesn't have to be retyped as a flag on every CLI run.
     # No other saved setting (`pages`, `experience`, `include`, `fill_target`, …) is
     # read here — those always come from argparse defaults, never from settings.json.
-    saved = workspace.load_settings()["defaults"]
+    profile_settings = workspace.load_settings()
+    saved = profile_settings["defaults"]
 
     # Resolved before anything is read or spent, so a bad spec costs nothing.
     try:
@@ -488,6 +490,15 @@ def main(argv: list[str] | None = None) -> int:
 
     try:
         resume = data.load()
+        industries.bind(industries.capture(
+            profile_settings.get("target_field"),
+            {"rewrite": saved.get("rewrite_style"), "expand": saved.get("expand_style"),
+             "cover": saved.get("cover_style")},
+            workspace_id=config.active_workspace_id(), resume=resume,
+        ))
+        if industries.active() is not None:
+            # Normalize source tags against the same frozen vocabulary used for extraction.
+            resume = data.load()
         problems = include.validate(resume, include_options)
         if problems:
             for problem in problems:
@@ -656,6 +667,7 @@ def main(argv: list[str] | None = None) -> int:
         jd_sidecar.write_text(jd_text, encoding="utf-8")
         archive_dir = config.OUTPUT_DIR / "jobs" / f"cli-{result.out_path.stem}"
         archive_dir.mkdir(parents=True, exist_ok=True)
+        industries.save(industries.active(), archive_dir)
         (archive_dir / "jd.txt").write_text(jd_text, encoding="utf-8")
         (archive_dir / "requirements.json").write_text(
             requirements.model_dump_json(indent=2), encoding="utf-8"

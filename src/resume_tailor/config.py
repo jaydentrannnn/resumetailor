@@ -23,11 +23,14 @@ from contextvars import ContextVar, copy_context
 from dataclasses import dataclass, replace
 from pathlib import Path
 from types import ModuleType
-from typing import Any, NamedTuple
+from typing import TYPE_CHECKING, Any, NamedTuple
 
 from dotenv import load_dotenv
 
 from . import library_seeds
+
+if TYPE_CHECKING:
+    from .industries import GuidanceSnapshot
 
 # --------------------------------------------------------------------------------------
 # Paths
@@ -1029,7 +1032,13 @@ def fingerprint(purpose: str) -> str:
     with the same model string but different origins would otherwise collide.
     """
     backend = backend_for(purpose)
-    return f"{backend.origin or backend.provider}|{backend.model}|{backend.effort}"
+    value = f"{backend.origin or backend.provider}|{backend.model}|{backend.effort}"
+    guidance = active_guidance()
+    if guidance is not None and purpose in (
+        "extract", "score", "facets", "rewrite", "expand", "skills", "cover"
+    ):
+        value += "|guidance:" + guidance.fingerprint()
+    return value
 
 
 # --------------------------------------------------------------------------------------
@@ -1188,6 +1197,7 @@ class RunContext:
     tag_aliases: dict[str, str] | None = None
     verb_families: dict[str, tuple[str, ...]] | None = None
     styles: dict[str, str | None] | None = None
+    guidance: GuidanceSnapshot | None = None
 
 
 def _legacy_paths() -> dict[str, Path]:
@@ -1298,6 +1308,21 @@ def set_styles(styles: dict[str, str | None]) -> bool:
         return False
     _RUN_CONTEXT.set(replace(current, styles=styles))
     return True
+
+
+def active_guidance() -> GuidanceSnapshot | None:
+    """Frozen profile guidance for this run, or None for the legacy path."""
+    return _current_context().guidance
+
+
+def set_guidance(guidance: GuidanceSnapshot | None) -> None:
+    global _DEFAULT
+    current = _RUN_CONTEXT.get()
+    updated = replace(current or _DEFAULT, guidance=guidance)
+    if current is None:
+        _DEFAULT = updated
+    else:
+        _RUN_CONTEXT.set(updated)
 
 
 def active_styles() -> dict[str, str | None] | None:

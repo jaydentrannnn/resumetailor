@@ -16,7 +16,8 @@ import shutil
 import threading
 import traceback
 import uuid
-from dataclasses import dataclass, field
+from contextlib import suppress
+from dataclasses import dataclass, field, replace
 from datetime import UTC, datetime
 from pathlib import Path
 from typing import Literal
@@ -30,6 +31,7 @@ from resume_tailor import (
     fit,
     housekeeping,
     include,
+    industries,
     jd,
     libraries,
     logs,
@@ -39,6 +41,7 @@ from resume_tailor import (
     rewrite,
     skills,
     style,
+    workspace,
 )
 from resume_tailor.data import MasterResume
 from resume_tailor.events import ProgressCallback, ProgressEvent
@@ -101,6 +104,7 @@ class Job:
     #: between pipeline stages (never mid-LLM-call) via `check_cancelled`.
     cancel_requested: threading.Event = field(default_factory=threading.Event)
     out_dir: Path | None = None
+    guidance: industries.GuidanceSnapshot | None = None
 
     def emit(self, event: ProgressEvent) -> None:
         """Append a progress event and wake any SSE listeners."""
@@ -198,6 +202,15 @@ def _persist_run_record(job: Job, status: str | None = None) -> None:
         "error": job.error,
         "report": job.report.model_dump() if job.report else None,
         "metadata": job.metadata.model_dump() if job.metadata else None,
+        "guidance": ({
+            "target_field": job.guidance.target_field,
+            "version": job.guidance.version,
+            "fingerprint": job.guidance.fingerprint(),
+            "styles": {
+                stage: "custom" if text is not None else "default"
+                for stage, text in job.guidance.styles.items()
+            },
+        } if job.guidance else None),
     }
     try:
         job.out_dir.mkdir(parents=True, exist_ok=True)
@@ -241,12 +254,26 @@ class JobQueue:
     ) -> tuple[Job, int]:
         """Enqueue a run. Returns `(job, 1-based queue position)`."""
         job_id = uuid.uuid4().hex[:12]
+        workspace_id = config.active_workspace_id()
+        target_field = workspace.load_settings(workspace_id).get("target_field")
+        resume = None
+        if target_field is not None:
+            # The pipeline still reports source errors in the normal job flow.
+            with suppress(FileNotFoundError, ValueError):
+                resume = data.load()
+        guidance = industries.capture(
+            target_field,
+            {"rewrite": settings.rewrite_style, "expand": settings.expand_style,
+             "cover": settings.cover_style},
+            workspace_id=workspace_id, resume=resume,
+        )
         job = Job(
             job_id=job_id,
             jd_text=jd_text,
-            settings=settings,
-            workspace_id=config.active_workspace_id(),
+            settings=settings.model_copy(deep=True),
+            workspace_id=workspace_id,
             metadata=metadata,
+            guidance=guidance,
         )
         with self._lock:
             self._jobs[job_id] = job
@@ -455,6 +482,7 @@ class JobQueue:
             if job.workspace_id is not None else config.default_context()
         )
         with config.use_context(context):
+            industries.bind(job.guidance)
             self._execute_in_context(job)
 
     def _execute_in_context(self, job: Job) -> None:
@@ -466,6 +494,7 @@ class JobQueue:
         out_dir = config.OUTPUT_DIR / "jobs" / job.job_id
         out_dir.mkdir(parents=True, exist_ok=True)
         job.out_dir = out_dir
+        industries.save(job.guidance, out_dir)
         job.check_cancelled()
 
         try:
@@ -649,7 +678,7 @@ class JobQueue:
                 resume,
                 target_pages=settings.pages,
                 include_project_links=include_links,
-                contact_fields=contact_fields,
+                contact_fields=list(contact_fields) if contact_fields is not None else None,
                 layout=layout,
                 merges=result.merges,
             )
@@ -967,8 +996,18 @@ def regenerate_cover_letter(
             tone=cover_angles.tone,
         )
 
-    resume = data.load()
-    with config.pinned_specs(backend_specs, effort=None):
+    snapshot = industries.load(out_dir)
+    workspace_id = config.active_workspace_id()
+    context = (
+        config.context_for_workspace(workspace_id)
+        if workspace_id is not None else config.default_context()
+    )
+    with config.use_context(replace(context, guidance=snapshot)), \
+            config.pinned_specs(backend_specs, effort=None):
+        industries.bind(snapshot)
+        if snapshot is not None:
+            style.activate(**snapshot.styles)
+        resume = data.load()
         letter = coverletter.draft_letter(
             resume,
             requirements,

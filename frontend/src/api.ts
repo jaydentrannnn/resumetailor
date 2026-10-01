@@ -778,6 +778,10 @@ export type AppConfig = {
   rewrite_core_rules: string;
   expand_core_rules: string;
   cover_core_rules: string;
+  target_field?: string | null;
+  target_field_summary?: string;
+  target_fields?: { id: string; label: string; summary: string }[];
+  effective_vocabulary_packs?: string[];
   active_workspace_id: string | null;
   active_workspace_label: string | null;
   /** True once, on the first /api/config response after a legacy-layout migration. */
@@ -826,6 +830,7 @@ export type SettingsResponse = {
   settings: JobSettings;
   /** True when settings.json did not exist yet and JobSettings defaults were served. */
   seeded: boolean;
+  target_field?: string | null;
 };
 
 export type Workspace = {
@@ -1111,6 +1116,13 @@ export function fetchResumeOutline(): Promise<ResumeOutline> {
 export function fetchSettings(): Promise<SettingsResponse> {
   /** Load the active profile's saved run defaults. */
   return request<SettingsResponse>("/api/settings");
+}
+
+export function saveTargetField(targetField: string | null): Promise<AppConfig> {
+  return request<AppConfig>("/api/settings/target-field", {
+    method: "PUT",
+    body: JSON.stringify({ target_field: targetField }),
+  });
 }
 
 export function saveSettings(settings: JobSettings): Promise<SettingsResponse> {

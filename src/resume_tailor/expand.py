@@ -22,7 +22,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from . import config, events, llm, style
+from . import config, events, industries, llm, style
 from .data import Experience, MasterResume
 from .fit import FitResult
 from .jd import JobRequirements
@@ -36,7 +36,7 @@ from .rewrite import (
 
 #: Bumped when `_SYSTEM` or the expand request shape changes, so stored expansions
 #: invalidate on their own rather than relying on `--no-cache`.
-_EXPAND_PROMPT_VERSION = 1
+_EXPAND_PROMPT_VERSION = 2
 
 #: How far below the hard char limit the advertised target range opens. Same lesson as
 #: `rewrite._TARGET_BAND`: a bare ceiling lets the model land two characters over.
@@ -99,7 +99,7 @@ return title, company, dates, or location — those are filled in by code.
 
 def locked_core_rules() -> str:
     """Return the non-editable expand rules for display in the settings UI."""
-    return _CORE_RULES.strip()
+    return industries.core("expand", _CORE_RULES).strip()
 
 
 def _system() -> str:
@@ -111,7 +111,7 @@ def _system() -> str:
     style_block = style_mod.active("expand").strip()
     if style_block and not style_block.endswith("\n"):
         style_block += "\n"
-    return (
+    return industries.system("expand", (
         "You expand a candidate's work-experience entries into fuller descriptions for an "
         'online application form\'s "Experience" / "Description" fields.\n\n'
         "These fields are NOT a resume page. They usually allow 1,500–2,000 characters and "
@@ -122,7 +122,7 @@ def _system() -> str:
         f"{_CORE_RULES}"
         f"{style_block}\n"
         f"{_RETURN_SHAPE}"
-    )
+    ))
 
 
 class ExpandedEntryLLM(BaseModel):

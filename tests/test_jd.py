@@ -610,9 +610,9 @@ def test_extraction_diagnosis_clean():
     assert jd.extraction_diagnosis(reqs) is None
 
 
-def test_prompt_version_is_three():
-    """Version 3 is the deliberate cache-bust for band/evidence + untrusted-input."""
-    assert jd._PROMPT_VERSION == 3
+def test_prompt_version_is_four():
+    """Version 4 includes profile field guidance in extraction and cache identity."""
+    assert jd._PROMPT_VERSION == 4
 
 
 def test_system_prompt_names_bands_and_untrusted_input():

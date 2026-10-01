@@ -326,7 +326,7 @@ export function RunOptions({
                 <div className="mt-3 space-y-3">
                   <StylePromptField
                     label="Resume bullet style"
-                    help="Voice and emphasis rules for resume bullet rewriting. Length and verb variety are also enforced in code by widow and verb repair passes."
+                    help="Voice and emphasis for this profile. Length limits are enforced; field guidance prioritizes accurate verbs over forced variety."
                     value={settings.rewrite_style}
                     defaultText={config?.rewrite_style_default ?? ""}
                     lockedCoreRules={config?.rewrite_core_rules ?? ""}

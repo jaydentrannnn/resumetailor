@@ -447,3 +447,11 @@ The fabrication guard now treats N+ as equivalent to over N, more than N, at lea
 
 ### 2026-09-30 — Preserve rebinding checks under lower-bound equivalence
 Number-noun bindings normalise numeric N+ to N, so a source claim about over 30 staff still rejects a rewrite about 30+ hours. Percentage outcomes expressed as by N% bind to the preceding outcome nouns; changing troubleshooting time to office costs remains a rebound. The real aol_b2, uci_b1, and mro_b3 plus-form rewrites pass both the fabrication and numeric-preservation checks.
+
+## 2026-10-01 — Profile target-field guidance and frozen run snapshots
+
+**What:** Target field is profile metadata, separate from JobSettings. Presets compose with existing vocabulary packs and explicit overrides without rewriting libraries. Existing profiles retain the legacy path; new empty profiles start with General. Submitted runs capture effective prompts, styles, aliases, verb families, and entry context for later cover-letter regeneration.
+**Why:** A posting supplies relevance rather than changing the candidate's field. Profile edits and shipped preset updates must not alter queued work or an older cover letter. Existing custom styles continue to replace only the editable style portion.
+**Impact:** Six presets cover the existing vocabulary domains. Scoring weights, layout budgets, discovery, and form answering remain unchanged. New guidance makes verb variation optional when alternatives would change the claim; fabrication and numeric guards remain active.
+
+2026-10-01 validation: the full hermetic backend suite passed (2,575 passed, 2 skipped), then 218 focused checks passed after the fresh-install default and CLI coverage additions. All 345 frontend tests passed; final selector/state tests, production build, typecheck, and frontend lint also passed (existing Fast Refresh warnings). Fresh installs with no migrated content use General; migrated profiles keep legacy guidance. Local Ollama was unavailable, so no live model evaluation was performed.

@@ -124,22 +124,27 @@ def activate(
 
 
 def is_overridden(stage: str) -> bool:
-    """Return True when ``stage`` carries a user override rather than the shipped default."""
+    """Assemble the locked core for a custom style or an opted-in field default."""
     if stage not in _STAGES:
         raise ValueError(f"Unknown style stage {stage!r}. Expected one of {_STAGES}.")
-    from . import config
+    from . import config, industries
 
-    return (config.active_styles() or _ACTIVE)[stage] is not None
+    return (
+        (config.active_styles() or _ACTIVE)[stage] is not None
+        or industries.active() is not None
+    )
 
 
 def active(stage: str) -> str:
     """Return the active style block for ``stage`` — override or shipped default."""
     if stage not in _STAGES:
         raise ValueError(f"Unknown style stage {stage!r}. Expected one of {_STAGES}.")
-    from . import config
+    from . import config, industries
 
     override = (config.active_styles() or _ACTIVE)[stage]
-    return override if override is not None else _DEFAULTS[stage]
+    if override is not None:
+        return override
+    return industries.default_style(stage) or _DEFAULTS[stage]
 
 
 def digest(stage: str) -> str:

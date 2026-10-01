@@ -1,5 +1,6 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
+import { useState } from "react";
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 // Vitest isn't configured with `test.globals`, so Testing Library's automatic
@@ -23,6 +24,7 @@ const fetchJob = vi.fn();
 const cancelJob = vi.fn();
 const pdfDownload = vi.fn(async () => undefined);
 const saveSettings = vi.fn(async () => undefined);
+const saveTargetField = vi.fn();
 
 vi.mock("../api", () => ({
   createJob: (...args: unknown[]) => createJob(...args),
@@ -31,6 +33,7 @@ vi.mock("../api", () => ({
   fetchConfig: vi.fn(async () => ({ pages: 1, experience: 3, projects: 2 })),
   fetchSettings: vi.fn(async () => ({ seeded: false, settings: { pages: 1 } })),
   saveSettings: (...args: unknown[]) => saveSettings(...args),
+  saveTargetField: (...args: unknown[]) => saveTargetField(...args),
   triggerPdfDownload: (...args: unknown[]) => pdfDownload(...args),
   fetchRunHistory: vi.fn(async () => []),
   fetchResumeOutline: vi.fn(async () => ({
@@ -92,6 +95,32 @@ function SettingsProbe() {
     </div>
   );
 }
+
+function TargetFieldProbe() {
+  const { config, setTargetField, settingsLoaded, flushSettings } = useRunState();
+  const [flushed, setFlushed] = useState(false);
+  return <div>
+    <span data-testid="field-ready">{String(settingsLoaded)}</span>
+    <span data-testid="field">{config?.target_field ?? "legacy"}</span>
+    <span data-testid="flushed">{String(flushed)}</span>
+    <button onClick={() => void setTargetField("finance-consulting")}>save field</button>
+    <button onClick={() => void flushSettings().then(setFlushed)}>flush field</button>
+  </div>;
+}
+
+it("waits for the profile field to save before flushing for a new run", async () => {
+  let finish!: (config: unknown) => void;
+  saveTargetField.mockImplementationOnce(() => new Promise((resolve) => { finish = resolve; }));
+  render(<RunProvider><TargetFieldProbe /></RunProvider>);
+  await waitFor(() => expect(screen.getByTestId("field-ready").textContent).toBe("true"));
+  fireEvent.click(screen.getByText("save field"));
+  await waitFor(() => expect(saveTargetField).toHaveBeenCalledWith("finance-consulting"));
+  fireEvent.click(screen.getByText("flush field"));
+  expect(screen.getByTestId("flushed").textContent).toBe("false");
+  finish({ target_field: "finance-consulting" });
+  await waitFor(() => expect(screen.getByTestId("flushed").textContent).toBe("true"));
+  expect(screen.getByTestId("field").textContent).toBe("finance-consulting");
+});
 
 describe("RunProvider: settings persistence", () => {
   it("keeps a failed save visible and retries the current draft before switching", async () => {

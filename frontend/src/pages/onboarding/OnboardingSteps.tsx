@@ -29,6 +29,7 @@ import { useApplicantProfile } from "../../state/applicantProfileState";
 import { useEditorState } from "../../state/editorState";
 import { useLibraryState } from "../../state/libraryState";
 import { useRunState } from "../../state/runState";
+import { TargetFieldSection } from "../settings/TargetFieldSection";
 
 /** Step 1: the student's field sets the skill vocabularies and job-board categories. */
 export function FieldStep({
@@ -158,6 +159,7 @@ export function FieldStep({
           }
         />
       )}
+      <TargetFieldSection />
       <div className="flex justify-end border-t border-line pt-4">
         <Button
           variant="primary"

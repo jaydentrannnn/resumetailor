@@ -27,6 +27,7 @@ import {
   fetchRunHistory,
   fetchSettings,
   saveSettings,
+  saveTargetField,
   triggerPdfDownload,
 } from "../api";
 import { useWorkspaceState } from "./workspaceState";
@@ -242,6 +243,7 @@ type RunStateValue = {
   settings: JobSettings;
   setSettings: (settings: JobSettings) => void;
   settingsLoaded: boolean;
+  setTargetField: (field: string | null) => Promise<void>;
   settingsSaveState: "saved" | "unsaved" | "saving" | "failed";
   settingsSaveError: string | null;
   flushSettings: () => Promise<boolean>;
@@ -307,6 +309,15 @@ export function RunProvider({ children }: { children: ReactNode }) {
   const latestSettings = useRef<JobSettings>(DEFAULT_SETTINGS);
   const settingsWrite = useRef<Promise<void>>(Promise.resolve());
   const lastWriteFailed = useRef(false);
+  const guidanceWrite = useRef<Promise<void>>(Promise.resolve());
+
+  const setTargetField = useCallback((field: string | null): Promise<void> => {
+    const write = guidanceWrite.current.catch(() => undefined).then(async () => {
+      setConfig(await saveTargetField(field));
+    });
+    guidanceWrite.current = write;
+    return write;
+  }, []);
 
   const refreshHistory = useCallback(async () => {
     try {
@@ -377,6 +388,11 @@ export function RunProvider({ children }: { children: ReactNode }) {
   );
 
   const flushSettings = useCallback(async (): Promise<boolean> => {
+    try {
+      await guidanceWrite.current;
+    } catch {
+      return false;
+    }
     if (saveSettingsTimer.current) {
       clearTimeout(saveSettingsTimer.current);
       saveSettingsTimer.current = null;
@@ -726,6 +742,7 @@ export function RunProvider({ children }: { children: ReactNode }) {
       settings,
       setSettings,
       settingsLoaded,
+      setTargetField,
       settingsSaveState,
       settingsSaveError,
       flushSettings,
@@ -756,6 +773,7 @@ export function RunProvider({ children }: { children: ReactNode }) {
       settings,
       setSettings,
       settingsLoaded,
+      setTargetField,
       settingsSaveState,
       settingsSaveError,
       flushSettings,

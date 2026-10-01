@@ -23,7 +23,7 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from . import config, events, llm
+from . import config, events, industries, llm
 from .data import Bullet, Experience, MasterResume, Project
 from .jd import JobRequirements
 from .merge import MergeGroup
@@ -465,7 +465,7 @@ class ScoreTable(BaseModel):
 
 #: Bumped when `_SCORE_SYSTEM` or the score-table request shape changes, so stored tables
 #: invalidate on their own rather than relying on `--no-cache`.
-_SCORE_PROMPT_VERSION = 1
+_SCORE_PROMPT_VERSION = 2
 
 _SCORE_SYSTEM = """\
 You rate how relevant each of a candidate's resume bullets is to one specific job posting.
@@ -573,7 +573,7 @@ def score_table(
     response = client.messages.parse(
         model=config.model_for("score"),
         max_tokens=config.max_tokens_for("score"),
-        system=_SCORE_SYSTEM,
+        system=industries.system("score", _SCORE_SYSTEM),
         messages=[{"role": "user", "content": user}],
         output_format=ScoreTable,
         output_config={"effort": config.effort_for("score")},
@@ -1295,7 +1295,7 @@ Return one entry per input item, keyed by the exact id you were given.
 
 def locked_core_rules() -> str:
     """Return the non-editable rewrite rules for display in the settings UI."""
-    return _CORE_RULES.strip()
+    return industries.core("rewrite", _CORE_RULES).strip()
 
 
 def _system() -> str:
@@ -1307,14 +1307,14 @@ def _system() -> str:
     style_block = style_mod.active("rewrite").strip()
     if style_block and not style_block.endswith("\n"):
         style_block += "\n"
-    return (
+    return industries.system("rewrite", (
         "You rewrite resume bullet points so they mirror the language of a specific job "
         "posting.\n\n"
         "Absolute rules:\n"
         f"{_CORE_RULES}"
         f"{style_block}\n"
         f"{_RETURN_SHAPE}"
-    )
+    ))
 
 #: How far below `max` the advertised target range opens. Wide enough that hitting it
 #: leaves real headroom, narrow enough that the model does not aim at a half-empty line —
@@ -1342,9 +1342,15 @@ def _format_bullets(bullets: list[Bullet], budget: int) -> str:
     soft_min, hard_max = _length_band(budget)
     lines = []
     for b in bullets:
+        snapshot = industries.active()
+        entry_context = (
+            f"  <entry_context>{snapshot.entry_context.get(b.id, '')}</entry_context>\n"
+            if snapshot is not None else ""
+        )
         lines.append(
             f"<bullet id={b.id!r} target={f'{soft_min}-{hard_max}'!r} max={hard_max}>\n"
-            f"  <current>{b.text}</current>\n"
+            + entry_context
+            + f"  <current>{b.text}</current>\n"
             f"  <permitted_skills>{', '.join(b.tags)}</permitted_skills>\n"
             f"</bullet>"
         )
@@ -1471,7 +1477,7 @@ at most its `max` characters by cutting hedges, redundant context, and secondary
 Keep every number and every required technical keyword exactly as written.
 """
 
-_REPAIR_PROMPT_VERSION = 3
+_REPAIR_PROMPT_VERSION = 4
 _TARGET_INSTRUCTION = """\
 Each bullet has a character window. For SHORTEN, cut secondary detail while preserving
 every number and factual claim. For EXTEND, restore useful detail only from that bullet's
@@ -1704,6 +1710,18 @@ def _accept_verb_swap(
     return not check_fabrication(source, candidate)
 
 
+def _verb_instruction() -> str:
+    if industries.active() is None:
+        return _VERB_INSTRUCTION
+    return (
+        "Prefer a varied opening verb only when an equally accurate alternative exists. "
+        "The avoid list is a preference. Keep the original bullet unchanged when a "
+        "substitution would change its meaning, responsibility, or causal claim. "
+        "Otherwise change only the opening verb and minimal necessary grammar; "
+        "preserve every number and do not lengthen the bullet."
+    )
+
+
 def _polish(
     texts: dict[str, str],
     sources: dict[str, Bullet],
@@ -1794,7 +1812,7 @@ def _polish(
     if collisions:
         sections.append(
             f"<bullets_to_revoice>\n{_format_verb_items(collisions, texts, sources)}\n"
-            f"</bullets_to_revoice>\n\n{_VERB_INSTRUCTION}"
+            f"</bullets_to_revoice>\n\n{_verb_instruction()}"
         )
     user = "\n\n".join(sections)
 

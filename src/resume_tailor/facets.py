@@ -20,12 +20,12 @@ from pathlib import Path
 
 from pydantic import BaseModel, Field
 
-from . import config, events, llm
+from . import config, events, industries, llm
 from .data import MasterResume, Project, SkillGroup
 from .jd import JobRequirements
 
 #: Bumped when `_SYSTEM` or the facets request/response shape changes.
-_PROMPT_VERSION = 2
+_PROMPT_VERSION = 3
 
 #: Prefix of the coursework bullet; subtracted from the two-line character budget.
 _COURSEWORK_PREFIX = "Relevant Coursework: "
@@ -751,7 +751,7 @@ def select_facets(
         response = client.messages.parse(
             model=config.model_for("facets"),
             max_tokens=config.max_tokens_for("facets"),
-            system=_SYSTEM,
+            system=industries.system("facets", _SYSTEM),
             messages=[{"role": "user", "content": user}],
             output_format=FacetSelection,
             output_config={"effort": config.effort_for("facets")},
