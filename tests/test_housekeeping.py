@@ -43,6 +43,31 @@ def test_prune_jobs_keeps_newest_referenced_and_recent(tmp_path, monkeypatch):
     assert sorted(p.name for p in jobs.iterdir()) == ["a", "d", "e"]
 
 
+def test_dedupe_run_templates_moves_legacy_copies_and_drops_unused(tmp_path):
+    import json
+
+    from resume_tailor import rerender
+
+    jobs = tmp_path / "jobs"
+    for name in ("a", "b"):
+        (jobs / name).mkdir(parents=True)
+        (jobs / name / rerender.TEMPLATE).write_bytes(b"same template")
+        (jobs / name / rerender.SNAPSHOT).write_text(json.dumps({"version": 1}))
+    store = tmp_path / rerender.TEMPLATE_STORE
+    orphan = _file(store / "deadbeef.docx", 10, age=9000)
+    fresh = _file(store / "cafef00d.docx", 10, age=10)  # a snapshot may still be on its way
+
+    result = housekeeping.dedupe_run_templates(jobs)
+
+    assert result == {"moved": 2, "removed": 1}
+    assert not orphan.exists() and fresh.exists()
+    shas = {json.loads((jobs / n / rerender.SNAPSHOT).read_text())["template_sha"] for n in "ab"}
+    assert len(shas) == 1
+    assert (store / f"{shas.pop()}.docx").read_bytes() == b"same template"
+    assert not (jobs / "a" / rerender.TEMPLATE).exists()
+    assert housekeeping.dedupe_run_templates(tmp_path / "missing") == {"moved": 0, "removed": 0}
+
+
 def test_run_never_raises(monkeypatch):
     def _boom(*_a, **_k):
         raise OSError("disk gone")

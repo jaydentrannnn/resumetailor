@@ -2,7 +2,10 @@
 
 A run saves exactly what its final render used (`save_snapshot`): the resume after
 exclusions and facet selection, the template file, the template layout, contact
-fields and merges. A re-render replays `render.render` with the student's edits on
+fields and merges. The template is stored once per content hash in
+``<OUTPUT_DIR>/run_templates/`` and the snapshot records the hash: every run on the
+same template shares one file (a template embeds its fonts, ~750 KB). Runs made
+before that keep their own ``template.docx`` until housekeeping moves it into the store. A re-render replays `render.render` with the student's edits on
 top of the AI's bullets, so the document keeps the run's template even if the live
 template has changed since.
 
@@ -19,8 +22,10 @@ Rules, mirroring the pipeline's own:
 
 from __future__ import annotations
 
+import hashlib
 import json
 import math
+import os
 import shutil
 from dataclasses import dataclass, field
 from pathlib import Path
@@ -31,6 +36,7 @@ from resume_tailor.merge import MergeGroup
 
 SNAPSHOT = "render_snapshot.json"
 TEMPLATE = "template.docx"
+TEMPLATE_STORE = "run_templates"
 MAX_BULLET_CHARS = 1000
 
 
@@ -55,9 +61,10 @@ def save_snapshot(
 ) -> None:
     """Record the final render's inputs beside the run's other artifacts."""
     template = template or config.DEFAULT_TEMPLATE_PATH
-    shutil.copy2(template, out_dir / TEMPLATE)
+    sha = store_template(out_dir, template.read_bytes())
     payload = {
         "version": 1,
+        "template_sha": sha,
         "resume": resume.model_dump(mode="json", by_alias=True),
         "target_pages": target_pages,
         "include_project_links": include_project_links,
@@ -70,9 +77,47 @@ def save_snapshot(
     (out_dir / SNAPSHOT).write_text(json.dumps(payload, indent=2, default=list), "utf-8")
 
 
+def template_store(out_dir: Path) -> Path:
+    """The shared template store for a run folder (``<OUTPUT_DIR>/jobs/<id>``)."""
+    return out_dir.parent.parent / TEMPLATE_STORE
+
+
+def store_template(out_dir: Path, raw: bytes) -> str:
+    """Put ``raw`` in the store (once per content) and return its hash.
+
+    An existing copy is touched so housekeeping's grace period, which protects a file
+    whose snapshot is still being written, starts from this run.
+    """
+    sha = hashlib.sha256(raw).hexdigest()
+    store = template_store(out_dir)
+    store.mkdir(parents=True, exist_ok=True)
+    target = store / f"{sha}.docx"
+    if target.is_file():
+        os.utime(target)
+    else:
+        partial = target.with_suffix(f".{os.getpid()}.partial")
+        partial.write_bytes(raw)
+        partial.replace(target)
+    return sha
+
+
+def template_for(out_dir: Path, snapshot: dict) -> Path | None:
+    """The run's template file: its own legacy copy, else the stored one."""
+    legacy = out_dir / TEMPLATE
+    if legacy.is_file():
+        return legacy
+    sha = snapshot.get("template_sha")
+    if isinstance(sha, str) and sha:
+        stored = template_store(out_dir) / f"{sha}.docx"
+        if stored.is_file():
+            return stored
+    return None
+
+
 @dataclass
 class _Run:
     out_dir: Path
+    template: Path
     snapshot: dict
     resume: MasterResume
     ai: dict[str, str]
@@ -83,19 +128,20 @@ class _Run:
 
 def _load(out_dir: Path) -> _Run:
     snap_path = out_dir / SNAPSHOT
-    if not snap_path.is_file() or not (out_dir / TEMPLATE).is_file():
+    snapshot = json.loads(snap_path.read_text("utf-8")) if snap_path.is_file() else None
+    template = template_for(out_dir, snapshot) if snapshot is not None else None
+    if snapshot is None or template is None:
         raise NoSnapshot(
             "Editing is available for runs made after this feature was added. "
             "Tailor again to edit bullets."
         )
-    snapshot = json.loads(snap_path.read_text("utf-8"))
     resume = MasterResume.model_validate(snapshot["resume"])
     current = json.loads((out_dir / "bullets.json").read_text("utf-8"))
     v1 = out_dir / "bullets.v1.json"
     ai = json.loads(v1.read_text("utf-8")) if v1.is_file() else dict(current)
     sources = {b.id: b for b in resume.all_bullets()}
     merged_from = {m["survivor"]: list(m["members"]) for m in snapshot.get("merges", [])}
-    return _Run(out_dir, snapshot, resume, ai, current, sources, merged_from)
+    return _Run(out_dir, template, snapshot, resume, ai, current, sources, merged_from)
 
 
 def bullet_rows(out_dir: Path) -> list[dict]:
@@ -204,7 +250,7 @@ def rerender(
         render.render(
             run.resume,
             bullets=bullets,
-            template=out_dir / TEMPLATE,
+            template=run.template,
             out=tmp_docx,
             include_project_links=run.snapshot["include_project_links"],
             contact_fields=run.snapshot["contact_fields"],

@@ -7,13 +7,17 @@
   ``OUTPUT_DIR/jobs/``, never one an application still points at (its ``job_id`` or
   ``reused_from_job_id``: the files a fill uploads) and never one touched in the last
   hour (a run in progress).
+- `dedupe_run_templates` moves each older run's own ``template.docx`` into the shared
+  ``OUTPUT_DIR/run_templates/`` store (one file per content hash, `rerender.py`) and
+  deletes store files no run snapshot names any more.
 
-`run()` does both and never raises; it runs at server start and after each tailoring
+`run()` does all three and never raises; it runs at server start and after each tailoring
 run. `clear_cache` backs the Settings "Clear cache" button.
 """
 
 from __future__ import annotations
 
+import json
 import logging
 import shutil
 import time
@@ -112,16 +116,62 @@ def prune_jobs(keep: int | None = None, jobs_dir: Path | None = None) -> dict[st
     return {"removed": removed}
 
 
+def dedupe_run_templates(jobs_dir: Path | None = None) -> dict[str, int]:
+    """Move legacy per-run templates into the shared store; drop unreferenced ones."""
+    from resume_tailor import rerender
+
+    root = jobs_dir or config.OUTPUT_DIR / "jobs"
+    if not root.is_dir():
+        return {"moved": 0, "removed": 0}
+    store = root.parent / rerender.TEMPLATE_STORE
+    moved = 0
+    referenced: set[str] = set()
+    for child in root.iterdir():
+        snap_path = child / rerender.SNAPSHOT
+        if not snap_path.is_file():
+            continue
+        try:
+            snapshot = json.loads(snap_path.read_text("utf-8"))
+            legacy = child / rerender.TEMPLATE
+            if legacy.is_file():
+                snapshot["template_sha"] = rerender.store_template(child, legacy.read_bytes())
+                tmp = snap_path.with_suffix(".json.tmp")
+                tmp.write_text(json.dumps(snapshot, indent=2), "utf-8")
+                tmp.replace(snap_path)
+                legacy.unlink()
+                moved += 1
+        except (OSError, ValueError):
+            continue
+        sha = snapshot.get("template_sha")
+        if isinstance(sha, str):
+            referenced.add(sha)
+    removed = 0
+    now = time.time()
+    if store.is_dir():
+        for path in store.glob("*.docx"):
+            try:
+                if path.stem in referenced or now - path.stat().st_mtime < _RECENT_SECONDS:
+                    continue
+                path.unlink()
+            except OSError:
+                continue
+            removed += 1
+    return {"moved": moved, "removed": removed}
+
+
 def run() -> None:
-    """Both prunes, logged; never raises (housekeeping must not fail a run or a start)."""
+    """All prunes, logged; never raises (housekeeping must not fail a run or a start)."""
     try:
         cache = prune_cache()
         jobs = prune_jobs()
+        templates = dedupe_run_templates()
     except Exception:  # noqa: BLE001
         _log.warning("housekeeping failed", exc_info=True)
         return
-    if cache["removed"] or jobs["removed"]:
+    if cache["removed"] or jobs["removed"] or templates["moved"] or templates["removed"]:
         _log.info(
-            "housekeeping: removed %d cache file(s) (%d bytes) and %d old run folder(s)",
+            "housekeeping: removed %d cache file(s) (%d bytes) and %d old run folder(s); "
+            "moved %d run template(s) into the shared store, removed %d unused",
             cache["removed"], cache["freed"], jobs["removed"],
+            templates["moved"], templates["removed"],
         )

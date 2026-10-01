@@ -7,6 +7,7 @@ at `render.measure_detail`, as elsewhere in the suite.
 from __future__ import annotations
 
 import json
+import shutil
 import zipfile
 
 import pytest
@@ -172,3 +173,33 @@ def test_routes(run_dir, measure, monkeypatch):
         assert bad.status_code == 422
         (run_dir / rerender.SNAPSHOT).unlink()
         assert c.get("/api/jobs/job-1/bullets").status_code == 409
+
+
+def test_runs_share_one_stored_template(run_dir, built_template):
+    second = run_dir.parent / "job-2"
+    second.mkdir()
+    rerender.save_snapshot(
+        second, _resume_with_second_bullet(), target_pages=1, include_project_links=True,
+        contact_fields=None, layout=active_layout(), merges=[], template=built_template,
+    )
+    store = rerender.template_store(run_dir)
+    assert [p.name for p in store.iterdir()] == [
+        f"{json.loads((run_dir / rerender.SNAPSHOT).read_text())['template_sha']}.docx"
+    ]
+    assert not (run_dir / rerender.TEMPLATE).exists()
+
+
+def test_legacy_run_with_its_own_template_still_renders(run_dir, measure, built_template):
+    snapshot = json.loads((run_dir / rerender.SNAPSHOT).read_text())
+    del snapshot["template_sha"]
+    (run_dir / rerender.SNAPSHOT).write_text(json.dumps(snapshot))
+    shutil.rmtree(rerender.template_store(run_dir))
+    (run_dir / rerender.TEMPLATE).write_bytes(built_template.read_bytes())
+    result = rerender.rerender(run_dir, edits={}, reverted=["exp_b1"], removed=[], confirmed=[])
+    assert result["status"] == "saved"
+
+
+def test_missing_stored_template_reads_as_no_snapshot(run_dir):
+    shutil.rmtree(rerender.template_store(run_dir))
+    with pytest.raises(rerender.NoSnapshot):
+        rerender.bullet_rows(run_dir)

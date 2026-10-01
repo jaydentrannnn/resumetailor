@@ -959,7 +959,9 @@ def test_job_runs_to_success_with_stubbed_pipeline(client, monkeypatch, tmp_path
     job_dir = config.OUTPUT_DIR / "jobs" / job_id
     snapshot = json.loads((job_dir / "render_snapshot.json").read_text())
     assert snapshot["include_project_links"] is False and snapshot["target_pages"] == 1
-    assert (job_dir / "template.docx").read_bytes() == b"PK-template"
+    stored = config.OUTPUT_DIR / "run_templates" / f"{snapshot['template_sha']}.docx"
+    assert stored.read_bytes() == b"PK-template"
+    assert not (job_dir / "template.docx").exists()  # shared, not copied per run
     assert isinstance(status["report"]["gaps"], list)
     assert status["expansion"] is not None
     assert status["expansion"]["entries"][0]["company"] == resume.experience[0].company
