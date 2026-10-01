@@ -40,6 +40,7 @@ import {
   resolveApplyTab,
   SOURCES_PATH,
   TERMINAL_STATUSES,
+  canRetailor,
   type ApplyTab,
 } from "../../lib/applyPage";
 import { IN_FLIGHT_STATUSES, pollSignature, shouldRefreshTables } from "../../lib/applyPoll";
@@ -288,6 +289,32 @@ export function ApplyPage() {
     });
   }
 
+  /**
+   * Tailor files again, even when the current files are fine. A row whose filled tab is
+   * still open asks first: the new files replace the ones that tab was filled with.
+   */
+  function retailor(rows: ApplicationRow[]) {
+    const ids = rows.filter(canRetailor).map((row) => row.source_job_id);
+    if (!ids.length) return;
+    const filled = rows.filter(
+      (row) => canRetailor(row) && row.fill?.browser_target_id && !isTabClosed(row, openTabs),
+    );
+    if (!filled.length) {
+      void start("prepare", ids, "initial", true);
+      return;
+    }
+    const many = filled.length > 1;
+    void confirm({
+      title: many ? `Tailor files again for ${ids.length} applications?` : "Tailor files again?",
+      message: many
+        ? `${filled.length} of them have an application tab already filled with the current files. Fill them again afterwards to upload the new resume.`
+        : "The open application tab was filled with the current files. Fill it again afterwards to upload the new resume.",
+      confirmLabel: "Tailor files again",
+    }).then((ok) => {
+      if (ok) void start("prepare", ids, "initial", true);
+    });
+  }
+
   async function move(ids: string[], archived: boolean, undoable = true) {
     if (!ids.length) return;
     setBusy(true);
@@ -386,6 +413,7 @@ export function ApplyPage() {
     openTabs,
     start: (action, ids, mode, force) => void start(action, ids, mode, force),
     reopen,
+    retailor,
     move: (ids, archived) => void move(ids, archived),
     undo: (row) => void undo(row),
     retry: (row) => void retry(row),
@@ -408,6 +436,7 @@ export function ApplyPage() {
   const prepareIds = queueSelected
     .filter((row) => !TERMINAL_STATUSES.has(row.status))
     .map((row) => row.source_job_id);
+  const retailorRows = queueSelected.filter(canRetailor);
   const fillIds = queueSelected
     .filter((row) => row.status === "ready" && row.preparation_eligible !== false)
     .map((row) => row.source_job_id);
@@ -498,6 +527,16 @@ export function ApplyPage() {
         onClick={() => void start("prepare", prepareIds)}
       >
         {GLOSSARY.prepare.label} for selected ({prepareIds.length})
+      </Button>
+      <Button
+        variant="secondary"
+        disabled={busy || active || !retailorRows.length}
+        title={
+          idleNote ?? "Tailor the selected applications again, replacing files that already exist."
+        }
+        onClick={() => retailor(retailorRows)}
+      >
+        Tailor again ({retailorRows.length})
       </Button>
       <Button
         variant="primary"

@@ -27,6 +27,19 @@ export const TERMINAL_STATUSES = new Set([
   "ghosted",
   "skipped",
 ]);
+/** Statuses where a tailor or fill is in flight, or a submit may have gone through:
+ * tailoring again there would race the run or replace files already sent. */
+const NO_RETAILOR = new Set(["tailoring", "filling", "submit_unconfirmed"]);
+
+/**
+ * Whether a row can have its files tailored again: any row with a tailor run that is
+ * not finished (submitted, skipped, ...) and has nothing in flight. Files that are
+ * already fine are re-made too — the point is to pick up a better tailoring.
+ */
+export function canRetailor(row: { job_id: string | null; status: string }): boolean {
+  return !!row.job_id && !TERMINAL_STATUSES.has(row.status) && !NO_RETAILOR.has(row.status);
+}
+
 const PRE_READY = new Set([
   "discovered",
   "jd_fetched",

@@ -38,6 +38,7 @@ const actions: TableActions = {
   openTabs: { reachable: true, target_ids: [] },
   start: vi.fn(),
   reopen: vi.fn(),
+  retailor: vi.fn(),
   move: vi.fn(),
   undo: vi.fn(),
   retry: vi.fn(),
@@ -97,4 +98,22 @@ describe("ApplicationsTable actions", () => {
     expect(screen.getAllByRole("button", { name: "Fill" }).length).toBeGreaterThan(0);
     expect(screen.queryByRole("menuitem", { name: "Not submitted — move back" })).toBeNull();
   });
+
+  it.each(["ready", "awaiting_review", "fill_failed", "tailor_failed"])(
+    "offers Tailor files again on a %s row whose files are fine",
+    (status) => {
+      show(status);
+      const item = screen.getAllByRole("menuitem", { name: /Tailor files again/ })[0];
+      fireEvent.click(item);
+      expect(actions.retailor).toHaveBeenCalledWith([expect.objectContaining({ status })]);
+    },
+  );
+
+  it.each(["submitted", "skipped", "filling", "tailoring", "submit_unconfirmed"])(
+    "does not offer Tailor files again on a %s row",
+    (status) => {
+      show(status);
+      expect(screen.queryByRole("menuitem", { name: /Tailor files again/ })).toBeNull();
+    },
+  );
 });

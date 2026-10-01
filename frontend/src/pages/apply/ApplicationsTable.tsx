@@ -23,7 +23,7 @@ import {
   retryTitle,
   type OpenTabs,
 } from "../../lib/applicationRows";
-import { REVIEW_STATUSES, TERMINAL_STATUSES, reviewReason } from "../../lib/applyPage";
+import { REVIEW_STATUSES, TERMINAL_STATUSES, canRetailor, reviewReason } from "../../lib/applyPage";
 import type { ApplicationTableState, Scope } from "./useApplicationTable";
 
 // One fixed box for every row action, <button> or <Link>: same width so the column
@@ -78,6 +78,8 @@ export interface TableActions {
     force?: boolean,
   ) => void;
   reopen: (rows: ApplicationRow[]) => void;
+  /** Tailor files again (forced), asking first when a filled tab is still open. */
+  retailor: (rows: ApplicationRow[]) => void;
   move: (ids: string[], archived: boolean) => void;
   undo: (row: ApplicationRow) => void;
   retry: (row: ApplicationRow) => void;
@@ -140,11 +142,12 @@ export function ApplicationsTable({
         disabled: busy || active,
         action: () => actions.undo(row),
       });
-    if (row.job_id && !row.preparation_eligible && !TERMINAL_STATUSES.has(row.status))
+    if (canRetailor(row))
       items.push({
         label: "Tailor files again",
         disabled: busy || active,
-        action: () => actions.start("prepare", [row.source_job_id], "initial", true),
+        action: () => actions.retailor([row]),
+        description: "Available when Apply is idle",
       });
     const tabOpen = !!row.fill?.browser_target_id && !isTabClosed(row, openTabs);
     if (tabOpen) items.push({ label: "Open application tab", action: () => actions.focusTab(row) });
