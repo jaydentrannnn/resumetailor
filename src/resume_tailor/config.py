@@ -1088,8 +1088,9 @@ MAX_DROP_ROUNDS = 3
 
 #: Rounds of the fit loop's top-up (`fit.top_up`): once the loop settles on an underfull
 #: page it cannot grow, each round re-adds bullets the caps allow, then tries one bullet
-#: past the per-entry cap, then a new entry, rewriting only the added bullets. A second
-#: round runs only when the added bullets' own widow repair freed lines again.
+#: past the per-entry cap, then a new entry, rewriting only the added bullets. Every
+#: round's added bullets get a measured widow pass; a second round runs only when that
+#: pass freed lines again.
 MAX_TOPUP_ROUNDS = 2
 
 #: A multi-line bullet is a pull-back candidate when its final line is at most this
@@ -1551,6 +1552,10 @@ WIDOW_MIN_FILL = 0.50
 WIDOW_EST_FILL = 0.30
 #: Below this fill, save a line. Moderately short lines may grow from their own source.
 WIDOW_SHORTEN_MAX = 0.35
+#: Last-line fill an EXTEND repair aims for at minimum. Just above `WIDOW_MIN_FILL` (the
+#: margin is about `WIDOW_SAFETY` characters) so the window stays wide enough for a model
+#: to land in; aiming at 80% left only ~15 characters and most drafts missed it.
+WIDOW_EXTEND_FILL = 0.55
 
 #: Characters of headroom held back from a line boundary when setting a ceiling. The
 #: observed overshoot was 2-5 characters, so a ceiling placed exactly on the boundary would

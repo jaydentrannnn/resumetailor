@@ -1471,12 +1471,18 @@ at most its `max` characters by cutting hedges, redundant context, and secondary
 Keep every number and every required technical keyword exactly as written.
 """
 
-_REPAIR_PROMPT_VERSION = 2
+_REPAIR_PROMPT_VERSION = 3
 _TARGET_INSTRUCTION = """\
 Each bullet has a character window. For SHORTEN, cut secondary detail while preserving
 every number and factual claim. For EXTEND, restore useful detail only from that bullet's
-own source. Stay within min and max, and preserve all numbers. Return plain text strings.
+own source. Preserve all numbers. Return THREE versions of each bullet, each as its own
+entry under the same id: one near min, one in the middle, one near max. Exact counts are
+not required — the versions just need to differ in length. Return plain text strings.
 """
+
+#: Most versions of one fit bullet considered from a reply (`_TARGET_INSTRUCTION` asks for
+#: three); extra entries under the same id are ignored.
+_TARGET_VARIANTS = 3
 
 
 def _format_targets(targets: dict[str, tuple[int, int]], texts: dict[str, str],
@@ -1707,6 +1713,7 @@ def _polish(
     repair_verbs: bool = True,
     ceilings: dict[str, int] | None = None,
     targets: dict[str, tuple[int, int]] | None = None,
+    line_ceilings: dict[str, int] | None = None,
     revoice_only: set[str] | None = None,
 ) -> tuple[dict[str, str], int, int, dict[str, list[str]]]:
     """Re-request only the defective bullets.
@@ -1716,7 +1723,12 @@ def _polish(
     bullet is accepted only if it is shorter *and* spans fewer lines — a cut that stays on
     the same line count frees nothing, which is the whole point of the call.
 
-    `targets` gives measured widow repairs a minimum and maximum character window.
+    `targets` gives measured widow repairs a minimum and maximum character window. The
+    model returns several versions of each (`_TARGET_INSTRUCTION`) and code keeps the
+    longest clean one inside the window — the model only has to vary length, not count
+    characters. `line_ceilings` optionally gives a target a second acceptable outcome: a
+    version at or under that length saves the bullet's whole last line, which cures the
+    widow just as well as filling it.
 
     `revoice_only` limits verb repair to those ids while `texts` still carries every
     rendered bullet, so the fit loop's top-up can re-voice only the bullets it just added
@@ -1810,24 +1822,56 @@ def _polish(
     # An accepted swap claims its new opener, so two colliding bullets cannot both be
     # handed the same replacement verb.
     claimed: set[str] = set()
+    line_ceilings = line_ceilings or {}
+
+    def fits_target(bid: str, candidate: str) -> bool:
+        low, high = targets[bid]
+        return bool(candidate) and (
+            low <= len(candidate) <= high or len(candidate) <= line_ceilings.get(bid, 0)
+        )
+
+    # Fit targets come back as several versions per id; judge them together.
+    variants: dict[str, list[str]] = {}
+    for item in result.bullets:
+        if item.id in targets and item.id in sources:
+            bucket = variants.setdefault(item.id, [])
+            if len(bucket) < _TARGET_VARIANTS:
+                bucket.append(item.text.strip())
+    for bid, candidates in variants.items():
+        source = sources[bid]
+        clean: list[str] = []
+        fabricated: tuple[str, list[str]] | None = None
+        for candidate in candidates:
+            offenders = guard_offenders([source], candidate)
+            if offenders:
+                fabricated = fabricated or (candidate, offenders)
+                continue
+            if fits_target(bid, candidate) and not numbers_dropped([source], candidate):
+                clean.append(candidate)
+        if clean:
+            # Prefer the window over the line-saving fallback, then the longest version:
+            # it keeps the most detail and fills the last line furthest.
+            low, high = targets[bid]
+            repaired[bid] = max(clean, key=lambda c: (low <= len(c) <= high, len(c)))
+            tightened += 1
+        elif fabricated is not None:
+            rejected[bid] = fabricated[1]
+            retry_candidates[bid] = fabricated
 
     for item in result.bullets:
         source = sources.get(item.id)
-        if source is None:
+        if source is None or item.id in targets:
             continue
         candidate = item.text.strip()
 
-        if item.id in targets or item.id in ceilings:
+        if item.id in ceilings:
             offenders = guard_offenders([source], candidate)
             if offenders:
                 rejected[item.id] = offenders
                 retry_candidates[item.id] = (candidate, offenders)
                 continue
             original = texts[item.id]
-            if item.id in targets:
-                low, high = targets[item.id]
-                improved = bool(candidate) and low <= len(candidate) <= high and not numbers_dropped([source], candidate)
-            elif pullback:
+            if pullback:
                 # The ceiling is one line below where the text ends — measured from the
                 # PDF when the fit loop had one — so landing under it frees that line.
                 improved = len(candidate) < len(original) and len(candidate) <= ceilings[item.id]
@@ -1856,8 +1900,7 @@ def _polish(
             if numbers_dropped([sources[bid]], candidate):
                 continue
             if bid in targets:
-                low, high = targets[bid]
-                valid = bool(candidate) and low <= len(candidate) <= high
+                valid = fits_target(bid, candidate)
             else:
                 valid = len(candidate) < len(texts[bid]) and (
                     len(candidate) <= ceilings[bid]

@@ -1570,7 +1570,7 @@ def test_measured_target_window_accepts_only_guard_clean_numeric_preserving_repl
     )
     assert out["a"] == "Trained 30+ staff on IT practices."
     assert fixed == 1 and rejected == {}
-    assert "<repair_prompt_version>2" in calls[0]["messages"][0]["content"]
+    assert "<repair_prompt_version>3" in calls[0]["messages"][0]["content"]
 
     rewrite_calls(_reply(a="Trained 30+ staff."))
     out, fixed, _, _ = rewrite._polish(
@@ -1709,3 +1709,41 @@ def test_a_much_more_relevant_older_entry_still_wins():
     )
     chosen = rewrite.select_entries([old, recent], requirements, limit=1)
     assert chosen == [old]
+
+
+def _replies(*pairs) -> rewrite.RewriteResult:
+    return rewrite.RewriteResult(
+        bullets=[rewrite.RewrittenBullet(id=k, text=v) for k, v in pairs]
+    )
+
+
+def test_fit_target_keeps_the_longest_clean_version_inside_the_window(rewrite_calls):
+    src = {"a": bullet("a", "Trained over 30 staff on IT practices and common tools.",
+                       ["support"], metric=True)}
+    current = {"a": "Trained over 30 staff on IT practices and common tools today."}
+    calls = rewrite_calls(_replies(
+        ("a", "Trained 30+ staff."),                       # too short
+        ("a", "Trained 30+ staff on IT practices."),       # 34, in window
+        ("a", "Trained over 30 staff on IT practices."),   # 38, in window, longest
+    ))
+    out, fixed, _, rejected = rewrite._polish(
+        current, src, _reqs(), repair_widows=False, repair_verbs=False,
+        targets={"a": (30, 40)},
+    )
+    assert out["a"] == "Trained over 30 staff on IT practices."
+    assert fixed == 1 and rejected == {} and len(calls) == 1
+    assert "THREE versions" in calls[0]["messages"][0]["content"]
+
+
+def test_fit_target_accepts_a_line_saving_version_when_no_version_lands_in_the_window(
+    rewrite_calls,
+):
+    src = {"a": bullet("a", "Trained over 30 staff on IT practices and common tools.",
+                       ["support"], metric=True)}
+    current = {"a": "Trained over 30 staff on IT practices."}
+    rewrite_calls(_replies(("a", "Trained 30+ staff."), ("a", "x" * 90)))
+    out, fixed, _, _ = rewrite._polish(
+        current, src, _reqs(), repair_widows=False, repair_verbs=False,
+        targets={"a": (45, 60)}, line_ceilings={"a": 20},
+    )
+    assert out["a"] == "Trained 30+ staff." and fixed == 1

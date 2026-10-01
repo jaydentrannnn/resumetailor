@@ -161,11 +161,32 @@ def _widow_targets(
             if high >= 1:
                 targets[bid] = (0, high)
         elif len(sources[bid].text) > len(text):
-            low = math.ceil(len(text) + (0.80 - fit.last_fill) * span)
+            low = math.ceil(
+                len(text) + (config.WIDOW_EXTEND_FILL - fit.last_fill) * span - 1e-9
+            )
             high = int(fit.lines * span - config.WIDOW_SAFETY)
             if low <= high:
                 targets[bid] = (low, high)
     return targets
+
+
+def _line_saving_ceilings(
+    targets: dict[str, tuple[int, int]], layout: dict[str, render.LineFit]
+) -> dict[str, int]:
+    """For EXTEND targets, the length at which a draft instead saves the whole last line.
+
+    A draft that misses the extend window by coming back a full line shorter also cures
+    the widow, so `_polish` accepts either rather than asking the model to hit one narrow
+    window exactly."""
+    ceilings: dict[str, int] = {}
+    for bid, (low, _high) in targets.items():
+        if low <= 0:
+            continue
+        fit = layout[bid]
+        ceiling = int((fit.lines - 1) * fit.chars_per_line - config.WIDOW_SAFETY)
+        if ceiling >= 1:
+            ceilings[bid] = ceiling
+    return ceilings
 
 
 # --------------------------------------------------------------------------------------
@@ -972,6 +993,7 @@ def fit(
             repaired, _, _, rejected = _polish(
                 rewritten, repair_sources, requirements, repair_widows=False,
                 repair_verbs=False, targets=targets,
+                line_ceilings=_line_saving_ceilings(targets, layout),
             )
             rewritten = outcome.texts = repaired
             outcome.widow_repairs_rejected.update(rejected)
@@ -1238,9 +1260,10 @@ def fit(
 
     def top_up() -> str | None:
         """Fill the space trimming and widow repair freed, once the loop has settled on an
-        underfull page it cannot grow (see `top_up_ladder`). After the first round, the
-        added bullets get their own measured widow pass; if that frees lines, one more
-        round runs without a further widow pass (`config.MAX_TOPUP_ROUNDS`).
+        underfull page it cannot grow (see `top_up_ladder`). Every round's added bullets
+        get their own measured widow pass — they arrive after the main widow pass, so
+        nothing else would catch one ending on a near-empty line. If that pass frees
+        lines on a still-short page, one more round runs (`config.MAX_TOPUP_ROUNDS`).
 
         Returns why the page is still short, or None once it reaches the fill target."""
         reason: str | None = None
@@ -1248,17 +1271,15 @@ def fit(
             if measured_lines >= math.ceil(underflow * capacity):
                 return None
             added, reason = top_up_ladder()
-            if not added or reason is None:
-                break
-            if round_index == config.MAX_TOPUP_ROUNDS - 1 or not repair_widows:
+            if not added or not repair_widows:
                 break
             lines_before = measured_lines
             widow_pass(only=set(added))
-            if measured_lines >= lines_before:
+            if round_index == config.MAX_TOPUP_ROUNDS - 1 or measured_lines >= lines_before:
                 break
         if measured_lines >= math.ceil(underflow * capacity):
             return None
-        return reason
+        return reason or "widow repair of the added bullets freed lines after the last round"
 
     while True:
         selected = select_within_entries(

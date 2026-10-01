@@ -497,7 +497,7 @@ def test_measured_widow_targets_choose_shortening_extension_and_merged_shortenin
         estimated=False,
     )
     assert targets["a"] == (0, 95)
-    assert targets["b"] == (158, 195)
+    assert targets["b"] == (133, 195)
     full_page = fit_mod._widow_targets(
         texts, sources, fits, measured_lines=50, capacity=50, members={},
         estimated=False,
@@ -1146,3 +1146,53 @@ def test_top_up_never_adds_an_entry_from_a_section_the_template_cannot_render(
     )
 
     assert not any(bid.startswith("proj") for bid in result.bullets)
+
+
+def test_top_up_repairs_widows_in_the_bullets_it_adds_even_on_reaching_the_target(
+    monkeypatch, tmp_path
+):
+    """Added bullets arrive after the main widow pass; reaching the fill target must not
+    skip their own measured pass, and the reported count must cover them."""
+    monkeypatch.setattr(config, "MAX_GROW_ATTEMPTS", 0)
+    monkeypatch.setattr(fit_mod, "rewrite_bullets", _identity_rewrite)
+    first: dict[str, set[str]] = {}
+
+    def pages_for(texts):
+        first.setdefault("ids", set(texts))
+        lines = _target_lines() - 2 + (len(texts) - len(first["ids"]))
+        return (1 if lines <= config.LINES_PER_PAGE else 2, lines)
+
+    def layout_for(texts):
+        return {
+            bid: fit_mod.render.LineFit(2, 0.2, 100)
+            if bid not in first["ids"] and not text.endswith(" fixed")
+            else fit_mod.render.LineFit(1, 1.0, 100)
+            for bid, text in texts.items()
+        }
+
+    _stub_render(monkeypatch, tmp_path, pages_for=pages_for, layout_for=layout_for)
+    polished: list[set[str]] = []
+
+    def fake_polish(texts, sources, requirements, **kwargs):
+        polished.append(set(kwargs["targets"]))
+        return {**texts, **{b: texts[b] + " fixed" for b in kwargs["targets"]}}, 1, 0, {}
+
+    monkeypatch.setattr(fit_mod, "_polish", fake_polish)
+    result = fit_mod.fit(
+        _test_resume(), _requirements(), target_pages=1, merge_bullets=False,
+        max_bullets_per_entry=3, initial_bullet_share=0.5,
+    )
+
+    assert result.topped_up
+    assert polished == [set(result.topped_up)]
+    assert all(result.bullets[b].endswith(" fixed") for b in result.topped_up)
+    assert result.widows_remaining == 0
+
+
+def test_extend_target_also_accepts_a_draft_that_saves_the_last_line():
+    targets = {"b": (133, 195), "a": (0, 95)}
+    layout = {
+        "a": fit_mod.render.LineFit(2, 0.20, 100),
+        "b": fit_mod.render.LineFit(2, 0.42, 100),
+    }
+    assert fit_mod._line_saving_ceilings(targets, layout) == {"b": 95}
