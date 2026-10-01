@@ -1086,6 +1086,12 @@ DEFAULT_PAGE_TARGET = 1
 #: rounds. Exhausting them is an error, never a silent truncation.
 MAX_DROP_ROUNDS = 3
 
+#: Rounds of the fit loop's top-up (`fit.top_up`): once the loop settles on an underfull
+#: page it cannot grow, each round re-adds bullets the caps allow, then tries one bullet
+#: past the per-entry cap, then a new entry, rewriting only the added bullets. A second
+#: round runs only when the added bullets' own widow repair freed lines again.
+MAX_TOPUP_ROUNDS = 2
+
 #: A multi-line bullet is a pull-back candidate when its final line is at most this
 #: fraction full. Wider than `WIDOW_MIN_FILL`: a bullet at 35% is not a widow, but a
 #: one-line cut still frees its whole last line.
@@ -1622,6 +1628,20 @@ SEMANTIC_WEIGHT = 0.5
 #: Small nudge toward bullets carrying a concrete metric, which read stronger at equal
 #: keyword relevance.
 METRIC_BONUS = 0.5
+
+#: Mild preference for recent work, applied in code at every ranking site (entry choice,
+#: bullet selection, the fit loop's drop / pull-back / top-up order) and never sent to the
+#: model, so the cached score table is unaffected. An entry's score is multiplied by
+#: `1 + RECENCY_WEIGHT * 0.5 ** (age_months / RECENCY_HALF_LIFE_MONTHS)`, with age taken
+#: from the entry's end date ("Present" is age 0; no parseable date is neutral, 1.0). At
+#: 0.20 a clearly more relevant older entry still wins; recency settles near-ties. 0.0
+#: restores relevance-only ranking.
+RECENCY_WEIGHT = 0.20
+RECENCY_HALF_LIFE_MONTHS = 24
+
+#: Pins "today" for the recency weight (``YYYY-MM``); ``None`` uses the real date. Tests
+#: pin it so rankings never drift with the calendar.
+RECENCY_TODAY: str | None = None
 
 #: How many entries each section may show. Experience and projects are ranked separately
 #: against these caps, so a job only ever competes with other jobs — pooling them let side

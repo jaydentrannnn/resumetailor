@@ -14,7 +14,7 @@ What it answers, in the order a user actually asks it:
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 
 from . import config
@@ -363,6 +363,11 @@ class RunReport:
     #: Why coverage is unmeasurable, when extraction produced nothing usable.
     #: See `jd.extraction_diagnosis`. None when coverage is a real ratio.
     extraction_diagnosis: str | None = None
+    #: Bullet ids the fit loop's top-up added after trimming (`FitResult.topped_up`).
+    topped_up: list[str] = field(default_factory=list)
+    #: One record per render (`FitResult.trace`): what each draft measured and why it
+    #: was drawn. Saved so a surprising final fill can be explained after the run.
+    fit_trace: list[dict] = field(default_factory=list)
 
 
 def report_data(
@@ -422,6 +427,8 @@ def report_data(
         pdf_backend=config.PDF_BACKEND,
         calibration_source=config.CALIBRATION_SOURCE,
         calibration_rejection=config.CALIBRATION_REJECTION,
+        topped_up=list(result.topped_up),
+        fit_trace=[dict(step) for step in result.trace],
     )
 
 
@@ -544,6 +551,12 @@ def format_report(
             lines.append(f"  - {result.pulled_back} bullet(s) shortened by a line")
         if result.dropped:
             lines.append(f"  - {len(result.dropped)} bullet(s) dropped: {', '.join(result.dropped)}")
+    if result.topped_up:
+        lines.append("")
+        lines.append(
+            f"Topped up to fill the page: {len(result.topped_up)} bullet(s) added: "
+            f"{', '.join(result.topped_up)}"
+        )
 
     page_note = " (estimated — Word unavailable)" if result.pages_are_estimated else ""
     lines += [

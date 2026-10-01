@@ -7,6 +7,8 @@ verified in isolation, matching the rest of the suite's no-network convention.
 
 from __future__ import annotations
 
+import math
+
 import pytest
 
 from resume_tailor import config
@@ -42,6 +44,7 @@ def _identity_rewrite(
     repair_verbs=True,
     merge_groups=None,
     on_event=None,
+    verb_context=None,
 ):
     """Pass-through rewrite stub that ignores polish and merge knobs."""
     return RewriteOutcome({b.id: b.text for b in bullets})
@@ -678,8 +681,13 @@ def test_fit_does_not_regrow_bullets_the_ladder_just_removed(monkeypatch, tmp_pa
 
     result = fit_mod.fit(resume, requirements, target_pages=1, merge_bullets=False)
 
-    assert len(calls) == 1
-    assert any("fuller draft overflowed" in w for w in result.warnings)
+    # The loop rewrote the full set once and never grew back into the overflow; every
+    # later call is the top-up rewriting only the bullets it tried to add.
+    assert calls[0] == max(calls)
+    assert all(n < calls[0] for n in calls[1:])
+    assert not any(step["step"] == "grow" for step in result.trace)
+    assert result.pages == 1
+    assert any("overflowed the page" in w for w in result.warnings)
 
 
 def _bullet_fixture(ids):
@@ -879,10 +887,14 @@ def test_fit_growth_ceiling_stops_early_when_entries_are_capped(monkeypatch, tmp
 
     entries = fit_mod.choose_entries(resume, requirements)
     # Every entry is capped at its one floor bullet, so the achievable total equals the
-    # entry count — reached immediately, with no room to grow into at all.
-    assert result.bullets_selected == len(entries)
-    assert result.iterations == 1
-    assert any("selectable bullet cap" in w for w in result.warnings)
+    # entry count — reached immediately, with no room to grow into at all. The loop
+    # never re-rewrites; only the top-up runs, adding one more entry.
+    steps = [step["step"] for step in result.trace]
+    assert steps[0] == "draft"
+    assert "grow" not in steps
+    assert "topup-C" in steps
+    assert result.bullets_selected == len(entries) + 1
+    assert any("top-up limit reached after adding" in w for w in result.warnings)
 
 
 def test_fit_honours_entry_caps_and_never_drops_a_chosen_entry(monkeypatch, tmp_path):
@@ -950,3 +962,187 @@ def test_fit_falls_back_to_budget_estimate_when_word_unavailable(monkeypatch, tm
     assert any("Word is not installed" in w for w in result.warnings)
 
 
+
+
+# --------------------------------------------------------------------------------------
+# Measured pull-back and the top-up ladder
+# --------------------------------------------------------------------------------------
+
+
+def test_choose_pullbacks_judges_measured_bullets_on_the_pdf_layout():
+    width = config.CHARS_PER_LINE
+    line_fit = fit_mod.render.LineFit
+    texts = {
+        # The estimate calls this two nearly-full lines; the PDF shows three with a
+        # near-empty last line — the real near-widow.
+        "pdf_widow": "a" * (width + int(width * 0.9)),
+        # The estimate calls this a near-widow; the PDF shows its last line full.
+        "pdf_full": "a" * (width + int(width * 0.1)),
+        # Not measured at all: falls back to the estimate, which flags it.
+        "unmeasured": "a" * (width + int(width * 0.1)),
+    }
+    layout = {
+        "pdf_widow": line_fit(3, 0.1, float(width)),
+        "pdf_full": line_fit(2, 0.9, float(width)),
+        "unmeasured": line_fit(2, 0.1, float(width)),
+    }
+    picked = fit_mod._choose_pullbacks(
+        texts, _bullet_fixture(texts), _requirements(), None, {}, count=5,
+        layout=layout, measured_ids={"pdf_widow", "pdf_full"},
+    )
+    assert picked["pdf_widow"] == int(2 * width - config.WIDOW_SAFETY)
+    assert "pdf_full" not in picked
+    assert "unmeasured" in picked
+
+
+def _entry_key(bullet_id: str) -> str:
+    return bullet_id.split("_b")[0]
+
+
+def _target_lines() -> int:
+    return math.ceil(config.UNDERFLOW_THRESHOLD * config.LINES_PER_PAGE)
+
+
+def _lines_with_headers(base: int):
+    """`pages_for` charging one line per bullet and two per rendered entry over a fixed
+    `base` — enough structure for the top-up's bullet-versus-entry arithmetic."""
+
+    def pages_for(texts):
+        lines = base + len(texts) + 2 * len({_entry_key(bid) for bid in texts})
+        return (1 if lines <= config.LINES_PER_PAGE else 2, lines)
+
+    return pages_for
+
+
+def _capped_first_draft() -> int:
+    """With `max_bullets_per_entry=1`, the first draft is one bullet per chosen entry."""
+    return len(fit_mod.choose_entries(_test_resume(), _requirements()))
+
+
+def test_top_up_adds_back_bullets_the_caps_allow(monkeypatch, tmp_path):
+    """The loop stops underfull without growing; step A refills from the chosen entries,
+    rewriting only the bullets it adds."""
+    monkeypatch.setattr(config, "MAX_GROW_ATTEMPTS", 0)
+    calls: list[list[str]] = []
+
+    def fake_rewrite(bullets, requirements, **kwargs):
+        calls.append([b.id for b in bullets])
+        return _identity_rewrite(bullets, requirements, **kwargs)
+
+    monkeypatch.setattr(fit_mod, "rewrite_bullets", fake_rewrite)
+    first: dict[str, int] = {}
+
+    def pages_for(texts):
+        # Two lines short of the target on the first draft, one line per bullet after.
+        first.setdefault("n", len(texts))
+        lines = _target_lines() - 2 + (len(texts) - first["n"])
+        return (1 if lines <= config.LINES_PER_PAGE else 2, lines)
+
+    _stub_render(monkeypatch, tmp_path, pages_for=pages_for)
+    # A small first draft leaves bullets the caps allow off the page.
+    result = fit_mod.fit(
+        _test_resume(), _requirements(), target_pages=1, merge_bullets=False,
+        max_bullets_per_entry=3, initial_bullet_share=0.5,
+    )
+
+    assert len(calls) == 2
+    assert len(calls[1]) == 2
+    assert result.topped_up == calls[1]
+    assert set(calls[1]) <= set(result.bullets)
+    assert [s["step"] for s in result.trace] == ["draft", "topup-A"]
+    assert not any("full (target" in w for w in result.warnings)
+
+
+def test_top_up_keeps_one_bullet_past_the_cap_when_that_reaches_the_target(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setattr(config, "MAX_GROW_ATTEMPTS", 0)
+    monkeypatch.setattr(fit_mod, "rewrite_bullets", _identity_rewrite)
+    n = _capped_first_draft()
+    # One line short: a single extra bullet in an entry already on the page fills it.
+    base = _target_lines() - 1 - n - 2 * n
+    _stub_render(monkeypatch, tmp_path, pages_for=_lines_with_headers(base))
+
+    result = fit_mod.fit(
+        _test_resume(), _requirements(), target_pages=1, merge_bullets=False,
+        max_bullets_per_entry=1,
+    )
+
+    assert [s["step"] for s in result.trace] == ["draft", "topup-B"]
+    assert len(result.topped_up) == 1
+    assert len(result.bullets) == n + 1
+    assert not any("full (target" in w for w in result.warnings)
+
+
+def test_top_up_swaps_a_short_extra_bullet_for_a_new_entry(monkeypatch, tmp_path):
+    """Bullet 2 of an entry leaves the page short, so it is taken back out and the
+    next-best entry is added instead — which reaches the target."""
+    monkeypatch.setattr(config, "MAX_GROW_ATTEMPTS", 0)
+    monkeypatch.setattr(fit_mod, "rewrite_bullets", _identity_rewrite)
+    resume, requirements = _test_resume(), _requirements()
+    n = _capped_first_draft()
+    base = _target_lines() - 3 - n - 2 * n
+    _stub_render(monkeypatch, tmp_path, pages_for=_lines_with_headers(base))
+
+    result = fit_mod.fit(
+        resume, requirements, target_pages=1, merge_bullets=False, max_bullets_per_entry=1,
+    )
+
+    assert [s["step"] for s in result.trace] == ["draft", "topup-B", "revert", "topup-C"]
+    extra = next(s for s in result.trace if s["step"] == "topup-B")["added"][0]
+    assert extra not in result.bullets
+    chosen = {
+        _entry_key(b.id) for e in fit_mod.choose_entries(resume, requirements)
+        for b in e.bullets
+    }
+    new = [bid for bid in result.topped_up if _entry_key(bid) not in chosen]
+    assert len(new) == 1 and new[0] in result.bullets
+    assert not any("full (target" in w for w in result.warnings)
+
+
+def test_top_up_restores_the_extra_bullet_when_no_new_entry_fits(monkeypatch, tmp_path):
+    monkeypatch.setattr(config, "MAX_GROW_ATTEMPTS", 0)
+    monkeypatch.setattr(fit_mod, "rewrite_bullets", _identity_rewrite)
+    resume, requirements = _test_resume(), _requirements()
+    chosen = {
+        _entry_key(b.id) for e in fit_mod.choose_entries(resume, requirements)
+        for b in e.bullets
+    }
+    n = _capped_first_draft()
+    inner = _lines_with_headers(_target_lines() - 3 - n - 2 * n)
+
+    def pages_for(texts):
+        pages, lines = inner(texts)
+        if any(_entry_key(bid) not in chosen for bid in texts):
+            return 2, lines + config.LINES_PER_PAGE  # any new entry overflows
+        return pages, lines
+
+    _stub_render(monkeypatch, tmp_path, pages_for=pages_for)
+    result = fit_mod.fit(
+        resume, requirements, target_pages=1, merge_bullets=False, max_bullets_per_entry=1,
+    )
+
+    steps = [s["step"] for s in result.trace]
+    assert steps == ["draft", "topup-B", "revert", "topup-C", "revert", "restore"]
+    extra = next(s for s in result.trace if s["step"] == "topup-B")["added"][0]
+    assert extra in result.bullets
+    assert result.topped_up == [extra]
+    assert any("overflowed the page" in w for w in result.warnings)
+
+
+def test_top_up_never_adds_an_entry_from_a_section_the_template_cannot_render(
+    monkeypatch, tmp_path
+):
+    monkeypatch.setattr(config, "MAX_GROW_ATTEMPTS", 0)
+    monkeypatch.setattr(fit_mod, "rewrite_bullets", _identity_rewrite)
+    monkeypatch.setattr(
+        fit_mod, "active_layout", lambda: {"enabled": {"projects": False, "experience": True}}
+    )
+    _stub_render(monkeypatch, tmp_path, pages_for=lambda texts: (1, _SPARSE_LINES))
+
+    result = fit_mod.fit(
+        _test_resume(), _requirements(), target_pages=1, merge_bullets=False,
+        max_bullets_per_entry=1,
+    )
+
+    assert not any(bid.startswith("proj") for bid in result.bullets)

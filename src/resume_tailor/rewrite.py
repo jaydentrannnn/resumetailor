@@ -143,7 +143,77 @@ def score_entry(
     several usable lines, and a section capped at three entries should prefer the one that
     can fill those lines over one carrying a single strong bullet.
     """
-    return sum(score(b, requirements, semantic=semantic) for b in entry.bullets)
+    total = sum(score(b, requirements, semantic=semantic) for b in entry.bullets)
+    return total * entry_recency(entry)
+
+
+_MONTHS = {
+    m: i for i, m in enumerate(
+        ("jan", "feb", "mar", "apr", "may", "jun", "jul", "aug", "sep", "oct", "nov", "dec"),
+        1,
+    )
+}
+_ISO_MONTH = re.compile(r"\b(\d{4})-(0[1-9]|1[0-2])\b")
+_NAMED_MONTH = re.compile(r"\b([A-Za-z]{3})[a-z]*\.?\s+(\d{4})\b")
+_BARE_YEAR = re.compile(r"\b((?:19|20)\d{2})\b")
+_ONGOING = re.compile(r"\b(?:present|current|now|ongoing)\b", re.IGNORECASE)
+
+
+def _end_month(text: str) -> tuple[int, int] | None:
+    """The last (year, month) a free-text date range names, or None.
+
+    Accepts ``2025-06``, ``Jun 2025`` / ``June 2025`` and a bare ``2025`` (read as
+    December, the most recent month it can mean). The last match wins, since a range's
+    end is written after its start.
+    """
+    found: list[tuple[int, int, int]] = []  # (position, year, month)
+    for match in _ISO_MONTH.finditer(text):
+        found.append((match.start(), int(match.group(1)), int(match.group(2))))
+    for match in _NAMED_MONTH.finditer(text):
+        month = _MONTHS.get(match.group(1).lower())
+        if month:
+            found.append((match.start(), int(match.group(2)), month))
+    if not found:
+        for match in _BARE_YEAR.finditer(text):
+            found.append((match.start(), int(match.group(1)), 12))
+    if not found:
+        return None
+    _, year, month = max(found)
+    return year, month
+
+
+def _today_month() -> tuple[int, int]:
+    if config.RECENCY_TODAY:
+        year, month = config.RECENCY_TODAY.split("-")[:2]
+        return int(year), int(month)
+    from datetime import date
+
+    today = date.today()
+    return today.year, today.month
+
+
+def entry_recency(entry: object, *, today: tuple[int, int] | None = None) -> float:
+    """Recency multiplier for an entry's relevance score (`config.RECENCY_WEIGHT`).
+
+    Age is measured from the entry's end: ``Experience.end`` or ``Project.date`` (any
+    entry kind exposing one of those). An ongoing entry gets the full boost; an entry with
+    no parseable date is neutral (1.0) rather than penalised, so a missing date never
+    costs an entry its slot.
+    """
+    if config.RECENCY_WEIGHT <= 0:
+        return 1.0
+    text = str(getattr(entry, "end", "") or getattr(entry, "date", "") or "")
+    if not text.strip():
+        return 1.0
+    if _ONGOING.search(text):
+        age = 0.0
+    else:
+        end = _end_month(text)
+        if end is None:
+            return 1.0
+        now = today or _today_month()
+        age = max(0.0, float((now[0] - end[0]) * 12 + (now[1] - end[1])))
+    return 1.0 + config.RECENCY_WEIGHT * 0.5 ** (age / config.RECENCY_HALF_LIFE_MONTHS)
 
 
 def select_entries(
@@ -275,8 +345,13 @@ def _take_ranked(
         return kept
 
     entry_of = {id(b): id(e) for e in entries for b in e.bullets}
+    recency = {id(e): entry_recency(e) for e in entries}
     pool = [b for e in entries for b in e.bullets if id(b) not in kept]
-    ranked = sorted(pool, key=lambda b: score(b, requirements, semantic=semantic), reverse=True)
+    ranked = sorted(
+        pool,
+        key=lambda b: score(b, requirements, semantic=semantic) * recency[entry_of[id(b)]],
+        reverse=True,
+    )
 
     taken = 0
     for b in ranked:
@@ -883,9 +958,24 @@ def _number_noun_bindings(text: str) -> dict[str, set[str]]:
     Taking the whole window — not only the nearest token — keeps "40 remote
     engineers" bound to both `remote` and `engineer`, so a faithful restatement
     that inserts an adjective still shares the source noun.
+
+    A slash compound also binds its letter parts: "130 students/week" binds `students`
+    and `week` as well as the whole token, so "130 students" restates it rather than
+    rebinding the number. Only the source side splits (this function is only called on
+    sources): a rewrite's own compound must still match whole, so "130 students/semester"
+    against that source is flagged.
     """
-    return {number: {key for _surface, key in pairs}
-            for number, pairs in _number_noun_surface(text).items()}
+    out: dict[str, set[str]] = {}
+    for number, pairs in _number_noun_surface(text).items():
+        keys = out.setdefault(number, set())
+        for surface, key in pairs:
+            keys.add(key)
+            if "/" in surface:
+                for part in surface.split("/"):
+                    part_key = _noun_key(part) if _HAS_LETTER.search(part) else None
+                    if part_key is not None:
+                        keys.add(part_key)
+    return out
 
 
 def _number_noun_surface(text: str) -> dict[str, list[tuple[str, str]]]:
@@ -1617,6 +1707,7 @@ def _polish(
     repair_verbs: bool = True,
     ceilings: dict[str, int] | None = None,
     targets: dict[str, tuple[int, int]] | None = None,
+    revoice_only: set[str] | None = None,
 ) -> tuple[dict[str, str], int, int, dict[str, list[str]]]:
     """Re-request only the defective bullets.
 
@@ -1626,6 +1717,10 @@ def _polish(
     the same line count frees nothing, which is the whole point of the call.
 
     `targets` gives measured widow repairs a minimum and maximum character window.
+
+    `revoice_only` limits verb repair to those ids while `texts` still carries every
+    rendered bullet, so the fit loop's top-up can re-voice only the bullets it just added
+    against openers the page already uses, without touching (and re-wrapping) the rest.
     The guard and numeric-preservation check apply to both shortening and extension.
 
     Returns ``(texts, widows fixed, verbs changed, widow repairs rejected)`` where the
@@ -1658,7 +1753,11 @@ def _polish(
     if ceilings is None:
         ceilings = widowed(texts) if repair_widows and not targeted else {}
     collisions = (
-        {bid: avoid for bid, avoid in verb_collisions(texts).items() if bid not in ceilings and bid not in targets}
+        {
+            bid: avoid for bid, avoid in verb_collisions(texts).items()
+            if bid not in ceilings and bid not in targets
+            and (revoice_only is None or bid in revoice_only)
+        }
         if repair_verbs
         else {}
     )
@@ -1729,9 +1828,9 @@ def _polish(
                 low, high = targets[item.id]
                 improved = bool(candidate) and low <= len(candidate) <= high and not numbers_dropped([source], candidate)
             elif pullback:
-                improved = len(candidate) < len(original) and (
-                    config.line_span(candidate) < config.line_span(original)
-                )
+                # The ceiling is one line below where the text ends — measured from the
+                # PDF when the fit loop had one — so landing under it frees that line.
+                improved = len(candidate) < len(original) and len(candidate) <= ceilings[item.id]
             else:
                 improved = len(candidate) < len(original) and not widowed({item.id: candidate})
             if improved:
@@ -1761,7 +1860,7 @@ def _polish(
                 valid = bool(candidate) and low <= len(candidate) <= high
             else:
                 valid = len(candidate) < len(texts[bid]) and (
-                    config.line_span(candidate) < config.line_span(texts[bid])
+                    len(candidate) <= ceilings[bid]
                     if pullback else not widowed({bid: candidate})
                 )
             if valid:
@@ -1816,8 +1915,14 @@ def rewrite_bullets(
     repair_verbs: bool = True,
     merge_groups: list[MergeGroup] | None = None,
     on_event: events.ProgressCallback | None = None,
+    verb_context: dict[str, str] | None = None,
 ) -> RewriteOutcome:
     """Rewrite `bullets` to surface the posting's keywords.
+
+    `verb_context` is the text of bullets already on the page (`{id: text}`), used only
+    to detect repeated opening verbs: the fit loop's top-up rewrites just the bullets it
+    adds, and those must not open with a verb the page already uses. Context bullets are
+    never re-requested or returned.
 
     Verb repair can add one follow-up call here. Widow repair waits until fit has a PDF;
     character estimates at this stage have too many false positives to trim safely.
@@ -1922,7 +2027,13 @@ def rewrite_bullets(
     # PDF layout is unavailable until fit has rendered this draft. Do not cut here
     # based on the character estimate; it often flags full physical lines.
     stranded = 0
-    colliding = len(verb_collisions(out)) if repair_verbs else 0
+    context = {bid: text for bid, text in (verb_context or {}).items() if bid not in out}
+    revoice_only = set(out) if context else None
+    combined = {**context, **out}
+    colliding = (
+        sum(1 for bid in verb_collisions(combined) if revoice_only is None or bid in revoice_only)
+        if repair_verbs else 0
+    )
     if stranded or colliding:
         wanted = []
         if stranded:
@@ -1936,13 +2047,15 @@ def rewrite_bullets(
             widowed=stranded,
             verb_collisions=colliding,
         )
-    out, improved, revoiced, rejected_repairs = _polish(
-        out,
+    polished, improved, revoiced, rejected_repairs = _polish(
+        combined,
         by_id,
         requirements,
         repair_widows=False,
         repair_verbs=repair_verbs,
+        revoice_only=revoice_only,
     )
+    out = {bid: polished[bid] for bid in out}
     return RewriteOutcome(
         texts=out,
         widows_repaired=improved,

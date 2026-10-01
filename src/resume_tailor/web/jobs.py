@@ -1065,6 +1065,8 @@ def _to_report_out(data: report.RunReport) -> RunReportOut:
         pdf_backend=data.pdf_backend,
         calibration_source=data.calibration_source,
         calibration_rejection=data.calibration_rejection,
+        topped_up=data.topped_up,
+        fit_trace=data.fit_trace,
     )
 
 

@@ -205,3 +205,9 @@ def built_template(tmp_path_factory) -> Path:
     dst = tmp_dir / "main_template.docx"
     template_build.build_from_profile(src, dst, result.suggested_profile)
     return dst
+
+
+@pytest.fixture(autouse=True)
+def _pinned_recency_today(monkeypatch):
+    """Pin "today" for `rewrite.entry_recency` so rankings never drift with the calendar."""
+    monkeypatch.setattr(config, "RECENCY_TODAY", "2026-09")

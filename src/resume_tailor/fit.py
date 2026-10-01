@@ -24,16 +24,18 @@ from .jd import JobRequirements
 from .merge import MergeGroup
 from .merge import propose as propose_merges
 from .rewrite import (
+    RewriteOutcome,
+    _polish,
+    entry_recency,
     merge_into,
     pull_back,
     rewrite_bullets,
+    score_entry,
     select_entries,
     select_within_entries,
     selectable_total,
     widowed,
 )
-from .rewrite import RewriteOutcome
-from .rewrite import _polish
 from .rewrite import score as score_bullet
 from .template_profile import ContactField, active_layout
 
@@ -95,6 +97,16 @@ class FitResult:
     dropped: list[str] = field(default_factory=list)
 
     warnings: list[str] = field(default_factory=list)
+
+    #: Bullet ids the top-up stage added after the loop settled underfull (re-added
+    #: bullets, a 4th bullet, or a new entry's bullets). Reported because they change
+    #: the resume's shape, not just its length.
+    topped_up: list[str] = field(default_factory=list)
+
+    #: One record per render: ``{step, bullets, lines, pages, fill, ...}``. Persisted in
+    #: the run report so a surprising final fill can be explained after the fact — the
+    #: progress events that say the same thing are not saved.
+    trace: list[dict] = field(default_factory=list)
 
 
 @dataclass
@@ -544,12 +556,18 @@ def _bullet_score(
     requirements: JobRequirements,
     semantic: dict[str, float] | None,
     members: dict[str, tuple[str, ...]],
+    recency: dict[str, float] | None = None,
 ) -> float:
     """Relevance of a rendered bullet. A merged survivor is as relevant as its best
-    member: merging must not make the strongest claim in a group easier to drop."""
+    member: merging must not make the strongest claim in a group easier to drop.
+
+    `recency` maps bullet id to its entry's `rewrite.entry_recency` multiplier, so drops,
+    pull-back ties and the top-up all prefer recent work the way selection does."""
     ids = members.get(bullet_id, (bullet_id,))
+    recency = recency or {}
     return max(
-        score_bullet(sources[m], requirements, semantic=semantic) for m in ids if m in sources
+        score_bullet(sources[m], requirements, semantic=semantic) * recency.get(m, 1.0)
+        for m in ids if m in sources
     )
 
 
@@ -561,6 +579,9 @@ def _choose_pullbacks(
     members: dict[str, tuple[str, ...]],
     *,
     count: int,
+    layout: dict[str, render.LineFit] | None = None,
+    measured_ids: set[str] | None = None,
+    recency: dict[str, float] | None = None,
 ) -> dict[str, int]:
     """`{bullet id: character ceiling}` for the bullets worth a one-line pull-back.
 
@@ -568,13 +589,32 @@ def _choose_pullbacks(
     full — cutting a few words frees a whole line. Emptiest last line first (the smallest
     cut), ties to the lower relevance. Merged survivors are excluded: they were just
     condensed from several sources, and a single-source guard check would misread them.
+
+    `layout`/`measured_ids` come from the overflowing PDF (`_widow_fits`). A measured
+    bullet is judged on its real line count and last-line fill, with its ceiling one
+    measured line below where it ends; the character estimate both missed real near-widows
+    and flagged full lines. Unmeasured bullets fall back to the estimate (`widowed`).
     """
-    eligible = widowed(texts, max_fill=config.PULLBACK_MAX_FILL)
+    estimated = widowed(texts, max_fill=config.PULLBACK_MAX_FILL)
+    measured_ids = measured_ids if layout is not None and measured_ids is not None else set()
+    eligible: dict[str, int] = {}
+    fill: dict[str, float] = {}
+    for bid, text in texts.items():
+        if bid in measured_ids:
+            line_fit = layout[bid]
+            if line_fit.lines > 1 and line_fit.last_fill <= config.PULLBACK_MAX_FILL:
+                ceiling = int((line_fit.lines - 1) * line_fit.chars_per_line - config.WIDOW_SAFETY)
+                if ceiling >= 1:
+                    eligible[bid] = ceiling
+                    fill[bid] = line_fit.last_fill
+        elif bid in estimated:
+            eligible[bid] = estimated[bid]
+            fill[bid] = config.last_line_fill(text) / config.CHARS_PER_LINE
     ranked = sorted(
         (bid for bid in eligible if bid not in members),
         key=lambda bid: (
-            config.last_line_fill(texts[bid]),
-            _bullet_score(bid, sources, requirements, semantic, members),
+            fill[bid],
+            _bullet_score(bid, sources, requirements, semantic, members, recency),
         ),
     )
     return {bid: eligible[bid] for bid in ranked[: max(0, count)]}
@@ -599,6 +639,7 @@ def _choose_drops(
     repeats.
     """
     owner = {b.id: e for e in entries for b in e.bullets}
+    recency = {b.id: entry_recency(e) for e in entries for b in e.bullets}
     remaining_in_entry: dict[int, int] = {}
     for bid in texts:
         entry = owner.get(bid)
@@ -621,7 +662,7 @@ def _choose_drops(
         pick = min(
             covering or candidates,
             key=lambda bid: (
-                _bullet_score(bid, sources, requirements, semantic, members),
+                _bullet_score(bid, sources, requirements, semantic, members, recency),
                 -remaining_in_entry[id(owner[bid])],
             ),
         )
@@ -811,9 +852,31 @@ def fit(
 
     by_id: dict[str, Bullet] = {b.id: b for e in entries for b in e.bullets}
     capacity = target_pages * config.LINES_PER_PAGE
+    trace: list[dict] = []
+    topped_up: list[str] = []
 
-    def draw(texts: dict[str, str]) -> tuple[Path, int, int, bool]:
-        """Render `texts`, then measure: `(doc path, pages, lines, measurement estimated)`."""
+    # Every entry the template can render, for the top-up's new-entry step (the same
+    # section gating `choose_entries` applies), with each bullet's recency multiplier.
+    enabled_kinds = active_layout().get("enabled") or {}
+    section_of: dict[int, str] = {}
+    candidate_entries: list = []
+    for section in resume.entry_sections:
+        key = "projects" if section.kind == "project" else "experience"
+        if not enabled_kinds.get(key, True):
+            continue
+        for entry in section.entries:
+            section_of[id(entry)] = section.id
+            candidate_entries.append(entry)
+    recency_of: dict[str, float] = {
+        b.id: entry_recency(e) for e in candidate_entries for b in e.bullets
+    }
+    all_sources: dict[str, Bullet] = {b.id: b for e in candidate_entries for b in e.bullets}
+    all_sources.update(by_id)
+
+    def draw(texts: dict[str, str], step: str = "draft", **note) -> tuple[Path, int, int, bool]:
+        """Render `texts`, then measure: `(doc path, pages, lines, measurement estimated)`.
+
+        `step` and `note` label the draw in `trace` (`FitResult.trace`)."""
         nonlocal iterations
         iterations += 1
         events.emit(on_event, "render", f"Rendering draft {iterations}", iteration=iterations)
@@ -844,7 +907,358 @@ def fit(
             lines=lines_,
             estimated=estimated,
         )
+        trace.append({
+            "step": step,
+            "bullets": len(texts),
+            "lines": lines_,
+            "pages": pages_,
+            "fill": round(lines_ / capacity, 3),
+            "estimated": estimated,
+            **note,
+        })
         return path, pages_, lines_, estimated
+
+    def widow_pass(only: set[str] | None = None) -> None:
+        """One bounded measured layout pass on a draft that already fits.
+
+        Shortens or extends bullets whose measured last line is under
+        `config.WIDOW_MIN_FILL` (`_widow_targets`), and tops up or trims the coursework
+        line. Keeps the pre-pass document so any unexpected page growth is reverted
+        exactly. `only` restricts the pass to those bullet ids and skips coursework — the
+        top-up uses it to repair just the bullets it added.
+        """
+        nonlocal rewritten, doc_path, pages, measured_lines, pages_are_estimated
+        course_edu = (
+            next((edu for edu in resume.education if edu.coursework), None)
+            if only is None else None
+        )
+        course_text = (
+            "Relevant Coursework: " + ", ".join(course_edu.coursework)
+            if course_edu else None
+        )
+        requested = dict(rewritten)
+        if course_text:
+            requested["__coursework__"] = course_text
+        layout, measured_ids = _widow_fits(
+            doc_path, requested, estimated=pages_are_estimated
+        )
+
+        def is_widow(fits: dict[str, render.LineFit], measured: set[str], bid: str) -> bool:
+            return fits[bid].lines > 1 and fits[bid].last_fill < (
+                config.WIDOW_MIN_FILL if bid in measured else config.WIDOW_EST_FILL
+            )
+
+        scope = set(rewritten) if only is None else set(rewritten) & only
+        before_widows = {bid for bid in scope if is_widow(layout, measured_ids, bid)}
+        targets = _widow_targets(
+            rewritten, by_id, layout, measured_lines=measured_lines,
+            capacity=capacity, members=members, estimated=pages_are_estimated,
+            measured_ids=measured_ids,
+        ) if repair_widows else {}
+        if only is not None:
+            targets = {bid: window for bid, window in targets.items() if bid in only}
+        old_texts = dict(rewritten)
+        old_courses = list(course_edu.coursework) if course_edu else []
+        if targets:
+            repair_sources = dict(by_id)
+            for survivor, member_ids in members.items():
+                if survivor in targets:
+                    originals = [by_id[mid] for mid in member_ids]
+                    repair_sources[survivor] = Bullet(
+                        id=survivor,
+                        text=" ".join(item.text for item in originals),
+                        tags=list({tag for item in originals for tag in item.tags}),
+                    )
+            repaired, _, _, rejected = _polish(
+                rewritten, repair_sources, requirements, repair_widows=False,
+                repair_verbs=False, targets=targets,
+            )
+            rewritten = outcome.texts = repaired
+            outcome.widow_repairs_rejected.update(rejected)
+        if repair_widows and course_edu and coursework_pool:
+            course_edu.coursework = facets.fit_coursework_to_budget(
+                old_courses, pool=coursework_pool,
+                jd_keywords=[k.phrase for k in requirements.keywords],
+                chars_per_line=layout["__coursework__"].chars_per_line,
+                last_fill=(layout["__coursework__"].last_fill
+                           if "__coursework__" in measured_ids else None),
+                rendered_lines=(layout["__coursework__"].lines
+                                if "__coursework__" in measured_ids else None),
+            )
+        changed = rewritten != old_texts or (
+            course_edu is not None and course_edu.coursework != old_courses
+        )
+        if changed:
+            doc_path, pages, measured_lines, pages_are_estimated = draw(rewritten, "widow")
+            if pages > target_pages:
+                rewritten = outcome.texts = old_texts
+                if course_edu:
+                    course_edu.coursework = old_courses
+                doc_path, pages, measured_lines, pages_are_estimated = draw(rewritten, "revert")
+                warnings.append("Widow repair overflowed the page; kept the fitting draft.")
+                changed = False
+        if changed:
+            final_layout, final_measured_ids = _widow_fits(
+                doc_path, rewritten, estimated=pages_are_estimated
+            )
+        else:
+            final_layout, final_measured_ids = layout, measured_ids
+        remaining = {
+            bid for bid in rewritten if is_widow(final_layout, final_measured_ids, bid)
+        }
+        if only is None:
+            outcome.widows_repaired = len(before_widows - remaining)
+        else:
+            outcome.widows_repaired += len(before_widows - remaining)
+        outcome.measured_widows_remaining = len(remaining)
+
+    def entry_label(entry) -> str:
+        return getattr(entry, "company", "") or getattr(entry, "name", "") or "an entry"
+
+    def rewrite_new(new: list[Bullet]) -> dict[str, str]:
+        """Rewrite only `new`, then re-voice any of them whose opening verb the page
+        already uses. Existing bullets are never re-requested: their text and wrap are
+        already measured."""
+        fresh = rewrite_bullets(
+            new, requirements, char_budget=char_budget,
+            repair_widows=False, repair_verbs=repair_verbs, on_event=on_event,
+            verb_context=dict(rewritten),
+        )
+        outcome.fabrications_rejected.update(fresh.fabrications_rejected)
+        outcome.verbs_diversified += fresh.verbs_diversified
+        return {b.id: fresh.texts.get(b.id, b.text) for b in new}
+
+    def add(new: list[Bullet], step: str, *, shrink: int) -> list[str]:
+        """Add `new` to the page: one rewrite, then render. On overflow, retry up to
+        `shrink` times without the last (lowest-ranked) bullet — render only, no new
+        call. Returns the ids kept, or [] after re-rendering the pre-step draft."""
+        nonlocal rewritten, doc_path, pages, measured_lines, pages_are_estimated
+        base = dict(rewritten)
+        fresh = rewrite_new(new)
+        ids = [b.id for b in new]
+        while ids:
+            candidate = {**base, **{bid: fresh[bid] for bid in ids}}
+            drawn = draw(candidate, step, added=list(ids))
+            if drawn[1] <= target_pages:
+                rewritten = outcome.texts = candidate
+                doc_path, pages, measured_lines, pages_are_estimated = drawn
+                return ids
+            if shrink <= 0 or len(ids) == 1:
+                break
+            shrink -= 1
+            ids = ids[:-1]
+        doc_path, pages, measured_lines, pages_are_estimated = draw(base, "revert")
+        rewritten = outcome.texts = base
+        return []
+
+    def bullet_cost(bullet: Bullet) -> int:
+        # The rewrite is asked for `_TARGET_LINES_PER_BULLET` lines; a shorter source
+        # stays shorter.
+        return min(_bullet_lines(bullet.text), _TARGET_LINES_PER_BULLET)
+
+    def bullet_rank(bullet: Bullet) -> float:
+        return score_bullet(bullet, requirements, semantic=semantic) * recency_of.get(
+            bullet.id, 1.0
+        )
+
+    def top_up_ladder() -> tuple[list[str], str | None]:
+        """One A/B/C pass. Returns (ids added, why it stopped short or None)."""
+        nonlocal total_bullets
+        added: list[str] = []
+        target_lines = math.ceil(underflow * capacity)
+
+        def shortfall() -> tuple[int, int]:
+            return target_lines - measured_lines, capacity - measured_lines
+
+        def rendered_ids() -> set[str]:
+            ids = set(rewritten)
+            for member_ids in members.values():
+                ids.update(member_ids)
+            return ids
+
+        def counts() -> dict[int, int]:
+            live = rendered_ids()
+            return {id(e): sum(1 for b in e.bullets if b.id in live) for e in entries}
+
+        def stop_text() -> str:
+            return (
+                f"no more bullets or entries fit in the remaining "
+                f"{max(0, capacity - measured_lines)} line(s)"
+            )
+
+        def take(ids: list[str]) -> None:
+            added.extend(ids)
+            topped_up.extend(ids)
+            already = {b.id for b in selected}
+            for bid in ids:
+                if bid in dropped:
+                    dropped.remove(bid)
+                if bid not in already:
+                    selected.append(all_sources[bid])
+
+        goal, room = shortfall()
+        if goal <= 0:
+            return added, None
+
+        # A — bullets of the chosen entries the caps still allow, including any the
+        # drop rung cut: they were relevant enough to pick once.
+        live, per_entry = rendered_ids(), counts()
+        owner = {b.id: e for e in entries for b in e.bullets}
+        pool = sorted(
+            (b for e in entries for b in e.bullets
+             if b.id not in live and (entry_cap is None or per_entry[id(e)] < entry_cap)),
+            key=bullet_rank, reverse=True,
+        )
+        picked: list[Bullet] = []
+        estimate = 0
+        for bullet in pool:
+            entry = owner[bullet.id]
+            if entry_cap is not None and per_entry[id(entry)] >= entry_cap:
+                continue
+            cost = bullet_cost(bullet)
+            if estimate + cost > room:
+                continue
+            picked.append(bullet)
+            per_entry[id(entry)] += 1
+            estimate += cost
+            if estimate >= goal:
+                break
+        if picked:
+            events.emit(
+                on_event, "fit",
+                f"Page {measured_lines / capacity:.0%} full; adding back "
+                f"{len(picked)} bullet(s)",
+                rung="topup-A", bullets=len(picked),
+            )
+            ids = add(picked, "topup-A", shrink=1)
+            if ids:
+                take(ids)
+            goal, room = shortfall()
+            if goal <= 0:
+                return added, None
+        last_failure: str | None = None
+
+        # B — one bullet past the per-entry cap, from an entry already at it.
+        b_draft: tuple[dict[str, str], list[str]] | None = None
+        if entry_cap is not None:
+            live, per_entry = rendered_ids(), counts()
+            extra = sorted(
+                (b for e in entries if per_entry[id(e)] >= entry_cap
+                 for b in e.bullets if b.id not in live and bullet_cost(b) <= room),
+                key=bullet_rank, reverse=True,
+            )
+            if extra:
+                bullet = extra[0]
+                events.emit(
+                    on_event, "fit",
+                    f"Page {measured_lines / capacity:.0%} full; trying bullet "
+                    f"{entry_cap + 1} in {entry_label(owner[bullet.id])}",
+                    rung="topup-B", bullet=bullet.id,
+                )
+                before = dict(rewritten)
+                ids = add([bullet], "topup-B", shrink=0)
+                if ids:
+                    goal, room = shortfall()
+                    if goal <= 0:
+                        take(ids)
+                        return added, None
+                    # Still short: take the extra bullet back out and try a new entry
+                    # instead; keep this draft in case no entry fits.
+                    b_draft = (dict(rewritten), ids)
+                    doc_path_b = draw(before, "revert")
+                    _set_state(before, doc_path_b)
+                    goal, room = shortfall()
+                else:
+                    last_failure = (
+                        f"adding a bullet to {entry_label(owner[bullet.id])} "
+                        f"overflowed the page"
+                    )
+
+        # C — the best entry not on the page yet, with as many of its top bullets
+        # (up to the cap) as reach the target.
+        chosen = {id(e) for e in entries}
+        live = rendered_ids()
+        live_sections = {
+            section_of.get(id(e)) for e in candidate_entries
+            if any(b.id in live for b in e.bullets)
+        }
+        ranked_entries = sorted(
+            (e for e in candidate_entries if id(e) not in chosen and e.bullets),
+            key=lambda e: score_entry(e, requirements, semantic=semantic),
+            reverse=True,
+        )
+        for entry in ranked_entries:
+            header = (2 if isinstance(entry, Experience) else 1) + (
+                0 if section_of.get(id(entry)) in live_sections else 1
+            )
+            top = sorted(entry.bullets, key=bullet_rank, reverse=True)
+            if entry_cap is not None:
+                top = top[:entry_cap]
+            k = 0
+            estimate = header
+            for bullet in top:
+                if estimate + bullet_cost(bullet) > room:
+                    break
+                estimate += bullet_cost(bullet)
+                k += 1
+                if estimate >= goal:
+                    break
+            if k == 0:
+                continue
+            events.emit(
+                on_event, "fit",
+                f"Page {measured_lines / capacity:.0%} full; adding "
+                f"{entry_label(entry)} with {k} bullet(s)",
+                rung="topup-C", entry=entry_label(entry), bullets=k,
+            )
+            ids = add(top[:k], "topup-C", shrink=k - 1)
+            if ids:
+                entries.append(entry)
+                by_id.update({b.id: b for b in entry.bullets})
+                total_bullets += len(entry.bullets)
+                take(ids)
+                goal, _ = shortfall()
+                if goal <= 0:
+                    return added, None
+                return added, f"top-up limit reached after adding {entry_label(entry)}"
+            last_failure = f"adding {entry_label(entry)} overflowed the page"
+            break
+
+        if b_draft is not None:
+            # No entry fit, but the extra bullet did: a fuller page beats a sparser one.
+            texts_b, ids_b = b_draft
+            _set_state(texts_b, draw(texts_b, "restore", added=list(ids_b)))
+            take(ids_b)
+        return added, last_failure or stop_text()
+
+    def _set_state(texts: dict[str, str], drawn: tuple[Path, int, int, bool]) -> None:
+        nonlocal rewritten, doc_path, pages, measured_lines, pages_are_estimated
+        rewritten = outcome.texts = texts
+        doc_path, pages, measured_lines, pages_are_estimated = drawn
+
+    def top_up() -> str | None:
+        """Fill the space trimming and widow repair freed, once the loop has settled on an
+        underfull page it cannot grow (see `top_up_ladder`). After the first round, the
+        added bullets get their own measured widow pass; if that frees lines, one more
+        round runs without a further widow pass (`config.MAX_TOPUP_ROUNDS`).
+
+        Returns why the page is still short, or None once it reaches the fill target."""
+        reason: str | None = None
+        for round_index in range(config.MAX_TOPUP_ROUNDS):
+            if measured_lines >= math.ceil(underflow * capacity):
+                return None
+            added, reason = top_up_ladder()
+            if not added or reason is None:
+                break
+            if round_index == config.MAX_TOPUP_ROUNDS - 1 or not repair_widows:
+                break
+            lines_before = measured_lines
+            widow_pass(only=set(added))
+            if measured_lines >= lines_before:
+                break
+        if measured_lines >= math.ceil(underflow * capacity):
+            return None
+        return reason
 
     while True:
         selected = select_within_entries(
@@ -865,7 +1279,9 @@ def fit(
             on_event=on_event,
         )
         rewritten = outcome.texts
-        doc_path, pages, measured_lines, pages_are_estimated = draw(rewritten)
+        doc_path, pages, measured_lines, pages_are_estimated = draw(
+            rewritten, "draft" if grow_attempts == 0 else "grow"
+        )
 
         members: dict[str, tuple[str, ...]] = {}
         pulled = 0
@@ -901,13 +1317,21 @@ def fit(
                         outcome.merges.extend(accepted)
                         for group in accepted:
                             members[group.survivor_id] = group.member_ids
-                        doc_path, pages, measured_lines, pages_are_estimated = draw(rewritten)
+                        doc_path, pages, measured_lines, pages_are_estimated = draw(
+                            rewritten, "combine"
+                        )
 
             # Rung 2 — pull back the bullets a few words from saving a whole line: one
             # call, only as many as the overflow needs plus one spare for wrap error.
             if pages > target_pages:
+                # Judge near-widows on the overflowing PDF itself (every page of it), not
+                # the character estimate; unmeasured bullets fall back to the estimate.
+                over_layout, over_measured = _widow_fits(
+                    doc_path, rewritten, estimated=pages_are_estimated
+                )
                 targets = _choose_pullbacks(
-                    rewritten, by_id, requirements, semantic, members, count=over_by() + 1
+                    rewritten, by_id, requirements, semantic, members, count=over_by() + 1,
+                    layout=over_layout, measured_ids=over_measured, recency=recency_of,
                 )
                 if targets:
                     events.emit(
@@ -922,7 +1346,9 @@ def fit(
                     if n_pulled:
                         rewritten = outcome.texts = pulled_texts
                         pulled += n_pulled
-                        doc_path, pages, measured_lines, pages_are_estimated = draw(rewritten)
+                        doc_path, pages, measured_lines, pages_are_estimated = draw(
+                            rewritten, "pullback", pulled=n_pulled
+                        )
 
             # Rung 3 — drop the weakest bullets whole. Deterministic, no model call.
             drop_rounds = 0
@@ -943,7 +1369,9 @@ def fit(
                 rewritten = outcome.texts = {
                     bid: text for bid, text in rewritten.items() if bid not in doomed
                 }
-                doc_path, pages, measured_lines, pages_are_estimated = draw(rewritten)
+                doc_path, pages, measured_lines, pages_are_estimated = draw(
+                    rewritten, "drop", dropped=list(doomed)
+                )
 
             if pages > target_pages:
                 if best is None:
@@ -962,7 +1390,7 @@ def fit(
                 dropped, members = best.dropped, best.members
                 for edu, courses in zip(resume.education, best.coursework, strict=False):
                     edu.coursework = list(courses)
-                doc_path, pages, measured_lines, pages_are_estimated = draw(rewritten)
+                doc_path, pages, measured_lines, pages_are_estimated = draw(rewritten, "restore")
                 if pages > target_pages:
                     if not pages_are_estimated:
                         render.to_pdf(doc_path, keep_active=False)
@@ -985,85 +1413,9 @@ def fit(
                     merges=len(outcome.merges), pulled_back=pulled, dropped=len(dropped),
                 )
 
-        # One bounded layout pass on a draft that already fits. Keep the pre-pass
-        # document available so any unexpected page growth can be reverted exactly.
+        # One bounded layout pass on a draft that already fits.
         if pages <= target_pages:
-            course_edu = next((edu for edu in resume.education if edu.coursework), None)
-            course_text = (
-                "Relevant Coursework: " + ", ".join(course_edu.coursework)
-                if course_edu else None
-            )
-            requested = dict(rewritten)
-            if course_text:
-                requested["__coursework__"] = course_text
-            layout, measured_ids = _widow_fits(
-                doc_path, requested, estimated=pages_are_estimated
-            )
-            before_widows = {
-                bid for bid in rewritten
-                if layout[bid].lines > 1 and layout[bid].last_fill < (
-                    config.WIDOW_MIN_FILL if bid in measured_ids else config.WIDOW_EST_FILL
-                )
-            }
-            targets = _widow_targets(
-                rewritten, by_id, layout, measured_lines=measured_lines,
-                capacity=capacity, members=members, estimated=pages_are_estimated,
-                measured_ids=measured_ids,
-            ) if repair_widows else {}
-            old_texts = dict(rewritten)
-            old_courses = list(course_edu.coursework) if course_edu else []
-            if targets:
-                repair_sources = dict(by_id)
-                for survivor, member_ids in members.items():
-                    if survivor in targets:
-                        originals = [by_id[mid] for mid in member_ids]
-                        repair_sources[survivor] = Bullet(
-                            id=survivor,
-                            text=" ".join(item.text for item in originals),
-                            tags=list({tag for item in originals for tag in item.tags}),
-                        )
-                repaired, _, _, rejected = _polish(
-                    rewritten, repair_sources, requirements, repair_widows=False,
-                    repair_verbs=False, targets=targets,
-                )
-                rewritten = outcome.texts = repaired
-                outcome.widow_repairs_rejected.update(rejected)
-            if repair_widows and course_edu and coursework_pool:
-                course_edu.coursework = facets.fit_coursework_to_budget(
-                    old_courses, pool=coursework_pool,
-                    jd_keywords=[k.phrase for k in requirements.keywords],
-                    chars_per_line=layout["__coursework__"].chars_per_line,
-                    last_fill=(layout["__coursework__"].last_fill
-                               if "__coursework__" in measured_ids else None),
-                    rendered_lines=(layout["__coursework__"].lines
-                                    if "__coursework__" in measured_ids else None),
-                )
-            changed = rewritten != old_texts or (
-                course_edu is not None and course_edu.coursework != old_courses
-            )
-            if changed:
-                doc_path, pages, measured_lines, pages_are_estimated = draw(rewritten)
-                if pages > target_pages:
-                    rewritten = outcome.texts = old_texts
-                    if course_edu:
-                        course_edu.coursework = old_courses
-                    doc_path, pages, measured_lines, pages_are_estimated = draw(rewritten)
-                    warnings.append("Widow repair overflowed the page; kept the fitting draft.")
-                    changed = False
-            if changed:
-                final_layout, final_measured_ids = _widow_fits(
-                    doc_path, rewritten, estimated=pages_are_estimated
-                )
-            else:
-                final_layout, final_measured_ids = layout, measured_ids
-            remaining = {
-                bid for bid in rewritten
-                if final_layout[bid].lines > 1 and final_layout[bid].last_fill < (
-                    config.WIDOW_MIN_FILL if bid in final_measured_ids else config.WIDOW_EST_FILL
-                )
-            }
-            outcome.widows_repaired = len(before_widows - remaining)
-            outcome.measured_widows_remaining = len(remaining)
+            widow_pass()
         else:
             outcome.measured_widows_remaining = 0
 
@@ -1086,8 +1438,15 @@ def fit(
         can_grow = limit < grow_limit and grow_attempts < config.MAX_GROW_ATTEMPTS
 
         if not underfull or not can_grow:
+            topup_reason: str | None = None
             if underfull:
-                if limit >= growth_ceiling:
+                topup_reason = top_up()
+                fill_ratio = measured_lines / capacity
+                underfull = fill_ratio < underflow
+            if underfull:
+                if topup_reason:
+                    reason = topup_reason
+                elif limit >= growth_ceiling:
                     reason = "reached the selectable bullet cap"
                 elif limit >= grow_limit:
                     reason = "a fuller draft overflowed, so the page was kept as trimmed"
@@ -1146,6 +1505,8 @@ def fit(
                 pulled_back=pulled,
                 dropped=dropped,
                 warnings=warnings,
+                topped_up=topped_up,
+                trace=trace,
             )
 
         # Convert the measured shortfall into bullets rather than adding one per round

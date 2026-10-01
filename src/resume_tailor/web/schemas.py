@@ -443,6 +443,10 @@ class RunReportOut(BaseModel):
     #: See `report.RunReport.calibration_rejection` — non-None only when a calibration
     #: file existed but was rejected as implausible, not simply absent.
     calibration_rejection: str | None = None
+    #: See `report.RunReport.topped_up` / `fit_trace`. Defaulted so a run saved before
+    #: these existed still validates; the SPA does not read them.
+    topped_up: list[str] = Field(default_factory=list)
+    fit_trace: list[dict] = Field(default_factory=list)
 
 
 class ExpandedEntryOut(BaseModel):

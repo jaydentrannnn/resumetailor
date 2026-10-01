@@ -1594,3 +1594,118 @@ def test_measured_repair_gets_one_fabrication_retry(rewrite_calls):
     assert len(calls) == 2
     assert out["a"] == "Built a Python service."
     assert fixed == 1 and rejected == {}
+
+
+# --------------------------------------------------------------------------------------
+# Slash-compound number bindings
+# --------------------------------------------------------------------------------------
+
+_TA_SOURCE = Bullet(
+    id="uci_b1",
+    text=(
+        "Facilitated three weekly labs in a team of three, clarifying Python and algorithm "
+        "concepts for over 130 students/week to improve assignment completion and "
+        "debugging skills."
+    ),
+    tags=["python"],
+)
+
+
+@pytest.mark.parametrize(
+    "rewritten",
+    [
+        "Facilitated weekly labs for over 130 students, clarifying Python and algorithm "
+        "concepts.",
+        "Facilitated weekly labs for 130+ students each week, clarifying Python concepts.",
+        "Led labs for over 130 students/week on Python and algorithms.",
+    ],
+)
+def test_a_slash_compound_source_noun_licenses_its_parts(rewritten):
+    assert rewrite.rebound_numbers([_TA_SOURCE], rewritten) == []
+
+
+@pytest.mark.parametrize(
+    ("rewritten", "claim"),
+    [
+        ("Led labs for over 130 teachers on Python.", "130 teachers"),
+        ("Taught 130 courses in Python.", "130 courses"),
+        # The rewrite's own compound must still match whole: the rate changed.
+        ("Led labs for 130 students/semester on Python.", "130 students/semester"),
+    ],
+)
+def test_a_slash_compound_source_still_rejects_a_rebound(rewritten, claim):
+    assert rewrite.rebound_numbers([_TA_SOURCE], rewritten) == [claim]
+
+
+# --------------------------------------------------------------------------------------
+# Recency weight
+# --------------------------------------------------------------------------------------
+
+
+@pytest.mark.parametrize(
+    ("text", "expected"),
+    [
+        ("2025-06", (2025, 6)),
+        ("Apr 2026 - May 2026", (2026, 5)),
+        ("June 2024", (2024, 6)),
+        ("Aug 2025", (2025, 8)),
+        ("2019 - 2023", (2023, 12)),
+        ("sometime", None),
+        ("", None),
+    ],
+)
+def test_end_month_reads_the_last_date_named(text, expected):
+    assert rewrite._end_month(text) == expected
+
+
+def _job(end: str, *, bullets: list[Bullet] | None = None) -> Experience:
+    return Experience(
+        company=f"Co {end}", title="Engineer", start="2020-01", end=end,
+        bullets=bullets or [Bullet(id=f"b{end}", text="Built things.", tags=["python"])],
+    )
+
+
+def test_entry_recency_decays_by_half_life_and_is_neutral_without_a_date(monkeypatch):
+    monkeypatch.setattr(config, "RECENCY_WEIGHT", 0.2)
+    monkeypatch.setattr(config, "RECENCY_HALF_LIFE_MONTHS", 24)
+    today = (2026, 9)
+    assert rewrite.entry_recency(_job("Present"), today=today) == pytest.approx(1.2)
+    assert rewrite.entry_recency(_job("2026-09"), today=today) == pytest.approx(1.2)
+    assert rewrite.entry_recency(_job("2024-09"), today=today) == pytest.approx(1.1)
+    project = Project(id="p", name="P", date="", bullets=[])
+    assert rewrite.entry_recency(project, today=today) == 1.0
+    garbled = Project(id="q", name="Q", date="someday", bullets=[])
+    assert rewrite.entry_recency(garbled, today=today) == 1.0
+    ongoing = Project(id="r", name="R", date="Jul 2026 - Present", bullets=[])
+    assert rewrite.entry_recency(ongoing, today=today) == pytest.approx(1.2)
+
+
+def test_entry_recency_is_off_at_zero_weight(monkeypatch):
+    monkeypatch.setattr(config, "RECENCY_WEIGHT", 0.0)
+    assert rewrite.entry_recency(_job("Present")) == 1.0
+
+
+def test_recency_breaks_a_tie_toward_the_recent_entry():
+    requirements = JobRequirements(
+        title="Engineer", seniority="mid",
+        keywords=[Keyword(phrase="Python", canonical="python", importance="must_have")],
+    )
+    old, recent = _job("2019-06"), _job("2026-06")
+    chosen = rewrite.select_entries([old, recent], requirements, limit=1)
+    assert chosen == [recent]
+
+
+def test_a_much_more_relevant_older_entry_still_wins():
+    requirements = JobRequirements(
+        title="Engineer", seniority="mid",
+        keywords=[Keyword(phrase="Python", canonical="python", importance="must_have")],
+    )
+    relevant = [
+        Bullet(id=f"old{i}", text="Built Python services.", tags=["python"]) for i in range(3)
+    ]
+    old = _job("2021-06", bullets=relevant)
+    recent = _job(
+        "2026-06", bullets=[Bullet(id="new1", text="Organised events.", tags=["events"])]
+    )
+    chosen = rewrite.select_entries([old, recent], requirements, limit=1)
+    assert chosen == [old]

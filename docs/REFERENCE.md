@@ -777,6 +777,17 @@ writes each bundle plus a filled sample PDF for checking a design change by eye.
   `--rebaseline`, the deliberate acknowledgement step. There is no single "expected page
   count" baked into the code — it was hardcoded to one person's resume once (39 bullets →
   3 pages) and broke for every other workspace.
+- **Top-up after trimming (`MAX_TOPUP_ROUNDS`, default 2).** When the loop settles on an
+  underfull page it cannot grow (grow cap, bullet ceiling or `MAX_GROW_ATTEMPTS`), it
+  re-adds bullets the caps allow (including ones the drop rung cut), then tries one bullet
+  past `max_bullets_per_entry` (kept only if that reaches the target), then adds the
+  best entry not yet on the page with as many bullets as reach the target. Only the added
+  bullets are rewritten; any step that overflows is reverted. Every render is recorded in
+  `FitResult.trace` (`report.fit_trace` in `run.json`).
+- **Recency (`RECENCY_WEIGHT` 0.20, `RECENCY_HALF_LIFE_MONTHS` 24)** multiplies an entry's
+  relevance at every code-side ranking site (entry choice, bullet selection, drops,
+  pull-back ties, top-up). Never sent to the model, so the score cache is unaffected; 0.0
+  restores relevance-only ranking. Undated entries are neutral.
 
 ---
 
