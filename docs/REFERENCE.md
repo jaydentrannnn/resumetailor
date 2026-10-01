@@ -12,7 +12,7 @@ full (§11).
 
 ---
 
-## 1. CLI flags (`tailor.py`)
+## 1. CLI flags (`tailor.py` → `cli/args.py`)
 
 | Flag | Effect |
 |---|---|
@@ -1087,7 +1087,7 @@ fixed overhead the fit loop never trims.
   prompt byte-for-byte; selected fields use resolved defaults, and custom overrides
   keep the locked core prepended. Still plain
   strings — the architectural invariant holds. `style.activate()` sits beside
-  `config.resolve()` in both `web/jobs.py` and `tailor.py`.
+  `config.resolve()` in both `web/jobs.py` and `cli/run.py`.
 
 ---
 
@@ -1104,7 +1104,7 @@ fixed overhead the fit loop never trims.
 - **`tests/test_tailor_cli.py` has autouse fixtures stubbing `rewrite.score_table`,
   `facets.select_facets`, `expand.expand_experience`, `skills.select_skills`,
   `coverletter.draft_letter`, `review.review_bullets`.** Adding another API call to
-  `tailor.main` needs those fixtures extended or the CLI tests reach the network.
+  `cli.run.main` needs those fixtures extended or the CLI tests reach the network.
   `tests/test_web.py` stubs the same seams on the job path (the `client` fixture's
   default `skills.select_skills` and `coverletter.draft_letter` stubs in particular — a
   per-test stub still wins by overriding it after fixture setup).

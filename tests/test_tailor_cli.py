@@ -6,31 +6,22 @@ error presentation, and neither should require an API key or Word to verify.
 
 from __future__ import annotations
 
-import importlib.util
 import json
 from pathlib import Path
 
 import pytest
 
 from resume_tailor import config
+from resume_tailor.cli import run as cli_run
 from resume_tailor.pipeline import fit as fit_mod
 from resume_tailor.pipeline.jd import JobRequirements, Keyword
 from resume_tailor.pipeline.rewrite import FabricationError
 from tests.fixtures import synthetic_resume
 
-_TAILOR_PATH = Path(__file__).resolve().parents[1] / "tailor.py"
-
-
-def _load_cli():
-    spec = importlib.util.spec_from_file_location("tailor_cli", _TAILOR_PATH)
-    module = importlib.util.module_from_spec(spec)
-    spec.loader.exec_module(module)
-    return module
-
 
 @pytest.fixture
 def cli():
-    return _load_cli()
+    return cli_run
 
 
 @pytest.fixture(autouse=True)

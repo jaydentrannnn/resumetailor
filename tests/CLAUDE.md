@@ -12,7 +12,7 @@ detail: `docs/REFERENCE.md` §11.
   affects callers that resolve `module.name` at call time; after moving code, move the
   patch target with it, or the test silently stops covering anything.
 - **`test_tailor_cli.py` autouse-stubs every API stage**; adding an API call to
-  `tailor.main` means extending them. `test_web.py` stubs the same seams on the job path
+  `cli.run.main` means extending them. `test_web.py` stubs the same seams on the job path
   (per-test stubs override the `client` fixture defaults).
 - **Word/COM is monkeypatched at `fit_mod.render`** (`test_render.py` is the real-docx
   exception). **Assert on the specific warning**, not on warnings being empty —

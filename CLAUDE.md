@@ -62,7 +62,7 @@ stop. That is the bug this project exists to avoid.
 - **Writing style is user-editable per profile with a locked core** (`style.py`; no
   target field or override → legacy prompt byte-for-byte; selected field → resolved
   defaults, with custom overrides preserved and locked core prepended;
-  `style.activate()` beside `config.resolve()` in `web/jobs.py` and `tailor.py`).
+  `style.activate()` beside `config.resolve()` in `web/jobs.py` and `cli/run.py`).
 - **A vocabulary-proposal approval that would rewrite an existing bullet tag 409s for
   explicit acknowledgement and backs up the master resume first** — do not weaken that.
 
@@ -120,6 +120,7 @@ Docs cite bare module names (`fit.py`, `render.py`); the few that repeat across 
 | Package | Holds |
 |---|---|
 | `config`, `workspace` | top-level modules — config globals rebound per workspace |
+| `cli/` | the `tailor.py` CLI: `args` (flags), `run` (one invocation, `_CliRun` steps) |
 | `pipeline/` | `jd`, `rewrite`, `facets`, `expand`, `skills`, `coverletter`, `review`, `propose` (the LLM callers), `fit`, `merge`, `include`, `report`, `estimate`, `events`, `runs`, `jd_input`, `jdsim` |
 | `document/` | `render`, `convert`, `docx_text`, `docx_normalize`, `template_*`, `cover_template`, `default_templates`, `calibrate`, `rerender`, `thumbnails` — no LLM, ever |
 | `content/` | `data` (the master-resume model), `data_transfer`, `edu_dates`, `libraries`, `industries`, `style`, `labels`, `onboarding`, `resume_versions` |
@@ -143,7 +144,7 @@ Guidelines, not hard caps — cohesion wins over a line count:
 ## Architecture
 
 Two halves that never mix, joined by a measure-and-retry loop (`fit.py` owns the loop;
-`tailor.py` is a thin CLI over it; `report.py` is pure formatting):
+`cli/run.py` (behind the `tailor.py` shim) is a thin CLI over it; `report.py` is pure formatting):
 
 ```
 master_resume.json + jd.txt
