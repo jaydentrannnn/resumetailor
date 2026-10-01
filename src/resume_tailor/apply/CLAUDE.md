@@ -1,0 +1,38 @@
+# apply/ — the application funnel
+
+Discover → screen → tailor → packet → fill. Full detail: `docs/REFERENCE.md` §3; decision
+log: `docs/notes/apply-funnel.md` (grep it, never Read it whole). Live fills run in the
+packaged desktop app, not this checkout (see the auto-memory note on the live fill runtime).
+
+## Rules specific to this package
+
+- **LLM calls only in `answer.py`, `model_resolver.py`, `hybrid_resolver.py`** — form-field
+  labels/options and resume text in, plain text/JSON out. Everything else here is
+  deterministic (`screen`, `eligibility`, `salary`, `field_matcher` are pure, no LLM).
+- **Every click goes through `clicks.py`**; every automatic submit passes `submit_guard.py`.
+- **Prepare uses the Tailor settings' model routing; Fill runs under
+  `config.pinned(ApplySettings.model_spec)`** (the Apply page's "Autofill model").
+- **Fill failures self-heal in code** (retry/recover) rather than producing a review item.
+- **Dedupe is by ATS requisition** (`identity.canonical_key`); rows live in the workspace's
+  `app.db` (`store.py`, via `storage/db.py`).
+- **The extension/backend never fetch, click or crawl LinkedIn/Indeed** — capture only.
+- A new form failure is reproduced as a captured page in `tests/fixtures/forms/` first.
+
+## Module map
+
+| Area | Modules |
+|---|---|
+| Orchestration | `daily` (nightly run), `scheduler`, `operations` (Find/Prepare/Fill coordinator), `preparation`, `packet`, `store`, `review`, `attention` |
+| Discovery | `sources` (README tables), `source_catalog` (+ `catalog/sources.json`), `boards` (+ `watchlists/`), `job_apis`, `ats_api`, `fetch_jd`, `identity` |
+| Screening | `screen`, `eligibility`, `form_guards` |
+| Answering | `questions` (one decision layer), `answer`, `answer_memory`, `salary`, `phone`, `profile` |
+| Form filling (generic) | `fill` (CDP fill entrypoint), `engine` (verified engine), `browser`, `cdp_relay`, `controls`, `clicks`, `scanner`, `wizards`, `field_catalog`, `field_matcher`, `field_types`, `form_routes`, `ats_hints`, `adapters`, `attachments`, `submit_guard` |
+| Model assist | `hybrid_resolver`, `model_resolver` |
+| Per-ATS flows | `workday_flow`, `workday_auth`, `workday_repeaters`, `smartrecruiters_flow` |
+| Injected JS | `filler.js` (label reading + fill), `filler_readiness.js`, `dom_scan.js` |
+
+## Tests
+
+`tests/test_fill.py`, `test_workday_*.py`, `test_smartrecruiters_flow.py`,
+`test_apply_*.py`, `test_filler_dom.py` (runs `filler.js`), `tests/browser/` (real
+browser, opt-in). Browser objects are faked at `browser` / `controls` seams.

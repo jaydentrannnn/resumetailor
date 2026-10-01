@@ -98,38 +98,31 @@ non-active profile. The full flag table (`--merge`, `--no-semantic`, `--fill-tar
 re-run `calibrate.py` and restart the server after any template change.
 
 **Web UI without Docker**: build the frontend (`cd frontend; npm install; npm run build`)
-then run the uvicorn line above; open http://127.0.0.1:8000. Hot-reload SPA: `npm run dev`
-in `frontend/` (proxies `/api`). Frontend equivalents of pytest: `npm run lint` (oxlint),
-`npm run test` (vitest), `npx tsc -b` (typecheck); single test `npx vitest run
-src/lib/runProgress.test.ts` or `pytest tests/test_rewrite.py -k pattern`. Docker uses
-LibreOffice for PDF measurement; host Ollama/LM Studio are reachable via
-`host.docker.internal`; first container run: `docker compose run --rm app python
+then run the uvicorn line above; open http://127.0.0.1:8000. Frontend dev/lint/test
+commands: `frontend/CLAUDE.md`. Single Python test: `pytest tests/test_rewrite.py -k
+pattern`. Docker uses LibreOffice for PDF measurement; host Ollama/LM Studio are reachable
+via `host.docker.internal`; first container run: `docker compose run --rm app python
 scripts/calibrate.py`.
 
-## Testing conventions
+## Area guides
 
-The whole suite runs **without an API key, network, or Word** — keep it that way.
+Each area has its own `CLAUDE.md` (loaded when you work there) with its module map and
+local rules: `tests/CLAUDE.md` (testing conventions — the suite runs **without an API key,
+network, or Word**; keep it that way), `src/resume_tailor/apply/CLAUDE.md`,
+`src/resume_tailor/web/CLAUDE.md`, `frontend/CLAUDE.md`.
 
-- **Stub at `llm.client_for`** with **hand-written fake clients**, not a mocking library
-  (`_FakeClient` in `tests/test_jd.py`; tests assert recorded `kwargs`; `test_llm.py` goes
-  one level lower, `llm.httpx.post`). A stage that can call twice needs a **shared reply
-  queue** in its fake — a per-client copy replays the first reply (`rewrite_calls`
-  fixture, `tests/test_rewrite.py`).
-- **`tests/test_tailor_cli.py` autouse-stubs every API stage**; adding an API call to
-  `tailor.main` means extending them. `tests/test_web.py` stubs the same seams on the job
-  path (per-test stubs override the `client` fixture defaults).
-- **Word/COM is monkeypatched at `fit_mod.render`** (`test_render.py` is the real-docx
-  exception). **Assert on the specific warning**, not on warnings being empty — `FitResult`
-  carries underflow *and* widow warnings, and identity fakes legitimately produce
-  near-empty final lines.
-- **The suite is hermetic** — `tests/fixtures.py`'s synthetic builders +
-  `synthetic_resume()`, never `data.load()`; `conftest.py` autouse fixtures pin
-  calibration, template paths, and vocabulary packs. Fixture entry headers need real
-  bold/italic/alignment formatting or `_split_entries`' fingerprint re-split mis-splits
-  them. Verify: `RESUME_TAILOR_DATA_DIR=<empty> RESUME_TAILOR_TEMPLATES_DIR=<empty> pytest`.
-- **Real-`master_resume.json` tests are `@pytest.mark.owner`** (excluded by default;
-  `pytest -m owner`). Staged template builds fall back in-process when the subprocess
-  fails — see `tests/test_web.py::_resume_upload_with_profile`.
+## Code organization
+
+Guidelines, not hard caps — cohesion wins over a line count:
+
+- **Functions ≲ 100 lines** (the one that matters most); source files ≲ 400 lines; test
+  files ≲ 800 lines; frontend components ≲ 150 lines. A file that is mostly declarative
+  data (schemas, catalogs) may run longer.
+- **When splitting, keep monkeypatch seams intact**: tests patch `module.name` where it is
+  *looked up*. Move the patch targets in the same commit as the code; no re-export shims
+  that leave tests patching a dead binding.
+- **`config` stays one module** — workspaces rebind its globals at runtime; only pure
+  helpers may move out of it.
 
 ## Architecture
 
