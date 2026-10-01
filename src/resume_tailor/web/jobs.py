@@ -487,14 +487,81 @@ class JobQueue:
 
     def _execute_in_context(self, job: Job) -> None:
         """Run one job end-to-end. Mutates `job` with events and a final report."""
-        settings = job.settings
-        on_event: ProgressCallback = job.emit
+        _TailorJobRun(job).run()
+
+
+class _TailorJobRun:
+    """One tailoring job's pipeline, in the active workspace context.
+
+    The core stages (`_extract` → `_score` → `_select_facets` → `_fit`) raise
+    `RuntimeError` on failure; the bonus artifacts after them (expansion, skills, cover
+    letter, vocabulary proposals) report a progress event and never fail the job.
+    """
+
+    out_dir: Path
+    resume: MasterResume
+    full_resume: MasterResume
+    master_resume: MasterResume
+    known_tags: list[str]
+    requirements: jd.JobRequirements
+    result: fit.FitResult
+
+    def __init__(self, job: Job) -> None:
+        self.job = job
+        self.settings = job.settings
+        self.on_event: ProgressCallback = job.emit
+
+    def run(self) -> None:
+        job, settings = self.job, self.settings
+        self._prepare()
+        self._extract()
+        job.check_cancelled()
+        self._score()
+        # Kept unfiltered for `expand.expand_experience` below — an excluded job still
+        # appears in the application-form paste tile, per its own decision. Applied here
+        # (after scoring, before facets) so an exclusion toggle never invalidates the
+        # score cache, and so facets never sees a pool an excluded entry contributed to.
+        self.full_resume = self.resume
+        self.resume = include.apply(self.resume, settings.include)
+
+        job.check_cancelled()
+        self._select_facets()
+        job.check_cancelled()
+        self._fit()
+        self._ensure_pdf()
+        job.report = _to_report_out(
+            report.report_data(
+                self.resume, self.requirements, self.result, master=self.master_resume
+            )
+        )
+        self._write_run_files()
+
+        job.check_cancelled()
+        if not settings.no_expand:
+            self._expand()
+        job.check_cancelled()
+        if not settings.no_skills:
+            self._select_skills()
+        job.check_cancelled()
+        if settings.cover_letter and not settings.no_cover_letter:
+            self._draft_cover_letter()
+        job.check_cancelled()
+        if settings.suggest_vocabulary:
+            self._suggest_vocabulary()
+
+    def _emit(self, stage: str, message: str, **detail: object) -> None:
+        self.on_event(ProgressEvent(stage=stage, message=message, detail=detail))
+
+    # -- core stages -------------------------------------------------------------------
+
+    def _prepare(self) -> None:
+        job, settings = self.job, self.settings
         # Create the job directory first so a failure during extract/score still leaves
         # a place for `run.json` — history needs something on disk even for failed runs.
-        out_dir = config.OUTPUT_DIR / "jobs" / job.job_id
-        out_dir.mkdir(parents=True, exist_ok=True)
-        job.out_dir = out_dir
-        industries.save(job.guidance, out_dir)
+        self.out_dir = config.OUTPUT_DIR / "jobs" / job.job_id
+        self.out_dir.mkdir(parents=True, exist_ok=True)
+        job.out_dir = self.out_dir
+        industries.save(job.guidance, self.out_dir)
         job.check_cancelled()
 
         try:
@@ -508,130 +575,116 @@ class JobQueue:
         except ValueError as exc:
             raise RuntimeError(str(exc)) from exc
 
-        resume = data.load()
-        known_tags = sorted({t for b in resume.all_bullets() for t in b.tags})
+        self.resume = data.load()
+        self.known_tags = sorted({t for b in self.resume.all_bullets() for t in b.tags})
         job.check_cancelled()
 
+    def _extract(self) -> None:
+        job, settings, out_dir = self.job, self.settings, self.out_dir
         try:
-            requirements = jd.extract_consensus(
+            self.requirements = jd.extract_consensus(
                 job.jd_text,
-                known_tags=known_tags,
+                known_tags=self.known_tags,
                 runs=config.extract_runs(settings.extract_runs),
                 use_cache=not settings.no_cache,
-                on_event=on_event,
+                on_event=self.on_event,
             )
         except (ValueError, RuntimeError, LLMError) as exc:
             raise RuntimeError(str(exc)) from exc
 
         (out_dir / "jd.txt").write_text(job.jd_text, encoding="utf-8")
         (out_dir / "requirements.json").write_text(
-            requirements.model_dump_json(indent=2),
+            self.requirements.model_dump_json(indent=2),
             encoding="utf-8",
         )
-
-        paraphrased = jd.verify_verbatim(requirements, job.jd_text)
+        paraphrased = jd.verify_verbatim(self.requirements, job.jd_text)
         if paraphrased:
-            on_event(
-                ProgressEvent(
-                    stage="extract",
-                    message="Some extracted phrases are not verbatim from the posting",
-                    detail={"paraphrased": paraphrased},
-                )
+            self._emit(
+                "extract",
+                "Some extracted phrases are not verbatim from the posting",
+                paraphrased=paraphrased,
             )
 
-        job.check_cancelled()
-        semantic: dict[str, float] | None = None
-        if not settings.no_semantic:
-            try:
-                semantic = rewrite.score_table(
-                    resume.all_bullets(),
-                    requirements,
-                    use_cache=not settings.no_cache,
-                    on_event=on_event,
-                )
-            except LLMError as exc:
-                raise RuntimeError(str(exc)) from exc
-            except (RuntimeError, ValueError) as exc:
-                on_event(
-                    ProgressEvent(
-                        stage="score",
-                        message=f"Semantic scoring unavailable; ranking on keywords only ({exc})",
-                        detail={},
-                    )
-                )
+    def _score(self) -> None:
+        settings = self.settings
+        self.semantic: dict[str, float] | None = None
+        if settings.no_semantic:
+            return
+        try:
+            self.semantic = rewrite.score_table(
+                self.resume.all_bullets(),
+                self.requirements,
+                use_cache=not settings.no_cache,
+                on_event=self.on_event,
+            )
+        except LLMError as exc:
+            raise RuntimeError(str(exc)) from exc
+        except (RuntimeError, ValueError) as exc:
+            self._emit(
+                "score", f"Semantic scoring unavailable; ranking on keywords only ({exc})"
+            )
 
-        # Kept unfiltered for `expand.expand_experience` below — an excluded job still
-        # appears in the application-form paste tile, per its own decision. Applied here
-        # (after scoring, before facets) so an exclusion toggle never invalidates the
-        # score cache, and so facets never sees a pool an excluded entry contributed to.
-        full_resume = resume
-        resume = include.apply(resume, settings.include)
-
-        job.check_cancelled()
-        include_links = not settings.no_project_links
+    def _select_facets(self) -> None:
+        settings, resume, requirements = self.settings, self.resume, self.requirements
+        self.include_links = not settings.no_project_links
         try:
             if settings.no_facets:
                 facet_result = facets.budget_only(
-                    resume, requirements, include_project_links=include_links
+                    resume, requirements, include_project_links=self.include_links
                 )
             else:
                 facet_result = facets.select_facets(
                     resume,
                     requirements,
                     use_cache=not settings.no_cache,
-                    include_project_links=include_links,
-                    on_event=on_event,
+                    include_project_links=self.include_links,
+                    on_event=self.on_event,
                 )
         except LLMError as exc:
             raise RuntimeError(str(exc)) from exc
         except (RuntimeError, ValueError) as exc:
-            on_event(
-                ProgressEvent(
-                    stage="facets",
-                    message=(
-                        f"Facet selection unavailable; truncating pools in original "
-                        f"order ({exc})"
-                    ),
-                    detail={},
-                )
+            self._emit(
+                "facets",
+                f"Facet selection unavailable; truncating pools in original order ({exc})",
             )
             facet_result = facets.budget_only(
-                resume, requirements, include_project_links=include_links
+                resume, requirements, include_project_links=self.include_links
             )
         for warning in facet_result.warnings:
-            on_event(
-                ProgressEvent(stage="facets", message=warning, detail={})
-            )
+            self._emit("facets", warning)
+        self.facet_result = facet_result
         # Captured before the rebind: facets.apply truncates Project.tech to its render
         # budget, and report.diagnose_gaps needs the untruncated pool to find evidence there.
-        master_resume = resume
-        resume = facets.apply(resume, facet_result)
+        self.master_resume = resume
+        self.resume = facets.apply(resume, facet_result)
 
-        out_path = out_dir / "tailored.docx"
-        layout = active_layout()
-        contact_fields = include.contact_order(settings.include, layout)
+    def _fit(self) -> None:
+        settings = self.settings
+        self.out_path = self.out_dir / "tailored.docx"
+        self.layout = active_layout()
+        self.contact_fields = include.contact_order(settings.include, self.layout)
 
-        job.check_cancelled()
+        self.job.check_cancelled()
         try:
-            result = fit.fit(
-                resume,
-                requirements,
+            self.result = fit.fit(
+                self.resume,
+                self.requirements,
                 target_pages=settings.pages,
-                out=out_path,
+                out=self.out_path,
                 max_experience=settings.experience,
                 max_projects=settings.projects,
-                semantic=semantic,
+                semantic=self.semantic,
                 repair_widows=not settings.no_widow_repair,
                 repair_verbs=not settings.no_verb_repair,
                 merge_bullets=settings.merge,
-                include_project_links=include_links,
-                contact_fields=contact_fields,
+                include_project_links=self.include_links,
+                contact_fields=self.contact_fields,
                 fill_target=settings.fill_target,
                 initial_bullet_share=settings.initial_bullet_share,
                 experience_bullet_share=settings.experience_bullet_share,
                 max_bullets_per_entry=settings.max_bullets_per_entry,
-                coursework_pool=facet_result.coursework_pool,
-                on_event=on_event,
+                coursework_pool=self.facet_result.coursework_pool,
+                on_event=self.on_event,
             )
         except FabricationError as exc:
             raise RuntimeError(str(exc)) from exc
@@ -640,28 +693,22 @@ class JobQueue:
         except (FileNotFoundError, RuntimeError) as exc:
             raise RuntimeError(str(exc)) from exc
 
+    def _ensure_pdf(self) -> None:
         # Ensure a PDF sits beside the docx for the preview endpoint. The fit loop already
         # measured one, but a failed measurement leaves only the estimate — regenerate so
         # the UI can still offer a downloadable preview when LibreOffice is available.
-        pdf_path = out_path.with_suffix(".pdf")
-        if not pdf_path.exists():
-            try:
-                from resume_tailor import render
+        pdf_path = self.out_path.with_suffix(".pdf")
+        if pdf_path.exists():
+            return
+        try:
+            from resume_tailor import render
 
-                render.to_pdf(out_path, pdf_path, keep_active=False)
-            except RuntimeError as exc:
-                on_event(
-                    ProgressEvent(
-                        stage="render",
-                        message=f"PDF preview unavailable ({exc})",
-                        detail={},
-                    )
-                )
+            render.to_pdf(self.out_path, pdf_path, keep_active=False)
+        except RuntimeError as exc:
+            self._emit("render", f"PDF preview unavailable ({exc})")
 
-        job.report = _to_report_out(
-            report.report_data(resume, requirements, result, master=master_resume)
-        )
-
+    def _write_run_files(self) -> None:
+        out_dir, result = self.out_dir, self.result
         (out_dir / "bullets.json").write_text(
             json.dumps(result.bullets, indent=2),
             encoding="utf-8",
@@ -675,141 +722,128 @@ class JobQueue:
             # later without a model call (`rerender.py`).
             rerender.save_snapshot(
                 out_dir,
-                resume,
-                target_pages=settings.pages,
-                include_project_links=include_links,
-                contact_fields=list(contact_fields) if contact_fields is not None else None,
-                layout=layout,
+                self.resume,
+                target_pages=self.settings.pages,
+                include_project_links=self.include_links,
+                contact_fields=(
+                    list(self.contact_fields) if self.contact_fields is not None else None
+                ),
+                layout=self.layout,
                 merges=result.merges,
             )
         except (OSError, TypeError, ValueError) as exc:
-            logger.warning("Could not save the re-render snapshot for %s: %s", job.job_id, exc)
+            logger.warning(
+                "Could not save the re-render snapshot for %s: %s", self.job.job_id, exc
+            )
 
-        job.check_cancelled()
-        if not settings.no_expand:
-            try:
-                # Unfiltered resume: an experience entry excluded from the tailored
-                # resume still appears in the application-form paste tile.
-                expansion = expand.expand_experience(
-                    full_resume,
-                    requirements,
-                    fit_result=result,
-                    semantic=semantic,
-                    use_cache=not settings.no_cache,
-                    on_event=on_event,
-                )
-                job.expansion = _to_expansion_out(expansion)
-                expansion_record = job.expansion.model_dump()
-                # Keep durable evidence that an empty expansion truly means there
-                # were no source jobs; later profile edits cannot establish this.
-                expansion_record["source_experience_count"] = len(full_resume.experience)
-                (out_dir / "expansion.json").write_text(
-                    json.dumps(expansion_record, indent=2), encoding="utf-8",
-                )
-                (out_dir / "expansion.md").write_text(
-                    expand.format_markdown(expansion), encoding="utf-8"
-                )
-            except Exception as exc:  # noqa: BLE001 - bonus artifact; never fail the job
-                on_event(
-                    ProgressEvent(
-                        stage="expand",
-                        message=f"Experience expansion skipped ({exc})",
-                        detail={},
-                    )
-                )
+    # -- bonus artifacts: never fail the job --------------------------------------------
 
-        job.check_cancelled()
-        if not settings.no_skills:
-            try:
-                # `master_resume` (post-include, pre-facets): exactly what
-                # `report.diagnose_gaps` above ran against, so the tile's "enter these"
-                # and "you can't claim these" halves partition one evidence universe. Not
-                # `full_resume` — an excluded entry is the user saying "not part of this
-                # application", and a skill evidenced only there should not be suggested
-                # for the Skills box of the package actually being submitted. Not the
-                # post-facets `resume` — facets truncates Project.tech to its render
-                # budget, which would silently drop evidence.
-                plan = skills.select_skills(
-                    master_resume,
-                    requirements,
-                    use_cache=not settings.no_cache,
-                    on_event=on_event,
-                )
-                job.skills = _to_skills_out(plan)
-                (out_dir / "skills.json").write_text(
-                    job.skills.model_dump_json(indent=2), encoding="utf-8"
-                )
-                (out_dir / "skills.md").write_text(
-                    skills.format_markdown(plan), encoding="utf-8"
-                )
-            except Exception as exc:  # noqa: BLE001 - bonus artifact; never fail the job
-                on_event(
-                    ProgressEvent(
-                        stage="skills",
-                        message=f"Skills selection skipped ({exc})",
-                        detail={},
-                    )
-                )
+    def _expand(self) -> None:
+        job, out_dir = self.job, self.out_dir
+        try:
+            # Unfiltered resume: an experience entry excluded from the tailored resume
+            # still appears in the application-form paste tile.
+            expansion = expand.expand_experience(
+                self.full_resume,
+                self.requirements,
+                fit_result=self.result,
+                semantic=self.semantic,
+                use_cache=not self.settings.no_cache,
+                on_event=self.on_event,
+            )
+            job.expansion = _to_expansion_out(expansion)
+            expansion_record = job.expansion.model_dump()
+            # Keep durable evidence that an empty expansion truly means there were no
+            # source jobs; later profile edits cannot establish this.
+            expansion_record["source_experience_count"] = len(self.full_resume.experience)
+            (out_dir / "expansion.json").write_text(
+                json.dumps(expansion_record, indent=2), encoding="utf-8",
+            )
+            (out_dir / "expansion.md").write_text(
+                expand.format_markdown(expansion), encoding="utf-8"
+            )
+        except Exception as exc:  # noqa: BLE001 - bonus artifact; never fail the job
+            self._emit("expand", f"Experience expansion skipped ({exc})")
 
-        job.check_cancelled()
-        if settings.cover_letter and not settings.no_cover_letter:
-            try:
-                letter = coverletter.draft_letter(
-                    master_resume,
-                    requirements,
-                    result.bullets,
-                    job.jd_text,
-                    use_cache=not settings.no_cache,
-                    angles=coverletter.CoverAngles(
-                        why_company=settings.cover_angles.why_company,
-                        problem=settings.cover_angles.problem,
-                        approach=settings.cover_angles.approach,
-                        tone=settings.cover_angles.tone,
-                    ),
-                    on_event=on_event,
-                )
-                cover_path = out_dir / "cover.docx"
-                coverletter.render_cover_letter(
-                    master_resume,
-                    letter,
-                    out=cover_path,
-                )
-                job.cover_letter = _to_cover_out(letter, out_dir=out_dir)
-                (out_dir / "cover.json").write_text(
-                    job.cover_letter.model_dump_json(indent=2),
-                    encoding="utf-8",
-                )
-                (out_dir / "cover.md").write_text(
-                    coverletter.format_markdown(letter),
-                    encoding="utf-8",
-                )
-            except Exception as exc:  # noqa: BLE001 - bonus artifact; never fail the job
-                message = f"Cover letter skipped ({exc})"
-                on_event(ProgressEvent(stage="cover", message=message, detail={}))
-                # Also a run warning, not just a progress event: a failed cover stage
-                # renders no card at all, so an event alone leaves the user with a
-                # silently missing artifact and nowhere showing why.
-                if job.report is not None:
-                    job.report.warnings.append(message)
+    def _select_skills(self) -> None:
+        job, out_dir = self.job, self.out_dir
+        try:
+            # `master_resume` (post-include, pre-facets): exactly what
+            # `report.diagnose_gaps` above ran against, so the tile's "enter these" and
+            # "you can't claim these" halves partition one evidence universe. Not
+            # `full_resume` — an excluded entry is the user saying "not part of this
+            # application", and a skill evidenced only there should not be suggested for
+            # the Skills box of the package actually being submitted. Not the post-facets
+            # `resume` — facets truncates Project.tech to its render budget, which would
+            # silently drop evidence.
+            plan = skills.select_skills(
+                self.master_resume,
+                self.requirements,
+                use_cache=not self.settings.no_cache,
+                on_event=self.on_event,
+            )
+            job.skills = _to_skills_out(plan)
+            (out_dir / "skills.json").write_text(
+                job.skills.model_dump_json(indent=2), encoding="utf-8"
+            )
+            (out_dir / "skills.md").write_text(
+                skills.format_markdown(plan), encoding="utf-8"
+            )
+        except Exception as exc:  # noqa: BLE001 - bonus artifact; never fail the job
+            self._emit("skills", f"Skills selection skipped ({exc})")
 
-        job.check_cancelled()
-        if settings.suggest_vocabulary:
-            try:
-                _draft_vocabulary_proposals(
-                    known_tags=known_tags,
-                    master_resume=master_resume,
-                    requirements=requirements,
-                    selected_texts=result.bullets,
-                    on_event=on_event,
-                )
-            except Exception as exc:  # noqa: BLE001 - advisory only; never fail the job
-                on_event(
-                    ProgressEvent(
-                        stage="propose",
-                        message=f"Vocabulary suggestions skipped ({exc})",
-                        detail={},
-                    )
-                )
+    def _draft_cover_letter(self) -> None:
+        job, settings, out_dir = self.job, self.settings, self.out_dir
+        try:
+            letter = coverletter.draft_letter(
+                self.master_resume,
+                self.requirements,
+                self.result.bullets,
+                job.jd_text,
+                use_cache=not settings.no_cache,
+                angles=coverletter.CoverAngles(
+                    why_company=settings.cover_angles.why_company,
+                    problem=settings.cover_angles.problem,
+                    approach=settings.cover_angles.approach,
+                    tone=settings.cover_angles.tone,
+                ),
+                on_event=self.on_event,
+            )
+            cover_path = out_dir / "cover.docx"
+            coverletter.render_cover_letter(
+                self.master_resume,
+                letter,
+                out=cover_path,
+            )
+            job.cover_letter = _to_cover_out(letter, out_dir=out_dir)
+            (out_dir / "cover.json").write_text(
+                job.cover_letter.model_dump_json(indent=2),
+                encoding="utf-8",
+            )
+            (out_dir / "cover.md").write_text(
+                coverletter.format_markdown(letter),
+                encoding="utf-8",
+            )
+        except Exception as exc:  # noqa: BLE001 - bonus artifact; never fail the job
+            message = f"Cover letter skipped ({exc})"
+            self._emit("cover", message)
+            # Also a run warning, not just a progress event: a failed cover stage renders
+            # no card at all, so an event alone leaves the user with a silently missing
+            # artifact and nowhere showing why.
+            if job.report is not None:
+                job.report.warnings.append(message)
+
+    def _suggest_vocabulary(self) -> None:
+        try:
+            _draft_vocabulary_proposals(
+                known_tags=self.known_tags,
+                master_resume=self.master_resume,
+                requirements=self.requirements,
+                selected_texts=self.result.bullets,
+                on_event=self.on_event,
+            )
+        except Exception as exc:  # noqa: BLE001 - advisory only; never fail the job
+            self._emit("propose", f"Vocabulary suggestions skipped ({exc})")
 
 
 def _draft_vocabulary_proposals(
