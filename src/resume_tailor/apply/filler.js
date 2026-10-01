@@ -1063,7 +1063,13 @@
     const replaceDatePart = el.tagName === "INPUT" && type === "text" && plannedPart &&
       ["earliest_start", "graduation_month", "education_start_month"].includes(key) &&
       existingAnswer !== plannedPart && !wellFormedPart;
-    if (existingAnswer && !replaceDatePart) {
+    // Ashby's education month/year selects arrive set to today ("September" / "2026"),
+    // which read as an answer. Education dates come only from the master resume, so a
+    // select that disagrees with the planned option is overwritten (Ramp, 2026-09).
+    const replaceDateSelect = el.tagName === "SELECT" && plannedPart &&
+      ["graduation_month", "education_start_month"].includes(key) &&
+      norm(existingAnswer) !== norm(plannedPart);
+    if (existingAnswer && !replaceDatePart && !replaceDateSelect) {
       filled.push({ key: "existing", label, value: existingAnswer, selector: sel, preserved: true });
       continue;
     }

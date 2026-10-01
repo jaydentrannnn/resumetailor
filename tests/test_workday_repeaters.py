@@ -474,3 +474,106 @@ def test_an_education_row_without_year_controls_is_not_flagged(monkeypatch):
     filled, review = repeaters.fill(page, packet, lambda _m: None)
     assert review == []
     assert [item["label"] for item in filled] == ["Education: UC Irvine"]
+
+
+class _FrontPage(_Page):
+    """Keys sent while the tab is behind are lost; `bring_to_front` makes them land."""
+
+    def __init__(self, values: dict[str, str]) -> None:
+        super().__init__(values)
+        self.fronted = 0
+
+    def evaluate(self, script, arg=None):
+        if script == "() => document.hasFocus()":
+            return False
+        return super().evaluate(script, arg)
+
+    def bring_to_front(self) -> None:
+        self.fronted += 1
+        self.drop_typing = 0
+
+
+def test_a_date_lost_in_a_background_tab_is_retyped_in_front():
+    # Invesco (2026-10): one row's From/To stayed empty while three fills shared a window.
+    page = _FrontPage({f"{_START}Month-input": "", f"{_START}Year-input": ""})
+    page.drop_typing = 2  # both background attempts at the month are lost
+    notes: list[str] = []
+    assert repeaters._fill_date_retrying(  # noqa: SLF001
+        page, "workExperience-1--", "startDate", "2025-01", with_month=True, note=notes.append,
+    )
+    assert page.fronted == 1
+    assert page.values[f"{_START}Month-input"] == "01"
+    assert page.values[f"{_START}Year-input"] == "2025"
+    assert "page had focus: False" in notes[0] and notes[0].endswith("filled")
+
+
+def test_a_date_that_lands_is_not_brought_to_front():
+    page = _FrontPage({f"{_START}Month-input": "", f"{_START}Year-input": ""})
+    assert repeaters._fill_date_retrying(  # noqa: SLF001
+        page, "workExperience-1--", "startDate", "2025-01", with_month=True, note=lambda _m: None,
+    )
+    assert page.fronted == 0
+
+
+def test_an_add_press_that_shows_no_new_row_uses_the_row_rendered_late(monkeypatch):
+    # AmerisourceBergen (2026-10): two employment rows were silently dropped when Add
+    # showed no single new row in time. The late blank row is used; no review line.
+    page = _Page(_work_rows(("Analyst", "Acme")))
+    presses: list[str] = []
+
+    def add_row(_page, heading, _anchor, **_kw):
+        presses.append(heading)
+        page.values["workExperience-2--jobTitle"] = ""  # rendered after the wait
+        page.values["workExperience-2--companyName"] = ""
+        return None
+
+    monkeypatch.setattr(repeaters, "_add_row", add_row)
+    monkeypatch.setattr(repeaters, "_fill_date", lambda *_a, **_k: True)
+    packet = SimpleNamespace(education=[], experience=[
+        SimpleNamespace(title="Analyst", employer="Acme", location="", description="",
+                        start="2024-01", end="2024-06", current=False),
+        SimpleNamespace(title="Engineer", employer="Initech", location="", description="",
+                        start="2025-01", end="2025-06", current=False),
+    ])
+    filled, review = repeaters.fill(page, packet, lambda _m: None)
+    assert review == []
+    assert presses == ["Work Experience"]  # the late row was used, not a second press
+    assert page.values["workExperience-2--jobTitle"] == "Engineer"
+    assert [f["label"] for f in filled][-1] == "Work experience: Engineer at Initech"
+
+
+def test_recover_row_presses_add_again_when_nothing_rendered():
+    page = _Page(_work_rows(("Analyst", "Acme")))
+    again: list[int] = []
+
+    def press_again():
+        again.append(1)
+        page.values["workExperience-2--jobTitle"] = ""
+        return "workExperience-2--"
+
+    row = repeaters._recover_row(page, "jobTitle", {"workExperience-1--"}, press_again)  # noqa: SLF001
+    assert row == "workExperience-2--" and again == [1]
+
+
+def test_dates_cleared_by_a_later_row_are_retyped_before_continue(monkeypatch):
+    calls: list[tuple[str, str]] = []
+    landed: set[tuple[str, str]] = set()
+
+    def fill_date(_page, prefix, field, _value, *, with_month):
+        calls.append((prefix, field))
+        if (prefix, field) == ("workExperience-1--", "startDate") and (prefix, field) in landed:
+            landed.discard((prefix, field))  # a later row's re-render cleared it once
+            return False
+        landed.add((prefix, field))
+        return True
+
+    page = _FrontPage(_work_rows(("Analyst", "Acme")))
+    monkeypatch.setattr(repeaters, "_fill_date", fill_date)
+    packet = SimpleNamespace(education=[], experience=[
+        SimpleNamespace(title="Analyst", employer="Acme", location="", description="",
+                        start="2024-01", end="2024-06", current=False),
+    ])
+    filled, review = repeaters.fill(page, packet, lambda _m: None)
+    assert review == []
+    assert [f["label"] for f in filled] == ["Work experience: Analyst at Acme"]
+    assert calls.count(("workExperience-1--", "startDate")) == 3  # fill, re-check, retype

@@ -271,6 +271,39 @@ def _add_row(
     return added[0] if len(added) == 1 else None
 
 
+def _recover_row(
+    page: Any,
+    anchor: str | tuple[str, ...],
+    claimed: set[str],
+    press_again: Callable[[], str | None],
+    *,
+    dismiss: Callable[[Any], Any] | None = None,
+) -> str | None:
+    """A row for an entry after an Add press that showed no single new row.
+
+    A slow tenant renders the row after `_add_row` stops looking, and a double-registered
+    press renders two: either way an unclaimed blank row is now there to use. When none
+    is, the press did not land; stray popups are closed and Add is pressed once more.
+    """
+    anchors = (anchor,) if isinstance(anchor, str) else anchor
+
+    def blank_rows() -> list[str]:
+        rows = dict.fromkeys(row for name in anchors for row in _rows(page, name))
+        return [row for row in rows
+                if row not in claimed and not any(_value(page, row, name) for name in anchors)]
+
+    found = blank_rows()
+    if found:
+        return found[0]
+    if dismiss is not None:
+        dismiss(page)
+    row = press_again()
+    if row is not None:
+        return row
+    found = blank_rows()
+    return found[0] if found else None
+
+
 def _school_field(page: Any, row: str | None = None) -> str:
     """This tenant's school control name, for one row or for the page."""
     for name in _SCHOOL_FIELDS:
@@ -354,6 +387,48 @@ def _fill_date(page: Any, prefix: str, field: str, value: str, *, with_month: bo
             return current == year if current else workday_flow.select_listbox(page, f"[id='{prefix}{field}']", year)
     parts = ([("dateSectionMonth", month)] if with_month else []) + [("dateSectionYear", year)]
     return fill_date_sections(page, f"{prefix}{field}", parts)
+
+
+def _fill_date_retrying(
+    page: Any, prefix: str, field: str, value: str, *, with_month: bool, note: Callable[[str], None],
+) -> bool:
+    """`_fill_date`, typed once more with the tab in front when the keys did not land.
+
+    Invesco (2026-10) left one row's From/To and Education's years empty while other rows
+    in the same tab typed: three fills shared one window, and keystrokes sent to a tab
+    that is not in front can miss the spinbutton. Whether the page had focus is logged
+    so the next failure says whether that was the cause.
+    """
+    if _attempt(lambda: _fill_date(page, prefix, field, value, with_month=with_month)):
+        return True
+    try:
+        focused = bool(page.evaluate("() => document.hasFocus()"))
+    except Exception:  # noqa: BLE001
+        focused = None
+    with contextlib.suppress(Exception):
+        page.bring_to_front()
+    ok = _attempt(lambda: _fill_date(page, prefix, field, value, with_month=with_month))
+    note(f"Workday: retyped {prefix}{field} in front (page had focus: {focused}); "
+         + ("filled" if ok else "still not filled"))
+    return ok
+
+
+def _recheck_dates(
+    page: Any,
+    placed: list[tuple[str, str, list[tuple[str, str, bool]]]],
+    filled: list[dict[str, str]],
+    review: list[str],
+    progress: Callable[[str], None],
+) -> None:
+    """Re-read every filled row's dates once the section is done, retyping any that went
+    blank: adding and filling later rows re-renders earlier ones before Continue."""
+    for row, label, dates in placed:
+        lost = [field for field, value, with_month in dates
+                if not _fill_date_retrying(page, row, field, value, with_month=with_month, note=progress)]
+        if lost:
+            filled[:] = [item for item in filled if item.get("label") != label]
+            names = {"startDate": "From", "endDate": "To"}
+            review.append(f"{label} ({', '.join(names.get(field, field) for field in lost)})")
 
 
 def _date_absent(page: Any, prefix: str, field: str) -> bool:
@@ -524,7 +599,15 @@ def fill(
         if heading in blocked_add:
             raise AddRowError(blocked_add[heading])
         try:
-            return _add_row(page, heading, anchor, dismiss=dismiss)
+            row = _add_row(page, heading, anchor, dismiss=dismiss)
+            if row is None:
+                # AmerisourceBergen (2026-10): two employment rows were dropped when the
+                # press showed no single new row. Recover instead of skipping the entry.
+                row = _recover_row(page, anchor, claimed, lambda: _add_row(page, heading, anchor, dismiss=dismiss),
+                                   dismiss=dismiss)
+                progress(f"Workday: {heading} Add showed no new row; "
+                         + (f"recovered row {row}" if row else "no row after a second press"))
+            return row
         except AddRowError as exc:
             blocked_add[heading] = str(exc)
             raise
@@ -541,6 +624,8 @@ def fill(
     if experience:
         progress("Inspecting Workday employment rows")
     claimed: set[str] = set()
+    #: Filled rows and their dates, re-checked once every row is placed.
+    placed: list[tuple[str, str, list[tuple[str, str, bool]]]] = []
     for index, exp in enumerate(experience):
         label = f"Work experience: {exp.title} at {exp.employer}"
         try:
@@ -569,18 +654,22 @@ def fill(
             }
             if exp.current:
                 results["I currently work here"] = _attempt(lambda: _tick_current(page, row))
-            results["From"] = _attempt(lambda: _fill_date(page, row, "startDate", exp.start, with_month=True))
+            results["From"] = _fill_date_retrying(page, row, "startDate", exp.start, with_month=True, note=progress)
             if not exp.current:
-                results["To"] = _attempt(lambda: _fill_date(page, row, "endDate", exp.end, with_month=True))
+                results["To"] = _fill_date_retrying(page, row, "endDate", exp.end, with_month=True, note=progress)
             failed = [name for name, ok in results.items() if not ok]
             if not failed:
                 progress(f"Workday: filled {label}")
                 filled.append({"label": label, "value": f"{exp.start} - {exp.end or 'present'}"})
+                placed.append((row, label, [("startDate", exp.start, True)]
+                               + ([] if exp.current else [("endDate", exp.end, True)])))
             else:
                 review.append(f"{label} ({', '.join(failed)})")
         except Exception as exc:  # noqa: BLE001 - preserve the rest of the batch
             progress(f"Workday employment row needs review: {exp.title} at {exp.employer} ({why(exc)})")
             review.append(f"{label} ({why(exc)})")
+
+    _recheck_dates(page, placed, filled, review, progress)
 
     education = packet.education
     school = _school_field(page)
@@ -635,9 +724,11 @@ def fill(
                                 or _blank_fill(page, row, _EDU["gpa"], edu.gpa)),
                 # Years attended are optional per tenant (F5 asks none): absent is not a gap.
                 "From": _attempt(lambda: _date_absent(page, row, "firstYearAttended")
-                                 or _fill_date(page, row, "firstYearAttended", edu.start, with_month=False)),
+                                 or _fill_date_retrying(page, row, "firstYearAttended", edu.start,
+                                                         with_month=False, note=progress)),
                 "To": _attempt(lambda: _date_absent(page, row, "lastYearAttended")
-                               or _fill_date(page, row, "lastYearAttended", edu.end, with_month=False)),
+                               or _fill_date_retrying(page, row, "lastYearAttended", edu.end,
+                                                       with_month=False, note=progress)),
             }
             degree = edu.degree_name or edu.degree_level or edu.degree
             if degree and not _value(page, row, _EDU["degree"]):

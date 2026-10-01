@@ -1535,3 +1535,18 @@ top, which matches the number answered everywhere else.
 
 ## 2026-09-30 — Apply attention and mistaken submitted marks
 Needs you sorts by the latest status timestamp, so recently changed rows appear first. Apply operations and nightly runs retain one latest attention outcome per application with the real failure or hand-off reason and a review-tab link. Restoring a submitted/skipped Done row now undoes that mark using its last non-terminal status; undo_terminal is the only bypass of set_status's terminal guard, and an explicit undo route covers already-restored rows.
+
+### 2026-10-01 — Self-healing Workday rows/dates; Ashby preset date selects
+- Ashby education month/year `<select>`s arrive set to today (Ramp: both dates stayed 9/2026);
+  `filler.js` kept them as the applicant's answer. A select keyed `education_start_month` /
+  `graduation_month` whose value differs from the planned option is now overwritten (education
+  dates come only from the master resume).
+- Workday: an Add press that showed no single new row silently dropped the entry
+  (AmerisourceBergen rows 4–5). `_recover_row` uses an unclaimed blank row rendered late, else
+  closes popups and presses Add once more. Progress line only — no review line (user: review
+  lines push work onto the applicant).
+- Workday dates: `_fill_date_retrying` retypes with `page.bring_to_front()` when keys did not
+  land (Invesco: concurrent fills in one window), logging `document.hasFocus()` to confirm the
+  cause; `_recheck_dates` re-reads every filled employment date after the section and retypes.
+- Not fixed: the post-Continue scroll lock (Motorola/Invesco). Esc does not clear it, so the
+  2026-09-25 stray-popup theory is incomplete; needs a live-tab CDP probe.

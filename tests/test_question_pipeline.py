@@ -241,3 +241,43 @@ def test_follow_up_questions_take_no_profile_fact(gcm):
     scanned, plan, result = gcm
     assert _planned(scanned, plan, "If Other for Education")["key"] is None
     assert not _filled(result, "If Other for Education")
+
+
+def _ashby_date(field: str, label: str, month: str, year: str) -> str:
+    months = "".join(
+        f'<option value="{name}"{" selected" if name == month else ""}>{name}</option>'
+        for name in ("January", "February", "March", "April", "May", "June", "July",
+                     "August", "September", "October", "November", "December")
+    )
+    years = "".join(
+        f'<option value="{y}"{" selected" if str(y) == year else ""}>{y}</option>' for y in range(2030, 2015, -1)
+    )
+    return (
+        f'<div><label for="_systemfield_education_history-{field}">{label}</label>'
+        f'<div id="_systemfield_education_history-{field}">'
+        f'<div><select><option value="">Month</option>{months}</select></div>'
+        f'<div><select><option value="">Year</option>{years}</select></div></div></div>'
+    )
+
+
+@pytest.mark.browser
+def test_ashby_education_date_selects_preset_to_today_are_overwritten(browser):
+    """Ashby's education month/year selects arrive set to today (Ramp, 2026-09: both
+    dates stayed "September 2026"); the resume's dates replace them."""
+    page = browser.new_page()
+    try:
+        page.set_content(
+            "<form><h3>Education</h3>"
+            + _ashby_date("startDate", "Start Date", "September", "2026")
+            + _ashby_date("endDate", "End Date", "September", "2026")
+            + "</form>"
+        )
+        args = {"fields": FIELDS, "hints": {}, "synonyms": [list(pair) for pair in ats_hints.SYNONYMS],
+                "eeo": field_matcher.eeo_patterns(FIELDS)}
+        scanned = page.evaluate(_FILLER, {**args, "scan": True})["questions"]
+        plan = questions.plan_for(scanned, questions.facts_for(FIELDS, today=_TODAY))
+        page.evaluate(_FILLER, {**args, "plan": plan})
+        values = page.evaluate("() => [...document.querySelectorAll('select')].map(s => s.selectedOptions[0].text)")
+        assert values == ["September", "2023", "June", "2027"]
+    finally:
+        page.close()
