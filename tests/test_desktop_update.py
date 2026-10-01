@@ -102,6 +102,9 @@ def test_ready_backs_up_then_applies_when_idle(_fresh, monkeypatch, tmp_path):
     con.execute("INSERT INTO t VALUES (1)")
     con.commit()
     con.close()
+    stray = tmp_path / "data" / "workspaces" / "default" / "output" / "jobs" / "j1"
+    stray.mkdir(parents=True)
+    (stray / "tailored.docx").write_bytes(b"run output")
     (tmp_path / "templates").mkdir()
     (tmp_path / "templates" / "main_template.docx").write_bytes(b"docx")
     monkeypatch.setattr(desktop_update, "busy_reason", lambda: None)
@@ -120,6 +123,8 @@ def test_ready_backs_up_then_applies_when_idle(_fresh, monkeypatch, tmp_path):
     assert "data/workspaces/default/app.db" in names
     assert "data/workspaces/default/profile.json" in names
     assert "templates/main_template.docx" in names
+    # Run output left inside the data folder is regenerable and never zipped.
+    assert not any("/output/" in name for name in names)
 
 
 def test_install_waits_while_busy(_fresh, monkeypatch):

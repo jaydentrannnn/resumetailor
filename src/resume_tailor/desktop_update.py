@@ -47,6 +47,10 @@ COMMANDS = frozenset({"check", "download", "apply"})
 IDLE_POLL_SECONDS = 10.0
 #: Pre-update backups kept; older ones are deleted.
 KEEP_BACKUPS = 3
+#: Folders never zipped. Run output belongs under OUTPUT_ROOT and is regenerable; a
+#: copy left inside the data folder (an old layout, a hand migration) once made every
+#: backup ~290 MB instead of ~30 MB.
+_BACKUP_SKIP_DIRS = frozenset({"output"})
 
 _lock = threading.Lock()
 _write_lock = threading.Lock()
@@ -237,6 +241,8 @@ def backup(from_version: str, to_version: str) -> Path:
                 continue
             for file in sorted(root.rglob("*")):
                 if not file.is_file() or file.name.endswith(("-wal", "-shm", "-journal")):
+                    continue
+                if _BACKUP_SKIP_DIRS.intersection(file.relative_to(root).parts[:-1]):
                     continue
                 name = f"{label}/{file.relative_to(root).as_posix()}"
                 if file.suffix == ".db":
