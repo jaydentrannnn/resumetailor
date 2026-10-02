@@ -92,3 +92,14 @@ def test_automatic_submit_checks_live_acknowledgement(prepared):
     assert submit_guard.check(app, ApplySettings()).code == "resume_quality"
     resume_review.acknowledge("one", resume_review.state(app).revision)
     assert submit_guard.check(app, ApplySettings()) is None
+
+
+def test_finished_or_archived_applications_need_no_review(prepared):
+    """A submitted or archived application is never filled again, so it shows no warning."""
+    app, out = prepared
+    resume_quality.save(out, resume_quality.ResumeQuality(fill_ratio=0.8, fill_target=0.93))
+    assert resume_review.state(app).required
+    submitted = app.model_copy(update={"status": "submitted"})
+    assert resume_review.state(submitted) == resume_review.ReviewState()
+    archived = app.model_copy(update={"archived_at": "2026-10-02T00:00:00+00:00"})
+    assert not resume_review.state(archived).warnings

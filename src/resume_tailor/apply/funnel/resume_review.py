@@ -22,7 +22,9 @@ class ReviewState(BaseModel):
 
 
 def state(app: store_models.Application) -> ReviewState:
-    if not app.job_id:
+    # A finished or archived application will not be filled again: nothing to review, and
+    # no reason to hash both resume artifacts on every Apply-list poll.
+    if not app.job_id or app.status in store_models.TERMINAL_STATUSES or app.archived_at:
         return ReviewState()
     out_dir = config.OUTPUT_DIR / "jobs" / app.job_id
     quality = resume_quality.read(out_dir)
