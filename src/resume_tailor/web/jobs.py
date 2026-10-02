@@ -30,6 +30,7 @@ from resume_tailor.document.template_profile import active_layout
 from resume_tailor.infra import housekeeping, logs
 from resume_tailor.infra.llm import LLMError
 from resume_tailor.pipeline import (
+    bullet_checks,
     coverletter,
     expand,
     facets,
@@ -37,13 +38,13 @@ from resume_tailor.pipeline import (
     include,
     jd,
     propose,
+    relevance,
     report,
-    rewrite,
     skills,
 )
 from resume_tailor.pipeline.events import ProgressCallback, ProgressEvent
+from resume_tailor.pipeline.fabrication import FabricationError
 from resume_tailor.pipeline.fit import FitError
-from resume_tailor.pipeline.rewrite import FabricationError
 from resume_tailor.web import template_ops
 from resume_tailor.web.schemas import (
     CoverAnglesIn,
@@ -606,7 +607,7 @@ class _TailorJobRun:
         if settings.no_semantic:
             return
         try:
-            self.semantic = rewrite.score_table(
+            self.semantic = relevance.score_table(
                 self.resume.all_bullets(),
                 self.requirements,
                 use_cache=not settings.no_cache,
@@ -863,7 +864,7 @@ def _draft_vocabulary_proposals(
         {
             verb
             for text in selected_texts.values()
-            if (verb := rewrite.opening_verb(text)) and config.verb_family(verb) is None
+            if (verb := bullet_checks.opening_verb(text)) and config.verb_family(verb) is None
         }
     )
     if not unmatched and not unknown_verbs:

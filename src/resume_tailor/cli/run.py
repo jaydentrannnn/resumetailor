@@ -30,13 +30,13 @@ from resume_tailor.pipeline import (
     fit,
     include,
     jd,
+    relevance,
     report,
     review,
-    rewrite,
     runs,
     skills,
 )
-from resume_tailor.pipeline.rewrite import FabricationError
+from resume_tailor.pipeline.fabrication import FabricationError
 
 _CONTACT_FIELDS = {"location", "email", "phone", "linkedin", "github"}
 
@@ -236,11 +236,11 @@ class _CliRun:
 
     def _score(self) -> int | None:
         # Scored once, before the loop, and held fixed for the run — see
-        # `rewrite.score_table` for why it must not be recomputed per iteration.
+        # `relevance.score_table` for why it must not be recomputed per iteration.
         if self.args.no_semantic:
             return None
         try:
-            self.semantic = rewrite.score_table(
+            self.semantic = relevance.score_table(
                 self.resume.all_bullets(), self.requirements, use_cache=not self.args.no_cache
             )
         except LLMError as exc:

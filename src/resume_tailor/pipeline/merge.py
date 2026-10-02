@@ -2,7 +2,7 @@
 
 This module is the deterministic, no-LLM half of the merge feature. It proposes
 candidate merge groups inside a single entry; the actual merging (LLM rewrite + guard)
-is implemented in `rewrite.py`.
+is implemented in `bullet_merge.py`.
 """
 
 from __future__ import annotations
@@ -64,7 +64,7 @@ def _jaccard(a: set[str], b: set[str]) -> float:
 
 
 def _keyword_score(bullet: Bullet, requirements: JobRequirements) -> float:
-    """Compute the same keyword-overlap signal as `rewrite.score` (minus semantic)."""
+    """Compute the same keyword-overlap signal as `selection.score` (minus semantic)."""
     tags = set(bullet.tags)
     total = 0.0
     for kw in requirements.keywords:
@@ -144,7 +144,7 @@ def propose(
     """Propose redundant bullet groups for merging (pure, deterministic).
 
     The output is a list of `MergeGroup`s. They are accepted or rejected later by
-    the actual merge stage in `rewrite.py` after the model rewrites the combined bullet
+    the actual merge stage in `bullet_merge.py` after the model rewrites the combined bullet
     and the guard checks multi-source factuality and number preservation.
     """
     if not selected:

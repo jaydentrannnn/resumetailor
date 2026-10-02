@@ -94,7 +94,7 @@ def test_job_runs_to_success_with_stubbed_pipeline(client, monkeypatch, tmp_path
         )
 
     monkeypatch.setattr(jobs_mod.jd, "extract", fake_extract)
-    monkeypatch.setattr(jobs_mod.rewrite, "score_table", fake_score)
+    monkeypatch.setattr(jobs_mod.relevance, "score_table", fake_score)
     monkeypatch.setattr(jobs_mod.fit, "fit", fake_fit)
     monkeypatch.setattr(jobs_mod.jd, "verify_verbatim", lambda *a, **k: [])
 
@@ -292,7 +292,7 @@ def test_job_honours_exclusions_but_expansion_still_sees_the_excluded_job(
     monkeypatch.setattr(jobs_mod.jd, "extract", fake_extract)
     monkeypatch.setattr(jobs_mod.jd, "verify_verbatim", lambda *a, **k: [])
     monkeypatch.setattr(
-        jobs_mod.rewrite, "score_table", lambda bullets, *a, **k: {b.id: 5.0 for b in bullets}
+        jobs_mod.relevance, "score_table", lambda bullets, *a, **k: {b.id: 5.0 for b in bullets}
     )
 
     seen_fit_resume = {}
@@ -411,7 +411,7 @@ def test_skills_selection_resume_is_post_include_pre_facets(client, monkeypatch,
     monkeypatch.setattr(jobs_mod.jd, "extract", fake_extract)
     monkeypatch.setattr(jobs_mod.jd, "verify_verbatim", lambda *a, **k: [])
     monkeypatch.setattr(
-        jobs_mod.rewrite, "score_table", lambda bullets, *a, **k: {b.id: 5.0 for b in bullets}
+        jobs_mod.relevance, "score_table", lambda bullets, *a, **k: {b.id: 5.0 for b in bullets}
     )
 
     def fake_fit(resume_arg, requirements, *, out=None, on_event=None, **kwargs):
@@ -490,7 +490,7 @@ def test_skills_endpoint_and_status_field(client, monkeypatch):
     monkeypatch.setattr(jobs_mod.jd, "extract", fake_extract)
     monkeypatch.setattr(jobs_mod.jd, "verify_verbatim", lambda *a, **k: [])
     monkeypatch.setattr(
-        jobs_mod.rewrite, "score_table", lambda bullets, *a, **k: {b.id: 5.0 for b in bullets}
+        jobs_mod.relevance, "score_table", lambda bullets, *a, **k: {b.id: 5.0 for b in bullets}
     )
 
     def fake_fit(resume_arg, requirements, *, out=None, on_event=None, **kwargs):
@@ -640,7 +640,7 @@ def test_skills_download_404s_when_no_skills_produced(client, monkeypatch):
     monkeypatch.setattr(jobs_mod.jd, "extract", fake_extract)
     monkeypatch.setattr(jobs_mod.jd, "verify_verbatim", lambda *a, **k: [])
     monkeypatch.setattr(
-        jobs_mod.rewrite, "score_table", lambda bullets, *a, **k: {b.id: 5.0 for b in bullets}
+        jobs_mod.relevance, "score_table", lambda bullets, *a, **k: {b.id: 5.0 for b in bullets}
     )
 
     def fake_fit(resume_arg, requirements, *, out=None, on_event=None, **kwargs):

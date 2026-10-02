@@ -9,7 +9,7 @@ relying on someone reading the table by eye.
 make about a real resume it was grounded in (see `library_seeds.py`) — including one
 regression that exists specifically to correct an earlier, wrong claim: the resume's two
 exact-duplicate verb repeats ("collaborated", "received") are already caught by
-`rewrite.verb_collisions`'s exact-duplicate rule with `core-tech` alone; the new pack's
+`bullet_checks.verb_collisions`'s exact-duplicate rule with `core-tech` alone; the new pack's
 real, verifiable contribution is the alias table and the near-synonym rule, tested below.
 """
 
@@ -17,7 +17,7 @@ from __future__ import annotations
 
 from resume_tailor import config, library_seeds
 from resume_tailor.content import libraries
-from resume_tailor.pipeline import rewrite
+from resume_tailor.pipeline import bullet_checks
 
 
 def _effective_for(pack: library_seeds.Pack) -> libraries.EffectiveLibrary:
@@ -79,7 +79,7 @@ def test_finance_consulting_has_no_alias_chain_against_core_tech():
 # --------------------------------------------------------------------------------------
 
 #: Opening verbs from the actual resume's bullets (see library_seeds.py's comment),
-#: reduced to just the words `rewrite.opening_verb` extracts from them.
+#: reduced to just the words `bullet_checks.opening_verb` extracts from them.
 _RESUME_OPENERS = {
     "partnered": "lead",  # already covered by core-tech
     "recruited": None,  # covered only once finance-consulting is enabled
@@ -109,7 +109,7 @@ def test_finance_consulting_classifies_the_resume_openers_core_tech_does_not(mon
 
 def test_exact_duplicate_verb_repeats_are_already_caught_without_the_new_pack():
     """Corrects an earlier wrong claim: this does NOT depend on finance-consulting.
-    `rewrite.verb_collisions`'s exact-duplicate rule matches on the literal word, with
+    `bullet_checks.verb_collisions`'s exact-duplicate rule matches on the literal word, with
     no family lookup at all, so `core-tech` alone already flags both repeats."""
     texts = {
         "b7": "Collaborated with peers and Deloitte consultants to solve a case",
@@ -117,7 +117,7 @@ def test_exact_duplicate_verb_repeats_are_already_caught_without_the_new_pack():
         "b6": "Received exposure to financial analysis, forecasting",
         "b16": "Received a trial implementation of a sexual education course",
     }
-    collisions = rewrite.verb_collisions(texts)
+    collisions = bullet_checks.verb_collisions(texts)
     assert "b12" in collisions and "collaborated" in collisions["b12"]
     assert "b16" in collisions and "received" in collisions["b16"]
 
@@ -135,14 +135,14 @@ def test_finance_consulting_verb_families_catch_a_near_synonym_cluster_core_tech
     }
 
     monkeypatch.setattr(config, "VERB_FAMILIES", dict(library_seeds.BUILTIN_PACKS["core-tech"]["verb_families"]))
-    assert rewrite.verb_collisions(texts) == {}
+    assert bullet_checks.verb_collisions(texts) == {}
 
     merged = dict(library_seeds.BUILTIN_PACKS["core-tech"]["verb_families"])
     for family, verbs in library_seeds.BUILTIN_PACKS["finance-consulting"]["verb_families"].items():
         merged[family] = tuple(merged.get(family, ())) + tuple(verbs)
     monkeypatch.setattr(config, "VERB_FAMILIES", merged)
 
-    collisions = rewrite.verb_collisions(texts)
+    collisions = bullet_checks.verb_collisions(texts)
     assert "c" in collisions  # the third same-family opener is the one that overflows
 
 

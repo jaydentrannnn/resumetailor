@@ -23,23 +23,21 @@ from ..content.data import Bullet, Experience, MasterResume, Project
 from ..document import render
 from ..document.template_profile import ContactField, active_layout
 from . import events, facets
+from .bullet_checks import widowed
+from .bullet_merge import merge_into, pull_back
+from .followups import _polish
 from .jd import JobRequirements
 from .merge import MergeGroup
 from .merge import propose as propose_merges
-from .rewrite import (
-    RewriteOutcome,
-    _polish,
+from .rewrite import RewriteOutcome, rewrite_bullets
+from .selection import (
     entry_recency,
-    merge_into,
-    pull_back,
-    rewrite_bullets,
     score_entry,
     select_entries,
     select_within_entries,
     selectable_total,
-    widowed,
 )
-from .rewrite import score as score_bullet
+from .selection import score as score_bullet
 
 #: How many physical lines a bullet's rewritten text is targeted at, on average. Passed
 #: to `rewrite_bullets` as its starting character budget before any shortening.
@@ -201,7 +199,7 @@ def _bullet_lines(text: str) -> int:
     """Delegated so the budget estimator and the widow detector cannot disagree.
 
     Both answer "how many lines is this text?" — if they ever computed it differently, the
-    loop would be sizing pages against one definition while `rewrite.widowed` trimmed
+    loop would be sizing pages against one definition while `bullet_checks.widowed` trimmed
     against another.
     """
     return config.line_span(text)
@@ -584,7 +582,7 @@ def _bullet_score(
     """Relevance of a rendered bullet. A merged survivor is as relevant as its best
     member: merging must not make the strongest claim in a group easier to drop.
 
-    `recency` maps bullet id to its entry's `rewrite.entry_recency` multiplier, so drops,
+    `recency` maps bullet id to its entry's `selection.entry_recency` multiplier, so drops,
     pull-back ties and the top-up all prefer recent work the way selection does."""
     ids = members.get(bullet_id, (bullet_id,))
     recency = recency or {}
@@ -730,7 +728,7 @@ def fit(
     overall via `limit`, and now optionally by section (`experience_bullet_share`) and
     per-entry (`max_bullets_per_entry`) — but never drops an entry entirely.
 
-    `semantic` is an optional {bullet_id: 0-10} relevance table from `rewrite.score_table`,
+    `semantic` is an optional {bullet_id: 0-10} relevance table from `relevance.score_table`,
     computed once by the caller and held fixed for the whole run. It must not be recomputed
     per iteration: a table that shifted between grow steps could swap bullets rather than
     add them, which is the one thing the estimate/measure relationship depends on.
@@ -785,7 +783,7 @@ def fit(
     `max_bullets_per_entry` overrides `config.MAX_BULLETS_PER_ENTRY`: a ceiling on how many
     bullets any single job or project may take. Because this can make the achievable total
     lower than the raw bullet pool, the loop's grow ceiling is
-    `rewrite.selectable_total(entries, max_per_entry=...)`, not the raw count — comparing
+    `selection.selectable_total(entries, max_per_entry=...)`, not the raw count — comparing
     against the raw count here would keep raising `limit` while the selection stays
     unchanged, burning grow attempts for nothing.
 

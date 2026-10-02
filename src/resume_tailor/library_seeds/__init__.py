@@ -26,7 +26,7 @@ The alias table closes a measured gap on that resume: "Google Workspace", "MS Of
 and "KPIs" — all plausible posting spellings — matched none of its own tag/skill wording
 ("Google Drive Suite", "Microsoft 365", "KPI") before this pack existed. The verb
 families are forward-looking rather than a fix for anything already broken on that resume:
-`collaborated` and `received` each open two of its bullets, but `rewrite.verb_collisions`'s
+`collaborated` and `received` each open two of its bullets, but `bullet_checks.verb_collisions`'s
 exact-duplicate rule already catches an identical repeated word with no family table
 involved (see `tests/content/test_library_seeds.py`) — what these families add is coverage for
 the *near-synonym* rule (three-plus related-but-different openers, e.g. a rewrite that

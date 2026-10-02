@@ -771,7 +771,7 @@ writes each bundle plus a filled sample PDF for checking a design change by eye.
 - **The character budget is a cliff, not a slope.** Every widowed bullet measured came back
   at 204–207 characters against a 202-character budget; every non-widowed run had bullets
   at 180–199. `_length_band` advertises a target *range* below the ceiling specifically so
-  the model doesn't optimise right up to the edge. `rewrite.widowed()` then catches
+  the model doesn't optimise right up to the edge. `bullet_checks.widowed()` then catches
   survivors and `_polish` re-cuts only those, accepted only if strictly shorter and no
   longer widowed.
 - **PDF rendering** goes through `convert.py`, selected by `config.PDF_BACKEND` (`word` on
@@ -951,7 +951,7 @@ kind (e.g. "Work Experience" + "Leadership Experience" + "Other Activities" all 
 `experience`-kind). A `model_validator(mode="before")` folds a legacy pre-`sections` file's
 four top-level lists into four sections in fixed order (`education, experience, projects,
 skills`), which is what keeps `all_bullets()`'s order — and therefore
-`rewrite._score_cache_path`'s cache key — identical across the migration. Read-only
+`relevance._score_cache_path`'s cache key — identical across the migration. Read-only
 `@property` `experience`/`projects`/`education`/`skills` flatten same-kind sections back
 into the old shape for ~50 call sites that only ever read one list — **never
 `@computed_field`**, which would put those keys back into `model_dump` and let a saved file
@@ -964,7 +964,7 @@ fixed overhead the fit loop never trims.
   (`config.MAX_EXPERIENCE_ENTRIES`/`MAX_PROJECT_ENTRIES`) — a "Leadership" section's
   entries never compete with a job's for a slot, generalising the original
   experience-vs-projects split to any number of sections.
-- **Bullet budgeting generalises the same way.** `rewrite._allocate_budgets(pools,
+- **Bullet budgeting generalises the same way.** `selection._allocate_budgets(pools,
   weights, ...)` replaces the old two-section-only `_section_budgets`: floors per pool,
   proportional shares, then an iterative spill until every pool is satisfied or capped.
   `select_within_entries`'s old `experience_share` float is kept as two-pool sugar
@@ -1048,7 +1048,7 @@ fixed overhead the fit loop never trims.
 - **The fabrication guard** decomposes compounds on both sides (`Python/FastAPI`,
   `Recall@k/MRR`) and matches plurals; only letter-bearing parts license a match (`96.3`
   never licenses a `3`), and numbers are checked whole (`99%`/`GPT-4.1` still fail if
-  fabricated) — both pinned by tests. Beyond token membership, `rewrite.guard_offenders`
+  fabricated) — both pinned by tests. Beyond token membership, `bullet_checks.guard_offenders`
   also flags **number-noun rebinding** (`40 engineers` → `40 hours`) and
   **delegated-authorship escalation** (coordinating a vendor → claiming you built the
   work); coverletter/expand keep using `check_fabrication` alone. A fabricating first
@@ -1058,7 +1058,7 @@ fixed overhead the fit loop never trims.
   raised — same pattern as a fabricating widow-repair candidate, which is likewise
   discarded and reported (`widow_repairs_rejected`) rather than raised, since the
   pre-polish text is already guard-clean. `FabricationError` still exists and is still
-  raisable in principle, but nothing in `rewrite.py` raises it any more — the fallback
+  raisable in principle, but nothing in the rewrite modules raises it any more — the fallback
   text is always the verbatim source, so the "never invent" invariant holds without
   failing the whole run over one stubborn bullet.
 - **Cover-letter guard** (`coverletter.py`, narrower than the rewrite guard): numbers and
@@ -1068,19 +1068,19 @@ fixed overhead the fit loop never trims.
   must appear verbatim in the posting or are blanked; AI tells (long dashes, phrase
   blocklist) and consecutive-"I" openers are enforced in code with one targeted retry.
   Cover letters may issue one guard retry.
-- **Merge checks**: `rewrite._merge_bullets` fires only after a measured overflow
+- **Merge checks**: `bullet_merge._merge_bullets` fires only after a measured overflow
   (`fit.fit`'s `attempt >= 1`), and is accepted only when non-regressive, guard-clean,
   numeric-token-preserving, and free of `redundancy_offenders`. *Which* bullets are
   affinity-eligible to merge (`config.MERGE_AFFINITY_SCHEDULE`) is deterministic, no-LLM
-  logic in `merge.py`; the rewrite + guard checks live in `rewrite._merge_bullets`.
+  logic in `merge.py`; the rewrite + guard checks live in `bullet_merge._merge_bullets`.
 - **Cache-key composition** (the full rule set): `config.fingerprint(purpose)`
-  (`origin`, model, effort) is folded into `jd._slug` and `rewrite._score_cache_path`;
+  (`origin`, model, effort) is folded into `jd._slug` and `relevance._score_cache_path`;
   `propose._cache_path` extends the same rule with `libraries.effective_fingerprint()`;
   `expand._cache_path` also folds in `style.digest("expand")` when a profile's
   expand-style override differs from the shipped default. Keys on `Backend.origin`, not
   `.provider` — Ollama/LM Studio/Gemini all remap to `provider == "openai"` for the
   client shape, so without `origin` two of them sharing a model string would collide.
-- **Style splitting**: `rewrite._SYSTEM` and `expand._SYSTEM` split into non-editable
+- **Style splitting**: `rewrite_prompts._SYSTEM` and `expand._SYSTEM` split into non-editable
   fabrication/number/id/length rules plus an editable style block (`style.py`'s defaults,
   overridable via `JobSettings.rewrite_style` / `expand_style` / `cover_style` in
   `settings.json`). Without a target field or override, `_system()` returns the legacy
@@ -1101,7 +1101,7 @@ fixed overhead the fit loop never trims.
   `llm.client_for` is invoked once per call, so a fake that copies its queue per client
   silently replays the first reply on a follow-up call. See the `rewrite_calls` fixture
   in `tests/pipeline/test_rewrite.py`.
-- **`tests/cli/test_tailor_cli.py` has autouse fixtures stubbing `rewrite.score_table`,
+- **`tests/cli/test_tailor_cli.py` has autouse fixtures stubbing `relevance.score_table`,
   `facets.select_facets`, `expand.expand_experience`, `skills.select_skills`,
   `coverletter.draft_letter`, `review.review_bullets`.** Adding another API call to
   `cli.run.main` needs those fixtures extended or the CLI tests reach the network.

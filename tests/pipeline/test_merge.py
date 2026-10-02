@@ -2,7 +2,7 @@
 
 The merge feature is composed of two deterministic parts:
 1. `merge.propose` (pure proposal heuristics, no network)
-2. `rewrite._merge_bullets` acceptance logic (guard + number preservation + widows)
+2. `bullet_merge._merge_bullets` acceptance logic (guard + number preservation + widows)
 
 The actual LLM rewrite itself is stubbed with fake clients, matching the existing
 no-network rewrite tests.
@@ -15,8 +15,15 @@ import pytest
 from resume_tailor import config
 from resume_tailor.content.data import Bullet, Contact, Experience, MasterResume
 from resume_tailor.document import render
+from resume_tailor.pipeline import (
+    bullet_checks,
+    fabrication,
+    merge,
+    report,
+    rewrite,
+    rewrite_prompts,
+)
 from resume_tailor.pipeline import fit as fit_mod
-from resume_tailor.pipeline import merge, report, rewrite
 from resume_tailor.pipeline.jd import JobRequirements, Keyword
 
 
@@ -65,10 +72,10 @@ class _FakeClient:
         self.messages = _FakeMessages(replies, calls)
 
 
-def _reply(**by_id) -> rewrite.RewriteResult:
+def _reply(**by_id) -> rewrite_prompts.RewriteResult:
     """Build a RewriteResult reply with one output per provided id."""
-    return rewrite.RewriteResult(
-        bullets=[rewrite.RewrittenBullet(id=k, text=v) for k, v in by_id.items()]
+    return rewrite_prompts.RewriteResult(
+        bullets=[rewrite_prompts.RewrittenBullet(id=k, text=v) for k, v in by_id.items()]
     )
 
 
@@ -190,14 +197,14 @@ def test_propose_allows_3_member_groups_only_after_first_overflow_rung():
 def test_multi_source_guard_still_rejects_tokenisation_number_fragments():
     src96 = bullet("a", "Lifted top-5 accuracy to 96.3% overall.", ["evaluation"], metric=True)
     src_other = bullet("b", "Built a service in python.", ["python"])
-    offenders = rewrite._check_fabrication([src96, src_other], "Lifted accuracy 3% overall.")
+    offenders = fabrication._check_fabrication([src96, src_other], "Lifted accuracy 3% overall.")
     assert "3" in offenders
 
 
 def test_multi_source_guard_still_rejects_fabricated_percentage_numbers():
     src96 = bullet("a", "Reduced query latency to 96.3% overall.", ["evaluation"], metric=True)
     src_other = bullet("b", "Built a service in python.", ["python"])
-    offenders = rewrite._check_fabrication([src96, src_other], "Reduced query latency to 99% overall.")
+    offenders = fabrication._check_fabrication([src96, src_other], "Reduced query latency to 99% overall.")
     assert "99" in offenders
 
 
@@ -205,7 +212,7 @@ def test_merge_acceptance_collapses_ids_but_keeps_entry_renderable(monkeypatch, 
     """Accepted merge deletes absorbed ids from the rewritten bullets dict."""
     CPL = config.CHARS_PER_LINE
     char_budget = 2 * CPL
-    _, hard_max = rewrite._length_band(char_budget)
+    _, hard_max = rewrite_prompts._length_band(char_budget)
 
     a = bullet("aol_b1", _text(hard_max), ["python"])
     b = bullet("aol_b2", _text(hard_max), ["python"])
@@ -260,7 +267,7 @@ def test_merge_rejects_when_numbers_are_dropped(monkeypatch, rewrite_calls):
     """Even if the merged text is shorter, dropping any source number rejects the merge."""
     CPL = config.CHARS_PER_LINE
     char_budget = 2 * CPL
-    _, hard_max = rewrite._length_band(char_budget)
+    _, hard_max = rewrite_prompts._length_band(char_budget)
 
     a = bullet("aol_b1", f"{_text(hard_max - 10)} 100", ["python"])
     b = bullet("aol_b2", f"{_text(hard_max - 20)} 200", ["python"])
@@ -313,7 +320,7 @@ def test_merge_rejects_when_number_is_rebound(monkeypatch, rewrite_calls):
     """A merge that rebinds a source number to a different noun is silently skipped."""
     CPL = config.CHARS_PER_LINE
     char_budget = 2 * CPL
-    _, hard_max = rewrite._length_band(char_budget)
+    _, hard_max = rewrite_prompts._length_band(char_budget)
 
     a = bullet(
         "aol_b1",
@@ -417,12 +424,12 @@ def test_report_prints_merge_section_and_counts_absorbed_members_as_kept():
 
 def test_redundancy_offenders_flags_repeated_claims():
     """A merge that restates the same tool twice must be detectable in code."""
-    clean = rewrite.redundancy_offenders(
+    clean = bullet_checks.redundancy_offenders(
         "Built a Python service that reduced latency by 40%"
     )
     assert clean == []
 
-    redundant = rewrite.redundancy_offenders(
+    redundant = bullet_checks.redundancy_offenders(
         "Designed a Python pipeline and engineered a Python pipeline"
     )
     assert "engineered" in redundant
@@ -434,7 +441,7 @@ def test_merge_rejects_redundant_candidate(rewrite_calls):
     """A short, honest merge that restates shared terms must not be accepted."""
     CPL = config.CHARS_PER_LINE
     char_budget = 2 * CPL
-    _, hard_max = rewrite._length_band(char_budget)
+    _, hard_max = rewrite_prompts._length_band(char_budget)
 
     a = bullet(
         "a",
@@ -464,7 +471,7 @@ def test_merge_rejects_redundant_candidate(rewrite_calls):
         "Designed a Python retrieval pipeline and engineered a Python retrieval pipeline."
     )
     assert len(candidate) <= hard_max
-    assert rewrite.redundancy_offenders(candidate)
+    assert bullet_checks.redundancy_offenders(candidate)
 
     rewrite_calls(_reply(**{a.id: a.text, b.id: b.text}), _reply(**{a.id: candidate}))
 

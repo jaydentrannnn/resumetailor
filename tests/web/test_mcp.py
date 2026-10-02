@@ -148,7 +148,7 @@ async def mcp_client(tmp_path, monkeypatch):
 
     monkeypatch.setattr(jobs_mod.jd, "extract", fake_extract)
     monkeypatch.setattr(jobs_mod.jd, "verify_verbatim", lambda *a, **k: [])
-    monkeypatch.setattr(jobs_mod.rewrite, "score_table", fake_score)
+    monkeypatch.setattr(jobs_mod.relevance, "score_table", fake_score)
     monkeypatch.setattr(jobs_mod.fit, "fit", fake_fit)
     monkeypatch.setattr(jobs_mod.facets, "select_facets", fake_facets)
     monkeypatch.setattr(jobs_mod.expand, "expand_experience", fake_expand)

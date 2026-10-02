@@ -326,7 +326,7 @@ def test_job_artifacts_land_under_active_workspace(client, tmp_path, monkeypatch
     from resume_tailor.pipeline.expand import Expansion
 
     monkeypatch.setattr(jobs_mod.jd, "extract", fake_extract)
-    monkeypatch.setattr(jobs_mod.rewrite, "score_table", fake_score)
+    monkeypatch.setattr(jobs_mod.relevance, "score_table", fake_score)
     monkeypatch.setattr(jobs_mod.fit, "fit", fake_fit)
     monkeypatch.setattr(jobs_mod.jd, "verify_verbatim", lambda *a, **k: [])
     monkeypatch.setattr(jobs_mod.facets, "select_facets", fake_facets)

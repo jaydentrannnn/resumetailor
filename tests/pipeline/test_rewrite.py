@@ -11,15 +11,25 @@ import pytest
 
 from resume_tailor import config
 from resume_tailor.content.data import Bullet, Contact, Experience, MasterResume, Project
-from resume_tailor.pipeline import rewrite
-from resume_tailor.pipeline.jd import JobRequirements, Keyword
-from resume_tailor.pipeline.rewrite import (
-    BulletScore,
-    ScoreTable,
-    check_fabrication,
+from resume_tailor.pipeline import (
+    bullet_checks,
+    bullet_merge,
+    fabrication,
+    followups,
+    relevance,
+    rewrite,
+    rewrite_prompts,
+    selection,
+)
+from resume_tailor.pipeline.bullet_checks import (
     delegated_authorship,
     guard_offenders,
     rebound_numbers,
+)
+from resume_tailor.pipeline.fabrication import check_fabrication
+from resume_tailor.pipeline.jd import JobRequirements, Keyword
+from resume_tailor.pipeline.relevance import BulletScore, ScoreTable
+from resume_tailor.pipeline.selection import (
     score,
     score_entry,
     select,
@@ -500,27 +510,27 @@ def test_score_table_maps_ids_and_clamps(monkeypatch, tmp_path):
         rewrite.llm, "client_for", lambda purpose: _FakeScoringClient(table)
     )
 
-    result = rewrite.score_table(bullets, requirements(("python", "must_have")))
+    result = relevance.score_table(bullets, requirements(("python", "must_have")))
 
     assert result == {"a": 10.0, "b": 0.0}
 
 
 def test_score_table_is_empty_without_bullets():
-    assert rewrite.score_table([], requirements(("python", "must_have"))) == {}
+    assert relevance.score_table([], requirements(("python", "must_have"))) == {}
 
 
 def test_score_cache_key_covers_bullet_text():
     """Editing a bullet must not silently reuse the score computed for its old wording."""
     reqs = requirements(("python", "must_have"))
-    before = rewrite._score_cache_path([bullet("a", "Original text.", ["python"])], reqs)
-    after = rewrite._score_cache_path([bullet("a", "Edited text.", ["python"])], reqs)
+    before = relevance._score_cache_path([bullet("a", "Original text.", ["python"])], reqs)
+    after = relevance._score_cache_path([bullet("a", "Edited text.", ["python"])], reqs)
     assert before != after
 
 
 def test_score_cache_key_covers_the_posting():
     b = [bullet("a", "x", ["python"])]
-    one = rewrite._score_cache_path(b, requirements(("python", "must_have")))
-    two = rewrite._score_cache_path(b, requirements(("sql", "must_have")))
+    one = relevance._score_cache_path(b, requirements(("python", "must_have")))
+    two = relevance._score_cache_path(b, requirements(("sql", "must_have")))
     assert one != two
 
 
@@ -862,7 +872,7 @@ def test_logged_lower_bound_rewrites_pass_guard_and_preserve_number():
     for source, rewritten in cases:
         src = bullet("a", source, ["support"], metric=True)
         assert guard_offenders([src], rewritten) == []
-        assert rewrite.numbers_dropped([src], rewritten) == []
+        assert fabrication.numbers_dropped([src], rewritten) == []
 
 
 def test_lower_bound_equivalence_preserves_rebound_detection():
@@ -870,7 +880,7 @@ def test_lower_bound_equivalence_preserves_rebound_detection():
     assert rebound_numbers([src], "Saved 30+ hours.") == ["30 hours"]
     plus = bullet("b", "Trained 30+ staff.", ["support"], metric=True)
     assert guard_offenders([plus], "Trained over 30 staff.") == []
-    assert rewrite.numbers_dropped([plus], "Trained more than 30 staff.") == []
+    assert fabrication.numbers_dropped([plus], "Trained more than 30 staff.") == []
     assert check_fabrication(plus, "Trained 30 staff.") == ["30"]
     bare = bullet("c", "Trained 30 staff.", ["support"], metric=True)
     assert check_fabrication(bare, "Trained over 30 staff.") == ["30"]
@@ -952,9 +962,9 @@ class _FakeRewriteClient:
         self.messages = _FakeRewriteMessages(replies, calls)
 
 
-def _reply(**by_id) -> rewrite.RewriteResult:
-    return rewrite.RewriteResult(
-        bullets=[rewrite.RewrittenBullet(id=k, text=v) for k, v in by_id.items()]
+def _reply(**by_id) -> rewrite_prompts.RewriteResult:
+    return rewrite_prompts.RewriteResult(
+        bullets=[rewrite_prompts.RewrittenBullet(id=k, text=v) for k, v in by_id.items()]
     )
 
 
@@ -981,7 +991,7 @@ def test_a_bullet_filling_whole_lines_is_not_a_widow():
     """An exact multiple fills its last line completely — the ideal, not the failure."""
     assert config.line_span(_text(2 * CPL)) == 2
     assert config.last_line_fill(_text(2 * CPL)) == CPL
-    assert rewrite.widowed({"a": _text(2 * CPL)}) == {}
+    assert bullet_checks.widowed({"a": _text(2 * CPL)}) == {}
 
 
 def test_two_characters_over_a_line_boundary_is_a_widow():
@@ -989,22 +999,22 @@ def test_two_characters_over_a_line_boundary_is_a_widow():
     over = _text(2 * CPL + 2)
     assert config.line_span(over) == 3
     assert config.last_line_fill(over) == 2
-    assert "a" in rewrite.widowed({"a": over})
+    assert "a" in bullet_checks.widowed({"a": over})
 
 
 def test_a_single_line_bullet_is_never_a_widow():
     """There is no earlier line to fall back onto; a short bullet is just short."""
-    assert rewrite.widowed({"a": _text(5)}) == {}
-    assert rewrite.widowed({"a": _text(CPL)}) == {}
+    assert bullet_checks.widowed({"a": _text(5)}) == {}
+    assert bullet_checks.widowed({"a": _text(CPL)}) == {}
 
 
 def test_a_comfortably_filled_last_line_is_not_a_widow():
-    assert rewrite.widowed({"a": _text(198)}) == {}
+    assert bullet_checks.widowed({"a": _text(198)}) == {}
 
 
 def test_the_ceiling_is_a_full_line_below_where_the_text_ends():
     """An explicit 'cut seven characters', not a vague 'shorten by 15%'."""
-    assert rewrite.widowed({"a": _text(204)}) == {"a": 2 * CPL - config.WIDOW_SAFETY}
+    assert bullet_checks.widowed({"a": _text(204)}) == {"a": 2 * CPL - config.WIDOW_SAFETY}
 
 
 # --- the prompt -----------------------------------------------------------------------
@@ -1012,32 +1022,32 @@ def test_the_ceiling_is_a_full_line_below_where_the_text_ends():
 
 def test_the_prompt_advertises_a_band_below_the_budget():
     """A ceiling alone is what let the model optimise right up to the cliff edge."""
-    soft_min, hard_max = rewrite._length_band(202)
+    soft_min, hard_max = rewrite_prompts._length_band(202)
     assert hard_max < 202, "max must sit below the budget, not on it"
     assert soft_min < hard_max
 
-    rendered = rewrite._format_bullets([bullet("a", "Built a service.", ["python"])], 202)
+    rendered = rewrite_prompts._format_bullets([bullet("a", "Built a service.", ["python"])], 202)
     assert f"max={hard_max}" in rendered
     assert f"{soft_min}-{hard_max}" in rendered
 
 
 def test_the_system_prompt_states_which_way_to_err():
-    assert "Err short, never long." in rewrite._system()
+    assert "Err short, never long." in rewrite_prompts._system()
 
 
 def test_the_system_prompt_forbids_moving_metrics_across_bullet_ids():
     """Regression pin for aeth_b3/zot_b3 cross-wiring of eval metrics."""
-    assert "Never move a number or metric from one bullet id to another" in rewrite._system()
+    assert "Never move a number or metric from one bullet id to another" in rewrite_prompts._system()
 
 
 def test_the_system_prompt_encourages_leadership_and_drive_verbs_without_forcing_them():
-    assert "a stretched \"led\"" in rewrite._system()
-    assert "do not imply managing people, owning a decision" in rewrite._system()
+    assert "a stretched \"led\"" in rewrite_prompts._system()
+    assert "do not imply managing people, owning a decision" in rewrite_prompts._system()
 
 
 def test_the_system_prompt_foregrounds_accomplishment_without_inventing_one():
-    assert "Foreground the accomplishment." in rewrite._system()
-    assert "never manufacture a result, number, or comparison" in rewrite._system()
+    assert "Foreground the accomplishment." in rewrite_prompts._system()
+    assert "never manufacture a result, number, or comparison" in rewrite_prompts._system()
 
 
 def test_default_rewrite_system_prompt_is_byte_identical_to_the_legacy_string():
@@ -1045,7 +1055,7 @@ def test_default_rewrite_system_prompt_is_byte_identical_to_the_legacy_string():
     from resume_tailor.content import style as style_mod
 
     style_mod.activate(rewrite=None, expand=None)
-    assert rewrite._system() == rewrite._SYSTEM
+    assert rewrite_prompts._system() == rewrite_prompts._SYSTEM
 
 
 def test_a_custom_rewrite_style_reaches_the_llm_system_prompt(rewrite_calls):
@@ -1070,7 +1080,7 @@ def test_a_custom_rewrite_style_cannot_drop_locked_core_rules(rewrite_calls):
     from resume_tailor.content import style as style_mod
 
     style_mod.activate(rewrite="- Be concise.", expand=None)
-    system = rewrite._system()
+    system = rewrite_prompts._system()
     assert "NEVER introduce a skill, tool, technology, metric" in system
     assert "Never bend a bullet toward a keyword to work it in" in system
 
@@ -1341,9 +1351,9 @@ def test_no_widow_repair_holds_the_run_to_one_call(rewrite_calls):
 
 def test_opening_verb_ignores_non_word_openers():
     """Hyphenated or empty openers are not verbs and must not participate in collisions."""
-    assert rewrite.opening_verb("Designed a pipeline.") == "designed"
-    assert rewrite.opening_verb("Full-stack app") is None
-    assert rewrite.opening_verb("") is None
+    assert bullet_checks.opening_verb("Designed a pipeline.") == "designed"
+    assert bullet_checks.opening_verb("Full-stack app") is None
+    assert bullet_checks.opening_verb("") is None
 
 
 def test_verb_collisions_flags_exact_duplicate_openers():
@@ -1353,7 +1363,7 @@ def test_verb_collisions_flags_exact_duplicate_openers():
         "b": "Designed a retrieval pipeline.",
         "c": "Led a mentoring cohort.",
     }
-    collisions = rewrite.verb_collisions(texts)
+    collisions = bullet_checks.verb_collisions(texts)
     assert set(collisions) == {"b"}
     assert "designed" in collisions["b"]
 
@@ -1366,7 +1376,7 @@ def test_verb_collisions_flags_family_over_concentration():
         "c": "Architected a SQL router.",
         "d": "Led a mentoring cohort.",
     }
-    collisions = rewrite.verb_collisions(texts)
+    collisions = bullet_checks.verb_collisions(texts)
     # First two build-family openers keep their claim; the third is the offender.
     assert set(collisions) == {"c"}
     assert "designed" in collisions["c"]
@@ -1381,7 +1391,7 @@ def test_verb_collisions_ignores_unknown_openers_for_family_rules():
         "c": "Designed a Python service.",
         "d": "Engineered a retrieval pipeline.",
     }
-    collisions = rewrite.verb_collisions(texts)
+    collisions = bullet_checks.verb_collisions(texts)
     # Exact duplicate of Photographed is still flagged; family rule does not invent one.
     assert set(collisions) == {"b"}
     assert "photographed" in collisions["b"]
@@ -1514,8 +1524,8 @@ def test_widowed_max_fill_widens_the_net_without_changing_the_default():
     # 38% of a last line: not a widow by default, but inside a 40% pull-back net.
     texts = {"a": "x" * (width + int(width * 0.38))}
 
-    assert rewrite.widowed(texts) == {}
-    assert rewrite.widowed(texts, max_fill=0.40) == {"a": width - config.WIDOW_SAFETY}
+    assert bullet_checks.widowed(texts) == {}
+    assert bullet_checks.widowed(texts, max_fill=0.40) == {"a": width - config.WIDOW_SAFETY}
 
 
 def test_pull_back_accepts_only_a_reply_that_saves_a_line(rewrite_calls):
@@ -1530,7 +1540,7 @@ def test_pull_back_accepts_only_a_reply_that_saves_a_line(rewrite_calls):
     # "a" comes back under one line; "b" is shorter but still wraps, so it frees nothing.
     calls = rewrite_calls(_reply(a="y" * (ceiling - 1), b="y" * (width + 5)))
 
-    out, pulled, rejected = rewrite.pull_back(
+    out, pulled, rejected = bullet_merge.pull_back(
         texts, src, _reqs(), {"a": ceiling, "b": ceiling}
     )
 
@@ -1549,7 +1559,7 @@ def test_pull_back_sends_only_the_requested_bullets(rewrite_calls):
     texts = {"a": "x" * (width + 10), "b": "x" * (width + 10)}
     calls = rewrite_calls(_reply(a="y" * 50))
 
-    rewrite.pull_back(texts, src, _reqs(), {"a": width - config.WIDOW_SAFETY})
+    bullet_merge.pull_back(texts, src, _reqs(), {"a": width - config.WIDOW_SAFETY})
 
     sent = calls[0]["messages"][0]["content"]
     assert "'a'" in sent and "'b'" not in sent
@@ -1557,7 +1567,7 @@ def test_pull_back_sends_only_the_requested_bullets(rewrite_calls):
 
 def test_pull_back_with_no_targets_makes_no_call(rewrite_calls):
     calls = rewrite_calls()
-    out, pulled, rejected = rewrite.pull_back({"a": "x"}, {}, _reqs(), {})
+    out, pulled, rejected = bullet_merge.pull_back({"a": "x"}, {}, _reqs(), {})
     assert calls == [] and pulled == 0 and out == {"a": "x"}
 
 
@@ -1565,7 +1575,7 @@ def test_measured_target_window_accepts_only_guard_clean_numeric_preserving_repl
     src = {"a": bullet("a", "Trained over 30 staff on IT practices.", ["support"], metric=True)}
     current = {"a": "Trained over 30 staff on IT practices and common tools."}
     calls = rewrite_calls(_reply(a="Trained 30+ staff on IT practices."))
-    out, fixed, _, rejected = rewrite._polish(
+    out, fixed, _, rejected = followups._polish(
         current, src, _reqs(), repair_widows=False, repair_verbs=False,
         targets={"a": (30, 40)},
     )
@@ -1574,7 +1584,7 @@ def test_measured_target_window_accepts_only_guard_clean_numeric_preserving_repl
     assert "<repair_prompt_version>4" in calls[0]["messages"][0]["content"]
 
     rewrite_calls(_reply(a="Trained 30+ staff."))
-    out, fixed, _, _ = rewrite._polish(
+    out, fixed, _, _ = followups._polish(
         current, src, _reqs(), repair_widows=False, repair_verbs=False,
         targets={"a": (30, 40)},
     )
@@ -1587,7 +1597,7 @@ def test_measured_repair_gets_one_fabrication_retry(rewrite_calls):
         _reply(a="Built a Kubernetes service."),
         _reply(a="Built a Python service."),
     )
-    out, fixed, _, rejected = rewrite._polish(
+    out, fixed, _, rejected = followups._polish(
         {"a": "Built a Python service with several extra words."},
         src, _reqs(), repair_widows=False, repair_verbs=False,
         targets={"a": (20, 30)},
@@ -1622,7 +1632,7 @@ _TA_SOURCE = Bullet(
     ],
 )
 def test_a_slash_compound_source_noun_licenses_its_parts(rewritten):
-    assert rewrite.rebound_numbers([_TA_SOURCE], rewritten) == []
+    assert bullet_checks.rebound_numbers([_TA_SOURCE], rewritten) == []
 
 
 @pytest.mark.parametrize(
@@ -1635,7 +1645,7 @@ def test_a_slash_compound_source_noun_licenses_its_parts(rewritten):
     ],
 )
 def test_a_slash_compound_source_still_rejects_a_rebound(rewritten, claim):
-    assert rewrite.rebound_numbers([_TA_SOURCE], rewritten) == [claim]
+    assert bullet_checks.rebound_numbers([_TA_SOURCE], rewritten) == [claim]
 
 
 # --------------------------------------------------------------------------------------
@@ -1656,7 +1666,7 @@ def test_a_slash_compound_source_still_rejects_a_rebound(rewritten, claim):
     ],
 )
 def test_end_month_reads_the_last_date_named(text, expected):
-    assert rewrite._end_month(text) == expected
+    assert selection._end_month(text) == expected
 
 
 def _job(end: str, *, bullets: list[Bullet] | None = None) -> Experience:
@@ -1670,20 +1680,20 @@ def test_entry_recency_decays_by_half_life_and_is_neutral_without_a_date(monkeyp
     monkeypatch.setattr(config, "RECENCY_WEIGHT", 0.2)
     monkeypatch.setattr(config, "RECENCY_HALF_LIFE_MONTHS", 24)
     today = (2026, 9)
-    assert rewrite.entry_recency(_job("Present"), today=today) == pytest.approx(1.2)
-    assert rewrite.entry_recency(_job("2026-09"), today=today) == pytest.approx(1.2)
-    assert rewrite.entry_recency(_job("2024-09"), today=today) == pytest.approx(1.1)
+    assert selection.entry_recency(_job("Present"), today=today) == pytest.approx(1.2)
+    assert selection.entry_recency(_job("2026-09"), today=today) == pytest.approx(1.2)
+    assert selection.entry_recency(_job("2024-09"), today=today) == pytest.approx(1.1)
     project = Project(id="p", name="P", date="", bullets=[])
-    assert rewrite.entry_recency(project, today=today) == 1.0
+    assert selection.entry_recency(project, today=today) == 1.0
     garbled = Project(id="q", name="Q", date="someday", bullets=[])
-    assert rewrite.entry_recency(garbled, today=today) == 1.0
+    assert selection.entry_recency(garbled, today=today) == 1.0
     ongoing = Project(id="r", name="R", date="Jul 2026 - Present", bullets=[])
-    assert rewrite.entry_recency(ongoing, today=today) == pytest.approx(1.2)
+    assert selection.entry_recency(ongoing, today=today) == pytest.approx(1.2)
 
 
 def test_entry_recency_is_off_at_zero_weight(monkeypatch):
     monkeypatch.setattr(config, "RECENCY_WEIGHT", 0.0)
-    assert rewrite.entry_recency(_job("Present")) == 1.0
+    assert selection.entry_recency(_job("Present")) == 1.0
 
 
 def test_recency_breaks_a_tie_toward_the_recent_entry():
@@ -1692,7 +1702,7 @@ def test_recency_breaks_a_tie_toward_the_recent_entry():
         keywords=[Keyword(phrase="Python", canonical="python", importance="must_have")],
     )
     old, recent = _job("2019-06"), _job("2026-06")
-    chosen = rewrite.select_entries([old, recent], requirements, limit=1)
+    chosen = selection.select_entries([old, recent], requirements, limit=1)
     assert chosen == [recent]
 
 
@@ -1708,13 +1718,13 @@ def test_a_much_more_relevant_older_entry_still_wins():
     recent = _job(
         "2026-06", bullets=[Bullet(id="new1", text="Organised events.", tags=["events"])]
     )
-    chosen = rewrite.select_entries([old, recent], requirements, limit=1)
+    chosen = selection.select_entries([old, recent], requirements, limit=1)
     assert chosen == [old]
 
 
-def _replies(*pairs) -> rewrite.RewriteResult:
-    return rewrite.RewriteResult(
-        bullets=[rewrite.RewrittenBullet(id=k, text=v) for k, v in pairs]
+def _replies(*pairs) -> rewrite_prompts.RewriteResult:
+    return rewrite_prompts.RewriteResult(
+        bullets=[rewrite_prompts.RewrittenBullet(id=k, text=v) for k, v in pairs]
     )
 
 
@@ -1727,7 +1737,7 @@ def test_fit_target_keeps_the_longest_clean_version_inside_the_window(rewrite_ca
         ("a", "Trained 30+ staff on IT practices."),       # 34, in window
         ("a", "Trained over 30 staff on IT practices."),   # 38, in window, longest
     ))
-    out, fixed, _, rejected = rewrite._polish(
+    out, fixed, _, rejected = followups._polish(
         current, src, _reqs(), repair_widows=False, repair_verbs=False,
         targets={"a": (30, 40)},
     )
@@ -1743,7 +1753,7 @@ def test_fit_target_accepts_a_line_saving_version_when_no_version_lands_in_the_w
                        ["support"], metric=True)}
     current = {"a": "Trained over 30 staff on IT practices."}
     rewrite_calls(_replies(("a", "Trained 30+ staff."), ("a", "x" * 90)))
-    out, fixed, _, _ = rewrite._polish(
+    out, fixed, _, _ = followups._polish(
         current, src, _reqs(), repair_widows=False, repair_verbs=False,
         targets={"a": (45, 60)}, line_ceilings={"a": 20},
     )

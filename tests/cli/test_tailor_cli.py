@@ -14,8 +14,8 @@ import pytest
 from resume_tailor import config
 from resume_tailor.cli import run as cli_run
 from resume_tailor.pipeline import fit as fit_mod
+from resume_tailor.pipeline.fabrication import FabricationError
 from resume_tailor.pipeline.jd import JobRequirements, Keyword
-from resume_tailor.pipeline.rewrite import FabricationError
 from tests.fixtures import synthetic_resume
 
 
@@ -51,7 +51,7 @@ def _stub_relevance_api(cli, monkeypatch):
     stubbed `jd.extract` and `fit.fit` would try to reach the network. An empty table means
     keyword-only ranking, which is what these tests were written against.
     """
-    monkeypatch.setattr(cli.rewrite, "score_table", lambda *a, **k: {})
+    monkeypatch.setattr(cli.relevance, "score_table", lambda *a, **k: {})
 
 
 @pytest.fixture(autouse=True)
@@ -543,7 +543,7 @@ def test_a_backend_failure_while_scoring_fails_the_run(cli, jd_file, tmp_path, m
     def unreachable(*a, **k):
         raise cli.LLMError("Could not reach http://localhost:11434/v1")
 
-    monkeypatch.setattr(cli.rewrite, "score_table", unreachable)
+    monkeypatch.setattr(cli.relevance, "score_table", unreachable)
 
     assert cli.main(["--jd", str(jd_file), "--model", "ollama"]) == 1
     assert "Could not reach" in capsys.readouterr().err

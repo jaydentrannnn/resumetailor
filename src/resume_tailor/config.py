@@ -864,7 +864,7 @@ def pinned_specs(
 def backend_for(purpose: str) -> Backend:
     """The resolved backend for one stage, defaulting to Claude if `resolve` never ran.
 
-    The default matters: `jd.extract` and `rewrite.score_table` are importable library
+    The default matters: `jd.extract` and `relevance.score_table` are importable library
     functions, and tests and scripts call them without going through the CLI. A `pinned()`
     block, if active in this context, wins over both `_ACTIVE` and that default.
     """
@@ -1024,7 +1024,7 @@ def credential_gaps(profile: str, overrides: dict[str, str] | None = None) -> li
 def fingerprint(purpose: str) -> str:
     """Identity of the backend serving a stage, for cache keys.
 
-    Folded into `jd._slug` and `rewrite._score_cache_path`. Without it, switching models
+    Folded into `jd._slug` and `relevance._score_cache_path`. Without it, switching models
     and re-running silently serves the *previous* model's output — the same class of bug
     `_PROMPT_VERSION` exists to prevent, and one that would make any A/B between backends
     meaningless. Keyed on `origin or provider`, not `provider` alone: after `_backend`'s
@@ -1406,7 +1406,7 @@ INITIAL_BULLET_SHARE = 1.0
 #
 # Merging combines multiple selected bullet points within a single entry into fewer
 # bullets. It is designed as a space lever that must still preserve correctness
-# invariants enforced in `rewrite.check_fabrication`.
+# invariants enforced in `fabrication.check_fabrication`.
 
 #: Affinity threshold schedule for merge proposals.
 #: Lower thresholds propose more merges as the fit loop escalates on overflow.
@@ -1458,7 +1458,7 @@ MAX_GROW_ATTEMPTS = 4
 # wrongly — the cost of an omission is a missed catch, never a false one.
 
 #: Near-synonymous bullet openers, grouped by the claim they make. Past tense, because
-#: that is the register `rewrite._SYSTEM` asks for. Initialised from the built-in
+#: that is the register `rewrite_prompts._SYSTEM` asks for. Initialised from the built-in
 #: `core-tech` pack (`library_seeds.py`) and reassigned wholesale by
 #: `libraries.apply_to_config()` once a workspace has its own pack selection — never
 #: mutated in place, since `verb_family`'s index cache below keys on object identity.
@@ -1642,7 +1642,7 @@ NICE_TO_HAVE_WEIGHT = 1.0
 #: it is one more thing to keep calibrated.
 SOFT_SKILL_WEIGHT = 1.5
 
-#: Multiplier on the LLM relevance score (0-10 per bullet) from `rewrite.score_table`, which
+#: Multiplier on the LLM relevance score (0-10 per bullet) from `relevance.score_table`, which
 #: is *added* to the keyword score rather than replacing it. The two signals answer different
 #: questions: tag overlap asks "did they literally use this tool", the semantic score asks
 #: "is this bullet relevant to this role at all" — the latter is the only one that can see
@@ -1716,7 +1716,7 @@ SECTION_KIND_ENABLED_DEFAULT: dict[str, bool] = {
     "skills": True,
 }
 
-#: Overall experience-vs-projects split of the bullets `rewrite.select_within_entries`
+#: Overall experience-vs-projects split of the bullets `selection.select_within_entries`
 #: chooses, as a fraction going to experience (e.g. 0.65 -> 65% experience / 35% projects).
 #: `None` is the original behaviour: one flat pool ranked purely by `score`, which lets a
 #: keyword-dense project out-rank every job for the shared discretionary budget. Distinct
@@ -1728,7 +1728,7 @@ EXPERIENCE_BULLET_SHARE: float | None = None
 #: Ceiling on how many bullets any single job or project may take, applied inside whichever
 #: pool (flat, or per-section under `EXPERIENCE_BULLET_SHARE`) is in play. `None` is
 #: uncapped — the original behaviour, where a single rich entry could take as many lines as
-#: the ranking gave it. `rewrite.selectable_total` is what the fit loop's grow condition
+#: the ranking gave it. `selection.selectable_total` is what the fit loop's grow condition
 #: must compare against once this is set, since the pool saturates below the raw bullet
 #: count and comparing against the raw count would spin the grow loop for nothing.
 MAX_BULLETS_PER_ENTRY: int | None = None

@@ -13,6 +13,8 @@ from functools import lru_cache
 from pathlib import Path
 from typing import Any
 
+from ..pipeline import relevance, rewrite_prompts
+
 STAGES = ("extract", "score", "facets", "rewrite", "expand", "skills", "cover")
 _POLICY_VERSION = 1
 
@@ -207,7 +209,7 @@ def capture(
     if target_field is None:
         return None
     from .. import config
-    from ..pipeline import coverletter, expand, facets, jd, rewrite, skills
+    from ..pipeline import coverletter, expand, facets, jd, skills
     from . import libraries
 
     preset = catalog()[target_field]
@@ -241,10 +243,10 @@ def capture(
     with config.use_context(context):
         systems = {
             "extract": system("extract", jd._SYSTEM),
-            "score": system("score", rewrite._SCORE_SYSTEM),
+            "score": system("score", relevance._SCORE_SYSTEM),
             "facets": system("facets", facets._SYSTEM),
             "skills": system("skills", skills._SYSTEM),
-            "rewrite": rewrite._system(),
+            "rewrite": rewrite_prompts._system(),
             "expand": expand._system(),
             "cover": coverletter._system(),
         }

@@ -24,7 +24,7 @@ from .. import config
 
 #: The four legacy top-level keys a pre-`sections` master resume file used. Order matters:
 #: it is the order `_migrate_legacy_sections` rebuilds them in, which is also today's
-#: `all_bullets()` order — preserving it keeps `rewrite._score_cache_path` stable across
+#: `all_bullets()` order — preserving it keeps `relevance._score_cache_path` stable across
 #: the migration, so an upgraded file does not silently invalidate every cached score.
 _LEGACY_SECTION_KEYS: tuple[tuple[str, str], ...] = (
     ("education", "education"),
@@ -246,7 +246,7 @@ class MasterResume(_Strict):
         a brand-new resume with neither is left alone (`sections` defaults to `[]`). The
         four sections are always built in the fixed `_LEGACY_SECTION_KEYS` order with
         stable ids equal to the legacy key name, which is what keeps `all_bullets()`'s
-        order — and therefore `rewrite._score_cache_path`'s cache key — identical to
+        order — and therefore `relevance._score_cache_path`'s cache key — identical to
         pre-migration output for every existing file.
         """
         if not isinstance(data, dict):

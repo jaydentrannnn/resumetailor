@@ -16,8 +16,9 @@ from .. import config
 from ..content.data import Bullet, MasterResume
 from ..infra import llm
 from . import events
+from .fabrication import check_fabrication
 from .jd import JobRequirements
-from .rewrite import _format_keywords, check_fabrication
+from .rewrite_prompts import _format_keywords
 
 Verdict = Literal["keep", "cut", "rewrite"]
 

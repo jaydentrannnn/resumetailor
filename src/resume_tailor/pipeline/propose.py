@@ -31,7 +31,7 @@ from pydantic import BaseModel, Field
 from .. import config
 from ..content import libraries
 from ..infra import llm
-from . import events, report, rewrite
+from . import bullet_checks, events, report
 from .events import ProgressCallback
 
 if TYPE_CHECKING:
@@ -135,7 +135,7 @@ def unclassified_opening_verbs(master: MasterResume) -> list[str]:
     """
     verbs: set[str] = set()
     for bullet in master.all_bullets():
-        verb = rewrite.opening_verb(bullet.text)
+        verb = bullet_checks.opening_verb(bullet.text)
         if verb and config.verb_family(verb) is None:
             verbs.add(verb)
     return sorted(verbs)

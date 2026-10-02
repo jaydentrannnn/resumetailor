@@ -15,7 +15,19 @@ from resume_tailor import config, workspace
 from resume_tailor.content import industries, libraries, style
 from resume_tailor.content.data import Bullet
 from resume_tailor.infra import llm
-from resume_tailor.pipeline import coverletter, expand, facets, jd, rewrite, skills
+from resume_tailor.pipeline import (
+    bullet_checks,
+    coverletter,
+    expand,
+    fabrication,
+    facets,
+    followups,
+    jd,
+    relevance,
+    rewrite,
+    rewrite_prompts,
+    skills,
+)
 from resume_tailor.web import jobs as jobs_mod
 from resume_tailor.web.app import app
 from resume_tailor.web.jobs import JobQueue, regenerate_cover_letter
@@ -43,7 +55,7 @@ def capture(target="finance-consulting", **overrides):
 
 def test_legacy_prompts_and_custom_override_are_preserved(profile):
     assert industries.capture(None, {}) is None
-    assert rewrite._system() == rewrite._SYSTEM
+    assert rewrite_prompts._system() == rewrite_prompts._SYSTEM
     assert expand._system() == expand._SYSTEM
     assert coverletter._system() == coverletter._SYSTEM
     custom = "Prefer short concrete descriptions."
@@ -52,9 +64,9 @@ def test_legacy_prompts_and_custom_override_are_preserved(profile):
         industries.bind(snapshot)
         style.activate(**snapshot.styles)
         assert style.active("rewrite") == custom
-        assert "NEVER introduce a skill" in rewrite._system()
-        assert "Candidate claims must come" in rewrite._system()
-        assert "Profile target field: Finance & Consulting" in rewrite._system()
+        assert "NEVER introduce a skill" in rewrite_prompts._system()
+        assert "Candidate claims must come" in rewrite_prompts._system()
+        assert "Profile target field: Finance & Consulting" in rewrite_prompts._system()
         style.activate()
         # Clearing an override restores this profile's field default.
         assert "financial modeling" in style.active("rewrite")
@@ -101,9 +113,9 @@ def test_pack_composition_preserves_files_custom_overrides_and_source_limits(pro
     assert libraries.workspace_file().read_bytes() == before
     industries.bind(snapshot)
     source = Bullet(id="excel", text="Analyzed records using Excel.", tags=["excel"])
-    assert rewrite.check_fabrication(source, "Analyzed records using Bloomberg.")
-    assert "matching aids" in rewrite._system()
-    assert "proficiency" in rewrite._system()
+    assert fabrication.check_fabrication(source, "Analyzed records using Bloomberg.")
+    assert "matching aids" in rewrite_prompts._system()
+    assert "proficiency" in rewrite_prompts._system()
 
 
 def test_cache_fingerprints_change_with_guidance_and_custom_styles(profile):
@@ -175,7 +187,7 @@ def test_concurrent_guidance_is_isolated_and_inherited_by_worker_calls(profile):
         with config.use_context(config.default_context()):
             industries.bind(snapshot)
             style.activate(**snapshot.styles)
-            wrapped = config.run_in_context(rewrite._system)
+            wrapped = config.run_in_context(rewrite_prompts._system)
             barrier.wait(timeout=10)
             return wrapped(), config.TAG_ALIASES.get("dcf")
 
@@ -205,9 +217,9 @@ def test_all_stages_receive_field_guidance_with_unchanged_output_schemas(profile
             calls[self.purpose] = kwargs
             output = {
                 "extract": requirements,
-                "score": rewrite.ScoreTable(scores=[]),
+                "score": relevance.ScoreTable(scores=[]),
                 "facets": facets.FacetSelection(),
-                "rewrite": rewrite.RewriteResult(bullets=[]),
+                "rewrite": rewrite_prompts.RewriteResult(bullets=[]),
                 "expand": expand.ExpansionLLMResult(entries=[]),
                 "skills": skills.SkillsSelectionLLM(selected=[]),
                 "cover": coverletter.CoverLetterLLM(paragraphs=[]),
@@ -216,7 +228,7 @@ def test_all_stages_receive_field_guidance_with_unchanged_output_schemas(profile
 
     monkeypatch.setattr(llm, "client_for", lambda purpose: SimpleNamespace(messages=Messages(purpose)))
     jd.extract("Analyst position", use_cache=False)
-    rewrite.score_table(resume.all_bullets(), requirements, use_cache=False)
+    relevance.score_table(resume.all_bullets(), requirements, use_cache=False)
     facets.select_facets(resume, requirements, use_cache=False)
     rewrite.rewrite_bullets(resume.all_bullets(), requirements, char_budget=300,
                             repair_widows=False, repair_verbs=False)
@@ -244,12 +256,12 @@ def test_accurate_repeated_verb_can_survive_repair_without_losing_metrics(profil
     class Messages:
         def parse(self, **kwargs):
             calls.append(kwargs)
-            reply = rewrite.RewriteResult(bullets=[rewrite.RewrittenBullet(id="b", text=sources["b"].text)])
+            reply = rewrite_prompts.RewriteResult(bullets=[rewrite_prompts.RewrittenBullet(id="b", text=sources["b"].text)])
             return SimpleNamespace(parsed_output=reply, stop_reason="end_turn")
 
     monkeypatch.setattr(llm, "client_for", lambda _: SimpleNamespace(messages=Messages()))
     original = {bid: bullet.text for bid, bullet in sources.items()}
-    result, _, changed, _ = rewrite._polish(original, sources,
+    result, _, changed, _ = followups._polish(original, sources,
                                            jd.JobRequirements(title="Analyst", seniority="entry"),
                                            repair_widows=False)
     assert result == original and changed == 0
@@ -275,6 +287,6 @@ def test_simulation_and_forecast_context_remains_visible_and_numeric_guards_bind
     entry.bullets = [bullet]
     snapshot = industries.capture("finance-consulting", {"rewrite": None, "expand": None, "cover": None}, resume=resume)
     industries.bind(snapshot)
-    assert "simulated portfolio forecast" in rewrite._format_bullets([bullet], 300)
-    assert "forecasts are not realized results" in rewrite._system()
-    assert rewrite.guard_offenders([bullet], "Forecasted a simulated $20M portfolio using Excel.")
+    assert "simulated portfolio forecast" in rewrite_prompts._format_bullets([bullet], 300)
+    assert "forecasts are not realized results" in rewrite_prompts._system()
+    assert bullet_checks.guard_offenders([bullet], "Forecasted a simulated $20M portfolio using Excel.")

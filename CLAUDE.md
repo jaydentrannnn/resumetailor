@@ -21,8 +21,8 @@ the Claude Desktop fallback for `needs_browser` postings.
 ## The architectural invariant
 
 **The LLM produces plain strings and nothing else. It never sees, receives, or emits XML,
-styling, template markup, or anything about layout.** Only `jd.py`, `rewrite.py`,
-`facets.py`, `expand.py`, `skills.py`, `coverletter.py`, `review.py`, `propose.py` — plus
+styling, template markup, or anything about layout.** Only `jd.py`, `rewrite.py` (with
+`relevance.py`, `followups.py`, `bullet_merge.py`), `facets.py`, `expand.py`, `skills.py`, `coverletter.py`, `review.py`, `propose.py` — plus
 the apply funnel's `apply/answers/` `answer.py`, `model_resolver.py`, `hybrid_resolver.py`
 (form-field labels/options and resume text, never document XML) — call the API,
 exchanging plain text/JSON only. `llm.py` routes which backend; `render.py` is
@@ -30,7 +30,7 @@ the only module that touches the document (mechanically, via `docxtpl`); `conver
 owns PDF conversion. Six stages on every clean run: JD extraction, relevance scoring,
 facet selection, bullet rewriting, experience expansion, skills selection. Opt-in: cover
 letter, hiring-manager review (advisory, never auto-applied), vocabulary proposals (never
-in-pipeline). Bounded follow-ups: `rewrite._polish`, `rewrite._retry_fabrications`, one
+in-pipeline). Bounded follow-ups: `followups._polish`, `followups._retry_fabrications`, one
 cover-letter guard retry; `--merge` adds one call after a measured overflow.
 
 If you are about to send document XML to the model, or ask it to emit a `.docx` fragment,
@@ -43,7 +43,7 @@ stop. That is the bug this project exists to avoid.
   each** (`scripts/build_template.py` / `scripts/build_cover_template.py`). Never hand-edit
   or tag from anywhere else — a fix belongs in the build module.
 - **Never invent resume content.** Every fact traces to `data/master_resume.json`;
-  `rewrite.py`'s post-hoc fabrication guard enforces this in code — do not weaken it. A
+  the post-hoc fabrication guard (`fabrication.py`) enforces this in code — do not weaken it. A
   fabricating draft gets one targeted retry, then falls back to verbatim source text,
   reported as a run warning, never raised. Cover letters use a narrower guard
   (`coverletter.check_claims`); review suggestions are guarded and never auto-applied
@@ -54,7 +54,7 @@ stop. That is the bug this project exists to avoid.
 - **Never silently truncate to fit a page** — the fit loop fails loudly, naming the
   overflowing sections.
 - **Editing a prompt means bumping its version constant** (`jd._PROMPT_VERSION`,
-  `rewrite._SCORE_PROMPT_VERSION`) — folded into cache keys.
+  `relevance._SCORE_PROMPT_VERSION`) — folded into cache keys.
 - **Anything that changes what the model returns belongs in the cache key**
   (`config.fingerprint(purpose)`; `propose` adds the libraries fingerprint; `expand` adds
   the style digest). Keys on `Backend.origin`, not `.provider` — ollama/lmstudio/gemini all
@@ -149,13 +149,13 @@ Two halves that never mix, joined by a measure-and-retry loop (`fit.py` owns the
 ```
 master_resume.json + jd.txt
   → jd.extract()              JD → JobRequirements (LLM, voted ×3, cached)
-  → rewrite.score_table()     all bullets → 0-10 relevance (LLM, once, cached)
+  → relevance.score_table()     all bullets → 0-10 relevance (LLM, once, cached)
   → include.apply()           drop exclusions (pure)
   → facets.select_facets()    project tech + coursework (LLM, once, cached)
   → fit.choose_entries()      rank each section independently (pure)
-  → rewrite.select_within_entries() → rewrite_bullets() (LLM, batched)
-  → rewrite.check_fabrication()   reject invented terms (pure, in code)
-  → rewrite._merge_bullets() / _polish()   (LLM, optional/bounded)
+  → selection.select_within_entries() → rewrite_bullets() (LLM, batched)
+  → fabrication.check_fabrication()   reject invented terms (pure, in code)
+  → bullet_merge._merge_bullets() / followups._polish()   (LLM, optional/bounded)
   → render.build_context() + docxtpl fill  (no LLM, ever)
   → render.measure_detail() → (pages, lines) via convert.py
 fit.fit(): over → combine → pull back near-widows → drop weakest (else FitError)

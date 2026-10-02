@@ -7,7 +7,15 @@ import asyncio
 import pytest
 
 from resume_tailor.infra import fake_llm, llm
-from resume_tailor.pipeline import coverletter, facets, jd, review, rewrite, skills
+from resume_tailor.pipeline import (
+    coverletter,
+    facets,
+    jd,
+    relevance,
+    review,
+    rewrite_prompts,
+    skills,
+)
 from tests.fixtures import synthetic_resume
 
 
@@ -22,10 +30,10 @@ def test_off_unless_the_variable_is_set(monkeypatch):
 def test_rewrite_echoes_each_bullet_from_the_real_prompt_format():
     resume = synthetic_resume()
     bullets = [b for exp in resume.experience for b in exp.bullets]
-    prompt = rewrite._format_bullets(bullets, 180)
-    result = fake_llm.reply(rewrite.RewriteResult, prompt)
+    prompt = rewrite_prompts._format_bullets(bullets, 180)
+    result = fake_llm.reply(rewrite_prompts.RewriteResult, prompt)
     assert [(b.id, b.text) for b in result.bullets] == [(b.id, b.text) for b in bullets]
-    scores = fake_llm.reply(rewrite.ScoreTable, prompt)
+    scores = fake_llm.reply(relevance.ScoreTable, prompt)
     assert [s.id for s in scores.scores] == [b.id for b in bullets]
 
 
@@ -55,7 +63,7 @@ def test_async_client_parses():
     async def go():
         async with fake_llm.AsyncFakeClient("answer") as client:
             response = await client.messages.parse(
-                output_format=rewrite.RewriteResult,
+                output_format=rewrite_prompts.RewriteResult,
                 messages=[{"content": "<bullet id='b1'>\n  <current>Did it</current>\n</bullet>"}],
             )
         return response.parsed_output

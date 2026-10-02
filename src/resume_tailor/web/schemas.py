@@ -650,7 +650,7 @@ class ConfigResponse(BaseModel):
     chars_per_line: int
     lines_per_page: int
     #: Soft min / hard max character band the rewrite prompt advertises for a two-line
-    #: bullet — same numbers `rewrite.length_band(fit.default_bullet_char_budget())`
+    #: bullet — same numbers `rewrite_prompts.length_band(fit.default_bullet_char_budget())`
     #: returns. Surfaced so the master-resume editor can warn before a bullet is past
     #: the cliff the fit loop will later fight.
     bullet_char_soft_min: int = 0

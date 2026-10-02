@@ -27,13 +27,9 @@ from ..content import industries, style
 from ..content.data import Bullet, MasterResume
 from ..infra import llm
 from . import events
+from .fabrication import _HAS_DIGIT, _TOKEN, _check_fabrication
 from .jd import JobRequirements
-from .rewrite import (
-    _HAS_DIGIT,
-    _TOKEN,
-    _check_fabrication,
-    _format_keywords,
-)
+from .rewrite_prompts import _format_keywords
 
 #: Bumped when ``_SYSTEM`` or the cover request shape changes. Version 2 added
 #: ATS/trust keyword split, anti-generic self-check, and optional CoverAngles.

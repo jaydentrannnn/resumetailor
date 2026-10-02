@@ -208,5 +208,5 @@ def built_template(tmp_path_factory) -> Path:
 
 @pytest.fixture(autouse=True)
 def _pinned_recency_today(monkeypatch):
-    """Pin "today" for `rewrite.entry_recency` so rankings never drift with the calendar."""
+    """Pin "today" for `selection.entry_recency` so rankings never drift with the calendar."""
     monkeypatch.setattr(config, "RECENCY_TODAY", "2026-09")

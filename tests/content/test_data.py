@@ -180,7 +180,7 @@ def test_migration_produces_four_default_sections_in_fixed_order():
 
 @pytest.mark.owner
 def test_all_bullets_order_matches_pre_migration_order_for_the_real_master_resume():
-    """`rewrite._score_cache_path` hashes `all_bullets()` in list order — if migrating a
+    """`relevance._score_cache_path` hashes `all_bullets()` in list order — if migrating a
     legacy file changed that order, every cached relevance score would silently
     invalidate. Compares against the raw JSON's own experience-then-projects order,
     independent of any pipeline code.

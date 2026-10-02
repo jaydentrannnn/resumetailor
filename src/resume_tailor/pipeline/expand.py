@@ -27,22 +27,19 @@ from ..content import industries, style
 from ..content.data import Experience, MasterResume
 from ..infra import llm
 from . import events
+from .bullet_checks import verb_collisions
+from .fabrication import _check_fabrication, numbers_dropped
 from .fit import FitResult
 from .jd import JobRequirements
-from .rewrite import (
-    _check_fabrication,
-    _format_keywords,
-    numbers_dropped,
-    select_entries,
-    verb_collisions,
-)
+from .rewrite_prompts import _format_keywords
+from .selection import select_entries
 
 #: Bumped when `_SYSTEM` or the expand request shape changes, so stored expansions
 #: invalidate on their own rather than relying on `--no-cache`.
 _EXPAND_PROMPT_VERSION = 2
 
 #: How far below the hard char limit the advertised target range opens. Same lesson as
-#: `rewrite._TARGET_BAND`: a bare ceiling lets the model land two characters over.
+#: `rewrite_prompts._TARGET_BAND`: a bare ceiling lets the model land two characters over.
 _TARGET_BAND = 150
 
 #: Leading list glyphs some models prepend even when asked for plain bullets.
@@ -191,7 +188,7 @@ def choose_entries(
 ) -> list[Experience]:
     """Pick experience entries for expansion, forcing in every entry on the tailored resume.
 
-    Ranking reuses `rewrite.score_entry` / `select_entries` so the tile cannot disagree
+    Ranking reuses `selection.score_entry` / `select_entries` so the tile cannot disagree
     with the resume about which job mattered. Entries that contributed at least one
     bullet to `FitResult.bullets` are always included, even when that pushes past `limit`
     — the form should never omit a role the applicant just put on the PDF.
