@@ -149,7 +149,7 @@ def _static_heading_texts() -> set[str]:
       (see `render.build_context`'s `if not rendered_entries: continue`), so nothing
       needs filtering — an empty set is correct.
     - With no profile at all (legacy build), the physical headings are exactly
-      `template_build.SECTIONS`'s hardcoded literals.
+      `template_bullets.SECTIONS`'s hardcoded literals.
     """
     profile = template_profile.load_profile()
     if profile is None:

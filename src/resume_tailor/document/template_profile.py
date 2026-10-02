@@ -312,7 +312,7 @@ class TemplateProfile(_Strict):
     #: `"paragraph"` (default) is every template before this field existed: content
     #: lives in body paragraphs. `"table"` is a resume whose content lives inside one
     #: invisible layout table (used purely to right-align dates/locations without tab
-    #: stops) — see `template_build.build_generic_table`. Always implies
+    #: stops) — see `template_generic_table.build_generic_table`. Always implies
     #: `section_mode="generic"`: a table-layout resume needs at least two
     #: experience-shaped headings' worth of generality (this document's own
     #: WORK EXPERIENCE + LEADERSHIP) far more often than a paragraph one does, and

@@ -217,7 +217,7 @@ def iter_document_paragraphs(
     Walks `w:body`'s direct children in document order; a `w:p` is yielded as-is
     (`location=None`), a `w:tbl` is descended into as rows -> physical cells ->
     paragraphs. This is THE invariant the whole template system rests on:
-    `template_analyze._load_paras` and `template_build._para_by_id` must both use this
+    `template_analyze._load_paras` and `template_tagging._para_by_id` must both use this
     walk and therefore enumerate identically, because a `CharSpan.paragraph_id` is an
     index into this sequence and nothing else.
 

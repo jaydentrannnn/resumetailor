@@ -254,7 +254,7 @@ class _ProfileValidator:
         A missing paragraph always blocks. A non-list paragraph blocks only when
         `strict` — the experience/project bullet loop is the resume's main visual list
         content, where real Word numbering matters. Education's degree/detail role is not
-        strict: `template_build.retarget_bullet` creates a paragraph's numbering
+        strict: `template_bullets.retarget_bullet` creates a paragraph's numbering
         properties rather than requiring them, so a plain degree line still builds fine
         and only needs a non-blocking heads-up (see `template_analyze`'s
         `education_bullets_not_list` issue, raised for the same reason at analyze time).

@@ -21,10 +21,16 @@ from resume_tailor.content.data import (
     ListSection,
     MasterResume,
 )
-from resume_tailor.document import template_analyze, template_build, template_profile
+from resume_tailor.document import (
+    template_analyze,
+    template_build,
+    template_bullets,
+    template_profile,
+    template_tagging,
+    template_xml,
+)
 from resume_tailor.document.render import build_context
 from resume_tailor.document.template_profile import HeadingPrototype
-from tests.fixtures import _table_resume
 from tests.document.test_template_analyze import (
     _add_bullet_numbering,
     _add_hyperlink,
@@ -32,6 +38,7 @@ from tests.document.test_template_analyze import (
     _make_bullet,
     _standard_resume,
 )
+from tests.fixtures import _table_resume
 
 
 def _run_bold(run) -> bool:
@@ -318,7 +325,7 @@ def test_span_past_paragraph_end_raises():
     doc = docx.Document(BytesIO(raw))
     para = next(p for p in doc.paragraphs if "Analytical Engines" in p.text)
     with pytest.raises(RuntimeError, match="dates"):
-        template_build.replace_span_with_tag(
+        template_tagging.replace_span_with_tag(
             para,
             template_profile.CharSpan(
                 paragraph_id=0, start=0, end=len(para.text) + 5
@@ -337,7 +344,7 @@ def test_tab_inside_span_raises():
     para = next(p for p in doc.paragraphs if "Analytical Engines" in p.text)
     tab_idx = para.text.index("\t")
     with pytest.raises(RuntimeError, match="tab"):
-        template_build.replace_span_with_tag(
+        template_tagging.replace_span_with_tag(
             para,
             template_profile.CharSpan(
                 paragraph_id=0, start=tab_idx - 1, end=tab_idx + 2
@@ -357,7 +364,7 @@ def test_overlapping_spans_name_both_fields():
     slices = template_build.docx_text.paragraph_run_slices(para)
     text = template_build.docx_text.paragraph_text(para)
     with pytest.raises(RuntimeError, match=r"(?s)company.*location|location.*company"):
-        template_build.build_segments(
+        template_tagging.build_segments(
             text,
             slices,
             [
@@ -685,7 +692,7 @@ def test_sub_single_text_paragraphs_are_normalized_to_single(tmp_path: Path):
     src = tmp_path / "baseline.docx"
     src.write_bytes(raw)
     doc = docx.Document(str(src))
-    template_build.normalize_single_spacing(doc)
+    template_xml.normalize_single_spacing(doc)
     out = tmp_path / "normalized.docx"
     doc.save(str(out))
 
@@ -719,7 +726,7 @@ def test_bullets_always_get_the_exact_line_rule(tmp_path: Path):
     doc = docx.Document(str(src))
     assert _line_rule(doc.paragraphs[-1]) == "auto"  # sanity: starts as auto
 
-    template_build.normalize_single_spacing(doc)
+    template_xml.normalize_single_spacing(doc)
     out = tmp_path / "normalized.docx"
     doc.save(str(out))
 
@@ -748,7 +755,7 @@ def test_chrome_keeps_its_height_but_is_pinned_to_exact(tmp_path: Path):
     src = tmp_path / "baseline.docx"
     src.write_bytes(raw)
     doc = docx.Document(str(src))
-    template_build.normalize_single_spacing(doc)
+    template_xml.normalize_single_spacing(doc)
     out = tmp_path / "normalized.docx"
     doc.save(str(out))
 
@@ -824,7 +831,7 @@ def test_clamp_tab_stops_uses_paragraph_right_edge(tmp_path: Path):
     pgSz = sectPr.find(qn("w:pgSz"))
     text_width = float(pgSz.get(qn("w:w"))) - 1417.3228346456694 - 708.5433070866151
 
-    template_build.clamp_tab_stops(doc)
+    template_xml.clamp_tab_stops(doc)
     out = tmp_path / "clamped.docx"
     doc.save(str(out))
 
@@ -868,7 +875,7 @@ def test_no_built_template_tab_stop_exceeds_its_paragraph(tmp_path: Path):
     template_build.build_from_profile(src, dst, analysis.suggested_profile)
 
     built = docx.Document(str(dst))
-    text_width = template_build._section_text_width(built)
+    text_width = template_xml._section_text_width(built)
     assert text_width is not None
 
     found_tabs = 0
@@ -1072,7 +1079,7 @@ def _bullet_resume_with_glyph(document, glyph: str):
     wrong glyph entirely."""
     num_id = _add_bullet_numbering(document)
     root = document.part.numbering_part.element
-    abstract_id = template_build._num_to_abstract(root)[num_id]
+    abstract_id = template_bullets._num_to_abstract(root)[num_id]
     for anum in root.findall(qn("w:abstractNum")):
         if anum.get(qn("w:abstractNumId")) != abstract_id:
             continue
@@ -1105,7 +1112,7 @@ def test_shrink_bullet_marker_leaves_a_dash_at_body_size(tmp_path: Path):
     dot renders it as a near-invisible hairline, so it must be left alone."""
     doc = docx.Document()
     bullet = _bullet_resume_with_glyph(doc, "-")
-    template_build.shrink_bullet_marker(doc, bullet)
+    template_bullets.shrink_bullet_marker(doc, bullet)
     assert _marker_size(bullet) == "20"
 
 
@@ -1114,7 +1121,7 @@ def test_shrink_bullet_marker_still_shrinks_a_round_dot():
     tuned against — and must still shrink."""
     doc = docx.Document()
     bullet = _bullet_resume_with_glyph(doc, "●")
-    template_build.shrink_bullet_marker(doc, bullet)
+    template_bullets.shrink_bullet_marker(doc, bullet)
     assert _marker_size(bullet) == "11"
 
 
@@ -1123,9 +1130,9 @@ def test_shrink_bullet_marker_is_idempotent():
     is derived from the body run's own size, not the marker's current size."""
     doc = docx.Document()
     bullet = _bullet_resume_with_glyph(doc, "●")
-    template_build.shrink_bullet_marker(doc, bullet)
+    template_bullets.shrink_bullet_marker(doc, bullet)
     once = _marker_size(bullet)
-    template_build.shrink_bullet_marker(doc, bullet)
+    template_bullets.shrink_bullet_marker(doc, bullet)
     assert _marker_size(bullet) == once
 
 

@@ -390,7 +390,7 @@ def build_context(
     }
 
     # Generic-mode section list — consumed only by a template tagged via
-    # `template_build.build_generic`. A section whose kind the active template cannot
+    # `template_generic.build_generic`. A section whose kind the active template cannot
     # render (no prototype) is silently omitted here; `fit.py` is what turns that into a
     # warning, since this function has no result channel of its own to carry one.
     sections = []
@@ -438,7 +438,7 @@ def build_context(
     }
 
     # Table-layout contact block: one RichText per `ContactSlot`, keyed by index
-    # (`contact_slot_0`, …) — see `template_build.CONTACT_SLOT_TAG_FMT` for why a
+    # (`contact_slot_0`, …) — see `template_tags.CONTACT_SLOT_TAG_FMT` for why a
     # named key rather than a `contact_slots[i]` subscript. Empty `layout["contact_slots"]`
     # (every profile without a table-layout contact block) adds nothing.
     for i, slot in enumerate(layout.get("contact_slots") or []):

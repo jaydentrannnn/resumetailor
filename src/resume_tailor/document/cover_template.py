@@ -19,15 +19,10 @@ from docx.text.paragraph import Paragraph
 
 from .. import config
 from . import docx_text
-from .template_build import (
-    _para_by_id,
-    build_contact_profile,
-    build_name_profile,
-    delete,
-    make_para,
-    set_run_text,
-)
 from .template_profile import TemplateProfile, load_profile
+from .template_profile_build import build_contact_profile, build_name_profile
+from .template_tagging import _para_by_id
+from .template_xml import delete, make_para, set_run_text
 
 #: Bump when ``build_cover_template`` output changes so ``ensure_cover_template`` rebuilds.
 _BUILDER_VERSION = 1

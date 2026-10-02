@@ -29,7 +29,8 @@ from ..content.data import MasterResume
 from . import docx_text, template_profile
 from . import render as render_mod
 from .analysis_types import Issue
-from .template_build import (
+from .template_profile import TemplateProfile
+from .template_tags import (
     BULLET_TAG,
     CONTACT_SLOT_TAG_FMT,
     CONTACT_TAG,
@@ -48,7 +49,6 @@ from .template_build import (
     SKILLS_BODY_TAG,
     SKILLS_LABEL_TAG,
 )
-from .template_profile import TemplateProfile
 
 _TC_TAG = qn("w:tc")
 _P_TAG = qn("w:p")

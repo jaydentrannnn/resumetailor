@@ -633,14 +633,14 @@ range in the upload.
 - **`"table"`** — content lives inside one invisible layout table, used purely to
   right-align dates/locations without tab stops (a common Word/Google Docs export shape).
   Always implies `section_mode="generic"` — see the field's own docstring for why.
-  `template_build.build_generic_table` is the row-level counterpart of `build_generic`: the
+  `template_generic_table.build_generic_table` is the row-level counterpart of `build_generic`: the
   shared block repeats table *rows* via `{%tr for/if %}` marker rows (see §8), not
   paragraphs, while bullet/detail/skills-group repetition inside one cell still uses
   ordinary `{%p for %}`. The whole system's paragraph-id space — `CharSpan.paragraph_id`,
   every bare `*_paragraph_id` field — is minted by exactly one function,
   `docx_text.iter_document_paragraphs(doc)` (a depth-first walk: body children in order,
   descending into a table as rows → physical cells → paragraphs), called identically by
-  `template_analyze._load_paras` and `template_build._para_by_id`. An entry header's
+  `template_analyze._load_paras` and `template_tagging._para_by_id`. An entry header's
   location/dates can live in a *different* paragraph than its company/school (the row's
   other cell) — `CharSpan` already carries its own `paragraph_id` per field, and
   `_tag_mapped_header` already resolves a field whose span isn't on the header's own
@@ -899,7 +899,7 @@ file that was **well-formed XML and passed a naive parse check**, yet was broken
   first entry's header line, and whatever field maps to "the first header in the section"
   lands on the rule instead of the real content below it.
 - **A section's body boundary must be found by paragraph identity, not by matching another
-  heading's text.** `template_build._section_body_paragraphs` stops at the first paragraph
+  heading's text.** `template_profile_build._section_body_paragraphs` stops at the first paragraph
   *object* in a pre-resolved `other_headings` list, not at a walked paragraph whose text
   happens to equal another heading's text — an ordinary entry line that reads exactly
   "SKILLS" (a bolded label inside a bullet, say) is otherwise indistinguishable from the
@@ -913,7 +913,7 @@ file that was **well-formed XML and passed a naive parse check**, yet was broken
   *before* the paragraph-tag pass) replaces the **entire** `<w:tr>` containing a
   `{%tr %}` tag with the bare Jinja text — the row disappears, it is not repeated. A
   row-level loop therefore needs its own disposable one-cell marker row per
-  `for`/`if`/`endfor`/`endif` (`template_build._marker_row`), with the rows meant to
+  `for`/`if`/`endfor`/`endif` (`template_generic_table._marker_row`), with the rows meant to
   actually repeat sitting between an open marker and a close marker — never a `{%tr %}` tag
   placed inside a content row, which would delete that row's own content along with the
   tag. The tagged intermediate template still opens fine in Word (every row is
@@ -928,7 +928,7 @@ file that was **well-formed XML and passed a naive parse check**, yet was broken
   re-derive it.
 - **A cell holding several stacked repeatable paragraphs (three bullets, three skill
   labels) needs everything *after* the chosen loop prototype stripped, not just wrapped.**
-  `template_build._wrap_cell_loop` puts `{%p for/endfor %}` around one paragraph and
+  `template_generic_table._wrap_cell_loop` puts `{%p for/endfor %}` around one paragraph and
   removes every later paragraph in that same cell — otherwise, since the whole *row* gets
   cloned once as the loop's per-iteration template (`build_generic_table`), an untouched
   sibling bullet renders verbatim on every entry instead of being replaced by however many

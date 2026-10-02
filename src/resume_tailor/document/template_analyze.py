@@ -36,7 +36,7 @@ def _load_paras(doc) -> list[analysis_types._Para]:
 
     THE id space: every `CharSpan.paragraph_id` and every bare `*_paragraph_id` field
     in `template_profile.py` is an index into this exact sequence.
-    `template_build._para_by_id` must enumerate identically — see that function.
+    `template_tagging._para_by_id` must enumerate identically — see that function.
     """
     out: list[analysis_types._Para] = []
     for i, (paragraph, location) in enumerate(docx_text.iter_document_paragraphs(doc)):
