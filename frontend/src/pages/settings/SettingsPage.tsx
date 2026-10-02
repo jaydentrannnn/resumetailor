@@ -25,7 +25,7 @@ export function SettingsPage() {
   const requested = params.get("tab");
   const tab: TabId = TABS.some((t) => t.id === requested) ? (requested as TabId) : "models";
   return (
-    <div className="space-y-6">
+    <div className="max-w-5xl space-y-6">
       <h1 className="font-display text-2xl font-bold text-ink">Settings</h1>
       <Tabs
         label="Settings sections"

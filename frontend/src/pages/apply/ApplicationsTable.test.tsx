@@ -8,8 +8,8 @@ import type { ApplicationTableState } from "./useApplicationTable";
 
 afterEach(cleanup);
 
-const row = (status: string, archived = false): ApplicationRow => ({
-  source_job_id: "one",
+const row = (status: string, archived = false, id = "one"): ApplicationRow => ({
+  source_job_id: id,
   company: "Acme",
   role: "Engineer",
   location: "Remote",
@@ -43,16 +43,19 @@ const actions: TableActions = {
   undo: vi.fn(),
   retry: vi.fn(),
   mark: vi.fn(),
+  skip: vi.fn(),
   focusTab: vi.fn(),
   detail: (item) => `/applications/${item.source_job_id}`,
   rememberScroll: vi.fn(),
 };
 
-function show(status: string, archived = false) {
+function show(status: string, archived = false, selectedRows: ApplicationRow[] = []) {
   const state = {
     data: { applications: [row(status, archived)], counts: { [status]: 1 }, total: 1 },
-    selected: new Set<string>(),
+    selected: new Set(selectedRows.map((item) => item.source_job_id)),
+    selectedRows,
     setSelected: vi.fn(),
+    clearSelection: vi.fn(),
     q: "",
     status: "",
     page: 0,
@@ -71,6 +74,7 @@ function show(status: string, archived = false) {
         state={state}
         actions={actions}
         empty="Empty"
+        onClearSearch={vi.fn()}
       />
     </MemoryRouter>,
   );
@@ -116,4 +120,28 @@ describe("ApplicationsTable actions", () => {
       expect(screen.queryByRole("menuitem", { name: /Tailor files again/ })).toBeNull();
     },
   );
+});
+
+describe("ApplicationsTable bulk bar", () => {
+  const picked = [
+    row("ready", false, "one"),
+    row("submitted", false, "two"),
+    row("ready", false, "three"),
+  ];
+
+  it("skips only the selected rows that are not finished, and counts rows on other pages", () => {
+    show("ready", false, picked);
+    expect(screen.getByText("(2 on other pages)")).toBeTruthy();
+    fireEvent.click(screen.getByRole("button", { name: "Skip (2)" }));
+    expect(actions.skip).toHaveBeenCalledWith([
+      expect.objectContaining({ source_job_id: "one" }),
+      expect.objectContaining({ source_job_id: "three" }),
+    ]);
+  });
+
+  it("has no Skip on the Done tab", () => {
+    show("ready", true, [row("ready", true, "one")]);
+    expect(screen.queryByRole("button", { name: /^Skip/ })).toBeNull();
+    expect(screen.getByRole("button", { name: "Restore" })).toBeTruthy();
+  });
 });

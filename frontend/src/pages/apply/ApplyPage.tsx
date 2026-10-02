@@ -2,7 +2,6 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import {
   archiveApplications,
-  applicationsExportUrl,
   controlApplyOperation,
   focusApplicationReviewTab,
   getApplyOperation,
@@ -25,7 +24,9 @@ import { Button, EmptyState, Skeleton } from "../../components/ui";
 import { startAdaptivePoll } from "../../lib/adaptivePoll";
 import {
   consumeApplicationListScroll,
+  recallApplyParams,
   rememberApplicationListScroll,
+  rememberApplyParams,
 } from "../../lib/applicationNavigation";
 import { canContinueFill, canReopenFill, isTabClosed } from "../../lib/applicationRows";
 import {
@@ -45,19 +46,17 @@ import {
 } from "../../lib/applyPage";
 import { IN_FLIGHT_STATUSES, pollSignature, shouldRefreshTables } from "../../lib/applyPoll";
 import { describe } from "../../lib/errors";
-import { GLOSSARY } from "../../lib/glossary";
-import { sourcesHeadline } from "../../lib/sources";
 import { useToast } from "../../lib/toast";
 import { useOpenTabs } from "../../lib/useOpenTabs";
 import { useProfileGaps } from "../../state/applicantProfileState";
 import { useConfirm } from "../../state/confirmState";
 import { useRunState } from "../../state/runState";
 import { useWorkspaceState } from "../../state/workspaceState";
-import { AgeWindowPicker } from "./AgeWindowPicker";
 import { ApplicationsTable, type TableActions } from "./ApplicationsTable";
 import { ApplySettingsDrawer } from "./ApplySettingsDrawer";
 import { ConnectionStatus } from "./BrowserConnection";
 import { OperationBanner, type OperationControl } from "./OperationBanner";
+import { ProgressToolbar } from "./ProgressToolbar";
 import { AttentionList } from "./AttentionList";
 import { useSourcesStatus } from "./sourceHooks";
 import { NeedsDescriptionGroup } from "../CapturedStubs";
@@ -84,11 +83,38 @@ export function ApplyPage() {
     if (params.get("tab") === "sources") navigate(SOURCES_PATH, { replace: true });
   }, [params, navigate]);
   const workspaceId = activeId ?? "";
-  const review = useApplicationTable("review", workspaceId, params, setParams, true);
-  const queue = useApplicationTable("queue", workspaceId, params, setParams, true);
+  // Leaving Apply and coming back (the nav link carries no params) restores the same
+  // tab, page, sort and filters.
+  const paramString = params.toString();
+  useEffect(() => {
+    if (!paramString) {
+      const saved = recallApplyParams(workspaceId);
+      if (saved) {
+        setParams(new URLSearchParams(saved), { replace: true });
+        return;
+      }
+    }
+    if (params.get("tab") !== "sources") rememberApplyParams(workspaceId, paramString);
+  }, [paramString, params, workspaceId, setParams]);
+  // One search covers every tab; `search` is the debounced value the tables query with.
+  const q = params.get("q") ?? "";
+  const [search, setSearch] = useState(q);
+  useEffect(() => {
+    const id = window.setTimeout(() => setSearch(q), 250);
+    return () => window.clearTimeout(id);
+  }, [q]);
+  const review = useApplicationTable("review", workspaceId, params, setParams, true, search);
+  const queue = useApplicationTable("queue", workspaceId, params, setParams, true, search);
   const tab: ApplyTab = resolveApplyTab(params.get("tab"), review.data ? review.data.total : null);
   const tabDecided = params.has("tab") || review.data != null;
-  const archive = useApplicationTable("archive", workspaceId, params, setParams, tab === "done");
+  const archive = useApplicationTable(
+    "archive",
+    workspaceId,
+    params,
+    setParams,
+    tab === "done" || search !== "",
+    search,
+  );
   const [archiveTotal, setArchiveTotal] = useState(0);
   const [revision, setRevision] = useState(0);
   const [operation, setOperation] = useState<ApplyOperation | null>(null);
@@ -114,6 +140,19 @@ export function ApplyPage() {
     (title: string, reason: unknown) => toast.error(title, describe(reason).detail),
     [toast],
   );
+
+  function setQuery(value: string) {
+    setParams(
+      (previous) => {
+        const out = new URLSearchParams(previous);
+        if (value) out.set("q", value);
+        else out.delete("q");
+        for (const scope of ["review", "queue", "archive"]) out.delete(`${scope}_page`);
+        return out;
+      },
+      { replace: true },
+    );
+  }
 
   function setTab(next: string) {
     setParams(
@@ -141,10 +180,10 @@ export function ApplyPage() {
   const refresh = useCallback(() => {
     refreshQueue();
     refreshReview();
-    if (tab === "done") refreshArchive();
+    if (tab === "done" || search) refreshArchive();
     recheckTabs();
     setRevision((n) => n + 1);
-  }, [refreshQueue, refreshReview, refreshArchive, tab, recheckTabs]);
+  }, [refreshQueue, refreshReview, refreshArchive, tab, search, recheckTabs]);
   // The poll reads these through refs so it never restarts (and forgets what it saw)
   // when the tab changes or the rows change.
   const refreshRef = useRef(refresh);
@@ -321,10 +360,7 @@ export function ApplyPage() {
     try {
       const result = await archiveApplications(ids, archived);
       if (result.updated.length) {
-        for (const table of [queue, review, archive])
-          table.setSelected(
-            new Set([...table.selected].filter((id) => !result.updated.includes(id))),
-          );
+        for (const table of [queue, review, archive]) table.deselect(result.updated);
         const n = result.updated.length;
         const title = `${n} application${n === 1 ? "" : "s"} ${archived ? "moved to Done" : "restored"}`;
         if (undoable)
@@ -346,6 +382,51 @@ export function ApplyPage() {
     } finally {
       setBusy(false);
     }
+  }
+
+  /** Skip the rows in one go; like Archive, Undo puts them back instead of asking first. */
+  async function skip(rows: ApplicationRow[]) {
+    if (!rows.length) return;
+    setBusy(true);
+    try {
+      const results = await Promise.allSettled(
+        rows.map((row) => setApplicationStatus(row.source_job_id, "skipped")),
+      );
+      const done: string[] = [];
+      const failures: string[] = [];
+      results.forEach((result, index) => {
+        if (result.status === "fulfilled") done.push(rows[index].source_job_id);
+        else failures.push(`${rows[index].company}: ${describe(result.reason).detail}`);
+      });
+      if (done.length) {
+        for (const table of [queue, review, archive]) table.deselect(done);
+        const n = done.length;
+        toast.success(`${n} application${n === 1 ? "" : "s"} skipped`, "Moved to Done.", {
+          label: "Undo",
+          onClick: () => void unskip(done),
+        });
+      }
+      if (failures.length) toast.error("Some applications were not skipped", failures.join("; "));
+      refresh();
+    } finally {
+      setBusy(false);
+    }
+  }
+
+  /** Skipping moves a row to Done; restoring it from Done is what undoes the skipped mark. */
+  async function unskip(ids: string[]) {
+    try {
+      const result = await archiveApplications(ids, false);
+      const failures = Object.entries(result.errors);
+      if (failures.length)
+        toast.error(
+          "Some applications could not be restored",
+          failures.map(([id, message]) => `${id}: ${message}`).join("; "),
+        );
+    } catch (reason) {
+      showError("Could not undo the skip", reason);
+    }
+    refresh();
   }
 
   async function retry(row: ApplicationRow) {
@@ -418,6 +499,7 @@ export function ApplyPage() {
     undo: (row) => void undo(row),
     retry: (row) => void retry(row),
     mark: (row, status) => void mark(row, status),
+    skip: (rows) => void skip(rows),
     focusTab: (row) =>
       void focusApplicationReviewTab(row.source_job_id).catch((reason) =>
         showError("Could not open the tab", reason),
@@ -430,9 +512,7 @@ export function ApplyPage() {
     rememberScroll: () => rememberApplicationListScroll(workspaceId),
   };
 
-  const queueSelected = (queue.data?.applications ?? []).filter((row) =>
-    queue.selected.has(row.source_job_id),
-  );
+  const queueSelected = queue.selectedRows;
   const prepareIds = queueSelected
     .filter((row) => !TERMINAL_STATUSES.has(row.status))
     .map((row) => row.source_job_id);
@@ -441,120 +521,40 @@ export function ApplyPage() {
     .filter((row) => row.status === "ready" && row.preparation_eligible !== false)
     .map((row) => row.source_job_id);
   const blockers = fillBlockers(queueSelected);
-  const reviewSelected = (review.data?.applications ?? []).filter((row) =>
-    review.selected.has(row.source_job_id),
-  );
+  const reviewSelected = review.selectedRows;
   const continueIds = reviewSelected
     .filter((row) => canContinueFill(row, openTabs))
     .map((row) => row.source_job_id);
   const reopenRows = reviewSelected.filter(canReopenFill);
   const readyCount = (queue.data?.counts.ready ?? 0) + (review.data?.total ?? 0);
   const anySource = settings.apply.sources.some((source) => source.enabled);
-  const allowedAts = settings.apply.auto_submit_ats;
   const notConnected = "Connect the browser in Apply settings first";
   const idleNote = active ? "Available when the current Apply task finishes" : undefined;
 
   const progressToolbar = (
-    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-line bg-panel p-3 text-sm">
-      <Button
-        variant="secondary"
-        disabled={busy || active || !anySource}
-        title={anySource ? "Look for new postings now" : "Choose what to search for first"}
-        onClick={() => void start("find")}
-      >
-        Find jobs
-      </Button>
-      <span className="text-xs text-ink-muted">
-        {sourcesHeadline(settings.apply.sources, sourcesStatus?.last_run_at)} ·{" "}
-        <button
-          type="button"
-          className="text-accent underline"
-          onClick={() => navigate(SOURCES_PATH)}
-        >
-          Manage
-        </button>
-      </span>
-      <details className="relative">
-        <summary
-          className="rt-control inline-flex cursor-pointer items-center rounded-md border border-line bg-panel px-3 text-sm"
-          title="Options for the next Find jobs only; not saved"
-        >
-          Search options{limit || dryRun || ageDays != null ? " •" : ""}
-        </summary>
-        <div className="absolute left-0 z-20 mt-1 w-72 space-y-3 rounded-md border border-line bg-panel p-3 text-sm shadow-lg">
-          <p className="text-xs font-medium text-ink-muted">This search only (not saved)</p>
-          <div>
-            <p className="mb-1">Postings from the last</p>
-            <AgeWindowPicker
-              ariaLabel="Posting age for this search"
-              value={ageDays ?? settings.apply.max_age_days}
-              onChange={(days) => setAgeDays(days === settings.apply.max_age_days ? null : days)}
-            />
-            <p className="mt-1 text-xs text-ink-muted">
-              Postings you've already found are skipped. Each search still stops at the most
-              postings per search below.
-            </p>
-          </div>
-          <label className="block">
-            Most postings per search
-            <input
-              className="field mt-1 w-24"
-              type="number"
-              min={1}
-              max={500}
-              placeholder={String(settings.apply.max_new_per_day)}
-              value={limit}
-              onChange={(e) => setLimit(e.target.value)}
-            />
-          </label>
-          <label className="flex items-center gap-2">
-            <input type="checkbox" checked={dryRun} onChange={(e) => setDryRun(e.target.checked)} />
-            Only list what's found (don't tailor)
-          </label>
-        </div>
-      </details>
-      <a
-        className="rt-control inline-flex items-center rounded-md border border-line bg-panel px-3 font-medium text-ink hover:border-line-hover"
-        href={applicationsExportUrl()}
-      >
-        Export CSV
-      </a>
-      <span aria-hidden className="mx-1 h-6 w-px bg-line" />
-      <Button
-        variant="secondary"
-        disabled={busy || active || !prepareIds.length}
-        title={idleNote ?? GLOSSARY.prepare.help}
-        onClick={() => void start("prepare", prepareIds)}
-      >
-        {GLOSSARY.prepare.label} ({prepareIds.length})
-      </Button>
-      <Button
-        variant="secondary"
-        disabled={busy || active || !retailorRows.length}
-        title={
-          idleNote ?? "Tailor the selected applications again, replacing files that already exist."
-        }
-        onClick={() => retailor(retailorRows)}
-      >
-        Tailor again ({retailorRows.length})
-      </Button>
-      <Button
-        variant="primary"
-        disabled={busy || active || !fillIds.length || !browserConnected}
-        title={
-          idleNote ?? (browserConnected ? "Open and fill the selected postings" : notConnected)
-        }
-        onClick={() => void start("fill", fillIds)}
-      >
-        Fill ({fillIds.length})
-      </Button>
-      <span className="ml-auto text-xs text-ink-muted">
-        {settings.apply.auto_submit_enabled && allowedAts.length
-          ? `Fill submits verified forms on ${allowedAts.join(", ")}`
-          : "Fill stops for your review before submitting"}
-      </span>
-      {blockers && <p className="w-full text-xs text-warn">{blockers}</p>}
-    </div>
+    <ProgressToolbar
+      apply={settings.apply}
+      sourcesStatus={sourcesStatus}
+      options={{ limit, dryRun, ageDays }}
+      onOptions={(next) => {
+        setLimit(next.limit);
+        setDryRun(next.dryRun);
+        setAgeDays(next.ageDays);
+      }}
+      busy={busy}
+      active={active}
+      anySource={anySource}
+      browserConnected={browserConnected}
+      prepareCount={prepareIds.length}
+      retailorCount={retailorRows.length}
+      fillCount={fillIds.length}
+      blockers={blockers}
+      onFind={() => void start("find")}
+      onPrepare={() => void start("prepare", prepareIds)}
+      onRetailor={() => retailor(retailorRows)}
+      onFill={() => void start("fill", fillIds)}
+      onManageSources={() => navigate(SOURCES_PATH)}
+    />
   );
 
   const reviewToolbar = reviewSelected.length > 0 && (
@@ -588,6 +588,36 @@ export function ApplyPage() {
       )}
     </div>
   );
+
+  // A new search that finds nothing on this tab jumps to the first tab that has matches,
+  // once per search, so it never fights a tab the user clicks afterwards.
+  const switchedFor = useRef("");
+  const doneCount = search ? (archive.data?.total ?? 0) : archiveTotal;
+  useEffect(() => {
+    if (!search) {
+      switchedFor.current = "";
+      return;
+    }
+    const tables = { needs: review, progress: queue, done: archive };
+    const trimmed = search.trim();
+    if (switchedFor.current === search || Object.values(tables).some((t) => t.dataQ !== trimmed))
+      return;
+    switchedFor.current = search;
+    const total = (id: ApplyTab) => tables[id].data?.total ?? 0;
+    if (total(tab) > 0) return;
+    const hit = (["needs", "progress", "done"] as const).find((id) => total(id) > 0);
+    if (hit) setTab(hit);
+    // eslint-disable-next-line react-hooks/exhaustive-deps -- setTab only writes the URL
+  }, [
+    search,
+    tab,
+    review.dataQ,
+    queue.dataQ,
+    archive.dataQ,
+    review.data,
+    queue.data,
+    archive.data,
+  ]);
 
   const lastChecked = daily?.scheduler?.last_started_at;
 
@@ -652,12 +682,32 @@ export function ApplyPage() {
         <Skeleton className="h-48" />
       ) : (
         <>
+          <div className="relative">
+            <input
+              className="w-full rounded-md border border-line bg-panel py-2 pl-3 pr-9 text-sm"
+              aria-label="Search applications"
+              data-shortcut="search"
+              placeholder="Search every tab by company, role, or location"
+              value={q}
+              onChange={(e) => setQuery(e.target.value)}
+            />
+            {q && (
+              <button
+                type="button"
+                aria-label="Clear search"
+                className="absolute right-2 top-1/2 -translate-y-1/2 px-1.5 text-ink-muted hover:text-ink"
+                onClick={() => setQuery("")}
+              >
+                ×
+              </button>
+            )}
+          </div>
           <Tabs
             label="Applications"
             items={[
               { id: "needs", label: `Needs you (${review.data?.total ?? 0})` },
               { id: "progress", label: `In progress (${queue.data?.total ?? 0})` },
-              { id: "done", label: `Done (${archiveTotal})` },
+              { id: "done", label: `Done (${doneCount})` },
             ]}
             value={tab}
             onChange={setTab}
@@ -669,6 +719,7 @@ export function ApplyPage() {
                 scope="review"
                 state={review}
                 actions={actions}
+                onClearSearch={() => setQuery("")}
                 toolbar={reviewToolbar}
                 empty={
                   <EmptyState title="Nothing needs you right now">
@@ -683,6 +734,7 @@ export function ApplyPage() {
                 scope="queue"
                 state={queue}
                 actions={actions}
+                onClearSearch={() => setQuery("")}
                 toolbar={progressToolbar}
                 empty={
                   !anySource ? (
@@ -734,6 +786,7 @@ export function ApplyPage() {
                 scope="archive"
                 state={archive}
                 actions={actions}
+                onClearSearch={() => setQuery("")}
                 empty={
                   <EmptyState title="Nothing finished yet">
                     Submitted, skipped and archived applications appear here.

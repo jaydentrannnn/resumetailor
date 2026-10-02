@@ -168,7 +168,7 @@ export function ProfilePage() {
   const educationSection = editor.resume?.sections.find((section) => section.kind === "education");
 
   return (
-    <div className="space-y-5 pb-4">
+    <div className="max-w-6xl space-y-5 pb-4">
       <header>
         <h1 className="font-display text-[28px] font-semibold">Profile</h1>
         <p className="text-sm text-ink-muted">

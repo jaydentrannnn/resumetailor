@@ -84,6 +84,8 @@ export interface TableActions {
   undo: (row: ApplicationRow) => void;
   retry: (row: ApplicationRow) => void;
   mark: (row: ApplicationRow, status: "submitted" | "skipped") => void;
+  /** Skip every row given (bulk); the page moves them to Done and offers Undo. */
+  skip: (rows: ApplicationRow[]) => void;
   focusTab: (row: ApplicationRow) => void;
   detail: (row: ApplicationRow, tab?: string) => To;
   rememberScroll: () => void;
@@ -99,6 +101,7 @@ export function ApplicationsTable({
   actions,
   toolbar,
   empty,
+  onClearSearch,
 }: {
   scope: Scope;
   state: ApplicationTableState;
@@ -107,15 +110,18 @@ export function ApplicationsTable({
   toolbar?: ReactNode;
   /** Shown when the list is empty and no filter is set. */
   empty: ReactNode;
+  /** Clears the page-wide search (the box lives above the tabs). */
+  onClearSearch: () => void;
 }) {
   const navigate = useNavigate();
   const { busy, active, browserConnected, openTabs } = actions;
   const [extraColumns, setExtraColumns] = useState<string[]>([]);
   const archived = scope === "archive";
   const rows = state.data?.applications ?? [];
-  const selectedIds = rows
-    .filter((row) => state.selected.has(row.source_job_id))
-    .map((row) => row.source_job_id);
+  const selectedIds = state.selectedRows.map((row) => row.source_job_id);
+  const onScreen = new Set(rows.map((row) => row.source_job_id));
+  const elsewhere = selectedIds.filter((id) => !onScreen.has(id)).length;
+  const skippable = state.selectedRows.filter((row) => !TERMINAL_STATUSES.has(row.status));
   const dateColumn = archived ? "archived_at" : scope === "review" ? "status_at" : "posted_at";
 
   function menu(row: ApplicationRow): MenuItem[] {
@@ -458,7 +464,13 @@ export function ApplicationsTable({
         state.change({ page: String(page + 1) });
         document.getElementById(`${scope}-toolbar`)?.scrollIntoView();
       }}
-      onSize={(size) => state.change({ size: String(size) })}
+      onSize={(size) =>
+        // Keep the first row in view: the new page is the one that still holds it.
+        state.change({
+          size: String(size),
+          page: String(Math.floor((state.page * state.size) / size) + 1),
+        })
+      }
     />
   );
   const optionalColumns = archived
@@ -467,15 +479,7 @@ export function ApplicationsTable({
 
   return (
     <div className="space-y-3">
-      <div id={`${scope}-toolbar`} className="flex flex-wrap gap-2">
-        <input
-          className="min-w-48 flex-1 rounded-md border border-line bg-panel px-3 text-sm"
-          aria-label="Search applications"
-          data-shortcut="search"
-          placeholder="Search company, role, or location"
-          value={state.q}
-          onChange={(e) => state.change({ q: e.target.value })}
-        />
+      <div id={`${scope}-toolbar`} className="flex flex-wrap justify-end gap-2">
         <select
           aria-label="Filter by status"
           className="rounded-md border border-line bg-panel px-2 text-sm"
@@ -528,7 +532,10 @@ export function ApplicationsTable({
       {selectedIds.length > 0 && (
         <div className="flex flex-wrap items-center gap-3 rounded-md bg-accent-soft p-2 text-sm">
           <strong>{selectedIds.length} selected</strong>
-          <button type="button" onClick={() => state.setSelected(new Set())}>
+          {elsewhere > 0 && (
+            <span className="text-xs text-ink-muted">({elsewhere} on other pages)</span>
+          )}
+          <button type="button" onClick={state.clearSelection}>
             Clear
           </button>
           <button
@@ -539,6 +546,17 @@ export function ApplicationsTable({
           >
             {archived ? "Restore" : "Archive"}
           </button>
+          {!archived && (
+            <button
+              type="button"
+              className="text-danger disabled:opacity-40"
+              disabled={busy || !skippable.length}
+              title="Mark the selected applications as skipped and move them to Done"
+              onClick={() => actions.skip(skippable)}
+            >
+              Skip ({skippable.length})
+            </button>
+          )}
         </div>
       )}
       {pagination}
@@ -565,7 +583,10 @@ export function ApplicationsTable({
               <button
                 type="button"
                 className="mt-2 block w-full text-accent underline"
-                onClick={() => state.change({ q: "", status: "" })}
+                onClick={() => {
+                  if (state.status) state.change({ status: "" });
+                  onClearSearch();
+                }}
               >
                 Clear filters
               </button>
