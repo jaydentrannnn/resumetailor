@@ -262,7 +262,7 @@ before the settings add it. `apply/discovery/watchlists/*.json` are suggestions,
 A keyword search (`kind="job_search"`, `apply/discovery/job_apis.py`) queries Adzuna or USAJobs by
 `query`/`location` (`country` for Adzuna) across any industry — `query` holds up to 5
 comma-separated phrases, each searched on its own and merged by `job_id` — then applies the same
-`include`/`exclude`/`locations` filters (`sources.matches_filters`) and its own
+`include`/`exclude`/`locations` filters (`source_watchlists.matches_filters`) and its own
 `max_age_days` (default 14). Paging stops at `MAX_PAGES` with a polite delay between pages.
 Keys (`ADZUNA_APP_ID`, `ADZUNA_APP_KEY`, `USAJOBS_API_KEY`, `USAJOBS_EMAIL`) are
 `config.SAVABLE_CREDENTIALS`, never `settings.json`; a missing key is one run error for that

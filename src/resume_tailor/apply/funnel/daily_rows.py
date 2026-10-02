@@ -10,7 +10,7 @@ from pathlib import Path
 
 from resume_tailor import config
 from resume_tailor.apply.discovery import fetch_jd
-from resume_tailor.apply.discovery.sources import SourceRow
+from resume_tailor.apply.discovery.source_rows import SourceRow
 from resume_tailor.apply.funnel import eligibility as eligibility_mod
 from resume_tailor.apply.funnel import screen as screen_mod
 from resume_tailor.apply.funnel import store

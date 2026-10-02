@@ -28,7 +28,13 @@ from fastapi import APIRouter, HTTPException, Query
 from pydantic import BaseModel, Field
 
 from resume_tailor import workspace
-from resume_tailor.apply.discovery import boards, source_catalog, sources
+from resume_tailor.apply.discovery import (
+    boards,
+    source_catalog,
+    source_headings,
+    source_status,
+    sources,
+)
 from resume_tailor.web.schemas import JobSettings, SourceConfig
 
 router = APIRouter()
@@ -151,7 +157,7 @@ def source_sections(url: str = Query(min_length=8, max_length=2000)) -> Sections
         readme = sources.fetch_readme(url)
     except Exception as exc:  # noqa: BLE001
         raise HTTPException(status_code=502, detail=f"Could not read the list: {exc}") from exc
-    names = [name for _level, name in sources.list_sections(readme)]
+    names = [name for _level, name in source_headings.list_sections(readme)]
     return SectionsResponse(sections=list(dict.fromkeys(names)))
 
 
@@ -253,7 +259,7 @@ class SourcesStatus(BaseModel):
 
 @router.get("/api/apply/sources/status", response_model=SourcesStatus)
 def get_sources_status() -> SourcesStatus:
-    return SourcesStatus.model_validate(sources.load_source_status())
+    return SourcesStatus.model_validate(source_status.load_source_status())
 
 
 @router.post("/api/apply/sources/inspect", response_model=SourceInspection)

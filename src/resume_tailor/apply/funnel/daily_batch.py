@@ -9,7 +9,7 @@ from pathlib import Path
 from typing import Any
 
 from resume_tailor import config
-from resume_tailor.apply.discovery import identity, sources
+from resume_tailor.apply.discovery import identity, source_rows, source_status, sources
 from resume_tailor.apply.driver import browser
 from resume_tailor.apply.forms import fill, submit_guard
 from resume_tailor.apply.funnel import store
@@ -22,7 +22,7 @@ _ROW_POOL_SIZE = 4
 
 def _source_status_entry(found: int, kept: int, error: str) -> dict[str, object]:
     """One source's row in `source_status.json`; an empty source with no error says so."""
-    reason = sources.short_reason(error) if error else None
+    reason = source_status.short_reason(error) if error else None
     if reason is None and found == 0:
         reason = "No postings found"
     return {"found": found, "kept": kept, "error": reason, "at": daily_rows._now_iso()}
@@ -33,9 +33,9 @@ def _discover_new_rows(
     summary: daily_progress.DailySummary,
     log_file: Path,
     log: Callable[[str], None],
-) -> list[sources.SourceRow]:
+) -> list[source_rows.SourceRow]:
     """Every enabled source's new rows, deduplicated by job id across sources."""
-    all_new: list[sources.SourceRow] = []
+    all_new: list[source_rows.SourceRow] = []
     total_candidates = 0
     already_known = 0
     known_ids: set[tuple[str, str]] = set(store.all_ids())
@@ -68,7 +68,7 @@ def _discover_new_rows(
             log,
         )
     if status_entries:
-        sources.record_source_status(status_entries, daily_rows._now_iso())
+        source_status.record_source_status(status_entries, daily_rows._now_iso())
     summary.total_candidates = total_candidates
     summary.new_rows = len(all_new)
     summary.already_known = already_known
@@ -91,7 +91,7 @@ def _filter_source(
 ) -> Any:
     """One source's rows through the funnel filters, recording its health; None when the
     source failed."""
-    rows: list[sources.SourceRow] = []
+    rows: list[source_rows.SourceRow] = []
     daily_progress._progress_set(
         phase="discovering",
         source_id=src.id,
@@ -122,7 +122,7 @@ def _filter_source(
         summary.errors.append(f"{src.id}: {exc}")
         daily_rows._append_log(log_file, f"[source {src.id}] error: {exc}", log)
         status_entries[src.id] = _source_status_entry(
-            len(rows), 0, sources.failure_reason(exc)
+            len(rows), 0, source_status.failure_reason(exc)
         )
         return None
     status_entries[src.id] = _source_status_entry(
@@ -133,13 +133,13 @@ def _filter_source(
     return filtered
 
 def _rows_to_process(
-    all_new: list[sources.SourceRow], *, cap: int, fetch_only: bool
-) -> list[sources.SourceRow]:
+    all_new: list[source_rows.SourceRow], *, cap: int, fetch_only: bool
+) -> list[source_rows.SourceRow]:
     """This run's rows: earlier discoveries still waiting first (unless fetch-only),
     then the new ones, up to `cap`."""
     if fetch_only:
         return all_new[:cap]
-    pending_discovered: list[sources.SourceRow] = []
+    pending_discovered: list[source_rows.SourceRow] = []
     for app in store.load_all().values():
         if (
             app.status == "discovered"
@@ -148,7 +148,7 @@ def _rows_to_process(
             and not app.capture_stub  # the extension completes it, never a fetch
         ):
             pending_discovered.append(
-                sources.SourceRow(
+                source_rows.SourceRow(
                     company=app.company,
                     role=app.role,
                     location=app.location,
@@ -163,7 +163,7 @@ def _rows_to_process(
     return (pending_discovered + all_new)[:cap]
 
 def _process_rows(
-    to_process: list[sources.SourceRow],
+    to_process: list[source_rows.SourceRow],
     *,
     settings: ApplySettings,
     job_defaults: JobSettings,
@@ -181,7 +181,7 @@ def _process_rows(
     index_lock = threading.Lock()
     group_locks: dict[str, threading.Lock] = {}
 
-    def process_row(row: sources.SourceRow, prior: Any = None) -> None:
+    def process_row(row: source_rows.SourceRow, prior: Any = None) -> None:
         if prior is not None:
             prior.result()
         group_key = identity.group_key(row.company, row.role)

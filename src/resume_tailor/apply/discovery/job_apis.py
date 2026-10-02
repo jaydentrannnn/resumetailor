@@ -15,8 +15,8 @@ from typing import Any, Literal
 import httpx
 
 from resume_tailor import config
-from resume_tailor.apply.discovery.sources import (
-    SourceRow,
+from resume_tailor.apply.discovery.source_rows import SourceRow
+from resume_tailor.apply.discovery.source_watchlists import (
     _age_days,
     iso_date,
     matches_filters,

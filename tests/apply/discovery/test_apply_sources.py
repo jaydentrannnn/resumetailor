@@ -6,7 +6,14 @@ from pathlib import Path
 
 import pytest
 
-from resume_tailor.apply.discovery import sources
+from resume_tailor.apply.discovery import (
+    source_company_table,
+    source_headings,
+    source_pipe_table,
+    source_rows,
+    source_watchlists,
+    sources,
+)
 
 _FIXTURE = Path(__file__).resolve().parents[2] / "fixtures" / "simplify_readme.md"
 _CATEGORIES = ["Software Engineering Internship Roles"]
@@ -32,7 +39,7 @@ def test_parse_readme_detects_emoji_flags(readme_text):
     assert rows["ccc33333-3333-3333-3333-333333333333"].sponsorship_ok == "No"
     assert rows["ddd44444-4444-4444-4444-444444444444"].advanced_degree is True
     assert "🎓" not in rows["ddd44444-4444-4444-4444-444444444444"].role
-    assert sources.US_CITIZEN_FLAG in rows["bbb22222-2222-2222-2222-222222222222"].company
+    assert source_rows.US_CITIZEN_FLAG in rows["bbb22222-2222-2222-2222-222222222222"].company
 
 
 def test_filter_rows_applies_age_citizenship_degree_and_dedupe(readme_text):
@@ -121,7 +128,7 @@ def test_fetch_readme_uses_httpx(monkeypatch):
 )
 def test_parse_age_normalizes_units(raw, expected):
     """Age tokens collapse minutes/hours to day 0 and scale weeks/months."""
-    assert sources.parse_age(raw) == expected
+    assert source_rows.parse_age(raw) == expected
 
 
 def test_parse_readme_sets_age_days(readme_text):
@@ -136,7 +143,9 @@ _SPEEDY = Path(__file__).resolve().parents[2] / "fixtures" / "speedyapply_readme
 
 def test_parse_pipe_table_readme_extracts_usa_rows():
     text = _SPEEDY.read_text(encoding="utf-8")
-    rows = sources.parse_pipe_table_readme(text, ["2027 USA SWE Internships", "USA Positions"])
+    rows = source_pipe_table.parse_pipe_table_readme(
+        text, ["2027 USA SWE Internships", "USA Positions"]
+    )
     companies = {row.company for row in rows}
     assert companies == {"Microsoft", "DoorDash", "Figma", "Lyft", "Acme NewGrad"}
     assert "ForeignCo" not in companies
@@ -149,7 +158,7 @@ def test_parse_pipe_table_readme_extracts_usa_rows():
 
 def test_list_sections_returns_levels():
     text = _SPEEDY.read_text(encoding="utf-8")
-    sections = sources.list_sections(text)
+    sections = source_headings.list_sections(text)
     assert (2, "2027 USA SWE Internships") in sections
     assert (3, "FAANG") in sections or any(n == "FAANG" for _, n in sections)
     assert any("International" in n for _, n in sections)
@@ -200,21 +209,21 @@ def _fixture(name: str) -> str:
 def test_summary_h3_headings_are_sections():
     """zapplyjobs titles its sections ``<summary><h3>…</h3></summary>``."""
     text = _fixture("zapplyjobs_readme.md")
-    assert (3, "Software Engineering") in sources.list_sections(text)
-    assert (3, "Business & Operations") in sources.list_sections(text)
-    rows = sources.parse_pipe_table_readme(text, ["Software Engineering"])
+    assert (3, "Software Engineering") in source_headings.list_sections(text)
+    assert (3, "Business & Operations") in source_headings.list_sections(text)
+    rows = source_pipe_table.parse_pipe_table_readme(text, ["Software Engineering"])
     assert [r.company for r in rows] == ["LabCorp", "Cisco", "Parsons"]
     labcorp, cisco, parsons = rows
     assert labcorp.application_link == "https://zapply.jobs/l/d/workday-labcorp-2632795"
     assert labcorp.age_days == 0 and cisco.age_days == 3
     assert parsons.age_days is None  # "Date unknown"
-    business = sources.parse_pipe_table_readme(text, ["Business & Operations"])
+    business = source_pipe_table.parse_pipe_table_readme(text, ["Business & Operations"])
     assert [r.company for r in business] == ["Deloitte"]
 
 
 def test_jobright_rows_link_from_the_title_and_dates_resolve():
     text = _fixture("jobright_readme.md")
-    rows = sources.parse_pipe_table_readme(text, ["Daily Job List"], today=_TODAY)
+    rows = source_pipe_table.parse_pipe_table_readme(text, ["Daily Job List"], today=_TODAY)
     assert [r.company for r in rows] == ["IBM", "IBM", "Nuclear Promise X"]
     first, second, third = rows
     assert first.role == "Delivery Consultant Intern"
@@ -228,7 +237,7 @@ def test_jobright_rows_link_from_the_title_and_dates_resolve():
 
 def test_vanshb03_rows_carry_flags_and_locations():
     text = _fixture("vanshb03_readme.md")
-    rows = sources.parse_pipe_table_readme(text, ["The List"], today=_TODAY)
+    rows = source_pipe_table.parse_pipe_table_readme(text, ["The List"], today=_TODAY)
     assert [r.company for r in rows] == [
         "Quora",
         "Chicago Trading Company",
@@ -245,7 +254,7 @@ def test_vanshb03_rows_carry_flags_and_locations():
 
 def test_company_link_table_one_row_per_link():
     text = _fixture("nwfintech_readme.md")
-    rows = sources.parse_company_link_table(text, [])
+    rows = source_company_table.parse_company_link_table(text, [])
     assert [(r.company, r.role) for r in rows] == [
         ("Akuna Capital", "Quant Developer"),
         ("Akuna Capital", "Software Engineer (C++)"),
@@ -261,9 +270,13 @@ def test_company_link_table_one_row_per_link():
     )
     assert all(r.age_days == 0 and "age_unknown" in r.flags for r in rows)
     assert len({r.job_id for r in rows}) == 5
-    only = sources.parse_company_link_table(text, ["Citadel"])
+    only = source_company_table.parse_company_link_table(text, ["Citadel"])
     assert {r.company for r in only} == {"Citadel"}
-    assert sources.company_link_sections(text) == ["Akuna Capital", "Ansatz Capital", "Citadel"]
+    assert source_company_table.company_link_sections(text) == [
+        "Akuna Capital",
+        "Ansatz Capital",
+        "Citadel",
+    ]
 
 
 @pytest.mark.parametrize(
@@ -314,12 +327,12 @@ def test_source_sections_lists_only_sections_with_rows():
     ],
 )
 def test_parse_posted(raw, expected):
-    assert sources.parse_posted(raw, today=_TODAY) == expected
+    assert source_pipe_table.parse_posted(raw, today=_TODAY) == expected
 
 
 def test_empty_categories_read_the_whole_readme():
     speedy = _fixture("speedyapply_readme.md")
-    companies = {r.company for r in sources.parse_pipe_table_readme(speedy, [])}
+    companies = {r.company for r in source_pipe_table.parse_pipe_table_readme(speedy, [])}
     assert "Microsoft" in companies and "Acme NewGrad" in companies
     assert "ForeignCo" not in companies  # International sections stay out
     assert sources.parse_readme(_fixture("simplify_readme.md"), [])
@@ -335,10 +348,10 @@ def test_fetch_source_rows_dispatches_every_kind(monkeypatch):
     assert {r.source_id for r in rows} == {"nwf"}
 
     monkeypatch.setattr(
-        sources,
+        source_watchlists,
         "board_rows",
         lambda s: (
-            [sources.SourceRow(company="A", role="R", location="", age="", job_id="x")],
+            [source_rows.SourceRow(company="A", role="R", location="", age="", job_id="x")],
             ["board B: gone"],
         ),
     )

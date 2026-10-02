@@ -6,7 +6,7 @@ from collections.abc import Callable
 from contextlib import contextmanager
 
 from resume_tailor import workspace
-from resume_tailor.apply.discovery import sources
+from resume_tailor.apply.discovery import source_rows
 from resume_tailor.apply.funnel import store
 from resume_tailor.content import data
 from resume_tailor.web.jobs import get_queue
@@ -88,7 +88,7 @@ def prepare_application(
     job_defaults = JobSettings.model_validate(raw["defaults"])
     resume = data.load()
     known_tags = sorted({t for b in resume.all_bullets() for t in b.tags})
-    row = sources.SourceRow(
+    row = source_rows.SourceRow(
         company=app.company,
         role=app.role,
         location=app.location,

@@ -56,10 +56,10 @@ def main(argv: list[str] | None = None) -> int:
     args = parser.parse_args(argv)
 
     if args.list_sections:
-        from resume_tailor.apply.discovery import sources
+        from resume_tailor.apply.discovery import source_headings, sources
 
         text = sources.fetch_readme(args.list_sections)
-        for level, name in sources.list_sections(text):
+        for level, name in source_headings.list_sections(text):
             print(f"{'#' * level} {name}")
         return 0
 

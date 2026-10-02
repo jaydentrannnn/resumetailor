@@ -15,7 +15,13 @@ from typing import Any
 import pytest
 
 from resume_tailor import config
-from resume_tailor.apply.discovery import fetch_jd, sources
+from resume_tailor.apply.discovery import (
+    fetch_jd,
+    source_pipe_table,
+    source_rows,
+    source_status,
+    sources,
+)
 from resume_tailor.apply.driver import browser
 from resume_tailor.apply.forms import fill, fill_widgets, submit_guard
 from resume_tailor.apply.funnel import (
@@ -39,7 +45,7 @@ def test_daily_attention_tracks_known_row_errors_and_latest_outcome():
     assert [(item.application_id, item.kind, item.message) for item in summary.attention] == [
         ("one", "needs_input", "Open the posting")
     ]
-from resume_tailor.apply.discovery.sources import SourceRow
+from resume_tailor.apply.discovery.source_rows import SourceRow
 from resume_tailor.pipeline.jd import JobRequirements, Keyword
 from resume_tailor.web import jobs as jobs_mod
 from resume_tailor.web.job_types import Job
@@ -151,10 +157,10 @@ def stub_pipeline(monkeypatch, apply_paths):
         else:
             is_known = row.job_id in known
         if is_known:
-            return sources.FilterResult(
+            return source_rows.FilterResult(
                 new_rows=[], total_candidates=1, already_known=1
             )
-        return sources.FilterResult(new_rows=[row], total_candidates=1)
+        return source_rows.FilterResult(new_rows=[row], total_candidates=1)
 
     monkeypatch.setattr(sources, "filter_rows", _fake_filter)
 
@@ -250,8 +256,8 @@ def test_daily_rows_overlap_and_match_serial_counts(stub_pipeline, apply_paths, 
     monkeypatch.setattr(sources, "parse_readme", lambda text, categories: rows)
     monkeypatch.setattr(
         sources, "filter_rows",
-        lambda source_rows, **kwargs: sources.FilterResult(
-            new_rows=list(source_rows), total_candidates=len(source_rows)
+        lambda candidate_rows, **kwargs: source_rows.FilterResult(
+            new_rows=list(candidate_rows), total_candidates=len(candidate_rows)
         ),
     )
     barrier = threading.Barrier(3)
@@ -298,7 +304,7 @@ def test_run_daily_idempotent_on_known_ids(stub_pipeline, apply_paths, monkeypat
     monkeypatch.setattr(
         sources,
         "filter_rows",
-        lambda rows, **kwargs: sources.FilterResult(
+        lambda rows, **kwargs: source_rows.FilterResult(
             new_rows=[], total_candidates=1, already_known=1
         ),
     )
@@ -382,7 +388,7 @@ def test_run_daily_writes_log_file(stub_pipeline, apply_paths):
 def test_run_daily_logs_no_application_link(stub_pipeline, apply_paths, monkeypatch):
     """A discovered row with no posting link logs `[skipped]` instead of vanishing."""
     row = _sample_row(application_link="")
-    monkeypatch.setattr(sources, "filter_rows", lambda rows, **kwargs: sources.FilterResult(
+    monkeypatch.setattr(sources, "filter_rows", lambda rows, **kwargs: source_rows.FilterResult(
         new_rows=[row], total_candidates=1
     ))
     summary = daily.run_daily(settings=ApplySettings(enabled=True, max_new_per_day=5))
@@ -436,7 +442,7 @@ def test_run_daily_loops_multiple_simplify_sources(stub_pipeline, apply_paths, m
     monkeypatch.setattr(
         sources,
         "filter_rows",
-        lambda rows, **kwargs: sources.FilterResult(
+        lambda rows, **kwargs: source_rows.FilterResult(
             new_rows=list(rows), total_candidates=len(rows)
         ),
     )
@@ -498,14 +504,14 @@ def test_canonical_dedupe_merges_source_refs(stub_pipeline, apply_paths, monkeyp
         lambda text, categories: [row_a],
     )
     monkeypatch.setattr(
-        sources,
+        source_pipe_table,
         "parse_pipe_table_readme",
         lambda text, categories: [row_b],
     )
     monkeypatch.setattr(
         sources,
         "filter_rows",
-        lambda rows, **kwargs: sources.FilterResult(
+        lambda rows, **kwargs: source_rows.FilterResult(
             new_rows=list(rows), total_candidates=len(rows)
         ),
     )
@@ -583,7 +589,7 @@ def test_group_key_reuses_tailoring(stub_pipeline, apply_paths, monkeypatch):
     monkeypatch.setattr(
         sources,
         "filter_rows",
-        lambda rows, **kwargs: sources.FilterResult(
+        lambda rows, **kwargs: source_rows.FilterResult(
             new_rows=list(rows), total_candidates=len(rows)
         ),
     )
@@ -705,7 +711,7 @@ def test_extract_consensus_pinned_to_tailor_routing(apply_paths, monkeypatch):
     monkeypatch.setattr(
         sources,
         "filter_rows",
-        lambda rows, **kwargs: sources.FilterResult(
+        lambda rows, **kwargs: source_rows.FilterResult(
             new_rows=list(rows), total_candidates=1
         ),
     )
@@ -760,7 +766,7 @@ def test_daily_status_reflects_progress(apply_paths, monkeypatch):
     monkeypatch.setattr(
         sources,
         "filter_rows",
-        lambda rows, **kwargs: sources.FilterResult(
+        lambda rows, **kwargs: source_rows.FilterResult(
             new_rows=list(rows), total_candidates=1
         ),
     )
@@ -1768,7 +1774,7 @@ def test_closed_posting_is_skipped_before_tailoring(stub_pipeline, apply_paths, 
 
 
 def test_new_application_keeps_the_sources_posted_date():
-    from resume_tailor.apply.discovery.sources import SourceRow
+    from resume_tailor.apply.discovery.source_rows import SourceRow
 
     row = SourceRow(company="Acme", role="Analyst", location="", age="4d", age_days=4,
                     posted_at="2026-09-01", job_id="greenhouse:acme:1")
@@ -1805,7 +1811,7 @@ def test_run_daily_reads_company_link_tables_and_reports_part_errors(
     def _pass_through(rows, **kwargs):
         for row in rows:
             seen[row.source_id] = seen.get(row.source_id, 0) + 1
-        return sources.FilterResult(new_rows=list(rows), total_candidates=len(rows))
+        return source_rows.FilterResult(new_rows=list(rows), total_candidates=len(rows))
 
     monkeypatch.setattr(sources, "filter_rows", _pass_through)
     settings = ApplySettings(
@@ -1875,7 +1881,7 @@ def test_source_status_keeps_partial_fetch_errors(apply_paths, monkeypatch):
         apply_paths, monkeypatch, lambda src: ([fresh], ["gone: no greenhouse board named 'gone'"]),
         ["watch"],
     )
-    entry = sources.load_source_status()["sources"]["watch"]
+    entry = source_status.load_source_status()["sources"]["watch"]
     assert entry["found"] == 1 and entry["error"] == "gone: no greenhouse board named 'gone'"
 
 
@@ -1887,7 +1893,7 @@ def test_source_status_leaves_disabled_and_absent_sources_alone(apply_paths, mon
     )
     fresh = _sample_row(job_id="new", age="0d", age_days=0)
     _status_run(apply_paths, monkeypatch, lambda src: ([fresh], []), ["on"], disabled=["off"])
-    status = sources.load_source_status()
+    status = source_status.load_source_status()
     assert status["sources"]["off"] == old and status["sources"]["gone"] == old
     assert status["sources"]["on"]["found"] == 1
     assert status["last_run_at"] != "2026-01-01T00:00:00+00:00"

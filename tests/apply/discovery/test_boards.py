@@ -1,4 +1,4 @@
-"""Hermetic tests for company watchlists (`apply/boards.py`, `sources.board_rows`, P4-D)."""
+"""Hermetic tests for company watchlists (`apply/boards.py`, `source_watchlists.board_rows`, P4-D)."""
 
 from __future__ import annotations
 
@@ -8,7 +8,7 @@ import httpx
 import pytest
 from fastapi.testclient import TestClient
 
-from resume_tailor.apply.discovery import boards, identity, sources
+from resume_tailor.apply.discovery import boards, identity, source_rows, source_watchlists, sources
 from resume_tailor.apply.funnel import eligibility
 from resume_tailor.web.app import app as web_app
 from resume_tailor.web.routes import discovery
@@ -237,7 +237,7 @@ def test_board_rows_filters_keywords_and_locations(monkeypatch):
         {"https://boards-api.greenhouse.io/v1/boards/acme/jobs": _Response(200, GREENHOUSE)}
     )
     source = _source(include=["analyst", "intern"], exclude=["senior"], locations=["NY", "Remote"])
-    rows, errors = sources.board_rows(
+    rows, errors = source_watchlists.board_rows(
         source, list_board=lambda ats, slug: boards.list_board(ats, slug, get=get), now=NOW
     )
     assert errors == []
@@ -275,7 +275,7 @@ def test_board_rows_reports_a_bad_board_and_keeps_the_rest(monkeypatch):
             boards.BoardJob("1", "Analyst", "NY", "https://boards.greenhouse.io/acme/jobs/1", "")
         ]
 
-    rows, errors = sources.board_rows(source, list_board=fake_list, now=NOW)
+    rows, errors = source_watchlists.board_rows(source, list_board=fake_list, now=NOW)
     assert [r.company for r in rows] == ["acme"]
     assert errors == [
         "Gone Inc: no greenhouse board named 'gone'",
@@ -299,7 +299,7 @@ def test_watchlist_source_defaults_and_validation():
 
 
 def test_filter_rows_uses_the_source_age_limit():
-    row = sources.SourceRow(
+    row = source_rows.SourceRow(
         company="A",
         role="Analyst",
         location="",
