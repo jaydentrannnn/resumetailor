@@ -17,7 +17,7 @@ import pytest
 from resume_tailor import config
 from resume_tailor.apply.discovery import fetch_jd, sources
 from resume_tailor.apply.driver import browser
-from resume_tailor.apply.forms import fill, submit_guard
+from resume_tailor.apply.forms import fill, fill_widgets, submit_guard
 from resume_tailor.apply.funnel import daily, store
 from resume_tailor.pipeline import jd
 
@@ -1205,7 +1205,7 @@ def test_parallel_legacy_uploads_do_not_overlap():
 
     def upload():
         barrier.wait(timeout=5)
-        return fill._set_and_verify_file(Control(), "input[type=file]", "resume.pdf")
+        return fill_widgets._set_and_verify_file(Control(), "input[type=file]", "resume.pdf")
 
     with ThreadPoolExecutor(max_workers=2) as executor:
         first = executor.submit(upload)

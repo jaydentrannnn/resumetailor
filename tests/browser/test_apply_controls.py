@@ -15,6 +15,7 @@ from resume_tailor import config
 from resume_tailor.apply.answers.profile import ApplicantProfile
 from resume_tailor.apply.ats import adapters, workday_auth
 from resume_tailor.apply.driver import controls, scanner
+from resume_tailor.apply.forms import fill_buttons
 
 pytestmark = pytest.mark.browser
 _EDGE = Path(r"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe")
@@ -351,7 +352,6 @@ _OTHER_FILL_OPENS_TAB = "setTimeout(() => window.open('about:blank', '_blank'), 
 
 
 def test_apply_click_ignores_a_tab_another_fill_opens():
-    from resume_tailor.apply.forms import fill
 
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(executable_path=str(_EDGE), headless=True)
@@ -361,7 +361,7 @@ def test_apply_click_ignores_a_tab_another_fill_opens():
             page = context.new_page()
             page.set_content("<button onclick=\"location.hash = 'form'\">Apply</button>")
             other.evaluate(_OTHER_FILL_OPENS_TAB)
-            resulting = fill._click_and_track_popup(page, context, lambda: page.click("button"))  # noqa: SLF001
+            resulting = fill_buttons._click_and_track_popup(page, context, lambda: page.click("button"))  # noqa: SLF001
             assert resulting is page
             assert len(context.pages) == 3  # the other fill's tab did open
         finally:
@@ -369,7 +369,6 @@ def test_apply_click_ignores_a_tab_another_fill_opens():
 
 
 def test_apply_click_follows_its_own_noopener_tab():
-    from resume_tailor.apply.forms import fill
 
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(executable_path=str(_EDGE), headless=True)
@@ -378,7 +377,7 @@ def test_apply_click_follows_its_own_noopener_tab():
             context.route("**/*", lambda route: route.fulfill(body="<form>form</form>", content_type="text/html"))
             page = context.new_page()
             page.set_content('<a href="https://fixture.example/form" target="_blank" rel="noopener">Apply</a>')
-            resulting = fill._click_and_track_popup(page, context, lambda: page.click("a"))  # noqa: SLF001
+            resulting = fill_buttons._click_and_track_popup(page, context, lambda: page.click("a"))  # noqa: SLF001
             assert resulting is not page
             assert resulting.url == "https://fixture.example/form"
         finally:

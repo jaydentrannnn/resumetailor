@@ -30,7 +30,7 @@ subpackage).
 | `discovery/` — finding postings | `sources` (README tables), `source_catalog` (+ `catalog/sources.json`), `boards` (+ `watchlists/`), `job_apis`, `ats_api`, `fetch_jd`, `identity` |
 | `answers/` — question answering | `questions` (one decision layer), `answer` (LLM), `answer_memory`, `salary`, `phone`, `profile`, `model_resolver` (LLM), `hybrid_resolver` (LLM) |
 | `driver/` — the browser over CDP | `browser`, `cdp_relay`, `controls`, `clicks`, `scanner` (+ `dom_scan.js`) |
-| `forms/` — generic form filling | `fill` (CDP fill entrypoint), `engine` (verified engine), `wizards`, `field_catalog`, `field_matcher` (+ `school_aliases.json`), `field_types`, `form_routes`, `form_guards`, `attachments`, `submit_guard`, `filler.js`, `filler_readiness.js` |
+| `forms/` — generic form filling | `fill` (CDP fill entrypoint + `_FillRun.run`; its steps are layered classes over `fill_state._FillState`: `fill_entry`, `fill_wizard`, `fill_answers`, `fill_ats_steps`, `fill_finish`; module helpers in `fill_buttons`, `fill_page`, `fill_widgets`, `fill_outcomes`), `engine` (verified engine), `wizards`, `field_catalog`, `field_matcher` (+ `school_aliases.json`), `field_types`, `form_routes`, `form_guards`, `attachments`, `submit_guard`, `filler.js`, `filler_readiness.js` |
 | `ats/` — per-ATS flows | `workday_flow`, `workday_auth`, `workday_repeaters`, `smartrecruiters_flow`, `adapters`, `ats_hints` |
 
 ## Tests

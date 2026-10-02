@@ -32,7 +32,7 @@ from pydantic import BaseModel, Field
 
 from resume_tailor import config, workspace
 from resume_tailor.apply.discovery import fetch_jd, identity
-from resume_tailor.apply.forms import fill, submit_guard
+from resume_tailor.apply.forms import fill_buttons, submit_guard
 from resume_tailor.apply.funnel import daily as apply_daily
 from resume_tailor.apply.funnel import operations as apply_operations
 from resume_tailor.apply.funnel import store
@@ -348,7 +348,7 @@ def lookup(url: str = Query(min_length=1, max_length=4000)) -> LookupResponse:
     app = _find(url)
     return LookupResponse(
         ats=ats,
-        assist_only=ats in fill.ASSIST_ONLY_ATS,
+        assist_only=ats in fill_buttons.ASSIST_ONLY_ATS,
         application=_tracked(app) if app is not None else None,
     )
 

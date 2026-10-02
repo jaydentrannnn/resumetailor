@@ -10,11 +10,19 @@ from unittest.mock import MagicMock
 import pytest
 
 from resume_tailor import config
-from resume_tailor.apply.answers import answer
+from resume_tailor.apply.answers import answer, hybrid_resolver
 from resume_tailor.apply.answers import profile as profile_mod
 from resume_tailor.apply.answers.profile import ApplicantProfile
 from resume_tailor.apply.driver import browser, clicks
-from resume_tailor.apply.forms import fill, submit_guard, wizards
+from resume_tailor.apply.forms import (
+    fill,
+    fill_buttons,
+    fill_outcomes,
+    fill_page,
+    fill_widgets,
+    submit_guard,
+    wizards,
+)
 from resume_tailor.apply.funnel import packet, store
 from resume_tailor.apply.funnel.packet import Packet
 from resume_tailor.content import data
@@ -67,14 +75,14 @@ def test_stage_attachment_uses_user_facing_resume_and_cover_names(tmp_path):
     resume.write_bytes(b"resume")
     cover.write_bytes(b"cover")
 
-    staged_resume = fill._stage_attachment(  # noqa: SLF001
+    staged_resume = fill_widgets._stage_attachment(  # noqa: SLF001
         str(resume),
         purpose="resume",
         applicant_name="Ada Lovelace",
         role="Software Intern",
         out_dir=tmp_path / "application",
     )
-    staged_cover = fill._stage_attachment(  # noqa: SLF001
+    staged_cover = fill_widgets._stage_attachment(  # noqa: SLF001
         str(cover),
         purpose="cover_letter",
         applicant_name="Ada Lovelace",
@@ -93,7 +101,7 @@ def test_stage_attachment_names_profile_documents_by_kind(tmp_path, purpose):
     """A transcript or portfolio is not per-role, and never gets the cover-letter name."""
     source = tmp_path / f"{purpose}.pdf"
     source.write_bytes(b"%PDF")
-    staged = fill._stage_attachment(  # noqa: SLF001
+    staged = fill_widgets._stage_attachment(  # noqa: SLF001
         str(source),
         purpose=purpose,
         applicant_name="Ada Lovelace",
@@ -113,12 +121,12 @@ def test_stage_attachment_names_profile_documents_by_kind(tmp_path, purpose):
     ],
 )
 def test_portfolio_uploads_are_classified(label, expected):
-    assert fill._attachment_purpose(label, "input[type=file]", {}) == expected  # noqa: SLF001
+    assert fill_widgets._attachment_purpose(label, "input[type=file]", {}) == expected  # noqa: SLF001
 
 
 def test_greenhouse_cover_letter_input_is_classified_by_name():
     assert (
-        fill._attachment_purpose(  # noqa: SLF001
+        fill_widgets._attachment_purpose(  # noqa: SLF001
             "",
             "input[name=\"job_application[cover_letter]\"]",
             {},
@@ -133,10 +141,10 @@ def test_workday_generic_upload_is_the_resume_by_hint_or_section():
     selector = 'input[data-automation-id="file-upload-input-ref"]'
     hints = {"input[data-automation-id='file-upload-input-ref']": "resume_upload"}
     label = "Upload a file (5MB max)*"
-    assert fill._attachment_purpose(label, selector, hints) is None  # noqa: SLF001
-    assert fill._attachment_purpose(label, selector, hints, hint_key="resume_upload") == "resume"  # noqa: SLF001
-    assert fill._attachment_purpose(label, selector, {}, section="Resume/CV") == "resume"  # noqa: SLF001
-    assert fill._attachment_purpose(label, selector, {}, section="Cover Letter") == "cover_letter"  # noqa: SLF001
+    assert fill_widgets._attachment_purpose(label, selector, hints) is None  # noqa: SLF001
+    assert fill_widgets._attachment_purpose(label, selector, hints, hint_key="resume_upload") == "resume"  # noqa: SLF001
+    assert fill_widgets._attachment_purpose(label, selector, {}, section="Resume/CV") == "resume"  # noqa: SLF001
+    assert fill_widgets._attachment_purpose(label, selector, {}, section="Cover Letter") == "cover_letter"  # noqa: SLF001
 
 
 def test_upload_verified_when_react_replaces_file_input(tmp_path):
@@ -147,15 +155,15 @@ def test_upload_verified_when_react_replaces_file_input(tmp_path):
     control = target.locator.return_value.first
     control.evaluate.side_effect = RuntimeError("input removed after upload")
     target.get_by_text.return_value.count.return_value = 1
-    assert fill._set_and_verify_file(target, "#resume", str(file_path))  # noqa: SLF001
+    assert fill_widgets._set_and_verify_file(target, "#resume", str(file_path))  # noqa: SLF001
     control.set_input_files.assert_called_once_with(str(file_path), timeout=5000)
     target.get_by_text.return_value.first.wait_for.assert_called_once_with(state="visible", timeout=3000)
 
 
 def test_availability_after_program_start_is_reported():
-    note = fill._availability_note("2027-06-14", "10-Week paid internship June 1, 2027- August 6, 2027")  # noqa: SLF001
+    note = fill_widgets._availability_note("2027-06-14", "10-Week paid internship June 1, 2027- August 6, 2027")  # noqa: SLF001
     assert note and "2027-06-14" in note and "2027-06-01" in note
-    assert fill._availability_note("2027-06-01", "paid internship June 1, 2027") is None  # noqa: SLF001
+    assert fill_widgets._availability_note("2027-06-01", "paid internship June 1, 2027") is None  # noqa: SLF001
 
 
 def _ready_app(**overrides) -> store.Application:
@@ -179,7 +187,7 @@ def test_decide_submit_action_policy_a():
     """Policy A: ATS in auto list and form ready → auto submit."""
     settings = ApplySettings(auto_submit_enabled=True, auto_submit_ats=["greenhouse"])
     assert (
-        fill.decide_submit_action(
+        fill_buttons.decide_submit_action(
             ats="greenhouse",
             settings=settings,
             ready_to_submit=True,
@@ -192,7 +200,7 @@ def test_decide_submit_action_policy_b():
     """Policy B: ATS not listed or form incomplete → awaiting review."""
     settings = ApplySettings(auto_submit_ats=["greenhouse"])
     assert (
-        fill.decide_submit_action(
+        fill_buttons.decide_submit_action(
             ats="lever",
             settings=settings,
             ready_to_submit=True,
@@ -200,7 +208,7 @@ def test_decide_submit_action_policy_b():
         == "awaiting_review"
     )
     assert (
-        fill.decide_submit_action(
+        fill_buttons.decide_submit_action(
             ats="greenhouse",
             settings=settings,
             ready_to_submit=False,
@@ -214,17 +222,17 @@ def test_decide_submit_action_never_auto_submits_workday():
     (`ApplySettings.auto_submit_max_per_run`'s documented exclusion)."""
     settings = ApplySettings(auto_submit_enabled=True, auto_submit_ats=["workday", "greenhouse"])
     for ats in ("workday", "Workday"):
-        assert fill.decide_submit_action(ats=ats, settings=settings, ready_to_submit=True) == "awaiting_review"
-    assert fill.decide_submit_action(ats="greenhouse", settings=settings, ready_to_submit=True) == "auto_submit"
+        assert fill_buttons.decide_submit_action(ats=ats, settings=settings, ready_to_submit=True) == "awaiting_review"
+    assert fill_buttons.decide_submit_action(ats="greenhouse", settings=settings, ready_to_submit=True) == "auto_submit"
 
 
 @pytest.mark.parametrize("ats", ["linkedin", "indeed", "handshake", "LinkedIn"])
 def test_job_board_apply_flows_are_assist_only(ats):
     """LinkedIn Easy Apply, Indeed Apply and Handshake are filled, never auto-submitted."""
     settings = ApplySettings(auto_submit_enabled=True, auto_submit_ats=[ats.lower()])
-    assert fill.decide_submit_action(ats=ats, settings=settings, ready_to_submit=True) == "awaiting_review"
+    assert fill_buttons.decide_submit_action(ats=ats, settings=settings, ready_to_submit=True) == "awaiting_review"
     assert (
-        fill.decide_submit_action(
+        fill_buttons.decide_submit_action(
             ats=ats, settings=settings, ready_to_submit=True, submit_mode="auto_submit"
         )
         == "awaiting_review"
@@ -234,7 +242,7 @@ def test_job_board_apply_flows_are_assist_only(ats):
 def _stub_greenhouse_form(fill_paths, monkeypatch, **app_fields):
     """A ready Greenhouse application whose form fills cleanly and confirms on submit."""
     app = _ready_app(**app_fields)
-    monkeypatch.setattr(fill, "_find_submit_button", lambda _page, _hints: MagicMock())  # noqa: SLF001
+    monkeypatch.setattr(fill_buttons, "_find_submit_button", lambda _page, _hints: MagicMock())  # noqa: SLF001
     store.upsert(app)
 
     sample_packet = Packet(
@@ -271,9 +279,9 @@ def _stub_greenhouse_form(fill_paths, monkeypatch, **app_fields):
     page.url = "https://example.com/apply"
     page.frames = [page]
     def evaluate_form(script, args=None):
-        if script == fill._load_filler_js():  # noqa: SLF001
+        if script == fill_page._load_filler_js():  # noqa: SLF001
             return filler_result if args and args.get("fields") else {"filled": [{"key": "existing", "label": "First", "value": "Ada", "selector": "#first_name"}], "leftovers": []}
-        if script == fill._load_readiness_js():  # noqa: SLF001
+        if script == fill_page._load_readiness_js():  # noqa: SLF001
             return []
         return {"errors": [], "unresolved": [], "advance_disabled": False}
 
@@ -314,7 +322,7 @@ def test_wizard_sign_in_page_is_handed_over_unfilled(fill_paths, monkeypatch):
     result = fill.fill_application("src-1", settings=ApplySettings())
     assert result.status == "awaiting_review"
     assert "Sign in to Taleo" in result.handoff_reason
-    assert fill._load_filler_js() not in [c.args[0] for c in page.evaluate.call_args_list]  # noqa: SLF001
+    assert fill_page._load_filler_js() not in [c.args[0] for c in page.evaluate.call_args_list]  # noqa: SLF001
     assert store.get("src-1").status == "awaiting_review"
 
 
@@ -480,7 +488,7 @@ class _ConfirmPage:
 )
 def test_submission_confirmed_uses_per_ats_markers(ats, before_url, after_url, before, after, confirmed):
     page = _ConfirmPage(after_url, after)
-    assert fill._submission_confirmed(  # noqa: SLF001
+    assert fill_page._submission_confirmed(  # noqa: SLF001
         page, before_url=before_url, before_body=before, confirmation_text="", ats=ats
     ) is confirmed
 
@@ -493,7 +501,7 @@ def test_unanswered_salary_question_forces_manual_review_even_with_auto_submit(f
     ))
     monkeypatch.setattr(profile_mod, "load_profile", lambda: (ApplicantProfile(first_name="Ada", salary_expectation="$45/hour"), False))
     monkeypatch.setattr(data, "load", lambda: MagicMock(all_bullets=lambda: []))
-    monkeypatch.setattr(fill, "_find_submit_button", lambda _page, _hints: MagicMock())  # noqa: SLF001
+    monkeypatch.setattr(fill_buttons, "_find_submit_button", lambda _page, _hints: MagicMock())  # noqa: SLF001
     form = {
         "filled": [{"key": "first_name", "label": "First Name", "value": "Ada", "selector": "#first_name"}],
         "leftovers": [{"key": "salary_expectation", "label": "Desired salary", "type": "text", "selector": "#salary", "required": False, "reason": "No salary range in the applicant profile"}],
@@ -503,9 +511,9 @@ def test_unanswered_salary_question_forces_manual_review_even_with_auto_submit(f
     page.frames = [page]
 
     def evaluate_form(script, args=None):
-        if script == fill._load_filler_js():  # noqa: SLF001
+        if script == fill_page._load_filler_js():  # noqa: SLF001
             return form if args and args.get("fields") else {"filled": form["filled"], "leftovers": form["leftovers"]}
-        if script == fill._load_readiness_js():  # noqa: SLF001
+        if script == fill_page._load_readiness_js():  # noqa: SLF001
             return []
         return {"errors": [], "unresolved": [], "advance_disabled": False}
 
@@ -535,7 +543,7 @@ def test_a_guessed_location_list_is_kept_for_review(fill_paths, monkeypatch):
     ))
     monkeypatch.setattr(profile_mod, "load_profile", lambda: (ApplicantProfile(first_name="Ada"), False))
     monkeypatch.setattr(data, "load", lambda: MagicMock(all_bullets=lambda: []))
-    monkeypatch.setattr(fill, "_find_submit_button", lambda _page, _hints: MagicMock())  # noqa: SLF001
+    monkeypatch.setattr(fill_buttons, "_find_submit_button", lambda _page, _hints: MagicMock())  # noqa: SLF001
     offices = "Which offices?"
     form = {
         "filled": [
@@ -549,9 +557,9 @@ def test_a_guessed_location_list_is_kept_for_review(fill_paths, monkeypatch):
     page.frames = [page]
 
     def evaluate_form(script, args=None):
-        if script == fill._load_filler_js():  # noqa: SLF001
+        if script == fill_page._load_filler_js():  # noqa: SLF001
             return form if args and args.get("fields") else {"filled": form["filled"], "leftovers": []}
-        if script == fill._load_readiness_js():  # noqa: SLF001
+        if script == fill_page._load_readiness_js():  # noqa: SLF001
             return []
         return {"errors": [], "unresolved": [], "advance_disabled": False}
 
@@ -623,7 +631,7 @@ def test_fill_application_awaiting_review(fill_paths, monkeypatch, model_unavail
             ledger.model_unavailable = True
             return False
 
-        monkeypatch.setattr(fill.hybrid_resolver, "resolve_step_blockers", unavailable_resolver)
+        monkeypatch.setattr(hybrid_resolver, "resolve_step_blockers", unavailable_resolver)
     submit_called = {"value": False}
     original_click = MagicMock()
 
@@ -859,9 +867,9 @@ def test_a_page_with_only_its_own_chrome_is_not_ready_for_review(fill_paths, mon
     page.frames = [page]
 
     def evaluate(script, args=None):
-        if script == fill._load_filler_js():  # noqa: SLF001
+        if script == fill_page._load_filler_js():  # noqa: SLF001
             return {"questions": []} if args and args.get("scan") else filler_result
-        if script == fill._load_readiness_js():  # noqa: SLF001
+        if script == fill_page._load_readiness_js():  # noqa: SLF001
             return []
         return {"errors": [], "unresolved": [], "advance_disabled": False}
 
@@ -886,7 +894,7 @@ def test_a_page_with_only_its_own_chrome_is_not_ready_for_review(fill_paths, mon
 
     result = fill.fill_application("src-1")
     assert result.status == "awaiting_review"
-    assert result.handoff_reason == fill.NO_FORM_MSG
+    assert result.handoff_reason == fill_outcomes.NO_FORM_MSG
     assert store.get("src-1").status == "awaiting_review"
 
 
@@ -939,10 +947,10 @@ def test_a_step_is_blank_only_when_its_passes_saw_no_control_at_all():
     """Philips re-renders My Information for the saved country: a scan in that gap sees
     nothing, and that step is rescanned rather than advanced."""
     empty = {"filled": [{"key": "email"}], "leftovers": [], "long_text": [], "file_inputs": [], "required_empty": []}
-    assert fill._scanned_nothing(empty, filled_start=1)
-    assert not fill._scanned_nothing({**empty, "filled": [{"key": "email"}, {"key": "phone"}]}, filled_start=1)
+    assert fill_page._scanned_nothing(empty, filled_start=1)
+    assert not fill_page._scanned_nothing({**empty, "filled": [{"key": "email"}, {"key": "phone"}]}, filled_start=1)
     for key in ("leftovers", "long_text", "file_inputs", "required_empty"):
-        assert not fill._scanned_nothing({**empty, key: [{"label": "x"}]}, filled_start=1)
+        assert not fill_page._scanned_nothing({**empty, key: [{"label": "x"}]}, filled_start=1)
 
 
 def test_decide_submit_action_submit_mode_override():
@@ -950,20 +958,20 @@ def test_decide_submit_action_submit_mode_override():
     settings = ApplySettings(auto_submit_enabled=True, auto_submit_ats=["greenhouse"])
 
     # Normal auto-submit ATS with ready_to_submit
-    assert fill.decide_submit_action(ats="greenhouse", settings=settings, ready_to_submit=True) == "auto_submit"
+    assert fill_buttons.decide_submit_action(ats="greenhouse", settings=settings, ready_to_submit=True) == "auto_submit"
 
     # User explicitly requested awaiting_review
-    assert fill.decide_submit_action(
+    assert fill_buttons.decide_submit_action(
         ats="greenhouse", settings=settings, ready_to_submit=True, submit_mode="awaiting_review"
     ) == "awaiting_review"
 
     # Explicit run toggle cannot bypass the configured ATS allowlist.
-    assert fill.decide_submit_action(
+    assert fill_buttons.decide_submit_action(
         ats="lever", settings=settings, ready_to_submit=True, submit_mode="auto_submit"
     ) == "awaiting_review"
 
     # Workday must also be listed before a verified submission.
-    assert fill.decide_submit_action(
+    assert fill_buttons.decide_submit_action(
         ats="workday", settings=settings, ready_to_submit=True, submit_mode="auto_submit"
     ) == "awaiting_review"
 
@@ -1007,12 +1015,12 @@ def test_fill_application_multi_step_wizard(fill_paths, monkeypatch):
 
     def evaluate_form(script, args=None):
         nonlocal form_step
-        if script == fill._load_filler_js():  # noqa: SLF001
+        if script == fill_page._load_filler_js():  # noqa: SLF001
             if args and args.get("fields") and not args.get("scan"):
                 form_step += 1
             current = step1_result if form_step <= 1 else step2_result
             return current
-        if script == fill._load_readiness_js():  # noqa: SLF001
+        if script == fill_page._load_readiness_js():  # noqa: SLF001
             return []
         return {"errors": [], "unresolved": [], "advance_disabled": False}
 
@@ -1070,7 +1078,7 @@ def test_workday_textareas_are_recommitted_with_real_input_events():
         def locator(self, selector: str):
             return MagicMock(first=_Control(selector))
 
-    fill._commit_workday_textareas(  # noqa: SLF001
+    fill_widgets._commit_workday_textareas(  # noqa: SLF001
         [_Frame()],
         [
             {"key": "salary_expectation", "value": "$20/hour", "selector": "#salary"},
@@ -1122,8 +1130,8 @@ class _FooterPage:
 def test_workday_review_submit_is_never_an_advance_button():
     # Philips (2026-09-24): Review's Submit shares Next's `pageFooterNextButton` id, and
     # clicking it as "advance" submitted the application.
-    assert fill._find_advance_button(_FooterPage("Submit")) is None  # noqa: SLF001
-    assert fill._find_advance_button(_FooterPage("Save and Continue")) is not None  # noqa: SLF001
+    assert fill_buttons._find_advance_button(_FooterPage("Submit")) is None  # noqa: SLF001
+    assert fill_buttons._find_advance_button(_FooterPage("Save and Continue")) is not None  # noqa: SLF001
 
 
 class _EvalFrame:
@@ -1144,7 +1152,7 @@ def test_resume_prefill_correction_runs_filler_in_correct_mode():
     good = _EvalFrame({"filled": [fixed], "leftovers": [stuck]})
     cross_origin = _EvalFrame(RuntimeError("cross-origin"))
     page = MagicMock()
-    items = fill._correct_resume_prefill(  # noqa: SLF001
+    items = fill_widgets._correct_resume_prefill(  # noqa: SLF001
         page, [good, cross_origin], "js", {"email": "ada@example.com"}, {}
     )
     assert good.calls[0]["correct"] is True
@@ -1157,7 +1165,7 @@ def test_observed_outcome_explains_a_correction():
     page = MagicMock()
     page.frames = [_EvalFrame({"filled": [{"key": "existing", "label": "Email", "value": "ada@example.com", "selector": "#em"}]})]
     attempted = {(0, "#em"): {"key": "email", "corrected": True, "previous": "old@x.edu"}}
-    observed = fill._observe_fields(page, "js", {}, attempted)  # noqa: SLF001
+    observed = fill_widgets._observe_fields(page, "js", {}, attempted)  # noqa: SLF001
     row = observed[(0, "#em")]
     assert row["key"] == "email" and row["corrected"] is True
     assert "old@x.edu" in row["reason_text"]
@@ -1191,7 +1199,7 @@ def test_apply_click_follows_only_a_popup_of_its_own_page():
     popup = MagicMock()
     page = _PopupPage(popup)
     clicked: list[bool] = []
-    assert fill._click_and_track_popup(page, _SharedContext(), lambda: clicked.append(True)) is popup  # noqa: SLF001
+    assert fill_buttons._click_and_track_popup(page, _SharedContext(), lambda: clicked.append(True)) is popup  # noqa: SLF001
     assert clicked == [True] and page.waits == [5000]
     stay = _PopupPage(None)
-    assert fill._click_and_track_popup(stay, _SharedContext(), lambda: None) is stay  # noqa: SLF001
+    assert fill_buttons._click_and_track_popup(stay, _SharedContext(), lambda: None) is stay  # noqa: SLF001

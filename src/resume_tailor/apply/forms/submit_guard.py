@@ -1,6 +1,6 @@
 """Guard rails checked just before an automatic submit (plan P4-S).
 
-`fill.decide_submit_action` decides whether policy *allows* auto-submit for a form.
+`fill_buttons.decide_submit_action` decides whether policy *allows* auto-submit for a form.
 This module decides whether *now* is a safe moment to do it. It runs right before
 `clicks.submit_click`, and a ``Hold`` turns the submit into ``awaiting_review`` with a
 plain-language note:

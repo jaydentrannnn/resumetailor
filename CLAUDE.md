@@ -210,7 +210,7 @@ everything *after* the loop prototype stripped (`_wrap_cell_loop`).
   an LLM outside a job hits the claude fallback; one that must not does
   `config.pinned(config.ONE_OFF_PROFILE)` (ContextVar overlay). Apply's Prepare (screening
   extraction in `apply/funnel/daily.py` + the tailor job) uses the Tailor settings' routing
-  (`web.jobs.model_routing`); Fill's answer/resolver calls (`fill.py`, `engine.py`) run under
+  (`web.jobs.model_routing`); Fill's answer/resolver calls (`fill*.py`, `engine.py`) run under
   `config.pinned(ApplySettings.model_spec)` — the Apply page's "Autofill model".
 - **Structured output**: non-frontier backends may accept a schema and ignore it — `llm.py`
   puts the schema in the prompt and escalates on **parse failure, not status code**; on the

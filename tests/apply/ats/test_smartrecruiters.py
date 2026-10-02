@@ -13,7 +13,7 @@ import pytest
 
 from resume_tailor.apply.ats import adapters, ats_hints
 from resume_tailor.apply.driver import clicks
-from resume_tailor.apply.forms import fill
+from resume_tailor.apply.forms import fill_buttons
 from resume_tailor.web.schemas import ApplySettings
 
 _FORM = "https://jobs.smartrecruiters.com/oneclick-ui/company/Acme/publication/abc"
@@ -49,8 +49,8 @@ def test_smartrecruiters_urls_get_their_adapter():
 
 def test_smartrecruiters_never_submits_automatically():
     settings = ApplySettings(auto_submit_enabled=True, auto_submit_ats=["smartrecruiters"])
-    assert "smartrecruiters" in fill.ASSIST_ONLY_ATS
-    assert fill.decide_submit_action(ats="smartrecruiters", settings=settings, ready_to_submit=True) == "awaiting_review"
+    assert "smartrecruiters" in fill_buttons.ASSIST_ONLY_ATS
+    assert fill_buttons.decide_submit_action(ats="smartrecruiters", settings=settings, ready_to_submit=True) == "awaiting_review"
 
 
 def _page(playwright):
@@ -74,7 +74,7 @@ def test_the_legacy_entry_follows_the_postings_own_link_once():
                                                           route.fulfill(body="<h1>Form</h1>")))
             page.route("**/smartr.me/**", lambda route: (followed.append(route.request.url), route.abort()))
             page.set_content(_POSTING)
-            landed = fill.find_and_click_apply(page, "smartrecruiters")
+            landed = fill_buttons.find_and_click_apply(page, "smartrecruiters")
             landed.wait_for_load_state()
             assert followed == [_FORM]
             assert landed.locator("h1").inner_text() == "Form"
@@ -117,6 +117,6 @@ def test_the_datadome_wall_is_a_barrier_for_the_applicant():
             page.route("**/captcha-delivery.com/**", lambda route: route.fulfill(body="Verification Required"))
             page.set_content('<p>Please try again later.</p><iframe title="Verification system" '
                              'src="https://geo.captcha-delivery.com/captcha/?initialCid=x" width="400" height="300"></iframe>')
-            assert fill._detect_barriers(page) == "CAPTCHA detected"  # noqa: SLF001
+            assert fill_buttons._detect_barriers(page) == "CAPTCHA detected"  # noqa: SLF001
         finally:
             browser.close()

@@ -28,12 +28,13 @@ def test_no_raw_click_outside_clicks_module():
 
 
 def test_only_fill_presses_submit():
+    """Only the legacy fill's submit step (`fill_finish._dispatch_submit`) clicks submit."""
     users = [
         path.name
         for path in APPLY_DIR.rglob("*.py")
         if path.name != "clicks.py" and "submit_click(" in path.read_text(encoding="utf-8")
     ]
-    assert users == ["fill.py"]
+    assert users == ["fill_finish.py"]
 
 
 class _Loc:

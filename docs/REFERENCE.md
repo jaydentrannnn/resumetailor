@@ -309,7 +309,7 @@ The SPA starts persistent `find`, `prepare`, and `fill` operations through
 `output/.../applications/operations.json`, so progress survives page refreshes. Fill verifies
 required fields and each intended attachment before submission. Auto-submit additionally
 requires `auto_submit_enabled`, ATS membership in `auto_submit_ats`, and remaining room under
-`auto_submit_max_per_run`. Workday is never auto-submitted (`fill.decide_submit_action`
+`auto_submit_max_per_run`. Workday is never auto-submitted (`fill_buttons.decide_submit_action`
 returns `awaiting_review` for it whatever the settings). Right before the click,
 `apply/submit_guard.check` can still hold the form for review with a plain note. It holds when
 the header's "Pause all automation" switch is on (`<DATA_ROOT>/automation.json`, shared by every
@@ -324,7 +324,7 @@ file uploads share `browser.UPLOAD_LOCK`, submits still pass through `pace`, the
 `operations.batch_browser_owner()` so a user operation cannot share the browser, and extension
 mode (one relayed tab) always runs one at a time. Each submit writes
 `submit-<UTC stamp>/{before,after}.{json,png}` next to `fill.json`, shown on the detail page's
-Timeline. `fill.confirmation_markers` adds per-ATS confirmation selectors, phrases and URL
+Timeline. `fill_page.confirmation_markers` adds per-ATS confirmation selectors, phrases and URL
 fragments. The pause switch also holds the operation worker between applications, stops the
 nightly batch submit, and makes the scheduler wait. The Apply page sends
 `blocker_mode="continue"` for Fill selected; older API callers may still request pause.
@@ -364,7 +364,7 @@ password, a new site creates straight away with a generated password. A rejectio
 submit wait as soon as the form shows its error. A successful sign-in marks the site
 `signed_in`. `classify` calls a progress-bar shell `apply_form` only once a footer or a
 `formField-*` shows; below ~800px the bar has no step names, and a bare shell is the
-Create Account step still loading. Per step, `fill.py` waits for the step to render stably, then fills Workday
+Create Account step still loading. Per step, `fill_ats_steps.py` waits for the step to render stably, then fills Workday
 listbox dropdowns (`select_listbox`, Country first since it re-renders the form), Yes/No
 radios (previous-employer answered from the resume's own employers), empty prompts whose
 label maps to a profile fact ("How Did You Hear About Us?", `fill_prompts`), the Skills
@@ -446,7 +446,7 @@ run their own regexes. The layer has three parts:
 - **`answers`** takes the answer from the profile or computes it.
 - **`choose`** picks the one option that says that answer.
 
-**How the generic fill uses it.** `fill._fill_frame` runs `filler.js` twice:
+**How the generic fill uses it.** `fill_widgets._fill_frame` runs `filler.js` twice:
 
 1. `scan` mode reads one entry per question. A radio, checkbox or `aria-pressed`
    toggle-button group counts once; Ashby's name-less radios group by fieldset.
@@ -472,7 +472,7 @@ per-site branch.
 **Reaching the form.** A wizard platform's posting page (an Apply control and at most two
 chrome inputs, such as iCIMS's footer language picker) is entered once through that
 control (`WizardAdapter.enter`). A fill that saw only unlabelled chrome hands the tab
-over with `fill.NO_FORM_MSG`, never "ready for review".
+over with `fill_outcomes.NO_FORM_MSG`, never "ready for review".
 
 **Salary and revealed fields.** Salary questions are answered deterministically (no LLM) by
 `apply/answers/salary.py`: `min(posted top, applicant top)` in the posting's unit, hourly ↔ yearly at
@@ -483,7 +483,7 @@ from the free-text `salary_expectation`; empty maximums leave salary for the app
 fill runner adds `salary_expectation`/`salary_hourly`/`salary_yearly` (and `_number` forms
 for number inputs) to the packet fields. `filler.js` reads a Workday question's label from a
 multi-id `aria-labelledby` or its `formField-*` container, ticks a lone yes/no checkbox ("I have
-a preferred name", `has_preferred_name`), and reports `revealed`, after which `fill.py` scans
+a preferred name", `has_preferred_name`), and reports `revealed`, after which `fill_wizard.py` scans
 the frame once more so the fields the tick revealed are filled.
 
 **Applications page.** Rows in `store.REVIEW_STATUSES` (awaiting review/verification, fill
@@ -523,7 +523,7 @@ Platforms (plan P4-A): `store.AtsKind` also names Taleo, SuccessFactors, Oracle 
 Jobvite, BambooHR, LinkedIn, Indeed and Handshake; `fetch_jd.detect_ats` and
 `identity.canonical_key` recognise their URLs (`fetch_jd.AtsName` must match `AtsKind`, and a
 test checks it). LinkedIn, Indeed and Handshake are assist-only like Workday
-(`fill.ASSIST_ONLY_ATS`): filled, never submitted automatically. Multi-step platforms get a
+(`fill_buttons.ASSIST_ONLY_ATS`): filled, never submitted automatically. Multi-step platforms get a
 `wizards.WizardAdapter` whose pure `classify(snapshot)` names the screen. Each fill step
 first hands over a sign-in, account creation, an emailed code or a closed posting (before
 anything is typed), and a review page ends the loop like Workday's Review step. Workday

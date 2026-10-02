@@ -1228,7 +1228,7 @@ def _run_batch_submit(
     Reuses `fill.fill_application` — the exact function the manual "Open & fill"
     button calls — so there is no separate submit code path to keep in sync. A
     per-item failure is logged and skipped rather than aborting the batch. Workday
-    is never eligible regardless of `auto_submit_ats`: `fill.decide_submit_action`
+    is never eligible regardless of `auto_submit_ats`: `fill_buttons.decide_submit_action`
     hard-excludes it.
     """
     if cap <= 0:

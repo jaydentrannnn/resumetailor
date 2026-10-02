@@ -1,7 +1,7 @@
 """The generic fill's question pipeline against captured application forms.
 
 ``filler.js`` reads each question (scan mode), `questions.plan_for` decides its key and
-answer, and the filler sets them — the path `fill._fill_frame` runs. Each page under
+answer, and the filler sets them — the path `fill_widgets._fill_frame` runs. Each page under
 ``tests/fixtures/forms/`` is a sanitized capture of a live form whose fill went wrong
 (2026-09); a new failure adds a page and rows here, not a per-site branch.
 """

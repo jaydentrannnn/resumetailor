@@ -171,7 +171,7 @@ def detect_ats(final_url: str, html: str = "") -> AtsName:
         return "jobvite"
     if host.endswith("bamboohr.com"):
         return "bamboohr"
-    # Job boards whose own apply flow is assist-only (`fill.ASSIST_ONLY_ATS`).
+    # Job boards whose own apply flow is assist-only (`fill_buttons.ASSIST_ONLY_ATS`).
     if host == "linkedin.com" or host.endswith(".linkedin.com"):
         return "linkedin"
     if host == "indeed.com" or host.endswith(".indeed.com"):

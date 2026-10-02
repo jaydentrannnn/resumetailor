@@ -12,7 +12,7 @@ three checked what they were about to press. Now:
   chooser) is not text-checked, because Workday labels its sign-in overlay "Submit".
   Only the auth flows use it.
 - `submit_click` is the one function that may press a final submit, and only with an
-  ``auto_submit`` decision from `fill.decide_submit_action`.
+  ``auto_submit`` decision from `fill_buttons.decide_submit_action`.
 - `mouse_click` / `async_mouse_click` wrap coordinate clicks (Workday's click-filter
   overlays) with the same check on whatever element sits at that point.
 
