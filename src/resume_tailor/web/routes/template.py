@@ -17,6 +17,7 @@ from resume_tailor.web import (
     template_library,
     template_preview,
     template_uploads,
+    template_state,
 )
 from resume_tailor.web.jobs import get_queue
 from resume_tailor.web.schemas import (
@@ -43,10 +44,15 @@ def get_template() -> TemplateInfoResponse:
 
 
 @router.get("/api/template/preview.pdf")
-def template_preview_pdf() -> FileResponse:
+def template_preview_pdf(revision: str | None = None) -> FileResponse:
     """Inline PDF of the tagged template filled with the full master resume."""
     try:
-        path = template_preview.ensure_preview()
+        path = (
+            template_preview.ensure_preview(revision)
+            if revision is not None else template_preview.ensure_preview()
+        )
+    except template_preview.StalePreview as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
     except FileNotFoundError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except RuntimeError as exc:
@@ -61,7 +67,15 @@ def template_preview_pdf() -> FileResponse:
         media_type="application/pdf",
         filename="template-preview.pdf",
         content_disposition_type="inline",
+        headers={
+            "Cache-Control": "private, max-age=31536000, immutable" if revision else "no-cache",
+        },
     )
+
+
+@router.get("/api/template/state")
+def get_template_state() -> dict:
+    return template_state.snapshot()
 
 
 @router.post("/api/template/analyze", response_model=TemplateAnalyzeResponse)
@@ -254,9 +268,9 @@ def activate_template_library_entry(
         )
     do_calibrate = (calibrate or "").strip().lower() in ("1", "true", "yes", "on")
     try:
-        return template_library.activate_library_entry(
+        return template_state.switched(template_library.activate_library_entry(
             entry_id, do_calibrate=do_calibrate
-        )
+        ))
     except TemplateValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
     except TemplateBuildError as exc:
@@ -316,7 +330,9 @@ def install_default_template(name: str, calibrate: str | None = None) -> Templat
             "switching templates.",
         )
     try:
-        return template_defaults.install_default(name, do_calibrate=_truthy(calibrate))
+        return template_state.switched(
+            template_defaults.install_default(name, do_calibrate=_truthy(calibrate))
+        )
     except default_templates.UnknownTemplate as exc:
         raise HTTPException(status_code=404, detail="No such default template.") from exc
     except TemplateValidationError as exc:

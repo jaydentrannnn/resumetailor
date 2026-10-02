@@ -539,13 +539,16 @@ def test_template_fingerprint_changes_with_bytes(tmp_path, monkeypatch):
 # ----------------------------------------------------------------------------------
 
 
-def test_write_calibration_without_anchors_matches_the_old_shape(tmp_path, monkeypatch):
+def test_write_calibration_without_anchors_records_input_digest(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "CALIBRATION_DIR", tmp_path)
     monkeypatch.setattr(config, "PDF_BACKEND", "word")
     monkeypatch.setattr(config, "DEFAULT_TEMPLATE_PATH", tmp_path / "main_template.docx")
     path = calibrate.write_calibration(101, 52)
     payload = json.loads(path.read_text(encoding="utf-8"))
-    assert set(payload.keys()) == {"backend", "chars_per_line", "lines_per_page", "measured_at", "template"}
+    assert set(payload.keys()) == {
+        "backend", "chars_per_line", "lines_per_page", "measured_at", "template", "input_digest",
+    }
+    assert len(payload["input_digest"]) == 64
 
 
 def test_write_calibration_with_anchors_includes_the_block(tmp_path, monkeypatch):

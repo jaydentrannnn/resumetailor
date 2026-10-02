@@ -168,6 +168,9 @@ class Application(BaseModel):
     capture_stub: bool = False
     #: Bumped on every write of this row; lets a client tell that a row changed.
     revision: int = 0
+    # Additive JSON-column fields: old SQLite/legacy rows load with empty defaults.
+    resume_ack_revision: str = ""
+    resume_ack_at: str = ""
 
     #: The stored version this object was read from (never mutated), or None for a
     #: row built in memory. `upsert` diffs against it; see the module docstring.

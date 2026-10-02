@@ -16,6 +16,7 @@ import {
 } from "../../lib/applicationStatus";
 import {
   canContinueFill,
+  canFillAfterReview,
   canReopenFill,
   localDate,
   isTabClosed,
@@ -160,7 +161,7 @@ export function ApplicationsTable({
     if (tabOpen && !["submitted", "filling", "submit_unconfirmed"].includes(row.status))
       items.push({
         label: "Continue fill",
-        disabled: busy || active || !row.preparation_eligible,
+        disabled: busy || active || !canFillAfterReview(row),
         action: () => actions.start("fill", [row.source_job_id], "continue"),
       });
     if (canReopenFill(row))
@@ -203,7 +204,7 @@ export function ApplicationsTable({
             : isTabClosed(row, openTabs) && canReopenFill(row)
               ? "reopen"
               : "review"
-          : row.status === "ready" && row.preparation_eligible !== false
+          : row.status === "ready" && canFillAfterReview(row)
             ? "fill"
             : retryLabel
               ? "retry"
@@ -320,6 +321,12 @@ export function ApplicationsTable({
       cell: (row) => (
         <span className="flex flex-wrap items-center gap-1.5">
           <strong className="font-medium">{row.company}</strong>
+          {!!row.resume_review?.warnings.length && (
+            <p className="mt-1 text-xs text-warn" title={row.resume_review.warnings.join("\n")}>
+              {row.resume_review.required ? "Resume needs review" : "Resume warnings reviewed"} ·{" "}
+              {row.resume_review.warnings.join(" ")}
+            </p>
+          )}
           <CapturedBadge row={row} />
         </span>
       ),

@@ -203,7 +203,7 @@ def set_active_workspace(workspace_id: str, *, create_dirs: bool = False) -> str
         for key in ("DATA_DIR", "TEMPLATES_DIR", "OUTPUT_DIR", "CACHE_DIR"):
             paths[key].mkdir(parents=True, exist_ok=True)
 
-    calibration = _load_calibration(PDF_BACKEND, paths["CALIBRATION_DIR"])
+    calibration = _load_calibration(PDF_BACKEND, paths["CALIBRATION_DIR"], paths=paths)
     _DEFAULT = replace(_DEFAULT, workspace_id=workspace_id, paths=paths, calibration=calibration)
     return workspace_id
 
@@ -1126,7 +1126,7 @@ PLAUSIBLE_LINES_PER_PAGE = (25, 90)
 
 
 def _load_calibration(
-    backend: str, directory: Path | None = None
+    backend: str, directory: Path | None = None, *, paths: dict[str, Path] | None = None
 ) -> tuple[int, int, str, str | None]:
     """Read measured fit constants for `backend`, falling back to the Word-derived pair.
 
@@ -1155,6 +1155,14 @@ def _load_calibration(
         ) from exc
 
     chars_lo, chars_hi = PLAUSIBLE_CHARS_PER_LINE
+    if raw.get("input_digest"):
+        from resume_tailor.document.calibration_cache import input_digest
+
+        if raw["input_digest"] != input_digest(paths=paths, backend=backend):
+            return (
+                _FALLBACK_CHARS_PER_LINE, _FALLBACK_LINES_PER_PAGE, "fallback",
+                "Page fit needs tuning for the current template and resume.",
+            )
     lines_lo, lines_hi = PLAUSIBLE_LINES_PER_PAGE
     if not (chars_lo <= chars_per_line <= chars_hi) or not (lines_lo <= lines_per_page <= lines_hi):
         # A bad file must not brick the app — fall back rather than raise, but name
@@ -1225,7 +1233,7 @@ def _legacy_paths() -> dict[str, Path]:
 _INITIAL_PATHS = _legacy_paths()
 _DEFAULT = RunContext(
     None, _INITIAL_PATHS, _ACTIVE,
-    _load_calibration(PDF_BACKEND, _INITIAL_PATHS["CALIBRATION_DIR"]),
+    _load_calibration(PDF_BACKEND, _INITIAL_PATHS["CALIBRATION_DIR"], paths=_INITIAL_PATHS),
     dict(library_seeds.BUILTIN_PACKS["core-tech"]["tag_aliases"]),
     dict(library_seeds.BUILTIN_PACKS["core-tech"]["verb_families"]),
 )
@@ -1262,7 +1270,7 @@ def use_context(context: RunContext) -> Iterator[RunContext]:
 
 def context_for_workspace(workspace_id: str) -> RunContext:
     paths = workspace_paths(workspace_id)
-    calibration = _load_calibration(PDF_BACKEND, paths["CALIBRATION_DIR"])
+    calibration = _load_calibration(PDF_BACKEND, paths["CALIBRATION_DIR"], paths=paths)
     from .content import libraries
 
     effective = libraries.resolve_effective(workspace_id)

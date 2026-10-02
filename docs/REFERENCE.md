@@ -661,8 +661,11 @@ with a user label (max 20 saved entries). `template_build.build()`'s CLI/scripte
 errors clearly when no profile is found (on disk or passed in) rather than silently falling
 back to anything.
 
-After any template change, re-run `python scripts/calibrate.py` (or use calibrate-on-install
-/ calibrate-on-activate in the UI).
+Ordinary saved/starter template switching skips calibration. Matching measurements are
+restored by a digest of template, profile, master resume and PDF backend. Otherwise use
+**Tune page fit** (or `python scripts/calibrate.py`). Uploaded templates still offer
+calibrate-on-install. Preview conversions use immutable revision snapshots and do not
+hold the template mutation lock during PDF conversion.
 
 ### Analyzer correctness: structure, not just text
 
@@ -807,6 +810,13 @@ writes each bundle plus a filled sample PDF for checking a design change by eye.
 ---
 
 ## 7. Backend / model routing detail
+
+Every physical model request enters one shared FIFO queue per endpoint, including
+retries. Local servers default to one simultaneous request; cloud endpoints default
+to three. A queued request starts as soon as a slot opens, with no pause between
+batches. HTTP 429 Retry-After delays the whole endpoint. Settings > Advanced controls
+these app-wide limits and shows active/waiting requests; settings persist under
+`DATA_ROOT/model_queue.json`. Limits are shared within one server process.
 
 - **The default profile is `ollama`, not `claude`.** Both `tailor.py --model` and
   `JobSettings.model` default to `ollama` (`config.OLLAMA_MODEL`, `gemma4:cloud`), so a

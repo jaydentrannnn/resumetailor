@@ -10,6 +10,7 @@ from fastapi import APIRouter
 
 from resume_tailor import config, workspace
 from resume_tailor.content import data, industries, libraries, style
+from resume_tailor.infra import model_queue
 from resume_tailor.pipeline import coverletter, expand, fit_types, rewrite_prompts
 from resume_tailor.pipeline.events import ProgressEvent
 from resume_tailor.web import state as web_state
@@ -26,6 +27,17 @@ from resume_tailor.web.schemas import (
 
 router = APIRouter()
 _log = logging.getLogger(__name__)
+
+
+@router.get("/api/model-queue")
+def get_model_queue() -> dict:
+    return model_queue.queue.status()
+
+
+@router.put("/api/model-queue")
+def put_model_queue(body: model_queue.QueueSettings) -> dict:
+    model_queue.queue.save_settings(body)
+    return model_queue.queue.status()
 
 
 def _event_out(event: ProgressEvent) -> ProgressEventOut:

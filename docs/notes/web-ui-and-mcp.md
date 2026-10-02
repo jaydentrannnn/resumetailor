@@ -521,3 +521,8 @@ The two legacy tests that assumed process-wide routing/rebound globals were upda
  * * I m p a c t : * *   T h e   a d   h o c   s i g n a t u r e   c h e c k s   b u n d l e   i n t e g r i t y   a n d   a d d r e s s e s   t h a t   G a t e k e e p e r   s y m p t o m ,   b u t   i t   d o e s   n o t   i d e n t i f y   t h e   d e v e l o p e r   o r   n o t a r i z e   t h e   a p p .   m a c O S   m a y   s t i l l   r e q u i r e   a p p r o v a l   i n   S y s t e m   S e t t i n g s   >   P r i v a c y   &   S e c u r i t y .   D e v e l o p e r   I D   s i g n i n g   a n d   n o t a r i z a t i o n   r e q u i r e   A p p l e   c r e d e n t i a l s . 
  
  
+## 2026-10-02 — Shared model queue, resume quality review, and template switching
+
+**What:** Limit physical model requests per endpoint (local 1, cloud 3), require version-bound acknowledgement of underfill/missing selected sections before Fill, and restore page-fit measurements only for matching template/profile/resume/PDF-backend inputs.
+**Why:** Job and browser concurrency controls do not bound provider traffic. Preview, selection badges and metadata previously refreshed independently; saved-template activation also recalibrated by default.
+**Impact:** Limits are process-wide across workspaces, with no fixed batch pause. Older resumes without sufficient saved measurement evidence require Prepare again. Application acknowledgement fields use the existing SQLite JSON column, so old rows acquire empty defaults without a destructive database migration. Previously measured calibrations without input fingerprints are preserved as unverified backups rather than reused across a switch.

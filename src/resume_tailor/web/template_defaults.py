@@ -88,12 +88,15 @@ def default_thumbnail(name: str) -> Path:
     Raises `default_templates.UnknownTemplate` for an unknown name and `RuntimeError`
     when no PDF engine is available.
     """
+    from .template_preview import _preview_lock
+
     raw = default_templates.build(name)
     digest = hashlib.sha256(raw).hexdigest()[:16]
     folder = config.OUTPUT_DIR / "template" / "defaults"
     folder.mkdir(parents=True, exist_ok=True)
     baseline = folder / f"{name}-{digest}.docx"
-    with template_ops.LOCK:
+    # These inputs are immutable, so gallery conversions must not hold up switches.
+    with _preview_lock(str(baseline)):
         if not baseline.exists():
             baseline.write_bytes(raw)
         return thumbnails.docx_thumbnail(baseline, folder / f"{name}-{digest}.png")

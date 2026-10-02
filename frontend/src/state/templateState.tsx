@@ -5,6 +5,7 @@ import {
   useEffect,
   useMemo,
   useState,
+  useRef,
   type ReactNode,
 } from "react";
 import {
@@ -14,12 +15,11 @@ import {
   type TemplateHeadingKind,
   type TemplateInfo,
   type TemplateLibraryEntry,
+  type TemplateSnapshot,
   activateTemplateLibrary,
   analyzeTemplate,
   deleteTemplateLibrary,
-  fetchDefaultTemplates,
-  fetchTemplateInfo,
-  fetchTemplateLibrary,
+  fetchTemplateSnapshot,
   installDefaultTemplate,
   remapTemplateHeadings,
   renameTemplateLibrary,
@@ -39,6 +39,8 @@ type TemplateStateValue = {
   lastBuildOk: boolean | null;
   /** Cache-buster so the iframe reloads after a successful rebuild. */
   previewKey: number;
+  previewRevision: string | null;
+  pendingTemplate: string | null;
   wizardStep: WizardStep;
   draftFile: File | null;
   analysis: TemplateAnalyzeResponse | null;
@@ -98,6 +100,10 @@ export function TemplateProvider({ children }: { children: ReactNode }) {
   const [buildLog, setBuildLog] = useState<string | null>(null);
   const [lastBuildOk, setLastBuildOk] = useState<boolean | null>(null);
   const [previewKey, setPreviewKey] = useState(0);
+  const [previewRevision, setPreviewRevision] = useState<string | null>(null);
+  const [pendingTemplate, setPendingTemplate] = useState<string | null>(null);
+  const sequence = useRef(0);
+  const switching = useRef(false);
   const [wizardStep, setWizardStep] = useState<WizardStep>("idle");
   const [draftFile, setDraftFile] = useState<File | null>(null);
   const [analysis, setAnalysis] = useState<TemplateAnalyzeResponse | null>(null);
@@ -114,62 +120,70 @@ export function TemplateProvider({ children }: { children: ReactNode }) {
   const toast = useToast();
 
   const refreshLibrary = useCallback(async () => {
-    /** Reload the named template library list and the starter templates. Each list is
-     * set on its own: one failed request must not leave the other showing the old
-     * "In use" badge. A failure is shown as a toast, not only in the saved-list panel. */
-    const [next, starters] = await Promise.allSettled([
-      fetchTemplateLibrary(),
-      fetchDefaultTemplates(),
-    ]);
-    if (next.status === "fulfilled") {
-      setLibrary(next.value.entries);
-      setLibraryActiveId(next.value.active_id);
-    }
-    if (starters.status === "fulfilled") setDefaults(starters.value);
-    const failed = [next, starters].find((r) => r.status === "rejected");
-    if (failed) {
-      const message =
-        failed.reason instanceof Error ? failed.reason.message : String(failed.reason);
+    if (switching.current) return;
+    const token = ++sequence.current;
+    try {
+      const next = await fetchTemplateSnapshot();
+      if (token !== sequence.current) return;
+      applySnapshot(next);
+    } catch (err) {
+      if (token !== sequence.current) return;
+      const message = err instanceof Error ? err.message : String(err);
       setError(message);
       toast.error("Couldn't reload your templates", message);
     }
   }, [toast]);
 
+  function applySnapshot(next: TemplateSnapshot) {
+    setInfo(next.info);
+    setLibrary(next.library.entries);
+    setLibraryActiveId(next.library.active_id);
+    setDefaults(next.defaults);
+    setPreviewRevision(next.preview_revision);
+    setPreviewKey((k) => k + 1);
+  }
+
   const refresh = useCallback(async () => {
-    /** Reload template metadata and library from the API, and re-fetch the preview. */
+    if (switching.current) return;
+    const token = ++sequence.current;
     setLoading(true);
     setError(null);
     try {
-      const next = await fetchTemplateInfo();
-      setInfo(next);
-      await refreshLibrary();
-      // Bump the cache-buster too: the iframe src is `preview.pdf?v=${previewKey}`, so
-      // without this Refresh only updated the metadata card and the browser re-showed
-      // the PDF it already had — which is what made a master-resume edit look like it
-      // had not applied.
-      setPreviewKey((k) => k + 1);
+      const next = await fetchTemplateSnapshot();
+      if (token === sequence.current) applySnapshot(next);
     } catch (err) {
-      setError(err instanceof Error ? err.message : String(err));
+      if (token === sequence.current) setError(err instanceof Error ? err.message : String(err));
     } finally {
-      setLoading(false);
+      if (token === sequence.current) setLoading(false);
     }
-  }, [refreshLibrary]);
+  }, []);
 
-  const afterSwitch = useCallback(async () => {
-    /** After any template switch, successful or not: reload info, both lists and the
-     * preview from the server, and tell other pages their page-fit numbers are stale. */
+  const afterSwitch = useCallback(async (token: number, snapshot?: TemplateSnapshot | null) => {
     try {
-      setInfo(await fetchTemplateInfo());
-    } catch {
-      /* the lists below still reload; `refresh` reports errors on the next visit */
+      const next = snapshot ?? (await fetchTemplateSnapshot());
+      if (token !== sequence.current) return;
+      applySnapshot(next);
+      emitAppEvent("rt:template-changed");
+    } catch (err) {
+      if (token !== sequence.current) return;
+      setPreviewRevision(null);
+      setError(`Couldn't synchronize template state: ${String(err)}`);
+    } finally {
+      if (token === sequence.current) {
+        switching.current = false;
+        setPendingTemplate(null);
+        setLibraryBusy(false);
+        setLoading(false);
+      }
     }
-    await refreshLibrary();
-    setPreviewKey((k) => k + 1);
-    emitAppEvent("rt:template-changed");
-  }, [refreshLibrary]);
+  }, []);
 
   useEffect(() => {
     void refresh();
+    const requestSequence = sequence;
+    return () => {
+      requestSequence.current++;
+    };
   }, [refresh]);
 
   const resetWizard = useCallback(() => {
@@ -291,45 +305,55 @@ export function TemplateProvider({ children }: { children: ReactNode }) {
   const activateLibraryEntry = useCallback(
     async (id: string) => {
       /** Switch the live slot to a saved library snapshot. */
+      if (switching.current) return;
+      switching.current = true;
+      const token = ++sequence.current;
+      setPendingTemplate(library.find((entry) => entry.id === id)?.label ?? id);
       setLibraryBusy(true);
       setError(null);
+      let snapshot: TemplateSnapshot | null | undefined;
       try {
         const result = await activateTemplateLibrary(id, {
-          calibrate: calibrateAlso,
+          calibrate: false,
         });
+        if (token !== sequence.current) return;
+        snapshot = result.snapshot;
         setBuildLog(result.log || null);
-        if (result.info) setInfo(result.info);
       } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
+        if (token === sequence.current) setError(err instanceof Error ? err.message : String(err));
       } finally {
         // Always: a request that failed late (page-fit tuning, a timeout) may already
         // have switched the template, and the badge must follow the server.
-        await afterSwitch();
-        setLibraryBusy(false);
+        await afterSwitch(token, snapshot);
       }
     },
-    [calibrateAlso, afterSwitch],
+    [library, afterSwitch],
   );
 
   const installDefault = useCallback(
     async (name: string): Promise<boolean> => {
       /** Build and install a starter template, or re-activate its saved copy. */
+      if (switching.current) return false;
+      switching.current = true;
+      const token = ++sequence.current;
+      setPendingTemplate(defaults.find((entry) => entry.name === name)?.label ?? name);
       setLibraryBusy(true);
       setError(null);
+      let snapshot: TemplateSnapshot | null | undefined;
       try {
-        const result = await installDefaultTemplate(name, { calibrate: calibrateAlso });
+        const result = await installDefaultTemplate(name, { calibrate: false });
+        if (token !== sequence.current) return false;
+        snapshot = result.snapshot;
         setBuildLog(result.log || null);
-        if (result.info) setInfo(result.info);
         return true;
       } catch (err) {
-        setError(err instanceof Error ? err.message : String(err));
+        if (token === sequence.current) setError(err instanceof Error ? err.message : String(err));
         return false;
       } finally {
-        await afterSwitch();
-        setLibraryBusy(false);
+        await afterSwitch(token, snapshot);
       }
     },
-    [calibrateAlso, afterSwitch],
+    [defaults, afterSwitch],
   );
 
   const renameLibraryEntry = useCallback(
@@ -375,6 +399,8 @@ export function TemplateProvider({ children }: { children: ReactNode }) {
       buildLog,
       lastBuildOk,
       previewKey,
+      previewRevision,
+      pendingTemplate,
       wizardStep,
       draftFile,
       analysis,
@@ -409,6 +435,8 @@ export function TemplateProvider({ children }: { children: ReactNode }) {
       buildLog,
       lastBuildOk,
       previewKey,
+      previewRevision,
+      pendingTemplate,
       wizardStep,
       draftFile,
       analysis,

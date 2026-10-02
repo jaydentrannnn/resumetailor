@@ -3,12 +3,14 @@ import { Link } from "react-router-dom";
 import { ResumeHistoryList } from "../../components/ResumeHistoryList";
 import { Card } from "../../components/ui";
 import { useRunState } from "../../state/runState";
+import { ModelQueueCard } from "./ModelQueueCard";
 
 /** Settings → Advanced: extraction votes, vocabulary, and master resume history. */
 export function AdvancedSection() {
   const { settings, setSettings } = useRunState();
   return (
     <div className="space-y-6">
+      <ModelQueueCard />
       <Card
         title="Job description reading"
         description="How many times the AI reads each posting before agreeing on its requirements. More reads are steadier but slower and cost more on paid models."

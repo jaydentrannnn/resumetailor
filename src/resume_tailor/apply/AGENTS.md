@@ -41,3 +41,7 @@ subpackage).
 `tests/apply/forms/test_fill.py`, `test_engine.py` (verified engine, fakes at `browser`/`scanner`/`controls`/`adapters`), `test_workday_*.py`, `test_smartrecruiters_flow.py`,
 `test_apply_*.py`, `test_filler_dom.py` (runs `filler.js`), `tests/browser/` (real
 browser, opt-in). Browser objects are faked at `browser` / `controls` seams.
+
+## Resume quality review
+
+`pipeline/resume_quality.py` persists final page fill and missing whole selected sections to each run. `funnel/resume_review.py` binds acknowledgement to those measurements and both resume artifacts. Prepare may retain a usable flagged resume; Fill requires acknowledgement, and automatic submission checks it again. Unknown legacy quality requires Prepare again. Individual omitted entries and intentional exclusions do not require review. Additive acknowledgement fields live in the application JSON payload.

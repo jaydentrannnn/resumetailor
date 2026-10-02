@@ -12,6 +12,7 @@ from pathlib import Path
 from typing import Literal
 
 from resume_tailor import config
+from resume_tailor.infra import model_queue
 from resume_tailor.apply.answers import answer, answer_memory, model_resolver, profile, salary
 from resume_tailor.apply.ats import (
     adapters,
@@ -90,6 +91,7 @@ def _current_outcome(field: FieldObservation, prior: FieldOutcome | None) -> Fie
     )
 
 
+@model_queue.observe_progress
 async def fill_application(
     source_job_id: str, *, settings: ApplySettings,
     submit_mode: Literal["auto_submit", "awaiting_review"] | None,

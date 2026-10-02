@@ -60,6 +60,7 @@ type RunStateValue = {
   status: string | null;
   events: ProgressEvent[];
   report: RunReport | null;
+  refreshReport: () => Promise<void>;
   expansion: Expansion | null;
   skills: SkillsPlan | null;
   coverLetter: CoverLetter | null;
@@ -100,6 +101,8 @@ export function RunProvider({ children }: { children: ReactNode }) {
   const [status, setStatus] = useState<string | null>(null);
   const [events, setEvents] = useState<ProgressEvent[]>([]);
   const [report, setReport] = useState<RunReport | null>(null);
+  const displayedJobId = useRef(jobId);
+  displayedJobId.current = jobId;
   const [expansion, setExpansion] = useState<Expansion | null>(null);
   const [skills, setSkills] = useState<SkillsPlan | null>(null);
   const [coverLetter, setCoverLetter] = useState<CoverLetter | null>(null);
@@ -465,6 +468,18 @@ export function RunProvider({ children }: { children: ReactNode }) {
     [activeId],
   );
 
+  const refreshReport = useCallback(async () => {
+    if (!jobId) return;
+    try {
+      const job = await fetchJob(jobId);
+      if (displayedJobId.current === jobId) setReport(job.report);
+    } catch (err) {
+      if (displayedJobId.current === jobId) {
+        setError(err instanceof Error ? err.message : String(err));
+      }
+    }
+  }, [jobId]);
+
   const clearDisplayedRun = useCallback(() => {
     /** Drop the results tiles when the run being viewed was removed from history. */
     setJobId(null);
@@ -561,6 +576,7 @@ export function RunProvider({ children }: { children: ReactNode }) {
       status,
       events,
       report,
+      refreshReport,
       expansion,
       skills,
       coverLetter,
@@ -592,6 +608,7 @@ export function RunProvider({ children }: { children: ReactNode }) {
       status,
       events,
       report,
+      refreshReport,
       expansion,
       skills,
       coverLetter,

@@ -59,6 +59,8 @@ def save_snapshot(
     layout: dict,
     merges: list[MergeGroup],
     template: Path | None = None,
+    fill_target: float | None = None,
+    lines_per_page: int | None = None,
 ) -> None:
     """Record the final render's inputs beside the run's other artifacts."""
     template = template or config.DEFAULT_TEMPLATE_PATH
@@ -68,6 +70,8 @@ def save_snapshot(
         "template_sha": sha,
         "resume": resume.model_dump(mode="json", by_alias=True),
         "target_pages": target_pages,
+        "fill_target": fill_target,
+        "lines_per_page": lines_per_page,
         "include_project_links": include_project_links,
         "contact_fields": list(contact_fields) if contact_fields is not None else None,
         "layout": layout,
@@ -244,6 +248,7 @@ def rerender(
         return {"status": "needs_confirmation", "flagged": unconfirmed}
 
     target = int(run.snapshot["target_pages"])
+    lines_per_page = run.snapshot.get("lines_per_page") or config.LINES_PER_PAGE
     tmp_docx = out_dir / "rerender.tmp.docx"
     tmp_pdf = tmp_docx.with_suffix(".pdf")
     warnings: list[str] = []
@@ -264,11 +269,11 @@ def rerender(
             from resume_tailor.pipeline import fit_lines
 
             lines = fit_lines.estimate_lines(run.resume, bullets)
-            pages = math.ceil(lines / config.LINES_PER_PAGE)
+            pages = math.ceil(lines / lines_per_page)
             estimated = True
             warnings.append(f"PDF engine unavailable, so the page count is an estimate ({exc}).")
         if pages > target:
-            over = max(1, lines - target * config.LINES_PER_PAGE)
+            over = max(1, lines - target * lines_per_page)
             return {"status": "over", "pages": pages, "target_pages": target, "over_by_lines": over}
 
         for name in ("tailored.docx", "tailored.pdf", "bullets.json"):
@@ -289,12 +294,25 @@ def rerender(
             ),
             "utf-8",
         )
+        from resume_tailor.pipeline import resume_quality
+
+        capacity = target * lines_per_page
+        quality = resume_quality.assess(
+            run.resume, bullets, run.snapshot["layout"], fill_ratio=lines / capacity,
+            fill_target=run.snapshot.get("fill_target"), estimated=estimated,
+        )
+        quality.verified = (
+            run.snapshot.get("fill_target") is not None
+            and run.snapshot.get("lines_per_page") is not None
+        )
+        resume_quality.save(out_dir, quality)
         return {
             "status": "saved",
             "pages": pages,
             "pages_are_estimated": estimated,
             "warnings": warnings,
             "flagged": flagged,
+            "quality": quality.model_dump(),
         }
     finally:
         tmp_docx.unlink(missing_ok=True)

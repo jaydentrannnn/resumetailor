@@ -19,6 +19,7 @@ from resume_tailor import config
 from resume_tailor.content import data
 from resume_tailor.content.data import Bullet, Experience, ExperienceSection, MasterResume
 from resume_tailor.document import render, template_profile
+from resume_tailor.document import calibration_cache
 
 
 class CalibrationError(RuntimeError):
@@ -444,10 +445,12 @@ def write_calibration(
         "lines_per_page": lines_per_page,
         "measured_at": datetime.now(UTC).isoformat(timespec="seconds"),
         "template": config.DEFAULT_TEMPLATE_PATH.name,
+        "input_digest": calibration_cache.input_digest(),
     }
     if anchors is not None:
         payload["anchors"] = anchors
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
+    calibration_cache.remember()
     return path
 
 

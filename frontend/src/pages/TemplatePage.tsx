@@ -1,4 +1,4 @@
-import { templatePreviewUrl } from "../api";
+import { TemplatePreview } from "../components/template/TemplatePreview";
 import { PageFitCard } from "../components/template/PageFitCard";
 import { SavedTemplatesPanel } from "../components/template/SavedTemplatesPanel";
 import { StarterTemplatesPanel } from "../components/template/StarterTemplatesPanel";
@@ -31,7 +31,16 @@ function formatWhen(iso: string | null | undefined): string {
  * Template tab: preview the current tagged template and import a new baseline.
  */
 export function TemplatePage() {
-  const { info, loading, uploading, previewKey, refresh } = useTemplateState();
+  const {
+    info,
+    loading,
+    uploading,
+    previewKey,
+    previewRevision,
+    pendingTemplate,
+    libraryBusy,
+    refresh,
+  } = useTemplateState();
 
   return (
     <div className="max-w-6xl space-y-6">
@@ -40,7 +49,9 @@ export function TemplatePage() {
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
             <h2 className="font-display text-lg font-semibold">
-              {info?.active_label || "Current template"}
+              {pendingTemplate
+                ? `Switching to ${pendingTemplate}…`
+                : info?.active_label || "Current template"}
             </h2>
             <p className="mt-1 text-sm text-ink-muted">
               Tagged template filled with your full master resume. Formatting comes from your
@@ -50,7 +61,7 @@ export function TemplatePage() {
           <button
             type="button"
             onClick={() => void refresh()}
-            disabled={loading || uploading}
+            disabled={loading || uploading || libraryBusy}
             className="rounded-md border border-line px-3 py-1.5 text-sm font-medium text-ink hover:border-accent hover:text-accent disabled:opacity-50"
           >
             Refresh
@@ -118,37 +129,11 @@ export function TemplatePage() {
               ) : null}
 
               {info.tagged.exists ? (
-                <div className="order-1 mt-4 overflow-hidden rounded-lg border border-line bg-paper/40">
-                  <div className="flex justify-end border-b border-line px-3 py-1.5">
-                    <a
-                      href={`${templatePreviewUrl()}?v=${previewKey}`}
-                      target="_blank"
-                      rel="noreferrer"
-                      className="text-xs text-ink-muted underline-offset-2 hover:text-accent hover:underline"
-                    >
-                      Open in new tab
-                    </a>
-                  </div>
-                  <iframe
-                    key={previewKey}
-                    title="Template preview"
-                    src={`${templatePreviewUrl()}?v=${previewKey}#toolbar=0&navpanes=0`}
-                    className="h-[70vh] w-full bg-doc-preview"
-                  >
-                    <p className="p-4 text-sm text-ink-muted">
-                      PDF preview is not available in this browser.{" "}
-                      <a
-                        href={`${templatePreviewUrl()}?v=${previewKey}`}
-                        target="_blank"
-                        rel="noreferrer"
-                        className="text-accent underline"
-                      >
-                        Open the PDF in a new tab
-                      </a>
-                      .
-                    </p>
-                  </iframe>
-                </div>
+                <TemplatePreview
+                  revision={previewRevision}
+                  pending={pendingTemplate}
+                  refreshKey={previewKey}
+                />
               ) : (
                 <p className="order-1 mt-4 rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">
                   No template yet. Pick a starter template below, or upload your own single-column

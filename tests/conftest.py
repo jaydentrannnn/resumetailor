@@ -186,7 +186,16 @@ def _isolated_template_paths(tmp_path, monkeypatch):
              "BASELINE_TEMPLATE_PATH": tmp_path / "no-such-baseline.docx",
              "COVER_TEMPLATE_PATH": tmp_path / "no-such-cover-template.docx",
              "COVER_TEMPLATE_META_PATH": tmp_path / "no-such-cover-meta.json"}
+    paths["CALIBRATION_DIR"] = tmp_path / "calibration"
     monkeypatch.setattr(config, "_DEFAULT", replace(config._DEFAULT, paths=paths))
+
+
+@pytest.fixture(autouse=True)
+def _isolated_model_queue(tmp_path, monkeypatch):
+    from resume_tailor.infra import model_queue
+
+    monkeypatch.setattr(model_queue, "settings_path", lambda: tmp_path / "model_queue.json")
+    monkeypatch.setattr(model_queue, "queue", model_queue.RequestQueue())
 
 
 @pytest.fixture(scope="session")

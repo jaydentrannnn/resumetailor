@@ -13,6 +13,7 @@ from typing import Any, Literal
 
 from fastapi import APIRouter, File, HTTPException, Request, Response, UploadFile
 from fastapi.responses import JSONResponse, StreamingResponse
+from pydantic import BaseModel, Field
 
 from resume_tailor import config, workspace
 from resume_tailor.apply.answers import profile as apply_profile
@@ -85,6 +86,9 @@ def _application_out(
     eligible = preparation.check(app, require_cover=apply_settings.cover_letter)
     payload["preparation_eligible"] = eligible.eligible
     payload["preparation_reasons"] = eligible.reasons
+    from resume_tailor.apply.funnel import resume_review
+
+    payload["resume_review"] = resume_review.state(app).model_dump()
     payload["retry_kind"] = daily_retry.retry_kind(app)
     if app.status == "screened_out" and app.screen is not None:
         from resume_tailor.apply.funnel.screen import screen_label
@@ -92,6 +96,28 @@ def _application_out(
         payload["screen_label"] = screen_label(app.screen.reasons)
     payload["review_summary"] = store_views.review_summary(app)
     return ApplicationOut.model_validate(payload)
+
+
+class ResumeAcknowledgeRequest(BaseModel):
+    revision: str = Field(min_length=1, max_length=64)
+
+
+@router.post(
+    "/api/applications/{source_job_id}/resume-acknowledgement", response_model=ApplicationOut,
+)
+def acknowledge_application_resume(
+    source_job_id: str, body: ResumeAcknowledgeRequest,
+) -> ApplicationOut:
+    from resume_tailor.apply.funnel import resume_review
+
+    with template_ops.LOCK:
+        try:
+            app = resume_review.acknowledge(source_job_id, body.revision)
+        except apply_store.StaleApplication as exc:
+            raise HTTPException(status_code=404, detail="Application not found") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return _application_out(app)
 
 
 def _profile_gaps(profile: apply_profile.ApplicantProfile) -> list[ProfileGap]:

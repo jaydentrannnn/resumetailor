@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { ResumeQualityNotice } from "../../components/ResumeQualityNotice";
 import type { RunReport } from "../../api";
 import { InlineHelp } from "../../components/ui";
 import { GLOSSARY, type GlossaryKey } from "../../lib/glossary";
@@ -24,6 +25,7 @@ export function ReportCard({ report }: { report: RunReport }) {
 
   return (
     <section className="rounded-xl border border-line bg-panel p-5 shadow-sm">
+      <ResumeQualityNotice quality={report.quality} />
       <div>
         <h2 className="font-display text-xl font-semibold">{report.title}</h2>
         {report.seniority && <p className="text-sm text-ink-muted">{report.seniority}</p>}

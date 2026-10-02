@@ -18,6 +18,7 @@ def _status(c) -> dict[str, dict]:
 
 
 def test_checklist_reports_each_prerequisite(tmp_path, monkeypatch):
+    monkeypatch.setattr(config, "OLLAMA_BASE_URL", "http://localhost:11434/v1")
     monkeypatch.setattr(config, "MASTER_RESUME_PATH", tmp_path / "missing.json")
     monkeypatch.setattr(config, "DEFAULT_TEMPLATE_PATH", tmp_path / "none.docx")
     monkeypatch.setattr(config, "APPLICANT_PROFILE_PATH", tmp_path / "profile.json")

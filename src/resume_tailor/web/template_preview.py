@@ -2,8 +2,11 @@
 
 from __future__ import annotations
 
+import hashlib
 import re
+import shutil
 import tempfile
+import threading
 from pathlib import Path
 
 from resume_tailor import config
@@ -18,14 +21,38 @@ from resume_tailor.document.template_profile import TemplateProfile
 
 from . import template_info, template_library_store, template_ops, template_uploads
 
+_PREVIEW_LOCKS = [threading.Lock() for _ in range(16)]
 
-def ensure_preview() -> Path:
+
+def _preview_lock(key: str):
+    return _PREVIEW_LOCKS[int(hashlib.sha256(key.encode()).hexdigest(), 16) % 16]
+
+
+def preview_revision() -> str:
+    digest = hashlib.sha256(config.PDF_BACKEND.encode())
+    for path in (
+        config.DEFAULT_TEMPLATE_PATH,
+        config.TEMPLATE_PROFILE_PATH,
+        config.MASTER_RESUME_PATH,
+    ):
+        digest.update(path.name.encode())
+        digest.update(path.read_bytes() if path.is_file() else b"missing")
+    return digest.hexdigest()
+
+
+class StalePreview(ValueError):
+    """The requested version is no longer active and has no cached PDF."""
+
+
+def ensure_preview(revision: str | None = None) -> Path:
     """Render the full master resume through the tagged template and return its PDF path.
 
     Regenerates when the cached PDF is missing or older than **either** of its two
     inputs. Raises `RuntimeError` when PDF conversion is unavailable so the route can
     return 503 instead of a broken frame.
     """
+    if revision is not None:
+        return _revision_preview(revision)
     with template_ops.LOCK:
         tagged = config.DEFAULT_TEMPLATE_PATH
         if not tagged.exists():
@@ -58,8 +85,39 @@ def ensure_preview() -> Path:
         resume = data.load()
         render.render(resume, out=docx_path)
         # Propagate RuntimeError from convert so the UI can say "no PDF backend".
-        render.to_pdf(docx_path, pdf_path)
+        partial = pdf_path.with_name("preview.partial.pdf")
+        try:
+            render.to_pdf(docx_path, partial)
+            partial.replace(pdf_path)
+        finally:
+            partial.unlink(missing_ok=True)
         return pdf_path
+
+
+def _revision_preview(revision: str) -> Path:
+    if not re.fullmatch(r"[a-f0-9]{64}", revision):
+        raise StalePreview("Invalid template preview revision")
+    folder = config.OUTPUT_DIR / "template" / "previews" / revision
+    docx_path, pdf_path = folder / "preview.docx", folder / "preview.pdf"
+    with _preview_lock(str(folder)):
+        if pdf_path.is_file():
+            return pdf_path
+        with template_ops.LOCK:
+            if revision != preview_revision():
+                raise StalePreview("The template changed; refresh to load its current preview")
+            if not config.DEFAULT_TEMPLATE_PATH.is_file():
+                raise FileNotFoundError("No tagged template is installed")
+            folder.mkdir(parents=True, exist_ok=True)
+            render.render(data.load(), out=docx_path)
+        # Conversion uses the requested document snapshot, not live template inputs.
+        partial = pdf_path.with_name("preview.partial.pdf")
+        try:
+            render.to_pdf(docx_path, partial)
+            partial.replace(pdf_path)
+        finally:
+            partial.unlink(missing_ok=True)
+        return pdf_path
+
 
 def library_thumbnail(entry_id: str) -> Path:
     """Cached first-page PNG of a saved template's baseline export (the gallery card).
@@ -69,13 +127,26 @@ def library_thumbnail(entry_id: str) -> Path:
     """
     if not re.fullmatch(r"[A-Za-z0-9_-]+", entry_id):
         raise FileNotFoundError(entry_id)
-    with template_ops.LOCK:
-        if template_library_store._load_entry_meta(entry_id) is None:
-            raise FileNotFoundError(entry_id)
-        entry_dir = template_library_store._library_entry_dir(entry_id)
-        return thumbnails.docx_thumbnail(
-            entry_dir / "original_export.docx", entry_dir / "thumb.png"
-        )
+    entry_dir = template_library_store._library_entry_dir(entry_id)
+    source, target = entry_dir / "original_export.docx", entry_dir / "thumb.png"
+    with _preview_lock(str(target)):
+        with template_ops.LOCK:
+            if template_library_store._load_entry_meta(entry_id) is None:
+                raise FileNotFoundError(entry_id)
+            if target.exists() and target.stat().st_mtime >= source.stat().st_mtime:
+                return target
+            baseline = source.read_bytes()
+        with tempfile.TemporaryDirectory(prefix="rt_library_thumb_") as directory:
+            staged_source = Path(directory) / source.name
+            staged_target = Path(directory) / target.name
+            staged_source.write_bytes(baseline)
+            thumbnails.docx_thumbnail(staged_source, staged_target)
+            with template_ops.LOCK:
+                if not source.is_file() or source.read_bytes() != baseline:
+                    raise FileNotFoundError(entry_id)
+                shutil.copy2(staged_target, target)
+        return target
+
 
 def invalidate_preview() -> None:
     """Delete the cached preview so the next `ensure_preview` regenerates it."""
@@ -83,6 +154,7 @@ def invalidate_preview() -> None:
     for path in (docx_path, pdf_path):
         if path.exists():
             path.unlink()
+
 
 def preview_source(source_sha256: str) -> Path:
     """Convert a previously uploaded (not-yet-installed) baseline to PDF, for the
@@ -102,6 +174,7 @@ def preview_source(source_sha256: str) -> Path:
     with template_ops.LOCK:
         render.to_pdf(docx_path, pdf_path)
     return pdf_path
+
 
 def preview_draft(source_sha256: str, profile: TemplateProfile | dict) -> Path:
     """Build a staged profile into a temp tagged template and render the master resume

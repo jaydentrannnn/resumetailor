@@ -76,6 +76,13 @@ export type ApplyAttachment = {
 };
 
 export type ApplicationRow = {
+  resume_review?: {
+    quality: import("../lib/resumeQuality").ResumeQuality;
+    warnings: string[];
+    revision: string;
+    acknowledged: boolean;
+    required: boolean;
+  } | null;
   source_job_id: string;
   company: string;
   role: string;
@@ -143,6 +150,12 @@ export type ApplicationRow = {
     confirmation?: string;
   } | null;
 };
+
+export const acknowledgeApplicationResume = (id: string, revision: string) =>
+  request<ApplicationRow>(`/api/applications/${encodeURIComponent(id)}/resume-acknowledgement`, {
+    method: "POST",
+    body: JSON.stringify({ revision }),
+  });
 
 /** Questions a fill recognised as a profile fact the profile leaves blank. */
 export type MissingProfileField = {

@@ -78,7 +78,9 @@ def prepare_application(
         )
     from resume_tailor.apply.funnel import preparation
 
-    existing_preparation = preparation.check(app, require_cover=settings.cover_letter)
+    existing_preparation = preparation.check(
+        app, require_cover=settings.cover_letter, require_acknowledgement=False,
+    )
     if app.status == "ready" and existing_preparation.eligible and not force_prepare:
         return app
     previous = app.model_copy(deep=True)

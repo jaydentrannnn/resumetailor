@@ -43,3 +43,10 @@ same text (`tests/tooling/test_agent_docs.py` enforces it).
 
 `tests/web/test_web_*.py` + `conftest.py`/`helpers.py` (job path stubs the same LLM seams as the CLI; per-test stubs override
 the `client` fixture defaults), `test_apply_api.py`, `test_extension*.py`, `test_mcp.py`.
+
+## Template and model request consistency
+
+- `template_state.snapshot()` returns metadata, library badges, starter badges and a preview revision together under `template_ops.LOCK`. The SPA commits this snapshot together.
+- Revision previews render under the template lock, then convert their immutable document outside it. Gallery conversions also run outside this lock.
+- Ordinary template activation never calibrates automatically. `calibration_cache` restores measurements only when template, profile, resume and PDF backend digests match; otherwise use Tune page fit.
+- `infra/model_queue.py` admits each physical model request (including retries), shared across threads, async callers and profiles in this process. Settings are app-wide at `DATA_ROOT/model_queue.json`; `/api/model-queue` exposes limits and status.

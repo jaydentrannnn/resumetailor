@@ -6,6 +6,7 @@ import type {
   JobStatus,
 } from "../api";
 import { runProgress } from "./runProgress";
+import { canFillAfterReview } from "./applicationRows";
 import { runSteps } from "./runSteps";
 
 /** Where the job sources are managed (per profile); opened from Apply settings and Find jobs. */
@@ -138,7 +139,7 @@ export function fillBlockers(rows: ApplicationRow[]): string | null {
   const reasons = new Map<string, number>();
   const add = (reason: string) => reasons.set(reason, (reasons.get(reason) ?? 0) + 1);
   for (const row of rows) {
-    if (row.status === "ready" && row.preparation_eligible !== false) continue;
+    if (row.status === "ready" && canFillAfterReview(row)) continue;
     if (TERMINAL_STATUSES.has(row.status)) add("already finished");
     else if (row.status === "ready") add("files are out of date");
     else if (row.status === "filling") add("being filled now");

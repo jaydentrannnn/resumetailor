@@ -1,5 +1,16 @@
 import type { ApplicationRow } from "../api";
 
+/** A flagged resume can enter the review dialog; the server still gates actual Fill. */
+export function canFillAfterReview(
+  row: Pick<ApplicationRow, "preparation_eligible" | "preparation_reasons">,
+): boolean {
+  return (
+    row.preparation_eligible !== false ||
+    (!!row.preparation_reasons?.length &&
+      row.preparation_reasons.every((reason) => reason === "resume_quality_ack_required"))
+  );
+}
+
 /** Pure helpers for Applications-table rows, driven by server-computed fields. */
 
 /**
@@ -64,13 +75,16 @@ export function isTabClosed(row: Pick<ApplicationRow, "fill">, openTabs: OpenTab
  * reachable — that tab is still open.
  */
 export function canContinueFill(
-  row: Pick<ApplicationRow, "status" | "archived_at" | "preparation_eligible" | "fill">,
+  row: Pick<
+    ApplicationRow,
+    "status" | "archived_at" | "preparation_eligible" | "preparation_reasons" | "fill"
+  >,
   openTabs: OpenTabs = null,
 ): boolean {
   return (
     !!row.fill?.browser_target_id &&
     !row.archived_at &&
-    row.preparation_eligible !== false &&
+    canFillAfterReview(row) &&
     CONTINUABLE.has(row.status) &&
     !isTabClosed(row, openTabs)
   );

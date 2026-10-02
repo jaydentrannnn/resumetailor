@@ -40,7 +40,9 @@ from typing import Any, Literal
 
 from resume_tailor import config
 
-HoldCode = Literal["paused", "daily_cap", "company_cap", "already_submitted", "duplicate"]
+HoldCode = Literal[
+    "paused", "daily_cap", "company_cap", "already_submitted", "duplicate", "resume_quality",
+]
 
 #: Statuses that mean the employer (probably) has the application.
 APPLIED_STATUSES = frozenset(
@@ -177,6 +179,15 @@ def check(
     """
     if is_paused():
         return Hold("paused", "Automation is paused")
+    if getattr(app, "job_id", None):
+        from resume_tailor.apply.funnel import resume_review, store
+
+        live = store.get(getattr(app, "source_job_id", "") or _key(app)) or app
+        review = resume_review.state(live)
+        if not review.quality.verified or review.required:
+            return Hold(
+                "resume_quality", "Review this resume's quality warnings in Apply before submitting",
+            )
     now = now or _now()
     if apps is None:
         from resume_tailor.apply.funnel import store

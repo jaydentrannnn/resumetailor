@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { Link, useLocation, useNavigate, useParams, useSearchParams } from "react-router-dom";
 import {
   archiveApplications,
+  acknowledgeApplicationResume,
   correctApplicationField,
   fetchJob,
   focusApplicationReviewTab,
@@ -15,6 +16,7 @@ import {
   type Packet,
 } from "../api";
 import { ApplicationReview } from "../components/ApplicationReview";
+import { ResumeQualityNotice } from "../components/ResumeQualityNotice";
 import { DocumentsCard } from "../components/DocumentsCard";
 import { Tabs } from "../components/Tabs";
 import { ExperienceCard } from "../components/ExperienceCard";
@@ -79,6 +81,23 @@ export function ApplicationDetailPage() {
     };
   }, [applicationId, activeId]);
   const app = detail?.application;
+  async function refreshEditedResume() {
+    setDocsRevision((n) => n + 1);
+    if (!applicationId || !app?.job_id) return;
+    const current = sequence.current;
+    try {
+      const [updated, run] = await Promise.all([
+        getApplication(applicationId),
+        fetchJob(app.job_id),
+      ]);
+      if (current === sequence.current) {
+        setDetail(updated);
+        setJob(run);
+      }
+    } catch (reason) {
+      if (current === sequence.current) setError(String(reason));
+    }
+  }
   // A tailor retry or a fill moves the row on a background thread: follow it until it settles.
   const inFlight = !!app && IN_FLIGHT_STATUSES.has(app.status);
   useEffect(() => {
@@ -188,6 +207,35 @@ export function ApplicationDetailPage() {
   if (!app) return <p className="text-sm text-ink-muted">Loading application…</p>;
   return (
     <div className="space-y-5">
+      {error && (
+        <p role="alert" className="text-sm text-danger">
+          {error}
+        </p>
+      )}
+      <ResumeQualityNotice quality={app.resume_review?.quality} />
+      {app.resume_review?.required && app.resume_review.quality.verified && (
+        <button
+          className="rounded-md border border-warn px-3 py-2 text-sm text-warn"
+          disabled={busy}
+          onClick={async () => {
+            if (!applicationId || !app.resume_review) return;
+            const current = sequence.current;
+            setBusy(true);
+            setError(null);
+            try {
+              await acknowledgeApplicationResume(applicationId, app.resume_review.revision);
+              const updated = await getApplication(applicationId);
+              if (current === sequence.current) setDetail(updated);
+            } catch (reason) {
+              if (current === sequence.current) setError(String(reason));
+            } finally {
+              if (current === sequence.current) setBusy(false);
+            }
+          }}
+        >
+          Use this resume anyway
+        </button>
+      )}
       <button className="text-sm text-accent underline" onClick={() => navigate(back)}>
         ← Back to applications
       </button>
@@ -379,7 +427,7 @@ export function ApplicationDetailPage() {
                 The next fill uploads the updated resume.
               </p>
               <div className="mt-3">
-                <BulletReview jobId={app.job_id} onSaved={() => setDocsRevision((n) => n + 1)} />
+                <BulletReview jobId={app.job_id} onSaved={() => void refreshEditedResume()} />
               </div>
             </details>
           )}

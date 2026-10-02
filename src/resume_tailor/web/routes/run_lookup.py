@@ -17,7 +17,7 @@ from pydantic import ValidationError
 from resume_tailor import config
 from resume_tailor.content import data
 from resume_tailor.document import convert
-from resume_tailor.pipeline import report
+from resume_tailor.pipeline import report, resume_quality
 from resume_tailor.pipeline.events import ProgressEvent
 from resume_tailor.web.job_types import Job
 from resume_tailor.web.jobs import get_queue
@@ -42,7 +42,7 @@ def _job_status_response(job: Job) -> JobStatusResponse:
         status=job.status,
         queue_position=position if job.status == "queued" else None,
         error=job.error,
-        report=job.report,
+        report=_quality_report(job.report, job.out_dir),
         expansion=job.expansion,
         skills=job.skills,
         cover_letter=job.cover_letter,
@@ -51,6 +51,12 @@ def _job_status_response(job: Job) -> JobStatusResponse:
         title=title,
         metadata=job.metadata,
     )
+
+
+def _quality_report(value: RunReportOut | None, out_dir: Path | None) -> RunReportOut | None:
+    if value is None or out_dir is None or not (out_dir / "quality.json").exists():
+        return value
+    return value.model_copy(update={"quality": resume_quality.read(out_dir).model_dump()})
 
 @dataclass
 class _ResolvedRun:
@@ -160,7 +166,7 @@ def _resolved_status_response(resolved: _ResolvedRun) -> JobStatusResponse:
         job_id=resolved.job_id,
         status=resolved.status,  # type: ignore[arg-type]
         error=resolved.error,
-        report=resolved.report,
+        report=_quality_report(resolved.report, resolved.out_dir),
         expansion=resolved.expansion,
         skills=resolved.skills,
         cover_letter=resolved.cover_letter,

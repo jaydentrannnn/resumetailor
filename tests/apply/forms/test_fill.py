@@ -59,6 +59,9 @@ def fill_paths(tmp_path, monkeypatch):
     )
     (job_dir / "bullets.json").write_text('{"a":"Built APIs."}', encoding="utf-8")
     (job_dir / "tailored.pdf").write_bytes(b"%PDF-1.4 prepared")
+    (job_dir / "quality.json").write_text(
+        '{"fill_ratio":0.94,"fill_target":0.93,"verified":true}', encoding="utf-8",
+    )
     (job_dir / "cover.pdf").write_bytes(b"%PDF-1.4 prepared cover")
     (job_dir / "expansion.json").write_text(
         '{"entries":[{"entry_key":"exp:one","title":"Intern","company":"Acme",'

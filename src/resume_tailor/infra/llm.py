@@ -55,7 +55,7 @@ import httpx
 from pydantic import BaseModel, ValidationError
 
 from .. import config
-from . import fake_llm
+from . import fake_llm, model_queue
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -266,8 +266,10 @@ class _OpenAICompatClient:
         timeout: float,
         structured_mode: str,
         max_token_cap: int = 0,
+        origin: str = "",
     ):
         self.base_url = base_url.rstrip("/")
+        self.origin = origin
         self.api_key = api_key
         self.timeout = timeout
         self.structured_mode = structured_mode
@@ -289,12 +291,14 @@ class _OpenAICompatClient:
         slept = 0.0
         for retry in range(len(_RETRY_BACKOFF) + 1):
             try:
-                response = httpx.post(
-                    f"{self.base_url}/chat/completions",
-                    headers=headers,
-                    json=payload,
-                    timeout=self.timeout,
-                )
+                with model_queue.queue.slot(self.base_url, self.origin):
+                    response = httpx.post(
+                        f"{self.base_url}/chat/completions",
+                        headers=headers,
+                        json=payload,
+                        timeout=self.timeout,
+                    )
+                    model_queue.queue.rate_limited(self.base_url, response)
             except httpx.RequestError as exc:
                 # base_url is whatever the profile/override resolved — do not assume Ollama.
                 # :11434 → Ollama, :1234 → LM Studio; from Docker both use host.docker.internal.
@@ -495,7 +499,10 @@ def client_for(purpose: str) -> Any:
     if backend.provider == "anthropic":
         import anthropic
 
-        return anthropic.Anthropic(api_key=config.api_key_for(purpose))
+        return anthropic.Anthropic(
+            api_key=config.api_key_for(purpose),
+            http_client=httpx.Client(transport=model_queue.ScheduledTransport()),
+        )
 
     if backend.provider == "openai":
         if not backend.base_url:
@@ -516,6 +523,7 @@ def client_for(purpose: str) -> Any:
             )
         return _OpenAICompatClient(
             base_url=backend.base_url,
+            origin=backend.origin,
             api_key=config.api_key_for(purpose),
             timeout=config.LLM_TIMEOUT,
             structured_mode=config.structured_mode_for(purpose),
@@ -550,8 +558,10 @@ class _AsyncOpenAICompatClient:
     def __init__(
         self, *, base_url: str, api_key: str, structured_mode: str,
         max_token_cap: int = 0, timeout: float = 60,
+        origin: str = "",
     ):
         self.base_url = base_url.rstrip("/")
+        self.origin = origin
         self.api_key = api_key
         self.structured_mode = structured_mode
         self.max_token_cap = max_token_cap
@@ -581,10 +591,15 @@ class _AsyncOpenAICompatClient:
                 raise TimeoutError("Apply model stage exceeded its deadline")
             try:
                 async with asyncio.timeout(remaining):
-                    response = await self._http.post(
-                        f"{self.base_url}/chat/completions", headers=headers,
-                        json=payload, timeout=min(self.timeout, remaining),
-                    )
+                    async with model_queue.queue.async_slot(
+                        self.base_url, self.origin, deadline=deadline,
+                    ):
+                        remaining = deadline - time.monotonic()
+                        response = await self._http.post(
+                            f"{self.base_url}/chat/completions", headers=headers,
+                            json=payload, timeout=min(self.timeout, remaining),
+                        )
+                        model_queue.queue.rate_limited(self.base_url, response)
             except httpx.RequestError as exc:
                 raise LLMError(f"Could not reach {self.base_url}: {exc}") from exc
             if response.status_code not in _RETRYABLE_STATUSES or retry == len(_RETRY_BACKOFF):
@@ -670,6 +685,7 @@ def async_client_for(purpose: str) -> Any:
         return anthropic.AsyncAnthropic(
             api_key=config.api_key_for(purpose), max_retries=0,
             timeout=min(config.LLM_TIMEOUT, 60),
+            http_client=httpx.AsyncClient(transport=model_queue.AsyncScheduledTransport()),
         )
     if backend.provider == "openai":
         if not backend.base_url:
@@ -681,6 +697,7 @@ def async_client_for(purpose: str) -> Any:
             raise LLMError(f"No API key found for {backend.origin!r}. Set {env_names}.")
         return _AsyncOpenAICompatClient(
             base_url=backend.base_url, api_key=config.api_key_for(purpose),
+            origin=backend.origin,
             structured_mode=config.structured_mode_for(purpose),
             max_token_cap=config.max_token_cap_for(purpose),
             timeout=min(config.LLM_TIMEOUT, 60),

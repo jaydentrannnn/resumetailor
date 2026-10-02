@@ -273,6 +273,9 @@ def _install_with_profile(
             previous_baseline: bytes | None = (
                 baseline.read_bytes() if baseline.exists() else None
             )
+            from resume_tailor.document import calibration_cache
+
+            calibration_cache.remember()
             previous_tagged: bytes | None = (
                 tagged.read_bytes() if tagged.exists() else None
             )
@@ -363,6 +366,7 @@ def _install_with_profile(
                 label=label, source_filename=Path(filename).name
             )
             template_preview.invalidate_preview()
+            calibration_cache.activate()
             from resume_tailor.document.cover_template import ensure_cover_template
 
             ensure_cover_template(src=baseline, profile=confirmed)

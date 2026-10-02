@@ -461,6 +461,7 @@ class RunReportOut(BaseModel):
     #: these existed still validates; the SPA does not read them.
     topped_up: list[str] = Field(default_factory=list)
     fit_trace: list[dict] = Field(default_factory=list)
+    quality: dict | None = None
 
 
 class ExpandedEntryOut(BaseModel):
@@ -834,6 +835,7 @@ class TemplateBuildResponse(BaseModel):
     ok: bool
     log: str = ""
     info: TemplateInfoResponse | None = None
+    snapshot: dict | None = None
 
 
 class TemplateLibraryEntry(BaseModel):
@@ -1233,6 +1235,7 @@ class ApplicationOut(BaseModel):
     archived_at: str | None = None
     preparation_eligible: bool = False
     preparation_reasons: list[str] = Field(default_factory=list)
+    resume_review: dict | None = None
     #: Which retry `POST .../retry` would run (`daily_retry.retry_kind`), or None when the
     #: row has no retry path — the SPA shows and labels its Retry button from this.
     retry_kind: Literal["fetch", "prefilter", "tailor"] | None = None

@@ -56,7 +56,16 @@ export type TemplateBuildResponse = {
   ok: boolean;
   log: string;
   info: TemplateInfo | null;
+  snapshot?: TemplateSnapshot | null;
 };
+
+export type TemplateSnapshot = {
+  info: TemplateInfo;
+  library: TemplateLibraryResponse;
+  defaults: DefaultTemplate[];
+  preview_revision: string;
+};
+export const fetchTemplateSnapshot = () => request<TemplateSnapshot>("/api/template/state");
 
 export type TemplateLibraryEntry = {
   id: string;

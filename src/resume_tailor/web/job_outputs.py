@@ -186,4 +186,5 @@ def _to_report_out(data: report.RunReport) -> RunReportOut:
         calibration_rejection=data.calibration_rejection,
         topped_up=data.topped_up,
         fit_trace=data.fit_trace,
+        quality=data.quality,
     )

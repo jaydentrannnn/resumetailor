@@ -75,6 +75,9 @@ class FitResult:
     #: the run report so a surprising final fill can be explained after the fact — the
     #: progress events that say the same thing are not saved.
     trace: list[dict] = field(default_factory=list)
+    fill_ratio: float | None = None
+    fill_target: float | None = None
+    quality: dict | None = None
 
 @dataclass
 class _Draft:

@@ -12,3 +12,4 @@ export * from "./libraries";
 export * from "./applySettings";
 export * from "./applications";
 export * from "./sources";
+export * from "./modelQueue";

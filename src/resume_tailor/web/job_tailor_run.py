@@ -261,7 +261,13 @@ class _TailorJobRun:
             self._emit("render", f"PDF preview unavailable ({exc})")
 
     def _write_run_files(self) -> None:
+        from resume_tailor.pipeline import resume_quality
+
         out_dir, result = self.out_dir, self.result
+        if result.quality is not None:
+            resume_quality.save(
+                out_dir, resume_quality.ResumeQuality.model_validate(result.quality),
+            )
         (out_dir / "bullets.json").write_text(
             json.dumps(result.bullets, indent=2),
             encoding="utf-8",
@@ -283,6 +289,8 @@ class _TailorJobRun:
                 ),
                 layout=self.layout,
                 merges=result.merges,
+                fill_target=result.fill_target,
+                lines_per_page=config.LINES_PER_PAGE,
             )
         except (OSError, TypeError, ValueError) as exc:
             logger.warning(

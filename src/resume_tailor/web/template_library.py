@@ -8,6 +8,7 @@ import shutil
 import docx
 
 from resume_tailor import config
+from resume_tailor.document import calibration_cache
 from resume_tailor.document import (
     template_profile,
 )
@@ -28,27 +29,32 @@ from . import (
 def list_library() -> TemplateLibraryResponse:
     """Seed Default if needed, then return all named library entries."""
     with template_ops.LOCK:
-        template_library_store._library_seed_if_empty()
-        active_id = template_library_store._read_library_index().get("active_id")
-        entries = [
-            template_library_store._entry_to_schema(m, active_id=active_id)
-            for m in template_library_store._iter_library_metas()
-        ]
-        # If index points nowhere but we have entries matching live sha, heal active.
-        if active_id is None and entries:
-            sha = template_library_store._sha256_file(config.BASELINE_TEMPLATE_PATH)
-            match = template_library_store._find_entry_by_sha(sha)
-            if match is not None:
-                active_id = match["id"]
-                template_library_store._write_library_index(active_id=active_id)
-                entries = [
-                    template_library_store._entry_to_schema(m, active_id=active_id)
-                    for m in template_library_store._iter_library_metas()
-                ]
-        return TemplateLibraryResponse(
-            entries=entries,
-            active_id=str(active_id) if active_id else None,
-        )
+        return _list_library()
+
+
+def _list_library() -> TemplateLibraryResponse:
+    """List/heal library state while the caller holds template_ops.LOCK."""
+    template_library_store._library_seed_if_empty()
+    active_id = template_library_store._read_library_index().get("active_id")
+    entries = [
+        template_library_store._entry_to_schema(m, active_id=active_id)
+        for m in template_library_store._iter_library_metas()
+    ]
+    # If index points nowhere but we have entries matching live sha, heal active.
+    if active_id is None and entries:
+        sha = template_library_store._sha256_file(config.BASELINE_TEMPLATE_PATH)
+        match = template_library_store._find_entry_by_sha(sha)
+        if match is not None:
+            active_id = match["id"]
+            template_library_store._write_library_index(active_id=active_id)
+            entries = [
+                template_library_store._entry_to_schema(m, active_id=active_id)
+                for m in template_library_store._iter_library_metas()
+            ]
+    return TemplateLibraryResponse(
+        entries=entries,
+        active_id=str(active_id) if active_id else None,
+    )
 
 def rename_library_entry(entry_id: str, label: str) -> TemplateLibraryResponse:
     """Rename a library entry; labels must stay unique (case-insensitive)."""
@@ -135,6 +141,7 @@ def activate_library_entry(
         try:
             # Smoke-open the tagged snapshot before committing.
             docx.Document(str(src_tagged))
+            calibration_cache.remember()
             shutil.copy2(src_baseline, baseline)
             shutil.copy2(src_tagged, tagged)
             if src_profile.exists():
@@ -149,6 +156,7 @@ def activate_library_entry(
             ) from exc
 
         template_library_store._write_library_index(active_id=entry_id)
+        calibration_cache.activate()
         template_preview.invalidate_preview()
         log = f"Activated library template “{meta.get('label', entry_id)}” ({entry_id})."
 

@@ -19,7 +19,7 @@ from contextlib import suppress
 
 from resume_tailor import config, workspace
 from resume_tailor.content import data, industries
-from resume_tailor.infra import housekeeping, logs
+from resume_tailor.infra import housekeeping, logs, model_queue
 from resume_tailor.pipeline.events import ProgressEvent
 from resume_tailor.web.schemas import (
     JobSettings,
@@ -288,7 +288,7 @@ class JobQueue:
             config.context_for_workspace(job.workspace_id)
             if job.workspace_id is not None else config.default_context()
         )
-        with config.use_context(context):
+        with config.use_context(context), model_queue.observe(job.emit, job.check_cancelled):
             industries.bind(job.guidance)
             self._execute_in_context(job)
 

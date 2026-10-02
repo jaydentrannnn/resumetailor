@@ -38,3 +38,7 @@ hermetic backend).
   `lib/errors.ts`; toasts through `lib/toast.ts`.
 - Don't re-propose declined features: per-stage model overrides, hybrid routing,
   always-on repair toggles, run history.
+
+## Template switching and resume review
+
+Template state commits one `/api/template/state` snapshot; obsolete requests cannot overwrite it. `TemplatePreview` fetches the exact revision and discards old PDF responses. Ordinary saved/starter activation skips calibration. Tailor and Apply show `ResumeQualityNotice`; Fill confirms flagged resumes using their current revision. After bullet edits, refresh both document previews and quality reports. Settings > Advanced exposes shared simultaneous model request limits (local 1, cloud 3 by default).

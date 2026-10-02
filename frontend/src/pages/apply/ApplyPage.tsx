@@ -2,6 +2,8 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { useLocation, useNavigate, useSearchParams } from "react-router-dom";
 import {
   archiveApplications,
+  acknowledgeApplicationResume,
+  getApplication,
   controlApplyOperation,
   focusApplicationReviewTab,
   getApplyOperation,
@@ -28,7 +30,12 @@ import {
   rememberApplicationListScroll,
   rememberApplyParams,
 } from "../../lib/applicationNavigation";
-import { canContinueFill, canReopenFill, isTabClosed } from "../../lib/applicationRows";
+import {
+  canContinueFill,
+  canReopenFill,
+  isTabClosed,
+  canFillAfterReview,
+} from "../../lib/applicationRows";
 import {
   type ApplySnapshot,
   applyNotifications,
@@ -285,6 +292,35 @@ export function ApplyPage() {
   ) {
     setBusy(true);
     try {
+      if (action === "fill") {
+        const current = await Promise.all(ids.map((id) => getApplication(id)));
+        const flagged = current.filter((item) => item.application.resume_review?.required);
+        if (flagged.some((item) => !item.application.resume_review?.quality.verified)) {
+          toast.error(
+            "Prepare these resumes again",
+            "Resume quality could not be verified. Open the application details to review.",
+          );
+          return;
+        }
+        if (flagged.length) {
+          const accepted = await confirm({
+            title: "Review resume warnings before Fill",
+            message: flagged
+              .map(
+                ({ application: app }) =>
+                  `${app.company} — ${app.role}:\n${app.resume_review!.warnings.join("\n")}`,
+              )
+              .join("\n\n"),
+            confirmLabel: "Use these resumes anyway",
+          });
+          if (!accepted) return;
+          await Promise.all(
+            flagged.map(({ application: app }) =>
+              acknowledgeApplicationResume(app.source_job_id, app.resume_review!.revision),
+            ),
+          );
+        }
+      }
       setOperation(
         await startApplyOperation({
           action,
@@ -518,7 +554,7 @@ export function ApplyPage() {
     .map((row) => row.source_job_id);
   const retailorRows = queueSelected.filter(canRetailor);
   const fillIds = queueSelected
-    .filter((row) => row.status === "ready" && row.preparation_eligible !== false)
+    .filter((row) => row.status === "ready" && canFillAfterReview(row))
     .map((row) => row.source_job_id);
   const blockers = fillBlockers(queueSelected);
   const reviewSelected = review.selectedRows;

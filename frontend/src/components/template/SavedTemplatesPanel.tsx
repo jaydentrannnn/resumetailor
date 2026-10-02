@@ -32,8 +32,6 @@ export function SavedTemplatesPanel() {
     library,
     libraryBusy,
     uploading,
-    calibrateAlso,
-    setCalibrateAlso,
     activateLibraryEntry,
     renameLibraryEntry,
     deleteLibraryEntry,
@@ -66,15 +64,6 @@ export function SavedTemplatesPanel() {
             your resume content stays the same.
           </p>
         </div>
-        <label className="flex items-center gap-2 text-xs text-ink-muted">
-          <input
-            type="checkbox"
-            checked={calibrateAlso}
-            disabled={busy}
-            onChange={(e) => setCalibrateAlso(e.target.checked)}
-          />
-          Tune page fit when switching
-        </label>
       </div>
 
       {library.length === 0 ? (

@@ -71,6 +71,24 @@ def _docx_text(path) -> str:
         return z.read("word/document.xml").decode("utf-8")
 
 
+def test_edit_reassesses_missing_sections_using_saved_page_capacity(run_dir, measure):
+    from resume_tailor.pipeline import resume_quality
+
+    snapshot_path = run_dir / "render_snapshot.json"
+    snapshot = json.loads(snapshot_path.read_text("utf-8"))
+    snapshot.update(fill_target=0.95, lines_per_page=60)
+    snapshot_path.write_text(json.dumps(snapshot), "utf-8")
+    result = rerender.rerender(
+        run_dir, edits={}, reverted=[], removed=["proj_b1"], confirmed=[],
+    )
+    assert result["status"] == "saved"
+    quality = resume_quality.read(run_dir)
+    assert quality.verified
+    assert quality.fill_ratio == pytest.approx(40 / 60)
+    assert quality.fill_target == 0.95
+    assert [section.title for section in quality.missing_sections] == ["Projects"]
+
+
 def test_rows_pair_each_rendered_bullet_with_its_source(run_dir):
     rows = rerender.bullet_rows(run_dir)
     assert [r["bullet_id"] for r in rows] == ["exp_b1", "proj_b1"]  # exp_b2 was not rendered

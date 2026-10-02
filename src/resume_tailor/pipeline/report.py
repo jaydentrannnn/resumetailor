@@ -368,6 +368,7 @@ class RunReport:
     #: One record per render (`FitResult.trace`): what each draft measured and why it
     #: was drawn. Saved so a surprising final fill can be explained after the run.
     fit_trace: list[dict] = field(default_factory=list)
+    quality: dict | None = None
 
 
 def report_data(
@@ -429,6 +430,7 @@ def report_data(
         calibration_rejection=config.CALIBRATION_REJECTION,
         topped_up=list(result.topped_up),
         fit_trace=[dict(step) for step in result.trace],
+        quality=result.quality,
     )
 
 

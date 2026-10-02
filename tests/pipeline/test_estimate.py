@@ -31,7 +31,8 @@ def test_estimate_counts_stages_and_prices_known_models():
     assert not full["local"]
 
 
-def test_local_and_unknown_models():
+def test_local_and_unknown_models(monkeypatch):
+    monkeypatch.setattr(config, "OLLAMA_BASE_URL", "http://localhost:11434/v1")
     resume = synthetic_resume()
     with config.pinned("ollama:llama3"):
         local = estimate.estimate_run("jd", resume, extract_runs=3)

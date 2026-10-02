@@ -35,6 +35,7 @@ export function RunPage() {
     setSettings,
     jobId,
     report,
+    refreshReport,
     expansion,
     skills,
     coverLetter,
@@ -193,7 +194,10 @@ export function RunPage() {
               <BulletReview
                 jobId={jobId}
                 ready={!busy}
-                onSaved={() => setDocsRevision((n) => n + 1)}
+                onSaved={() => {
+                  setDocsRevision((n) => n + 1);
+                  void refreshReport();
+                }}
               />
             </div>
           )}

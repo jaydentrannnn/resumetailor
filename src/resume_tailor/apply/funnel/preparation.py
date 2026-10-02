@@ -97,7 +97,8 @@ def _usable_file(path: Path) -> bool:
 
 
 def check(
-    app: store_models.Application, *, require_cover: bool | None = None
+    app: store_models.Application, *, require_cover: bool | None = None,
+    require_acknowledgement: bool = True,
 ) -> PreparationEligibility:
     reasons: list[str] = []
     if app.archived_at:
@@ -131,6 +132,14 @@ def check(
         )
     if not any(_usable_file(job_dir / name) for name in ("tailored.pdf", "tailored.docx")):
         reasons.append("missing_resume")
+    else:
+        from . import resume_review
+
+        review = resume_review.state(app)
+        if not review.quality.verified:
+            reasons.append("resume_quality_unverified")
+        elif review.required and require_acknowledgement:
+            reasons.append("resume_quality_ack_required")
     if require_cover and not any(
         _usable_file(job_dir / name) for name in ("cover.pdf", "cover.docx")
     ):

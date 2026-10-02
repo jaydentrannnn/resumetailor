@@ -121,7 +121,6 @@ test("template page: switch to a starter template", async ({ page }) => {
   await expect(
     starters.getByRole("img", { name: "Sample page in the Compact template" }),
   ).toBeVisible();
-  await page.getByLabel("Tune page fit when switching").uncheck();
   await starters.getByRole("button", { name: "Use Compact" }).click();
   await expect(starters.getByRole("button", { name: "In use" })).toBeVisible({ timeout: 60_000 });
   await expect(page.getByRole("heading", { name: "Compact", level: 2 })).toBeVisible();
@@ -135,7 +134,7 @@ test("template page: Use on a saved template moves the In use badge without a re
   const saved = page.locator("section").filter({ hasText: "Your templates" }).first();
   const card = (label: string) => saved.locator("li").filter({ hasText: label });
   await expect(card("Compact").getByRole("button", { name: "In use" })).toBeVisible();
-  // Page-fit tuning on, as it is by default: the slow path the owner hit.
+  // Ordinary activation reuses valid calibration and offers tuning separately.
   await card("E2E template").getByRole("button", { name: "Use", exact: true }).click();
   await expect(card("E2E template").getByRole("button", { name: "In use" })).toBeVisible({
     timeout: 90_000,

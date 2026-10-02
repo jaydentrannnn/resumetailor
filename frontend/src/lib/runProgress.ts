@@ -34,6 +34,7 @@ const BANDS: { stages: string[]; from: number; to: number }[] = [
 const FIT_ITERATION_DECAY = 0.45;
 
 const LABELS: Record<string, string> = {
+  model_wait: "Waiting for model capacity",
   start: "Starting",
   extract: "Reading the posting",
   score: "Scoring bullets",

@@ -130,6 +130,7 @@ export type KeywordGap = {
 };
 
 export type RunReport = {
+  quality?: import("../lib/resumeQuality").ResumeQuality | null;
   title: string;
   seniority: string;
   coverage_matched: number;

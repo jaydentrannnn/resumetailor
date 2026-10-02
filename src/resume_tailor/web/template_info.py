@@ -106,7 +106,15 @@ def _calibration_info(tagged: Path) -> CalibrationInfo:
 
     # Module-level CHARS_PER_LINE / LINES_PER_PAGE were loaded at import time; if the
     # template is newer than the cal file, those numbers describe a previous layout.
-    stale = tagged.stat().st_mtime > cal_path.stat().st_mtime
+    import json
+
+    from resume_tailor.document.calibration_cache import input_digest
+
+    raw = json.loads(cal_path.read_text("utf-8"))
+    stale = (
+        raw["input_digest"] != input_digest()
+        if raw.get("input_digest") else tagged.stat().st_mtime > cal_path.stat().st_mtime
+    )
     return CalibrationInfo(
         source=source,
         chars_per_line=chars,
