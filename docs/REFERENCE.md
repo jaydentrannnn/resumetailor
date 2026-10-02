@@ -388,10 +388,10 @@ name and Date with today, leaving Employee ID blank (`fill_self_identify`). **Bl
 facts are reported, never skipped silently**: a question whose label maps to a profile field
 the profile leaves blank is recorded (filler.js leftover reason "Profile field is blank";
 `workday_dropdowns.fill_dropdowns`/`fill_radios` `blank=`; the engine's `unsupported_fact`) and
-grouped by `packet.missing_profile` into `FillResult.missing_profile`. `packet.PROFILE_FIELDS`
+grouped by `packet_profile_fields.missing_profile` into `FillResult.missing_profile`. `packet_profile_fields.PROFILE_FIELDS`
 is the one registry of profile-backed keys (label, Profile page section, `common`);
 `GET/PUT /api/applicant-profile` return `gaps` (common blanks plus any a stored fill met,
-most-met first) for the Profile page banner and the Applications notice. `packet.DEFAULTS`
+most-met first) for the Profile page banner and the Applications notice. `packet_profile_fields.DEFAULTS`
 fills harmless blanks only (phone device type → "Mobile"); legal and self-identification
 answers never get one. **Eligibility questions come from the profile**:
 `ats_hints.AUTHORIZED_TO_WORK` (authorized/permitted/eligible to work, "can you provide proof
@@ -399,7 +399,7 @@ of eligibility") and `ats_hints.OVER_18` (never "under 18") sit before the Count
 "…work in the country where this job is located" is not the Country field; `field_catalog`
 reuses them. A follow-up revealed by an answer is picked up by `fill_dropdowns`' rescan, or,
 after a model answer, by `resolve_step_blockers`' reveal rounds (≤2, only the new controls).
-`packet.authorization_mismatch` withholds "Authorized to work" when the posting's location
+`packet_profile_fields.authorization_mismatch` withholds "Authorized to work" when the posting's location
 clearly names another country than the profile's authorization country. Required Workday application consent/accuracy boxes are ticked and verified
 (`form_routes.accept_workday_sync`); optional marketing consent is untouched. Workday's
 "Something went wrong ... Error Code: VPS|" page (`workday_flow.recover_site_error`) is

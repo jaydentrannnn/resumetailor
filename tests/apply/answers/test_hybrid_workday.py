@@ -16,7 +16,7 @@ from resume_tailor.apply.answers import (
 )
 from resume_tailor.apply.answers.profile import ApplicantProfile
 from resume_tailor.apply.ats import workday_auth
-from resume_tailor.apply.funnel.packet import Packet
+from resume_tailor.apply.funnel.packet_models import Packet
 from resume_tailor.infra import llm
 
 
@@ -247,7 +247,7 @@ def resolver_page(monkeypatch):
 
 
 def _resolve(state, ledger, messages=None, **kwargs):
-    from resume_tailor.apply.funnel.packet import Packet
+    from resume_tailor.apply.funnel.packet_models import Packet
 
     return hybrid_resolver.resolve_step_blockers(
         state.page, Packet.model_construct(fields={}), ApplicantProfile(),

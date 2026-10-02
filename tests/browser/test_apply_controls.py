@@ -761,7 +761,7 @@ def test_resolver_never_treats_upload_or_prompt_widgets_as_dropdowns(monkeypatch
         resolver_types,
         widget_actions,
     )
-    from resume_tailor.apply.funnel.packet import Packet
+    from resume_tailor.apply.funnel.packet_models import Packet
 
     calls: list[dict] = []
 

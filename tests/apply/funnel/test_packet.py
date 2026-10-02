@@ -9,18 +9,15 @@ import pytest
 
 from resume_tailor import config
 from resume_tailor.apply.answers.profile import ApplicantProfile, EEOAnswers, LanguageEntry
-from resume_tailor.apply.funnel.packet import (
+from resume_tailor.apply.funnel.packet import build_packet, write_packet
+from resume_tailor.apply.funnel.packet_fields import _build_education, build_fields, degree_name
+from resume_tailor.apply.funnel.packet_models import PacketEducation
+from resume_tailor.apply.funnel.packet_profile_fields import (
     DEFAULTS,
-    PacketEducation,
-    _build_education,
     authorization_mismatch,
-    build_fields,
-    build_packet,
-    degree_name,
     job_country,
     missing_profile,
     profile_gaps,
-    write_packet,
 )
 from tests.fixtures import synthetic_resume
 
@@ -234,7 +231,10 @@ def test_missing_profile_groups_questions_by_fact_and_marks_the_ones_answered_an
 
 
 def test_blank_middle_name_and_address_line2_are_not_gaps_unless_required():
-    from resume_tailor.apply.funnel.packet import profile_gaps, visible_missing_profile
+    from resume_tailor.apply.funnel.packet_profile_fields import (
+        profile_gaps,
+        visible_missing_profile,
+    )
 
     blank = [
         {"key": "middle_name", "label": "Middle Name"},
@@ -479,12 +479,17 @@ def test_packet_records_inputs_digest_and_route_rebuilds_stale(tmp_path, monkeyp
 
     from resume_tailor.apply.answers import profile as profile_mod
     from resume_tailor.apply.funnel import packet as packet_mod
+    from resume_tailor.apply.funnel import packet_models
     from resume_tailor.web.app import app
 
-    digest_a = packet_mod.inputs_digest(profile_mod.ApplicantProfile(first_name="A"), synthetic_resume())
-    digest_b = packet_mod.inputs_digest(profile_mod.ApplicantProfile(first_name="B"), synthetic_resume())
+    digest_a = packet_models.inputs_digest(
+        profile_mod.ApplicantProfile(first_name="A"), synthetic_resume()
+    )
+    digest_b = packet_models.inputs_digest(
+        profile_mod.ApplicantProfile(first_name="B"), synthetic_resume()
+    )
     assert digest_a != digest_b
-    same = packet_mod.inputs_digest(
+    same = packet_models.inputs_digest(
         profile_mod.ApplicantProfile(first_name="A", workday_password="x"), synthetic_resume()
     )
     assert same == digest_a  # the password never feeds the digest
@@ -494,7 +499,7 @@ def test_packet_records_inputs_digest_and_route_rebuilds_stale(tmp_path, monkeyp
     (job_dir / "packet.json").write_text(_json.dumps({"job_id": "job1", "inputs_digest": "old"}))
     monkeypatch.setattr(config, "OUTPUT_DIR", tmp_path)
     monkeypatch.setattr(packet_mod, "current_inputs_digest", lambda: "new")
-    rebuilt = packet_mod.Packet(job_id="job1", built_at="now", inputs_digest="new")
+    rebuilt = packet_models.Packet(job_id="job1", built_at="now", inputs_digest="new")
     monkeypatch.setattr(packet_mod, "write_packet", lambda job_id: rebuilt)
     with TestClient(app) as client:
         body = client.get("/api/jobs/job1/packet.json").json()
@@ -502,7 +507,7 @@ def test_packet_records_inputs_digest_and_route_rebuilds_stale(tmp_path, monkeyp
 
 
 def test_visa_status_implies_sponsorship_only_where_the_profile_is_silent():
-    from resume_tailor.apply.funnel.packet import build_fields
+    from resume_tailor.apply.funnel.packet_fields import build_fields
 
     resume = synthetic_resume()
     fields = build_fields(ApplicantProfile(visa_status="f1_opt"), resume)
@@ -519,7 +524,7 @@ def test_visa_status_implies_sponsorship_only_where_the_profile_is_silent():
 
 
 def test_student_profile_fields_override_and_derive():
-    from resume_tailor.apply.funnel.packet import build_fields
+    from resume_tailor.apply.funnel.packet_fields import build_fields
 
     resume = synthetic_resume()
     fields = build_fields(
@@ -560,13 +565,13 @@ def test_student_profile_fields_override_and_derive():
 def test_class_year_for(graduation, degree, expected):
     from datetime import date
 
-    from resume_tailor.apply.funnel.packet import class_year_for
+    from resume_tailor.apply.funnel.packet_profile_fields import class_year_for
 
     assert class_year_for(graduation, degree, today=date(2026, 6, 15)) == expected
 
 
 def test_profile_path_routes_profile_owned_education_to_application_tab():
-    from resume_tailor.apply.funnel.packet import PROFILE_FIELDS, profile_path
+    from resume_tailor.apply.funnel.packet_profile_fields import PROFILE_FIELDS, profile_path
 
     section = PROFILE_FIELDS["school"].section
     assert profile_path(section, "school") == "/profile/resume"

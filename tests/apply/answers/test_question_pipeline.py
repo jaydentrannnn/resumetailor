@@ -17,7 +17,7 @@ from playwright.sync_api import sync_playwright
 from resume_tailor.apply.answers import questions
 from resume_tailor.apply.ats import ats_hints
 from resume_tailor.apply.forms import field_matcher
-from resume_tailor.apply.funnel import packet
+from resume_tailor.apply.funnel import packet_profile_fields
 
 _ROOT = Path(__file__).parents[3]
 _FILLER = (_ROOT / "src/resume_tailor/apply/forms/filler.js").read_text(encoding="utf-8")
@@ -140,8 +140,12 @@ def test_blank_school_email_is_reported_without_filling_personal_email(browser):
         plan = questions.plan_for(scanned, questions.facts_for(fields))
         result = page.evaluate(_FILLER, {**args, "plan": plan})
         assert page.locator("#school-email").input_value() == ""
-        blanks = [item for item in result["leftovers"] if item.get("reason") == packet.BLANK_PROFILE_REASON]
-        assert packet.missing_profile(blanks, set())[0]["key"] == "school_email"
+        blanks = [
+            item
+            for item in result["leftovers"]
+            if item.get("reason") == packet_profile_fields.BLANK_PROFILE_REASON
+        ]
+        assert packet_profile_fields.missing_profile(blanks, set())[0]["key"] == "school_email"
     finally:
         page.close()
 

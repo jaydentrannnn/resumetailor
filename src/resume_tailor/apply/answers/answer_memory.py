@@ -149,9 +149,9 @@ def profile_key(label: str, canonical_key: str = "") -> str | None:
     classified by the decision layer every fill uses (`questions`).
     """
     from resume_tailor.apply.answers import questions  # noqa: PLC0415
-    from resume_tailor.apply.funnel import packet
+    from resume_tailor.apply.funnel import packet_profile_fields
 
-    covered = set(packet.PROFILE_FIELDS) | {"referred_by"}
+    covered = set(packet_profile_fields.PROFILE_FIELDS) | {"referred_by"}
     if canonical_key in covered:
         return canonical_key
     text = (label or "").strip()

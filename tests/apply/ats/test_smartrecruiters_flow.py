@@ -22,7 +22,7 @@ from resume_tailor.apply.ats import (
     smartrecruiters_page,
 )
 from resume_tailor.apply.ats import smartrecruiters_flow as sr
-from resume_tailor.apply.funnel.packet import Packet, PacketEducation, PacketExperience
+from resume_tailor.apply.funnel.packet_models import Packet, PacketEducation, PacketExperience
 
 _DIR = Path(__file__).parents[2] / "fixtures" / "smartrecruiters"
 _URL = "https://jobs.smartrecruiters.com/oneclick-ui/company/Acme/publication/abc"
@@ -355,7 +355,9 @@ def test_a_second_degree_at_the_same_school_is_added(browser):
     page = _open(browser, replace={"education": _fixture("education_saved.html")})
     masters = PacketEducation(school="State University", degree_level="Master of Science",
                               major="Statistics", start="2027-09", end="2029-06")
-    filled, review = smartrecruiters_entries.fill_education(page, _packet(education=[masters]), _no_progress)
+    filled, review = smartrecruiters_entries.fill_education(
+        page, _packet(education=[masters]), _no_progress
+    )
     assert review == []
     assert "state" not in filled[0]
     assert len(smartrecruiters_entries._entries(page, "education")) == 2
@@ -398,7 +400,10 @@ def test_the_cover_letter_goes_into_an_empty_message_box(browser):
     filled, review = sr.fill_message(page, "I would like to join the team.")
     assert review == []
     assert filled == [{"label": "Message to the Hiring Team", "value": "cover letter"}]
-    assert page.locator(smartrecruiters_page._MESSAGE).input_value() == "I would like to join the team."
+    assert (
+        page.locator(smartrecruiters_page._MESSAGE).input_value()
+        == "I would like to join the team."
+    )
 
 
 def test_a_written_message_is_kept(browser):
@@ -432,7 +437,9 @@ def test_the_whole_form_is_filled_and_verified(browser, tmp_path):
 
 def test_past_the_deadline_no_entry_is_added(browser):
     page = _open(browser)
-    filled, review = smartrecruiters_entries.fill_experience(page, _packet(), _no_progress, deadline=0.0)
+    filled, review = smartrecruiters_entries.fill_experience(
+        page, _packet(), _no_progress, deadline=0.0
+    )
     assert filled == []
     assert review == ["Experience 1 (Data Intern at Acme Corp)"]
 

@@ -10,8 +10,7 @@ from typing import Any
 from resume_tailor.apply.ats import workday_flow, workday_page
 from resume_tailor.apply.driver import clicks
 from resume_tailor.apply.forms import submit_guard
-from resume_tailor.apply.funnel import packet as apply_packet
-from resume_tailor.apply.funnel import store
+from resume_tailor.apply.funnel import packet_profile_fields, store
 from resume_tailor.apply.funnel.store_models import FillResult
 
 from . import fill_buttons, fill_outcomes, fill_page, fill_state, fill_widgets
@@ -330,7 +329,7 @@ class _FillFinish(fill_state._FillState):
             ),
             final_step_reached=self.final_step_reached,
             field_outcomes=list(outcomes.values()),
-            missing_profile=apply_packet.missing_profile(
+            missing_profile=packet_profile_fields.missing_profile(
                 # Withheld for another country's posting, not blank in the profile.
                 [
                     item for item in self.blank_facts

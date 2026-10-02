@@ -151,7 +151,7 @@ class ApplicantProfile(BaseModel):
     earliest_start: str = ""
     notice_period: str = ""
     #: Free-text answer; school, major, degree, GPA and dates come from the master
-    #: resume's education entries (`packet._build_education`).
+    #: resume's education entries (`packet_fields._build_education`).
     highest_education_obtained: str = ""
     salary_expectation: str = ""
     #: Structured range behind salary answers (`apply/salary.py`); seeded once from
@@ -174,7 +174,7 @@ class ApplicantProfile(BaseModel):
     visa_status: VisaStatus = ""
     #: "YYYY-MM"; overrides the resume's education end date on forms. Blank = resume.
     graduation_date: str = ""
-    #: Blank = derived from the graduation date (`packet.class_year_for`).
+    #: Blank = derived from the graduation date (`packet_profile_fields.class_year_for`).
     class_year: ClassYear = ""
     #: Overrides the resume's GPA on forms ("3.7/4.0"). Blank = resume.
     gpa_display: str = ""

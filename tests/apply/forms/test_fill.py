@@ -24,7 +24,7 @@ from resume_tailor.apply.forms import (
     wizards,
 )
 from resume_tailor.apply.funnel import packet, store, store_models
-from resume_tailor.apply.funnel.packet import Packet
+from resume_tailor.apply.funnel.packet_models import Packet
 from resume_tailor.content import data
 from resume_tailor.web.schemas import ApplySettings
 

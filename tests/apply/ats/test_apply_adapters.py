@@ -2,7 +2,7 @@
 
 from resume_tailor.apply.ats.adapters import GreenhouseAdapter
 from resume_tailor.apply.forms.field_types import FieldObservation
-from resume_tailor.apply.funnel.packet import Packet, PacketEducation
+from resume_tailor.apply.funnel.packet_models import Packet, PacketEducation
 
 
 def _field(label: str, control_id: str, row: str = "0") -> FieldObservation:

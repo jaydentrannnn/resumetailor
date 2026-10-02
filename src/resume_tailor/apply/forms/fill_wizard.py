@@ -16,7 +16,7 @@ from resume_tailor.apply.ats import (
 )
 from resume_tailor.apply.driver import clicks
 from resume_tailor.apply.forms import wizards
-from resume_tailor.apply.funnel import packet as apply_packet
+from resume_tailor.apply.funnel import packet_profile_fields
 from resume_tailor.apply.funnel.store_models import FillResult
 
 from . import fill_answers, fill_ats_steps, fill_buttons, fill_outcomes, fill_page, fill_widgets
@@ -213,7 +213,8 @@ class _FillWizard(fill_answers._FillAnswers, fill_ats_steps._FillAtsSteps):
         self.blank_facts.extend(
             {**item, "key": questions.profile_field(str(item.get("key") or ""))}
             for item in partial.get("leftovers") or []
-            if isinstance(item, dict) and item.get("reason") == apply_packet.BLANK_PROFILE_REASON
+            if isinstance(item, dict)
+            and item.get("reason") == packet_profile_fields.BLANK_PROFILE_REASON
         )
 
     def _advance(self, step: int) -> FillResult | str | None:

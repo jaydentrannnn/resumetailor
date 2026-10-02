@@ -15,7 +15,7 @@ from resume_tailor.apply.discovery import fetch_jd
 from resume_tailor.apply.driver import browser
 from resume_tailor.apply.forms import form_guards, wizards
 from resume_tailor.apply.funnel import packet as apply_packet
-from resume_tailor.apply.funnel import store
+from resume_tailor.apply.funnel import packet_fields, packet_profile_fields, store
 from resume_tailor.apply.funnel.store_models import FillResult
 from resume_tailor.content import data
 from resume_tailor.web.schemas import ApplySettings
@@ -167,7 +167,7 @@ class _FillState:
         fields = dict(pkt.fields)
         if fields.get("degree_level") and not fields.get("degree_name"):
             # Packets prepared before ``degree_name`` existed.
-            fields["degree_name"] = apply_packet.degree_name(pkt.education, fields["degree_level"])
+            fields["degree_name"] = packet_fields.degree_name(pkt.education, fields["degree_level"])
         fields.update(salary_mod.salary_fields(
             role=app.role or pkt.role or "", listing_salary=app.salary or "",
             jd_text=self.jd_text or "",
@@ -204,7 +204,9 @@ class _FillState:
         # "Authorized to work" answers for the profile's country; a posting clearly in
         # another country leaves eligibility questions to the applicant, the model included.
         self.authorization_note = ""
-        self.mismatch = apply_packet.authorization_mismatch(self.profile, self.app.location or "")
+        self.mismatch = packet_profile_fields.authorization_mismatch(
+            self.profile, self.app.location or ""
+        )
         if self.mismatch:
             self.fields.pop("authorized_to_work", None)
             self.pkt.fields.pop("authorized_to_work", None)

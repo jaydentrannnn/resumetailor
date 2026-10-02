@@ -23,7 +23,7 @@ from resume_tailor.apply.forms.field_matcher import (
     search_terms,
 )
 from resume_tailor.apply.forms.field_types import FieldObservation, FieldOutcome, ObservedOption
-from resume_tailor.apply.funnel.packet import Packet, PacketEducation
+from resume_tailor.apply.funnel.packet_models import Packet, PacketEducation
 from resume_tailor.apply.funnel.preparation import PreparedExpansion
 
 

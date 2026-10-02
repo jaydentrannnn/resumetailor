@@ -18,7 +18,14 @@ from resume_tailor import config, workspace
 from resume_tailor.apply.answers import profile as apply_profile
 from resume_tailor.apply.answers.answer import answer_question
 from resume_tailor.apply.driver import browser as apply_browser
-from resume_tailor.apply.funnel import daily_progress, daily_retry, store_models, store_views
+from resume_tailor.apply.funnel import (
+    daily_progress,
+    daily_retry,
+    packet_fields,
+    packet_profile_fields,
+    store_models,
+    store_views,
+)
 from resume_tailor.apply.funnel import operations as apply_operations
 from resume_tailor.apply.funnel import packet as apply_packet
 from resume_tailor.apply.funnel import scheduler as apply_scheduler
@@ -63,7 +70,7 @@ def _application_out(
     """Convert a store row into the API response model with computed fields."""
     payload = app.model_dump()
     if isinstance(payload.get("fill"), dict) and payload["fill"].get("missing_profile"):
-        payload["fill"]["missing_profile"] = apply_packet.visible_missing_profile(
+        payload["fill"]["missing_profile"] = packet_profile_fields.visible_missing_profile(
             payload["fill"]["missing_profile"]
         )
     payload["sources"] = (
@@ -94,9 +101,9 @@ def _profile_gaps(profile: apply_profile.ApplicantProfile) -> list[ProfileGap]:
     fill sees them. Most-often-met first, then Profile page order.
     """
     try:
-        fields = apply_packet.build_fields(profile, data.load())
+        fields = packet_fields.build_fields(profile, data.load())
     except Exception:  # noqa: BLE001 - no resume yet: the profile alone decides
-        fields = apply_packet.build_fields(
+        fields = packet_fields.build_fields(
             profile, MasterResume.model_construct(contact=data.Contact.model_construct(name="", email="", phone="")),
         )
     seen: dict[str, int] = {}
@@ -106,20 +113,24 @@ def _profile_gaps(profile: apply_profile.ApplicantProfile) -> list[ProfileGap]:
             entries = (fill.get("missing_profile") if isinstance(fill, dict) else getattr(fill, "missing_profile", None)) or []
             for key in {
                 str(entry.get("key") or "")
-                for entry in apply_packet.visible_missing_profile(entries)
+                for entry in packet_profile_fields.visible_missing_profile(entries)
                 if isinstance(entry, dict)
             }:
                 seen[key] = seen.get(key, 0) + 1
-    keys = list(apply_packet.profile_gaps(fields))
-    keys += [key for key in seen if key in apply_packet.PROFILE_FIELDS and key not in keys and not fields.get(key)]
-    order = list(apply_packet.PROFILE_FIELDS)
+    keys = list(packet_profile_fields.profile_gaps(fields))
+    keys += [
+        key
+        for key in seen
+        if key in packet_profile_fields.PROFILE_FIELDS and key not in keys and not fields.get(key)
+    ]
+    order = list(packet_profile_fields.PROFILE_FIELDS)
     keys.sort(key=lambda key: (-seen.get(key, 0), order.index(key)))
     gaps = []
     for key in keys:
-        info = apply_packet.field_info(key)
+        info = packet_profile_fields.field_info(key)
         gaps.append(ProfileGap(
             key=key, label=info.label, section=info.section,
-            path=apply_packet.profile_path(info.section, key), seen_in=seen.get(key, 0),
+            path=packet_profile_fields.profile_path(info.section, key), seen_in=seen.get(key, 0),
         ))
     return gaps
 
@@ -131,7 +142,7 @@ def _profile_response(profile: apply_profile.ApplicantProfile, *, seeded: bool, 
         seeded=seeded,
         workday_password_set=password_set,
         gaps=_profile_gaps(profile),
-        defaults=dict(apply_packet.DEFAULTS),
+        defaults=dict(packet_profile_fields.DEFAULTS),
     )
 
 

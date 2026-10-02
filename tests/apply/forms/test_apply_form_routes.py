@@ -10,7 +10,7 @@ from playwright.sync_api import sync_playwright
 
 from resume_tailor.apply.ats.workday_repeaters import fill_education_years_async
 from resume_tailor.apply.forms import form_routes
-from resume_tailor.apply.funnel.packet import Packet, PacketEducation
+from resume_tailor.apply.funnel.packet_models import Packet, PacketEducation
 
 
 def _launch_sync(playwright):

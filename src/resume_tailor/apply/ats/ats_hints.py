@@ -1,6 +1,6 @@
 """Per-ATS CSS selector hints for the deterministic form filler.
 
-Maps known selectors to canonical field keys from ``packet.build_fields``. Special keys
+Maps known selectors to canonical field keys from ``packet_fields.build_fields``. Special keys
 ``submit``, ``confirmation_text``, and ``resume_upload`` are reserved for the fill runner.
 Label-driven ATSs (Ashby, Workday) rely on ``SYNONYMS`` when hints are sparse.
 """

@@ -10,7 +10,7 @@ from pathlib import Path
 from resume_tailor.apply.driver import browser
 from resume_tailor.apply.driver.scanner import ScanSnapshot
 from resume_tailor.apply.forms.field_types import AttachmentOutcome, FieldObservation
-from resume_tailor.apply.funnel.packet import Packet
+from resume_tailor.apply.funnel.packet_models import Packet
 from resume_tailor.pipeline import report
 
 

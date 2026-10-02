@@ -34,7 +34,7 @@ from resume_tailor.apply.ats import ats_hints
 from resume_tailor.apply.forms import field_matcher
 
 if TYPE_CHECKING:
-    from resume_tailor.apply.funnel.packet import Packet
+    from resume_tailor.apply.funnel.packet_models import Packet
 
 Kind = Literal["text", "textarea", "choice", "multi", "typeahead", "date", "checkbox"]
 

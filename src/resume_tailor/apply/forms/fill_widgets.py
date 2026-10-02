@@ -16,7 +16,7 @@ from resume_tailor.apply.answers import questions, widget_actions
 from resume_tailor.apply.ats import workday_dropdowns, workday_page
 from resume_tailor.apply.driver import browser
 from resume_tailor.apply.forms import field_matcher
-from resume_tailor.apply.funnel import packet as apply_packet
+from resume_tailor.apply.funnel import packet_models
 from resume_tailor.pipeline import report
 from resume_tailor.pipeline.jd import JobRequirements
 
@@ -230,7 +230,7 @@ def _job_artifacts(job_id: str) -> tuple[dict[str, str], JobRequirements | None,
 
 def _fill_workday_experience_and_education(
     page: Any,
-    pkt: apply_packet.Packet,
+    pkt: packet_models.Packet,
     progress: Callable[[str], None],
 ) -> tuple[list[dict[str, str]], list[str]]:
     """Fill only Workday rows whose identity is unambiguous; preserve manual rows."""

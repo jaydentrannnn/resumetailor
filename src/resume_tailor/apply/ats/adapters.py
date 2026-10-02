@@ -8,7 +8,7 @@ from typing import Any
 from resume_tailor.apply.forms.field_catalog import classify
 from resume_tailor.apply.forms.field_matcher import normalize
 from resume_tailor.apply.forms.field_types import FieldObservation
-from resume_tailor.apply.funnel.packet import Packet
+from resume_tailor.apply.funnel.packet_models import Packet
 
 
 class FormAdapter:

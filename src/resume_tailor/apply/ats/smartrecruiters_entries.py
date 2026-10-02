@@ -7,7 +7,7 @@ from collections.abc import Callable
 from typing import Any
 
 from resume_tailor.apply.forms import form_guards
-from resume_tailor.apply.funnel.packet import Packet, PacketEducation, PacketExperience
+from resume_tailor.apply.funnel.packet_models import Packet, PacketEducation, PacketExperience
 
 from . import smartrecruiters_location, smartrecruiters_page
 

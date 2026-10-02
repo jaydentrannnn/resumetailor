@@ -1182,9 +1182,9 @@ class ApplicantProfileResponse(BaseModel):
     profile: ApplicantProfile
     seeded: bool = False
     workday_password_set: bool = False
-    #: Profile fields forms ask for that this profile leaves blank (`packet.profile_gaps`).
+    #: Profile fields forms ask for that this profile leaves blank (`packet_profile_fields.profile_gaps`).
     gaps: list[ProfileGap] = Field(default_factory=list)
-    #: Harmless answers used when the profile field is blank (`packet.DEFAULTS`).
+    #: Harmless answers used when the profile field is blank (`packet_profile_fields.DEFAULTS`).
     defaults: dict[str, str] = Field(default_factory=dict)
 
 

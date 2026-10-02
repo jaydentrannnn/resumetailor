@@ -22,7 +22,13 @@ from resume_tailor.apply.ats import (
 from resume_tailor.apply.driver import browser, clicks, controls, scanner
 from resume_tailor.apply.forms import attachments, field_catalog, form_routes
 from resume_tailor.apply.forms.field_types import FieldObservation, FieldOutcome
-from resume_tailor.apply.funnel import packet, preparation, store, store_models
+from resume_tailor.apply.funnel import (
+    packet,
+    packet_profile_fields,
+    preparation,
+    store,
+    store_models,
+)
 from resume_tailor.content import data
 from resume_tailor.pipeline.jd import JobRequirements
 from resume_tailor.web.schemas import ApplySettings
@@ -112,8 +118,10 @@ async def fill_application(
     resume = data.load()
     fields = dict(pkt.fields)
     # A posting clearly in another country than the profile's authorization: its
-    # eligibility questions are the applicant's (`packet.authorization_mismatch`).
-    authorization_elsewhere = packet.authorization_mismatch(applicant, app.location or "")
+    # eligibility questions are the applicant's (`packet_profile_fields.authorization_mismatch`).
+    authorization_elsewhere = packet_profile_fields.authorization_mismatch(
+        applicant, app.location or ""
+    )
     if authorization_elsewhere:
         fields.pop("authorized_to_work", None)
     job_dir = config.OUTPUT_DIR / "jobs" / app.job_id
@@ -170,7 +178,7 @@ async def fill_application(
             item.label for item in outcomes.values()
             if item.required and item.state not in {"verified_filled", "preserved"}
         ]
-        result.missing_profile = packet.missing_profile(
+        result.missing_profile = packet_profile_fields.missing_profile(
             [{"key": item.canonical_key, "label": item.label, "required": item.required}
              for item in outcomes.values()
              if item.reason_code == "unsupported_fact"],

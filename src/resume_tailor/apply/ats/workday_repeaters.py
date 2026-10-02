@@ -15,7 +15,7 @@ from typing import Any
 
 from resume_tailor.apply.driver import clicks
 from resume_tailor.apply.forms import field_matcher
-from resume_tailor.apply.funnel.packet import Packet
+from resume_tailor.apply.funnel.packet_models import Packet
 
 from . import workday_dates, workday_rows
 

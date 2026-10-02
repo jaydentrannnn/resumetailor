@@ -23,7 +23,7 @@ from pydantic import BaseModel, Field
 from resume_tailor import config
 from resume_tailor.apply.answers.profile import ApplicantProfile
 from resume_tailor.apply.driver import clicks
-from resume_tailor.apply.funnel.packet import Packet
+from resume_tailor.apply.funnel.packet_models import Packet
 from resume_tailor.infra import llm
 
 from . import page_blockers, resolver_types, widget_actions
