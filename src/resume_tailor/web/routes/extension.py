@@ -33,7 +33,7 @@ from pydantic import BaseModel, Field
 from resume_tailor import config, workspace
 from resume_tailor.apply.discovery import fetch_jd, identity
 from resume_tailor.apply.forms import fill_buttons, submit_guard
-from resume_tailor.apply.funnel import daily_rows, store
+from resume_tailor.apply.funnel import daily_rows, store, store_models, store_views
 from resume_tailor.apply.funnel import operations as apply_operations
 from resume_tailor.pipeline import jd_input
 from resume_tailor.web import extension
@@ -47,7 +47,7 @@ from resume_tailor.web.schemas import (
 
 router = APIRouter()
 
-_ATS_KINDS = frozenset(get_args(store.AtsKind))
+_ATS_KINDS = frozenset(get_args(store_models.AtsKind))
 
 
 class PairCompleteRequest(BaseModel):
@@ -81,7 +81,7 @@ class TrackedApplication(BaseModel):
     archived: bool = False
     needs_you: str = ""
     screen_reasons: list[str] = Field(default_factory=list)
-    apply_kind: store.ApplyKind = "unknown"
+    apply_kind: store_models.ApplyKind = "unknown"
     capture_stub: bool = False
     #: Where the job was captured (the board page for a LinkedIn/Indeed row).
     posting_url: str = ""
@@ -126,7 +126,7 @@ class CaptureRequest(BaseModel):
     jd_text: str = Field(max_length=200_000)
     ats_guess: str = Field(default="", max_length=40)
     #: How the LinkedIn/Indeed page applies; ignored on other sites.
-    apply_kind: store.ApplyKind = "unknown"
+    apply_kind: store_models.ApplyKind = "unknown"
 
 
 class CaptureResponse(BaseModel):
@@ -196,21 +196,21 @@ class CapturedItem(BaseModel):
     site: str
     posting_url: str
     capture_stub: bool
-    apply_kind: store.ApplyKind
+    apply_kind: store_models.ApplyKind
     discovered_at: str = ""
 
 
-def _app_id(app: store.Application) -> str:
+def _app_id(app: store_models.Application) -> str:
     return app.canonical_key or app.source_job_id
 
 
-def _apply_url(app: store.Application) -> str:
+def _apply_url(app: store_models.Application) -> str:
     """The employer's apply page when it differs from where the job was captured."""
     final = app.final_url or ""
     return final if final and final != app.posting_url else ""
 
 
-def _tracked(app: store.Application) -> TrackedApplication:
+def _tracked(app: store_models.Application) -> TrackedApplication:
     return TrackedApplication(
         id=_app_id(app),
         company=app.company,
@@ -218,7 +218,7 @@ def _tracked(app: store.Application) -> TrackedApplication:
         status=app.status,
         ats=app.ats,
         archived=bool(app.archived_at),
-        needs_you=store.review_summary(app) or "",
+        needs_you=store_views.review_summary(app) or "",
         screen_reasons=list(app.screen.reasons) if app.screen else [],
         apply_kind=app.apply_kind,
         capture_stub=app.capture_stub,
@@ -228,7 +228,7 @@ def _tracked(app: store.Application) -> TrackedApplication:
     )
 
 
-def _find(*urls: str) -> store.Application | None:
+def _find(*urls: str) -> store_models.Application | None:
     for url in dict.fromkeys(u for u in urls if u):
         found = store.get(identity.canonical_key(url))
         if found is not None:
@@ -249,7 +249,7 @@ def _board_url(board: str, job_id: str, host: str) -> str:
     return f"https://{host}/viewjob?jk={job_id}"
 
 
-def _is_captured(app: store.Application) -> bool:
+def _is_captured(app: store_models.Application) -> bool:
     return app.source == "extension" or any(ref.source == "extension" for ref in app.source_refs)
 
 
@@ -324,7 +324,7 @@ def extension_status() -> ExtensionStatus:
     needs_you = sum(
         1
         for app in store.load_all().values()
-        if app.status in store.REVIEW_STATUSES and not app.archived_at
+        if app.status in store_models.REVIEW_STATUSES and not app.archived_at
     )
     current = apply_operations.active()
     operation = (
@@ -376,7 +376,7 @@ def _settings_or_none() -> ApplySettings | None:
         return None
 
 
-def _screen(app: store.Application, text: str, settings: ApplySettings | None) -> None:
+def _screen(app: store_models.Application, text: str, settings: ApplySettings | None) -> None:
     """The no-LLM prefilter every capture runs, exactly as the daily funnel does."""
     if settings is None:
         return
@@ -387,7 +387,7 @@ def _screen(app: store.Application, text: str, settings: ApplySettings | None) -
         store.set_status(app, "screened_out", note="prefilter: " + "; ".join(screen.reasons))
 
 
-def _attach_apply_url(app: store.Application, target: str, now: str) -> None:
+def _attach_apply_url(app: store_models.Application, target: str, now: str) -> None:
     """Point a board row at the employer's application page (its key is unchanged).
 
     The ATS page's own key is added as a source ref, so a later lookup or capture of
@@ -398,7 +398,7 @@ def _attach_apply_url(app: store.Application, target: str, now: str) -> None:
     app.apply_kind = "external"
     store.add_source_ref(
         app,
-        store.SourceRef(
+        store_models.SourceRef(
             source="extension",
             source_job_id=identity.canonical_key(target),
             url=target,
@@ -408,7 +408,7 @@ def _attach_apply_url(app: store.Application, target: str, now: str) -> None:
 
 
 def _describe(
-    app: store.Application,
+    app: store_models.Application,
     body: CaptureRequest,
     text: str,
     settings: ApplySettings | None,
@@ -426,7 +426,7 @@ def _describe(
     _screen(app, text, settings)
 
 
-def _merge_candidate(group: str, index: store.Index) -> store.Application | None:
+def _merge_candidate(group: str, index: store_models.Index) -> store_models.Application | None:
     """A LinkedIn/Indeed row for the same job that has no employer apply URL yet."""
     for key in index.by_group.get(group, []):
         other = index.by_canonical.get(key)
@@ -435,7 +435,7 @@ def _merge_candidate(group: str, index: store.Index) -> store.Application | None
             and _board_of(other.canonical_key)
             and not _apply_url(other)
             and not other.archived_at
-            and other.status not in store.TERMINAL_STATUSES
+            and other.status not in store_models.TERMINAL_STATUSES
         ):
             return other
     return None
@@ -458,7 +458,7 @@ def capture(body: CaptureRequest) -> CaptureResponse:
     settings = _settings_or_none()
 
     if existing is not None:  # a saved search card, now opened: complete it
-        def complete(app: store.Application) -> None:
+        def complete(app: store_models.Application) -> None:
             if target != page_url and not _apply_url(app):
                 _attach_apply_url(app, target, now)
             elif board and body.apply_kind != "unknown":
@@ -486,7 +486,7 @@ def capture(body: CaptureRequest) -> CaptureResponse:
         else None
     )
     if candidate is not None:
-        def merge(app: store.Application) -> None:
+        def merge(app: store_models.Application) -> None:
             _attach_apply_url(app, target, now)
             if app.capture_stub:
                 _describe(app, body, cleaned.text, settings, note="description captured from the employer's page")
@@ -505,10 +505,10 @@ def capture(body: CaptureRequest) -> CaptureResponse:
             warnings.append(f"You already track {other.company} · {other.role} ({other.status}).")
             break
 
-    apply_kind: store.ApplyKind = "unknown"
+    apply_kind: store_models.ApplyKind = "unknown"
     if board:
         apply_kind = "external" if target != page_url else body.apply_kind
-    app = store.Application(
+    app = store_models.Application(
         source="extension",
         source_job_id=source_job_id,
         company=body.company.strip() or "Unknown company",
@@ -522,7 +522,7 @@ def capture(body: CaptureRequest) -> CaptureResponse:
         group_key=group,
         apply_kind=apply_kind,
         source_refs=[
-            store.SourceRef(
+            store_models.SourceRef(
                 source="extension", source_job_id=source_job_id, url=body.url, first_seen=now
             )
         ],
@@ -534,7 +534,7 @@ def capture(body: CaptureRequest) -> CaptureResponse:
     return CaptureResponse(result="created", application=_tracked(app), warnings=warnings)
 
 
-def _index_find(index: store.Index, key: str) -> store.Application | None:
+def _index_find(index: store_models.Index, key: str) -> store_models.Application | None:
     """`store.get` against an index built once for a whole batch."""
     found = index.by_canonical.get(key)
     if found is not None:
@@ -587,7 +587,7 @@ def capture_stubs(body: CaptureStubsRequest) -> CaptureStubsResponse:
         host = (urlparse(card.url).hostname or "www.indeed.com").lower()
         posting = _board_url(card.site, job_id, host)
         source_job_id = _source_job_id(key)
-        app = store.Application(
+        app = store_models.Application(
             source="extension",
             source_job_id=source_job_id,
             company=card.company.strip() or "Unknown company",
@@ -601,7 +601,7 @@ def capture_stubs(body: CaptureStubsRequest) -> CaptureStubsResponse:
             group_key=identity.group_key(card.company, card.role),
             capture_stub=True,
             source_refs=[
-                store.SourceRef(
+                store_models.SourceRef(
                     source="extension", source_job_id=source_job_id, url=card.url, first_seen=now
                 )
             ],

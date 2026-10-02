@@ -16,6 +16,8 @@ from collections import Counter
 from collections.abc import Iterable
 from pathlib import Path
 
+from resume_tailor.apply.funnel import store_models
+
 _ROOT = Path(__file__).resolve().parents[1]
 _SRC = _ROOT / "src"
 if str(_SRC) not in sys.path:
@@ -37,7 +39,7 @@ _COLUMNS = (
 )
 
 
-def ats_of(app: store.Application, *, stored: bool = False) -> str:
+def ats_of(app: store_models.Application, *, stored: bool = False) -> str:
     """The row's ATS: detected from its URL unless ``stored`` or the URL is unhelpful."""
     if stored:
         return app.ats
@@ -47,7 +49,7 @@ def ats_of(app: store.Application, *, stored: bool = False) -> str:
 
 
 def tally(
-    apps: Iterable[store.Application],
+    apps: Iterable[store_models.Application],
     *,
     stored: bool = False,
     include_archived: bool = False,

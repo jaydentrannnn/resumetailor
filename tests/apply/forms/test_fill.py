@@ -23,7 +23,7 @@ from resume_tailor.apply.forms import (
     submit_guard,
     wizards,
 )
-from resume_tailor.apply.funnel import packet, store
+from resume_tailor.apply.funnel import packet, store, store_models
 from resume_tailor.apply.funnel.packet import Packet
 from resume_tailor.content import data
 from resume_tailor.web.schemas import ApplySettings
@@ -166,7 +166,7 @@ def test_availability_after_program_start_is_reported():
     assert fill_widgets._availability_note("2027-06-01", "paid internship June 1, 2027") is None  # noqa: SLF001
 
 
-def _ready_app(**overrides) -> store.Application:
+def _ready_app(**overrides) -> store_models.Application:
     """Build a minimal application ready for fill."""
     data = {
         "source": "simplify",
@@ -180,7 +180,7 @@ def _ready_app(**overrides) -> store.Application:
         "job_id": "job-1",
     }
     data.update(overrides)
-    return store.Application(**data)
+    return store_models.Application(**data)
 
 
 def test_decide_submit_action_policy_a():

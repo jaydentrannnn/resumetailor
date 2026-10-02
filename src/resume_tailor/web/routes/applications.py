@@ -18,7 +18,7 @@ from resume_tailor import config, workspace
 from resume_tailor.apply.answers import profile as apply_profile
 from resume_tailor.apply.answers.answer import answer_question
 from resume_tailor.apply.driver import browser as apply_browser
-from resume_tailor.apply.funnel import daily_progress, daily_retry
+from resume_tailor.apply.funnel import daily_progress, daily_retry, store_models, store_views
 from resume_tailor.apply.funnel import operations as apply_operations
 from resume_tailor.apply.funnel import packet as apply_packet
 from resume_tailor.apply.funnel import scheduler as apply_scheduler
@@ -56,7 +56,7 @@ _log = logging.getLogger(__name__)
 
 
 def _application_out(
-    app: apply_store.Application,
+    app: store_models.Application,
     *,
     group_size: int = 1,
 ) -> ApplicationOut:
@@ -70,7 +70,7 @@ def _application_out(
         [ref.source for ref in app.source_refs] if app.source_refs else [app.source]
     )
     payload["group_size"] = group_size
-    payload["posted_at"], payload["posted_known"] = apply_store.posted_date(app)
+    payload["posted_at"], payload["posted_known"] = store_models.posted_date(app)
     payload["status_at"] = apply_store.status_at(app)
     from resume_tailor.apply.funnel import preparation
 
@@ -83,7 +83,7 @@ def _application_out(
         from resume_tailor.apply.funnel.screen import screen_label
 
         payload["screen_label"] = screen_label(app.screen.reasons)
-    payload["review_summary"] = apply_store.review_summary(app)
+    payload["review_summary"] = store_views.review_summary(app)
     return ApplicationOut.model_validate(payload)
 
 
@@ -351,7 +351,7 @@ def get_open_application_tabs() -> dict[str, Any]:
 @router.get("/api/applications", response_model=ApplicationsListResponse)
 def list_applications(
     request: Request,
-    status: apply_store.ApplicationStatus | None = None,
+    status: store_models.ApplicationStatus | None = None,
     limit: int = 50,
     offset: int = 0,
     q: str = "",
@@ -369,13 +369,19 @@ def list_applications(
     if len(q) > 200:
         raise HTTPException(status_code=422, detail="Search must be at most 200 characters")
     all_apps = apply_store.load_all()
-    matched = apply_store.filtered_applications(q=q, archive=archive, applications=list(all_apps.values()))
+    matched = store_views.filtered_applications(
+        q=q, archive=archive, applications=list(all_apps.values())
+    )
     if group is not None:
-        matched = [row for row in matched if (row.status in apply_store.REVIEW_STATUSES) == (group == "review")]
+        matched = [
+            row
+            for row in matched
+            if (row.status in store_models.REVIEW_STATUSES) == (group == "review")
+        ]
     counts: dict[str, int] = {}
     for item in matched:
         counts[item.status] = counts.get(item.status, 0) + 1
-    rows = apply_store.list_applications(
+    rows = store_views.list_applications(
         status=status,
         limit=max(1, min(limit, 500)),
         offset=max(0, offset),
@@ -493,7 +499,7 @@ def focus_application_review_tab(source_job_id: str) -> dict[str, str]:
         raise HTTPException(status_code=404, detail="Unknown application")
     if app.archived_at:
         raise HTTPException(status_code=409, detail="Restore this application before using its browser tab")
-    previous = apply_store.FillResult.model_validate(app.fill) if app.fill else None
+    previous = store_models.FillResult.model_validate(app.fill) if app.fill else None
     if previous is None or not previous.browser_target_id:
         raise HTTPException(status_code=409, detail="No review tab was recorded for this application")
     try:
@@ -589,7 +595,7 @@ def run_daily_now() -> DailyStatusResponse:
 @router.get("/api/applications/export.csv")
 def export_applications_csv() -> StreamingResponse:
     """Download the application tracker as CSV."""
-    csv_text = apply_store.export_csv()
+    csv_text = store_views.export_csv()
     return StreamingResponse(
         iter([csv_text]),
         media_type="text/csv; charset=utf-8",

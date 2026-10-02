@@ -8,7 +8,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from resume_tailor.apply.funnel import attention as attention_mod
-from resume_tailor.apply.funnel import store
+from resume_tailor.apply.funnel import store_models
 
 _DAILY_LOCK = threading.Lock()
 
@@ -93,13 +93,20 @@ def _bump(summary: DailySummary, field: str) -> None:
     with _PROGRESS_LOCK:
         setattr(summary, field, getattr(summary, field) + 1)
 
-def _row_error(summary: DailySummary, message: str, app: store.Application | None = None) -> None:
+def _row_error(
+    summary: DailySummary, message: str, app: store_models.Application | None = None
+) -> None:
     with _PROGRESS_LOCK:
         summary.errors.append(message)
         if app is not None:
             attention_mod.record(summary.attention, app.canonical_key or app.source_job_id, f"{app.company} — {app.role}", "failed", message)
 
-def _row_attention(summary: DailySummary, app: store.Application, kind: attention_mod.AttentionKind, message: str) -> None:
+def _row_attention(
+    summary: DailySummary,
+    app: store_models.Application,
+    kind: attention_mod.AttentionKind,
+    message: str,
+) -> None:
     with _PROGRESS_LOCK:
         attention_mod.record(summary.attention, app.canonical_key or app.source_job_id, f"{app.company} — {app.role}", kind, message)
 

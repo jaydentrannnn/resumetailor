@@ -15,7 +15,7 @@ from resume_tailor import config
 from resume_tailor.apply.answers import profile as profile_mod
 from resume_tailor.apply.driver import browser
 from resume_tailor.apply.funnel import store
-from resume_tailor.apply.funnel.store import FillResult
+from resume_tailor.apply.funnel.store_models import FillResult
 from resume_tailor.web.schemas import ApplySettings, JobSettings
 
 from . import fill_entry, fill_finish, fill_widgets, fill_wizard

@@ -9,11 +9,11 @@ import threading
 import pytest
 
 from resume_tailor import config
-from resume_tailor.apply.funnel import store
+from resume_tailor.apply.funnel import store, store_models, store_views
 from resume_tailor.apply.funnel.screen import ScreenResult
 
 
-def _sample_app(**overrides) -> store.Application:
+def _sample_app(**overrides) -> store_models.Application:
     """Build a minimal application record for store tests."""
     data = {
         "source": "simplify",
@@ -22,7 +22,7 @@ def _sample_app(**overrides) -> store.Application:
         "role": "Intern",
     }
     data.update(overrides)
-    return store.Application(**data)
+    return store_models.Application(**data)
 
 
 @pytest.fixture
@@ -87,19 +87,24 @@ def test_archive_round_trip_is_idempotent_and_preserves_workflow(apps_path):
 def test_status_at_sort_uses_latest_status_change():
     old = _sample_app(source_job_id="old", discovered_at="2026-09-01T00:00:00+00:00")
     fresh = _sample_app(source_job_id="fresh", discovered_at="2026-09-02T00:00:00+00:00")
-    old.status_history = [store.StatusChange(status="awaiting_review", at="2026-09-03T00:00:00+00:00")]
-    rows = store.list_applications(sort="status_at", applications=[fresh, old])
+    old.status_history = [
+        store_models.StatusChange(status="awaiting_review", at="2026-09-03T00:00:00+00:00")
+    ]
+    rows = store_views.list_applications(sort="status_at", applications=[fresh, old])
     assert [row.source_job_id for row in rows] == ["old", "fresh"]
     assert store.status_at(fresh) == fresh.discovered_at
     offset = _sample_app(source_job_id="offset", discovered_at="2026-09-03T01:00:00-07:00")
-    assert [row.source_job_id for row in store.list_applications(sort="status_at", applications=[old, offset])] == ["offset", "old"]
+    assert [
+        row.source_job_id
+        for row in store_views.list_applications(sort="status_at", applications=[old, offset])
+    ] == ["offset", "old"]
 
 
 @pytest.mark.parametrize("previous,expected", [("filling", "ready"), ("tailoring", "tailor_failed"), ("awaiting_review", "awaiting_review")])
 def test_undo_terminal_uses_history_and_maps_transients(previous, expected):
     app = _sample_app(status="submitted", job_id="run-1", status_history=[
-        store.StatusChange(status=previous, at="2026-09-01T00:00:00+00:00"),
-        store.StatusChange(status="submitted", at="2026-09-02T00:00:00+00:00"),
+        store_models.StatusChange(status=previous, at="2026-09-01T00:00:00+00:00"),
+        store_models.StatusChange(status="submitted", at="2026-09-02T00:00:00+00:00"),
     ])
     assert store.undo_terminal(app, "mistake")
     assert app.status == expected
@@ -123,10 +128,18 @@ def test_archive_search_sort_and_missing_last(apps_path):
         "b": _sample_app(source_job_id="b", company="Beta", role="Engineer", discovered_at="2026-01-02", location="Paris", salary="100"),
         "c": _sample_app(source_job_id="c", company="Gamma", role="Designer", archived_at="2026-02-01", salary="200"),
     })
-    assert [app.source_job_id for app in store.list_applications(archive="active", sort="salary", direction="asc")] == ["b", "a"]
-    assert [app.source_job_id for app in store.list_applications(q="eng", sort="company", direction="desc", limit=1, offset=1)] == ["a"]
-    assert [app.source_job_id for app in store.list_applications(archive="archived")] == ["c"]
-    assert "archived_at" in store.export_csv()
+    assert [
+        app.source_job_id
+        for app in store_views.list_applications(archive="active", sort="salary", direction="asc")
+    ] == ["b", "a"]
+    assert [
+        app.source_job_id
+        for app in store_views.list_applications(
+            q="eng", sort="company", direction="desc", limit=1, offset=1
+        )
+    ] == ["a"]
+    assert [app.source_job_id for app in store_views.list_applications(archive="archived")] == ["c"]
+    assert "archived_at" in store_views.export_csv()
 
 
 def test_ties_fall_back_to_newest_then_company_and_status_sorts_in_pipeline_order(apps_path):
@@ -137,9 +150,13 @@ def test_ties_fall_back_to_newest_then_company_and_status_sorts_in_pipeline_orde
         _sample_app(source_job_id="gh", company="Bee", ats="greenhouse", discovered_at="2026-01-15", status="submitted"),
     ]
     apps = {row.source_job_id: row for row in rows}
-    by_ats = store.list_applications(sort="ats", direction="asc", applications=list(apps.values()))
+    by_ats = store_views.list_applications(
+        sort="ats", direction="asc", applications=list(apps.values())
+    )
     assert [row.source_job_id for row in by_ats] == ["gh", "new", "mid", "old"]
-    by_status = store.list_applications(sort="status", direction="asc", applications=list(apps.values()))
+    by_status = store_views.list_applications(
+        sort="status", direction="asc", applications=list(apps.values())
+    )
     assert [row.status for row in by_status] == ["discovered", "ready", "awaiting_review", "submitted"]
 
 
@@ -149,8 +166,8 @@ def test_review_group_splits_rows_waiting_on_the_applicant(apps_path):
         _sample_app(source_job_id="o", status="awaiting_otp"),
         _sample_app(source_job_id="w", status="ready"),
     ]
-    review = store.list_applications(group="review", applications=rows)
-    working = store.list_applications(group="working", applications=rows)
+    review = store_views.list_applications(group="review", applications=rows)
+    working = store_views.list_applications(group="working", applications=rows)
     assert {row.source_job_id for row in review} == {"r", "o"}
     assert [row.source_job_id for row in working] == ["w"]
 
@@ -181,11 +198,16 @@ def test_review_group_splits_rows_waiting_on_the_applicant(apps_path):
 )
 def test_review_summary(status, fill, summary):
     app = _sample_app(status=status, fill=fill)
-    assert store.review_summary(app) == summary
+    assert store_views.review_summary(app) == summary
 
 
 def test_current_registry_imports_once_and_keeps_the_original(apps_path):
-    raw = {"schema_version": store.SCHEMA_VERSION, "applications": {"a": {"source": "simplify", "source_job_id": "a", "company": "Acme", "role": "Intern"}}}
+    raw = {
+        "schema_version": store_models.SCHEMA_VERSION,
+        "applications": {
+            "a": {"source": "simplify", "source_job_id": "a", "company": "Acme", "role": "Intern"}
+        },
+    }
     original = json.dumps(raw)
     apps_path.write_text(original, encoding="utf-8")
     assert store.load_all()["a"].archived_at is None
@@ -296,7 +318,7 @@ def test_set_status_appends_history(apps_path):
 def test_set_status_blocks_terminal_to_pre_ready():
     app = _sample_app(status="submitted")
     app.status_history = [
-        store.StatusChange(status="submitted", at="2026-01-01T00:00:00+00:00")
+        store_models.StatusChange(status="submitted", at="2026-01-01T00:00:00+00:00")
     ]
     with pytest.raises(ValueError, match="terminal"):
         store.set_status(app, "discovered")
@@ -561,7 +583,11 @@ def test_v3_registry_archives_submitted_rows_once(apps_path):
 def test_v4_registry_archives_screened_out_rows_once_preserving_details(apps_path):
     history_at = "2026-09-20T12:00:00+00:00"
     rejected = _sample_app(source_job_id="rejected", status="screened_out")
-    rejected.status_history = [store.StatusChange(status="screened_out", at=history_at, note="prefilter: citizenship_required")]
+    rejected.status_history = [
+        store_models.StatusChange(
+            status="screened_out", at=history_at, note="prefilter: citizenship_required"
+        )
+    ]
     rejected.screen = ScreenResult(passed=False, reasons=["citizenship_required"])
     already_archived = _sample_app(source_job_id="archived", status="screened_out", archived_at="2026-09-19T00:00:00+00:00")
     no_history = _sample_app(source_job_id="no-history", status="screened_out")
@@ -617,7 +643,7 @@ def test_late_fill_does_not_unsubmit_a_row(apps_path):
 
     store.set_status(fill_view, "awaiting_review", note="fill done")
     fill_view.error = None
-    fill_view.fill = store.FillResult(ready_to_submit=True)
+    fill_view.fill = store_models.FillResult(ready_to_submit=True)
     store.upsert(fill_view)
 
     stored = store.get("gh:acme:1")
@@ -725,11 +751,11 @@ def test_posted_date_prefers_the_stated_date_then_the_age_then_the_date_found():
     aged = _sample_app(discovered_at="2026-09-20T10:00:00+00:00", age_days=3)
     unknown = _sample_app(discovered_at="2026-09-20T10:00:00+00:00", age_days=0, eligibility_flags=["age_unknown"])
     captured = _sample_app(discovered_at="2026-09-20T10:00:00+00:00")
-    assert store.posted_date(stated) == ("2026-08-30", True)
-    assert store.posted_date(aged) == ("2026-09-17", True)
-    assert store.posted_date(unknown) == ("2026-09-20", False)
-    assert store.posted_date(captured) == ("2026-09-20", False)
-    assert store.posted_date(_sample_app()) == ("", False)
+    assert store_models.posted_date(stated) == ("2026-08-30", True)
+    assert store_models.posted_date(aged) == ("2026-09-17", True)
+    assert store_models.posted_date(unknown) == ("2026-09-20", False)
+    assert store_models.posted_date(captured) == ("2026-09-20", False)
+    assert store_models.posted_date(_sample_app()) == ("", False)
 
 
 def test_sort_by_posted_date_orders_by_publication_not_discovery(apps_path):
@@ -739,6 +765,10 @@ def test_sort_by_posted_date_orders_by_publication_not_discovery(apps_path):
         "new": _sample_app(source_job_id="new", company="New", discovered_at="2026-09-10T00:00:00+00:00", posted_at="2026-09-09"),
         "cap": _sample_app(source_job_id="cap", company="Captured", discovered_at="2026-09-15T00:00:00+00:00"),
     })
-    newest_first = [app.source_job_id for app in store.list_applications(sort="posted_at")]
+    newest_first = [app.source_job_id for app in store_views.list_applications(sort="posted_at")]
     assert newest_first == ["cap", "new", "old"]
-    assert [app.source_job_id for app in store.list_applications(sort="discovered_at")] == ["old", "cap", "new"]
+    assert [app.source_job_id for app in store_views.list_applications(sort="discovered_at")] == [
+        "old",
+        "cap",
+        "new",
+    ]

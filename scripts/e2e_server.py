@@ -44,7 +44,7 @@ def _seed(base: str) -> None:
 
     sys.path.insert(0, str(ROOT))
     from resume_tailor.apply.answers import answer_memory
-    from resume_tailor.apply.funnel import store
+    from resume_tailor.apply.funnel import store, store_models
     from tests.fixtures import synthetic_resume
     from tests.web.helpers import _resume_upload_with_profile
 
@@ -61,7 +61,7 @@ def _seed(base: str) -> None:
     answer_memory.remember(
         "Which office would you prefer?", "New York", company="Acme Capital", ats="greenhouse"
     )
-    app = store.Application
+    app = store_models.Application
     for row in (
         app(
             source="simplify",

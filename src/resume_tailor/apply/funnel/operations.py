@@ -23,7 +23,14 @@ from resume_tailor.apply.discovery import identity
 from resume_tailor.apply.driver import browser
 from resume_tailor.apply.forms import fill, submit_guard
 from resume_tailor.apply.funnel import attention as attention_mod
-from resume_tailor.apply.funnel import daily, daily_progress, preparation, store
+from resume_tailor.apply.funnel import (
+    daily,
+    daily_progress,
+    preparation,
+    store,
+    store_models,
+    store_views,
+)
 from resume_tailor.infra import logs
 from resume_tailor.web.schemas import ApplyOperationRequest, ApplySettings, JobSettings
 
@@ -284,9 +291,9 @@ def list_recent() -> list[ApplyOperation]:
                     operation.finished_at = _now()
                     operation.updated_at = operation.finished_at
                     changed = True
-            for app in store.list_applications(status="filling", limit=None):
+            for app in store_views.list_applications(status="filling", limit=None):
                 fill_result = (
-                    store.FillResult.model_validate(app.fill) if app.fill else store.FillResult()
+                    store_models.FillResult.model_validate(app.fill) if app.fill else store_models.FillResult()
                 )
                 if (
                     fill_result.submit_action in {"submit", "auto_submit"}
@@ -505,7 +512,7 @@ def _process_item(
                         operation.attention, application_id, item.label, "blocked",
                         result_app.error
                         or ("; ".join(result_app.screen.reasons) if result_app.screen else "")
-                        or store.review_summary(result_app)
+                        or store_views.review_summary(result_app)
                         or (result_app.status_history[-1].note if result_app.status_history else "")
                         or result_app.status.replace("_", " "),
                     )
@@ -556,7 +563,16 @@ def _process_item(
                 with _LOCK:
                     operation.blocked += 1
                     operation.needs_input += 1
-                    attention_mod.record(operation.attention, application_id, item.label, "needs_input", result.handoff_reason or result.error or store.review_summary(store.get(application_id) or app) or result.status.replace("_", " "))
+                    attention_mod.record(
+                        operation.attention,
+                        application_id,
+                        item.label,
+                        "needs_input",
+                        result.handoff_reason
+                        or result.error
+                        or store_views.review_summary(store.get(application_id) or app)
+                        or result.status.replace("_", " "),
+                    )
                 if request.blocker_mode != "pause":
                     break
                 with _LOCK:
@@ -811,7 +827,7 @@ def start_review_action(
         raise KeyError(source_job_id)
     if app.archived_at:
         raise ValueError("Archived applications cannot be inspected or corrected until restored")
-    prior = store.FillResult.model_validate(app.fill) if app.fill else None
+    prior = store_models.FillResult.model_validate(app.fill) if app.fill else None
     if prior is None or not prior.browser_target_id:
         raise ValueError("No recorded review tab")
     body = correction or {}

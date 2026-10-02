@@ -32,13 +32,16 @@ from resume_tailor.apply.funnel import (
     daily_row_run,
     daily_rows,
     store,
+    store_models,
 )
 from resume_tailor.pipeline import jd
 
 
 def test_daily_attention_tracks_known_row_errors_and_latest_outcome():
     summary = daily_progress.DailySummary()
-    app = store.Application(source="test", source_job_id="one", company="Acme", role="Engineer")
+    app = store_models.Application(
+        source="test", source_job_id="one", company="Acme", role="Engineer"
+    )
     daily_progress._row_error(summary, "Acme: fetch failed", app)
     daily_progress._row_attention(summary, app, "needs_input", "Open the posting")
     assert summary.errors == ["Acme: fetch failed"]
@@ -563,7 +566,7 @@ def test_group_key_reuses_tailoring(stub_pipeline, apply_paths, monkeypatch):
         application_link="https://boards.greenhouse.io/northrop/jobs/2",
     )
     # Seed primary as ready with a tailor job_id.
-    primary = store.Application(
+    primary = store_models.Application(
         source="simplify-internships",
         source_job_id="northrop-balt",
         company="Northrop Grumman",
@@ -574,7 +577,7 @@ def test_group_key_reuses_tailoring(stub_pipeline, apply_paths, monkeypatch):
         job_id="tailor-job-1",
         status="ready",
         source_refs=[
-            store.SourceRef(
+            store_models.SourceRef(
                 source="simplify-internships",
                 source_job_id="northrop-balt",
                 url=baltimore.application_link or "",
@@ -873,9 +876,9 @@ def test_daily_status_reflects_progress(apply_paths, monkeypatch):
     assert final.summary.processed == 1
 
 
-def _ready_app(source_job_id: str, *, ats: str, discovered_at: str) -> store.Application:
+def _ready_app(source_job_id: str, *, ats: str, discovered_at: str) -> store_models.Application:
     """Build one `ready`, tailored application for batch-submit tests."""
-    return store.Application(
+    return store_models.Application(
         source="simplify-internships",
         source_job_id=source_job_id,
         company="Acme Corp",
@@ -921,7 +924,7 @@ def test_run_batch_submit_respects_cap_oldest_first(apply_paths, monkeypatch):
 
     def _fake_fill(key, **kwargs):
         calls.append(key)
-        return store.FillResult(status="submitted")
+        return store_models.FillResult(status="submitted")
 
     monkeypatch.setattr(fill, "fill_application", _fake_fill)
     monkeypatch.setattr(browser, "browser_status", lambda: browser.BrowserStatus(reachable=True))
@@ -1019,7 +1022,7 @@ def test_run_batch_submit_one_failure_does_not_sink_the_batch(apply_paths, monke
     def _fake_fill(key, **kwargs):
         if key.endswith("a1"):
             raise RuntimeError("boom")
-        return store.FillResult(status="submitted")
+        return store_models.FillResult(status="submitted")
 
     monkeypatch.setattr(fill, "fill_application", _fake_fill)
     monkeypatch.setattr(browser, "browser_status", lambda: browser.BrowserStatus(reachable=True))
@@ -1062,7 +1065,7 @@ def test_run_batch_submit_bounds_workers_and_copies_context(apply_paths, monkeyp
         time.sleep(0.02)
         with lock:
             active -= 1
-        return store.FillResult(status="submitted")
+        return store_models.FillResult(status="submitted")
 
     monkeypatch.setattr(fill, "fill_application", fake_fill)
     summary = daily_progress.DailySummary()
@@ -1098,7 +1101,7 @@ def test_run_batch_submit_pause_stops_new_starts_and_pending_submits(apply_paths
         both_started.wait(timeout=5)
         paused.set()
         assert kwargs["should_cancel"]()
-        return store.FillResult(status="awaiting_review")
+        return store_models.FillResult(status="awaiting_review")
 
     monkeypatch.setattr(fill, "fill_application", fake_fill)
     summary = daily_progress.DailySummary()
@@ -1128,7 +1131,7 @@ def test_extension_batch_falls_back_to_serial_fills(apply_paths, monkeypatch):
         seen.append(key)
         time.sleep(0.01)
         active -= 1
-        return store.FillResult(status="submitted")
+        return store_models.FillResult(status="submitted")
 
     monkeypatch.setattr(fill, "fill_application", fake_fill)
     logged: list[str] = []
@@ -1297,9 +1300,9 @@ def test_archived_discovery_is_not_prepared_by_daily_run(stub_pipeline, apply_pa
     with pytest.raises(RuntimeError, match="archived"):
         daily.prepare_application(application_id, settings=ApplySettings(enabled=True))
 
-def _retry_app(status: str, *, note: str = "", **overrides: Any) -> store.Application:
+def _retry_app(status: str, *, note: str = "", **overrides: Any) -> store_models.Application:
     """One application at ``status`` whose last history note is ``note``."""
-    app = store.Application(
+    app = store_models.Application(
         **{
             "source": "simplify-internships",
             "source_job_id": "retry-1",
@@ -1311,7 +1314,9 @@ def _retry_app(status: str, *, note: str = "", **overrides: Any) -> store.Applic
         }
     )
     if note:
-        app.status_history.append(store.StatusChange(status=status, at="2026-09-23T00:00:00+00:00", note=note))
+        app.status_history.append(
+            store_models.StatusChange(status=status, at="2026-09-23T00:00:00+00:00", note=note)
+        )
     return app
 
 
@@ -1482,7 +1487,7 @@ def test_prepare_application_clears_stale_error_on_fetch_success(
     page kept showing "Browser extraction too short (0 chars)" on a row that had
     already moved past `jd_fetched` into `tailoring`/`ready`."""
     row = _sample_row()
-    stale = store.Application(
+    stale = store_models.Application(
         source="simplify",
         source_job_id=row.job_id,
         company=row.company,
@@ -1546,7 +1551,7 @@ def test_failed_prepare_again_does_not_restore_orphaned_tailoring(
     resurrected the dead ``tailoring`` row (and its stale error) forever."""
     row = _sample_row()
     store.upsert(
-        store.Application(
+        store_models.Application(
             source="simplify",
             source_job_id=row.job_id,
             company=row.company,
@@ -1584,7 +1589,7 @@ def test_failed_prepare_again_restores_ready_packet(stub_pipeline, apply_paths, 
     """A refresh of a row that already had a packet keeps the packet on failure."""
     row = _sample_row()
     store.upsert(
-        store.Application(
+        store_models.Application(
             source="simplify",
             source_job_id=row.job_id,
             company=row.company,
@@ -1625,8 +1630,8 @@ def test_recover_orphaned_tailoring_marks_only_dead_jobs(apply_paths, monkeypatc
     for mod in (daily, daily_row_run, daily_retry):  # every get_queue lookup
         monkeypatch.setattr(mod, "get_queue", lambda: queue)
 
-    def _app(source_job_id: str, status: str, job_id: str | None) -> store.Application:
-        return store.Application(
+    def _app(source_job_id: str, status: str, job_id: str | None) -> store_models.Application:
+        return store_models.Application(
             source="simplify",
             source_job_id=source_job_id,
             company="Acme Corp",
@@ -1664,7 +1669,7 @@ def test_prepare_again_keeps_only_a_live_review_tab(
     """An open review tab survives a refresh; an old fill failure does not outlive its packet."""
     row = _sample_row()
     store.upsert(
-        store.Application(
+        store_models.Application(
             source="simplify",
             source_job_id=row.job_id,
             company=row.company,
@@ -1674,7 +1679,7 @@ def test_prepare_again_keeps_only_a_live_review_tab(
             canonical_key=f"pending:{row.job_id}",
             status=previous_status,
             job_id="old-job",
-            fill=store.FillResult(status=previous_status, handoff_reason="old attempt"),
+            fill=store_models.FillResult(status=previous_status, handoff_reason="old attempt"),
         )
     )
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 import importlib.util
 from pathlib import Path
 
-from resume_tailor.apply.funnel import store
+from resume_tailor.apply.funnel import store_models
 
 _SPEC = importlib.util.spec_from_file_location(
     "ats_stats", Path(__file__).parents[2] / "scripts" / "ats_stats.py"
@@ -15,8 +15,8 @@ ats_stats = importlib.util.module_from_spec(_SPEC)
 _SPEC.loader.exec_module(ats_stats)
 
 
-def _app(ats: str, status: str, url: str = "", archived: bool = False) -> store.Application:
-    return store.Application(
+def _app(ats: str, status: str, url: str = "", archived: bool = False) -> store_models.Application:
+    return store_models.Application(
         source="test",
         source_job_id=f"{ats}-{status}-{url}",
         company="Acme",

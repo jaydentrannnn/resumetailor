@@ -10,7 +10,7 @@ import pytest
 from resume_tailor import config
 from resume_tailor.apply.driver import scanner
 from resume_tailor.apply.forms.field_types import FieldObservation
-from resume_tailor.apply.funnel import review, store
+from resume_tailor.apply.funnel import review, store, store_models
 
 
 def _field(value: str = "") -> FieldObservation:
@@ -29,9 +29,9 @@ def test_state_hash_changes_when_answer_changes():
 
 def test_refresh_records_current_observed_state(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "APPLICATIONS_PATH", tmp_path / "applications.json")
-    app = store.Application(
+    app = store_models.Application(
         source="test", source_job_id="app-1", company="Acme", role="Intern",
-        status="awaiting_review", fill=store.FillResult(browser_target_id="tab-1"),
+        status="awaiting_review", fill=store_models.FillResult(browser_target_id="tab-1"),
     )
     store.upsert(app)
 
@@ -43,19 +43,21 @@ def test_refresh_records_current_observed_state(tmp_path, monkeypatch):
     assert result.review_snapshot_id == "snapshot"
     assert result.review_fields[0]["expected_state_hash"]
     assert result.field_outcomes[0]["state"] == "preserved"
-    assert store.FillResult.model_validate(store.get("app-1").fill).browser_target_id == "tab-1"
+    assert (
+        store_models.FillResult.model_validate(store.get("app-1").fill).browser_target_id == "tab-1"
+    )
 
 
 def test_refresh_keeps_completed_step_evidence_but_replaces_current_step(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "APPLICATIONS_PATH", tmp_path / "applications.json")
-    previous = store.FillResult(
+    previous = store_models.FillResult(
         browser_target_id="tab-1", current_step_id="current-step",
         field_outcomes=[
             {"field_id": "old-school", "step_id": "completed-step", "label": "School", "state": "verified_filled"},
             {"field_id": "old-salary", "step_id": "current-step", "label": "Desired salary", "state": "unanswered"},
         ],
     )
-    app = store.Application(
+    app = store_models.Application(
         source="test", source_job_id="app-1", company="Acme", role="Intern",
         status="awaiting_review", fill=previous,
     )
@@ -73,10 +75,10 @@ def test_refresh_keeps_completed_step_evidence_but_replaces_current_step(tmp_pat
 
 def test_correction_rejects_old_snapshot_before_browser_connection(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "APPLICATIONS_PATH", tmp_path / "applications.json")
-    store.upsert(store.Application(
+    store.upsert(store_models.Application(
         source="test", source_job_id="app-1", company="Acme", role="Intern",
         status="awaiting_review",
-        fill=store.FillResult(browser_target_id="tab-1", review_snapshot_id="new-snapshot"),
+        fill=store_models.FillResult(browser_target_id="tab-1", review_snapshot_id="new-snapshot"),
     ))
     with pytest.raises(ValueError, match="stale_snapshot"):
         asyncio.run(review.correct(
@@ -96,10 +98,10 @@ def _correctable(tmp_path, monkeypatch, label: str):
     url = "https://boards.greenhouse.io/acme/jobs/1"
     field = _field("").model_copy(update={"label": label})
     saved = {**field.model_dump(), "expected_state_hash": review.state_hash(field, url)}
-    store.upsert(store.Application(
+    store.upsert(store_models.Application(
         source="test", source_job_id="app-1", company="Acme", role="Intern", ats="greenhouse",
         status="awaiting_review",
-        fill=store.FillResult(
+        fill=store_models.FillResult(
             browser_target_id="tab-1", review_snapshot_id="snapshot", review_fields=[saved],
         ),
     ))

@@ -12,6 +12,7 @@ from resume_tailor import config
 from resume_tailor.apply.answers import profile as profile_mod
 from resume_tailor.apply.funnel import operations as operations_mod
 from resume_tailor.apply.funnel import store as apply_store
+from resume_tailor.apply.funnel import store_models
 from resume_tailor.web import jobs as jobs_mod
 from resume_tailor.web.app import app
 from resume_tailor.web.jobs import JobQueue
@@ -80,9 +81,9 @@ def test_applicant_profile_lists_blank_fields_forms_ask_for(client, tmp_path, mo
     monkeypatch.setattr(profile_mod.config, "APPLICANT_PROFILE_PATH", path)
     met = {"key": "notice_period", "field_label": "Notice period", "questions": ["Notice period"]}
     apply_store.save_all({
-        "a": apply_store.Application(source="t", source_job_id="a", company="A", role="R",
-                                     fill=apply_store.FillResult(missing_profile=[met])),
-        "b": apply_store.Application(source="t", source_job_id="b", company="B", role="R"),
+        "a": store_models.Application(source="t", source_job_id="a", company="A", role="R",
+                                     fill=store_models.FillResult(missing_profile=[met])),
+        "b": store_models.Application(source="t", source_job_id="b", company="B", role="R"),
     })
 
     body = c.get("/api/applicant-profile").json()
@@ -140,10 +141,20 @@ def test_applications_list_empty(client):
 
 def test_archive_endpoint_and_scoped_listing(client):
     c, _q = client
-    apply_store.save_all({
-        "a": apply_store.Application(source="simplify", source_job_id="a", company="Acme", role="Engineer", status="submitted"),
-        "b": apply_store.Application(source="simplify", source_job_id="b", company="Beta", role="Designer"),
-    })
+    apply_store.save_all(
+        {
+            "a": store_models.Application(
+                source="simplify",
+                source_job_id="a",
+                company="Acme",
+                role="Engineer",
+                status="submitted",
+            ),
+            "b": store_models.Application(
+                source="simplify", source_job_id="b", company="Beta", role="Designer"
+            ),
+        }
+    )
     moved = c.post("/api/applications/archive", json={"application_ids": ["a", "unknown"], "archived": True})
     assert moved.status_code == 200
     assert moved.json()["updated"] == ["a"]
@@ -162,7 +173,9 @@ def test_archive_endpoint_and_scoped_listing(client):
 def test_undo_submitted_route_conflicts_and_success(client):
     c, _q = client
     assert c.post("/api/applications/unknown/undo-submitted").status_code == 404
-    row = apply_store.Application(source="test", source_job_id="one", company="Acme", role="Engineer", job_id="run-1")
+    row = store_models.Application(
+        source="test", source_job_id="one", company="Acme", role="Engineer", job_id="run-1"
+    )
     apply_store.set_status(row, "ready")
     apply_store.set_status(row, "submitted")
     apply_store.upsert(row)
@@ -181,7 +194,9 @@ def test_undo_submitted_route_conflicts_and_success(client):
 
 def test_screened_out_row_moves_from_working_to_archived_listing(client):
     c, _q = client
-    row = apply_store.Application(source="simplify", source_job_id="screened", company="Acme", role="Intern")
+    row = store_models.Application(
+        source="simplify", source_job_id="screened", company="Acme", role="Intern"
+    )
     apply_store.set_status(row, "screened_out", note="prefilter: citizenship_required")
     apply_store.upsert(row)
 
@@ -195,7 +210,13 @@ def test_screened_out_row_moves_from_working_to_archived_listing(client):
 
 def test_archive_busy_conflict_does_not_write(client):
     c, _q = client
-    apply_store.save_all({"a": apply_store.Application(source="simplify", source_job_id="a", company="Acme", role="Engineer")})
+    apply_store.save_all(
+        {
+            "a": store_models.Application(
+                source="simplify", source_job_id="a", company="Acme", role="Engineer"
+            )
+        }
+    )
     assert operations_mod._RUN_LOCK.acquire(blocking=False)
     try:
         result = c.post("/api/applications/archive", json={"application_ids": ["a"], "archived": True})
@@ -208,7 +229,7 @@ def test_archive_busy_conflict_does_not_write(client):
 def test_applications_list_pages_and_filtered_total(client):
     c, _q = client
     apply_store.save_all({
-        f"job-{i}": apply_store.Application(
+        f"job-{i}": store_models.Application(
             source="test",
             source_job_id=f"job-{i}",
             company="Example",
@@ -308,9 +329,9 @@ def test_verify_claim_without_job_id(client, tmp_path, monkeypatch):
     assert res.json()["ok"] is False
 
 
-def _stored_app(source_job_id: str, status: str) -> apply_store.Application:
+def _stored_app(source_job_id: str, status: str) -> store_models.Application:
     return apply_store.upsert(
-        apply_store.Application(
+        store_models.Application(
             source="simplify-internships",
             source_job_id=source_job_id,
             company="Acme",
@@ -407,7 +428,9 @@ def test_application_list_answers_304_when_unchanged(client):
     etag = first.headers["etag"]
     again = c.get("/api/applications?limit=50", headers={"If-None-Match": etag})
     assert again.status_code == 304 and again.content == b""
-    apply_store.upsert(apply_store.Application(source="s", source_job_id="new", company="N", role="R"))
+    apply_store.upsert(
+        store_models.Application(source="s", source_job_id="new", company="N", role="R")
+    )
     changed = c.get("/api/applications?limit=50", headers={"If-None-Match": etag})
     assert changed.status_code == 200 and changed.headers["etag"] != etag
     assert changed.json()["total"] == first.json()["total"] + 1
@@ -437,7 +460,7 @@ def test_notes_route_saves_only_the_notes(client):
     """The detail page's Notes tab writes `notes` and nothing else, archived or not."""
     c, _q = client
     apply_store.save_all({
-        "a": apply_store.Application(
+        "a": store_models.Application(
             source="simplify", source_job_id="a", company="Acme", role="Analyst", status="ready"
         ),
     })

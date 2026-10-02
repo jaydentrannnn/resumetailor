@@ -10,7 +10,7 @@ from fastapi.testclient import TestClient
 
 from resume_tailor import config
 from resume_tailor.apply.forms import submit_guard
-from resume_tailor.apply.funnel import operations, scheduler, store
+from resume_tailor.apply.funnel import operations, scheduler, store, store_models
 from resume_tailor.web.app import app as web_app
 from resume_tailor.web.schemas import ApplySettings
 
@@ -19,7 +19,7 @@ SETTINGS = ApplySettings(auto_submit_enabled=True, auto_submit_ats=["greenhouse"
 
 
 def _app(key: str, *, company: str = "Acme", role: str = "Analyst Intern", **fields):
-    return store.Application(
+    return store_models.Application(
         source="simplify",
         source_job_id=key,
         canonical_key=f"greenhouse:{key}",
@@ -34,7 +34,9 @@ def _app(key: str, *, company: str = "Acme", role: str = "Analyst Intern", **fie
 def _submitted(key: str, *, at: datetime, note: str = "auto_submit", status="submitted", **fields):
     row = _app(key, **fields)
     row.status = status
-    row.status_history.append(store.StatusChange(status=status, at=at.isoformat(), note=note))
+    row.status_history.append(
+        store_models.StatusChange(status=status, at=at.isoformat(), note=note)
+    )
     return row
 
 

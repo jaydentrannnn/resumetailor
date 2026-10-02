@@ -26,7 +26,7 @@ subpackage).
 
 | Subpackage | Modules |
 |---|---|
-| `funnel/` — orchestration + state | `daily` (nightly run; + `daily_progress`, `daily_rows`, `daily_row_run`, `daily_batch`, `daily_retry`), `scheduler`, `operations` (Find/Prepare/Fill coordinator), `preparation`, `packet`, `store`, `review`, `attention`, `screen`, `eligibility` |
+| `funnel/` — orchestration + state | `daily` (nightly run; + `daily_progress`, `daily_rows`, `daily_row_run`, `daily_batch`, `daily_retry`), `scheduler`, `operations` (Find/Prepare/Fill coordinator), `preparation`, `packet`, `store` (+ `store_models`, `store_migrations`, `store_views`), `review`, `attention`, `screen`, `eligibility` |
 | `discovery/` — finding postings | `sources` (README fetch + format detection; + `source_rows`, `source_headings`, `source_pipe_table`, `source_company_table`, `source_watchlists`, `source_status`), `source_catalog` (+ `catalog/sources.json`), `boards` (+ `watchlists/`), `job_apis`, `ats_api`, `fetch_jd`, `identity` |
 | `answers/` — question answering | `questions` (one decision layer), `answer` (LLM), `answer_memory`, `salary`, `phone`, `profile`, `model_resolver` (LLM), `hybrid_resolver` (LLM; + `resolver_types`, `page_blockers`, `widget_actions`) |
 | `driver/` — the browser over CDP | `browser`, `cdp_relay`, `controls`, `clicks`, `scanner` (+ `dom_scan.js`) |

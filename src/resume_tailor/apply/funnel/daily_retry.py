@@ -8,7 +8,7 @@ from typing import Literal
 
 from resume_tailor import workspace
 from resume_tailor.apply.discovery import fetch_jd
-from resume_tailor.apply.funnel import store
+from resume_tailor.apply.funnel import store, store_models
 from resume_tailor.web import template_ops
 from resume_tailor.web.jobs import get_queue
 from resume_tailor.web.schemas import JobSettings, RunMetadata
@@ -17,7 +17,7 @@ from . import daily_row_run, daily_rows
 
 RetryKind = Literal["fetch", "prefilter", "tailor"]
 
-def retry_kind(app: store.Application) -> RetryKind | None:
+def retry_kind(app: store_models.Application) -> RetryKind | None:
     """Which retry `retry_application` would run for ``app``, or None when it has none.
 
     The single definition of "retryable": the API serves it per row so the SPA shows a
@@ -50,7 +50,7 @@ def _finish_tailor_retry(source_job_id: str, job_id: str) -> None:
         store.set_status(app, "ready", note=f"tailored as {job_id}")
     store.upsert(app)
 
-def retry_application(source_job_id: str) -> store.Application:
+def retry_application(source_job_id: str) -> store_models.Application:
     """Re-run the failed step for one application (fetch JD, re-check the eligibility
     prefilter, or re-queue tailoring).
 

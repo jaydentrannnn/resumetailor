@@ -268,7 +268,7 @@ Keys (`ADZUNA_APP_ID`, `ADZUNA_APP_KEY`, `USAJOBS_API_KEY`, `USAJOBS_EMAIL`) are
 `config.SAVABLE_CREDENTIALS`, never `settings.json`; a missing key is one run error for that
 source, and error text is redacted because Adzuna carries its keys in the query string.
 
-The Apply tables sort by **Posted** (`store.posted_date`): the source's own publication date
+The Apply tables sort by **Posted** (`store_models.posted_date`): the source's own publication date
 when it states one (`SourceRow.posted_at`: Greenhouse `first_published`, Lever `createdAt`,
 Ashby `publishedAt`, SmartRecruiters `releasedDate`, Workday `postedOn`, Adzuna `created`,
 USAJobs `PublicationStartDate`), else the date found minus the age the source reported,
@@ -486,7 +486,7 @@ multi-id `aria-labelledby` or its `formField-*` container, ticks a lone yes/no c
 a preferred name", `has_preferred_name`), and reports `revealed`, after which `fill_wizard.py` scans
 the frame once more so the fields the tick revealed are filled.
 
-**Applications page.** Rows in `store.REVIEW_STATUSES` (awaiting review/verification, fill
+**Applications page.** Rows in `store_models.REVIEW_STATUSES` (awaiting review/verification, fill
 failed, submit unconfirmed) sit in a separate "Needs your review" table (`GET
 /api/applications?group=review`, the working table uses `group=working`), each with
 `review_summary` (the first field waiting on the applicant, or the kind of hand-off). Sorting is
@@ -519,7 +519,7 @@ one-field corrections share the Apply operation lock; a correction requires a fr
 snapshot and state hash. Prepare records the source employment count with expansion output
 so an empty expansion is accepted only when no source employment existed at preparation.
 
-Platforms (plan P4-A): `store.AtsKind` also names Taleo, SuccessFactors, Oracle Cloud,
+Platforms (plan P4-A): `store_models.AtsKind` also names Taleo, SuccessFactors, Oracle Cloud,
 Jobvite, BambooHR, LinkedIn, Indeed and Handshake; `fetch_jd.detect_ats` and
 `identity.canonical_key` recognise their URLs (`fetch_jd.AtsName` must match `AtsKind`, and a
 test checks it). LinkedIn, Indeed and Handshake are assist-only like Workday

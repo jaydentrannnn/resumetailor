@@ -7,7 +7,7 @@ from contextlib import contextmanager
 
 from resume_tailor import workspace
 from resume_tailor.apply.discovery import source_rows
-from resume_tailor.apply.funnel import store
+from resume_tailor.apply.funnel import store, store_models, store_views
 from resume_tailor.content import data
 from resume_tailor.web.jobs import get_queue
 from resume_tailor.web.schemas import ApplySettings, JobSettings
@@ -34,7 +34,7 @@ def recover_orphaned_tailoring() -> int:
     """
     queue = get_queue()
     recovered = 0
-    for app in store.list_applications(status="tailoring", limit=None):
+    for app in store_views.list_applications(status="tailoring", limit=None):
         if app.job_id and queue.get(app.job_id) is not None:
             continue
         note = "Tailoring was interrupted by a server restart; prepare again"
@@ -56,7 +56,7 @@ def prepare_application(
     on_progress: Callable[[str], None] | None = None,
     force_prepare: bool = False,
     on_job: Callable[[str], None] | None = None,
-) -> store.Application:
+) -> store_models.Application:
     """Prepare one selected application through the existing fetch/screen/tailor path.
 
     ``on_job`` is called with the tailor job's id as soon as it is queued, so the Apply
@@ -67,7 +67,7 @@ def prepare_application(
         raise KeyError(f"unknown application {source_job_id!r}")
     if app.archived_at:
         raise RuntimeError("cannot prepare an archived application")
-    if app.status in store.TERMINAL_STATUSES:
+    if app.status in store_models.TERMINAL_STATUSES:
         raise RuntimeError(f"cannot prepare terminal application {app.status!r}")
     if app.capture_stub:
         # LinkedIn/Indeed are never fetched server-side; the description arrives when

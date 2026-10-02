@@ -11,7 +11,7 @@ from pathlib import Path
 import pytest
 
 from resume_tailor import config, workspace
-from resume_tailor.apply.funnel import store
+from resume_tailor.apply.funnel import store, store_models
 from resume_tailor.content import data_transfer
 from resume_tailor.workspace import bootstrap
 from tests.test_workspace import isolated_roots  # noqa: F401 - pytest fixture
@@ -21,7 +21,9 @@ from tests.test_workspace import isolated_roots  # noqa: F401 - pytest fixture
 def active(isolated_roots):  # noqa: F811
     bootstrap()
     workspace_id = config.active_workspace_id()
-    store.upsert(store.Application(source="s", source_job_id="1", company="Acme", role="Analyst"))
+    store.upsert(
+        store_models.Application(source="s", source_job_id="1", company="Acme", role="Analyst")
+    )
     (config.DATA_DIR / "secrets.enc").write_bytes(b"never exported")
     (config.DATA_DIR / ".session_token").write_text("tok")
     (config.TEMPLATES_DIR / "main_template.docx").write_bytes(b"tagged")

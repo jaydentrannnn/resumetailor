@@ -17,7 +17,7 @@ from resume_tailor.apply.ats import (
 from resume_tailor.apply.driver import clicks
 from resume_tailor.apply.forms import wizards
 from resume_tailor.apply.funnel import packet as apply_packet
-from resume_tailor.apply.funnel.store import FillResult
+from resume_tailor.apply.funnel.store_models import FillResult
 
 from . import fill_answers, fill_ats_steps, fill_buttons, fill_outcomes, fill_page, fill_widgets
 

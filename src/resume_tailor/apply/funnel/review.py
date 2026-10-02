@@ -12,7 +12,7 @@ from resume_tailor.apply.ats import adapters, workday_auth
 from resume_tailor.apply.driver import browser, controls, scanner
 from resume_tailor.apply.forms import attachments, field_catalog
 from resume_tailor.apply.forms.field_types import FieldObservation, FieldOutcome
-from resume_tailor.apply.funnel import store
+from resume_tailor.apply.funnel import store, store_models
 
 _PROTECTED = re.compile(
     r"password|passcode|verification code|one.time code|\botp\b|"
@@ -59,7 +59,7 @@ def _outcome(field: FieldObservation) -> FieldOutcome:
     )
 
 
-async def _record(app: store.Application, page: Any) -> store.FillResult:
+async def _record(app: store_models.Application, page: Any) -> store_models.FillResult:
     observed = await scanner.scan(page)
     for field in observed.fields:
         if field.control_kind == "combobox":
@@ -67,7 +67,9 @@ async def _record(app: store.Application, page: Any) -> store.FillResult:
                 field.options = await controls.observe_options(page, observed, field)
             except Exception:  # noqa: BLE001 - unresolved is safer than a false option list
                 field.options = []
-    result = store.FillResult.model_validate(app.fill) if app.fill else store.FillResult()
+    result = (
+        store_models.FillResult.model_validate(app.fill) if app.fill else store_models.FillResult()
+    )
     current_step_id = await adapters.for_url(str(page.url)).step_id(page, observed.fields)
     prior_step_id = result.current_step_id
     completed_steps = [
@@ -109,11 +111,11 @@ async def _record(app: store.Application, page: Any) -> store.FillResult:
     return result
 
 
-async def refresh(source_job_id: str) -> store.FillResult:
+async def refresh(source_job_id: str) -> store_models.FillResult:
     app = store.get(source_job_id)
     if app is None:
         raise KeyError(source_job_id)
-    previous = store.FillResult.model_validate(app.fill) if app.fill else None
+    previous = store_models.FillResult.model_validate(app.fill) if app.fill else None
     if previous is None or not previous.browser_target_id:
         raise ValueError("No recorded review tab")
     async with browser.async_cdp_browser() as connected:
@@ -146,7 +148,7 @@ async def correct(
     app = store.get(source_job_id)
     if app is None:
         raise KeyError(source_job_id)
-    previous = store.FillResult.model_validate(app.fill) if app.fill else None
+    previous = store_models.FillResult.model_validate(app.fill) if app.fill else None
     if previous is None or not previous.browser_target_id:
         raise ValueError("No recorded review tab")
     if snapshot_id != previous.review_snapshot_id:

@@ -9,7 +9,14 @@ import pytest
 from fastapi.testclient import TestClient
 
 from resume_tailor import config
-from resume_tailor.apply.funnel import daily, daily_retry, daily_row_run, daily_rows, store
+from resume_tailor.apply.funnel import (
+    daily,
+    daily_retry,
+    daily_row_run,
+    daily_rows,
+    store,
+    store_models,
+)
 from resume_tailor.apply.funnel import operations as apply_operations
 from resume_tailor.web import extension
 from resume_tailor.web.app import app as web_app
@@ -236,7 +243,7 @@ def test_capture_runs_the_no_llm_prefilter(client):
 
 
 def test_prepare_reuses_the_captured_text():
-    app = store.Application(
+    app = store_models.Application(
         source="extension",
         source_job_id="ext-1",
         company="Acme",
@@ -525,7 +532,7 @@ def test_app_lists_captures_and_stubs(client):
         json={"url": "https://boards.greenhouse.io/acme/jobs/9", "jd_text": _JD},
         headers=headers,
     )
-    other = store.Application(source="simplify", source_job_id="s1", company="B", role="C")
+    other = store_models.Application(source="simplify", source_job_id="s1", company="B", role="C")
     store.upsert(other)
     rows = client.get("/api/extension-captures").json()
     assert {r["id"] for r in rows} == {"linkedin:jobs:111", "greenhouse:acme:9"}
@@ -548,7 +555,7 @@ def test_daily_funnel_and_prepare_skip_stubs(client, monkeypatch):
 
     headers = _pair(client)
     client.post("/api/extension/capture-stubs", json={"cards": _cards("111")}, headers=headers)
-    plain = store.Application(
+    plain = store_models.Application(
         source="simplify", source_job_id="s1", company="B", role="C",
         posting_url="https://boards.greenhouse.io/b/jobs/1", canonical_key="greenhouse:b:1",
     )
@@ -573,7 +580,7 @@ def test_daily_funnel_and_prepare_skip_stubs(client, monkeypatch):
 def test_status_counts_rows_that_need_you(client):
     headers = _pair(client)
     for n, status in enumerate(["awaiting_otp", "ready", "fill_failed"]):
-        row = store.Application(
+        row = store_models.Application(
             source="t", source_job_id=f"r{n}", company="A", role="B", canonical_key=f"k{n}"
         )
         store.set_status(row, status)

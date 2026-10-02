@@ -6,7 +6,7 @@ import threading
 
 import pytest
 
-from resume_tailor.apply.funnel import operations, store
+from resume_tailor.apply.funnel import operations, store_models
 from resume_tailor.web.schemas import ApplyOperationRequest, ApplySettings, JobSettings
 
 
@@ -25,7 +25,7 @@ def batch(monkeypatch):
         lambda: {"defaults": JobSettings(max_concurrent_jobs=2).model_dump()},
     )
     apps = {
-        key: store.Application(
+        key: store_models.Application(
             source="test",
             source_job_id=key,
             company=key,
@@ -79,7 +79,7 @@ def test_fill_uses_exactly_two_workers(batch, monkeypatch):
         barrier.wait()
         with lock:
             active -= 1
-        return store.FillResult(status="awaiting_review", ready_to_submit=True)
+        return store_models.FillResult(status="awaiting_review", ready_to_submit=True)
 
     monkeypatch.setattr(operations.fill, "fill_application", fake_fill)
     operation = batch(settings=ApplySettings(max_parallel_fills=2))
@@ -97,7 +97,7 @@ def test_fill_serial_modes(batch, monkeypatch, extension, blocker):
         active += 1
         peak = max(peak, active)
         active -= 1
-        return store.FillResult(status="awaiting_review", ready_to_submit=True)
+        return store_models.FillResult(status="awaiting_review", ready_to_submit=True)
 
     monkeypatch.setattr(operations.fill, "fill_application", fake_fill)
     operation = batch(settings=ApplySettings(max_parallel_fills=4), blocker_mode=blocker)
@@ -108,7 +108,7 @@ def test_raising_fill_does_not_stop_other_rows(batch, monkeypatch):
     def fake_fill(application_id, **_kwargs):
         if application_id == "one":
             raise RuntimeError("site failed")
-        return store.FillResult(status="awaiting_review", ready_to_submit=True)
+        return store_models.FillResult(status="awaiting_review", ready_to_submit=True)
 
     monkeypatch.setattr(operations.fill, "fill_application", fake_fill)
     operation = batch()
@@ -117,9 +117,9 @@ def test_raising_fill_does_not_stop_other_rows(batch, monkeypatch):
 
 
 @pytest.mark.parametrize("result,kind,message", [
-    (store.FillResult(status="awaiting_review", ready_to_submit=True), "ready_for_review", "Ready to submit — final check"),
-    (store.FillResult(status="awaiting_otp", handoff_reason="Email code required"), "needs_input", "Email code required"),
-    (store.FillResult(status="fill_failed", error="Form crashed"), "failed", "Form crashed"),
+    (store_models.FillResult(status="awaiting_review", ready_to_submit=True), "ready_for_review", "Ready to submit — final check"),
+    (store_models.FillResult(status="awaiting_otp", handoff_reason="Email code required"), "needs_input", "Email code required"),
+    (store_models.FillResult(status="fill_failed", error="Form crashed"), "failed", "Form crashed"),
 ])
 def test_fill_attention_records_real_outcome(batch, monkeypatch, result, kind, message):
     monkeypatch.setattr(operations.fill, "fill_application", lambda *_args, **_kwargs: result)
@@ -129,9 +129,18 @@ def test_fill_attention_records_real_outcome(batch, monkeypatch, result, kind, m
 
 
 def test_prepare_attention_records_blocked_and_missing(batch, monkeypatch):
-    monkeypatch.setattr(operations.daily, "prepare_application", lambda *_args, **_kwargs: store.Application(
-        source="test", source_job_id="one", company="one", role="Engineer", status="needs_browser", error="Sign in first",
-    ))
+    monkeypatch.setattr(
+        operations.daily,
+        "prepare_application",
+        lambda *_args, **_kwargs: store_models.Application(
+            source="test",
+            source_job_id="one",
+            company="one",
+            role="Engineer",
+            status="needs_browser",
+            error="Sign in first",
+        ),
+    )
     operation = batch(action="prepare", ids=("one", "missing"))
     assert {(item.application_id, item.kind, item.message) for item in operation.attention} == {
         ("one", "blocked", "Sign in first"),
@@ -141,8 +150,8 @@ def test_prepare_attention_records_blocked_and_missing(batch, monkeypatch):
 
 def test_pause_resume_removes_attention_for_retried_item(batch, monkeypatch):
     replies = iter([
-        store.FillResult(status="awaiting_otp", handoff_reason="Email code required"),
-        store.FillResult(status="submitted"),
+        store_models.FillResult(status="awaiting_otp", handoff_reason="Email code required"),
+        store_models.FillResult(status="submitted"),
     ])
     monkeypatch.setattr(operations.fill, "fill_application", lambda *_args, **_kwargs: next(replies))
     monkeypatch.setattr(operations, "_wait_if_paused", lambda _operation: "resume")
@@ -163,8 +172,8 @@ def test_auto_submit_reservation_caps_parallel_fills(batch, monkeypatch):
         if first_wave:
             barrier.wait()
         if kwargs["submit_mode"] == "auto_submit":
-            return store.FillResult(status="submitted")
-        return store.FillResult(status="awaiting_review", ready_to_submit=True)
+            return store_models.FillResult(status="submitted")
+        return store_models.FillResult(status="awaiting_review", ready_to_submit=True)
 
     monkeypatch.setattr(operations.fill, "fill_application", fake_fill)
     operation = batch(
@@ -188,7 +197,7 @@ def test_prepare_uses_tailor_job_concurrency(batch, monkeypatch):
         barrier.wait()
         with lock:
             active -= 1
-        return store.Application(
+        return store_models.Application(
             source="test",
             source_job_id=application_id,
             company=application_id,
@@ -208,7 +217,7 @@ def test_same_group_prepares_serially(batch, monkeypatch):
     monkeypatch.setattr(
         operations.store,
         "get",
-        lambda key: store.Application(
+        lambda key: store_models.Application(
             source="test",
             source_job_id=key,
             company="Acme",
@@ -223,7 +232,7 @@ def test_same_group_prepares_serially(batch, monkeypatch):
             assert release_first.wait(3)
         else:
             second_started.set()
-        return store.Application(
+        return store_models.Application(
             source="test",
             source_job_id=application_id,
             company="Acme",
@@ -263,7 +272,7 @@ def test_pause_holds_new_dispatch_after_in_flight_fills(batch, monkeypatch):
         if application_id in {"one", "two"}:
             both_started.wait()
             assert release.wait(3)
-        return store.FillResult(status="awaiting_review", ready_to_submit=True)
+        return store_models.FillResult(status="awaiting_review", ready_to_submit=True)
 
     monkeypatch.setattr(operations, "_event", observe_event)
     monkeypatch.setattr(operations.fill, "fill_application", fake_fill)

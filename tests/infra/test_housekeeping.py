@@ -6,7 +6,7 @@ import os
 import time
 
 from resume_tailor import config
-from resume_tailor.apply.funnel import store
+from resume_tailor.apply.funnel import store, store_models
 from resume_tailor.infra import housekeeping
 
 
@@ -37,7 +37,9 @@ def test_prune_jobs_keeps_newest_referenced_and_recent(tmp_path, monkeypatch):
         stamp = time.time() - age
         os.utime(jobs / name, (stamp, stamp))
     monkeypatch.setattr(config, "APPLICATIONS_PATH", tmp_path / "applications.json")
-    store.upsert(store.Application(source="s", source_job_id="1", company="A", role="R", job_id="a"))
+    store.upsert(
+        store_models.Application(source="s", source_job_id="1", company="A", role="R", job_id="a")
+    )
     result = housekeeping.prune_jobs(keep=1, jobs_dir=jobs)
     # e is newest (kept); d is recent (maybe running); a is referenced; b and c go.
     assert result == {"removed": 2}

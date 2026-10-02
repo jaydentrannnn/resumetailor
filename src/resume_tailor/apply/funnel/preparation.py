@@ -8,7 +8,7 @@ from pathlib import Path
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from resume_tailor import config
-from resume_tailor.apply.funnel import store
+from resume_tailor.apply.funnel import store_models
 from resume_tailor.pipeline.expand import ExpandedEntry, Expansion
 
 
@@ -96,13 +96,15 @@ def _usable_file(path: Path) -> bool:
         return False
 
 
-def check(app: store.Application, *, require_cover: bool | None = None) -> PreparationEligibility:
+def check(
+    app: store_models.Application, *, require_cover: bool | None = None
+) -> PreparationEligibility:
     reasons: list[str] = []
     if app.archived_at:
         reasons.append("archived_application")
     if app.status == "submit_unconfirmed":
         reasons.append("submission_unconfirmed")
-    elif app.status in store.TERMINAL_STATUSES:
+    elif app.status in store_models.TERMINAL_STATUSES:
         reasons.append("terminal_application")
     elif app.status not in _FILLABLE:
         reasons.append("not_prepared")

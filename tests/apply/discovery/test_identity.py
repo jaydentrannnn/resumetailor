@@ -3,14 +3,13 @@
 from __future__ import annotations
 
 import json
-from pathlib import Path
 from typing import get_args
 
 import pytest
 
 from resume_tailor import config
 from resume_tailor.apply.discovery import fetch_jd, identity
-from resume_tailor.apply.funnel import store
+from resume_tailor.apply.funnel import store_models
 
 
 @pytest.fixture
@@ -239,4 +238,4 @@ def test_platform_pages_without_a_job_id_fall_back_to_the_path_digest():
 
 def test_ats_kinds_agree():
     """`fetch_jd.detect_ats` may only return kinds the store accepts."""
-    assert get_args(fetch_jd.AtsName) == get_args(store.AtsKind)
+    assert get_args(fetch_jd.AtsName) == get_args(store_models.AtsKind)

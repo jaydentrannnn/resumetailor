@@ -18,7 +18,7 @@ from resume_tailor.apply.ats import (
     workday_prompts,
     workday_skills,
 )
-from resume_tailor.apply.funnel.store import FillResult
+from resume_tailor.apply.funnel.store_models import FillResult
 
 from . import fill_outcomes, fill_page, fill_state, fill_widgets
 

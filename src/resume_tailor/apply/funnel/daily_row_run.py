@@ -11,7 +11,7 @@ from pathlib import Path
 from resume_tailor import config
 from resume_tailor.apply.discovery import fetch_jd, identity
 from resume_tailor.apply.discovery.source_rows import SourceRow
-from resume_tailor.apply.funnel import store
+from resume_tailor.apply.funnel import store, store_models
 from resume_tailor.apply.funnel.screen import screen
 from resume_tailor.content import data
 from resume_tailor.pipeline import jd, runs
@@ -67,7 +67,7 @@ def _process_one(
     log_path: Path,
     log: Callable[[str], None],
     summary: daily_progress.DailySummary,
-    index: store.Index,
+    index: store_models.Index,
     index_lock: threading.Lock | None = None,
     force_tailor: bool = False,
     on_job: Callable[[str], None] | None = None,
@@ -112,7 +112,7 @@ class _RowRun:
         log_path: Path,
         log: Callable[[str], None],
         summary: daily_progress.DailySummary,
-        index: store.Index,
+        index: store_models.Index,
         index_lock: threading.Lock | None,
         force_tailor: bool,
         on_job: Callable[[str], None] | None,
@@ -141,7 +141,7 @@ class _RowRun:
             identity.canonical_key(self.final_url) if self.final_url else f"pending:{row.job_id}"
         )
         self.gkey = identity.group_key(row.company, row.role)
-        self.ref = store.SourceRef(
+        self.ref = store_models.SourceRef(
             source=row.source_id or "simplify",
             source_job_id=row.job_id,
             url=wrapper_or_direct,
@@ -173,7 +173,7 @@ class _RowRun:
 
     # -- registering the row -----------------------------------------------------------
 
-    def _register(self) -> store.Application | None:
+    def _register(self) -> store_models.Application | None:
         """The application to carry on with, or None when the row is fully handled."""
         index = self.index
         if self.ckey in index.by_canonical:
@@ -186,13 +186,13 @@ class _RowRun:
             return None
         return app
 
-    def _add_to_index(self, app: store.Application) -> None:
+    def _add_to_index(self, app: store_models.Application) -> None:
         index = self.index
         index.by_canonical[self.ckey] = app
         index.by_source_ref[(self.ref.source, self.ref.source_job_id)] = self.ckey
         index.by_group.setdefault(self.gkey, []).append(self.ckey)
 
-    def _merge_known(self, existing: store.Application) -> store.Application | None:
+    def _merge_known(self, existing: store_models.Application) -> store_models.Application | None:
         """Another sighting of a known requisition: record it; carry on only when that
         application is still waiting to be processed."""
         store.add_source_ref(existing, self.ref)
@@ -209,7 +209,7 @@ class _RowRun:
         self._log(f"[merge-ref] {self.row.company} → {self.ckey} via {self.ref.source}")
         return None
 
-    def _join_group(self) -> store.Application | None:
+    def _join_group(self) -> store_models.Application | None:
         """Same company and role as a known application: skip it when that one is done,
         reuse its tailor run when it has one, else carry on as a normal discovery."""
         row, index, dry_run = self.row, self.index, self.dry_run
@@ -253,7 +253,7 @@ class _RowRun:
         # Primary not tailored yet — continue as a normal discovery; first to finish wins.
         return app
 
-    def _discover(self) -> store.Application:
+    def _discover(self) -> store_models.Application:
         row = self.row
         existing_app = store.get(row.job_id) if row.job_id else None
         if existing_app is not None:
@@ -279,7 +279,7 @@ class _RowRun:
 
     # -- fetch, screen, tailor ---------------------------------------------------------
 
-    def _fetch_jd(self, app: store.Application) -> fetch_jd.FetchResult | None:
+    def _fetch_jd(self, app: store_models.Application) -> fetch_jd.FetchResult | None:
         """The posting's JD, saved on the application; None when the row stops here."""
         url = app.posting_url or app.final_url
         if not url:
@@ -324,7 +324,7 @@ class _RowRun:
         self._count("jd_fetched")
         return fetch
 
-    def _screen(self, app: store.Application, jd_text: str) -> jd.JobRequirements | None:
+    def _screen(self, app: store_models.Application, jd_text: str) -> jd.JobRequirements | None:
         """Prefilter, extract and screen; the requirements when the posting passes."""
         elig = daily_rows.prefilter_screen(jd_text, app.role, self.settings)
         if not elig.passed:
@@ -364,7 +364,7 @@ class _RowRun:
         self._count("screened_in")
         return requirements
 
-    def _extract(self, app: store.Application, jd_text: str) -> jd.JobRequirements | None:
+    def _extract(self, app: store_models.Application, jd_text: str) -> jd.JobRequirements | None:
         job_defaults = self.job_defaults
         try:
             # Same routing and vote count as the tailor job below, so its own extraction
@@ -388,7 +388,7 @@ class _RowRun:
             return None
 
     def _reuse_prior_run(
-        self, app: store.Application, jd_text: str, requirements: jd.JobRequirements
+        self, app: store_models.Application, jd_text: str, requirements: jd.JobRequirements
     ) -> bool:
         """Link a near-identical earlier run for the same company instead of tailoring."""
         match = None if self.force_tailor else runs.closest_run(jd_text, requirements)
@@ -409,7 +409,7 @@ class _RowRun:
         self._count("processed")
         return True
 
-    def _tailor(self, app: store.Application, jd_text: str) -> None:
+    def _tailor(self, app: store_models.Application, jd_text: str) -> None:
         metadata = RunMetadata(
             posting_url=app.posting_url,
             company=app.company,

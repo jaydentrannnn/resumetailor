@@ -12,7 +12,7 @@ from resume_tailor import config
 from resume_tailor.apply.discovery import identity, source_rows, source_status, sources
 from resume_tailor.apply.driver import browser
 from resume_tailor.apply.forms import fill, submit_guard
-from resume_tailor.apply.funnel import store
+from resume_tailor.apply.funnel import store, store_models, store_views
 from resume_tailor.content import data
 from resume_tailor.web.schemas import ApplySettings, JobSettings
 
@@ -175,7 +175,7 @@ def _process_rows(
     log_file: Path,
     log: Callable[[str], None],
     summary: daily_progress.DailySummary,
-    index: store.Index,
+    index: store_models.Index,
 ) -> None:
     """Run `_process_one` over the rows on a small pool, one role group at a time."""
     index_lock = threading.Lock()
@@ -327,7 +327,7 @@ def _run_batch_submit(
                     "needs_input",
                     result.handoff_reason
                     or result.error
-                    or store.review_summary(store.get(app.source_job_id) or app)
+                    or store_views.review_summary(store.get(app.source_job_id) or app)
                     or result.status.replace("_", " "),
                 )
             elif result.status != "submitted":

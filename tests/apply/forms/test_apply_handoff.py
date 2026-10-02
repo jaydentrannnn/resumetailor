@@ -11,7 +11,7 @@ from resume_tailor import config
 from resume_tailor.apply.answers.profile import ApplicantProfile
 from resume_tailor.apply.ats import workday_auth
 from resume_tailor.apply.driver import browser
-from resume_tailor.apply.funnel import operations, preparation, store
+from resume_tailor.apply.funnel import operations, preparation, store, store_models
 from resume_tailor.web.schemas import ApplyOperationRequest, ApplySettings
 
 
@@ -42,14 +42,14 @@ def test_interrupted_fill_restores_retryable_status(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "APPLICATIONS_PATH", tmp_path / "applications.json")
     monkeypatch.setattr(config, "APPLICATIONS_OUTPUT_DIR", tmp_path / "output")
     monkeypatch.setattr(operations, "_ACTIVE_ID", None)
-    app = store.Application(
+    app = store_models.Application(
         source="test",
         source_job_id="app-1",
         company="Acme",
         role="Intern",
         status="filling",
         job_id="job-1",
-        fill=store.FillResult(browser_target_id="target-1", status="awaiting_review"),
+        fill=store_models.FillResult(browser_target_id="target-1", status="awaiting_review"),
     )
     store.upsert(app)
     op = operations.ApplyOperation(
@@ -60,21 +60,21 @@ def test_interrupted_fill_restores_retryable_status(tmp_path, monkeypatch):
     assert recent[0].state == "interrupted"
     restored = store.get("app-1")
     assert restored is not None and restored.status == "awaiting_review"
-    assert store.FillResult.model_validate(restored.fill).browser_target_id == "target-1"
+    assert store_models.FillResult.model_validate(restored.fill).browser_target_id == "target-1"
 
 
 def test_interrupted_submission_is_not_refilled(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "APPLICATIONS_PATH", tmp_path / "applications.json")
     monkeypatch.setattr(config, "APPLICATIONS_OUTPUT_DIR", tmp_path / "output")
     monkeypatch.setattr(operations, "_ACTIVE_ID", None)
-    app = store.Application(
+    app = store_models.Application(
         source="test",
         source_job_id="app-1",
         company="Acme",
         role="Intern",
         status="filling",
         job_id="job-1",
-        fill=store.FillResult(browser_target_id="target-1", submit_action="submit"),
+        fill=store_models.FillResult(browser_target_id="target-1", submit_action="submit"),
     )
     store.upsert(app)
     operations._save(
@@ -96,7 +96,7 @@ def test_interrupted_submission_is_not_refilled(tmp_path, monkeypatch):
 def test_fill_batch_continues_past_missing_answers_and_workday_verification(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "APPLICATIONS_OUTPUT_DIR", tmp_path / "output")
     apps = {
-        key: store.Application(
+        key: store_models.Application(
             source="test",
             source_job_id=key,
             company="Acme",
@@ -115,9 +115,9 @@ def test_fill_batch_continues_past_missing_answers_and_workday_verification(tmp_
         lambda _app, **_kwargs: preparation.PreparationEligibility(eligible=True),
     )
     outcomes = {
-        "one": store.FillResult(status="awaiting_review", ready_to_submit=False),
-        "two": store.FillResult(status="awaiting_otp"),
-        "three": store.FillResult(status="awaiting_review", ready_to_submit=True),
+        "one": store_models.FillResult(status="awaiting_review", ready_to_submit=False),
+        "two": store_models.FillResult(status="awaiting_otp"),
+        "three": store_models.FillResult(status="awaiting_review", ready_to_submit=True),
     }
     visited: list[str] = []
 
@@ -169,7 +169,7 @@ def _wait_for_state(
 def test_resume_after_pause_continues_in_the_retained_tab(tmp_path, monkeypatch):
     """Resuming a paused Fill must reuse the tab the user just worked in, not open a new one."""
     monkeypatch.setattr(config, "APPLICATIONS_OUTPUT_DIR", tmp_path / "output")
-    app = store.Application(
+    app = store_models.Application(
         source="test",
         source_job_id="one",
         company="Acme",
@@ -186,8 +186,8 @@ def test_resume_after_pause_continues_in_the_retained_tab(tmp_path, monkeypatch)
         lambda _app, **_kwargs: preparation.PreparationEligibility(eligible=True),
     )
     replies = [
-        store.FillResult(status="awaiting_otp"),
-        store.FillResult(status="awaiting_review", ready_to_submit=True),
+        store_models.FillResult(status="awaiting_otp"),
+        store_models.FillResult(status="awaiting_review", ready_to_submit=True),
     ]
     modes: list[str] = []
 
@@ -224,7 +224,7 @@ def test_user_pause_stops_before_the_next_application(tmp_path, monkeypatch):
 
     monkeypatch.setattr(config, "APPLICATIONS_OUTPUT_DIR", tmp_path / "output")
     apps = {
-        key: store.Application(
+        key: store_models.Application(
             source="test",
             source_job_id=key,
             company="Acme",
@@ -253,7 +253,7 @@ def test_user_pause_stops_before_the_next_application(tmp_path, monkeypatch):
         if application_id == "one":
             in_first.set()
             release.wait(5)
-        return store.FillResult(status="awaiting_review", ready_to_submit=True)
+        return store_models.FillResult(status="awaiting_review", ready_to_submit=True)
 
     monkeypatch.setattr(operations.fill, "fill_application", fake_fill)
     request = ApplyOperationRequest(
@@ -280,7 +280,7 @@ def test_user_pause_stops_before_the_next_application(tmp_path, monkeypatch):
 def test_prepare_records_the_tailor_job_while_it_runs(tmp_path, monkeypatch):
     """The Apply page reads the in-flight tailor job's steps for progress inside an item."""
     monkeypatch.setattr(config, "APPLICATIONS_OUTPUT_DIR", tmp_path / "output")
-    app = store.Application(
+    app = store_models.Application(
         source="test", source_job_id="one", company="Acme", role="Intern", status="discovered"
     )
     monkeypatch.setattr(operations.store, "get", {"one": app}.get)

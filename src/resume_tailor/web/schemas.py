@@ -15,7 +15,7 @@ from ..apply.answers.profile import ApplicantProfile
 from ..apply.funnel.attention import AttentionItem
 from ..apply.funnel.eligibility import EligibilitySettings
 from ..apply.funnel.screen import ScreenResult, ScreenSettings
-from ..apply.funnel.store import ApplicationStatus, AtsKind, FillResult, StatusChange
+from ..apply.funnel.store_models import ApplicationStatus, AtsKind, FillResult, StatusChange
 from ..content import industries
 from ..pipeline.include import IncludeOptions
 
@@ -1212,7 +1212,7 @@ class ApplicationOut(BaseModel):
     status_history: list[StatusChange] = Field(default_factory=list)
     status_at: str = ""
     discovered_at: str = ""
-    #: When the posting was published (`store.posted_date`); when ``posted_known`` is
+    #: When the posting was published (`store_models.posted_date`); when ``posted_known`` is
     #: false this is the date it was found instead.
     posted_at: str = ""
     posted_known: bool = False
@@ -1238,11 +1238,11 @@ class ApplicationOut(BaseModel):
     retry_kind: Literal["fetch", "prefilter", "tailor"] | None = None
     #: Short "why screened out" label for the Status column (`screen.screen_label`).
     screen_label: str | None = None
-    #: What a row in the "Needs your review" table is waiting on (`store.review_summary`).
+    #: What a row in the "Needs your review" table is waiting on (`store_views.review_summary`).
     review_summary: str | None = None
-    #: LinkedIn/Indeed apply path recorded by the browser extension (`store.ApplyKind`).
+    #: LinkedIn/Indeed apply path recorded by the browser extension (`store_models.ApplyKind`).
     apply_kind: Literal["easy_apply", "external", "unknown"] = "unknown"
-    #: A search-result card saved without its description (`store.Application.capture_stub`).
+    #: A search-result card saved without its description (`store_models.Application.capture_stub`).
     capture_stub: bool = False
 
 

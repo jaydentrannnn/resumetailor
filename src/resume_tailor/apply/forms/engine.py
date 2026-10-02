@@ -22,7 +22,7 @@ from resume_tailor.apply.ats import (
 from resume_tailor.apply.driver import browser, clicks, controls, scanner
 from resume_tailor.apply.forms import attachments, field_catalog, form_routes
 from resume_tailor.apply.forms.field_types import FieldObservation, FieldOutcome
-from resume_tailor.apply.funnel import packet, preparation, store
+from resume_tailor.apply.funnel import packet, preparation, store, store_models
 from resume_tailor.content import data
 from resume_tailor.pipeline.jd import JobRequirements
 from resume_tailor.web.schemas import ApplySettings
@@ -91,7 +91,7 @@ async def fill_application(
     should_cancel: Callable[[], bool] | None,
     on_progress: Callable[[str], None] | None,
     applicant_profile: profile.ApplicantProfile | None = None,
-) -> store.FillResult:
+) -> store_models.FillResult:
     """Run one attempt; only verified outcomes can contribute to readiness."""
     app = store.get(source_job_id)
     if app is None:
@@ -132,8 +132,10 @@ async def fill_application(
         role=app.role, listing_salary=app.salary, jd_text=jd_text,
         hourly_max=applicant.salary_hourly_max, yearly_max=applicant.salary_yearly_max,
     ))
-    previous = store.FillResult.model_validate(app.fill) if app.fill else store.FillResult()
-    result = store.FillResult(
+    previous = (
+        store_models.FillResult.model_validate(app.fill) if app.fill else store_models.FillResult()
+    )
+    result = store_models.FillResult(
         browser_target_id=previous.browser_target_id,
         browser_url=previous.browser_url,
         status="filling",

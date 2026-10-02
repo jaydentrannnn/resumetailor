@@ -24,7 +24,7 @@ from resume_tailor.apply.ats import (
     workday_prompts,
     workday_skills,
 )
-from resume_tailor.apply.funnel import store
+from resume_tailor.apply.funnel import store, store_models
 
 _SCREENS = json.loads(
     (Path(__file__).parents[2] / "fixtures" / "workday" / "screens.json").read_text(encoding="utf-8")
@@ -433,7 +433,11 @@ def test_sign_in_screen_switches_to_create_account_for_an_unknown_tenant(clock):
         ("sign_in", "createAccountLink"): "create_account",
         ("create_account", "click_filter:Create Account"): "verify_email",
     }, clock=clock)
-    store.upsert(store.Application(source="simplify", source_job_id="app-1", company="Acme", role="Intern", status="ready"))
+    store.upsert(
+        store_models.Application(
+            source="simplify", source_job_id="app-1", company="Acme", role="Intern", status="ready"
+        )
+    )
     assert workday_auth.handle_workday_auth(page, "app-1", _profile()) == "verification_needed"
     assert page.clicks == ["createAccountLink", "click_filter:Create Account"]
     assert _tenant_vault()["created"] is True
@@ -602,7 +606,11 @@ def test_an_existing_account_under_another_password_is_handed_over_after_one_try
 def test_an_unverified_account_hands_over_for_the_email_link_without_creating_again(clock):
     # Live Jabil 2026-09-24: this read as a wrong password, so the run tried Create Account
     # for an account that already existed and waited it out.
-    store.upsert(store.Application(source="simplify", source_job_id="app-1", company="Jabil", role="Intern", status="ready"))
+    store.upsert(
+        store_models.Application(
+            source="simplify", source_job_id="app-1", company="Jabil", role="Intern", status="ready"
+        )
+    )
     page = _FakePage("auth_chooser", {
         ("auth_chooser", "SignInWithEmailButton"): "sign_in",
         ("sign_in", "click_filter:Sign In"): "sign_in_unverified",

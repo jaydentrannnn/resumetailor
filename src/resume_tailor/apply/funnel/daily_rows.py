@@ -13,7 +13,7 @@ from resume_tailor.apply.discovery import fetch_jd
 from resume_tailor.apply.discovery.source_rows import SourceRow
 from resume_tailor.apply.funnel import eligibility as eligibility_mod
 from resume_tailor.apply.funnel import screen as screen_mod
-from resume_tailor.apply.funnel import store
+from resume_tailor.apply.funnel import store, store_models
 from resume_tailor.apply.funnel.screen import ScreenResult
 from resume_tailor.web.schemas import ApplySettings, JobSettings
 
@@ -72,15 +72,15 @@ def _application_from_row(
     canonical_key: str,
     group_key: str,
     final_url: str,
-) -> store.Application:
+) -> store_models.Application:
     """Build a new ``Application`` record from one parsed README row."""
-    ref = store.SourceRef(
+    ref = store_models.SourceRef(
         source=row.source_id or "simplify",
         source_job_id=row.job_id or "",
         url=row.application_link or "",
         first_seen=_now_iso(),
     )
-    return store.Application(
+    return store_models.Application(
         source=row.source_id or "simplify",
         source_job_id=row.job_id or "",
         company=row.company,
@@ -110,7 +110,7 @@ def _save_jd(source_job_id: str, text: str) -> str:
     path.write_text(text, encoding="utf-8")
     return str(path)
 
-def _captured_jd(app: store.Application) -> fetch_jd.FetchResult | None:
+def _captured_jd(app: store_models.Application) -> fetch_jd.FetchResult | None:
     """The text the browser extension sent for this row, instead of fetching it again.
 
     A captured page (LinkedIn, Handshake, a careers page behind a login) often cannot be
@@ -141,7 +141,7 @@ def _prior_company(job_id: str) -> str:
     metadata = raw.get("metadata") or {}
     return str(metadata.get("company") or "")
 
-def _link_reused_packet(app: store.Application, prior_job_id: str) -> None:
+def _link_reused_packet(app: store_models.Application, prior_job_id: str) -> None:
     """Point ``app`` at an existing tailoring run without re-queueing."""
     app.reused_from_job_id = prior_job_id
     app.job_id = prior_job_id
@@ -162,7 +162,7 @@ def _job_settings(base: JobSettings, apply: ApplySettings) -> JobSettings:
     return settings
 
 def _settle_failed_prepare(
-    previous: store.Application, source_job_id: str, *, error: str | None = None
+    previous: store_models.Application, source_job_id: str, *, error: str | None = None
 ) -> None:
     """Leave a row in an honest state after a Prepare that didn't reach ``ready``.
 
@@ -171,7 +171,7 @@ def _settle_failed_prepare(
     new attempt's outcome (e.g. ``screened_out`` with its reasons) — restoring it could
     resurrect a stale ``tailoring`` whose job died with a server restart.
     """
-    if previous.status not in store.PRE_READY_STATUSES:
+    if previous.status not in store_models.PRE_READY_STATUSES:
         store.restore(previous)
         return
     current = store.get(source_job_id)
