@@ -21,6 +21,7 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from resume_tailor.apply.ats import workday_page
+from resume_tailor.apply.driver import clicks
 from resume_tailor.apply.forms import form_guards
 
 WizardState = Literal[
@@ -92,6 +93,19 @@ _APPLY_BUTTON = re.compile(
     r"^\s*apply(?:\s+now|\s+online|\s+for\s+this\s+(?:job|position)(?:\s+online)?)?\s*$", re.I
 )
 _SUBMIT_BUTTON = re.compile(r"^\s*submit(?:\s+(?:my\s+)?application)?\s*$", re.I)
+#: iCIMS's central login (``login.icims.com/u/login/...``), reached from a portal's
+#: email step when iCIMS wants the applicant signed in.
+_ICIMS_CENTRAL_LOGIN = re.compile(r"^https?://login\.icims\.com/", re.I)
+#: A portal's email-first step: ``/jobs/4109/<slug>/login`` (the iframe adds a query).
+_ICIMS_EMAIL_STEP = re.compile(r"/jobs/(?:[^/?#]+/)*login/?(?:[?#]|$)", re.I)
+_ICIMS_SIGN_IN_MSG = (
+    "iCIMS asked for a login. Sign in in the opened tab; with no iCIMS account, go back "
+    "to the posting's email step, type your email yourself and press Next. Then choose "
+    "Continue fill"
+)
+_EMAIL_BOX = "input#email:visible, input[type='email']:visible"
+#: Per-key delay when typing the email by hand, in milliseconds.
+_KEY_DELAY_MS = 80
 #: At most this many inputs beside an Apply control is still the posting page.
 _POSTING_CHROME_FIELDS = 2
 #: Click the first visible control whose text or title is an Apply button's.
@@ -176,13 +190,18 @@ class WizardAdapter:
         """Click the posting's own apply control (iCIMS "Apply for this job online");
         False when it has none."""
         try:
-            return bool(self._target(page).evaluate(_ENTER_JS, _APPLY_BUTTON.pattern))
+            return bool(self.form_scope(page).evaluate(_ENTER_JS, _APPLY_BUTTON.pattern))
         except Exception:  # noqa: BLE001 - a navigating page cannot be clicked yet
             return False
 
-    def _target(self, page: Any) -> Any:
+    def form_scope(self, page: Any) -> Any:
         """The page or frame holding the application."""
         return page
+
+    def type_email(self, page: Any, email: str) -> bool:
+        """Type ``email`` into an email-first sign-in step by hand; False when this
+        platform has no such step (the filler then fills the box as usual)."""
+        return False
 
     def _is_review(self, step: str, headings: list[str], buttons: list[str], fields: int) -> bool:
         extra = {w.casefold() for w in self.review_words}
@@ -259,13 +278,50 @@ class IcimsWizard(WizardAdapter):
     review_words = ("Review and Submit", "Submit Application", "Review Your Application")
 
     def snapshot(self, page: Any) -> dict[str, Any]:
-        return super().snapshot(self._target(page))
+        return super().snapshot(self.form_scope(page))
 
-    def _target(self, page: Any) -> Any:
+    def form_scope(self, page: Any) -> Any:
         frame = None
         with contextlib.suppress(Exception):
             frame = page.frame(name="icims_content_iframe")
         return frame if frame is not None else page
+
+    def classify(self, snap: dict[str, Any]) -> WizardState:
+        # The central login has one visible box (its password box stays hidden until
+        # the email is known), so the shared rules would read it as a form to fill.
+        if _ICIMS_CENTRAL_LOGIN.match(str(snap.get("url") or "")):
+            return "sign_in"
+        return super().classify(snap)
+
+    def stop_for(self, state: WizardState) -> Stop | None:
+        if state == "sign_in":
+            return Stop("awaiting_review", _ICIMS_SIGN_IN_MSG)
+        return super().stop_for(state)
+
+    def type_email(self, page: Any, email: str) -> bool:
+        """Type the email on the portal's email-first step with real key presses.
+
+        The step is behind an invisible hCaptcha that scores how the box was filled. A
+        value set by script got the browser sent to iCIMS's central login (with no
+        account to sign in to), while the same email typed by hand in the same tab
+        opened the new-candidate profile (Corgan, 2026-10-02). True when the box now
+        holds ``email``.
+        """
+        scope = self.form_scope(page)
+        if not email or not _ICIMS_EMAIL_STEP.search(str(getattr(scope, "url", "") or "")):
+            return False
+        try:
+            box = scope.locator(_EMAIL_BOX).first
+            if box.count() == 0 or box.input_value():
+                return False
+            clicks.safe_click(box, purpose="select", timeout=3000)
+            box.press_sequentially(email, delay=_KEY_DELAY_MS)
+            if box.input_value() == email:
+                return True
+            box.fill("")  # a half-typed box would be kept by the filler as an answer
+        except Exception:  # noqa: BLE001 - the filler fills a box this cannot reach
+            pass
+        return False
 
 
 class TaleoWizard(WizardAdapter):

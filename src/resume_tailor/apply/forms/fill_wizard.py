@@ -56,6 +56,10 @@ class _FillWizard(fill_answers._FillAnswers, fill_ats_steps._FillAtsSteps):
         if self._interstitial_barrier():
             return fill_outcomes._BREAK
 
+        if self.wizard is not None and self.wizard.type_email(
+            self.page, str(self.fields.get("email") or "")
+        ):
+            self.progress(f"typed the email on the {self.wizard.label} email step")
         self._scan_frames()
         if self.is_workday and self._workday_blank_step():
             return fill_outcomes._CONTINUE
@@ -221,7 +225,7 @@ class _FillWizard(fill_answers._FillAnswers, fill_ats_steps._FillAtsSteps):
         """Press the step's advance button (resolving blockers first when needed), or end
         the walk when there is none."""
         last_step = step >= fill_outcomes._MAX_WIZARD_STEPS - 1
-        advance_btn = fill_buttons._find_advance_button(self.page)
+        advance_btn = self._advance_button()
         if (not advance_btn or self.merged.get("required_empty")) and not last_step:
             with config.pinned(self.settings.model_spec):
                 for frame_index, frame in enumerate(self.frames):
@@ -231,7 +235,7 @@ class _FillWizard(fill_answers._FillAnswers, fill_ats_steps._FillAtsSteps):
                         ledger=self.ledgers.setdefault(frame_index, resolver_types.StepLedger()),
                     )
                     self.model_unavailable |= self.ledgers[frame_index].model_unavailable
-            advance_btn = fill_buttons._find_advance_button(self.page)
+            advance_btn = self._advance_button()
 
         if not advance_btn or last_step:
             self.final_step_reached = advance_btn is None and (
@@ -254,6 +258,16 @@ class _FillWizard(fill_answers._FillAnswers, fill_ats_steps._FillAtsSteps):
             workday_page.active_step(workday_page.snapshot(page)) if self.is_workday else ""
         )
         return self._click_advance(advance_btn, before_step, wd_before)
+
+    def _advance_button(self) -> Any | None:
+        """The step's Next, on the page or else in the wizard's form frame (iCIMS keeps
+        it inside ``icims_content_iframe``)."""
+        found = fill_buttons._find_advance_button(self.page)
+        if found is None and self.wizard is not None:
+            scope = self.wizard.form_scope(self.page)
+            if scope is not self.page:
+                found = fill_buttons._find_advance_button(scope)
+        return found
 
     def _settle_after_advance(self, fallback_ms: int, wd_before: str) -> None:
         # Workday saves the step server-side before painting the next one.
@@ -296,7 +310,7 @@ class _FillWizard(fill_answers._FillAnswers, fill_ats_steps._FillAtsSteps):
             retried_advance = True
             self.progress("wizard advance was blocked; resolving visible blockers once")
             self._resolve_invalid_blockers()
-            retry_button = fill_buttons._find_advance_button(self.page)
+            retry_button = self._advance_button()
             if retry_button is None:
                 return fill_outcomes._BREAK
             try:
@@ -311,7 +325,7 @@ class _FillWizard(fill_answers._FillAnswers, fill_ats_steps._FillAtsSteps):
             return fill_outcomes._BREAK
         self.progress("wizard did not advance; resolving visible blockers once")
         self._resolve_invalid_blockers()
-        retry_button = fill_buttons._find_advance_button(self.page)
+        retry_button = self._advance_button()
         if retry_button is None:
             return fill_outcomes._BREAK
         with contextlib.suppress(Exception):

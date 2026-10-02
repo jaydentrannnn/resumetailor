@@ -5,11 +5,12 @@ from __future__ import annotations
 import json
 import os
 from pathlib import Path
+from types import SimpleNamespace
 
 import pytest
 
 from resume_tailor.apply.ats import workday_page
-from resume_tailor.apply.forms import wizards
+from resume_tailor.apply.forms import fill_buttons, fill_wizard, wizards
 
 _FIXTURES = Path(__file__).parents[2] / "fixtures"
 _SCREENS = json.loads((_FIXTURES / "wizards" / "screens.json").read_text(encoding="utf-8"))
@@ -175,3 +176,70 @@ def test_a_posting_page_with_a_language_picker_is_still_the_posting(page):
 def test_a_page_without_an_apply_control_cannot_be_entered(page):
     page.set_content("<h1>Careers</h1><select><option>English</option></select>")
     assert wizards.IcimsWizard().enter(page) is False
+
+
+def test_icims_central_login_is_a_sign_in_not_a_form():
+    # login.icims.com shows one box (its password box stays hidden), which the shared
+    # rules read as a form to fill (Corgan, 2026-10-02).
+    snap = _SCREENS["icims"]["central_login"]
+    assert wizards.WizardAdapter().classify(snap) == "apply_form"
+    stop = wizards.IcimsWizard().stop_for("sign_in")
+    assert stop is not None and stop.status == "awaiting_review"
+    assert "type your email yourself" in stop.message
+
+
+def test_only_icims_types_the_email_by_hand():
+    assert wizards.TaleoWizard().type_email(object(), "ada@example.com") is False
+
+
+def test_the_advance_button_is_looked_for_in_the_form_frame(monkeypatch):
+    page, frame = object(), object()
+    monkeypatch.setattr(
+        fill_buttons, "_find_advance_button", lambda scope: "next" if scope is frame else None
+    )
+
+    class _Wizard:
+        def form_scope(self, _page):
+            return frame
+
+    run = SimpleNamespace(page=page, wizard=_Wizard())
+    assert fill_wizard._FillWizard._advance_button(run) == "next"  # noqa: SLF001
+    run.wizard = None
+    assert fill_wizard._FillWizard._advance_button(run) is None  # noqa: SLF001
+
+
+_ICIMS_JOB = "https://acme.icims.com/jobs/1/intern/"
+_ICIMS_EMAIL_FRAME = """<input id="email" type="email"><button type="button">Next</button>
+  <script>window.keys = []; document.getElementById('email')
+    .addEventListener('keydown', e => keys.push(e.isTrusted));</script>"""
+
+
+def _icims_portal(page, step):
+    outer = (f'<h1>Careers</h1><iframe name="icims_content_iframe" '
+             f'src="{_ICIMS_JOB}{step}?in_iframe=1"></iframe>')
+    page.route("https://acme.icims.com/**", lambda route: route.fulfill(
+        content_type="text/html",
+        body=_ICIMS_EMAIL_FRAME if "in_iframe" in route.request.url else outer,
+    ))
+    page.goto(_ICIMS_JOB + step)
+    return page.frame(name="icims_content_iframe")
+
+
+def test_icims_email_step_is_typed_with_real_key_presses(page):
+    frame = _icims_portal(page, "login")
+    adapter = wizards.IcimsWizard()
+    assert adapter.type_email(page, "ada@example.com") is True
+    assert frame.locator("#email").input_value() == "ada@example.com"
+    keys = frame.evaluate("window.keys")
+    assert len(keys) == len("ada@example.com") and all(keys)
+    # A box that already holds an answer is the filler's to keep.
+    assert adapter.type_email(page, "ada@example.com") is False
+    # Next lives in the frame, not on the page.
+    assert fill_buttons._find_advance_button(page) is None  # noqa: SLF001
+    assert fill_buttons._find_advance_button(adapter.form_scope(page)) is not None  # noqa: SLF001
+
+
+def test_an_email_box_off_the_login_step_is_left_to_the_filler(page):
+    frame = _icims_portal(page, "job")
+    assert wizards.IcimsWizard().type_email(page, "ada@example.com") is False
+    assert frame.locator("#email").input_value() == ""

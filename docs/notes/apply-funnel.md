@@ -1588,3 +1588,22 @@ Needs you sorts by the latest status timestamp, so recently changed rows appear 
   runs) instead of falling through to the claude fallback.
 - The panel offers the last fill's open written-answer questions as chips
   (`frontend/src/lib/askQuestions.ts`): outcome `unanswered`/`manual_review` on a text control.
+
+## 2026-10-02 — iCIMS email step: typed by hand, Next found in the frame
+
+- Corgan's iCIMS fill stopped after filling the email: `_find_advance_button` searched only
+  the top page, and iCIMS's Next sits in `icims_content_iframe`. `_FillWizard._advance_button`
+  now falls back to `wizard.form_scope(page)` (renamed from `_target`).
+- Pressing Next after the filler's script-set email sent the tab to hCaptcha, then to iCIMS's
+  central Auth0 login (`login.icims.com/u/login/identifier`, cookie
+  `icims_prompt_login_redirect` with `loginOnly=1`) for an applicant with no iCIMS account.
+  The same email typed by hand in the same tab opened `/candidate?from=login&eem=…&code=…`
+  (the new-candidate profile). The step's invisible hCaptcha scores how the box was filled.
+- `IcimsWizard.type_email` clicks the empty email box (via `clicks`) and types it with
+  `press_sequentially` (trusted key events, 80 ms/key) on the portal's `/jobs/.../login`
+  step only, before the scan; the filler then keeps it as an existing answer. A half-typed
+  box is cleared so the filler fills it instead. No CAPTCHA is solved or bypassed: a
+  challenge that still appears is the applicant's.
+- `IcimsWizard.classify` names any `login.icims.com` page `sign_in` (the shared rules read its
+  one visible box as a form); its handoff tells the applicant to sign in or, with no account,
+  type the email on the posting's own step. Fixture `icims/central_login` is captured text.

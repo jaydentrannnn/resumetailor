@@ -9,6 +9,7 @@
   },
   "icims": {
     "sign_in": {"expect": "sign_in", "headings": ["Log In"], "buttons": ["Log In"], "password_inputs": 1, "fields": 2, "text": "Please enter your email address and password"},
+    "central_login": {"expect": "sign_in", "_note": "captured from Corgan's iCIMS, 2026-10-02", "url": "https://login.icims.com/u/login/identifier?state=x", "headings": ["Welcome"], "buttons": ["Continue", "Continue with Microsoft", "Continue with Google", "Continue with Linkedin", "Continue with Apple", "Continue with Facebook", "Continue with Corporate Login", "Continue with Indeed"], "password_inputs": 0, "fields": 1, "text": "Welcome\n\nLog in to Corgan\n\nUsername or email address *\nContinue\nOR\nContinue with Microsoft\nContinue with Google"},
     "otp": {"expect": "otp", "headings": ["Verify Your Identity"], "buttons": ["Verify"], "fields": 1, "otp_input": true, "text": "We have sent a verification code to your email."},
     "apply_form": {"expect": "apply_form", "active_step": "Candidate Profile", "headings": ["Candidate Profile"], "buttons": ["Next"], "fields": 9, "text": "Candidate Profile\nFirst Name\nLast Name"},
     "review": {"expect": "review", "headings": ["Submit Application"], "buttons": ["Submit"], "fields": 2, "text": "Submit Application\nBy submitting you certify..."},
