@@ -21,7 +21,6 @@ from dataclasses import dataclass
 from typing import Any, Literal
 
 from resume_tailor.apply.ats import workday_page
-from resume_tailor.apply.driver import clicks
 from resume_tailor.apply.forms import form_guards
 
 WizardState = Literal[
@@ -103,9 +102,11 @@ _ICIMS_SIGN_IN_MSG = (
     "to the posting's email step, type your email yourself and press Next. Then choose "
     "Continue fill"
 )
-_EMAIL_BOX = "input#email:visible, input[type='email']:visible"
-#: Per-key delay when typing the email by hand, in milliseconds.
-_KEY_DELAY_MS = 80
+_ICIMS_EMAIL_STEP_MSG = (
+    "iCIMS checks for a person on its email step. In the opened tab, type your email, "
+    "tick the privacy box and press Next yourself, then choose Continue fill"
+)
+_HCAPTCHA = ".h-captcha, iframe[src*='hcaptcha']"
 #: At most this many inputs beside an Apply control is still the posting page.
 _POSTING_CHROME_FIELDS = 2
 #: Click the first visible control whose text or title is an Apply button's.
@@ -198,10 +199,11 @@ class WizardAdapter:
         """The page or frame holding the application."""
         return page
 
-    def type_email(self, page: Any, email: str) -> bool:
-        """Type ``email`` into an email-first sign-in step by hand; False when this
-        platform has no such step (the filler then fills the box as usual)."""
-        return False
+    def applicant_step(self, page: Any) -> Stop | None:
+        """A form step only the applicant can get past (one behind a CAPTCHA), else None.
+
+        Checked before the step is filled, so nothing is typed into it."""
+        return None
 
     def _is_review(self, step: str, headings: list[str], buttons: list[str], fields: int) -> bool:
         extra = {w.casefold() for w in self.review_words}
@@ -298,30 +300,23 @@ class IcimsWizard(WizardAdapter):
             return Stop("awaiting_review", _ICIMS_SIGN_IN_MSG)
         return super().stop_for(state)
 
-    def type_email(self, page: Any, email: str) -> bool:
-        """Type the email on the portal's email-first step with real key presses.
+    def applicant_step(self, page: Any) -> Stop | None:
+        """The portal's email step when an hCaptcha guards it.
 
-        The step is behind an invisible hCaptcha that scores how the box was filled. A
-        value set by script got the browser sent to iCIMS's central login (with no
-        account to sign in to), while the same email typed by hand in the same tab
-        opened the new-candidate profile (Corgan, 2026-10-02). True when the box now
-        holds ``email``.
+        With the fill browser driving the tab, that step's Next raised an hCaptcha
+        puzzle and then iCIMS's central login, for an applicant with no iCIMS account;
+        typing the email with real key presses made no difference. The same email typed
+        and sent by the applicant in the same tab opened the new-candidate profile
+        (Corgan, 2026-10-02). So the applicant sends this one step.
         """
         scope = self.form_scope(page)
-        if not email or not _ICIMS_EMAIL_STEP.search(str(getattr(scope, "url", "") or "")):
-            return False
+        if not _ICIMS_EMAIL_STEP.search(str(getattr(scope, "url", "") or "")):
+            return None
         try:
-            box = scope.locator(_EMAIL_BOX).first
-            if box.count() == 0 or box.input_value():
-                return False
-            clicks.safe_click(box, purpose="select", timeout=3000)
-            box.press_sequentially(email, delay=_KEY_DELAY_MS)
-            if box.input_value() == email:
-                return True
-            box.fill("")  # a half-typed box would be kept by the filler as an answer
-        except Exception:  # noqa: BLE001 - the filler fills a box this cannot reach
-            pass
-        return False
+            guarded = scope.locator(_HCAPTCHA).count() > 0
+        except Exception:  # noqa: BLE001 - a navigating frame is read again next step
+            return None
+        return Stop("awaiting_review", _ICIMS_EMAIL_STEP_MSG) if guarded else None
 
 
 class TaleoWizard(WizardAdapter):

@@ -1607,3 +1607,17 @@ Needs you sorts by the latest status timestamp, so recently changed rows appear 
 - `IcimsWizard.classify` names any `login.icims.com` page `sign_in` (the shared rules read its
   one visible box as a form); its handoff tells the applicant to sign in or, with no account,
   type the email on the posting's own step. Fixture `icims/central_login` is captured text.
+
+## 2026-10-02 — iCIMS email step: handed to the applicant (supersedes "typed by hand")
+
+- Live re-test in a fresh context of the fill Edge: the email typed with real key presses
+  (`press_sequentially`), consent ticked, Next clicked in the frame, and hCaptcha still
+  raised an image challenge. Typing was not the signal; the likely one is the automation
+  session attached to the tab (the applicant's own Next, with the fill finished, passed).
+  `type_email` was removed. Getting past or hiding from the check is out of scope.
+- `WizardAdapter.applicant_step(page)` (None by default) runs in `_wizard_gate` after
+  `stop_for`. `IcimsWizard` returns an `awaiting_review` Stop on the `/jobs/.../login` step
+  when its form frame holds `.h-captcha` / an hCaptcha iframe (Corgan: 3 matches in the frame,
+  none on the page), before anything is typed. A portal email step without hCaptcha is still
+  filled and advanced; Continue fill after the applicant's Next lands on `/candidate`.
+- Kept: Next found in `wizard.form_scope(page)`, and `login.icims.com` classified as `sign_in`.

@@ -56,10 +56,6 @@ class _FillWizard(fill_answers._FillAnswers, fill_ats_steps._FillAtsSteps):
         if self._interstitial_barrier():
             return fill_outcomes._BREAK
 
-        if self.wizard is not None and self.wizard.type_email(
-            self.page, str(self.fields.get("email") or "")
-        ):
-            self.progress(f"typed the email on the {self.wizard.label} email step")
         self._scan_frames()
         if self.is_workday and self._workday_blank_step():
             return fill_outcomes._CONTINUE
@@ -128,7 +124,7 @@ class _FillWizard(fill_answers._FillAnswers, fill_ats_steps._FillAtsSteps):
                 state = wizard.detect_state(page)
             if state == "posting":
                 return self._handoff(fill_outcomes.NO_FORM_MSG)
-        stop = wizard.stop_for(state)
+        stop = wizard.stop_for(state) or wizard.applicant_step(page)
         if stop is not None:
             return self._handoff(stop.message, status=stop.status)
         return None

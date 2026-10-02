@@ -188,8 +188,8 @@ def test_icims_central_login_is_a_sign_in_not_a_form():
     assert "type your email yourself" in stop.message
 
 
-def test_only_icims_types_the_email_by_hand():
-    assert wizards.TaleoWizard().type_email(object(), "ada@example.com") is False
+def test_only_icims_hands_over_a_form_step():
+    assert wizards.TaleoWizard().applicant_step(object()) is None
 
 
 def test_the_advance_button_is_looked_for_in_the_form_frame(monkeypatch):
@@ -209,37 +209,36 @@ def test_the_advance_button_is_looked_for_in_the_form_frame(monkeypatch):
 
 
 _ICIMS_JOB = "https://acme.icims.com/jobs/1/intern/"
-_ICIMS_EMAIL_FRAME = """<input id="email" type="email"><button type="button">Next</button>
-  <script>window.keys = []; document.getElementById('email')
-    .addEventListener('keydown', e => keys.push(e.isTrusted));</script>"""
+_ICIMS_EMAIL_FRAME = '<input id="email" type="email"><button type="button">Next</button>'
+_HCAPTCHA = '<div class="h-captcha" data-size="invisible"></div>'
 
 
-def _icims_portal(page, step):
+def _icims_portal(page, step, frame_body):
     outer = (f'<h1>Careers</h1><iframe name="icims_content_iframe" '
              f'src="{_ICIMS_JOB}{step}?in_iframe=1"></iframe>')
     page.route("https://acme.icims.com/**", lambda route: route.fulfill(
         content_type="text/html",
-        body=_ICIMS_EMAIL_FRAME if "in_iframe" in route.request.url else outer,
+        body=frame_body if "in_iframe" in route.request.url else outer,
     ))
     page.goto(_ICIMS_JOB + step)
-    return page.frame(name="icims_content_iframe")
 
 
-def test_icims_email_step_is_typed_with_real_key_presses(page):
-    frame = _icims_portal(page, "login")
+def test_a_captcha_guarded_icims_email_step_is_the_applicants(page):
+    _icims_portal(page, "login", _ICIMS_EMAIL_FRAME + _HCAPTCHA)
     adapter = wizards.IcimsWizard()
-    assert adapter.type_email(page, "ada@example.com") is True
-    assert frame.locator("#email").input_value() == "ada@example.com"
-    keys = frame.evaluate("window.keys")
-    assert len(keys) == len("ada@example.com") and all(keys)
-    # A box that already holds an answer is the filler's to keep.
-    assert adapter.type_email(page, "ada@example.com") is False
+    stop = adapter.applicant_step(page)
+    assert stop is not None and stop.status == "awaiting_review"
+    assert "press Next yourself" in stop.message
     # Next lives in the frame, not on the page.
     assert fill_buttons._find_advance_button(page) is None  # noqa: SLF001
     assert fill_buttons._find_advance_button(adapter.form_scope(page)) is not None  # noqa: SLF001
 
 
-def test_an_email_box_off_the_login_step_is_left_to_the_filler(page):
-    frame = _icims_portal(page, "job")
-    assert wizards.IcimsWizard().type_email(page, "ada@example.com") is False
-    assert frame.locator("#email").input_value() == ""
+@pytest.mark.parametrize(
+    ("step", "frame_body"),
+    [("login", _ICIMS_EMAIL_FRAME), ("job", _ICIMS_EMAIL_FRAME + _HCAPTCHA)],
+    ids=["email-step-without-captcha", "captcha-off-the-email-step"],
+)
+def test_other_icims_steps_are_filled(page, step, frame_body):
+    _icims_portal(page, step, frame_body)
+    assert wizards.IcimsWizard().applicant_step(page) is None
