@@ -492,7 +492,7 @@ def _cell_para(
     """Set text and run formatting on the cell's paragraph at `index` (0 is the
     cell's already-existing first paragraph; higher indices are appended).
 
-    Formatting here is not cosmetic: `template_analyze._split_entries` re-splits a
+    Formatting here is not cosmetic: `entry_structure._split_entries` re-splits a
     bootstrapped entry list by formatting fingerprint when a majority of entries'
     header paragraphs share one — real resumes naturally satisfy this (a bold company
     name differs from an italic, right-aligned date), but an unformatted fixture
@@ -590,7 +590,7 @@ def _sidebar_table_resume(document) -> None:
     """Negative fixture: same table shape as `_table_resume`, but the work-experience
     bullets sit in the row's SECOND cell alongside its own header text — the
     structural signature of two parallel reading columns (a sidebar), which
-    `template_analyze.classify_table_layout` must reject via `table_sidebar_bullets`.
+    `table_layout.classify_table_layout` must reject via `table_sidebar_bullets`.
     """
     num_id = _add_bullet_numbering(document)
     table = document.add_table(rows=8, cols=4)

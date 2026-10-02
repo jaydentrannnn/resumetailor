@@ -645,7 +645,7 @@ range in the upload.
   other cell) — `CharSpan` already carries its own `paragraph_id` per field, and
   `_tag_mapped_header` already resolves a field whose span isn't on the header's own
   paragraph, so this needed no schema change, only
-  `template_analyze._entry_header_fields`/`_header_fields_across_cells` to detect it. A
+  `header_fields._entry_header_fields`/`_header_fields_across_cells` to detect it. A
   contact block spread across several paragraphs (name/address/email/phone in different
   cells) uses `ContactMapping.slots: list[ContactSlot]` instead of the ordinary
   single-paragraph joined line; empty `slots` (every non-table profile, and any
@@ -894,7 +894,7 @@ file that was **well-formed XML and passed a naive parse check**, yet was broken
   needs the same descending-order processing or a kind physically below an
   education-with-single-line-entry section gets its prototype spans corrupted.
 - **A rule/underscore paragraph reads as an entry header unless filtered.**
-  `template_analyze._is_chrome` (blank, or `^[\s_\-–—=·.]+$`) must be checked in
+  `entry_structure._is_chrome` (blank, or `^[\s_\-–—=·.]+$`) must be checked in
   `_split_entries` — without it, a horizontal-rule paragraph under a heading is read as the
   first entry's header line, and whatever field maps to "the first header in the section"
   lands on the rule instead of the real content below it.

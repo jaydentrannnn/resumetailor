@@ -29,6 +29,7 @@ from resume_tailor import config
 from resume_tailor.content import data
 from resume_tailor.content.labels import label_taken, normalize_label
 from resume_tailor.document import (
+    analysis_types,
     calibrate,
     default_templates,
     docx_normalize,
@@ -846,7 +847,7 @@ def clear_upload_cache() -> None:
         shutil.rmtree(directory, ignore_errors=True)
 
 
-def _analysis_to_response(result: template_analyze.AnalyzeResult) -> TemplateAnalyzeResponse:
+def _analysis_to_response(result: analysis_types.AnalyzeResult) -> TemplateAnalyzeResponse:
     """Shared `AnalyzeResult` -> wire-shape conversion for `analyze_upload`/`remap_upload`."""
     return TemplateAnalyzeResponse(
         source_sha256=result.source_sha256,

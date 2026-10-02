@@ -32,7 +32,7 @@ from pathlib import Path
 from lxml import etree
 
 from . import convert
-from .template_analyze import Issue
+from .analysis_types import Issue
 
 W = "http://schemas.openxmlformats.org/wordprocessingml/2006/main"
 MC = "http://schemas.openxmlformats.org/markup-compatibility/2006"

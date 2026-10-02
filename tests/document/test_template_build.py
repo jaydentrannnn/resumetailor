@@ -228,7 +228,7 @@ def _build_project_template(tmp_path: Path, *, tech: bool = True, keep_link: boo
         profile = profile.model_copy(
             update={
                 "projects": profile.projects.model_copy(
-                    update={"link": template_analyze.OptionalSpan(present=False)}
+                    update={"link": template_profile.OptionalSpan(present=False)}
                 )
             }
         )
@@ -320,7 +320,7 @@ def test_span_past_paragraph_end_raises():
     with pytest.raises(RuntimeError, match="dates"):
         template_build.replace_span_with_tag(
             para,
-            template_analyze.CharSpan(
+            template_profile.CharSpan(
                 paragraph_id=0, start=0, end=len(para.text) + 5
             ),
             "{{ job.dates }}",
@@ -339,7 +339,7 @@ def test_tab_inside_span_raises():
     with pytest.raises(RuntimeError, match="tab"):
         template_build.replace_span_with_tag(
             para,
-            template_analyze.CharSpan(
+            template_profile.CharSpan(
                 paragraph_id=0, start=tab_idx - 1, end=tab_idx + 2
             ),
             "{{ job.dates }}",

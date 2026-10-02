@@ -58,7 +58,7 @@ from ..content.data import (
     SkillsSection,
     SummaryVariant,
 )
-from ..document import template_analyze
+from ..document import analysis_types, entry_structure
 from ..document.render import parse_range
 from .resume_import import UNTAGGED, ImportedResume, _default_vocabulary, _fresh_id, _seed_tags
 
@@ -409,7 +409,7 @@ def _normalise(line: Line) -> Line | None:
     text = _PUA_RE.sub(" ", text)
     text = "\t".join(re.sub(r"\s+", " ", part).strip() for part in text.split("\t"))
     text = re.sub(r"\t+", "\t", text).strip("\t ")
-    if not text or template_analyze._is_chrome(text):
+    if not text or entry_structure._is_chrome(text):
         return None
     line.text = text
     return line
@@ -539,7 +539,7 @@ def _heading_text(text: str) -> SectionKind | Literal["shaped"] | None:
         return "list"
     if key in _SHAPED_TITLES:
         return "shaped"
-    kind, confidence, _alias = template_analyze._classify_heading(stripped)
+    kind, confidence, _alias = entry_structure._classify_heading(stripped)
     if kind is not None and confidence >= 0.55:
         return {"projects": "project"}.get(kind, kind)  # type: ignore[return-value]
     return None
@@ -579,7 +579,7 @@ def _find_headings(lines: list[Line]) -> dict[int, SectionKind | Literal["shaped
             found[i] = "shaped"
     if not found:
         for i, ln in enumerate(lines):
-            if i and not ln.bullet and template_analyze._looks_like_heading(ln.text):
+            if i and not ln.bullet and entry_structure._looks_like_heading(ln.text):
                 found[i] = "shaped"
     return found
 
@@ -888,10 +888,10 @@ def _contact(preamble: list[Line], links: list[str], warnings: list[str]) -> tup
     name_line = max(preamble[:3], key=lambda ln: ln.size)
     rest = [ln for ln in preamble if ln is not name_line]
     text = " | ".join(ln.text.replace("\t", " | ") for ln in rest)
-    email_m = template_analyze._EMAIL_RE.search(text)
+    email_m = analysis_types._EMAIL_RE.search(text)
     phone = ""
-    phone_m = template_analyze._PHONE_RE.search(text)
-    if phone_m and not template_analyze._DATE_RE.search(phone_m.group(0)):
+    phone_m = analysis_types._PHONE_RE.search(text)
+    if phone_m and not analysis_types._DATE_RE.search(phone_m.group(0)):
         phone = phone_m.group(0)
         if phone_m.start() > 0 and text[phone_m.start() - 1] == "(":
             phone = "(" + phone
@@ -918,7 +918,7 @@ def _contact(preamble: list[Line], links: list[str], warnings: list[str]) -> tup
         for seg in segments:
             if (
                 "@" in seg
-                or template_analyze._PHONE_RE.fullmatch(seg.strip("() "))
+                or analysis_types._PHONE_RE.fullmatch(seg.strip("() "))
                 or _URL_RE.search(seg)
                 or any(p.search(seg) for p in _LINK_RES.values())
                 or seg.lower() in ("linkedin", "github", "portfolio")
@@ -1180,6 +1180,6 @@ def import_lines(
 
 def _is_contact_line(line: Line) -> bool:
     return bool(
-        template_analyze._EMAIL_RE.search(line.text)
+        analysis_types._EMAIL_RE.search(line.text)
         or any(p.search(line.text) for p in _LINK_RES.values())
     )

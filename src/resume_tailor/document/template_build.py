@@ -1214,7 +1214,7 @@ def _tag_skills_prototype(doc, mapping) -> tuple[Paragraph, Paragraph]:
     `(label_paragraph, body_paragraph)` — the same paragraph twice when both spans
     share one paragraph (paragraph layout, today's exact behaviour), two different
     paragraphs when a table layout puts the label and its value in different cells
-    (see `template_analyze._skills_pair_across_cells`) — mirrors how
+    (see `field_candidates._skills_pair_across_cells`) — mirrors how
     `_tag_mapped_header` already handles a cross-paragraph header field.
     """
     if mapping.label_span.paragraph_id == mapping.body_span.paragraph_id:

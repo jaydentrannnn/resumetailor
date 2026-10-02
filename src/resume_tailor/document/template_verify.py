@@ -28,7 +28,7 @@ from docx.oxml.ns import qn
 from ..content.data import MasterResume
 from . import docx_text, template_profile
 from . import render as render_mod
-from .template_analyze import Issue
+from .analysis_types import Issue
 from .template_build import (
     BULLET_TAG,
     CONTACT_SLOT_TAG_FMT,

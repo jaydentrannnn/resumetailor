@@ -13,6 +13,7 @@ from docx.oxml import parse_xml
 from docx.oxml.ns import nsdecls, qn
 
 from resume_tailor.document import (
+    analysis_types,
     convert,
     cover_template,
     docx_normalize,
@@ -118,7 +119,7 @@ def test_typed_bullets_become_a_real_list_only_when_asked():
     prepared = docx_normalize.prepare(raw, "resume.docx", convert_bullets=True)
     assert "typed_bullets_converted" in _codes(prepared)
     document = docx.Document(io.BytesIO(prepared.raw))
-    bullets = [p for p in document.paragraphs if template_analyze.is_bullet(p)]
+    bullets = [p for p in document.paragraphs if analysis_types.is_bullet(p)]
     assert [p.text for p in bullets] == [
         "Built numerical engines in Python.",
         "Wrote the first program.",
@@ -151,7 +152,7 @@ def test_typed_bullets_in_a_file_without_a_numbering_part():
     )
     prepared = docx_normalize.prepare(raw, "resume.docx", convert_bullets=True)
     document = docx.Document(io.BytesIO(prepared.raw))
-    assert sum(template_analyze.is_bullet(p) for p in document.paragraphs) == 2
+    assert sum(analysis_types.is_bullet(p) for p in document.paragraphs) == 2
 
 
 def test_pages_files_get_export_advice():

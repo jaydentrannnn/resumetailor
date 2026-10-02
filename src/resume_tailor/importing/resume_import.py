@@ -53,10 +53,18 @@ from ..content.data import (
     SkillGroup,
     SkillsSection,
 )
-from ..document import docx_text, template_analyze
+from ..document import (
+    analysis_types,
+    contact_detect,
+    docx_text,
+    entry_structure,
+    field_candidates,
+    header_fields,
+    template_analyze,
+)
+from ..document.analysis_types import AnalyzeResult, _Para
 from ..document.render import parse_range
-from ..document.template_analyze import AnalyzeResult, HeaderFieldMapping, _Para
-from ..document.template_profile import ContactSlot
+from ..document.template_profile import ContactSlot, HeaderFieldMapping
 
 #: Sentinel tag for a bullet the deterministic pass matched nothing for — `Bullet.tags`
 #: requires at least one entry, so this stands in until the user (or an opt-in LLM
@@ -209,12 +217,12 @@ def _import_contact_from_paragraph(name: str, contact_para: _Para | None) -> Con
     resume, and any table layout whose contact info still fits in one cell)."""
     text = contact_para.text if contact_para is not None else ""
 
-    email_m = template_analyze._EMAIL_RE.search(text)
+    email_m = analysis_types._EMAIL_RE.search(text)
     email = email_m.group(0) if email_m else ""
 
     phone = ""
-    phone_m = template_analyze._PHONE_RE.search(text)
-    if phone_m and not template_analyze._DATE_RE.search(phone_m.group(0)):
+    phone_m = analysis_types._PHONE_RE.search(text)
+    if phone_m and not analysis_types._DATE_RE.search(phone_m.group(0)):
         phone = phone_m.group(0)
         # `_PHONE_RE` requires its match to start on a digit, so a leading "(" in
         # "(555) 123-4567" is never part of the match — restore it here rather than
@@ -236,12 +244,12 @@ def _import_contact_from_paragraph(name: str, contact_para: _Para | None) -> Con
                 github = target
 
     # Split on the *actual* separator this line uses (reusing
-    # `template_analyze._contact_separator`'s own detection) rather than a bare
+    # `contact_detect._contact_separator`'s own detection) rather than a bare
     # character class: a plain-text profile URL typed inline, not a real w:hyperlink
     # ("www.linkedin.com/in/…", common when an export loses its hyperlinks), contains
     # bare "/" and "." itself — splitting on those unconditionally shreds the URL into
     # unrelated fragments instead of treating it as one field.
-    sep = template_analyze._contact_separator(text) if text.strip() else " • "
+    sep = contact_detect._contact_separator(text) if text.strip() else " • "
     segments = [s.strip() for s in text.split(sep) if s.strip()] if sep in text else (
         [text.strip()] if text.strip() else []
     )
@@ -259,7 +267,7 @@ def _import_contact_from_paragraph(name: str, contact_para: _Para | None) -> Con
             if not github:
                 github = seg
             continue
-        if template_analyze._PHONE_RE.fullmatch(seg.replace(" ", "")):
+        if analysis_types._PHONE_RE.fullmatch(seg.replace(" ", "")):
             continue
         location = seg
         break
@@ -273,7 +281,7 @@ def _import_contact_from_slots(
     name: str, slots: list[ContactSlot], by_id: dict[int, _Para]
 ) -> Contact:
     """One paragraph per contact field — a table layout's own cells, already
-    classified by `template_analyze._detect_name_and_contact` — so each slot's text
+    classified by `contact_detect._detect_name_and_contact` — so each slot's text
     supplies exactly the field(s) it was classified as, with no further splitting."""
     fields = {"email": "", "phone": "", "location": "", "linkedin": "", "github": ""}
     for slot in slots:
@@ -285,7 +293,7 @@ def _import_contact_from_slots(
             if fields.get(field):
                 continue
             if field == "email":
-                m = template_analyze._EMAIL_RE.search(text)
+                m = analysis_types._EMAIL_RE.search(text)
                 fields["email"] = m.group(0) if m else text
             elif field in ("linkedin", "github"):
                 fields[field] = _paragraph_hyperlink_url(para) or text
@@ -309,7 +317,7 @@ def _import_contact(paras: list[_Para], first_heading_id: int | None) -> Contact
     own table-layout documents do: the name lands at paragraph 1, not 0) or spreads
     name/address/email/phone across several paragraphs.
     """
-    name_id, contact_para, slots, _unmapped = template_analyze._detect_name_and_contact(
+    name_id, contact_para, slots, _unmapped = contact_detect._detect_name_and_contact(
         paras, first_heading_id
     )
     by_id = {p.id: p for p in paras}
@@ -329,9 +337,9 @@ def _import_experience_entries(
 ) -> tuple[list[Experience], list[str]]:
     warnings: list[str] = []
     entries: list[Experience] = []
-    for entry in template_analyze._split_entries(body):
+    for entry in entry_structure._split_entries(body):
         header_para = entry[0]
-        header, _candidates = template_analyze._entry_header_fields(
+        header, _candidates = header_fields._entry_header_fields(
             entry, primary="company", secondary="location", date_field="dates"
         )
         company = _field_text(entry, header, "company")
@@ -339,7 +347,7 @@ def _import_experience_entries(
         dates_text = _field_text(entry, header, "dates")
 
         rest = entry[1:]
-        main_rest = template_analyze._entry_main_paragraphs(entry)[1:]
+        main_rest = header_fields._entry_main_paragraphs(entry)[1:]
         titles = [p for p in main_rest if not p.is_bullet and p.text.strip()]
         title = ""
         if titles:
@@ -389,7 +397,7 @@ def _import_project_entries(
 ) -> tuple[list[Project], list[str]]:
     warnings: list[str] = []
     entries: list[Project] = []
-    for entry in template_analyze._split_entries(body):
+    for entry in entry_structure._split_entries(body):
         header_para = entry[0]
         text = header_para.text
         tab = text.find("\t")
@@ -397,7 +405,7 @@ def _import_project_entries(
             header_para, limit=None if tab < 0 else tab
         )
 
-        header, _candidates = template_analyze._entry_header_fields(
+        header, _candidates = header_fields._entry_header_fields(
             entry,
             primary="name",
             secondary="tech",
@@ -437,9 +445,9 @@ def _import_project_entries(
 def _import_education_entries(body: list[_Para]) -> tuple[list[Education], list[str]]:
     warnings: list[str] = []
     entries: list[Education] = []
-    for entry in template_analyze._split_entries(body):
+    for entry in entry_structure._split_entries(body):
         header_para = entry[0]
-        header, _candidates = template_analyze._entry_header_fields(
+        header, _candidates = header_fields._entry_header_fields(
             entry, primary="school", secondary="location", date_field="dates"
         )
         school = _field_text(entry, header, "school")
@@ -448,7 +456,7 @@ def _import_education_entries(body: list[_Para]) -> tuple[list[Education], list[
 
         # Main-cell paragraphs only: a table layout's location/dates cell must not be
         # read as a degree line or a detail — see `_entry_main_paragraphs`.
-        main_rest = template_analyze._entry_main_paragraphs(entry)[1:]
+        main_rest = header_fields._entry_main_paragraphs(entry)[1:]
         detail_paras = [p for p in main_rest if p.text.strip()]
         degree = ""
         gpa = ""
@@ -500,7 +508,7 @@ def _import_skill_groups(body: list[_Para]) -> tuple[list[SkillGroup], list[str]
     groups: list[SkillGroup] = []
 
     non_blank = [p for p in body if p.text.strip()]
-    cross_pairs = template_analyze._skills_rows_across_cells(non_blank)
+    cross_pairs = field_candidates._skills_rows_across_cells(non_blank)
     if cross_pairs is not None:
         # Table layout: a label cell and a value cell, side by side — every row is one
         # group, unlike the single-paragraph path below where one line is one group.
@@ -519,7 +527,7 @@ def _import_skill_groups(body: list[_Para]) -> tuple[list[SkillGroup], list[str]
         return groups, warnings
 
     for p in non_blank:
-        spans = template_analyze._skills_spans(p)
+        spans = field_candidates._skills_spans(p)
         if spans is None:
             warnings.append(
                 f"skills line at paragraph {p.id} ({p.text.strip()!r}) is not "
@@ -1111,17 +1119,17 @@ _MC_FALLBACK = "{http://schemas.openxmlformats.org/markup-compatibility/2006}Fal
 def header_contact(doc, contact: Contact) -> Contact:
     """Fill the gaps in `contact` from the page header, where many Word templates put
     the name and contact line. Fields the body already supplied win."""
-    text = template_analyze.header_identity_text(doc)
+    text = entry_structure.header_identity_text(doc)
     if not text.strip():
         return contact
     updates: dict[str, str] = {}
     if not contact.email:
-        m = template_analyze._EMAIL_RE.search(text)
+        m = analysis_types._EMAIL_RE.search(text)
         if m:
             updates["email"] = m.group(0)
     if not contact.phone:
-        m = template_analyze._PHONE_RE.search(text)
-        if m and not template_analyze._DATE_RE.search(m.group(0)):
+        m = analysis_types._PHONE_RE.search(text)
+        if m and not analysis_types._DATE_RE.search(m.group(0)):
             phone = m.group(0)
             if m.start() > 0 and text[m.start() - 1] == "(":
                 phone = "(" + phone
@@ -1234,7 +1242,7 @@ def docx_lines(doc):
                     bold=share("bold"),
                     italic=share("italic"),
                     rel_top=0.5,
-                    bullet=template_analyze.is_bullet(paragraph),
+                    bullet=analysis_types.is_bullet(paragraph),
                     text_x0=x0,
                     last_top=top,
                 )
@@ -1266,7 +1274,7 @@ def docx_lines(doc):
                 if content is not None:
                     walk(content)
 
-    header = template_analyze.header_identity_text(doc)
+    header = entry_structure.header_identity_text(doc)
     for n, text in enumerate(line for line in header.splitlines() if line.strip()):
         out.append(Line(text=text, x0=0.0, top=float(n * 100), size=11.0, rel_top=0.5))
     walk(doc.element.body)

@@ -15,10 +15,24 @@ import re
 from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
-#: Modules that create analyzer issues: the analyzer itself and the upload clean-up.
-SOURCES = (
-    ROOT / "src" / "resume_tailor" / "document" / "template_analyze.py",
-    ROOT / "src" / "resume_tailor" / "document" / "docx_normalize.py",
+#: Modules that create analyzer issues: the analyzer (`template_analyze` and the modules
+#: split out of it) and the upload clean-up. Add a module here when it starts creating
+#: `Issue`s, or its codes go unexplained on the Template page.
+_DOCUMENT = ROOT / "src" / "resume_tailor" / "document"
+SOURCES = tuple(
+    _DOCUMENT / f"{name}.py"
+    for name in (
+        "template_analyze",
+        "analysis_types",
+        "table_layout",
+        "entry_structure",
+        "contact_detect",
+        "header_fields",
+        "field_candidates",
+        "profile_validation",
+        "section_mapping",
+        "docx_normalize",
+    )
 )
 OUT = ROOT / "frontend" / "src" / "lib" / "templateIssueCodes.json"
 

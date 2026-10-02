@@ -8,7 +8,7 @@ import docx
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 
-from resume_tailor.document import template_analyze
+from resume_tailor.document import analysis_types, contact_detect, header_fields, template_analyze
 from tests.fixtures import _sidebar_table_resume, _table_resume
 
 
@@ -122,7 +122,7 @@ def test_analyze_standard_resume_is_ready():
     assert result.ready is True
     assert result.suggested_profile is not None
     assert result.suggested_profile.enabled.experience is True
-    assert result.suggested_profile.source_sha256 == template_analyze.sha256_bytes(raw)
+    assert result.suggested_profile.source_sha256 == analysis_types.sha256_bytes(raw)
     keys = {s.key for s in result.sections}
     assert keys == {"education", "experience", "projects", "skills"}
 
@@ -997,10 +997,10 @@ def test_contact_field_order_does_not_read_a_date_range_as_a_phone_number():
     always returns the full field set (order is a rendering preference, not a presence
     filter — see its own "always allow the full set" comment), so the observable is
     which field the text's own content is attributed to first, not membership."""
-    order = template_analyze._contact_field_order("2021 - 2025")
+    order = contact_detect._contact_field_order("2021 - 2025")
     assert order[0] == "location"  # not "phone" — a date range is not a phone number
 
-    order_with_real_phone = template_analyze._contact_field_order("555-123-4567")
+    order_with_real_phone = contact_detect._contact_field_order("555-123-4567")
     assert order_with_real_phone[0] == "phone"
 
 
@@ -1092,7 +1092,7 @@ def test_table_resume_single_contact_paragraph_still_uses_slots_empty():
     raw = _docx_bytes(build)
     doc = docx.Document(io.BytesIO(raw))
     paras = template_analyze._load_paras(doc)
-    name_id, contact_para, slots, unmapped = template_analyze._detect_name_and_contact(
+    name_id, contact_para, slots, unmapped = contact_detect._detect_name_and_contact(
         paras, first_heading_id=None
     )
     assert slots == []
@@ -1109,10 +1109,10 @@ def test_analyze_sidebar_table_resume_is_blocking():
     assert any(i.code == "table_sidebar_bullets" and i.blocking for i in result.issues)
 
 
-def _candidates_for(result, heading_paragraph_id: int) -> dict[str, template_analyze.FieldCandidate]:
+def _candidates_for(result, heading_paragraph_id: int) -> dict[str, analysis_types.FieldCandidate]:
     """Best (highest-confidence) candidate per field for one section, keyed by field
     name — mirrors the wizard's own `SectionFieldRows` de-duplication."""
-    best: dict[str, template_analyze.FieldCandidate] = {}
+    best: dict[str, analysis_types.FieldCandidate] = {}
     for c in result.field_candidates:
         if c.section_heading_paragraph_id != heading_paragraph_id:
             continue
@@ -1243,7 +1243,7 @@ def test_entry_header_fields_resolves_cross_cell_project_entry():
     paras = template_analyze._load_paras(doc)
     entry = [p for p in paras if p.text.strip()]
 
-    header, candidates = template_analyze._entry_header_fields(
+    header, candidates = header_fields._entry_header_fields(
         entry, primary="name", secondary="tech", date_field="date"
     )
     assert header.fields["name"].present is True
