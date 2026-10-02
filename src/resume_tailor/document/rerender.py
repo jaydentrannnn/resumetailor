@@ -33,7 +33,6 @@ from pathlib import Path
 from resume_tailor import config
 from resume_tailor.content.data import Bullet, Experience, MasterResume
 from resume_tailor.document import render
-from resume_tailor.pipeline import fabrication
 from resume_tailor.pipeline.merge import MergeGroup
 
 SNAPSHOT = "render_snapshot.json"
@@ -179,6 +178,7 @@ def bullet_rows(out_dir: Path) -> list[dict]:
 
 
 def _check(run: _Run, bullet_id: str, text: str) -> list[str]:
+    from resume_tailor.pipeline import fabrication
 
     members = run.merged_from.get(bullet_id) or [bullet_id]
     sources = [run.sources[m] for m in members if m in run.sources]
