@@ -6,9 +6,9 @@ import json
 import time
 
 from resume_tailor import config
+from resume_tailor.document import convert
 from resume_tailor.pipeline import jd
 from resume_tailor.web import job_types
-from resume_tailor.web.routes import jobs as routes_jobs
 from resume_tailor.web.schemas import JobSettings
 from tests.web.helpers import _disk_only_run, _drain, _stub_no_network_extract
 
@@ -201,7 +201,7 @@ def test_missing_pdf_is_rebuilt_from_the_docx(client, monkeypatch):
         pdf.write_bytes(b"%PDF-rebuilt")
         return pdf
 
-    monkeypatch.setattr(routes_jobs.convert, "convert", fake_convert)
+    monkeypatch.setattr(convert, "convert", fake_convert)
     assert c.get("/api/jobs/nopdf001/download.pdf").content == b"%PDF-rebuilt"
     assert c.get("/api/jobs/nopdf001/preview.pdf").status_code == 200
     assert c.get("/api/jobs/nopdf001/cover-letter/preview.pdf").content == b"%PDF-rebuilt"
@@ -216,7 +216,7 @@ def test_missing_pdf_rebuild_failure_is_a_404(client, monkeypatch):
     def boom(docx, pdf, **_):
         raise RuntimeError("word could not convert tailored.docx")
 
-    monkeypatch.setattr(routes_jobs.convert, "convert", boom)
+    monkeypatch.setattr(convert, "convert", boom)
     res = c.get("/api/jobs/nopdf002/download.pdf")
     assert res.status_code == 404
     assert "word could not convert" in res.json()["detail"]

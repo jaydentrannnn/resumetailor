@@ -35,7 +35,7 @@ from resume_tailor.content.data import MasterResume
 from resume_tailor.pipeline import jd
 from resume_tailor.web import template_ops
 from resume_tailor.web.jobs import get_queue
-from resume_tailor.web.routes.jobs import _resolve_run
+from resume_tailor.web.routes.run_lookup import _resolve_run
 from resume_tailor.web.schemas import (
     AnswerRequest,
     AnswerResponse,

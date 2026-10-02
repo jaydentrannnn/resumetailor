@@ -6,24 +6,19 @@ import asyncio
 import json
 import logging
 import time
-from contextlib import suppress
-from dataclasses import dataclass, field
-from pathlib import Path
 from typing import Any
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
-from pydantic import BaseModel, Field, ValidationError
+from pydantic import BaseModel, Field
 
 from resume_tailor import config, workspace
 from resume_tailor.content import data
-from resume_tailor.document import convert, rerender
+from resume_tailor.document import rerender
 from resume_tailor.document.template_profile import active_layout
-from resume_tailor.pipeline import estimate, include, report
-from resume_tailor.pipeline.events import ProgressEvent
+from resume_tailor.pipeline import estimate, include
 from resume_tailor.web import job_routing, template_ops
 from resume_tailor.web.job_followups import regenerate_cover_letter, verify_claim
-from resume_tailor.web.job_types import Job
 from resume_tailor.web.jobs import get_queue
 from resume_tailor.web.routes.config import _event_out, _seed_include_gpa_if_missing
 from resume_tailor.web.schemas import (
@@ -33,20 +28,17 @@ from resume_tailor.web.schemas import (
     CreateJobResponse,
     DeleteRunHistoryRequest,
     DeleteRunHistoryResponse,
-    ExpansionOut,
     JobSettings,
     JobStatusResponse,
     ResumeOutlineEntryOut,
     ResumeOutlineResponse,
     ResumeOutlineSectionOut,
-    RunHistoryEntryOut,
     RunHistoryResponse,
-    RunMetadata,
-    RunReportOut,
-    SkillsPlanOut,
     VerifyClaimRequest,
     VerifyClaimResponse,
 )
+
+from . import run_lookup
 
 router = APIRouter()
 _log = logging.getLogger(__name__)
@@ -222,227 +214,10 @@ def get_resume_outline() -> ResumeOutlineResponse:
     )
 
 
-def _job_status_response(job: Job) -> JobStatusResponse:
-    """Build the wire shape shared by `get_job` and `cancel_job`."""
-    position = get_queue().queue_position(job.job_id) or None
-    title = job.report.title if job.report else None
-    return JobStatusResponse(
-        job_id=job.job_id,
-        status=job.status,
-        queue_position=position if job.status == "queued" else None,
-        error=job.error,
-        report=job.report,
-        expansion=job.expansion,
-        skills=job.skills,
-        cover_letter=job.cover_letter,
-        events=[_event_out(e) for e in job.events],
-        created_at=job.created_at,
-        title=title,
-        metadata=job.metadata,
-    )
-
-
-@dataclass
-class _ResolvedRun:
-    """Live job or disk-backed `run.json` — enough for status + artifact routes."""
-
-    job_id: str
-    status: str
-    out_dir: Path
-    error: str | None = None
-    report: RunReportOut | None = None
-    expansion: ExpansionOut | None = None
-    skills: SkillsPlanOut | None = None
-    cover_letter: CoverLetterOut | None = None
-    events: list[ProgressEvent] = field(default_factory=list)
-    created_at: str | None = None
-    title: str | None = None
-    #: Present only for in-memory jobs — cancel/SSE still need the live object.
-    live: Job | None = None
-    metadata: RunMetadata | None = None
-
-
-def _load_run_json(job_id: str) -> dict[str, Any] | None:
-    """Parse `output/.../jobs/<id>/run.json` if it exists, else None."""
-    path = config.OUTPUT_DIR / "jobs" / job_id / "run.json"
-    if not path.exists():
-        return None
-    try:
-        return json.loads(path.read_text(encoding="utf-8"))
-    except (OSError, json.JSONDecodeError, ValueError):
-        return None
-
-
-def _resolve_run(job_id: str) -> _ResolvedRun | None:
-    """Prefer the in-memory job; fall back to a persisted `run.json` on disk.
-
-    Download and preview routes used to 404 the moment the process restarted even
-    though `tailored.pdf` was still on disk — this is what makes history usable.
-    """
-    live = get_queue().get(job_id)
-    if live is not None:
-        out_dir = live.out_dir or (config.OUTPUT_DIR / "jobs" / job_id)
-        return _ResolvedRun(
-            job_id=live.job_id,
-            status=live.status,
-            out_dir=out_dir,
-            error=live.error,
-            report=live.report,
-            expansion=live.expansion,
-            skills=live.skills,
-            cover_letter=live.cover_letter,
-            events=list(live.events),
-            created_at=live.created_at,
-            title=live.report.title if live.report else None,
-            live=live,
-            metadata=live.metadata,
-        )
-    raw = _load_run_json(job_id)
-    if raw is None:
-        return None
-    out_dir = config.OUTPUT_DIR / "jobs" / job_id
-    report_out: RunReportOut | None = None
-    if raw.get("report"):
-        with suppress(ValidationError):
-            report_out = RunReportOut.model_validate(raw["report"])
-    expansion_out: ExpansionOut | None = None
-    expansion_path = out_dir / "expansion.json"
-    if expansion_path.exists():
-        with suppress(OSError, ValidationError, json.JSONDecodeError):
-            expansion_out = ExpansionOut.model_validate(
-                json.loads(expansion_path.read_text(encoding="utf-8"))
-            )
-    skills_out: SkillsPlanOut | None = None
-    skills_path = out_dir / "skills.json"
-    if skills_path.exists():
-        with suppress(OSError, ValidationError, json.JSONDecodeError):
-            skills_out = SkillsPlanOut.model_validate(
-                json.loads(skills_path.read_text(encoding="utf-8"))
-            )
-    cover_out: CoverLetterOut | None = None
-    cover_path = out_dir / "cover.json"
-    if cover_path.exists():
-        with suppress(OSError, ValidationError, json.JSONDecodeError):
-            cover_out = CoverLetterOut.model_validate(
-                json.loads(cover_path.read_text(encoding="utf-8"))
-            )
-    meta_out: RunMetadata | None = None
-    if raw.get("metadata"):
-        with suppress(ValidationError):
-            meta_out = RunMetadata.model_validate(raw["metadata"])
-    return _ResolvedRun(
-        job_id=str(raw.get("job_id") or job_id),
-        status=str(raw.get("status") or "failed"),
-        out_dir=out_dir,
-        error=raw.get("error"),
-        report=report_out,
-        expansion=expansion_out,
-        skills=skills_out,
-        cover_letter=cover_out,
-        created_at=raw.get("created_at"),
-        title=raw.get("title") or (report_out.title if report_out else None),
-        metadata=meta_out,
-    )
-
-
-def _resolved_status_response(resolved: _ResolvedRun) -> JobStatusResponse:
-    """Wire shape for a live or disk-backed run."""
-    if resolved.live is not None:
-        return _job_status_response(resolved.live)
-    return JobStatusResponse(
-        job_id=resolved.job_id,
-        status=resolved.status,  # type: ignore[arg-type]
-        error=resolved.error,
-        report=resolved.report,
-        expansion=resolved.expansion,
-        skills=resolved.skills,
-        cover_letter=resolved.cover_letter,
-        events=[_event_out(e) for e in resolved.events],
-        created_at=resolved.created_at,
-        title=resolved.title,
-        metadata=resolved.metadata,
-    )
-
-
-#: Cap on how many history rows `GET /api/jobs` returns.
-_HISTORY_LIMIT = 30
-
-
-def _scan_run_history() -> list[RunHistoryEntryOut]:
-    """Newest-first history for the active workspace from disk + in-memory overlay."""
-    active_ws = config.active_workspace_id()
-    jobs_root = config.OUTPUT_DIR / "jobs"
-    by_id: dict[str, RunHistoryEntryOut] = {}
-
-    if jobs_root.is_dir():
-        for child in jobs_root.iterdir():
-            if not child.is_dir():
-                continue
-            raw = _load_run_json(child.name)
-            if raw is None:
-                continue
-            # Skip runs that belong to a different profile (or legacy runs with no
-            # workspace_id when we *do* have an active one — those predate this field).
-            record_ws = raw.get("workspace_id")
-            if active_ws is not None and record_ws is not None and record_ws != active_ws:
-                continue
-            if active_ws is not None and record_ws is None:
-                # Pre-history runs: only show them when their directory sits under the
-                # active workspace's output root (workspace-scoped OUTPUT_DIR already).
-                pass
-            report = raw.get("report") or {}
-            by_id[child.name] = RunHistoryEntryOut(
-                job_id=child.name,
-                status=raw.get("status") or "failed",
-                created_at=str(raw.get("created_at") or ""),
-                finished_at=raw.get("finished_at"),
-                title=str(raw.get("title") or "Untitled run"),
-                company=str((raw.get("metadata") or {}).get("company") or ""),
-                error=raw.get("error"),
-                pages=report.get("pages"),
-                coverage_matched=report.get("coverage_matched"),
-                coverage_total=report.get("coverage_total"),
-                has_pdf=(child / "tailored.pdf").exists(),
-                has_docx=(child / "tailored.docx").exists(),
-            )
-
-    # Overlay live jobs for this workspace (queued/running may have no run.json yet).
-    for job in get_queue().iter_jobs():
-        if active_ws is not None and job.workspace_id not in (None, active_ws):
-            continue
-        out_dir = job.out_dir or (jobs_root / job.job_id)
-        title = (
-            job.report.title
-            if job.report
-            else (
-                job.jd_text.splitlines()[0].strip()[:80]
-                if job.jd_text.strip()
-                else "Untitled run"
-            )
-        )
-        by_id[job.job_id] = RunHistoryEntryOut(
-            job_id=job.job_id,
-            status=job.status,
-            created_at=job.created_at,
-            finished_at=None,
-            title=title or "Untitled run",
-            company=job.metadata.company if job.metadata else "",
-            error=job.error,
-            pages=job.report.pages if job.report else None,
-            coverage_matched=job.report.coverage_matched if job.report else None,
-            coverage_total=job.report.coverage_total if job.report else None,
-            has_pdf=(out_dir / "tailored.pdf").exists(),
-            has_docx=(out_dir / "tailored.docx").exists(),
-        )
-
-    runs = sorted(by_id.values(), key=lambda r: r.created_at, reverse=True)
-    return runs[:_HISTORY_LIMIT]
-
-
 @router.get("/api/jobs", response_model=RunHistoryResponse)
 def list_jobs() -> RunHistoryResponse:
     """Newest-first recent runs for the active profile (disk + in-memory)."""
-    return RunHistoryResponse(runs=_scan_run_history())
+    return RunHistoryResponse(runs=run_lookup._scan_run_history())
 
 
 @router.post("/api/jobs/history/delete", response_model=DeleteRunHistoryResponse)
@@ -466,10 +241,10 @@ def delete_run_history(body: DeleteRunHistoryRequest) -> DeleteRunHistoryRespons
 @router.get("/api/jobs/{job_id}", response_model=JobStatusResponse)
 def get_job(job_id: str) -> JobStatusResponse:
     """Current state of one queued or finished run (live or disk-backed)."""
-    resolved = _resolve_run(job_id)
+    resolved = run_lookup._resolve_run(job_id)
     if resolved is None:
         raise HTTPException(status_code=404, detail=f"Unknown job {job_id!r}.")
-    return _resolved_status_response(resolved)
+    return run_lookup._resolved_status_response(resolved)
 
 
 @router.delete("/api/jobs/{job_id}", response_model=JobStatusResponse)
@@ -488,7 +263,7 @@ def cancel_job(job_id: str) -> JobStatusResponse:
         raise HTTPException(status_code=404, detail=f"Unknown job {job_id!r}.")
     if get_queue().cancel(job_id) is None:
         raise HTTPException(status_code=409, detail=f"Job {job_id} is already {job.status}.")
-    return _job_status_response(job)
+    return run_lookup._job_status_response(job)
 
 
 @router.get("/api/jobs/{job_id}/events")
@@ -544,55 +319,6 @@ async def job_events(job_id: str) -> StreamingResponse:
     )
 
 
-def _job_artifact(job_id: str, suffix: str) -> Path:
-    """Resolve a finished job's deliverable, or raise 404."""
-    resolved = _resolve_run(job_id)
-    if resolved is None:
-        raise HTTPException(status_code=404, detail=f"Unknown job {job_id!r}.")
-    if resolved.status != "succeeded":
-        raise HTTPException(
-            status_code=409, detail=f"Job {job_id} is {resolved.status}, not ready for download."
-        )
-    path = resolved.out_dir / f"tailored{suffix}"
-    if suffix == ".pdf":
-        _rebuild_missing_pdf(path)
-    if not path.exists():
-        raise HTTPException(status_code=404, detail=f"{path.name} was not produced.")
-    return path
-
-
-def _rebuild_missing_pdf(pdf: Path) -> None:
-    """Convert a finished run's `.docx` when its PDF is missing, or raise 404.
-
-    A run whose PDF step failed (e.g. Word refusing a conversion) still has a good
-    `.docx`, so the PDF is rebuilt on first request instead of leaving a dead link.
-    """
-    docx = pdf.with_suffix(".docx")
-    if pdf.exists() or not docx.exists():
-        return
-    try:
-        convert.convert(docx, pdf)
-    except RuntimeError as exc:
-        raise HTTPException(
-            status_code=404, detail=f"{pdf.name} was not produced, and rebuilding it failed: {exc}"
-        ) from exc
-
-
-def _export_download_name(job_id: str, *, suffix: str) -> str:
-    """User-facing download name from contact + JD title, with a safe fallback."""
-    resolved = _resolve_run(job_id)
-    title = (
-        (resolved.report.title if resolved and resolved.report else None)
-        or (resolved.title if resolved else None)
-        or "Resume"
-    )
-    try:
-        name = data.load().contact.name
-    except (FileNotFoundError, ValueError):
-        name = "Resume"
-    return report.export_filename(name, title, suffix=suffix)
-
-
 class RerenderRequest(BaseModel):
     """Edits relative to the AI version; an empty request restores it."""
 
@@ -603,19 +329,10 @@ class RerenderRequest(BaseModel):
     confirmed: list[str] = Field(default_factory=list, max_length=500)
 
 
-def _finished_run_dir(job_id: str) -> Path:
-    resolved = _resolve_run(job_id)
-    if resolved is None:
-        raise HTTPException(status_code=404, detail=f"Unknown job {job_id!r}.")
-    if resolved.status != "succeeded":
-        raise HTTPException(status_code=409, detail="Only a finished run can be edited.")
-    return resolved.out_dir
-
-
 @router.get("/api/jobs/{job_id}/bullets")
 def get_job_bullets(job_id: str) -> dict:
     """The run's bullets beside their master-resume source, for review and editing."""
-    out_dir = _finished_run_dir(job_id)
+    out_dir = run_lookup._finished_run_dir(job_id)
     try:
         return {"bullets": rerender.bullet_rows(out_dir)}
     except rerender.NoSnapshot as exc:
@@ -625,7 +342,7 @@ def get_job_bullets(job_id: str) -> dict:
 @router.post("/api/jobs/{job_id}/rerender")
 def rerender_job(job_id: str, body: RerenderRequest) -> dict:
     """Render the edited bullets with the run's own template. No model call."""
-    out_dir = _finished_run_dir(job_id)
+    out_dir = run_lookup._finished_run_dir(job_id)
     # Held like a profile switch: the render reads config's per-profile fit constants.
     with template_ops.LOCK:
         try:
@@ -662,11 +379,11 @@ def preview_pdf(job_id: str) -> FileResponse:
     """Inline PDF for embedding. Must not use attachment disposition — that forces a
     download every time an iframe remounts (e.g. switching Tailor ↔ Master resume).
     """
-    path = _job_artifact(job_id, ".pdf")
+    path = run_lookup._job_artifact(job_id, ".pdf")
     return FileResponse(
         path,
         media_type="application/pdf",
-        filename=_export_download_name(job_id, suffix=".pdf"),
+        filename=run_lookup._export_download_name(job_id, suffix=".pdf"),
         content_disposition_type="inline",
     )
 
@@ -674,11 +391,11 @@ def preview_pdf(job_id: str) -> FileResponse:
 @router.get("/api/jobs/{job_id}/download.pdf")
 def download_pdf(job_id: str) -> FileResponse:
     """Download the tailored PDF (attachment disposition for Save As / auto-download)."""
-    path = _job_artifact(job_id, ".pdf")
+    path = run_lookup._job_artifact(job_id, ".pdf")
     return FileResponse(
         path,
         media_type="application/pdf",
-        filename=_export_download_name(job_id, suffix=".pdf"),
+        filename=run_lookup._export_download_name(job_id, suffix=".pdf"),
         content_disposition_type="attachment",
     )
 
@@ -686,18 +403,18 @@ def download_pdf(job_id: str) -> FileResponse:
 @router.get("/api/jobs/{job_id}/download.docx")
 def download_docx(job_id: str) -> FileResponse:
     """Download the tailored `.docx`."""
-    path = _job_artifact(job_id, ".docx")
+    path = run_lookup._job_artifact(job_id, ".docx")
     return FileResponse(
         path,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        filename=_export_download_name(job_id, suffix=".docx"),
+        filename=run_lookup._export_download_name(job_id, suffix=".docx"),
     )
 
 
 @router.get("/api/jobs/{job_id}/expansion.md")
 def download_expansion(job_id: str) -> FileResponse:
     """Plain-text expanded experience descriptions for a single copy-all paste."""
-    resolved = _resolve_run(job_id)
+    resolved = run_lookup._resolve_run(job_id)
     if resolved is None:
         raise HTTPException(status_code=404, detail=f"Unknown job {job_id!r}.")
     if resolved.status != "succeeded":
@@ -713,14 +430,14 @@ def download_expansion(job_id: str) -> FileResponse:
     return FileResponse(
         path,
         media_type="text/markdown; charset=utf-8",
-        filename=_export_download_name(job_id, suffix=".expansion.md"),
+        filename=run_lookup._export_download_name(job_id, suffix=".expansion.md"),
     )
 
 
 @router.get("/api/jobs/{job_id}/skills.md")
 def download_skills(job_id: str) -> FileResponse:
     """Plain-text tailored skills list for a single copy-all paste."""
-    resolved = _resolve_run(job_id)
+    resolved = run_lookup._resolve_run(job_id)
     if resolved is None:
         raise HTTPException(status_code=404, detail=f"Unknown job {job_id!r}.")
     if resolved.status != "succeeded":
@@ -736,14 +453,14 @@ def download_skills(job_id: str) -> FileResponse:
     return FileResponse(
         path,
         media_type="text/markdown; charset=utf-8",
-        filename=_export_download_name(job_id, suffix=".skills.md"),
+        filename=run_lookup._export_download_name(job_id, suffix=".skills.md"),
     )
 
 
 @router.get("/api/jobs/{job_id}/cover-letter.md")
 def download_cover_letter_md(job_id: str) -> FileResponse:
     """Plain-text cover letter for a single copy-all paste."""
-    resolved = _resolve_run(job_id)
+    resolved = run_lookup._resolve_run(job_id)
     if resolved is None:
         raise HTTPException(status_code=404, detail=f"Unknown job {job_id!r}.")
     if resolved.status != "succeeded":
@@ -759,14 +476,14 @@ def download_cover_letter_md(job_id: str) -> FileResponse:
     return FileResponse(
         path,
         media_type="text/markdown; charset=utf-8",
-        filename=_export_download_name(job_id, suffix=".cover.md"),
+        filename=run_lookup._export_download_name(job_id, suffix=".cover.md"),
     )
 
 
 @router.get("/api/jobs/{job_id}/cover-letter.docx")
 def download_cover_letter_docx(job_id: str) -> FileResponse:
     """Download the rendered cover-letter ``.docx``."""
-    resolved = _resolve_run(job_id)
+    resolved = run_lookup._resolve_run(job_id)
     if resolved is None:
         raise HTTPException(status_code=404, detail=f"Unknown job {job_id!r}.")
     if resolved.status != "succeeded":
@@ -782,14 +499,14 @@ def download_cover_letter_docx(job_id: str) -> FileResponse:
     return FileResponse(
         path,
         media_type="application/vnd.openxmlformats-officedocument.wordprocessingml.document",
-        filename=_export_download_name(job_id, suffix=" Cover Letter.docx"),
+        filename=run_lookup._export_download_name(job_id, suffix=" Cover Letter.docx"),
     )
 
 
 @router.get("/api/jobs/{job_id}/cover-letter.pdf")
 def download_cover_letter_pdf(job_id: str) -> FileResponse:
     """Download the rendered cover-letter PDF."""
-    resolved = _resolve_run(job_id)
+    resolved = run_lookup._resolve_run(job_id)
     if resolved is None:
         raise HTTPException(status_code=404, detail=f"Unknown job {job_id!r}.")
     if resolved.status != "succeeded":
@@ -797,7 +514,7 @@ def download_cover_letter_pdf(job_id: str) -> FileResponse:
             status_code=409, detail=f"Job {job_id} is {resolved.status}, not ready for download."
         )
     path = resolved.out_dir / "cover.pdf"
-    _rebuild_missing_pdf(path)
+    run_lookup._rebuild_missing_pdf(path)
     if not path.exists():
         raise HTTPException(
             status_code=404,
@@ -806,7 +523,7 @@ def download_cover_letter_pdf(job_id: str) -> FileResponse:
     return FileResponse(
         path,
         media_type="application/pdf",
-        filename=_export_download_name(job_id, suffix=" Cover Letter.pdf"),
+        filename=run_lookup._export_download_name(job_id, suffix=" Cover Letter.pdf"),
         content_disposition_type="attachment",
     )
 
@@ -814,7 +531,7 @@ def download_cover_letter_pdf(job_id: str) -> FileResponse:
 @router.get("/api/jobs/{job_id}/cover-letter/preview.pdf")
 def preview_cover_letter_pdf(job_id: str) -> FileResponse:
     """Inline cover-letter PDF for embedding in the results card."""
-    resolved = _resolve_run(job_id)
+    resolved = run_lookup._resolve_run(job_id)
     if resolved is None:
         raise HTTPException(status_code=404, detail=f"Unknown job {job_id!r}.")
     if resolved.status != "succeeded":
@@ -822,7 +539,7 @@ def preview_cover_letter_pdf(job_id: str) -> FileResponse:
             status_code=409, detail=f"Job {job_id} is {resolved.status}, not ready for download."
         )
     path = resolved.out_dir / "cover.pdf"
-    _rebuild_missing_pdf(path)
+    run_lookup._rebuild_missing_pdf(path)
     if not path.exists():
         raise HTTPException(
             status_code=404,
@@ -831,7 +548,7 @@ def preview_cover_letter_pdf(job_id: str) -> FileResponse:
     return FileResponse(
         path,
         media_type="application/pdf",
-        filename=_export_download_name(job_id, suffix=" Cover Letter.pdf"),
+        filename=run_lookup._export_download_name(job_id, suffix=" Cover Letter.pdf"),
         content_disposition_type="inline",
     )
 
@@ -842,7 +559,7 @@ def regenerate_job_cover_letter(
     body: CoverLetterRegenerateRequest,
 ) -> CoverLetterOut:
     """Re-draft and overwrite this job's cover letter using saved run inputs."""
-    resolved = _resolve_run(job_id)
+    resolved = run_lookup._resolve_run(job_id)
     if resolved is None:
         raise HTTPException(status_code=404, detail=f"Unknown job {job_id!r}.")
     if resolved.status != "succeeded":
