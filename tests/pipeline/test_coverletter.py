@@ -10,19 +10,18 @@ import pytest
 
 from resume_tailor import config
 from resume_tailor.content import style
-from resume_tailor.content.data import Bullet, Contact, Experience, ExperienceSection, MasterResume
+from resume_tailor.content.data import MasterResume
 from resume_tailor.infra import llm
-from resume_tailor.pipeline import coverletter
+from resume_tailor.pipeline import coverletter, coverletter_models
 from resume_tailor.pipeline.coverletter import (
-    CoverLetterLLM,
     _accept_letter,
     _cache_path,
     _claim_fabrication_offenders,
     _validate_posting_fields,
-    ai_tells,
-    consecutive_first_person,
     draft_letter,
 )
+from resume_tailor.pipeline.coverletter_models import CoverLetterLLM
+from resume_tailor.pipeline.coverletter_style import ai_tells, consecutive_first_person
 from resume_tailor.pipeline.jd import JobRequirements, Keyword
 from tests.fixtures import synthetic_resume
 
@@ -322,7 +321,7 @@ def test_angles_reach_the_prompt(cover_calls):
         bullets,
         jd,
         use_cache=False,
-        angles=coverletter.CoverAngles(
+        angles=coverletter_models.CoverAngles(
             why_company="Their retrieval work",
             problem="Latency at scale",
             approach="Measure first",
@@ -353,7 +352,7 @@ def test_cache_key_changes_with_each_angle_field():
             reqs,
             jd_text=jd,
             word_band=config.COVER_WORD_BAND,
-            angles=coverletter.CoverAngles(**{field: value}),
+            angles=coverletter_models.CoverAngles(**{field: value}),
         )
         assert other != base, field
 
@@ -383,7 +382,7 @@ def test_angles_do_not_disable_caching_or_guard_retry(cover_calls, tmp_path, mon
         ],
     )
     calls = cover_calls(bad, good)
-    angles = coverletter.CoverAngles(why_company="retrieval focus")
+    angles = coverletter_models.CoverAngles(why_company="retrieval focus")
     letter = draft_letter(
         resume, reqs, bullets, jd, use_cache=True, angles=angles
     )

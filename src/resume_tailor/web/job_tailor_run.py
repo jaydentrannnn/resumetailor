@@ -14,6 +14,8 @@ from resume_tailor.document.template_profile import active_layout
 from resume_tailor.infra.llm import LLMError
 from resume_tailor.pipeline import (
     coverletter,
+    coverletter_format,
+    coverletter_models,
     expand,
     facets,
     fit,
@@ -352,7 +354,7 @@ class _TailorJobRun:
                 self.result.bullets,
                 job.jd_text,
                 use_cache=not settings.no_cache,
-                angles=coverletter.CoverAngles(
+                angles=coverletter_models.CoverAngles(
                     why_company=settings.cover_angles.why_company,
                     problem=settings.cover_angles.problem,
                     approach=settings.cover_angles.approach,
@@ -372,7 +374,7 @@ class _TailorJobRun:
                 encoding="utf-8",
             )
             (out_dir / "cover.md").write_text(
-                coverletter.format_markdown(letter),
+                coverletter_format.format_markdown(letter),
                 encoding="utf-8",
             )
         except Exception as exc:  # noqa: BLE001 - bonus artifact; never fail the job

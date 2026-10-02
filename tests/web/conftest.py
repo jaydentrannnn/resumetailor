@@ -10,7 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from resume_tailor import config
-from resume_tailor.pipeline import coverletter, jd, skills
+from resume_tailor.pipeline import coverletter, coverletter_models, jd, skills
 from resume_tailor.web import jobs as jobs_mod
 from resume_tailor.web.app import app
 from resume_tailor.web.jobs import JobQueue
@@ -52,7 +52,7 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(
         coverletter,
         "draft_letter",
-        lambda *a, **k: coverletter.CoverLetter(model="stub"),
+        lambda *a, **k: coverletter_models.CoverLetter(model="stub"),
     )
     monkeypatch.setattr(
         coverletter,

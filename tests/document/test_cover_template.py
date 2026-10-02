@@ -17,7 +17,7 @@ from resume_tailor import config
 from resume_tailor.document import cover_template, docx_text, render, template_analyze
 from resume_tailor.document.template_profile import load_profile
 from resume_tailor.document.template_tagging import _para_by_id
-from resume_tailor.pipeline.coverletter import CoverLetter
+from resume_tailor.pipeline.coverletter_models import CoverLetter
 from tests.fixtures import _docx_bytes, _full_featured_resume, synthetic_resume
 
 

@@ -7,7 +7,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from resume_tailor.pipeline import (
-    coverletter,
+    coverletter_models,
     expand,
     report,
     skills,
@@ -110,7 +110,7 @@ def _to_skills_out(plan: skills.SkillsPlan) -> SkillsPlanOut:
     )
 
 def _to_cover_out(
-    letter: coverletter.CoverLetter,
+    letter: coverletter_models.CoverLetter,
     *,
     out_dir: Path | None = None,
 ) -> CoverLetterOut:

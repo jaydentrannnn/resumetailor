@@ -8,8 +8,8 @@ import pytest
 
 from resume_tailor.infra import fake_llm, llm
 from resume_tailor.pipeline import (
-    coverletter,
-    facets,
+    coverletter_models,
+    facets_models,
     jd,
     relevance,
     review,
@@ -49,9 +49,9 @@ def test_extraction_keeps_known_tags_named_in_the_posting():
 @pytest.mark.parametrize(
     "model",
     [
-        facets.FacetSelection,
+        facets_models.FacetSelection,
         skills.SkillsSelectionLLM,
-        coverletter.CoverLetterLLM,
+        coverletter_models.CoverLetterLLM,
         review.ReviewLLM,
     ],
 )

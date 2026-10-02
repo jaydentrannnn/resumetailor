@@ -19,7 +19,7 @@ from typing import TYPE_CHECKING, Literal
 
 from .. import config
 from ..content.data import Experience, MasterResume, Project
-from .facets import labels_are_equivalent
+from .facets_labels import labels_are_equivalent
 from .fit_types import FitResult
 from .jd import JobRequirements, extraction_diagnosis
 from .rewrite import keyword_coverage
@@ -197,7 +197,7 @@ def diagnose_gaps(requirements: JobRequirements, master: MasterResume) -> list[K
     evidence this function exists to find (see the `master=` parameter on `report_data` /
     `format_report`, added for the same reason).
 
-    Reuses `facets.labels_are_equivalent` for the near-miss and untagged-evidence checks
+    Reuses `facets_labels.labels_are_equivalent` for the near-miss and untagged-evidence checks
     rather than a second string-similarity implementation: it already carries the acronym
     ladder, alphanumeric-prefix containment, token-set containment, and word-by-word
     acronym alignment, each added for a live rename failure. It catches *spelling*
@@ -652,7 +652,7 @@ def format_cover_letter(letter) -> str:
     Kept separate from ``format_report`` because the cover letter succeeds or fails
     independently of the fit loop, and the CLI prints it only when the call ran.
     """
-    from . import coverletter as coverletter_mod
+    from . import coverletter_format
 
     lines: list[str] = [
         f"Cover letter ({letter.word_count} words, model={letter.model}):",
@@ -661,7 +661,7 @@ def format_cover_letter(letter) -> str:
         lines.append(f"  WARNING: {warning}")
     if letter.paragraphs:
         lines.append("")
-        lines.append(coverletter_mod.format_markdown(letter))
+        lines.append(coverletter_format.format_markdown(letter))
     return "\n".join(lines)
 
 

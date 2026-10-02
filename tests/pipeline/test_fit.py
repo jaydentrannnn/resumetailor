@@ -23,7 +23,7 @@ from resume_tailor.content.data import (
     SkillsSection,
 )
 from resume_tailor.pipeline import (
-    facets,
+    facets_budget,
     fit_lines,
     fit_selection,
     fit_shrink,
@@ -480,7 +480,7 @@ def test_measured_pass_refits_coursework_only_from_the_pool_it_is_given(monkeypa
         pools.append(list(pool))
         return [*ordered, "Operating Systems"]
 
-    monkeypatch.setattr(facets, "fit_coursework_to_budget", fake_fit_coursework)
+    monkeypatch.setattr(facets_budget, "fit_coursework_to_budget", fake_fit_coursework)
     pool = ["Algorithms", "Databases", "Operating Systems"]
 
     fit_mod.fit(

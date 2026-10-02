@@ -15,73 +15,21 @@ are enforced in code.
 from __future__ import annotations
 
 import hashlib
-import re
 from dataclasses import dataclass, field
-from datetime import date
 from pathlib import Path
-
-from pydantic import BaseModel, Field
 
 from .. import config
 from ..content import industries, style
 from ..content.data import Bullet, MasterResume
 from ..infra import llm
-from . import events
-from .fabrication import _HAS_DIGIT, _TOKEN, _check_fabrication
+from . import coverletter_format, coverletter_models, coverletter_style, events
+from .fabrication import _check_fabrication
 from .jd import JobRequirements
 from .rewrite_prompts import _format_keywords
 
 #: Bumped when ``_SYSTEM`` or the cover request shape changes. Version 2 added
 #: ATS/trust keyword split, anti-generic self-check, and optional CoverAngles.
 _COVER_PROMPT_VERSION = 4
-
-#: Long dashes the model must never emit. Mechanical replacement is safe when one slips
-#: through after a retry.
-_LONG_DASHES = ("\u2012", "\u2013", "\u2014", "\u2015")
-
-#: Phrase blocklist for AI-tell detection. Curated against ``style.DEFAULT_REWRITE_STYLE``
-#: so it never blocks a verb the rewrite style recommends (e.g. "spearheaded").
-_AI_PHRASES = (
-    "delve",
-    "tapestry",
-    "testament to",
-    "i am writing to apply",
-    "in today's fast-paced",
-    "moreover",
-    "furthermore",
-    "in conclusion",
-    "it is worth noting",
-    "seamless",
-    "cutting-edge",
-    "synergy",
-    "passionate about",
-    "excited about the opportunity",
-    "resonates with",
-    "wealth of experience",
-    "proven track record",
-    "hit the ground running",
-    "deep dive",
-    "unlock",
-    "harness",
-    "pivotal",
-)
-
-#: Structural patterns that read as template prose rather than a human voice.
-_AI_STRUCTURAL = (
-    re.compile(r"\bnot just\b.+\bbut\b", re.IGNORECASE),
-    re.compile(r"\bit is not about\b.+\bit is about\b", re.IGNORECASE),
-)
-
-#: First-person verbs that mark a sentence as a resume claim worth checking.
-_FIRST_PERSON_VERB = re.compile(
-    r"\b(?:I|i)'?(?:ve|m|d)?\s+"
-    r"(?:built|designed|developed|engineered|led|managed|created|implemented|"
-    r"improved|increased|reduced|achieved|delivered|shipped|trained|mentored|"
-    r"optimized|optimised|launched|deployed|wrote|coded|programmed|researched|"
-    r"analyzed|analysed|worked|contributed|helped|used|applied)\b"
-)
-
-_SENTENCE_SPLIT = re.compile(r"(?<=[.!?])\s+")
 
 
 _SYSTEM = """\
@@ -198,187 +146,6 @@ def _system() -> str:
     ))
 
 
-class CoverLetterLLM(BaseModel):
-    """Model output for one cover letter. Strings only; no layout, no hard facts."""
-
-    company: str = ""
-    company_location: str = ""
-    addressee: str = ""
-    paragraphs: list[str] = Field(default_factory=list)
-
-
-@dataclass(frozen=True)
-class CoverAngles:
-    """Optional per-application angle inputs for the cover letter.
-
-    Separate from ``instruction`` on purpose: a non-empty instruction skips cache
-    read, cache write, and the guard retry. Angles are durable per-application
-    inputs that must stay cacheable and guarded. All fields optional — absent,
-    behaviour is byte-identical to a run without angles (aside from the prompt
-    version bump).
-    """
-
-    why_company: str = ""
-    problem: str = ""
-    approach: str = ""
-    tone: str = ""
-
-    def is_empty(self) -> bool:
-        """True when every field is blank."""
-        return not any(
-            (
-                self.why_company.strip(),
-                self.problem.strip(),
-                self.approach.strip(),
-                self.tone.strip(),
-            )
-        )
-
-    def cache_payload(self) -> str:
-        """Stable string folded into the cover-letter cache key."""
-        return "\n".join(
-            [
-                self.why_company.strip(),
-                self.problem.strip(),
-                self.approach.strip(),
-                self.tone.strip(),
-            ]
-        )
-
-    def prompt_block(self) -> str:
-        """XML block for the user message, or empty string when nothing is set."""
-        if self.is_empty():
-            return ""
-        parts: list[str] = ["<angles>"]
-        if self.why_company.strip():
-            parts.append(f"  <why_company>{self.why_company.strip()}</why_company>")
-        if self.problem.strip():
-            parts.append(f"  <problem>{self.problem.strip()}</problem>")
-        if self.approach.strip():
-            parts.append(f"  <approach>{self.approach.strip()}</approach>")
-        if self.tone.strip():
-            parts.append(f"  <tone>{self.tone.strip()}</tone>")
-        parts.append("</angles>")
-        return "\n".join(parts)
-
-
-def _genericness_offenders(
-    paragraphs: list[str],
-    *,
-    company: str,
-    jd_text: str,
-) -> list[str]:
-    """Soft offenders when no body paragraph names the company or a JD phrase.
-
-    Soft (not hard): surfaces as a warning without triggering a retry, matching
-    phrase-level AI tells.
-    """
-    body = "\n".join(paragraphs).lower()
-    if company.strip() and company.strip().lower() in body:
-        return []
-    # A short distinctive phrase from the posting — first 4+ letter token sequence
-    # of length >= 2 that appears in both. Cheap proxy for "mentions the JD".
-    jd_tokens = [t.lower() for t in _TOKEN.findall(jd_text) if len(t) >= 4]
-    for i in range(len(jd_tokens) - 1):
-        phrase = f"{jd_tokens[i]} {jd_tokens[i + 1]}"
-        if phrase in body:
-            return []
-    return ["generic: no body paragraph names the company or a posting phrase"]
-
-
-@dataclass
-class CoverLetter:
-    """Full cover-letter artifact for one tailoring run."""
-
-    company: str = ""
-    company_location: str = ""
-    addressee: str = ""
-    paragraphs: list[str] = field(default_factory=list)
-    salutation: str = ""
-    closing: str = "Sincerely,"
-    signature: str = ""
-    inside_address: list[str] = field(default_factory=list)
-    date: str = ""
-    warnings: list[str] = field(default_factory=list)
-    model: str = ""
-    word_count: int = 0
-    docx_path: Path | None = None
-    pdf_path: Path | None = None
-
-
-def ai_tells(text: str) -> list[str]:
-    """Return AI-tell offenders found in ``text`` (long dashes, phrases, structures)."""
-    offenders: list[str] = []
-    lowered = text.lower()
-    for dash in _LONG_DASHES:
-        if dash in text:
-            offenders.append(f"long dash {dash!r}")
-    for phrase in _AI_PHRASES:
-        if phrase in lowered:
-            offenders.append(f"phrase {phrase!r}")
-    for pattern in _AI_STRUCTURAL:
-        if pattern.search(text):
-            offenders.append(f"structure {pattern.pattern!r}")
-    return list(dict.fromkeys(offenders))
-
-
-def consecutive_first_person(paragraphs: list[str]) -> list[str]:
-    """Return descriptions of consecutive sentences that both open with "I"."""
-    offenders: list[str] = []
-    for para in paragraphs:
-        sentences = [s.strip() for s in _SENTENCE_SPLIT.split(para.strip()) if s.strip()]
-        for prev, curr in zip(sentences, sentences[1:]):
-            if prev.startswith("I ") and curr.startswith("I "):
-                offenders.append(f'consecutive "I" after "{prev[:40]}..."')
-    return offenders
-
-
-def _replace_long_dashes(text: str) -> str:
-    """Replace any surviving long dash with a comma and a space."""
-    for dash in _LONG_DASHES:
-        text = text.replace(dash, ", ")
-    return re.sub(r",\s+,", ", ", text)
-
-
-def _word_count(paragraphs: list[str]) -> int:
-    """Count words across all body paragraphs."""
-    return sum(len(p.split()) for p in paragraphs)
-
-
-def _verbatim_in_jd(value: str, jd_text: str) -> bool:
-    """Return True when ``value`` appears verbatim in the posting (case-insensitive)."""
-    stripped = value.strip()
-    if not stripped:
-        return True
-    return stripped.lower() in jd_text.lower()
-
-
-def _numbers_not_in_source(
-    text: str,
-    source_bullets: list[Bullet],
-    jd_text: str,
-) -> list[str]:
-    """Return number-bearing tokens in ``text`` absent from bullets or the posting."""
-    allowed: set[str] = set()
-    for match in _TOKEN.finditer(jd_text):
-        term = match.group(0)
-        if _HAS_DIGIT.search(term):
-            allowed.add(term.lower())
-    for bullet in source_bullets:
-        for src in (bullet.text, " ".join(bullet.tags)):
-            for match in _TOKEN.finditer(src):
-                term = match.group(0)
-                if _HAS_DIGIT.search(term):
-                    allowed.add(term.lower())
-
-    offenders: list[str] = []
-    for match in _TOKEN.finditer(text):
-        term = match.group(0)
-        if _HAS_DIGIT.search(term) and term.lower() not in allowed:
-            offenders.append(term)
-    return list(dict.fromkeys(offenders))
-
-
 def _claim_fabrication_offenders(
     paragraphs: list[str],
     source_bullets: list[Bullet],
@@ -395,9 +162,11 @@ def _claim_fabrication_offenders(
     """
     offenders: list[str] = []
     for para in paragraphs:
-        sentences = [s.strip() for s in _SENTENCE_SPLIT.split(para.strip()) if s.strip()]
+        sentences = [
+            s.strip() for s in coverletter_style._SENTENCE_SPLIT.split(para.strip()) if s.strip()
+        ]
         for sentence in sentences:
-            if first_person_only and not _FIRST_PERSON_VERB.search(sentence):
+            if first_person_only and not coverletter_style._FIRST_PERSON_VERB.search(sentence):
                 continue
             offenders.extend(_check_fabrication(source_bullets, sentence))
     return list(dict.fromkeys(offenders))
@@ -474,7 +243,7 @@ def check_claims(
     terms = _claim_fabrication_offenders(
         [text], source, first_person_only=False
     )
-    numbers = _numbers_not_in_source(text, source, jd_text)
+    numbers = coverletter_style._numbers_not_in_source(text, source, jd_text)
     return ClaimCheck(
         ok=not terms and not numbers,
         unsupported_terms=terms,
@@ -483,7 +252,7 @@ def check_claims(
 
 
 def _validate_posting_fields(
-    llm_result: CoverLetterLLM,
+    llm_result: coverletter_models.CoverLetterLLM,
     jd_text: str,
 ) -> tuple[str, str, str, list[str]]:
     """Blank posting-sourced fields not found verbatim in the JD; return warnings."""
@@ -492,13 +261,13 @@ def _validate_posting_fields(
     location = llm_result.company_location.strip()
     addressee = llm_result.addressee.strip()
 
-    if company and not _verbatim_in_jd(company, jd_text):
+    if company and not coverletter_style._verbatim_in_jd(company, jd_text):
         warnings.append(f"Company {company!r} not found in posting; omitted")
         company = ""
-    if location and not _verbatim_in_jd(location, jd_text):
+    if location and not coverletter_style._verbatim_in_jd(location, jd_text):
         warnings.append(f"Location {location!r} not found in posting; omitted")
         location = ""
-    if addressee and not _verbatim_in_jd(addressee, jd_text):
+    if addressee and not coverletter_style._verbatim_in_jd(addressee, jd_text):
         warnings.append(f"Addressee {addressee!r} not found in posting; omitted")
         addressee = ""
     return company, location, addressee, warnings
@@ -515,7 +284,7 @@ class _GuardResult:
 
 
 def _accept_letter(
-    llm_result: CoverLetterLLM,
+    llm_result: coverletter_models.CoverLetterLLM,
     *,
     source_bullets: list[Bullet],
     jd_text: str,
@@ -532,27 +301,27 @@ def _accept_letter(
     soft: list[str] = []
     warnings = list(field_warnings)
 
-    hard.extend(_numbers_not_in_source(body, source_bullets, jd_text))
+    hard.extend(coverletter_style._numbers_not_in_source(body, source_bullets, jd_text))
     hard.extend(_claim_fabrication_offenders(paragraphs, source_bullets))
 
-    for tell in ai_tells(body):
+    for tell in coverletter_style.ai_tells(body):
         if tell.startswith("long dash"):
             hard.append(tell)
         else:
             soft.append(tell)
 
-    hard.extend(consecutive_first_person(paragraphs))
+    hard.extend(coverletter_style.consecutive_first_person(paragraphs))
     soft.extend(
-        _genericness_offenders(paragraphs, company=company, jd_text=jd_text)
+        coverletter_models._genericness_offenders(paragraphs, company=company, jd_text=jd_text)
     )
 
-    count = _word_count(paragraphs)
+    count = coverletter_style._word_count(paragraphs)
     lo, hi = word_band
     if count < lo or count > hi:
         hard.append(f"word count {count} outside band {lo}-{hi}")
 
     # Mechanical fix for long dashes that survived a retry.
-    cleaned = [_replace_long_dashes(p) for p in paragraphs]
+    cleaned = [coverletter_style._replace_long_dashes(p) for p in paragraphs]
     if cleaned != paragraphs:
         warnings.append("Replaced long dashes with commas")
         paragraphs = cleaned
@@ -565,60 +334,6 @@ def _accept_letter(
     )
 
 
-def _format_education(resume: MasterResume) -> str:
-    """Format education entries for the cover-letter user message."""
-    lines: list[str] = []
-    for edu in resume.education:
-        parts = [edu.school, edu.degree, edu.dates]
-        if edu.gpa and edu.show_gpa:
-            parts.append(f"GPA {edu.gpa}")
-        lines.append(" | ".join(p for p in parts if p))
-    return "\n".join(lines) or "(none)"
-
-
-def _format_skills(resume: MasterResume) -> str:
-    """Format skills groups for the cover-letter user message."""
-    lines: list[str] = []
-    for group in resume.skills:
-        items = ", ".join(group.items)
-        if items:
-            lines.append(f"{group.label}: {items}")
-    return "\n".join(lines) or "(none)"
-
-
-def _format_tailored_entries(
-    resume: MasterResume,
-    bullets: dict[str, str],
-) -> str:
-    """Build the tailored-resume block for the cover-letter user message."""
-    blocks: list[str] = []
-    for section in resume.entry_sections:
-        for entry in section.entries:
-            entry_bullets = [
-                (b.id, bullets[b.id])
-                for b in entry.bullets
-                if b.id in bullets
-            ]
-            if not entry_bullets:
-                continue
-            source_bullet = resume.bullet_by_id(entry_bullets[0][0])
-            if hasattr(entry, "company"):
-                label = f"{entry.title} at {entry.company}"
-            else:
-                label = getattr(entry, "name", section.title)
-            bullet_lines = "\n".join(
-                f"    <bullet id={bid!r}>\n"
-                f"      <current>{text}</current>\n"
-                f"      <permitted_skills>{', '.join((resume.bullet_by_id(bid) or source_bullet).tags)}</permitted_skills>\n"
-                f"    </bullet>"
-                for bid, text in entry_bullets
-            )
-            blocks.append(
-                f"<entry>\n  <role>{label}</role>\n  <bullets>\n{bullet_lines}\n  </bullets>\n</entry>"
-            )
-    return "\n".join(blocks) or "(no tailored bullets)"
-
-
 def _cache_path(
     bullets: dict[str, str],
     requirements: JobRequirements,
@@ -626,10 +341,10 @@ def _cache_path(
     jd_text: str,
     word_band: tuple[int, int],
     instruction: str = "",
-    angles: CoverAngles | None = None,
+    angles: coverletter_models.CoverAngles | None = None,
 ) -> Path:
     """Cache key covering everything the cover letter depends on."""
-    angles = angles or CoverAngles()
+    angles = angles or coverletter_models.CoverAngles()
     payload = "\n".join(
         [
             str(_COVER_PROMPT_VERSION),
@@ -647,48 +362,6 @@ def _cache_path(
     return config.CACHE_DIR / f"{digest}.cover.json"
 
 
-def _build_salutation(addressee: str) -> str:
-    """Build the letter salutation from an optional named addressee."""
-    if addressee.strip():
-        return f"Dear {addressee.strip()},"
-    return "Dear Hiring Manager,"
-
-
-def _build_inside_address(company: str, company_location: str) -> list[str]:
-    """Build the inside-address lines from validated posting fields."""
-    lines: list[str] = []
-    if company:
-        lines.append(company)
-    if company_location:
-        lines.append(company_location)
-    return lines
-
-
-def _format_date_long(when: date | None = None) -> str:
-    """Format a date as a long English month-day-year string."""
-    when = when or date.today()
-    return when.strftime("%B %d, %Y").replace(" 0", " ")
-
-
-def format_markdown(letter: CoverLetter) -> str:
-    """Render the cover letter as plain text suitable for copy-all or a .md download."""
-    lines: list[str] = []
-    if letter.date:
-        lines.append(letter.date)
-        lines.append("")
-    for line in letter.inside_address:
-        lines.append(line)
-    if letter.inside_address:
-        lines.append("")
-    lines.append(letter.salutation)
-    lines.append("")
-    lines.extend(letter.paragraphs)
-    lines.append("")
-    lines.append(letter.closing)
-    lines.append(letter.signature)
-    return "\n".join(lines)
-
-
 def _call_model(
     *,
     resume: MasterResume,
@@ -697,10 +370,10 @@ def _call_model(
     jd_text: str,
     word_band: tuple[int, int],
     instruction: str = "",
-    angles: CoverAngles | None = None,
+    angles: coverletter_models.CoverAngles | None = None,
     retry_offenders: list[str] | None = None,
     previous_paragraphs: list[str] | None = None,
-) -> CoverLetterLLM:
+) -> coverletter_models.CoverLetterLLM:
     """Issue one cover-letter LLM call and return the parsed result."""
     lo, hi = word_band
     notes = "\n".join(f"  - {n}" for n in requirements.domain_notes) or "  (none)"
@@ -709,12 +382,12 @@ def _call_model(
         f"<word_band>{lo}-{hi}</word_band>\n\n",
         f"<what_the_role_involves>\n{notes}\n</what_the_role_involves>\n\n",
         f"<keywords_to_mirror>\n{_format_keywords(requirements)}\n</keywords_to_mirror>\n\n",
-        f"<education>\n{_format_education(resume)}\n</education>\n\n",
-        f"<skills>\n{_format_skills(resume)}\n</skills>\n\n",
-        f"<tailored_resume>\n{_format_tailored_entries(resume, bullets)}\n</tailored_resume>\n\n",
+        f"<education>\n{coverletter_format._format_education(resume)}\n</education>\n\n",
+        f"<skills>\n{coverletter_format._format_skills(resume)}\n</skills>\n\n",
+        f"<tailored_resume>\n{coverletter_format._format_tailored_entries(resume, bullets)}\n</tailored_resume>\n\n",
         f"<job_posting>\n{jd_text.strip()}\n</job_posting>",
     ]
-    angles_block = (angles or CoverAngles()).prompt_block()
+    angles_block = (angles or coverletter_models.CoverAngles()).prompt_block()
     if angles_block:
         # Distinct from <extra_instruction>: angles are durable and cacheable.
         user_parts.append(f"\n\n{angles_block}")
@@ -735,7 +408,7 @@ def _call_model(
         max_tokens=config.max_tokens_for("cover"),
         system=_system(),
         messages=[{"role": "user", "content": user}],
-        output_format=CoverLetterLLM,
+        output_format=coverletter_models.CoverLetterLLM,
         output_config={"effort": config.effort_for("cover")},
     )
     result = response.parsed_output
@@ -755,9 +428,9 @@ def draft_letter(
     *,
     use_cache: bool = True,
     instruction: str = "",
-    angles: CoverAngles | None = None,
+    angles: coverletter_models.CoverAngles | None = None,
     on_event: events.ProgressCallback | None = None,
-) -> CoverLetter:
+) -> coverletter_models.CoverLetter:
     """Draft a cover letter from the tailored bullets and job posting.
 
     The LLM returns body paragraphs plus posting-sourced fields; code assembles the
@@ -771,11 +444,13 @@ def draft_letter(
     word_band = config.COVER_WORD_BAND
     model_label = config.backend_for("cover").label()
     source_bullets = _source_bullets(resume, bullets)
-    angles = angles or CoverAngles()
+    angles = angles or coverletter_models.CoverAngles()
 
     if not bullets:
         events.emit(on_event, "cover", "No tailored bullets for cover letter")
-        return CoverLetter(warnings=["No tailored bullets to write from"], model=model_label)
+        return coverletter_models.CoverLetter(
+            warnings=["No tailored bullets to write from"], model=model_label
+        )
 
     config.CACHE_DIR.mkdir(parents=True, exist_ok=True)
     cache_path = _cache_path(
@@ -787,10 +462,10 @@ def draft_letter(
         angles=angles,
     )
 
-    llm_result: CoverLetterLLM | None = None
+    llm_result: coverletter_models.CoverLetterLLM | None = None
     if use_cache and cache_path.exists() and not instruction.strip():
         events.emit(on_event, "cover", "Reusing cached cover letter", cached=True)
-        llm_result = CoverLetterLLM.model_validate_json(
+        llm_result = coverletter_models.CoverLetterLLM.model_validate_json(
             cache_path.read_text(encoding="utf-8")
         )
     else:
@@ -854,28 +529,28 @@ def draft_letter(
             "Guard issues remain after retry: " + "; ".join(accepted.hard_offenders)
         )
 
-    letter = CoverLetter(
+    letter = coverletter_models.CoverLetter(
         company=company,
         company_location=location,
         addressee=addressee,
         paragraphs=accepted.paragraphs,
-        salutation=_build_salutation(addressee),
+        salutation=coverletter_format._build_salutation(addressee),
         signature=resume.contact.name,
-        inside_address=_build_inside_address(company, location),
-        date=_format_date_long(),
+        inside_address=coverletter_format._build_inside_address(company, location),
+        date=coverletter_format._format_date_long(),
         warnings=warnings,
         model=model_label,
-        word_count=_word_count(accepted.paragraphs),
+        word_count=coverletter_style._word_count(accepted.paragraphs),
     )
     return letter
 
 
 def render_cover_letter(
     resume: MasterResume,
-    letter: CoverLetter,
+    letter: coverletter_models.CoverLetter,
     *,
     out: Path,
-) -> CoverLetter:
+) -> coverletter_models.CoverLetter:
     """Render ``letter`` to ``out`` and attempt PDF conversion plus a one-page check."""
     from ..document import cover_template, render
 

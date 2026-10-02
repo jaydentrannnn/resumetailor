@@ -25,6 +25,8 @@ from resume_tailor.infra import logs
 from resume_tailor.infra.llm import LLMError
 from resume_tailor.pipeline import (
     coverletter,
+    coverletter_format,
+    coverletter_models,
     expand,
     facets,
     fit,
@@ -428,7 +430,7 @@ class _CliRun:
                 self.result.bullets,
                 self.jd_text,
                 use_cache=not args.no_cache,
-                angles=coverletter.CoverAngles(
+                angles=coverletter_models.CoverAngles(
                     why_company=args.cover_why,
                     problem=args.cover_problem,
                     approach=args.cover_approach,
@@ -440,7 +442,7 @@ class _CliRun:
             print()
             print(report.format_cover_letter(letter))
             cover_md = self._sidecar(".cover.md")
-            cover_md.write_text(coverletter.format_markdown(letter), encoding="utf-8")
+            cover_md.write_text(coverletter_format.format_markdown(letter), encoding="utf-8")
             print(f"Cover letter: {cover_path}")
         except Exception as exc:  # noqa: BLE001 - bonus artifact; never fail the run
             print(f"warning: cover letter skipped ({exc})", file=sys.stderr)

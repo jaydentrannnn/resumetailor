@@ -112,7 +112,7 @@ def _stub_cover_api(cli, monkeypatch):
     ``tailor.main`` can draft a cover letter after a successful fit when
     ``--cover-letter`` is passed. Without this stub, that path would reach the network.
     """
-    from resume_tailor.pipeline.coverletter import CoverLetter
+    from resume_tailor.pipeline.coverletter_models import CoverLetter
 
     monkeypatch.setattr(
         cli.coverletter,

@@ -11,6 +11,8 @@ from resume_tailor.content.data import MasterResume
 from resume_tailor.pipeline import (
     bullet_checks,
     coverletter,
+    coverletter_format,
+    coverletter_models,
     jd,
     propose,
 )
@@ -127,7 +129,7 @@ def regenerate_cover_letter(
 
     angles = None
     if cover_angles is not None:
-        angles = coverletter.CoverAngles(
+        angles = coverletter_models.CoverAngles(
             why_company=cover_angles.why_company,
             problem=cover_angles.problem,
             approach=cover_angles.approach,
@@ -160,7 +162,7 @@ def regenerate_cover_letter(
     out = job_outputs._to_cover_out(letter, out_dir=out_dir)
     (out_dir / "cover.json").write_text(out.model_dump_json(indent=2), encoding="utf-8")
     (out_dir / "cover.md").write_text(
-        coverletter.format_markdown(letter),
+        coverletter_format.format_markdown(letter),
         encoding="utf-8",
     )
     return out

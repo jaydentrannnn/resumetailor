@@ -34,7 +34,7 @@ from ..content import industries
 from ..content.data import MasterResume
 from ..infra import llm
 from . import events
-from .facets import (
+from .facets_labels import (
     _norm_ws,
     labels_are_equivalent,
     rename_is_jd_anchored,
@@ -129,7 +129,7 @@ def pool_key(label: str) -> str:
     """Membership key for pool merging and validation.
 
     Reuses `config.canonical_tag` — the project's global spelling-collapser, already
-    applied to every `Bullet.tag` at load time — rather than `facets.labels_are_equivalent`,
+    applied to every `Bullet.tag` at load time — rather than `facets_labels.labels_are_equivalent`,
     which is deliberately NOT used for pool merging: its token-set/prefix-containment
     branches would collapse "retrieval" into "hybrid retrieval & reranking" and destroy a
     distinct pasteable claim, exactly what `rename_preserves_claim` exists to prevent

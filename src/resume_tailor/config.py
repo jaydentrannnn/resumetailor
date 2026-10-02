@@ -1562,8 +1562,8 @@ def last_line_fill(text: str) -> int:
 def skill_group_line(label: str, items: list[str]) -> str:
     """The text one skills group renders as, for line-budget estimation.
 
-    Shared so `fit_lines._fixed_overhead_lines` and `facets._resolve_skill_group` cannot drift:
-    one measures the overhead, the other must not grow it. Mirrors the join in
+    Shared so `fit_lines._fixed_overhead_lines` and `facets_resolve._resolve_skill_group`
+    cannot drift: one measures the overhead, the other must not grow it. Mirrors the join in
     `render.build_context`'s skills block. The ": " separator is hardcoded here rather
     than read from `template_profile.SkillsMapping.separator`; if that ever needs
     honouring, this is the one place it lands.

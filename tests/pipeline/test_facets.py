@@ -4,21 +4,16 @@ from __future__ import annotations
 
 from resume_tailor import config
 from resume_tailor.content.data import Education, MasterResume, Project, SkillGroup
-from resume_tailor.pipeline import facets
-from resume_tailor.pipeline.facets import (
-    FacetResult,
-    FacetSelection,
-    ProjectTech,
-    apply,
-    budget_only,
-    finalise_selection,
+from resume_tailor.pipeline import facets, facets_labels, facets_resolve
+from resume_tailor.pipeline.facets import apply, budget_only, select_facets
+from resume_tailor.pipeline.facets_budget import (
     fit_coursework_to_budget,
     fit_tech_to_budget,
-    labels_are_equivalent,
     project_header_tech_budget,
-    rename_is_jd_anchored,
-    select_facets,
 )
+from resume_tailor.pipeline.facets_labels import labels_are_equivalent, rename_is_jd_anchored
+from resume_tailor.pipeline.facets_models import FacetResult, FacetSelection, ProjectTech
+from resume_tailor.pipeline.facets_resolve import finalise_selection
 from resume_tailor.pipeline.jd import JobRequirements, Keyword
 from tests.fixtures import synthetic_resume
 
@@ -133,7 +128,7 @@ def test_rename_rejects_sql_to_snowflake():
 def test_rename_rejects_sql_to_mysql():
     """Suffix containment must not license claiming MySQL from SQL."""
     assert not labels_are_equivalent("SQL", "MySQL")
-    from resume_tailor.pipeline.facets import _alnum_compact
+    from resume_tailor.pipeline.facets_labels import _alnum_compact
 
     # sql is only a suffix of mysql — prefix rule correctly rejects both directions.
     assert not _alnum_compact("mysql").startswith(_alnum_compact("sql"))
@@ -172,7 +167,7 @@ def test_aligns_rejects_single_letter_word_prefix():
     for "curiosity". An exact single-letter match (not exercised here) must stay legal;
     only the *prefix* shortcut needed the floor.
     """
-    from resume_tailor.pipeline.facets import _aligns
+    from resume_tailor.pipeline.facets_labels import _aligns
 
     assert not _aligns("curiosity", "C++")
     assert not _aligns("C++", "curiosity")
@@ -556,9 +551,9 @@ def test_skill_rename_rejected_when_it_adds_a_line():
 
     reqs = _requirements((new_item, new_item))
     warnings: list[str] = []
-    kept = facets._resolve_skill_group(
+    kept = facets_resolve._resolve_skill_group(
         group,
-        {facets._norm_ws(old_item): new_item},
+        {facets_labels._norm_ws(old_item): new_item},
         reqs,
         warnings=warnings,
     )

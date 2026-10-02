@@ -36,7 +36,7 @@ class CoverAnglesIn(BaseModel):
     """Optional per-application cover-letter angle inputs.
 
     Nested on `JobSettings` with defaults so an existing `settings.json` loads
-    unchanged. Separate from regeneration `instruction` — see `coverletter.CoverAngles`.
+    unchanged. Separate from regeneration `instruction` — see `coverletter_models.CoverAngles`.
     """
 
     why_company: str = Field(default="", max_length=1000)

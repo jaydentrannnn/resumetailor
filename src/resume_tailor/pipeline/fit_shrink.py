@@ -5,7 +5,7 @@ from __future__ import annotations
 from .. import config
 from ..content.data import Bullet
 from ..document import render
-from . import events, facets, fit_lines, fit_selection, fit_state, fit_types
+from . import events, facets_budget, fit_lines, fit_selection, fit_state, fit_types
 from .bullet_merge import merge_into, pull_back
 from .followups import _polish
 from .merge import propose as propose_merges
@@ -231,7 +231,7 @@ class _FitShrink(fit_state._FitState):
     ) -> None:
         course_fit = layout["__coursework__"]
         measured = "__coursework__" in measured_ids
-        course_edu.coursework = facets.fit_coursework_to_budget(
+        course_edu.coursework = facets_budget.fit_coursework_to_budget(
             old_courses, pool=self.coursework_pool,
             jd_keywords=[k.phrase for k in self.requirements.keywords],
             chars_per_line=course_fit.chars_per_line,

@@ -18,9 +18,11 @@ from resume_tailor.infra import llm
 from resume_tailor.pipeline import (
     bullet_checks,
     coverletter,
+    coverletter_models,
     expand,
     fabrication,
     facets,
+    facets_models,
     followups,
     jd,
     relevance,
@@ -170,7 +172,7 @@ def test_cover_regeneration_uses_saved_prompts_and_vocabulary(profile, monkeypat
 
     def draft(*args, **kwargs):
         seen.append((industries.active().target_field, coverletter._system(), style.active("cover")))
-        return coverletter.CoverLetter(paragraphs=["A saved example."], model="stub")
+        return coverletter_models.CoverLetter(paragraphs=["A saved example."], model="stub")
 
     monkeypatch.setattr(coverletter, "draft_letter", draft)
     monkeypatch.setattr(coverletter, "render_cover_letter", lambda *args, **kwargs: None)
@@ -219,11 +221,11 @@ def test_all_stages_receive_field_guidance_with_unchanged_output_schemas(profile
             output = {
                 "extract": requirements,
                 "score": relevance.ScoreTable(scores=[]),
-                "facets": facets.FacetSelection(),
+                "facets": facets_models.FacetSelection(),
                 "rewrite": rewrite_prompts.RewriteResult(bullets=[]),
                 "expand": expand.ExpansionLLMResult(entries=[]),
                 "skills": skills.SkillsSelectionLLM(selected=[]),
-                "cover": coverletter.CoverLetterLLM(paragraphs=[]),
+                "cover": coverletter_models.CoverLetterLLM(paragraphs=[]),
             }[self.purpose]
             return SimpleNamespace(parsed_output=output, stop_reason="end_turn")
 

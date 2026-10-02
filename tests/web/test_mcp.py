@@ -15,7 +15,16 @@ import pytest
 from resume_tailor import config
 from resume_tailor.mcp_server import tools
 from resume_tailor.mcp_server.client import BackendClient, BackendError
-from resume_tailor.pipeline import coverletter, expand, facets, fit, jd, relevance, skills
+from resume_tailor.pipeline import (
+    coverletter,
+    coverletter_models,
+    expand,
+    facets,
+    fit,
+    jd,
+    relevance,
+    skills,
+)
 from resume_tailor.pipeline.events import ProgressEvent
 from resume_tailor.pipeline.expand import ExpandedEntry, Expansion
 from resume_tailor.pipeline.fit_types import FitResult
@@ -138,7 +147,7 @@ async def mcp_client(tmp_path, monkeypatch):
 
     def fake_draft(*a, **k):
         """Stub cover-letter drafting."""
-        return coverletter.CoverLetter(
+        return coverletter_models.CoverLetter(
             company="Stub Co",
             paragraphs=["I improved reliability for production services."],
             salutation="Dear Hiring Manager,",
