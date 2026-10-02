@@ -16,7 +16,8 @@ from __future__ import annotations
 
 import hashlib
 
-#: Default style block for resume bullet rewriting — editable portions of ``rewrite_prompts._SYSTEM``.
+#: Default style block for resume bullet rewriting — the editable portions of
+#: ``rewrite_prompts._SYSTEM``.
 DEFAULT_REWRITE_STYLE = """\
 - Mirror the posting's wording only where it names something the bullet already does, and \
 only when the two genuinely mean the same thing: if the bullet says "fuzzy matching" and \
