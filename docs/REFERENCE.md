@@ -725,7 +725,7 @@ nothing; the editor loads the result as unsaved state via `editorState.loadDraft
 - Deterministic, no LLM required: reuses `template_analyze`'s own paragraph-level helpers
   (`_split_entries`, `_header_fields_from_text`, `_skills_spans`) to parse *every* entry
   (not one prototype), and seeds tags by whole-word substring match against a known-tag
-  vocabulary (`resume_import._seed_tags`). A bullet nothing matched gets the sentinel tag
+  vocabulary (`import_common._seed_tags`). A bullet nothing matched gets the sentinel tag
   `"untagged"` (`Bullet.tags` requires ≥1 entry) and is counted, not silently guessed at.
 - **Optional, explicitly opt-in LLM pass**: `propose.propose_bullet_tags(bullets,
   known_tags)` — same "model selects, code enforces" contract as `propose_vocabulary` (a
@@ -736,7 +736,7 @@ nothing; the editor loads the result as unsaved state via `editorState.loadDraft
   a `w:hyperlink`'s actual target URL (every other caller only ever needed the visible
   label text; this is the first that needs where a link actually points, to reconstruct
   `Project.url`).
-- **`POST /api/master-resume/merge` (`resume_import.merge_into`) folds an imported draft
+- **`POST /api/master-resume/merge` (`import_merge.merge_into`) folds an imported draft
   into the existing master resume** — matched entries updated in place, unmatched ones
   added, everything else untouched; never a full replace, since the master resume is
   deliberately a superset. Matching is exact `_match_key` equality for every kind except

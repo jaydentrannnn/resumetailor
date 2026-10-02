@@ -22,7 +22,7 @@ from resume_tailor.content.data import (
     SummaryVariant,
 )
 from resume_tailor.document import template_analyze
-from resume_tailor.importing import resume_import
+from resume_tailor.importing import import_common, import_merge, resume_import
 from tests.fixtures import (
     _add_bullet_numbering,
     _add_hyperlink,
@@ -35,7 +35,7 @@ from tests.fixtures import (
 )
 
 
-def _import(build) -> resume_import.ImportedResume:
+def _import(build) -> import_common.ImportedResume:
     """Analyze + import a synthetic docx built by `build`."""
     raw = _docx_bytes(build)
     result = template_analyze.analyze_docx(raw=raw)
@@ -108,7 +108,7 @@ def test_known_tag_is_seeded_deterministically():
 def test_unmatched_bullet_gets_the_untagged_sentinel_and_is_counted():
     imported = _import(_full_featured_resume)
     exp_bullet = imported.resume.experience[0].bullets[0]
-    assert exp_bullet.tags == [resume_import.UNTAGGED]
+    assert exp_bullet.tags == [import_common.UNTAGGED]
     assert imported.untagged_bullet_count >= 1
     assert any("untagged" in w.lower() for w in imported.warnings)
 
@@ -340,7 +340,7 @@ def test_merge_experience_match_is_case_and_punctuation_insensitive():
         ]
     )
 
-    merged, stats = resume_import.merge_into(existing, incoming)
+    merged, stats = import_merge.merge_into(existing, incoming)
 
     assert stats.updated == ["ACME INC"]
     assert stats.added == []
@@ -401,7 +401,7 @@ def test_merge_experience_matches_globally_not_by_section_title():
         ]
     )
 
-    merged, stats = resume_import.merge_into(existing, incoming)
+    merged, stats = import_merge.merge_into(existing, incoming)
 
     assert stats.updated == ["In the Green at UCI"]
     assert stats.added == []
@@ -457,7 +457,7 @@ def test_merge_experience_does_not_confuse_companies_sharing_a_slugify_prefix():
         ]
     )
 
-    merged, stats = resume_import.merge_into(existing, incoming)
+    merged, stats = import_merge.merge_into(existing, incoming)
 
     assert stats.added == [name_b]
     assert stats.updated == []
@@ -494,7 +494,7 @@ def test_merge_leaves_unmatched_existing_entries_completely_untouched():
         ]
     )
 
-    merged, stats = resume_import.merge_into(existing, incoming)
+    merged, stats = import_merge.merge_into(existing, incoming)
 
     assert stats.added == ["New Co"]
     assert stats.updated == []
@@ -528,7 +528,7 @@ def test_merge_adopts_an_empty_existing_section_of_the_right_kind():
         ]
     )
 
-    merged, stats = resume_import.merge_into(existing, incoming)
+    merged, stats = import_merge.merge_into(existing, incoming)
 
     assert stats.added_sections == []  # adopted, not created
     exp_sections = [s for s in merged.sections if s.kind == "experience"]
@@ -556,7 +556,7 @@ def test_merge_uses_the_sole_existing_section_of_a_kind_when_no_title_matches():
         ]
     )
 
-    merged, stats = resume_import.merge_into(existing, incoming)
+    merged, stats = import_merge.merge_into(existing, incoming)
 
     assert stats.added_sections == []
     skills_sections = [s for s in merged.sections if s.kind == "skills"]
@@ -606,7 +606,7 @@ def test_merge_creates_a_new_section_only_when_no_targeting_rule_resolves():
         ]
     )
 
-    merged, stats = resume_import.merge_into(existing, incoming)
+    merged, stats = import_merge.merge_into(existing, incoming)
 
     assert stats.added_sections == ["LEADERSHIP"]
     assert stats.added == ["C"]
@@ -654,7 +654,7 @@ def test_merge_pairs_duplicate_match_keys_in_document_order():
         ]
     )
 
-    merged, stats = resume_import.merge_into(existing, incoming)
+    merged, stats = import_merge.merge_into(existing, incoming)
 
     assert stats.updated == ["Acme", "Acme"]
     assert stats.added == []
@@ -684,7 +684,7 @@ def test_merge_skills_group_items_are_replaced_on_label_match():
         ]
     )
 
-    merged, stats = resume_import.merge_into(existing, incoming)
+    merged, stats = import_merge.merge_into(existing, incoming)
 
     assert stats.updated == ["Languages"]  # existing casing is what's reported
     group = merged.skills[0]
@@ -713,7 +713,7 @@ def test_merge_list_items_dedupe_by_exact_text():
         ]
     )
 
-    merged, stats = resume_import.merge_into(existing, incoming)
+    merged, stats = import_merge.merge_into(existing, incoming)
 
     assert stats.added == ["PMP Certified"]
     entries = merged.sections[0].entries
@@ -743,7 +743,7 @@ def test_merge_contact_only_overwrites_fields_incoming_actually_has():
         )
     )
 
-    merged, _stats = resume_import.merge_into(existing, incoming)
+    merged, _stats = import_merge.merge_into(existing, incoming)
 
     assert merged.contact.name == "New Name"
     assert merged.contact.email == "new@example.com"
@@ -787,7 +787,7 @@ def test_merge_preserves_summary_variants_and_comment_and_unions_tag_vocabulary(
         tag_vocabulary=["zzzexcel", "zzzpython"],
     )
 
-    merged, _stats = resume_import.merge_into(existing, incoming)
+    merged, _stats = import_merge.merge_into(existing, incoming)
 
     assert merged.comment == "hand-maintained notes"
     assert merged.summary_variants == existing.summary_variants
@@ -837,7 +837,7 @@ def test_merge_education_near_miss_school_updates_in_place_with_coursework():
         ]
     )
 
-    merged, stats = resume_import.merge_into(existing, incoming)
+    merged, stats = import_merge.merge_into(existing, incoming)
 
     assert stats.added == []
     assert stats.updated == ["University of California, Irvine --- Paul Merage School of Business"]
@@ -880,7 +880,7 @@ def test_merge_education_empty_incoming_field_never_blanks_a_populated_one():
         ]
     )
 
-    merged, stats = resume_import.merge_into(existing, incoming)
+    merged, stats = import_merge.merge_into(existing, incoming)
 
     entry = merged.education[0]
     assert entry.degree == "B.S. Computer Science"
@@ -925,7 +925,7 @@ def test_merge_education_exact_beats_near_miss():
         ]
     )
 
-    merged, stats = resume_import.merge_into(existing, incoming)
+    merged, stats = import_merge.merge_into(existing, incoming)
 
     assert stats.added == []
     assert stats.updated == ["University of California, Irvine --- Paul Merage School of Business"]
@@ -962,7 +962,7 @@ def test_merge_education_ambiguous_near_miss_is_added_not_guessed():
         ]
     )
 
-    merged, stats = resume_import.merge_into(existing, incoming)
+    merged, stats = import_merge.merge_into(existing, incoming)
 
     assert stats.updated == []
     assert stats.added == ["Acme University"]
@@ -994,7 +994,7 @@ def test_merge_education_genuinely_distinct_schools_stay_two_entries():
         ]
     )
 
-    merged, stats = resume_import.merge_into(existing, incoming)
+    merged, stats = import_merge.merge_into(existing, incoming)
 
     assert stats.updated == []
     assert stats.added == ["University of California, Los Angeles"]
@@ -1043,7 +1043,7 @@ def test_merge_experience_near_miss_scoping_does_not_apply_to_companies():
         ]
     )
 
-    merged, stats = resume_import.merge_into(existing, incoming)
+    merged, stats = import_merge.merge_into(existing, incoming)
 
     assert stats.updated == []
     assert stats.added == ["Acme Corp Consulting Division"]

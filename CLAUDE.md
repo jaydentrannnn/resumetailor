@@ -124,7 +124,7 @@ Docs cite bare module names (`fit.py`, `render.py`); the few that repeat across 
 | `pipeline/` | `jd`, `rewrite`, `facets`, `expand`, `skills`, `coverletter`, `review`, `propose` (the LLM callers), `fit` (`fit()` + `_FitRun.run`; layers `fit_state` → `fit_shrink` → `fit_topup`; helpers `fit_types`, `fit_lines`, `fit_selection`), `merge`, `include`, `report`, `estimate`, `events`, `runs`, `jd_input`, `jdsim` |
 | `document/` | `render`, `convert`, `docx_text`, `docx_normalize`, `template_*`, `cover_template`, `default_templates`, `calibrate`, `rerender`, `thumbnails` — no LLM, ever |
 | `content/` | `data` (the master-resume model), `data_transfer`, `edu_dates`, `libraries`, `industries`, `style`, `labels`, `onboarding`, `resume_versions` |
-| `importing/` | `resume_import`, `resume_import_pdf`, `tag_suggest` |
+| `importing/` | `resume_import` (.docx entry; `import_common`, `import_contact`, `import_entries`, `import_merge_match`, `import_merge`, `import_layout`), `resume_import_pdf` (PDF entry + its LLM call; `pdf_patterns`, `pdf_lines`, `pdf_structure`, `pdf_build`), `tag_suggest` |
 | `infra/` | `llm`, `fake_llm`, `logs`, `secret_store`, `housekeeping`, `desktop_main`, `desktop_update` |
 | `apply/`, `web/`, `mcp_server/`, `storage/`, `library_seeds/` | see their own `CLAUDE.md` / docstrings |
 

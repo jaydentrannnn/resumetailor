@@ -18,7 +18,15 @@ from resume_tailor import config
 from resume_tailor.content import data, edu_dates, resume_versions
 from resume_tailor.content.data import MasterResume
 from resume_tailor.document import template_analyze
-from resume_tailor.importing import resume_import, resume_import_pdf, tag_suggest
+from resume_tailor.importing import (
+    import_common,
+    import_layout,
+    import_merge,
+    pdf_lines,
+    resume_import,
+    resume_import_pdf,
+    tag_suggest,
+)
 from resume_tailor.pipeline import propose
 from resume_tailor.web import template_ops, template_uploads
 from resume_tailor.web.schemas import (
@@ -219,7 +227,7 @@ def import_master_resume(
 
     Writes nothing: the editor loads the result as unsaved state and the user saves
     through the existing `PUT /api/master-resume`, same as a hand edit. Tags are seeded
-    deterministically (`resume_import._seed_tags`); optional multipart field
+    deterministically (`import_common._seed_tags`); optional multipart field
     `suggest_tags` (truthy: `1`/`true`/`yes`) additionally runs `propose.
     propose_bullet_tags` for whatever the deterministic pass left untagged — an LLM
     call that must never fail the import itself, so a failure there is appended to
@@ -234,7 +242,7 @@ def import_master_resume(
     """
     raw = file.file.read()
     filename = file.filename or "upload.docx"
-    known_tags = resume_import._default_vocabulary()
+    known_tags = import_common._default_vocabulary()
     # brand-new workspace with no master resume yet
     with suppress(FileNotFoundError, ValueError):
         known_tags |= set(data.load().tag_vocabulary)
@@ -249,7 +257,7 @@ def _truthy(value: str | None) -> bool:
     return (value or "").strip().lower() in ("1", "true", "yes", "on")
 
 
-def _import_pdf(raw: bytes, known_tags: set[str], use_model: bool) -> resume_import.ImportedResume:
+def _import_pdf(raw: bytes, known_tags: set[str], use_model: bool) -> import_common.ImportedResume:
     if not raw:
         raise HTTPException(status_code=400, detail="Upload is empty.")
     if len(raw) > template_ops._MAX_UPLOAD_BYTES:
@@ -260,11 +268,11 @@ def _import_pdf(raw: bytes, known_tags: set[str], use_model: bool) -> resume_imp
     try:
         with config.pinned(config.ONE_OFF_PROFILE):
             return resume_import_pdf.import_pdf(raw, known_tags=known_tags, use_model=use_model)
-    except resume_import_pdf.PdfImportError as exc:
+    except pdf_lines.PdfImportError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
-def _import_docx(raw: bytes, filename: str, known_tags: set[str]) -> resume_import.ImportedResume:
+def _import_docx(raw: bytes, filename: str, known_tags: set[str]) -> import_common.ImportedResume:
     """Content import from a Word file. The upload is converted/cleaned first; typed
     bullets always become a list here (it is a private copy, never a template). A layout
     that can't become a template is still read, in reading order."""
@@ -284,9 +292,9 @@ def _import_docx(raw: bytes, filename: str, known_tags: set[str]) -> resume_impo
                 ) from exc
             result = template_analyze.analyze_docx(raw=raw)
             if any(
-                i.blocking and i.code in resume_import.LAYOUT_BLOCKERS for i in result.issues
+                i.blocking and i.code in import_layout.LAYOUT_BLOCKERS for i in result.issues
             ):
-                imported = resume_import.import_content_only(doc, known_tags=known_tags)
+                imported = import_layout.import_content_only(doc, known_tags=known_tags)
             else:
                 imported = resume_import.import_from_analysis(result, doc, known_tags=known_tags)
             imported.warnings[:0] = [n.message for n in prepared.notices]
@@ -298,13 +306,13 @@ def _import_docx(raw: bytes, filename: str, known_tags: set[str]) -> resume_impo
 
 
 def _suggest_tags(
-    imported: resume_import.ImportedResume, known_tags: set[str], do_suggest: bool
+    imported: import_common.ImportedResume, known_tags: set[str], do_suggest: bool
 ) -> MasterResumeImportResponse:
     """Optional model pass proposing tags for bullets the import left untagged."""
     if do_suggest and imported.untagged_bullet_count:
         all_bullets = imported.resume.all_bullets()
         untagged_indices = [
-            i for i, b in enumerate(all_bullets) if b.tags == [resume_import.UNTAGGED]
+            i for i, b in enumerate(all_bullets) if b.tags == [import_common.UNTAGGED]
         ]
         try:
             with config.pinned(config.ONE_OFF_PROFILE):
@@ -325,7 +333,7 @@ def _suggest_tags(
                         {config.canonical_tag(t) for t in suggestions[local_i]}
                     )
             imported.untagged_bullet_count = sum(
-                1 for b in all_bullets if b.tags == [resume_import.UNTAGGED]
+                1 for b in all_bullets if b.tags == [import_common.UNTAGGED]
             )
 
     return MasterResumeImportResponse(
@@ -341,7 +349,7 @@ def merge_master_resume(body: dict[str, Any]) -> MasterResumeMergeResponse:
     /api/master-resume/import`) into the current master resume and save the result.
 
     Unlike `PUT`, entries/sections in the current resume with no counterpart in `body`
-    are left untouched rather than replaced — see `resume_import.merge_into` for the
+    are left untouched rather than replaced — see `import_merge.merge_into` for the
     matching rules. A workspace with no master resume yet merges against an empty one
     (contact seeded from `body`), the same tolerance `import_master_resume` already
     applies to `data.load()` failing.
@@ -368,7 +376,7 @@ def merge_master_resume(body: dict[str, Any]) -> MasterResumeMergeResponse:
         except (FileNotFoundError, ValueError):
             existing = MasterResume(contact=incoming.contact, sections=[])
 
-        merged, stats = resume_import.merge_into(existing, incoming)
+        merged, stats = import_merge.merge_into(existing, incoming)
         backup = _write_master_resume(merged, note="merged an import")
 
     return MasterResumeMergeResponse(

@@ -8,14 +8,12 @@ import pytest
 from pypdf import PdfReader, PdfWriter
 
 from resume_tailor import config
-from resume_tailor.importing import resume_import_pdf
+from resume_tailor.importing import pdf_lines, pdf_patterns, resume_import_pdf
+from resume_tailor.importing.pdf_lines import Line, PdfImportError, clean_lines
 from resume_tailor.importing.resume_import_pdf import (
     ImportEntryLLM,
     ImportLLM,
     ImportSectionLLM,
-    Line,
-    PdfImportError,
-    clean_lines,
     import_pdf,
 )
 from resume_tailor.infra import llm
@@ -86,7 +84,7 @@ def test_single_column_resume_becomes_a_structured_draft():
 
 def test_every_imported_word_comes_from_the_pdf():
     raw = single_column_resume()
-    source = " ".join(ln.text for ln in resume_import_pdf.extract_lines(raw)[0])
+    source = " ".join(ln.text for ln in pdf_lines.extract_lines(raw)[0])
     imported = import_pdf(raw)
     for bullet in imported.resume.all_bullets():
         for word in bullet.text.split():
@@ -110,7 +108,7 @@ def test_two_column_resume_reads_each_column_in_turn():
 
 
 def test_right_aligned_dates_do_not_look_like_a_second_column():
-    lines, _links = resume_import_pdf.extract_lines(single_column_resume())
+    lines, _links = pdf_lines.extract_lines(single_column_resume())
     assert any(ln.text == "Acme Capital\tJun 2025 – Aug 2025" for ln in lines)
     assert all(ln.x0 < 300 or ln.page == 0 and ln.top < 80 for ln in lines if not ln.bullet)
 
@@ -137,7 +135,7 @@ def test_a_file_that_is_not_a_pdf_is_rejected():
 def test_too_many_pages_is_rejected():
     page = [T(40, 100, "Some text on a page that is long enough to count as text")]
     with pytest.raises(PdfImportError, match="pages"):
-        import_pdf(make_pdf([page] * (resume_import_pdf.MAX_PAGES + 1)))
+        import_pdf(make_pdf([page] * (pdf_lines.MAX_PAGES + 1)))
 
 
 def test_running_footer_and_page_numbers_are_dropped():
@@ -166,7 +164,7 @@ def test_running_footer_and_page_numbers_are_dropped():
             ),
         ]
     )
-    lines = clean_lines(resume_import_pdf.extract_lines(raw)[0])
+    lines = clean_lines(pdf_lines.extract_lines(raw)[0])
     texts = [ln.text for ln in lines]
     assert "Alex Doe - Resume" not in texts
     assert "1" not in texts and "2" not in texts
@@ -223,7 +221,7 @@ def test_wrapped_lines_join_and_keep_real_hyphens():
     ],
 )
 def test_date_shapes_are_recognised(text):
-    assert resume_import_pdf._DATE_FULL_RE.match(text)
+    assert pdf_patterns._DATE_FULL_RE.match(text)
 
 
 def test_no_headings_keeps_everything_as_one_list():
@@ -251,7 +249,7 @@ def test_no_headings_keeps_everything_as_one_list():
 
 
 def _numbered_lines():
-    return clean_lines(resume_import_pdf.extract_lines(single_column_resume())[0])
+    return clean_lines(pdf_lines.extract_lines(single_column_resume())[0])
 
 
 def _index(lines, text):

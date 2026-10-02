@@ -21,7 +21,7 @@ from resume_tailor.document import (
     template_build,
     template_verify,
 )
-from resume_tailor.importing import resume_import
+from resume_tailor.importing import import_layout, resume_import
 from tests.fixtures import (
     _add_bullet_numbering,
     _docx_bytes,
@@ -296,7 +296,7 @@ def test_textbox_layout_is_blocked_but_its_content_imports():
     analysis = template_analyze.analyze_docx(raw=raw)
     assert any(i.code == "textboxes" and i.blocking for i in analysis.issues)
 
-    imported = resume_import.import_content_only(docx.Document(io.BytesIO(raw)))
+    imported = import_layout.import_content_only(docx.Document(io.BytesIO(raw)))
     sections = {s.title: s for s in imported.resume.sections}
     assert list(sections) == ["SKILLS", "EXPERIENCE"]
     job = sections["EXPERIENCE"].entries[0]
@@ -308,7 +308,7 @@ def test_textbox_layout_is_blocked_but_its_content_imports():
 
 def test_sidebar_table_reads_column_by_column():
     raw = _docx_bytes(_sidebar_table_resume)
-    lines = [ln.text for ln in resume_import.docx_lines(docx.Document(io.BytesIO(raw)))]
+    lines = [ln.text for ln in import_layout.docx_lines(docx.Document(io.BytesIO(raw)))]
     assert lines.index("JORDAN RIVERA") < lines.index("WORK EXPERIENCE")
     # The sidebar cell's bullet comes after the whole main column, not interleaved.
     assert lines.index("Improved reliability for production services.") > lines.index(
