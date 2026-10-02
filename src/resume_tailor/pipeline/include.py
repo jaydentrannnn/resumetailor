@@ -6,7 +6,7 @@ it without importing the web layer.
 
 Applied once, before `facets.select_facets`, so the model never sees pools an excluded
 entry or a suppressed GPA/coursework line would have contributed — see CLAUDE.md's
-pipeline diagram and the `web/jobs.py` / `tailor.py` call sites for why this specific
+pipeline diagram and the `web/job_tailor_run.py` / `tailor.py` call sites for why this specific
 placement (after scoring, before facets) matters.
 """
 

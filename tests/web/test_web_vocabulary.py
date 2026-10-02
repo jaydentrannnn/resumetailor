@@ -3,7 +3,7 @@
 from __future__ import annotations
 
 from resume_tailor import config
-from resume_tailor.web import jobs as jobs_mod
+from resume_tailor.web import job_types
 from resume_tailor.web.schemas import JobSettings
 from tests.web.helpers import _FakeProposeClient, _FakeSDKError, _write_test_resume
 
@@ -192,7 +192,7 @@ def test_library_routes_reject_when_queue_busy(client):
     # Direct insertion, not submit() — see test_upload_template_rejects_when_queue_busy
     # for why: submit() starts a real background worker regardless of reassigning
     # `job.status` afterward.
-    job = jobs_mod.Job(
+    job = job_types.Job(
         job_id="fake-busy", jd_text="placeholder jd", settings=JobSettings(), status="running"
     )
     q._jobs[job.job_id] = job
@@ -385,7 +385,7 @@ def test_approve_rejects_when_queue_busy(client, tmp_path, monkeypatch):
     c, q = client
     _write_test_resume(monkeypatch, tmp_path, bullet_text="Did a thing.", bullet_tags=["python"])
     # Direct insertion, not submit() — see test_upload_template_rejects_when_queue_busy.
-    job = jobs_mod.Job(
+    job = job_types.Job(
         job_id="fake-busy", jd_text="placeholder jd", settings=JobSettings(), status="running"
     )
     q._jobs[job.job_id] = job
@@ -403,7 +403,7 @@ def test_generate_and_reject_proceed_even_when_queue_busy(client, tmp_path, monk
     c, q = client
     _write_test_resume(monkeypatch, tmp_path, bullet_text="Did a thing.", bullet_tags=["python"])
     # Direct insertion, not submit() — see test_upload_template_rejects_when_queue_busy.
-    job = jobs_mod.Job(
+    job = job_types.Job(
         job_id="fake-busy", jd_text="placeholder jd", settings=JobSettings(), status="running"
     )
     q._jobs[job.job_id] = job

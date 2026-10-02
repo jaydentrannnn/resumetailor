@@ -21,9 +21,10 @@ from resume_tailor.document import convert, rerender
 from resume_tailor.document.template_profile import active_layout
 from resume_tailor.pipeline import estimate, include, report
 from resume_tailor.pipeline.events import ProgressEvent
-from resume_tailor.web import jobs as jobs_mod
-from resume_tailor.web import template_ops
-from resume_tailor.web.jobs import Job, get_queue, regenerate_cover_letter, verify_claim
+from resume_tailor.web import job_routing, template_ops
+from resume_tailor.web.job_followups import regenerate_cover_letter, verify_claim
+from resume_tailor.web.job_types import Job
+from resume_tailor.web.jobs import get_queue
 from resume_tailor.web.routes.config import _event_out, _seed_include_gpa_if_missing
 from resume_tailor.web.schemas import (
     CoverLetterOut,
@@ -116,7 +117,7 @@ def estimate_job(body: CreateJobRequest) -> dict[str, Any]:
     settings = body.settings
     if settings is None:
         settings = JobSettings.model_validate(workspace.load_settings()["defaults"])
-    profile, overrides, effort = jobs_mod.model_routing(settings)
+    profile, overrides, effort = job_routing.model_routing(settings)
     with template_ops.LOCK:
         try:
             resume = data.load()

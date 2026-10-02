@@ -15,7 +15,7 @@ re-proposed — is enforced afterward in code (`filter_proposals`), the same spl
 Never fatal to a caller that cannot afford it: `propose_vocabulary` raises normally
 (`LLMError`, `RuntimeError`) like every other LLM stage, and it is the caller's job to
 decide whether that should fail loudly (an explicit "Generate suggestions" click) or
-degrade silently (the opportunistic post-run hook in `web/jobs.py`).
+degrade silently (the opportunistic post-run hook in `web/job_followups.py`).
 """
 
 from __future__ import annotations
@@ -184,7 +184,7 @@ def propose_vocabulary(
 
     Raises normally (`LLMError`, `RuntimeError`) — a caller that must not fail on this
     wraps it itself; see `web/app.py`'s `generate_library_proposals` route and
-    `web/jobs.py`'s post-run hook.
+    `web/job_followups.py`'s post-run hook.
     """
     if not unmatched and not unknown_verbs:
         return VocabularyProposal()

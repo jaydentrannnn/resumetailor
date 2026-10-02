@@ -30,7 +30,8 @@ from resume_tailor.pipeline import (
 )
 from resume_tailor.web import jobs as jobs_mod
 from resume_tailor.web.app import app
-from resume_tailor.web.jobs import JobQueue, regenerate_cover_letter
+from resume_tailor.web.job_followups import regenerate_cover_letter
+from resume_tailor.web.jobs import JobQueue
 from resume_tailor.web.schemas import JobSettings
 from tests.fixtures import synthetic_resume
 

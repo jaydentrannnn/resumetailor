@@ -10,6 +10,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from resume_tailor import config
+from resume_tailor.pipeline import coverletter, jd, skills
 from resume_tailor.web import jobs as jobs_mod
 from resume_tailor.web.app import app
 from resume_tailor.web.jobs import JobQueue
@@ -37,24 +38,24 @@ def client(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "CACHE_DIR", tmp_path / "cache")
     config.OUTPUT_DIR.mkdir()
     config.CACHE_DIR.mkdir()
-    monkeypatch.setattr(jobs_mod.jd, "extract_consensus", _stub_extract_consensus)
+    monkeypatch.setattr(jd, "extract_consensus", _stub_extract_consensus)
     # Default stub for every job test, set here (not per-test) so an unstubbed job never
     # silently attempts a real network call — the same gap `expand.expand_experience`
     # still has (it relies on each test's own `except Exception` swallow). A test that
     # cares about the skills stage overrides this with its own `monkeypatch.setattr`,
     # which still wins since it runs after fixture setup.
     monkeypatch.setattr(
-        jobs_mod.skills,
+        skills,
         "select_skills",
-        lambda *a, **k: jobs_mod.skills.SkillsPlan(skills=[], model="stub", pool_size=0),
+        lambda *a, **k: skills.SkillsPlan(skills=[], model="stub", pool_size=0),
     )
     monkeypatch.setattr(
-        jobs_mod.coverletter,
+        coverletter,
         "draft_letter",
-        lambda *a, **k: jobs_mod.coverletter.CoverLetter(model="stub"),
+        lambda *a, **k: coverletter.CoverLetter(model="stub"),
     )
     monkeypatch.setattr(
-        jobs_mod.coverletter,
+        coverletter,
         "render_cover_letter",
         lambda _resume, letter, **k: letter,
     )

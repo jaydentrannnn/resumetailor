@@ -187,7 +187,7 @@ class ApplySettings(BaseModel):
     #: Provider + model for Fill's own LLM calls only — written-answer drafting and
     #: choice/blocker resolution (the "Autofill model" on the Apply page). Prepare's
     #: tailoring and its screening JD extraction use the Tailor tab's routing instead
-    #: (`JobSettings.model` & co., via `web.jobs.model_routing`), so they run exactly like
+    #: (`JobSettings.model` & co., via `web.job_routing.model_routing`), so they run exactly like
     #: a Tailor-tab run. Fill's calls run outside the job queue, so without this explicit
     #: pin they would fall through to `config.backend_for`'s hardcoded Claude default
     #: whenever `_ACTIVE` is empty (e.g. right after a fresh restart) — see CLAUDE.md.

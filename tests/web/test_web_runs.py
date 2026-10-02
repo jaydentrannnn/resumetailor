@@ -6,7 +6,8 @@ import json
 import time
 
 from resume_tailor import config
-from resume_tailor.web import jobs as jobs_mod
+from resume_tailor.pipeline import jd
+from resume_tailor.web import job_types
 from resume_tailor.web.routes import jobs as routes_jobs
 from resume_tailor.web.schemas import JobSettings
 from tests.web.helpers import _disk_only_run, _drain, _stub_no_network_extract
@@ -157,7 +158,7 @@ def test_delete_run_history_removes_disk_artifacts(client):
 def test_delete_run_history_rejects_active_job(client):
     """Queued and running jobs cannot be deleted from history."""
     c, q = client
-    job = jobs_mod.Job(job_id="activehist", jd_text="x", settings=JobSettings(), status="running")
+    job = job_types.Job(job_id="activehist", jd_text="x", settings=JobSettings(), status="running")
     q._jobs[job.job_id] = job
     out_dir = config.OUTPUT_DIR / "jobs" / job.job_id
     out_dir.mkdir(parents=True, exist_ok=True)
@@ -306,7 +307,7 @@ def test_create_job_with_a_gemini_key_present_is_accepted(client, monkeypatch):
     """The inverse: a key present, even a fake one, must not be blocked at the door."""
     c, q = client
     monkeypatch.setenv("GEMINI_API_KEY", "fake-key-for-test")
-    monkeypatch.setattr(jobs_mod.jd, "extract", _stub_no_network_extract)
+    monkeypatch.setattr(jd, "extract", _stub_no_network_extract)
 
     res = c.post(
         "/api/jobs",

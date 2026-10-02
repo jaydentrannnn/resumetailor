@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 from resume_tailor import config
+from resume_tailor.pipeline import jd
 from resume_tailor.web import jobs as jobs_mod
 from tests.web.helpers import _drain, _stub_no_network_extract
 
@@ -24,7 +25,7 @@ def test_ollama_model_setting_repoints_only_the_ollama_stages(client, monkeypatc
         return real_resolve(profile, overrides=overrides, effort=effort)
 
     monkeypatch.setattr(jobs_mod.config, "resolve", recording_resolve)
-    monkeypatch.setattr(jobs_mod.jd, "extract", _stub_no_network_extract)
+    monkeypatch.setattr(jd, "extract", _stub_no_network_extract)
 
     res = c.post(
         "/api/jobs",
@@ -62,7 +63,7 @@ def test_model_name_setting_repoints_every_stage(client, monkeypatch):
         return real_resolve(profile, overrides=overrides, effort=effort)
 
     monkeypatch.setattr(jobs_mod.config, "resolve", recording_resolve)
-    monkeypatch.setattr(jobs_mod.jd, "extract", _stub_no_network_extract)
+    monkeypatch.setattr(jd, "extract", _stub_no_network_extract)
 
     res = c.post(
         "/api/jobs",
@@ -95,7 +96,7 @@ def test_blank_ollama_model_leaves_the_env_default_in_place(client, monkeypatch)
         return seen["backends"]
 
     monkeypatch.setattr(jobs_mod.config, "resolve", recording_resolve)
-    monkeypatch.setattr(jobs_mod.jd, "extract", _stub_no_network_extract)
+    monkeypatch.setattr(jd, "extract", _stub_no_network_extract)
 
     res = c.post(
         "/api/jobs",
@@ -122,7 +123,7 @@ def test_gemini_model_setting_repoints_only_the_gemini_stages(client, monkeypatc
         return real_resolve(profile, overrides=overrides, effort=effort)
 
     monkeypatch.setattr(jobs_mod.config, "resolve", recording_resolve)
-    monkeypatch.setattr(jobs_mod.jd, "extract", _stub_no_network_extract)
+    monkeypatch.setattr(jd, "extract", _stub_no_network_extract)
 
     res = c.post(
         "/api/jobs",
@@ -150,7 +151,7 @@ def test_explicit_stage_override_beats_the_blanket_ollama_tag(client, monkeypatc
         return real_resolve(profile, overrides=overrides, effort=effort)
 
     monkeypatch.setattr(jobs_mod.config, "resolve", recording_resolve)
-    monkeypatch.setattr(jobs_mod.jd, "extract", _stub_no_network_extract)
+    monkeypatch.setattr(jd, "extract", _stub_no_network_extract)
 
     res = c.post(
         "/api/jobs",
@@ -183,7 +184,7 @@ def test_skills_model_setting_reaches_resolve_as_a_per_stage_override(client, mo
         return real_resolve(profile, overrides=overrides, effort=effort)
 
     monkeypatch.setattr(jobs_mod.config, "resolve", recording_resolve)
-    monkeypatch.setattr(jobs_mod.jd, "extract", _stub_no_network_extract)
+    monkeypatch.setattr(jd, "extract", _stub_no_network_extract)
 
     res = c.post(
         "/api/jobs",

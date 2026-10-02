@@ -17,7 +17,7 @@ from fastapi import APIRouter
 from resume_tailor import config, workspace
 from resume_tailor.apply.answers import profile as apply_profile
 from resume_tailor.content import data
-from resume_tailor.web.jobs import model_routing
+from resume_tailor.web.job_routing import model_routing
 from resume_tailor.web.schemas import JobSettings
 
 router = APIRouter()

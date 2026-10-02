@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from resume_tailor import config
 from resume_tailor.apply.funnel import operations
-from resume_tailor.web.jobs import model_label, model_routing
+from resume_tailor.web.job_routing import model_label, model_routing
 from resume_tailor.web.schemas import ApplyOperationRequest, JobSettings
 
 

@@ -5,7 +5,7 @@ from __future__ import annotations
 import json
 
 from resume_tailor.content.data import load
-from resume_tailor.web import jobs as jobs_mod
+from resume_tailor.pipeline import jd
 from tests.web.helpers import _point_settings_at
 
 
@@ -137,7 +137,7 @@ def test_create_job_without_settings_uses_saved_defaults(client, tmp_path, monke
     def _stub_extract_raises(*args, **kwargs):
         raise RuntimeError("stub — no network in tests")
 
-    monkeypatch.setattr(jobs_mod.jd, "extract", _stub_extract_raises)
+    monkeypatch.setattr(jd, "extract", _stub_extract_raises)
 
     res = c.post("/api/jobs", json={"jd_text": "Some job description."})
     assert res.status_code == 200

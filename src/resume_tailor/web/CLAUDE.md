@@ -8,7 +8,7 @@ workspaces: `docs/REFERENCE.md` §2.
 
 - **Single process is a hard requirement.** Jobs run one at a time because `config._ACTIVE`
   is process-wide and workspaces rebind `config` module globals.
-- **`config._ACTIVE` is populated only by `jobs.py`'s runner.** A route calling an LLM
+- **`config._ACTIVE` is populated only by `job_tailor_run.py`'s runner.** A route calling an LLM
   outside a job must use `config.pinned(config.ONE_OFF_PROFILE)` or it hits the claude
   fallback. `style.activate()` sits beside `config.resolve()` in the runner.
 - **Mutating workspace routes hold `get_queue().busy()` then `template_ops.LOCK`**, in that
@@ -22,7 +22,8 @@ workspaces: `docs/REFERENCE.md` §2.
 ## Module map
 
 - `app.py` — FastAPI app, router inclusion order, static serving.
-- `jobs.py` — the bounded job queue and the tailoring job runner.
+- `jobs.py` — the bounded job queue (`JobQueue`, `get_queue`); the tailoring run is
+  `job_tailor_run.py`, with `job_types`, `job_routing`, `job_outputs`, `job_followups`.
 - `template_ops.py` — the Template tab's shared `LOCK`, limits and errors; the ops live in
   `template_info`, `template_library_store`, `template_library`, `template_preview`,
   `template_uploads`, `template_install`, `template_defaults`.

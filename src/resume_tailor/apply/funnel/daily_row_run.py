@@ -16,7 +16,8 @@ from resume_tailor.apply.funnel.screen import screen
 from resume_tailor.content import data
 from resume_tailor.pipeline import jd, runs
 from resume_tailor.web import template_ops
-from resume_tailor.web.jobs import get_queue, model_routing
+from resume_tailor.web.job_routing import model_routing
+from resume_tailor.web.jobs import get_queue
 from resume_tailor.web.schemas import ApplySettings, JobSettings, RunMetadata
 
 from . import daily_progress, daily_rows

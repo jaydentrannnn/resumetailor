@@ -10,8 +10,7 @@ import pytest
 
 from resume_tailor import config
 from resume_tailor.document import render, template_build, template_profile
-from resume_tailor.web import jobs as jobs_mod
-from resume_tailor.web import template_info, template_install, template_uploads
+from resume_tailor.web import job_types, template_info, template_install, template_uploads
 from resume_tailor.web.schemas import JobSettings
 from tests.web.helpers import (
     _DOCX_MIME,
@@ -79,7 +78,7 @@ def test_upload_template_rejects_when_queue_busy(client, tmp_path, monkeypatch):
     # worker would independently run the real (unstubbed) pipeline against
     # "placeholder jd", reaching the network in the background for the rest of the
     # suite. See test_activate_workspace_409_when_queue_busy for the same pattern.
-    job = jobs_mod.Job(
+    job = job_types.Job(
         job_id="fake-busy", jd_text="placeholder jd", settings=JobSettings(), status="running"
     )
     q._jobs[job.job_id] = job

@@ -187,7 +187,7 @@ update, move data): `docs/GUIDE.md`.
 `src/resume_tailor/apply/` owns the daily discover → screen → tailor → packet → fill
 funnel. Prepare tailors and screens with the **Tailor tab's** model settings (profile,
 model name, effort, per-stage overrides): `daily_rows._job_settings` leaves them untouched, and
-the screening `jd.extract_consensus` call is pinned to the same `web.jobs.model_routing` with
+the screening `jd.extract_consensus` call is pinned to the same `web.job_routing.model_routing` with
 the same `extract_runs`, so the tailor job's own extraction is a cache hit.
 `ApplySettings.model_provider`/`model_name` (default `ollama`/`nemotron-3-super:cloud`, the
 Apply page's "Autofill model") covers only Fill's LLM calls — prepared long answers and
@@ -814,7 +814,7 @@ writes each bundle plus a filled sample PDF for checking a design change by eye.
   `backend_for`'s resolve-if-unresolved still default to `"claude"` — they guard importable
   library functions called by scripts/tests that never went through the CLI, and flipping
   them would silently reroute callers that never asked for a backend.
-- **`config._ACTIVE` is only ever populated by `web/jobs.py`'s tailoring-job runner** — it
+- **`config._ACTIVE` is only ever populated by `web/job_tailor_run.py`'s tailoring-job runner** — it
   is the sole `config.resolve()` call site under `src/`. A web route reached outside a job
   (the import wizard's "suggest tags" pass, vocabulary-proposal generation) that calls an
   LLM stage therefore hits `backend_for`'s `"claude"` fallback on a freshly started server,
@@ -1087,7 +1087,7 @@ fixed overhead the fit loop never trims.
   prompt byte-for-byte; selected fields use resolved defaults, and custom overrides
   keep the locked core prepended. Still plain
   strings — the architectural invariant holds. `style.activate()` sits beside
-  `config.resolve()` in both `web/jobs.py` and `cli/run.py`.
+  `config.resolve()` in both `web/job_tailor_run.py` and `cli/run.py`.
 
 ---
 

@@ -450,7 +450,9 @@ def test_default_template_label_avoids_a_taken_one(client, tmp_path, monkeypatch
     c, _ = client
     _point_templates_at(tmp_path, monkeypatch)
     monkeypatch.setattr(template_install, "_run_build", lambda **_k: (1, "stub: in-process"))
-    monkeypatch.setattr(template_library_store, "_label_taken", lambda label, **_k: label == "Business")
+    monkeypatch.setattr(
+        template_library_store, "_label_taken", lambda label, **_k: label == "Business"
+    )
     res = c.post("/api/template/defaults/business/install")
     assert res.status_code == 200, res.text
     assert res.json()["info"]["active_label"] == "Business (2)"

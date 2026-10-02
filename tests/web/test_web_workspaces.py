@@ -12,9 +12,9 @@ import pytest
 from resume_tailor import config
 from resume_tailor.content.data import load
 from resume_tailor.document import template_profile
+from resume_tailor.pipeline import expand, facets, fit, jd, relevance
 from resume_tailor.pipeline.fit_types import FitResult
-from resume_tailor.web import jobs as jobs_mod
-from resume_tailor.web import template_install, template_ops
+from resume_tailor.web import job_types, template_install, template_ops
 from resume_tailor.web.schemas import JobSettings
 
 # `bootstrap` is imported directly (not via `resume_tailor.workspace.bootstrap`) because
@@ -96,7 +96,7 @@ def test_activate_workspace_409_when_queue_busy(client, tmp_path, monkeypatch):
     # the background worker and race this test — there is no master resume in the
     # isolated tmp workspace for it to load, so it would fail (and un-busy the queue)
     # before this request lands.
-    job = jobs_mod.Job(job_id="fake-busy", jd_text="x", settings=JobSettings(), status="running")
+    job = job_types.Job(job_id="fake-busy", jd_text="x", settings=JobSettings(), status="running")
     q._jobs[job.job_id] = job
 
     res = c.post("/api/workspaces/second/activate")
@@ -131,7 +131,7 @@ def test_create_job_and_activate_workspace_share_one_lock(client, tmp_path, monk
     def failing_extract_consensus(*a, **k):
         raise RuntimeError("test stub — pipeline must not reach the network")
 
-    monkeypatch.setattr(jobs_mod.jd, "extract_consensus", failing_extract_consensus)
+    monkeypatch.setattr(jd, "extract_consensus", failing_extract_consensus)
 
     acquired = threading.Event()
     release = threading.Event()
@@ -325,13 +325,13 @@ def test_job_artifacts_land_under_active_workspace(client, tmp_path, monkeypatch
 
     from resume_tailor.pipeline.expand import Expansion
 
-    monkeypatch.setattr(jobs_mod.jd, "extract", fake_extract)
-    monkeypatch.setattr(jobs_mod.relevance, "score_table", fake_score)
-    monkeypatch.setattr(jobs_mod.fit, "fit", fake_fit)
-    monkeypatch.setattr(jobs_mod.jd, "verify_verbatim", lambda *a, **k: [])
-    monkeypatch.setattr(jobs_mod.facets, "select_facets", fake_facets)
+    monkeypatch.setattr(jd, "extract", fake_extract)
+    monkeypatch.setattr(relevance, "score_table", fake_score)
+    monkeypatch.setattr(fit, "fit", fake_fit)
+    monkeypatch.setattr(jd, "verify_verbatim", lambda *a, **k: [])
+    monkeypatch.setattr(facets, "select_facets", fake_facets)
     monkeypatch.setattr(
-        jobs_mod.expand, "expand_experience", lambda *a, **k: Expansion(entries=[], model="stub")
+        expand, "expand_experience", lambda *a, **k: Expansion(entries=[], model="stub")
     )
 
     res = c.post("/api/jobs", json={"jd_text": "Looking for a Python intern."})

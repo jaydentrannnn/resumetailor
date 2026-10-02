@@ -62,7 +62,7 @@ stop. That is the bug this project exists to avoid.
 - **Writing style is user-editable per profile with a locked core** (`style.py`; no
   target field or override → legacy prompt byte-for-byte; selected field → resolved
   defaults, with custom overrides preserved and locked core prepended;
-  `style.activate()` beside `config.resolve()` in `web/jobs.py` and `cli/run.py`).
+  `style.activate()` beside `config.resolve()` in `web/job_tailor_run.py` and `cli/run.py`).
 - **A vocabulary-proposal approval that would rewrite an existing bullet tag 409s for
   explicit acknowledgement and backs up the master resume first** — do not weaken that.
 
@@ -206,11 +206,11 @@ everything *after* the loop prototype stripped (`_wrap_cell_loop`).
 - **The default model profile is `ollama`, not `claude`** — a fresh install runs with no
   Anthropic key. `config.resolve()`/`backend_for`'s fallbacks still default to `claude`
   deliberately (importable library callers that never went through the CLI).
-- **`config._ACTIVE` is populated only by `web/jobs.py`'s job runner.** A web route calling
+- **`config._ACTIVE` is populated only by `web/job_tailor_run.py`'s job runner.** A web route calling
   an LLM outside a job hits the claude fallback; one that must not does
   `config.pinned(config.ONE_OFF_PROFILE)` (ContextVar overlay). Apply's Prepare (screening
   extraction in `apply/funnel/daily.py` + the tailor job) uses the Tailor settings' routing
-  (`web.jobs.model_routing`); Fill's answer/resolver calls (`fill*.py`, `engine.py`) run under
+  (`web.job_routing.model_routing`); Fill's answer/resolver calls (`fill*.py`, `engine.py`) run under
   `config.pinned(ApplySettings.model_spec)` — the Apply page's "Autofill model".
 - **Structured output**: non-frontier backends may accept a schema and ignore it — `llm.py`
   puts the schema in the prompt and escalates on **parse failure, not status code**; on the

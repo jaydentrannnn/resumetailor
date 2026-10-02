@@ -10,9 +10,10 @@ from urllib.parse import unquote
 
 from resume_tailor import config
 from resume_tailor.content.data import load
+from resume_tailor.pipeline import expand, facets, fit, jd, relevance, skills
 from resume_tailor.pipeline.events import ProgressEvent
 from resume_tailor.pipeline.fit_types import FitResult
-from resume_tailor.web import jobs as jobs_mod
+from resume_tailor.web import job_types
 from resume_tailor.web.jobs import JobQueue
 from resume_tailor.web.schemas import JobSettings
 from tests.web.helpers import _drain
@@ -93,10 +94,10 @@ def test_job_runs_to_success_with_stubbed_pipeline(client, monkeypatch, tmp_path
             semantic_used=bool(semantic),
         )
 
-    monkeypatch.setattr(jobs_mod.jd, "extract", fake_extract)
-    monkeypatch.setattr(jobs_mod.relevance, "score_table", fake_score)
-    monkeypatch.setattr(jobs_mod.fit, "fit", fake_fit)
-    monkeypatch.setattr(jobs_mod.jd, "verify_verbatim", lambda *a, **k: [])
+    monkeypatch.setattr(jd, "extract", fake_extract)
+    monkeypatch.setattr(relevance, "score_table", fake_score)
+    monkeypatch.setattr(fit, "fit", fake_fit)
+    monkeypatch.setattr(jd, "verify_verbatim", lambda *a, **k: [])
 
     def fake_facets(resume, requirements, **kwargs):
         """Budget-only facets so the job path never reaches the network."""
@@ -108,7 +109,7 @@ def test_job_runs_to_success_with_stubbed_pipeline(client, monkeypatch, tmp_path
             include_project_links=kwargs.get("include_project_links", True),
         )
 
-    monkeypatch.setattr(jobs_mod.facets, "select_facets", fake_facets)
+    monkeypatch.setattr(facets, "select_facets", fake_facets)
 
     from resume_tailor.pipeline.expand import ExpandedEntry, Expansion
 
@@ -133,7 +134,7 @@ def test_job_runs_to_success_with_stubbed_pipeline(client, monkeypatch, tmp_path
             char_limit=config.EXPAND_CHAR_LIMIT,
         )
 
-    monkeypatch.setattr(jobs_mod.expand, "expand_experience", fake_expand)
+    monkeypatch.setattr(expand, "expand_experience", fake_expand)
     template = tmp_path / "live_template.docx"
     template.write_bytes(b"PK-template")
     monkeypatch.setattr(config, "DEFAULT_TEMPLATE_PATH", template)
@@ -289,10 +290,10 @@ def test_job_honours_exclusions_but_expansion_still_sees_the_excluded_job(
             keywords=[Keyword(phrase="Python", canonical="python", importance="must_have")],
         )
 
-    monkeypatch.setattr(jobs_mod.jd, "extract", fake_extract)
-    monkeypatch.setattr(jobs_mod.jd, "verify_verbatim", lambda *a, **k: [])
+    monkeypatch.setattr(jd, "extract", fake_extract)
+    monkeypatch.setattr(jd, "verify_verbatim", lambda *a, **k: [])
     monkeypatch.setattr(
-        jobs_mod.relevance, "score_table", lambda bullets, *a, **k: {b.id: 5.0 for b in bullets}
+        relevance, "score_table", lambda bullets, *a, **k: {b.id: 5.0 for b in bullets}
     )
 
     seen_fit_resume = {}
@@ -315,7 +316,7 @@ def test_job_honours_exclusions_but_expansion_still_sees_the_excluded_job(
             bullets={bullet.id: bullet.text},
         )
 
-    monkeypatch.setattr(jobs_mod.fit, "fit", fake_fit)
+    monkeypatch.setattr(fit, "fit", fake_fit)
 
     def fake_facets(resume_arg, requirements, **kwargs):
         from resume_tailor.pipeline import facets as facets_mod
@@ -326,7 +327,7 @@ def test_job_honours_exclusions_but_expansion_still_sees_the_excluded_job(
             ),
         )
 
-    monkeypatch.setattr(jobs_mod.facets, "select_facets", fake_facets)
+    monkeypatch.setattr(facets, "select_facets", fake_facets)
 
     def fake_expand(resume_arg, requirements, **kwargs):
         seen_expand_resume["ids"] = {e.id for e in resume_arg.experience}
@@ -334,7 +335,7 @@ def test_job_honours_exclusions_but_expansion_still_sees_the_excluded_job(
 
         return Expansion(entries=[], model="stub", char_limit=config.EXPAND_CHAR_LIMIT)
 
-    monkeypatch.setattr(jobs_mod.expand, "expand_experience", fake_expand)
+    monkeypatch.setattr(expand, "expand_experience", fake_expand)
 
     res = c.post(
         "/api/jobs",
@@ -408,10 +409,10 @@ def test_skills_selection_resume_is_post_include_pre_facets(client, monkeypatch,
             keywords=[Keyword(phrase="Python", canonical="python", importance="must_have")],
         )
 
-    monkeypatch.setattr(jobs_mod.jd, "extract", fake_extract)
-    monkeypatch.setattr(jobs_mod.jd, "verify_verbatim", lambda *a, **k: [])
+    monkeypatch.setattr(jd, "extract", fake_extract)
+    monkeypatch.setattr(jd, "verify_verbatim", lambda *a, **k: [])
     monkeypatch.setattr(
-        jobs_mod.relevance, "score_table", lambda bullets, *a, **k: {b.id: 5.0 for b in bullets}
+        relevance, "score_table", lambda bullets, *a, **k: {b.id: 5.0 for b in bullets}
     )
 
     def fake_fit(resume_arg, requirements, *, out=None, on_event=None, **kwargs):
@@ -430,7 +431,7 @@ def test_skills_selection_resume_is_post_include_pre_facets(client, monkeypatch,
             bullets={bullet.id: bullet.text},
         )
 
-    monkeypatch.setattr(jobs_mod.fit, "fit", fake_fit)
+    monkeypatch.setattr(fit, "fit", fake_fit)
 
     def fake_facets(resume_arg, requirements, **kwargs):
         from resume_tailor.pipeline import facets as facets_mod
@@ -441,7 +442,7 @@ def test_skills_selection_resume_is_post_include_pre_facets(client, monkeypatch,
             include_project_links=kwargs.get("include_project_links", True),
         )
 
-    monkeypatch.setattr(jobs_mod.facets, "select_facets", fake_facets)
+    monkeypatch.setattr(facets, "select_facets", fake_facets)
 
     seen_skills_resume: dict = {}
 
@@ -452,7 +453,7 @@ def test_skills_selection_resume_is_post_include_pre_facets(client, monkeypatch,
 
         return SkillsPlan(skills=[], model="stub", pool_size=0)
 
-    monkeypatch.setattr(jobs_mod.skills, "select_skills", fake_select_skills)
+    monkeypatch.setattr(skills, "select_skills", fake_select_skills)
 
     res = c.post(
         "/api/jobs",
@@ -487,10 +488,10 @@ def test_skills_endpoint_and_status_field(client, monkeypatch):
             keywords=[Keyword(phrase="Python", canonical="python", importance="must_have")],
         )
 
-    monkeypatch.setattr(jobs_mod.jd, "extract", fake_extract)
-    monkeypatch.setattr(jobs_mod.jd, "verify_verbatim", lambda *a, **k: [])
+    monkeypatch.setattr(jd, "extract", fake_extract)
+    monkeypatch.setattr(jd, "verify_verbatim", lambda *a, **k: [])
     monkeypatch.setattr(
-        jobs_mod.relevance, "score_table", lambda bullets, *a, **k: {b.id: 5.0 for b in bullets}
+        relevance, "score_table", lambda bullets, *a, **k: {b.id: 5.0 for b in bullets}
     )
 
     def fake_fit(resume_arg, requirements, *, out=None, on_event=None, **kwargs):
@@ -509,7 +510,7 @@ def test_skills_endpoint_and_status_field(client, monkeypatch):
             bullets={bullet.id: bullet.text},
         )
 
-    monkeypatch.setattr(jobs_mod.fit, "fit", fake_fit)
+    monkeypatch.setattr(fit, "fit", fake_fit)
 
     def fake_facets(resume_arg, requirements, **kwargs):
         from resume_tailor.pipeline import facets as facets_mod
@@ -520,7 +521,7 @@ def test_skills_endpoint_and_status_field(client, monkeypatch):
             include_project_links=kwargs.get("include_project_links", True),
         )
 
-    monkeypatch.setattr(jobs_mod.facets, "select_facets", fake_facets)
+    monkeypatch.setattr(facets, "select_facets", fake_facets)
 
     from resume_tailor.pipeline.skills import SkillsPlan, SkillSuggestion
 
@@ -535,7 +536,7 @@ def test_skills_endpoint_and_status_field(client, monkeypatch):
             pool_size=1,
         )
 
-    monkeypatch.setattr(jobs_mod.skills, "select_skills", fake_select_skills)
+    monkeypatch.setattr(skills, "select_skills", fake_select_skills)
 
     from resume_tailor.pipeline.expand import Expansion
 
@@ -544,7 +545,7 @@ def test_skills_endpoint_and_status_field(client, monkeypatch):
     # reached the real `expand.expand_experience`, an unstubbed network call left
     # running in the background for the rest of the suite.
     monkeypatch.setattr(
-        jobs_mod.expand,
+        expand,
         "expand_experience",
         lambda *a, **k: Expansion(entries=[], model="stub", char_limit=config.EXPAND_CHAR_LIMIT),
     )
@@ -573,7 +574,7 @@ def test_skills_download_404s_for_unknown_job(client):
 def test_skills_download_409s_while_job_is_running(client, monkeypatch):
     """A still-queued/running job's skills.md is not ready yet."""
     c, q = client
-    from resume_tailor.web.jobs import Job
+    from resume_tailor.web.job_types import Job
 
     job = Job(job_id="pending-job", jd_text="x", settings=JobSettings())
     q._jobs["pending-job"] = job
@@ -590,7 +591,7 @@ def test_cancel_job_404s_for_unknown_job(client):
 def test_cancel_job_cancels_a_queued_job(client):
     """DELETE on a job the worker hasn't touched yet cancels it immediately."""
     c, q = client
-    job = jobs_mod.Job(job_id="queued-job", jd_text="x", settings=JobSettings(), status="queued")
+    job = job_types.Job(job_id="queued-job", jd_text="x", settings=JobSettings(), status="queued")
     q._jobs[job.job_id] = job
 
     res = c.delete("/api/jobs/queued-job")
@@ -606,7 +607,7 @@ def test_cancel_job_flags_a_running_job_without_finishing_it_immediately(client)
     `_execute` (with no worker thread running here) never gets a chance to notice it,
     so the job legitimately still reads "running" right after the call."""
     c, q = client
-    job = jobs_mod.Job(job_id="running-job", jd_text="x", settings=JobSettings(), status="running")
+    job = job_types.Job(job_id="running-job", jd_text="x", settings=JobSettings(), status="running")
     q._jobs[job.job_id] = job
 
     res = c.delete("/api/jobs/running-job")
@@ -617,7 +618,7 @@ def test_cancel_job_flags_a_running_job_without_finishing_it_immediately(client)
 
 def test_cancel_job_409s_when_already_terminal(client):
     c, q = client
-    job = jobs_mod.Job(job_id="done-job", jd_text="x", settings=JobSettings(), status="succeeded")
+    job = job_types.Job(job_id="done-job", jd_text="x", settings=JobSettings(), status="succeeded")
     q._jobs[job.job_id] = job
 
     res = c.delete("/api/jobs/done-job")
@@ -637,10 +638,10 @@ def test_skills_download_404s_when_no_skills_produced(client, monkeypatch):
             keywords=[Keyword(phrase="Python", canonical="python", importance="must_have")],
         )
 
-    monkeypatch.setattr(jobs_mod.jd, "extract", fake_extract)
-    monkeypatch.setattr(jobs_mod.jd, "verify_verbatim", lambda *a, **k: [])
+    monkeypatch.setattr(jd, "extract", fake_extract)
+    monkeypatch.setattr(jd, "verify_verbatim", lambda *a, **k: [])
     monkeypatch.setattr(
-        jobs_mod.relevance, "score_table", lambda bullets, *a, **k: {b.id: 5.0 for b in bullets}
+        relevance, "score_table", lambda bullets, *a, **k: {b.id: 5.0 for b in bullets}
     )
 
     def fake_fit(resume_arg, requirements, *, out=None, on_event=None, **kwargs):
@@ -659,7 +660,7 @@ def test_skills_download_404s_when_no_skills_produced(client, monkeypatch):
             bullets={bullet.id: bullet.text},
         )
 
-    monkeypatch.setattr(jobs_mod.fit, "fit", fake_fit)
+    monkeypatch.setattr(fit, "fit", fake_fit)
 
     def fake_facets(resume_arg, requirements, **kwargs):
         from resume_tailor.pipeline import facets as facets_mod
@@ -670,11 +671,11 @@ def test_skills_download_404s_when_no_skills_produced(client, monkeypatch):
             include_project_links=kwargs.get("include_project_links", True),
         )
 
-    monkeypatch.setattr(jobs_mod.facets, "select_facets", fake_facets)
+    monkeypatch.setattr(facets, "select_facets", fake_facets)
 
     called = []
     monkeypatch.setattr(
-        jobs_mod.skills, "select_skills", lambda *a, **k: called.append(1)
+        skills, "select_skills", lambda *a, **k: called.append(1)
     )
 
     res = c.post(
@@ -820,7 +821,7 @@ def test_cancel_is_a_noop_for_an_unknown_or_already_terminal_job(tmp_path, monke
     q = JobQueue()
     assert q.cancel("no-such-job") is None
 
-    job = jobs_mod.Job(job_id="done", jd_text="x", settings=JobSettings(), status="succeeded")
+    job = job_types.Job(job_id="done", jd_text="x", settings=JobSettings(), status="succeeded")
     q._jobs[job.job_id] = job
     assert q.cancel("done") is None
     assert q.get("done").status == "succeeded"  # unchanged

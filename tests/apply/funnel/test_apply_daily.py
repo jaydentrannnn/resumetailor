@@ -42,7 +42,8 @@ def test_daily_attention_tracks_known_row_errors_and_latest_outcome():
 from resume_tailor.apply.discovery.sources import SourceRow
 from resume_tailor.pipeline.jd import JobRequirements, Keyword
 from resume_tailor.web import jobs as jobs_mod
-from resume_tailor.web.jobs import Job, JobQueue
+from resume_tailor.web.job_types import Job
+from resume_tailor.web.jobs import JobQueue
 from resume_tailor.web.schemas import ApplySettings, JobSettings
 
 

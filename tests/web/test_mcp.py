@@ -15,6 +15,7 @@ import pytest
 from resume_tailor import config
 from resume_tailor.mcp_server import tools
 from resume_tailor.mcp_server.client import BackendClient, BackendError
+from resume_tailor.pipeline import coverletter, expand, facets, fit, jd, relevance, skills
 from resume_tailor.pipeline.events import ProgressEvent
 from resume_tailor.pipeline.expand import ExpandedEntry, Expansion
 from resume_tailor.pipeline.fit_types import FitResult
@@ -28,7 +29,7 @@ from tests.fixtures import synthetic_resume
 
 def _stub_extract_consensus(text, *, known_tags=None, runs=1, use_cache=True, on_event=None):
     """Route extract_consensus to jd.extract so tests control the reply once."""
-    return jobs_mod.jd.extract(text, known_tags=known_tags, use_cache=use_cache, on_event=on_event)
+    return jd.extract(text, known_tags=known_tags, use_cache=use_cache, on_event=on_event)
 
 
 @pytest.fixture
@@ -38,7 +39,7 @@ async def mcp_client(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "CACHE_DIR", tmp_path / "cache")
     config.OUTPUT_DIR.mkdir()
     config.CACHE_DIR.mkdir()
-    monkeypatch.setattr(jobs_mod.jd, "extract_consensus", _stub_extract_consensus)
+    monkeypatch.setattr(jd, "extract_consensus", _stub_extract_consensus)
 
     resume_path = tmp_path / "master_resume.json"
     resume = synthetic_resume()
@@ -137,7 +138,7 @@ async def mcp_client(tmp_path, monkeypatch):
 
     def fake_draft(*a, **k):
         """Stub cover-letter drafting."""
-        return jobs_mod.coverletter.CoverLetter(
+        return coverletter.CoverLetter(
             company="Stub Co",
             paragraphs=["I improved reliability for production services."],
             salutation="Dear Hiring Manager,",
@@ -146,16 +147,16 @@ async def mcp_client(tmp_path, monkeypatch):
             word_count=7,
         )
 
-    monkeypatch.setattr(jobs_mod.jd, "extract", fake_extract)
-    monkeypatch.setattr(jobs_mod.jd, "verify_verbatim", lambda *a, **k: [])
-    monkeypatch.setattr(jobs_mod.relevance, "score_table", fake_score)
-    monkeypatch.setattr(jobs_mod.fit, "fit", fake_fit)
-    monkeypatch.setattr(jobs_mod.facets, "select_facets", fake_facets)
-    monkeypatch.setattr(jobs_mod.expand, "expand_experience", fake_expand)
-    monkeypatch.setattr(jobs_mod.skills, "select_skills", fake_skills)
-    monkeypatch.setattr(jobs_mod.coverletter, "draft_letter", fake_draft)
+    monkeypatch.setattr(jd, "extract", fake_extract)
+    monkeypatch.setattr(jd, "verify_verbatim", lambda *a, **k: [])
+    monkeypatch.setattr(relevance, "score_table", fake_score)
+    monkeypatch.setattr(fit, "fit", fake_fit)
+    monkeypatch.setattr(facets, "select_facets", fake_facets)
+    monkeypatch.setattr(expand, "expand_experience", fake_expand)
+    monkeypatch.setattr(skills, "select_skills", fake_skills)
+    monkeypatch.setattr(coverletter, "draft_letter", fake_draft)
     monkeypatch.setattr(
-        jobs_mod.coverletter,
+        coverletter,
         "render_cover_letter",
         lambda _resume, letter, **k: letter,
     )

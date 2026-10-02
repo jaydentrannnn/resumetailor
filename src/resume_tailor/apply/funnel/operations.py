@@ -327,7 +327,7 @@ def _effective_model(request: ApplyOperationRequest) -> str:
     """
     if request.action == "fill":
         return f"{request.model_provider}:{request.model_name.strip()}"
-    from resume_tailor.web.jobs import model_label
+    from resume_tailor.web.job_routing import model_label
 
     return model_label(JobSettings.model_validate(workspace.load_settings()["defaults"]))
 

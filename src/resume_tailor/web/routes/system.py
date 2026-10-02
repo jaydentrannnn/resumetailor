@@ -23,7 +23,8 @@ from resume_tailor.content import data_transfer, libraries
 from resume_tailor.document import convert
 from resume_tailor.infra import llm
 from resume_tailor.web import template_ops
-from resume_tailor.web.jobs import get_queue, model_routing
+from resume_tailor.web.job_routing import model_routing
+from resume_tailor.web.jobs import get_queue
 from resume_tailor.web.schemas import JobSettings
 
 router = APIRouter()

@@ -9,7 +9,7 @@ from pathlib import Path
 import pytest
 
 from resume_tailor import config
-from resume_tailor.web import jobs as jobs_mod
+from resume_tailor.pipeline import jd
 from tests.fixtures import synthetic_resume
 
 
@@ -19,10 +19,10 @@ def _stub_extract_consensus(text, *, known_tags=None, runs=1, use_cache=True, on
     `jobs.py` now calls `jd.extract_consensus`, which at `runs > 1` (the default) would
     call `jd.extract` multiple times and write a real consensus cache file. These tests
     stub `jd.extract` directly and care about the job/queue contract, not the voting
-    algorithm (that's `test_jd.py`'s job) — a live attribute lookup on `jobs_mod.jd.extract`
+    algorithm (that's `test_jd.py`'s job) — a live attribute lookup on `jd.extract`
     means each test's own stub is still honoured.
     """
-    return jobs_mod.jd.extract(text, known_tags=known_tags, use_cache=use_cache, on_event=on_event)
+    return jd.extract(text, known_tags=known_tags, use_cache=use_cache, on_event=on_event)
 
 
 def _disk_only_run(job_id: str) -> Path:
