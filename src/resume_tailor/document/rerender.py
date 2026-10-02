@@ -261,9 +261,9 @@ def rerender(
             pages, lines = render.measure_detail(tmp_docx)
             estimated = False
         except RuntimeError as exc:
-            from resume_tailor.pipeline import fit
+            from resume_tailor.pipeline import fit_lines
 
-            lines = fit.estimate_lines(run.resume, bullets)
+            lines = fit_lines.estimate_lines(run.resume, bullets)
             pages = math.ceil(lines / config.LINES_PER_PAGE)
             estimated = True
             warnings.append(f"PDF engine unavailable, so the page count is an estimate ({exc}).")

@@ -93,7 +93,7 @@ def score_table(
     """Rate every bullet's relevance to the posting. Returns {bullet_id: 0-10}.
 
     Called **once per run, before the fit loop** — deliberately not inside it.
-    `fit._initial_selection_size` binary-searches over the bullet count, calling selection on
+    `fit_selection._initial_selection_size` binary-searches over the bullet count, calling selection on
     every iteration, and the loop calls it again on every grow attempt; an API call in that
     path would cost a dozen round trips per run. Worse, a table that changed between
     iterations would break the loop's monotonicity assumption, letting a grow step *swap*

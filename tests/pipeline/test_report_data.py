@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from pathlib import Path
 
-from resume_tailor.pipeline.fit import FitResult
+from resume_tailor.pipeline.fit_types import FitResult
 from resume_tailor.pipeline.jd import JobRequirements, Keyword
 from resume_tailor.pipeline.report import format_report, report_data
 from tests.fixtures import synthetic_resume

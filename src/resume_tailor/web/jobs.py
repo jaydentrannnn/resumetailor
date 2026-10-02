@@ -35,6 +35,7 @@ from resume_tailor.pipeline import (
     expand,
     facets,
     fit,
+    fit_types,
     include,
     jd,
     propose,
@@ -44,7 +45,7 @@ from resume_tailor.pipeline import (
 )
 from resume_tailor.pipeline.events import ProgressCallback, ProgressEvent
 from resume_tailor.pipeline.fabrication import FabricationError
-from resume_tailor.pipeline.fit import FitError
+from resume_tailor.pipeline.fit_types import FitError
 from resume_tailor.web import template_ops
 from resume_tailor.web.schemas import (
     CoverAnglesIn,
@@ -500,7 +501,7 @@ class _TailorJobRun:
     master_resume: MasterResume
     known_tags: list[str]
     requirements: jd.JobRequirements
-    result: fit.FitResult
+    result: fit_types.FitResult
 
     def __init__(self, job: Job) -> None:
         self.job = job

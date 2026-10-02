@@ -18,7 +18,7 @@ from resume_tailor.content.data import (
     SkillGroup,
 )
 from resume_tailor.pipeline import facets, report
-from resume_tailor.pipeline.fit import FitResult
+from resume_tailor.pipeline.fit_types import FitResult
 from resume_tailor.pipeline.jd import JobRequirements, Keyword
 
 

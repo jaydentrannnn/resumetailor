@@ -22,8 +22,17 @@ from resume_tailor.content.data import (
     SkillGroup,
     SkillsSection,
 )
+from resume_tailor.pipeline import (
+    facets,
+    fit_lines,
+    fit_selection,
+    fit_shrink,
+    fit_state,
+    fit_types,
+)
 from resume_tailor.pipeline import fit as fit_mod
 from resume_tailor.pipeline.jd import JobRequirements, Keyword
+from resume_tailor.pipeline.merge import MergeGroup
 from resume_tailor.pipeline.rewrite import RewriteOutcome
 
 
@@ -96,8 +105,8 @@ def _test_resume() -> MasterResume:
 
 def test_estimate_lines_scales_with_bullet_count():
     resume = _test_resume()
-    empty = fit_mod.estimate_lines(resume, {})
-    full = fit_mod.estimate_lines(resume, {b.id: b.text for b in resume.all_bullets()})
+    empty = fit_lines.estimate_lines(resume, {})
+    full = fit_lines.estimate_lines(resume, {b.id: b.text for b in resume.all_bullets()})
     assert full > empty
 
 
@@ -107,7 +116,7 @@ def test_fixed_overhead_uses_shared_skill_line():
     """
     resume = _test_resume()
     expected = 2  # name + contact
-    layout = fit_mod.active_layout()
+    layout = fit_state.active_layout()
     enabled = layout.get("enabled") or {}
     if enabled.get("education", True):
         expected += 1
@@ -122,7 +131,7 @@ def test_fixed_overhead_uses_shared_skill_line():
             expected += config.line_span(
                 config.skill_group_line(group.label, group.items)
             )
-    assert fit_mod._fixed_overhead_lines(resume) == expected
+    assert fit_lines._fixed_overhead_lines(resume) == expected
 
 
 def test_estimate_lines_respects_disabled_sections(monkeypatch):
@@ -138,12 +147,12 @@ def test_estimate_lines_respects_disabled_sections(monkeypatch):
             "skills": False,
         },
     }
-    monkeypatch.setattr(fit_mod, "active_layout", lambda: layout)
-    empty = fit_mod.estimate_lines(resume, {}, layout=layout)
+    monkeypatch.setattr(fit_lines, "active_layout", lambda: layout)
+    empty = fit_lines.estimate_lines(resume, {}, layout=layout)
     # Name + contact only when education/skills are off and no bullets selected.
     assert empty == 2
 
-    entries = fit_mod.choose_entries(resume, _requirements(), layout=layout)
+    entries = fit_selection.choose_entries(resume, _requirements(), layout=layout)
     assert all(hasattr(e, "company") for e in entries)  # experience only
     assert not any(hasattr(e, "tech") for e in entries)
 
@@ -193,7 +202,7 @@ def test_spacer_lines_zero_when_layout_has_no_spacing():
     """No `spacing` key at all (every pre-existing profile) contributes nothing."""
     resume = _spacer_test_resume()
     layout = {"section_mode": "generic", "enabled": {}}
-    assert fit_mod._spacer_lines(resume, {}, layout=layout) == 0
+    assert fit_lines._spacer_lines(resume, {}, layout=layout) == 0
 
 
 def test_spacer_lines_zero_when_donors_all_none():
@@ -203,7 +212,7 @@ def test_spacer_lines_zero_when_donors_all_none():
         "enabled": {},
         "spacing": {"before_heading": [], "after_heading": [], "between_entries": []},
     }
-    assert fit_mod._spacer_lines(resume, {}, layout=layout) == 0
+    assert fit_lines._spacer_lines(resume, {}, layout=layout) == 0
 
 
 def test_spacer_lines_counts_before_after_and_between():
@@ -219,7 +228,7 @@ def test_spacer_lines_counts_before_after_and_between():
         "enabled": {"education": True, "skills": True},
         "spacing": {"before_heading": [1], "after_heading": [1], "between_entries": [1]},
     }
-    assert fit_mod._spacer_lines(resume, bullets, layout=layout) == 7
+    assert fit_lines._spacer_lines(resume, bullets, layout=layout) == 7
 
 
 def test_spacer_lines_scale_with_run_length():
@@ -233,7 +242,7 @@ def test_spacer_lines_scale_with_run_length():
         "spacing": {"before_heading": [], "after_heading": [1, 2], "between_entries": []},
     }
     # 3 rendered sections x 2 paragraphs each.
-    assert fit_mod._spacer_lines(resume, bullets, layout=layout) == 6
+    assert fit_lines._spacer_lines(resume, bullets, layout=layout) == 6
 
 
 def test_spacer_lines_only_the_set_donors_contribute():
@@ -244,7 +253,7 @@ def test_spacer_lines_only_the_set_donors_contribute():
         "enabled": {"education": True, "skills": True},
         "spacing": {"before_heading": [1], "after_heading": [], "between_entries": []},
     }
-    assert fit_mod._spacer_lines(resume, bullets, layout=layout) == 2  # rendered - 1
+    assert fit_lines._spacer_lines(resume, bullets, layout=layout) == 2  # rendered - 1
 
 
 def test_spacer_lines_skips_a_disabled_kind():
@@ -258,7 +267,7 @@ def test_spacer_lines_skips_a_disabled_kind():
         "spacing": {"before_heading": [1], "after_heading": [1], "between_entries": []},
     }
     # rendered = education + experience only (skills disabled) = 2
-    assert fit_mod._spacer_lines(resume, bullets, layout=layout) == 1 + 2  # (2-1) + 2
+    assert fit_lines._spacer_lines(resume, bullets, layout=layout) == 1 + 2  # (2-1) + 2
 
 
 def test_spacer_lines_zero_when_nothing_survives():
@@ -268,7 +277,7 @@ def test_spacer_lines_zero_when_nothing_survives():
         "enabled": {"education": False, "skills": False},
         "spacing": {"before_heading": [1], "after_heading": [1], "between_entries": [1]},
     }
-    assert fit_mod._spacer_lines(resume, {}, layout=layout) == 0
+    assert fit_lines._spacer_lines(resume, {}, layout=layout) == 0
 
 
 def test_estimate_lines_adds_spacer_term_under_generic_mode():
@@ -282,8 +291,8 @@ def test_estimate_lines_adds_spacer_term_under_generic_mode():
         "spacing": {"before_heading": [1], "after_heading": [1], "between_entries": [1]},
     }
     layout_no_spacing = {**layout, "spacing": {}}
-    with_spacing = fit_mod.estimate_lines(resume, bullets, layout=layout)
-    without_spacing = fit_mod.estimate_lines(resume, bullets, layout=layout_no_spacing)
+    with_spacing = fit_lines.estimate_lines(resume, bullets, layout=layout)
+    without_spacing = fit_lines.estimate_lines(resume, bullets, layout=layout_no_spacing)
     assert with_spacing - without_spacing == 7
 
 
@@ -300,8 +309,8 @@ def test_estimate_lines_ignores_spacing_under_fixed_mode():
         "spacing": {"before_heading": [1], "after_heading": [1], "between_entries": [1]},
     }
     layout_no_spacing = {**layout, "spacing": {}}
-    with_spacing = fit_mod.estimate_lines(resume, bullets, layout=layout)
-    without_spacing = fit_mod.estimate_lines(resume, bullets, layout=layout_no_spacing)
+    with_spacing = fit_lines.estimate_lines(resume, bullets, layout=layout)
+    without_spacing = fit_lines.estimate_lines(resume, bullets, layout=layout_no_spacing)
     assert with_spacing == without_spacing
 
 
@@ -310,7 +319,7 @@ def test_estimate_lines_counts_coursework_wrap():
     resume = _test_resume()
     assert resume.education
     assert resume.education[0].coursework
-    empty = fit_mod.estimate_lines(resume, {})
+    empty = fit_lines.estimate_lines(resume, {})
     # Overhead alone (no experience/project bullets) still includes the coursework wrap.
     assert empty >= 5
 
@@ -326,9 +335,9 @@ def test_include_apply_clearing_coursework_shrinks_fixed_overhead():
     assert resume.education
     assert resume.education[0].coursework  # sanity: fixture has some to clear
 
-    with_coursework = fit_mod._fixed_overhead_lines(resume)
+    with_coursework = fit_lines._fixed_overhead_lines(resume)
     trimmed = include_apply(resume, IncludeOptions(coursework=False))
-    without_coursework = fit_mod._fixed_overhead_lines(trimmed)
+    without_coursework = fit_lines._fixed_overhead_lines(trimmed)
 
     freed = sum(
         config.line_span("Relevant Coursework: " + ", ".join(edu.coursework))
@@ -353,10 +362,10 @@ def test_initial_selection_size_share_is_a_ceiling_not_a_floor():
     """`share=1.0` must reproduce the unbounded search exactly (no-behaviour-change)."""
     resume = _test_resume()
     requirements = _requirements()
-    entries = fit_mod.choose_entries(resume, requirements)
+    entries = fit_selection.choose_entries(resume, requirements)
 
-    unbounded = fit_mod._initial_selection_size(resume, entries, requirements, target_pages=1)
-    default_share = fit_mod._initial_selection_size(
+    unbounded = fit_selection._initial_selection_size(resume, entries, requirements, target_pages=1)
+    default_share = fit_selection._initial_selection_size(
         resume, entries, requirements, target_pages=1, share=1.0
     )
     assert default_share == unbounded
@@ -366,16 +375,16 @@ def test_initial_selection_size_share_caps_below_the_estimate():
     """A share below the unbounded result caps the search's upper bound exactly."""
     resume = _test_resume()
     requirements = _requirements()
-    entries = fit_mod.choose_entries(resume, requirements)
+    entries = fit_selection.choose_entries(resume, requirements)
     total = sum(len(e.bullets) for e in entries)
 
-    unbounded = fit_mod._initial_selection_size(resume, entries, requirements, target_pages=1)
+    unbounded = fit_selection._initial_selection_size(resume, entries, requirements, target_pages=1)
     share = 0.5
     capped_high = max(len(entries), min(total, round(total * share)))
     assume_room = capped_high < unbounded  # only a meaningful test if the cap actually bites
     assert assume_room, "fixture needs the cap to bind below the unbounded estimate"
 
-    capped = fit_mod._initial_selection_size(
+    capped = fit_selection._initial_selection_size(
         resume, entries, requirements, target_pages=1, share=share
     )
     assert capped == capped_high
@@ -386,10 +395,10 @@ def test_initial_selection_size_share_never_drops_below_one_bullet_per_entry():
     """A share so low it would fall under one bullet per entry is clamped up to the floor."""
     resume = _test_resume()
     requirements = _requirements()
-    entries = fit_mod.choose_entries(resume, requirements)
+    entries = fit_selection.choose_entries(resume, requirements)
 
     floor = len(entries)
-    capped = fit_mod._initial_selection_size(
+    capped = fit_selection._initial_selection_size(
         resume, entries, requirements, target_pages=1, share=0.01
     )
     assert capped >= floor
@@ -430,7 +439,7 @@ def _stub_render(monkeypatch, tmp_path, *, pages_for, renders=None, layout_for=N
 
 def test_measured_widow_pass_reverts_when_repair_overflows(monkeypatch, tmp_path):
     resume = _test_resume()
-    monkeypatch.setattr(fit_mod, "rewrite_bullets", _identity_rewrite)
+    monkeypatch.setattr(fit_state, "rewrite_bullets", _identity_rewrite)
     _stub_render(
         monkeypatch, tmp_path,
         pages_for=lambda texts: (2, _FULL_LINES + 5) if any(
@@ -447,7 +456,7 @@ def test_measured_widow_pass_reverts_when_repair_overflows(monkeypatch, tmp_path
         assert kwargs["targets"]["exp1_b1"][1] == 95
         return {**texts, "exp1_b1": texts["exp1_b1"] + " repair"}, 1, 0, {}
 
-    monkeypatch.setattr(fit_mod, "_polish", fake_polish)
+    monkeypatch.setattr(fit_shrink, "_polish", fake_polish)
     result = fit_mod.fit(resume, _requirements(), target_pages=1, fill_target=0)
     assert not result.bullets["exp1_b1"].endswith(" repair")
     assert result.widows_repaired == 0 and result.widows_remaining == 1
@@ -456,7 +465,7 @@ def test_measured_widow_pass_reverts_when_repair_overflows(monkeypatch, tmp_path
 
 def test_measured_pass_refits_coursework_only_from_the_pool_it_is_given(monkeypatch, tmp_path):
     """The coursework pool reaches the measured pass as an argument, never via the resume."""
-    monkeypatch.setattr(fit_mod, "rewrite_bullets", _identity_rewrite)
+    monkeypatch.setattr(fit_state, "rewrite_bullets", _identity_rewrite)
     _stub_render(
         monkeypatch, tmp_path,
         pages_for=lambda texts: (1, _FULL_LINES),
@@ -471,7 +480,7 @@ def test_measured_pass_refits_coursework_only_from_the_pool_it_is_given(monkeypa
         pools.append(list(pool))
         return [*ordered, "Operating Systems"]
 
-    monkeypatch.setattr(fit_mod.facets, "fit_coursework_to_budget", fake_fit_coursework)
+    monkeypatch.setattr(facets, "fit_coursework_to_budget", fake_fit_coursework)
     pool = ["Algorithms", "Databases", "Operating Systems"]
 
     fit_mod.fit(
@@ -492,18 +501,18 @@ def test_measured_widow_targets_choose_shortening_extension_and_merged_shortenin
         "a": fit_mod.render.LineFit(2, 0.20, 100),
         "b": fit_mod.render.LineFit(2, 0.42, 100),
     }
-    targets = fit_mod._widow_targets(
+    targets = fit_lines._widow_targets(
         texts, sources, fits, measured_lines=40, capacity=50, members={},
         estimated=False,
     )
     assert targets["a"] == (0, 95)
     assert targets["b"] == (133, 195)
-    full_page = fit_mod._widow_targets(
+    full_page = fit_lines._widow_targets(
         texts, sources, fits, measured_lines=50, capacity=50, members={},
         estimated=False,
     )
     assert full_page["b"] == (0, 95)
-    merged = fit_mod._widow_targets(
+    merged = fit_lines._widow_targets(
         texts, sources, fits, measured_lines=40, capacity=50,
         members={"b": ("a", "b")}, estimated=False,
     )
@@ -513,7 +522,7 @@ def test_measured_widow_targets_choose_shortening_extension_and_merged_shortenin
 def test_estimated_widow_uses_conservative_threshold():
     source = {"a": Bullet(id="a", text="x" * 220, tags=["python"])}
     fits = {"a": fit_mod.render.LineFit(2, 0.40, 100)}
-    assert fit_mod._widow_targets(
+    assert fit_lines._widow_targets(
         {"a": "x" * 120}, source, fits, measured_lines=40, capacity=50,
         members={}, estimated=True,
     ) == {}
@@ -529,7 +538,7 @@ def test_fit_drops_weakest_bullets_on_overflow_without_another_rewrite(monkeypat
         calls.append(len(bullets))
         return _identity_rewrite(bullets, requirements, **kwargs)
 
-    monkeypatch.setattr(fit_mod, "rewrite_bullets", fake_rewrite)
+    monkeypatch.setattr(fit_state, "rewrite_bullets", fake_rewrite)
     first: dict[str, dict] = {}
 
     def pages_for(texts):
@@ -551,12 +560,12 @@ def test_fit_ladder_order_is_combine_then_pullback_then_drop(monkeypatch, tmp_pa
     resume = _test_resume()
     requirements = _requirements()
     order: list[str] = []
-    monkeypatch.setattr(fit_mod, "rewrite_bullets", _identity_rewrite)
+    monkeypatch.setattr(fit_state, "rewrite_bullets", _identity_rewrite)
 
     def fake_propose(entries, selected, *a, **k):
         order.append("propose")
         ids = [b.id for b in selected[:2]]
-        return [fit_mod.MergeGroup(ids[0], tuple(ids), 1.0, "test")]
+        return [MergeGroup(ids[0], tuple(ids), 1.0, "test")]
 
     def fake_merge(texts, sources, groups, requirements, *, char_budget):
         order.append("merge")
@@ -570,10 +579,10 @@ def test_fit_ladder_order_is_combine_then_pullback_then_drop(monkeypatch, tmp_pa
         order.append("pull_back")
         return dict(texts), 0, {}  # nothing shortened
 
-    monkeypatch.setattr(fit_mod, "propose_merges", fake_propose)
-    monkeypatch.setattr(fit_mod, "merge_into", fake_merge)
-    monkeypatch.setattr(fit_mod, "_choose_pullbacks", fake_choose_pullbacks)
-    monkeypatch.setattr(fit_mod, "pull_back", fake_pull_back)
+    monkeypatch.setattr(fit_shrink, "propose_merges", fake_propose)
+    monkeypatch.setattr(fit_shrink, "merge_into", fake_merge)
+    monkeypatch.setattr(fit_selection, "_choose_pullbacks", fake_choose_pullbacks)
+    monkeypatch.setattr(fit_shrink, "pull_back", fake_pull_back)
     sizes: dict[str, int] = {}
 
     def pages_for(texts):
@@ -594,11 +603,11 @@ def test_fit_ladder_order_is_combine_then_pullback_then_drop(monkeypatch, tmp_pa
 def test_fit_stops_the_ladder_once_a_rung_fits(monkeypatch, tmp_path):
     resume = _test_resume()
     requirements = _requirements()
-    monkeypatch.setattr(fit_mod, "rewrite_bullets", _identity_rewrite)
+    monkeypatch.setattr(fit_state, "rewrite_bullets", _identity_rewrite)
 
     def fake_propose(entries, selected, *a, **k):
         ids = [b.id for b in selected[:2]]
-        return [fit_mod.MergeGroup(ids[0], tuple(ids), 1.0, "test")]
+        return [MergeGroup(ids[0], tuple(ids), 1.0, "test")]
 
     def fake_merge(texts, sources, groups, requirements, *, char_budget):
         merged = {k: v for k, v in texts.items() if k != groups[0].member_ids[1]}
@@ -607,9 +616,9 @@ def test_fit_stops_the_ladder_once_a_rung_fits(monkeypatch, tmp_path):
     def boom(*a, **k):
         raise AssertionError("pull-back must not run once the merge fit")
 
-    monkeypatch.setattr(fit_mod, "propose_merges", fake_propose)
-    monkeypatch.setattr(fit_mod, "merge_into", fake_merge)
-    monkeypatch.setattr(fit_mod, "pull_back", boom)
+    monkeypatch.setattr(fit_shrink, "propose_merges", fake_propose)
+    monkeypatch.setattr(fit_shrink, "merge_into", fake_merge)
+    monkeypatch.setattr(fit_shrink, "pull_back", boom)
     sizes: dict[str, int] = {}
 
     def pages_for(texts):
@@ -628,10 +637,10 @@ def test_fit_raises_when_the_ladder_is_exhausted_and_nothing_ever_fit(monkeypatc
     resume = _test_resume()
     requirements = _requirements()
     renders: list[dict] = []
-    monkeypatch.setattr(fit_mod, "rewrite_bullets", _identity_rewrite)
+    monkeypatch.setattr(fit_state, "rewrite_bullets", _identity_rewrite)
     _stub_render(monkeypatch, tmp_path, pages_for=lambda t: (2, _FULL_LINES + 4), renders=renders)
 
-    with pytest.raises(fit_mod.FitError, match="Could not fit") as excinfo:
+    with pytest.raises(fit_types.FitError, match="Could not fit") as excinfo:
         fit_mod.fit(resume, requirements, target_pages=1, merge_bullets=False)
 
     # First draft plus at most MAX_DROP_ROUNDS drop renders; no unbounded retrying.
@@ -644,7 +653,7 @@ def test_fit_keeps_an_earlier_draft_that_fit_instead_of_failing(monkeypatch, tmp
     """Grow → overflow → ladder exhausted: return the draft that fit, with a warning."""
     resume = _test_resume()
     requirements = _requirements()
-    monkeypatch.setattr(fit_mod, "rewrite_bullets", _identity_rewrite)
+    monkeypatch.setattr(fit_state, "rewrite_bullets", _identity_rewrite)
     first: dict[str, dict] = {}
 
     def pages_for(texts):
@@ -670,7 +679,7 @@ def test_fit_does_not_regrow_bullets_the_ladder_just_removed(monkeypatch, tmp_pa
         calls.append(len(bullets))
         return _identity_rewrite(bullets, requirements, **kwargs)
 
-    monkeypatch.setattr(fit_mod, "rewrite_bullets", fake_rewrite)
+    monkeypatch.setattr(fit_state, "rewrite_bullets", fake_rewrite)
     sizes: dict[str, int] = {}
 
     def pages_for(texts):
@@ -706,20 +715,20 @@ def test_choose_pullbacks_only_takes_multiline_bullets_with_an_emptyish_last_lin
     requirements = _requirements()
     sources = _bullet_fixture(texts)
 
-    picked = fit_mod._choose_pullbacks(texts, sources, requirements, None, {}, count=2)
+    picked = fit_selection._choose_pullbacks(texts, sources, requirements, None, {}, count=2)
 
     assert list(picked) == ["tenth", "fifth"], "emptiest last line first, limited to count"
     assert picked["tenth"] == 2 * width - config.WIDOW_SAFETY
     assert picked["fifth"] == width - config.WIDOW_SAFETY
 
-    everything = fit_mod._choose_pullbacks(texts, sources, requirements, None, {}, count=10)
+    everything = fit_selection._choose_pullbacks(texts, sources, requirements, None, {}, count=10)
     assert set(everything) == {"tenth", "fifth", "third"}
 
 
 def test_choose_pullbacks_skips_merged_survivors():
     width = config.CHARS_PER_LINE
     texts = {"m": "a" * (width + 5), "p": "a" * (width + 6)}
-    picked = fit_mod._choose_pullbacks(
+    picked = fit_selection._choose_pullbacks(
         texts, _bullet_fixture(texts), _requirements(), None, {"m": ("m", "z")}, count=5
     )
     assert list(picked) == ["p"]
@@ -728,16 +737,21 @@ def test_choose_pullbacks_skips_merged_survivors():
 def test_choose_drops_never_removes_an_entrys_last_bullet():
     resume = _test_resume()
     requirements = _requirements()
-    entries = fit_mod.choose_entries(resume, requirements)
+    entries = fit_selection.choose_entries(resume, requirements)
     sources = {b.id: b for e in entries for b in e.bullets}
     # Exactly one rendered bullet per entry: nothing may be dropped, however large the overflow.
     texts = {e.bullets[0].id: e.bullets[0].text for e in entries}
 
-    assert fit_mod._choose_drops(entries, texts, sources, requirements, None, {}, overflow=50) == []
+    assert (
+        fit_selection._choose_drops(entries, texts, sources, requirements, None, {}, overflow=50)
+        == []
+    )
 
     # Two per entry: at most one per entry can go, and the weakest goes first.
     texts = {b.id: b.text for e in entries for b in e.bullets[:2]}
-    doomed = fit_mod._choose_drops(entries, texts, sources, requirements, None, {}, overflow=500)
+    doomed = fit_selection._choose_drops(
+        entries, texts, sources, requirements, None, {}, overflow=500
+    )
     per_entry = {id(e): sum(1 for b in e.bullets if b.id in texts and b.id not in doomed) for e in entries}
     assert all(n >= 1 for n in per_entry.values())
     assert len(doomed) == len(entries)
@@ -746,7 +760,7 @@ def test_choose_drops_never_removes_an_entrys_last_bullet():
 def test_choose_drops_prefers_the_weakest_bullet_tall_enough_to_cover_the_overflow():
     resume = _test_resume()
     requirements = _requirements()
-    entries = fit_mod.choose_entries(resume, requirements)
+    entries = fit_selection.choose_entries(resume, requirements)
     entry = entries[0]
     ids = [b.id for b in entry.bullets[:3]]
     sources = {b.id: b for b in entry.bullets}
@@ -756,7 +770,7 @@ def test_choose_drops_prefers_the_weakest_bullet_tall_enough_to_cover_the_overfl
     # so the pick must come from the two-line bullets even though ids[0] scores no higher.
     semantic = {ids[0]: 0.0, ids[1]: 5.0, ids[2]: 9.0}
 
-    doomed = fit_mod._choose_drops(
+    doomed = fit_selection._choose_drops(
         [entry], texts, sources, requirements, semantic, {}, overflow=2
     )
 
@@ -768,10 +782,10 @@ def test_overflow_report_quotes_measured_lines_and_is_never_negative():
     capacity = config.LINES_PER_PAGE
     bullets = {b.id: b.text for b in resume.all_bullets()}
 
-    over = fit_mod._overflow_report(resume, bullets, 1, capacity + 3)
+    over = fit_selection._overflow_report(resume, bullets, 1, capacity + 3)
     assert f"Measured {capacity + 3} lines" in over and "over by 3" in over
 
-    within = fit_mod._overflow_report(resume, bullets, 1, capacity - 4)
+    within = fit_selection._overflow_report(resume, bullets, 1, capacity - 4)
     assert "within the" in within and "over by" not in within
 
 
@@ -779,9 +793,11 @@ def test_fit_restores_bullets_on_underflow(monkeypatch, tmp_path):
     """A sparse page must pull bullets back rather than shipping half-empty."""
     resume = _test_resume()
     requirements = _requirements()
-    entries = fit_mod.choose_entries(resume, requirements)
+    entries = fit_selection.choose_entries(resume, requirements)
     available = sum(len(e.bullets) for e in entries)
-    initial_limit = fit_mod._initial_selection_size(resume, entries, requirements, target_pages=1)
+    initial_limit = fit_selection._initial_selection_size(
+        resume, entries, requirements, target_pages=1
+    )
     assert initial_limit < available, "test needs room to grow the selection"
 
     seen: dict[str, int] = {}
@@ -804,7 +820,7 @@ def test_fit_restores_bullets_on_underflow(monkeypatch, tmp_path):
     def fake_measure(*a, **k):
         return (1, _SPARSE_LINES if seen["count"] <= initial_limit else _FULL_LINES)
 
-    monkeypatch.setattr(fit_mod, "rewrite_bullets", fake_rewrite)
+    monkeypatch.setattr(fit_state, "rewrite_bullets", fake_rewrite)
     monkeypatch.setattr(fit_mod.render, "render", lambda *a, **k: tmp_path / "out.docx")
     monkeypatch.setattr(fit_mod.render, "measure_detail", fake_measure)
     monkeypatch.setattr(fit_mod.render, "to_pdf", lambda *a, **k: tmp_path / "out.pdf")
@@ -823,7 +839,7 @@ def test_fit_stops_growing_after_max_attempts_and_warns(monkeypatch, tmp_path):
     resume = _test_resume()
     requirements = _requirements()
 
-    monkeypatch.setattr(fit_mod, "rewrite_bullets", _identity_rewrite)
+    monkeypatch.setattr(fit_state, "rewrite_bullets", _identity_rewrite)
     monkeypatch.setattr(fit_mod.render, "render", lambda *a, **k: tmp_path / "out.docx")
     monkeypatch.setattr(fit_mod.render, "measure_detail", lambda *a, **k: (1, _SPARSE_LINES))
     monkeypatch.setattr(fit_mod.render, "to_pdf", lambda *a, **k: tmp_path / "out.pdf")
@@ -856,7 +872,7 @@ def test_fit_warns_when_widow_repair_fabrication_is_discarded(monkeypatch, tmp_p
             widow_repairs_rejected={"exp1_b1": ["Kubernetes"]},
         )
 
-    monkeypatch.setattr(fit_mod, "rewrite_bullets", fake_rewrite)
+    monkeypatch.setattr(fit_state, "rewrite_bullets", fake_rewrite)
     monkeypatch.setattr(fit_mod.render, "render", lambda *a, **k: tmp_path / "out.docx")
     monkeypatch.setattr(fit_mod.render, "measure_detail", lambda *a, **k: (1, _FULL_LINES))
     monkeypatch.setattr(fit_mod.render, "to_pdf", lambda *a, **k: tmp_path / "out.pdf")
@@ -878,14 +894,14 @@ def test_fit_growth_ceiling_stops_early_when_entries_are_capped(monkeypatch, tmp
     resume = _test_resume()
     requirements = _requirements()
 
-    monkeypatch.setattr(fit_mod, "rewrite_bullets", _identity_rewrite)
+    monkeypatch.setattr(fit_state, "rewrite_bullets", _identity_rewrite)
     monkeypatch.setattr(fit_mod.render, "render", lambda *a, **k: tmp_path / "out.docx")
     monkeypatch.setattr(fit_mod.render, "measure_detail", lambda *a, **k: (1, _SPARSE_LINES))
     monkeypatch.setattr(fit_mod.render, "to_pdf", lambda *a, **k: tmp_path / "out.pdf")
 
     result = fit_mod.fit(resume, requirements, target_pages=1, max_bullets_per_entry=1)
 
-    entries = fit_mod.choose_entries(resume, requirements)
+    entries = fit_selection.choose_entries(resume, requirements)
     # Every entry is capped at its one floor bullet, so the achievable total equals the
     # entry count — reached immediately, with no room to grow into at all. The loop
     # never re-rewrites; only the top-up runs, adding one more entry.
@@ -902,7 +918,7 @@ def test_fit_honours_entry_caps_and_never_drops_a_chosen_entry(monkeypatch, tmp_
     resume = _test_resume()
     requirements = _requirements()
 
-    monkeypatch.setattr(fit_mod, "rewrite_bullets", _identity_rewrite)
+    monkeypatch.setattr(fit_state, "rewrite_bullets", _identity_rewrite)
     monkeypatch.setattr(fit_mod.render, "render", lambda *a, **k: tmp_path / "out.docx")
     monkeypatch.setattr(fit_mod.render, "measure_detail", lambda *a, **k: (1, _FULL_LINES))
     monkeypatch.setattr(fit_mod.render, "to_pdf", lambda *a, **k: tmp_path / "out.pdf")
@@ -922,7 +938,7 @@ def test_semantic_table_reaches_entry_selection(monkeypatch, tmp_path):
     resume = _test_resume()
     requirements = _requirements()
 
-    monkeypatch.setattr(fit_mod, "rewrite_bullets", _identity_rewrite)
+    monkeypatch.setattr(fit_state, "rewrite_bullets", _identity_rewrite)
     monkeypatch.setattr(fit_mod.render, "render", lambda *a, **k: tmp_path / "out.docx")
     monkeypatch.setattr(fit_mod.render, "measure_detail", lambda *a, **k: (1, _FULL_LINES))
     monkeypatch.setattr(fit_mod.render, "to_pdf", lambda *a, **k: tmp_path / "out.pdf")
@@ -947,14 +963,14 @@ def test_fit_falls_back_to_budget_estimate_when_word_unavailable(monkeypatch, tm
     resume = _test_resume()
     requirements = _requirements()
 
-    monkeypatch.setattr(fit_mod, "rewrite_bullets", _identity_rewrite)
+    monkeypatch.setattr(fit_state, "rewrite_bullets", _identity_rewrite)
     monkeypatch.setattr(fit_mod.render, "render", lambda *a, **k: tmp_path / "out.docx")
 
     def fake_measure(*a, **k):
         raise RuntimeError("Word is not installed")
 
     monkeypatch.setattr(fit_mod.render, "measure_detail", fake_measure)
-    monkeypatch.setattr(fit_mod, "estimate_lines", lambda resume, bullets: _FULL_LINES)
+    monkeypatch.setattr(fit_lines, "estimate_lines", lambda resume, bullets: _FULL_LINES)
 
     result = fit_mod.fit(resume, requirements, target_pages=1)
 
@@ -986,7 +1002,7 @@ def test_choose_pullbacks_judges_measured_bullets_on_the_pdf_layout():
         "pdf_full": line_fit(2, 0.9, float(width)),
         "unmeasured": line_fit(2, 0.1, float(width)),
     }
-    picked = fit_mod._choose_pullbacks(
+    picked = fit_selection._choose_pullbacks(
         texts, _bullet_fixture(texts), _requirements(), None, {}, count=5,
         layout=layout, measured_ids={"pdf_widow", "pdf_full"},
     )
@@ -1016,7 +1032,7 @@ def _lines_with_headers(base: int):
 
 def _capped_first_draft() -> int:
     """With `max_bullets_per_entry=1`, the first draft is one bullet per chosen entry."""
-    return len(fit_mod.choose_entries(_test_resume(), _requirements()))
+    return len(fit_selection.choose_entries(_test_resume(), _requirements()))
 
 
 def test_top_up_adds_back_bullets_the_caps_allow(monkeypatch, tmp_path):
@@ -1029,7 +1045,7 @@ def test_top_up_adds_back_bullets_the_caps_allow(monkeypatch, tmp_path):
         calls.append([b.id for b in bullets])
         return _identity_rewrite(bullets, requirements, **kwargs)
 
-    monkeypatch.setattr(fit_mod, "rewrite_bullets", fake_rewrite)
+    monkeypatch.setattr(fit_state, "rewrite_bullets", fake_rewrite)
     first: dict[str, int] = {}
 
     def pages_for(texts):
@@ -1057,7 +1073,7 @@ def test_top_up_keeps_one_bullet_past_the_cap_when_that_reaches_the_target(
     monkeypatch, tmp_path
 ):
     monkeypatch.setattr(config, "MAX_GROW_ATTEMPTS", 0)
-    monkeypatch.setattr(fit_mod, "rewrite_bullets", _identity_rewrite)
+    monkeypatch.setattr(fit_state, "rewrite_bullets", _identity_rewrite)
     n = _capped_first_draft()
     # One line short: a single extra bullet in an entry already on the page fills it.
     base = _target_lines() - 1 - n - 2 * n
@@ -1078,7 +1094,7 @@ def test_top_up_swaps_a_short_extra_bullet_for_a_new_entry(monkeypatch, tmp_path
     """Bullet 2 of an entry leaves the page short, so it is taken back out and the
     next-best entry is added instead — which reaches the target."""
     monkeypatch.setattr(config, "MAX_GROW_ATTEMPTS", 0)
-    monkeypatch.setattr(fit_mod, "rewrite_bullets", _identity_rewrite)
+    monkeypatch.setattr(fit_state, "rewrite_bullets", _identity_rewrite)
     resume, requirements = _test_resume(), _requirements()
     n = _capped_first_draft()
     base = _target_lines() - 3 - n - 2 * n
@@ -1092,7 +1108,7 @@ def test_top_up_swaps_a_short_extra_bullet_for_a_new_entry(monkeypatch, tmp_path
     extra = next(s for s in result.trace if s["step"] == "topup-B")["added"][0]
     assert extra not in result.bullets
     chosen = {
-        _entry_key(b.id) for e in fit_mod.choose_entries(resume, requirements)
+        _entry_key(b.id) for e in fit_selection.choose_entries(resume, requirements)
         for b in e.bullets
     }
     new = [bid for bid in result.topped_up if _entry_key(bid) not in chosen]
@@ -1102,10 +1118,10 @@ def test_top_up_swaps_a_short_extra_bullet_for_a_new_entry(monkeypatch, tmp_path
 
 def test_top_up_restores_the_extra_bullet_when_no_new_entry_fits(monkeypatch, tmp_path):
     monkeypatch.setattr(config, "MAX_GROW_ATTEMPTS", 0)
-    monkeypatch.setattr(fit_mod, "rewrite_bullets", _identity_rewrite)
+    monkeypatch.setattr(fit_state, "rewrite_bullets", _identity_rewrite)
     resume, requirements = _test_resume(), _requirements()
     chosen = {
-        _entry_key(b.id) for e in fit_mod.choose_entries(resume, requirements)
+        _entry_key(b.id) for e in fit_selection.choose_entries(resume, requirements)
         for b in e.bullets
     }
     n = _capped_first_draft()
@@ -1134,10 +1150,12 @@ def test_top_up_never_adds_an_entry_from_a_section_the_template_cannot_render(
     monkeypatch, tmp_path
 ):
     monkeypatch.setattr(config, "MAX_GROW_ATTEMPTS", 0)
-    monkeypatch.setattr(fit_mod, "rewrite_bullets", _identity_rewrite)
-    monkeypatch.setattr(
-        fit_mod, "active_layout", lambda: {"enabled": {"projects": False, "experience": True}}
-    )
+    monkeypatch.setattr(fit_state, "rewrite_bullets", _identity_rewrite)
+    # `active_layout` is looked up by the run itself and by line estimation/selection.
+    for mod in (fit_state, fit_lines, fit_selection):
+        monkeypatch.setattr(
+            mod, "active_layout", lambda: {"enabled": {"projects": False, "experience": True}}
+        )
     _stub_render(monkeypatch, tmp_path, pages_for=lambda texts: (1, _SPARSE_LINES))
 
     result = fit_mod.fit(
@@ -1154,7 +1172,7 @@ def test_top_up_repairs_widows_in_the_bullets_it_adds_even_on_reaching_the_targe
     """Added bullets arrive after the main widow pass; reaching the fill target must not
     skip their own measured pass, and the reported count must cover them."""
     monkeypatch.setattr(config, "MAX_GROW_ATTEMPTS", 0)
-    monkeypatch.setattr(fit_mod, "rewrite_bullets", _identity_rewrite)
+    monkeypatch.setattr(fit_state, "rewrite_bullets", _identity_rewrite)
     first: dict[str, set[str]] = {}
 
     def pages_for(texts):
@@ -1177,7 +1195,7 @@ def test_top_up_repairs_widows_in_the_bullets_it_adds_even_on_reaching_the_targe
         polished.append(set(kwargs["targets"]))
         return {**texts, **{b: texts[b] + " fixed" for b in kwargs["targets"]}}, 1, 0, {}
 
-    monkeypatch.setattr(fit_mod, "_polish", fake_polish)
+    monkeypatch.setattr(fit_shrink, "_polish", fake_polish)
     result = fit_mod.fit(
         _test_resume(), _requirements(), target_pages=1, merge_bullets=False,
         max_bullets_per_entry=3, initial_bullet_share=0.5,
@@ -1195,4 +1213,4 @@ def test_extend_target_also_accepts_a_draft_that_saves_the_last_line():
         "a": fit_mod.render.LineFit(2, 0.20, 100),
         "b": fit_mod.render.LineFit(2, 0.42, 100),
     }
-    assert fit_mod._line_saving_ceilings(targets, layout) == {"b": 95}
+    assert fit_lines._line_saving_ceilings(targets, layout) == {"b": 95}

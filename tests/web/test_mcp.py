@@ -17,7 +17,7 @@ from resume_tailor.mcp_server import tools
 from resume_tailor.mcp_server.client import BackendClient, BackendError
 from resume_tailor.pipeline.events import ProgressEvent
 from resume_tailor.pipeline.expand import ExpandedEntry, Expansion
-from resume_tailor.pipeline.fit import FitResult
+from resume_tailor.pipeline.fit_types import FitResult
 from resume_tailor.pipeline.jd import JobRequirements, Keyword
 from resume_tailor.pipeline.skills import SkillsPlan, SkillSuggestion
 from resume_tailor.web import jobs as jobs_mod

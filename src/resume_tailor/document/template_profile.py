@@ -299,7 +299,7 @@ class TemplateProfile(_Strict):
     #: has no effect until the template is rebuilt. `"generic"` tags one shared
     #: `{%p for section in sections %}` block instead, so any number of sections, in any
     #: order, with any title, render correctly with no rebuild — see `template_build.
-    #: build_generic`. `fit.estimate_lines` reads this to know whether same-kind sections
+    #: build_generic`. `fit_lines.estimate_lines` reads this to know whether same-kind sections
     #: share one heading line or each get their own.
     section_mode: Literal["fixed", "generic"] = "fixed"
     #: Every detected/confirmed section, in document order. Generic-mode only; empty

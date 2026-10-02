@@ -81,7 +81,7 @@ def test_profile_needs_some_entry_section():
 
 @pytest.mark.parametrize("section_mode", ["fixed", "generic"])
 def test_fit_skips_experience_when_template_has_none(section_mode):
-    from resume_tailor.pipeline import fit
+    from resume_tailor.pipeline import fit_lines, fit_selection
     from resume_tailor.pipeline.jd import JobRequirements, Keyword
 
     resume = synthetic_resume()
@@ -94,13 +94,13 @@ def test_fit_skips_experience_when_template_has_none(section_mode):
     without = {"section_mode": section_mode, "enabled": {"experience": False}}
     exp_ids = {s.id for s in resume.entry_sections if s.kind == "experience"}
 
-    chosen = fit.choose_entries(
+    chosen = fit_selection.choose_entries(
         resume, requirements, layout=without, section_limits={i: 5 for i in exp_ids}
     )
     assert not any(isinstance(e, type(resume.experience[0])) for e in chosen)
     assert any(isinstance(e, type(resume.projects[0])) for e in chosen)
 
     bullets = {b.id: b.text for b in resume.all_bullets()}
-    assert fit.estimate_lines(resume, bullets, layout=without) < fit.estimate_lines(
+    assert fit_lines.estimate_lines(resume, bullets, layout=without) < fit_lines.estimate_lines(
         resume, bullets, layout=with_exp
     )

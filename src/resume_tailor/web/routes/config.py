@@ -10,7 +10,7 @@ from fastapi import APIRouter
 
 from resume_tailor import config, workspace
 from resume_tailor.content import data, industries, libraries, style
-from resume_tailor.pipeline import coverletter, expand, fit, rewrite_prompts
+from resume_tailor.pipeline import coverletter, expand, fit_types, rewrite_prompts
 from resume_tailor.pipeline.events import ProgressEvent
 from resume_tailor.web import state as web_state
 from resume_tailor.web import template_ops
@@ -64,7 +64,7 @@ def _config_response(*, consume_migrated: bool = True) -> ConfigResponse:
     if consume_migrated:
         web_state.migrated_from_legacy = False
 
-    soft_min, hard_max = rewrite_prompts.length_band(fit.default_bullet_char_budget())
+    soft_min, hard_max = rewrite_prompts.length_band(fit_types.default_bullet_char_budget())
     saved = workspace.load_settings()
     target_field = saved.get("target_field")
     snapshot = industries.capture(

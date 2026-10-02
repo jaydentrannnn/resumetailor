@@ -13,7 +13,7 @@ import pytest
 
 from resume_tailor import config
 from resume_tailor.cli import run as cli_run
-from resume_tailor.pipeline import fit as fit_mod
+from resume_tailor.pipeline import fit_types
 from resume_tailor.pipeline.fabrication import FabricationError
 from resume_tailor.pipeline.jd import JobRequirements, Keyword
 from tests.fixtures import synthetic_resume
@@ -178,9 +178,9 @@ def _requirements() -> JobRequirements:
     )
 
 
-def _fit_result(resume, out_path: Path) -> fit_mod.FitResult:
+def _fit_result(resume, out_path: Path) -> fit_types.FitResult:
     bullets = {b.id: b.text for b in resume.experience[0].bullets}
-    return fit_mod.FitResult(
+    return fit_types.FitResult(
         out_path=out_path,
         pages=1,
         pages_are_estimated=False,
@@ -246,7 +246,7 @@ def test_fit_failure_exits_one_without_printing_a_report(cli, jd_file, monkeypat
     monkeypatch.setattr(cli.jd, "verify_verbatim", lambda reqs, text: [])
 
     def boom(*a, **k):
-        raise fit_mod.FitError("Could not fit the resume to 1 page(s)")
+        raise fit_types.FitError("Could not fit the resume to 1 page(s)")
 
     monkeypatch.setattr(cli.fit, "fit", boom)
 

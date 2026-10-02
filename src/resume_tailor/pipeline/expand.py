@@ -29,7 +29,7 @@ from ..infra import llm
 from . import events
 from .bullet_checks import verb_collisions
 from .fabrication import _check_fabrication, numbers_dropped
-from .fit import FitResult
+from .fit_types import FitResult
 from .jd import JobRequirements
 from .rewrite_prompts import _format_keywords
 from .selection import select_entries

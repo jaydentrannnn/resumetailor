@@ -20,7 +20,7 @@ from resume_tailor.pipeline.expand import (
     expand_experience,
     format_markdown,
 )
-from resume_tailor.pipeline.fit import FitResult
+from resume_tailor.pipeline.fit_types import FitResult
 from resume_tailor.pipeline.jd import JobRequirements, Keyword
 
 

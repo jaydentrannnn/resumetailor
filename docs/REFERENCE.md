@@ -959,7 +959,7 @@ carry two sources of truth. `resume.entry_sections` is `experience`+`project` ki
 (the ones that carry bullets and go through selection); `list`/`education`/`skills` are
 fixed overhead the fit loop never trims.
 
-- **Selection ranks each section independently.** `fit.choose_entries` loops
+- **Selection ranks each section independently.** `fit_selection.choose_entries` loops
   `resume.entry_sections`, ranking each against a per-kind default cap
   (`config.MAX_EXPERIENCE_ENTRIES`/`MAX_PROJECT_ENTRIES`) — a "Leadership" section's
   entries never compete with a job's for a slot, generalising the original

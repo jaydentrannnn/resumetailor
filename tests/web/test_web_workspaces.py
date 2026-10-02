@@ -12,7 +12,7 @@ import pytest
 from resume_tailor import config
 from resume_tailor.content.data import load
 from resume_tailor.document import template_profile
-from resume_tailor.pipeline.fit import FitResult
+from resume_tailor.pipeline.fit_types import FitResult
 from resume_tailor.web import jobs as jobs_mod
 from resume_tailor.web import template_ops
 from resume_tailor.web.schemas import JobSettings

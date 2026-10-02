@@ -11,7 +11,7 @@ from urllib.parse import unquote
 from resume_tailor import config
 from resume_tailor.content.data import load
 from resume_tailor.pipeline.events import ProgressEvent
-from resume_tailor.pipeline.fit import FitResult
+from resume_tailor.pipeline.fit_types import FitResult
 from resume_tailor.web import jobs as jobs_mod
 from resume_tailor.web.jobs import JobQueue
 from resume_tailor.web.schemas import JobSettings

@@ -121,7 +121,7 @@ Docs cite bare module names (`fit.py`, `render.py`); the few that repeat across 
 |---|---|
 | `config`, `workspace` | top-level modules — config globals rebound per workspace |
 | `cli/` | the `tailor.py` CLI: `args` (flags), `run` (one invocation, `_CliRun` steps) |
-| `pipeline/` | `jd`, `rewrite`, `facets`, `expand`, `skills`, `coverletter`, `review`, `propose` (the LLM callers), `fit`, `merge`, `include`, `report`, `estimate`, `events`, `runs`, `jd_input`, `jdsim` |
+| `pipeline/` | `jd`, `rewrite`, `facets`, `expand`, `skills`, `coverletter`, `review`, `propose` (the LLM callers), `fit` (`fit()` + `_FitRun.run`; layers `fit_state` → `fit_shrink` → `fit_topup`; helpers `fit_types`, `fit_lines`, `fit_selection`), `merge`, `include`, `report`, `estimate`, `events`, `runs`, `jd_input`, `jdsim` |
 | `document/` | `render`, `convert`, `docx_text`, `docx_normalize`, `template_*`, `cover_template`, `default_templates`, `calibrate`, `rerender`, `thumbnails` — no LLM, ever |
 | `content/` | `data` (the master-resume model), `data_transfer`, `edu_dates`, `libraries`, `industries`, `style`, `labels`, `onboarding`, `resume_versions` |
 | `importing/` | `resume_import`, `resume_import_pdf`, `tag_suggest` |
@@ -152,7 +152,7 @@ master_resume.json + jd.txt
   → relevance.score_table()     all bullets → 0-10 relevance (LLM, once, cached)
   → include.apply()           drop exclusions (pure)
   → facets.select_facets()    project tech + coursework (LLM, once, cached)
-  → fit.choose_entries()      rank each section independently (pure)
+  → fit_selection.choose_entries()  rank each section independently (pure)
   → selection.select_within_entries() → rewrite_bullets() (LLM, batched)
   → fabrication.check_fabrication()   reject invented terms (pure, in code)
   → bullet_merge._merge_bullets() / followups._polish()   (LLM, optional/bounded)

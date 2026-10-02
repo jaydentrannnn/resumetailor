@@ -18,12 +18,12 @@ from resume_tailor.document import render
 from resume_tailor.pipeline import (
     bullet_checks,
     fabrication,
+    fit_types,
     merge,
     report,
     rewrite,
     rewrite_prompts,
 )
-from resume_tailor.pipeline import fit as fit_mod
 from resume_tailor.pipeline.jd import JobRequirements, Keyword
 
 
@@ -402,7 +402,7 @@ def test_report_prints_merge_section_and_counts_absorbed_members_as_kept():
     ]
 
     # Only the survivor renders after merge acceptance.
-    fit_result = fit_mod.FitResult(
+    fit_result = fit_types.FitResult(
         out_path=config.OUTPUT_DIR / "out.docx",
         pages=1,
         pages_are_estimated=False,

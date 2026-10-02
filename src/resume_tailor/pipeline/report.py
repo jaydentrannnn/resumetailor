@@ -20,7 +20,7 @@ from typing import TYPE_CHECKING, Literal
 from .. import config
 from ..content.data import Experience, MasterResume, Project
 from .facets import labels_are_equivalent
-from .fit import FitResult
+from .fit_types import FitResult
 from .jd import JobRequirements, extraction_diagnosis
 from .rewrite import keyword_coverage
 

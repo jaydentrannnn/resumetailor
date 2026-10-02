@@ -28,6 +28,7 @@ from resume_tailor.pipeline import (
     expand,
     facets,
     fit,
+    fit_types,
     include,
     jd,
     relevance,
@@ -53,7 +54,7 @@ class _CliRun:
     master_resume: MasterResume
     requirements: jd.JobRequirements
     jd_text: str
-    result: fit.FitResult
+    result: fit_types.FitResult
 
     def __init__(self, args: argparse.Namespace) -> None:
         self.args = args
@@ -333,7 +334,7 @@ class _CliRun:
                 max_bullets_per_entry=args.max_bullets_per_entry,
                 coursework_pool=self.facet_result.coursework_pool,
             )
-        except (FabricationError, fit.FitError, FileNotFoundError, RuntimeError) as exc:
+        except (FabricationError, fit_types.FitError, FileNotFoundError, RuntimeError) as exc:
             return self._error(exc)
 
         print(report.format_report(

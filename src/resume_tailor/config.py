@@ -1377,7 +1377,7 @@ def reload_calibration() -> tuple[int, int, str, str | None]:
 #: whitespace; raise toward 0.93 for a denser page (more grow/rewrite rounds).
 UNDERFLOW_THRESHOLD = 0.93
 
-#: Extra estimated lines past page capacity that `fit._initial_selection_size` may claim.
+#: Extra estimated lines past page capacity that `fit_selection._initial_selection_size` may claim.
 #:
 #: The first rewrite usually lands under the advertised max, so a small optimism margin
 #: packs the opening call denser (e.g. 13/15 instead of 12/15) and avoids a grow round.
@@ -1386,7 +1386,7 @@ INITIAL_SELECTION_OVERSHOOT = 2
 
 #: Fraction of the chosen entries' bullets the *first* selection may claim.
 #:
-#: 1.0 leaves `fit._initial_selection_size` exactly as it was: the binary search's only
+#: 1.0 leaves `fit_selection._initial_selection_size` exactly as it was: the binary search's only
 #: bound is what the line estimate says fits (typically 14 of 15). Lowering it caps that
 #: search — a ceiling, never a floor, and never below one bullet per entry.
 #:
@@ -1562,7 +1562,7 @@ def last_line_fill(text: str) -> int:
 def skill_group_line(label: str, items: list[str]) -> str:
     """The text one skills group renders as, for line-budget estimation.
 
-    Shared so `fit._fixed_overhead_lines` and `facets._resolve_skill_group` cannot drift:
+    Shared so `fit_lines._fixed_overhead_lines` and `facets._resolve_skill_group` cannot drift:
     one measures the overhead, the other must not grow it. Mirrors the join in
     `render.build_context`'s skills block. The ": " separator is hardcoded here rather
     than read from `template_profile.SkillsMapping.separator`; if that ever needs

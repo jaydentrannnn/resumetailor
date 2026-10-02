@@ -107,7 +107,7 @@ def validate(resume: MasterResume, options: IncludeOptions) -> list[str]:
 
     Currently just the one failure mode that would otherwise surface many minutes later
     as an opaque `FitError("No experience or project entries were selected...")` out of
-    `fit.choose_entries`.
+    `fit_selection.choose_entries`.
     """
     problems: list[str] = []
     excluded_entries = _excluded_entry_ids(options)
