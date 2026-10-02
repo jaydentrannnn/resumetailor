@@ -255,7 +255,7 @@ def ensure_phone_code(
     Returns None when the step has no such prompt, True when the committed chip matches,
     False when it could not be verified (left for review).
     """
-    from resume_tailor.apply.answers.hybrid_resolver import _phone_option  # noqa: PLC0415
+    from resume_tailor.apply.answers.widget_actions import _phone_option  # noqa: PLC0415
 
     try:
         state = page.evaluate(PHONE_CODE_JS)

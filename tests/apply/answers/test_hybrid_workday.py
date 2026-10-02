@@ -8,7 +8,12 @@ from unittest.mock import MagicMock
 import pytest
 
 from resume_tailor import config
-from resume_tailor.apply.answers import hybrid_resolver
+from resume_tailor.apply.answers import (
+    hybrid_resolver,
+    page_blockers,
+    resolver_types,
+    widget_actions,
+)
 from resume_tailor.apply.answers.profile import ApplicantProfile
 from resume_tailor.apply.ats import workday_auth
 from resume_tailor.apply.funnel.packet import Packet
@@ -17,14 +22,14 @@ from resume_tailor.infra import llm
 
 def test_phone_code_choice_requires_explicit_region():
     options = ["United States +1", "Canada +1", "American Samoa +1", "United Kingdom +44"]
-    assert hybrid_resolver._phone_option(options, "+1", "") is None  # noqa: SLF001
-    assert hybrid_resolver._phone_option(options, "+1", "United States") == "United States +1"  # noqa: SLF001
-    assert hybrid_resolver._phone_option(options, "+1", "Canada") == "Canada +1"  # noqa: SLF001
-    assert hybrid_resolver._phone_option(options, "+1", "United Kingdom") is None  # noqa: SLF001
+    assert widget_actions._phone_option(options, "+1", "") is None  # noqa: SLF001
+    assert widget_actions._phone_option(options, "+1", "United States") == "United States +1"  # noqa: SLF001
+    assert widget_actions._phone_option(options, "+1", "Canada") == "Canada +1"  # noqa: SLF001
+    assert widget_actions._phone_option(options, "+1", "United Kingdom") is None  # noqa: SLF001
 
 
 def test_declared_greenhouse_option_aliases_are_exact_and_unambiguous():
-    match = hybrid_resolver._option_match  # noqa: SLF001
+    match = widget_actions._option_match  # noqa: SLF001
     assert match(["University of California, Irvine", "Other"], "University of California - Irvine", key="school") == "University of California, Irvine"
     assert match(["Bachelor's Degree", "Master's Degree"], "Bachelors", key="degree_level") == "Bachelor's Degree"
     assert match(["South Asian", "Asian"], "Asian", key="race") == "Asian"
@@ -42,14 +47,16 @@ def test_greenhouse_degree_search_uses_bachelor_root(monkeypatch):
     option = MagicMock()
     option.is_visible.return_value = True
     option.inner_text.return_value = "Bachelor's Degree"
-    monkeypatch.setattr(hybrid_resolver, "_selected_combobox_text", MagicMock(side_effect=["", "Bachelor's Degree"]))
     monkeypatch.setattr(
-        hybrid_resolver,
+        widget_actions, "_selected_combobox_text", MagicMock(side_effect=["", "Bachelor's Degree"])
+    )
+    monkeypatch.setattr(
+        widget_actions,
         "_menu_choices",
         lambda _page, _trigger: [option] if trigger.fill.call_args and trigger.fill.call_args.args[0] == "bachelor" else [],
     )
 
-    assert hybrid_resolver._select_combobox_option(page, "#degree", "Bachelors", key="degree_level")  # noqa: SLF001
+    assert widget_actions._select_combobox_option(page, "#degree", "Bachelors", key="degree_level")  # noqa: SLF001
     trigger.fill.assert_called_once_with("bachelor")
     option.click.assert_called_once()
 
@@ -67,10 +74,10 @@ def test_greenhouse_phone_code_verifies_selected_country_option(monkeypatch):
     canada = MagicMock()
     canada.is_visible.return_value = True
     canada.inner_text.return_value = "Canada +1"
-    monkeypatch.setattr(hybrid_resolver, "_selected_combobox_text", lambda _trigger: "+1")
-    monkeypatch.setattr(hybrid_resolver, "_menu_choices", lambda _page, _trigger: [us, canada])
+    monkeypatch.setattr(widget_actions, "_selected_combobox_text", lambda _trigger: "+1")
+    monkeypatch.setattr(widget_actions, "_menu_choices", lambda _page, _trigger: [us, canada])
 
-    assert hybrid_resolver._select_combobox_option(  # noqa: SLF001
+    assert widget_actions._select_combobox_option(  # noqa: SLF001
         page, "#country", "+1", key="phone_country_code", phone_region="United States",
     )
     us.click.assert_called_once()
@@ -170,17 +177,17 @@ def test_hybrid_resolver_action_execution():
     mock_el.is_visible.return_value = True
     page.locator.return_value.first = mock_el
 
-    action_fill = hybrid_resolver.FieldAction(
+    action_fill = resolver_types.FieldAction(
         selector="#custom-input",
         label="Custom Field",
         action="fill_text",
         value="My Answer",
     )
-    assert hybrid_resolver.execute_action(page, action_fill)
+    assert widget_actions.execute_action(page, action_fill)
     assert mock_el.fill.called
 
     with pytest.raises(ValueError):
-        hybrid_resolver.FieldAction(
+        resolver_types.FieldAction(
             selector="#custom-btn",
             label="Custom Button",
             action="click_element",
@@ -219,17 +226,17 @@ def resolver_page(monkeypatch):
     shared = _FakeClient(state.replies, state.calls)  # one queue across every call
     monkeypatch.setattr(hybrid_resolver.llm, "client_for", lambda _purpose: shared)
     monkeypatch.setattr(
-        hybrid_resolver, "extract_page_blockers",
+        page_blockers, "extract_page_blockers",
         lambda _page: {"errors": [], "unresolved": [dict(f) for f in state.unresolved], "advance_disabled": False},
     )
-    monkeypatch.setattr(hybrid_resolver, "_menu_choices", lambda _page, trigger: [])
-    monkeypatch.setattr(hybrid_resolver, "_is_upload_widget", lambda _locator: False)
+    monkeypatch.setattr(widget_actions, "_menu_choices", lambda _page, trigger: [])
+    monkeypatch.setattr(widget_actions, "_is_upload_widget", lambda _locator: False)
 
     def execute(_page, action):
         state.unresolved = [f for f in state.unresolved if f["selector"] != action.selector]
         return True
 
-    monkeypatch.setattr(hybrid_resolver, "execute_action", execute)
+    monkeypatch.setattr(widget_actions, "execute_action", execute)
     page = MagicMock()
     page.locator.side_effect = lambda selector: SimpleNamespace(first=SimpleNamespace(
         click=lambda timeout=None: state.opened.append(selector),
@@ -259,7 +266,7 @@ def test_transient_model_failure_is_recorded_for_review(resolver_page, monkeypat
     monkeypatch.setattr(hybrid_resolver.llm, "client_for", lambda _purpose: SimpleNamespace(
         messages=FailingMessages(), timeout=60.0,
     ))
-    ledger = hybrid_resolver.StepLedger()
+    ledger = resolver_types.StepLedger()
     messages: list[str] = []
 
     assert _resolve(state, ledger, messages) is False
@@ -271,16 +278,16 @@ def test_a_second_pass_on_the_step_touches_only_the_new_gap(resolver_page):
     state = resolver_page
     state.unresolved = [_field("#state", "State"), _field("#vet", "Veteran status")]
     # The model answers State; Veteran status it cannot answer.
-    state.replies.append(hybrid_resolver.StepResolution(actions=[hybrid_resolver.FieldAction(
+    state.replies.append(resolver_types.StepResolution(actions=[resolver_types.FieldAction(
         label="State", selector="#state", action="select_combobox", value="California")]))
     # The observed option list must contain the answer for it to be executed.
-    ledger = hybrid_resolver.StepLedger(options={"#state": ["California", "Texas"]})
+    ledger = resolver_types.StepLedger(options={"#state": ["California", "Texas"]})
     _resolve(state, ledger)
     assert len(state.calls) == 1
     assert state.opened == ["#vet"]  # State's options were already known
 
     # Same step, the field the model skipped: sent once more, alone; nothing is reopened.
-    state.replies.append(hybrid_resolver.StepResolution(actions=[]))
+    state.replies.append(resolver_types.StepResolution(actions=[]))
     _resolve(state, ledger)
     assert len(state.calls) == 2
     sent = state.calls[1]["messages"][0]["content"]
@@ -295,7 +302,7 @@ def test_a_second_pass_on_the_step_touches_only_the_new_gap(resolver_page):
 
     # A field revealed later on the same step is the only thing sent.
     state.unresolved.append(_field("#reloc", "Willing to relocate"))
-    state.replies.append(hybrid_resolver.StepResolution(actions=[]))
+    state.replies.append(resolver_types.StepResolution(actions=[]))
     messages = []
     _resolve(state, ledger, messages)
     assert len(state.calls) == 3
@@ -308,8 +315,10 @@ def _yes_no(selector: str, label: str) -> dict:
     return _field(selector, label)
 
 
-def _choose(selector: str, label: str, value: str) -> hybrid_resolver.FieldAction:
-    return hybrid_resolver.FieldAction(label=label, selector=selector, action="select_combobox", value=value)
+def _choose(selector: str, label: str, value: str) -> resolver_types.FieldAction:
+    return resolver_types.FieldAction(
+        label=label, selector=selector, action="select_combobox", value=value
+    )
 
 
 def test_a_question_the_model_skips_is_asked_again_in_the_same_call(resolver_page):
@@ -318,9 +327,11 @@ def test_a_question_the_model_skips_is_asked_again_in_the_same_call(resolver_pag
     state = resolver_page
     board = "Are you a board member of any outside organization?"
     state.unresolved = [_yes_no("#ref", "Were you referred?"), _yes_no("#board", board)]
-    state.replies.append(hybrid_resolver.StepResolution(actions=[_choose("#ref", "Were you referred?", "No")]))
-    state.replies.append(hybrid_resolver.StepResolution(actions=[_choose("#board", board, "No")]))
-    ledger = hybrid_resolver.StepLedger(options={"#ref": ["Yes", "No"], "#board": ["Yes", "No"]})
+    state.replies.append(
+        resolver_types.StepResolution(actions=[_choose("#ref", "Were you referred?", "No")])
+    )
+    state.replies.append(resolver_types.StepResolution(actions=[_choose("#board", board, "No")]))
+    ledger = resolver_types.StepLedger(options={"#ref": ["Yes", "No"], "#board": ["Yes", "No"]})
 
     messages: list[str] = []
     assert hybrid_resolver.resolve_step_blockers(
@@ -339,22 +350,22 @@ def test_the_same_question_gets_the_same_answer_on_another_tab(resolver_page):
     state = resolver_page
     question = "Have you ever applied for registration with any regulatory authority?"
     state.unresolved = [_yes_no("#reg", question)]
-    state.replies.append(hybrid_resolver.StepResolution(actions=[_choose("#reg", question, "No")]))
-    _resolve(state, hybrid_resolver.StepLedger(options={"#reg": ["Yes", "No"]}))
+    state.replies.append(resolver_types.StepResolution(actions=[_choose("#reg", question, "No")]))
+    _resolve(state, resolver_types.StepLedger(options={"#reg": ["Yes", "No"]}))
     assert len(state.calls) == 1
 
     executed: list[str] = []
     state.unresolved = [_yes_no("#reg-2", question)]
-    original = hybrid_resolver.execute_action
+    original = widget_actions.execute_action
 
     def record(page, action):
         executed.append(f"{action.selector}={action.value}")
         return original(page, action)
 
     with pytest.MonkeyPatch.context() as mp:
-        mp.setattr(hybrid_resolver, "execute_action", record)
+        mp.setattr(widget_actions, "execute_action", record)
         messages: list[str] = []
-        _resolve(state, hybrid_resolver.StepLedger(options={"#reg-2": ["Yes", "No"]}), messages)
+        _resolve(state, resolver_types.StepLedger(options={"#reg-2": ["Yes", "No"]}), messages)
     assert len(state.calls) == 1  # no second model call
     assert executed == ["#reg-2=No"]
     assert any("reusing 1 earlier answer" in m for m in messages)
@@ -364,13 +375,15 @@ def test_a_remembered_answer_needs_the_same_options(resolver_page):
     state = resolver_page
     question = "Do you hold a securities license?"
     state.unresolved = [_yes_no("#lic", question)]
-    state.replies.append(hybrid_resolver.StepResolution(actions=[_choose("#lic", question, "No")]))
-    _resolve(state, hybrid_resolver.StepLedger(options={"#lic": ["Yes", "No"]}))
+    state.replies.append(resolver_types.StepResolution(actions=[_choose("#lic", question, "No")]))
+    _resolve(state, resolver_types.StepLedger(options={"#lic": ["Yes", "No"]}))
 
     # Other options make it another question: the model is asked.
     state.unresolved = [_yes_no("#lic", question)]
-    state.replies.append(hybrid_resolver.StepResolution(actions=[_choose("#lic", question, "No, never")]))
-    _resolve(state, hybrid_resolver.StepLedger(options={"#lic": ["Yes, active", "No, never"]}))
+    state.replies.append(
+        resolver_types.StepResolution(actions=[_choose("#lic", question, "No, never")])
+    )
+    _resolve(state, resolver_types.StepLedger(options={"#lic": ["Yes, active", "No, never"]}))
     assert len(state.calls) == 2
 
 
@@ -380,8 +393,10 @@ def test_an_unknown_decision_is_final_and_never_remembered(resolver_page):
     state = resolver_page
     question = "Do you serve on a municipal retirement plan board?"
     state.unresolved = [_yes_no("#board", question)]
-    state.replies.append(hybrid_resolver.StepResolution(actions=[_choose("#board", question, "unknown")]))
-    ledger = hybrid_resolver.StepLedger(options={"#board": ["Yes", "No"]})
+    state.replies.append(
+        resolver_types.StepResolution(actions=[_choose("#board", question, "unknown")])
+    )
+    ledger = resolver_types.StepLedger(options={"#board": ["Yes", "No"]})
     messages: list[str] = []
     hybrid_resolver.resolve_step_blockers(
         state.page, Packet.model_construct(fields={}), ApplicantProfile(),
@@ -420,8 +435,11 @@ def test_a_tab_waits_for_the_answer_another_tab_is_fetching(resolver_page):
         state.unresolved = [_yes_no("#fam", question)]
         messages: list[str] = []
         assert hybrid_resolver.resolve_step_blockers(
-            state.page, Packet.model_construct(fields={}), profile,
-            ledger=hybrid_resolver.StepLedger(options={"#fam": ["Yes", "No"]}), on_progress=messages.append,
+            state.page,
+            Packet.model_construct(fields={}),
+            profile,
+            ledger=resolver_types.StepLedger(options={"#fam": ["Yes", "No"]}),
+            on_progress=messages.append,
         )
     finally:
         timer.join()
@@ -435,9 +453,11 @@ def test_unrelated_questions_do_not_wait_on_another_tab(resolver_page):
     hybrid_resolver._IN_FLIGHT["someone-elses-question"] = hybrid_resolver.threading.Event()  # noqa: SLF001
     try:
         state.unresolved = [_yes_no("#q", "Do you have outside employment?")]
-        state.replies.append(hybrid_resolver.StepResolution(actions=[_choose("#q", "Outside", "No")]))
+        state.replies.append(
+            resolver_types.StepResolution(actions=[_choose("#q", "Outside", "No")])
+        )
         started = hybrid_resolver.time.monotonic()
-        assert _resolve(state, hybrid_resolver.StepLedger(options={"#q": ["Yes", "No"]}))
+        assert _resolve(state, resolver_types.StepLedger(options={"#q": ["Yes", "No"]}))
         assert hybrid_resolver.time.monotonic() - started < 5
     finally:
         hybrid_resolver._IN_FLIGHT.pop("someone-elses-question", None)  # noqa: SLF001
@@ -448,7 +468,7 @@ def test_unrelated_questions_do_not_wait_on_another_tab(resolver_page):
 def test_a_choice_that_did_not_stick_is_retried_once(resolver_page, monkeypatch):
     state = resolver_page
     state.unresolved = [_yes_no("#q", "Do you have outside employment?")]
-    state.replies.append(hybrid_resolver.StepResolution(actions=[_choose("#q", "Outside", "No")]))
+    state.replies.append(resolver_types.StepResolution(actions=[_choose("#q", "Outside", "No")]))
     attempts: list[str] = []
 
     def flaky(_page, action):
@@ -458,8 +478,8 @@ def test_a_choice_that_did_not_stick_is_retried_once(resolver_page, monkeypatch)
         state.unresolved = []
         return True
 
-    monkeypatch.setattr(hybrid_resolver, "execute_action", flaky)
-    ledger = hybrid_resolver.StepLedger(options={"#q": ["Yes", "No"]})
+    monkeypatch.setattr(widget_actions, "execute_action", flaky)
+    ledger = resolver_types.StepLedger(options={"#q": ["Yes", "No"]})
     assert _resolve(state, ledger)
     assert attempts == ["#q", "#q"]
     assert "#q" in ledger.done
@@ -468,8 +488,8 @@ def test_a_choice_that_did_not_stick_is_retried_once(resolver_page, monkeypatch)
 def test_after_a_rejected_advance_only_invalid_fields_are_retried(resolver_page):
     state = resolver_page
     state.unresolved = [_field("#a", "Optional pick"), _field("#b", "Required pick", invalid=True)]
-    state.replies.append(hybrid_resolver.StepResolution(actions=[]))
-    _resolve(state, hybrid_resolver.StepLedger(), only_invalid=True)
+    state.replies.append(resolver_types.StepResolution(actions=[]))
+    _resolve(state, resolver_types.StepLedger(), only_invalid=True)
     sent = state.calls[0]["messages"][0]["content"]
     assert "#b" in sent and "#a" not in sent
 
@@ -487,13 +507,13 @@ def test_a_question_revealed_by_the_models_answer_is_asked_next(resolver_page, m
             state.unresolved.append(dict(proof))
         return True
 
-    monkeypatch.setattr(hybrid_resolver, "execute_action", execute)
-    ledger = hybrid_resolver.StepLedger(options={
+    monkeypatch.setattr(widget_actions, "execute_action", execute)
+    ledger = resolver_types.StepLedger(options={
         "#permitted": ["Yes", "No"], "#proof": ["Yes", "No"], "#other": ["A", "B"],
     })
-    state.replies.append(hybrid_resolver.StepResolution(actions=[hybrid_resolver.FieldAction(
+    state.replies.append(resolver_types.StepResolution(actions=[resolver_types.FieldAction(
         label="Legally permitted to work?", selector="#permitted", action="select_combobox", value="Yes")]))
-    state.replies.append(hybrid_resolver.StepResolution(actions=[hybrid_resolver.FieldAction(
+    state.replies.append(resolver_types.StepResolution(actions=[resolver_types.FieldAction(
         label="Proof", selector="#proof", action="select_combobox", value="Yes")]))
     messages: list[str] = []
     _resolve(state, ledger, messages)  # max_retries=1: the reveal round is extra
@@ -508,9 +528,9 @@ def test_a_question_revealed_by_the_models_answer_is_asked_next(resolver_page, m
 def test_no_reveal_means_no_extra_model_call(resolver_page):
     state = resolver_page
     state.unresolved = [_field("#state", "State")]
-    state.replies.append(hybrid_resolver.StepResolution(actions=[hybrid_resolver.FieldAction(
+    state.replies.append(resolver_types.StepResolution(actions=[resolver_types.FieldAction(
         label="State", selector="#state", action="select_combobox", value="California")]))
-    _resolve(state, hybrid_resolver.StepLedger(options={"#state": ["California"]}))
+    _resolve(state, resolver_types.StepLedger(options={"#state": ["California"]}))
     assert len(state.calls) == 1
 
 
@@ -536,14 +556,14 @@ def test_checkbox_group_answers_are_only_offered_options(resolver_page, monkeypa
         state.unresolved = []
         return True
 
-    monkeypatch.setattr(hybrid_resolver, "execute_action", execute)
+    monkeypatch.setattr(widget_actions, "execute_action", execute)
     state.unresolved = [{
         "type": "checkboxgroup", "selector": "[data-automation-id=\"firms-CheckboxGroup\"]",
         "label": "Have you worked for any of the listed firms?", "options": _FIRMS, "invalid": True,
     }]
-    state.replies.append(hybrid_resolver.StepResolution(actions=[hybrid_resolver.FieldAction(
+    state.replies.append(resolver_types.StepResolution(actions=[resolver_types.FieldAction(
         label="firms", selector="[data-automation-id=\"firms-CheckboxGroup\"]", action=action, value=value)]))
-    _resolve(state, hybrid_resolver.StepLedger())
+    _resolve(state, resolver_types.StepLedger())
     assert state.opened == []  # a checkbox group has no menu to open
     assert done == ([value] if executed else [])
 
@@ -551,10 +571,10 @@ def test_checkbox_group_answers_are_only_offered_options(resolver_page, monkeypa
 def test_errors_with_nothing_actionable_do_not_call_the_model(resolver_page, monkeypatch):
     state = resolver_page
     monkeypatch.setattr(
-        hybrid_resolver, "extract_page_blockers",
+        page_blockers, "extract_page_blockers",
         lambda _page: {"errors": ["Error: 1 field needs attention"], "unresolved": [], "advance_disabled": False},
     )
-    assert _resolve(state, hybrid_resolver.StepLedger()) is False
+    assert _resolve(state, resolver_types.StepLedger()) is False
     assert state.calls == []
 
 

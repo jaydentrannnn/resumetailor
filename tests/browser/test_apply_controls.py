@@ -594,7 +594,7 @@ def _workday_checkbox_group(field: str, question: str, options: list[str], *, re
 def test_resolver_sees_and_ticks_a_required_workday_checkbox_group():
     """Required checkbox groups (MPC's locations, American Century's listed firms) were
     invisible to both fill layers; the resolver's scan now reports them and ticks them."""
-    from resume_tailor.apply.answers import hybrid_resolver
+    from resume_tailor.apply.answers import page_blockers, resolver_types, widget_actions
 
     html = (
         _workday_checkbox_group(
@@ -608,19 +608,19 @@ def test_resolver_sees_and_ticks_a_required_workday_checkbox_group():
         try:
             page = browser.new_page()
             page.set_content(html)
-            groups = [f for f in hybrid_resolver.extract_page_blockers(page)["unresolved"] if f["type"] == "checkboxgroup"]
+            groups = [f for f in page_blockers.extract_page_blockers(page)["unresolved"] if f["type"] == "checkboxgroup"]
             assert len(groups) == 1  # the optional group is not a blocker
             group = groups[0]
             assert group["label"] == "Have you worked for any of the listed firms?*"
             assert group["options"] == ["Grant Thornton", "FORVIS", "No"]
             assert group["invalid"] is True
-            action = hybrid_resolver.FieldAction(
+            action = resolver_types.FieldAction(
                 label=group["label"], selector=group["selector"], action="check_options", value="No",
             )
-            assert hybrid_resolver.execute_action(page, action) is True
+            assert widget_actions.execute_action(page, action) is True
             assert page.is_checked("[id='5c8be8f5firms-2']") and not page.is_checked("[id='5c8be8f5firms-0']")
             # Answered: the group is no longer a blocker.
-            assert not [f for f in hybrid_resolver.extract_page_blockers(page)["unresolved"] if f["type"] == "checkboxgroup"]
+            assert not [f for f in page_blockers.extract_page_blockers(page)["unresolved"] if f["type"] == "checkboxgroup"]
         finally:
             browser.close()
 
@@ -755,7 +755,12 @@ _WORKDAY_STEP = '''
 def test_resolver_never_treats_upload_or_prompt_widgets_as_dropdowns(monkeypatch):
     from types import SimpleNamespace
 
-    from resume_tailor.apply.answers import hybrid_resolver
+    from resume_tailor.apply.answers import (
+        hybrid_resolver,
+        page_blockers,
+        resolver_types,
+        widget_actions,
+    )
     from resume_tailor.apply.funnel.packet import Packet
 
     calls: list[dict] = []
@@ -763,7 +768,7 @@ def test_resolver_never_treats_upload_or_prompt_widgets_as_dropdowns(monkeypatch
     class _Messages:
         def parse(self, **kwargs):
             calls.append(kwargs)
-            return SimpleNamespace(parsed_output=hybrid_resolver.StepResolution(actions=[]))
+            return SimpleNamespace(parsed_output=resolver_types.StepResolution(actions=[]))
 
     monkeypatch.setattr(hybrid_resolver.llm, "client_for", lambda _purpose: SimpleNamespace(timeout=60.0, messages=_Messages()))
     with sync_playwright() as playwright:
@@ -773,17 +778,17 @@ def test_resolver_never_treats_upload_or_prompt_widgets_as_dropdowns(monkeypatch
             page.set_content(_WORKDAY_STEP)
             choosers: list[object] = []
             page.on("filechooser", lambda chooser: choosers.append(chooser))
-            info = hybrid_resolver.extract_page_blockers(page)
+            info = page_blockers.extract_page_blockers(page)
             assert [(f["selector"], f["label"]) for f in info["unresolved"]] == [("#address--countryRegion", "State*")]
             hybrid_resolver.resolve_step_blockers(
                 page, Packet.model_construct(fields={}), ApplicantProfile(), max_retries=1,
-                ledger=hybrid_resolver.StepLedger(),
+                ledger=resolver_types.StepLedger(),
             )
             assert choosers == []
             assert len(calls) == 1
             assert "select-files" not in calls[0]["messages"][0]["content"]
-            assert hybrid_resolver._is_upload_widget(page.locator("[data-automation-id=select-files]"))  # noqa: SLF001
-            assert not hybrid_resolver._is_upload_widget(page.locator("#address--countryRegion"))  # noqa: SLF001
+            assert widget_actions._is_upload_widget(page.locator("[data-automation-id=select-files]"))  # noqa: SLF001
+            assert not widget_actions._is_upload_widget(page.locator("#address--countryRegion"))  # noqa: SLF001
         finally:
             browser.close()
 

@@ -62,7 +62,7 @@ _OPTIONS_JS = r"""(id) => {
 
 def _pick_listbox_option(options: list[dict[str, Any]], value: str, key: str) -> tuple[str, str] | None:
     """(label, id) of the one option meaning ``value``, or None."""
-    from resume_tailor.apply.answers.hybrid_resolver import _option_match  # noqa: PLC0415
+    from resume_tailor.apply.answers.widget_actions import _option_match  # noqa: PLC0415
 
     usable = [o for o in options if not o["disabled"] and not _PLACEHOLDER.match(o["label"])]
     if key in {SALARY_RANGE_KEY, ANY_OPTION_KEY}:
@@ -137,7 +137,7 @@ def select_listbox(page: Any, selector: str, value: str, *, key: str = "") -> bo
 
 def _same_option(current: str, value: str, key: str) -> bool:
     """True when a committed option already means ``value`` (e.g. "United States of America")."""
-    from resume_tailor.apply.answers.hybrid_resolver import _option_match  # noqa: PLC0415
+    from resume_tailor.apply.answers.widget_actions import _option_match  # noqa: PLC0415
 
     return _option_match([current], value, key=key) is not None
 

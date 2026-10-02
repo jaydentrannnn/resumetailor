@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from resume_tailor import config
-from resume_tailor.apply.answers import answer, answer_memory, hybrid_resolver
+from resume_tailor.apply.answers import answer, answer_memory, widget_actions
 from resume_tailor.apply.forms import form_guards
 
 from . import fill_buttons, fill_outcomes, fill_state, fill_widgets
@@ -283,10 +283,10 @@ class _FillAnswers(fill_state._FillState):
         if control_type == "select":
             target.locator(selector).first.select_option(label=canned)
         elif control_type == "radio":
-            if not hybrid_resolver._choose_radio_option(target, selector, canned):  # noqa: SLF001
+            if not widget_actions._choose_radio_option(target, selector, canned):  # noqa: SLF001
                 raise RuntimeError("No matching radio option")
         elif control_type in {"combobox", "button"}:
-            if not hybrid_resolver._select_combobox_option(target, selector, canned):  # noqa: SLF001
+            if not widget_actions._select_combobox_option(target, selector, canned):  # noqa: SLF001
                 raise RuntimeError("No matching dropdown option")
         elif not target.locator(selector).first.input_value().strip():
             target.fill(selector, canned)

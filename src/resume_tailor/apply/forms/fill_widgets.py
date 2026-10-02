@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from resume_tailor import config
-from resume_tailor.apply.answers import hybrid_resolver, questions
+from resume_tailor.apply.answers import questions, widget_actions
 from resume_tailor.apply.ats import workday_dropdowns, workday_page
 from resume_tailor.apply.driver import browser
 from resume_tailor.apply.forms import field_matcher
@@ -73,7 +73,7 @@ def _fill_declared_combobox(target: Any, item: dict[str, Any], fields: dict[str,
         return None
     planned = [str(item["value"])] if item.get("value") else []
     for value in dict.fromkeys([*planned, *field_matcher.choice_values(key, fields)]):
-        if value and hybrid_resolver._select_combobox_option(  # noqa: SLF001
+        if value and widget_actions._select_combobox_option(  # noqa: SLF001
             target, selector, value, key=key, phone_region=fields.get("phone_country_region", ""),
         ):
             return value

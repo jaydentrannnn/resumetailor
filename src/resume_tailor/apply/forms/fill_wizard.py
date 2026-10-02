@@ -7,7 +7,7 @@ import time
 from typing import Any
 
 from resume_tailor import config
-from resume_tailor.apply.answers import hybrid_resolver, questions
+from resume_tailor.apply.answers import hybrid_resolver, questions, resolver_types
 from resume_tailor.apply.ats import (
     smartrecruiters_flow,
     workday_dropdowns,
@@ -99,7 +99,7 @@ class _FillWizard(fill_answers._FillAnswers, fill_ats_steps._FillAtsSteps):
     def _start_step(self) -> None:
         # One ledger per frame for this step: every resolver pass on the step shares it,
         # so a stuck field is retried alone instead of the whole page again.
-        self.ledgers: dict[int, hybrid_resolver.StepLedger] = {}
+        self.ledgers: dict[int, resolver_types.StepLedger] = {}
         self.verified_purposes: set[tuple[str, int]] = set()
         self.attempted_purposes: set[tuple[str, int]] = set()
         self.other_chosen = False
@@ -227,7 +227,7 @@ class _FillWizard(fill_answers._FillAnswers, fill_ats_steps._FillAtsSteps):
                     hybrid_resolver.resolve_step_blockers(
                         frame, self.pkt, self.profile, on_progress=self.progress,
                         deadline=self.deadline,
-                        ledger=self.ledgers.setdefault(frame_index, hybrid_resolver.StepLedger()),
+                        ledger=self.ledgers.setdefault(frame_index, resolver_types.StepLedger()),
                     )
                     self.model_unavailable |= self.ledgers[frame_index].model_unavailable
             advance_btn = fill_buttons._find_advance_button(self.page)
@@ -271,7 +271,7 @@ class _FillWizard(fill_answers._FillAnswers, fill_ats_steps._FillAtsSteps):
             hybrid_resolver.resolve_step_blockers(
                 self.page, self.pkt, self.profile, max_retries=1, on_progress=self.progress,
                 deadline=self.deadline,
-                ledger=self.ledgers.setdefault(0, hybrid_resolver.StepLedger()),
+                ledger=self.ledgers.setdefault(0, resolver_types.StepLedger()),
                 only_invalid=True,
             )
             self.model_unavailable |= self.ledgers[0].model_unavailable
