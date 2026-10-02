@@ -20,7 +20,7 @@ import re
 from dataclasses import dataclass
 from typing import Any, Literal
 
-from resume_tailor.apply.ats import workday_flow
+from resume_tailor.apply.ats import workday_page
 from resume_tailor.apply.forms import form_guards
 
 WizardState = Literal[
@@ -150,7 +150,7 @@ class WizardAdapter:
 
         if snap.get("otp_input") or (_CODE_SENT.search(head) and passwords == 0):
             return "otp"
-        if workday_flow.VERIFY_EMAIL.search(head) and fields <= 1:
+        if workday_page.VERIFY_EMAIL.search(head) and fields <= 1:
             return "verify_email"
         if _CONFIRMED.search(head) and fields == 0:
             return "confirmation"
@@ -220,11 +220,11 @@ class WizardAdapter:
 
 
 class WorkdayWizard(WizardAdapter):
-    """Workday's observed state machine (`workday_flow.classify`), under the shared names."""
+    """Workday's observed state machine (`workday_page.classify`), under the shared names."""
 
     platform = "workday"
     label = "Workday"
-    snapshot_js = workday_flow.SNAPSHOT_JS
+    snapshot_js = workday_page.SNAPSHOT_JS
 
     _STATES: dict[str, WizardState] = {
         "posting": "posting",
@@ -241,8 +241,8 @@ class WorkdayWizard(WizardAdapter):
     }
 
     def classify(self, snap: dict[str, Any]) -> WizardState:
-        state = self._STATES[workday_flow.classify(snap)]
-        if state == "apply_form" and workday_flow.is_review_step(snap):
+        state = self._STATES[workday_page.classify(snap)]
+        if state == "apply_form" and workday_page.is_review_step(snap):
             return "review"
         return state
 

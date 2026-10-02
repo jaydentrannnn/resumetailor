@@ -901,7 +901,7 @@ def test_a_page_with_only_its_own_chrome_is_not_ready_for_review(fill_paths, mon
 def test_workday_error_page_that_survives_refreshes_is_handed_over(fill_paths, monkeypatch):
     """Workday's "Something went wrong ... Error Code: VPS|" page is refreshed; if it keeps
     coming back, the tab is handed over for review, not failed as "no form controls"."""
-    from resume_tailor.apply.ats import workday_auth, workday_flow  # noqa: PLC0415
+    from resume_tailor.apply.ats import workday_auth, workday_flow, workday_page  # noqa: PLC0415
     from resume_tailor.apply.forms import form_routes  # noqa: PLC0415
 
     store.upsert(_ready_app(ats="workday"))
@@ -939,7 +939,7 @@ def test_workday_error_page_that_survives_refreshes_is_handed_over(fill_paths, m
     assert result.status == "awaiting_review"
     assert "kept showing 'Something went wrong'" in (result.handoff_reason or "")
     assert result.browser_target_id == "target-wd"
-    assert refreshes and all(attempts == workday_flow.SITE_ERROR_RELOADS for attempts in refreshes)
+    assert refreshes and all(attempts == workday_page.SITE_ERROR_RELOADS for attempts in refreshes)
     assert store.get("src-1").status == "awaiting_review"
 
 

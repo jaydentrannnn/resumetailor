@@ -13,7 +13,7 @@ from typing import Any, Literal
 
 from resume_tailor import config
 from resume_tailor.apply.answers import hybrid_resolver, questions
-from resume_tailor.apply.ats import workday_flow
+from resume_tailor.apply.ats import workday_dropdowns, workday_page
 from resume_tailor.apply.driver import browser
 from resume_tailor.apply.forms import field_matcher
 from resume_tailor.apply.funnel import packet as apply_packet
@@ -240,7 +240,7 @@ def _fill_workday_experience_and_education(
     # dismiss layer) open over the Add buttons (F5, 2026-09): closed first, and again
     # when an Add press is blocked.
     return workday_repeaters.fill(
-        page, pkt, progress, select=workday_flow.select_listbox, dismiss=workday_flow.close_stray_popups,
+        page, pkt, progress, select=workday_dropdowns.select_listbox, dismiss=workday_page.close_stray_popups,
     )
 
 def _guard_file_chooser(page: Any, progress: Callable[[str], None]) -> None:

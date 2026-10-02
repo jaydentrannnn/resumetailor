@@ -13,7 +13,12 @@ from typing import Literal
 
 from resume_tailor import config
 from resume_tailor.apply.answers import answer, answer_memory, model_resolver, profile, salary
-from resume_tailor.apply.ats import adapters, workday_auth, workday_flow, workday_repeaters
+from resume_tailor.apply.ats import (
+    adapters,
+    workday_auth,
+    workday_page,
+    workday_repeaters,
+)
 from resume_tailor.apply.driver import browser, clicks, controls, scanner
 from resume_tailor.apply.forms import attachments, field_catalog, form_routes
 from resume_tailor.apply.forms.field_types import FieldObservation, FieldOutcome
@@ -447,7 +452,7 @@ async def fill_application(
                             result_field.answer_source = "model_mapped_profile_fact"
                             record(step_id, result_field)
                     if isinstance(adapter, adapters.WorkdayAdapter):
-                        workday_step = workday_flow.active_step(await page.evaluate(workday_flow.SNAPSHOT_JS)).casefold()
+                        workday_step = workday_page.active_step(await page.evaluate(workday_page.SNAPSHOT_JS)).casefold()
                         if "experience" in workday_step:
                             years_filled, years_review = await workday_repeaters.fill_education_years_async(page, pkt)
                             inspection_errors.extend(years_review)
@@ -488,7 +493,7 @@ async def fill_application(
                     if next_button is None:
                         review_step = False
                         if isinstance(adapter, adapters.WorkdayAdapter):
-                            review_step = workday_flow.is_review_step(await page.evaluate(workday_flow.SNAPSHOT_JS))
+                            review_step = workday_page.is_review_step(await page.evaluate(workday_page.SNAPSHOT_JS))
                         final_step = await adapter.final_submit(page) is not None or review_step
                         break
                     check_budget()

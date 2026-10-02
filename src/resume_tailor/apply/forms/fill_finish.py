@@ -7,7 +7,7 @@ import time
 from pathlib import Path
 from typing import Any
 
-from resume_tailor.apply.ats import workday_flow
+from resume_tailor.apply.ats import workday_flow, workday_page
 from resume_tailor.apply.driver import clicks
 from resume_tailor.apply.forms import submit_guard
 from resume_tailor.apply.funnel import packet as apply_packet
@@ -29,7 +29,7 @@ class _FillFinish(fill_state._FillState):
         )
         self._reconcile_observed()
         if self.is_workday:
-            workday_flow.close_stray_popups(page)
+            workday_page.close_stray_popups(page)
         shot = self._capture_screenshot()
         guarded = self._readiness_guard(attempted_count, shot)
         if guarded is not None:
@@ -122,7 +122,7 @@ class _FillFinish(fill_state._FillState):
             return None
         if (
             total_controls == 0 and self.is_workday
-            and workday_flow.is_site_error(workday_flow.snapshot(page))
+            and workday_flow.is_site_error(workday_page.snapshot(page))
         ):
             return self._handoff(self.SITE_ERROR_MSG)
         if total_controls and not fill_page._form_questions(self.merged):

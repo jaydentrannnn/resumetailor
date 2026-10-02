@@ -6,7 +6,7 @@ import contextlib
 from typing import Any
 
 from resume_tailor.apply.answers import questions
-from resume_tailor.apply.ats import workday_auth, workday_flow
+from resume_tailor.apply.ats import workday_auth, workday_flow, workday_page
 from resume_tailor.apply.driver import browser
 from resume_tailor.apply.forms import form_guards
 from resume_tailor.apply.funnel.store import FillResult
@@ -29,7 +29,7 @@ class _FillEntry(fill_state._FillState):
             self.progress("continuing the existing application tab")
             if self.is_workday:
                 # A popup left open by the last fill or by the applicant blocks this one.
-                workday_flow.close_stray_popups(self.page)
+                workday_page.close_stray_popups(self.page)
         else:
             self.page = context.new_page()
             self.target_id = browser.target_id(context, self.page)

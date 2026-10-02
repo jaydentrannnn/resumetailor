@@ -8,7 +8,12 @@ from typing import Any
 
 from resume_tailor import config
 from resume_tailor.apply.answers import hybrid_resolver, questions
-from resume_tailor.apply.ats import smartrecruiters_flow, workday_flow
+from resume_tailor.apply.ats import (
+    smartrecruiters_flow,
+    workday_dropdowns,
+    workday_flow,
+    workday_page,
+)
 from resume_tailor.apply.driver import clicks
 from resume_tailor.apply.forms import wizards
 from resume_tailor.apply.funnel import packet as apply_packet
@@ -79,7 +84,7 @@ class _FillWizard(fill_answers._FillAnswers, fill_ats_steps._FillAtsSteps):
             # address fields and empties the phone code; correct it and fill the
             # re-rendered step again, once.
             if not self.country_rechecked:
-                wrong_country = workday_flow.country_mismatch(self.page, self.fields)
+                wrong_country = workday_dropdowns.country_mismatch(self.page, self.fields)
                 if wrong_country:
                     self.country_rechecked = True
                     self.progress(
@@ -147,7 +152,7 @@ class _FillWizard(fill_answers._FillAnswers, fill_ats_steps._FillAtsSteps):
             return True
         # Workday's Review step is the end: its footer button submits. Stop here whatever
         # the button is called; submission is always the applicant's.
-        if self.is_workday and workday_flow.is_review_step(workday_flow.snapshot(self.page)):
+        if self.is_workday and workday_page.is_review_step(workday_page.snapshot(self.page)):
             self.final_step_reached = True
             self.progress("Workday Review step reached; leaving it for the applicant to submit")
             return True
@@ -230,7 +235,7 @@ class _FillWizard(fill_answers._FillAnswers, fill_ats_steps._FillAtsSteps):
         if not advance_btn or last_step:
             self.final_step_reached = advance_btn is None and (
                 fill_buttons._find_submit_button(self.page, self.hints) is not None or
-                (self.is_workday and workday_flow.is_review_step(workday_flow.snapshot(self.page)))
+                (self.is_workday and workday_page.is_review_step(workday_page.snapshot(self.page)))
             )
             return fill_outcomes._BREAK
 
@@ -245,7 +250,7 @@ class _FillWizard(fill_answers._FillAnswers, fill_ats_steps._FillAtsSteps):
         self.progress(f"advancing wizard step {step + 1}")
         before_step = fill_page._form_step_signature(page)
         wd_before = (
-            workday_flow.active_step(workday_flow.snapshot(page)) if self.is_workday else ""
+            workday_page.active_step(workday_page.snapshot(page)) if self.is_workday else ""
         )
         return self._click_advance(advance_btn, before_step, wd_before)
 
@@ -258,7 +263,7 @@ class _FillWizard(fill_answers._FillAnswers, fill_ats_steps._FillAtsSteps):
 
     def _step_unchanged(self, before_step: Any, wd_before: str) -> bool:
         if self.is_workday:
-            return workday_flow.active_step(workday_flow.snapshot(self.page)) == wd_before
+            return workday_page.active_step(workday_page.snapshot(self.page)) == wd_before
         return before_step is not None and fill_page._form_step_signature(self.page) == before_step
 
     def _resolve_invalid_blockers(self) -> None:
@@ -280,7 +285,7 @@ class _FillWizard(fill_answers._FillAnswers, fill_ats_steps._FillAtsSteps):
             self._settle_after_advance(1000, wd_before)
             with contextlib.suppress(Exception):
                 self.page.wait_for_load_state("networkidle", timeout=self._ms_left(5000))
-            if self.is_workday and workday_flow.is_site_error(workday_flow.snapshot(self.page)):
+            if self.is_workday and workday_flow.is_site_error(workday_page.snapshot(self.page)):
                 # Save and Continue hit Workday's error page; after a refresh the draft
                 # reopens on whichever step it saved, so scan that one afresh.
                 if not self.recover_site_error():

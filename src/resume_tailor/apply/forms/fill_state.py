@@ -10,7 +10,7 @@ from resume_tailor import config
 from resume_tailor.apply.answers import answer, questions
 from resume_tailor.apply.answers import profile as profile_mod
 from resume_tailor.apply.answers import salary as salary_mod
-from resume_tailor.apply.ats import ats_hints, workday_auth, workday_flow
+from resume_tailor.apply.ats import ats_hints, workday_auth, workday_flow, workday_page
 from resume_tailor.apply.discovery import fetch_jd
 from resume_tailor.apply.driver import browser
 from resume_tailor.apply.forms import form_guards, wizards
@@ -33,7 +33,7 @@ def _workday_handoff(
     error: str | None = None,
 ) -> FillResult:
     """Leave the Workday tab open for the applicant with a readable reason."""
-    workday_flow.close_stray_popups(page)
+    workday_page.close_stray_popups(page)
     result = FillResult(
         error=error,
         status=status,
@@ -151,7 +151,7 @@ class _FillState:
         self.context: Any = None
         self.target_id = self.previous_fill.browser_target_id
         #: Refreshes of Workday's "Something went wrong" page this fill may still spend.
-        self.site_error_left = 2 * workday_flow.SITE_ERROR_RELOADS
+        self.site_error_left = 2 * workday_page.SITE_ERROR_RELOADS
 
         rest = form_guards.host_blocked(url) if fill_mode != "continue" else None
         if rest is not None:
@@ -247,7 +247,7 @@ class _FillState:
     def recover_site_error(self) -> bool:
         recovered, used = workday_flow.recover_site_error(
             self.page, deadline=self.deadline, progress=self.progress,
-            attempts=min(workday_flow.SITE_ERROR_RELOADS, max(0, self.site_error_left)),
+            attempts=min(workday_page.SITE_ERROR_RELOADS, max(0, self.site_error_left)),
         )
         self.site_error_left -= used
         return recovered

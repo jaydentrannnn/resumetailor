@@ -383,11 +383,11 @@ fluent checkbox, and each proficiency listbox by its label; levels match by rank
 wording (`field_matcher.eeo_pattern`: "No" → "No, I do not have a disability…", "I am not a
 protected veteran"; "decline" is sent as a literal sentinel that picks the decline option and
 is never typed); checkbox groups (the CC-305 disability form) go through
-`workday_flow.fill_choice_checkboxes`, and the Self Identify step signs Name with the full
+`workday_choices.fill_choice_checkboxes`, and the Self Identify step signs Name with the full
 name and Date with today, leaving Employee ID blank (`fill_self_identify`). **Blank profile
 facts are reported, never skipped silently**: a question whose label maps to a profile field
 the profile leaves blank is recorded (filler.js leftover reason "Profile field is blank";
-`workday_flow.fill_dropdowns`/`fill_radios` `blank=`; the engine's `unsupported_fact`) and
+`workday_dropdowns.fill_dropdowns`/`fill_radios` `blank=`; the engine's `unsupported_fact`) and
 grouped by `packet.missing_profile` into `FillResult.missing_profile`. `packet.PROFILE_FIELDS`
 is the one registry of profile-backed keys (label, Profile page section, `common`);
 `GET/PUT /api/applicant-profile` return `gaps` (common blanks plus any a stored fill met,

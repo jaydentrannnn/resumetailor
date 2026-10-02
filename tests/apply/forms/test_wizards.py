@@ -8,7 +8,7 @@ from pathlib import Path
 
 import pytest
 
-from resume_tailor.apply.ats import workday_flow
+from resume_tailor.apply.ats import workday_page
 from resume_tailor.apply.forms import wizards
 
 _FIXTURES = Path(__file__).parents[2] / "fixtures"
@@ -33,16 +33,16 @@ def test_platform_screens(ats, snap):
 
 @pytest.mark.parametrize("name", sorted(_WORKDAY))
 def test_workday_keeps_its_own_rules(name):
-    """No behaviour change: the adapter only renames `workday_flow.classify`'s states."""
+    """No behaviour change: the adapter only renames `workday_page.classify`'s states."""
     snap = _WORKDAY[name]
-    state = workday_flow.classify(snap)
+    state = workday_page.classify(snap)
     expected = {"start_dialog": "posting", "auth_chooser": "sign_in"}.get(state, state)
     assert wizards.WorkdayWizard().classify(snap) == expected
 
 
 def test_workday_review_step_is_final():
     snap = {**_WORKDAY["my_information"], "active_step": "current step 6 of 6 Review"}
-    assert workday_flow.classify(snap) == "apply_form"
+    assert workday_page.classify(snap) == "apply_form"
     assert wizards.WorkdayWizard().classify(snap) == "review"
     assert wizards.WorkdayWizard().is_final_step(snap)
 

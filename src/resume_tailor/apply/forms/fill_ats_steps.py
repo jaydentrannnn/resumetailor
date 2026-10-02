@@ -8,7 +8,15 @@ from typing import Any
 
 from resume_tailor import config
 from resume_tailor.apply.answers import hybrid_resolver
-from resume_tailor.apply.ats import smartrecruiters_flow, workday_flow
+from resume_tailor.apply.ats import (
+    smartrecruiters_flow,
+    workday_choices,
+    workday_dropdowns,
+    workday_flow,
+    workday_page,
+    workday_prompts,
+    workday_skills,
+)
 from resume_tailor.apply.funnel.store import FillResult
 
 from . import fill_outcomes, fill_page, fill_state, fill_widgets
@@ -22,13 +30,13 @@ class _FillAtsSteps(fill_state._FillState):
         # or replaces the step while it loads: refresh, which restores the saved draft.
         if not self.recover_site_error():
             return self._handoff(self.SITE_ERROR_MSG)
-        if step and workday_flow.detect_state(self.page) in fill_outcomes.SIGNED_OUT_STATES:
+        if step and workday_page.detect_state(self.page) in fill_outcomes.SIGNED_OUT_STATES:
             # The session timed out mid-application. Workday keeps the saved steps, and
             # Continue fill signs in again from this tab.
             return self._handoff(fill_outcomes.SESSION_EXPIRED_MSG)
         if workday_flow.wait_for_step_ready(self.page, deadline=self.deadline):
             return None
-        if not workday_flow.is_site_error(workday_flow.snapshot(self.page)):
+        if not workday_flow.is_site_error(workday_page.snapshot(self.page)):
             self.progress("Workday step did not finish loading; scanning what is visible")
             return None
         if not self.recover_site_error():
@@ -45,20 +53,20 @@ class _FillAtsSteps(fill_state._FillState):
         """Workday's own dropdowns, radios, self-identification and prompts."""
         page, fields, pkt = self.page, self.fields, self.pkt
         self.progress(
-            f"Workday step: {workday_flow.active_step(workday_flow.snapshot(page)) or 'unknown'}"
+            f"Workday step: {workday_page.active_step(workday_page.snapshot(page)) or 'unknown'}"
         )
         employers = [entry.company for entry in getattr(self.resume, "experience", []) or []]
         dropdown_review: list[str] = []
-        wd_filled = workday_flow.fill_dropdowns(
+        wd_filled = workday_dropdowns.fill_dropdowns(
             page, fields, progress=self.progress, deadline=self.deadline,
-            select=workday_flow.select_listbox, review=dropdown_review, blank=self.blank_facts,
+            select=workday_dropdowns.select_listbox, review=dropdown_review, blank=self.blank_facts,
         )
         if any(item.get("key") == "country" for item in wd_filled):
             self.needs_review[:] = [
                 label for label in self.needs_review if not label.startswith("Country is ")
             ]
         self._review(dropdown_review)
-        wd_filled += workday_flow.fill_radios(
+        wd_filled += workday_choices.fill_radios(
             page, fields, progress=self.progress,
             company=self.app.company or pkt.company or "",
             employers=employers,
@@ -70,16 +78,16 @@ class _FillAtsSteps(fill_state._FillState):
         # Self-identification answers rendered as checkboxes (the disability form), then
         # the Self Identify step's signature Name and Date.
         self_id_review: list[str] = []
-        ticked = workday_flow.fill_choice_checkboxes(
+        ticked = workday_choices.fill_choice_checkboxes(
             page, fields, progress=self.progress, review=self_id_review, employers=employers,
         )
         wd_filled += ticked
-        if ticked or workday_flow.is_self_identify_step(workday_flow.snapshot(page)):
-            wd_filled += workday_flow.fill_self_identify(
+        if ticked or workday_choices.is_self_identify_step(workday_page.snapshot(page)):
+            wd_filled += workday_choices.fill_self_identify(
                 page, fields, today=date.today(), progress=self.progress, review=self_id_review,
             )
         self._review(self_id_review)
-        wd_filled += workday_flow.fill_prompts(page, fields, progress=self.progress)
+        wd_filled += workday_prompts.fill_prompts(page, fields, progress=self.progress)
         wd_filled += self._workday_skills()
         self.merged["filled"].extend({**item, "frame_index": 0} for item in wd_filled)
         self._workday_phone_code()
@@ -87,7 +95,7 @@ class _FillAtsSteps(fill_state._FillState):
     def _workday_skills(self) -> list[dict[str, Any]]:
         skills_deadline = min(self.deadline, time.monotonic() + 120)
         with config.pinned(self.settings.model_spec):
-            skill_chips, skills_left = workday_flow.fill_skills(
+            skill_chips, skills_left = workday_skills.fill_skills(
                 self.page, list(self.pkt.skills), progress=self.progress,
                 deadline=skills_deadline,
                 choose_many=lambda unmatched: hybrid_resolver.choose_skill_options(
@@ -103,7 +111,7 @@ class _FillAtsSteps(fill_state._FillState):
         return skill_chips
 
     def _workday_phone_code(self) -> None:
-        phone_code = workday_flow.ensure_phone_code(
+        phone_code = workday_prompts.ensure_phone_code(
             self.page, self.fields.get("phone_country_region", ""),
             self.fields.get("phone_country_code", ""), progress=self.progress,
         )
@@ -121,7 +129,7 @@ class _FillAtsSteps(fill_state._FillState):
         if (
             not self.blank_step_rescanned
             and fill_page._scanned_nothing(self.merged, self.step_filled_start)
-            and not workday_flow.is_review_step(workday_flow.snapshot(self.page))
+            and not workday_page.is_review_step(workday_page.snapshot(self.page))
         ):
             self.blank_step_rescanned = True
             self.progress("Workday step showed no fields to fill yet; rescanning once it settles")
@@ -131,8 +139,8 @@ class _FillAtsSteps(fill_state._FillState):
 
     def _workday_rows(self) -> None:
         # Workday structured experience & education injection (My Experience only).
-        if "experience" not in workday_flow.active_step(
-            workday_flow.snapshot(self.page)
+        if "experience" not in workday_page.active_step(
+            workday_page.snapshot(self.page)
         ).casefold():
             return
         rows_filled, rows_review = fill_widgets._fill_workday_experience_and_education(

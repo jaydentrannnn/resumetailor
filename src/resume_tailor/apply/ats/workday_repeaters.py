@@ -349,9 +349,9 @@ def _text_or_prompt(page: Any, prefix: str, field: str, value: str, *, key: str)
         in_prompt = False
     if not in_prompt:
         return _blank_fill(page, prefix, field, value)
-    from resume_tailor.apply.ats import workday_flow  # noqa: PLC0415
+    from resume_tailor.apply.ats import workday_prompts
 
-    return workday_flow.select_prompt(page, f"{prefix}{field}", value, key=key)
+    return workday_prompts.select_prompt(page, f"{prefix}{field}", value, key=key)
 
 
 def _date_parts(value: str) -> tuple[str, str]:
@@ -383,9 +383,13 @@ def _fill_date(page: Any, prefix: str, field: str, value: str, *, with_month: bo
             target.press("Tab", timeout=3000)
             return str(target.input_value() or "").strip() == year
         if target.get_attribute("aria-haspopup") == "listbox":
-            from resume_tailor.apply.ats import workday_flow  # noqa: PLC0415
+            from resume_tailor.apply.ats import workday_dropdowns
             current = _value(page, prefix, field)
-            return current == year if current else workday_flow.select_listbox(page, f"[id='{prefix}{field}']", year)
+            return (
+                current == year
+                if current
+                else workday_dropdowns.select_listbox(page, f"[id='{prefix}{field}']", year)
+            )
     parts = ([("dateSectionMonth", month)] if with_month else []) + [("dateSectionYear", year)]
     return fill_date_sections(page, f"{prefix}{field}", parts)
 
@@ -585,7 +589,7 @@ def fill(
 
     Returns (filled, needs_review): filled rows as ``{"label", "value"}`` records and the
     human labels of rows or fields left for the applicant. ``dismiss`` closes a popup an
-    earlier pass left open (`workday_flow.close_stray_popups`); it runs before the rows
+    earlier pass left open (`workday_page.close_stray_popups`); it runs before the rows
     and again when an Add press is blocked.
     """
     filled: list[dict[str, str]] = []

@@ -475,7 +475,7 @@ def test_workday_create_account_clicks_through_the_click_filter_overlay(tmp_path
 
 
 def test_workday_entry_goes_through_apply_manually_only():
-    from resume_tailor.apply.ats import workday_flow
+    from resume_tailor.apply.ats import workday_flow, workday_page
 
     html = f'''
         <div data-automation-id="utilityButtonAccountTasksMenu">me</div>
@@ -497,7 +497,7 @@ def test_workday_entry_goes_through_apply_manually_only():
             resulting, state = workday_flow.enter_application(page, context, deadline=time.monotonic() + 30)
             assert resulting is page
             assert state == "apply_form"
-            assert workday_flow.active_step(workday_flow.snapshot(page)) == "My Information"
+            assert workday_page.active_step(workday_page.snapshot(page)) == "My Information"
             assert page.evaluate("window.autofill === true") is False
         finally:
             browser.close()
@@ -525,7 +525,7 @@ _STRAY_POPUP_PAGE = '''
 def test_workday_stray_popup_is_closed_before_handoff(escape_closes):
     """A dropdown left open keeps Workday's full-viewport click_filter up, which swallows
     the applicant's mouse wheel; Escape closes it, else a click on the dismiss layer."""
-    from resume_tailor.apply.ats import workday_flow
+    from resume_tailor.apply.ats import workday_page
 
     html = _STRAY_POPUP_PAGE.replace("ESCAPE_CLOSES", "true" if escape_closes else "false")
     with sync_playwright() as playwright:
@@ -533,7 +533,7 @@ def test_workday_stray_popup_is_closed_before_handoff(escape_closes):
         try:
             page = browser.new_page()
             page.set_content(html)
-            assert workday_flow.close_stray_popups(page) is True
+            assert workday_page.close_stray_popups(page) is True
             assert page.locator("[role='listbox']").count() == 0
             assert page.locator("[data-automation-id='click_filter']").count() == 0
         finally:
@@ -544,7 +544,7 @@ def test_workday_prompt_results_list_is_closed_by_tab():
     """A prompt's results list (Skills, How Did You Hear) has no dismiss layer and ignores
     Escape; left open it covered CACI's Add buttons (2026-09-28). Tab out of its search box
     closes it, and the always-visible chip list (selectedItemList) is not a popup."""
-    from resume_tailor.apply.ats import workday_flow
+    from resume_tailor.apply.ats import workday_page
 
     html = '''
         <div data-automation-id="formField-skills">
@@ -564,13 +564,13 @@ def test_workday_prompt_results_list_is_closed_by_tab():
             page = browser.new_page()
             page.set_content(html)
             page.focus("#skills--skills")
-            assert workday_flow.close_stray_popups(page) is True
+            assert workday_page.close_stray_popups(page) is True
             assert page.locator("[data-automation-id='activeListContainer']").count() == 0
             assert page.locator("[data-automation-id='selectedItem']").count() == 1
             page.click("#add", timeout=2000)
             assert page.evaluate("window.added") is True
             # Nothing open: the chip list alone reads as no popup.
-            assert page.evaluate(workday_flow._STRAY_POPUP_JS)["popup"] is False  # noqa: SLF001
+            assert page.evaluate(workday_page._STRAY_POPUP_JS)["popup"] is False  # noqa: SLF001
         finally:
             browser.close()
 
@@ -627,7 +627,7 @@ def test_resolver_sees_and_ticks_a_required_workday_checkbox_group():
 
 def test_workday_stray_popup_cleanup_leaves_a_real_dialog_open():
     """The Start Your Application / OTP / terms dialogs are the applicant's to act on."""
-    from resume_tailor.apply.ats import workday_flow
+    from resume_tailor.apply.ats import workday_page
 
     html = '''
         <div role="dialog" aria-label="Start Your Application"><a href="#">Apply Manually</a></div>
@@ -639,7 +639,7 @@ def test_workday_stray_popup_cleanup_leaves_a_real_dialog_open():
         try:
             page = browser.new_page()
             page.set_content(html)
-            assert workday_flow.close_stray_popups(page) is False
+            assert workday_page.close_stray_popups(page) is False
             assert page.locator("[role='dialog']").count() == 1
         finally:
             browser.close()
@@ -837,7 +837,7 @@ _SKILLS_PROMPT = '''
 
 
 def test_workday_skills_are_entered_one_at_a_time():
-    from resume_tailor.apply.ats import workday_flow
+    from resume_tailor.apply.ats import workday_skills
 
     asked: list[dict[str, list[str]]] = []
 
@@ -851,7 +851,7 @@ def test_workday_skills_are_entered_one_at_a_time():
         try:
             page = browser.new_page()
             page.set_content(_SKILLS_PROMPT)
-            committed, review = workday_flow.fill_skills(
+            committed, review = workday_skills.fill_skills(
                 page, ["RAG", "SQL", "data analysis", "COBOL", "Python"], choose_many=choose_many,
             )
             chips = page.locator("[data-automation-id=selectedItem]").all_inner_texts()
@@ -870,7 +870,7 @@ def test_a_skill_already_on_the_form_is_not_added_again():
     # F5 (2026-09): "HuggingFace" searched to "Hugging Face", which a Continue run's
     # earlier pass had already committed; Workday then refused the step with "You
     # cannot enter duplicate skills".
-    from resume_tailor.apply.ats import workday_flow
+    from resume_tailor.apply.ats import workday_skills
 
     content = _SKILLS_PROMPT.replace(
         '<li><div data-automation-id="selectedItem">SQL</div></li>',
@@ -881,7 +881,7 @@ def test_a_skill_already_on_the_form_is_not_added_again():
         try:
             page = browser.new_page()
             page.set_content(content)
-            committed, review = workday_flow.fill_skills(
+            committed, review = workday_skills.fill_skills(
                 page, ["HuggingFace"], choose_many=lambda unmatched: {"HuggingFace": "Hugging Face"},
             )
             chips = page.locator("[data-automation-id=selectedItem]").all_inner_texts()
@@ -894,7 +894,7 @@ def test_a_skill_already_on_the_form_is_not_added_again():
 def test_duplicate_chips_from_an_earlier_draft_are_removed():
     # F5's saved draft (2026-09) held "Hugging Face" and "Model Fine-Tuning" twice, and
     # Workday refused the step until they were gone.
-    from resume_tailor.apply.ats import workday_flow
+    from resume_tailor.apply.ats import workday_skills
 
     chips = "".join(
         f'<li><div data-automation-id="selectedItem" tabindex="-1" '
@@ -909,7 +909,7 @@ def test_duplicate_chips_from_an_earlier_draft_are_removed():
         try:
             page = browser.new_page()
             page.set_content(content)
-            assert workday_flow.remove_duplicate_chips(page, "skills--skills") == 2
+            assert workday_skills.remove_duplicate_chips(page, "skills--skills") == 2
             assert page.locator("[data-automation-id=selectedItem]").all_inner_texts() == [
                 "Hugging Face", "PyTorch", "Model Fine-Tuning",
             ]
@@ -942,7 +942,7 @@ _TOGGLING_SKILLS_PROMPT = _SKILLS_PROMPT.replace(
 def test_a_skill_enter_already_committed_is_kept_not_clicked_off():
     """American Century (2026-09): every skill was added by Enter and removed again by
     the click that followed, so the step ended with no skills at all."""
-    from resume_tailor.apply.ats import workday_flow
+    from resume_tailor.apply.ats import workday_skills
 
     asked: list[dict[str, list[str]]] = []
 
@@ -955,7 +955,7 @@ def test_a_skill_enter_already_committed_is_kept_not_clicked_off():
         try:
             page = browser.new_page()
             page.set_content(_TOGGLING_SKILLS_PROMPT)
-            committed, review = workday_flow.fill_skills(page, ["Pandas", "torch", "Python"], choose_many=choose_many)
+            committed, review = workday_skills.fill_skills(page, ["Pandas", "torch", "Python"], choose_many=choose_many)
             chips = page.locator("[data-automation-id=selectedItem]").all_inner_texts()
             assert chips == ["SQL", "Pandas", "Python"]
             assert [c["value"] for c in committed] == ["Pandas", "Python"]
@@ -971,7 +971,7 @@ def test_listed_firms_checkboxes_read_their_question_outside_the_group_fieldset(
     """American Century's group fieldset holds only the boxes; the question is the form
     field's legend. Read from the group alone it was blank and the group was skipped,
     which left the required field empty and the step unable to advance."""
-    from resume_tailor.apply.ats import workday_flow
+    from resume_tailor.apply.ats import workday_choices
 
     html = '<div data-automation-id="applyFlowPage">' + _workday_checkbox_group(
         "cec2firms",
@@ -983,7 +983,7 @@ def test_listed_firms_checkboxes_read_their_question_outside_the_group_fieldset(
         try:
             page = browser.new_page()
             page.set_content(html)
-            committed = workday_flow.fill_choice_checkboxes(page, {}, employers=["Age of Learning Inc."])
+            committed = workday_choices.fill_choice_checkboxes(page, {}, employers=["Age of Learning Inc."])
             assert [c["value"] for c in committed] == ["No"]
             assert page.is_checked("[id='cec2firms-3']") and not page.is_checked("[id='cec2firms-0']")
         finally:

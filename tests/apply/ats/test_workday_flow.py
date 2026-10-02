@@ -15,7 +15,15 @@ import pytest
 
 from resume_tailor import config
 from resume_tailor.apply.answers.profile import ApplicantProfile
-from resume_tailor.apply.ats import workday_auth, workday_flow
+from resume_tailor.apply.ats import (
+    workday_auth,
+    workday_choices,
+    workday_dropdowns,
+    workday_flow,
+    workday_page,
+    workday_prompts,
+    workday_skills,
+)
 from resume_tailor.apply.funnel import store
 
 _SCREENS = json.loads(
@@ -170,7 +178,7 @@ class _FakePage:
         return next((_LABELS[s] for s in _SUBMITS if s in ids), "")
 
     def evaluate(self, script: str, arg: object = None) -> object:
-        if script == workday_flow.SNAPSHOT_JS:
+        if script == workday_page.SNAPSHOT_JS:
             return {"ids": [], "text": "", "alerts": [], **self.snap()}
         if script == workday_flow.AUTH_FORM_JS:
             ids = set(self.snap().get("ids", []))
@@ -190,8 +198,9 @@ class _FakePage:
 def clock(monkeypatch, tmp_path):
     fake = _Clock()
     fake_time = SimpleNamespace(monotonic=fake.monotonic)
-    monkeypatch.setattr(workday_flow, "time", fake_time)
-    monkeypatch.setattr(workday_auth, "time", fake_time)
+    # every module whose deadlines read `time.monotonic`
+    for mod in (workday_flow, workday_auth, workday_dropdowns, workday_skills):
+        monkeypatch.setattr(mod, "time", fake_time)
     monkeypatch.setattr(config, "APPLICATIONS_OUTPUT_DIR", tmp_path / "applications")
     monkeypatch.setattr(config, "APPLICATIONS_PATH", tmp_path / "applications.json")
     return fake
@@ -233,31 +242,41 @@ def _known_site() -> None:
     ],
 )
 def test_classify_recognises_captured_screens(screen, state):
-    assert workday_flow.classify(_SCREENS[screen]) == state
+    assert workday_page.classify(_SCREENS[screen]) == state
 
 
 def test_classify_special_pages():
-    assert workday_flow.classify({"ids": ["header"], "text": "The page you are looking for doesn't exist."}) == "unavailable"
-    assert workday_flow.classify({"ids": ["jobPostingPage"], "text": "You've already applied for this job"}) == "already_applied"
-    assert workday_flow.classify({"ids": ["header"], "otp_input": True}) == "otp"
+    assert (
+        workday_page.classify(
+            {"ids": ["header"], "text": "The page you are looking for doesn't exist."}
+        )
+        == "unavailable"
+    )
+    assert (
+        workday_page.classify(
+            {"ids": ["jobPostingPage"], "text": "You've already applied for this job"}
+        )
+        == "already_applied"
+    )
+    assert workday_page.classify({"ids": ["header"], "otp_input": True}) == "otp"
 
 
 def test_a_verify_message_in_the_auth_step_is_verify_email():
     shell = {**_SCREENS["auth_step_loading"], "text": "Please verify your account. Check your inbox."}
-    assert workday_flow.classify(shell) == "verify_email"
-    assert workday_flow.classify(_SCREENS["sign_in_unverified"]) == "sign_in"
+    assert workday_page.classify(shell) == "verify_email"
+    assert workday_page.classify(_SCREENS["sign_in_unverified"]) == "sign_in"
 
 
 def test_signed_in_needs_account_menu_and_no_auth_form():
-    assert workday_flow.signed_in(_SCREENS["posting_signed_in"])
-    assert workday_flow.signed_in(_SCREENS["my_information"])
-    assert not workday_flow.signed_in(_SCREENS["posting_signed_out"])
-    assert not workday_flow.signed_in(_SCREENS["create_account"])
+    assert workday_page.signed_in(_SCREENS["posting_signed_in"])
+    assert workday_page.signed_in(_SCREENS["my_information"])
+    assert not workday_page.signed_in(_SCREENS["posting_signed_out"])
+    assert not workday_page.signed_in(_SCREENS["create_account"])
 
 
 def test_active_step_strips_progress_prefix():
-    assert workday_flow.active_step(_SCREENS["my_information"]) == "My Information"
-    assert workday_flow.active_step({"active_step": "step 2 of 6 My Experience"}) == "My Experience"
+    assert workday_page.active_step(_SCREENS["my_information"]) == "My Information"
+    assert workday_page.active_step({"active_step": "step 2 of 6 My Experience"}) == "My Experience"
 
 
 # -- entering the application ----------------------------------------------------------
@@ -685,7 +704,7 @@ class _DropdownPage:
         self.items = items
 
     def evaluate(self, script: str, arg: object = None) -> object:
-        assert script == workday_flow.DROPDOWNS_JS
+        assert script == workday_dropdowns.DROPDOWNS_JS
         return [dict(item) for item in self.items]
 
     def wait_for_timeout(self, ms: int) -> None:
@@ -693,7 +712,6 @@ class _DropdownPage:
 
 
 def test_fill_dropdowns_corrects_country_first_and_leaves_unknowns():
-    from resume_tailor.apply.ats import ats_hints
 
     page = _DropdownPage([
         {"selector": "#source--source", "label": "How Did You Hear About Us?", "current": "Select One"},
@@ -713,7 +731,7 @@ def test_fill_dropdowns_corrects_country_first_and_leaves_unknowns():
         return True
 
     fields = {"country": "United States", "state": "California", "how_heard": "LinkedIn", "salary_expectation": "100"}
-    committed = workday_flow.fill_dropdowns(page, fields, select=select)
+    committed = workday_dropdowns.fill_dropdowns(page, fields, select=select)
     assert calls[0] == ("#country--country", "United States", "country")
     assert ("#address--countryRegion", "California", "state") in calls
     assert ("#source--source", "LinkedIn", "how_heard") in calls
@@ -722,7 +740,6 @@ def test_fill_dropdowns_corrects_country_first_and_leaves_unknowns():
 
 
 def test_fill_dropdowns_records_a_blank_profile_fact_instead_of_skipping_silently():
-    from resume_tailor.apply.ats import ats_hints
 
     page = _DropdownPage([
         {"selector": "#phoneNumber--phoneType", "label": "Phone Device Type", "current": "Select One"},
@@ -731,7 +748,7 @@ def test_fill_dropdowns_records_a_blank_profile_fact_instead_of_skipping_silentl
         {"selector": "#q1", "label": "Favourite colour", "current": "Select One"},
     ])
     blank: list[dict] = []
-    workday_flow.fill_dropdowns(
+    workday_dropdowns.fill_dropdowns(
         page, {}, select=lambda *a, **k: True, blank=blank,
     )
     # An already-answered State and the per-posting salary are not blanks to report.
@@ -741,7 +758,6 @@ def test_fill_dropdowns_records_a_blank_profile_fact_instead_of_skipping_silentl
 def test_an_answer_that_reveals_a_follow_up_is_followed_in_the_same_call():
     """"Legally permitted to work" = Yes reveals "proof of eligibility" (a live Workday
     step, 2026-09); both come from the profile, and neither is read as the Country."""
-    from resume_tailor.apply.ats import ats_hints
 
     permitted = "Are you legally permitted to work in the country where this job is located?"
     proof = {"selector": "#proof", "label": "If hired, can you provide proof of eligibility?", "current": "Select One"}
@@ -761,22 +777,21 @@ def test_an_answer_that_reveals_a_follow_up_is_followed_in_the_same_call():
         return True
 
     fields = {"country": "United States", "authorized_to_work": "Yes", "over_18": "Yes"}
-    workday_flow.fill_dropdowns(page, fields, select=select)
+    workday_dropdowns.fill_dropdowns(page, fields, select=select)
     assert calls == [
         ("#age", "Yes", "over_18"),
         ("#permitted", "Yes", "authorized_to_work"),
         ("#proof", "Yes", "authorized_to_work"),
     ]
     # Answered "Yes", the question is not a Country that reads wrong.
-    assert workday_flow.country_mismatch(page, fields) is None
+    assert workday_dropdowns.country_mismatch(page, fields) is None
 
 
 def test_fill_dropdowns_keeps_an_existing_choice():
-    from resume_tailor.apply.ats import ats_hints
 
     page = _DropdownPage([{"selector": "#address--countryRegion", "label": "State", "current": "Texas"}])
     calls: list = []
-    workday_flow.fill_dropdowns(
+    workday_dropdowns.fill_dropdowns(
         page, {"state": "California"},
         select=lambda *a, **k: calls.append(a) or True,
     )
@@ -788,12 +803,11 @@ class _PromptPage:
         self.prompts = prompts
 
     def evaluate(self, script: str, arg: object = None) -> object:
-        assert script == workday_flow.PROMPTS_JS
+        assert script == workday_prompts.PROMPTS_JS
         return [dict(item) for item in self.prompts]
 
 
 def test_fill_prompts_answers_only_empty_prompts_with_a_profile_fact():
-    from resume_tailor.apply.ats import ats_hints
 
     page = _PromptPage([
         {"input_id": "source--source", "label": "How Did You Hear About Us?", "chips": 0},
@@ -806,7 +820,7 @@ def test_fill_prompts_answers_only_empty_prompts_with_a_profile_fact():
         calls.append((input_id, value, key))
         return True
 
-    committed = workday_flow.fill_prompts(
+    committed = workday_prompts.fill_prompts(
         page, {"how_heard": "LinkedIn"}, select=select,
     )
     assert calls == [("source--source", "LinkedIn", "how_heard")]
@@ -840,7 +854,7 @@ class _SearchPromptPage:
 
 def test_select_prompt_treats_a_leaf_listed_twice_as_one_answer():
     page = _SearchPromptPage()
-    assert workday_flow.select_prompt(page, "source--source", "LinkedIn", key="how_heard")
+    assert workday_prompts.select_prompt(page, "source--source", "LinkedIn", key="how_heard")
     assert page.chips == ["LinkedIn"]
 
 
@@ -857,7 +871,7 @@ class _ListboxPage:
         ]
 
     def evaluate(self, script: str, arg: object = None) -> object:
-        assert script == workday_flow._OPTIONS_JS  # noqa: SLF001
+        assert script == workday_dropdowns._OPTIONS_JS  # noqa: SLF001
         return [dict(o) for o in self.options] if arg == "dmlbo" else None
 
     def wait_for_timeout(self, _ms: int) -> None:
@@ -882,7 +896,7 @@ class _ListboxPage:
 
 def test_select_listbox_waits_for_the_list_to_open():
     page = _ListboxPage()
-    assert workday_flow.select_listbox(page, "#q", "No", key="requires_sponsorship_future")
+    assert workday_dropdowns.select_listbox(page, "#q", "No", key="requires_sponsorship_future")
     assert page.text == "No"
 
 
@@ -890,10 +904,10 @@ def test_fill_prompts_leaves_the_skills_prompt_to_fill_skills(monkeypatch):
     from resume_tailor.apply.answers import questions
 
     # Even a Skills prompt keyed to a known fact is `fill_skills`' to fill.
-    monkeypatch.setattr(workday_flow.questions, "classify", lambda _q: questions.Match("skills"))
+    monkeypatch.setattr(questions, "classify", lambda _q: questions.Match("skills"))
     page = _PromptPage([{"input_id": "skills--skills", "field": "formField-skills", "label": "Skills", "chips": 0}])
     calls: list = []
-    workday_flow.fill_prompts(
+    workday_prompts.fill_prompts(
         page, {"skills": "Python"}, select=lambda *a, **k: calls.append(a) or True,
     )
     assert calls == []
@@ -938,7 +952,9 @@ def test_select_prompt_searches_the_campus_when_the_full_school_name_finds_nothi
         "University of California - Irvine": ["No Items."],
         "Irvine": ["Irvine Valley College", "University of California, Irvine"],
     })
-    assert workday_flow.select_prompt(page, "education-1--schoolName", "University of California - Irvine", key="school")
+    assert workday_prompts.select_prompt(
+        page, "education-1--schoolName", "University of California - Irvine", key="school"
+    )
     assert page.typed[:2] == ["University of California - Irvine", "Irvine"]
     assert page.chips == ["University of California, Irvine"]
 
@@ -947,12 +963,13 @@ def test_select_prompt_leaves_a_tie_for_review():
     page = _TermSearchPage({
         "Irvine": ["University of California Irvine (UCI)", "University of California Irvine Extension"],
     })
-    assert not workday_flow.select_prompt(page, "education-1--schoolName", "University of California - Irvine", key="school")
+    assert not workday_prompts.select_prompt(
+        page, "education-1--schoolName", "University of California - Irvine", key="school"
+    )
     assert page.chips == []
 
 
 def test_fill_prompts_falls_back_to_other_when_the_source_is_not_listed():
-    from resume_tailor.apply.ats import ats_hints
 
     page = _PromptPage([{"input_id": "source--source", "label": "How Did You Hear About Us?", "chips": 0}])
     tried: list[str] = []
@@ -961,7 +978,7 @@ def test_fill_prompts_falls_back_to_other_when_the_source_is_not_listed():
         tried.append(value)
         return value == "Other"
 
-    committed = workday_flow.fill_prompts(
+    committed = workday_prompts.fill_prompts(
         page, {"how_heard": "LinkedIn"}, select=select,
     )
     assert tried == ["LinkedIn", "Other"]
@@ -969,32 +986,30 @@ def test_fill_prompts_falls_back_to_other_when_the_source_is_not_listed():
 
 
 def test_country_mismatch_reads_a_wrong_saved_country():
-    from resume_tailor.apply.ats import ats_hints
 
     def page_with(current: str) -> SimpleNamespace:
         items = [{"selector": "#country--country", "label": "Country", "current": current, "required": True}]
         return SimpleNamespace(evaluate=lambda script, arg=None: [dict(i) for i in items])
 
     fields = {"country": "United States"}
-    assert workday_flow.country_mismatch(page_with("Vietnam"), fields) == "Vietnam"
-    assert workday_flow.country_mismatch(page_with("United States of America"), fields) is None
-    assert workday_flow.country_mismatch(page_with("Select One"), fields) is None
-    assert workday_flow.country_mismatch(page_with("Vietnam"), {}) is None
+    assert workday_dropdowns.country_mismatch(page_with("Vietnam"), fields) == "Vietnam"
+    assert workday_dropdowns.country_mismatch(page_with("United States of America"), fields) is None
+    assert workday_dropdowns.country_mismatch(page_with("Select One"), fields) is None
+    assert workday_dropdowns.country_mismatch(page_with("Vietnam"), {}) is None
 
 
 def test_fill_dropdowns_reports_a_country_it_could_not_change():
-    from resume_tailor.apply.ats import ats_hints
 
     class _Page:
         def evaluate(self, script, arg=None):
-            assert script == workday_flow.DROPDOWNS_JS
+            assert script == workday_dropdowns.DROPDOWNS_JS
             return [{"selector": "#country", "label": "Country", "current": "Vietnam", "required": True}]
 
         def wait_for_timeout(self, _ms):
             pass
 
     review: list[str] = []
-    committed = workday_flow.fill_dropdowns(
+    committed = workday_dropdowns.fill_dropdowns(
         _Page(), {"country": "United States"},
         select=lambda *a, **k: False, review=review,
     )
@@ -1008,7 +1023,7 @@ class _PhoneCodePage:
         self.chips: list[str] = []
 
     def evaluate(self, script: str, arg: object = None) -> object:
-        assert script == workday_flow.PHONE_CODE_JS
+        assert script == workday_prompts.PHONE_CODE_JS
         return {"chips": list(self.chips), "input_id": "phoneNumber--countryPhoneCode"}
 
     def wait_for_timeout(self, _ms: int) -> None:
@@ -1031,7 +1046,7 @@ def test_phone_code_is_the_whole_region_not_any_region_containing_it():
         "United States Minor Outlying Islands (+1)",
         "United States of America (+1)",
     ])
-    assert workday_flow.ensure_phone_code(page, "United States", "+1") is True
+    assert workday_prompts.ensure_phone_code(page, "United States", "+1") is True
     assert page.chips == ["United States of America (+1)"]
 
 
@@ -1052,7 +1067,9 @@ def test_select_prompt_accepts_the_option_enter_committed_itself():
         return SimpleNamespace(first=SimpleNamespace(fill=found.first.fill, press=press))
 
     page.locator = locator
-    assert workday_flow.select_prompt(page, "education-1--fieldOfStudy", "Computer Science", key="major")
+    assert workday_prompts.select_prompt(
+        page, "education-1--fieldOfStudy", "Computer Science", key="major"
+    )
     assert page.chips == ["Computer and Information Science"]
 
 
@@ -1075,8 +1092,8 @@ class _SavingPage:
 
 def test_a_slow_save_is_waited_for_while_the_button_is_disabled(monkeypatch):
     # F5 (2026-09): My Experience with five rows saved after 15 s.
-    monkeypatch.setattr(workday_flow, "snapshot", lambda p: p.evaluate("snapshot"))
-    monkeypatch.setattr(workday_flow, "active_step", lambda snap: snap["step"])
+    monkeypatch.setattr(workday_page, "snapshot", lambda p: p.evaluate("snapshot"))
+    monkeypatch.setattr(workday_page, "active_step", lambda snap: snap["step"])
     page = _SavingPage(saved_after_ms=25_000)
     monkeypatch.setattr(workday_flow.time, "monotonic", lambda: page.elapsed / 1000)
     assert workday_flow.wait_for_step_change(page, "My Experience", deadline=1e9, timeout_s=15)
@@ -1122,16 +1139,21 @@ _ANNUAL_LABEL = "What is your desired annual base salary range for this position
 
 def test_salary_range_spec_uses_the_unit_the_question_names():
     fields = {"salary_yearly_number": "80000", "salary_yearly_low_number": "60000"}
-    assert workday_flow.salary_range_spec(_ANNUAL_LABEL, fields) == "60000-80000/year"
+    assert workday_dropdowns.salary_range_spec(_ANNUAL_LABEL, fields) == "60000-80000/year"
 
 
 def test_salary_range_spec_without_a_low_end_is_a_single_figure():
-    assert workday_flow.salary_range_spec(_ANNUAL_LABEL, {"salary_yearly_number": "80000"}) == "80000-80000/year"
+    assert (
+        workday_dropdowns.salary_range_spec(_ANNUAL_LABEL, {"salary_yearly_number": "80000"})
+        == "80000-80000/year"
+    )
 
 
 def test_salary_range_spec_is_none_without_a_salary_range():
-    assert workday_flow.salary_range_spec(_ANNUAL_LABEL, {}) is None
-    assert workday_flow.salary_range_spec(_ANNUAL_LABEL, {"salary_hourly_number": "45"}) is None
+    assert workday_dropdowns.salary_range_spec(_ANNUAL_LABEL, {}) is None
+    assert (
+        workday_dropdowns.salary_range_spec(_ANNUAL_LABEL, {"salary_hourly_number": "45"}) is None
+    )
 
 
 def test_salary_range_spec_without_a_unit_follows_the_default_unit_of_the_expectation():
@@ -1140,9 +1162,9 @@ def test_salary_range_spec_without_a_unit_follows_the_default_unit_of_the_expect
         "salary_expectation_low_number": "40",
     }
     label = "Select the range that best matches your salary expectations"
-    assert workday_flow.salary_range_spec(label, hourly) == "40-45/hour"
+    assert workday_dropdowns.salary_range_spec(label, hourly) == "40-45/hour"
     yearly = {"salary_expectation": "$80,000/year", "salary_expectation_number": "80000"}
-    assert workday_flow.salary_range_spec(label, yearly) == "80000-80000/year"
+    assert workday_dropdowns.salary_range_spec(label, yearly) == "80000-80000/year"
 
 
 def test_fill_dropdowns_picks_the_range_covering_the_applicants_own(monkeypatch):
@@ -1151,15 +1173,15 @@ def test_fill_dropdowns_picks_the_range_covering_the_applicants_own(monkeypatch)
 
     def select(_page, selector, value, *, key):
         calls.append((selector, value, key))
-        monkeypatch.setitem(workday_flow.last_listbox, "chosen", "$60,000 - $79,999")
+        monkeypatch.setitem(workday_dropdowns.last_listbox, "chosen", "$60,000 - $79,999")
         return True
 
     fields = {
         "salary_expectation": "$80,000/year", "salary_expectation_number": "80000",
         "salary_yearly": "$80,000/year", "salary_yearly_number": "80000", "salary_yearly_low_number": "60000",
     }
-    committed = workday_flow.fill_dropdowns(page, fields, select=select)
-    assert calls == [("#q-salary", "60000-80000/year", workday_flow.SALARY_RANGE_KEY)]
+    committed = workday_dropdowns.fill_dropdowns(page, fields, select=select)
+    assert calls == [("#q-salary", "60000-80000/year", workday_dropdowns.SALARY_RANGE_KEY)]
     assert [(c["key"], c["value"], c["selector"]) for c in committed] == [
         ("salary_expectation", "$60,000 - $79,999", "#q-salary"),
     ]
@@ -1174,15 +1196,17 @@ def test_fill_dropdowns_leaves_a_salary_dropdown_that_lists_no_range_uncommitted
         return False  # the options were not ranges: `select_listbox` matches nothing
 
     fields = {"salary_yearly_number": "80000", "salary_yearly_low_number": "60000"}
-    assert workday_flow.fill_dropdowns(page, fields, select=select) == []
-    assert calls == [workday_flow.SALARY_RANGE_KEY]  # tried once, never retried with another key
+    assert workday_dropdowns.fill_dropdowns(page, fields, select=select) == []
+    assert calls == [
+        workday_dropdowns.SALARY_RANGE_KEY
+    ]  # tried once, never retried with another key
 
 
 def test_fill_dropdowns_keeps_an_answered_salary_range():
     page = _DropdownPage([{"selector": "#q-salary", "label": _ANNUAL_LABEL, "current": "$80,000 - $99,999"}])
     calls: list = []
     fields = {"salary_yearly_number": "80000", "salary_yearly_low_number": "60000"}
-    workday_flow.fill_dropdowns(page, fields, select=lambda *a, **k: calls.append(a) or True)
+    workday_dropdowns.fill_dropdowns(page, fields, select=lambda *a, **k: calls.append(a) or True)
     assert calls == []
 
 
@@ -1195,16 +1219,16 @@ def test_pick_listbox_option_takes_the_range_covering_the_spec():
         "Select One", "Less than $40,000", "$40,000 - $59,999", "$60,000 - $79,999", "$80,000 - $99,999",
     )
     options[0]["disabled"] = True
-    picked = workday_flow._pick_listbox_option(  # noqa: SLF001
-        options, "60000-80000/year", workday_flow.SALARY_RANGE_KEY,
+    picked = workday_dropdowns._pick_listbox_option(  # noqa: SLF001
+        options, "60000-80000/year", workday_dropdowns.SALARY_RANGE_KEY,
     )
     assert picked == ("$60,000 - $79,999", "opt-3")
 
 
 def test_pick_listbox_option_finds_no_range_in_a_yes_no_list():
     options = _listbox_options("Yes", "No")
-    assert workday_flow._pick_listbox_option(  # noqa: SLF001
-        options, "60000-80000/year", workday_flow.SALARY_RANGE_KEY,
+    assert workday_dropdowns._pick_listbox_option(  # noqa: SLF001
+        options, "60000-80000/year", workday_dropdowns.SALARY_RANGE_KEY,
     ) is None
 
 
@@ -1212,21 +1236,29 @@ def test_pick_listbox_option_finds_no_range_in_a_yes_no_list():
 
 
 def test_any_option_prefers_the_named_source_then_other_then_the_first():
-    assert workday_flow.any_option(["Job Board", "Social Media - LinkedIn", "Other"], "LinkedIn") == "Social Media - LinkedIn"
-    assert workday_flow.any_option(["Job Board", "Other (please specify)", "Referral"], "LinkedIn") == "Other (please specify)"
-    assert workday_flow.any_option(["Job Board", "Referral"], "LinkedIn") == "Job Board"
+    assert (
+        workday_dropdowns.any_option(["Job Board", "Social Media - LinkedIn", "Other"], "LinkedIn")
+        == "Social Media - LinkedIn"
+    )
+    assert (
+        workday_dropdowns.any_option(
+            ["Job Board", "Other (please specify)", "Referral"], "LinkedIn"
+        )
+        == "Other (please specify)"
+    )
+    assert workday_dropdowns.any_option(["Job Board", "Referral"], "LinkedIn") == "Job Board"
 
 
 def test_any_option_ignores_empty_search_rows():
-    assert workday_flow.any_option(["No Items."], "LinkedIn") is None
-    assert workday_flow.any_option(["No Items.", "Referral"], "LinkedIn") == "Referral"
-    assert workday_flow.any_option([], "LinkedIn") is None
+    assert workday_dropdowns.any_option(["No Items."], "LinkedIn") is None
+    assert workday_dropdowns.any_option(["No Items.", "Referral"], "LinkedIn") == "Referral"
+    assert workday_dropdowns.any_option([], "LinkedIn") is None
 
 
 def test_pick_listbox_option_any_option_key_takes_the_closest_option():
     options = _listbox_options("Job Board", "Other", "Referral")
-    assert workday_flow._pick_listbox_option(  # noqa: SLF001
-        options, "LinkedIn", workday_flow.ANY_OPTION_KEY,
+    assert workday_dropdowns._pick_listbox_option(  # noqa: SLF001
+        options, "LinkedIn", workday_dropdowns.ANY_OPTION_KEY,
     ) == ("Other", "opt-1")
 
 
@@ -1238,14 +1270,14 @@ def test_fill_dropdowns_settles_for_any_option_when_the_source_is_not_listed(mon
 
     def select(_page, selector, value, *, key):
         tried.append((value, key))
-        if key == workday_flow.ANY_OPTION_KEY:
-            monkeypatch.setitem(workday_flow.last_listbox, "chosen", "Other")
+        if key == workday_dropdowns.ANY_OPTION_KEY:
+            monkeypatch.setitem(workday_dropdowns.last_listbox, "chosen", "Other")
             return True
         return False
 
-    committed = workday_flow.fill_dropdowns(page, {"how_heard": "LinkedIn"}, select=select)
-    assert tried[-1] == ("LinkedIn", workday_flow.ANY_OPTION_KEY)
-    assert all(key != workday_flow.ANY_OPTION_KEY for _v, key in tried[:-1])
+    committed = workday_dropdowns.fill_dropdowns(page, {"how_heard": "LinkedIn"}, select=select)
+    assert tried[-1] == ("LinkedIn", workday_dropdowns.ANY_OPTION_KEY)
+    assert all(key != workday_dropdowns.ANY_OPTION_KEY for _v, key in tried[:-1])
     assert [(c["key"], c["value"]) for c in committed] == [("how_heard", "Other")]
 
 
@@ -1257,8 +1289,8 @@ def test_fill_dropdowns_does_not_settle_for_any_option_on_other_questions():
         keys.append(key)
         return False
 
-    assert workday_flow.fill_dropdowns(page, {"state": "California"}, select=select) == []
-    assert workday_flow.ANY_OPTION_KEY not in keys
+    assert workday_dropdowns.fill_dropdowns(page, {"state": "California"}, select=select) == []
+    assert workday_dropdowns.ANY_OPTION_KEY not in keys
 
 
 class _HierarchyPromptPage:
@@ -1274,7 +1306,7 @@ class _HierarchyPromptPage:
         self.clicked: list[str] = []
 
     def evaluate(self, script: str, arg: object = None) -> object:
-        assert script == workday_flow._PROMPT_STATE_JS  # noqa: SLF001
+        assert script == workday_prompts._PROMPT_STATE_JS  # noqa: SLF001
         return list(self.chips)
 
     def wait_for_timeout(self, _ms: int) -> None:
@@ -1311,21 +1343,21 @@ def test_select_prompt_any_walks_down_to_a_leaf_when_the_source_is_not_listed():
         "": ["Job Board", "Other", "Social Media"],
         "Other": ["Career Fair", "Other Source"],
     })
-    assert workday_flow.select_prompt_any(page, "source--source", "LinkedIn") == "Other Source"
+    assert workday_prompts.select_prompt_any(page, "source--source", "LinkedIn") == "Other Source"
     assert page.clicked == ["Other", "Other Source"]
     assert page.chips == ["Other Source"]
 
 
 def test_select_prompt_any_takes_the_named_source_when_it_is_listed():
     page = _HierarchyPromptPage({"": ["Job Board", "LinkedIn", "Other"]})
-    assert workday_flow.select_prompt_any(page, "source--source", "LinkedIn") == "LinkedIn"
+    assert workday_prompts.select_prompt_any(page, "source--source", "LinkedIn") == "LinkedIn"
     assert page.clicked == ["LinkedIn"]
 
 
 def test_select_prompt_any_leaves_an_answered_prompt_alone():
     page = _HierarchyPromptPage({"": ["Job Board", "LinkedIn"]})
     page.chips.append("Referral")
-    assert workday_flow.select_prompt_any(page, "source--source", "LinkedIn") is None
+    assert workday_prompts.select_prompt_any(page, "source--source", "LinkedIn") is None
     assert page.clicked == []
 
 
@@ -1342,7 +1374,9 @@ def test_fill_prompts_falls_back_to_any_option_when_every_candidate_fails():
         any_calls.append((input_id, value))
         return "Other Source"
 
-    committed = workday_flow.fill_prompts(page, {"how_heard": "LinkedIn"}, select=select, select_any=select_any)
+    committed = workday_prompts.fill_prompts(
+        page, {"how_heard": "LinkedIn"}, select=select, select_any=select_any
+    )
     assert tried == ["LinkedIn", "Other"]
     assert any_calls == [("source--source", "LinkedIn")]
     assert [(c["key"], c["value"], c["selector"]) for c in committed] == [
@@ -1352,7 +1386,7 @@ def test_fill_prompts_falls_back_to_any_option_when_every_candidate_fails():
 
 def test_fill_prompts_leaves_a_source_for_review_when_no_option_commits():
     page = _PromptPage([{"input_id": "source--source", "label": "How Did You Hear About Us?", "chips": 0}])
-    committed = workday_flow.fill_prompts(
+    committed = workday_prompts.fill_prompts(
         page, {"how_heard": "LinkedIn"}, select=lambda *a, **k: False, select_any=lambda *a, **k: None,
     )
     assert committed == []
@@ -1361,10 +1395,10 @@ def test_fill_prompts_leaves_a_source_for_review_when_no_option_commits():
 def test_fill_prompts_never_asks_for_any_option_on_a_question_that_is_not_a_source(monkeypatch):
     from resume_tailor.apply.answers import questions
 
-    monkeypatch.setattr(workday_flow.questions, "classify", lambda _q: questions.Match("school"))
+    monkeypatch.setattr(questions, "classify", lambda _q: questions.Match("school"))
     page = _PromptPage([{"input_id": "edu--school", "label": "School or University", "chips": 0}])
     any_calls: list = []
-    committed = workday_flow.fill_prompts(
+    committed = workday_prompts.fill_prompts(
         page, {"school": "State University"},
         select=lambda *a, **k: False, select_any=lambda *a, **k: any_calls.append(a) or "X",
     )
@@ -1387,7 +1421,7 @@ class _CheckboxPage:
         self.ticked: list[str] = []
 
     def evaluate(self, script: str, arg: object = None) -> object:
-        assert script == workday_flow.CHECKBOX_GROUPS_JS
+        assert script == workday_choices.CHECKBOX_GROUPS_JS
         return [
             {"question": g["question"], "options": [
                 {"id": o["id"], "label": o["label"], "checked": o["id"] in self.ticked} for o in g["options"]
@@ -1423,7 +1457,7 @@ def _ticked_labels(page: _CheckboxPage) -> list[str]:
 
 def test_listed_firms_checkboxes_tick_only_none_when_the_applicant_worked_for_none():
     page = _firms_page()
-    committed = workday_flow.fill_choice_checkboxes(
+    committed = workday_choices.fill_choice_checkboxes(
         page, {}, employers=["Age of Learning Inc.", "VNPT Group"],
     )
     assert _ticked_labels(page) == ["No"]
@@ -1432,7 +1466,7 @@ def test_listed_firms_checkboxes_tick_only_none_when_the_applicant_worked_for_no
 
 def test_listed_firms_checkboxes_tick_the_firm_the_applicant_worked_for_and_not_none():
     page = _firms_page()
-    committed = workday_flow.fill_choice_checkboxes(
+    committed = workday_choices.fill_choice_checkboxes(
         page, {}, employers=["Deloitte and Touche LLP", "Age of Learning Inc."],
     )
     assert _ticked_labels(page) == ["Deloitte and Touche"]
@@ -1441,7 +1475,9 @@ def test_listed_firms_checkboxes_tick_the_firm_the_applicant_worked_for_and_not_
 
 def test_listed_firms_checkboxes_tick_every_firm_worked_for():
     page = _firms_page()
-    workday_flow.fill_choice_checkboxes(page, {}, employers=["FORVIS, LLP", "Grant Thornton LLP"])
+    workday_choices.fill_choice_checkboxes(
+        page, {}, employers=["FORVIS, LLP", "Grant Thornton LLP"]
+    )
     assert sorted(_ticked_labels(page)) == ["FORVIS", "Grant Thornton"]
 
 
@@ -1452,7 +1488,10 @@ def test_listed_firms_checkboxes_are_left_alone_without_a_single_none_option():
         "options": [{"id": f"firm-{i}", "label": label} for i, label in enumerate(labels)],
     }])
     review: list[str] = []
-    assert workday_flow.fill_choice_checkboxes(page, {}, employers=["VNPT Group"], review=review) == []
+    assert (
+        workday_choices.fill_choice_checkboxes(page, {}, employers=["VNPT Group"], review=review)
+        == []
+    )
     assert page.ticked == [] and review == []
 
 
@@ -1460,6 +1499,6 @@ def test_listed_firms_match_an_ampersand_spelling_of_the_employer():
     # "Deloitte & Touche LLP" on the resume is the listed "Deloitte and Touche": ticking
     # "No" instead would misstate the applicant's history.
     page = _firms_page()
-    workday_flow.fill_choice_checkboxes(page, {}, employers=["Deloitte & Touche LLP"])
+    workday_choices.fill_choice_checkboxes(page, {}, employers=["Deloitte & Touche LLP"])
     assert _ticked_labels(page) == ["Deloitte and Touche"]
-    assert workday_flow.previously_employed("Deloitte and Touche", ["Deloitte & Touche LLP"])
+    assert workday_choices.previously_employed("Deloitte and Touche", ["Deloitte & Touche LLP"])
