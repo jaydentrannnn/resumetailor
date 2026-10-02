@@ -12,7 +12,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from resume_tailor import config, workspace
-from resume_tailor.content import industries, libraries, style
+from resume_tailor.content import industries, libraries, library_models, style
 from resume_tailor.content.data import Bullet
 from resume_tailor.infra import llm
 from resume_tailor.pipeline import (
@@ -102,9 +102,9 @@ def test_settings_field_survives_old_clients_and_invalid_ids_are_rejected(profil
 
 
 def test_pack_composition_preserves_files_custom_overrides_and_source_limits(profile):
-    state = libraries.WorkspaceLibraryState(
+    state = library_models.WorkspaceLibraryState(
         enabled_packs=["core-tech", "marketing"],
-        overrides=libraries.LibraryOverrides(tag_aliases={"dcf": "custom valuation"}),
+        overrides=library_models.LibraryOverrides(tag_aliases={"dcf": "custom valuation"}),
     )
     libraries.write_workspace_state(state)
     before = libraries.workspace_file().read_bytes()

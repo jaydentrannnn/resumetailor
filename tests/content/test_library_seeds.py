@@ -16,13 +16,13 @@ real, verifiable contribution is the alias table and the near-synonym rule, test
 from __future__ import annotations
 
 from resume_tailor import config, library_seeds
-from resume_tailor.content import libraries
+from resume_tailor.content import libraries, library_models
 from resume_tailor.pipeline import bullet_checks
 
 
-def _effective_for(pack: library_seeds.Pack) -> libraries.EffectiveLibrary:
+def _effective_for(pack: library_seeds.Pack) -> library_models.EffectiveLibrary:
     converted = libraries._pack_from_seed(pack)
-    return libraries.EffectiveLibrary(
+    return library_models.EffectiveLibrary(
         tag_aliases=converted.tag_aliases,
         verb_families={f: tuple(v) for f, v in converted.verb_families.items()},
         verb_index={v: f for f, vs in converted.verb_families.items() for v in vs},
@@ -31,7 +31,9 @@ def _effective_for(pack: library_seeds.Pack) -> libraries.EffectiveLibrary:
 
 
 def test_every_shipped_json_file_loads_and_is_valid():
-    empty = libraries.EffectiveLibrary(tag_aliases={}, verb_families={}, verb_index={}, diagnostics=[])
+    empty = library_models.EffectiveLibrary(
+        tag_aliases={}, verb_families={}, verb_index={}, diagnostics=[]
+    )
     for pack_id in library_seeds.shipped_pack_ids():
         pack = libraries.read_pack(pack_id)
         errors = libraries.validate_pack(pack, against=empty)
@@ -39,7 +41,9 @@ def test_every_shipped_json_file_loads_and_is_valid():
 
 
 def test_every_builtin_pack_is_internally_valid():
-    empty = libraries.EffectiveLibrary(tag_aliases={}, verb_families={}, verb_index={}, diagnostics=[])
+    empty = library_models.EffectiveLibrary(
+        tag_aliases={}, verb_families={}, verb_index={}, diagnostics=[]
+    )
     for pack_id, seed in library_seeds.BUILTIN_PACKS.items():
         pack = libraries._pack_from_seed(seed)
         errors = libraries.validate_pack(pack, against=empty)
@@ -60,7 +64,7 @@ def test_finance_consulting_has_no_alias_chain_against_core_tech():
     """No `finance-consulting` alias key/value collides with a core-tech alias key/value
     in a way that would form a chain once both are enabled — belt-and-braces alongside
     `validate_pack`, using the actual composition path a user would hit."""
-    state = libraries.WorkspaceLibraryState(enabled_packs=["core-tech", "finance-consulting"])
+    state = library_models.WorkspaceLibraryState(enabled_packs=["core-tech", "finance-consulting"])
     packs = {
         "core-tech": libraries._pack_from_seed(library_seeds.BUILTIN_PACKS["core-tech"]),
         "finance-consulting": libraries._pack_from_seed(
@@ -169,8 +173,8 @@ def test_finance_consulting_aliases_close_a_measured_spelling_gap(monkeypatch):
 BUSINESS_PACKS = ["finance-consulting", "accounting", "marketing", "ops-supply-chain"]
 
 
-def _compose(monkeypatch, pack_ids: list[str]) -> libraries.EffectiveLibrary:
-    state = libraries.WorkspaceLibraryState(enabled_packs=pack_ids)
+def _compose(monkeypatch, pack_ids: list[str]) -> library_models.EffectiveLibrary:
+    state = library_models.WorkspaceLibraryState(enabled_packs=pack_ids)
     monkeypatch.setattr(libraries, "read_workspace_state", lambda *_a, **_k: state)
     return libraries._resolve_effective_uncached(None)
 

@@ -312,10 +312,11 @@ def test_approve_requires_acknowledgement_when_it_rewrites_an_existing_tag(
     pack_id = created.json()["packs"][-1]["id"]
 
     from resume_tailor.content import libraries as libraries_mod
+    from resume_tailor.content import library_models
 
     state = libraries_mod.read_workspace_state()
     state.proposals = [
-        libraries_mod.LibraryProposal(
+        library_models.LibraryProposal(
             id="p-1", kind="tag_alias", alias="pg", canonical="postgresql", source="manual",
             created_at="2026-01-01T00:00:00+00:00",
         )
@@ -344,13 +345,14 @@ def test_approve_requires_acknowledgement_when_it_rewrites_an_existing_tag(
 
 def test_approve_into_a_shipped_target_pack_writes_a_shadow(client, tmp_path, monkeypatch):
     from resume_tailor.content import libraries as libraries_mod
+    from resume_tailor.content import library_models
 
     c, _ = client
     _write_test_resume(monkeypatch, tmp_path, bullet_text="Did a thing.", bullet_tags=["python"])
 
     state = libraries_mod.read_workspace_state()
     state.proposals = [
-        libraries_mod.LibraryProposal(
+        library_models.LibraryProposal(
             id="p-1", kind="tag_alias", alias="pg", canonical="postgresql", source="manual",
             created_at="2026-01-01T00:00:00+00:00",
         )
@@ -414,13 +416,14 @@ def test_generate_and_reject_proceed_even_when_queue_busy(client, tmp_path, monk
 
 def test_reject_moves_ids_to_rejected_and_they_are_never_reproposed(client, tmp_path, monkeypatch):
     from resume_tailor.content import libraries as libraries_mod
+    from resume_tailor.content import library_models
 
     c, _ = client
     _write_test_resume(monkeypatch, tmp_path, bullet_text="Did a thing.", bullet_tags=["python"])
 
     state = libraries_mod.read_workspace_state()
     state.proposals = [
-        libraries_mod.LibraryProposal(
+        library_models.LibraryProposal(
             id="p-1", kind="tag_alias", alias="pg", canonical="postgresql", source="manual",
             created_at="2026-01-01T00:00:00+00:00",
         )

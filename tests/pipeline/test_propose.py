@@ -11,7 +11,7 @@ from __future__ import annotations
 import pytest
 
 from resume_tailor import config
-from resume_tailor.content import libraries
+from resume_tailor.content import libraries, library_models
 from resume_tailor.content.data import (
     Bullet,
     Contact,
@@ -176,9 +176,9 @@ def test_cache_key_varies_with_the_effective_library(calls):
     )
     propose.propose_vocabulary(**kwargs)
 
-    libraries.write_pack(libraries.Pack(id="a", label="A", tag_aliases={"x": "y"}))
+    libraries.write_pack(library_models.Pack(id="a", label="A", tag_aliases={"x": "y"}))
     libraries.write_workspace_state(
-        libraries.WorkspaceLibraryState(enabled_packs=["core-tech", "a"])
+        library_models.WorkspaceLibraryState(enabled_packs=["core-tech", "a"])
     )
 
     propose.propose_vocabulary(**kwargs)
@@ -215,10 +215,10 @@ def test_llm_error_is_not_fatal_by_construction(calls, monkeypatch):
 # --------------------------------------------------------------------------------------
 
 
-def _effective(**kw) -> libraries.EffectiveLibrary:
+def _effective(**kw) -> library_models.EffectiveLibrary:
     defaults = dict(tag_aliases={}, verb_families={}, verb_index={}, diagnostics=[])
     defaults.update(kw)
-    return libraries.EffectiveLibrary(**defaults)
+    return library_models.EffectiveLibrary(**defaults)
 
 
 def test_filters_a_target_not_in_known_tags():
@@ -262,7 +262,9 @@ def test_filters_a_previously_rejected_alias():
         raw,
         known_tags=["postgresql"],
         effective=_effective(),
-        rejected=[libraries.RejectedEntry(kind="tag_alias", alias="pg", canonical="postgresql")],
+        rejected=[
+            library_models.RejectedEntry(kind="tag_alias", alias="pg", canonical="postgresql")
+        ],
     )
     assert out == []
 
@@ -339,7 +341,9 @@ def test_filters_a_previously_rejected_verb():
         raw,
         known_tags=[],
         effective=_effective(verb_families={"analyse": ("assessed",)}),
-        rejected=[libraries.RejectedEntry(kind="verb_family", verb="triaged", family="analyse")],
+        rejected=[
+            library_models.RejectedEntry(kind="verb_family", verb="triaged", family="analyse")
+        ],
     )
     assert out == []
 

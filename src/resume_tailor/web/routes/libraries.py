@@ -7,7 +7,7 @@ import logging
 from fastapi import APIRouter, HTTPException
 
 from resume_tailor import config
-from resume_tailor.content import data, libraries
+from resume_tailor.content import data, libraries, library_impact, library_models
 from resume_tailor.pipeline import jd, propose
 from resume_tailor.web import template_ops
 from resume_tailor.web.jobs import get_queue
@@ -34,7 +34,7 @@ router = APIRouter()
 _log = logging.getLogger(__name__)
 
 
-def _library_pack_summary_out(pack: libraries.PackMeta) -> LibraryPackSummaryOut:
+def _library_pack_summary_out(pack: library_models.PackMeta) -> LibraryPackSummaryOut:
     return LibraryPackSummaryOut(
         id=pack.id,
         label=pack.label,
@@ -48,7 +48,7 @@ def _library_pack_summary_out(pack: libraries.PackMeta) -> LibraryPackSummaryOut
     )
 
 
-def _library_proposal_out(p: libraries.LibraryProposal) -> LibraryProposalOut:
+def _library_proposal_out(p: library_models.LibraryProposal) -> LibraryProposalOut:
     return LibraryProposalOut(
         id=p.id,
         kind=p.kind,
@@ -84,7 +84,7 @@ def _library_state_response(*, warning: str | None = None) -> LibraryStateRespon
     )
 
 
-def _library_pack_out(pack: libraries.Pack) -> LibraryPackOut:
+def _library_pack_out(pack: library_models.Pack) -> LibraryPackOut:
     return LibraryPackOut(
         id=pack.id,
         label=pack.label,
@@ -110,7 +110,7 @@ def get_library_pack(pack_id: str) -> LibraryPackOut:
     """One pack's full contents, for the pack editor."""
     try:
         pack = libraries.read_pack(pack_id)
-    except libraries.LibraryError as exc:
+    except library_models.LibraryError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     return _library_pack_out(pack)
 
@@ -127,7 +127,7 @@ def create_library_pack(body: LibraryPackWriteRequest) -> LibraryStateResponse:
     with template_ops.LOCK:
         existing_ids = {p.id for p in libraries.list_packs()}
         pack_id = libraries.new_pack_id(body.label, existing=existing_ids)
-        pack = libraries.Pack(
+        pack = library_models.Pack(
             id=pack_id,
             label=body.label,
             description=body.description,
@@ -136,11 +136,11 @@ def create_library_pack(body: LibraryPackWriteRequest) -> LibraryStateResponse:
         )
         try:
             libraries.write_pack(pack, force=body.force)
-        except libraries.LibraryValidationError as exc:
+        except library_models.LibraryValidationError as exc:
             raise HTTPException(
                 status_code=400, detail={"message": str(exc), "errors": exc.errors}
             ) from exc
-        except libraries.LibraryError as exc:
+        except library_models.LibraryError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         libraries.reload()
         return _library_state_response()
@@ -152,7 +152,7 @@ def update_library_pack(pack_id: str, body: LibraryPackWriteRequest) -> LibraryS
     if get_queue().busy():
         raise _library_write_conflict()
     with template_ops.LOCK:
-        pack = libraries.Pack(
+        pack = library_models.Pack(
             id=pack_id,
             label=body.label,
             description=body.description,
@@ -161,11 +161,11 @@ def update_library_pack(pack_id: str, body: LibraryPackWriteRequest) -> LibraryS
         )
         try:
             libraries.write_pack(pack, force=body.force)
-        except libraries.LibraryValidationError as exc:
+        except library_models.LibraryValidationError as exc:
             raise HTTPException(
                 status_code=400, detail={"message": str(exc), "errors": exc.errors}
             ) from exc
-        except libraries.LibraryError as exc:
+        except library_models.LibraryError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         libraries.reload()
         return _library_state_response()
@@ -184,7 +184,7 @@ def delete_library_pack(pack_id: str) -> LibraryStateResponse:
     with template_ops.LOCK:
         try:
             libraries.delete_pack(pack_id)
-        except libraries.LibraryError as exc:
+        except library_models.LibraryError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         libraries.reload()
         return _library_state_response()
@@ -198,7 +198,7 @@ def reset_library_pack(pack_id: str) -> LibraryStateResponse:
     with template_ops.LOCK:
         try:
             libraries.reset_pack(pack_id)
-        except libraries.LibraryError as exc:
+        except library_models.LibraryError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
         libraries.reload()
         return _library_state_response()
@@ -212,7 +212,7 @@ def put_library_selection(body: LibrarySelectionRequest) -> LibraryStateResponse
     with template_ops.LOCK:
         state = libraries.read_workspace_state()
         state.enabled_packs = body.enabled_packs
-        state.overrides = libraries.LibraryOverrides(**body.overrides.model_dump())
+        state.overrides = library_models.LibraryOverrides(**body.overrides.model_dump())
         libraries.write_workspace_state(state)
         libraries.reload()
         return _library_state_response()
@@ -222,7 +222,7 @@ def put_library_selection(body: LibrarySelectionRequest) -> LibraryStateResponse
 def preview_library_impact(body: LibraryImpactRequest) -> LibraryImpactResponse:
     """What approving each of `tag_aliases` would rewrite in the current master
     resume, if anything — the confirmation step before a destructive alias write."""
-    impacts = libraries.alias_impact(body.tag_aliases)
+    impacts = library_impact.alias_impact(body.tag_aliases)
     return LibraryImpactResponse(
         impacts=[
             LibraryAliasImpactOut(
@@ -279,7 +279,7 @@ def generate_library_proposals(body: ProposalGenerateRequest) -> LibraryStateRes
     unknown_verbs = propose.unclassified_opening_verbs(resume)
     effective = libraries.resolve_effective()
 
-    filtered: list[libraries.LibraryProposal] = []
+    filtered: list[library_models.LibraryProposal] = []
     warning: str | None = None
     if unmatched or unknown_verbs:
         try:
@@ -338,7 +338,7 @@ def approve_library_proposals(body: ProposalApproveRequest) -> LibraryStateRespo
             raise HTTPException(status_code=404, detail="No matching pending proposals.")
 
         alias_map = {p.alias: p.canonical for p in selected if p.kind == "tag_alias" and p.alias}
-        impacts = libraries.alias_impact(alias_map) if alias_map else []
+        impacts = library_impact.alias_impact(alias_map) if alias_map else []
         rewriting = [i for i in impacts if i.affected_tags]
         if rewriting and not body.acknowledge_rewrites:
             raise HTTPException(
@@ -362,7 +362,7 @@ def approve_library_proposals(body: ProposalApproveRequest) -> LibraryStateRespo
 
         try:
             pack = libraries.read_pack(body.target_pack_id)
-        except libraries.LibraryError as exc:
+        except library_models.LibraryError as exc:
             raise HTTPException(status_code=404, detail=str(exc)) from exc
 
         if rewriting:
@@ -383,11 +383,11 @@ def approve_library_proposals(body: ProposalApproveRequest) -> LibraryStateRespo
         )
         try:
             libraries.write_pack(updated)
-        except libraries.LibraryValidationError as exc:
+        except library_models.LibraryValidationError as exc:
             raise HTTPException(
                 status_code=400, detail={"message": str(exc), "errors": exc.errors}
             ) from exc
-        except libraries.LibraryError as exc:
+        except library_models.LibraryError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
         state.proposals = [p for p in state.proposals if p.id not in wanted_ids]
@@ -422,7 +422,7 @@ def reject_library_proposals(body: ProposalRejectRequest) -> LibraryStateRespons
             key = (p.kind, p.alias, p.canonical, p.verb, p.family)
             if key not in existing_rejected:
                 state.rejected.append(
-                    libraries.RejectedEntry(
+                    library_models.RejectedEntry(
                         kind=p.kind,
                         alias=p.alias,
                         canonical=p.canonical,

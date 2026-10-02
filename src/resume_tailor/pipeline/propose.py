@@ -29,7 +29,7 @@ from typing import TYPE_CHECKING
 from pydantic import BaseModel, Field
 
 from .. import config
-from ..content import libraries
+from ..content import libraries, library_models
 from ..infra import llm
 from . import bullet_checks, events, report
 from .events import ProgressCallback
@@ -256,10 +256,10 @@ def filter_proposals(
     raw: VocabularyProposal,
     *,
     known_tags: list[str],
-    effective: libraries.EffectiveLibrary,
-    rejected: list[libraries.RejectedEntry],
+    effective: library_models.EffectiveLibrary,
+    rejected: list[library_models.RejectedEntry],
     source: str = "manual",
-) -> list[libraries.LibraryProposal]:
+) -> list[library_models.LibraryProposal]:
     """Deterministic acceptance rules a drafted item must clear before it becomes a
     pending proposal. Drops: a target not in `known_tags`; an alias that is itself
     already a known tag or is already effective; anything previously rejected; a verb
@@ -271,7 +271,7 @@ def filter_proposals(
     rejected_verbs = {(r.verb or "").strip().lower() for r in rejected if r.kind == "verb_family"}
 
     now = datetime.now(UTC).isoformat(timespec="seconds")
-    out: list[libraries.LibraryProposal] = []
+    out: list[library_models.LibraryProposal] = []
 
     for item in raw.tag_aliases:
         if len(out) >= _MAX_PROPOSALS:
@@ -289,7 +289,7 @@ def filter_proposals(
         if alias in rejected_aliases:
             continue
         out.append(
-            libraries.LibraryProposal(
+            library_models.LibraryProposal(
                 id=_proposal_id("tag_alias", alias, canonical),
                 kind="tag_alias",
                 alias=alias,
@@ -314,7 +314,7 @@ def filter_proposals(
         if verb in rejected_verbs:
             continue
         out.append(
-            libraries.LibraryProposal(
+            library_models.LibraryProposal(
                 id=_proposal_id("verb_family", verb, family),
                 kind="verb_family",
                 verb=verb,

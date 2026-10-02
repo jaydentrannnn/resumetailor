@@ -208,12 +208,12 @@ def test_duplicate_inherits_target_field_and_custom_styles(isolated_roots):
 
 
 def test_create_duplicate_copies_libraries_json(isolated_roots):
-    from resume_tailor.content import libraries
+    from resume_tailor.content import libraries, library_models
 
     bootstrap()  # empty "default"
-    libraries.write_pack(libraries.Pack(id="a", label="A", tag_aliases={"x": "y"}))
+    libraries.write_pack(library_models.Pack(id="a", label="A", tag_aliases={"x": "y"}))
     libraries.write_workspace_state(
-        libraries.WorkspaceLibraryState(enabled_packs=["core-tech", "a"])
+        library_models.WorkspaceLibraryState(enabled_packs=["core-tech", "a"])
     )
 
     entry = workspace.create("Data Science", copy_from="default")
@@ -246,13 +246,17 @@ def test_create_without_copy_from_seeds_a_loadable_resume(isolated_roots):
 def test_activate_reloads_the_effective_library(isolated_roots):
     """Switching profiles must rebind config.TAG_ALIASES to the new profile's own
     pack selection, the same way it already rebinds the path globals."""
-    from resume_tailor.content import libraries
+    from resume_tailor.content import libraries, library_models
 
     bootstrap()  # "default", core-tech only
     workspace.create("Nina")
-    libraries.write_pack(libraries.Pack(id="nursing", label="Nursing", tag_aliases={"bls": "basic life support"}))
+    libraries.write_pack(
+        library_models.Pack(
+            id="nursing", label="Nursing", tag_aliases={"bls": "basic life support"}
+        )
+    )
     libraries.write_workspace_state(
-        libraries.WorkspaceLibraryState(enabled_packs=["nursing"]), workspace_id="nina"
+        library_models.WorkspaceLibraryState(enabled_packs=["nursing"]), workspace_id="nina"
     )
 
     assert "bls" not in config.TAG_ALIASES

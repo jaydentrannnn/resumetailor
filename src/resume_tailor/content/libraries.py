@@ -32,172 +32,13 @@ import os
 import re
 import secrets
 from collections.abc import Iterable
-from dataclasses import dataclass, field
 from datetime import UTC, datetime
 from pathlib import Path
-from typing import Literal
 
-from pydantic import BaseModel, ConfigDict, Field, ValidationError
+from pydantic import ValidationError
 
 from .. import config, library_seeds
-from . import data
-
-# --------------------------------------------------------------------------------------
-# Errors
-# --------------------------------------------------------------------------------------
-
-
-class LibraryError(ValueError):
-    """Raised for an unknown pack id, a refused write, or a shipped-pack delete attempt."""
-
-
-class LibraryValidationError(LibraryError):
-    """Raised by `write_pack` when `validate_pack` finds problems. Carries every error,
-    not just the first, so a caller (the API route) can report the whole list at once."""
-
-    def __init__(self, errors: list[str]):
-        super().__init__("; ".join(errors))
-        self.errors = errors
-
-
-# --------------------------------------------------------------------------------------
-# On-disk models
-# --------------------------------------------------------------------------------------
-
-
-class _Strict(BaseModel):
-    """Reject unknown keys so a typo'd field fails loudly, matching `data._Strict`."""
-
-    model_config = ConfigDict(extra="forbid")
-
-
-class Pack(_Strict):
-    """One named bundle of aliases and verb families — built-in or user-authored.
-
-    `verb_families` values are lists here (JSON has no tuples); `resolve_effective`
-    converts to the `tuple[str, ...]` shape `config.VERB_FAMILIES` uses.
-    """
-
-    schema_version: int = 1
-    id: str
-    label: str
-    description: str = ""
-    tag_aliases: dict[str, str] = Field(default_factory=dict)
-    verb_families: dict[str, list[str]] = Field(default_factory=dict)
-    created_at: str = ""
-    updated_at: str = ""
-
-
-class _PackIndexEntry(_Strict):
-    id: str
-    label: str
-    description: str = ""
-    created_at: str = ""
-    updated_at: str = ""
-
-
-class _PackIndex(_Strict):
-    schema_version: int = 1
-    packs: list[_PackIndexEntry] = Field(default_factory=list)
-
-
-class LibraryOverrides(_Strict):
-    """A workspace's own additions and removals, layered on top of its enabled packs."""
-
-    tag_aliases: dict[str, str] = Field(default_factory=dict)
-    tag_aliases_removed: list[str] = Field(default_factory=list)
-    #: verb -> family. One family per overridden verb, same shape as a resolved
-    #: `verb_index` entry, not a `Pack`'s `family -> [verbs]` shape.
-    verb_families: dict[str, str] = Field(default_factory=dict)
-    verb_families_removed: list[str] = Field(default_factory=list)
-
-
-ProposalKind = Literal["tag_alias", "verb_family"]
-
-
-class LibraryProposal(_Strict):
-    """One LLM-drafted addition awaiting approval. See `propose.py` (Phase 4)."""
-
-    id: str
-    kind: ProposalKind
-    alias: str | None = None
-    canonical: str | None = None
-    verb: str | None = None
-    family: str | None = None
-    rationale: str = ""
-    source: Literal["run", "manual"] = "manual"
-    created_at: str = ""
-
-
-class RejectedEntry(_Strict):
-    """A previously-declined proposal, kept so it is never re-proposed."""
-
-    kind: ProposalKind
-    alias: str | None = None
-    canonical: str | None = None
-    verb: str | None = None
-    family: str | None = None
-
-
-class WorkspaceLibraryState(_Strict):
-    """The on-disk shape of one workspace's `libraries.json`."""
-
-    schema_version: int = 1
-    enabled_packs: list[str] = Field(default_factory=lambda: ["core-tech"])
-    overrides: LibraryOverrides = Field(default_factory=LibraryOverrides)
-    proposals: list[LibraryProposal] = Field(default_factory=list)
-    rejected: list[RejectedEntry] = Field(default_factory=list)
-
-
-# --------------------------------------------------------------------------------------
-# Computed views (not persisted)
-# --------------------------------------------------------------------------------------
-
-
-@dataclass(frozen=True)
-class PackMeta:
-    """Summary row for the Settings tab's pack list — no full alias/verb bodies."""
-
-    id: str
-    label: str
-    description: str = ""
-    #: True when the pack is shipped with the package (resettable, not deletable).
-    builtin: bool = False
-    #: True when a store file shadows the shipped copy for this id.
-    customized: bool = False
-    tag_alias_count: int = 0
-    verb_count: int = 0
-    created_at: str = ""
-    updated_at: str = ""
-
-
-@dataclass(frozen=True)
-class EffectiveLibrary:
-    """The composed tables one workspace's enabled packs + overrides resolve to."""
-
-    tag_aliases: dict[str, str]
-    verb_families: dict[str, tuple[str, ...]]
-    #: verb -> family, the flat form `config.verb_family` ultimately indexes.
-    verb_index: dict[str, str]
-    #: Human-readable notes about what composition had to work around: a missing pack,
-    #: a cross-pack verb collision, or an alias chain that was dropped to keep
-    #: `canonical_tag` idempotent. Never raised as errors — see the module docstring.
-    diagnostics: list[str] = field(default_factory=list)
-
-
-@dataclass(frozen=True)
-class AliasImpact:
-    """What approving one alias would rewrite in the current master resume, if anything."""
-
-    alias: str
-    canonical: str
-    #: Non-empty when `alias` is currently used as a literal tag or vocabulary entry —
-    #: the signal that approving this alias would rewrite existing content, not just
-    #: widen future JD matching.
-    affected_tags: list[str]
-    #: (entry label, bullet id) pairs carrying the affected tag, for the impact preview.
-    affected_bullets: list[tuple[str, str]]
-
+from . import library_models
 
 # --------------------------------------------------------------------------------------
 # Paths
@@ -231,7 +72,7 @@ def _pack_path(pack_id: str) -> Path:
     not merely a same-directory one.
     """
     if not _PACK_ID_RE.match(pack_id):
-        raise LibraryError(f"Invalid pack id: {pack_id!r}")
+        raise library_models.LibraryError(f"Invalid pack id: {pack_id!r}")
     return store_root() / "packs" / f"{pack_id}.json"
 
 
@@ -270,7 +111,7 @@ def _now_iso() -> str:
 # --------------------------------------------------------------------------------------
 
 
-def _read_pack_index() -> _PackIndex:
+def _read_pack_index() -> library_models._PackIndex:
     path = _index_path()
     if path.exists():
         try:
@@ -279,28 +120,28 @@ def _read_pack_index() -> _PackIndex:
             raw = None
         if isinstance(raw, dict):
             try:
-                return _PackIndex.model_validate(raw)
+                return library_models._PackIndex.model_validate(raw)
             except ValidationError:
                 pass
     return _rebuild_pack_index()
 
 
-def _rebuild_pack_index() -> _PackIndex:
+def _rebuild_pack_index() -> library_models._PackIndex:
     """Recover the registry by scanning `packs/*.json`, the `workspace._rebuild_index`
     precedent for a lost or corrupt `index.json`."""
     packs_dir = store_root() / "packs"
-    entries: list[_PackIndexEntry] = []
+    entries: list[library_models._PackIndexEntry] = []
     if packs_dir.exists():
         for child in sorted(packs_dir.glob("*.json")):
             try:
                 raw = json.loads(child.read_text(encoding="utf-8"))
-                pack = Pack.model_validate(raw)
+                pack = library_models.Pack.model_validate(raw)
             except (OSError, json.JSONDecodeError, ValidationError):
                 continue
             if pack.id != child.stem:
                 continue
             entries.append(
-                _PackIndexEntry(
+                library_models._PackIndexEntry(
                     id=pack.id,
                     label=pack.label,
                     description=pack.description,
@@ -308,13 +149,13 @@ def _rebuild_pack_index() -> _PackIndex:
                     updated_at=pack.updated_at,
                 )
             )
-    index = _PackIndex(packs=entries)
+    index = library_models._PackIndex(packs=entries)
     if entries:
         _write_pack_index(index)
     return index
 
 
-def _write_pack_index(index: _PackIndex) -> None:
+def _write_pack_index(index: library_models._PackIndex) -> None:
     path = _index_path()
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
@@ -327,8 +168,8 @@ def _write_pack_index(index: _PackIndex) -> None:
 # --------------------------------------------------------------------------------------
 
 
-def _pack_from_seed(seed: library_seeds.Pack) -> Pack:
-    return Pack(
+def _pack_from_seed(seed: library_seeds.Pack) -> library_models.Pack:
+    return library_models.Pack(
         id=seed["id"],
         label=seed["label"],
         description=seed.get("description", ""),
@@ -349,23 +190,23 @@ def is_customized_pack(pack_id: str) -> bool:
     return _pack_path(pack_id).exists()
 
 
-def read_pack(pack_id: str) -> Pack:
+def read_pack(pack_id: str) -> library_models.Pack:
     """A shipped or user-authored pack by id. Store file wins over the shipped seed.
     Raises `LibraryError` if neither exists."""
     path = _pack_path(pack_id)
     if path.exists():
         try:
             raw = json.loads(path.read_text(encoding="utf-8"))
-            return Pack.model_validate(raw)
+            return library_models.Pack.model_validate(raw)
         except (OSError, json.JSONDecodeError, ValidationError) as exc:
-            raise LibraryError(f"Pack {pack_id!r} is corrupt: {exc}") from exc
+            raise library_models.LibraryError(f"Pack {pack_id!r} is corrupt: {exc}") from exc
     seed = library_seeds.BUILTIN_PACKS.get(pack_id)
     if seed is not None:
         return _pack_from_seed(seed)
-    raise LibraryError(f"Unknown pack: {pack_id!r}")
+    raise library_models.LibraryError(f"Unknown pack: {pack_id!r}")
 
 
-def list_packs() -> list[PackMeta]:
+def list_packs() -> list[library_models.PackMeta]:
     """Shipped packs first (via `read_pack` so shadows show edited counts), then
     user-authored packs from the registry not already listed.
 
@@ -373,7 +214,7 @@ def list_packs() -> list[PackMeta]:
     rather than raised — a listing must not crash the whole Settings tab over one bad
     pack; `resolve_effective` is where a *selected* missing pack becomes a diagnostic.
     """
-    out: list[PackMeta] = []
+    out: list[library_models.PackMeta] = []
     seen: set[str] = set()
 
     for seed in library_seeds.BUILTIN_PACKS.values():
@@ -381,10 +222,10 @@ def list_packs() -> list[PackMeta]:
         seen.add(pack_id)
         try:
             pack = read_pack(pack_id)
-        except LibraryError:
+        except library_models.LibraryError:
             continue
         out.append(
-            PackMeta(
+            library_models.PackMeta(
                 id=pack.id,
                 label=pack.label,
                 description=pack.description,
@@ -402,11 +243,11 @@ def list_packs() -> list[PackMeta]:
             continue
         try:
             pack = read_pack(entry.id)
-        except LibraryError:
+        except library_models.LibraryError:
             continue
         seen.add(pack.id)
         out.append(
-            PackMeta(
+            library_models.PackMeta(
                 id=pack.id,
                 label=pack.label,
                 description=pack.description,
@@ -421,7 +262,7 @@ def list_packs() -> list[PackMeta]:
     return out
 
 
-def write_pack(pack: Pack, *, force: bool = False) -> Pack:
+def write_pack(pack: library_models.Pack, *, force: bool = False) -> library_models.Pack:
     """Validate and atomically write a pack to the store. Shipped ids are allowed —
     the write creates or updates a shadow file that `read_pack` prefers over the seed.
 
@@ -430,14 +271,14 @@ def write_pack(pack: Pack, *, force: bool = False) -> Pack:
     timestamps filled in), not the input.
     """
     if not _PACK_ID_RE.match(pack.id):
-        raise LibraryError(
+        raise library_models.LibraryError(
             f"Invalid pack id {pack.id!r}: must match {_PACK_ID_RE.pattern!r}."
         )
 
     baseline = resolve_effective(exclude_pack_id=pack.id)
     errors = validate_pack(pack, against=baseline, force=force)
     if errors:
-        raise LibraryValidationError(errors)
+        raise library_models.LibraryValidationError(errors)
 
     now = _now_iso()
     path = _pack_path(pack.id)
@@ -445,7 +286,7 @@ def write_pack(pack: Pack, *, force: bool = False) -> Pack:
     if not created_at:
         if path.exists():
             try:
-                created_at = Pack.model_validate_json(
+                created_at = library_models.Pack.model_validate_json(
                     path.read_text(encoding="utf-8")
                 ).created_at
             except (OSError, ValidationError):
@@ -462,7 +303,7 @@ def write_pack(pack: Pack, *, force: bool = False) -> Pack:
     index = _read_pack_index()
     entries = [e for e in index.packs if e.id != pack.id]
     entries.append(
-        _PackIndexEntry(
+        library_models._PackIndexEntry(
             id=to_write.id,
             label=to_write.label,
             description=to_write.description,
@@ -470,7 +311,7 @@ def write_pack(pack: Pack, *, force: bool = False) -> Pack:
             updated_at=to_write.updated_at,
         )
     )
-    _write_pack_index(_PackIndex(packs=entries))
+    _write_pack_index(library_models._PackIndex(packs=entries))
     _invalidate_memo()
     return to_write
 
@@ -483,13 +324,13 @@ def delete_pack(pack_id: str) -> None:
     deleting a pack out from under an active selection degrades gracefully.
     """
     if is_builtin_pack(pack_id):
-        raise LibraryError(f"{pack_id!r} is a shipped pack and cannot be deleted.")
+        raise library_models.LibraryError(f"{pack_id!r} is a shipped pack and cannot be deleted.")
     path = _pack_path(pack_id)
     if not path.exists():
-        raise LibraryError(f"Unknown pack: {pack_id!r}")
+        raise library_models.LibraryError(f"Unknown pack: {pack_id!r}")
     path.unlink()
     index = _read_pack_index()
-    _write_pack_index(_PackIndex(packs=[e for e in index.packs if e.id != pack_id]))
+    _write_pack_index(library_models._PackIndex(packs=[e for e in index.packs if e.id != pack_id]))
     _invalidate_memo()
 
 
@@ -500,15 +341,15 @@ def reset_pack(pack_id: str) -> None:
     when the store file is missing/corrupt.
     """
     if not is_builtin_pack(pack_id):
-        raise LibraryError(f"{pack_id!r} is not a shipped pack and cannot be reset.")
+        raise library_models.LibraryError(f"{pack_id!r} is not a shipped pack and cannot be reset.")
     path = _pack_path(pack_id)
     if not path.exists():
-        raise LibraryError(
+        raise library_models.LibraryError(
             f"Pack {pack_id!r} has no customized copy to reset."
         )
     path.unlink()
     index = _read_pack_index()
-    _write_pack_index(_PackIndex(packs=[e for e in index.packs if e.id != pack_id]))
+    _write_pack_index(library_models._PackIndex(packs=[e for e in index.packs if e.id != pack_id]))
     _invalidate_memo()
 
 
@@ -517,7 +358,7 @@ def reset_pack(pack_id: str) -> None:
 # --------------------------------------------------------------------------------------
 
 
-def read_workspace_state(workspace_id: str | None = None) -> WorkspaceLibraryState:
+def read_workspace_state(workspace_id: str | None = None) -> library_models.WorkspaceLibraryState:
     """Read `libraries.json`. Never raises — missing, unreadable, or malformed all
     degrade to the default state (`core-tech` enabled, nothing else), the same
     tolerance `workspace.load_settings` gives `settings.json`."""
@@ -529,14 +370,14 @@ def read_workspace_state(workspace_id: str | None = None) -> WorkspaceLibrarySta
             raw = None
         if isinstance(raw, dict):
             try:
-                return WorkspaceLibraryState.model_validate(raw)
+                return library_models.WorkspaceLibraryState.model_validate(raw)
             except ValidationError:
                 pass
-    return WorkspaceLibraryState()
+    return library_models.WorkspaceLibraryState()
 
 
 def write_workspace_state(
-    state: WorkspaceLibraryState, workspace_id: str | None = None
+    state: library_models.WorkspaceLibraryState, workspace_id: str | None = None
 ) -> None:
     """Atomically write `libraries.json`: temp file, then `os.replace`."""
     path = workspace_file(workspace_id)
@@ -556,7 +397,7 @@ def write_workspace_state(
 #: workspace (`resolve_effective(workspace_id=...)`, used by pack validation previews
 #: and workspace duplication) are always recomputed fresh rather than cached under a
 #: second key, which would risk staleness with no invalidation signal.
-_ACTIVE_MEMO: dict[Path, EffectiveLibrary] = {}
+_ACTIVE_MEMO: dict[Path, library_models.EffectiveLibrary] = {}
 
 
 def _invalidate_memo() -> None:
@@ -572,8 +413,8 @@ def _invalidate_memo() -> None:
 
 def resolve_effective(
     workspace_id: str | None = None, *, exclude_pack_id: str | None = None,
-    state: WorkspaceLibraryState | None = None,
-) -> EffectiveLibrary:
+    state: library_models.WorkspaceLibraryState | None = None,
+) -> library_models.EffectiveLibrary:
     """The composed alias/verb tables for `workspace_id`, or the active workspace.
 
     `exclude_pack_id` composes as if that pack were not enabled, without touching
@@ -595,8 +436,8 @@ def resolve_effective(
 
 def _resolve_effective_uncached(
     workspace_id: str | None, *, exclude_pack_id: str | None = None,
-    state: WorkspaceLibraryState | None = None,
-) -> EffectiveLibrary:
+    state: library_models.WorkspaceLibraryState | None = None,
+) -> library_models.EffectiveLibrary:
     state = state if state is not None else read_workspace_state(workspace_id)
     diagnostics: list[str] = []
 
@@ -610,7 +451,7 @@ def _resolve_effective_uncached(
             continue
         try:
             pack = read_pack(pack_id)
-        except LibraryError:
+        except library_models.LibraryError:
             diagnostics.append(f"Pack {pack_id!r} is enabled but no longer exists; skipped.")
             continue
         pack_labels[pack_id] = pack.label
@@ -672,7 +513,7 @@ def _resolve_effective_uncached(
         verb_families.setdefault(family, []).append(verb)
     verb_families_t = {family: tuple(sorted(verbs)) for family, verbs in verb_families.items()}
 
-    return EffectiveLibrary(
+    return library_models.EffectiveLibrary(
         tag_aliases=aliases,
         verb_families=verb_families_t,
         verb_index=dict(verb_owner),
@@ -691,7 +532,10 @@ _MAX_VERBS_PER_FAMILY = 500
 
 
 def validate_pack(
-    pack: Pack, *, against: EffectiveLibrary | None = None, force: bool = False
+    pack: library_models.Pack,
+    *,
+    against: library_models.EffectiveLibrary | None = None,
+    force: bool = False,
 ) -> list[str]:
     """Everything checked before a pack is written. Empty list means OK.
 
@@ -779,7 +623,7 @@ def validate_pack(
 # --------------------------------------------------------------------------------------
 
 
-def effective_fingerprint(effective: EffectiveLibrary | None = None) -> str:
+def effective_fingerprint(effective: library_models.EffectiveLibrary | None = None) -> str:
     """Digest of the composed alias + verb tables, for `propose.py`'s cache key."""
     eff = effective if effective is not None else resolve_effective()
     payload = "\n".join(
@@ -791,7 +635,7 @@ def effective_fingerprint(effective: EffectiveLibrary | None = None) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:12]
 
 
-def apply_to_config(workspace_id: str | None = None) -> EffectiveLibrary:
+def apply_to_config(workspace_id: str | None = None) -> library_models.EffectiveLibrary:
     """Rebind `config.TAG_ALIASES` / `config.VERB_FAMILIES` to the resolved tables.
 
     Always assigns new dict objects — never mutates the existing ones in place — since
@@ -804,7 +648,7 @@ def apply_to_config(workspace_id: str | None = None) -> EffectiveLibrary:
     return effective
 
 
-def reload(workspace_id: str | None = None) -> EffectiveLibrary:
+def reload(workspace_id: str | None = None) -> library_models.EffectiveLibrary:
     """Drop the memo and rebind `config`'s tables.
 
     Call after any write in this module, and from `workspace.bootstrap` /
@@ -824,49 +668,3 @@ def reset() -> None:
         dict(core["tag_aliases"]),
         {family: tuple(verbs) for family, verbs in core["verb_families"].items()},
     )
-
-
-# --------------------------------------------------------------------------------------
-# Alias impact (the destructive-write guard)
-# --------------------------------------------------------------------------------------
-
-
-def alias_impact(
-    aliases: dict[str, str], *, resume: data.MasterResume | None = None
-) -> list[AliasImpact]:
-    """What approving `aliases` would rewrite in the current master resume, if anything.
-
-    `Bullet._normalise_tags` runs `canonical_tag` on every save (`web/app.py`'s
-    `put_master_resume`), so an alias whose *key* is already used as a literal tag would
-    be silently collapsed onto its target the next time the resume is saved — this is
-    the check that turns that into a visible, confirmable preview instead. An alias with
-    no impact here is purely additive: it only widens future JD keyword matching.
-    """
-    if resume is None:
-        try:
-            resume = data.load()
-        except (FileNotFoundError, ValueError):
-            return [
-                AliasImpact(alias=k, canonical=v, affected_tags=[], affected_bullets=[])
-                for k, v in aliases.items()
-            ]
-
-    out: list[AliasImpact] = []
-    for raw_k, raw_v in aliases.items():
-        k = raw_k.strip().lower()
-        bullets: list[tuple[str, str]] = []
-        for job in resume.experience:
-            for bullet in job.bullets:
-                if k in bullet.tags:
-                    bullets.append((job.company, bullet.id))
-        for proj in resume.projects:
-            for bullet in proj.bullets:
-                if k in bullet.tags:
-                    bullets.append((proj.name, bullet.id))
-        affected = [k] if (bullets or k in resume.tag_vocabulary) else []
-        out.append(
-            AliasImpact(
-                alias=raw_k, canonical=raw_v, affected_tags=affected, affected_bullets=bullets
-            )
-        )
-    return out

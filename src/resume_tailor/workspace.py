@@ -28,7 +28,7 @@ from datetime import UTC, datetime
 from pathlib import Path
 
 from resume_tailor import config
-from resume_tailor.content import industries, libraries
+from resume_tailor.content import industries, libraries, library_models
 from resume_tailor.content.labels import label_taken, normalize_label
 
 #: Serialises registry mutations (create/rename/delete/activate) against each other.
@@ -221,7 +221,7 @@ def _write_default_libraries(path: Path) -> None:
     enabled, nothing overridden. Mirrors `_write_default_settings`'s shape."""
     path.parent.mkdir(parents=True, exist_ok=True)
     path.write_text(
-        libraries.WorkspaceLibraryState().model_dump_json(indent=2) + "\n",
+        library_models.WorkspaceLibraryState().model_dump_json(indent=2) + "\n",
         encoding="utf-8",
     )
 

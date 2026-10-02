@@ -13,10 +13,10 @@ from __future__ import annotations
 import pytest
 
 from resume_tailor import config, library_seeds
-from resume_tailor.content import data, libraries
+from resume_tailor.content import data, libraries, library_impact, library_models
 
 
-def _pack(pack_id: str, **kwargs) -> libraries.Pack:
+def _pack(pack_id: str, **kwargs) -> library_models.Pack:
     fields = {
         "id": pack_id,
         "label": kwargs.pop("label", pack_id.title()),
@@ -24,7 +24,7 @@ def _pack(pack_id: str, **kwargs) -> libraries.Pack:
         "verb_families": {},
     }
     fields.update(kwargs)
-    return libraries.Pack(**fields)
+    return library_models.Pack(**fields)
 
 
 def _resume_with_tags(*tags: str) -> data.MasterResume:
@@ -73,11 +73,11 @@ def test_corrupt_workspace_file_degrades_to_defaults():
 def test_missing_workspace_file_returns_defaults():
     assert not libraries.workspace_file().exists()
     state = libraries.read_workspace_state()
-    assert state == libraries.WorkspaceLibraryState()
+    assert state == library_models.WorkspaceLibraryState()
 
 
 def test_missing_pack_id_is_skipped_with_a_diagnostic():
-    state = libraries.WorkspaceLibraryState(enabled_packs=["core-tech", "ghost"])
+    state = library_models.WorkspaceLibraryState(enabled_packs=["core-tech", "ghost"])
     libraries.write_workspace_state(state)
 
     eff = libraries.resolve_effective()
@@ -96,12 +96,12 @@ def test_pack_order_decides_alias_precedence():
     libraries.write_pack(_pack("b", tag_aliases={"x": "beta"}))
 
     libraries.write_workspace_state(
-        libraries.WorkspaceLibraryState(enabled_packs=["a", "b"])
+        library_models.WorkspaceLibraryState(enabled_packs=["a", "b"])
     )
     assert libraries.resolve_effective().tag_aliases["x"] == "beta"
 
     libraries.write_workspace_state(
-        libraries.WorkspaceLibraryState(enabled_packs=["b", "a"])
+        library_models.WorkspaceLibraryState(enabled_packs=["b", "a"])
     )
     assert libraries.resolve_effective().tag_aliases["x"] == "alpha"
 
@@ -111,12 +111,12 @@ def test_pack_order_decides_verb_precedence():
     libraries.write_pack(_pack("b", verb_families={"operate": ["administered"]}))
 
     libraries.write_workspace_state(
-        libraries.WorkspaceLibraryState(enabled_packs=["a", "b"])
+        library_models.WorkspaceLibraryState(enabled_packs=["a", "b"])
     )
     assert libraries.resolve_effective().verb_index["administered"] == "operate"
 
     libraries.write_workspace_state(
-        libraries.WorkspaceLibraryState(enabled_packs=["b", "a"])
+        library_models.WorkspaceLibraryState(enabled_packs=["b", "a"])
     )
     assert libraries.resolve_effective().verb_index["administered"] == "care"
 
@@ -124,7 +124,7 @@ def test_pack_order_decides_verb_precedence():
 def test_cross_pack_verb_collision_is_a_diagnostic_not_an_error():
     libraries.write_pack(_pack("a", verb_families={"care": ["administered"]}))
     libraries.write_workspace_state(
-        libraries.WorkspaceLibraryState(enabled_packs=["core-tech", "a"])
+        library_models.WorkspaceLibraryState(enabled_packs=["core-tech", "a"])
     )
 
     eff = libraries.resolve_effective()
@@ -134,9 +134,9 @@ def test_cross_pack_verb_collision_is_a_diagnostic_not_an_error():
 
 
 def test_removals_win_over_additions():
-    state = libraries.WorkspaceLibraryState(
+    state = library_models.WorkspaceLibraryState(
         enabled_packs=["core-tech"],
-        overrides=libraries.LibraryOverrides(
+        overrides=library_models.LibraryOverrides(
             tag_aliases={"foo": "bar"},
             tag_aliases_removed=["foo", "py"],
             verb_families={"triaged": "analyse"},
@@ -154,9 +154,9 @@ def test_removals_win_over_additions():
 
 
 def test_overrides_win_over_packs():
-    state = libraries.WorkspaceLibraryState(
+    state = library_models.WorkspaceLibraryState(
         enabled_packs=["core-tech"],
-        overrides=libraries.LibraryOverrides(tag_aliases={"py": "override-target"}),
+        overrides=library_models.LibraryOverrides(tag_aliases={"py": "override-target"}),
     )
     libraries.write_workspace_state(state)
 
@@ -175,7 +175,7 @@ def test_resolver_drops_a_chain():
     libraries.write_pack(_pack("a", tag_aliases={"foo": "bar"}))
     libraries.write_pack(_pack("b", tag_aliases={"bar": "baz"}))
     libraries.write_workspace_state(
-        libraries.WorkspaceLibraryState(enabled_packs=["core-tech", "a", "b"])
+        library_models.WorkspaceLibraryState(enabled_packs=["core-tech", "a", "b"])
     )
 
     eff = libraries.resolve_effective()
@@ -196,7 +196,7 @@ def test_resolver_drops_a_chain():
 
 def test_write_pack_shadows_a_shipped_id():
     seed = library_seeds.BUILTIN_PACKS["core-tech"]
-    customized = libraries.Pack(
+    customized = library_models.Pack(
         id="core-tech",
         label=seed["label"],
         description=seed["description"],
@@ -211,13 +211,13 @@ def test_write_pack_shadows_a_shipped_id():
 
 
 def test_delete_pack_refuses_a_shipped_id():
-    with pytest.raises(libraries.LibraryError):
+    with pytest.raises(library_models.LibraryError):
         libraries.delete_pack("core-tech")
 
 
 def test_reset_pack_restores_the_shipped_seed():
     seed = library_seeds.BUILTIN_PACKS["core-tech"]
-    customized = libraries.Pack(
+    customized = library_models.Pack(
         id="core-tech",
         label=seed["label"],
         description=seed["description"],
@@ -235,19 +235,19 @@ def test_reset_pack_restores_the_shipped_seed():
 
 def test_reset_pack_refuses_a_non_shipped_id():
     libraries.write_pack(_pack("a"))
-    with pytest.raises(libraries.LibraryError):
+    with pytest.raises(library_models.LibraryError):
         libraries.reset_pack("a")
 
 
 def test_reset_pack_refuses_when_no_shadow_exists():
-    with pytest.raises(libraries.LibraryError):
+    with pytest.raises(library_models.LibraryError):
         libraries.reset_pack("core-tech")
 
 
 def test_list_packs_marks_a_customized_shipped_pack():
     seed = library_seeds.BUILTIN_PACKS["core-tech"]
     libraries.write_pack(
-        libraries.Pack(
+        library_models.Pack(
             id="core-tech",
             label=seed["label"],
             description=seed["description"],
@@ -261,12 +261,12 @@ def test_list_packs_marks_a_customized_shipped_pack():
 
 
 def test_delete_pack_refuses_an_unknown_id():
-    with pytest.raises(libraries.LibraryError):
+    with pytest.raises(library_models.LibraryError):
         libraries.delete_pack("nonexistent")
 
 
 def test_read_pack_raises_for_an_unknown_id():
-    with pytest.raises(libraries.LibraryError):
+    with pytest.raises(library_models.LibraryError):
         libraries.read_pack("nonexistent")
 
 
@@ -313,7 +313,7 @@ def test_updating_an_enabled_pack_does_not_conflict_with_its_own_prior_version()
     a tweaked value for an existing key always looked like a conflict with itself and
     needed `force=True` just to keep going."""
     libraries.write_pack(_pack("a", tag_aliases={"x": "y"}))
-    libraries.write_workspace_state(libraries.WorkspaceLibraryState(enabled_packs=["a"]))
+    libraries.write_workspace_state(library_models.WorkspaceLibraryState(enabled_packs=["a"]))
     assert libraries.resolve_effective().tag_aliases["x"] == "y"
 
     updated = libraries.write_pack(_pack("a", tag_aliases={"x": "z"}))
@@ -333,7 +333,7 @@ def test_new_pack_id_avoids_existing_ids():
 def test_deleting_an_enabled_pack_degrades_to_a_diagnostic_not_a_crash():
     libraries.write_pack(_pack("a", tag_aliases={"x": "y"}))
     libraries.write_workspace_state(
-        libraries.WorkspaceLibraryState(enabled_packs=["core-tech", "a"])
+        library_models.WorkspaceLibraryState(enabled_packs=["core-tech", "a"])
     )
     assert libraries.resolve_effective().tag_aliases["x"] == "y"
 
@@ -413,14 +413,14 @@ def test_validate_allows_a_conflicting_target_with_force():
 
 
 def test_write_pack_raises_library_validation_error_with_every_message():
-    with pytest.raises(libraries.LibraryValidationError) as excinfo:
+    with pytest.raises(library_models.LibraryValidationError) as excinfo:
         libraries.write_pack(_pack("a", tag_aliases={"python": "python"}))
     assert excinfo.value.errors
     assert any("maps to itself" in e for e in excinfo.value.errors)
 
 
 def test_pack_id_must_match_the_slug_pattern():
-    with pytest.raises(libraries.LibraryError):
+    with pytest.raises(library_models.LibraryError):
         libraries.write_pack(_pack("Not A Valid Id!"))
 
 
@@ -432,7 +432,7 @@ def test_pack_id_must_match_the_slug_pattern():
 def test_apply_to_config_rebinds_both_tables_and_invalidates_the_verb_index():
     libraries.write_pack(_pack("a", verb_families={"custom": ["zorped"]}))
     libraries.write_workspace_state(
-        libraries.WorkspaceLibraryState(enabled_packs=["core-tech", "a"])
+        library_models.WorkspaceLibraryState(enabled_packs=["core-tech", "a"])
     )
 
     libraries.apply_to_config()
@@ -450,7 +450,7 @@ def test_writes_invalidate_the_memo_but_leave_config_unrebound():
     effect immediately."""
     libraries.write_pack(_pack("a", tag_aliases={"x": "y"}))
     libraries.write_workspace_state(
-        libraries.WorkspaceLibraryState(enabled_packs=["core-tech", "a"])
+        library_models.WorkspaceLibraryState(enabled_packs=["core-tech", "a"])
     )
 
     assert "x" in libraries.resolve_effective().tag_aliases
@@ -465,7 +465,7 @@ def test_writes_invalidate_the_memo_but_leave_config_unrebound():
 def test_reset_restores_the_builtin_table_only():
     libraries.write_pack(_pack("a", tag_aliases={"x": "y"}))
     libraries.write_workspace_state(
-        libraries.WorkspaceLibraryState(enabled_packs=["core-tech", "a"])
+        library_models.WorkspaceLibraryState(enabled_packs=["core-tech", "a"])
     )
     libraries.reload()
     assert "x" in config.TAG_ALIASES
@@ -484,7 +484,7 @@ def test_reset_restores_the_builtin_table_only():
 def test_effective_fingerprint_is_stable_under_key_reordering():
     reordered = dict(reversed(list(library_seeds.BUILTIN_PACKS["core-tech"]["tag_aliases"].items())))
     a = libraries.effective_fingerprint(
-        libraries.EffectiveLibrary(
+        library_models.EffectiveLibrary(
             tag_aliases=library_seeds.BUILTIN_PACKS["core-tech"]["tag_aliases"],
             verb_families={},
             verb_index={},
@@ -492,7 +492,7 @@ def test_effective_fingerprint_is_stable_under_key_reordering():
         )
     )
     b = libraries.effective_fingerprint(
-        libraries.EffectiveLibrary(
+        library_models.EffectiveLibrary(
             tag_aliases=reordered, verb_families={}, verb_index={}, diagnostics=[]
         )
     )
@@ -503,7 +503,7 @@ def test_effective_fingerprint_changes_when_aliases_change():
     before = libraries.effective_fingerprint()
     libraries.write_pack(_pack("a", tag_aliases={"x": "y"}))
     libraries.write_workspace_state(
-        libraries.WorkspaceLibraryState(enabled_packs=["core-tech", "a"])
+        library_models.WorkspaceLibraryState(enabled_packs=["core-tech", "a"])
     )
     after = libraries.effective_fingerprint()
     assert before != after
@@ -517,7 +517,7 @@ def test_effective_fingerprint_changes_when_aliases_change():
 def test_alias_impact_distinguishes_additive_from_rewriting():
     resume = _resume_with_tags("python", "docker")
 
-    impacts = libraries.alias_impact({"rust": "rust-lang", "python": "py-lang"}, resume=resume)
+    impacts = library_impact.alias_impact({"rust": "rust-lang", "python": "py-lang"}, resume=resume)
     by_alias = {i.alias: i for i in impacts}
 
     assert by_alias["rust"].affected_tags == []
@@ -530,8 +530,8 @@ def test_alias_impact_distinguishes_additive_from_rewriting():
 def test_alias_impact_missing_resume_returns_additive_only(tmp_path, monkeypatch):
     monkeypatch.setattr(config, "MASTER_RESUME_PATH", tmp_path / "no-such-resume.json")
 
-    impacts = libraries.alias_impact({"x": "y"})
+    impacts = library_impact.alias_impact({"x": "y"})
 
     assert impacts == [
-        libraries.AliasImpact(alias="x", canonical="y", affected_tags=[], affected_bullets=[])
+        library_models.AliasImpact(alias="x", canonical="y", affected_tags=[], affected_bullets=[])
     ]

@@ -1008,7 +1008,7 @@ class WorkspaceActivateResponse(BaseModel):
 
 class LibraryOverridesOut(BaseModel):
     """A workspace's own additions and removals, layered on top of its enabled packs.
-    Wire shape of `libraries.LibraryOverrides`."""
+    Wire shape of `library_models.LibraryOverrides`."""
 
     tag_aliases: dict[str, str] = Field(default_factory=dict)
     tag_aliases_removed: list[str] = Field(default_factory=list)
@@ -1151,7 +1151,7 @@ class ProposalApproveRequest(BaseModel):
     #: An existing user-authored pack to fold the approved items into. Never a built-in
     #: id — `libraries.write_pack` refuses those.
     target_pack_id: str
-    #: Required (re-POST with this set) once `libraries.alias_impact` reports that an
+    #: Required (re-POST with this set) once `library_impact.alias_impact` reports that an
     #: approved alias would rewrite an existing bullet tag on the next master-resume
     #: save — see `approve_library_proposals`'s 409 path.
     acknowledge_rewrites: bool = False
