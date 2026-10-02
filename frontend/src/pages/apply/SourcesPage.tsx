@@ -1,4 +1,5 @@
 import { Link } from "react-router-dom";
+import { Page, PageHeader } from "../../components/ui";
 import { useRunState } from "../../state/runState";
 import { useSourcesStatus } from "./sourceHooks";
 import { SourcesTab } from "./SourcesTab";
@@ -13,13 +14,15 @@ export function SourcesPage() {
     useRunState();
   const status = useSourcesStatus();
   return (
-    <div className="space-y-5">
-      <div>
-        <Link to="/applications" className="text-sm text-accent underline">
-          ← Applications
-        </Link>
-        <h1 className="mt-2 font-display text-2xl font-bold text-ink">Job sources</h1>
-      </div>
+    <Page>
+      <PageHeader
+        title="Job sources"
+        back={
+          <Link to="/applications" className="text-sm text-accent underline">
+            ← Applications
+          </Link>
+        }
+      />
       <SourcesTab
         sources={settings.apply.sources}
         saveError={settingsSaveError}
@@ -32,6 +35,6 @@ export function SourcesPage() {
         }
         onChange={(sources) => setSettings({ ...settings, apply: { ...settings.apply, sources } })}
       />
-    </div>
+    </Page>
   );
 }

@@ -5,6 +5,7 @@ export { Button, Spinner } from "./Button";
 export { buttonClass, type ButtonVariant } from "../../lib/buttonClass";
 export { Card, EmptyState, Kbd, Skeleton } from "./Card";
 export { InlineHelp } from "./InlineHelp";
+export { Page, PageHeader } from "./Page";
 export { Stepper, type StepItem } from "./Stepper";
 export { stepState, type StepState } from "../../lib/stepState";
 export { ToastProvider } from "./Toast";

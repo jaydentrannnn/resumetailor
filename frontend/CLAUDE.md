@@ -34,6 +34,9 @@ hermetic backend).
 ## Conventions
 
 - Files: aim for ≤ ~400 lines; components ≤ ~150. Extract hooks into `lib/` or `state/`.
+- Setup pages (Profile, Template, Vocabulary, Settings, Job sources) render inside
+  `ui/Page` + `PageHeader` — one centred column and title style; only the Tailor/Apply
+  dashboards run full width. Don't hand-roll page widths or title sizes.
 - Polling goes through `lib/adaptivePoll.ts` / `conditionalGet` (in `api/core.ts`); errors through
   `lib/errors.ts`; toasts through `lib/toast.ts`.
 - Don't re-propose declined features: per-stage model overrides, hybrid routing,

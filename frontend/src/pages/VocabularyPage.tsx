@@ -6,6 +6,7 @@ import { KeyValueListField } from "../components/KeyValueListField";
 import { PackEditor } from "../components/library/PackEditor";
 import { Pagination } from "../components/TableControls";
 import { Tabs } from "../components/Tabs";
+import { Page, PageHeader } from "../components/ui";
 import { useConfirm } from "../state/confirmState";
 import { useLibraryState } from "../state/libraryState";
 
@@ -23,15 +24,19 @@ export function VocabularyPage() {
     ? params.get("tab")!
     : "packs";
   return (
-    <div className="space-y-6">
-      <h1 className="font-display text-[28px] font-semibold">Vocabulary</h1>
-      <p className="text-sm text-ink-muted">
-        Active vocabulary:{" "}
-        <span className="font-medium text-ink">
-          {effective.tag_alias_count} alias{effective.tag_alias_count === 1 ? "" : "es"} &middot;{" "}
-          {effective.verb_count} verb{effective.verb_count === 1 ? "" : "s"}
-        </span>
-      </p>
+    <Page>
+      <PageHeader
+        title="Vocabulary"
+        description={
+          <>
+            Active vocabulary:{" "}
+            <span className="font-medium text-ink">
+              {effective.tag_alias_count} alias{effective.tag_alias_count === 1 ? "" : "es"}{" "}
+              &middot; {effective.verb_count} verb{effective.verb_count === 1 ? "" : "s"}
+            </span>
+          </>
+        }
+      />
       <Tabs
         label="Vocabulary sections"
         items={[
@@ -51,7 +56,7 @@ export function VocabularyPage() {
       <div role="tabpanel" hidden={tab !== "suggestions"}>
         <SuggestionsSection />
       </div>
-    </div>
+    </Page>
   );
 }
 

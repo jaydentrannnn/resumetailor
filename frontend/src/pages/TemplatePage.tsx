@@ -1,3 +1,4 @@
+import { Page, PageHeader } from "../components/ui";
 import { TemplatePreview } from "../components/template/TemplatePreview";
 import { PageFitCard } from "../components/template/PageFitCard";
 import { SavedTemplatesPanel } from "../components/template/SavedTemplatesPanel";
@@ -43,8 +44,8 @@ export function TemplatePage() {
   } = useTemplateState();
 
   return (
-    <div className="max-w-6xl space-y-6">
-      <h1 className="font-display text-[28px] font-semibold">Template</h1>
+    <Page>
+      <PageHeader title="Template" />
       <section className="rounded-xl border border-line bg-panel p-5 shadow-sm">
         <div className="flex flex-wrap items-start justify-between gap-3">
           <div>
@@ -149,7 +150,7 @@ export function TemplatePage() {
       <SavedTemplatesPanel />
       <StarterTemplatesPanel />
       <TemplateImportWizard />
-    </div>
+    </Page>
   );
 }
 

@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import type { ApplicantProfile } from "../../api";
 import { ProfileGapBanner } from "../../components/ProfileGapBanner";
-import { Button } from "../../components/ui";
+import { Button, Page, PageHeader } from "../../components/ui";
 import {
   GAP_FIELD_ALIASES,
   changedKeys,
@@ -168,13 +168,11 @@ export function ProfilePage() {
   const educationSection = editor.resume?.sections.find((section) => section.kind === "education");
 
   return (
-    <div className="max-w-6xl space-y-5 pb-4">
-      <header>
-        <h1 className="font-display text-[28px] font-semibold">Profile</h1>
-        <p className="text-sm text-ink-muted">
-          Your resume content and the details application forms ask for, saved together.
-        </p>
-      </header>
+    <Page className="pb-4">
+      <PageHeader
+        title="Profile"
+        description="Your resume content and the details application forms ask for, saved together."
+      />
       <nav aria-label="Profile sections" className="flex flex-wrap gap-2 border-b border-line pb-2">
         {TABS.map(([id, label]) => (
           <Link
@@ -271,6 +269,6 @@ export function ProfilePage() {
           </span>
         )}
       </div>
-    </div>
+    </Page>
   );
 }

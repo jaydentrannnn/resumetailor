@@ -1,5 +1,5 @@
 import { useSearchParams } from "react-router-dom";
-import { Tabs } from "../../components/ui";
+import { Page, PageHeader, Tabs } from "../../components/ui";
 import { AboutSection } from "./AboutSection";
 import { AdvancedSection } from "./AdvancedSection";
 import { DataSection } from "./DataSection";
@@ -25,8 +25,8 @@ export function SettingsPage() {
   const requested = params.get("tab");
   const tab: TabId = TABS.some((t) => t.id === requested) ? (requested as TabId) : "models";
   return (
-    <div className="max-w-5xl space-y-6">
-      <h1 className="font-display text-2xl font-bold text-ink">Settings</h1>
+    <Page>
+      <PageHeader title="Settings" />
       <Tabs
         label="Settings sections"
         items={TABS.map((t) => ({ id: t.id, label: t.label }))}
@@ -46,6 +46,6 @@ export function SettingsPage() {
         {tab === "browser" && <BrowserSection />}
         {tab === "about" && <AboutSection />}
       </div>
-    </div>
+    </Page>
   );
 }
