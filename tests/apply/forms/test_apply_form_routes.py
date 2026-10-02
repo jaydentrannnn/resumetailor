@@ -115,6 +115,65 @@ def test_required_consent_that_cannot_be_checked_is_reported(page):
     assert len(unresolved) == 1
 
 
+_ICIMS_LEFTOVER = {
+    "label": "I agree", "type": "checkbox", "options": [], "required": True,
+    "reason": "Unrecognized field", "selector": "#accept_gdpr",
+}
+
+
+def test_required_consent_leftover_is_recognised_without_optional_boxes():
+    assert form_routes.is_required_consent(_ICIMS_LEFTOVER)
+    assert not form_routes.is_required_consent({**_ICIMS_LEFTOVER, "required": False})
+    assert not form_routes.is_required_consent({**_ICIMS_LEFTOVER, "type": "radio"})
+    assert not form_routes.is_required_consent({**_ICIMS_LEFTOVER, "label": "Email me job alerts"})
+    assert not form_routes.is_required_consent({**_ICIMS_LEFTOVER, "label": "Sign up (agree to marketing)"})
+
+
+def test_icims_style_consent_checkbox_is_ticked(page):
+    page.set_content("""
+      <input type="email" id="email">
+      <label for="accept_gdpr">I agree</label><input type="checkbox" id="accept_gdpr" required>
+    """)
+    assert form_routes.tick_consent(page, _ICIMS_LEFTOVER)
+    assert page.locator("#accept_gdpr").is_checked()
+
+
+def test_consent_checkbox_with_hidden_input_is_ticked_through_its_label(page):
+    page.set_content("""
+      <input type="checkbox" id="accept_gdpr" style="position:absolute;opacity:0;pointer-events:none">
+      <label for="accept_gdpr">I agree</label>
+    """)
+    assert form_routes.tick_consent(page, _ICIMS_LEFTOVER)
+    assert page.locator("#accept_gdpr").is_checked()
+
+
+def test_consent_checkbox_that_cannot_be_ticked_is_not_reported_ticked(page):
+    page.set_content('<input type="checkbox" id="accept_gdpr" disabled><label>I agree</label>')
+    assert not form_routes.tick_consent(page, _ICIMS_LEFTOVER)
+
+
+def test_icims_step_ticks_consent_and_clears_it_from_the_blocking_lists(page):
+    from types import SimpleNamespace
+
+    from resume_tailor.apply.forms.fill_answers import _FillAnswers
+
+    page.set_content('<label for="accept_gdpr">I agree</label><input type="checkbox" id="accept_gdpr">')
+    leftover = {**_ICIMS_LEFTOVER, "frame_index": 0}
+    run = SimpleNamespace(
+        ats_name="icims", frames=[page], needs_review=[],
+        merged={"filled": [], "leftovers": [leftover], "required_empty": ["accept_gdpr", "Other"]},
+    )
+    run._accept_consent = lambda item: _FillAnswers._accept_consent(run, item)
+    run._resolve_leftover = lambda item: _FillAnswers._resolve_leftover(run, item)
+    run._stop_if_out_of_time = lambda _msg: False
+    _FillAnswers._resolve_leftovers(run)
+    assert page.locator("#accept_gdpr").is_checked()
+    assert run.merged["required_empty"] == ["Other"]
+    assert run.merged["leftovers"] == []
+    assert run.needs_review == []
+    assert run.merged["filled"][0]["key"] == "consent"
+
+
 def test_verified_workday_hidden_year_control_uses_matched_education_row():
     import asyncio
 

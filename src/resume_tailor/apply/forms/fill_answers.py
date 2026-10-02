@@ -8,7 +8,7 @@ from typing import Any
 
 from resume_tailor import config
 from resume_tailor.apply.answers import answer, answer_memory, widget_actions
-from resume_tailor.apply.forms import form_guards
+from resume_tailor.apply.forms import form_guards, form_routes
 
 from . import fill_buttons, fill_outcomes, fill_state, fill_widgets
 
@@ -219,11 +219,31 @@ class _FillAnswers(fill_state._FillState):
         self._fill_if_empty(item, ans.answer)
 
     def _resolve_leftovers(self) -> None:
-        for leftover in self.merged.get("leftovers") or []:
+        for leftover in list(self.merged.get("leftovers") or []):
             if self._stop_if_out_of_time("Fill stopped before all choices were checked"):
                 break
             if isinstance(leftover, dict):
                 self._resolve_leftover(leftover)
+
+    def _accept_consent(self, leftover: dict[str, Any]) -> bool:
+        """Tick a required consent checkbox on an iCIMS step (its sign-in step has an
+        "I agree" privacy box the generic scan cannot key). True when it reads checked."""
+        frame_index = int(leftover.get("frame_index") or 0)
+        if not form_routes.tick_consent(self.frames[frame_index], leftover):
+            return False
+        label, selector = str(leftover.get("label") or ""), str(leftover["selector"])
+        self.merged["filled"].append({
+            "key": "consent", "label": label, "value": "checked",
+            "selector": selector, "frame_index": frame_index,
+        })
+        done = {label, selector, selector.lstrip("#")}
+        self.merged["required_empty"] = [
+            item for item in self.merged.get("required_empty") or [] if item not in done
+        ]
+        self.merged["leftovers"] = [
+            item for item in self.merged.get("leftovers") or [] if item is not leftover
+        ]
+        return True
 
     def _resolve_leftover(self, leftover: dict[str, Any]) -> None:
         needs_review = self.needs_review
@@ -238,6 +258,12 @@ class _FillAnswers(fill_state._FillState):
                 needs_review.append(label)
             return
         if label in needs_review:
+            return
+        if (
+            self.ats_name == "icims"
+            and form_routes.is_required_consent(leftover)
+            and self._accept_consent(leftover)
+        ):
             return
         if leftover.get("type") == "combobox" and leftover.get("key"):
             target = self.frames[int(leftover.get("frame_index") or 0)]

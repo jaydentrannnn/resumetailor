@@ -1551,3 +1551,16 @@ Needs you sorts by the latest status timestamp, so recently changed rows appear 
   cause; `_recheck_dates` re-reads every filled employment date after the section and retypes.
 - Not fixed: the post-Continue scroll lock (Motorola/Invesco). Esc does not clear it, so the
   2026-09-25 stray-popup theory is incomplete; needs a live-tab CDP probe.
+- iCIMS (2026-10-02, from runtime reports): saved JDs were nav chrome only — the description
+  lives in `icims_content_iframe` (src = job URL + `?in_iframe=1`, server-rendered, same
+  origin), and the app's HTTP fetch got `405 Not Allowed` because iCIMS rejects a Chrome
+  User-Agent from a non-browser client (default httpx UA and `Mozilla/5.0` get 200).
+  `fetch_jd._fetch_icims_content` fetches the iframe document with default headers and
+  `extract_fragment_text`, before the generic path; any miss falls through unchanged.
+  The browser fallback still reads only the top-level `innerText` (not changed).
+- iCIMS fills stopped at the `/login` email step: the "I agree" privacy box (`#accept_gdpr`,
+  inside the iframe) was an "Unrecognized field", so `required_empty` blocked Next
+  (H&R Block, Lutron, TRC ×2, Atlassian). `_FillAnswers._accept_consent` now ticks a required
+  consent checkbox leftover (`form_routes.is_required_consent`/`tick_consent`; marketing,
+  job-alert, talent-community and arbitration boxes excluded) on iCIMS only, via `clicks`.
+  The Workday consent path is page-level and never reached the iframe.

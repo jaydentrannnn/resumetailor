@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import json
 import re
 import time
@@ -175,4 +176,39 @@ async def accept_workday_async(page: Any) -> tuple[list[dict[str, str]], list[st
         except Exception:
             unresolved.append(row["label"])
     return completed, unresolved
+
+
+def is_required_consent(leftover: dict[str, Any]) -> bool:
+    """Whether a generic-scan leftover is a required consent checkbox (iCIMS "I agree")."""
+    label = str(leftover.get("label") or "").strip()
+    return bool(
+        leftover.get("type") == "checkbox"
+        and leftover.get("required")
+        and leftover.get("selector")
+        and _CONSENT.search(label)
+        and not _EXCLUDE.search(label)
+    )
+
+
+def tick_consent(frame: Any, leftover: dict[str, Any]) -> bool:
+    """Check the consent checkbox `leftover` names inside `frame`; True once it reads checked.
+
+    The click goes through `clicks`; a styled box whose input swallows the click falls back
+    to its `<label for>`. Anything that cannot be confirmed checked returns False, so the
+    caller leaves the field for review.
+    """
+    try:
+        box = frame.locator(str(leftover["selector"])).first
+        if box.is_checked():
+            return True
+        with contextlib.suppress(Exception):
+            clicks.safe_click(box, purpose="select", timeout=3000)
+        if not box.is_checked():
+            box_id = box.get_attribute("id")
+            label = frame.locator(f"label[for={json.dumps(box_id)}]") if box_id else None
+            if label is not None and label.count() == 1:
+                clicks.safe_click(label, purpose="select", timeout=3000)
+        return bool(box.is_checked())
+    except Exception:  # noqa: BLE001 - an unreachable box is the applicant's to tick
+        return False
 from resume_tailor.apply.driver import clicks

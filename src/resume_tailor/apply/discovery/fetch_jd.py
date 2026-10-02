@@ -183,6 +183,49 @@ def detect_ats(final_url: str, html: str = "") -> AtsName:
     return "unknown"
 
 
+_ICIMS_JOB_PATH = re.compile(r"^/jobs/\d+(?:/[^/]+)?/(?:job|login)/?$", re.I)
+
+
+def icims_content_url(url: str) -> str | None:
+    """The iframe document URL for an iCIMS posting, or None for any other URL.
+
+    An iCIMS posting page is a shell: the description lives in ``icims_content_iframe``,
+    whose ``src`` is the same job URL plus ``in_iframe=1``. That document is plain
+    server-rendered HTML, so it can be fetched directly (the shell yields only nav chrome).
+    """
+    parts = urlparse(url)
+    host = (parts.hostname or "").lower()
+    if not (host == "icims.com" or host.endswith(".icims.com")):
+        return None
+    match = _ICIMS_JOB_PATH.match(parts.path)
+    if not match:
+        return None
+    path = re.sub(r"/(?:job|login)/?$", "/job", parts.path, flags=re.I)
+    return f"{parts.scheme}://{parts.netloc}{path}?in_iframe=1"
+
+
+def _fetch_icims_content(url: str) -> FetchResult | None:
+    """The description from an iCIMS posting's iframe document; None when unavailable
+    (the caller then runs the ordinary HTTP/browser path)."""
+    content_url = icims_content_url(url)
+    if content_url is None:
+        return None
+    try:
+        # No `_DESKTOP_UA`: iCIMS answers a Chrome User-Agent from a non-browser client with
+        # `405 Not Allowed` (observed 2026-10), yet serves the client's own default one.
+        resp = httpx.get(
+            content_url, follow_redirects=True, timeout=30.0, headers={"Accept": "text/html"}
+        )
+        resp.raise_for_status()
+    except Exception:  # noqa: BLE001 - fall back to the generic path
+        return None
+    text = extract_fragment_text(resp.text)
+    if len(text) < _MIN_JD_CHARS:
+        return None
+    closed = form_guards.closed_posting(text) or ""
+    return FetchResult(final_url=url, ats="icims", text=text, method="http", closed=closed)
+
+
 def _looks_like_js_shell(html: str, text: str) -> bool:
     """True when the HTTP body is mostly a SPA shell without enough text."""
     if len(text) >= _MIN_JD_CHARS:
@@ -269,6 +312,9 @@ def fetch_jd(
                 text=workday_text,
                 method="api",
             )
+    icims = _fetch_icims_content(url)
+    if icims is not None:
+        return icims
     try:
         resp = httpx.get(
             url,
