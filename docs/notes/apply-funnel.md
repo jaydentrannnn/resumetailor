@@ -1564,3 +1564,27 @@ Needs you sorts by the latest status timestamp, so recently changed rows appear 
   consent checkbox leftover (`form_routes.is_required_consent`/`tick_consent`; marketing,
   job-alert, talent-community and arbitration boxes excluded) on iCIMS only, via `clicks`.
   The Workday consent path is page-level and never reached the iframe.
+
+## 2026-10-02 — "Ask the AI" panel on the application Answers tab
+
+- `POST /api/jobs/{id}/answer` gained `context`, `full_resume`, `regenerate`; defaults keep the
+  MCP call identical. The panel always sends `full_resume=true`: every master-resume bullet plus
+  an **allowlisted** set of profile facts (`answer_facts.SAFE_PROFILE_FIELDS`: location, work
+  authorization, sponsorship, start date, education). Never contact info, salary, EEO, credentials.
+  Allowlist, not denylist, so a profile field added later stays out until named.
+- Typed context and profile facts are a **trusted guard source**: `check_claims(extra_sources=…)`
+  appends one synthetic bullet, like `_resume_context_bullet`. Anything else the model invents is
+  still discarded after one retry. Autofill (`answer_question_async`) is untouched.
+- Prompt version 3. The applicant-facts rule is appended to `_SYSTEM` only when context or facts
+  are sent, so the legacy prompt is byte-identical; context and facts are in the cache key.
+- Copy-only: nothing is written to answer memory (a typed, company-specific answer would
+  otherwise pollute autofill). Needs a succeeded run: JD and requirements come from it.
+- Employer naming fix (all answer paths): `check_claims` only took names from resume text, so
+  "Why do you want to work at Acme?" drafts naming the employer were discarded after the retry
+  (autofill, MCP and the panel alike). `AnswerExtras` (company / facts / context) now carries the
+  application's employer into the prompt (`<employer>`) and the guard. Only the name: the
+  posting's products and technologies are still blocked, so JD tools never become claimed skills.
+- The answer route pins `config.ONE_OFF_PROFILE` when a run has no `backends.json` (CLI-made
+  runs) instead of falling through to the claude fallback.
+- The panel offers the last fill's open written-answer questions as chips
+  (`frontend/src/lib/askQuestions.ts`): outcome `unanswered`/`manual_review` on a text control.

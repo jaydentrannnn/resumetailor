@@ -1293,6 +1293,12 @@ class AnswerRequest(BaseModel):
 
     question: str = Field(min_length=1, max_length=4000)
     max_chars: int = Field(default=1500, ge=50, le=10_000)
+    #: Extra facts the applicant typed; shown to the model and trusted by the claim guard.
+    context: str = Field(default="", max_length=4000)
+    #: Draw on the whole master resume and safe profile fields, not just this run's bullets.
+    full_resume: bool = False
+    #: Skip the answer cache and draft afresh.
+    regenerate: bool = False
 
 
 class AnswerResponse(BaseModel):

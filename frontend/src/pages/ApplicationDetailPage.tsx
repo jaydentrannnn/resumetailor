@@ -16,6 +16,7 @@ import {
   type Packet,
 } from "../api";
 import { ApplicationReview } from "../components/ApplicationReview";
+import { AskAnswerCard } from "../components/AskAnswerCard";
 import { ResumeQualityNotice } from "../components/ResumeQualityNotice";
 import { DocumentsCard } from "../components/DocumentsCard";
 import { Tabs } from "../components/Tabs";
@@ -23,6 +24,7 @@ import { ExperienceCard } from "../components/ExperienceCard";
 import { SkillsCard } from "../components/SkillsCard";
 import { SubmitEvidenceList } from "../components/SubmitEvidenceList";
 import { applicationStatusLabel } from "../lib/applicationStatus";
+import { unansweredQuestions } from "../lib/askQuestions";
 import { IN_FLIGHT_STATUSES } from "../lib/applyPoll";
 import { useWorkspaceState } from "../state/workspaceState";
 import { isTabClosed } from "../lib/applicationRows";
@@ -439,6 +441,13 @@ export function ApplicationDetailPage() {
             Prepared content was saved with this application and may differ from later Profile
             edits.
           </p>
+          {app.job_id && job?.status === "succeeded" ? (
+            <AskAnswerCard jobId={app.job_id} suggestions={unansweredQuestions(app.fill)} />
+          ) : (
+            <p className="rounded-lg border border-line bg-panel p-4 text-sm text-ink-muted">
+              Tailor this application first to ask the AI a question.
+            </p>
+          )}
           {job?.skills && app.job_id && (
             <SkillsCard plan={job.skills} gaps={job.report?.gaps ?? []} jobId={app.job_id} />
           )}

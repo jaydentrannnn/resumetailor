@@ -508,3 +508,29 @@ export function getOpenTabs(): Promise<{ reachable: boolean; target_ids: string[
 export function applicationsExportUrl(): string {
   return "/api/applications/export.csv";
 }
+
+/** A guarded draft for one free-text application question (`POST /api/jobs/{id}/answer`). */
+export type AnswerDraft = {
+  answer: string;
+  offenders: string[];
+  warnings: string[];
+  source: string;
+  model: string;
+};
+
+/** Draft an answer from the whole resume, safe profile facts and the typed `context`. */
+export function answerApplicationQuestion(
+  jobId: string,
+  body: { question: string; context: string; maxChars: number; regenerate?: boolean },
+): Promise<AnswerDraft> {
+  return request(`/api/jobs/${encodeURIComponent(jobId)}/answer`, {
+    method: "POST",
+    body: JSON.stringify({
+      question: body.question,
+      context: body.context,
+      max_chars: body.maxChars,
+      full_resume: true,
+      regenerate: body.regenerate ?? false,
+    }),
+  });
+}

@@ -29,7 +29,7 @@ from resume_tailor.pipeline.coverletter import check_claims
 from resume_tailor.pipeline.jd import JobRequirements
 
 #: Bumped when ``_SYSTEM`` or the request shape changes so cached answers invalidate.
-_ANSWER_PROMPT_VERSION = 2
+_ANSWER_PROMPT_VERSION = 3
 
 _SENTENCE_END = re.compile(r"(?<=[.!?])\s+")
 
@@ -60,7 +60,20 @@ Absolute rules:
 - Use plain prose in complete sentences. Do not use em dashes or en dashes.
 - Stay within the requested character limit.
 - If the provided material does not support a truthful answer, return an empty answer.
+- You may name the employer given in <employer>. Never present the posting's products, \
+tools, or technologies as the candidate's own experience.
 """
+
+#: Added to ``_SYSTEM`` only when the applicant typed context or profile facts are sent.
+_APPLICANT_RULE = """\
+- Facts inside <candidate_profile> and <candidate_context> were stated by the candidate \
+and are true; use them alongside the resume content. Do not go beyond them.
+"""
+
+
+def _system_for(applicant_facts: bool) -> str:
+    """The system prompt: legacy text, plus the applicant-facts rule when relevant."""
+    return _SYSTEM + _APPLICANT_RULE if applicant_facts else _SYSTEM
 
 
 def normalize_question(question: str) -> str:
@@ -126,10 +139,52 @@ def _truncate_at_sentence(text: str, max_chars: int) -> tuple[str, list[str]]:
     return trimmed.strip(), ["truncated to fit character limit"]
 
 
+@dataclass(frozen=True)
+class AnswerExtras:
+    """What the application and the applicant add beyond the resume and the posting.
+
+    Each field is shown to the model and counts as true for the claim guard: ``company``
+    is the employer the application is for (so an answer may name it), ``facts`` are
+    allowlisted profile lines (`answer_facts`), ``context`` is text the applicant typed.
+    """
+
+    company: str = ""
+    facts: tuple[str, ...] = ()
+    context: str = ""
+
+    def sources(self) -> list[str]:
+        """Text the claim guard accepts alongside the resume."""
+        return [self.company, *self.facts, self.context]
+
+    def applicant_given(self) -> bool:
+        """True when the applicant supplied facts, which adds a rule to the prompt."""
+        return bool(self.facts or self.context.strip())
+
+    def cache_parts(self) -> list[str]:
+        """Cache-key lines; empty when nothing was added, so plain keys stay stable."""
+        if not (self.company.strip() or self.applicant_given()):
+            return []
+        return ["extras", self.company.strip(), self.context.strip(), *self.facts]
+
+    def request_parts(self) -> list[str]:
+        """The tagged blocks this adds to the user message."""
+        parts: list[str] = []
+        if self.company.strip():
+            parts.append(f"<employer>{self.company.strip()}</employer>")
+        if self.facts:
+            parts.append("<candidate_profile>\n" + "\n".join(self.facts) + "\n</candidate_profile>")
+        if self.context.strip():
+            parts.append(f"<candidate_context>\n{self.context.strip()}\n</candidate_context>")
+        return parts
+
+
+_NO_EXTRAS = AnswerExtras()
+
+
 def _cache_path(
     question: str, bullets: dict[str, str], *, max_chars: int,
     resume: MasterResume, requirements: JobRequirements | None, jd_text: str,
-    policy: str = "legacy",
+    policy: str = "legacy", extras: AnswerExtras = _NO_EXTRAS,
 ) -> Path:
     """Return the cache file path for one guarded answer request."""
     payload = "\n".join(
@@ -144,6 +199,7 @@ def _cache_path(
             requirements.seniority if requirements else "",
             jd_text,
             *(f"{key}:{bullets[key]}" for key in sorted(bullets)),
+            *extras.cache_parts(),
         ]
     )
     digest = hashlib.sha256(payload.encode("utf-8")).hexdigest()[:12]
@@ -178,12 +234,13 @@ def _call_model(
     jd_text: str,
     retry_offenders: list[str] | None = None,
     deadline: float | None = None,
+    extras: AnswerExtras = _NO_EXTRAS,
 ) -> AnswerLLM:
     """Issue one ``answer``-purpose LLM call."""
     user_parts = _request_parts(
         question=question, resume=resume, bullets=bullets,
         requirements=requirements, max_chars=max_chars, jd_text=jd_text,
-        retry_offenders=retry_offenders,
+        retry_offenders=retry_offenders, extras=extras,
     )
     client = llm.client_for("answer")
     if deadline is not None:
@@ -195,7 +252,7 @@ def _call_model(
     response = client.messages.parse(
         model=config.model_for("answer"),
         max_tokens=config.max_tokens_for("answer"),
-        system=_SYSTEM,
+        system=_system_for(extras.applicant_given()),
         messages=[{"role": "user", "content": "\n\n".join(user_parts)}],
         output_format=AnswerLLM,
     )
@@ -205,7 +262,7 @@ def _call_model(
 def _request_parts(
     *, question: str, resume: MasterResume, bullets: dict[str, str],
     requirements: JobRequirements | None, max_chars: int, jd_text: str,
-    retry_offenders: list[str] | None,
+    retry_offenders: list[str] | None, extras: AnswerExtras = _NO_EXTRAS,
 ) -> list[str]:
     """Build the same plain-text request for sync and async transports."""
     role_title = requirements.title if requirements else "(unknown role)"
@@ -214,6 +271,7 @@ def _request_parts(
         f"<question max_chars={max_chars}>\n{question.strip()}\n</question>",
         f"<role>{role_title} ({seniority})</role>" if seniority else f"<role>{role_title}</role>",
         f"<resume_content>\n{_format_bullets(resume, bullets)}\n</resume_content>",
+        *extras.request_parts(),
     ]
     if jd_text.strip():
         user_parts.append(f"<job_posting_excerpt>\n{jd_text.strip()[:4000]}\n</job_posting_excerpt>")
@@ -231,11 +289,12 @@ async def _call_model_async(
     *, question: str, resume: MasterResume, bullets: dict[str, str],
     requirements: JobRequirements | None, max_chars: int, jd_text: str,
     retry_offenders: list[str] | None = None, deadline: float,
+    extras: AnswerExtras = _NO_EXTRAS,
 ) -> AnswerLLM:
     user_parts = _request_parts(
         question=question, resume=resume, bullets=bullets,
         requirements=requirements, max_chars=max_chars, jd_text=jd_text,
-        retry_offenders=retry_offenders,
+        retry_offenders=retry_offenders, extras=extras,
     )
     remaining = min(60.0, deadline - time.monotonic())
     if remaining <= 0:
@@ -246,7 +305,7 @@ async def _call_model_async(
             response = await client.messages.parse(
                 model=config.model_for("answer"),
                 max_tokens=config.max_tokens_for("answer"),
-                system=_SYSTEM,
+                system=_system_for(extras.applicant_given()),
                 messages=[{"role": "user", "content": "\n\n".join(user_parts)}],
                 output_format=AnswerLLM,
                 **kwargs,
@@ -266,6 +325,7 @@ def answer_question(
     on_event: events.ProgressCallback | None = None,
     use_cache: bool = True,
     deadline: float | None = None,
+    extras: AnswerExtras = _NO_EXTRAS,
 ) -> AnswerResult:
     """Answer one ATS question from profile canned text or a guarded LLM draft.
 
@@ -289,7 +349,7 @@ def answer_question(
     config.CACHE_DIR.mkdir(parents=True, exist_ok=True)
     cache_path = _cache_path(
         question, bullets, max_chars=max_chars, resume=resume,
-        requirements=requirements, jd_text=jd_text,
+        requirements=requirements, jd_text=jd_text, extras=extras,
     )
     if use_cache and cache_path.is_file():
         events.emit(on_event, "answer", "Reusing cached application answer", cached=True)
@@ -311,9 +371,10 @@ def answer_question(
         max_chars=max_chars,
         jd_text=jd_text,
         deadline=deadline,
+        extras=extras,
     )
     answer_text = draft.answer.strip()
-    check = check_claims(resume, bullets, jd_text, answer_text)
+    check = check_claims(resume, bullets, jd_text, answer_text, extra_sources=extras.sources())
     warnings: list[str] = []
 
     if not check.ok:
@@ -333,9 +394,10 @@ def answer_question(
             jd_text=jd_text,
             retry_offenders=offenders,
             deadline=deadline,
+            extras=extras,
         )
         answer_text = retry.answer.strip()
-        check = check_claims(resume, bullets, jd_text, answer_text)
+        check = check_claims(resume, bullets, jd_text, answer_text, extra_sources=extras.sources())
         if not check.ok:
             offenders = _offenders_from_check(check)
             warnings.append("Answer discarded after guard failure")
@@ -366,7 +428,7 @@ async def answer_question_async(
     question: str, *, resume: MasterResume, bullets: dict[str, str],
     requirements: JobRequirements | None, profile: ApplicantProfile,
     max_chars: int, jd_text: str, deadline: float,
-    use_cache: bool = True,
+    use_cache: bool = True, extras: AnswerExtras = _NO_EXTRAS,
 ) -> AnswerResult:
     """Guarded Apply answer using cancellable async transport.
 
@@ -391,7 +453,7 @@ async def answer_question_async(
     config.CACHE_DIR.mkdir(parents=True, exist_ok=True)
     cache_path = _cache_path(
         question, bullets, max_chars=max_chars, resume=resume,
-        requirements=requirements, jd_text=jd_text, policy="verified-v1",
+        requirements=requirements, jd_text=jd_text, policy="verified-v1", extras=extras,
     )
     if use_cache and cache_path.is_file():
         cached = json.loads(cache_path.read_text(encoding="utf-8"))
@@ -403,21 +465,21 @@ async def answer_question_async(
     draft = await _call_model_async(
         question=question, resume=resume, bullets=bullets,
         requirements=requirements, max_chars=max_chars, jd_text=jd_text,
-        deadline=stage_deadline,
+        deadline=stage_deadline, extras=extras,
     )
     answer_text = draft.answer.strip()
     if not answer_text:
         return AnswerResult(answer="", warnings=["No supported answer"], model=model_label)
-    check = check_claims(resume, bullets, jd_text, answer_text)
+    check = check_claims(resume, bullets, jd_text, answer_text, extra_sources=extras.sources())
     if not check.ok:
         offenders = _offenders_from_check(check)
         retry = await _call_model_async(
             question=question, resume=resume, bullets=bullets,
             requirements=requirements, max_chars=max_chars, jd_text=jd_text,
-            retry_offenders=offenders, deadline=stage_deadline,
+            retry_offenders=offenders, deadline=stage_deadline, extras=extras,
         )
         answer_text = retry.answer.strip()
-        check = check_claims(resume, bullets, jd_text, answer_text)
+        check = check_claims(resume, bullets, jd_text, answer_text, extra_sources=extras.sources())
         if not answer_text or not check.ok:
             return AnswerResult(
                 answer="", offenders=_offenders_from_check(check),

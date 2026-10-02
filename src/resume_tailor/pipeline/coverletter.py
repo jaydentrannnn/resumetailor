@@ -15,6 +15,7 @@ are enforced in code.
 from __future__ import annotations
 
 import hashlib
+from collections.abc import Sequence
 from dataclasses import dataclass, field
 from pathlib import Path
 
@@ -173,6 +174,7 @@ def _claim_fabrication_offenders(
 
 
 _CONTEXT_BULLET_ID = "__cover_resume_context__"
+_ANSWER_CONTEXT_BULLET_ID = "__answer_applicant_context__"
 
 
 def _resume_context_bullet(resume: MasterResume) -> Bullet:
@@ -231,15 +233,22 @@ def check_claims(
     bullets: dict[str, str],
     jd_text: str,
     text: str,
+    *,
+    extra_sources: Sequence[str] = (),
 ) -> ClaimCheck:
     """Check application-answer prose against tailored bullets and the posting.
 
     Unlike the cover-letter path (which only inspects first-person claim sentences),
     every sentence is checked — application answers are often written in resume voice
     without "I". Numbers are allowed when present in the tailored bullets or the JD.
+    ``extra_sources`` is text the applicant supplied themselves (typed context, profile
+    facts): it counts as true, like a bullet, and nothing else is let through.
     Pure: no LLM, no disk writes.
     """
     source = _source_bullets(resume, bullets)
+    extra = " ".join(part.strip() for part in extra_sources if part and part.strip())
+    if extra:
+        source.append(Bullet(id=_ANSWER_CONTEXT_BULLET_ID, text=extra, tags=["answer-context"]))
     terms = _claim_fabrication_offenders(
         [text], source, first_person_only=False
     )

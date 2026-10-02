@@ -16,8 +16,9 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from resume_tailor import config, workspace
+from resume_tailor.apply.answers import answer_facts
 from resume_tailor.apply.answers import profile as apply_profile
-from resume_tailor.apply.answers.answer import answer_question
+from resume_tailor.apply.answers.answer import AnswerExtras, answer_question
 from resume_tailor.apply.driver import browser as apply_browser
 from resume_tailor.apply.funnel import (
     daily_progress,
@@ -328,20 +329,25 @@ def answer_job_question(job_id: str, body: AnswerRequest) -> AnswerResponse:
     resume = data.load()
     profile, _seeded = apply_profile.load_profile()
 
+    facts: tuple[str, ...] = ()
+    if body.full_resume:
+        bullets = answer_facts.all_bullets(resume)
+        facts = tuple(answer_facts.profile_facts(profile))
+    extras = AnswerExtras(
+        company=resolved.metadata.company if resolved.metadata else "",
+        facts=facts,
+        context=body.context,
+    )
+
+    # A web run records its routing; a CLI-made run does not, and an unpinned route would
+    # fall through to the claude fallback, which a default (ollama) install has no key for.
     backends_path = out_dir / "backends.json"
-    if backends_path.is_file():
-        backend_specs = json.loads(backends_path.read_text(encoding="utf-8"))
-        with config.pinned_specs(backend_specs, effort=None):
-            result = answer_question(
-                body.question,
-                resume=resume,
-                bullets=bullets,
-                requirements=requirements,
-                profile=profile,
-                max_chars=body.max_chars,
-                jd_text=jd_text,
-            )
-    else:
+    pinned = (
+        config.pinned_specs(json.loads(backends_path.read_text(encoding="utf-8")), effort=None)
+        if backends_path.is_file()
+        else config.pinned(config.ONE_OFF_PROFILE)
+    )
+    with pinned:
         result = answer_question(
             body.question,
             resume=resume,
@@ -350,6 +356,8 @@ def answer_job_question(job_id: str, body: AnswerRequest) -> AnswerResponse:
             profile=profile,
             max_chars=body.max_chars,
             jd_text=jd_text,
+            use_cache=not body.regenerate,
+            extras=extras,
         )
 
     return AnswerResponse(

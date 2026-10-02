@@ -361,6 +361,7 @@ async def fill_application(
                                         requirements=requirements, profile=applicant,
                                         max_chars=max_chars, jd_text=jd_text,
                                         deadline=deadline,
+                                        extras=answer.AnswerExtras(company=app.company or ""),
                                     )
                                 if drafted.answer and not drafted.warnings:
                                     value = drafted.answer

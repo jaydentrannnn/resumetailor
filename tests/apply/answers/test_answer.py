@@ -5,7 +5,12 @@ from __future__ import annotations
 import pytest
 
 from resume_tailor import config
-from resume_tailor.apply.answers.answer import AnswerLLM, answer_question, normalize_question
+from resume_tailor.apply.answers.answer import (
+    AnswerExtras,
+    AnswerLLM,
+    answer_question,
+    normalize_question,
+)
 from resume_tailor.apply.answers.profile import ApplicantProfile
 from resume_tailor.infra import llm
 from resume_tailor.pipeline.jd import JobRequirements, Keyword
@@ -246,3 +251,97 @@ def test_classifier_outage_keys_nothing(answer_calls):
     # No reply queued: the fake raises, as a backend that is down would.
     asked = [Question("Are you a student?", kind="choice", options=("Yes", "No"))]
     assert classify_questions(asked) == [None]
+
+
+_KUBERNETES = "I built Kubernetes clusters for production workloads."
+
+
+def test_context_fact_passes_the_guard(answer_calls):
+    """A fact the applicant typed counts as true; the prompt carries it and the rule."""
+    resume, bullets = _resume_and_bullets()
+    calls = answer_calls(AnswerLLM(answer=_KUBERNETES))
+    result = answer_question(
+        "Describe your infrastructure experience.",
+        resume=resume, bullets=bullets, requirements=_reqs(), profile=ApplicantProfile(),
+        jd_text="Python role.", use_cache=False,
+        extras=AnswerExtras(
+            context="I built Kubernetes clusters for production workloads at a hackathon.",
+            facts=("City: Irvine",),
+        ),
+    )
+    assert result.answer == _KUBERNETES
+    assert result.offenders == []
+    content = calls[0]["messages"][0]["content"]
+    assert "<candidate_context>" in content and "Kubernetes clusters" in content
+    assert "<candidate_profile>\nCity: Irvine\n</candidate_profile>" in content
+    assert "<candidate_context>" in calls[0]["system"]
+
+
+def test_facts_outside_resume_and_context_are_still_blocked(answer_calls):
+    """Context only whitelists what it says; other invented terms are still discarded."""
+    resume, bullets = _resume_and_bullets()
+    answer_calls(AnswerLLM(answer=_KUBERNETES), AnswerLLM(answer=_KUBERNETES))
+    result = answer_question(
+        "Describe your infrastructure experience.",
+        resume=resume, bullets=bullets, requirements=_reqs(), profile=ApplicantProfile(),
+        jd_text="Python role.", use_cache=False,
+        extras=AnswerExtras(context="I enjoy hiking on weekends."),
+    )
+    assert result.answer == ""
+    assert any("kubernetes" in o.lower() for o in result.offenders)
+
+
+def test_no_context_keeps_the_legacy_prompt(answer_calls):
+    """Without context or facts the system prompt and request carry no applicant blocks."""
+    from resume_tailor.apply.answers import answer as answer_module
+
+    resume, bullets = _resume_and_bullets()
+    calls = answer_calls(AnswerLLM(answer="I improved reliability at Example Corp."))
+    answer_question(
+        "Why us?", resume=resume, bullets=bullets, requirements=_reqs(),
+        profile=ApplicantProfile(), jd_text="Python role.", use_cache=False,
+    )
+    assert calls[0]["system"] == answer_module._SYSTEM
+    assert "<candidate_" not in calls[0]["messages"][0]["content"]
+
+
+def test_context_is_part_of_the_cache_key(answer_calls):
+    """Same question + same context hits the cache; different context asks again."""
+    resume, bullets = _resume_and_bullets()
+    reply = "I improved reliability and throughput for production Python services at Example Corp."
+    calls = answer_calls(*(AnswerLLM(answer=reply) for _ in range(3)))
+    kwargs = dict(
+        resume=resume, bullets=bullets, requirements=_reqs(),
+        profile=ApplicantProfile(), jd_text="Python role.",
+    )
+    answer_question("Why us?", extras=AnswerExtras(context="one"), **kwargs)
+    answer_question("Why us?", extras=AnswerExtras(context="one"), **kwargs)
+    assert len(calls) == 1
+    answer_question("Why us?", extras=AnswerExtras(context="two"), **kwargs)
+    assert len(calls) == 2
+    answer_question("Why us?", extras=AnswerExtras(context="two"), use_cache=False, **kwargs)
+    assert len(calls) == 3
+
+
+def test_answer_may_name_the_employer(answer_calls):
+    """The employer's name passes the guard and is sent as <employer>; its products do not."""
+    resume, bullets = _resume_and_bullets()
+    naming = "I want to join Acme Robotics to keep improving reliability for production services."
+    calls = answer_calls(AnswerLLM(answer=naming))
+    result = answer_question(
+        "Why do you want to work here?", resume=resume, bullets=bullets,
+        requirements=_reqs(), profile=ApplicantProfile(), use_cache=False,
+        jd_text="Acme Robotics builds the Atlas fleet platform.",
+        extras=AnswerExtras(company="Acme Robotics"),
+    )
+    assert result.answer == naming
+    assert "<employer>Acme Robotics</employer>" in calls[0]["messages"][0]["content"]
+    product = "I want to join Acme Robotics to work on the Atlas fleet platform."
+    answer_calls(AnswerLLM(answer=product), AnswerLLM(answer=product))
+    blocked = answer_question(
+        "Why do you want to work here?", resume=resume, bullets=bullets,
+        requirements=_reqs(), profile=ApplicantProfile(), use_cache=False,
+        jd_text="Acme Robotics builds the Atlas fleet platform.",
+        extras=AnswerExtras(company="Acme Robotics"),
+    )
+    assert blocked.answer == "" and "Atlas" in blocked.offenders

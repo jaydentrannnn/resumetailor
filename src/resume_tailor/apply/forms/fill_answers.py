@@ -211,6 +211,7 @@ class _FillAnswers(fill_state._FillState):
             max_chars=maxlength if maxlength > 0 else 1500,
             jd_text=self.jd_text,
             deadline=self.deadline,
+            extras=answer.AnswerExtras(company=self.app.company or self.pkt.company or ""),
         )
         if ans.offenders or not ans.answer:
             self.needs_review.append(label)

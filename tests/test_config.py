@@ -220,6 +220,8 @@ def test_ollama_cloud_profile_with_a_key_has_no_gap(monkeypatch):
 
 def test_local_ollama_needs_no_key(monkeypatch):
     _keys(monkeypatch)
+    # A developer .env may point OLLAMA_BASE_URL at Ollama Cloud; this test is about local.
+    monkeypatch.setattr(config, "OLLAMA_BASE_URL", "http://localhost:11434/v1")
     assert config.credential_gaps("ollama") == []
     assert config.credential_gaps("hybrid") == []
 
