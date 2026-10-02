@@ -2,6 +2,11 @@
 
 This file provides guidance to Claude Code (claude.ai/code) when working with code in this repository.
 
+**`AGENTS.md` mirrors `CLAUDE.md`.** Every `CLAUDE.md` in this repo (root and area
+guides) has an `AGENTS.md` beside it with byte-identical content, for agents that read
+that name. Change both files in the same edit with the same text — never one alone;
+`tests/tooling/test_agent_docs.py` fails when a pair drifts or an `AGENTS.md` is missing.
+
 ResumeTailor takes a master store of resume content, a job description, and the user's own
 `.docx` resume, and produces a tailored resume that is **visually identical to the
 original** — only the words change.
@@ -121,8 +126,8 @@ Docs cite bare module names (`fit.py`, `render.py`); the few that repeat across 
 |---|---|
 | `config`, `workspace` | top-level modules — config globals rebound per workspace |
 | `cli/` | the `tailor.py` CLI: `args` (flags), `run` (one invocation, `_CliRun` steps) |
-| `pipeline/` | `jd`, `rewrite`, `facets`, `expand`, `skills`, `coverletter`, `review`, `propose` (the LLM callers), `fit` (`fit()` + `_FitRun.run`; layers `fit_state` → `fit_shrink` → `fit_topup`; helpers `fit_types`, `fit_lines`, `fit_selection`), `merge`, `include`, `report`, `estimate`, `events`, `runs`, `jd_input`, `jdsim` |
-| `document/` | `render`, `convert`, `docx_text`, `docx_normalize`, `template_*`, `cover_template`, `default_templates`, `calibrate`, `rerender`, `thumbnails` — no LLM, ever |
+| `pipeline/` | `jd`, `rewrite` (+ `rewrite_prompts`, `bullet_checks`), `facets`, `expand`, `skills`, `coverletter`, `review`, `propose` (the LLM callers), `fit` (`fit()` + `_FitRun.run`; layers `fit_state` → `fit_shrink` → `fit_topup`; helpers `fit_types`, `fit_lines`, `fit_selection`), `merge`, `include`, `report`, `estimate`, `events`, `runs`, `jd_input`, `jdsim` |
+| `document/` | `render`, `convert`, `docx_text`, `docx_normalize`, `template_*` (analysis helpers: `analysis_types`, `contact_detect`, `entry_structure`, `field_candidates`, `header_fields`, `section_mapping`, `table_layout`, `profile_validation`), `cover_template`, `default_templates`, `calibrate`, `rerender`, `thumbnails` — no LLM, ever |
 | `content/` | `data` (the master-resume model), `data_transfer`, `edu_dates`, `libraries`, `industries`, `style`, `labels`, `onboarding`, `resume_versions` |
 | `importing/` | `resume_import` (.docx entry; `import_common`, `import_contact`, `import_entries`, `import_merge_match`, `import_merge`, `import_layout`), `resume_import_pdf` (PDF entry + its LLM call; `pdf_patterns`, `pdf_lines`, `pdf_structure`, `pdf_build`), `tag_suggest` |
 | `infra/` | `llm`, `fake_llm`, `logs`, `secret_store`, `housekeeping`, `desktop_main`, `desktop_update` |
