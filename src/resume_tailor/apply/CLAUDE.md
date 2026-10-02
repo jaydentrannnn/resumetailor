@@ -31,7 +31,7 @@ subpackage).
 | `answers/` — question answering | `questions` (one decision layer), `answer` (LLM), `answer_memory`, `salary`, `phone`, `profile`, `model_resolver` (LLM), `hybrid_resolver` (LLM; + `resolver_types`, `page_blockers`, `widget_actions`) |
 | `driver/` — the browser over CDP | `browser`, `cdp_relay`, `controls`, `clicks`, `scanner` (+ `dom_scan.js`) |
 | `forms/` — generic form filling | `fill` (CDP fill entrypoint + `_FillRun.run`; its steps are layered classes over `fill_state._FillState`: `fill_entry`, `fill_wizard`, `fill_answers`, `fill_ats_steps`, `fill_finish`; module helpers in `fill_buttons`, `fill_page`, `fill_widgets`, `fill_outcomes`), `engine` (verified engine), `wizards`, `field_catalog`, `field_matcher` (+ `school_aliases.json`), `field_types`, `form_routes`, `form_guards`, `attachments`, `submit_guard`, `filler.js`, `filler_readiness.js` |
-| `ats/` — per-ATS flows | `workday_flow` (navigation; widgets in `workday_page`, `workday_dropdowns`, `workday_choices`, `workday_prompts`, `workday_skills`), `workday_auth`, `workday_repeaters`, `smartrecruiters_flow`, `adapters`, `ats_hints` |
+| `ats/` — per-ATS flows | `workday_flow` (navigation; widgets in `workday_page`, `workday_dropdowns`, `workday_choices`, `workday_prompts`, `workday_skills`), `workday_auth`, `workday_repeaters` (+ `workday_rows`, `workday_dates`), `smartrecruiters_flow` (+ `smartrecruiters_page`, `_location`, `_entries`), `adapters`, `ats_hints` |
 
 ## Tests
 

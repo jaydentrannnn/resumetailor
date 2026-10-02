@@ -281,7 +281,7 @@ def fill_self_identify(
     Date; Employee ID stays blank (applicants are not employees). Existing answers are
     kept. The disability answer is `fill_choice_checkboxes`'s.
     """
-    from resume_tailor.apply.ats import workday_repeaters  # noqa: PLC0415
+    from resume_tailor.apply.ats import workday_dates
 
     try:
         controls = page.evaluate(SELF_ID_JS) or []
@@ -314,7 +314,7 @@ def fill_self_identify(
                 parts.append(("dateSectionDay", f"{today.day:02d}"))
             parts.append(("dateSectionYear", str(today.year)))
             try:
-                ok = workday_repeaters.fill_date_sections(page, str(control["control"]), parts)
+                ok = workday_dates.fill_date_sections(page, str(control["control"]), parts)
             except Exception:  # noqa: BLE001
                 ok = False
             if ok:

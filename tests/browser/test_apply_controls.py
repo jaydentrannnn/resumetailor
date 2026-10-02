@@ -1010,14 +1010,14 @@ _EXPERIENCE_STEP = '''
 
 
 def test_the_visible_add_button_under_the_heading_is_pressed():
-    from resume_tailor.apply.ats import workday_repeaters
+    from resume_tailor.apply.ats import workday_rows
 
     with sync_playwright() as playwright:
         browser = playwright.chromium.launch(executable_path=str(_EDGE), headless=True)
         try:
             page = browser.new_page()
             page.set_content(_EXPERIENCE_STEP)
-            row = workday_repeaters._add_row(page, "Work Experience", "jobTitle")  # noqa: SLF001
+            row = workday_rows._add_row(page, "Work Experience", "jobTitle")  # noqa: SLF001
             assert row == "workExperience-7--"
             assert page.evaluate("window.pressed") == "work"
         finally:

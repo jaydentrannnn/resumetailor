@@ -8,6 +8,7 @@ from __future__ import annotations
 import re
 from types import SimpleNamespace
 
+from resume_tailor.apply.ats import workday_dates, workday_rows
 from resume_tailor.apply.ats import workday_repeaters as repeaters
 
 
@@ -84,11 +85,11 @@ class _Page:
         return _Control(self, match.group(1))
 
     def evaluate(self, script: str, arg: str) -> list[str] | None:
-        if script == repeaters._CHIPS_JS:  # noqa: SLF001 - no prompt fields in these rows
+        if script == workday_rows._CHIPS_JS:  # noqa: SLF001 - no prompt fields in these rows
             return None
-        if script == repeaters._ADD_BUTTON_JS:  # noqa: SLF001 - no section Add buttons here
+        if script == workday_rows._ADD_BUTTON_JS:  # noqa: SLF001 - no section Add buttons here
             return -1
-        assert script == repeaters._ROWS_JS  # noqa: SLF001
+        assert script == workday_rows._ROWS_JS  # noqa: SLF001
         suffix = f"--{arg}"
         prefixes = [key[: -len(arg)] for key in self.values if key.endswith(suffix)]
         return [prefix for prefix in prefixes if re.fullmatch(r"[A-Za-z]+-\d+--", prefix)]
@@ -107,8 +108,10 @@ def _work_rows(*rows: tuple[str, str]) -> dict[str, str]:
 
 def test_same_title_at_different_companies_stays_distinct():
     page = _Page(_work_rows(("Analyst", "Company A"), ("Analyst", "Company B")))
-    rows = repeaters._rows(page, "jobTitle")  # noqa: SLF001
-    chosen = repeaters._choose_row(page, rows, ("Analyst", "Company B"), ("jobTitle", "companyName"))  # noqa: SLF001
+    rows = workday_rows._rows(page, "jobTitle")  # noqa: SLF001
+    chosen = workday_rows._choose_row(
+        page, rows, ("Analyst", "Company B"), ("jobTitle", "companyName")
+    )  # noqa: SLF001
     assert chosen == "workExperience-2--"
 
 
@@ -117,8 +120,8 @@ def test_two_degrees_at_one_school_stay_distinct():
         "education-1--schoolName": "UC Irvine", "education-1--fieldOfStudy": "Physics",
         "education-2--schoolName": "UC Irvine", "education-2--fieldOfStudy": "Computer Science",
     })
-    rows = repeaters._rows(page, "schoolName")  # noqa: SLF001
-    chosen = repeaters._choose_row(  # noqa: SLF001
+    rows = workday_rows._rows(page, "schoolName")  # noqa: SLF001
+    chosen = workday_rows._choose_row(  # noqa: SLF001
         page, rows, ("UC Irvine", "Computer Science"), ("schoolName", "fieldOfStudy"),
     )
     assert chosen == "education-2--"
@@ -126,15 +129,18 @@ def test_two_degrees_at_one_school_stay_distinct():
 
 def test_only_a_single_blank_row_is_reused():
     page = _Page(_work_rows(("", ""), ("", "")))
-    rows = repeaters._rows(page, "jobTitle")  # noqa: SLF001
-    assert repeaters._choose_row(page, rows, ("Analyst", "Acme"), ("jobTitle", "companyName")) is None  # noqa: SLF001
+    rows = workday_rows._rows(page, "jobTitle")  # noqa: SLF001
+    assert (
+        workday_rows._choose_row(page, rows, ("Analyst", "Acme"), ("jobTitle", "companyName"))
+        is None
+    )  # noqa: SLF001
 
 
 def test_existing_answers_are_never_replaced():
     page = _Page({"workExperience-1--jobTitle": "User's own answer"})
-    assert not repeaters._blank_fill(page, "workExperience-1--", "jobTitle", "Prepared answer")  # noqa: SLF001
+    assert not workday_dates._blank_fill(page, "workExperience-1--", "jobTitle", "Prepared answer")  # noqa: SLF001
     assert page.writes == []
-    assert repeaters._blank_fill(page, "workExperience-1--", "jobTitle", "user's own answer")  # noqa: SLF001
+    assert workday_dates._blank_fill(page, "workExperience-1--", "jobTitle", "user's own answer")  # noqa: SLF001
 
 
 def test_split_date_types_month_and_year_and_keeps_existing():
@@ -145,11 +151,11 @@ def test_split_date_types_month_and_year_and_keeps_existing():
         f"{prefix}endDate-dateSectionMonth-input": "03",
         f"{prefix}endDate-dateSectionYear-input": "2024",
     })
-    assert repeaters._fill_date(page, prefix, "startDate", "2025-01", with_month=True)  # noqa: SLF001
+    assert workday_dates._fill_date(page, prefix, "startDate", "2025-01", with_month=True)  # noqa: SLF001
     assert page.values[f"{prefix}startDate-dateSectionMonth-input"] == "01"
     assert page.values[f"{prefix}startDate-dateSectionYear-input"] == "2025"
     # A different existing end date is the applicant's; it is kept and flagged.
-    assert not repeaters._fill_date(page, prefix, "endDate", "2025-06", with_month=True)  # noqa: SLF001
+    assert not workday_dates._fill_date(page, prefix, "endDate", "2025-06", with_month=True)  # noqa: SLF001
     assert page.values[f"{prefix}endDate-dateSectionYear-input"] == "2024"
 
 
@@ -164,7 +170,9 @@ def test_a_date_typed_into_nothing_is_typed_again():
     # CACI (2026-09): the keys went to whatever held focus and the section stayed empty.
     page = _start_page()
     page.drop_typing = 1
-    assert repeaters._fill_date(page, "workExperience-1--", "startDate", "2025-01", with_month=True)  # noqa: SLF001
+    assert workday_dates._fill_date(
+        page, "workExperience-1--", "startDate", "2025-01", with_month=True
+    )  # noqa: SLF001
     assert page.values[f"{_START}Month-input"] == "01"
     assert page.values[f"{_START}Year-input"] == "2025"
     assert page.typed == ["01", "01", "2025"]  # the month twice, the year once
@@ -174,14 +182,18 @@ def test_a_date_typed_into_nothing_is_typed_again():
 def test_a_date_that_never_lands_is_reported_not_claimed():
     page = _start_page()
     page.drop_typing = 2  # both attempts at the month are lost
-    assert not repeaters._fill_date(page, "workExperience-1--", "startDate", "2025-01", with_month=True)  # noqa: SLF001
+    assert not workday_dates._fill_date(
+        page, "workExperience-1--", "startDate", "2025-01", with_month=True
+    )  # noqa: SLF001
     assert page.values[f"{_START}Month-input"] == ""
     assert page.typed.count("01") == 2  # retried once, not forever
 
 
 def test_a_partial_month_is_retyped_not_taken_for_the_applicants_own_date():
     page = _start_page(month="0")  # one keystroke of "03" landed
-    assert repeaters._fill_date(page, "workExperience-1--", "startDate", "2025-03", with_month=True)  # noqa: SLF001
+    assert workday_dates._fill_date(
+        page, "workExperience-1--", "startDate", "2025-03", with_month=True
+    )  # noqa: SLF001
     assert page.values[f"{_START}Month-input"] == "03"
     assert page.values[f"{_START}Year-input"] == "2025"
     assert "Backspace" in page.pressed  # the stray "0" is cleared first
@@ -189,13 +201,17 @@ def test_a_partial_month_is_retyped_not_taken_for_the_applicants_own_date():
 
 def test_an_existing_matching_date_is_not_typed_again():
     page = _start_page(month="03", year="2025")
-    assert repeaters._fill_date(page, "workExperience-1--", "startDate", "2025-03", with_month=True)  # noqa: SLF001
+    assert workday_dates._fill_date(
+        page, "workExperience-1--", "startDate", "2025-03", with_month=True
+    )  # noqa: SLF001
     assert page.typed == [] and page.pressed == []
 
 
 def test_an_existing_different_date_is_kept_even_when_it_looks_partial():
     page = _start_page(month="1", year="2024")  # "1" is not the start of "03"
-    assert not repeaters._fill_date(page, "workExperience-1--", "startDate", "2025-03", with_month=True)  # noqa: SLF001
+    assert not workday_dates._fill_date(
+        page, "workExperience-1--", "startDate", "2025-03", with_month=True
+    )  # noqa: SLF001
     assert page.values[f"{_START}Month-input"] == "1"
     assert page.values[f"{_START}Year-input"] == "2024"
     assert page.typed == []
@@ -206,14 +222,14 @@ def test_a_row_started_by_an_earlier_run_is_completed_not_duplicated():
         "education-1--schoolName": "UC Irvine", "education-1--fieldOfStudy": "",
         "education-2--schoolName": "", "education-2--fieldOfStudy": "",
     })
-    rows = repeaters._rows(page, "schoolName")  # noqa: SLF001
-    chosen = repeaters._choose_row(  # noqa: SLF001
+    rows = workday_rows._rows(page, "schoolName")  # noqa: SLF001
+    chosen = workday_rows._choose_row(  # noqa: SLF001
         page, rows, ("UC Irvine", "Computer Science"), ("schoolName", "fieldOfStudy"),
     )
     assert chosen == "education-1--"
     # A partial row that disagrees on a filled field is someone else's.
     page.values["education-1--schoolName"] = "Stanford"
-    assert repeaters._choose_row(  # noqa: SLF001
+    assert workday_rows._choose_row(  # noqa: SLF001
         page, rows, ("UC Irvine", "Computer Science"), ("schoolName", "fieldOfStudy"),
     ) == "education-2--"
 
@@ -243,15 +259,17 @@ def test_a_failed_school_search_still_fills_the_rest_of_the_education_row(monkey
         written.append(field)
         return True
 
-    monkeypatch.setattr(repeaters, "_section_present", lambda *_a: True)
-    monkeypatch.setattr(repeaters, "_rows", lambda *_a: ["education-1--"])
-    monkeypatch.setattr(repeaters, "_choose_row", lambda *_a, **_k: "education-1--")
-    monkeypatch.setattr(repeaters, "_text_or_prompt", text_or_prompt)
-    monkeypatch.setattr(repeaters, "_blank_fill", lambda *_a: True)
-    monkeypatch.setattr(repeaters, "_value", lambda *_a: "")
-    monkeypatch.setattr(repeaters, "_school_field", lambda *_a: "schoolName")
-    monkeypatch.setattr(repeaters, "_ctl", lambda *_a: SimpleNamespace(count=lambda: 1))
-    monkeypatch.setattr(repeaters, "_fill_date", lambda _p, _r, field, _v, **_k: written.append(field) or True)
+    monkeypatch.setattr(workday_rows, "_section_present", lambda *_a: True)
+    monkeypatch.setattr(workday_rows, "_rows", lambda *_a: ["education-1--"])
+    monkeypatch.setattr(workday_rows, "_choose_row", lambda *_a, **_k: "education-1--")
+    monkeypatch.setattr(workday_dates, "_text_or_prompt", text_or_prompt)
+    monkeypatch.setattr(workday_dates, "_blank_fill", lambda *_a: True)
+    monkeypatch.setattr(workday_rows, "_value", lambda *_a: "")
+    monkeypatch.setattr(workday_dates, "_school_field", lambda *_a: "schoolName")
+    monkeypatch.setattr(workday_rows, "_ctl", lambda *_a: SimpleNamespace(count=lambda: 1))
+    monkeypatch.setattr(
+        workday_dates, "_fill_date", lambda _p, _r, field, _v, **_k: written.append(field) or True
+    )
     packet = SimpleNamespace(experience=[], education=[PacketEducation(
         school="University of California - Irvine", major="Computer Science", degree_level="Bachelors",
         start="2023-09", end="2027-06",
@@ -272,14 +290,14 @@ def test_rows_ignore_error_elements_and_accept_a_school_prompt():
     # Upbound: the school control is `education-N--school` (a prompt), and Workday's
     # `error1-education-N--school` shares the suffix.
     page = _Page({"education-235--school": "", "error1-education-235--school": "", "education-235--fieldOfStudy": ""})
-    assert repeaters._rows(page, "schoolName") == []  # noqa: SLF001
-    assert repeaters._school_field(page) == "school"  # noqa: SLF001
-    assert repeaters._school_field(page, "education-235--") == "school"  # noqa: SLF001
+    assert workday_rows._rows(page, "schoolName") == []  # noqa: SLF001
+    assert workday_dates._school_field(page) == "school"  # noqa: SLF001
+    assert workday_dates._school_field(page, "education-235--") == "school"  # noqa: SLF001
 
 
 def test_a_committed_school_chip_identifies_its_row():
     page = _Page({"education-1--schoolName": "University of California, Irvine", "education-1--fieldOfStudy": ""})
-    row = repeaters._choose_row(  # noqa: SLF001
+    row = workday_rows._choose_row(  # noqa: SLF001
         page, ["education-1--"], ("University of California - Irvine", "Computer Science"),
         ("schoolName", "fieldOfStudy"),
     )
@@ -305,11 +323,11 @@ def _education_run(monkeypatch, page: _Page, education: list) -> tuple[list[str]
         return f"education-{n}--"
 
     def text_or_prompt(_page, row, field, value, *, key):
-        return repeaters._blank_fill(page, row, field, value)  # noqa: SLF001
+        return workday_dates._blank_fill(page, row, field, value)  # noqa: SLF001
 
-    monkeypatch.setattr(repeaters, "_add_row", add_row)
-    monkeypatch.setattr(repeaters, "_text_or_prompt", text_or_prompt)
-    monkeypatch.setattr(repeaters, "_fill_date", lambda *_a, **_k: True)
+    monkeypatch.setattr(workday_rows, "_add_row", add_row)
+    monkeypatch.setattr(workday_dates, "_text_or_prompt", text_or_prompt)
+    monkeypatch.setattr(workday_dates, "_fill_date", lambda *_a, **_k: True)
     packet = SimpleNamespace(experience=[], education=education)
     filled, review = repeaters.fill(page, packet, lambda _m: None)
     return adds, filled, review
@@ -328,7 +346,7 @@ def test_continue_reuses_the_education_row_whose_major_the_applicant_changed(mon
 
 def test_running_the_education_step_twice_leaves_one_row(monkeypatch):
     page = _Page({})
-    monkeypatch.setattr(repeaters, "_section_present", lambda *_a: True)
+    monkeypatch.setattr(workday_rows, "_section_present", lambda *_a: True)
     entries = [_edu("UC Irvine", "Computer Science")]
     first_adds, _, _ = _education_run(monkeypatch, page, entries)
     # A one-result search committed a longer major than the profile's.
@@ -362,9 +380,9 @@ def test_rows_already_covering_every_entry_block_the_add(monkeypatch):
 
 
 def test_a_major_match_is_tried_both_ways():
-    assert repeaters._same("computer and information science", "computer science", "major")  # noqa: SLF001
-    assert repeaters._same("computer science", "computer and information science", "major")  # noqa: SLF001
-    assert not repeaters._same("stanford university", "uc irvine", "school")  # noqa: SLF001
+    assert workday_rows._same("computer and information science", "computer science", "major")  # noqa: SLF001
+    assert workday_rows._same("computer science", "computer and information science", "major")  # noqa: SLF001
+    assert not workday_rows._same("stanford university", "uc irvine", "school")  # noqa: SLF001
 
 
 def test_a_row_rendered_after_the_wait_is_still_returned(monkeypatch):
@@ -372,7 +390,7 @@ def test_a_row_rendered_after_the_wait_is_still_returned(monkeypatch):
         waits = 0
 
         def evaluate(self, script, arg):
-            if script == repeaters._ADD_BUTTON_JS:  # noqa: SLF001
+            if script == workday_rows._ADD_BUTTON_JS:  # noqa: SLF001
                 return 0
             return super().evaluate(script, arg)
 
@@ -384,7 +402,7 @@ def test_a_row_rendered_after_the_wait_is_still_returned(monkeypatch):
     page = _SlowPage({"education-1--schoolName": "UC Irvine"})
     monkeypatch.setattr(repeaters.clicks, "safe_click", lambda *_a, **_k: None)
     monkeypatch.setattr(page, "locator", lambda _s: _AddButton(), raising=False)
-    assert repeaters._add_row(page, "Education", "schoolName") == "education-2--"  # noqa: SLF001
+    assert workday_rows._add_row(page, "Education", "schoolName") == "education-2--"  # noqa: SLF001
 
 
 class _AddButton:
@@ -410,7 +428,7 @@ class _AddPage(_Page):
         self.add_args: list[object] = []
 
     def evaluate(self, script, arg):
-        if script == repeaters._ADD_BUTTON_JS:  # noqa: SLF001
+        if script == workday_rows._ADD_BUTTON_JS:  # noqa: SLF001
             self.add_args.append(arg)
             return 0
         return super().evaluate(script, arg)
@@ -441,7 +459,7 @@ def test_a_blocked_add_press_is_retried_after_closing_the_popup(monkeypatch):
     # press timed out. The popup is closed and the press tried once more.
     page = _AddPage({}, blocked=1)
     monkeypatch.setattr(repeaters.clicks, "safe_click", lambda *_a, **_k: page.press())
-    row = repeaters._add_row(page, "Education", "schoolName", dismiss=page.dismiss)  # noqa: SLF001
+    row = workday_rows._add_row(page, "Education", "schoolName", dismiss=page.dismiss)  # noqa: SLF001
     assert row == "education-1--"
     assert (page.presses, page.dismissed) == (2, 1)
     # Only the visible button under the heading is marked and clicked by its tag.
@@ -451,7 +469,7 @@ def test_a_blocked_add_press_is_retried_after_closing_the_popup(monkeypatch):
 def test_an_add_press_that_stays_blocked_names_the_blocker_once_per_section(monkeypatch):
     page = _AddPage({}, blocked=99)
     monkeypatch.setattr(repeaters.clicks, "safe_click", lambda *_a, **_k: page.press())
-    monkeypatch.setattr(repeaters, "_fill_date", lambda *_a, **_k: True)
+    monkeypatch.setattr(workday_dates, "_fill_date", lambda *_a, **_k: True)
     packet = SimpleNamespace(experience=[], education=[_edu("UC Irvine", "Computer Science"),
                                                         _edu("Irvine Valley College", "Mathematics")])
     messages: list[str] = []
@@ -467,9 +485,12 @@ def test_an_add_press_that_stays_blocked_names_the_blocker_once_per_section(monk
 def test_an_education_row_without_year_controls_is_not_flagged(monkeypatch):
     # F5 (2026-09) asks school, degree, field of study and GPA, but no years attended.
     page = _Page({"education-1--schoolName": "", "education-1--fieldOfStudy": ""})
-    monkeypatch.setattr(repeaters, "_text_or_prompt",
-                        lambda _p, row, field, value, *, key: repeaters._blank_fill(page, row, field, value))  # noqa: SLF001
-    monkeypatch.setattr(repeaters, "_fill_date", lambda *_a, **_k: False)  # would fail if tried
+    monkeypatch.setattr(
+        workday_dates,
+        "_text_or_prompt",
+        lambda _p, row, field, value, *, key: workday_dates._blank_fill(page, row, field, value),
+    )  # noqa: SLF001
+    monkeypatch.setattr(workday_dates, "_fill_date", lambda *_a, **_k: False)  # would fail if tried
     packet = SimpleNamespace(experience=[], education=[_edu("UC Irvine", "Computer Science")])
     filled, review = repeaters.fill(page, packet, lambda _m: None)
     assert review == []
@@ -498,7 +519,7 @@ def test_a_date_lost_in_a_background_tab_is_retyped_in_front():
     page = _FrontPage({f"{_START}Month-input": "", f"{_START}Year-input": ""})
     page.drop_typing = 2  # both background attempts at the month are lost
     notes: list[str] = []
-    assert repeaters._fill_date_retrying(  # noqa: SLF001
+    assert workday_dates._fill_date_retrying(  # noqa: SLF001
         page, "workExperience-1--", "startDate", "2025-01", with_month=True, note=notes.append,
     )
     assert page.fronted == 1
@@ -509,7 +530,7 @@ def test_a_date_lost_in_a_background_tab_is_retyped_in_front():
 
 def test_a_date_that_lands_is_not_brought_to_front():
     page = _FrontPage({f"{_START}Month-input": "", f"{_START}Year-input": ""})
-    assert repeaters._fill_date_retrying(  # noqa: SLF001
+    assert workday_dates._fill_date_retrying(  # noqa: SLF001
         page, "workExperience-1--", "startDate", "2025-01", with_month=True, note=lambda _m: None,
     )
     assert page.fronted == 0
@@ -527,8 +548,8 @@ def test_an_add_press_that_shows_no_new_row_uses_the_row_rendered_late(monkeypat
         page.values["workExperience-2--companyName"] = ""
         return None
 
-    monkeypatch.setattr(repeaters, "_add_row", add_row)
-    monkeypatch.setattr(repeaters, "_fill_date", lambda *_a, **_k: True)
+    monkeypatch.setattr(workday_rows, "_add_row", add_row)
+    monkeypatch.setattr(workday_dates, "_fill_date", lambda *_a, **_k: True)
     packet = SimpleNamespace(education=[], experience=[
         SimpleNamespace(title="Analyst", employer="Acme", location="", description="",
                         start="2024-01", end="2024-06", current=False),
@@ -551,7 +572,7 @@ def test_recover_row_presses_add_again_when_nothing_rendered():
         page.values["workExperience-2--jobTitle"] = ""
         return "workExperience-2--"
 
-    row = repeaters._recover_row(page, "jobTitle", {"workExperience-1--"}, press_again)  # noqa: SLF001
+    row = workday_rows._recover_row(page, "jobTitle", {"workExperience-1--"}, press_again)  # noqa: SLF001
     assert row == "workExperience-2--" and again == [1]
 
 
@@ -568,7 +589,7 @@ def test_dates_cleared_by_a_later_row_are_retyped_before_continue(monkeypatch):
         return True
 
     page = _FrontPage(_work_rows(("Analyst", "Acme")))
-    monkeypatch.setattr(repeaters, "_fill_date", fill_date)
+    monkeypatch.setattr(workday_dates, "_fill_date", fill_date)
     packet = SimpleNamespace(education=[], experience=[
         SimpleNamespace(title="Analyst", employer="Acme", location="", description="",
                         start="2024-01", end="2024-06", current=False),

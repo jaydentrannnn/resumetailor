@@ -10,6 +10,7 @@ from resume_tailor import config
 from resume_tailor.apply.answers import hybrid_resolver
 from resume_tailor.apply.ats import (
     smartrecruiters_flow,
+    smartrecruiters_page,
     workday_choices,
     workday_dropdowns,
     workday_flow,
@@ -189,7 +190,7 @@ class _FillAtsSteps(fill_state._FillState):
         )
         # The screening step's controls read as "*" to the generic pass; the flow answered
         # or listed them, so those records are dropped too.
-        handled = smartrecruiters_flow.HANDLED_SELECTORS
+        handled = smartrecruiters_page.HANDLED_SELECTORS
         owned = handled | smartrecruiters_flow.screening_selectors(page)
         for key in ("filled", "leftovers", "long_text"):
             merged[key] = [

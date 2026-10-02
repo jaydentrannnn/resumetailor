@@ -9,7 +9,7 @@ from typing import Any
 from resume_tailor import config
 from resume_tailor.apply.answers import hybrid_resolver, questions, resolver_types
 from resume_tailor.apply.ats import (
-    smartrecruiters_flow,
+    smartrecruiters_page,
     workday_dropdowns,
     workday_flow,
     workday_page,
@@ -59,7 +59,7 @@ class _FillWizard(fill_answers._FillAnswers, fill_ats_steps._FillAtsSteps):
         self._scan_frames()
         if self.is_workday and self._workday_blank_step():
             return fill_outcomes._CONTINUE
-        if self.is_smartrecruiters and smartrecruiters_flow.is_form(self.page):
+        if self.is_smartrecruiters and smartrecruiters_page.is_form(self.page):
             self._smartrecruiters_step()
         self._upload_attachments()
         if self._stop_if_out_of_time("Fill stopped before this form step was complete"):

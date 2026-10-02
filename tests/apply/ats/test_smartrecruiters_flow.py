@@ -16,6 +16,11 @@ from pathlib import Path
 
 import pytest
 
+from resume_tailor.apply.ats import (
+    smartrecruiters_entries,
+    smartrecruiters_location,
+    smartrecruiters_page,
+)
 from resume_tailor.apply.ats import smartrecruiters_flow as sr
 from resume_tailor.apply.funnel.packet import Packet, PacketEducation, PacketExperience
 
@@ -134,46 +139,82 @@ def _no_progress(_message: str) -> None:
 
 
 def test_month_year_is_the_pickers_typed_format():
-    assert sr.month_year("2026-06") == "06/2026"
-    assert sr.month_year("2026-6-01") == "06/2026"
-    assert sr.month_year("2026") == ""  # no month: left for review, never guessed
-    assert sr.month_year("") == ""
+    assert smartrecruiters_location.month_year("2026-06") == "06/2026"
+    assert smartrecruiters_location.month_year("2026-6-01") == "06/2026"
+    assert (
+        smartrecruiters_location.month_year("2026") == ""
+    )  # no month: left for review, never guessed
+    assert smartrecruiters_location.month_year("") == ""
 
 
 def test_split_location_tells_a_state_from_a_country():
-    assert sr.split_location("Glendale, California") == ("Glendale", "California", "United States")
-    assert sr.split_location("Irvine, CA") == ("Irvine", "CA", "United States")
-    assert sr.split_location("Ho Chi Minh City, Vietnam") == ("Ho Chi Minh City", "", "Vietnam")
-    assert sr.split_location("") == ("", "", "")
+    assert smartrecruiters_location.split_location("Glendale, California") == (
+        "Glendale",
+        "California",
+        "United States",
+    )
+    assert smartrecruiters_location.split_location("Irvine, CA") == (
+        "Irvine",
+        "CA",
+        "United States",
+    )
+    assert smartrecruiters_location.split_location("Ho Chi Minh City, Vietnam") == (
+        "Ho Chi Minh City",
+        "",
+        "Vietnam",
+    )
+    assert smartrecruiters_location.split_location("") == ("", "", "")
 
 
 def test_pick_location_needs_one_city_in_the_right_state():
     options = [("US_AZ_CITY_glendale", "Glendale, AZ, US"), ("US_CA_CITY_glendale", "Glendale, CA, US"),
                ("goToManualLocationMode", "Cannot find your city? Click here to fill in manually")]
-    assert sr.pick_location(options, "Glendale", "California") == "US_CA_CITY_glendale"
-    assert sr.pick_location(options, "Glendale", "CA") == "US_CA_CITY_glendale"
-    assert sr.pick_location(options, "Glendale") is None  # two Glendales: not confident
-    assert sr.pick_location(options, "Irvine", "California") is None
-    assert sr.pick_location([options[2]], "Cannot find your city? Click here to fill in manually") is None
+    assert (
+        smartrecruiters_location.pick_location(options, "Glendale", "California")
+        == "US_CA_CITY_glendale"
+    )
+    assert (
+        smartrecruiters_location.pick_location(options, "Glendale", "CA") == "US_CA_CITY_glendale"
+    )
+    assert (
+        smartrecruiters_location.pick_location(options, "Glendale") is None
+    )  # two Glendales: not confident
+    assert smartrecruiters_location.pick_location(options, "Irvine", "California") is None
+    assert (
+        smartrecruiters_location.pick_location(
+            [options[2]], "Cannot find your city? Click here to fill in manually"
+        )
+        is None
+    )
     vn = [("VN_SG_CITY_ho_chi_minh_city", "Ho Chi Minh City, SG, VN")]
-    assert sr.pick_location(vn, "Ho Chi Minh City", "", "Vietnam") == "VN_SG_CITY_ho_chi_minh_city"
-    assert sr.pick_location(vn, "Ho Chi Minh City", "", "United States") is None
+    assert (
+        smartrecruiters_location.pick_location(vn, "Ho Chi Minh City", "", "Vietnam")
+        == "VN_SG_CITY_ho_chi_minh_city"
+    )
+    assert (
+        smartrecruiters_location.pick_location(vn, "Ho Chi Minh City", "", "United States") is None
+    )
 
 
 def test_pick_text_prefers_the_catalog_spelling_then_the_typed_text():
     options = [("#spl-custom-option", "Acme"), ("Acme", "Acme Irvine, US")]
-    assert sr.pick_text(options, "acme") == "Acme"
-    assert sr.pick_text([("#spl-custom-option", "Acme Corp")], "Acme Corp") == "#spl-custom-option"
-    assert sr.pick_text([("Acme Holdings", "Acme Holdings")], "Acme") is None
+    assert smartrecruiters_location.pick_text(options, "acme") == "Acme"
+    assert (
+        smartrecruiters_location.pick_text([("#spl-custom-option", "Acme Corp")], "Acme Corp")
+        == "#spl-custom-option"
+    )
+    assert smartrecruiters_location.pick_text([("Acme Holdings", "Acme Holdings")], "Acme") is None
 
 
 def test_a_committed_location_is_checked_against_the_profile():
     committed = _LOCATIONS["US_CA_CITY_fountain_valley"]
-    assert sr.location_matches(committed, "Fountain Valley", "California", "United States")
-    assert sr.location_matches(committed, "Fountain Valley", "CA", "USA")
-    assert not sr.location_matches(committed, "Fountain Valley", "Arizona")
-    assert not sr.location_matches(committed, "Irvine")
-    assert not sr.location_matches("Fountain Valley", "Fountain Valley")
+    assert smartrecruiters_location.location_matches(
+        committed, "Fountain Valley", "California", "United States"
+    )
+    assert smartrecruiters_location.location_matches(committed, "Fountain Valley", "CA", "USA")
+    assert not smartrecruiters_location.location_matches(committed, "Fountain Valley", "Arizona")
+    assert not smartrecruiters_location.location_matches(committed, "Irvine")
+    assert not smartrecruiters_location.location_matches("Fountain Valley", "Fountain Valley")
 
 
 # --- City ---------------------------------------------------------------------------
@@ -181,34 +222,40 @@ def test_a_committed_location_is_checked_against_the_profile():
 
 def test_city_commits_the_matching_option(browser):
     page = _open(browser)
-    filled, review = sr.fill_city(page, _packet().fields)
+    filled, review = smartrecruiters_location.fill_city(page, _packet().fields)
     assert review == []
     assert filled == [{"label": "City", "value": "Fountain Valley, CA, US"}]
-    host = page.locator(sr._LOCATION)
+    host = page.locator(smartrecruiters_page._LOCATION)
     assert host.evaluate("h => h.value.id") == "US_CA_CITY_fountain_valley"
 
 
 def test_an_ambiguous_city_is_cleared_and_left_for_review(browser):
     page = _open(browser)
-    filled, review = sr.fill_city(page, {"city": "Springfield", "state": "", "country": "United States"})
+    filled, review = smartrecruiters_location.fill_city(
+        page, {"city": "Springfield", "state": "", "country": "United States"}
+    )
     assert filled == []
     assert review == ["City: no confident match for Springfield"]
-    field = page.locator(f"{sr._LOCATION} input[role=combobox]")
+    field = page.locator(f"{smartrecruiters_page._LOCATION} input[role=combobox]")
     assert field.input_value() == ""  # no half-typed text that reads as filled
 
 
 def test_a_committed_city_is_kept(browser):
     page = _open(browser)
-    page.locator(sr._LOCATION).evaluate("(h, loc) => { h.value = loc; }", _LOCATIONS["US_IL_CITY_springfield"])
-    filled, review = sr.fill_city(page, _packet().fields)
+    page.locator(smartrecruiters_page._LOCATION).evaluate(
+        "(h, loc) => { h.value = loc; }", _LOCATIONS["US_IL_CITY_springfield"]
+    )
+    filled, review = smartrecruiters_location.fill_city(page, _packet().fields)
     assert review == []
     assert filled == [{"label": "City", "value": "Springfield, IL, US", "state": "preserved"}]
-    assert page.locator(sr._LOCATION).evaluate("h => h.value.city") == "Springfield"
+    assert (
+        page.locator(smartrecruiters_page._LOCATION).evaluate("h => h.value.city") == "Springfield"
+    )
 
 
 def test_a_form_without_a_city_asks_nothing(browser):
     page = _open(browser, "form_wellmark.html")
-    assert sr.fill_city(page, _packet().fields) == ([], [])
+    assert smartrecruiters_location.fill_city(page, _packet().fields) == ([], [])
 
 
 # --- Experience ---------------------------------------------------------------------
@@ -216,26 +263,30 @@ def test_a_form_without_a_city_asks_nothing(browser):
 
 def test_an_experience_entry_is_added_saved_and_listed(browser):
     page = _open(browser)
-    filled, review = sr.fill_experience(page, _packet(), _no_progress)
+    filled, review = smartrecruiters_entries.fill_experience(page, _packet(), _no_progress)
     assert review == []
     assert filled == [{"label": "Experience 1 (Data Intern at Acme Corp)", "value": "Data Intern at Acme Corp"}]
-    assert sr._entries(page, "experience") == [{"title": "Data Intern", "company": "Acme Corp"}]
+    assert smartrecruiters_entries._entries(page, "experience") == [
+        {"title": "Data Intern", "company": "Acme Corp"}
+    ]
     assert page.evaluate("window.__sr.saves") == 1
 
 
 def test_a_listed_experience_entry_is_reused_not_duplicated(browser):
     page = _open(browser, replace={"experience": _fixture("experience_saved.html")})
-    assert sr._entries(page, "experience") == [{"title": "Data Intern", "company": "Acme Corp"}]
-    filled, review = sr.fill_experience(page, _packet(), _no_progress)
+    assert smartrecruiters_entries._entries(page, "experience") == [
+        {"title": "Data Intern", "company": "Acme Corp"}
+    ]
+    filled, review = smartrecruiters_entries.fill_experience(page, _packet(), _no_progress)
     assert review == []
     assert filled[0]["state"] == "preserved"
     assert page.evaluate("window.__sr.saves") == 0
-    assert len(sr._entries(page, "experience")) == 1
+    assert len(smartrecruiters_entries._entries(page, "experience")) == 1
 
 
 def test_an_entry_already_open_for_editing_is_not_touched(browser):
     page = _open(browser, replace={"experience": _fixture("experience_editor.html")})
-    filled, review = sr.fill_experience(page, _packet(), _no_progress)
+    filled, review = smartrecruiters_entries.fill_experience(page, _packet(), _no_progress)
     assert filled == []
     assert review == ["Experience: an entry is open for editing; finish it, then Continue fill"]
     assert page.evaluate("window.__sr.saves") == 0
@@ -244,7 +295,9 @@ def test_an_entry_already_open_for_editing_is_not_touched(browser):
 def test_a_current_role_ticks_the_box_instead_of_an_end_date(browser):
     page = _open(browser)
     current = PacketExperience(title="Data Intern", employer="Acme Corp", start="2026-06", current=True)
-    filled, review = sr.fill_experience(page, _packet(experience=[current]), _no_progress)
+    filled, review = smartrecruiters_entries.fill_experience(
+        page, _packet(experience=[current]), _no_progress
+    )
     assert review == []
     assert len(filled) == 1
     assert "Present" in page.locator("[data-test=experience-entry-date]").inner_text()
@@ -254,7 +307,9 @@ def test_an_entry_that_cannot_be_saved_is_left_open_with_the_rest_for_review(bro
     page = _open(browser)
     undated = PacketExperience(title="Data Intern", employer="Acme Corp")  # To/From are required
     later = PacketExperience(title="Tutor", employer="Library", start="2024-01", end="2024-05")
-    filled, review = sr.fill_experience(page, _packet(experience=[undated, later]), _no_progress)
+    filled, review = smartrecruiters_entries.fill_experience(
+        page, _packet(experience=[undated, later]), _no_progress
+    )
     assert filled == []
     label = "Experience 1 (Data Intern at Acme Corp)"
     assert f"{label}: start date" in review
@@ -267,7 +322,9 @@ def test_an_unmatched_office_location_is_left_blank_and_flagged(browser):
     page = _open(browser)
     elsewhere = PacketExperience(title="Data Intern", employer="Acme Corp", location="Glendale",
                                  start="2025-06", end="2025-09")
-    filled, review = sr.fill_experience(page, _packet(experience=[elsewhere]), _no_progress)
+    filled, review = smartrecruiters_entries.fill_experience(
+        page, _packet(experience=[elsewhere]), _no_progress
+    )
     # Two Glendales and no state: the entry is saved without an office location.
     assert review == ["Experience 1 (Data Intern at Acme Corp): office location (Glendale)"]
     assert filled[0]["state"] == "partial"
@@ -278,17 +335,17 @@ def test_an_unmatched_office_location_is_left_blank_and_flagged(browser):
 
 def test_an_education_entry_is_added_with_the_catalog_school(browser):
     page = _open(browser)
-    filled, review = sr.fill_education(page, _packet(), _no_progress)
+    filled, review = smartrecruiters_entries.fill_education(page, _packet(), _no_progress)
     assert review == []
     assert filled == [{"label": "Education 1 (State University)", "value": "State University"}]
-    assert sr._entries(page, "education") == [
+    assert smartrecruiters_entries._entries(page, "education") == [
         {"school": "State University", "major": "Computer Science", "degree": "Bachelor of Science"},
     ]
 
 
 def test_a_listed_education_entry_is_reused(browser):
     page = _open(browser, replace={"education": _fixture("education_saved.html")})
-    filled, review = sr.fill_education(page, _packet(), _no_progress)
+    filled, review = smartrecruiters_entries.fill_education(page, _packet(), _no_progress)
     assert review == []
     assert filled[0]["state"] == "preserved"
     assert page.evaluate("window.__sr.saves") == 0
@@ -298,10 +355,10 @@ def test_a_second_degree_at_the_same_school_is_added(browser):
     page = _open(browser, replace={"education": _fixture("education_saved.html")})
     masters = PacketEducation(school="State University", degree_level="Master of Science",
                               major="Statistics", start="2027-09", end="2029-06")
-    filled, review = sr.fill_education(page, _packet(education=[masters]), _no_progress)
+    filled, review = smartrecruiters_entries.fill_education(page, _packet(education=[masters]), _no_progress)
     assert review == []
     assert "state" not in filled[0]
-    assert len(sr._entries(page, "education")) == 2
+    assert len(smartrecruiters_entries._entries(page, "education")) == 2
 
 
 # --- Resume -------------------------------------------------------------------------
@@ -341,16 +398,16 @@ def test_the_cover_letter_goes_into_an_empty_message_box(browser):
     filled, review = sr.fill_message(page, "I would like to join the team.")
     assert review == []
     assert filled == [{"label": "Message to the Hiring Team", "value": "cover letter"}]
-    assert page.locator(sr._MESSAGE).input_value() == "I would like to join the team."
+    assert page.locator(smartrecruiters_page._MESSAGE).input_value() == "I would like to join the team."
 
 
 def test_a_written_message_is_kept(browser):
     page = _open(browser)
-    page.locator(sr._MESSAGE).fill("My own note.")
+    page.locator(smartrecruiters_page._MESSAGE).fill("My own note.")
     filled, review = sr.fill_message(page, "I would like to join the team.")
     assert review == []
     assert filled[0]["state"] == "preserved"
-    assert page.locator(sr._MESSAGE).input_value() == "My own note."
+    assert page.locator(smartrecruiters_page._MESSAGE).input_value() == "My own note."
 
 
 # --- Whole form ---------------------------------------------------------------------
@@ -375,7 +432,7 @@ def test_the_whole_form_is_filled_and_verified(browser, tmp_path):
 
 def test_past_the_deadline_no_entry_is_added(browser):
     page = _open(browser)
-    filled, review = sr.fill_experience(page, _packet(), _no_progress, deadline=0.0)
+    filled, review = smartrecruiters_entries.fill_experience(page, _packet(), _no_progress, deadline=0.0)
     assert filled == []
     assert review == ["Experience 1 (Data Intern at Acme Corp)"]
 
