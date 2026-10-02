@@ -707,7 +707,7 @@ substring alone:
   forced by the user (paragraph id → kind, or `null` for "not a section"), bypassing every
   heuristic gate for just those paragraphs — `template_analyze._analyze_document`'s
   `overrides` parameter. Needs the original upload's bytes without re-uploading:
-  `template_ops._cache_upload`/`_load_cached_upload` keys a short-lived cache by the
+  `template_uploads._cache_upload`/`_load_cached_upload` keys a short-lived cache by the
   upload's own sha256 under `output/.../template/uploads/`, cleared on install or after
   24h.
 - **`POST /api/template/preview/source`** and **`POST /api/template/preview/draft`** give
@@ -753,7 +753,7 @@ Business) for students whose own file can't become a template, or who only have 
 `default_templates.build(name)` is the only producer of their baseline `.docx`. It
 generates them with python-docx at install time and never commits them, since `.docx`
 files stay out of git. The build is byte-reproducible, so the hash is stable. Installing
-one (`POST /api/template/defaults/{name}/install`, `template_ops.install_default`) goes
+one (`POST /api/template/defaults/{name}/install`, `template_defaults.install_default`) goes
 through the same analyze → `template_build` → verify → commit path as an upload. When the
 library already holds those exact bytes, that entry is re-activated instead. Every design
 carries every section kind, so the analyzer picks `section_mode="generic"`. Business lists
@@ -1145,7 +1145,7 @@ fixed overhead the fit loop never trims.
   pack store and resets `config.TAG_ALIASES`/`VERB_FAMILIES` per test, so a bare run never
   picks up a developer's own approved packs.
 - **A staged/profile-based template build has an in-process fallback** —
-  `template_ops._install_with_profile` shells out to `scripts/build_template.py` first,
+  `template_install._install_with_profile` shells out to `scripts/build_template.py` first,
   but falls back to calling `template_build.build_from_profile` directly whenever the
   subprocess exits non-zero *or* doesn't write the staged output path. A test stubbing
   `_run_build` to skip the subprocess (returning e.g. `(1, "stub: subprocess skipped")`

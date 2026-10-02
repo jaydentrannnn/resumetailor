@@ -14,7 +14,7 @@ from resume_tailor.content.data import load
 from resume_tailor.document import template_profile
 from resume_tailor.pipeline.fit_types import FitResult
 from resume_tailor.web import jobs as jobs_mod
-from resume_tailor.web import template_ops
+from resume_tailor.web import template_install, template_ops
 from resume_tailor.web.schemas import JobSettings
 
 # `bootstrap` is imported directly (not via `resume_tailor.workspace.bootstrap`) because
@@ -387,7 +387,7 @@ def test_profile_template_install_works_on_a_freshly_created_profile(
         tb_mod.build_from_profile(Path(source), out, loaded_profile)
         return 0, "stub build ok"
 
-    monkeypatch.setattr(template_ops, "_run_build", fake_build)
+    monkeypatch.setattr(template_install, "_run_build", fake_build)
 
     upload = _resume_docx_bytes()
     mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"

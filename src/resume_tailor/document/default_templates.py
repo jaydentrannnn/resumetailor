@@ -3,7 +3,7 @@
 This module is the only producer of the default templates' baseline documents. Each
 one is built here with python-docx from synthetic sample content. It then goes through
 the same analyze → profile → `template_build` → verify path as an uploaded file
-(`web/template_ops.install_default`). A default template therefore follows the same
+(`web/template_defaults.install_default`). A default template therefore follows the same
 contract as a student's own export, and its `main_template.docx` still comes only from
 `template_build`.
 

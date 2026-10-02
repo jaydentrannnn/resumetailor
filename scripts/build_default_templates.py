@@ -1,7 +1,7 @@
 """Write the built-in starter templates to a folder so you can inspect them.
 
 The app never reads this output: it builds a default template in memory when a student
-installs it (`web/template_ops.install_default`). This script runs the same steps
+installs it (`web/template_defaults.install_default`). This script runs the same steps
 (baseline → analyze → `template_build`) and, with ``--pdf``, renders each template
 filled with its own sample content. Use it to check a design change by eye.
 

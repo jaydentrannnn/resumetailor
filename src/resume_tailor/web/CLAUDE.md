@@ -23,7 +23,9 @@ workspaces: `docs/REFERENCE.md` §2.
 
 - `app.py` — FastAPI app, router inclusion order, static serving.
 - `jobs.py` — the bounded job queue and the tailoring job runner.
-- `template_ops.py` — Template tab filesystem ops (inspect, preview, analyze, install).
+- `template_ops.py` — the Template tab's shared `LOCK`, limits and errors; the ops live in
+  `template_info`, `template_library_store`, `template_library`, `template_preview`,
+  `template_uploads`, `template_install`, `template_defaults`.
 - `schemas.py` — request/response models (keep in sync with `frontend/src/api.ts`).
 - `routes/` — one router module per area (`jobs`, `applications`, `extension`, `resume`,
   `template`, `libraries`, `config`, `workspaces`, `system`, `setup`, ...).

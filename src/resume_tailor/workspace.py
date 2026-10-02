@@ -244,7 +244,7 @@ def ensure_master_resume(workspace_id: str | None = None) -> bool:
     if one was written.
 
     A workspace without this file is broken in three separate places — the editor 404s,
-    `template_ops._smoke_render` (and therefore every template install) raises
+    `template_install._smoke_render` (and therefore every template install) raises
     `FileNotFoundError`, and a tailoring run cannot start — so a profile created without
     `copy_from` has to start with *something* loadable rather than nothing. Only ever
     writes when the file is absent, so it can never clobber real content.

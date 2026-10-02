@@ -229,7 +229,7 @@ class JobQueue:
     #: `_jobs` without bound: every job keeps its full `jd_text` (up to 50k chars),
     #: every progress event (including a full traceback on failure), and its final
     #: report forever. Pruned opportunistically in `submit`, oldest terminal job first,
-    #: the same way `template_ops._prune_upload_cache` runs opportunistically rather
+    #: the same way `template_uploads._prune_upload_cache` runs opportunistically rather
     #: than on a timer.
     _MAX_RETAINED_JOBS = 50
 

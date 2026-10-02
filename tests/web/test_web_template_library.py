@@ -5,8 +5,13 @@ from __future__ import annotations
 import hashlib
 
 from resume_tailor import config
-from resume_tailor.document import default_templates
-from resume_tailor.web import template_ops
+from resume_tailor.document import calibrate, default_templates
+from resume_tailor.web import (
+    template_defaults,
+    template_install,
+    template_library_store,
+    template_ops,
+)
 from tests.web.helpers import _minimal_docx_bytes, _point_templates_at, _resume_upload_with_profile
 
 
@@ -47,8 +52,8 @@ def test_upload_template_with_calibrate_flag(client, tmp_path, monkeypatch):
             log="CHARS_PER_LINE = 99\nLINES_PER_PAGE = 48",
         )
 
-    monkeypatch.setattr(template_ops, "_run_build", stub_run_build)
-    monkeypatch.setattr(template_ops.calibrate, "run", fake_calibrate)
+    monkeypatch.setattr(template_install, "_run_build", stub_run_build)
+    monkeypatch.setattr(calibrate, "run", fake_calibrate)
     monkeypatch.setattr(config, "reload_calibration", lambda: (99, 48, "test"))
 
     upload, profile = _resume_upload_with_profile()
@@ -105,7 +110,7 @@ def test_upload_with_label_creates_library_entry(client, tmp_path, monkeypatch):
     def stub_run_build(**_kwargs):
         return 1, "stub: subprocess skipped"
 
-    monkeypatch.setattr(template_ops, "_run_build", stub_run_build)
+    monkeypatch.setattr(template_install, "_run_build", stub_run_build)
 
     upload, profile = _resume_upload_with_profile()
     res = c.post(
@@ -148,7 +153,7 @@ def test_activate_library_switches_live_baseline(client, tmp_path, monkeypatch):
     def stub_run_build(**_kwargs):
         return 1, "stub: subprocess skipped"
 
-    monkeypatch.setattr(template_ops, "_run_build", stub_run_build)
+    monkeypatch.setattr(template_install, "_run_build", stub_run_build)
     second, profile = _resume_upload_with_profile()
     assert second != first
     res = c.post(
@@ -195,15 +200,15 @@ def test_starter_card_marks_the_copy_that_is_in_use(monkeypatch):
     name = default_templates.names()[0]
     sha = hashlib.sha256(default_templates.build(name)).hexdigest()
     metas = [{"id": "newer", "sha256": sha}, {"id": "older", "sha256": sha}]
-    monkeypatch.setattr(template_ops, "_iter_library_metas", lambda: metas)
-    monkeypatch.setattr(template_ops, "_library_active_meta", lambda: ("newer", "x"))
-    card = next(t for t in template_ops.list_defaults().templates if t.name == name)
+    monkeypatch.setattr(template_library_store, "_iter_library_metas", lambda: metas)
+    monkeypatch.setattr(template_library_store, "_library_active_meta", lambda: ("newer", "x"))
+    card = next(t for t in template_defaults.list_defaults().templates if t.name == name)
     assert (card.library_id, card.is_active) == ("newer", True)
-    monkeypatch.setattr(template_ops, "_library_active_meta", lambda: ("older", "x"))
-    card = next(t for t in template_ops.list_defaults().templates if t.name == name)
+    monkeypatch.setattr(template_library_store, "_library_active_meta", lambda: ("older", "x"))
+    card = next(t for t in template_defaults.list_defaults().templates if t.name == name)
     assert (card.library_id, card.is_active) == ("older", True)
-    monkeypatch.setattr(template_ops, "_library_active_meta", lambda: (None, None))
-    card = next(t for t in template_ops.list_defaults().templates if t.name == name)
+    monkeypatch.setattr(template_library_store, "_library_active_meta", lambda: (None, None))
+    card = next(t for t in template_defaults.list_defaults().templates if t.name == name)
     assert (card.library_id, card.is_active) == ("newer", False)
 
 
@@ -220,7 +225,7 @@ def test_rename_library_rejects_duplicate_label(client, tmp_path, monkeypatch):
     def stub_run_build(**_kwargs):
         return 1, "stub: subprocess skipped"
 
-    monkeypatch.setattr(template_ops, "_run_build", stub_run_build)
+    monkeypatch.setattr(template_install, "_run_build", stub_run_build)
     upload, profile = _resume_upload_with_profile()
     c.post(
         "/api/template",
@@ -256,7 +261,7 @@ def test_delete_library_refuses_active(client, tmp_path, monkeypatch):
     def stub_run_build(**_kwargs):
         return 1, "stub: subprocess skipped"
 
-    monkeypatch.setattr(template_ops, "_run_build", stub_run_build)
+    monkeypatch.setattr(template_install, "_run_build", stub_run_build)
     upload, profile = _resume_upload_with_profile()
     c.post(
         "/api/template",
@@ -300,7 +305,7 @@ def test_library_cap_refuses_twenty_first(client, tmp_path, monkeypatch):
     def stub_run_build(**_kwargs):
         return 1, "stub: subprocess skipped"
 
-    monkeypatch.setattr(template_ops, "_run_build", stub_run_build)
+    monkeypatch.setattr(template_install, "_run_build", stub_run_build)
     upload, profile = _resume_upload_with_profile()
     first = c.post(
         "/api/template",
@@ -386,7 +391,7 @@ def test_calibrate_route_reports_result_and_refuses_while_busy(client, tmp_path,
             log="CHARS_PER_LINE = 95", warnings=["anchor drift"],
         )
 
-    monkeypatch.setattr(template_ops.calibrate, "run", fake_run)
+    monkeypatch.setattr(calibrate, "run", fake_run)
     monkeypatch.setattr(config, "reload_calibration", lambda: (95, 50, "test"))
     res = c.post("/api/template/calibrate")
     assert res.status_code == 200
@@ -397,7 +402,7 @@ def test_calibrate_route_reports_result_and_refuses_while_busy(client, tmp_path,
     def boom(**_):
         raise RuntimeError("No PDF engine found")
 
-    monkeypatch.setattr(template_ops.calibrate, "run", boom)
+    monkeypatch.setattr(calibrate, "run", boom)
     body = c.post("/api/template/calibrate").json()
     assert body["ok"] is False and "No PDF engine" in body["log"]
 
@@ -411,7 +416,7 @@ def test_default_templates_install_and_reuse_the_library_entry(client, tmp_path,
     """POST /api/template/defaults/{name}/install builds the design like an upload."""
     c, _ = client
     templates = _point_templates_at(tmp_path, monkeypatch)
-    monkeypatch.setattr(template_ops, "_run_build", lambda **_k: (1, "stub: in-process"))
+    monkeypatch.setattr(template_install, "_run_build", lambda **_k: (1, "stub: in-process"))
 
     listed = c.get("/api/template/defaults").json()["templates"]
     assert [t["name"] for t in listed] == ["classic", "compact", "business"]
@@ -444,8 +449,8 @@ def test_default_templates_install_and_reuse_the_library_entry(client, tmp_path,
 def test_default_template_label_avoids_a_taken_one(client, tmp_path, monkeypatch):
     c, _ = client
     _point_templates_at(tmp_path, monkeypatch)
-    monkeypatch.setattr(template_ops, "_run_build", lambda **_k: (1, "stub: in-process"))
-    monkeypatch.setattr(template_ops, "_label_taken", lambda label, **_k: label == "Business")
+    monkeypatch.setattr(template_install, "_run_build", lambda **_k: (1, "stub: in-process"))
+    monkeypatch.setattr(template_library_store, "_label_taken", lambda label, **_k: label == "Business")
     res = c.post("/api/template/defaults/business/install")
     assert res.status_code == 200, res.text
     assert res.json()["info"]["active_label"] == "Business (2)"

@@ -943,7 +943,7 @@ class TemplateRemapRequest(BaseModel):
     """Body for `POST /api/template/analyze/remap`.
 
     `source_sha256` must match a sha the wizard already analyzed in this process
-    lifetime (see `template_ops._cache_upload`) — the remap step never re-uploads the
+    lifetime (see `template_uploads._cache_upload`) — the remap step never re-uploads the
     file. `overrides` maps a heading paragraph id to a user-confirmed kind
     (`experience`/`education`/`projects`/`skills`/`list`), or `null` to say "this is
     not a section" regardless of what the heuristics concluded.

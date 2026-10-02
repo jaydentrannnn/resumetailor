@@ -131,7 +131,7 @@ class _RequestSizeLimitMiddleware:
     existing 10 MB limit (`template_ops._MAX_UPLOAD_BYTES`).
 
     A check inside a route handler (e.g. `len(raw) > _MAX_UPLOAD_BYTES` after
-    `await file.read()`, as `template_ops._validate_upload_bytes` does) is too late to
+    `await file.read()`, as `template_uploads._validate_upload_bytes` does) is too late to
     bound memory use: `File(...)`/`Form(...)` dependency resolution fully consumes and
     parses the body *before* any handler code runs, so the oversized payload is already
     resident by the time a handler could reject it. This is a raw ASGI middleware

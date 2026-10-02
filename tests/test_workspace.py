@@ -226,7 +226,7 @@ def test_create_without_copy_from_seeds_a_loadable_resume(isolated_roots):
     """A profile created without duplicating is immediately usable.
 
     Regression: it used to be created with only settings.json, which left it broken in
-    three places at once — the editor 404d, `template_ops._smoke_render` raised
+    three places at once — the editor 404d, `template_install._smoke_render` raised
     FileNotFoundError so every template install failed, and no run could start.
     """
     from resume_tailor.content import data

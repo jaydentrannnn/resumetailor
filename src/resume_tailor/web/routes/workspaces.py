@@ -10,7 +10,7 @@ from resume_tailor import (
     workspace,
 )
 from resume_tailor.apply.funnel import daily_progress
-from resume_tailor.web import template_ops
+from resume_tailor.web import template_info, template_ops
 from resume_tailor.web.jobs import get_queue
 from resume_tailor.web.routes.config import (
     _config_response,
@@ -108,7 +108,7 @@ def activate_workspace(workspace_id: str) -> WorkspaceActivateResponse:
             entries=[_workspace_entry_out(e) for e in entries],
             config=_config_response(),
             settings=activated_settings,
-            template=template_ops.info(),
+            template=template_info.info(),
         )
 
 

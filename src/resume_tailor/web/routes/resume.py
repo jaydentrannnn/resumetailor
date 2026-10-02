@@ -20,7 +20,7 @@ from resume_tailor.content.data import MasterResume
 from resume_tailor.document import template_analyze
 from resume_tailor.importing import resume_import, resume_import_pdf, tag_suggest
 from resume_tailor.pipeline import propose
-from resume_tailor.web import template_ops
+from resume_tailor.web import template_ops, template_uploads
 from resume_tailor.web.schemas import (
     MasterResumeImportResponse,
     MasterResumeMergeResponse,
@@ -269,9 +269,9 @@ def _import_docx(raw: bytes, filename: str, known_tags: set[str]) -> resume_impo
     bullets always become a list here (it is a private copy, never a template). A layout
     that can't become a template is still read, in reading order."""
     try:
-        prepared = template_ops.prepare_upload(raw, filename, convert_bullets=True)
+        prepared = template_uploads.prepare_upload(raw, filename, convert_bullets=True)
         raw, filename = prepared.raw, prepared.filename
-        template_ops._validate_upload_bytes(raw, filename)
+        template_uploads._validate_upload_bytes(raw, filename)
         with tempfile.NamedTemporaryFile(suffix=".docx", delete=False) as tmp:
             tmp.write(raw)
             tmp_path = Path(tmp.name)

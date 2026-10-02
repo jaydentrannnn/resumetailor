@@ -9,9 +9,9 @@ from pathlib import Path
 import pytest
 
 from resume_tailor import config
-from resume_tailor.document import template_profile
+from resume_tailor.document import render, template_build, template_profile
 from resume_tailor.web import jobs as jobs_mod
-from resume_tailor.web import template_ops
+from resume_tailor.web import template_info, template_install, template_uploads
 from resume_tailor.web.schemas import JobSettings
 from tests.web.helpers import (
     _DOCX_MIME,
@@ -115,7 +115,7 @@ def test_upload_template_backs_up_and_rebuilds(client, tmp_path, monkeypatch):
     def stub_run_build(**_kwargs):
         return 1, "stub: subprocess skipped"
 
-    monkeypatch.setattr(template_ops, "_run_build", stub_run_build)
+    monkeypatch.setattr(template_install, "_run_build", stub_run_build)
 
     new_bytes, profile = _resume_upload_with_profile()
 
@@ -161,9 +161,9 @@ def test_upload_template_restores_baseline_on_build_failure(client, tmp_path, mo
     def failing_build_from_profile(src, dst, profile):
         raise RuntimeError("could not find section heading(s): WORK EXPERIENCES.")
 
-    monkeypatch.setattr(template_ops, "_run_build", failing_run_build)
+    monkeypatch.setattr(template_install, "_run_build", failing_run_build)
     monkeypatch.setattr(
-        template_ops.template_build, "build_from_profile", failing_build_from_profile
+        template_build, "build_from_profile", failing_build_from_profile
     )
 
     upload, profile = _resume_upload_with_profile()
@@ -207,8 +207,8 @@ def test_template_preview_uses_stubbed_render(client, tmp_path, monkeypatch):
         target.write_bytes(b"%PDF-1.4\n%\xe2\xe3\xcf\xd3\ntrailer\n%%EOF\n")
         return target
 
-    monkeypatch.setattr(template_ops.render, "render", fake_render)
-    monkeypatch.setattr(template_ops.render, "to_pdf", fake_to_pdf)
+    monkeypatch.setattr(render, "render", fake_render)
+    monkeypatch.setattr(render, "to_pdf", fake_to_pdf)
 
     res = c.get("/api/template/preview.pdf")
     assert res.status_code == 200
@@ -247,8 +247,8 @@ def test_preview_cache_invalidates_when_master_resume_changes(client, tmp_path, 
         target.write_bytes(b"%PDF-1.4\n%%EOF\n")
         return target
 
-    monkeypatch.setattr(template_ops.render, "render", fake_render)
-    monkeypatch.setattr(template_ops.render, "to_pdf", fake_to_pdf)
+    monkeypatch.setattr(render, "render", fake_render)
+    monkeypatch.setattr(render, "to_pdf", fake_to_pdf)
 
     assert c.get("/api/template/preview.pdf").status_code == 200
     assert len(renders) == 1
@@ -256,7 +256,7 @@ def test_preview_cache_invalidates_when_master_resume_changes(client, tmp_path, 
     assert c.get("/api/template/preview.pdf").status_code == 200
     assert len(renders) == 1
 
-    _, pdf_path = template_ops._preview_paths()
+    _, pdf_path = template_info._preview_paths()
     future = pdf_path.stat().st_mtime + 10
     resume_path.write_text(resume_path.read_text(encoding="utf-8"), encoding="utf-8")
     os.utime(resume_path, (future, future))
@@ -392,11 +392,11 @@ def test_remap_template_rejects_non_hex_sha_before_touching_disk(
     client, tmp_path, monkeypatch, sha
 ):
     """`source_sha256` is interpolated straight into a filesystem path in
-    `template_ops._load_cached_upload` (`_upload_cache_dir() / f"{sha}.docx"`), and
+    `template_uploads._load_cached_upload` (`_upload_cache_dir() / f"{sha}.docx"`), and
     arrives in a JSON body rather than a path param, so nothing else stops a
     traversal value from reaching it. The schema-level pattern constraint
     (`web/schemas.py`'s `_SHA256_HEX_PATTERN`) must reject it with FastAPI's own 422,
-    before `template_ops.remap_upload` — and therefore any path/file access — ever
+    before `template_uploads.remap_upload` — and therefore any path/file access — ever
     runs. Covers the traversal case the existing `"0" * 64` test above cannot: that
     value is well-formed hex, so it only ever probes the "valid shape, unknown upload"
     400 path, never the "malformed shape" 422 path."""
@@ -434,7 +434,7 @@ def test_preview_source_returns_pdf(client, tmp_path, monkeypatch):
         target.write_bytes(b"%PDF-1.4\n%%EOF\n")
         return target
 
-    monkeypatch.setattr(template_ops.render, "to_pdf", fake_to_pdf)
+    monkeypatch.setattr(render, "to_pdf", fake_to_pdf)
 
     analyzed = c.post(
         "/api/template/analyze",
@@ -463,7 +463,7 @@ def test_preview_draft_returns_pdf(client, tmp_path, monkeypatch):
         target.write_bytes(b"%PDF-1.4\n%%EOF\n")
         return target
 
-    monkeypatch.setattr(template_ops.render, "to_pdf", fake_to_pdf)
+    monkeypatch.setattr(render, "to_pdf", fake_to_pdf)
 
     analyzed = c.post(
         "/api/template/analyze",
@@ -490,7 +490,7 @@ def test_preview_draft_reports_a_bad_mapping_as_422_not_503(client, tmp_path, mo
     """`template_build.build_from_profile` raises plain `RuntimeError` for every
     mapping problem (a missing field, a paragraph id out of range, …) —
     indistinguishable, to a bare `except RuntimeError`, from `render.to_pdf` genuinely
-    having no PDF backend available. `template_ops.preview_draft` re-raises the build
+    having no PDF backend available. `template_preview.preview_draft` re-raises the build
     failure as `TemplateBuildError`, and the route must catch that ahead of its
     `except RuntimeError` branch (it's a subclass), so a bad *mapping* reads as
     "fix your profile" (422, with the build log) rather than "install LibreOffice"
@@ -503,7 +503,7 @@ def test_preview_draft_reports_a_bad_mapping_as_422_not_503(client, tmp_path, mo
     def failing_build(source, output, profile):
         raise RuntimeError("Experience mapping is missing a job title.")
 
-    monkeypatch.setattr(template_ops.template_build, "build_from_profile", failing_build)
+    monkeypatch.setattr(template_build, "build_from_profile", failing_build)
 
     analyzed = c.post(
         "/api/template/analyze",
@@ -535,7 +535,7 @@ def test_preview_draft_reports_no_pdf_backend_as_503(client, tmp_path, monkeypat
     def failing_to_pdf(docx_path, pdf_path=None, **_kwargs):
         raise RuntimeError("No PDF backend is configured.")
 
-    monkeypatch.setattr(template_ops.render, "to_pdf", failing_to_pdf)
+    monkeypatch.setattr(render, "to_pdf", failing_to_pdf)
 
     analyzed = c.post(
         "/api/template/analyze",
@@ -568,7 +568,7 @@ def test_install_clears_the_upload_cache(client, tmp_path, monkeypatch):
         tb_mod.build_from_profile(Path(source), out, loaded_profile)
         return 0, "stub build ok"
 
-    monkeypatch.setattr(template_ops, "_run_build", fake_build)
+    monkeypatch.setattr(template_install, "_run_build", fake_build)
 
     upload = _resume_docx_bytes()
     analyzed = c.post(
@@ -597,7 +597,7 @@ def test_prune_upload_cache_deletes_preview_pdfs_too(client, tmp_path, monkeypat
     _c, _q = client  # ensures config.OUTPUT_DIR is already redirected under tmp_path
     _point_templates_at(tmp_path, monkeypatch)
 
-    cache_dir = template_ops._upload_cache_dir()
+    cache_dir = template_uploads._upload_cache_dir()
     cache_dir.mkdir(parents=True, exist_ok=True)
 
     old_docx = cache_dir / "aaaa.docx"
@@ -613,7 +613,7 @@ def test_prune_upload_cache_deletes_preview_pdfs_too(client, tmp_path, monkeypat
     for f in (old_docx, old_source_pdf, old_draft_pdf):
         os.utime(f, (day_and_a_half_ago, day_and_a_half_ago))
 
-    template_ops._prune_upload_cache()
+    template_uploads._prune_upload_cache()
 
     assert not old_docx.exists()
     assert not old_source_pdf.exists(), "the .docx-only glob left this PDF behind"

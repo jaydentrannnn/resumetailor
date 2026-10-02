@@ -119,14 +119,14 @@ def test_watch_stdin_fires_at_end_of_file():
 
 def test_frozen_build_never_spawns_itself_for_a_template_build(monkeypatch):
     """Frozen, sys.executable is the server: a spawned "build" would be a second server."""
-    from resume_tailor.web import template_ops
+    from resume_tailor.web import template_install
 
     def _spawned(*_args, **_kwargs):
         raise AssertionError("the frozen app must build templates in-process")
 
     monkeypatch.setattr(sys, "frozen", True, raising=False)
-    monkeypatch.setattr(template_ops.subprocess, "run", _spawned)
-    code, log = template_ops._run_build()  # noqa: SLF001
+    monkeypatch.setattr(subprocess, "run", _spawned)
+    code, log = template_install._run_build()  # noqa: SLF001
     assert code != 0 and "in-process" in log
 
 
