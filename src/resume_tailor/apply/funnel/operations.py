@@ -23,7 +23,7 @@ from resume_tailor.apply.discovery import identity
 from resume_tailor.apply.driver import browser
 from resume_tailor.apply.forms import fill, submit_guard
 from resume_tailor.apply.funnel import attention as attention_mod
-from resume_tailor.apply.funnel import daily, preparation, store
+from resume_tailor.apply.funnel import daily, daily_progress, preparation, store
 from resume_tailor.infra import logs
 from resume_tailor.web.schemas import ApplyOperationRequest, ApplySettings, JobSettings
 
@@ -323,7 +323,7 @@ def _effective_model(request: ApplyOperationRequest) -> str:
     """The model the operation's LLM calls will actually use, for the UI label.
 
     Fill runs on the Apply page's autofill model (the request's provider/model); Find
-    and Prepare tailor and screen with the Tailor tab's routing (`daily._job_settings`).
+    and Prepare tailor and screen with the Tailor tab's routing (`daily_rows._job_settings`).
     """
     if request.action == "fill":
         return f"{request.model_provider}:{request.model_name.strip()}"
@@ -367,7 +367,7 @@ def start(request: ApplyOperationRequest) -> ApplyOperation:
         current = active()
         label = current.operation_id if current else "unknown"
         raise RuntimeError(f"Apply operation {label} is already active")
-    if daily.daily_busy():
+    if daily_progress.daily_busy():
         _RUN_LOCK.release()
         raise RuntimeError("Another Apply workflow is already running")
     applicant_snapshot = None
@@ -833,7 +833,7 @@ def start_review_action(
                     return existing
     if not _RUN_LOCK.acquire(blocking=False):
         raise RuntimeError("Another Apply operation owns the browser")
-    if daily.daily_busy():
+    if daily_progress.daily_busy():
         _RUN_LOCK.release()
         raise RuntimeError("Another Apply workflow owns the browser")
     operation = ApplyOperation(

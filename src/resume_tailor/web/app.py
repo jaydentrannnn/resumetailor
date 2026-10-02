@@ -23,6 +23,7 @@ from starlette.exceptions import HTTPException as StarletteHTTPException
 
 from resume_tailor import config, workspace
 from resume_tailor.apply.funnel import daily as apply_daily
+from resume_tailor.apply.funnel import daily_progress
 from resume_tailor.apply.funnel import operations as apply_operations
 from resume_tailor.apply.funnel import scheduler as apply_scheduler
 from resume_tailor.content import data_transfer
@@ -39,7 +40,7 @@ _scheduler_stop = threading.Event()
 
 def _apply_busy() -> bool:
     """Another Apply workflow owns the browser; the scheduled run waits a tick."""
-    return apply_daily.daily_busy() or apply_operations.active() is not None
+    return daily_progress.daily_busy() or apply_operations.active() is not None
 
 
 def _start_daily_run() -> None:

@@ -16,7 +16,7 @@ from pydantic import BaseModel, Field
 from starlette.background import BackgroundTask
 
 from resume_tailor import config, workspace
-from resume_tailor.apply.funnel import daily as apply_daily
+from resume_tailor.apply.funnel import daily_progress
 from resume_tailor.apply.funnel import operations as apply_operations
 from resume_tailor.apply.funnel import store as apply_store
 from resume_tailor.content import data_transfer, libraries
@@ -120,7 +120,7 @@ def test_pdf() -> dict[str, Any]:
 def _require_idle(action: str) -> None:
     if get_queue().busy():
         raise HTTPException(409, f"A tailoring run is in progress; wait before {action}.")
-    if apply_daily.daily_busy() or apply_operations.active() is not None:
+    if daily_progress.daily_busy() or apply_operations.active() is not None:
         raise HTTPException(409, f"An Apply operation is running; wait before {action}.")
 
 

@@ -108,7 +108,7 @@ def test_fill_batch_continues_past_missing_answers_and_workday_verification(tmp_
     }
     monkeypatch.setattr(operations.store, "get", apps.get)
     monkeypatch.setattr(operations, "_captured_settings", lambda _request: ApplySettings())
-    monkeypatch.setattr(operations.daily, "daily_busy", lambda: False)
+    monkeypatch.setattr(operations.daily_progress, "daily_busy", lambda: False)
     monkeypatch.setattr(
         preparation,
         "check",
@@ -179,7 +179,7 @@ def test_resume_after_pause_continues_in_the_retained_tab(tmp_path, monkeypatch)
     )
     monkeypatch.setattr(operations.store, "get", {"one": app}.get)
     monkeypatch.setattr(operations, "_captured_settings", lambda _request: ApplySettings())
-    monkeypatch.setattr(operations.daily, "daily_busy", lambda: False)
+    monkeypatch.setattr(operations.daily_progress, "daily_busy", lambda: False)
     monkeypatch.setattr(
         preparation,
         "check",
@@ -238,7 +238,7 @@ def test_user_pause_stops_before_the_next_application(tmp_path, monkeypatch):
     monkeypatch.setattr(
         operations, "_captured_settings", lambda _request: ApplySettings(max_parallel_fills=1)
     )
-    monkeypatch.setattr(operations.daily, "daily_busy", lambda: False)
+    monkeypatch.setattr(operations.daily_progress, "daily_busy", lambda: False)
     monkeypatch.setattr(
         preparation,
         "check",
@@ -285,7 +285,7 @@ def test_prepare_records_the_tailor_job_while_it_runs(tmp_path, monkeypatch):
     )
     monkeypatch.setattr(operations.store, "get", {"one": app}.get)
     monkeypatch.setattr(operations, "_captured_settings", lambda _request: ApplySettings())
-    monkeypatch.setattr(operations.daily, "daily_busy", lambda: False)
+    monkeypatch.setattr(operations.daily_progress, "daily_busy", lambda: False)
     seen: list[str] = []
 
     def fake_prepare(application_id, *, on_job, **_kwargs):
@@ -321,12 +321,12 @@ def test_find_applies_a_one_off_age_window(tmp_path, monkeypatch, override, expe
     monkeypatch.setattr(config, "APPLICATIONS_OUTPUT_DIR", tmp_path / "output")
     saved = ApplySettings(max_age_days=2)
     monkeypatch.setattr(operations, "_captured_settings", lambda _request: saved)
-    monkeypatch.setattr(operations.daily, "daily_busy", lambda: False)
+    monkeypatch.setattr(operations.daily_progress, "daily_busy", lambda: False)
     calls: list[dict] = []
 
     def fake_run_daily(**kwargs):
         calls.append(kwargs)
-        return operations.daily.DailySummary()
+        return operations.daily_progress.DailySummary()
 
     monkeypatch.setattr(operations.daily, "run_daily", fake_run_daily)
     started = operations.start(

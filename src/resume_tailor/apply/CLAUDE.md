@@ -26,7 +26,7 @@ subpackage).
 
 | Subpackage | Modules |
 |---|---|
-| `funnel/` — orchestration + state | `daily` (nightly run), `scheduler`, `operations` (Find/Prepare/Fill coordinator), `preparation`, `packet`, `store`, `review`, `attention`, `screen`, `eligibility` |
+| `funnel/` — orchestration + state | `daily` (nightly run; + `daily_progress`, `daily_rows`, `daily_row_run`, `daily_batch`, `daily_retry`), `scheduler`, `operations` (Find/Prepare/Fill coordinator), `preparation`, `packet`, `store`, `review`, `attention`, `screen`, `eligibility` |
 | `discovery/` — finding postings | `sources` (README tables), `source_catalog` (+ `catalog/sources.json`), `boards` (+ `watchlists/`), `job_apis`, `ats_api`, `fetch_jd`, `identity` |
 | `answers/` — question answering | `questions` (one decision layer), `answer` (LLM), `answer_memory`, `salary`, `phone`, `profile`, `model_resolver` (LLM), `hybrid_resolver` (LLM) |
 | `driver/` — the browser over CDP | `browser`, `cdp_relay`, `controls`, `clicks`, `scanner` (+ `dom_scan.js`) |

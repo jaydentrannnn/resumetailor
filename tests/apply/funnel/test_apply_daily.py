@@ -18,15 +18,23 @@ from resume_tailor import config
 from resume_tailor.apply.discovery import fetch_jd, sources
 from resume_tailor.apply.driver import browser
 from resume_tailor.apply.forms import fill, fill_widgets, submit_guard
-from resume_tailor.apply.funnel import daily, store
+from resume_tailor.apply.funnel import (
+    daily,
+    daily_batch,
+    daily_progress,
+    daily_retry,
+    daily_row_run,
+    daily_rows,
+    store,
+)
 from resume_tailor.pipeline import jd
 
 
 def test_daily_attention_tracks_known_row_errors_and_latest_outcome():
-    summary = daily.DailySummary()
+    summary = daily_progress.DailySummary()
     app = store.Application(source="test", source_job_id="one", company="Acme", role="Engineer")
-    daily._row_error(summary, "Acme: fetch failed", app)
-    daily._row_attention(summary, app, "needs_input", "Open the posting")
+    daily_progress._row_error(summary, "Acme: fetch failed", app)
+    daily_progress._row_attention(summary, app, "needs_input", "Open the posting")
     assert summary.errors == ["Acme: fetch failed"]
     assert [(item.application_id, item.kind, item.message) for item in summary.attention] == [
         ("one", "needs_input", "Open the posting")
@@ -52,7 +60,7 @@ def test_apply_job_settings_keeps_tailor_model_routing():
         rewrite_model="rewrite-model",
         cover_letter=False,
     )
-    merged = daily._job_settings(
+    merged = daily_rows._job_settings(
         base,
         ApplySettings(model_provider="lmstudio", model_name="autofill-model", cover_letter=True),
     )
@@ -172,7 +180,7 @@ def stub_pipeline(monkeypatch, apply_paths):
     )
     monkeypatch.setattr(daily.data, "load", lambda: synthetic_resume())
     monkeypatch.setattr(
-        daily,
+        daily_row_run,
         "screen",
         lambda *a, **k: ScreenResult(
             passed=True,
@@ -198,9 +206,10 @@ def stub_pipeline(monkeypatch, apply_paths):
 
     monkeypatch.setattr(queue, "submit", _submit)
     monkeypatch.setattr(jobs_mod, "get_queue", lambda: queue)
-    monkeypatch.setattr(daily, "get_queue", lambda: queue)
+    for mod in (daily, daily_row_run, daily_retry):  # every get_queue lookup
+        monkeypatch.setattr(mod, "get_queue", lambda: queue)
     monkeypatch.setattr(
-        daily,
+        daily_row_run,
         "_wait_for_job",
         lambda job_id, **kwargs: queue.get(job_id),
     )
@@ -266,7 +275,7 @@ def test_daily_rows_overlap_and_match_serial_counts(stub_pipeline, apply_paths, 
         monkeypatch.setattr(config, "OUTPUT_DIR", root / "output")
         monkeypatch.setattr(config, "CACHE_DIR", root / "cache")
         (root / "output" / "jobs").mkdir(parents=True)
-        monkeypatch.setattr(daily, "_ROW_POOL_SIZE", workers)
+        monkeypatch.setattr(daily_batch, "_ROW_POOL_SIZE", workers)
         return daily.run_daily(settings=settings)
 
     parallel = run_at("parallel", 3)
@@ -331,12 +340,12 @@ def test_run_daily_reuses_prior_run_when_company_matches(stub_pipeline, apply_pa
 
 def test_run_daily_already_running_returns_early(apply_paths):
     """A concurrent call should report ``already_running`` without mutating state."""
-    assert daily._DAILY_LOCK.acquire(blocking=False)  # noqa: SLF001 - lock contract test
+    assert daily_progress._DAILY_LOCK.acquire(blocking=False)  # noqa: SLF001 - lock contract test
     try:
         summary = daily.run_daily(settings=ApplySettings(enabled=True))
         assert summary.already_running is True
     finally:
-        daily._DAILY_LOCK.release()
+        daily_progress._DAILY_LOCK.release()
 
 
 def test_run_daily_dry_run_discovers_without_tailoring(stub_pipeline, apply_paths, monkeypatch):
@@ -663,7 +672,7 @@ def test_resume_screen_rejection_is_archived(stub_pipeline, apply_paths, monkeyp
     from resume_tailor.apply.funnel.screen import ScreenResult
 
     monkeypatch.setattr(
-        daily,
+        daily_row_run,
         "screen",
         lambda *args, **kwargs: ScreenResult(passed=False, reasons=["seniority_mismatch"]),
     )
@@ -782,7 +791,7 @@ def test_daily_status_reflects_progress(apply_paths, monkeypatch):
 
     monkeypatch.setattr(daily.data, "load", lambda: synthetic_resume())
     monkeypatch.setattr(
-        daily,
+        daily_row_run,
         "screen",
         lambda *a, **k: ScreenResult(
             passed=True,
@@ -807,8 +816,9 @@ def test_daily_status_reflects_progress(apply_paths, monkeypatch):
 
     monkeypatch.setattr(_queue, "submit", _submit)
     monkeypatch.setattr(jobs_mod, "get_queue", lambda: _queue)
-    monkeypatch.setattr(daily, "get_queue", lambda: _queue)
-    monkeypatch.setattr(daily, "_wait_for_job", lambda job_id, **kwargs: _queue.get(job_id))
+    for mod in (daily, daily_row_run, daily_retry):  # every get_queue lookup
+        monkeypatch.setattr(mod, "get_queue", lambda: _queue)
+    monkeypatch.setattr(daily_row_run, "_wait_for_job", lambda job_id, **kwargs: _queue.get(job_id))
     monkeypatch.setattr(
         daily.workspace,
         "load_settings",
@@ -840,8 +850,8 @@ def test_daily_status_reflects_progress(apply_paths, monkeypatch):
     # Poll until the run finishes.
     deadline = time.monotonic() + 10.0
     seen_discovering = False
-    while daily.daily_busy() and time.monotonic() < deadline:
-        status = daily.daily_status()
+    while daily_progress.daily_busy() and time.monotonic() < deadline:
+        status = daily_progress.daily_status()
         assert status.running is True
         if status.phase in {"discovering", "processing"}:
             seen_discovering = True
@@ -849,7 +859,7 @@ def test_daily_status_reflects_progress(apply_paths, monkeypatch):
     t.join(timeout=2.0)
 
     assert seen_discovering, "daily_status never left the idle phase"
-    final = daily.daily_status()
+    final = daily_progress.daily_status()
     assert final.running is False
     assert final.phase == "done"
     assert final.summary is not None
@@ -879,8 +889,8 @@ def test_run_batch_submit_noop_when_cap_zero(apply_paths, monkeypatch):
         fill, "fill_application", lambda *a, **k: pytest.fail("must not be called")
     )
 
-    summary = daily.DailySummary()
-    daily._run_batch_submit(
+    summary = daily_progress.DailySummary()
+    daily_batch._run_batch_submit(
         settings=ApplySettings(auto_submit_ats=["greenhouse"]),
         cap=0,
         dry_run=False,
@@ -909,8 +919,8 @@ def test_run_batch_submit_respects_cap_oldest_first(apply_paths, monkeypatch):
     monkeypatch.setattr(fill, "fill_application", _fake_fill)
     monkeypatch.setattr(browser, "browser_status", lambda: browser.BrowserStatus(reachable=True))
 
-    summary = daily.DailySummary()
-    daily._run_batch_submit(
+    summary = daily_progress.DailySummary()
+    daily_batch._run_batch_submit(
         settings=ApplySettings(auto_submit_ats=["greenhouse"], max_parallel_fills=1),
         cap=2,
         dry_run=False,
@@ -933,8 +943,8 @@ def test_run_batch_submit_skips_non_eligible_ats(apply_paths, monkeypatch):
     )
     monkeypatch.setattr(browser, "browser_status", lambda: browser.BrowserStatus(reachable=True))
 
-    summary = daily.DailySummary()
-    daily._run_batch_submit(
+    summary = daily_progress.DailySummary()
+    daily_batch._run_batch_submit(
         settings=ApplySettings(auto_submit_ats=["greenhouse"]),
         cap=5,
         dry_run=False,
@@ -955,8 +965,8 @@ def test_run_batch_submit_skips_when_browser_unreachable(apply_paths, monkeypatc
     )
     monkeypatch.setattr(browser, "browser_status", lambda: browser.BrowserStatus(reachable=False))
 
-    summary = daily.DailySummary()
-    daily._run_batch_submit(
+    summary = daily_progress.DailySummary()
+    daily_batch._run_batch_submit(
         settings=ApplySettings(auto_submit_ats=["greenhouse"]),
         cap=5,
         dry_run=False,
@@ -979,8 +989,8 @@ def test_run_batch_submit_dry_run_logs_without_calling_fill(apply_paths, monkeyp
     monkeypatch.setattr(browser, "browser_status", lambda: browser.BrowserStatus(reachable=True))
 
     logged: list[str] = []
-    summary = daily.DailySummary()
-    daily._run_batch_submit(
+    summary = daily_progress.DailySummary()
+    daily_batch._run_batch_submit(
         settings=ApplySettings(auto_submit_ats=["greenhouse"]),
         cap=5,
         dry_run=True,
@@ -1007,8 +1017,8 @@ def test_run_batch_submit_one_failure_does_not_sink_the_batch(apply_paths, monke
     monkeypatch.setattr(fill, "fill_application", _fake_fill)
     monkeypatch.setattr(browser, "browser_status", lambda: browser.BrowserStatus(reachable=True))
 
-    summary = daily.DailySummary()
-    daily._run_batch_submit(
+    summary = daily_progress.DailySummary()
+    daily_batch._run_batch_submit(
         settings=ApplySettings(auto_submit_ats=["greenhouse"]),
         cap=5,
         dry_run=False,
@@ -1048,12 +1058,12 @@ def test_run_batch_submit_bounds_workers_and_copies_context(apply_paths, monkeyp
         return store.FillResult(status="submitted")
 
     monkeypatch.setattr(fill, "fill_application", fake_fill)
-    summary = daily.DailySummary()
+    summary = daily_progress.DailySummary()
     with config.use_context(config.context_for_workspace("parallel")):
         config.resolve("ollama")
         for i in range(5):
             store.upsert(_ready_app(f"a{i}", ats="greenhouse", discovered_at=f"2026-01-0{i + 1}T00:00:00+00:00"))
-        daily._run_batch_submit(
+        daily_batch._run_batch_submit(
             settings=ApplySettings(auto_submit_ats=["greenhouse"], max_parallel_fills=2),
             cap=5, dry_run=False, log_path=apply_paths / "log.txt",
             log=lambda *_: None, summary=summary,
@@ -1084,8 +1094,8 @@ def test_run_batch_submit_pause_stops_new_starts_and_pending_submits(apply_paths
         return store.FillResult(status="awaiting_review")
 
     monkeypatch.setattr(fill, "fill_application", fake_fill)
-    summary = daily.DailySummary()
-    daily._run_batch_submit(
+    summary = daily_progress.DailySummary()
+    daily_batch._run_batch_submit(
         settings=ApplySettings(auto_submit_ats=["greenhouse"], max_parallel_fills=2),
         cap=5, dry_run=False, log_path=apply_paths / "log.txt",
         log=lambda *_: None, summary=summary,
@@ -1115,8 +1125,8 @@ def test_extension_batch_falls_back_to_serial_fills(apply_paths, monkeypatch):
 
     monkeypatch.setattr(fill, "fill_application", fake_fill)
     logged: list[str] = []
-    summary = daily.DailySummary()
-    daily._run_batch_submit(
+    summary = daily_progress.DailySummary()
+    daily_batch._run_batch_submit(
         settings=ApplySettings(auto_submit_ats=["greenhouse"], max_parallel_fills=3),
         cap=3, dry_run=False, log_path=apply_paths / "log.txt",
         log=logged.append, summary=summary,
@@ -1313,21 +1323,21 @@ def _retry_app(status: str, *, note: str = "", **overrides: Any) -> store.Applic
 )
 def test_retry_kind_matches_retry_application_branches(status, note, expected):
     """`retry_kind` is the single definition of what the Retry button can do."""
-    assert daily.retry_kind(_retry_app(status, note=note)) == expected
+    assert daily_retry.retry_kind(_retry_app(status, note=note)) == expected
 
 
 @pytest.mark.parametrize("note", ["prefilter: requires_5_years", "seniority 'mid' not in ['intern', 'entry']"])
 def test_any_screen_out_with_saved_jd_can_be_rechecked(note):
     """Both prefilter and screen-stage rejections re-check without a model call."""
     app = _retry_app("screened_out", note=note, jd_text_path="jd.txt")
-    assert daily.retry_kind(app) == "prefilter"
+    assert daily_retry.retry_kind(app) == "prefilter"
 
 
 def test_retry_application_refuses_screened_out_without_saved_jd(apply_paths):
     """With no saved JD text there is nothing to re-check, so the API must not offer it."""
     store.upsert(_retry_app("screened_out", note="screen: seniority mismatch"))
     with pytest.raises(RuntimeError, match="no retry path"):
-        daily.retry_application("retry-1")
+        daily_retry.retry_application("retry-1")
 
 
 def _recheck_settings(monkeypatch):
@@ -1358,7 +1368,7 @@ def test_recheck_clears_a_stale_screen_out(apply_paths, monkeypatch):
             screen=ScreenResult(passed=False, reasons=["requires_30_years"], seniority="mid"),
         )
     )
-    after = daily.retry_application("retry-1")
+    after = daily_retry.retry_application("retry-1")
     assert after.status == "jd_fetched"
     assert after.status_history[-1].note == "eligibility cleared on re-check"
     assert "seniority_mismatch" in after.eligibility_flags
@@ -1373,7 +1383,7 @@ def test_recheck_keeps_a_real_restriction_with_its_evidence(apply_paths, monkeyp
         encoding="utf-8",
     )
     store.upsert(_retry_app("screened_out", jd_text_path=str(jd_path)))
-    after = daily.retry_application("retry-1")
+    after = daily_retry.retry_application("retry-1")
     assert after.status == "screened_out"
     assert after.archived_at == after.status_history[-1].at
     assert after.screen is not None
@@ -1404,11 +1414,12 @@ def test_tailor_retry_returns_before_the_job_finishes(apply_paths, monkeypatch):
         release.wait(timeout=5)
         return _Finished()
 
-    monkeypatch.setattr(daily, "get_queue", lambda: _Queue())
-    monkeypatch.setattr(daily, "_wait_for_job", fake_wait)
+    for mod in (daily, daily_row_run, daily_retry):  # every get_queue lookup
+        monkeypatch.setattr(mod, "get_queue", lambda: _Queue())
+    monkeypatch.setattr(daily_row_run, "_wait_for_job", fake_wait)
     monkeypatch.setattr(daily.workspace, "load_settings", lambda: {"defaults": JobSettings().model_dump()})
 
-    returned = daily.retry_application("retry-1")
+    returned = daily_retry.retry_application("retry-1")
     assert returned.status == "tailoring"
     assert returned.job_id == "retry-job"
 
@@ -1429,7 +1440,7 @@ def test_application_from_row_sets_ats_from_url():
             "WI-Madison/Consumer-Research-and-Insights-Intern-2027_R39474"
         )
     )
-    app = daily._application_from_row(
+    app = daily_rows._application_from_row(
         row,
         canonical_key="workday:amfam:r39474",
         group_key="amfam|intern",
@@ -1450,7 +1461,7 @@ def test_retry_application_fetch_rejects_short_text(apply_paths, monkeypatch):
             final_url=url, ats="workday", text="too short", method="api"
         ),
     )
-    returned = daily.retry_application("retry-1")
+    returned = daily_retry.retry_application("retry-1")
     assert returned.status == "needs_browser"
 
 
@@ -1493,7 +1504,8 @@ def test_wait_for_job_relays_progress_events(monkeypatch):
     job = Job(job_id="job-1", jd_text="jd", settings=JobSettings(), status="queued")
     queue = JobQueue()
     queue._jobs[job.job_id] = job
-    monkeypatch.setattr(daily, "get_queue", lambda: queue)
+    for mod in (daily, daily_row_run, daily_retry):  # every get_queue lookup
+        monkeypatch.setattr(mod, "get_queue", lambda: queue)
 
     ticks = iter(
         [
@@ -1512,8 +1524,8 @@ def test_wait_for_job_relays_progress_events(monkeypatch):
         elif event is not None:
             job.events.append(event)
 
-    monkeypatch.setattr(daily.time, "sleep", _tick)
-    result = daily._wait_for_job(job.job_id, on_progress=seen.append)
+    monkeypatch.setattr(daily_row_run.time, "sleep", _tick)
+    result = daily_row_run._wait_for_job(job.job_id, on_progress=seen.append)
     assert result is job
     assert result.status == "succeeded"
     assert seen == ["Extracting job requirements", "Rewriting bullets"]
@@ -1603,7 +1615,8 @@ def test_recover_orphaned_tailoring_marks_only_dead_jobs(apply_paths, monkeypatc
     queue = JobQueue()
     live = Job(job_id="live-job", jd_text="jd", settings=JobSettings(), status="running")
     queue._jobs[live.job_id] = live
-    monkeypatch.setattr(daily, "get_queue", lambda: queue)
+    for mod in (daily, daily_row_run, daily_retry):  # every get_queue lookup
+        monkeypatch.setattr(mod, "get_queue", lambda: queue)
 
     def _app(source_job_id: str, status: str, job_id: str | None) -> store.Application:
         return store.Application(
@@ -1631,7 +1644,7 @@ def test_recover_orphaned_tailoring_marks_only_dead_jobs(apply_paths, monkeypatc
         "done": "ready",
     }
     assert "server restart" in (store.get("dead").error or "")
-    assert daily.retry_kind(store.get("dead")) == "tailor"
+    assert daily_retry.retry_kind(store.get("dead")) == "tailor"
 
 
 @pytest.mark.parametrize(
@@ -1758,7 +1771,9 @@ def test_new_application_keeps_the_sources_posted_date():
 
     row = SourceRow(company="Acme", role="Analyst", location="", age="4d", age_days=4,
                     posted_at="2026-09-01", job_id="greenhouse:acme:1")
-    app = daily._application_from_row(row, canonical_key="greenhouse:acme:1", group_key="g", final_url="")
+    app = daily_rows._application_from_row(
+        row, canonical_key="greenhouse:acme:1", group_key="g", final_url=""
+    )
     assert app.posted_at == "2026-09-01"
     assert app.age_days == 4
 

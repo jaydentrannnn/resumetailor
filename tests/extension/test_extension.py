@@ -9,7 +9,7 @@ import pytest
 from fastapi.testclient import TestClient
 
 from resume_tailor import config
-from resume_tailor.apply.funnel import daily, store
+from resume_tailor.apply.funnel import daily, daily_retry, daily_row_run, daily_rows, store
 from resume_tailor.apply.funnel import operations as apply_operations
 from resume_tailor.web import extension
 from resume_tailor.web.app import app as web_app
@@ -245,15 +245,15 @@ def test_prepare_reuses_the_captured_text():
         final_url="https://www.linkedin.com/jobs/view/1",
         ats="linkedin",
     )
-    app.jd_text_path = daily._save_jd("ext-1", _JD)
-    captured = daily._captured_jd(app)
+    app.jd_text_path = daily_rows._save_jd("ext-1", _JD)
+    captured = daily_rows._captured_jd(app)
     assert captured is not None
     assert captured.method == "captured"
     assert captured.ats == "linkedin"
     assert captured.text == _JD
 
     other = app.model_copy(update={"source": "simplify"})
-    assert daily._captured_jd(other) is None
+    assert daily_rows._captured_jd(other) is None
 
 
 def test_prepare_and_fill_build_the_request_from_settings(client, monkeypatch):
@@ -555,12 +555,12 @@ def test_daily_funnel_and_prepare_skip_stubs(client, monkeypatch):
     store.upsert(plain)
     stub = store.get("linkedin:jobs:111")
     assert stub is not None
-    assert daily.retry_kind(stub) is None
+    assert daily_retry.retry_kind(stub) is None
     with pytest.raises(RuntimeError, match="no description"):
         daily.prepare_application("linkedin:jobs:111", settings=Settings())
 
     processed: list[str] = []
-    monkeypatch.setattr(daily, "_process_one", lambda row, **_kw: processed.append(row.job_id))
+    monkeypatch.setattr(daily_row_run, "_process_one", lambda row, **_kw: processed.append(row.job_id))
     monkeypatch.setattr(daily.data, "load", synthetic_resume)
     settings = Settings(enabled=True)
     settings.sources = []  # no discovery: only the rows already pending

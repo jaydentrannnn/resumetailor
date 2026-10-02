@@ -18,7 +18,7 @@ from resume_tailor import config, workspace
 from resume_tailor.apply.answers import profile as apply_profile
 from resume_tailor.apply.answers.answer import answer_question
 from resume_tailor.apply.driver import browser as apply_browser
-from resume_tailor.apply.funnel import daily as apply_daily
+from resume_tailor.apply.funnel import daily_progress, daily_retry
 from resume_tailor.apply.funnel import operations as apply_operations
 from resume_tailor.apply.funnel import packet as apply_packet
 from resume_tailor.apply.funnel import scheduler as apply_scheduler
@@ -78,7 +78,7 @@ def _application_out(
     eligible = preparation.check(app, require_cover=apply_settings.cover_letter)
     payload["preparation_eligible"] = eligible.eligible
     payload["preparation_reasons"] = eligible.reasons
-    payload["retry_kind"] = apply_daily.retry_kind(app)
+    payload["retry_kind"] = daily_retry.retry_kind(app)
     if app.status == "screened_out" and app.screen is not None:
         from resume_tailor.apply.funnel.screen import screen_label
 
@@ -543,7 +543,7 @@ def correct_application_field(
 @router.get("/api/applications/daily-status", response_model=DailyStatusResponse)
 def get_daily_status() -> DailyStatusResponse:
     """Return live progress for the in-flight (or last finished) daily pass."""
-    progress = apply_daily.daily_status()
+    progress = daily_progress.daily_status()
     try:
         apply_settings = JobSettings.model_validate(workspace.load_settings()["defaults"]).apply
         scheduler = apply_scheduler.status(
@@ -655,10 +655,10 @@ def retry_application_route(source_job_id: str) -> ApplicationOut:
     """Re-run the failed fetch, prefilter, or tailor step for one application."""
     # A fetch retry may drive the host browser, which an Apply operation or a daily
     # pass owns while it runs.
-    if apply_operations.active() is not None or apply_daily.daily_busy():
+    if apply_operations.active() is not None or daily_progress.daily_busy():
         raise HTTPException(status_code=409, detail="Another Apply workflow is running; retry when it finishes.")
     try:
-        app = apply_daily.retry_application(source_job_id)
+        app = daily_retry.retry_application(source_job_id)
     except KeyError as exc:
         raise HTTPException(status_code=404, detail=str(exc)) from exc
     except (RuntimeError, ValueError) as exc:

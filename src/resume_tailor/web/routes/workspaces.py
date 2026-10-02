@@ -9,7 +9,7 @@ from fastapi import APIRouter, HTTPException
 from resume_tailor import (
     workspace,
 )
-from resume_tailor.apply.funnel import daily as apply_daily
+from resume_tailor.apply.funnel import daily_progress
 from resume_tailor.web import template_ops
 from resume_tailor.web.jobs import get_queue
 from resume_tailor.web.routes.config import (
@@ -89,7 +89,7 @@ def activate_workspace(workspace_id: str) -> WorkspaceActivateResponse:
     with template_ops.LOCK:
         if get_queue().busy():
             raise _busy_conflict("switching profiles")
-        if apply_daily.daily_busy():
+        if daily_progress.daily_busy():
             raise HTTPException(
                 status_code=409,
                 detail="Cannot switch profiles while the daily apply funnel is running.",

@@ -168,7 +168,7 @@ class ApplySettings(BaseModel):
     eligibility: EligibilitySettings = Field(default_factory=EligibilitySettings)
     auto_submit_ats: list[str] = Field(default_factory=list)
     #: Cap on how many `ready` applications the unattended batch-submit stage
-    #: (`daily._run_batch_submit`) will fill+submit per `run_daily` invocation. `0`
+    #: (`daily_batch._run_batch_submit`) will fill+submit per `run_daily` invocation. `0`
     #: (default) disables the stage entirely — existing workspaces see no behavior
     #: change until this is explicitly raised. Only ever considers ATSes already
     #: listed in `auto_submit_ats`; Workday is excluded in code regardless (see
@@ -1233,7 +1233,7 @@ class ApplicationOut(BaseModel):
     archived_at: str | None = None
     preparation_eligible: bool = False
     preparation_reasons: list[str] = Field(default_factory=list)
-    #: Which retry `POST .../retry` would run (`daily.retry_kind`), or None when the
+    #: Which retry `POST .../retry` would run (`daily_retry.retry_kind`), or None when the
     #: row has no retry path — the SPA shows and labels its Retry button from this.
     retry_kind: Literal["fetch", "prefilter", "tailor"] | None = None
     #: Short "why screened out" label for the Status column (`screen.screen_label`).

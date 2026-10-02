@@ -11,7 +11,7 @@ Two groups of routes:
 Capture turns the page the student is looking at into a tracked application: the
 extension extracts the description text in the tab (so LinkedIn and Handshake, which
 need a login to read, work), and Prepare later reuses that text instead of fetching
-the page again (`daily._captured_jd`).
+the page again (`daily_rows._captured_jd`).
 
 Batch capture (``capture-stubs``) saves LinkedIn/Indeed search-result cards as
 ``capture_stub`` rows with no description. Nothing here or in the daily funnel ever
@@ -33,9 +33,8 @@ from pydantic import BaseModel, Field
 from resume_tailor import config, workspace
 from resume_tailor.apply.discovery import fetch_jd, identity
 from resume_tailor.apply.forms import fill_buttons, submit_guard
-from resume_tailor.apply.funnel import daily as apply_daily
+from resume_tailor.apply.funnel import daily_rows, store
 from resume_tailor.apply.funnel import operations as apply_operations
-from resume_tailor.apply.funnel import store
 from resume_tailor.pipeline import jd_input
 from resume_tailor.web import extension
 from resume_tailor.web.routes.diagnostics import _version
@@ -381,7 +380,7 @@ def _screen(app: store.Application, text: str, settings: ApplySettings | None) -
     """The no-LLM prefilter every capture runs, exactly as the daily funnel does."""
     if settings is None:
         return
-    screen = apply_daily.prefilter_screen(text, app.role, settings)
+    screen = daily_rows.prefilter_screen(text, app.role, settings)
     app.eligibility_flags = list(screen.flags)
     if not screen.passed:
         app.screen = screen
@@ -422,7 +421,7 @@ def _describe(
     app.role = body.role.strip() or app.role
     app.location = body.location.strip() or app.location
     app.group_key = identity.group_key(app.company, app.role)
-    app.jd_text_path = apply_daily._save_jd(app.source_job_id, text)
+    app.jd_text_path = daily_rows._save_jd(app.source_job_id, text)
     store.set_status(app, "jd_fetched", note=note)
     _screen(app, text, settings)
 
@@ -449,7 +448,7 @@ def capture(body: CaptureRequest) -> CaptureResponse:
     target = target or page_url
     page_key = identity.canonical_key(page_url)
     board = _board_of(page_key)
-    now = apply_daily._now_iso()
+    now = daily_rows._now_iso()
 
     existing = _find(target, page_url, body.url)
     if existing is not None and not existing.capture_stub:
@@ -528,7 +527,7 @@ def capture(body: CaptureRequest) -> CaptureResponse:
             )
         ],
     )
-    app.jd_text_path = apply_daily._save_jd(source_job_id, cleaned.text)
+    app.jd_text_path = daily_rows._save_jd(source_job_id, cleaned.text)
     store.set_status(app, "jd_fetched", note="captured by the browser extension")
     _screen(app, cleaned.text, settings)
     store.upsert(app)
@@ -571,7 +570,7 @@ def capture_stubs(body: CaptureStubsRequest) -> CaptureStubsResponse:
     Only LinkedIn/Indeed job URLs are accepted; each is stored under the job's own
     board URL so opening it from any search page later finds the same row.
     """
-    now = apply_daily._now_iso()
+    now = daily_rows._now_iso()
     results: list[StubResult] = []
     for card in body.cards:
         key = identity.canonical_key(card.url)

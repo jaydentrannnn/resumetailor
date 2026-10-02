@@ -186,7 +186,7 @@ update, move data): `docs/GUIDE.md`.
 
 `src/resume_tailor/apply/` owns the daily discover → screen → tailor → packet → fill
 funnel. Prepare tailors and screens with the **Tailor tab's** model settings (profile,
-model name, effort, per-stage overrides): `daily._job_settings` leaves them untouched, and
+model name, effort, per-stage overrides): `daily_rows._job_settings` leaves them untouched, and
 the screening `jd.extract_consensus` call is pinned to the same `web.jobs.model_routing` with
 the same `extract_runs`, so the tailor job's own extraction is a cache hit.
 `ApplySettings.model_provider`/`model_name` (default `ollama`/`nemotron-3-super:cloud`, the
@@ -284,7 +284,7 @@ Business program titles ("Summer Analyst", rotational or development programs) c
 early career, so a years floor in their JD is a flag, not a reject. A bare "Analyst" or
 "Associate" does not count as early career.
 The work-restriction block patterns (`screen.check_blocks`: citizenship, security clearance,
-user extras) run in the same no-LLM stage (`daily.prefilter_screen`) and record a named
+user extras) run in the same no-LLM stage (`daily_rows.prefilter_screen`) and record a named
 reason (`citizenship_required` / `clearance_required`) plus the matching JD sentence in
 `ScreenResult.evidence`. After extraction, `screen()` rejects on seniority only — an
 intern/new-grad/entry title overrides the model's label (`seniority_mismatch` flag).
