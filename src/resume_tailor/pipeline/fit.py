@@ -296,6 +296,16 @@ class _FitRun(fit_topup._FitTopUp):
                 f"{outcome.widows_remaining} bullet(s) still end on a near-empty line, "
                 f"wasting that much of the page."
             )
+        long_ids = [bid for bid in outcome.overlong_remaining if bid in self.rewritten]
+        if long_ids:
+            # One line however many bullets: name a couple by their opening words so the
+            # user can find them, and leave the rest to the count.
+            named = ", ".join(
+                f"\"{' '.join(self.rewritten[bid].split()[:4])}…\"" for bid in long_ids[:2]
+            )
+            self.warnings.append(
+                f"{len(long_ids)} bullet(s) still run past two lines ({named})."
+            )
         if outcome.verb_collisions_remaining:
             self.warnings.append(
                 f"{outcome.verb_collisions_remaining} bullet(s) still open with a verb "

@@ -275,14 +275,24 @@ def _choose_pullbacks(
     measured_ids = measured_ids if layout is not None and measured_ids is not None else set()
     eligible: dict[str, int] = {}
     fill: dict[str, float] = {}
+    # A bullet past the line cap is always eligible, ranked first, ceilinged at the cap:
+    # cutting it frees a line or more without dropping content, and the widow pass would
+    # cap it anyway once the draft fits.
+    cap = fit_types._TARGET_LINES_PER_BULLET
     for bid, text in texts.items():
         if bid in measured_ids:
             line_fit = layout[bid]
-            if line_fit.lines > 1 and line_fit.last_fill <= config.PULLBACK_MAX_FILL:
+            if line_fit.lines > cap:
+                eligible[bid] = int(cap * line_fit.chars_per_line - config.WIDOW_SAFETY)
+                fill[bid] = -1.0
+            elif line_fit.lines > 1 and line_fit.last_fill <= config.PULLBACK_MAX_FILL:
                 ceiling = int((line_fit.lines - 1) * line_fit.chars_per_line - config.WIDOW_SAFETY)
                 if ceiling >= 1:
                     eligible[bid] = ceiling
                     fill[bid] = line_fit.last_fill
+        elif config.line_span(text) > cap:
+            eligible[bid] = int(cap * config.CHARS_PER_LINE - config.WIDOW_SAFETY)
+            fill[bid] = -1.0
         elif bid in estimated:
             eligible[bid] = estimated[bid]
             fill[bid] = config.last_line_fill(text) / config.CHARS_PER_LINE
@@ -293,7 +303,8 @@ def _choose_pullbacks(
             _bullet_score(bid, sources, requirements, semantic, members, recency),
         ),
     )
-    return {bid: eligible[bid] for bid in ranked[: max(0, count)]}
+    overlong = sum(1 for bid in ranked if fill[bid] < 0)
+    return {bid: eligible[bid] for bid in ranked[: max(0, count, overlong)]}
 
 def _choose_drops(
     entries: list[Experience | Project],
@@ -312,9 +323,14 @@ def _choose_drops(
     bullets and the loop must not silently delete a job it decided to keep. Prefers the
     weakest bullet tall enough to cover what remains; when none is, takes the weakest and
     repeats.
+
+    The most recent job's lead bullet (`_lead_bullet`) is taken only when nothing else
+    can be: it is the candidate's headline, and a posting-specific relevance score that
+    rates it low otherwise strips the newest role down to its supporting lines.
     """
     owner = {b.id: e for e in entries for b in e.bullets}
     recency = {b.id: entry_recency(e) for e in entries for b in e.bullets}
+    lead = _lead_bullet(entries, texts)
     remaining_in_entry: dict[int, int] = {}
     for bid in texts:
         entry = owner.get(bid)
@@ -333,6 +349,7 @@ def _choose_drops(
         ]
         if not candidates:
             break
+        candidates = [bid for bid in candidates if bid != lead] or candidates
         covering = [bid for bid in candidates if fit_lines._bullet_lines(texts[bid]) >= remaining]
         pick = min(
             covering or candidates,
@@ -345,3 +362,20 @@ def _choose_drops(
         remaining_in_entry[id(owner[pick])] -= 1
         remaining -= fit_lines._bullet_lines(texts[pick])
     return chosen
+
+def _lead_bullet(entries: list[Experience | Project], texts: dict[str, str]) -> str | None:
+    """The first on-page bullet, in master order, of the most recent experience entry.
+
+    Most recent by `entry_recency`; ties keep master order, which lists newest first.
+    """
+    best: tuple[float, str] | None = None
+    for entry in entries:
+        if not isinstance(entry, Experience):
+            continue
+        first = next((b.id for b in entry.bullets if b.id in texts), None)
+        if first is None:
+            continue
+        recency = entry_recency(entry)
+        if best is None or recency > best[0]:
+            best = (recency, first)
+    return best[1] if best else None

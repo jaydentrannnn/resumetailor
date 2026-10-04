@@ -11,13 +11,14 @@ from . import bullet_checks, fabrication, rewrite_prompts
 from .jd import JobRequirements
 
 _REPAIR_INSTRUCTION = """\
-Each bullet below wrapped onto a final line holding almost nothing, wasting a whole line \
-of the page. The wording is already right — the only problem is length. Bring each one to \
-at most its `max` characters by cutting hedges, redundant context, and secondary detail. \
-Keep every number and every required technical keyword exactly as written.
+Each bullet below runs past its `max` characters — it either wrapped onto a final line \
+holding almost nothing or runs longer than a resume bullet should, wasting page space. \
+The wording is already right — the only problem is length. Bring each one to at most its \
+`max` characters by cutting hedges, redundant context, and secondary detail. Keep every \
+number and every required technical keyword exactly as written.
 """
 
-_REPAIR_PROMPT_VERSION = 4
+_REPAIR_PROMPT_VERSION = 5
 
 _TARGET_INSTRUCTION = """\
 Each bullet has a character window. For SHORTEN, cut secondary detail while preserving
@@ -265,6 +266,7 @@ def _polish(
     targets: dict[str, tuple[int, int]] | None = None,
     line_ceilings: dict[str, int] | None = None,
     revoice_only: set[str] | None = None,
+    number_floor: dict[str, str] | None = None,
 ) -> tuple[dict[str, str], int, int, dict[str, list[str]]]:
     """Re-request only the defective bullets.
 
@@ -284,6 +286,9 @@ def _polish(
     rendered bullet, so the fit loop's top-up can re-voice only the bullets it just added
     against openers the page already uses, without touching (and re-wrapping) the rest.
     The guard and numeric-preservation check apply to both shortening and extension.
+    `number_floor` (`{id: text}`) checks a target's numbers against that text instead of
+    its master source — for capping an over-long rewrite, which may already have dropped
+    a minor figure the master states; the guard itself still runs against the source.
 
     Returns ``(texts, widows fixed, verbs changed, widow repairs rejected)`` where the
     last mapping is bullet id to offending terms for shorten candidates discarded by the
@@ -373,6 +378,15 @@ def _polish(
     # handed the same replacement verb.
     claimed: set[str] = set()
     line_ceilings = line_ceilings or {}
+    number_floor = number_floor or {}
+
+    def keeps_numbers(bid: str, candidate: str) -> bool:
+        floor = number_floor.get(bid)
+        base = (
+            sources[bid] if floor is None
+            else sources[bid].model_copy(update={"text": floor, "tags": []})
+        )
+        return not fabrication.numbers_dropped([base], candidate)
 
     def fits_target(bid: str, candidate: str) -> bool:
         low, high = targets[bid]
@@ -396,7 +410,7 @@ def _polish(
             if offenders:
                 fabricated = fabricated or (candidate, offenders)
                 continue
-            if fits_target(bid, candidate) and not fabrication.numbers_dropped([source], candidate):
+            if fits_target(bid, candidate) and keeps_numbers(bid, candidate):
                 clean.append(candidate)
         if clean:
             # Prefer the window over the line-saving fallback, then the longest version:
@@ -449,7 +463,10 @@ def _polish(
         )
         rejected = survivors
         for bid, candidate in accepted.items():
-            if fabrication.numbers_dropped([sources[bid]], candidate):
+            if bid in number_floor:
+                if not keeps_numbers(bid, candidate):
+                    continue
+            elif fabrication.numbers_dropped([sources[bid]], candidate):
                 continue
             if bid in targets:
                 valid = fits_target(bid, candidate)

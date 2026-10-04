@@ -48,6 +48,9 @@ class RewriteOutcome:
     #: block the whole run over one bullet that's better left untailored.
     fabrications_rejected: dict[str, list[str]] = field(default_factory=dict)
     measured_widows_remaining: int | None = None
+    #: Bullets still rendering past `_TARGET_LINES_PER_BULLET` lines after the fit loop's
+    #: one capped shortening attempt (measured by the widow pass).
+    overlong_remaining: list[str] = field(default_factory=list)
 
     @property
     def widows_remaining(self) -> int:

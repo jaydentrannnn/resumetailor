@@ -177,12 +177,15 @@ class _FitShrink(fit_state._FitState):
             capacity=self.capacity, members=self.members, estimated=self.pages_are_estimated,
             measured_ids=measured_ids,
         ) if self.repair_widows else {}
+        # The two-line cap is not a layout nicety, so `repair_widows=False` does not skip it.
+        overlong = fit_lines._overlong_targets(self.rewritten, self.by_id, layout)
+        targets.update(overlong)
         if only is not None:
             targets = {bid: window for bid, window in targets.items() if bid in only}
         old_texts = dict(self.rewritten)
         old_courses = list(course_edu.coursework) if course_edu else []
         if targets:
-            self._repair_widows(targets, layout)
+            self._repair_widows(targets, layout, overlong=set(overlong) & set(targets))
         if self.repair_widows and course_edu and self.coursework_pool:
             self._fit_coursework(course_edu, old_courses, layout, measured_ids)
         changed = self.rewritten != old_texts or (
@@ -206,8 +209,13 @@ class _FitShrink(fit_state._FitState):
         else:
             self.outcome.widows_repaired += len(before_widows - remaining)
         self.outcome.measured_widows_remaining = len(remaining)
+        self.outcome.overlong_remaining = [
+            bid for bid in self.rewritten if fit_lines._is_overlong(final_layout, bid)
+        ]
 
-    def _repair_widows(self, targets: dict, layout: dict[str, render.LineFit]) -> None:
+    def _repair_widows(
+        self, targets: dict, layout: dict[str, render.LineFit], *, overlong: set[str]
+    ) -> None:
         repair_sources = dict(self.by_id)
         for survivor, member_ids in self.members.items():
             if survivor in targets:
@@ -221,9 +229,13 @@ class _FitShrink(fit_state._FitState):
             self.rewritten, repair_sources, self.requirements, repair_widows=False,
             repair_verbs=False, targets=targets,
             line_ceilings=fit_lines._line_saving_ceilings(targets, layout),
+            number_floor={bid: self.rewritten[bid] for bid in overlong},
         )
         self.rewritten = self.outcome.texts = repaired
-        self.outcome.widow_repairs_rejected.update(rejected)
+        # A failed over-long cut is reported once, as a still-long bullet, not again here.
+        self.outcome.widow_repairs_rejected.update(
+            {bid: terms for bid, terms in rejected.items() if bid not in overlong}
+        )
 
     def _fit_coursework(
         self, course_edu, old_courses: list[str], layout: dict[str, render.LineFit],

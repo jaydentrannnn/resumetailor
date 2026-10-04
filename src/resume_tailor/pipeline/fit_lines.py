@@ -57,6 +57,30 @@ def _widow_targets(
                 targets[bid] = (low, high)
     return targets
 
+def _overlong_ceiling(fit: render.LineFit) -> int:
+    """Character ceiling that lands a bullet on `_TARGET_LINES_PER_BULLET` lines."""
+    return int(fit_types._TARGET_LINES_PER_BULLET * fit.chars_per_line - config.WIDOW_SAFETY)
+
+def _is_overlong(layout: dict[str, render.LineFit], bid: str) -> bool:
+    return layout[bid].lines > fit_types._TARGET_LINES_PER_BULLET
+
+def _overlong_targets(
+    texts: dict[str, str], sources: dict[str, Bullet], layout: dict[str, render.LineFit]
+) -> dict[str, tuple[int, int]]:
+    """SHORTEN windows for bullets that render past `_TARGET_LINES_PER_BULLET` lines.
+
+    The rewrite prompt's `max` is only a request: a reply that ignores it, a guard
+    fallback to verbatim master text, or a re-added bullet all reach the page at full
+    length. This is the code-side cap, judged on the measured layout like widows are.
+    """
+    targets: dict[str, tuple[int, int]] = {}
+    for bid in texts:
+        if bid in sources and _is_overlong(layout, bid):
+            ceiling = _overlong_ceiling(layout[bid])
+            if ceiling >= 1:
+                targets[bid] = (0, ceiling)
+    return targets
+
 def _line_saving_ceilings(
     targets: dict[str, tuple[int, int]], layout: dict[str, render.LineFit]
 ) -> dict[str, int]:
