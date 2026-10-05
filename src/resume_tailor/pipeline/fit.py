@@ -20,7 +20,7 @@ from .. import config
 from ..content.data import MasterResume
 from ..document import render
 from ..document.template_profile import ContactField
-from . import events, fit_topup, fit_types
+from . import events, fit_topup, fit_types, followups
 from .jd import JobRequirements
 
 # --------------------------------------------------------------------------------------
@@ -282,6 +282,15 @@ class _FitRun(fit_topup._FitTopUp):
 
     def _quality_warnings(self) -> None:
         outcome = self.outcome
+        if outcome.fabrications_rejected:
+            detail = "; ".join(
+                f"{bid}: {followups._format_offender_summary(offenders)}"
+                for bid, offenders in outcome.fabrications_rejected.items()
+            )
+            self.warnings.append(
+                f"Original source text was kept for {len(outcome.fabrications_rejected)} "
+                f"bullet(s) after the factual retry failed ({detail})."
+            )
         if outcome.widow_repairs_rejected:
             detail = "; ".join(
                 f"{bid}: {', '.join(terms)}"

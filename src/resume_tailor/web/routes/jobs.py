@@ -6,16 +6,18 @@ import asyncio
 import json
 import logging
 import time
-from typing import Any
+from typing import Any, Literal
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import FileResponse, StreamingResponse
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, ConfigDict, Field
+from starlette.background import BackgroundTask
 
 from resume_tailor import config, workspace
 from resume_tailor.content import data
 from resume_tailor.document import rerender
 from resume_tailor.document.template_profile import active_layout
+from resume_tailor.infra import telemetry
 from resume_tailor.pipeline import estimate, include
 from resume_tailor.web import job_routing, template_ops
 from resume_tailor.web.job_followups import (
@@ -459,7 +461,26 @@ def download_skills(job_id: str) -> FileResponse:
         path,
         media_type="text/markdown; charset=utf-8",
         filename=run_lookup._export_download_name(job_id, suffix=".skills.md"),
+        background=BackgroundTask(
+            telemetry.artifact_use, resolved.out_dir.parent.parent, job_id, "download",
+        ),
     )
+
+
+class ArtifactUsageRequest(BaseModel):
+    model_config = ConfigDict(extra="forbid")
+    artifact: Literal["skills"]
+    action: Literal["copy"]
+
+
+@router.post("/api/jobs/{job_id}/artifact-usage", status_code=204)
+def record_artifact_usage(job_id: str, body: ArtifactUsageRequest) -> None:
+    resolved = run_lookup._resolve_run(job_id)
+    if resolved is None:
+        raise HTTPException(status_code=404, detail="Unknown job")
+    if resolved.status != "succeeded" or not (resolved.out_dir / "skills.json").is_file():
+        raise HTTPException(status_code=409, detail="Skills are not available for this run")
+    telemetry.artifact_use(resolved.out_dir.parent.parent, job_id, body.action)
 
 
 @router.get("/api/jobs/{job_id}/cover-letter.md")

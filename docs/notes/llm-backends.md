@@ -356,3 +356,9 @@ deterministic draft and a `"Tag suggestion pass failed: …"` warning instead of
 - **UI copy:** the "Ollama" card no longer claims "your resume never leaves it" — untrue for
   the default `:cloud` tag. The connection-test note for Ollama Cloud says it counts toward
   the Ollama plan rather than "a fraction of a cent".
+
+## 2026-10-05 — measured pipeline token usage and timing
+
+**What:** Every CLI/web run records versioned telemetry under its workspace output/telemetry directory; the usage_report module groups measured physical requests, cache events, and timings by routing, implementation version and extraction cache state.
+**Why:** Retries and cached/reasoning token subsets cannot be inferred accurately from stage estimates; concurrent stage durations cannot be summed into total run time. Usage absent from a provider response stays unknown.
+**Impact:** Metadata only is recorded, with atomic best-effort persistence on success/failure/cancellation. Skills copy/download/autofill signals measure observed consumption; the seven-day review window excludes incomplete observations and does not claim to observe manual reading. JD voting and skills defaults stay unchanged pending normal-run evidence and paired JD quality review.

@@ -6,7 +6,7 @@ from __future__ import annotations
 from .. import config
 from ..content import industries
 from ..content.data import Bullet
-from ..infra import llm
+from ..infra import llm, telemetry
 from . import bullet_checks, fabrication, rewrite_prompts
 from .jd import JobRequirements
 
@@ -58,7 +58,9 @@ authorship escalation that does not match the source material. Listed `rejected_
 are invented words or figures — rewrite without them, using only what its `source` and \
 `permitted_skills` already state. Listed `rebound_claims` are numbers attached to the \
 wrong noun (e.g. "40 hours" when the source said "40 engineers") — restore each number's \
-original subject from the source, or drop the number entirely; do not keep the rebound. \
+original subject from the source; never drop a source number to evade the check. \
+Listed `missing_numbers` are source figures the draft omitted — restore each figure \
+and its original subject, using the source's number and lower-bound form. \
 Listed `authorship_claims` escalate delegated work into personal authorship — restore the \
 external party and the delegation verb from the source; do not claim you built what a \
 vendor or agency built. Do not substitute a synonym or a variant for a rejected figure — \
@@ -67,7 +69,7 @@ from any other bullet. \
 Keep the rest of the bullet's meaning.
 """
 
-_RETRY_PROMPT_VERSION = 2
+_RETRY_PROMPT_VERSION = 3
 
 def _format_widows(
     ceilings: dict[str, int], texts: dict[str, str], sources: dict[str, Bullet]
@@ -100,23 +102,26 @@ def _format_verb_items(
         )
     return "\n".join(lines)
 
-def _split_offenders(offenders: list[str]) -> tuple[list[str], list[str], list[str]]:
-    """Split a flat offender list into (terms, rebound claims, authorship claims)."""
+def _split_offenders(offenders: list[str]) -> tuple[list[str], list[str], list[str], list[str]]:
+    """Separate terms, rebound claims, authorship claims, and missing source figures."""
     terms: list[str] = []
     rebounds: list[str] = []
     authorship: list[str] = []
+    missing: list[str] = []
     for o in offenders:
-        if o.startswith(bullet_checks._REBOUND_PREFIX):
+        if o.startswith(bullet_checks._DROPPED_NUMBER_PREFIX):
+            missing.append(o[len(bullet_checks._DROPPED_NUMBER_PREFIX):])
+        elif o.startswith(bullet_checks._REBOUND_PREFIX):
             rebounds.append(o[len(bullet_checks._REBOUND_PREFIX) :])
         elif o.startswith(fabrication._AUTHORSHIP_PREFIX):
             authorship.append(o[len(fabrication._AUTHORSHIP_PREFIX) :])
         else:
             terms.append(o)
-    return terms, rebounds, authorship
+    return terms, rebounds, authorship, missing
 
 def _format_offender_summary(offenders: list[str]) -> str:
     """Human-readable summary of mixed fabrication / rebound / authorship offenders."""
-    terms, rebounds, authorship = _split_offenders(offenders)
+    terms, rebounds, authorship, missing = _split_offenders(offenders)
     parts: list[str] = []
     if terms:
         parts.append(", ".join(terms))
@@ -124,6 +129,8 @@ def _format_offender_summary(offenders: list[str]) -> str:
         parts.append("rebound " + ", ".join(rebounds))
     if authorship:
         parts.append("authorship " + ", ".join(authorship))
+    if missing:
+        parts.append("missing source numbers " + ", ".join(missing))
     return "; ".join(parts) if parts else "(unknown)"
 
 def _format_fabrications(
@@ -139,7 +146,7 @@ def _format_fabrications(
     lines = []
     for bullet_id, (text, offenders) in rejected.items():
         tags = ", ".join(sources[bullet_id].tags)
-        terms, rebounds, authorship = _split_offenders(offenders)
+        terms, rebounds, authorship, missing = _split_offenders(offenders)
         attrs = [f"id={bullet_id!r}"]
         if terms:
             attrs.append(f"rejected_terms={', '.join(terms)!r}")
@@ -147,6 +154,8 @@ def _format_fabrications(
             attrs.append(f"rebound_claims={', '.join(rebounds)!r}")
         if authorship:
             attrs.append(f"authorship_claims={', '.join(authorship)!r}")
+        if missing:
+            attrs.append(f"missing_numbers={', '.join(missing)!r}")
         lines.append(
             f"<bullet {' '.join(attrs)}>\n"
             f"  <rejected>{text}</rejected>\n"
@@ -156,12 +165,14 @@ def _format_fabrications(
         )
     return "\n".join(lines)
 
+@telemetry.stage("rewrite", "factual_retry")
 def _retry_fabrications(
     rejected: dict[str, tuple[str, list[str]]],
     sources: dict[str, Bullet],
     requirements: JobRequirements,
     *,
     targets: dict[str, tuple[int, int]] | None = None,
+    preserve_numbers: bool = False,
 ) -> tuple[dict[str, str], dict[str, list[str]]]:
     """Re-request only the fabricating bullets. Returns (accepted, surviving offenders).
 
@@ -212,7 +223,9 @@ def _retry_fabrications(
             survivors[bullet_id] = _offenders
             continue
         source = sources[bullet_id]
-        still = bullet_checks.guard_offenders([source], candidate)
+        still = bullet_checks.guard_offenders(
+            [source], candidate, preserve_numbers=preserve_numbers,
+        )
         if still:
             survivors[bullet_id] = still
             continue
@@ -243,7 +256,9 @@ def _accept_verb_swap(
         return False
     if bullet_checks.widowed({"_": candidate}):
         return False
-    return not fabrication.check_fabrication(source, candidate)
+    floor = source.model_copy(update={"text": original, "tags": []})
+    return (not fabrication.check_fabrication(source, candidate)
+            and not fabrication.numbers_dropped([floor], candidate))
 
 def _keep_opener(texts: dict[str, str], bid: str, candidate: str) -> str | None:
     """`candidate` for `bid` with an opener that repeats no more verbs than `texts[bid]`.
@@ -276,6 +291,7 @@ def _verb_instruction() -> str:
         "preserve every number and do not lengthen the bullet."
     )
 
+@telemetry.stage("rewrite", "polish")
 def _polish(
     texts: dict[str, str],
     sources: dict[str, Bullet],

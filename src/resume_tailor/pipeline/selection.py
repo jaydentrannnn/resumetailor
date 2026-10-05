@@ -100,14 +100,18 @@ def score_entry(
     requirements: JobRequirements,
     *,
     semantic: dict[str, float] | None = None,
+    max_per_entry: int | None = None,
 ) -> float:
     """Score a whole job or project by how much relevant material it offers.
 
-    The sum, not the max or the mean: an entry earns its slot on a resume by having
-    several usable lines, and a section capped at three entries should prefer the one that
-    can fill those lines over one carrying a single strong bullet.
+    Sum the best three usable bullets, respecting any tighter configured bullet cap.
+    Additional weak stored content cannot boost an entry that will not render it.
     """
-    total = sum(score(b, requirements, semantic=semantic) for b in entry.bullets)
+    cap = config.MAX_BULLETS_PER_ENTRY if max_per_entry is None else max_per_entry
+    count = 3 if cap is None else min(3, max(0, cap))
+    scores = sorted((score(b, requirements, semantic=semantic) for b in entry.bullets),
+                    reverse=True)
+    total = sum(scores[:count])
     return total * entry_recency(entry)
 
 _MONTHS = {
@@ -185,6 +189,7 @@ def select_entries(
     *,
     limit: int,
     semantic: dict[str, float] | None = None,
+    max_per_entry: int | None = None,
 ) -> list:
     """Pick the `limit` most relevant entries, preserving their original order.
 
@@ -199,7 +204,9 @@ def select_entries(
         return []
 
     ranked = sorted(
-        entries, key=lambda e: score_entry(e, requirements, semantic=semantic), reverse=True
+        entries, key=lambda e: score_entry(
+            e, requirements, semantic=semantic, max_per_entry=max_per_entry,
+        ), reverse=True,
     )
     chosen = {id(e) for e in ranked[:limit]}
     return [e for e in entries if id(e) in chosen]

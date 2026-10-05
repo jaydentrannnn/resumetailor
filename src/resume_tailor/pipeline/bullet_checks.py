@@ -18,6 +18,7 @@ _NOUN_BIND_WINDOW = 3
 #: returns. `_format_fabrications` splits on it so the retry prompt can name a
 #: rebinding distinctly from a fabricated term.
 _REBOUND_PREFIX = "rebound:"
+_DROPPED_NUMBER_PREFIX = "missing_number:"
 
 def _noun_key(term: str) -> str | None:
     """`term` reduced to the key two number-noun bindings are compared on.
@@ -216,7 +217,9 @@ def delegated_authorship(sources: Sequence[Bullet], rewritten: str) -> list[str]
         offenders.append(claim)
     return offenders
 
-def guard_offenders(sources: Sequence[Bullet], rewritten: str) -> list[str]:
+def guard_offenders(
+    sources: Sequence[Bullet], rewritten: str, *, preserve_numbers: bool = False,
+) -> list[str]:
     """Every rewrite-path guard violation in one call.
 
     Fabricated terms, rebound numbers, and escalated authorship. One function so
@@ -231,6 +234,11 @@ def guard_offenders(sources: Sequence[Bullet], rewritten: str) -> list[str]:
         offenders.append(f"{_REBOUND_PREFIX}{claim}")
     for claim in delegated_authorship(sources, rewritten):
         offenders.append(f"{fabrication._AUTHORSHIP_PREFIX}{claim}")
+    if preserve_numbers:
+        # Numeric tags license wording, but are not figures the source actually stated.
+        text_sources = [b.model_copy(update={"tags": []}) for b in sources]
+        offenders.extend(_DROPPED_NUMBER_PREFIX + n
+                         for n in fabrication.numbers_dropped(text_sources, rewritten))
     return offenders
 
 def redundancy_offenders(text: str) -> list[str]:

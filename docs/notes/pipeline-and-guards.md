@@ -470,3 +470,15 @@ length candidate (targets, ceilings, the fabrication retry): a candidate that ad
 verb collision gets the current opener back when its own opener is a known family
 verb (a one-word swap), and is discarded otherwise. The prompts also ask to keep the
 opener (`_REPAIR_PROMPT_VERSION = 6`).
+
+## 2026-10-05 — dropped source numbers share the factual retry
+
+**What:** Initial rewrites and their existing one-shot retry must retain every number-bearing token from source text. Missing figures receive a distinct retry instruction; a still-invalid or omitted reply falls back to verbatim source text with a run warning. The retry prompt version is 3.
+**Why:** The vocabulary guard rejects invented figures but previously accepted omission of true ones. Numeric tags license terms without requiring them in prose. Verb-only polish now preserves its accepted text's numeric floor too, closing a path that could discard an initial rewrite's preserved metric.
+**Impact:** Clean drafts add no calls, mixed failures share one retry, and missing-number detection/repair/fallback counts enter telemetry. Existing measured-repair floors and merge policies are retained.
+
+## 2026-10-05 — entry ranking sums best three usable bullets
+
+**What:** Entry scores sum their three highest existing bullet scores, reduced by a tighter per-entry cap, then apply the existing recency multiplier. Initial fit selection, new-entry top-up, and expansion extras receive the same resolved cap.
+**Why:** Summing every stored bullet favored entries rich in weak material that could not all fit. The cap changes ranking, not the number of bullets the fit loop may render.
+**Impact:** Individual semantic scores and their cache keys are unchanged; existing expansion cache keys already identify the selected source entries. Forced expansion entries, section isolation, chronological output order, stable ties and bullet floors are preserved. Telemetry marks this algorithm as best_three so measurements remain comparable.

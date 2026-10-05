@@ -32,7 +32,7 @@ from pydantic import BaseModel, Field
 from .. import config
 from ..content import industries
 from ..content.data import MasterResume
-from ..infra import llm
+from ..infra import llm, telemetry
 from . import events
 from .facets_labels import (
     _norm_ws,
@@ -405,6 +405,7 @@ def format_markdown(plan: SkillsPlan) -> str:
     return "\n".join(lines).rstrip()
 
 
+@telemetry.stage("skills")
 def select_skills(
     resume: MasterResume,
     requirements: JobRequirements,
@@ -484,6 +485,7 @@ def select_skills(
         cache_path.write_text(to_cache.model_dump_json(indent=2), encoding="utf-8")
 
     suggestions, warnings = _accept(llm_result.selected, pool, requirements)
+    telemetry.event("skills", available=bool(suggestions))
     return SkillsPlan(
         skills=suggestions,
         warnings=warnings,

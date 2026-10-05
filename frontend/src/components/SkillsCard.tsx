@@ -1,5 +1,5 @@
 import type { KeywordGap, SkillsPlan, SkillSuggestion } from "../api";
-import { skillsUrl } from "../api";
+import { recordSkillsCopy, skillsUrl } from "../api";
 import { CopyButton } from "./CopyButton";
 
 const TIER_LABEL: Record<SkillSuggestion["tier"], string> = {
@@ -120,7 +120,11 @@ export function SkillsCard({
           </p>
         </div>
         <div className="flex shrink-0 flex-wrap gap-2">
-          <CopyButton label="Copy all" text={pasteLine(plan)} />
+          <CopyButton
+            label="Copy all"
+            text={pasteLine(plan)}
+            onCopied={() => void recordSkillsCopy(jobId).catch(() => undefined)}
+          />
           <a
             href={skillsUrl(jobId)}
             className="shrink-0 rounded-md border border-line px-2.5 py-1 text-xs font-medium text-ink-muted hover:border-accent hover:text-accent"

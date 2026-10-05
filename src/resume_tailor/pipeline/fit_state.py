@@ -90,6 +90,7 @@ class _FitState:
             max_experience=max_experience,
             max_projects=max_projects,
             semantic=semantic,
+            max_per_entry=self.entry_cap,
         )
         if not self.entries:
             raise fit_types.FitError(

@@ -29,6 +29,7 @@ import uuid
 from pathlib import Path
 
 from .. import config
+from ..infra import telemetry
 
 
 def _convert_word(docx_path: Path, pdf_path: Path, *, keep_active: bool) -> None:
@@ -194,6 +195,7 @@ def _convert_soffice(docx_path: Path, pdf_path: Path, *, keep_active: bool) -> N
 _BACKENDS = {"word": _convert_word, "soffice": _convert_soffice}
 
 
+@telemetry.stage("pdf_conversion")
 def convert(
     docx_path: Path, pdf_path: Path, *, keep_active: bool = False, backend: str | None = None
 ) -> Path:
@@ -211,8 +213,13 @@ def convert(
         ) from None
 
     try:
-        with _CONVERSION_LOCK:
-            impl(docx_path, pdf_path, keep_active=keep_active)
+        with telemetry.span("pdf_lock_wait"):
+            _CONVERSION_LOCK.acquire()
+        try:
+            with telemetry.span("pdf_engine"):
+                impl(docx_path, pdf_path, keep_active=keep_active)
+        finally:
+            _CONVERSION_LOCK.release()
     except RuntimeError:
         raise
     except Exception as exc:  # noqa: BLE001 - COM in particular raises a wide variety

@@ -19,7 +19,7 @@ from dataclasses import dataclass, field
 
 from .. import config
 from ..content.data import Bullet, MasterResume
-from ..infra import llm
+from ..infra import llm, telemetry
 from . import bullet_checks, bullet_merge, events, followups, rewrite_prompts
 from .jd import JobRequirements
 from .merge import MergeGroup
@@ -64,6 +64,7 @@ class RewriteOutcome:
         return len(bullet_checks.verb_collisions(self.texts))
 
 
+@telemetry.stage("rewrite", "initial")
 def rewrite_bullets(
     bullets: list[Bullet],
     requirements: JobRequirements,
@@ -142,21 +143,34 @@ def rewrite_bullets(
             # An unknown id means the mapping is unreliable; skip rather than guess.
             continue
         text = item.text.strip()
-        offenders = bullet_checks.guard_offenders([source], text)
+        offenders = bullet_checks.guard_offenders([source], text, preserve_numbers=True)
         if offenders:
             rejected[item.id] = (text, offenders)
         else:
             out[item.id] = text
 
     fabrications_rejected: dict[str, list[str]] = {}
+    missing_ids = {bid for bid, (_text, problems) in rejected.items()
+                   if any(p.startswith(bullet_checks._DROPPED_NUMBER_PREFIX) for p in problems)}
+    telemetry.event("rewrite", number_omissions=len(missing_ids))
     if rejected:
         events.emit(
             on_event,
             "rewrite",
-            f"Retrying {len(rejected)} fabricated bullet(s)",
+            f"Retrying {len(rejected)} bullet(s) with factual problems",
             fabricated=len(rejected),
         )
-        accepted, survivors = followups._retry_fabrications(rejected, by_id, requirements)
+        try:
+            accepted, survivors = followups._retry_fabrications(
+                rejected, by_id, requirements, preserve_numbers=True,
+            )
+        except llm.LLMError:
+            # A failed factual repair keeps verified source text, just like a
+            # repair that returns no usable bullet. Never spend another retry.
+            accepted = {}
+            survivors = {bid: offenders for bid, (_text, offenders) in rejected.items()}
+        telemetry.event("rewrite", number_repairs=len(missing_ids & accepted.keys()),
+                        number_fallbacks=len(missing_ids & survivors.keys()))
         out.update(accepted)
         if survivors:
             fabrications_rejected = survivors

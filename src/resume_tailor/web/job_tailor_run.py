@@ -12,6 +12,7 @@ from resume_tailor.content import data, industries, style
 from resume_tailor.content.data import MasterResume
 from resume_tailor.document import rerender
 from resume_tailor.document.template_profile import active_layout
+from resume_tailor.infra import telemetry
 from resume_tailor.infra.llm import LLMError
 from resume_tailor.pipeline import (
     coverletter,
@@ -66,8 +67,15 @@ class _TailorJobRun:
         self.on_event: ProgressCallback = job.emit
 
     def run(self) -> None:
+        with telemetry.recording(
+            config.OUTPUT_DIR, run_id=self.job.job_id, archive_id=self.job.job_id, source="web",
+        ):
+            self._run_measured()
+
+    def _run_measured(self) -> None:
         job, settings = self.job, self.settings
         self._prepare()
+        telemetry.configure()
         self._extract()
         job.check_cancelled()
         self._score()
@@ -83,6 +91,7 @@ class _TailorJobRun:
         job.check_cancelled()
         self._fit()
         self._ensure_pdf()
+        telemetry.ready()
         job.report = job_outputs._to_report_out(
             report.report_data(
                 self.resume, self.requirements, self.result, master=self.master_resume
@@ -156,6 +165,7 @@ class _TailorJobRun:
         settings = self.settings
         self.semantic: dict[str, float] | None = None
         if settings.no_semantic:
+            telemetry.event("score", skipped=True)
             return
         try:
             self.semantic = relevance.score_table(
@@ -310,6 +320,9 @@ class _TailorJobRun:
                 (self._select_skills, settings.no_skills),
             ) if not skipped
         ]
+        for stage, skipped in (("expand", settings.no_expand), ("skills", settings.no_skills)):
+            if skipped:
+                telemetry.event(stage, skipped=True)
         with ThreadPoolExecutor(max_workers=max(1, len(background))) as pool:
             futures = [config.submit_in_context(pool, stage) for stage in background]
             if settings.cover_letter and not settings.no_cover_letter:
@@ -327,6 +340,7 @@ class _TailorJobRun:
                 self.requirements,
                 fit_result=self.result,
                 semantic=self.semantic,
+                max_bullets_per_entry=self.settings.max_bullets_per_entry,
                 use_cache=not self.settings.no_cache,
                 on_event=self.on_event,
             )

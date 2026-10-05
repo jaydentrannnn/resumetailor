@@ -367,6 +367,13 @@ export function skillsUrl(jobId: string): string {
   return `/api/jobs/${jobId}/skills.md`;
 }
 
+export function recordSkillsCopy(jobId: string): Promise<void> {
+  return request(`/api/jobs/${encodeURIComponent(jobId)}/artifact-usage`, {
+    method: "POST",
+    body: JSON.stringify({ artifact: "skills", action: "copy" }),
+  });
+}
+
 export function coverLetterMdUrl(jobId: string): string {
   return `/api/jobs/${jobId}/cover-letter.md`;
 }

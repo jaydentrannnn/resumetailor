@@ -25,7 +25,7 @@ from pydantic import BaseModel, Field
 from .. import config
 from ..content import industries, style
 from ..content.data import Experience, MasterResume
-from ..infra import llm
+from ..infra import llm, telemetry
 from . import events
 from .bullet_checks import verb_collisions
 from .fabrication import _check_fabrication, numbers_dropped
@@ -185,6 +185,7 @@ def choose_entries(
     resume_bullet_ids: set[str] | None = None,
     semantic: dict[str, float] | None = None,
     limit: int | None = None,
+    max_per_entry: int | None = None,
 ) -> list[Experience]:
     """Pick experience entries for expansion, forcing in every entry on the tailored resume.
 
@@ -206,7 +207,8 @@ def choose_entries(
     remaining_budget = max(0, limit - len(forced))
     pool = [e for e in resume.experience if id(e) not in forced_ids]
     extras = (
-        select_entries(pool, requirements, limit=remaining_budget, semantic=semantic)
+        select_entries(pool, requirements, limit=remaining_budget, semantic=semantic,
+                       max_per_entry=max_per_entry)
         if remaining_budget
         else []
     )
@@ -348,6 +350,7 @@ def format_markdown(expansion: Expansion) -> str:
     return "\n\n---\n\n".join(blocks)
 
 
+@telemetry.stage("expand")
 def expand_experience(
     resume: MasterResume,
     requirements: JobRequirements,
@@ -356,6 +359,7 @@ def expand_experience(
     resume_bullet_ids: set[str] | None = None,
     semantic: dict[str, float] | None = None,
     limit: int | None = None,
+    max_bullets_per_entry: int | None = None,
     char_limit: int | None = None,
     use_cache: bool = True,
     on_event: events.ProgressCallback | None = None,
@@ -380,6 +384,7 @@ def expand_experience(
         resume_bullet_ids=resume_ids,
         semantic=semantic,
         limit=limit,
+        max_per_entry=max_bullets_per_entry,
     )
     model_label = config.backend_for("expand").label()
 

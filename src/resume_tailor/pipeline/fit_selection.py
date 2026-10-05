@@ -30,6 +30,7 @@ def choose_entries(
     semantic: dict[str, float] | None = None,
     layout: dict | None = None,
     section_limits: dict[str, int] | None = None,
+    max_per_entry: int | None = None,
 ) -> list:
     """Pick which entries appear, ranking every entry section independently.
 
@@ -67,7 +68,8 @@ def choose_entries(
         if section.kind == "experience" and not enabled.get("experience", True):
             limit = 0  # no Experience layout in the template: nothing could render them
         chosen.extend(
-            select_entries(section.entries, requirements, limit=limit, semantic=semantic)
+            select_entries(section.entries, requirements, limit=limit, semantic=semantic,
+                           max_per_entry=max_per_entry)
         )
     return chosen
 

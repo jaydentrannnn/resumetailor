@@ -19,6 +19,7 @@ from resume_tailor.apply.ats import (
     workday_skills,
 )
 from resume_tailor.apply.funnel.store_models import FillResult
+from resume_tailor.infra import telemetry
 
 from . import fill_outcomes, fill_page, fill_state, fill_widgets
 
@@ -109,6 +110,8 @@ class _FillAtsSteps(fill_state._FillState):
                 item for item in self.needs_review if not item.startswith("Skills not found")
             ]
             self.needs_review.append(note)
+        if skill_chips:
+            telemetry.artifact_use(config.OUTPUT_DIR, self.pkt.job_id, "autofill")
         return skill_chips
 
     def _workday_phone_code(self) -> None:

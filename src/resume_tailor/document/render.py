@@ -18,6 +18,7 @@ from docxtpl import DocxTemplate, RichText
 
 from .. import config
 from ..content.data import MasterResume
+from ..infra import telemetry
 from . import convert
 from .template_profile import ContactField, active_layout
 
@@ -454,6 +455,7 @@ def build_context(
     return context
 
 
+@telemetry.stage("render")
 def render(
     resume: MasterResume,
     *,
@@ -622,6 +624,7 @@ def measure(docx_path: Path, *, keep_active: bool = False) -> int:
     return page_count(to_pdf(docx_path, keep_active=keep_active))
 
 
+@telemetry.stage("measure")
 def measure_detail(docx_path: Path, *, keep_active: bool = False) -> tuple[int, int]:
     """Render `docx_path` to PDF and return `(page_count, line_count)`.
 

@@ -55,7 +55,7 @@ import httpx
 from pydantic import BaseModel, ValidationError
 
 from .. import config
-from . import fake_llm, model_queue
+from . import fake_llm, llm_telemetry, model_queue, telemetry
 
 T = TypeVar("T", bound=BaseModel)
 
@@ -291,13 +291,16 @@ class _OpenAICompatClient:
         slept = 0.0
         for retry in range(len(_RETRY_BACKOFF) + 1):
             try:
-                with model_queue.queue.slot(self.base_url, self.origin):
+                with telemetry.request(self.origin, payload["model"], retry) as measured, \
+                        model_queue.queue.slot(self.base_url, self.origin):
+                    measured.admitted()
                     response = httpx.post(
                         f"{self.base_url}/chat/completions",
                         headers=headers,
                         json=payload,
                         timeout=self.timeout,
                     )
+                    measured.response(response)
                     model_queue.queue.rate_limited(self.base_url, response)
             except httpx.RequestError as exc:
                 # base_url is whatever the profile/override resolved — do not assume Ollama.
@@ -397,6 +400,7 @@ class _OpenAICompatClient:
             # 401 means the sign-in lapsed; retrying either just spends another round trip
             # against a metered quota to be told the same thing.
             if response.status_code in (400, 422) and rung < len(ladder) - 1:
+                telemetry.retry_reason("structured_fallback")
                 rung += 1
                 continue
 
@@ -416,6 +420,7 @@ class _OpenAICompatClient:
                 # failure right here, so a run that already succeeds never pays for this —
                 # it issues the same requests at the same ceiling it always did.
                 if ceiling < cap and escalations < config.MAX_TOKEN_ESCALATIONS:
+                    telemetry.retry_reason("token_escalation")
                     ceiling = min(ceiling * 2, cap)
                     escalations += 1
                     continue
@@ -460,6 +465,7 @@ class _OpenAICompatClient:
             },
         ]
 
+        telemetry.retry_reason("json_repair")
         response = self._post(retry)
         self._check_status(response, model)
         repaired, finish = self._read(response, model)
@@ -499,10 +505,10 @@ def client_for(purpose: str) -> Any:
     if backend.provider == "anthropic":
         import anthropic
 
-        return anthropic.Anthropic(
+        return llm_telemetry.wrap(anthropic.Anthropic(
             api_key=config.api_key_for(purpose),
             http_client=httpx.Client(transport=model_queue.ScheduledTransport()),
-        )
+        ), purpose, backend.origin)
 
     if backend.provider == "openai":
         if not backend.base_url:
@@ -521,14 +527,14 @@ def client_for(purpose: str) -> Any:
                 f"No API key found for the {backend.origin!r} provider ({purpose!r} "
                 f"stage). Set {env_names} in .env."
             )
-        return _OpenAICompatClient(
+        return llm_telemetry.wrap(_OpenAICompatClient(
             base_url=backend.base_url,
             origin=backend.origin,
             api_key=config.api_key_for(purpose),
             timeout=config.LLM_TIMEOUT,
             structured_mode=config.structured_mode_for(purpose),
             max_token_cap=config.max_token_cap_for(purpose),
-        )
+        ), purpose, backend.origin)
 
     raise LLMError(
         f"Unknown provider {backend.provider!r} for {purpose!r}. "
@@ -590,16 +596,19 @@ class _AsyncOpenAICompatClient:
             if remaining <= 0:
                 raise TimeoutError("Apply model stage exceeded its deadline")
             try:
-                async with asyncio.timeout(remaining):
-                    async with model_queue.queue.async_slot(
-                        self.base_url, self.origin, deadline=deadline,
-                    ):
-                        remaining = deadline - time.monotonic()
-                        response = await self._http.post(
-                            f"{self.base_url}/chat/completions", headers=headers,
-                            json=payload, timeout=min(self.timeout, remaining),
-                        )
-                        model_queue.queue.rate_limited(self.base_url, response)
+                with telemetry.request(self.origin, payload["model"], retry) as measured:
+                    async with asyncio.timeout(remaining):
+                        async with model_queue.queue.async_slot(
+                            self.base_url, self.origin, deadline=deadline,
+                        ):
+                            measured.admitted()
+                            remaining = deadline - time.monotonic()
+                            response = await self._http.post(
+                                f"{self.base_url}/chat/completions", headers=headers,
+                                json=payload, timeout=min(self.timeout, remaining),
+                            )
+                            measured.response(response)
+                            model_queue.queue.rate_limited(self.base_url, response)
             except httpx.RequestError as exc:
                 raise LLMError(f"Could not reach {self.base_url}: {exc}") from exc
             if response.status_code not in _RETRYABLE_STATUSES or retry == len(_RETRY_BACKOFF):
@@ -639,6 +648,7 @@ class _AsyncOpenAICompatClient:
                 payload["response_format"] = ladder[rung]
             response = await self._post(payload, stage_deadline)
             if response.status_code in (400, 422) and rung < len(ladder) - 1:
+                telemetry.retry_reason("structured_fallback")
                 rung += 1
                 continue
             _OpenAICompatClient._check_status(self, response, model)
@@ -650,6 +660,7 @@ class _AsyncOpenAICompatClient:
                 return _Response(parsed, finish)
             except ValidationError as error:
                 if finish == "length" and ceiling < cap and escalations < config.MAX_TOKEN_ESCALATIONS:
+                    telemetry.retry_reason("token_escalation")
                     ceiling = min(ceiling * 2, cap)
                     escalations += 1
                     continue
@@ -664,6 +675,7 @@ class _AsyncOpenAICompatClient:
                         f"{str(error)[:600]}\n\nReturn ONLY a corrected JSON object."
                     )},
                 ]
+                telemetry.retry_reason("json_repair")
                 repaired_response = await self._post(repair, stage_deadline)
                 _OpenAICompatClient._check_status(self, repaired_response, model)
                 repaired, repaired_finish = _OpenAICompatClient._read(repaired_response, model)
@@ -682,11 +694,11 @@ def async_client_for(purpose: str) -> Any:
     if backend.provider == "anthropic":
         import anthropic
 
-        return anthropic.AsyncAnthropic(
+        return llm_telemetry.wrap(anthropic.AsyncAnthropic(
             api_key=config.api_key_for(purpose), max_retries=0,
             timeout=min(config.LLM_TIMEOUT, 60),
             http_client=httpx.AsyncClient(transport=model_queue.AsyncScheduledTransport()),
-        )
+        ), purpose, backend.origin, asynchronous=True)
     if backend.provider == "openai":
         if not backend.base_url:
             raise LLMError(f"Provider {backend.origin!r} needs a base URL")
@@ -695,11 +707,11 @@ def async_client_for(purpose: str) -> Any:
         ):
             env_names = " or ".join(config.api_key_env_for(backend.origin, backend.base_url))
             raise LLMError(f"No API key found for {backend.origin!r}. Set {env_names}.")
-        return _AsyncOpenAICompatClient(
+        return llm_telemetry.wrap(_AsyncOpenAICompatClient(
             base_url=backend.base_url, api_key=config.api_key_for(purpose),
             origin=backend.origin,
             structured_mode=config.structured_mode_for(purpose),
             max_token_cap=config.max_token_cap_for(purpose),
             timeout=min(config.LLM_TIMEOUT, 60),
-        )
+        ), purpose, backend.origin, asynchronous=True)
     raise LLMError(f"Unknown provider {backend.provider!r} for {purpose!r}")

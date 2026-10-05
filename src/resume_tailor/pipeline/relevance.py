@@ -10,7 +10,7 @@ from pydantic import BaseModel, Field
 from .. import config
 from ..content import industries
 from ..content.data import Bullet
-from ..infra import llm
+from ..infra import llm, telemetry
 from . import events, rewrite_prompts
 from .jd import JobRequirements
 
@@ -83,6 +83,7 @@ def _format_scoring_bullets(bullets: list[Bullet]) -> str:
         f"<bullet id={b.id!r}>{b.text}</bullet>" for b in bullets
     )
 
+@telemetry.stage("score")
 def score_table(
     bullets: list[Bullet],
     requirements: JobRequirements,

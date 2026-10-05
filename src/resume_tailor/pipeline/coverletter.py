@@ -22,7 +22,7 @@ from pathlib import Path
 from .. import config
 from ..content import industries, style
 from ..content.data import Bullet, MasterResume
-from ..infra import llm
+from ..infra import llm, telemetry
 from . import coverletter_format, coverletter_models, coverletter_style, events
 from .fabrication import _check_fabrication
 from .jd import JobRequirements
@@ -429,6 +429,7 @@ def _call_model(
     return result
 
 
+@telemetry.stage("cover")
 def draft_letter(
     resume: MasterResume,
     requirements: JobRequirements,

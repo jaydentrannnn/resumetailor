@@ -18,7 +18,7 @@ from pathlib import Path
 from .. import config
 from ..content import industries
 from ..content.data import MasterResume
-from ..infra import llm
+from ..infra import llm, telemetry
 from . import events, facets_budget, facets_models, facets_resolve
 from .jd import JobRequirements
 
@@ -184,6 +184,7 @@ def _format_skills(resume: MasterResume) -> str:
     return "\n".join(blocks) or "  (no skill groups)"
 
 
+@telemetry.stage("facets")
 def select_facets(
     resume: MasterResume,
     requirements: JobRequirements,

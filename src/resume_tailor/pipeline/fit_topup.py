@@ -148,7 +148,8 @@ class _FitTopUp(fit_shrink._FitShrink):
         }
         ranked_entries = sorted(
             (e for e in self.candidate_entries if id(e) not in chosen and e.bullets),
-            key=lambda e: score_entry(e, self.requirements, semantic=self.semantic),
+            key=lambda e: score_entry(e, self.requirements, semantic=self.semantic,
+                                      max_per_entry=self.entry_cap),
             reverse=True,
         )
         for entry in ranked_entries:

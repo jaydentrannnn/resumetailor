@@ -21,7 +21,7 @@ from resume_tailor.cli.args import parse_args, validate_argument_ranges
 from resume_tailor.content import data, industries, style
 from resume_tailor.content.data import MasterResume
 from resume_tailor.document.template_profile import active_layout
-from resume_tailor.infra import logs
+from resume_tailor.infra import logs, telemetry
 from resume_tailor.infra.llm import LLMError
 from resume_tailor.pipeline import (
     coverletter,
@@ -63,11 +63,22 @@ class _CliRun:
         self.semantic: dict[str, float] | None = None
 
     def run(self) -> int:
-        for step in (self._configure, self._load_inputs, self._score, self._select_facets,
+        code = self._configure()
+        if code is not None:
+            return code
+        with telemetry.recording(config.OUTPUT_DIR) as measured:
+            telemetry.configure()
+            code = self._run_configured()
+            measured.data["status"] = "succeeded" if code == 0 else "failed"
+            return code
+
+    def _run_configured(self) -> int:
+        for step in (self._load_inputs, self._score, self._select_facets,
                      self._fit):
             code = step()
             if code is not None:
                 return code
+        telemetry.ready()
         self._archive()
         self._expand()
         self._select_skills()
@@ -241,6 +252,7 @@ class _CliRun:
         # Scored once, before the loop, and held fixed for the run — see
         # `relevance.score_table` for why it must not be recomputed per iteration.
         if self.args.no_semantic:
+            telemetry.event("score", skipped=True)
             return None
         try:
             self.semantic = relevance.score_table(
@@ -353,6 +365,8 @@ class _CliRun:
             jd_sidecar = result.out_path.with_name(result.out_path.stem + ".jd.txt")
             jd_sidecar.write_text(jd_text, encoding="utf-8")
             archive_dir = config.OUTPUT_DIR / "jobs" / f"cli-{result.out_path.stem}"
+            if measured := telemetry.current():
+                measured.data["archive_id"] = archive_dir.name
             archive_dir.mkdir(parents=True, exist_ok=True)
             industries.save(industries.active(), archive_dir)
             (archive_dir / "jd.txt").write_text(jd_text, encoding="utf-8")
@@ -376,6 +390,7 @@ class _CliRun:
         # Expansion is advisory paste text for application forms; the .docx is already on
         # disk.
         if self.args.no_expand:
+            telemetry.event("expand", skipped=True)
             return
         try:
             # Unfiltered resume: an experience entry excluded from the tailored resume
@@ -385,6 +400,7 @@ class _CliRun:
                 self.requirements,
                 fit_result=self.result,
                 semantic=self.semantic,
+                max_bullets_per_entry=self.args.max_bullets_per_entry,
                 use_cache=not self.args.no_cache,
             )
             print()
@@ -404,6 +420,7 @@ class _CliRun:
         # the post-facets `resume`: facets truncates Project.tech to its render budget,
         # which would silently drop evidence.
         if self.args.no_skills:
+            telemetry.event("skills", skipped=True)
             return
         try:
             plan = skills.select_skills(

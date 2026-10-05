@@ -46,5 +46,9 @@ def emit(
     throws is a bug in the caller, and swallowing it here would hide it during exactly
     the long-running operation the callback exists to make visible.
     """
+    from ..infra import telemetry
+
+    if "cached" in detail:
+        telemetry.event(stage, cached=bool(detail["cached"]))
     if on_event is not None:
         on_event(ProgressEvent(stage=stage, message=message, detail=detail))

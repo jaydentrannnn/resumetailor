@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from .. import config
 from ..content.data import Bullet
-from ..infra import llm
+from ..infra import llm, telemetry
 from . import bullet_checks, fabrication, followups, rewrite_prompts
 from .jd import JobRequirements
 from .merge import MergeGroup
@@ -44,6 +44,7 @@ def _format_merge_groups(
         )
     return "\n".join(parts)
 
+@telemetry.stage("rewrite", "merge")
 def _merge_bullets(
     texts: dict[str, str],
     sources: dict[str, Bullet],

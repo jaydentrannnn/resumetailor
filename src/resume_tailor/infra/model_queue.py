@@ -290,19 +290,30 @@ class ScheduledTransport(httpx.HTTPTransport):
 
     def handle_request(self, request: httpx.Request) -> httpx.Response:
         endpoint = str(request.url.copy_with(path="", query=None))
-        with queue.slot(endpoint, "anthropic"):
+        from . import telemetry
+
+        retry = int(request.headers.get("x-stainless-retry-count", "0"))
+        with telemetry.request("anthropic", retry=retry) as measured, \
+                queue.slot(endpoint, "anthropic"):
+            measured.admitted()
             response = super().handle_request(request)
             response.read()
+            measured.response(response)
             queue.rate_limited(endpoint, response)
             return response
 
 
 class AsyncScheduledTransport(httpx.AsyncHTTPTransport):
     async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+        from . import telemetry
+
         endpoint = str(request.url.copy_with(path="", query=None))
         with_deadline = time.monotonic() + min(config.LLM_TIMEOUT, 60)
-        async with queue.async_slot(endpoint, "anthropic", deadline=with_deadline):
-            response = await super().handle_async_request(request)
-            await response.aread()
-            queue.rate_limited(endpoint, response)
-            return response
+        with telemetry.request("anthropic") as measured:
+            async with queue.async_slot(endpoint, "anthropic", deadline=with_deadline):
+                measured.admitted()
+                response = await super().handle_async_request(request)
+                await response.aread()
+                measured.response(response)
+                queue.rate_limited(endpoint, response)
+                return response

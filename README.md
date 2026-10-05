@@ -38,6 +38,8 @@ Good to know:
 
 The owner's walkthrough (building installers, moving data from a dev checkout, updating,
 day-to-day operation) is [`docs/GUIDE.md`](docs/GUIDE.md).
+Local token, timing and retry measurements are described in
+[`docs/TELEMETRY.md`](docs/TELEMETRY.md).
 
 ## Install the desktop app (Apple Silicon Mac)
 

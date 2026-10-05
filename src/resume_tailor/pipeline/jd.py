@@ -26,7 +26,7 @@ from pydantic import BaseModel, Field, PrivateAttr
 
 from .. import config
 from ..content import industries
-from ..infra import llm
+from ..infra import llm, telemetry
 from . import events
 
 Importance = Literal["must_have", "nice_to_have"]
@@ -242,6 +242,7 @@ def _build_user_message(jd_text: str, known_tags: list[str] | None) -> str:
     return "\n\n".join(parts)
 
 
+@telemetry.stage("extract")
 def extract(
     jd_text: str,
     *,
@@ -456,6 +457,7 @@ def _vote(
     return consensus, dropped_all
 
 
+@telemetry.stage("extract")
 def extract_consensus(
     jd_text: str,
     *,
@@ -480,6 +482,7 @@ def extract_consensus(
     `-consensusN` suffix, so `runs=1` and `runs=3` results never collide and a later change
     to `runs` cache-misses cleanly rather than serving a stale vote count.
     """
+    telemetry.event("extract", votes=max(1, runs))
     if runs <= 1:
         return extract(jd_text, known_tags=known_tags, use_cache=use_cache, on_event=on_event)
 
@@ -514,6 +517,11 @@ def extract_consensus(
         samples = [future.result() for future in futures]
 
     consensus, dropped_all = _vote(samples, known_tags)
+    sets = [{(k.canonical, k.importance) for k in sample.keywords} for sample in samples]
+    pairs = [(a, b) for i, a in enumerate(sets) for b in sets[i + 1:]]
+    agreement = sum(len(a & b) / len(a | b) if a | b else 1 for a, b in pairs) / len(pairs)
+    telemetry.event("extract", votes=runs, sample_agreement=agreement,
+                    sample_count=len(samples), consensus_dropped_all=dropped_all)
 
     _write_cache(cache_path, consensus)
     events.emit(
