@@ -3,6 +3,7 @@ redundancy, widowed last lines, and repeated opening verbs."""
 
 from __future__ import annotations
 
+import re
 from collections.abc import Sequence
 
 from .. import config
@@ -30,9 +31,34 @@ def _noun_key(term: str) -> str | None:
     `libraries.apply_to_config()` rebinds `TAG_ALIASES` to a new dict per workspace.
 
     Returns None for a token repeating which asserts nothing (see `_significant`).
+    A short all-caps acronym ("ARR", "UI", "APIs") still binds: `_significant` drops
+    it for being short, but in "increasing ARR by 12%" it is the subject the figure
+    measures, and without it the figure bound only the verb, so any rephrased verb
+    read as a rebinding.
     """
     sig = fabrication._significant(term)
+    if sig is None and _ACRONYM.fullmatch(term):
+        sig = term.lower().removesuffix("s")
     return None if sig is None else config.canonical_tag(sig)
+
+_ACRONYM = re.compile(r"[A-Z]{2,}s?")
+#: A bare version number ("15", "3.11") — the shape `_is_version` checks after a name.
+_VERSION = re.compile(r"\d+(?:\.\d+)*")
+
+def _is_version(tokens: list[str], matches: list[re.Match[str]], text: str, i: int) -> bool:
+    """Whether `tokens[i]` is a version of the name before it ("Next.js 15", "Python 3.11").
+
+    The name must sit mid-bullet (the first token is the opening verb, so "Led 40
+    engineers" is a count), be separated from the number by whitespace only, and carry
+    a capital or an internal dot. A version is not a quantity of anything, so binding it
+    to the next words flagged "Next.js 15 frontend" as a rebinding of "Next.js 15 UI".
+    """
+    if i < 2 or not _VERSION.fullmatch(tokens[i]) or text[matches[i].end():].startswith("%"):
+        return False
+    name = tokens[i - 1]
+    if text[matches[i - 1].end():matches[i].start()].strip():
+        return False
+    return "." in name or any(c.isupper() for c in name)
 
 def _number_noun_bindings(text: str) -> dict[str, set[str]]:
     """Map each digit-bearing token (lowercased) to significant nouns near it.
@@ -74,26 +100,32 @@ def _number_noun_surface(text: str) -> dict[str, list[tuple[str, str]]]:
     for i, term in enumerate(tokens):
         if not fabrication._HAS_DIGIT.search(term):
             continue
+        # "EC2", "S3", "GPT-4" name a thing that happens to carry a digit; a version
+        # after a name ("Next.js 15") counts nothing. The term guard still checks both.
+        if not term[0].isdigit() or _is_version(tokens, matches, text, i):
+            continue
         key = term.lower()
         if fabrication._NUMBER_PLUS.fullmatch(key):
             key = key[:-1]
         pairs = out.setdefault(key, [])
-        # In "cut troubleshooting time by 50-66% by authoring ...", the
-        # percentage belongs to the preceding outcome, not the following action.
-        percent_outcome = (
-            i > 0 and tokens[i - 1].lower() == "by"
-            and text[matches[i].end():].startswith("%")
-        )
-        indices = (range(i - 2, max(-1, i - 2 - _NOUN_BIND_WINDOW), -1)
-                   if percent_outcome else
-                   range(i + 1, min(i + 1 + _NOUN_BIND_WINDOW, len(tokens))))
-        for j in indices:
-            candidate = tokens[j]
-            if fabrication._HAS_DIGIT.search(candidate):
-                break
-            sig = _noun_key(candidate)
-            if sig is not None:
-                pairs.append((candidate.lower(), sig))
+        forward = range(i + 1, min(i + 1 + _NOUN_BIND_WINDOW, len(tokens)))
+        if text[matches[i].end():].startswith("%"):
+            # A percentage measures the outcome named before it ("increasing ARR by
+            # 12%") as often as the thing after it ("12% of tickets"); a rewrite moves
+            # it between the two freely, so it binds both ways. The "by" in "time by
+            # 50-66%" is skipped so the window reaches the outcome itself.
+            start = i - 2 if i > 0 and tokens[i - 1].lower() == "by" else i - 1
+            windows = [range(start, max(-1, start - _NOUN_BIND_WINDOW), -1), forward]
+        else:
+            windows = [forward]
+        for indices in windows:
+            for j in indices:
+                candidate = tokens[j]
+                if fabrication._HAS_DIGIT.search(candidate):
+                    break
+                sig = _noun_key(candidate)
+                if sig is not None:
+                    pairs.append((candidate.lower(), sig))
     return out
 
 def rebound_numbers(sources: Sequence[Bullet], rewritten: str) -> list[str]:
@@ -336,8 +368,9 @@ def verb_collisions(texts: dict[str, str]) -> dict[str, list[str]]:
     Two rules, both deterministic and both free:
       - **exact duplicate**: a second bullet opening with the same word as an earlier one.
         Applies to any alphabetic opener, so an unlisted verb is still caught.
-      - **family over-concentration**: more than `config.MAX_SAME_FAMILY_OPENERS` bullets
-        opening with near-synonyms ("Designed... Engineered... Architected..."), which
+      - **family over-concentration**: more than `config.family_opener_cap(len(texts))`
+        bullets (two, plus one per five bullets past ten) opening with near-synonyms
+        ("Designed... Engineered... Architected..."), which
         reads as one note held too long even though no word repeats. Only verbs in
         `config.VERB_FAMILIES` participate, so an opener the table has never seen can
         never be flagged wrongly.
@@ -350,6 +383,7 @@ def verb_collisions(texts: dict[str, str]) -> dict[str, list[str]]:
     currently in use, plus the whole family when the family is what overflowed.
     """
     openers = {bid: opening_verb(text) for bid, text in texts.items()}
+    family_cap = config.family_opener_cap(len(texts))
 
     used_words: set[str] = set()
     family_counts: dict[str, int] = {}
@@ -362,7 +396,7 @@ def verb_collisions(texts: dict[str, str]) -> dict[str, list[str]]:
 
         if word in used_words:
             offenders[bullet_id] = set()
-        elif family is not None and family_counts.get(family, 0) >= config.MAX_SAME_FAMILY_OPENERS:
+        elif family is not None and family_counts.get(family, 0) >= family_cap:
             offenders[bullet_id] = set(config.family_verbs(family))
         else:
             # Only a bullet that keeps its opener holds a claim on it; an offender is

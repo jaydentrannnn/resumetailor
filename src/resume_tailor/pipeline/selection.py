@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import re
+from collections import Counter
 
 from .. import config
 from ..content.data import Bullet, Experience, Project
@@ -284,6 +285,37 @@ def _allocate_budgets(
             deficit -= give
     return allocations
 
+def _coverage_discount(times_shown: int) -> float:
+    """Keyword weight left after `times_shown` selected bullets already show it."""
+    if times_shown == 0:
+        return 1.0
+    return config.COVERAGE_REPEAT_DISCOUNT if times_shown == 1 else 0.0
+
+def _marginal_score(
+    bullet: Bullet,
+    requirements: JobRequirements,
+    semantic: dict[str, float] | None,
+    covered: Counter[str],
+) -> float:
+    """`score` with each keyword discounted by how often the page already shows it."""
+    tags = set(bullet.tags)
+    total = sum(
+        _keyword_weight(kw) * _coverage_discount(covered[kw.canonical])
+        for kw in requirements.keywords if _matches(kw, tags)
+    )
+    if semantic:
+        total += config.SEMANTIC_WEIGHT * semantic.get(bullet.id, 0.0)
+    if total and bullet.metric:
+        total += config.METRIC_BONUS
+    return total
+
+def _cover(bullet: Bullet, requirements: JobRequirements, covered: Counter[str]) -> None:
+    """Record the posting keywords `bullet` shows."""
+    tags = set(bullet.tags)
+    for kw in requirements.keywords:
+        if _matches(kw, tags):
+            covered[kw.canonical] += 1
+
 def _take_ranked(
     entries: list,
     requirements: JobRequirements,
@@ -291,12 +323,19 @@ def _take_ranked(
     limit: int,
     semantic: dict[str, float] | None = None,
     max_per_entry: int | None = None,
+    covered: Counter[str] | None = None,
 ) -> set[int]:
     """Return `id()`s of up to `limit` bullets: every entry's floor, then the
     highest-scoring remainder, skipping any entry already at `max_per_entry`.
 
     A capped entry's forfeited slot is not lost — the walk simply continues to the
     next-best bullet elsewhere, so spillover within the pool falls out for free.
+
+    With `covered` (coverage-aware selection, `config.COVERAGE_SELECTION`), the
+    remainder is picked greedily instead: each pick re-scores the pool with keywords
+    already shown discounted (`_marginal_score`), and records what it shows. The
+    counter is shared across a run's pools, so a must-have proven in Experience does
+    not need proving again in Projects.
     """
     floors: list[Bullet] = []
     counts: dict[int, int] = {}
@@ -307,6 +346,9 @@ def _take_ranked(
             counts[id(entry)] = 1
 
     kept = {id(b) for b in floors}
+    if covered is not None:
+        for b in floors:
+            _cover(b, requirements, covered)
     remaining = limit - len(floors)
     if remaining <= 0:
         return kept
@@ -314,6 +356,22 @@ def _take_ranked(
     entry_of = {id(b): id(e) for e in entries for b in e.bullets}
     recency = {id(e): entry_recency(e) for e in entries}
     pool = [b for e in entries for b in e.bullets if id(b) not in kept]
+    if covered is not None:
+        for _ in range(remaining):
+            open_ = [b for b in pool if max_per_entry is None
+                     or counts.get(entry_of[id(b)], 0) < max_per_entry]
+            if not open_:
+                break
+            # `max` keeps the first of equals, so ties resolve in pool order — the
+            # same order the stable sort below gives them.
+            best = max(open_, key=lambda b: _marginal_score(
+                b, requirements, semantic, covered) * recency[entry_of[id(b)]])
+            pool.remove(best)
+            kept.add(id(best))
+            counts[entry_of[id(best)]] = counts.get(entry_of[id(best)], 0) + 1
+            _cover(best, requirements, covered)
+        return kept
+
     ranked = sorted(
         pool,
         key=lambda b: score(b, requirements, semantic=semantic) * recency[entry_of[id(b)]],
@@ -374,7 +432,11 @@ def select_within_entries(
 
     All of `experience_share`, `pools`, and `weights` default to `None`, reproducing the
     original flat-pool selection exactly.
+
+    `config.COVERAGE_SELECTION` switches the remainder to coverage-aware picking (see
+    `_take_ranked`); off, selection is exactly as described above.
     """
+    covered: Counter[str] | None = Counter() if config.COVERAGE_SELECTION else None
     if pools is not None:
         resolved_weights = weights if weights is not None else [None] * len(pools)
         allocations = _allocate_budgets(
@@ -384,13 +446,14 @@ def select_within_entries(
         for pool, pool_limit in zip(pools, allocations, strict=True):
             kept |= _take_ranked(
                 pool, requirements, limit=pool_limit, semantic=semantic,
-                max_per_entry=max_per_entry,
+                max_per_entry=max_per_entry, covered=covered,
             )
         return [b for e in entries for b in e.bullets if id(b) in kept]
 
     if experience_share is None:
         kept = _take_ranked(
-            entries, requirements, limit=limit, semantic=semantic, max_per_entry=max_per_entry
+            entries, requirements, limit=limit, semantic=semantic, max_per_entry=max_per_entry,
+            covered=covered,
         )
         return [b for e in entries for b in e.bullets if id(b) in kept]
 
@@ -401,9 +464,11 @@ def select_within_entries(
         max_per_entry=max_per_entry,
     )
     kept = _take_ranked(
-        experience, requirements, limit=exp_limit, semantic=semantic, max_per_entry=max_per_entry
+        experience, requirements, limit=exp_limit, semantic=semantic,
+        max_per_entry=max_per_entry, covered=covered,
     )
     kept |= _take_ranked(
-        projects, requirements, limit=proj_limit, semantic=semantic, max_per_entry=max_per_entry
+        projects, requirements, limit=proj_limit, semantic=semantic,
+        max_per_entry=max_per_entry, covered=covered,
     )
     return [b for e in entries for b in e.bullets if id(b) in kept]

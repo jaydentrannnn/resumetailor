@@ -14,6 +14,7 @@ from __future__ import annotations
 import argparse
 import json
 import sys
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from resume_tailor import config, workspace
@@ -73,8 +74,7 @@ class _CliRun:
             return code
 
     def _run_configured(self) -> int:
-        for step in (self._load_inputs, self._score, self._select_facets,
-                     self._fit):
+        for step in (self._load_inputs, self._score_with_facets, self._fit):
             code = step()
             if code is not None:
                 return code
@@ -248,6 +248,20 @@ class _CliRun:
 
     # -- the pipeline ------------------------------------------------------------------
 
+    def _score_with_facets(self) -> int | None:
+        """Score relevance and select facets at the same time; the first failure's code.
+
+        Neither reads the other's output, so on a cloud backend the facets call no longer
+        waits behind scoring (`infra/model_queue.py` still serialises a local one). Both
+        read the unfiltered resume captured here; facets filters its own copy.
+        """
+        self.full_resume = self.resume
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            facets_done = config.submit_in_context(pool, self._select_facets)
+            score_code = self._score()
+        facets_code = facets_done.result()
+        return score_code if score_code is not None else facets_code
+
     def _score(self) -> int | None:
         # Scored once, before the loop, and held fixed for the run — see
         # `relevance.score_table` for why it must not be recomputed per iteration.
@@ -256,7 +270,8 @@ class _CliRun:
             return None
         try:
             self.semantic = relevance.score_table(
-                self.resume.all_bullets(), self.requirements, use_cache=not self.args.no_cache
+                self.full_resume.all_bullets(), self.requirements,
+                use_cache=not self.args.no_cache,
             )
         except LLMError as exc:
             # Deliberately NOT degraded. An unreachable daemon, an expired sign-in, or an
@@ -275,12 +290,11 @@ class _CliRun:
 
     def _select_facets(self) -> int | None:
         args, requirements = self.args, self.requirements
-        # Kept unfiltered for the experience expansion below — an excluded job still
-        # appears in the application-form paste text. Applied here (after scoring, before
-        # facets) so an exclusion never invalidates the score cache, and facets never sees
-        # a pool an excluded entry contributed to.
-        self.full_resume = self.resume
-        resume = include.apply(self.resume, self.include_options)
+        # `full_resume` stays unfiltered for the experience expansion below — an excluded
+        # job still appears in the application-form paste text — and for scoring, so an
+        # exclusion never invalidates the score cache. Facets never sees a pool an
+        # excluded entry contributed to.
+        resume = include.apply(self.full_resume, self.include_options)
 
         # Facets: pick tech tags / coursework once before the fit loop. On skip or soft
         # failure, still run budget-only truncation so headers cannot wrap.

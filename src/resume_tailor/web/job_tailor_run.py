@@ -48,7 +48,7 @@ def _jd_title_fallback(jd_text: str) -> str:
 class _TailorJobRun:
     """One tailoring job's pipeline, in the active workspace context.
 
-    The core stages (`_extract` → `_score` → `_select_facets` → `_fit`) raise
+    The core stages (`_extract` → `_score` with `_select_facets` → `_fit`) raise
     `RuntimeError` on failure; the bonus artifacts after them (expansion, skills, cover
     letter, vocabulary proposals) report a progress event and never fail the job.
     """
@@ -78,16 +78,13 @@ class _TailorJobRun:
         telemetry.configure()
         self._extract()
         job.check_cancelled()
-        self._score()
         # Kept unfiltered for `expand.expand_experience` below — an excluded job still
-        # appears in the application-form paste tile, per its own decision. Applied here
-        # (after scoring, before facets) so an exclusion toggle never invalidates the
-        # score cache, and so facets never sees a pool an excluded entry contributed to.
+        # appears in the application-form paste tile, per its own decision. Scoring reads
+        # it too, so an exclusion toggle never invalidates the score cache; facets gets
+        # the filtered pool, so it never sees one an excluded entry contributed to.
         self.full_resume = self.resume
         self.resume = include.apply(self.resume, settings.include)
-
-        job.check_cancelled()
-        self._select_facets()
+        self._score_with_facets()
         job.check_cancelled()
         self._fit()
         self._ensure_pdf()
@@ -161,6 +158,19 @@ class _TailorJobRun:
                 paraphrased=paraphrased,
             )
 
+    def _score_with_facets(self) -> None:
+        """Score relevance and select facets at the same time.
+
+        Neither reads the other's output, so on a cloud backend the facets call no longer
+        waits behind scoring (`infra/model_queue.py` still serialises a local one). Facets
+        runs on a worker; if scoring fails, the pool still waits for facets before the
+        error propagates.
+        """
+        with ThreadPoolExecutor(max_workers=1) as pool:
+            facets_done = config.submit_in_context(pool, self._select_facets)
+            self._score()
+        facets_done.result()
+
     def _score(self) -> None:
         settings = self.settings
         self.semantic: dict[str, float] | None = None
@@ -169,7 +179,7 @@ class _TailorJobRun:
             return
         try:
             self.semantic = relevance.score_table(
-                self.resume.all_bullets(),
+                self.full_resume.all_bullets(),
                 self.requirements,
                 use_cache=not settings.no_cache,
                 on_event=self.on_event,

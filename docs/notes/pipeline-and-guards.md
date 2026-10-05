@@ -482,3 +482,19 @@ opener (`_REPAIR_PROMPT_VERSION = 6`).
 **What:** Entry scores sum their three highest existing bullet scores, reduced by a tighter per-entry cap, then apply the existing recency multiplier. Initial fit selection, new-entry top-up, and expansion extras receive the same resolved cap.
 **Why:** Summing every stored bullet favored entries rich in weak material that could not all fit. The cap changes ranking, not the number of bullets the fit loop may render.
 **Impact:** Individual semantic scores and their cache keys are unchanged; existing expansion cache keys already identify the selected source entries. Forced expansion entries, section isolation, chronological output order, stable ties and bullet floors are preserved. Telemetry marks this algorithm as best_three so measurements remain comparable.
+
+## 2026-10-05 — rebound-number check: names, versions, acronyms, percentages
+
+**What:** `bullet_checks._number_noun_surface` skips digit-bearing names (`EC2`, `S3`, `GPT-4`) and a version after a mid-bullet name (`Next.js 15`, `Python 3.11`); `_noun_key` lets a short all-caps acronym (`ARR`, `UI`) bind; a percentage binds the words before it (past a "by") and after it.
+**Why:** Every widow repair discarded since 2026-10-02 was a rebound false positive: `ec2 natural-language`, `15 streaming`, `12 increasing` (source "increasing ARR by 12%" bound 12 only to the verb, because `_significant` drops "ARR" as short). Discarded repairs left near-empty last lines (128 warnings across 252 runs).
+**Impact:** True rebinds still flag ("40 engineers" → "40 hours", "130 students/week" → "130 students/semester", "ARR by 12%" → "costs by 12%"). The term guard still checks the skipped tokens themselves. `tests/pipeline/test_rebound_false_positives.py`.
+
+## 2026-10-05 — verb-family cap scales with page length
+
+**What:** `config.family_opener_cap(n) = max(MAX_SAME_FAMILY_OPENERS, ceil(n / BULLETS_PER_FAMILY_OPENER))` replaces the flat cap of 2 in `bullet_checks.verb_collisions`: 3 on a 15-bullet page. Exact repeated openers stay forbidden. The rewrite prompt still asks for at most two (aiming stricter than the check is harmless and keeps the locked-style text unchanged).
+**Why:** ~95% of runs ended with 2-3 "still open with a verb" warnings: a technical page carries four build-family openers and polish has one round, so the repair dodged to weaker unlisted verbs ("Coded", "Programmed").
+
+## 2026-10-05 — scoring and facets run concurrently; coverage selection stays off
+
+**What:** Web (`_TailorJobRun._score_with_facets`) and CLI (`_CliRun._score_with_facets`) score relevance on the calling thread while facets run on a worker (`config.submit_in_context`). Both read the unfiltered resume captured beforehand (`full_resume`), so the score cache key is unchanged; facets filters its own copy. A scoring failure waits for facets before propagating.
+**Coverage-aware selection:** `config.COVERAGE_SELECTION` (env `RESUME_TAILOR_COVERAGE_SELECTION=1`) switches `selection._take_ranked`'s remainder to a greedy pick that discounts posting keywords already shown (1.0, `COVERAGE_REPEAT_DISCOUNT`, then 0; shared across section pools). Off by default: `scripts/eval_selection.py` over 255 saved runs changed picks in 164 but added no must-have (2.94 → 2.94 of 6.33; keywords 5.62 → 5.69). The unshown must-haves are not tagged on any bullet of the chosen entries, so it is an evidence gap, not a ranking one.

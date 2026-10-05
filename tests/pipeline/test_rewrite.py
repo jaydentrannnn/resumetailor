@@ -1383,6 +1383,23 @@ def test_verb_collisions_flags_family_over_concentration():
     assert "engineered" in collisions["c"]
 
 
+def test_verb_collisions_family_cap_scales_with_page_length():
+    """A 15-bullet page may carry three build-family openers; the fourth is flagged."""
+    build = ["Designed", "Engineered", "Architected", "Built"]
+    # Openers outside every verb family, so only the build family can concentrate.
+    others = ["Photographed", "Sketched", "Painted", "Filmed", "Baked", "Gardened",
+              "Sailed", "Knitted", "Juggled", "Hiked", "Surfed", "Skated"]
+    texts = {f"o{i}": f"{verb} a thing." for i, verb in enumerate(others)}
+    three = {**texts, **{f"b{i}": f"{v} a service." for i, v in enumerate(build[:3])}}
+    four = {**three, "b3": "Built a service."}
+    del four["o11"]
+
+    assert len(three) == 15 and len(four) == 15
+    assert config.family_opener_cap(15) == 3
+    assert bullet_checks.verb_collisions(three) == {}
+    assert set(bullet_checks.verb_collisions(four)) == {"b3"}
+
+
 def test_verb_collisions_ignores_unknown_openers_for_family_rules():
     """An unlisted opener never participates in family over-concentration."""
     texts = {

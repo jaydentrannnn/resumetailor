@@ -1481,6 +1481,16 @@ MAX_GROW_ATTEMPTS = 4
 #: Two is the point where a pattern becomes visible but is still plausibly incidental; a
 #: third makes the whole resume sound like one sentence.
 MAX_SAME_FAMILY_OPENERS = 2
+#: A longer page earns one more same-family opener per this many bullets. A technical
+#: page of 15 bullets routinely carries four build-family openers (built, developed,
+#: implemented, designed); capping that at two flagged 2-3 bullets on ~95% of runs and
+#: pushed the repair toward weaker unlisted verbs ("Coded", "Programmed").
+BULLETS_PER_FAMILY_OPENER = 5
+
+
+def family_opener_cap(bullet_count: int) -> int:
+    """Same-family openers allowed across `bullet_count` bullets (exact repeats never are)."""
+    return max(MAX_SAME_FAMILY_OPENERS, math.ceil(bullet_count / BULLETS_PER_FAMILY_OPENER))
 
 
 def _build_verb_index(families: dict[str, tuple[str, ...]]) -> dict[str, str]:
@@ -1691,6 +1701,16 @@ SEMANTIC_WEIGHT = 0.5
 #: Small nudge toward bullets carrying a concrete metric, which read stronger at equal
 #: keyword relevance.
 METRIC_BONUS = 0.5
+
+#: Coverage-aware bullet selection (`selection._take_ranked`): a posting keyword already
+#: shown on the page is worth less to the next bullet, so a must-have proven once can
+#: lose its slot to one not yet shown. Off by default until `scripts/eval_selection.py`
+#: shows it raises must-have coverage on real runs; `RESUME_TAILOR_COVERAGE_SELECTION=1`
+#: turns it on.
+COVERAGE_SELECTION = os.environ.get("RESUME_TAILOR_COVERAGE_SELECTION", "") == "1"
+#: Keyword weight multiplier by how many selected bullets already show that keyword:
+#: full for the first, this for the second, nothing after that.
+COVERAGE_REPEAT_DISCOUNT = 0.5
 
 #: Mild preference for recent work, applied in code at every ranking site (entry choice,
 #: bullet selection, the fit loop's drop / pull-back / top-up order) and never sent to the
