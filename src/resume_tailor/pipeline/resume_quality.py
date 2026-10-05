@@ -21,6 +21,10 @@ class MissingSection(BaseModel):
 class ResumeQuality(BaseModel):
     fill_ratio: float | None = None
     fill_target: float | None = None
+    #: How far under `fill_target` still counts as met: the fit loop's
+    #: `config.FILL_TOLERANCE_LINES` as a fraction of the page, so a page the loop
+    #: accepted is not reported as below target.
+    fill_tolerance: float = 0.0
     estimated: bool = False
     missing_sections: list[MissingSection] = Field(default_factory=list)
     verified: bool = True
@@ -35,7 +39,7 @@ class ResumeQuality(BaseModel):
         if (
             self.fill_ratio is not None
             and self.fill_target is not None
-            and self.fill_ratio < self.fill_target
+            and self.fill_ratio < self.fill_target - self.fill_tolerance - 1e-9
         ):
             prefix = "Estimated page fill" if self.estimated else "Page fill"
             result.append(f"{prefix} is {self.fill_ratio:.0%}; target is {self.fill_target:.0%}.")
@@ -52,6 +56,7 @@ def assess(
     fill_ratio: float | None,
     fill_target: float | None,
     estimated: bool = False,
+    fill_tolerance: float = 0.0,
 ) -> ResumeQuality:
     enabled = layout.get("enabled") or {}
     missing = []
@@ -71,6 +76,7 @@ def assess(
     return ResumeQuality(
         fill_ratio=fill_ratio,
         fill_target=fill_target,
+        fill_tolerance=fill_tolerance,
         estimated=estimated,
         missing_sections=missing,
     )

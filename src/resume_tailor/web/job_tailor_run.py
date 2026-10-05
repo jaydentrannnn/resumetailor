@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from resume_tailor import config
@@ -90,14 +91,7 @@ class _TailorJobRun:
         self._write_run_files()
 
         job.check_cancelled()
-        if not settings.no_expand:
-            self._expand()
-        job.check_cancelled()
-        if not settings.no_skills:
-            self._select_skills()
-        job.check_cancelled()
-        if settings.cover_letter and not settings.no_cover_letter:
-            self._draft_cover_letter()
+        self._bonus_artifacts()
         job.check_cancelled()
         if settings.suggest_vocabulary:
             self._suggest_vocabulary()
@@ -299,6 +293,30 @@ class _TailorJobRun:
 
     # -- bonus artifacts: never fail the job --------------------------------------------
 
+    def _bonus_artifacts(self) -> None:
+        """Expansion, skills and the cover letter, at the same time.
+
+        Each only reads the finished fit and writes its own files, so none waits on
+        another. Expansion and skills go to worker threads (`config.submit_in_context`
+        carries this run's config and style into them); the cover letter stays on this
+        thread because rendering it may drive Word over COM. `infra/model_queue.py`
+        still caps how many model requests are in flight, so a local backend simply
+        takes them one at a time.
+        """
+        settings = self.settings
+        background = [
+            stage for stage, skipped in (
+                (self._expand, settings.no_expand),
+                (self._select_skills, settings.no_skills),
+            ) if not skipped
+        ]
+        with ThreadPoolExecutor(max_workers=max(1, len(background))) as pool:
+            futures = [config.submit_in_context(pool, stage) for stage in background]
+            if settings.cover_letter and not settings.no_cover_letter:
+                self._draft_cover_letter()
+            for future in futures:
+                future.result()
+
     def _expand(self) -> None:
         job, out_dir = self.job, self.out_dir
         try:
@@ -312,16 +330,9 @@ class _TailorJobRun:
                 use_cache=not self.settings.no_cache,
                 on_event=self.on_event,
             )
-            job.expansion = job_outputs._to_expansion_out(expansion)
-            expansion_record = job.expansion.model_dump()
-            # Keep durable evidence that an empty expansion truly means there were no
-            # source jobs; later profile edits cannot establish this.
-            expansion_record["source_experience_count"] = len(self.full_resume.experience)
-            (out_dir / "expansion.json").write_text(
-                json.dumps(expansion_record, indent=2), encoding="utf-8",
-            )
-            (out_dir / "expansion.md").write_text(
-                expand.format_markdown(expansion), encoding="utf-8"
+            job.expansion = job_outputs.write_expansion(
+                out_dir, expansion,
+                source_experience_count=len(self.full_resume.experience),
             )
         except Exception as exc:  # noqa: BLE001 - bonus artifact; never fail the job
             self._emit("expand", f"Experience expansion skipped ({exc})")

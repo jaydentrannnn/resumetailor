@@ -62,6 +62,7 @@ type RunStateValue = {
   report: RunReport | null;
   refreshReport: () => Promise<void>;
   expansion: Expansion | null;
+  setExpansion: (expansion: Expansion | null) => void;
   skills: SkillsPlan | null;
   coverLetter: CoverLetter | null;
   setCoverLetter: (letter: CoverLetter | null) => void;
@@ -578,6 +579,7 @@ export function RunProvider({ children }: { children: ReactNode }) {
       report,
       refreshReport,
       expansion,
+      setExpansion,
       skills,
       coverLetter,
       setCoverLetter,
@@ -610,6 +612,7 @@ export function RunProvider({ children }: { children: ReactNode }) {
       report,
       refreshReport,
       expansion,
+      setExpansion,
       skills,
       coverLetter,
       setCoverLetter,

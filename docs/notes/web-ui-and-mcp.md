@@ -526,3 +526,21 @@ The two legacy tests that assumed process-wide routing/rebound globals were upda
 **What:** Limit physical model requests per endpoint (local 1, cloud 3), require version-bound acknowledgement of underfill/missing selected sections before Fill, and restore page-fit measurements only for matching template/profile/resume/PDF-backend inputs.
 **Why:** Job and browser concurrency controls do not bound provider traffic. Preview, selection badges and metadata previously refreshed independently; saved-template activation also recalibrated by default.
 **Impact:** Limits are process-wide across workspaces, with no fixed batch pause. Older resumes without sufficient saved measurement evidence require Prepare again. Application acknowledgement fields use the existing SQLite JSON column, so old rows acquire empty defaults without a destructive database migration. Previously measured calibrations without input fingerprints are preserved as unverified backups rather than reused across a switch.
+
+### 2026-10-04 — post-fit stages run concurrently; expansion on demand
+
+- `_TailorJobRun._bonus_artifacts`: expansion and skills run on worker threads
+  (`config.submit_in_context`) while the cover letter drafts on the job thread (its
+  render may drive Word over COM). Each stage already swallowed its own errors and
+  wrote its own files; `infra/model_queue.py` still caps in-flight model requests
+  (local 1, cloud 3), so local backends just serialise. The CLI stays sequential
+  (it prints each artifact).
+- `JobSettings.no_expand` now defaults to True: only Apply uses the expansion, and
+  every Apply tailor run goes through `daily_rows._job_settings`, which forces it on;
+  the MCP `tailor_application` tool forces it on too. Any finished run can make it
+  later with `POST /api/jobs/{id}/expansion` (`job_followups.generate_expansion`:
+  saved requirements/bullets/backends, unfiltered master resume, cached relevance
+  scores, one expand call, packet rebuilt if present). Apply's Prepare calls the same
+  function when `preparation.check` reports only `missing_expansion`, instead of
+  re-tailoring the whole run. Existing profiles saved `no_expand: false` explicitly,
+  so the new default only reaches new profiles until the user flips the run option.

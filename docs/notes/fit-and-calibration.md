@@ -396,3 +396,23 @@ Two live gemma4 runs (Motorola R67731, AmerisourceBergen R2614039) still showed 
 
 ### 2026-10-04 — Two-line bullet cap; the newest job keeps its lead bullet
 An audit of 235 desktop runs found 9% of bullets at 3+ lines (102 at 4+), even though the rewrite prompt advertises a 2-line `max`. Roughly half were verbatim master text: guard fallbacks, unchanged replies, and top-up re-adds, chiefly `aeth_b1` (91 runs) and `aol_b1` (55 runs). The rest were rewrites that ignored `max`. Nothing in code enforced the cap, because the widow pass only looks at a near-empty final line. Fixes: `fit_lines._overlong_targets` adds a SHORTEN window at `_TARGET_LINES_PER_BULLET` lines to the measured widow pass. It runs even with `repair_widows=False`, and its numbers are checked against the bullet's current text (`_polish(number_floor=...)`), so an earlier compression is not held to every master figure; the guard still runs against the master. `_choose_pullbacks` ranks over-long bullets first and takes all of them, so an overflow shortens them before the drop rung removes whole bullets. Whatever remains is one warning line, not a per-bullet list (`_REPAIR_PROMPT_VERSION` 5). Separately, `_choose_drops` spares the first on-page bullet of the most recent experience (`_lead_bullet`) unless nothing else is droppable: the Revvity run dropped the user's headline `aol_b1` as low-relevance, and top-up re-added it verbatim at 3 lines. Not verified live; needs a desktop rebuild.
+
+### 2026-10-04 — one-line fill tolerance and remembered overflow point
+
+Live runs (Ollama cloud) made 15–18 calls in ~2–2.7 min, and every one ended the same
+way: the first draft met the 93% target (54/58 lines), widow repair cut a line (53,
+91%), then the top-up ladder spent ~4 calls and 4 Word renders — `topup-B` overflowed at
+56 lines → revert → `topup-C` overflowed at 57 → revert — to close that one line.
+Two code-only changes:
+- `config.FILL_TOLERANCE_LINES = 1`: `_FitState._short_of_target()` (used by the grow
+  check, `_finish` and `top_up`) treats a page within one line of
+  `ceil(fill_target × capacity)` as full. A top-up that does run still aims at the
+  full target (`_shortfall`'s goal), and its rungs stop once within tolerance; one
+  rewrite costs the same for one bullet or two. `resume_quality.ResumeQuality` carries
+  the same tolerance (`fill_tolerance`, as a page fraction) so Apply's quality gate
+  and the SPA don't flag a page the loop accepted.
+- `_FitState.overflow_lines`: the fewest measured lines any real (non-estimated)
+  draw overflowed at. Calibrated capacity was 58 but the page broke at 56;
+  `_shortfall`'s room is now capped one line under that, so after rung B overflows,
+  rung C no longer rewrites and renders an entry that needs even more lines. Rung B
+  refreshes `p.room` after a failed add for the same reason.

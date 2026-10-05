@@ -458,3 +458,15 @@ Number-noun bindings normalise numeric N+ to N, so a source claim about over 30 
 
 ### 2026-10-04 — People-facing verbs and soft-skill tags stop losing every ranking
 Resume Worded scored the user's tailored resumes 55-65 for teamwork and leadership. Two causes in code: (1) `core-tech`'s single `lead` verb family held all 14 leadership/teamwork openers (led, mentored, facilitated, trained, coordinated, partnered...), and `MAX_SAME_FAMILY_OPENERS` = 2 meant a third such opener on the page was always re-voiced. The audit found about 2.7 per resume. That family is now `lead` / `teach` / `coordinate` / `collaborate`; `collaborate` is the name `finance-consulting` already uses. The other shipped packs have no people-verb family to split (`finance-consulting`'s `lead` is only chaired/headed). (2) Soft must-haves were canonicalised to `teamwork`/`communication` but only matched those literal tags, so "Led a 3-person team" (tagged `leadership`) scored zero against a teamwork requirement. `config.SOFT_SKILL_RELATED_TAGS` widens a soft keyword's match to related tags at the same discounted `SOFT_SKILL_WEIGHT`, once per keyword, so a volunteer entry still cannot outrank a relevant job on soft tags alone. Workspaces can apply the split before a release through `libraries.json` `overrides.verb_families`.
+
+### 2026-10-04 — length repairs keep the bullet's current opener
+
+Live runs on v0.2.23 still showed "Built" opening three bullets with
+`verb_collisions_remaining = 3`, even though the verb pass had re-voiced five. The
+measured widow/over-long pass (and the pull-back) asks for a shorter version while
+showing the master `<source>`, and a master that opens "Built…" pulls the old verb
+back; that path never re-checked openers. `followups._keep_opener` now runs on every
+length candidate (targets, ceilings, the fabrication retry): a candidate that adds a
+verb collision gets the current opener back when its own opener is a known family
+verb (a one-word swap), and is discarded otherwise. The prompts also ask to keep the
+opener (`_REPAIR_PROMPT_VERSION = 6`).

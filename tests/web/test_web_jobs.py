@@ -145,6 +145,7 @@ def test_job_runs_to_success_with_stubbed_pipeline(client, monkeypatch, tmp_path
             "jd_text": "Looking for a Python intern.",
             "settings": {
                 "model": "claude",
+                "no_expand": False,
                 "merge": True,
                 "no_verb_repair": True,
                 "no_project_links": True,
@@ -341,7 +342,10 @@ def test_job_honours_exclusions_but_expansion_still_sees_the_excluded_job(
         "/api/jobs",
         json={
             "jd_text": "Looking for a Python intern.",
-            "settings": {"include": {"exclude_experience": [excluded_id]}},
+            "settings": {
+                "no_expand": False,
+                "include": {"exclude_experience": [excluded_id]},
+            },
         },
     )
     assert res.status_code == 200

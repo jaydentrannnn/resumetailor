@@ -15,15 +15,16 @@ Each bullet below runs past its `max` characters — it either wrapped onto a fi
 holding almost nothing or runs longer than a resume bullet should, wasting page space. \
 The wording is already right — the only problem is length. Bring each one to at most its \
 `max` characters by cutting hedges, redundant context, and secondary detail. Keep every \
-number and every required technical keyword exactly as written.
+number, every required technical keyword, and the opening verb exactly as written.
 """
 
-_REPAIR_PROMPT_VERSION = 5
+_REPAIR_PROMPT_VERSION = 6
 
 _TARGET_INSTRUCTION = """\
 Each bullet has a character window. For SHORTEN, cut secondary detail while preserving
 every number and factual claim. For EXTEND, restore useful detail only from that bullet's
-own source. Preserve all numbers. Return THREE versions of each bullet, each as its own
+own source. Preserve all numbers. Keep the opening verb of `current`, even where the
+source opens differently. Return THREE versions of each bullet, each as its own
 entry under the same id: one near min, one in the middle, one near max. Exact counts are
 not required — the versions just need to differ in length. Return plain text strings.
 """
@@ -244,6 +245,26 @@ def _accept_verb_swap(
         return False
     return not fabrication.check_fabrication(source, candidate)
 
+def _keep_opener(texts: dict[str, str], bid: str, candidate: str) -> str | None:
+    """`candidate` for `bid` with an opener that repeats no more verbs than `texts[bid]`.
+
+    A length repair is shown the master source, which often opens with the very verb the
+    verb pass just replaced ("Built…" for the third time), and nothing else re-checks the
+    opener. A candidate that adds a collision gets the current opener back when its own is
+    a known resume verb, a one-word swap that keeps the grammar. One that cannot be
+    swapped that way ("Using Python, built…") returns None and is discarded.
+    """
+    if len(bullet_checks.verb_collisions({**texts, bid: candidate})) <= len(
+        bullet_checks.verb_collisions(texts)
+    ):
+        return candidate
+    new = bullet_checks.opening_verb(candidate)
+    current = texts[bid].split(maxsplit=1)
+    _, _, rest = candidate.strip().partition(" ")
+    if new is None or config.verb_family(new) is None or not current or not rest:
+        return None
+    return f"{current[0]} {rest}"
+
 def _verb_instruction() -> str:
     if industries.active() is None:
         return _VERB_INSTRUCTION
@@ -405,7 +426,10 @@ def _polish(
         source = sources[bid]
         clean: list[str] = []
         fabricated: tuple[str, list[str]] | None = None
-        for candidate in candidates:
+        for raw in candidates:
+            candidate = _keep_opener(repaired, bid, raw)
+            if candidate is None:
+                continue
             offenders = bullet_checks.guard_offenders([source], candidate)
             if offenders:
                 fabricated = fabricated or (candidate, offenders)
@@ -429,6 +453,9 @@ def _polish(
         candidate = item.text.strip()
 
         if item.id in ceilings:
+            candidate = _keep_opener(repaired, item.id, candidate)
+            if candidate is None:
+                continue
             offenders = bullet_checks.guard_offenders([source], candidate)
             if offenders:
                 rejected[item.id] = offenders
@@ -462,7 +489,12 @@ def _polish(
             retry_candidates, sources, requirements, targets=windows
         )
         rejected = survivors
-        for bid, candidate in accepted.items():
+        for bid, raw in accepted.items():
+            candidate = _keep_opener(repaired, bid, raw)
+            if candidate is None or (
+                candidate != raw and bullet_checks.guard_offenders([sources[bid]], candidate)
+            ):
+                continue
             if bid in number_floor:
                 if not keeps_numbers(bid, candidate):
                     continue

@@ -98,6 +98,10 @@ class _FitState:
         self._start_selection()
 
         self.capacity = self.target_pages * config.LINES_PER_PAGE
+        # The fewest measured lines any draw has overflowed at. Calibrated `capacity` can
+        # sit a line or two above where the page really breaks; top-up treats this as
+        # the true ceiling so it never rewrites a candidate already known to overflow.
+        self.overflow_lines: int | None = None
         self.trace: list[dict] = []
         self.topped_up: list[str] = []
         self._collect_candidates()
@@ -231,6 +235,10 @@ class _FitState:
             lines_ = fit_lines.estimate_lines(self.resume, texts)
             pages_ = math.ceil(lines_ / config.LINES_PER_PAGE)
             estimated = True
+        if pages_ > self.target_pages and not estimated:
+            self.overflow_lines = (
+                lines_ if self.overflow_lines is None else min(self.overflow_lines, lines_)
+            )
         events.emit(
             self.on_event,
             "measure",
@@ -250,6 +258,18 @@ class _FitState:
             **note,
         })
         return path, pages_, lines_, estimated
+
+    def _full_target_lines(self) -> int:
+        """Measured lines that meet the fill target exactly."""
+        return math.ceil(self.underflow * self.capacity)
+
+    def _short_of_target(self) -> bool:
+        """Whether the page is short by more than `config.FILL_TOLERANCE_LINES` — the
+        test for spending another call on it. A top-up that does run still aims at the
+        full target: one rewrite costs the same whether it adds one bullet or two."""
+        return (
+            self.measured_lines < self._full_target_lines() - config.FILL_TOLERANCE_LINES
+        )
 
     def _set_draft(self, drawn: tuple[Path, int, int, bool]) -> None:
         self.doc_path, self.pages, self.measured_lines, self.pages_are_estimated = drawn

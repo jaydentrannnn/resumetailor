@@ -13,14 +13,17 @@ from resume_tailor.pipeline import (
     coverletter,
     coverletter_format,
     coverletter_models,
+    expand,
     jd,
     propose,
+    relevance,
 )
 from resume_tailor.pipeline.events import ProgressCallback, ProgressEvent
 from resume_tailor.web import template_ops
 from resume_tailor.web.schemas import (
     CoverAnglesIn,
     CoverLetterOut,
+    ExpansionOut,
 )
 
 from . import job_outputs
@@ -165,6 +168,61 @@ def regenerate_cover_letter(
         coverletter_format.format_markdown(letter),
         encoding="utf-8",
     )
+    return out
+
+def generate_expansion(job_id: str) -> ExpansionOut:
+    """Write a finished run's experience expansion now, from its saved inputs.
+
+    Runs skip expansion unless Apply needs it (`JobSettings.no_expand` defaults on); this
+    is the on-demand path — the job page's Generate button and Apply's Prepare when a
+    run is missing only its expansion. Same inputs as the in-run stage: the requirements
+    and bullets the run saved, the unfiltered master resume, and the run's relevance
+    scores (usually a cache hit). One expand call; nothing else is re-run.
+    """
+    out_dir = config.OUTPUT_DIR / "jobs" / job_id
+    names = ("requirements.json", "bullets.json", "backends.json")
+    paths = {name: out_dir / name for name in names}
+    for name, path in paths.items():
+        if not path.exists():
+            raise FileNotFoundError(f"This job has no saved {name.removesuffix('.json')}.")
+    requirements = jd.JobRequirements.model_validate_json(
+        paths["requirements.json"].read_text(encoding="utf-8")
+    )
+    bullets = json.loads(paths["bullets.json"].read_text(encoding="utf-8"))
+    backend_specs = json.loads(paths["backends.json"].read_text(encoding="utf-8"))
+
+    snapshot = industries.load(out_dir)
+    workspace_id = config.active_workspace_id()
+    context = (
+        config.context_for_workspace(workspace_id)
+        if workspace_id is not None else config.default_context()
+    )
+    with config.use_context(replace(context, guidance=snapshot)), \
+            config.pinned_specs(backend_specs, effort=None):
+        industries.bind(snapshot)
+        if snapshot is not None:
+            style.activate(**snapshot.styles)
+        resume = data.load()
+        try:
+            semantic = relevance.score_table(resume.all_bullets(), requirements, use_cache=True)
+        except Exception:  # noqa: BLE001 - ranking falls back to keywords, as in a run
+            semantic = None
+        expansion = expand.expand_experience(
+            resume,
+            requirements,
+            resume_bullet_ids=set(bullets),
+            semantic=semantic,
+            use_cache=True,
+        )
+    out = job_outputs.write_expansion(
+        out_dir, expansion, source_experience_count=len(resume.experience)
+    )
+    if (out_dir / "packet.json").is_file():
+        # The application kit embeds the expansion and its hash; rebuild it so Fill
+        # pastes the new text.
+        from resume_tailor.apply.funnel import packet as apply_packet
+
+        apply_packet.write_packet(job_id)
     return out
 
 def verify_claim(job_id: str | None, text: str) -> coverletter.ClaimCheck:

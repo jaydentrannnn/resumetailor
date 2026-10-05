@@ -2,8 +2,6 @@
 
 from __future__ import annotations
 
-import math
-
 from .. import config
 from ..content.data import Bullet, Experience, Project
 from . import events, fit_lines, fit_shrink, fit_types
@@ -26,7 +24,7 @@ class _FitTopUp(fit_shrink._FitShrink):
         Returns why the page is still short, or None once it reaches the fill target."""
         reason: str | None = None
         for round_index in range(config.MAX_TOPUP_ROUNDS):
-            if self.measured_lines >= math.ceil(self.underflow * self.capacity):
+            if not self._short_of_target():
                 return None
             added, reason = self.top_up_ladder()
             if not added or not self.repair_widows:
@@ -38,14 +36,14 @@ class _FitTopUp(fit_shrink._FitShrink):
                 or self.measured_lines >= lines_before
             ):
                 break
-        if self.measured_lines >= math.ceil(self.underflow * self.capacity):
+        if not self._short_of_target():
             return None
         return reason or "widow repair of the added bullets freed lines after the last round"
 
     def top_up_ladder(self) -> tuple[list[str], str | None]:
         """One A/B/C pass. Returns (ids added, why it stopped short or None)."""
         p = fit_types._TopUpPass(*self._shortfall())
-        if p.goal <= 0:
+        if p.goal <= config.FILL_TOLERANCE_LINES:
             return p.added, None
         if self._top_up_bullets(p):
             return p.added, None
@@ -98,7 +96,7 @@ class _FitTopUp(fit_shrink._FitShrink):
         if ids:
             self._take(p, ids)
         p.goal, p.room = self._shortfall()
-        return p.goal <= 0
+        return p.goal <= config.FILL_TOLERANCE_LINES
 
     def _top_up_extra(self, p: fit_types._TopUpPass, cap: int) -> bool:
         """B — one bullet past the per-entry cap, from an entry already at it. True once
@@ -125,9 +123,11 @@ class _FitTopUp(fit_shrink._FitShrink):
             p.last_failure = (
                 f"adding a bullet to {fit_types._entry_label(owner[bullet.id])} overflowed the page"
             )
+            # The overflow just lowered the page's real ceiling (`overflow_lines`).
+            p.goal, p.room = self._shortfall()
             return False
         p.goal, p.room = self._shortfall()
-        if p.goal <= 0:
+        if p.goal <= config.FILL_TOLERANCE_LINES:
             self._take(p, ids)
             return True
         # Still short: take the extra bullet back out and try a new entry instead; keep
@@ -168,7 +168,7 @@ class _FitTopUp(fit_shrink._FitShrink):
                 self.total_bullets += len(entry.bullets)
                 self._take(p, ids)
                 goal, _ = self._shortfall()
-                if goal <= 0:
+                if goal <= config.FILL_TOLERANCE_LINES:
                     return True, None
                 return True, f"top-up limit reached after adding {fit_types._entry_label(entry)}"
             p.last_failure = f"adding {fit_types._entry_label(entry)} overflowed the page"
@@ -235,9 +235,15 @@ class _FitTopUp(fit_shrink._FitShrink):
                 self.selected.append(self.all_sources[bid])
 
     def _shortfall(self) -> tuple[int, int]:
-        """(lines to the fill target, lines to a full page)."""
-        target_lines = math.ceil(self.underflow * self.capacity)
-        return target_lines - self.measured_lines, self.capacity - self.measured_lines
+        """(lines to the fill target, lines to a full page).
+
+        A full page is the calibrated capacity, or one line under the fewest lines any
+        draw this run overflowed at when that is lower — so a candidate already known to
+        overflow is never rewritten and rendered just to be reverted."""
+        ceiling = self.capacity
+        if self.overflow_lines is not None:
+            ceiling = min(ceiling, self.overflow_lines - 1)
+        return self._full_target_lines() - self.measured_lines, ceiling - self.measured_lines
 
     def _rendered_ids(self) -> set[str]:
         ids = set(self.rewritten)

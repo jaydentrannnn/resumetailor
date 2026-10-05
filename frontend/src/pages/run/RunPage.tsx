@@ -2,6 +2,7 @@ import { useEffect, useRef, useState } from "react";
 import { useSearchParams } from "react-router-dom";
 import { DocumentsCard } from "../../components/DocumentsCard";
 import { ExperienceCard } from "../../components/ExperienceCard";
+import { GenerateExperienceCard } from "../../components/GenerateExperienceCard";
 import { RunCostEstimate } from "../../components/RunCostEstimate";
 import { RunHistoryPanel } from "../../components/RunHistoryPanel";
 import { SkillsCard } from "../../components/SkillsCard";
@@ -37,6 +38,7 @@ export function RunPage() {
     report,
     refreshReport,
     expansion,
+    setExpansion,
     skills,
     coverLetter,
     setCoverLetter,
@@ -214,11 +216,10 @@ export function RunPage() {
           {resultTab === "content" && (
             <div role="tabpanel" className="space-y-4">
               {skills && <SkillsCard plan={skills} gaps={report?.gaps ?? []} jobId={jobId} />}
-              {expansion && <ExperienceCard expansion={expansion} jobId={jobId} />}
-              {!skills && !expansion && (
-                <p className="rounded-lg border border-line bg-panel p-5 text-sm text-ink-muted">
-                  No skills or experience expansion was saved for this run.
-                </p>
+              {expansion ? (
+                <ExperienceCard expansion={expansion} jobId={jobId} />
+              ) : (
+                <GenerateExperienceCard jobId={jobId} ready={!busy} onGenerated={setExpansion} />
               )}
             </div>
           )}

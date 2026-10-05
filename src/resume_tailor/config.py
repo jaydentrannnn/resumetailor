@@ -1385,6 +1385,12 @@ def reload_calibration() -> tuple[int, int, str, str | None]:
 #: whitespace; raise toward 0.93 for a denser page (more grow/rewrite rounds).
 UNDERFLOW_THRESHOLD = 0.93
 
+#: Measured lines a page may sit under `ceil(fill target × capacity)` and still count as
+#: full — no grow round, no top-up, no "only N% full" warning. Live runs hit 54/54 on the
+#: first draft, lost one line to widow repair (53, 91% vs 93%), then spent four LLM calls
+#: and four Word renders on top-ups that overflowed and were reverted to close that line.
+FILL_TOLERANCE_LINES = 1
+
 #: Extra estimated lines past page capacity that `fit_selection._initial_selection_size` may claim.
 #:
 #: The first rewrite usually lands under the advertised max, so a small optimism margin

@@ -268,7 +268,11 @@ class JobSettings(BaseModel):
     #: How many independent JD extractions to vote over (`jd.extract_consensus`);
     #: 0 = automatic (`config.extract_runs`: 1 on Anthropic/Gemini, 3 on local models).
     extract_runs: int = Field(default=0, ge=0, le=10)
-    no_expand: bool = False
+    #: Skips the application-form experience expansion. Defaults on (skipped): only
+    #: Apply uses it, and Apply's Prepare turns it back on for its own runs
+    #: (`daily_rows._job_settings`); any other run can generate it later on demand
+    #: (`POST /api/jobs/{id}/expansion`) instead of paying a model call every run.
+    no_expand: bool = True
     #: Skips the tailored skills-list stage. Defaults off (the stage runs): unlike
     #: `suggest_vocabulary`, this is read-only advisory output and is the point of the
     #: feature, not a workspace mutation the user must opt into.

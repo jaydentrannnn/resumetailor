@@ -77,6 +77,9 @@ async def tailor_application(
 
     settings_resp = await client.get_settings()
     settings = dict(settings_resp.get("settings") or {})
+    # This tool tailors for an application, whose form fields need the expansion that
+    # ordinary runs now skip (as Apply's Prepare does in `daily_rows._job_settings`).
+    settings["no_expand"] = False
     if cover_letter:
         settings["cover_letter"] = True
         settings["no_cover_letter"] = False

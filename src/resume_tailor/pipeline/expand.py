@@ -353,6 +353,7 @@ def expand_experience(
     requirements: JobRequirements,
     *,
     fit_result: FitResult | None = None,
+    resume_bullet_ids: set[str] | None = None,
     semantic: dict[str, float] | None = None,
     limit: int | None = None,
     char_limit: int | None = None,
@@ -364,9 +365,15 @@ def expand_experience(
     Selection is deterministic. The LLM call is one batched request for all chosen
     entries. Hard facts are joined from `resume` after the call — the model never emits
     them. Fabrication failures drop individual bullets; they never raise.
+
+    `resume_bullet_ids` stands in for `fit_result` when expanding a finished run later
+    (its saved `bullets.json`), so on-demand expansion marks the same entries as on the
+    resume.
     """
     char_limit = char_limit if char_limit is not None else config.EXPAND_CHAR_LIMIT
-    resume_ids = set(fit_result.bullets) if fit_result is not None else set()
+    resume_ids = (
+        set(fit_result.bullets) if fit_result is not None else set(resume_bullet_ids or ())
+    )
     chosen = choose_entries(
         resume,
         requirements,

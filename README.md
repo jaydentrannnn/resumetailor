@@ -61,6 +61,9 @@ The setup screen walks you through:
 
 Then open **Tailor**, paste a job description, and run. Each run produces the tailored
 `.docx` and `.pdf`, plus an optional cover letter, reviewer notes and application answers.
+Longer application-form descriptions of each job are made on demand (**Generate
+application experience** on the run's Content tab) or automatically by Apply, rather than
+on every run.
 
 Other pages: **Profile** (your applicant details for forms, saved answers, and several
 profiles you can switch between, each exported or imported as one `.zip` of up to 2 GB),

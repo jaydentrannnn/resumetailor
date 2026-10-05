@@ -18,7 +18,11 @@ from resume_tailor.document import rerender
 from resume_tailor.document.template_profile import active_layout
 from resume_tailor.pipeline import estimate, include
 from resume_tailor.web import job_routing, template_ops
-from resume_tailor.web.job_followups import regenerate_cover_letter, verify_claim
+from resume_tailor.web.job_followups import (
+    generate_expansion,
+    regenerate_cover_letter,
+    verify_claim,
+)
 from resume_tailor.web.jobs import get_queue
 from resume_tailor.web.routes.config import _event_out, _seed_include_gpa_if_missing
 from resume_tailor.web.schemas import (
@@ -28,6 +32,7 @@ from resume_tailor.web.schemas import (
     CreateJobResponse,
     DeleteRunHistoryRequest,
     DeleteRunHistoryResponse,
+    ExpansionOut,
     JobSettings,
     JobStatusResponse,
     ResumeOutlineEntryOut,
@@ -583,6 +588,32 @@ def regenerate_job_cover_letter(
         raise HTTPException(status_code=500, detail=str(exc)) from exc
     if resolved.live is not None:
         resolved.live.cover_letter = out
+    return out
+
+
+@router.post("/api/jobs/{job_id}/expansion", response_model=ExpansionOut)
+def generate_job_expansion(job_id: str) -> ExpansionOut:
+    """Write this finished run's application-form experience text on demand."""
+    resolved = run_lookup._resolve_run(job_id)
+    if resolved is None:
+        raise HTTPException(status_code=404, detail=f"Unknown job {job_id!r}.")
+    if resolved.status != "succeeded":
+        raise HTTPException(
+            status_code=409, detail=f"Job {job_id} is {resolved.status}, not ready to expand."
+        )
+    if get_queue().busy():
+        raise HTTPException(
+            status_code=409,
+            detail="Cannot generate while another tailoring run is in progress.",
+        )
+    try:
+        out = generate_expansion(job_id)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except Exception as exc:  # noqa: BLE001
+        raise HTTPException(status_code=500, detail=str(exc)) from exc
+    if resolved.live is not None:
+        resolved.live.expansion = out
     return out
 
 

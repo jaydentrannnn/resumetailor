@@ -127,3 +127,34 @@ def test_number_floor_lets_a_cap_keep_only_the_figures_the_draft_kept(monkeypatc
         repair_verbs=False, targets={"a": (0, 60)}, number_floor={"a": current},
     )
     assert fixed == 1 and capped["a"] == "Fine-tuned Qwen on 9,000 examples."
+
+
+def test_a_length_repair_keeps_the_opener_the_verb_pass_chose(monkeypatch):
+    """The master opens with "Built" like two other page bullets; a cut must not restore it."""
+    sources = {
+        bid: Bullet(id=bid, text=f"Built a {bid} pipeline in Python for search.", tags=["python"])
+        for bid in ("a", "b", "c")
+    }
+    texts = {
+        "a": "Built a a pipeline in Python for search.",
+        "b": "Built a b pipeline in Python for search.",
+        "c": "Engineered a c pipeline in Python for search, with retries, logging and docs.",
+    }
+    reply = rewrite_prompts.RewriteResult(
+        bullets=[rewrite_prompts.RewrittenBullet(id="c", text="Built a c pipeline in Python.")]
+    )
+    monkeypatch.setattr(config, "anthropic_api_key", lambda: "test-key")
+    monkeypatch.setattr(followups.llm, "client_for", lambda purpose: _Client(reply))
+
+    out, fixed, _, _ = followups._polish(
+        texts, sources, _requirements(), repair_widows=False, repair_verbs=False,
+        targets={"c": (0, 60)},
+    )
+    assert fixed == 1 and out["c"] == "Engineered a c pipeline in Python."
+
+
+def test_a_length_repair_that_cannot_keep_its_opener_is_discarded():
+    texts = {"a": "Built X.", "b": "Built Y.", "c": "Engineered Z with care."}
+    assert followups._keep_opener(texts, "c", "Using Python, built Z.") == "Using Python, built Z."
+    texts["d"] = "Using Go, shipped W."
+    assert followups._keep_opener(texts, "c", "Using Python, built Z.") is None

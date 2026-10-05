@@ -29,6 +29,7 @@ from resume_tailor.pipeline import (
     fit_shrink,
     fit_state,
     fit_types,
+    resume_quality,
 )
 from resume_tailor.pipeline import fit as fit_mod
 from resume_tailor.pipeline.jd import JobRequirements, Keyword
@@ -1075,8 +1076,9 @@ def test_top_up_keeps_one_bullet_past_the_cap_when_that_reaches_the_target(
     monkeypatch.setattr(config, "MAX_GROW_ATTEMPTS", 0)
     monkeypatch.setattr(fit_state, "rewrite_bullets", _identity_rewrite)
     n = _capped_first_draft()
-    # One line short: a single extra bullet in an entry already on the page fills it.
-    base = _target_lines() - 1 - n - 2 * n
+    # Two lines short: a single extra bullet in an entry already on the page brings it
+    # within `FILL_TOLERANCE_LINES` of the target.
+    base = _target_lines() - 2 - n - 2 * n
     _stub_render(monkeypatch, tmp_path, pages_for=_lines_with_headers(base))
 
     result = fit_mod.fit(
@@ -1088,6 +1090,63 @@ def test_top_up_keeps_one_bullet_past_the_cap_when_that_reaches_the_target(
     assert len(result.topped_up) == 1
     assert len(result.bullets) == n + 1
     assert not any("full (target" in w for w in result.warnings)
+
+
+def test_a_page_one_line_short_of_target_is_left_alone(monkeypatch, tmp_path):
+    """Within `FILL_TOLERANCE_LINES` of the target: no top-up rewrite, no warning."""
+    monkeypatch.setattr(config, "MAX_GROW_ATTEMPTS", 0)
+    calls: list[list[str]] = []
+
+    def fake_rewrite(bullets, requirements, **kwargs):
+        calls.append([b.id for b in bullets])
+        return _identity_rewrite(bullets, requirements, **kwargs)
+
+    monkeypatch.setattr(fit_state, "rewrite_bullets", fake_rewrite)
+    n = _capped_first_draft()
+    base = _target_lines() - config.FILL_TOLERANCE_LINES - n - 2 * n
+    _stub_render(monkeypatch, tmp_path, pages_for=_lines_with_headers(base))
+
+    result = fit_mod.fit(
+        _test_resume(), _requirements(), target_pages=1, merge_bullets=False,
+        max_bullets_per_entry=1,
+    )
+
+    assert [s["step"] for s in result.trace] == ["draft"]
+    assert len(calls) == 1, "only the first draft's rewrite"
+    assert not any("full (target" in w for w in result.warnings)
+    assert result.quality["fill_tolerance"] > 0
+    assert not resume_quality.ResumeQuality.model_validate(result.quality).warnings
+
+
+def test_top_up_skips_a_candidate_the_page_already_overflowed_at(monkeypatch, tmp_path):
+    """The page breaks below its calibrated capacity: once bullet B overflows there, the
+    new entry (which needs more lines still) is never rewritten or rendered."""
+    monkeypatch.setattr(config, "MAX_GROW_ATTEMPTS", 0)
+    calls: list[list[str]] = []
+
+    def fake_rewrite(bullets, requirements, **kwargs):
+        calls.append([b.id for b in bullets])
+        return _identity_rewrite(bullets, requirements, **kwargs)
+
+    monkeypatch.setattr(fit_state, "rewrite_bullets", fake_rewrite)
+    n = _capped_first_draft()
+    draft_lines = _target_lines() - 3
+    base = draft_lines - n - 2 * n
+    count = _lines_with_headers(base)
+
+    def pages_for(texts):
+        _, lines = count(texts)
+        return (1 if lines <= draft_lines else 2, lines)
+
+    _stub_render(monkeypatch, tmp_path, pages_for=pages_for)
+
+    result = fit_mod.fit(
+        _test_resume(), _requirements(), target_pages=1, merge_bullets=False,
+        max_bullets_per_entry=1,
+    )
+
+    assert [s["step"] for s in result.trace] == ["draft", "topup-B", "revert"]
+    assert len(calls) == 2, "the first draft and bullet B; no rewrite for an entry"
 
 
 def test_top_up_swaps_a_short_extra_bullet_for_a_new_entry(monkeypatch, tmp_path):

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 from collections.abc import Callable
 from contextlib import contextmanager
 
@@ -49,6 +50,24 @@ def recover_orphaned_tailoring() -> int:
 RETAINED_TAB_STATUSES = frozenset({"awaiting_review", "awaiting_otp"})
 
 
+def _heal_missing_expansion(app, settings: ApplySettings):
+    """Write the one artifact a finished run lacks instead of re-tailoring it.
+
+    Runs made outside Apply skip expansion by default; re-tailoring the whole run for
+    it would cost every pipeline call again, where this costs one expand call. Any
+    failure falls through to the normal full Prepare.
+    """
+    from resume_tailor.apply.funnel import preparation
+    from resume_tailor.web import job_followups
+
+    # Any failure leaves the run as it was; the full Prepare below still recovers it.
+    with contextlib.suppress(Exception):
+        job_followups.generate_expansion(app.job_id)
+    return preparation.check(
+        app, require_cover=settings.cover_letter, require_acknowledgement=False,
+    )
+
+
 def prepare_application(
     source_job_id: str,
     *,
@@ -81,6 +100,8 @@ def prepare_application(
     existing_preparation = preparation.check(
         app, require_cover=settings.cover_letter, require_acknowledgement=False,
     )
+    if existing_preparation.reasons == ["missing_expansion"] and not force_prepare:
+        existing_preparation = _heal_missing_expansion(app, settings)
     if app.status == "ready" and existing_preparation.eligible and not force_prepare:
         return app
     previous = app.model_copy(deep=True)

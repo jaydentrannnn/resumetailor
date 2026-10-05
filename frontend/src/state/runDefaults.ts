@@ -45,7 +45,7 @@ export const DEFAULT_SETTINGS: JobSettings = {
   // it exists here only so "Reset to defaults" round-trips it instead of dropping it.
   extract_runs: 0, // 0 = automatic: 1 vote on Anthropic/Gemini, 3 on local models
   max_concurrent_jobs: 2,
-  no_expand: false,
+  no_expand: true,
   no_skills: false,
   cover_letter: false,
   no_cover_letter: false,

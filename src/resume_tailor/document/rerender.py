@@ -300,6 +300,7 @@ def rerender(
         quality = resume_quality.assess(
             run.resume, bullets, run.snapshot["layout"], fill_ratio=lines / capacity,
             fill_target=run.snapshot.get("fill_target"), estimated=estimated,
+            fill_tolerance=config.FILL_TOLERANCE_LINES / capacity,
         )
         quality.verified = (
             run.snapshot.get("fill_target") is not None

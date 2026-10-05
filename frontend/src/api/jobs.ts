@@ -385,6 +385,11 @@ export function coverLetterPreviewUrl(jobId: string, cacheBuster?: number): stri
   return cacheBuster === undefined ? base : `${base}?v=${cacheBuster}`;
 }
 
+/** Write a finished run's application-form experience text on demand (one model call). */
+export function generateExpansion(jobId: string): Promise<Expansion> {
+  return request<Expansion>(`/api/jobs/${jobId}/expansion`, { method: "POST" });
+}
+
 export function regenerateCoverLetter(jobId: string, instruction: string): Promise<CoverLetter> {
   return request<CoverLetter>(`/api/jobs/${jobId}/cover-letter`, {
     method: "POST",

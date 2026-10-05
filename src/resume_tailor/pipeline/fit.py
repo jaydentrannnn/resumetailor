@@ -183,7 +183,7 @@ class _FitRun(fit_topup._FitTopUp):
             # 82% full. `measured_lines` is the estimate only when Word was unavailable.
             fill_ratio = self.measured_lines / self.capacity
 
-            underfull = fill_ratio < self.underflow
+            underfull = self._short_of_target()
             # `grow_cap` is the first limit that overflowed: growing back to it would only
             # re-add what the ladder just removed.
             grow_limit = (
@@ -223,7 +223,7 @@ class _FitRun(fit_topup._FitTopUp):
         if underfull:
             topup_reason = self.top_up()
             fill_ratio = self.measured_lines / self.capacity
-            underfull = fill_ratio < self.underflow
+            underfull = self._short_of_target()
         if underfull:
             self.warnings.append(
                 f"Page is only {fill_ratio:.0%} full (target {self.underflow:.0%}); "
@@ -267,6 +267,7 @@ class _FitRun(fit_topup._FitTopUp):
             quality=resume_quality.assess(
                 self.resume, self.rewritten, active_layout(), fill_ratio=fill_ratio,
                 fill_target=self.underflow, estimated=self.pages_are_estimated,
+                fill_tolerance=config.FILL_TOLERANCE_LINES / self.capacity,
             ).model_dump(),
         )
 

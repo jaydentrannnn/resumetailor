@@ -90,6 +90,22 @@ def _to_expansion_out(expansion: expand.Expansion) -> ExpansionOut:
         char_limit=expansion.char_limit,
     )
 
+def write_expansion(
+    out_dir: Path, expansion: expand.Expansion, *, source_experience_count: int
+) -> ExpansionOut:
+    """Write `expansion.json`/`expansion.md` for a run and return the API shape.
+
+    Shared by the tailoring run and on-demand generation so both leave identical files.
+    `source_experience_count` is durable evidence that an empty expansion truly means
+    there were no source jobs; later profile edits cannot establish this.
+    """
+    out = _to_expansion_out(expansion)
+    record = out.model_dump()
+    record["source_experience_count"] = source_experience_count
+    (out_dir / "expansion.json").write_text(json.dumps(record, indent=2), encoding="utf-8")
+    (out_dir / "expansion.md").write_text(expand.format_markdown(expansion), encoding="utf-8")
+    return out
+
 def _to_skills_out(plan: skills.SkillsPlan) -> SkillsPlanOut:
     """Convert the skills dataclass into the Pydantic shape the API serves."""
     return SkillsPlanOut(
