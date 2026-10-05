@@ -498,3 +498,26 @@ opener (`_REPAIR_PROMPT_VERSION = 6`).
 
 **What:** Web (`_TailorJobRun._score_with_facets`) and CLI (`_CliRun._score_with_facets`) score relevance on the calling thread while facets run on a worker (`config.submit_in_context`). Both read the unfiltered resume captured beforehand (`full_resume`), so the score cache key is unchanged; facets filters its own copy. A scoring failure waits for facets before propagating.
 **Coverage-aware selection:** `config.COVERAGE_SELECTION` (env `RESUME_TAILOR_COVERAGE_SELECTION=1`) switches `selection._take_ranked`'s remainder to a greedy pick that discounts posting keywords already shown (1.0, `COVERAGE_REPEAT_DISCOUNT`, then 0; shared across section pools). Off by default: `scripts/eval_selection.py` over 255 saved runs changed picks in 164 but added no must-have (2.94 → 2.94 of 6.33; keywords 5.62 → 5.69). The unshown must-haves are not tagged on any bullet of the chosen entries, so it is an evidence gap, not a ranking one.
+
+## 2026-10-05 - Project headers wrapped past one line (measured header width + PDF trim)
+
+- **Symptom:** IDT posting run `348d2addba09`: `ResumeTailor - JD-Tailored Resume
+  Pipeline | Python, FastAPI, Docker, GitHub Actions | Github  Jul 2026 - Present` pushed
+  "Present" to a second line. A scan of 198 desktop runs found 19 wrapped headers (~5%),
+  13+ on the ResumeTailor project.
+- **Cause:** the tech budget was `CHARS_PER_LINE(121) - overhead - PROJECT_HEADER_GAP(4)`.
+  121 is measured on lowercase bullet prose; a header (bold name, capitals, right tab)
+  holds ~108 on the Lora/Word template. Every header of 109+ chars wrapped, none of 108-.
+- **Fix, two layers:** (1) `fit_shrink.header_pass` runs last in `_FitRun._finish`: it
+  matches each project header in the PDF (`fit_lines._wrapped_headers` via
+  `render.line_layout`) and drops the last (weakest) tech tag of any that span >1 line,
+  re-rendering until none wrap; with no tags left it warns. Trimming only frees space, so
+  it cannot overflow. (2) `calibrate.calibrate_header_chars` binary-searches a real header
+  probe and writes optional `header_chars_per_line` (109 on this template);
+  `config.project_header_chars()` reads it, else `CHARS_PER_LINE - PROJECT_HEADER_GAP`
+  (gap raised 4 -> 13 from the scan). Header calibration is soft: failure omits the key.
+- **Also fixed:** `render._layout_from_words` joined a line's words in (top, x0) order; a
+  hyperlink run Word sets ~2pt high ("Github") led its line, so no header with a link
+  ever matched. Words are now x-sorted within a line (bullets with links benefit too).
+- **Cache:** facets cache key now includes `project_header_chars()` (it changes the
+  advertised `tech_char_budget`).

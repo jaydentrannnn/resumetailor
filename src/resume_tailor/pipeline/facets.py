@@ -121,6 +121,7 @@ def _cache_path(resume: MasterResume, requirements: JobRequirements) -> Path:
             str(_PROMPT_VERSION),
             config.fingerprint("facets"),
             str(config.CHARS_PER_LINE),
+            str(config.project_header_chars()),
             requirements.model_dump_json(),
             *pool_lines,
         ]

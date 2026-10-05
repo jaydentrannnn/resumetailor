@@ -17,7 +17,14 @@ from pathlib import Path
 
 from resume_tailor import config
 from resume_tailor.content import data
-from resume_tailor.content.data import Bullet, Experience, ExperienceSection, MasterResume
+from resume_tailor.content.data import (
+    Bullet,
+    Experience,
+    ExperienceSection,
+    MasterResume,
+    Project,
+    ProjectSection,
+)
 from resume_tailor.document import render, template_profile
 from resume_tailor.document import calibration_cache
 
@@ -242,6 +249,70 @@ def calibrate_chars_per_line(base: MasterResume) -> int:
     return low
 
 
+#: Tech-list filler for the header probe: title-case names and acronyms, which render
+#: wider than `_WORDS`' lowercase prose — the reason headers need their own measurement.
+_HEADER_TECH = (
+    "Python, FastAPI, Docker, GitHub Actions, TypeScript, PostgreSQL, React, Kubernetes, "
+    "Terraform, LangChain, Redis, GraphQL, Next.js, Tailwind CSS, Elasticsearch, AWS, "
+) * 3
+
+
+def _header_probe(base: MasterResume, tech_chars: int) -> tuple[MasterResume, Project]:
+    """`base` with one project whose header's tech list is `tech_chars` characters long."""
+    resume = base.model_copy(deep=True)
+    link = next((proj.link for proj in base.projects if proj.link), "")
+    proj = Project(
+        id="calib_proj",
+        name="Calibration Project - Header Width Probe",
+        tech=[_HEADER_TECH[:tech_chars].rstrip(", ")] if tech_chars else [],
+        date="Jan 2025 - Present",
+        link=link,
+        bullets=[Bullet(id="calib_p1", text="Calibration bullet.", tags=["calibration"])],
+    )
+    resume.sections = [
+        s for s in base.sections if s.kind not in ("experience", "project")
+    ] + [ProjectSection(id="projects", title="Projects", entries=[proj])]
+    return resume, proj
+
+
+def _header_lines(base: MasterResume, tech_chars: int) -> tuple[int, int]:
+    """Render the probe; return `(header characters, rendered header lines)`."""
+    from resume_tailor.pipeline import facets_budget
+
+    resume, proj = _header_probe(base, tech_chars)
+    pdf, _ = _render_pages(resume, "header")
+    text = facets_budget.header_text(proj)
+    layout = render.line_layout(pdf, {"header": text})
+    if "header" not in layout:
+        raise CalibrationError("Could not find the header probe in the rendered PDF.")
+    tech = ", ".join(proj.tech)
+    return facets_budget.header_overhead(proj) + len(tech), layout["header"].lines
+
+
+def calibrate_header_chars(base: MasterResume) -> int:
+    """Binary search the longest project header (`name | tech | link`, date) on one line.
+
+    The fit loop's `header_pass` still checks every real header; this only makes the
+    facets budget's first guess match the template's bold name, capitals and tab stop.
+    """
+    if not (template_profile.active_layout().get("enabled") or {}).get("projects", True):
+        raise CalibrationError("The active template has no projects section.")
+    if _header_lines(base, 0)[1] != 1:
+        raise CalibrationError("A project header with no tech list already wraps.")
+    low, high = 0, len(_HEADER_TECH)
+    while low < high:
+        mid = (low + high + 1) // 2
+        if _header_lines(base, mid)[1] == 1:
+            low = mid
+        else:
+            high = mid - 1
+    if low == len(_HEADER_TECH):
+        raise CalibrationError("The header probe never wrapped.")
+    chars = _header_lines(base, low)[0]
+    _check_in_band(chars, config.PLAUSIBLE_HEADER_CHARS, "header_chars_per_line")
+    return chars
+
+
 def calibrate_lines_per_page(base: MasterResume, chars_per_line: int) -> int:
     """Binary search the largest bullet count that still fits on page 1, then measure
     how many physical lines that many bullets actually occupy.
@@ -427,7 +498,10 @@ def _load_previous_anchors() -> dict | None:
 
 
 def write_calibration(
-    chars_per_line: int, lines_per_page: int, anchors: dict | None = None
+    chars_per_line: int,
+    lines_per_page: int,
+    anchors: dict | None = None,
+    header_chars: int | None = None,
 ) -> Path:
     """Record the measurements as data, keyed by the PDF backend that produced them.
 
@@ -435,7 +509,8 @@ def write_calibration(
     `anchors_to_write`) — omitted entirely (not even a `null` key) when
     `verify_anchors=False`, so a run that skips the anchor step doesn't clobber an
     existing baseline with nothing, and so the file shape from before anchors existed
-    is reproduced exactly when the block is absent.
+    is reproduced exactly when the block is absent. `header_chars` is likewise omitted
+    when unmeasured; `config.project_header_chars` then falls back to a fixed gap.
     """
     config.CALIBRATION_DIR.mkdir(parents=True, exist_ok=True)
     path = config.CALIBRATION_DIR / f"{config.PDF_BACKEND}.json"
@@ -447,6 +522,8 @@ def write_calibration(
         "template": config.DEFAULT_TEMPLATE_PATH.name,
         "input_digest": calibration_cache.input_digest(),
     }
+    if header_chars is not None:
+        payload["header_chars_per_line"] = header_chars
     if anchors is not None:
         payload["anchors"] = anchors
     path.write_text(json.dumps(payload, indent=2) + "\n", encoding="utf-8")
@@ -495,6 +572,16 @@ def run(*, verify_anchors: bool = True, rebaseline: bool = False) -> Calibration
     lines.append(f"  LINES_PER_PAGE = {lines_per_page}")
 
     warnings: list[str] = []
+    # Soft: an unmeasured header width falls back to a fixed gap, and the fit loop's
+    # header pass checks every rendered header anyway.
+    lines.append("Calibrating project header width…")
+    header_chars: int | None = None
+    try:
+        header_chars = calibrate_header_chars(base)
+        lines.append(f"  header_chars_per_line = {header_chars}")
+    except Exception as exc:
+        lines.append(f"  skipped ({exc})")
+
     previous_anchors = _load_previous_anchors()
     anchors: dict | None = previous_anchors
     if verify_anchors:
@@ -512,7 +599,7 @@ def run(*, verify_anchors: bool = True, rebaseline: bool = False) -> Calibration
             warnings.append(str(exc))
             lines.append(f"  warning: anchor check failed ({exc})")
 
-    path = write_calibration(chars_per_line, lines_per_page, anchors)
+    path = write_calibration(chars_per_line, lines_per_page, anchors, header_chars)
     lines.append(
         f"Wrote CHARS_PER_LINE={chars_per_line}, LINES_PER_PAGE={lines_per_page} "
         f"for '{config.PDF_BACKEND}' to {path}"

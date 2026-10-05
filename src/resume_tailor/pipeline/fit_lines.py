@@ -9,7 +9,7 @@ from .. import config
 from ..content.data import Bullet, Experience, MasterResume, Project
 from ..document import render
 from ..document.template_profile import active_layout
-from . import fit_types
+from . import facets_budget, fit_types
 
 
 def _widow_fits(
@@ -28,6 +28,24 @@ def _widow_fits(
                 float(config.CHARS_PER_LINE),
             )
     return measured, measured_ids
+
+def _wrapped_headers(
+    path: Path, resume: MasterResume, *, include_project_links: bool
+) -> list[Project]:
+    """Rendered projects whose header line the PDF shows wrapping past one line.
+
+    A project absent from the PDF (not selected) or one `line_layout` cannot match is
+    left out — no measurement, no trim.
+    """
+    pdf = path.with_suffix(".pdf")
+    if not pdf.exists():
+        return []
+    texts = {
+        proj.id: facets_budget.header_text(proj, include_project_links=include_project_links)
+        for proj in resume.projects
+    }
+    layout = render.line_layout(pdf, texts)
+    return [proj for proj in resume.projects if proj.id in layout and layout[proj.id].lines > 1]
 
 def _widow_targets(
     texts: dict[str, str], sources: dict[str, Bullet],

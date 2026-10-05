@@ -264,3 +264,36 @@ class _FitShrink(fit_state._FitState):
         self._set_draft(self.draw(self.rewritten, "revert"))
         self.warnings.append("Widow repair overflowed the page; kept the fitting draft.")
         return False
+
+    def header_pass(self) -> None:
+        """Drop the weakest tech tag from any project header the PDF shows wrapping.
+
+        The facets budget is a character estimate (`config.project_header_chars`); a bold
+        name and a right-aligned date can still push the date onto a second line. Tags are
+        best-first, so the last one goes; each round costs one render and frees space, so
+        it cannot overflow the page. A header still wrapping with no tags left is warned.
+        """
+        trimmed: list[str] = []
+        while not self.pages_are_estimated:
+            wrapped = fit_lines._wrapped_headers(
+                self.doc_path, self.resume, include_project_links=self.include_project_links
+            )
+            shrinkable = [proj for proj in wrapped if proj.tech]
+            if not shrinkable:
+                if wrapped:
+                    self.warnings.append(
+                        "Project header still wraps past one line with no tech left to "
+                        f"trim: {', '.join(proj.name for proj in wrapped)}."
+                    )
+                break
+            for proj in shrinkable:
+                trimmed.append(f"{proj.tech[-1]} ({proj.name})")
+                proj.tech = proj.tech[:-1]
+            self._set_draft(self.draw(self.rewritten, "header", trimmed=len(shrinkable)))
+        if trimmed:
+            events.emit(
+                self.on_event,
+                "fit",
+                f"Trimmed {len(trimmed)} tech tag(s) so project headers fit one line",
+                trimmed=trimmed,
+            )

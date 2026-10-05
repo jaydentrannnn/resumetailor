@@ -20,19 +20,30 @@ def project_header_tech_budget(
 
     Layout is `{name} | {tech}{link}` with `{date}` right-aligned after a tab. The date
     still consumes horizontal space in the character-budget approximation used here.
+    `config.project_header_chars` is the measured header width; the rendered header is
+    still checked afterwards (`fit_shrink.header_pass`).
     """
+    return max(0, config.project_header_chars() - header_overhead(
+        proj, include_project_links=include_project_links,
+    ))
+
+
+def header_overhead(proj: Project, *, include_project_links: bool = True) -> int:
+    """Characters a project header spends on everything but its tech list."""
     link_suffix = ""
     if include_project_links and proj.link:
         link_suffix = f" | {proj.link}"
-    return max(
-        0,
-        config.CHARS_PER_LINE
-        - len(proj.name)
-        - len(" | ")
-        - len(link_suffix)
-        - len(proj.date)
-        - config.PROJECT_HEADER_GAP,
-    )
+    return len(proj.name) + len(" | ") + len(link_suffix) + len(proj.date)
+
+
+def header_text(proj: Project, *, include_project_links: bool = True) -> str:
+    """The project header line as rendered (`render.build_context`), tab as a space."""
+    text = proj.name
+    if proj.tech:
+        text += " | " + ", ".join(proj.tech)
+    if include_project_links and proj.link:
+        text += " | " + proj.link
+    return f"{text} {proj.date}".rstrip()
 
 def coursework_char_budget() -> int:
     """Max characters for the joined coursework list under a two-line bullet."""

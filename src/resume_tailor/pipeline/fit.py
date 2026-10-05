@@ -222,8 +222,10 @@ class _FitRun(fit_topup._FitTopUp):
         topup_reason: str | None = None
         if underfull:
             topup_reason = self.top_up()
-            fill_ratio = self.measured_lines / self.capacity
-            underfull = self._short_of_target()
+        # Last layout step: top-up may have added a project whose header wraps.
+        self.header_pass()
+        fill_ratio = self.measured_lines / self.capacity
+        underfull = underfull and self._short_of_target()
         if underfull:
             self.warnings.append(
                 f"Page is only {fill_ratio:.0%} full (target {self.underflow:.0%}); "

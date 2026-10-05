@@ -806,6 +806,13 @@ writes each bundle plus a filled sample PDF for checking a design change by eye.
   relevance at every code-side ranking site (entry choice, bullet selection, drops,
   pull-back ties, top-up). Never sent to the model, so the score cache is unaffected; 0.0
   restores relevance-only ranking. Undated entries are neutral.
+- **Project headers stay one line.** The facets tech budget uses
+  `config.project_header_chars()` — the calibration file's optional
+  `header_chars_per_line` (a bold-name header probe, `calibrate.calibrate_header_chars`),
+  else `CHARS_PER_LINE - PROJECT_HEADER_GAP` (13). Bullet prose measures wider than a
+  header, so `CHARS_PER_LINE` alone let ~5% of headers wrap. The last fit step,
+  `fit_shrink.header_pass`, matches each header in the PDF and drops its weakest tech tag
+  until none wrap (one render per round; warns if a header wraps with no tags left).
 
 ---
 

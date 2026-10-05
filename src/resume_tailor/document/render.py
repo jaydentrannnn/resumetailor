@@ -665,6 +665,10 @@ def _layout_from_words(
         ):
             groups.append([])
         groups[-1].append(word)
+    # Reading order within a line is by x: a hyperlink run can sit a point or two
+    # above its line and would otherwise lead it, so the line never matched its source.
+    for group in groups:
+        group.sort(key=lambda w: w["x0"])
     lines = [" ".join(w["text"] for w in group) for group in groups]
     right_edges: dict[int, float] = {}
     for word in words:

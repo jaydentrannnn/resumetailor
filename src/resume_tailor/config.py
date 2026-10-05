@@ -1794,10 +1794,38 @@ MAX_PROJECT_TECH = 4
 #: stage picks courses best-first; code keeps only as many as fit under this span.
 COURSEWORK_MAX_LINES = 2
 
-#: Characters reserved when estimating whether a project header fits one line. The
-#: calibration constant is for bullet body text; headers have a bold name run and a
-#: right-aligned tab, so this gap absorbs that approximation. Raise if a header wraps.
-PROJECT_HEADER_GAP = 4
+#: Characters reserved when a calibration file has no measured `header_chars_per_line`
+#: (`project_header_chars`). `CHARS_PER_LINE` is measured on lowercase bullet prose; a
+#: header has a bold name, capitals and a right-aligned date, so it holds fewer
+#: characters. 13 is the observed cutoff across 390 Word-rendered headers (121-char
+#: body lines wrapped every header of 109+ characters and none of 108 or fewer).
+PROJECT_HEADER_GAP = 13
+
+#: Plausibility band for a measured `header_chars_per_line`, same role as
+#: `PLAUSIBLE_CHARS_PER_LINE`.
+PLAUSIBLE_HEADER_CHARS = (40, 200)
+
+
+def project_header_chars() -> int:
+    """Characters one project header line holds: `name | tech | link` plus its date.
+
+    Read from the active calibration file's optional `header_chars_per_line` (measured
+    by `calibrate.calibrate_header_chars`), else `CHARS_PER_LINE - PROJECT_HEADER_GAP`.
+    Only a first estimate — `fit_shrink.header_pass` checks the rendered PDF and trims
+    tech tags from any header that still wraps.
+    """
+    module = sys.modules[__name__]
+    source = module.CALIBRATION_SOURCE
+    if source != "fallback":
+        try:
+            raw = json.loads(Path(source).read_text(encoding="utf-8"))
+            measured = int(raw["header_chars_per_line"])
+        except (OSError, json.JSONDecodeError, KeyError, TypeError, ValueError):
+            measured = None
+        lo, hi = PLAUSIBLE_HEADER_CHARS
+        if measured is not None and lo <= measured <= hi:
+            return measured
+    return module.CHARS_PER_LINE - module.PROJECT_HEADER_GAP
 
 #: How many work-experience entries the application-form expansion may cover. Higher than
 #: `MAX_EXPERIENCE_ENTRIES` because forms are not page-constrained — the tile should
