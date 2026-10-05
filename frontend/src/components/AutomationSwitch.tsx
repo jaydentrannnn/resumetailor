@@ -57,7 +57,7 @@ export function AutomationSwitch() {
       disabled={saving}
       onClick={toggle}
       title={state.paused ? `Automation is paused. ${usage}.` : `Pause all automation. ${usage}.`}
-      className={`rounded-full border px-3 py-1 text-xs font-semibold ${
+      className={`rt-header-pill rt-control inline-flex items-center justify-center gap-1 whitespace-nowrap rounded-full border px-3 py-1 ${
         state.paused
           ? "border-warn/40 bg-warn-soft text-warn"
           : "border-line bg-panel text-ink-muted hover:text-ink"

@@ -71,7 +71,7 @@ export function SetupHealth() {
         aria-expanded={open}
         aria-controls={panelId}
         onClick={() => setOpen((v) => !v)}
-        className={`rounded-full border px-3 py-1 text-xs font-semibold ${
+        className={`rt-header-pill rt-control inline-flex items-center justify-center gap-1 whitespace-nowrap rounded-full border px-3 py-1 ${
           status.ready
             ? "border-success/40 bg-success-soft text-success"
             : "border-warn/40 bg-warn-soft text-warn"

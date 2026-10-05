@@ -33,6 +33,7 @@ def _discover_new_rows(
     summary: daily_progress.DailySummary,
     log_file: Path,
     log: Callable[[str], None],
+    on_progress: daily_progress.ProgressCallback | None = None,
 ) -> list[source_rows.SourceRow]:
     """Every enabled source's new rows, deduplicated by job id across sources."""
     all_new: list[source_rows.SourceRow] = []
@@ -44,11 +45,24 @@ def _discover_new_rows(
     # surviving the funnel filters (counted before the already-known dedupe, so a healthy
     # source that has nothing new still reads as working).
     status_entries: dict[str, dict[str, object]] = {}
-    for src in [s for s in settings.sources if s.enabled]:
+    enabled_sources = [s for s in settings.sources if s.enabled]
+    if on_progress is not None:
+        on_progress(daily_progress.FindProgress(phase="discovering", total=len(enabled_sources)))
+    for completed, src in enumerate(enabled_sources):
+        if on_progress is not None:
+            on_progress(daily_progress.FindProgress(
+                phase="discovering", processed=completed,
+                total=len(enabled_sources), current=src.name or src.id,
+            ))
         filtered = _filter_source(
             src, settings, known_ids=known_ids, status_entries=status_entries,
             summary=summary, log_file=log_file, log=log,
         )
+        if on_progress is not None:
+            on_progress(daily_progress.FindProgress(
+                phase="discovering", processed=completed + 1,
+                total=len(enabled_sources), current=src.name or src.id,
+            ))
         if filtered is None:
             continue
         total_candidates += filtered.total_candidates
@@ -176,10 +190,13 @@ def _process_rows(
     log: Callable[[str], None],
     summary: daily_progress.DailySummary,
     index: store_models.Index,
+    on_progress: daily_progress.ProgressCallback | None = None,
 ) -> None:
     """Run `_process_one` over the rows on a small pool, one role group at a time."""
     index_lock = threading.Lock()
     group_locks: dict[str, threading.Lock] = {}
+    if on_progress is not None:
+        on_progress(daily_progress.FindProgress(phase="processing", total=len(to_process)))
 
     def process_row(row: source_rows.SourceRow, prior: Any = None) -> None:
         if prior is not None:
@@ -216,18 +233,24 @@ def _process_rows(
     for row in to_process:
         group_locks.setdefault(identity.group_key(row.company, row.role), threading.Lock())
     with ThreadPoolExecutor(max_workers=_ROW_POOL_SIZE) as executor:
-        futures = []
+        futures = {}
         prior_by_group: dict[str, Any] = {}
         for row in to_process:
             group_key = identity.group_key(row.company, row.role)
             future = config.submit_in_context(
                 executor, process_row, row, prior_by_group.get(group_key)
             )
-            futures.append(future)
+            futures[future] = row
             prior_by_group[group_key] = future
         for completed, future in enumerate(as_completed(futures), start=1):
             future.result()
             daily_progress._progress_set(processed=completed)
+            if on_progress is not None:
+                row = futures[future]
+                on_progress(daily_progress.FindProgress(
+                    phase="processing", processed=completed, total=len(to_process),
+                    current=f"{row.company} — {row.role}",
+                ))
 
 def _run_batch_submit(
     *,

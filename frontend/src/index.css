@@ -103,10 +103,25 @@ input:not([type="checkbox"]):not([type="radio"]),
   min-height: 28px;
   height: 28px;
 }
+/* Override the unlayered button font reset consistently for header links and buttons. */
+.rt-header-pill {
+  font-size: 0.75rem;
+  line-height: 1rem;
+  font-weight: 600;
+}
+/* Settings labels reserve the help control's real height so adjacent fields align. */
+.rt-model-label {
+  display: flex;
+  align-items: center;
+  min-height: 28px;
+}
 @media (pointer: coarse) {
   .rt-row-action {
     min-height: 36px;
     height: 36px;
+  }
+  .rt-model-label {
+    min-height: 36px;
   }
 }
 

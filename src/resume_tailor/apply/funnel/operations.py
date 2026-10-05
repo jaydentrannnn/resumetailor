@@ -91,6 +91,7 @@ class ApplyOperation(BaseModel):
     message: str = ""
     processed: int = 0
     total: int = 0
+    find_progress: daily_progress.FindProgress | None = None
     completed: int = 0
     blocked: int = 0
     failed: int = 0
@@ -269,6 +270,13 @@ def _event(operation: ApplyOperation, stage: str, message: str, application_id: 
             {"at": _now(), "stage": stage, "message": message, "application_id": application_id}
         )
         operation.events = operation.events[-100:]
+        _persist(operation)
+
+
+def _set_find_progress(operation: ApplyOperation, progress: daily_progress.FindProgress) -> None:
+    """Persist measured counts independently of the human-readable activity log."""
+    with _LOCK:
+        operation.find_progress = progress
         _persist(operation)
 
 
@@ -754,6 +762,7 @@ def _worker(
                 fetch_only=True,
                 auto_submit_max_per_run=0,
                 log=lambda message: _event(operation, "discovering", message),
+                on_progress=lambda progress: _set_find_progress(operation, progress),
             )
             operation.processed = operation.completed = 1
             operation.attention = result.attention

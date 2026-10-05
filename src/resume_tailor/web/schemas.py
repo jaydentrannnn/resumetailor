@@ -1363,6 +1363,8 @@ class ApplyOperationResponse(BaseModel):
     message: str = ""
     processed: int = 0
     total: int = 0
+    #: Measured source/posting phase counts; absent on older operations.
+    find_progress: dict[str, Any] | None = None
     completed: int = 0
     blocked: int = 0
     failed: int = 0

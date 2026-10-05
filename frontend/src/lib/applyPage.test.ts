@@ -6,6 +6,7 @@ import {
   autoSubmitSummary,
   nightlyRunLabel,
   fillBlockers,
+  findProgress,
   itemProgress,
   formatEta,
   operationEtaSeconds,
@@ -64,6 +65,53 @@ const op = (patch: Partial<ApplyOperation>): ApplyOperation =>
     events: [],
     ...patch,
   }) as ApplyOperation;
+
+describe("Find jobs progress", () => {
+  const search = (patch: Partial<ApplyOperation> = {}) => op({ action: "find", ...patch });
+  it("uses measured source and posting counts for the two halves", () => {
+    const sources = search({
+      find_progress: { phase: "discovering", processed: 2, total: 4, current: "Internships" },
+    });
+    expect(findProgress(sources)).toEqual({
+      fraction: 0.25,
+      detail: "Fetching sources: 2 of 4 · Internships",
+    });
+    const postings = search({
+      find_progress: { phase: "processing", processed: 8, total: 20, current: "Acme" },
+    });
+    expect(findProgress(postings)?.fraction).toBe(0.7);
+    expect(findProgress(postings)?.detail).toBe("Processing postings: 8 of 20 · Acme");
+    expect(operationHeadline(sources)).toBe("Finding jobs");
+    expect(operationEtaSeconds(postings, Date.now())).toBeNull();
+  });
+  it("skips empty stages and reserves 100% for completion", () => {
+    const finding = search({
+      find_progress: { phase: "discovering", processed: 0, total: 0, current: "" },
+    });
+    expect(findProgress(finding)?.fraction).toBe(0.5);
+    finding.find_progress!.phase = "processing";
+    expect(findProgress(finding)?.fraction).toBe(0.99);
+    for (const state of ["completed", "completed_with_issues"])
+      expect(findProgress({ ...finding, state })?.fraction).toBe(1);
+  });
+  it("retains measured progress on failure, cancellation and interruption", () => {
+    for (const state of ["failed", "cancelled", "interrupted"])
+      expect(
+        findProgress(
+          search({
+            state,
+            find_progress: { phase: "processing", processed: 1, total: 2, current: "" },
+          }),
+        )?.fraction,
+      ).toBe(0.75);
+  });
+  it("supports old operations and leaves Prepare and Fill alone", () => {
+    expect(findProgress(search())).toBeNull();
+    expect(findProgress(search({ state: "completed" }))?.fraction).toBe(1);
+    expect(findProgress(op({}))).toBeNull();
+    expect(findProgress(op({ action: "fill" }))).toBeNull();
+  });
+});
 
 describe("resolveApplyTab", () => {
   it("honours the URL, else prefers Needs you when anything waits", () => {

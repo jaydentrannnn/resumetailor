@@ -33,3 +33,4 @@ data/
 /.playwright-mcp
 # Scratch pytest basetemp/cache dirs from ad-hoc runs (--basetemp/-o cache_dir)
 /.pytest-*/
+.aider*

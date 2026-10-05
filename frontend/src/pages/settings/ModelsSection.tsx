@@ -109,7 +109,7 @@ export function ModelsSection() {
 
         <div className="mt-4 grid gap-4 sm:grid-cols-2">
           <label className="block text-sm">
-            <span className="font-medium text-ink">Model</span>
+            <span className="rt-model-label font-medium text-ink">Model</span>
             <input
               className="field mt-1"
               list={local?.models.length ? modelListId : undefined}
@@ -141,7 +141,7 @@ export function ModelsSection() {
             </span>
           </label>
           <label className="block text-sm">
-            <span className="font-medium text-ink">
+            <span className="rt-model-label gap-1 font-medium text-ink">
               {GLOSSARY.effort.label} <InlineHelp label="effort">{GLOSSARY.effort.help}</InlineHelp>
             </span>
             <select

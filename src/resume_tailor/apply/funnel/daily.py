@@ -172,6 +172,7 @@ def run_daily(
     auto_submit_max_per_run: int | None = None,
     fetch_only: bool = False,
     log: Callable[[str], None] = print,
+    on_progress: daily_progress.ProgressCallback | None = None,
 ) -> daily_progress.DailySummary:
     """Execute one daily discover/screen/tailor pass; idempotent on known ids."""
     if not daily_progress._DAILY_LOCK.acquire(blocking=False):
@@ -222,7 +223,8 @@ def run_daily(
 
         daily_rows._append_log(log_file, f"=== daily run {date} ===", log)
         all_new = daily_batch._discover_new_rows(
-            settings, summary=summary, log_file=log_file, log=log
+            settings, summary=summary, log_file=log_file, log=log,
+            on_progress=on_progress,
         )
         cap = limit if limit is not None else settings.max_new_per_day
         to_process = daily_batch._rows_to_process(all_new, cap=cap, fetch_only=fetch_only)
@@ -248,6 +250,7 @@ def run_daily(
             log=log,
             summary=summary,
             index=index,
+            on_progress=on_progress,
         )
         daily_progress._progress_set(processed=len(to_process), current="")
 

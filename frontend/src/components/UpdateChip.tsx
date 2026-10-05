@@ -38,7 +38,7 @@ export function UpdateChip() {
   return (
     <Link
       to="/settings?tab=about"
-      className="rounded-full border border-accent/40 bg-accent-soft px-3 py-1 text-xs font-semibold text-accent"
+      className="rt-header-pill rt-control inline-flex items-center justify-center gap-1 whitespace-nowrap rounded-full border border-accent/40 bg-accent-soft px-3 py-1 text-accent"
     >
       <span aria-hidden="true">↑ </span>
       {updateChipLabel(status)}

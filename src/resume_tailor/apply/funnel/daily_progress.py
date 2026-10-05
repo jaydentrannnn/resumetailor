@@ -3,12 +3,25 @@
 from __future__ import annotations
 
 import threading
-from typing import Any
+from collections.abc import Callable
+from typing import Any, Literal
 
 from pydantic import BaseModel, Field
 
 from resume_tailor.apply.funnel import attention as attention_mod
 from resume_tailor.apply.funnel import store_models
+
+
+class FindProgress(BaseModel):
+    """Measured work within either stage of a Find jobs operation."""
+
+    phase: Literal["discovering", "processing"]
+    processed: int = 0
+    total: int = 0
+    current: str = ""
+
+
+ProgressCallback = Callable[[FindProgress], None]
 
 _DAILY_LOCK = threading.Lock()
 

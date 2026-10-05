@@ -49,6 +49,58 @@ const operation = (in_flight: InFlightItem[]): ApplyOperation => ({
 });
 
 describe("OperationBanner", () => {
+  it("shows newest activity first without mutating the operation events", () => {
+    const op = operation([]);
+    op.events = [
+      { at: "2026-01-01T00:00:00Z", message: "Starting" },
+      { at: "2026-01-01T00:00:01Z", message: "Starting" },
+      { at: "2026-01-01T00:00:02Z", message: "Finished fetching" },
+      { at: "2026-01-01T00:00:02Z", message: "Processing" },
+    ];
+    const original = structuredClone(op.events);
+    const { container } = render(
+      <MemoryRouter>
+        <OperationBanner operation={op} onControl={vi.fn()} />
+      </MemoryRouter>,
+    );
+    const activity = Array.from(container.querySelectorAll("details ul li"));
+    expect(activity).toHaveLength(3);
+    expect(activity[0].textContent).toContain("Processing");
+    expect(activity[1].textContent).toContain("Finished fetching");
+    expect(activity[2].textContent).toContain("Starting");
+    expect(op.events).toEqual(original);
+  });
+
+  it("renders Find jobs percentage and counts without application progress or ETA", () => {
+    render(
+      <MemoryRouter>
+        <OperationBanner
+          operation={{
+            ...operation([]),
+            action: "find",
+            find_progress: { phase: "processing", processed: 8, total: 20, current: "Acme" },
+          }}
+          onControl={vi.fn()}
+        />
+      </MemoryRouter>,
+    );
+    const bar = screen.getByRole("progressbar", { name: "Find jobs progress" });
+    expect(bar.getAttribute("aria-valuenow")).toBe("70");
+    expect(bar.getAttribute("aria-valuetext")).toBe("Processing postings: 8 of 20 · Acme");
+    expect(screen.queryByText(/left/)).toBeNull();
+    expect(screen.queryByText(/ready for you/)).toBeNull();
+  });
+
+  it("uses an indeterminate indicator for older active Find jobs operations", () => {
+    render(
+      <MemoryRouter>
+        <OperationBanner operation={{ ...operation([]), action: "find" }} onControl={vi.fn()} />
+      </MemoryRouter>,
+    );
+    const bar = screen.getByRole("progressbar", { name: "Progress total unknown" });
+    expect(bar.hasAttribute("aria-valuenow")).toBe(false);
+  });
+
   it("shows both active fills with their own progress", () => {
     render(
       <MemoryRouter>

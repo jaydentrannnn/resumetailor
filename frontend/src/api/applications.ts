@@ -210,6 +210,12 @@ export type ApplyOperation = {
   processed: number;
   total: number;
   completed: number;
+  find_progress?: {
+    phase: "discovering" | "processing";
+    processed: number;
+    total: number;
+    current: string;
+  } | null;
   blocked: number;
   failed: number;
   submitted: number;

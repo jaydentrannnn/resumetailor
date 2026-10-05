@@ -544,3 +544,15 @@ The two legacy tests that assumed process-wide routing/rebound globals were upda
   function when `preparation.check` reports only `missing_expansion`, instead of
   re-tailoring the whole run. Existing profiles saved `no_expand: false` explicitly,
   so the new default only reaches new profiles until the user flips the run option.
+
+## 2026-10-05 — Apply Find jobs progress and control alignment
+
+**What:** Find jobs exposes optional structured phase/count progress through the existing operation API. Sources and postings each occupy half the bar; completed searches reach 100%, while older active operations show an indeterminate indicator. Activity renders newest first. Settings label rows reserve the help control's height, and header pills share desktop/touch control sizing.
+**Why:** Find was previously one 0/1 task regardless of work performed. Logs remain human-readable activity rather than a source of parsed progress; source failures and completed posting futures count as attempted work. The existing unlayered row-action CSS makes help buttons 28px on desktop and 36px on touch.
+**Impact:** The percentage reflects equally weighted stages, not time remaining; Find no longer shows the item-based ETA. Existing nightly progress and Prepare/Fill behavior are retained. Model control alignment and pill sizing are verified with browser geometry checks.
+
+## 2026-10-05 — Header pill typography CSS cascade
+
+**What:** Header pills now use a scoped unlayered typography rule in addition to shared control sizing.
+**Why:** Browser inspection proved the global unlayered `button { font: inherit }` overrides layered Tailwind typography: Ready/Pause rendered at 16px/400 while the update link rendered at 12px/600 despite matching utility classes.
+**Impact:** All three pills now render at 12px/600 with a 16px line height; unrelated button styles remain unchanged. Browser regressions check computed typography as well as geometry.

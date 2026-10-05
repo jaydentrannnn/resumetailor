@@ -186,6 +186,7 @@ export function operationHeadline(op: ApplyOperation): string {
     const done = op.state.replaceAll("_", " ");
     return `${verb} ${done}`;
   }
+  if (op.action === "find") return verb;
   const position = op.total > 0 ? ` ${Math.min(op.processed + 1, op.total)} of ${op.total}` : "";
   const label = op.current_label ? ` · ${op.current_label}` : "";
   return `${verb}${position}${label}`;
@@ -201,11 +202,27 @@ export function operationEtaSeconds(
   nowMs: number,
   done: number = op.processed,
 ): number | null {
+  if (op.action === "find") return null;
   if (!["running"].includes(op.state) || op.total <= 0 || done <= 0.05) return null;
   const started = Date.parse(op.started_at);
   if (!Number.isFinite(started)) return null;
   const perItem = (nowMs - started) / 1000 / done;
   return Math.max(0, Math.round(perItem * (op.total - done)));
+}
+
+/** Sources and postings each account for half the Find jobs bar, not half its time. */
+export function findProgress(op: ApplyOperation): { fraction: number; detail: string } | null {
+  if (op.action !== "find") return null;
+  const progress = op.find_progress;
+  const completed = ["completed", "completed_with_issues"].includes(op.state);
+  if (!progress) return completed ? { fraction: 1, detail: "Search finished" } : null;
+  const ratio = progress.total > 0 ? progress.processed / progress.total : 1;
+  const fraction =
+    (progress.phase === "processing" ? 0.5 : 0) + 0.5 * Math.max(0, Math.min(1, ratio));
+  return {
+    fraction: completed ? 1 : Math.min(0.99, fraction),
+    detail: `${progress.phase === "discovering" ? "Fetching sources" : "Processing postings"}: ${progress.processed} of ${progress.total}${progress.current ? ` · ${progress.current}` : ""}`,
+  };
 }
 
 /** Pages a Workday fill typically walks; only an estimate (tenants differ). */

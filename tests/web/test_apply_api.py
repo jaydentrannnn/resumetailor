@@ -13,6 +13,7 @@ from resume_tailor.apply.answers import profile as profile_mod
 from resume_tailor.apply.funnel import operations as operations_mod
 from resume_tailor.apply.funnel import store as apply_store
 from resume_tailor.apply.funnel import store_models
+from resume_tailor.apply.funnel.daily_progress import FindProgress
 from resume_tailor.web import jobs as jobs_mod
 from resume_tailor.web.app import app
 from resume_tailor.web.jobs import JobQueue
@@ -44,6 +45,30 @@ def client(tmp_path, monkeypatch):
     with TestClient(app) as test_client:
         test_client.get("/api/config")
         yield test_client, q
+
+
+@pytest.mark.parametrize("endpoint", ["start", "list", "detail"])
+def test_find_operation_api_preserves_measured_progress(client, monkeypatch, endpoint):
+    c, _q = client
+    operation = operations_mod.ApplyOperation(
+        operation_id="find-progress", action="find", state="running",
+        find_progress=FindProgress(phase="processing", processed=3, total=8, current="Acme"),
+    )
+    monkeypatch.setattr(operations_mod, "start", lambda _body: operation)
+    monkeypatch.setattr(operations_mod, "list_recent", lambda: [operation])
+    monkeypatch.setattr(operations_mod, "get", lambda _id: operation)
+    if endpoint == "start":
+        response = c.post("/api/applications/operations", json={
+            "action": "find", "model_provider": "ollama", "model_name": "test",
+        })
+    else:
+        path = "/api/applications/operations" + ("/find-progress" if endpoint == "detail" else "")
+        response = c.get(path)
+    assert response.status_code == (202 if endpoint == "start" else 200)
+    body = response.json()[0] if endpoint == "list" else response.json()
+    assert body["find_progress"] == {
+        "phase": "processing", "processed": 3, "total": 8, "current": "Acme",
+    }
 
 
 def test_applicant_profile_round_trip(client, tmp_path, monkeypatch):

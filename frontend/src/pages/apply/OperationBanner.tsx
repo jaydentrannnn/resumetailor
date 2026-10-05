@@ -4,6 +4,7 @@ import { AttentionList } from "./AttentionList";
 import { type ApplyOperation, type JobStatus, fetchJob } from "../../api";
 import {
   formatEta,
+  findProgress,
   itemProgress,
   operationEtaSeconds,
   operationHeadline,
@@ -84,14 +85,16 @@ export function OperationBanner({
         : (item?.fraction ?? 0)),
   );
   const eta = operationEtaSeconds(operation, now, done);
+  const finding = operation.action === "find";
+  const search = findProgress(operation);
   const pct = (n: number) =>
     operation.total > 0 ? Math.max(0, Math.min(100, (n / operation.total) * 100)) : 0;
   const userPaused = operation.state === "paused" && operation.stage === "paused_by_user";
   const pauseRequested =
     operation.state === "running" && operation.events.at(-1)?.stage === "pause_requested";
-  const events = operation.events.filter(
-    (event, index, all) => index === 0 || event.message !== all[index - 1].message,
-  );
+  const events = operation.events
+    .filter((event, index, all) => index === 0 || event.message !== all[index - 1].message)
+    .reverse();
   const deadline = Date.parse(operation.application_deadline_at || "");
 
   return (
@@ -177,7 +180,22 @@ export function OperationBanner({
           )}
         </div>
       </div>
-      {operation.total > 0 ? (
+      {finding && search ? (
+        <div
+          role="progressbar"
+          aria-label="Find jobs progress"
+          aria-valuenow={Math.round(search.fraction * 100)}
+          aria-valuemin={0}
+          aria-valuemax={100}
+          aria-valuetext={search.detail}
+          className="relative mt-3 h-2 overflow-hidden rounded-full bg-line"
+        >
+          <div
+            className="absolute inset-y-0 left-0 bg-accent transition-[width] duration-500"
+            style={{ width: `${search.fraction * 100}%` }}
+          />
+        </div>
+      ) : !finding && operation.total > 0 ? (
         <div
           role="progressbar"
           aria-label="Apply task progress"
@@ -207,7 +225,11 @@ export function OperationBanner({
         )
       )}
       <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-muted">
-        {active && operation.total > 0 && (
+        {finding && search && <span className="font-medium text-ink">{search.detail}</span>}
+        {finding && search && active && (
+          <span>Sources and postings each make up half the progress bar.</span>
+        )}
+        {!finding && active && operation.total > 0 && (
           <span className="font-medium text-ink">
             {operation.processed} of {operation.total} done
             {!multiple && item
@@ -220,9 +242,9 @@ export function OperationBanner({
             {formatEta(eta)} left{item?.estimate ? " (estimate)" : ""}
           </span>
         )}
-        <span>{operation.ready_for_review ?? operation.completed} ready for you</span>
-        <span>{operation.submitted} submitted</span>
-        <span>{operation.needs_input ?? operation.blocked} need input</span>
+        {!finding && <span>{operation.ready_for_review ?? operation.completed} ready for you</span>}
+        {!finding && <span>{operation.submitted} submitted</span>}
+        {!finding && <span>{operation.needs_input ?? operation.blocked} need input</span>}
         {operation.failed > 0 && <span className="text-danger">{operation.failed} failed</span>}
       </div>
       <details className="mt-3 border-t border-line pt-2 text-xs text-ink-muted">
