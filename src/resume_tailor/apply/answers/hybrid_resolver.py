@@ -459,15 +459,22 @@ class _StepResolver:
     ) -> tuple[list[resolver_types.FieldAction], set[str]]:
         """Earlier answers to these questions, waiting briefly for any another tab is
         asking about right now."""
-        actions = _remembered(keys, observed)
-        answered = {action.selector for action in actions}
         # A question another tab is asking right now: wait for its answer rather than ask
         # the same thing twice (parallel fills of one employer's postings, 2026-09).
+        # Snapshot in-flight keys *before* reading the cache: a tab writes its answer and
+        # only then leaves `_IN_FLIGHT`, so either the read sees the answer or the
+        # snapshot holds its event. Reading first let an answer land in between unseen.
         with _CHOICES_LOCK:
-            waiting = {
+            in_flight = {
                 selector: _IN_FLIGHT[key] for selector, key in keys.items()
-                if selector not in answered and key in _IN_FLIGHT
+                if key in _IN_FLIGHT
             }
+        actions = _remembered(keys, observed)
+        answered = {action.selector for action in actions}
+        waiting = {
+            selector: event for selector, event in in_flight.items()
+            if selector not in answered
+        }
         if waiting:
             wait_until = time.monotonic() + _IN_FLIGHT_WAIT
             if self.deadline is not None:

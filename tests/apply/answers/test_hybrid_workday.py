@@ -448,6 +448,50 @@ def test_a_tab_waits_for_the_answer_another_tab_is_fetching(resolver_page):
     assert any("reusing 1 earlier answer" in m for m in messages)
 
 
+def test_an_answer_landing_during_the_cache_read_is_not_asked_again(resolver_page, monkeypatch):
+    """The other tab writes its answer and leaves `_IN_FLIGHT` right after this tab's
+    cache read missed (the Windows CI interleaving, 2026-10-05): reuse, never re-ask."""
+    import threading
+
+    state = resolver_page
+    question = "Is any immediate family member employed by a competitor?"
+    profile = ApplicantProfile()
+    digest = hybrid_resolver.hashlib.sha256(
+        hybrid_resolver.json.dumps(profile.model_dump(exclude={"workday_password", "workday_email"}, mode="json"),
+                                   sort_keys=True).encode("utf-8"),
+    ).hexdigest()
+    field = {**_yes_no("#fam", question), "options": ["Yes", "No"]}
+    key = hybrid_resolver._choice_key(field, digest)  # noqa: SLF001
+    event = threading.Event()
+    hybrid_resolver._IN_FLIGHT[key] = event  # noqa: SLF001
+    real_remembered = hybrid_resolver._remembered  # noqa: SLF001
+
+    def remembered_then_other_tab_finishes(keys, observed):
+        stale = real_remembered(keys, observed)
+        if not event.is_set():
+            hybrid_resolver._write_choices({key: {"action": "select_combobox", "value": "No", "label": question}})  # noqa: SLF001
+            with hybrid_resolver._CHOICES_LOCK:  # noqa: SLF001
+                hybrid_resolver._IN_FLIGHT.pop(key, None)  # noqa: SLF001
+                event.set()
+        return stale
+
+    monkeypatch.setattr(hybrid_resolver, "_remembered", remembered_then_other_tab_finishes)
+    try:
+        state.unresolved = [_yes_no("#fam", question)]
+        messages: list[str] = []
+        assert hybrid_resolver.resolve_step_blockers(
+            state.page,
+            Packet.model_construct(fields={}),
+            profile,
+            ledger=resolver_types.StepLedger(options={"#fam": ["Yes", "No"]}),
+            on_progress=messages.append,
+        )
+    finally:
+        hybrid_resolver._IN_FLIGHT.pop(key, None)  # noqa: SLF001
+    assert state.calls == []
+    assert any("reusing 1 earlier answer" in m for m in messages)
+
+
 def test_unrelated_questions_do_not_wait_on_another_tab(resolver_page):
     state = resolver_page
     hybrid_resolver._IN_FLIGHT["someone-elses-question"] = hybrid_resolver.threading.Event()  # noqa: SLF001
