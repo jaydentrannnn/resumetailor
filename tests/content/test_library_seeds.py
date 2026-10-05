@@ -85,7 +85,7 @@ def test_finance_consulting_has_no_alias_chain_against_core_tech():
 #: Opening verbs from the actual resume's bullets (see library_seeds.py's comment),
 #: reduced to just the words `bullet_checks.opening_verb` extracts from them.
 _RESUME_OPENERS = {
-    "partnered": "lead",  # already covered by core-tech
+    "partnered": "collaborate",  # already covered by core-tech
     "recruited": None,  # covered only once finance-consulting is enabled
     "received": None,
     "collaborated": None,
@@ -236,3 +236,24 @@ def test_enabling_a_business_pack_changes_the_cache_fingerprints(monkeypatch):
     before = config.tag_alias_fingerprint()
     monkeypatch.setattr(config, "TAG_ALIASES", with_finance.tag_aliases)
     assert config.tag_alias_fingerprint() != before
+
+
+# --------------------------------------------------------------------------------------
+# core-tech: people-facing verbs are not one family
+# --------------------------------------------------------------------------------------
+
+def test_core_tech_lets_a_page_open_with_four_leadership_and_teamwork_verbs(monkeypatch):
+    """The two-per-family cap used to hold every leadership/teamwork opener to two."""
+    monkeypatch.setattr(
+        config, "VERB_FAMILIES", dict(library_seeds.BUILTIN_PACKS["core-tech"]["verb_families"])
+    )
+    texts = {
+        "a": "Led a 3-person hackathon team",
+        "b": "Mentored students on core topics",
+        "c": "Coordinated events and school tours",
+        "d": "Partnered with Support Operations",
+    }
+    assert bullet_checks.verb_collisions(texts) == {}
+    assert {config.verb_family(v) for v in ("led", "mentored", "coordinated", "partnered")} == {
+        "lead", "teach", "coordinate", "collaborate",
+    }

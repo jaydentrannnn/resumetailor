@@ -64,9 +64,16 @@
       "scaled", "simplified", "streamlined", "strengthened", "tightened", "tuned"
     ],
     "lead": [
-      "coordinated", "directed", "facilitated", "guided", "led", "managed", "mentored",
-      "onboarded", "organised", "organized", "oversaw", "partnered", "supervised",
-      "trained"
+      "directed", "led", "managed", "oversaw", "supervised"
+    ],
+    "teach": [
+      "facilitated", "guided", "mentored", "onboarded", "trained"
+    ],
+    "coordinate": [
+      "coordinated", "organised", "organized"
+    ],
+    "collaborate": [
+      "partnered"
     ],
     "analyse": [
       "analysed", "analyzed", "assessed", "audited", "benchmarked", "debugged",

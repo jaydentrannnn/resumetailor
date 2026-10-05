@@ -25,9 +25,19 @@ def _keyword_weight(kw) -> float:
     return config.SOFT_SKILL_WEIGHT if kw.kind == "soft" else config.MUST_HAVE_WEIGHT
 
 def _keyword_score(bullet: Bullet, requirements: JobRequirements) -> float:
-    """Tag-overlap score: exact set membership against the bullet's canonical tags."""
+    """Tag-overlap score: exact set membership against the bullet's canonical tags.
+
+    A soft keyword also matches the related tags in `config.SOFT_SKILL_RELATED_TAGS`.
+    """
     tags = set(bullet.tags)
-    return sum(_keyword_weight(kw) for kw in requirements.keywords if kw.canonical in tags)
+    return sum(_keyword_weight(kw) for kw in requirements.keywords if _matches(kw, tags))
+
+def _matches(kw, tags: set[str]) -> bool:
+    if kw.canonical in tags:
+        return True
+    return kw.kind == "soft" and not tags.isdisjoint(
+        config.SOFT_SKILL_RELATED_TAGS.get(kw.canonical, ())
+    )
 
 def score(
     bullet: Bullet,

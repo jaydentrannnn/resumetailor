@@ -11,10 +11,14 @@ on a user pack: alias values are fixed points of the alias table (no `a -> b -> 
 chains), and a verb appears in exactly one family within a pack. `tests/test_config.py`
 and `tests/content/test_libraries.py` pin both for this pack specifically.
 
-**core-tech** — The original single-industry tables, unchanged, as the always-available
-default pack. Every user starts with this enabled and nothing else. Retrieval/LLM
-vocabulary aliases exist because a posting and a resume rarely spell these the same way,
-and every miss here costs a relevant bullet its score.
+**core-tech** — The original single-industry tables, as the always-available default
+pack. Every user starts with this enabled and nothing else. Retrieval/LLM vocabulary
+aliases exist because a posting and a resume rarely spell these the same way, and every
+miss here costs a relevant bullet its score. Its people-facing verbs are split across
+`lead`, `teach`, `coordinate` and `collaborate` rather than one `lead` family: the
+two-per-family opener cap otherwise held a whole page to two leadership or teamwork
+openers and re-voiced the rest, which is exactly what resume scanners mark down.
+`collaborate` is the family `finance-consulting` already extends.
 
 **finance-consulting** — Grounded in one real early-career finance/consulting resume
 (nonprofit fundraising, a Deloitte mentorship program, an internal-audit internship),

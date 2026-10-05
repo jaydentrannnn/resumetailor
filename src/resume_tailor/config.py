@@ -1650,6 +1650,25 @@ NICE_TO_HAVE_WEIGHT = 1.0
 #: it is one more thing to keep calibrated.
 SOFT_SKILL_WEIGHT = 1.5
 
+#: Tags that also evidence a soft-skill must-have whose canonical is the key, at the same
+#: SOFT_SKILL_WEIGHT. Extraction canonicalises "multi-disciplinary teams" or "pair
+#: programming" to `teamwork`, but a bullet showing it ("Led a 3-person team",
+#: "Mentored students") is tagged `leadership` or `mentorship` and scored zero for it, so
+#: the people-facing bullets resume scanners grade lost every ranking. One soft keyword
+#: still counts once per bullet however many of these tags it carries.
+SOFT_SKILL_RELATED_TAGS: dict[str, frozenset[str]] = {
+    "teamwork": frozenset({
+        "collaboration", "leadership", "project management", "stakeholder management",
+    }),
+    "leadership": frozenset({
+        "mentorship", "project management", "teaching", "training",
+    }),
+    "communication": frozenset({
+        "documentation", "mentorship", "presentation", "teaching", "technical writing",
+        "training",
+    }),
+}
+
 #: Multiplier on the LLM relevance score (0-10 per bullet) from `relevance.score_table`, which
 #: is *added* to the keyword score rather than replacing it. The two signals answer different
 #: questions: tag overlap asks "did they literally use this tool", the semantic score asks
