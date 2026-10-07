@@ -142,10 +142,10 @@ class _FillAtsSteps(fill_state._FillState):
         return False
 
     def _workday_rows(self) -> None:
-        # Workday structured experience & education injection (My Experience only).
-        if "experience" not in workday_page.active_step(
-            workday_page.snapshot(self.page)
-        ).casefold():
+        # Workday structured experience, education and language rows, on whichever step
+        # shows those sections (the filler checks for them itself). Not on Review, whose
+        # sections are read-only summaries.
+        if workday_page.is_review_step(workday_page.snapshot(self.page)):
             return
         rows_filled, rows_review = fill_widgets._fill_workday_experience_and_education(
             self.page, self.pkt, self.progress

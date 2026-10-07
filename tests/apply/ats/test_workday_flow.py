@@ -1101,7 +1101,7 @@ class _SavingPage:
 def test_a_slow_save_is_waited_for_while_the_button_is_disabled(monkeypatch):
     # F5 (2026-09): My Experience with five rows saved after 15 s.
     monkeypatch.setattr(workday_page, "snapshot", lambda p: p.evaluate("snapshot"))
-    monkeypatch.setattr(workday_page, "active_step", lambda snap: snap["step"])
+    monkeypatch.setattr(workday_page, "step_key", lambda snap: snap["step"])
     page = _SavingPage(saved_after_ms=25_000)
     monkeypatch.setattr(workday_flow.time, "monotonic", lambda: page.elapsed / 1000)
     assert workday_flow.wait_for_step_change(page, "My Experience", deadline=1e9, timeout_s=15)

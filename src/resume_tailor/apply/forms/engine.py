@@ -473,16 +473,16 @@ async def fill_application(
                             result_field.answer_source = "model_mapped_profile_fact"
                             record(step_id, result_field)
                     if isinstance(adapter, adapters.WorkdayAdapter):
-                        workday_step = workday_page.active_step(await page.evaluate(workday_page.SNAPSHOT_JS)).casefold()
-                        if "experience" in workday_step:
-                            years_filled, years_review = await workday_repeaters.fill_education_years_async(page, pkt)
-                            inspection_errors.extend(years_review)
-                            for year in years_filled:
-                                record(step_id, FieldOutcome(
-                                    field_id=year["label"], frame_id="main", label=year["label"],
-                                    canonical_key="education_start_year" if "firstYear" in year["label"] else "education_end_year",
-                                    state="verified_filled", observed_value=year["value"], answer_source="resume",
-                                ))
+                        # Any step with education rows (none: a no-op); not gated on the
+                        # step name, which a narrow window hides.
+                        years_filled, years_review = await workday_repeaters.fill_education_years_async(page, pkt)
+                        inspection_errors.extend(years_review)
+                        for year in years_filled:
+                            record(step_id, FieldOutcome(
+                                field_id=year["label"], frame_id="main", label=year["label"],
+                                canonical_key="education_start_year" if "firstYear" in year["label"] else "education_end_year",
+                                state="verified_filled", observed_value=year["value"], answer_source="resume",
+                            ))
                     result.browser_url = str(page.url)
                     checkpoint(force=True)
                     settled = await scanner.scan(page)

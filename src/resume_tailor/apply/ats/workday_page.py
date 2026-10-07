@@ -19,6 +19,10 @@ SNAPSHOT_JS = r"""() => {
   const ids = [...new Set([...document.querySelectorAll('[data-automation-id]')]
     .filter(vis).map(e => e.getAttribute('data-automation-id')))];
   const active = document.querySelector("[data-automation-id='progressBarActiveStep']");
+  // The step's own heading ("My Experience"), the first h3 of the apply flow: it stays
+  // when a narrow window drops the progress bar's step names.
+  const flow = document.querySelector("[data-automation-id='applyFlowPage']");
+  const title = flow ? [...flow.querySelectorAll('h3')].find(vis) : null;
   const dialog = [...document.querySelectorAll("[role='dialog']")].find(vis);
   const text = (document.body ? document.body.innerText : '').slice(0, 20000);
   const otp = [...document.querySelectorAll(
@@ -29,6 +33,7 @@ SNAPSHOT_JS = r"""() => {
   return {
     url: location.href, ids,
     active_step: active ? (active.innerText || '').trim() : '',
+    step_title: title ? (title.innerText || '').trim() : '',
     dialog_label: dialog ? (dialog.getAttribute('aria-label') || '') : '',
     otp_input: otp, alerts, text,
   };
@@ -103,14 +108,39 @@ def signed_in(snap: dict[str, Any]) -> bool:
     ids = set(snap.get("ids") or [])
     return "utilityButtonAccountTasksMenu" in ids and not ids & _AUTH_IDS
 
+_STEP_POSITION = re.compile(r"^(?:current\s+)?step\s+(\d+)\s+of\s+(\d+)\s*", re.I)
+
 def active_step(snap: dict[str, Any]) -> str:
-    """``current step 2 of 6 My Experience`` -> ``My Experience``."""
+    """``current step 2 of 6 My Experience`` -> ``My Experience``.
+
+    Below ~800px wide the progress bar keeps only ``current step 2 of 6`` (four tenants,
+    2026-10); the step's own heading still names it, so that is the fallback.
+    """
     raw = str(snap.get("active_step") or "")
-    return re.sub(r"^(?:current\s+)?step\s+\d+\s+of\s+\d+\s*", "", raw, flags=re.I).strip()
+    name = _STEP_POSITION.sub("", raw).strip()
+    if name or not raw:
+        return name
+    return str(snap.get("step_title") or "").strip()
+
+def step_position(snap: dict[str, Any]) -> str:
+    """``current step 2 of 6 My Experience`` -> ``2 of 6``; ``""`` without a progress bar."""
+    match = _STEP_POSITION.match(str(snap.get("active_step") or ""))
+    return f"{match[1]} of {match[2]}" if match else ""
+
+def step_key(snap: dict[str, Any]) -> str:
+    """What identifies the current step for "did Save and Continue move on?".
+
+    The position, not the name: names vanish in a narrow window, and a resize mid-step
+    would otherwise read as a step change.
+    """
+    return step_position(snap) or active_step(snap)
 
 def is_review_step(snap: dict[str, Any]) -> bool:
-    """Recognize the final Review or Review and Submit progress step."""
-    return bool(re.match(r"^review(?:\s|$)", active_step(snap), re.I))
+    """Recognize the final Review or Review and Submit progress step (always the last)."""
+    if re.match(r"^review(?:\s|$)", active_step(snap), re.I):
+        return True
+    match = _STEP_POSITION.match(str(snap.get("active_step") or ""))
+    return bool(match and match[1] == match[2])
 
 def snapshot(page: Any) -> dict[str, Any]:
     try:

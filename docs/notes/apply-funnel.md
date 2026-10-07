@@ -1621,3 +1621,23 @@ Needs you sorts by the latest status timestamp, so recently changed rows appear 
   none on the page), before anything is typed. A portal email step without hCaptcha is still
   filled and advanced; Continue fill after the applicant's Next lands on `/candidate`.
 - Kept: Next found in `wizard.form_scope(page)`, and `login.icims.com` classified as `sign_in`.
+
+## 2026-10-07 — Workday: step identity without step names (narrow window)
+
+- **Every Workday fill stopped on My Experience with no rows.** The Edge fill window was
+  ~695 CSS px. Below ~800px the progress bar keeps only `current step N of M` (checked
+  live on Magnite, Midland, Expedia, P&G); `active_step()` stripped that, so every step
+  read `""`. Save and Continue compared `"" == ""` → "wizard did not advance" → handoff,
+  and `_workday_rows` (gated on `"experience" in active_step`) never ran.
+- **Fix, replacing the name checks rather than adding a layer:** `step_key()` (the
+  `N of M` position) drives advance detection in `wait_for_step_change` and
+  `_step_unchanged`, so a mid-step resize is not a step change. `active_step()` falls back
+  to the step's own heading (`step_title`, first visible `h3` in `applyFlowPage`), which
+  narrow layouts keep. `is_review_step` also accepts `N == M` (Review is always last).
+- **The rows gate is gone:** `workday_repeaters.fill` runs on every non-Review step and
+  returns silently when no Work Experience / Education / Languages section is present;
+  the per-section "skipping" messages remain for partial steps. The verified engine's
+  `fill_education_years_async` gate was dropped too (a no-op without `schoolName` rows).
+- **Rejected:** forcing a wider window (a guard, not a fix); matching heading text
+  variants (Workday's section headings are platform defaults).
+- Not verified in a full live fill yet — needs a desktop rebuild.

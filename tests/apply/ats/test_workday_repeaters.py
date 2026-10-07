@@ -235,17 +235,34 @@ def test_a_row_started_by_an_earlier_run_is_completed_not_duplicated():
 
 
 def test_a_step_without_experience_sections_flags_nothing():
-    # Capital Group's My Experience asks only for Skills and a resume.
+    # Capital Group's My Experience asks only for Skills and a resume; the rows filler
+    # also runs on every other step, so a step without the sections stays quiet.
     page = _Page({})
     packet = SimpleNamespace(
         experience=[SimpleNamespace(title="Analyst", employer="Acme")],
         education=[SimpleNamespace(school="UC Irvine", major="CS")],
     )
     messages: list[str] = []
-    filled, review = repeaters.fill(page, packet, messages.append)
+    dismissed: list[object] = []
+    filled, review = repeaters.fill(page, packet, messages.append, dismiss=dismissed.append)
     assert (filled, review) == ([], [])
-    assert any("no Work Experience section" in m for m in messages)
+    assert messages == []
+    assert dismissed == []
     assert page.writes == []
+
+
+def test_a_step_with_only_some_sections_says_which_it_skips(monkeypatch):
+    # P&G (2026-10): Education but no Work Experience.
+    monkeypatch.setattr(
+        workday_rows, "_section_present", lambda _page, heading, _anchor: heading == "Education"
+    )
+    packet = SimpleNamespace(
+        experience=[SimpleNamespace(title="Analyst", employer="Acme")],
+        education=[],
+    )
+    messages: list[str] = []
+    repeaters.fill(_Page({}), packet, messages.append)
+    assert any("no Work Experience section" in m for m in messages)
 
 
 def test_a_failed_school_search_still_fills_the_rest_of_the_education_row(monkeypatch):

@@ -127,6 +127,18 @@ def fill(
     """
     filled: list[dict[str, str]] = []
     review: list[str] = []
+    # This runs on every Workday step: a narrow window hides the step names that once
+    # limited it to My Experience (2026-10). A step showing none of these sections is
+    # left alone, silently.
+    if not any(
+        workday_rows._section_present(page, heading, anchor)
+        for heading, anchor in (
+            ("Work Experience", workday_rows._WORK["title"]),
+            ("Education", workday_dates._school_field(page)),
+            ("Languages", workday_rows._LANGUAGE),
+        )
+    ):
+        return filled, review
     if dismiss is not None:
         dismiss(page)
     #: Section heading -> why its Add button could not be pressed; later entries in the

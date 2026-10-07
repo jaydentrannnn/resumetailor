@@ -253,7 +253,8 @@ _SAVING_JS = r"""() => {
 
 
 def wait_for_step_change(page: Any, before: str, *, deadline: float, timeout_s: float = 15) -> bool:
-    """After Save and Continue, wait for the progress bar to move past ``before``.
+    """After Save and Continue, wait for the progress bar to move past ``before``
+    (a ``workday_page.step_key``).
 
     Returns False once validation errors are showing on the unchanged step (they appear
     within about a second) or at the timeout. A save still in flight (the button
@@ -265,7 +266,7 @@ def wait_for_step_change(page: Any, before: str, *, deadline: float, timeout_s: 
     hard_stop = min(deadline, started + 3 * timeout_s)
     while time.monotonic() < stop:
         snap = workday_page.snapshot(page)
-        step = workday_page.active_step(snap)
+        step = workday_page.step_key(snap)
         if step and step != before:
             return True
         ids = set(snap.get("ids") or [])
@@ -280,5 +281,5 @@ def wait_for_step_change(page: Any, before: str, *, deadline: float, timeout_s: 
             if saving:
                 stop = min(hard_stop, time.monotonic() + 2)
     # One last look: the step can land on the very tick the wait runs out.
-    step = workday_page.active_step(workday_page.snapshot(page))
+    step = workday_page.step_key(workday_page.snapshot(page))
     return bool(step and step != before)

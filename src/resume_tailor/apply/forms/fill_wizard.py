@@ -251,7 +251,7 @@ class _FillWizard(fill_answers._FillAnswers, fill_ats_steps._FillAtsSteps):
         self.progress(f"advancing wizard step {step + 1}")
         before_step = fill_page._form_step_signature(page)
         wd_before = (
-            workday_page.active_step(workday_page.snapshot(page)) if self.is_workday else ""
+            workday_page.step_key(workday_page.snapshot(page)) if self.is_workday else ""
         )
         return self._click_advance(advance_btn, before_step, wd_before)
 
@@ -274,7 +274,7 @@ class _FillWizard(fill_answers._FillAnswers, fill_ats_steps._FillAtsSteps):
 
     def _step_unchanged(self, before_step: Any, wd_before: str) -> bool:
         if self.is_workday:
-            return workday_page.active_step(workday_page.snapshot(self.page)) == wd_before
+            return workday_page.step_key(workday_page.snapshot(self.page)) == wd_before
         return before_step is not None and fill_page._form_step_signature(self.page) == before_step
 
     def _resolve_invalid_blockers(self) -> None:
