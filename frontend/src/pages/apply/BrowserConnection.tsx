@@ -28,7 +28,11 @@ export function BrowserCommand() {
   const { browser, shell, command } = BROWSER_DEBUG_COMMANDS[target];
   return (
     <>
-      <div role="tablist" aria-label="Operating system and browser" className="mt-2 flex flex-wrap gap-1">
+      <div
+        role="tablist"
+        aria-label="Operating system and browser"
+        className="mt-2 flex flex-wrap gap-1"
+      >
         {(Object.keys(BROWSER_TARGET_LABELS) as BrowserTarget[]).map((key) => (
           <button
             key={key}
@@ -43,9 +47,9 @@ export function BrowserCommand() {
         ))}
       </div>
       <p className="mt-2 text-xs text-ink-muted">
-        For browser-assisted Fill, run this in {shell} to start {browser} with remote debugging on port
-        9222, then check the connection. Keep the browser open while reviewing forms, and use this{" "}
-        {browser} profile only for job-site logins.
+        For browser-assisted Fill, run this in {shell} to start {browser} with remote debugging on
+        port 9222, then check the connection. Keep the browser open while reviewing forms, and use
+        this {browser} profile only for job-site logins.
       </p>
       <div className="mt-2 flex items-start gap-2">
         <code className="min-w-0 flex-1 rounded-md bg-paper px-3 py-2 font-mono text-xs [overflow-wrap:anywhere]">
