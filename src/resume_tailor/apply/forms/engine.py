@@ -13,7 +13,7 @@ from typing import Literal
 
 from resume_tailor import config
 from resume_tailor.infra import model_queue
-from resume_tailor.apply.answers import answer, answer_memory, model_resolver, profile, salary
+from resume_tailor.apply.answers import answer, answer_memory, model_resolver, notice, profile, salary
 from resume_tailor.apply.ats import (
     adapters,
     workday_auth,
@@ -59,6 +59,12 @@ def _availability_for_field(value: str, control_kind: str) -> str:
     except ValueError:
         return value
     return f"{date.strftime('%B')} {date.day}, {date.year}"
+
+
+def _notice_for_field(value: str, question: str) -> str:
+    """The notice period in the unit the question names ("in days" -> "14")."""
+    parsed = notice.parse(value)
+    return value if parsed is None else notice.for_label(question, *parsed)
 
 
 class _Cancelled(RuntimeError):
@@ -405,6 +411,8 @@ async def fill_application(
                                 continue
                         if key == "earliest_start":
                             value = _availability_for_field(value, field.control_kind)
+                        if key == "notice_period" and field.control_kind == "text":
+                            value = _notice_for_field(value, field.label)
                         progress(f"Step {step_number}: filling {field.label or key}")
                         outcome = await controls.apply_value(
                             page, field_snapshot, field, value,

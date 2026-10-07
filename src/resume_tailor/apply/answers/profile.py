@@ -25,6 +25,7 @@ VisaStatus = Literal[
 ]
 ClassYear = Literal["", "freshman", "sophomore", "junior", "senior", "graduate"]
 SecurityClearance = Literal["", "none", "eligible", "secret", "top_secret"]
+NoticeUnit = Literal["day", "week", "month"]
 
 VISA_LABELS: dict[str, str] = {
     "none": "No visa needed (citizen or permanent resident)",
@@ -148,7 +149,12 @@ class ApplicantProfile(BaseModel):
     requires_sponsorship_now: bool | None = None
     requires_sponsorship_future: bool | None = None
     f1_opt_eligible: bool | None = None
+    #: "YYYY-MM-DD"; a legacy free-text date is converted on load (`_normalize_dates`).
     earliest_start: str = ""
+    #: Structured notice period; ``notice_period`` is its display string ("2 weeks"),
+    #: kept so older readers work. Forms ask in other units, so `notice.py` converts.
+    notice_period_value: int | None = Field(default=None, ge=0, le=999)
+    notice_period_unit: NoticeUnit = "week"
     notice_period: str = ""
     #: Free-text answer; school, major, degree, GPA and dates come from the master
     #: resume's education entries (`packet_fields._build_education`).
@@ -190,6 +196,48 @@ class ApplicantProfile(BaseModel):
     eeo: EEOAnswers = Field(default_factory=EEOAnswers)
     languages: list[LanguageEntry] = Field(default_factory=list)
     custom_answers: dict[str, str] = Field(default_factory=dict)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _sync_notice_period(cls, data: Any) -> Any:
+        """Keep the structured notice period and its display string in agreement.
+
+        A number wins; otherwise the free text an older profile held is parsed
+        ("Two weeks" -> 2 weeks, "immediately" -> 0). Text that states no amount
+        ("negotiable") stays as typed with no number.
+        """
+        if not isinstance(data, dict):
+            return data
+        from resume_tailor.apply.answers import notice  # noqa: PLC0415
+
+        value, unit = data.get("notice_period_value"), data.get("notice_period_unit") or "week"
+        if isinstance(value, int) and not isinstance(value, bool):
+            return {**data, "notice_period_unit": unit, "notice_period": notice.label(value, unit)}
+        parsed = notice.parse(str(data.get("notice_period") or ""))
+        if parsed is None:
+            return {**data, "notice_period_value": None}
+        amount, parsed_unit = parsed
+        return {
+            **data,
+            "notice_period_value": amount,
+            "notice_period_unit": parsed_unit,
+            "notice_period": notice.label(amount, parsed_unit),
+        }
+
+    @model_validator(mode="before")
+    @classmethod
+    def _normalize_dates(cls, data: Any) -> Any:
+        """Store the earliest start as ISO and the graduation month as YYYY-MM."""
+        if not isinstance(data, dict):
+            return data
+        from resume_tailor.content import dates  # noqa: PLC0415
+
+        out = dict(data)
+        for key, precision in (("earliest_start", "day"), ("graduation_date", "month")):
+            raw = out.get(key)
+            if isinstance(raw, str) and raw.strip():
+                out[key] = dates.normalize(raw, precision)
+        return out
 
     @model_validator(mode="before")
     @classmethod

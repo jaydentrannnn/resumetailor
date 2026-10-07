@@ -8,6 +8,7 @@ never on it.
 from __future__ import annotations
 
 from resume_tailor.apply.answers.profile import ApplicantProfile
+from resume_tailor.content import dates
 from resume_tailor.content.data import MasterResume
 
 #: (profile attribute, label) pairs, in the order they are shown to the model.
@@ -36,6 +37,8 @@ def profile_facts(profile: ApplicantProfile) -> list[str]:
         if isinstance(value, bool):
             value = "yes" if value else "no"
         text = str(value).strip()
+        if attr == "earliest_start":
+            text = dates.display(text)
         if text:
             lines.append(f"{label}: {text}")
     return lines

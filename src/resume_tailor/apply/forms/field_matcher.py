@@ -143,6 +143,8 @@ def match_option(
         return _match_degree(available, target)
     if not matches and key == "language_level":
         return _match_level(available, target)
+    if not matches and key == "notice_period":
+        return _match_notice(available, target)
     if not matches:
         # Most specific category first; a tier that names no option falls through to the
         # next, a tier that names two stops (never a guess between them).
@@ -154,6 +156,19 @@ def match_option(
             if matches:
                 break
     return OptionMatch(status="ambiguous" if matches else "no_match")
+
+
+def _match_notice(available: list[ObservedOption], target: str) -> OptionMatch:
+    """The option whose range holds the notice ("2 weeks" -> "Less than 1 month")."""
+    from resume_tailor.apply.answers import notice  # noqa: PLC0415
+
+    parsed = notice.parse(target)
+    if parsed is None:
+        return OptionMatch(status="no_match")
+    index = notice.pick_option([option.label for option in available], *parsed)
+    if index is None:
+        return OptionMatch(status="no_match")
+    return OptionMatch(status="matched", option_id=available[index].option_id, method="alias")
 
 
 #: Language proficiency wording by rank, most specific first ("limited working" is 2,
