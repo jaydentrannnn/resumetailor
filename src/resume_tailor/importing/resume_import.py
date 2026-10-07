@@ -105,7 +105,7 @@ def import_from_analysis(
                 ListSection(id=section_id, title=sec.heading_text, entries=list_items)
             )
 
-    resume = MasterResume(contact=contact, sections=sections)
+    resume = import_common.normalize_resume_dashes(MasterResume(contact=contact, sections=sections))
     used_tags = sorted(
         {t for b in resume.all_bullets() for t in b.tags if t != import_common.UNTAGGED}
     )

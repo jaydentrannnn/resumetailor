@@ -22,3 +22,11 @@ def test_profile_normalizes_legacy_dates():
         {"earliest_start": "June 14, 2027", "graduation_date": "June 2027"}
     )
     assert (profile.earliest_start, profile.graduation_date) == ("2027-06-14", "2027-06")
+
+
+def test_experience_months_are_read_into_iso_and_free_text_is_kept():
+    from resume_tailor.content.data import Experience
+
+    job = Experience(company="Acme", title="Intern", start="Jan 2023", end="Present")
+    assert (job.start, job.end) == ("2023-01", "Present")
+    assert Experience(company="A", title="T", start="Fall 2022", end="2023-05").start == "Fall 2022"

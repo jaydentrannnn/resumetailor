@@ -21,6 +21,7 @@ from typing import Annotated, Any, Literal
 from pydantic import BaseModel, ConfigDict, Field, field_validator, model_validator
 
 from .. import config
+from . import dates
 
 #: The four legacy top-level keys a pre-`sections` master resume file used. Order matters:
 #: it is the order `_migrate_legacy_sections` rebuilds them in, which is also today's
@@ -100,6 +101,12 @@ class Experience(_Strict):
     end: str
     bullets: list[Bullet] = Field(default_factory=list)
 
+    @field_validator("start", "end", mode="before")
+    @classmethod
+    def _read_month(cls, value: object) -> object:
+        """"Jan 2023" -> "2023-01"; "Present" and other free text pass through untouched."""
+        return dates.normalize(value.strip(), "month") if isinstance(value, str) else value
+
 
 class Education(_Strict):
     school: str
@@ -137,6 +144,7 @@ class Project(_Strict):
     name: str
     #: Technologies as shown in the resume's project header line.
     tech: list[str] = Field(default_factory=list)
+    #: ``YYYY-MM`` (printed in the template's month style) or free text ("Spring 2025").
     date: str = ""
     #: Link label as it appears in the resume, e.g. "Github". Empty means no link shown.
     link: str = ""

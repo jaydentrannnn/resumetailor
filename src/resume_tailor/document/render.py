@@ -19,7 +19,7 @@ from docxtpl import DocxTemplate, RichText
 from .. import config
 from ..content.data import MasterResume
 from ..infra import telemetry
-from . import convert
+from . import convert, date_style
 from .template_profile import ContactField, active_layout
 
 #: Word renders hyperlinks in this blue by convention; matching it keeps a rendered
@@ -37,21 +37,71 @@ _HYPERLINK_STYLE = "InternetLink"
 _CONTACT_SEP = " \u2022 "
 
 
-def _add_hyperlink(rt: RichText, text: str, url_id: str | None) -> None:
+def _run_kwargs(run) -> dict:
+    """The direct character formatting of a template run, as `RichText.add` arguments."""
+    font = run.font
+    found: dict = {}
+    if font.name:
+        found["font"] = font.name
+    if font.size:
+        found["size"] = int(round(font.size.pt * 2))
+    if run.bold:
+        found["bold"] = True
+    if run.italic:
+        found["italic"] = True
+    if font.color is not None and font.color.rgb is not None:
+        found["color"] = str(font.color.rgb)
+    return found
+
+
+_RICH_TAG = re.compile(r"\{\{r\s+([\w.]+)\s*\}\}")
+
+
+def _tag_formats(tpl: DocxTemplate) -> dict[str, dict]:
+    """Formatting of the run each `{{r tag }}` sits in, by tag name.
+
+    docxtpl replaces the whole run holding a `{{r }}` tag with the RichText's own runs,
+    so the tag run's font and size are lost unless the RichText restates them. The
+    template keeps that run (emptied) with its properties, which is where they are read.
+    """
+    cached = getattr(tpl, "_rt_tag_formats", None)
+    if cached is not None:
+        return cached
+    from .docx_text import iter_document_paragraphs  # noqa: PLC0415
+
+    found: dict[str, dict] = {}
+    if not hasattr(tpl, "init_docx"):  # a test double standing in for the template
+        return found
+    tpl.init_docx(reload=False)
+    for paragraph, _location in iter_document_paragraphs(tpl.docx):
+        for run in paragraph.runs:
+            match = _RICH_TAG.search(run.text or "")
+            if match and match.group(1) not in found:
+                found[match.group(1)] = _run_kwargs(run)
+    tpl._rt_tag_formats = found
+    return found
+
+
+def _add_hyperlink(rt: RichText, text: str, url_id: str | None, fmt: dict | None = None) -> None:
     """Append linked (or plain) text with the LibreOffice-safe InternetLink run style.
 
     `url_id` None means a labelled project with no URL — keep the label, skip the link.
+    `fmt` is the surrounding template run's font/size, restated because RichText drops it.
     """
+    fmt = fmt or {}
     if url_id:
         rt.add(
             text,
-            url_id=url_id,
-            style=_HYPERLINK_STYLE,
-            color=_LINK_COLOR,
-            underline=True,
+            **{
+                **fmt,
+                "url_id": url_id,
+                "style": _HYPERLINK_STYLE,
+                "color": _LINK_COLOR,
+                "underline": True,
+            },
         )
     else:
-        rt.add(text)
+        rt.add(text, **fmt)
 
 
 def _ensure_pdf_hyperlink_styles(docx_path: Path) -> None:
@@ -132,23 +182,29 @@ def _ensure_pdf_hyperlink_styles(docx_path: Path) -> None:
         docx_path.write_bytes(out_buf.getvalue())
 
 
-def format_month(value: str) -> str:
-
-    """Render a `YYYY-MM` month as `Mon YYYY`, passing anything else through.
+def format_month(value: str, style: date_style.DateStyle | None = None) -> str:
+    """Render a `YYYY-MM` month as `Mon YYYY` (or the template's style), passing anything
+    else through.
 
     Free-text values like "present" are deliberately left alone rather than rejected —
     the master file is hand-maintained and should tolerate a human writing a date the
     way it appears on the resume.
     """
     try:
-        return datetime.strptime(value, "%Y-%m").strftime("%b %Y")
+        parsed = datetime.strptime(value, "%Y-%m")
     except (ValueError, TypeError):
         return value
+    return date_style.format_month(parsed.year, parsed.month, style or date_style.DEFAULT)
 
 
-def format_range(start: str, end: str) -> str:
-    """Format a start/end pair as `Mon YYYY - Mon YYYY` (or free text)."""
-    return f"{format_month(start)} - {format_month(end)}"
+def format_range(start: str, end: str, style: date_style.DateStyle | None = None) -> str:
+    """Format a start/end pair as `Mon YYYY - Mon YYYY` (or free text).
+
+    ``style`` is the original resume's month style and separator (`date_style`); None is
+    the legacy `Mon YYYY - Mon YYYY`.
+    """
+    separator = (style or date_style.DEFAULT)["separator"]
+    return f"{format_month(start, style)}{separator}{format_month(end, style)}"
 
 
 _MONTH_ABBR = {
@@ -214,6 +270,7 @@ def _contact_richtext(
     *,
     field_order: list[ContactField] | None = None,
     separator: str | None = None,
+    tag: str = "contact",
 ) -> RichText:
     """Build the contact line as RichText with labelled LinkedIn/GitHub hyperlinks.
 
@@ -253,14 +310,15 @@ def _contact_richtext(
         elif text:
             parts.append((text, None))
 
+    fmt = _tag_formats(tpl).get(tag, {})
     rt = RichText()
     for i, (text, url) in enumerate(parts):
         if i:
-            rt.add(sep)
+            rt.add(sep, **fmt)
         if url:
-            _add_hyperlink(rt, text, tpl.build_url_id(url))
+            _add_hyperlink(rt, text, tpl.build_url_id(url), fmt)
         else:
-            rt.add(text)
+            rt.add(text, **fmt)
     return rt
 
 
@@ -320,7 +378,7 @@ def build_context(
                     "company": job.company,
                     "location": job.location,
                     "title": job.title,
-                    "dates": format_range(job.start, job.end),
+                    "dates": format_range(job.start, job.end, layout.get("date_style")),
                     "bullets": rendered,
                 }
             )
@@ -341,11 +399,13 @@ def build_context(
             # baking it into the tech run left a dangling pipe when links were suppressed.
             link = RichText()
             if include_project_links and proj.link:
-                link.add(" | ")
+                link_fmt = _tag_formats(tpl).get("proj.link", {})
+                link.add(" | ", **link_fmt)
                 _add_hyperlink(
                     link,
                     proj.link,
                     tpl.build_url_id(proj.url) if proj.url else None,
+                    link_fmt,
                 )
 
             out.append(
@@ -353,7 +413,7 @@ def build_context(
                     "name": proj.name,
                     "tech": ", ".join(proj.tech),
                     "link": link,
-                    "date": proj.date,
+                    "date": format_month(proj.date, layout.get("date_style")),
                     "bullets": rendered,
                 }
             )
@@ -447,7 +507,10 @@ def build_context(
         if contact_fields is not None:
             fields = [f for f in fields if f in contact_fields]
         context[f"contact_slot_{i}"] = (
-            _contact_richtext(resume, tpl, field_order=fields, separator=slot.get("separator"))
+            _contact_richtext(
+                resume, tpl, field_order=fields, separator=slot.get("separator"),
+                tag=f"contact_slot_{i}",
+            )
             if fields
             else RichText()
         )

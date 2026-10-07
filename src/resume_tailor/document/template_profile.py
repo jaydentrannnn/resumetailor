@@ -14,6 +14,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .. import config
+from . import date_style
 
 SCHEMA_VERSION = 2
 
@@ -419,6 +420,9 @@ def active_layout(profile: TemplateProfile | None = None) -> dict:
     }
     if contact.slots:
         layout["contact_slots"] = [s.model_dump() for s in contact.slots]
+    style = date_style.detect(config.BASELINE_TEMPLATE_PATH)
+    if style is not None:
+        layout["date_style"] = style
     if profile.section_mode == "generic":
         layout["sections"] = [s.model_dump() for s in profile.sections]
         layout["spacing"] = profile.spacing.model_dump()

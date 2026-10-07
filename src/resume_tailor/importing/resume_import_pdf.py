@@ -37,7 +37,7 @@ from pydantic import BaseModel, Field
 from .. import config
 from ..document import analysis_types
 from . import pdf_build, pdf_lines, pdf_patterns, pdf_structure
-from .import_common import UNTAGGED, ImportedResume, _default_vocabulary
+from .import_common import UNTAGGED, ImportedResume, _default_vocabulary, normalize_resume_dashes
 
 _PROMPT_VERSION = 1
 
@@ -273,7 +273,9 @@ def import_lines(
         ]
 
     contact, summary = pdf_build._contact(preamble, links, warnings)
-    resume = pdf_build._build(contact, summary, drafts, vocabulary, warnings)
+    resume = normalize_resume_dashes(
+        pdf_build._build(contact, summary, drafts, vocabulary, warnings)
+    )
     untagged = sum(1 for b in resume.all_bullets() if b.tags == [UNTAGGED])
     if untagged:
         warnings.append(

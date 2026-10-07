@@ -322,7 +322,7 @@ def verify_roundtrip(
         dates = exp_fields.get("dates")
         if dates is not None and dates.present:
             _check(
-                render_mod.format_range(entry.start, entry.end),
+                render_mod.format_range(entry.start, entry.end, layout.get("date_style")),
                 f"Experience dates for {entry.company!r}",
             )
 

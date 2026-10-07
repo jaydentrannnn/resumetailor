@@ -41,6 +41,37 @@ class ImportedResume(BaseModel):
     warnings: list[str] = Field(default_factory=list)
     untagged_bullet_count: int = 0
 
+#: A typed dash: ``---`` is an em dash and ``--`` an en dash, but only when set off by
+#: spaces, so a hyphenated range ("2020--2022" stays) or a word is never touched.
+_TYPED_EM = re.compile(r"(?<=\s)-{3}(?=\s)")
+_TYPED_EN = re.compile(r"(?<=\s)-{2}(?=\s)")
+
+
+def normalize_dashes(text: str) -> str:
+    """``"Irvine --- Merage"`` -> ``"Irvine — Merage"`` (Word's AutoFormat would have)."""
+    return _TYPED_EN.sub("–", _TYPED_EM.sub("—", text))
+
+
+def _normalize_strings(value: object) -> object:
+    if isinstance(value, str):
+        return normalize_dashes(value)
+    if isinstance(value, list):
+        return [_normalize_strings(item) for item in value]
+    if isinstance(value, dict):
+        return {key: _normalize_strings(item) for key, item in value.items()}
+    return value
+
+
+def normalize_resume_dashes(resume: MasterResume) -> MasterResume:
+    """The draft with typed ``---``/``--`` turned into real dashes in every text field.
+
+    Applied to both import paths after the draft is built, so a Word file and a PDF
+    read the same. Ids and urls hold no spaced hyphen runs, so they pass through.
+    """
+    data = _normalize_strings(resume.model_dump(by_alias=True))
+    return MasterResume.model_validate(data)
+
+
 def _default_vocabulary() -> set[str]:
     """Alias keys and their canonical targets — every tag name the deterministic
     matcher can recognize with no resume-specific vocabulary supplied."""
