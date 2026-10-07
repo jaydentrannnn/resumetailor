@@ -1073,11 +1073,34 @@ def _default_pdf_backend() -> str:
     return "word" if platform.system() == "Windows" else "soffice"
 
 
+def _default_soffice_binary() -> str:
+    """Find the LibreOffice executable: env var, PATH, or standard OS install paths."""
+    if env_val := os.environ.get("SOFFICE_BINARY"):
+        return env_val
+    if found := (shutil.which("soffice") or shutil.which("libreoffice")):
+        return found
+    if platform.system() == "Darwin":
+        for mac_path in (
+            Path("/Applications/LibreOffice.app/Contents/MacOS/soffice"),
+            Path.home() / "Applications/LibreOffice.app/Contents/MacOS/soffice",
+        ):
+            if mac_path.is_file() and os.access(mac_path, os.X_OK):
+                return str(mac_path)
+    elif platform.system() == "Windows":
+        for win_path in (
+            Path(r"C:\Program Files\LibreOffice\program\soffice.exe"),
+            Path(r"C:\Program Files (x86)\LibreOffice\program\soffice.exe"),
+        ):
+            if win_path.is_file():
+                return str(win_path)
+    return "soffice"
+
+
 PDF_BACKEND = _default_pdf_backend()
 
-#: How to invoke LibreOffice. The binary is `soffice` on Debian/Ubuntu and macOS; the
-#: env var covers installations that are not on PATH.
-SOFFICE_BINARY = os.environ.get("SOFFICE_BINARY") or shutil.which("soffice") or "soffice"
+#: How to invoke LibreOffice. Uses SOFFICE_BINARY env var, PATH lookup, standard
+#: macOS / Windows install locations, or falls back to "soffice".
+SOFFICE_BINARY = _default_soffice_binary()
 
 #: Seconds allowed for one LibreOffice conversion. A cold start costs a couple of seconds;
 #: this only exists so a wedged process fails the run instead of hanging it forever.

@@ -1,6 +1,11 @@
 import { useState } from "react";
 import { CopyButton } from "../../components/CopyButton";
-import { EDGE_DEBUG_COMMANDS, detectOs, type DesktopOs } from "../../lib/browserCommand";
+import {
+  BROWSER_DEBUG_COMMANDS,
+  BROWSER_TARGET_LABELS,
+  defaultTarget,
+  type BrowserTarget,
+} from "../../lib/browserCommand";
 
 /** Green/red connection dot with a text label — colour is never the only signal. */
 export function ConnectionStatus({ connected }: { connected: boolean }) {
@@ -17,32 +22,30 @@ export function ConnectionStatus({ connected }: { connected: boolean }) {
   );
 }
 
-const OS_LABELS: Record<DesktopOs, string> = { windows: "Windows", mac: "macOS", linux: "Linux" };
-
-/** The Edge remote-debugging command for the viewer's OS, with tabs for the others. */
+/** The remote-debugging command for the selected browser/OS. */
 export function BrowserCommand() {
-  const [os, setOs] = useState<DesktopOs>(() => detectOs());
-  const { shell, command } = EDGE_DEBUG_COMMANDS[os];
+  const [target, setTarget] = useState<BrowserTarget>(() => defaultTarget());
+  const { browser, shell, command } = BROWSER_DEBUG_COMMANDS[target];
   return (
     <>
-      <div role="tablist" aria-label="Operating system" className="mt-2 flex gap-1">
-        {(Object.keys(OS_LABELS) as DesktopOs[]).map((key) => (
+      <div role="tablist" aria-label="Operating system and browser" className="mt-2 flex flex-wrap gap-1">
+        {(Object.keys(BROWSER_TARGET_LABELS) as BrowserTarget[]).map((key) => (
           <button
             key={key}
             type="button"
             role="tab"
-            aria-selected={os === key}
-            className={`rounded-md px-2 py-0.5 text-xs ${os === key ? "bg-accent-soft font-medium" : "text-ink-muted"}`}
-            onClick={() => setOs(key)}
+            aria-selected={target === key}
+            className={`rounded-md px-2 py-0.5 text-xs ${target === key ? "bg-accent-soft font-medium" : "text-ink-muted"}`}
+            onClick={() => setTarget(key)}
           >
-            {OS_LABELS[key]}
+            {BROWSER_TARGET_LABELS[key]}
           </button>
         ))}
       </div>
       <p className="mt-2 text-xs text-ink-muted">
-        For browser-assisted Fill, run this in {shell} to start Edge with remote debugging on port
-        9222, then check the connection. Keep the browser open while reviewing forms, and use this
-        Edge profile only for job-site logins.
+        For browser-assisted Fill, run this in {shell} to start {browser} with remote debugging on port
+        9222, then check the connection. Keep the browser open while reviewing forms, and use this{" "}
+        {browser} profile only for job-site logins.
       </p>
       <div className="mt-2 flex items-start gap-2">
         <code className="min-w-0 flex-1 rounded-md bg-paper px-3 py-2 font-mono text-xs [overflow-wrap:anywhere]">

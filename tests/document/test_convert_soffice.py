@@ -7,6 +7,7 @@ from pathlib import Path, PureWindowsPath
 
 import pytest
 
+from resume_tailor import config
 from resume_tailor.document import convert
 
 
@@ -111,3 +112,48 @@ def test_profile_uri_is_a_valid_file_uri(tmp_path):
     assert uri.startswith("file:///")
     assert "%20" in uri
     assert PureWindowsPath("C:/Users/a b/lo").as_uri() == "file:///C:/Users/a%20b/lo"
+
+
+def test_default_soffice_binary_respects_env(monkeypatch):
+    monkeypatch.setenv("SOFFICE_BINARY", "/custom/bin/soffice")
+    assert config._default_soffice_binary() == "/custom/bin/soffice"
+
+
+def test_default_soffice_binary_uses_path(monkeypatch):
+    monkeypatch.delenv("SOFFICE_BINARY", raising=False)
+    monkeypatch.setattr(config.shutil, "which", lambda cmd: "/usr/bin/soffice" if cmd == "soffice" else None)
+    assert config._default_soffice_binary() == "/usr/bin/soffice"
+
+
+def test_default_soffice_binary_finds_macos_bundle(monkeypatch):
+    monkeypatch.delenv("SOFFICE_BINARY", raising=False)
+    monkeypatch.setattr(config.shutil, "which", lambda cmd: None)
+    monkeypatch.setattr(config.platform, "system", lambda: "Darwin")
+    mac_app = Path("/Applications/LibreOffice.app/Contents/MacOS/soffice")
+    monkeypatch.setattr(Path, "is_file", lambda self: self == mac_app)
+    monkeypatch.setattr(config.os, "access", lambda path, mode: True)
+    assert config._default_soffice_binary() == str(mac_app)
+
+
+def test_default_soffice_binary_fallback_when_not_found(monkeypatch):
+    monkeypatch.delenv("SOFFICE_BINARY", raising=False)
+    monkeypatch.setattr(config.shutil, "which", lambda cmd: None)
+    monkeypatch.setattr(config.platform, "system", lambda: "Linux")
+    assert config._default_soffice_binary() == "soffice"
+
+
+def test_run_soffice_not_found_raises_helpful_error(monkeypatch, tmp_path):
+    def fake_run(*args, **kwargs):
+        raise FileNotFoundError(2, "No such file or directory")
+
+    monkeypatch.setattr(convert.subprocess, "run", fake_run)
+    docx = tmp_path / "resume.docx"
+    docx.write_bytes(b"PK")
+    monkeypatch.setattr(convert.sys, "platform", "darwin")
+    with pytest.raises(RuntimeError, match="Install LibreOffice or set SOFFICE_BINARY"):
+        convert._run_soffice(docx, tmp_path, tmp_path / "profile")
+
+    monkeypatch.setattr(convert.sys, "platform", "linux")
+    with pytest.raises(RuntimeError, match="Install libreoffice-writer or set SOFFICE_BINARY"):
+        convert._run_soffice(docx, tmp_path, tmp_path / "profile")
+

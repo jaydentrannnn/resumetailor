@@ -22,6 +22,7 @@ import atexit
 import os
 import shutil
 import subprocess
+import sys
 import tempfile
 import threading
 import time
@@ -130,10 +131,12 @@ def _run_soffice(
             check=False,
         )
     except FileNotFoundError as exc:
-        raise RuntimeError(
-            f"LibreOffice binary not found at {config.SOFFICE_BINARY!r}. Install "
-            f"libreoffice-writer or set SOFFICE_BINARY."
-        ) from exc
+        msg = f"LibreOffice binary not found at {config.SOFFICE_BINARY!r}."
+        if sys.platform == "darwin":
+            msg += " Install LibreOffice or set SOFFICE_BINARY."
+        else:
+            msg += " Install libreoffice-writer or set SOFFICE_BINARY."
+        raise RuntimeError(msg) from exc
     except subprocess.TimeoutExpired as exc:
         raise RuntimeError(
             f"LibreOffice did not finish converting {docx_path.name} within "
