@@ -487,3 +487,11 @@ def test_open_tags_skip_the_call_for_an_empty_bullet(monkeypatch):
     recorded = _open_tag_client(monkeypatch, ["x"])
     assert propose.suggest_open_tags("   ", []) == []
     assert recorded == []
+
+
+def test_open_tags_drop_phrases_longer_than_three_words(monkeypatch):
+    _open_tag_client(monkeypatch, ["monthly revenue forecasts and yearly income", "revenue forecasts"])
+    result = propose.suggest_open_tags(
+        "Calculated monthly revenue forecasts and yearly income.", []
+    )
+    assert [item["tag"] for item in result] == ["revenue forecasts"]

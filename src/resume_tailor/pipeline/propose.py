@@ -435,16 +435,18 @@ _OPEN_TAG_SYSTEM = """\
 You are tagging one resume bullet with the skills, tools, methods or subject areas it \
 demonstrates, in any field (nursing, finance, marketing, engineering, research, ...).
 
-Return up to 6 short tags (one to three words each). Every tag must be a skill, tool, \
-method or subject named in the bullet's own words - copy the wording from the bullet, \
-never infer a skill the bullet does not state, and never include company names, job \
-titles, numbers or generic words ("team", "results", "worked"). A bullet that names \
-none returns an empty list; that is a normal answer.
+Return up to 6 tags. Each tag is a skill an employer would search for, as short as it \
+can be: one or two words, three at most. Copy the wording from the bullet, trimmed to \
+the core skill ("revenue forecasts", not "monthly revenue forecasts and yearly total \
+income"). Never infer a skill the bullet does not state. Never return company names, \
+job titles, numbers, deliverables or objects ("educational resources", "total \
+income"), or generic words ("team", "results", "worked"). A bullet that names none \
+returns an empty list; that is a normal answer.
 """
 
 #: Bumped whenever `_OPEN_TAG_SYSTEM` or the user-message shape changes. Not cached (a
 #: single click on one bullet), so there is no key to fold it into.
-_OPEN_TAG_PROMPT_VERSION = 1
+_OPEN_TAG_PROMPT_VERSION = 2
 
 
 def _words_in(tag: str, text: str) -> bool:
@@ -464,12 +466,13 @@ def suggest_open_tags(text: str, existing: list[str]) -> list[dict[str, str]]:
     """
     if not text.strip():
         return []
+    user = f"<bullet>\n{text.strip()}\n</bullet>"
     client = llm.client_for("extract")
     response = client.messages.parse(
         model=config.model_for("extract"),
         max_tokens=config.max_tokens_for("extract"),
         system=_OPEN_TAG_SYSTEM,
-        messages=[{"role": "user", "content": f"<bullet>\n{text.strip()}\n</bullet>"}],
+        messages=[{"role": "user", "content": user}],
         output_format=_OpenTags,
         output_config={"effort": config.effort_for("extract")},
     )

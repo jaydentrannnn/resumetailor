@@ -256,14 +256,14 @@ function BulletRow({
               : "No skill from your vocabulary appears in this bullet."}
           </span>
         )}
-        {suggested && chips.length === 0 && !aiAsked && (
+        {b.text.trim() && !aiAsked && (
           <button
             type="button"
             onClick={() => void askAI()}
             disabled={asking}
             className="text-accent underline-offset-2 hover:underline disabled:opacity-50"
           >
-            {asking ? "Asking…" : "Ask AI"}
+            {asking ? "Asking…" : "Ask AI for more"}
           </button>
         )}
         {suggestError && <span className="text-danger">{suggestError}</span>}
