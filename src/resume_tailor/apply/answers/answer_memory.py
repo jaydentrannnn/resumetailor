@@ -163,6 +163,11 @@ def profile_key(label: str, canonical_key: str = "") -> str | None:
     return match.key if match and match.key in covered else None
 
 
+def is_sensitive(label: str) -> bool:
+    """Whether a question is a self-identification or credential one (never copied around)."""
+    return _NEVER.search(label or "") is not None
+
+
 def storable(label: str, *, canonical_key: str = "", input_type: str = "") -> bool:
     """Whether an answer to this question may be remembered at all."""
     if not label.strip() or canonical_key in _EEO_KEYS:
@@ -174,23 +179,68 @@ def storable(label: str, *, canonical_key: str = "", input_type: str = "") -> bo
     return profile_key(label, canonical_key) is None
 
 
+#: Yes/No profile questions a correction may fill when still unset: canonical key -> attribute.
+_PROFILE_BOOL: dict[str, str] = {
+    "over_18": "over_18",
+    "authorized_to_work": "authorized_to_work",
+    "requires_sponsorship": "requires_sponsorship_now",
+    "requires_sponsorship_future": "requires_sponsorship_future",
+    "willing_to_relocate": "willing_to_relocate",
+    "relatives_at_company": "relatives_at_company",
+    "noncompete": "subject_to_noncompete",
+    "drivers_license": "drivers_license",
+}
+#: Date questions: canonical key -> (profile attribute, precision). The form's own wording
+#: ("06/14/2027", "June 2027") is read into the stored ISO shape (`content/dates.py`).
+_PROFILE_DATE: dict[str, tuple[str, str]] = {
+    "earliest_start": ("earliest_start", "day"),
+    "graduation_month": ("graduation_date", "month"),
+}
+
+
+def _as_bool(answer: str) -> bool | None:
+    head = answer.strip().casefold()
+    if head.startswith(("yes", "true")):
+        return True
+    if head.startswith(("no", "false")):
+        return False
+    return None
+
+
 def save_to_profile(key: str, answer: str) -> bool:
-    """Put ``answer`` into the blank profile text field ``key``; False when not blank.
+    """Put ``answer`` into the blank profile field ``key``; False when not blank.
 
     A correction to a profile question is what the applicant meant their profile to
     say. A field that already holds a value is left alone: the profile is the source.
+    Text, Yes/No and date questions are covered; self-identification answers are not
+    (an option's wording is not the profile's canonical value, and they are never
+    remembered).
     """
     from resume_tailor.apply.answers import profile as profile_mod  # noqa: PLC0415
+    from resume_tailor.content import dates  # noqa: PLC0415
 
-    attr = _PROFILE_TEXT.get(key)
     answer = (answer or "").strip()
-    if attr is None or not answer or len(answer) > MAX_ANSWER_CHARS:
+    if not answer or len(answer) > MAX_ANSWER_CHARS:
         return False
     current, _seeded = profile_mod.load_profile()
-    if str(getattr(current, attr, "") or "").strip():
+    if key in _PROFILE_BOOL:
+        attr, value = _PROFILE_BOOL[key], _as_bool(answer)
+        if value is None or getattr(current, attr, None) is not None:
+            return False
+    elif key in _PROFILE_DATE:
+        attr, precision = _PROFILE_DATE[key]
+        value = dates.normalize(answer, precision)  # type: ignore[arg-type]
+        if dates.parse(value) is None or str(getattr(current, attr, "") or "").strip():
+            return False
+    elif key in _PROFILE_TEXT:
+        attr, value = _PROFILE_TEXT[key], answer
+        if str(getattr(current, attr, "") or "").strip():
+            return False
+    else:
         return False
-    setattr(current, attr, answer)
-    profile_mod.save_profile(current)
+    # Re-validated, so derived fields (notice period's number, normalized dates) follow.
+    updated = profile_mod.ApplicantProfile.model_validate({**current.model_dump(), attr: value})
+    profile_mod.save_profile(updated)
     return True
 
 

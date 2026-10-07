@@ -7,6 +7,7 @@ import logging
 import re
 from typing import Any
 
+from resume_tailor.apply.answers import reference_data
 from resume_tailor.apply.driver import clicks
 from resume_tailor.apply.forms import field_matcher
 from resume_tailor.apply.forms.field_matcher import match_option
@@ -149,18 +150,14 @@ def _selected_combobox_text(trigger: Any) -> str:
 
 def _phone_option(options: list[str], code: str, region: str) -> str | None:
     """Resolve a calling-code menu only when the declared phone region disambiguates it."""
-    region_aliases = {
-        "us": "united states", "usa": "united states", "united states of america": "united states",
-        "ca": "canada", "gb": "united kingdom", "uk": "united kingdom",
-    }
-    region_key = region_aliases.get(_norm(region), _norm(region))
+    region_key = _norm(reference_data.region_key(region))
     if not region_key or not re.fullmatch(r"\+\d{1,4}", code):
         return None
     code_pattern = re.compile(rf"(?<!\d){re.escape(code)}(?!\d)")
     matches = [
         option for option in options
         if code_pattern.search(option)
-        and region_aliases.get(_norm(code_pattern.sub("", option)), _norm(code_pattern.sub("", option))) == region_key
+        and _norm(reference_data.region_key(code_pattern.sub("", option).strip(" ()-"))) == region_key
     ]
     return matches[0] if len(matches) == 1 else None
 

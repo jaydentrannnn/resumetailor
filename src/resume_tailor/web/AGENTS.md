@@ -35,7 +35,8 @@ same text (`tests/tooling/test_agent_docs.py` enforces it).
   lookup (helpers, no router) used by `jobs` and `applications`. Routers: `jobs`,
   `applications`, `extension`, `resume`,
   `template`, `libraries`, `config`, `workspaces`, `system`, `setup`, `answers`,
-  `automation`, `discovery`, `jd`, `onboarding`, `secrets`, `diagnostics`, `update`.
+  `automation`, `discovery`, `jd`, `onboarding`, `secrets`, `diagnostics`, `update`, `reference`
+  (static Profile-page option lists).
 - `extension.py` — pairing codes → tokens; `security.py` — request gate; `state.py` —
   process-wide flags shared by the lifespan and routers.
 

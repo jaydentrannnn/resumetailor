@@ -10,7 +10,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from resume_tailor.apply.answers import answer_memory
+from resume_tailor.apply.answers import answer_memory, hybrid_resolver
 
 router = APIRouter()
 
@@ -45,3 +45,26 @@ def delete_saved_answer(answer_id: int) -> SavedAnswersResponse:
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="No such saved answer.") from exc
     return SavedAnswersResponse(answers=answer_memory.list_answers())
+
+
+class AIChoice(BaseModel):
+    key: str
+    label: str
+    answer: str
+
+
+class AIChoicesResponse(BaseModel):
+    choices: list[AIChoice]
+
+
+@router.get("/api/answer-memory/ai-choices", response_model=AIChoicesResponse)
+def list_ai_choices() -> AIChoicesResponse:
+    """Dropdown/radio picks the autofill model made, which fills reuse until forgotten."""
+    return AIChoicesResponse(choices=[AIChoice(**row) for row in hybrid_resolver.list_choices()])
+
+
+@router.delete("/api/answer-memory/ai-choices/{key}", response_model=AIChoicesResponse)
+def forget_ai_choice(key: str) -> AIChoicesResponse:
+    if not hybrid_resolver.forget_choice(key):
+        raise HTTPException(status_code=404, detail="No such saved choice.")
+    return list_ai_choices()

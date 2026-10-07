@@ -192,3 +192,23 @@ def test_cleanup_moves_profile_duplicates_out_once_with_a_backup(tmp_path):
     # Idempotent: a row stored after the pass is not touched again.
     _insert("Middle Name", "Later", "lever", "2026-03-01T00:00:00+00:00")
     assert memory.cleanup_profile_duplicates() == 0
+
+
+def test_save_to_profile_fills_blank_yes_no_and_date_fields(tmp_path, monkeypatch):
+    from resume_tailor import config
+    from resume_tailor.apply.answers import profile as profile_mod
+
+    monkeypatch.setattr(config, "APPLICANT_PROFILE_PATH", tmp_path / "applicant_profile.json")
+    profile_mod.save_profile(profile_mod.ApplicantProfile(authorized_to_work=False))
+
+    assert memory.save_to_profile("over_18", "Yes")
+    assert memory.save_to_profile("earliest_start", "June 14, 2027")
+    assert memory.save_to_profile("notice_period", "2 weeks")
+    assert not memory.save_to_profile("authorized_to_work", "Yes")  # already set: the profile wins
+    assert not memory.save_to_profile("gender", "Male")  # self-ID is never copied
+
+    saved, _ = profile_mod.load_profile()
+    assert saved.over_18 is True
+    assert saved.authorized_to_work is False
+    assert saved.earliest_start == "2027-06-14"
+    assert (saved.notice_period_value, saved.notice_period_unit) == (2, "week")

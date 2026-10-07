@@ -226,6 +226,25 @@ class ApplicantProfile(BaseModel):
 
     @model_validator(mode="before")
     @classmethod
+    def _default_phone_region(cls, data: Any) -> Any:
+        """Fill a blank phone region from the dial code, so shared codes ("+1") resolve.
+
+        The profile's own country wins when it uses that code; otherwise the first
+        country listed with it. A code no country uses is left alone.
+        """
+        if not isinstance(data, dict) or str(data.get("phone_country_region") or "").strip():
+            return data
+        from resume_tailor.apply.answers import reference_data  # noqa: PLC0415
+
+        code = str(data.get("phone_country_code") or "+1").strip()
+        home = reference_data.country(str(data.get("country") or "United States"))
+        if home is not None and home["dial"] == code:
+            return {**data, "phone_country_region": home["name"]}
+        sharing = [entry for entry in reference_data.COUNTRIES if entry["dial"] == code]
+        return {**data, "phone_country_region": sharing[0]["name"]} if sharing else data
+
+    @model_validator(mode="before")
+    @classmethod
     def _normalize_dates(cls, data: Any) -> Any:
         """Store the earliest start as ISO and the graduation month as YYYY-MM."""
         if not isinstance(data, dict):

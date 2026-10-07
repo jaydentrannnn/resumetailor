@@ -236,6 +236,7 @@ from resume_tailor.web.routes import (  # noqa: E402, I001
     jobs as _jobs_routes,
     libraries as _libraries_routes,
     onboarding as _onboarding_routes,
+    reference as _reference_routes,
     resume as _resume_routes,
     secrets as _secrets_routes,
     setup as _setup_routes,
@@ -252,7 +253,7 @@ for _router in (
     _template_routes, _libraries_routes, _workspaces_routes, _diagnostics_routes,
     _secrets_routes, _setup_routes, _system_routes, _onboarding_routes,
     _jd_routes, _answers_routes, _automation_routes, _discovery_routes,
-    _extension_routes, _update_routes,
+    _extension_routes, _update_routes, _reference_routes,
 ):
     app.include_router(_router.router)
 

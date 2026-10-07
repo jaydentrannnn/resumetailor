@@ -63,6 +63,26 @@ _ALIASES: dict[str, dict[str, set[str]]] = {
 }
 
 
+def _geo_aliases(key: str, target: str) -> set[str]:
+    """Other spellings of a country or US/CA state ("California" <-> "CA", "UK")."""
+    from resume_tailor.apply.answers import reference_data  # noqa: PLC0415
+
+    if key == "country":
+        found = reference_data.country(target)
+        if found is None:
+            return set()
+        names = [found["name"], found["code"], *found["aliases"]]
+        return {normalize(name) for name in names} - {normalize(target)}
+    if key == "state":
+        names = [
+            reference_data.state_code(target, country) or reference_data.state_name(target, country)
+            for country in reference_data.SUBDIVISIONS
+        ]
+        names += [reference_data.state_name(target, c) for c in reference_data.SUBDIVISIONS]
+        return {normalize(name) for name in names if name} - {normalize(target)}
+    return set()
+
+
 def _skill_norm(value: str) -> str:
     """Like ``normalize`` but keeps ``#`` and ``.`` so C# is not C and .NET is not NET."""
     decomposed = unicodedata.normalize("NFKD", value).casefold()
@@ -132,7 +152,7 @@ def match_option(
             if not literal and len(set(spelled)) == len(spelled):
                 return OptionMatch(status="matched", option_id=matches[0].option_id, method=method)
             return OptionMatch(status="ambiguous")
-    aliases = _ALIASES.get(key, {}).get(wanted, set())
+    aliases = _ALIASES.get(key, {}).get(wanted, set()) | _geo_aliases(key, target)
     matches = [
         option for option in available
         if normalize(option.label) in aliases or normalize(option.value) in aliases
@@ -224,6 +244,7 @@ _EEO_RULES: dict[str, dict[str, str]] = {
     "gender": {
         "male": r"^(?:male|man)\b",
         "female": r"^(?:female|woman)\b",
+        "non binary": r"\bnon ?binary\b|\bgender (?:non ?conforming|variant)\b",
     },
 }
 

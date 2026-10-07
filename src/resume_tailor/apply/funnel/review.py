@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import hashlib
 import json
+import logging
 import re
 from typing import Any
 
@@ -13,6 +14,8 @@ from resume_tailor.apply.driver import browser, controls, scanner
 from resume_tailor.apply.forms import attachments, field_catalog
 from resume_tailor.apply.forms.field_types import FieldObservation, FieldOutcome
 from resume_tailor.apply.funnel import store, store_models
+
+_log = logging.getLogger(__name__)
 
 _PROTECTED = re.compile(
     r"password|passcode|verification code|one.time code|\botp\b|"
@@ -216,6 +219,6 @@ async def correct(
                         input_type=str(target.constraints.get("input_type") or ""),
                     )
             except Exception:  # noqa: BLE001 - memory is a convenience; the fix landed
-                pass
+                _log.warning("could not remember the correction for %r", target.label, exc_info=True)
             return outcome
     raise ValueError("The recorded review tab is closed")

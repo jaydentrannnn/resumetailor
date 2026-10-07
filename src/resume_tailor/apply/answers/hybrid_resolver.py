@@ -145,6 +145,48 @@ def _choice_key(field: dict[str, Any], profile_digest: str) -> str:
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
 
 
+def _profile_digest(safe_profile: dict[str, Any]) -> str:
+    return hashlib.sha256(json.dumps(safe_profile, sort_keys=True).encode("utf-8")).hexdigest()
+
+
+def current_digest() -> str:
+    """Digest of the saved profile as the resolver sees it (what keys its cached choices)."""
+    from resume_tailor.apply.answers import profile as profile_mod  # noqa: PLC0415
+
+    saved, _seeded = profile_mod.load_profile()
+    return _profile_digest(saved.model_dump(exclude={"workday_password", "workday_email"}, mode="json"))
+
+
+def list_choices() -> list[dict[str, str]]:
+    """The model's cached dropdown/radio picks that still apply to the saved profile.
+
+    A pick made for an older profile is never reused (its key hashes the profile), so it
+    is not listed; one written before entries carried a digest is hidden for the same
+    reason. Newest-looking order is not tracked; sorted by question.
+    """
+    digest = current_digest()
+    rows = [
+        {"key": key, "label": str(entry.get("label") or ""), "answer": str(entry.get("value") or "")}
+        for key, entry in _read_choices().items()
+        if isinstance(entry, dict) and entry.get("digest") == digest and entry.get("value")
+    ]
+    return sorted(rows, key=lambda row: row["label"].casefold())
+
+
+def forget_choice(key: str) -> bool:
+    """Drop one cached pick so the next fill asks the model again; False when unknown."""
+    with _CHOICES_LOCK:
+        known = _read_choices()
+        if key not in known:
+            return False
+        del known[key]
+        path = _choices_path()
+        tmp = path.with_suffix(".tmp")
+        tmp.write_text(json.dumps(known, indent=1, ensure_ascii=False), encoding="utf-8")
+        tmp.replace(path)
+    return True
+
+
 def _read_choices() -> dict[str, dict[str, str]]:
     try:
         data = json.loads(_choices_path().read_text(encoding="utf-8"))
@@ -422,9 +464,7 @@ class _StepResolver:
             exclude={"workday_password", "workday_email"},
             mode="json",
         )
-        profile_digest = hashlib.sha256(
-            json.dumps(safe_profile, sort_keys=True).encode("utf-8")
-        ).hexdigest()
+        profile_digest = _profile_digest(safe_profile)
         observed = {str(item.get("selector")): item for item in unresolved if item.get("selector")}
         keys = {
             selector: _choice_key(field, profile_digest) for selector, field in observed.items()
@@ -533,6 +573,7 @@ class _StepResolver:
                     keys[action.selector]: {
                         "action": action.action, "value": action.value,
                         "label": str(observed[action.selector].get("label") or "")[:200],
+                        "digest": _profile_digest(safe_profile),
                     }
                     for action in model_actions
                     if action.action in {"select_combobox", "choose_radio", "check_options"}

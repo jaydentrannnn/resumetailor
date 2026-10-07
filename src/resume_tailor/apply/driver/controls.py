@@ -7,6 +7,7 @@ import re
 from datetime import datetime
 from typing import Any
 
+from resume_tailor.apply.answers import reference_data
 from resume_tailor.apply.driver.scanner import ScanSnapshot, scan
 from resume_tailor.apply.forms.field_matcher import match_option, normalize, school_short_term
 from resume_tailor.apply.forms.field_types import FieldObservation, FieldOutcome, ObservedOption
@@ -115,19 +116,18 @@ def _phone_match(options: list[ObservedOption], code: str, region: str) -> Obser
         return code_only[0]
     if not region:
         return None
-    aliases = {"us": "united states", "usa": "united states", "ca": "canada", "uk": "united kingdom"}
-    region_key = aliases.get(normalize(region), normalize(region))
-    identifiers = {"united states": {"us", "usa"}, "canada": {"ca"}, "united kingdom": {"gb", "uk"}}
-    region_codes = {"united states": "+1", "canada": "+1", "united kingdom": "+44"}
+    region_key = normalize(reference_data.region_key(region))
+    identifiers = {normalize(name) for name in reference_data.region_identifiers(region)}
+    region_dial = reference_data.region_dial(region)
     matches = [
         option for option in options
         if option.enabled and not option.placeholder
         and (
             bool(re.search(rf"(?<!\d){re.escape(code)}(?!\d)", option.label))
             and normalize(re.sub(rf"(?<!\d){re.escape(code)}(?!\d)", "", option.label)) == region_key
-            or region_codes.get(region_key) == code
+            or region_dial == code
             and normalize(option.label) == region_key
-            and normalize(option.value) in identifiers.get(region_key, set())
+            and normalize(option.value) in identifiers
         )
     ]
     return matches[0] if len(matches) == 1 else None

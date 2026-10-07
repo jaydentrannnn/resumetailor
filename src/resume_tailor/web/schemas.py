@@ -1192,6 +1192,11 @@ class ApplicantProfileResponse(BaseModel):
     gaps: list[ProfileGap] = Field(default_factory=list)
     #: Harmless answers used when the profile field is blank (`packet_profile_fields.DEFAULTS`).
     defaults: dict[str, str] = Field(default_factory=dict)
+    #: What a blank field falls back to from the master resume, by profile attribute
+    #: ("graduation_date" -> "June 2027"); the Profile page shows it inside the control.
+    fallbacks: dict[str, str] = Field(default_factory=dict)
+    #: Custom answers that restate a built-in field: question -> profile attribute.
+    custom_answer_duplicates: dict[str, str] = Field(default_factory=dict)
 
 
 class ApplicantProfileUpdateRequest(BaseModel):

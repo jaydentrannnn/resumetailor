@@ -576,3 +576,28 @@ def test_sources_status_tolerates_a_corrupt_file(client, tmp_path, monkeypatch, 
     res = c.get("/api/apply/sources/status")
     assert res.status_code == 200
     assert res.json() == {"sources": {}, "last_run_at": None}
+
+
+def test_profile_response_flags_and_merges_duplicate_custom_answers(client, tmp_path, monkeypatch):
+    c, _q = client
+    monkeypatch.setattr(profile_mod.config, "APPLICANT_PROFILE_PATH", tmp_path / "applicant_profile.json")
+    body = c.get("/api/applicant-profile").json()
+    body["profile"]["custom_answers"] = {"are you at least 18 years of age": "Yes"}
+    saved = c.put("/api/applicant-profile", json={"profile": body["profile"]}).json()
+    assert saved["custom_answer_duplicates"] == {"are you at least 18 years of age": "over_18"}
+
+    merged = c.post(
+        "/api/applicant-profile/merge-custom-answer", json={"question": "are you at least 18 years of age"}
+    ).json()
+    assert merged["profile"]["over_18"] is True
+    assert merged["profile"]["custom_answers"] == {}
+    assert merged["custom_answer_duplicates"] == {}
+
+    missing = c.post("/api/applicant-profile/merge-custom-answer", json={"question": "nope"})
+    assert missing.status_code == 404
+
+
+def test_profile_options_are_served(client):
+    c, _q = client
+    options = c.get("/api/reference/profile-options").json()
+    assert {"countries", "subdivisions", "pronouns", "genders", "races", "race_details", "disability"} <= set(options)

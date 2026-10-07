@@ -16,7 +16,7 @@ from fastapi.responses import JSONResponse, StreamingResponse
 from pydantic import BaseModel, Field
 
 from resume_tailor import config, workspace
-from resume_tailor.apply.answers import answer_facts
+from resume_tailor.apply.answers import answer_facts, custom_answers
 from resume_tailor.apply.answers import profile as apply_profile
 from resume_tailor.apply.answers.answer import AnswerExtras, answer_question
 from resume_tailor.apply.driver import browser as apply_browser
@@ -32,7 +32,7 @@ from resume_tailor.apply.funnel import operations as apply_operations
 from resume_tailor.apply.funnel import packet as apply_packet
 from resume_tailor.apply.funnel import scheduler as apply_scheduler
 from resume_tailor.apply.funnel import store as apply_store
-from resume_tailor.content import data
+from resume_tailor.content import data, dates
 from resume_tailor.content.data import MasterResume
 from resume_tailor.pipeline import jd
 from resume_tailor.web import template_ops
@@ -162,8 +162,33 @@ def _profile_gaps(profile: apply_profile.ApplicantProfile) -> list[ProfileGap]:
     return gaps
 
 
+#: Profile attribute -> canonical form field whose resume-derived value fills it when blank.
+_RESUME_FALLBACKS = {
+    "first_name": "first_name", "last_name": "last_name", "email": "email", "phone": "phone",
+    "linkedin_url": "linkedin_url", "github_url": "github_url",
+    "graduation_date": "graduation_month", "gpa_display": "gpa", "school_email": "school_email",
+}
+
+
+def _resume_fallbacks() -> dict[str, str]:
+    """What each blank profile field would fall back to, read from the master resume.
+
+    The Profile page shows these inside the empty control, so "blank uses your resume"
+    reads as the actual value. Empty when there is no resume yet.
+    """
+    try:
+        fields = packet_fields.build_fields(apply_profile.ApplicantProfile(), data.load())
+    except Exception:  # noqa: BLE001 - no readable resume: nothing to fall back to
+        return {}
+    shown = {attr: fields.get(key, "") for attr, key in _RESUME_FALLBACKS.items()}
+    shown["graduation_date"] = dates.display(shown["graduation_date"])
+    return {attr: value for attr, value in shown.items() if value}
+
+
 def _profile_response(profile: apply_profile.ApplicantProfile, *, seeded: bool, password_set: bool) -> ApplicantProfileResponse:
     return ApplicantProfileResponse(
+        fallbacks=_resume_fallbacks(),
+        custom_answer_duplicates=custom_answers.duplicates(profile),
         workspace_id=config.active_workspace_id(),
         profile=profile.model_copy(update={"workday_password": ""}),
         seeded=seeded,
@@ -196,6 +221,25 @@ def put_applicant_profile(body: ApplicantProfileUpdateRequest) -> ApplicantProfi
             update={key: getattr(current, key) for key in _DOCUMENT_KEYS}
         )
         saved = apply_profile.save_profile(profile)
+    return _profile_response(saved, seeded=False, password_set=bool(saved.workday_password))
+
+
+class MergeCustomAnswerRequest(BaseModel):
+    question: str
+
+
+@router.post("/api/applicant-profile/merge-custom-answer", response_model=ApplicantProfileResponse)
+def merge_custom_answer(body: MergeCustomAnswerRequest) -> ApplicantProfileResponse:
+    """Fold a custom answer into the built-in field it restates and drop the entry."""
+    with template_ops.LOCK:
+        current, _seeded = apply_profile.load_profile()
+        try:
+            merged = custom_answers.merge(current, body.question)
+        except KeyError as exc:
+            raise HTTPException(status_code=404, detail="No such custom answer.") from exc
+        except ValueError as exc:
+            raise HTTPException(status_code=422, detail=str(exc)) from exc
+        saved = apply_profile.save_profile(merged)
     return _profile_response(saved, seeded=False, password_set=bool(saved.workday_password))
 
 
