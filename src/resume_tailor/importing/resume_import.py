@@ -109,7 +109,9 @@ def import_from_analysis(
     used_tags = sorted(
         {t for b in resume.all_bullets() for t in b.tags if t != import_common.UNTAGGED}
     )
-    resume = resume.model_copy(update={"tag_vocabulary": used_tags})
+    resume = resume.model_copy(
+        update={"tag_vocabulary": import_common.with_skill_terms(resume, used_tags)}
+    )
 
     untagged = sum(1 for b in resume.all_bullets() for t in b.tags if t == import_common.UNTAGGED)
     if untagged:

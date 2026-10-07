@@ -72,6 +72,24 @@ def normalize_resume_dashes(resume: MasterResume) -> MasterResume:
     return MasterResume.model_validate(data)
 
 
+def with_skill_terms(resume: MasterResume, used_tags: list[str]) -> list[str]:
+    """``used_tags`` plus the short terms from the resume's own Skills sections.
+
+    A resume outside the shipped vocabulary packs (nursing, say) would otherwise end up
+    with no tag names to suggest from; its Skills lines are the applicant's own list of
+    skills, so they join the tag vocabulary. Long phrases are not tags and are skipped.
+    """
+    terms = {
+        config.canonical_tag(item)
+        for section in resume.sections
+        if section.kind == "skills"
+        for group in section.entries
+        for item in group.items
+        if item.strip() and len(item.split()) <= 3
+    }
+    return sorted(set(used_tags) | terms)
+
+
 def _default_vocabulary() -> set[str]:
     """Alias keys and their canonical targets — every tag name the deterministic
     matcher can recognize with no resume-specific vocabulary supplied."""

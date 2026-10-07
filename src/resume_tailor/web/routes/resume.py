@@ -187,6 +187,18 @@ def suggest_bullet_tags(body: SuggestTagsRequest) -> dict[str, Any]:
     }
 
 
+@router.post("/api/master-resume/suggest-tags-ai")
+def suggest_bullet_tags_ai(body: SuggestTagsRequest) -> dict[str, Any]:
+    """Model fallback for a bullet no known skill matched: tags the bullet's own words say."""
+    try:
+        with config.pinned(config.ONE_OFF_PROFILE):
+            suggestions = propose.suggest_open_tags(body.text, body.tags)
+    except Exception as exc:  # noqa: BLE001 - a convenience; the editor shows the reason
+        _log.warning("AI tag suggestion failed", exc_info=True)
+        raise HTTPException(status_code=502, detail=f"The model could not suggest tags: {exc}") from exc
+    return {"suggestions": suggestions}
+
+
 @router.post("/api/master-resume/validate", response_model=ValidateResponse)
 def validate_master_resume(body: dict[str, Any]) -> ValidateResponse:
     """Dry-run validation for the editor — does not write anything."""

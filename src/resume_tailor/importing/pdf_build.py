@@ -24,7 +24,7 @@ from ..content.data import (
 from ..document import analysis_types
 from ..document.render import parse_range
 from . import pdf_lines, pdf_patterns, pdf_structure
-from .import_common import UNTAGGED, _fresh_id, _seed_tags
+from .import_common import UNTAGGED, _fresh_id, _seed_tags, with_skill_terms
 
 
 # --------------------------------------------------------------------------------------
@@ -251,4 +251,4 @@ def _build(
             sections.append(ListSection(id=sid, title=draft.title, entries=items))
     resume = MasterResume(contact=contact, summary_variants=summaries, sections=sections)
     used = sorted({t for b in resume.all_bullets() for t in b.tags if t != UNTAGGED})
-    return resume.model_copy(update={"tag_vocabulary": used})
+    return resume.model_copy(update={"tag_vocabulary": with_skill_terms(resume, used)})

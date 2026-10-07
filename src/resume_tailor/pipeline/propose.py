@@ -425,3 +425,66 @@ def propose_bullet_tags(
         if tags:
             result[item.bullet_index] = tags
     return result
+
+
+class _OpenTags(BaseModel):
+    tags: list[str] = Field(default_factory=list)
+
+
+_OPEN_TAG_SYSTEM = """\
+You are tagging one resume bullet with the skills, tools, methods or subject areas it \
+demonstrates, in any field (nursing, finance, marketing, engineering, research, ...).
+
+Return up to 6 short tags (one to three words each). Every tag must be a skill, tool, \
+method or subject named in the bullet's own words - copy the wording from the bullet, \
+never infer a skill the bullet does not state, and never include company names, job \
+titles, numbers or generic words ("team", "results", "worked"). A bullet that names \
+none returns an empty list; that is a normal answer.
+"""
+
+#: Bumped whenever `_OPEN_TAG_SYSTEM` or the user-message shape changes. Not cached (a
+#: single click on one bullet), so there is no key to fold it into.
+_OPEN_TAG_PROMPT_VERSION = 1
+
+
+def _words_in(tag: str, text: str) -> bool:
+    """Whether ``tag`` appears in ``text`` as whole words (case-insensitive)."""
+    pattern = r"(?<![a-z0-9])" + re.escape(tag.strip().lower()) + r"(?![a-z0-9])"
+    return re.search(pattern, text.lower()) is not None
+
+
+def suggest_open_tags(text: str, existing: list[str]) -> list[dict[str, str]]:
+    """Tags for one bullet outside any vocabulary, kept only when the bullet says them.
+
+    The fallback for a resume the vocabulary packs do not cover. The model proposes; code
+    enforces: a tag survives only if its words appear in ``text`` (so nothing is invented,
+    keeping the fabrication guard's whitelist honest) and the bullet does not already have
+    it. Returns ``[{"tag", "matched"}]``, the shape `tag_suggest.suggest_tags` returns.
+    Raises like every other LLM call.
+    """
+    if not text.strip():
+        return []
+    client = llm.client_for("extract")
+    response = client.messages.parse(
+        model=config.model_for("extract"),
+        max_tokens=config.max_tokens_for("extract"),
+        system=_OPEN_TAG_SYSTEM,
+        messages=[{"role": "user", "content": f"<bullet>\n{text.strip()}\n</bullet>"}],
+        output_format=_OpenTags,
+        output_config={"effort": config.effort_for("extract")},
+    )
+    raw = response.parsed_output
+    if raw is None:
+        raise RuntimeError(
+            f"Model did not return parseable tags (stop_reason={response.stop_reason!r})."
+        )
+    have = {config.canonical_tag(tag) for tag in existing}
+    found: list[dict[str, str]] = []
+    for candidate in raw.tags:
+        phrase = candidate.strip()
+        tag = config.canonical_tag(phrase)
+        if not phrase or len(phrase.split()) > 3 or tag in have or not _words_in(phrase, text):
+            continue
+        have.add(tag)
+        found.append({"tag": tag, "matched": phrase})
+    return found[:6]

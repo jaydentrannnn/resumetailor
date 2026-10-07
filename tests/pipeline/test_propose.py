@@ -456,3 +456,34 @@ def test_llm_error_is_not_fatal_by_construction_for_tags(monkeypatch):
     monkeypatch.setattr(propose.llm, "client_for", _raise)
     with pytest.raises(RuntimeError):
         propose.propose_bullet_tags(["Built a thing."], ["python"])
+
+
+# --------------------------------------------------------------------------------------
+# suggest_open_tags
+# --------------------------------------------------------------------------------------
+
+
+def _open_tag_client(monkeypatch, tags):
+    recorded: list[dict] = []
+    monkeypatch.setattr(config, "anthropic_api_key", lambda: "test-key")
+    monkeypatch.setattr(
+        propose.llm, "client_for",
+        lambda purpose: _FakeClient(propose._OpenTags(tags=tags), recorded),
+    )
+    return recorded
+
+
+def test_open_tags_keep_only_what_the_bullet_says(monkeypatch):
+    _open_tag_client(monkeypatch, ["patient triage", "Epic EHR", "leadership", "Kubernetes", "team"])
+    result = propose.suggest_open_tags(
+        "Performed patient triage for 40 patients per shift and charted in Epic EHR.", ["team"]
+    )
+    # "leadership" and "Kubernetes" are not in the text; "team" is already a tag.
+    assert [item["tag"] for item in result] == ["patient triage", "epic ehr"]
+    assert result[1]["matched"] == "Epic EHR"
+
+
+def test_open_tags_skip_the_call_for_an_empty_bullet(monkeypatch):
+    recorded = _open_tag_client(monkeypatch, ["x"])
+    assert propose.suggest_open_tags("   ", []) == []
+    assert recorded == []
