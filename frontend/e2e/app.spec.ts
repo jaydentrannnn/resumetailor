@@ -38,7 +38,9 @@ test("tailor a resume, edit a bullet and re-render without AI", async ({ page })
 test("profile: one save bar validates, then saves", async ({ page }) => {
   await page.goto("/profile/application");
   await page.getByLabel("Visa status").selectOption("f1_opt");
-  await expect(page.getByText("Auto from visa: Yes").first()).toBeVisible();
+  await expect(
+    page.getByLabel("Need sponsorship in the future", { exact: true }).locator("option").first(),
+  ).toHaveText("Auto from visa: Yes");
   await page.getByLabel("School email").fill("student@gmail.com");
   await page.getByRole("button", { name: "Save changes" }).click();
   await expect(page.getByRole("alert").filter({ hasText: "need" })).toBeVisible();
