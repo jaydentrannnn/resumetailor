@@ -1,18 +1,26 @@
 import type { ReactNode } from "react";
 import type { ApplicantProfile } from "../../api";
+import { DateParts } from "../../components/DateParts";
 import {
   BOOLEAN_FIELDS,
   CHECKBOX_FIELDS,
   CHOICE_FIELDS,
+  DATE_FIELDS,
   NUMBER_FIELDS,
   fieldLabel,
 } from "../../lib/profileForm";
 import type { FieldContext } from "./fieldContext";
+import { FieldFrame } from "./FieldFrame";
+import { LocationField } from "./LocationFields";
+import { NoticePeriodField } from "./NoticePeriodField";
+import { PhoneCountryField } from "./PhoneCountryField";
+import { PronounsField } from "./PronounsField";
 
 /**
  * One application-profile field: the right control for its kind, plus a hint, a
  * "forms ask for this" note when the saved value is blank, and its validation error.
- * The wrapper id `profile-field-<key>` is what "jump to the first problem" scrolls to.
+ * What a blank value stands for (the resume's value, a default, "Auto from visa") is
+ * shown inside the control, never as a line below it.
  */
 export function ProfileField({
   name,
@@ -20,25 +28,28 @@ export function ProfileField({
   hint,
   label,
   auto = false,
+  blankLabel,
 }: {
   name: keyof ApplicantProfile;
   ctx: FieldContext;
   hint?: ReactNode;
   label?: string;
-  /** A blank value is answered automatically (e.g. from the visa), so it is not a gap. */
   auto?: boolean;
+  /** Text of a select's empty option when something answers it ("Auto from visa: Yes"). */
+  blankLabel?: string;
 }) {
   const value = ctx.draft[name];
   const id = `pf-${name}`;
   const error = ctx.errors[name];
   const describedBy = error ? `${id}-error` : hint ? `${id}-hint` : undefined;
+  const frame = { name, ctx, label, hint, auto };
   const common = {
     id,
     className: `field mt-1 ${error ? "border-danger" : ""}`,
     "aria-invalid": error ? true : undefined,
     "aria-describedby": describedBy,
   };
-  let control: ReactNode;
+  const blank = value == null || value === "";
   if (CHECKBOX_FIELDS.has(name)) {
     return (
       <div id={`profile-field-${name}`} className="text-sm sm:col-span-2">
@@ -58,7 +69,30 @@ export function ProfileField({
         )}
       </div>
     );
-  } else if (NUMBER_FIELDS.has(name)) {
+  }
+  if (name === "notice_period") return <NoticePeriodField {...frame} />;
+  if (name === "phone_country_code") return <PhoneCountryField {...frame} />;
+  if (name === "pronouns") return <PronounsField {...frame} />;
+  if (name === "country" || name === "state" || name === "authorization_country")
+    return <LocationField {...frame} />;
+  const precision = DATE_FIELDS[name];
+  if (precision) {
+    return (
+      <FieldFrame {...frame} blank={blank} htmlFor={`${id}-month`}>
+        <DateParts
+          id={`${id}-month`}
+          label={label ?? fieldLabel(name)}
+          precision={precision}
+          value={String(value ?? "")}
+          fallback={ctx.fallbacks[name]}
+          invalid={!!error}
+          onChange={(next) => ctx.set(name, next)}
+        />
+      </FieldFrame>
+    );
+  }
+  let control: ReactNode;
+  if (NUMBER_FIELDS.has(name)) {
     const whole = name === "hours_per_week_available";
     control = (
       <input
@@ -81,7 +115,7 @@ export function ProfileField({
       >
         {CHOICE_FIELDS[name].map(([option, text]) => (
           <option key={option} value={option}>
-            {text}
+            {option === "" && blankLabel ? blankLabel : text}
           </option>
         ))}
       </select>
@@ -93,28 +127,29 @@ export function ProfileField({
         value={value == null ? "" : String(value)}
         onChange={(e) => ctx.set(name, e.target.value === "" ? null : e.target.value === "true")}
       >
-        <option value="">Not set</option>
+        <option value="">{blankLabel ?? "Not set"}</option>
         <option value="true">Yes</option>
         <option value="false">No</option>
       </select>
     );
   } else {
     const password = name === "workday_password";
+    const fromResume = ctx.fallbacks[name];
     const fallback = ctx.defaults[name];
     control = (
       <input
         {...common}
-        type={password ? "password" : name === "graduation_date" ? "month" : "text"}
+        type={password ? "password" : "text"}
         autoComplete={password ? "new-password" : undefined}
         inputMode={name.endsWith("email") ? "email" : name.endsWith("_url") ? "url" : undefined}
         value={String(value ?? "")}
         placeholder={
           password && ctx.passwordSet
             ? "Saved password · leave blank to keep"
-            : fallback
-              ? `Default: ${fallback}`
-              : name === "graduation_date"
-                ? "YYYY-MM"
+            : fromResume
+              ? `From resume: ${fromResume}`
+              : fallback
+                ? `Default: ${fallback}`
                 : undefined
         }
         onChange={(e) => ctx.set(name, e.target.value)}
@@ -122,27 +157,8 @@ export function ProfileField({
     );
   }
   return (
-    <div id={`profile-field-${name}`} className="text-sm" onBlur={() => ctx.touch(name)}>
-      <label htmlFor={id} className="block">
-        {label ?? fieldLabel(name)}
-      </label>
+    <FieldFrame {...frame} blank={blank}>
       {control}
-      {error ? (
-        <span id={`${id}-error`} className="mt-1 block text-xs text-danger">
-          {error}
-        </span>
-      ) : (
-        hint && (
-          <span id={`${id}-hint`} className="mt-1 block text-xs text-ink-muted">
-            {hint}
-          </span>
-        )
-      )}
-      {!auto && ctx.gapFields.has(name) && (value == null || value === "") && (
-        <span className="mt-1 block text-xs text-warn">
-          Forms ask for this; blank means autofill skips it.
-        </span>
-      )}
-    </div>
+    </FieldFrame>
   );
 }

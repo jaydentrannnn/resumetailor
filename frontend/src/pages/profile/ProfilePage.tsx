@@ -157,9 +157,11 @@ export function ProfilePage() {
         draft,
         set: (key: keyof ApplicantProfile, value: FieldValue) =>
           applicant.setDraft({ ...draft, [key]: value }),
+        setMany: (patch) => applicant.setDraft({ ...draft, ...patch }),
         errors: shownErrors,
         gapFields: new Set(applicant.gaps.map((gap) => GAP_FIELD_ALIASES[gap.key] ?? gap.key)),
         defaults: applicant.defaults,
+        fallbacks: applicant.fallbacks,
         passwordSet: applicant.passwordSet,
         touch: (key) =>
           setTouched((current) => (current.has(key) ? current : new Set(current).add(key))),

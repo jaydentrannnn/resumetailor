@@ -1,54 +1,52 @@
 import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
-import { VETERAN_OPTIONS, type ApplicantProfile, type VeteranStatus } from "../../api";
+import type { ApplicantProfile } from "../../api";
 import { LanguagesEditor } from "../../components/LanguagesEditor";
 import { ProfileGapBanner } from "../../components/ProfileGapBanner";
-import {
-  PROFILE_GROUPS,
-  classYearFor,
-  fieldLabel,
-  sponsorshipFromVisa,
-} from "../../lib/profileForm";
+import { PROFILE_GROUPS, classYearFor, sponsorshipFromVisa } from "../../lib/profileForm";
 import type { Education } from "../../lib/resumeEdit";
 import { useApplicantProfile } from "../../state/applicantProfileState";
 import type { FieldContext } from "./fieldContext";
 import { ProfileField } from "./ProfileField";
+import { AIChoicesList } from "./AIChoicesList";
+import { CustomAnswers } from "./CustomAnswers";
 import { DocumentUpload } from "./DocumentUpload";
+import { EeoFields } from "./EeoFields";
 import { SavedAnswersList } from "./SavedAnswersList";
 
 const yesNo = (value: boolean) => (value ? "Yes" : "No");
 
-/** Plain-language note under a field, mostly "what a blank value means". */
-function hintFor(key: keyof ApplicantProfile, draft: ApplicantProfile): ReactNode {
+/**
+ * What an empty select stands for, shown as its first option: "Auto from visa: Yes",
+ * "Auto: Senior". Undefined when nothing answers a blank value.
+ */
+function blankLabelFor(key: keyof ApplicantProfile, draft: ApplicantProfile): string | undefined {
   const fromVisa = sponsorshipFromVisa(draft.visa_status);
+  switch (key) {
+    case "requires_sponsorship_now":
+      return fromVisa ? `Auto from visa: ${yesNo(fromVisa[0])}` : undefined;
+    case "requires_sponsorship_future":
+      return fromVisa ? `Auto from visa: ${yesNo(fromVisa[1])}` : undefined;
+    case "f1_opt_eligible":
+      return draft.visa_status?.startsWith("f1") ? "Auto from visa: Yes" : undefined;
+    case "class_year": {
+      const auto = classYearFor(draft.graduation_date);
+      return auto ? `Auto: ${auto}` : "Auto from expected graduation";
+    }
+    default:
+      return undefined;
+  }
+}
+
+/** Explanations that are not "what a blank value means" (those live inside the control). */
+function hintFor(key: keyof ApplicantProfile): ReactNode {
   switch (key) {
     case "visa_status":
       return "Sets the sponsorship answers below unless you choose them yourself.";
-    case "requires_sponsorship_now":
-      return draft[key] == null && fromVisa ? `Auto from visa: ${yesNo(fromVisa[0])}` : null;
-    case "requires_sponsorship_future":
-      return draft[key] == null && fromVisa ? `Auto from visa: ${yesNo(fromVisa[1])}` : null;
-    case "f1_opt_eligible":
-      return draft[key] == null && draft.visa_status?.startsWith("f1")
-        ? "Auto from visa: Yes"
-        : null;
-    case "graduation_date":
-      return "Blank uses the dates on your resume's Education entry.";
-    case "class_year": {
-      if (draft.class_year) return null;
-      const auto = classYearFor(draft.graduation_date);
-      return auto
-        ? `Auto: ${auto} (from your graduation month)`
-        : "Worked out from your graduation month.";
-    }
-    case "gpa_display":
-      return "Blank uses the GPA on your resume.";
-    case "school_email":
-      return "Blank uses your email when it ends in .edu.";
     case "hours_per_week_available":
       return "For part-time and co-op forms.";
     case "location_preference":
-      return 'Cities you would work in ("New York; Remote"). Office checklists tick the ones named here, else the posting\'s city.';
+      return "Cities you would work in (“New York; Remote”). Office checklists tick the ones named here, else the posting’s city.";
     default:
       return null;
   }
@@ -129,7 +127,8 @@ export function ApplicationTab({
                   key={key}
                   name={key}
                   ctx={ctx}
-                  hint={hintFor(key, draft)}
+                  hint={hintFor(key)}
+                  blankLabel={blankLabelFor(key, draft)}
                   auto={autoAnswered(key, draft)}
                 />
               ))}
@@ -140,75 +139,7 @@ export function ApplicationTab({
             </div>
           )}
           {group.id === "Voluntary information" && (
-            <div className="mt-3 grid gap-3 sm:grid-cols-2">
-              {(["gender", "race", "race_detail", "disability"] as const).map((key) => (
-                <label key={key} className="text-sm">
-                  {fieldLabel(key)}
-                  <input
-                    className="field mt-1"
-                    value={draft.eeo[key] ?? ""}
-                    placeholder="Blank skips the question"
-                    onChange={(e) => setDraft({ eeo: { ...draft.eeo, [key]: e.target.value } })}
-                  />
-                </label>
-              ))}
-              <div className="text-sm">
-                <label className="block">
-                  {fieldLabel("veteran")}
-                  <select
-                    className="field mt-1"
-                    value={draft.eeo.veteran ?? ""}
-                    onChange={(e) =>
-                      setDraft({
-                        eeo: {
-                          ...draft.eeo,
-                          veteran: e.target.value as VeteranStatus,
-                          veteran_legacy: "",
-                        },
-                      })
-                    }
-                  >
-                    {VETERAN_OPTIONS.map((option) => (
-                      <option key={option.value} value={option.value}>
-                        {option.label}
-                      </option>
-                    ))}
-                  </select>
-                </label>
-                {draft.eeo.veteran_legacy && (
-                  <span className="mt-1 flex flex-wrap items-center gap-2 text-xs text-warn">
-                    Converted from your earlier answer “{draft.eeo.veteran_legacy}”. Forms tell
-                    apart “not a veteran” and “not a protected veteran”, so please check it.
-                    <button
-                      type="button"
-                      className="rounded-md border border-line px-2 py-0.5 font-medium text-ink hover:border-accent"
-                      onClick={() => setDraft({ eeo: { ...draft.eeo, veteran_legacy: "" } })}
-                    >
-                      Looks right
-                    </button>
-                  </span>
-                )}
-              </div>
-              <label className="text-sm">
-                Hispanic or Latino
-                <select
-                  className="field mt-1"
-                  value={draft.eeo.hispanic_latino == null ? "" : String(draft.eeo.hispanic_latino)}
-                  onChange={(e) =>
-                    setDraft({
-                      eeo: {
-                        ...draft.eeo,
-                        hispanic_latino: e.target.value === "" ? null : e.target.value === "true",
-                      },
-                    })
-                  }
-                >
-                  <option value="">Not set</option>
-                  <option value="true">Yes</option>
-                  <option value="false">No</option>
-                </select>
-              </label>
-            </div>
+            <EeoFields eeo={draft.eeo} onChange={(eeo) => setDraft({ eeo })} />
           )}
           {group.id === "Languages" && (
             <LanguagesEditor
@@ -216,30 +147,7 @@ export function ApplicationTab({
               onChange={(languages) => setDraft({ languages })}
             />
           )}
-          {group.id === "Saved answers and other preferences" && (
-            <div className="mt-4">
-              <h3 className="text-sm font-semibold">Custom answers</h3>
-              {Object.keys(draft.custom_answers ?? {}).length === 0 && (
-                <p className="mt-1 text-xs text-ink-muted">
-                  None yet. Remembered answers below are used first.
-                </p>
-              )}
-              {Object.entries(draft.custom_answers ?? {}).map(([question, answer]) => (
-                <label key={question} className="mt-2 block text-sm">
-                  {question}
-                  <textarea
-                    className="field mt-1"
-                    value={answer}
-                    onChange={(e) =>
-                      setDraft({
-                        custom_answers: { ...draft.custom_answers, [question]: e.target.value },
-                      })
-                    }
-                  />
-                </label>
-              ))}
-            </div>
-          )}
+          {group.id === "Saved answers and other preferences" && <CustomAnswers />}
         </details>
       ))}
       <details
@@ -250,6 +158,7 @@ export function ApplicationTab({
       >
         <summary className="cursor-pointer font-semibold">Remembered answers</summary>
         <SavedAnswersList />
+        <AIChoicesList />
       </details>
     </div>
   );

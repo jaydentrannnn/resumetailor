@@ -1,6 +1,7 @@
 import { ChipListField } from "../../components/ChipListField";
 import { AddButton, EntryControls } from "../../components/ListControls";
 import { BulletList } from "./BulletList";
+import { DateField } from "./DateField";
 import { TextField } from "./TextField";
 import {
   type Project,
@@ -82,7 +83,7 @@ export function ProjectEntries({
                     setEntries(next);
                   }}
                 />
-                <TextField
+                <DateField
                   label="Date"
                   value={proj.date ?? ""}
                   onChange={(v) => {

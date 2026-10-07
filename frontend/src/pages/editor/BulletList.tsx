@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { suggestTags, type TagSuggestion } from "../../api";
+import { suggestTags, suggestTagsAI, type TagSuggestion } from "../../api";
 import { ChipListField } from "../../components/ChipListField";
 import { describe } from "../../lib/errors";
 import { AddButton, EntryControls } from "../../components/ListControls";
@@ -119,6 +119,8 @@ function BulletRow({
   const [suggested, setSuggested] = useState<TagSuggestion[] | null>(null);
   const [suggesting, setSuggesting] = useState(false);
   const [suggestError, setSuggestError] = useState<string | null>(null);
+  const [asking, setAsking] = useState(false);
+  const [aiAsked, setAiAsked] = useState(false);
   const len = b.text.length;
   const overMax = len >= charMax;
   // The counter already warns past the character cap, and a ticked "has metric" means the
@@ -153,6 +155,21 @@ function BulletRow({
     }
   }
 
+  /** Model fallback for a bullet no known skill matched; it only returns words the bullet says. */
+  async function askAI() {
+    setAsking(true);
+    setSuggestError(null);
+    try {
+      const res = await suggestTagsAI(b.text, b.tags);
+      setSuggested((current) => [...(current ?? []), ...res.suggestions]);
+      setAiAsked(true);
+    } catch (reason) {
+      setSuggestError(describe(reason).title);
+    } finally {
+      setAsking(false);
+    }
+  }
+
   return (
     <div className="border-l-2 border-line/60 pl-4">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs text-ink-muted">
@@ -176,6 +193,7 @@ function BulletRow({
         onChange={(e) => {
           onChange({ text: e.target.value });
           setSuggested(null);
+          setAiAsked(false);
         }}
         className="w-full rounded-md border border-line bg-panel px-2 py-1.5 text-sm focus:border-accent"
       />
@@ -232,7 +250,21 @@ function BulletRow({
           </button>
         )}
         {suggested && chips.length === 0 && (
-          <span className="text-ink-muted">No more known skills in this bullet.</span>
+          <span className="text-ink-muted">
+            {aiAsked
+              ? "The AI found no skills stated in this bullet."
+              : "No skill from your vocabulary appears in this bullet."}
+          </span>
+        )}
+        {suggested && chips.length === 0 && !aiAsked && (
+          <button
+            type="button"
+            onClick={() => void askAI()}
+            disabled={asking}
+            className="text-accent underline-offset-2 hover:underline disabled:opacity-50"
+          >
+            {asking ? "Asking…" : "Ask AI"}
+          </button>
         )}
         {suggestError && <span className="text-danger">{suggestError}</span>}
       </div>

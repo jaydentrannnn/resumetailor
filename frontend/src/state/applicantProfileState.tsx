@@ -18,6 +18,10 @@ type State = {
   passwordSet: boolean;
   gaps: ProfileGap[];
   defaults: Record<string, string>;
+  /** What a blank field falls back to from the resume, by profile field. */
+  fallbacks: Record<string, string>;
+  /** Custom answers that restate a built-in field: question -> profile field. */
+  duplicates: Record<string, string>;
   /** Resolves true when the profile was saved; a failure is reported in `error`. */
   save: () => Promise<boolean>;
   /** Adopt a server response that already saved the profile (transcript upload). */
@@ -32,6 +36,8 @@ export function ApplicantProfileProvider({ children }: { children: ReactNode }) 
   // Gaps and defaults reflect the saved profile; they refresh on load and after Save.
   const [gaps, setGaps] = useState<ProfileGap[]>([]);
   const [defaults, setDefaults] = useState<Record<string, string>>({});
+  const [fallbacks, setFallbacks] = useState<Record<string, string>>({});
+  const [duplicates, setDuplicates] = useState<Record<string, string>>({});
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
   function accept(result: ApplicantProfileResponse) {
@@ -40,6 +46,8 @@ export function ApplicantProfileProvider({ children }: { children: ReactNode }) 
     setPasswordSet(result.workday_password_set);
     setGaps(result.gaps ?? []);
     setDefaults(result.defaults ?? {});
+    setFallbacks(result.fallbacks ?? {});
+    setDuplicates(result.custom_answer_duplicates ?? {});
   }
   useEffect(() => {
     let live = true;
@@ -93,6 +101,8 @@ export function ApplicantProfileProvider({ children }: { children: ReactNode }) 
         passwordSet,
         gaps,
         defaults,
+        fallbacks,
+        duplicates,
         save,
         accept,
         discard,

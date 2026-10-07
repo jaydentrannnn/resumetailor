@@ -147,6 +147,17 @@ export function suggestTags(
   });
 }
 
+/** Model fallback for a bullet no known skill matched; tags come from the bullet's own words. */
+export function suggestTagsAI(
+  text: string,
+  tags: string[],
+): Promise<{ suggestions: TagSuggestion[] }> {
+  return request("/api/master-resume/suggest-tags-ai", {
+    method: "POST",
+    body: JSON.stringify({ text, tags, vocabulary: [] }),
+  });
+}
+
 export function listResumeVersions(): Promise<{ versions: ResumeVersion[]; keep: number }> {
   /** Saved master-resume versions, newest first. */
   return request("/api/master-resume/versions");

@@ -1,5 +1,6 @@
 import { AddButton, EntryControls } from "../../components/ListControls";
 import { BulletList } from "./BulletList";
+import { DateField } from "./DateField";
 import { TextField } from "./TextField";
 import {
   type Experience,
@@ -84,9 +85,9 @@ export function ExperienceEntries({
                     setEntries(next);
                   }}
                 />
-                <div className="grid grid-cols-2 gap-3">
-                  <TextField
-                    label="Start (YYYY-MM)"
+                <div className="grid grid-cols-1 gap-3 sm:col-span-2 sm:grid-cols-2">
+                  <DateField
+                    label="Start"
                     value={job.start}
                     onChange={(v) => {
                       const next = [...entries];
@@ -94,8 +95,9 @@ export function ExperienceEntries({
                       setEntries(next);
                     }}
                   />
-                  <TextField
+                  <DateField
                     label="End"
+                    allowPresent
                     value={job.end}
                     onChange={(v) => {
                       const next = [...entries];

@@ -85,7 +85,10 @@ export function SavedAnswersList() {
       {answers === null ? (
         <p className="mt-2 text-xs text-ink-muted">Loading…</p>
       ) : answers.length === 0 ? (
-        <p className="mt-2 text-xs text-ink-muted">Nothing remembered yet.</p>
+        <p className="mt-2 text-xs text-ink-muted">
+          Nothing remembered yet. An answer is saved when you fix a field on an application’s review
+          page; Yes/No and date fixes go into your profile instead.
+        </p>
       ) : (
         <ul className="mt-2 space-y-3">
           {answers.map((item) => {

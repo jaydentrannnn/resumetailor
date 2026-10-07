@@ -119,7 +119,10 @@ export type ApplicantProfile = {
   requires_sponsorship_future: boolean | null;
   f1_opt_eligible: boolean | null;
   earliest_start: string;
+  /** Display string derived from the number and unit ("2 weeks"); the server keeps it in sync. */
   notice_period?: string;
+  notice_period_value?: number | null;
+  notice_period_unit?: NoticeUnit;
   highest_education_obtained: string;
   salary_expectation: string;
   /** Structured range behind salary answers; seeded from `salary_expectation`. */
@@ -167,6 +170,8 @@ export type ApplicantProfile = {
   school_email?: string;
 };
 
+export type NoticeUnit = "day" | "week" | "month";
+
 export type VisaStatus =
   "" | "none" | "f1" | "f1_opt" | "f1_stem_opt" | "f1_cpt" | "h1b" | "h4_ead" | "other";
 
@@ -195,7 +200,34 @@ export type ApplicantProfileResponse = {
   gaps?: ProfileGap[];
   /** Answers used when a harmless field is blank, keyed by canonical field. */
   defaults?: Record<string, string>;
+  /** What a blank field falls back to from the resume, by profile field ("June 2027"). */
+  fallbacks?: Record<string, string>;
+  /** Custom answers that restate a built-in field: question -> profile field. */
+  custom_answer_duplicates?: Record<string, string>;
 };
+
+/** Fixed option lists for the Profile pickers (`GET /api/reference/profile-options`). */
+export type ProfileOptions = {
+  countries: { code: string; name: string; dial: string; aliases: string[] }[];
+  subdivisions: Record<string, { code: string; name: string }[]>;
+  pronouns: string[];
+  genders: string[];
+  races: string[];
+  race_details: Record<string, string[]>;
+  disability: string[];
+};
+
+export function fetchProfileOptions(): Promise<ProfileOptions> {
+  return request("/api/reference/profile-options");
+}
+
+/** Fold a custom answer into the built-in field it restates, then drop the entry. */
+export function mergeCustomAnswer(question: string): Promise<ApplicantProfileResponse> {
+  return request("/api/applicant-profile/merge-custom-answer", {
+    method: "POST",
+    body: JSON.stringify({ question }),
+  });
+}
 
 /** Load the applicant form-filling profile for the active workspace. */
 export function getApplicantProfile(): Promise<ApplicantProfileResponse> {
@@ -262,6 +294,22 @@ export async function deleteSavedAnswer(id: number): Promise<SavedAnswer[]> {
   return (
     await request<{ answers: SavedAnswer[] }>(`/api/answer-memory/${id}`, { method: "DELETE" })
   ).answers;
+}
+
+/** A dropdown/radio choice the autofill model made, reused until forgotten. */
+export type AIChoice = { key: string; label: string; answer: string };
+
+export async function fetchAIChoices(): Promise<AIChoice[]> {
+  return (await request<{ choices: AIChoice[] }>("/api/answer-memory/ai-choices")).choices;
+}
+
+export async function forgetAIChoice(key: string): Promise<AIChoice[]> {
+  return (
+    await request<{ choices: AIChoice[] }>(
+      `/api/answer-memory/ai-choices/${encodeURIComponent(key)}`,
+      { method: "DELETE" },
+    )
+  ).choices;
 }
 
 // --- Auto-submit guard rails (P4-S) ---------------------------------------------------

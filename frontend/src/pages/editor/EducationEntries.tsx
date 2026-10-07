@@ -1,5 +1,6 @@
 import { ChipListField } from "../../components/ChipListField";
 import { AddButton, EntryControls } from "../../components/ListControls";
+import { DateField } from "./DateField";
 import { TextField } from "./TextField";
 import {
   type Education,
@@ -101,9 +102,8 @@ export function EducationEntries({
                   </p>
                 </div>
                 <div className="grid grid-cols-1 gap-3 sm:col-span-2 sm:grid-cols-2">
-                  <TextField
-                    label="Start month"
-                    type="month"
+                  <DateField
+                    label="Start"
                     value={edu.start ?? ""}
                     onChange={(v) => {
                       const next = [...entries];
@@ -111,9 +111,8 @@ export function EducationEntries({
                       setEntries(next);
                     }}
                   />
-                  <TextField
-                    label="Graduation month (or expected)"
-                    type="month"
+                  <DateField
+                    label="Expected graduation"
                     value={edu.end ?? ""}
                     onChange={(v) => {
                       const next = [...entries];

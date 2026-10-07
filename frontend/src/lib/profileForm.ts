@@ -1,4 +1,5 @@
-import type { ApplicantProfile, VisaStatus } from "../api";
+import type { ApplicantProfile, NoticeUnit, VisaStatus } from "../api";
+import type { DatePrecision } from "./dates";
 
 /** Form labels for profile fields; anything unlisted is its key in words. */
 export const PROFILE_LABELS: Partial<Record<keyof ApplicantProfile | string, string>> = {
@@ -18,8 +19,8 @@ export const PROFILE_LABELS: Partial<Record<keyof ApplicantProfile | string, str
   state: "State or province",
   postal_code: "Postal code",
   country: "Country",
-  phone_country_code: "Phone country code",
-  phone_country_region: "Phone country or region",
+  phone_country_code: "Phone country",
+  phone_country_region: "Phone country",
   phone_device_type: "Phone device type",
   authorization_country: "Country you're authorized in",
   authorized_to_work: "Authorized to work",
@@ -45,7 +46,7 @@ export const PROFILE_LABELS: Partial<Record<keyof ApplicantProfile | string, str
   subject_to_noncompete: "Subject to a non-compete agreement",
   portfolio_only_when_asked: "Portfolio only when asked",
   visa_status: "Visa status",
-  graduation_date: "Graduation month",
+  graduation_date: "Expected graduation",
   class_year: "Class standing",
   gpa_display: "GPA shown on forms",
   school_email: "School email",
@@ -141,6 +142,8 @@ export function validateProfile(profile: ApplicantProfile): Record<string, strin
   }
   if (profile.graduation_date && !/^\d{4}-(0[1-9]|1[0-2])$/.test(profile.graduation_date))
     errors.graduation_date = "Pick a month and year.";
+  if (profile.earliest_start && !/^\d{4}-(0[1-9]|1[0-2])-\d{2}$/.test(profile.earliest_start))
+    errors.earliest_start = "Pick a month, year and day.";
   const hours = profile.hours_per_week_available;
   if (hours != null && (!Number.isInteger(hours) || hours < 0 || hours > 80))
     errors.hours_per_week_available = "Enter whole hours from 0 to 80.";
@@ -230,7 +233,6 @@ export const PROFILE_GROUPS: ProfileGroup[] = [
       "postal_code",
       "country",
       "phone_country_code",
-      "phone_country_region",
       "phone_device_type",
     ],
   },
@@ -285,8 +287,22 @@ export const GAP_FIELD_ALIASES: Record<string, string> = {
   requires_sponsorship: "requires_sponsorship_now",
   hours_per_week: "hours_per_week_available",
   graduation_month: "graduation_date",
+  phone_country_region: "phone_country_code",
   noncompete: "subject_to_noncompete",
 };
+
+/** Date fields, edited as a month select plus typed year (and day). */
+export const DATE_FIELDS: Partial<Record<keyof ApplicantProfile, DatePrecision>> = {
+  graduation_date: "month",
+  earliest_start: "day",
+};
+
+/** "2 weeks" for a notice period; blank when there is no number. */
+export function noticeLabel(value: number | null | undefined, unit: NoticeUnit): string {
+  if (value == null) return "";
+  if (value === 0) return "Immediately";
+  return `${value} ${unit}${value === 1 ? "" : "s"}`;
+}
 
 export const NUMBER_FIELDS = new Set<string>([
   "salary_hourly_min",

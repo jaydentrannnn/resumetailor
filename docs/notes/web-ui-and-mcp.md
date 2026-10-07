@@ -556,3 +556,12 @@ The two legacy tests that assumed process-wide routing/rebound globals were upda
 **What:** Header pills now use a scoped unlayered typography rule in addition to shared control sizing.
 **Why:** Browser inspection proved the global unlayered `button { font: inherit }` overrides layered Tailwind typography: Ready/Pause rendered at 16px/400 while the update link rendered at 12px/600 despite matching utility classes.
 **Impact:** All three pills now render at 12px/600 with a 16px line height; unrelated button styles remain unchanged. Browser regressions check computed typography as well as geometry.
+
+## Profile form controls: dates, choices, hints (2026-10-07)
+
+- Every Profile date is `DateParts` (month select + year box, day box for `earliest_start`); storage stays `YYYY-MM[-DD]`/`Present`, older free text shows as a chip with "Pick a date instead" rather than being rewritten.
+- A blank field's fallback is shown inside the control ("From resume (June 2027)", `Default: …`, "Auto from visa: Yes"); helper lines are reserved for real explanations. Fallbacks come from the server (`fallbacks` on the applicant-profile response).
+- `ChoiceOrOther` derives its "Other…" mode from the value, not mount state: option lists load after first render, so a frozen initial guess left "Asian" stuck on Other.
+- Notice period is a number + unit; conversion to a form's option or unit is deterministic (`apply/answers/notice.py`), never model-picked.
+- Custom answers that restate a built-in field are flagged and merged by `POST /api/applicant-profile/merge-custom-answer` (fills the field only when unset/default, then drops the entry).
+- Remembered answers also list the hybrid resolver's AI picks (`/api/answer-memory/ai-choices`) with Forget.

@@ -86,7 +86,7 @@ export function PersonalTab({
                   name={pair.applicant}
                   ctx={{
                     ...ctx,
-                    defaults: { ...ctx.defaults, [pair.applicant]: fallback },
+                    fallbacks: { ...ctx.fallbacks, [pair.applicant]: fallback },
                   }}
                   label={`${fieldLabel(pair.applicant)} · ${overridden ? "different from resume" : "from resume"}`}
                 />
