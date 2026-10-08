@@ -68,6 +68,7 @@ fetched from a CDN, so the desktop app works offline.
 | Big figure | `rt-figure` | Fraunces 350, 40→56px, tabular numbers |
 | Eyebrow / table head / `dt` | `rt-eyebrow` | Geist Mono 11px caps, 0.08em, muted |
 | Tile title | `rt-tile-title` | 15px / 600 |
+| Inline text link | `rt-link` | `text-ink`, underline, 2px offset, accent on hover |
 | Body, table text | — | 14px (13px dense) |
 | Supporting text | — | 12px, `text-ink-muted` |
 | Times, counts, IDs, model names | `font-mono` | Geist Mono, tabular numbers |
@@ -75,6 +76,13 @@ fetched from a CDN, so the desktop app works offline.
 Controls are at least 36px tall (44px on coarse pointers). Header pills are exactly
 `rt-header-pill rt-control`: 36px/44px at 12px/16px/600 — a Playwright test pins this.
 Never add an unlayered `font: inherit` reset; it beats Tailwind text utilities.
+
+**Links.** An inline text link (in a sentence, an empty state, a toast, "Connect", "Open
+in new tab") is `rt-link`: ink with an underline, accent on hover. Never green at rest and
+never a colour class beside it — the utility owns the colour. Size and weight utilities
+(`text-xs`, `font-medium`) are fine. Quiet secondary actions that are deliberately muted
+(`text-ink-muted … hover:underline`) and destructive ones keep their own tone; a link that
+should look like a button uses `buttonClass`.
 
 ## Selected state
 
@@ -147,18 +155,19 @@ All exported from `components/ui` (`import { … } from "../components/ui"`).
 |---|---|---|
 | `Page` | `width?: "standard" \| "wide"`, `className` | The shell of every page: `standard` is one centred 6xl column, `wide` is a full-width dashboard. |
 | `PageHeader` | `title`, `eyebrow?`, `description?`, `back?`, `actions?` | The first thing on every page. |
-| `Tile` (alias `Card`) | `title?`, `eyebrow?`, `meta?`, `description?`, `actions?`, `as?`, `padding?: "md" \| "sm" \| "none"`, `className`, `id`/`aria-*`/`data-*` | Any grouped content. Default element is `<section>`; pass `as="aside"` etc. |
+| `Tile` (alias `Card`) | `title?`, `eyebrow?`, `meta?`, `description?`, `actions?`, `as?`, `padding?: "md" \| "sm" \| "none"`, `embedded?`, `className`, `id`/`aria-*`/`data-*` | Any grouped content. Default element is `<section>`; pass `as="aside"` etc. `embedded` renders the same heading and content with no box (no border, fill or padding) and the title as an h3 — for a tile's content shown inside another tile. |
+| `ResultFrame` | `embedded?`, `title?`, `description?`, `actions?`, `className` | The frame of a result card (report, documents, skills, experience, bullet review): a `Tile` standalone, unboxed with an h3 when `embedded` inside another tile. |
 | `TileSection` | `title?`, `actions?`, `className` | A second group inside a tile, separated by one hairline instead of a nested box. |
 | `Button` | `variant?: "primary" \| "secondary" \| "danger" \| "ghost"`, `size?: "sm" \| "md" \| "lg"`, `loading?`, + button attrs | Every button. `buttonClass(variant, size, extra)` styles links as buttons. |
 | `StatusChip` | `tone: Tone`, `children` (label), `className` | A status pill: mark + word. |
 | `StatusMark` | `tone: Tone` | Just the mark, inside your own labelled element (the label must still be text). |
 | `Segmented` | `items: {id,label,count?,disabled?}[]`, `value`, `onChange(id)`, `label`, `className` | One-of-N choice that is not a content switch (theme, view mode, filter). Renders a radiogroup. |
-| `Tabs` | `items: {id,label,count?}[]`, `value`, `onChange(id)`, `label`, `variant?: "underline" \| "segmented"`, `orientation?: "horizontal" \| "vertical"` | Switching panels. `underline` for page sections, `segmented` for a view inside a tile, `vertical` for a side rail. |
+| `Tabs` | `items: {id,label,count?}[]`, `value`, `onChange(id)`, `label`, `variant?: "underline" \| "segmented"`, `orientation?: "horizontal" \| "vertical"` | Switching panels. `underline` for page sections, `segmented` for a view inside a tile, `vertical` for a side rail. A horizontal strip that overflows (390px) scrolls itself so the selected tab stays visible; the page never scrolls. |
 | `Meter` | `value?` (0–100), `label`, `valueText?`, `indeterminate?`, `tone?: "accent" \| "danger" \| "ink"`, `className` | Progress. Always give it a `label`. |
 | `DataList` | `items: {label,value}[]`, `mono?`, `className` | Summaries of label/value pairs (options, report facts). |
 | `Stat` | `value`, `label`, `className` | Big serif figures (page count, match score). |
-| `SelectionBar` | `count`, `noun?`, `onClear`, `clearLabel?`, `children` (actions) | The toolbar above a table while rows are selected; render only when `count > 0`. |
-| `Stepper` | `steps: {id,label,meta?}[]`, `current`, `failed?`, `onSelect?`, `label?`, `orientation?` | Wizards and run progress; square marks, optional mono meta per step. |
+| `SelectionBar` | `count`, `noun?`, `onClear`, `clearLabel?`, `label?` (toolbar aria-label, default "Selection actions"), `children` (actions) | The toolbar above a table while rows are selected; render only when `count > 0`. |
+| `Stepper` | `steps: {id,label,meta?}[]`, `current`, `failed?`, `onSelect?`, `label?`, `orientation?`, `divided?` | Wizards and run progress; square marks, optional mono meta per step. `divided` (vertical only) puts hairlines between rows and right-aligns `meta` — the Tailor run stages. |
 | `Modal` | `title`, `onClose`, `wide?`, `placement?: "center" \| "right"` | Dialogs and the Apply settings drawer. |
 | `InlineHelp` | `label`, `children` | A "?" explanation next to a label. |
 | `EmptyState` | `title`, `icon?`, `children?`, `action?` | A list/page with nothing yet. |
@@ -166,7 +175,12 @@ All exported from `components/ui` (`import { … } from "../components/ui"`).
 | `Kbd` | `children` | A keyboard key. |
 | `Field` / `Toggle` | `label`, `help?`, … | Label + control pairs; inputs use the `.field` class. |
 | `ToastProvider` + `useToast()` | `success/error/info(title, detail?, action?)` | Transient messages (`lib/toast.ts`). |
-| `DataTable`, `Pagination`, `RowActionsMenu` | see `components/TableControls.tsx` | Tables with selection, paging and row menus. |
+| `DataTable`, `Pagination`, `RowActionsMenu` | see `components/TableControls.tsx`; `DataTable` also takes `bare?`, `selectable?: boolean \| (row) => boolean`, `className` | Tables with selection, paging and row menus. `bare` drops the table's own border, corners and panel fill when it sits directly on a `Tile`; `selectable={false}` removes the checkbox column and the mobile "Select" labels for read-only lists. |
+
+Shared sections with an `embedded` prop (the onboarding steps pass it; Settings and
+Template keep the tiled default): `ModelsSection`, `TargetFieldSection`,
+`TemplateImportWizard`, `StarterTemplatesPanel` (and `ImportResumePanel`). Embedded they
+render as hairline-separated sections inside the step tile instead of tiles of their own.
 | `useConfirm()` | `confirm({title,message,tone?,…})`, `choice({…})` | Promise-based dialogs; never `window.confirm`. |
 
 If a page needs something these do not cover, ask for a primitive rather than patching a
