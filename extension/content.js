@@ -39,20 +39,26 @@
     const shadow = host.attachShadow({ mode: "open" });
     const style = document.createElement("style");
     style.textContent = `
-      .chip{font:13px/1.3 system-ui,-apple-system,"Segoe UI",sans-serif;color:#15252c;background:#fff;
-        border:1px solid #b8c7cc;border-radius:999px;box-shadow:0 4px 14px rgba(0,0,0,.18);
-        display:flex;align-items:center;gap:6px;padding:6px 8px 6px 12px;max-width:420px}
+      .chip{font:13px/1.3 system-ui,-apple-system,"Segoe UI",sans-serif;color:#fff;background:#0b0b0b;
+        border:1px solid #0b0b0b;border-radius:4px;box-shadow:0 8px 24px -12px rgba(0,0,0,.18);
+        display:flex;align-items:center;gap:8px;padding:6px 8px 6px 12px;max-width:min(420px,calc(100vw - 48px))}
+      .chip::before{content:"";width:8px;height:8px;flex-shrink:0;background:#1f6b4a;border-radius:2px}
       .label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
-      button{font:inherit;cursor:pointer;border:1px solid #b8c7cc;background:#fff;color:#164f64;
-        border-radius:999px;padding:3px 10px;white-space:nowrap;flex-shrink:0}
-      button.primary{background:#164f64;border-color:#164f64;color:#fff}
-      button.close{border:none;padding:2px 6px;color:#58656b}
+      button{font:inherit;cursor:pointer;border:1px solid #3a3a38;background:#0b0b0b;color:#fff;
+        border-radius:4px;padding:3px 10px;white-space:nowrap;flex-shrink:0}
+      button.primary{background:#0b0b0b;border-color:#0b0b0b;color:#fff}
+      button.close{border:none;padding:2px 6px;color:#d4d4d2}
+      button:hover{background:#1d1d1d}
+      button:focus-visible{outline:2px solid #6fbf98;outline-offset:2px}
       button:disabled{opacity:.5;cursor:default}
       @media (prefers-color-scheme: dark){
-        .chip{background:#172226;color:#e8f1f3;border-color:#3b4d53}
-        button{background:#172226;color:#9bd3e0;border-color:#3b4d53}
-        button.primary{background:#2d7f98;border-color:#2d7f98;color:#fff}
-        button.close{color:#9aa9ae}
+        .chip{background:#f5f5f4;color:#0b0b0b;border-color:#f5f5f4;box-shadow:0 0 0 1px #2a2a2a}
+        .chip::before{background:#6fbf98}
+        button{background:#f5f5f4;color:#0b0b0b;border-color:#c8c8c4}
+        button.primary{background:#f5f5f4;border-color:#f5f5f4;color:#0b0b0b}
+        button.close{color:#3a3a38}
+        button:hover{background:#e2e2df}
+        button:focus-visible{outline-color:#1f6b4a}
       }`;
     const box = document.createElement("div");
     box.className = "chip";

@@ -4,49 +4,64 @@
     <meta charset="utf-8">
     <meta name="viewport" content="width=device-width, initial-scale=1">
     <title>ResumeTailor options</title>
+    <link rel="stylesheet" href="theme.css">
     <link rel="stylesheet" href="options.css">
     <script type="module" src="options.js"></script>
   </head>
   <body>
     <main>
-      <h1>ResumeTailor extension</h1>
+      <header class="page-head">
+        <span class="wordmark"><i aria-hidden="true"></i>ResumeTailor</span>
+        <p class="eyebrow">Browser extension</p>
+        <h1>ResumeTailor extension</h1>
+      </header>
 
-      <section aria-labelledby="app-h">
+      <section class="tile" aria-labelledby="app-h">
         <h2 id="app-h">App connection</h2>
-        <label for="port">Port</label>
-        <div class="row">
-          <input id="port" inputmode="numeric" placeholder="Automatic (8000–8010)" autocomplete="off">
-          <button id="test-port" type="button">Test</button>
+        <div class="setting-row">
+          <div class="setting-copy">
+            <label for="port">Port</label>
+            <p class="muted">Leave empty to find ResumeTailor automatically. The extension only talks to 127.0.0.1.</p>
+          </div>
+          <div class="row controls">
+            <input id="port" class="mono" inputmode="numeric" placeholder="Automatic (8000–8010)" autocomplete="off">
+            <button id="test-port" type="button">Test</button>
+          </div>
         </div>
-        <p class="muted">Leave empty to find ResumeTailor automatically. The extension only talks to 127.0.0.1.</p>
         <p id="port-status" role="status" class="muted"></p>
       </section>
 
-      <section aria-labelledby="capture-h">
+      <section class="tile" aria-labelledby="capture-h">
         <h2 id="capture-h">After a capture</h2>
-        <p class="muted">For the keyboard shortcut, the right-click menu and the page chip.</p>
-        <label class="choice"><input type="radio" name="afterCapture" value="send"> Send it to ResumeTailor</label>
-        <label class="choice"><input type="radio" name="afterCapture" value="send+tailor"> Send it and start tailoring</label>
-        <p class="muted">Shortcut: <kbd id="shortcut">not set</kbd> · <a id="shortcuts" href="#">Change shortcuts</a></p>
+        <div class="setting-row">
+          <p class="muted">For the keyboard shortcut, the right-click menu and the page chip.</p>
+          <div class="choices">
+            <label class="choice"><input type="radio" name="afterCapture" value="send"> Send it to ResumeTailor</label>
+            <label class="choice"><input type="radio" name="afterCapture" value="send+tailor"> Send it and start tailoring</label>
+          </div>
+        </div>
+        <p class="muted section-footer">Shortcut: <kbd id="shortcut">not set</kbd> · <a id="shortcuts" href="#">Change shortcuts</a></p>
       </section>
 
-      <section aria-labelledby="boards-h">
+      <section class="tile" aria-labelledby="boards-h">
         <h2 id="boards-h">LinkedIn and Indeed</h2>
-        <p id="boards-status" class="muted"></p>
-        <div class="row">
-          <button id="boards-allow" type="button" class="primary">Allow on LinkedIn and Indeed</button>
-          <button id="boards-remove" type="button">Remove access</button>
+        <div class="setting-row">
+          <p id="boards-status" class="muted"></p>
+          <div class="row controls">
+            <button id="boards-allow" type="button" class="primary">Allow on LinkedIn and Indeed</button>
+            <button id="boards-remove" type="button" class="danger">Remove access</button>
+          </div>
         </div>
-        <label class="choice"><input id="page-chip" type="checkbox"> Show the “Save to ResumeTailor” chip on job pages</label>
-        <label class="choice"><input id="auto-complete" type="checkbox"> Save a saved job’s description when I open it</label>
-        <p class="muted">The extension only reads pages you open. It never clicks, scrolls or opens pages by itself.</p>
+        <label class="choice setting-toggle"><input id="page-chip" type="checkbox"> Show the “Save to ResumeTailor” chip on job pages</label>
+        <label class="choice setting-toggle"><input id="auto-complete" type="checkbox"> Save a saved job’s description when I open it</label>
+        <p class="muted section-footer">The extension only reads pages you open. It never clicks, scrolls or opens pages by itself.</p>
       </section>
 
       <details>
         <summary>Advanced</summary>
-        <section aria-labelledby="relay-h">
+        <section class="tile" aria-labelledby="relay-h">
           <h2 id="relay-h">Fill relay</h2>
-          <label class="choice"><input id="relay" type="checkbox"> Let Fill drive a tab I choose (asks for the debugger permission)</label>
+          <label class="choice setting-toggle"><input id="relay" type="checkbox"> Let Fill drive a tab I choose (asks for the debugger permission)</label>
           <p class="muted">Needs the relay running next to the app (see the extension README). Off by default.</p>
         </section>
       </details>

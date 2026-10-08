@@ -1,0 +1,120 @@
+/* Latin variable fonts from @fontsource-variable packages 5.3.0; SIL OFL. */
+@font-face {
+  font-family: "Geist";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("fonts/geist/geist-latin-wght-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Geist Mono";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("fonts/geist-mono/geist-mono-latin-wght-normal.woff2") format("woff2");
+}
+@font-face {
+  font-family: "Fraunces";
+  font-style: normal;
+  font-weight: 100 900;
+  font-display: swap;
+  src: url("fonts/fraunces/fraunces-latin-wght-normal.woff2") format("woff2");
+}
+
+:root {
+  color-scheme: light;
+  --page: #ffffff;
+  --chrome: #ffffff;
+  --tile: #f7f7f6;
+  --sunken: #efefed;
+  --field: #ffffff;
+  --line: #e2e2df;
+  --line-hover: #c8c8c4;
+  --ink: #0b0b0b;
+  --ink-2: #3a3a38;
+  --muted: #6b6b68;
+  --primary: #0b0b0b;
+  --on-primary: #ffffff;
+  --accent: #1f6b4a;
+  --success: #1f6b4a;
+  --attention: #1d4ed8;
+  --danger: #c42020;
+  --status-tint: 10%;
+  --selected: #1f6b4a;
+  --on-selected: #ffffff;
+  --selected-line: #1f6b4a;
+  --overlay: 0 8px 24px -12px rgb(0 0 0 / .18);
+  --radius: 4px;
+  --font-body: "Geist", system-ui, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, Consolas, monospace;
+  --font-display: "Fraunces", Georgia, "Times New Roman", serif;
+  accent-color: var(--accent);
+}
+@media (prefers-color-scheme: dark) {
+  :root {
+    color-scheme: dark;
+    --page: #0a0a0a;
+    --chrome: #0a0a0a;
+    --tile: #151515;
+    --sunken: #1d1d1d;
+    --field: #0f0f0f;
+    --line: #2a2a2a;
+    --line-hover: #3d3d3d;
+    --ink: #f5f5f4;
+    --ink-2: #d4d4d2;
+    --muted: #8f8f8c;
+    --primary: #ffffff;
+    --on-primary: #0b0b0b;
+    --accent: #6fbf98;
+    --success: #6fae90;
+    --attention: #8699cb;
+    --danger: #d17875;
+    --status-tint: 8%;
+    --selected: color-mix(in srgb, #6fbf98 12%, transparent);
+    --on-selected: #6fbf98;
+    --selected-line: #6fbf98;
+    --overlay: 0 0 0 1px var(--line);
+  }
+}
+
+* { box-sizing: border-box; }
+body { margin: 0; background: var(--page); color: var(--ink); font: 400 14px/1.5 var(--font-body); -webkit-font-smoothing: antialiased; }
+[hidden] { display: none !important; }
+h1, h2, h3, p { margin: 0; }
+h1 { font: 350 32px/1.1 var(--font-display); letter-spacing: -.015em; text-wrap: balance; }
+h2, h3 { font-size: 15px; font-weight: 600; }
+a { color: var(--accent); text-underline-offset: 3px; }
+button, input, select, textarea { font: inherit; }
+button, a.button { display: inline-flex; justify-content: center; align-items: center; gap: 6px; min-height: 36px; padding: 7px 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--field); color: var(--ink); font-size: 13px; font-weight: 500; line-height: 20px; cursor: pointer; text-decoration: none; }
+button:hover, a.button:hover { background: var(--sunken); border-color: var(--line-hover); }
+button.primary, .button.primary { background: var(--primary); color: var(--on-primary); border-color: var(--primary); }
+button.primary:hover, .button.primary:hover { background: color-mix(in srgb, var(--primary) 85%, var(--page)); }
+button:disabled { opacity: .5; cursor: not-allowed; }
+input:not([type="checkbox"]):not([type="radio"]), .field { min-width: 0; min-height: 36px; padding: 7px 10px; border: 1px solid var(--line-hover); border-radius: var(--radius); background: var(--field); color: var(--ink); }
+input::placeholder { color: var(--muted); opacity: 1; }
+input:focus { border-color: var(--accent); }
+input[type="checkbox"], input[type="radio"] { width: 16px; height: 16px; margin: 0; flex: none; }
+:focus-visible { outline: 2px solid var(--accent); outline-offset: 2px; }
+::selection { background: color-mix(in srgb, var(--accent) 25%, transparent); }
+.mono, kbd { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.muted { color: var(--muted); font-size: 12px; }
+.eyebrow { color: var(--muted); font: 500 11px/1.3 var(--font-mono); letter-spacing: .08em; text-transform: uppercase; }
+.wordmark { display: inline-flex; align-items: center; gap: 10px; font: 600 18px/1 var(--font-display); letter-spacing: -.015em; }
+.wordmark i { width: 10px; height: 10px; border-radius: 2px; background: var(--accent); flex: none; }
+.tile { background: var(--tile); border: 1px solid var(--line); border-radius: var(--radius); min-width: 0; }
+.chip, .status { display: inline-flex; align-items: center; gap: 6px; padding: 3px 7px; border-radius: var(--radius); background: var(--sunken); color: var(--ink-2); font-size: 11px; line-height: 16px; }
+.status.done { color: var(--success); background: color-mix(in srgb, var(--success) var(--status-tint), transparent); }
+.status.attention { color: var(--attention); background: color-mix(in srgb, var(--attention) var(--status-tint), transparent); }
+.status.failed { color: var(--danger); background: color-mix(in srgb, var(--danger) var(--status-tint), transparent); }
+.status.muted { color: var(--muted); }
+.status-mark { display: inline-block; flex: none; }
+.status.done .status-mark { width: 4px; height: 8px; border: solid currentColor; border-width: 0 1.7px 1.7px 0; transform: translateY(-1px) rotate(45deg); margin-inline: 1px; }
+.status.attention .status-mark { width: 8px; height: 8px; border: 1.7px solid currentColor; border-radius: 50%; }
+.status.failed .status-mark { width: 6px; height: 6px; background: currentColor; transform: rotate(45deg); margin-inline: 1px; }
+.status.neutral .status-mark { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.status.muted .status-mark { width: 7px; height: 1.7px; background: currentColor; }
+.status.live .status-mark { width: 10px; height: 10px; border: 1.7px solid var(--line-hover); border-top-color: var(--accent); border-radius: 50%; animation: spin .9s linear infinite; }
+.notice { padding: 10px 12px; border: 1px solid var(--line); border-left: 2px solid var(--attention); border-radius: var(--radius); background: var(--tile); color: var(--ink-2); font-size: 13px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+@media (pointer: coarse) { button, a.button, input:not([type="checkbox"]):not([type="radio"]), .field { min-height: 44px; } }
+@media (prefers-reduced-motion: reduce) { *, *::before, *::after { animation: none !important; transition: none !important; } }
