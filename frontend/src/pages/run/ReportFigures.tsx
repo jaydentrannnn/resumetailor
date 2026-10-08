@@ -51,7 +51,7 @@ export function ReportFigures({ report }: { report: RunReport }) {
 
   return (
     <div className="space-y-5">
-      <div className="flex flex-wrap gap-x-16 gap-y-4 pb-1">
+      <div className="flex flex-wrap items-start gap-x-10 gap-y-5 pb-1 sm:gap-x-16">
         {figures.map((figure, index) => (
           <Stat key={index} value={figure.value} label={figure.label} />
         ))}

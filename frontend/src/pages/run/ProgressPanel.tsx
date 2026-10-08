@@ -51,6 +51,9 @@ export function ProgressPanel() {
   const showStatus = busy || events.length > 0 || Boolean(error) || Boolean(report);
   const failed = status === "failed";
   const pct = Math.round(progress.value * 100);
+  // A failed or cancelled run reads 100% in `runProgress` (the bar fills red); the figure
+  // must not claim the run completed.
+  const stopped = !busy && (failed || status === "cancelled");
 
   return (
     <Tile
@@ -71,7 +74,10 @@ export function ProgressPanel() {
       ) : (
         <>
           <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
-            <Stat value={progress.indeterminate ? "…" : `${pct}%`} label="done" />
+            <Stat
+              value={stopped ? "—" : progress.indeterminate ? "…" : `${pct}%`}
+              label={busy ? "done so far" : stopped ? "stopped early" : "complete"}
+            />
             <span role="status" aria-live="polite">
               <StatusChip tone={STATUS_TONE[status ?? ""] ?? "live"}>{progress.label}</StatusChip>
             </span>

@@ -154,7 +154,7 @@ export function SkillsCard({
       )}
 
       {plan.warnings.map((w) => (
-        <p key={w} className="mt-3 text-sm text-attn">
+        <p key={w} className="mt-3 text-sm text-ink-muted">
           {w}
         </p>
       ))}
