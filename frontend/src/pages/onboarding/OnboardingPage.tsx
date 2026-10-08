@@ -1,3 +1,4 @@
+import { StepFrame } from "./StepFrame";
 import { useEffect, useState } from "react";
 import { useNavigate } from "react-router-dom";
 import {
@@ -6,7 +7,7 @@ import {
   type OnboardingField,
   type OnboardingState,
 } from "../../api";
-import { Button, Stepper } from "../../components/ui";
+import { Button, Page, PageHeader, Stepper } from "../../components/ui";
 import { describe } from "../../lib/errors";
 import { ONBOARDING_STEPS, stepIndex, type OnboardingStep } from "../../lib/onboarding";
 import { useToast } from "../../lib/toast";
@@ -63,24 +64,21 @@ export function OnboardingPage() {
   }
 
   return (
-    <div className="mx-auto max-w-3xl space-y-6">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h1 className="font-display text-3xl font-bold tracking-tight text-ink">
-            Welcome to ResumeTailor
-          </h1>
-          <p className="mt-1 text-sm text-ink-muted">
-            A few minutes of setup, then every resume you tailor keeps your own design.
-          </p>
-        </div>
-        {!state.completed && (
-          <Button variant="ghost" size="sm" onClick={skipAll} disabled={saving}>
-            Skip setup for now
-          </Button>
-        )}
-      </div>
+    <Page className="max-w-3xl!">
+      <PageHeader
+        eyebrow={state.step === "done" ? "SETUP · COMPLETE" : `SETUP · STEP ${current + 1} OF 5`}
+        title="Welcome to ResumeTailor"
+        description="Five short steps. You can change any of this later in Settings."
+        actions={
+          !state.completed && (
+            <Button variant="ghost" size="sm" onClick={skipAll} disabled={saving}>
+              Skip setup for now
+            </Button>
+          )
+        }
+      />
       <Stepper
-        steps={[...ONBOARDING_STEPS]}
+        steps={ONBOARDING_STEPS.filter((step) => step.id !== "done")}
         current={current}
         label="Setup steps"
         onSelect={(index) => void goTo(ONBOARDING_STEPS[index].id)}
@@ -147,52 +145,6 @@ export function OnboardingPage() {
           saving={saving}
         />
       )}
-    </div>
-  );
-}
-
-function StepFrame({
-  title,
-  intro,
-  children,
-  onBack,
-  onNext,
-  nextLabel = "Next",
-  saving,
-}: {
-  title: string;
-  intro: string;
-  children: React.ReactNode;
-  onBack?: () => void;
-  onNext?: () => void;
-  nextLabel?: string;
-  saving: boolean;
-}) {
-  return (
-    <section aria-labelledby="step-title" className="space-y-4">
-      <div>
-        <h2 id="step-title" className="text-xl font-semibold text-ink">
-          {title}
-        </h2>
-        <p className="mt-1 text-sm text-ink-muted">{intro}</p>
-      </div>
-      {children}
-      {(onBack || onNext) && (
-        <div className="flex flex-wrap justify-between gap-3 border-t border-line pt-4">
-          {onBack ? (
-            <Button variant="ghost" onClick={onBack} disabled={saving}>
-              Back
-            </Button>
-          ) : (
-            <span />
-          )}
-          {onNext && (
-            <Button variant="primary" onClick={onNext} loading={saving}>
-              {nextLabel}
-            </Button>
-          )}
-        </div>
-      )}
-    </section>
+    </Page>
   );
 }
