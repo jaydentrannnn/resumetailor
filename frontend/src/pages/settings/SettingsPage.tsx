@@ -34,11 +34,7 @@ export function SettingsPage() {
   const tab: TabId = TABS.some((t) => t.id === requested) ? (requested as TabId) : "models";
   return (
     <Page>
-      <PageHeader
-        title="Settings"
-        eyebrow="On this computer"
-        description="How ResumeTailor runs on this computer."
-      />
+      <PageHeader title="Settings" description="How ResumeTailor runs on this computer." />
       <div className="grid min-w-0 gap-6 lg:grid-cols-[180px_minmax(0,1fr)] lg:gap-8">
         <Tabs
           label="Settings sections"

@@ -86,6 +86,7 @@ export function SavedTemplatesPanel() {
               <TemplateThumb
                 src={`/api/template/library/${encodeURIComponent(entry.id)}/thumb.png?v=${encodeURIComponent(entry.created_at)}`}
                 alt={`First page of ${entry.label}`}
+                label={entry.label}
               />
               <div className="flex flex-1 flex-col gap-2 p-3">
                 {renamingId === entry.id ? (

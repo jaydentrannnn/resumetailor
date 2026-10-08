@@ -166,7 +166,6 @@ export function EditorPage({
         {!embedded && (
           <PageHeader
             title="Master resume"
-            eyebrow="PROFILE · RESUME CONTENT"
             description="Every fact a tailored resume can use lives here."
           />
         )}

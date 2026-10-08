@@ -22,7 +22,6 @@ export function VocabularyPage() {
     <Page>
       <PageHeader
         title="Vocabulary"
-        eyebrow="Writing vocabulary"
         back={<Link to="/settings">← Settings</Link>}
         description="The words the rewriter may use. Packs add verbs and terms for a field; additions are yours."
       />
@@ -44,7 +43,7 @@ export function VocabularyPage() {
         ]}
       />
       <Tabs
-        variant="segmented"
+        variant="underline"
         label="Vocabulary sections"
         items={[
           { id: "packs", label: "Packs" },

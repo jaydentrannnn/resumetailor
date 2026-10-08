@@ -3,10 +3,15 @@ import { SEGMENT_BASE, SEGMENT_OFF, SEGMENT_ON, SEGMENT_TRACK } from "./ui/Segme
 
 type TabItem = { id: string; label: string; count?: number };
 
+/** Shared appearance for page-section tabs and Profile's section links. */
+export function underlineTabClass(active: boolean): string {
+  return `rt-control -mb-px border-b px-3 py-2 text-sm ${active ? "border-selected-line font-semibold text-ink" : "border-transparent text-ink-muted hover:text-ink"}`;
+}
+
 /**
  * ARIA tabs (tablist/tab/aria-selected, roving tabindex, arrow/Home/End keys).
  * `variant="underline"` (default) is the page-level look: muted text, ink when selected,
- * a 2px accent underline. `variant="segmented"` is a contained control with the green
+ * an accent border. `variant="segmented"` is a contained control with the green
  * `selected` look, for switching a panel's view. `orientation="vertical"` stacks the tabs
  * as a side rail (Up/Down move). The roles and keyboard contract are identical in every
  * combination. A horizontal strip that overflows narrow screens scrolls the selected tab
@@ -69,8 +74,8 @@ export function Tabs({
     ? `${SEGMENT_TRACK} ${vertical ? "flex-col" : ""}`
     : vertical
       ? "flex flex-col gap-0.5"
-      : "flex gap-1 overflow-x-auto border-b border-line [scrollbar-width:none]";
-  return (
+      : "-mb-px flex gap-4 overflow-x-auto pb-px [scrollbar-width:none]";
+  const tabList = (
     <div
       ref={list}
       role="tablist"
@@ -85,7 +90,7 @@ export function Tabs({
           ? `${SEGMENT_BASE} ${on ? SEGMENT_ON : SEGMENT_OFF}`
           : vertical
             ? `flex items-center justify-between gap-2 rounded-sm px-3 py-2 text-left text-[13px] font-medium ${on ? "bg-panel text-ink shadow-[inset_2px_0_0_var(--color-accent)]" : "text-ink-muted hover:bg-sunken hover:text-ink"}`
-            : `relative h-10 shrink-0 whitespace-nowrap px-3 text-[13px] font-medium after:absolute after:inset-x-3 after:-bottom-px after:h-0.5 ${on ? "text-ink after:bg-accent" : "text-ink-muted after:bg-transparent hover:text-ink"}`;
+            : `${underlineTabClass(on)} shrink-0 whitespace-nowrap`;
         return (
           <button
             type="button"
@@ -109,5 +114,12 @@ export function Tabs({
         );
       })}
     </div>
+  );
+  // Keep the hairline outside the scroll strip so -mb-px can overlap it without
+  // the strip clipping the active tab's border.
+  return !segmented && !vertical ? (
+    <div className="min-w-0 border-b border-line">{tabList}</div>
+  ) : (
+    tabList
   );
 }

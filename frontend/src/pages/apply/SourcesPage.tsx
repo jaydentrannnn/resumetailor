@@ -17,7 +17,6 @@ export function SourcesPage() {
     <Page>
       <PageHeader
         title="Job sources"
-        eyebrow="DISCOVERY · SOURCES"
         description="Where new postings come from. Each source is checked on the nightly run, or when you find jobs."
         back={
           <Link to="/applications" className="text-sm text-ink-muted hover:text-ink">

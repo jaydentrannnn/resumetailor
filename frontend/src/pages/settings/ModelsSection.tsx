@@ -152,18 +152,25 @@ export function ModelsSection({ embedded = false }: { embedded?: boolean } = {})
         <div className="mt-4 border-t border-line pt-4">
           <SettingRow
             label="Connection"
+            layout="action"
             description={
-              result ? (
-                <CheckResultLine result={result} />
-              ) : (
-                "Send a small request to check the selected model."
-              )
+              <>
+                {result ? (
+                  <CheckResultLine result={result} />
+                ) : (
+                  "Send a small request to check the selected model."
+                )}
+                {!provider?.local && (
+                  <p className="mt-2">
+                    {settings.model === "ollama-cloud"
+                      ? "The test sends one tiny request (counts toward your Ollama plan)."
+                      : "The test sends one tiny request (a fraction of a cent)."}
+                  </p>
+                )}
+              </>
             }
           >
-            <div className="flex flex-wrap items-center gap-3">
-              <Button variant="secondary" loading={testing} onClick={runTest}>
-                Test connection
-              </Button>
+            <div className="flex w-full flex-wrap items-center justify-end gap-3">
               {provider?.link && (
                 <a
                   className="rt-link text-sm font-medium"
@@ -174,13 +181,9 @@ export function ModelsSection({ embedded = false }: { embedded?: boolean } = {})
                   {provider.link.label}
                 </a>
               )}
-              {!provider?.local && (
-                <span className="text-xs text-ink-muted">
-                  {settings.model === "ollama-cloud"
-                    ? "The test sends one tiny request (counts toward your Ollama plan)."
-                    : "The test sends one tiny request (a fraction of a cent)."}
-                </span>
-              )}
+              <Button variant="secondary" loading={testing} onClick={runTest}>
+                Test connection
+              </Button>
             </div>
           </SettingRow>
         </div>

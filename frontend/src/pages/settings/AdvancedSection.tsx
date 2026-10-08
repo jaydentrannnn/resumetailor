@@ -51,9 +51,10 @@ export function AdvancedSection() {
         </SettingRow>
         <SettingRow
           label="Skill vocabulary"
+          layout="action"
           description="Teach ResumeTailor that different spellings mean the same skill (for example, “MS Excel” and “Excel”)."
         >
-          <Link to="/vocabulary" className={buttonClass("secondary", "sm")}>
+          <Link to="/vocabulary" className={buttonClass("secondary", "md", "ml-auto")}>
             Open vocabulary
           </Link>
         </SettingRow>

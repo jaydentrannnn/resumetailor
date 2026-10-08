@@ -41,17 +41,16 @@ export function DocumentsSection() {
       >
         <SettingRow
           label="Conversion"
+          layout="action"
           description={
             <>
               Using <strong>{ENGINE_NAMES[engine] ?? engine}</strong>.
               {engine === "soffice" && " LibreOffice is free; install it if the test below fails."}
+              {result && <CheckResultLine result={result} />}
             </>
           }
         >
-          <div className="flex flex-wrap items-center gap-3">
-            <Button variant="secondary" onClick={run} loading={testing}>
-              Test PDF conversion
-            </Button>
+          <div className="flex w-full flex-wrap items-center justify-end gap-3">
             {engine === "soffice" && (
               <a
                 className="rt-link text-sm font-medium"
@@ -62,9 +61,11 @@ export function DocumentsSection() {
                 Get LibreOffice
               </a>
             )}
+            <Button variant="secondary" onClick={run} loading={testing}>
+              Test PDF conversion
+            </Button>
           </div>
         </SettingRow>
-        {result && <CheckResultLine result={result} />}
       </Card>
       <Card
         title="Page fit"
@@ -72,13 +73,14 @@ export function DocumentsSection() {
       >
         <SettingRow
           label="Calibration"
+          layout="action"
           description={
             calibrated
               ? `Tuned for your template (${config?.chars_per_line} characters per line, ${config?.lines_per_page} lines per page).`
               : "Using estimates. Tune it once from the Template page for exact page fit."
           }
         >
-          <Link to="/template" className={buttonClass("secondary", "md")}>
+          <Link to="/template" className={buttonClass("secondary", "md", "ml-auto")}>
             Open Template
           </Link>
         </SettingRow>

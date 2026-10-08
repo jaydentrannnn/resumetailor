@@ -87,6 +87,7 @@ export function StarterTemplatesPanel({
             <TemplateThumb
               src={defaultTemplateThumbUrl(t.name)}
               alt={`Sample page in the ${t.label} template`}
+              label={t.label}
             />
             <div className="flex flex-1 flex-col gap-2 p-3">
               <div className="flex flex-wrap items-center gap-2">

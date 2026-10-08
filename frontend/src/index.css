@@ -213,6 +213,11 @@ input:not([type="checkbox"]):not([type="radio"]),
 /* Header pills (setup, update, automation, settings) share one exact type size; the
    uiDisplay e2e pins 12px/16px/600 at a 36px (44px touch) height. */
 /* Header logo mark: black art in light, white art in dark (data-theme is always resolved). */
+.rt-logo-light,
+.rt-logo-dark {
+  /* Fraunces caps sit 0.5px above the line box's centre at the header's 18px size. */
+  transform: translateY(-0.5px);
+}
 .rt-logo-dark {
   display: none;
 }

@@ -47,7 +47,6 @@ export function TemplatePage() {
     <Page>
       <PageHeader
         title="Template"
-        eyebrow={`Active: ${info?.active_label || "No template"}`}
         description="The Word document every tailored resume is poured into. Only the words change; the look stays yours."
       />
       <Tile aria-label="Current template">
@@ -58,6 +57,7 @@ export function TemplatePage() {
                 revision={previewRevision}
                 pending={pendingTemplate}
                 refreshKey={previewKey}
+                activeLabel={info?.active_label}
               />
             ) : (
               <p className="py-8 text-sm text-ink-muted">

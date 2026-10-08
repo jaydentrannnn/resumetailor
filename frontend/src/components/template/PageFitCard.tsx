@@ -49,6 +49,12 @@ export function PageFitCard({ calibration }: { calibration: CalibrationInfo }) {
             or installing fonts.
           </p>
         </div>
+      </div>
+      <div className="mt-5 flex flex-wrap items-end justify-between gap-4">
+        <div className="flex flex-wrap gap-x-10 gap-y-4">
+          <Stat value={calibration.lines_per_page} label="lines per page" />
+          <Stat value={calibration.chars_per_line} label="characters per line" />
+        </div>
         <Button
           variant={tuned && !calibration.stale ? "secondary" : "primary"}
           loading={running}
@@ -57,10 +63,6 @@ export function PageFitCard({ calibration }: { calibration: CalibrationInfo }) {
         >
           {running ? "Measuring…" : "Tune page fit"}
         </Button>
-      </div>
-      <div className="mt-5 flex flex-wrap gap-x-10 gap-y-4">
-        <Stat value={calibration.lines_per_page} label="lines per page" />
-        <Stat value={calibration.chars_per_line} label="characters per line" />
       </div>
       <p className="mt-4 font-mono text-xs text-ink-muted">
         {tuned && calibration.calibrated_at

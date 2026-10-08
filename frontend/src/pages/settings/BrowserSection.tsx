@@ -129,26 +129,32 @@ export function BrowserSection() {
       <Card title="Pair a browser">
         <SettingRow
           label="Pairing code"
-          description="Type the code into the ResumeTailor extension popup."
+          layout="action"
+          description={
+            <>
+              <p>Type the code into the ResumeTailor extension popup.</p>
+              {code && remaining > 0 ? (
+                <div className="space-y-2">
+                  <p
+                    className="font-mono text-3xl tracking-widest"
+                    aria-label={`Pairing code ${code}`}
+                  >
+                    {code}
+                  </p>
+                  <p className="text-sm text-ink-muted" role="timer">
+                    Expires in {pairingCountdown(remaining)}
+                  </p>
+                </div>
+              ) : code ? (
+                <p className="text-sm text-ink-muted">Code expired.</p>
+              ) : null}
+              {code && <p className="mt-2">A new code replaces the previous one.</p>}
+            </>
+          }
         >
-          {code && remaining > 0 ? (
-            <div className="space-y-2">
-              <p className="font-mono text-3xl tracking-widest" aria-label={`Pairing code ${code}`}>
-                {code}
-              </p>
-              <p className="text-sm text-ink-muted" role="timer">
-                Expires in {pairingCountdown(remaining)}
-              </p>
-            </div>
-          ) : code ? (
-            <p className="text-sm text-ink-muted">Code expired.</p>
-          ) : null}
-          <Button loading={creating} onClick={() => void createCode()}>
+          <Button className="ml-auto" loading={creating} onClick={() => void createCode()}>
             {code ? "New code" : "Pair a browser"}
           </Button>
-          {code && (
-            <p className="mt-2 text-xs text-ink-muted">A new code replaces the previous one.</p>
-          )}
         </SettingRow>
       </Card>
       <Card title="Paired browsers">

@@ -66,7 +66,6 @@ export function OnboardingPage() {
   return (
     <Page className="max-w-3xl!">
       <PageHeader
-        eyebrow={state.step === "done" ? "SETUP · COMPLETE" : `SETUP · STEP ${current + 1} OF 5`}
         title="Welcome to ResumeTailor"
         description="Five short steps. You can change any of this later in Settings."
         actions={

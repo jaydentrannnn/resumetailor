@@ -76,6 +76,7 @@ export function PacksSection() {
       <div className="mt-5 bg-panel [&_thead]:bg-sunken">
         <DataTable
           bare
+          className="[&_table]:table-auto"
           rows={packs}
           id={(pack) => pack.id}
           selected={new Set()}
@@ -91,7 +92,6 @@ export function PacksSection() {
             {
               id: "pack",
               heading: "Pack",
-              className: "w-[25%]",
               cell: (pack) => (
                 <div className="space-y-2">
                   <span className="font-medium">{pack.label}</span>
@@ -105,22 +105,25 @@ export function PacksSection() {
             {
               id: "description",
               heading: "Field",
-              className: "w-[30%]",
+              className: "w-[28%]",
               cell: (pack) => <span className="text-xs text-ink-muted">{pack.description}</span>,
             },
             {
               id: "verbs",
               heading: "Verbs",
+              className: "w-[4.5rem] text-right font-mono",
               cell: (pack) => <span className="font-mono">{pack.verb_count}</span>,
             },
             {
               id: "aliases",
               heading: "Aliases",
+              className: "w-[5rem] text-right font-mono",
               cell: (pack) => <span className="font-mono">{pack.tag_alias_count}</span>,
             },
             {
               id: "on",
               heading: "On",
+              className: "w-[3rem] text-right font-mono",
               cell: (pack) => (
                 <input
                   type="checkbox"
@@ -134,9 +137,9 @@ export function PacksSection() {
             {
               id: "actions",
               heading: "Actions",
-              className: "w-[20%]",
+              className: "w-px text-right whitespace-nowrap",
               cell: (pack) => (
-                <div className="flex flex-wrap gap-1">
+                <div className="flex justify-end gap-1">
                   <button
                     type="button"
                     onClick={() => setEditingPackId(pack.id)}

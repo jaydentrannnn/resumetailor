@@ -32,9 +32,14 @@ export function AboutSection() {
       <Card title="Get help">
         <SettingRow
           label="Diagnostics"
+          layout="action"
           description="The diagnostics file shows what the app did, with your name, contact details, keys and passwords removed. Attach it when you report a problem."
         >
-          <a className={buttonClass("secondary")} href="/api/diagnostics.zip" download>
+          <a
+            className={buttonClass("secondary", "md", "ml-auto")}
+            href="/api/diagnostics.zip"
+            download
+          >
             Download diagnostics
           </a>
         </SettingRow>

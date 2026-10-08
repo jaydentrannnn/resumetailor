@@ -31,8 +31,7 @@ export function RunPage() {
     flushSettings,
     startJob,
   } = useRunState();
-  const { switching, activeId, activeLabel } = useWorkspaceState();
-  const resumeName = activeLabel || config?.contact_name;
+  const { switching, activeId } = useWorkspaceState();
 
   async function onSubmit(e: React.FormEvent) {
     e.preventDefault();
@@ -98,7 +97,6 @@ export function RunPage() {
   return (
     <Page width="wide">
       <PageHeader
-        eyebrow={resumeName ? `Resume: ${resumeName}` : undefined}
         title="Tailor resume"
         description="Paste a job posting. Your bullets are rewritten to match it, and the document keeps its original layout."
       />

@@ -2,6 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import { getOnboarding, type ApplicantProfile } from "../../api";
 import { ProfileGapBanner } from "../../components/ProfileGapBanner";
+import { underlineTabClass } from "../../components/Tabs";
 import { Button, Page, PageHeader, StatusMark } from "../../components/ui";
 import {
   GAP_FIELD_ALIASES,
@@ -19,7 +20,6 @@ import { useToast } from "../../lib/toast";
 import { useApplicantProfile } from "../../state/applicantProfileState";
 import { useConfirm } from "../../state/confirmState";
 import { useEditorState } from "../../state/editorState";
-import { useWorkspaceState } from "../../state/workspaceState";
 import { EditorPage } from "../editor/EditorPage";
 import { ApplicationTab } from "./ApplicationTab";
 import type { FieldContext, FieldValue } from "./fieldContext";
@@ -47,7 +47,6 @@ export function ProfilePage() {
       ? "application"
       : "personal";
   const editor = useEditorState();
-  const { activeLabel } = useWorkspaceState();
   const applicant = useApplicantProfile();
   const toast = useToast();
   const { confirm } = useConfirm();
@@ -187,7 +186,6 @@ export function ProfilePage() {
     <Page className="pb-4">
       <PageHeader
         title="Profile"
-        eyebrow={`PROFILE · ${activeLabel ?? "Default"}`}
         description="Your resume content and the details application forms ask for, saved together."
       />
       <nav aria-label="Profile sections" className="flex flex-wrap gap-4 border-b border-line">
@@ -196,7 +194,7 @@ export function ProfilePage() {
             key={id}
             to={`/profile/${id}`}
             aria-current={tab === id ? "page" : undefined}
-            className={`rt-control -mb-px border-b px-3 py-2 text-sm ${tab === id ? "border-selected-line font-semibold text-ink" : "border-transparent text-ink-muted hover:text-ink"}`}
+            className={underlineTabClass(tab === id)}
           >
             {label}
           </Link>
