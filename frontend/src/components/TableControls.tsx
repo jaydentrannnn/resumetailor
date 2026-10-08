@@ -131,6 +131,17 @@ export function DataTable<T>({
     if (checkbox.current) checkbox.current.indeterminate = some && !all;
     if (mobileCheckbox.current) mobileCheckbox.current.indeterminate = some && !all;
   }, [some, all]);
+  const toggleRow = (row: T) => {
+    const next = new Set(selected);
+    if (next.has(id(row))) next.delete(id(row));
+    else next.add(id(row));
+    onSelected(next);
+  };
+  const togglePage = (checked: boolean) => {
+    const next = new Set(selected);
+    eligible.forEach((row) => (checked ? next.add(id(row)) : next.delete(id(row))));
+    onSelected(next);
+  };
   return (
     <div
       className={`overflow-x-auto ${bare ? "" : "rounded-sm border border-line bg-panel"} ${className}`.trim()}
@@ -151,45 +162,17 @@ export function DataTable<T>({
                   aria-label="Select this page"
                   checked={all}
                   disabled={!eligible.length}
-                  onChange={(e) => {
-                    const next = new Set(selected);
-                    eligible.forEach((row) =>
-                      e.target.checked ? next.add(id(row)) : next.delete(id(row)),
-                    );
-                    onSelected(next);
-                  }}
+                  onChange={(e) => togglePage(e.target.checked)}
                 />
               </th>
             )}
             {columns.map((col) => (
-              <th
+              <HeaderCell
                 key={col.id}
-                className={`rt-eyebrow px-2 py-2.5 text-left ${col.className ?? ""}`}
-                aria-sort={
-                  col.sortable
-                    ? sort === col.id
-                      ? direction === "asc"
-                        ? "ascending"
-                        : "descending"
-                      : "none"
-                    : undefined
-                }
-              >
-                {col.sortable ? (
-                  <button
-                    type="button"
-                    className="rt-eyebrow rt-row-action text-left hover:text-ink"
-                    onClick={() => onSort(col.id)}
-                  >
-                    {col.heading}{" "}
-                    <span aria-hidden="true">
-                      {sort === col.id ? (direction === "asc" ? "↑" : "↓") : ""}
-                    </span>
-                  </button>
-                ) : (
-                  col.heading
-                )}
-              </th>
+                col={col}
+                sorted={sort === col.id ? direction : null}
+                onSort={onSort}
+              />
             ))}
           </tr>
         </thead>
@@ -207,12 +190,7 @@ export function DataTable<T>({
                     aria-label={label(row)}
                     checked={selected.has(id(row))}
                     disabled={!canSelect(row)}
-                    onChange={() => {
-                      const next = new Set(selected);
-                      if (next.has(id(row))) next.delete(id(row));
-                      else next.add(id(row));
-                      onSelected(next);
-                    }}
+                    onChange={() => toggleRow(row)}
                   />
                 </td>
               )}
@@ -237,13 +215,7 @@ export function DataTable<T>({
               aria-label="Select this page"
               checked={all}
               disabled={!eligible.length}
-              onChange={(e) => {
-                const next = new Set(selected);
-                eligible.forEach((row) =>
-                  e.target.checked ? next.add(id(row)) : next.delete(id(row)),
-                );
-                onSelected(next);
-              }}
+              onChange={(e) => togglePage(e.target.checked)}
             />{" "}
             Select this page
           </label>
@@ -261,12 +233,7 @@ export function DataTable<T>({
                   aria-label={label(row)}
                   checked={selected.has(id(row))}
                   disabled={!canSelect(row)}
-                  onChange={() => {
-                    const next = new Set(selected);
-                    if (next.has(id(row))) next.delete(id(row));
-                    else next.add(id(row));
-                    onSelected(next);
-                  }}
+                  onChange={() => toggleRow(row)}
                 />{" "}
                 Select
               </label>
@@ -286,6 +253,45 @@ export function DataTable<T>({
         </div>
       )}
     </div>
+  );
+}
+
+/** A column heading; a sortable one is a button that shows and announces its order. */
+function HeaderCell<T>({
+  col,
+  sorted,
+  onSort,
+}: {
+  col: TableColumn<T>;
+  sorted: "asc" | "desc" | null;
+  onSort: (id: string) => void;
+}) {
+  return (
+    <th
+      className={`rt-eyebrow px-2 py-2.5 text-left ${col.className ?? ""}`}
+      aria-sort={
+        col.sortable
+          ? sorted === "asc"
+            ? "ascending"
+            : sorted === "desc"
+              ? "descending"
+              : "none"
+          : undefined
+      }
+    >
+      {col.sortable ? (
+        <button
+          type="button"
+          className="rt-eyebrow rt-row-action text-left hover:text-ink"
+          onClick={() => onSort(col.id)}
+        >
+          {col.heading}{" "}
+          <span aria-hidden="true">{sorted === "asc" ? "↑" : sorted === "desc" ? "↓" : ""}</span>
+        </button>
+      ) : (
+        col.heading
+      )}
+    </th>
   );
 }
 

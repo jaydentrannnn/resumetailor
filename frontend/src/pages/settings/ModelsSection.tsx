@@ -83,35 +83,12 @@ export function ModelsSection({ embedded = false }: { embedded?: boolean } = {})
           label="Provider"
           description="Choose where the model runs. Local providers need no API key."
         >
-          <fieldset disabled={!settingsLoaded} className="divide-y divide-line">
-            <legend className="sr-only">Provider</legend>
-            {options.map((id) => {
-              const info = providerInfo(id);
-              const checked = settings.model === id;
-              return (
-                <label
-                  key={id}
-                  className={`flex cursor-pointer gap-3 py-3 first:pt-0 ${
-                    checked ? "text-accent" : "text-ink-muted"
-                  }`}
-                >
-                  <input
-                    type="radio"
-                    name="provider"
-                    className="mt-1"
-                    checked={checked}
-                    onChange={() => setSettings({ ...settings, model: id, model_name: null })}
-                  />
-                  <span>
-                    <span className="block font-semibold text-ink">{info?.name ?? id}</span>
-                    <span className="block text-sm text-ink-muted">
-                      {info?.summary ?? "Advanced routing profile."}
-                    </span>
-                  </span>
-                </label>
-              );
-            })}
-          </fieldset>
+          <ProviderPicker
+            options={options}
+            value={settings.model}
+            disabled={!settingsLoaded}
+            onPick={(id) => setSettings({ ...settings, model: id, model_name: null })}
+          />
         </SettingRow>
 
         <div className="mt-4 grid gap-4 border-t border-line pt-4 sm:grid-cols-2">
@@ -235,5 +212,50 @@ export function ModelsSection({ embedded = false }: { embedded?: boolean } = {})
         </ul>
       </Card>
     </div>
+  );
+}
+
+/** The provider radio list: name and one-line summary, the chosen one marked. */
+function ProviderPicker({
+  options,
+  value,
+  disabled,
+  onPick,
+}: {
+  options: string[];
+  value: string;
+  disabled: boolean;
+  onPick: (id: string) => void;
+}) {
+  return (
+    <fieldset disabled={disabled} className="divide-y divide-line">
+      <legend className="sr-only">Provider</legend>
+      {options.map((id) => {
+        const info = providerInfo(id);
+        const checked = value === id;
+        return (
+          <label
+            key={id}
+            className={`flex cursor-pointer gap-3 py-3 first:pt-0 ${
+              checked ? "text-accent" : "text-ink-muted"
+            }`}
+          >
+            <input
+              type="radio"
+              name="provider"
+              className="mt-1"
+              checked={checked}
+              onChange={() => onPick(id)}
+            />
+            <span>
+              <span className="block font-semibold text-ink">{info?.name ?? id}</span>
+              <span className="block text-sm text-ink-muted">
+                {info?.summary ?? "Advanced routing profile."}
+              </span>
+            </span>
+          </label>
+        );
+      })}
+    </fieldset>
   );
 }

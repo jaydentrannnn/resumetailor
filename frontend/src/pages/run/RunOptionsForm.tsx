@@ -154,10 +154,6 @@ function MoreOptions({ config, settings, onChange, disabled }: FormProps) {
     });
   }
 
-  const fillValue = settings.fill_target ?? config?.fill_target ?? 0.93;
-  const initialShareValue = settings.initial_bullet_share ?? config?.initial_bullet_share ?? 1;
-  const experienceShareValue =
-    settings.experience_bullet_share ?? config?.experience_bullet_share ?? 0.65;
   const coverOn = settings.cover_letter && !settings.no_cover_letter;
 
   return (
@@ -191,31 +187,87 @@ function MoreOptions({ config, settings, onChange, disabled }: FormProps) {
           />
         </Field>
       </div>
-      {coverOn && (
-        <div className="space-y-3 border-y border-line py-3">
-          <p className="text-xs text-ink-muted">
-            Optional cover letter angles for this application. Leave blank for the default letter.
-          </p>
-          {(
-            [
-              ["why_company", "Why this company"],
-              ["problem", "Problem to solve"],
-              ["approach", "Your approach"],
-            ] as const
-          ).map(([key, label]) => (
-            <Field key={key} label={label}>
-              <textarea
-                value={settings.cover_angles[key]}
-                onChange={(e) =>
-                  set("cover_angles", { ...settings.cover_angles, [key]: e.target.value })
-                }
-                rows={2}
-                className="field"
-              />
-            </Field>
+      {coverOn && <CoverAngles settings={settings} set={set} />}
+      <BulletBudget config={config} settings={settings} set={set} />
+      <Field
+        label="Max bullets per entry"
+        help="Cap on how many bullets any single job or project may take."
+      >
+        <select
+          value={settings.max_bullets_per_entry ?? ""}
+          onChange={(e) =>
+            set("max_bullets_per_entry", e.target.value === "" ? null : Number(e.target.value))
+          }
+          className="field"
+        >
+          <option value="">No limit</option>
+          {[2, 3, 4, 5, 6].map((n) => (
+            <option key={n} value={n}>
+              {n}
+            </option>
           ))}
-        </div>
-      )}
+        </select>
+      </Field>
+      <StageToggles settings={settings} set={set} />
+      <RunStyleRules config={config} settings={settings} set={set} />
+      <button
+        type="button"
+        onClick={resetDefaults}
+        className="text-xs text-ink-muted underline-offset-2 hover:text-ink hover:underline"
+      >
+        Reset options to defaults
+      </button>
+    </fieldset>
+  );
+}
+
+type Setter = <K extends keyof JobSettings>(key: K, value: JobSettings[K]) => void;
+
+/** Optional cover-letter angles, shown while a cover letter is on. */
+function CoverAngles({ settings, set }: { settings: JobSettings; set: Setter }) {
+  return (
+    <div className="space-y-3 border-y border-line py-3">
+      <p className="text-xs text-ink-muted">
+        Optional cover letter angles for this application. Leave blank for the default letter.
+      </p>
+      {(
+        [
+          ["why_company", "Why this company"],
+          ["problem", "Problem to solve"],
+          ["approach", "Your approach"],
+        ] as const
+      ).map(([key, label]) => (
+        <Field key={key} label={label}>
+          <textarea
+            value={settings.cover_angles[key]}
+            onChange={(e) =>
+              set("cover_angles", { ...settings.cover_angles, [key]: e.target.value })
+            }
+            rows={2}
+            className="field"
+          />
+        </Field>
+      ))}
+    </div>
+  );
+}
+
+/** Page fill target, first-draft share and the experience/projects weighting. */
+function BulletBudget({
+  config,
+  settings,
+  set,
+}: {
+  config: AppConfig | null;
+  settings: JobSettings;
+  set: Setter;
+}) {
+  const fillValue = settings.fill_target ?? config?.fill_target ?? 0.93;
+  const initialShareValue = settings.initial_bullet_share ?? config?.initial_bullet_share ?? 1;
+  const experienceShareValue =
+    settings.experience_bullet_share ?? config?.experience_bullet_share ?? 0.65;
+  return (
+    <>
       <Field
         label={`Page fill target (${Math.round(fillValue * 100)}%)`}
         help="Grow when measured fill is below this. Lower = sparser page, fewer rewrites."
@@ -265,39 +317,9 @@ function MoreOptions({ config, settings, onChange, disabled }: FormProps) {
           />
         </Field>
       )}
-      <Field
-        label="Max bullets per entry"
-        help="Cap on how many bullets any single job or project may take."
-      >
-        <select
-          value={settings.max_bullets_per_entry ?? ""}
-          onChange={(e) =>
-            set("max_bullets_per_entry", e.target.value === "" ? null : Number(e.target.value))
-          }
-          className="field"
-        >
-          <option value="">No limit</option>
-          {[2, 3, 4, 5, 6].map((n) => (
-            <option key={n} value={n}>
-              {n}
-            </option>
-          ))}
-        </select>
-      </Field>
-      <StageToggles settings={settings} set={set} />
-      <RunStyleRules config={config} settings={settings} set={set} />
-      <button
-        type="button"
-        onClick={resetDefaults}
-        className="text-xs text-ink-muted underline-offset-2 hover:text-ink hover:underline"
-      >
-        Reset options to defaults
-      </button>
-    </fieldset>
+    </>
   );
 }
-
-type Setter = <K extends keyof JobSettings>(key: K, value: JobSettings[K]) => void;
 
 const STAGE_TOGGLES: {
   key: "merge" | "no_cache" | "no_expand" | "no_skills" | "no_facets" | "suggest_vocabulary";
