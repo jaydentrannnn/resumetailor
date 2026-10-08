@@ -48,8 +48,8 @@ Use the Tailwind classes (`bg-panel`, `text-ink-muted`, `border-line`), never ra
 | `scrim` | 40% black | 60% black | modal backdrop |
 | `doc-preview` | `#ffffff` | `#ffffff` | an actual white PDF page; not a UI surface |
 
-Retired, kept only as aliases until integration deletes them: `warn`, `warn-soft`,
-`warning`, `info`, `info-soft` (all → `attn`) and `bg` (→ `paper`). Do not use them.
+The old `warn`, `warn-soft`, `warning`, `info`, `info-soft` and `bg` tokens were deleted at
+integration; use `attn`/`attn-soft` (or `ink-muted` for a plain note) and `paper`.
 
 Radius: `--radius-sm` … `--radius-4xl` are all 4px, so `rounded-md` and `rounded-lg` are
 4px too; prefer `rounded-sm`. `rounded-xs` is 2px for tiny marks. Shadow: `shadow-2xs` …

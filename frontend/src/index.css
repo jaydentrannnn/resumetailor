@@ -52,15 +52,6 @@
   /* Modal / drawer backdrop. */
   --color-scrim: rgb(0 0 0 / 0.4);
 
-  /* Retired tokens, kept as aliases until every page has moved off them; deleted at
-     integration (plan Phase 3). Do not use in new code. */
-  --color-bg: var(--color-paper);
-  --color-warn: var(--color-attn);
-  --color-warn-soft: var(--color-attn-soft);
-  --color-warning: var(--color-attn);
-  --color-info: var(--color-attn);
-  --color-info-soft: var(--color-attn-soft);
-
   /* Same value in both themes — represents an actual white document/PDF page
      behind a preview iframe, not a UI surface, so it does not follow data-theme. */
   --color-doc-preview: #ffffff;
