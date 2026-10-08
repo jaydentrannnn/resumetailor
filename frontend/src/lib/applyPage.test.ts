@@ -12,6 +12,7 @@ import {
   formatEta,
   operationEtaSeconds,
   operationHeadline,
+  readyBlockLabel,
   resolveApplyTab,
   reviewReason,
 } from "./applyPage";
@@ -172,6 +173,25 @@ describe("fillBlockers", () => {
     expect(fillBlockers([row({ status: "discovered" }), row({ status: "skipped" })])).toBe(
       "2 selected can't be filled yet: 1 not tailored, 1 already finished",
     );
+  });
+});
+
+describe("readyBlockLabel", () => {
+  const blocked = (reasons: string[], status = "ready") =>
+    readyBlockLabel(row({ status, preparation_eligible: false, preparation_reasons: reasons }));
+
+  it("is null for a fillable ready row and for any other status", () => {
+    expect(readyBlockLabel(row({ status: "ready" }))).toBeNull();
+    expect(blocked(["resume_quality_ack_required"])).toBeNull();
+    expect(blocked(["resume_quality_unverified"], "discovered")).toBeNull();
+  });
+
+  it("names the resume, the cover letter, or the files", () => {
+    expect(blocked(["resume_quality_unverified"])).toBe("Check resume");
+    expect(blocked(["missing_configured_cover_letter", "missing_resume"])).toBe("Check resume");
+    expect(blocked(["missing_configured_cover_letter"])).toBe("Check cover letter");
+    expect(blocked(["invalid_expansion"])).toBe("Check files");
+    expect(blocked([])).toBe("Check files");
   });
 });
 

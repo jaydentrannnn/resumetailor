@@ -135,6 +135,24 @@ export function reviewReason(row: ApplicationRow): ReviewReason {
   return { why: "Check the form before it is submitted", action: "Review" };
 }
 
+const RESUME_BLOCKS = new Set(["resume_quality_unverified", "missing_resume"]);
+const COVER_LETTER_BLOCKS = new Set(["missing_configured_cover_letter"]);
+
+/**
+ * The attention label for a ready row the server will not fill (`canFillAfterReview`
+ * false), from its `preparation_reasons`: the resume ("Check resume"), the cover letter,
+ * or any other file problem. Null when the row can be filled.
+ */
+export function readyBlockLabel(
+  row: Pick<ApplicationRow, "status" | "preparation_eligible" | "preparation_reasons">,
+): string | null {
+  if (row.status !== "ready" || canFillAfterReview(row)) return null;
+  const reasons = row.preparation_reasons ?? [];
+  if (reasons.some((reason) => RESUME_BLOCKS.has(reason))) return "Check resume";
+  if (reasons.some((reason) => COVER_LETTER_BLOCKS.has(reason))) return "Check cover letter";
+  return "Check files";
+}
+
 /** Why some selected rows can't be filled, e.g. "2 selected can't be filled yet: not tailored". */
 export function fillBlockers(rows: ApplicationRow[]): string | null {
   const reasons = new Map<string, number>();
