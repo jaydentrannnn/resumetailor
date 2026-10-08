@@ -90,7 +90,7 @@ export function PersonalTab({
                   {overridden && (
                     <button
                       type="button"
-                      className="mt-1 text-xs text-accent underline"
+                      className="rt-link mt-1 text-xs"
                       onClick={() => ctx.set(pair.applicant, "")}
                     >
                       Use resume value

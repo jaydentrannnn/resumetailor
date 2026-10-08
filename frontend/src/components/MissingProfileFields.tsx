@@ -18,7 +18,7 @@ export function MissingProfileFields({ items }: { items: MissingProfileField[] }
       <ul className="mt-1 space-y-1">
         {items.map((item) => (
           <li key={item.key}>
-            <Link className="font-medium text-ink underline underline-offset-2" to={item.path}>
+            <Link className="rt-link font-medium" to={item.path}>
               {item.field_label}
             </Link>
             <span className="text-ink-muted">

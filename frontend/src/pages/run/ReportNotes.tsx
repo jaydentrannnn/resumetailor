@@ -144,9 +144,7 @@ function GapList({
       {title} <span className="font-mono text-xs font-normal text-ink-muted">{items.length}</span>
     </span>
   );
-  const link = (
-    <span className="text-xs font-medium text-ink underline underline-offset-2">{action}</span>
-  );
+  const link = <span className="rt-link text-xs font-medium">{action}</span>;
   const body = (
     <>
       <p className="mt-1 text-xs text-ink-muted">{note}</p>

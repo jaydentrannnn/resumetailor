@@ -91,7 +91,7 @@ export function JobSearchEditor({
         <p role="alert" className="rounded-md bg-attn-soft p-2.5 text-xs text-attn">
           Connect {label} first: searches return nothing until its keys are saved.{" "}
           {onConnect && (
-            <button type="button" className="font-medium text-accent underline" onClick={onConnect}>
+            <button type="button" className="rt-link font-medium" onClick={onConnect}>
               Connect {label}
             </button>
           )}

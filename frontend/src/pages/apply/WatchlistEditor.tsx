@@ -101,7 +101,7 @@ export function WatchlistEditor({
         </p>
       )}
       {suggestions === null ? (
-        <button type="button" className="text-xs text-accent underline" onClick={showSuggestions}>
+        <button type="button" className="rt-link text-xs" onClick={showSuggestions}>
           Suggested companies
         </button>
       ) : (

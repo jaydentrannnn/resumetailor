@@ -285,7 +285,7 @@ export function ApplySettingsDrawer({
         <Section title="Autofill model">
           <p className="text-xs text-ink-muted">
             Writes answers to form questions. Tailoring uses{" "}
-            <Link className="text-ink underline underline-offset-2" to="/settings?tab=models">
+            <Link className="rt-link" to="/settings?tab=models">
               {tailorModelLabel(settings, config)}
             </Link>
             .

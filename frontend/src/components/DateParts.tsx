@@ -66,7 +66,7 @@ export function DateParts({
         </span>
         <button
           type="button"
-          className="text-xs text-accent underline"
+          className="rt-link text-xs"
           onClick={() => {
             setParts(EMPTY_PARTS);
             emit("");

@@ -157,6 +157,16 @@
   letter-spacing: -0.005em;
   color: var(--color-ink);
 }
+/* Inline text link: ink, underlined, accent on hover. Don't add a text-colour class
+   beside it; the hover colour belongs to the utility. */
+@utility rt-link {
+  color: var(--color-ink);
+  text-decoration-line: underline;
+  text-underline-offset: 2px;
+  &:hover {
+    color: var(--color-accent);
+  }
+}
 
 html,
 body,

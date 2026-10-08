@@ -110,7 +110,7 @@ export function SetupHealth() {
                     <Link
                       to={item.fix.to}
                       onClick={() => setOpen(false)}
-                      className="mt-1 inline-block text-xs font-semibold text-accent underline-offset-2 hover:underline"
+                      className="rt-link mt-1 inline-block text-xs font-semibold"
                     >
                       {item.fix.label}
                     </Link>

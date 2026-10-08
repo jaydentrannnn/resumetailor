@@ -199,7 +199,7 @@ function EducationSummary({ education }: { education: Education[] }) {
       ) : (
         <p className="mt-1 text-attn">Your resume has no Education entry yet.</p>
       )}
-      <Link className="mt-1 inline-block text-accent underline" to="/profile/resume">
+      <Link className="rt-link mt-1 inline-block" to="/profile/resume">
         Edit on resume
       </Link>
     </div>

@@ -59,10 +59,7 @@ export function ReviewStep() {
             {review.warnings.length > 8 && <li>…and {review.warnings.length - 8} more.</li>}
           </ul>
         )}
-        <Link
-          to="/profile/resume"
-          className="mt-3 inline-block text-sm font-semibold text-accent underline-offset-2 hover:underline"
-        >
+        <Link to="/profile/resume" className="rt-link mt-3 inline-block text-sm font-semibold">
           Open the resume editor
         </Link>
       </TileSection>

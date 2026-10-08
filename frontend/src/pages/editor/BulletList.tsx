@@ -248,7 +248,7 @@ function BulletRow({
             type="button"
             onClick={() => void suggest()}
             disabled={suggesting}
-            className="text-accent underline-offset-2 hover:underline disabled:opacity-50"
+            className="rt-link disabled:opacity-50"
           >
             {suggesting ? "Looking…" : suggested ? "Suggest again" : "Suggest tags"}
           </button>
@@ -265,7 +265,7 @@ function BulletRow({
             type="button"
             onClick={() => void askAI()}
             disabled={asking}
-            className="text-accent underline-offset-2 hover:underline disabled:opacity-50"
+            className="rt-link disabled:opacity-50"
           >
             {asking ? "Asking…" : "Ask AI for more"}
           </button>

@@ -145,7 +145,7 @@ export function ApplicationsTable({
               No applications match these filters.{" "}
               <button
                 type="button"
-                className="mt-2 block w-full text-ink underline underline-offset-2"
+                className="rt-link mt-2 block w-full"
                 onClick={() => {
                   if (state.status) state.change({ status: "" });
                   onClearSearch();

@@ -184,7 +184,7 @@ export function ModelsSection() {
               </Button>
               {provider?.link && (
                 <a
-                  className="text-sm font-medium text-accent underline-offset-2 hover:underline"
+                  className="rt-link text-sm font-medium"
                   href={provider.link.href}
                   target="_blank"
                   rel="noreferrer"

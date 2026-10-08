@@ -327,7 +327,7 @@ export function RunHistoryPanel() {
                 No runs match these filters.{" "}
                 <button
                   type="button"
-                  className="mt-2 block w-full text-ink underline"
+                  className="rt-link mt-2 block w-full"
                   onClick={() => {
                     setQuery("");
                     setStatus("");

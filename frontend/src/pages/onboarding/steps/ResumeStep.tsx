@@ -18,11 +18,7 @@ export function ResumeStep({ onScratch }: { onScratch: () => void }) {
       ) : (
         <p className="text-sm text-ink-muted">
           Only have a PDF?{" "}
-          <button
-            type="button"
-            onClick={() => setPdf(true)}
-            className="font-semibold text-accent underline-offset-2 hover:underline"
-          >
+          <button type="button" onClick={() => setPdf(true)} className="rt-link font-semibold">
             Import its content
           </button>
           .
@@ -30,11 +26,7 @@ export function ResumeStep({ onScratch }: { onScratch: () => void }) {
       )}
       <p className="text-sm text-ink-muted">
         No Word file?{" "}
-        <button
-          type="button"
-          onClick={onScratch}
-          className="font-semibold text-accent underline-offset-2 hover:underline"
-        >
+        <button type="button" onClick={onScratch} className="rt-link font-semibold">
           Start from scratch
         </button>{" "}
         and add your experience in the editor; you can upload a template later on the Template page.

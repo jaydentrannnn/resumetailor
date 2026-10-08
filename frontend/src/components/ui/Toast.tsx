@@ -76,7 +76,7 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: (id: number)
           {toast.action && (
             <button
               type="button"
-              className="mt-2 font-semibold text-ink underline underline-offset-2"
+              className="rt-link mt-2 font-semibold"
               onClick={() => {
                 toast.action?.onClick();
                 onDismiss(toast.id);

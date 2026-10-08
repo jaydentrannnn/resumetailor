@@ -54,7 +54,7 @@ export function DocumentsSection() {
             </Button>
             {engine === "soffice" && (
               <a
-                className="text-sm font-medium text-accent underline-offset-2 hover:underline"
+                className="rt-link text-sm font-medium"
                 href="https://www.libreoffice.org/download/download/"
                 target="_blank"
                 rel="noreferrer"

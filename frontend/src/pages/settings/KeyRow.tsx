@@ -67,7 +67,7 @@ export function KeyRow({
               href={help.href}
               target="_blank"
               rel="noopener noreferrer"
-              className="ml-2 text-xs text-accent underline hover:text-accent-hover"
+              className="rt-link ml-2 text-xs"
             >
               {help.label}
             </a>

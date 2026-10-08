@@ -186,7 +186,7 @@ function PdfFrame({ iframeKey, title, src }: { iframeKey: string; title: string;
       >
         <p className="p-4 text-sm text-ink-muted">
           PDF preview is not available in this browser.{" "}
-          <a href={src} target="_blank" rel="noreferrer" className="text-ink underline">
+          <a href={src} target="_blank" rel="noreferrer" className="rt-link">
             Open the PDF in a new tab
           </a>
           .

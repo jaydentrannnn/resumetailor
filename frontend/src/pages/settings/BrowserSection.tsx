@@ -108,12 +108,7 @@ export function BrowserSection() {
           <li>
             Download <span className="font-mono">resumetailor-extension-&lt;version&gt;.zip</span>{" "}
             from the{" "}
-            <a
-              className="text-accent underline"
-              href={RELEASES_URL}
-              target="_blank"
-              rel="noreferrer"
-            >
+            <a className="rt-link" href={RELEASES_URL} target="_blank" rel="noreferrer">
               latest release
             </a>{" "}
             and unzip it.

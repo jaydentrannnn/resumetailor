@@ -174,11 +174,7 @@ export function SourceRow({
               }}
             />
           ) : (
-            <button
-              type="button"
-              className="text-xs text-accent underline"
-              onClick={() => setReviewing(true)}
-            >
+            <button type="button" className="rt-link text-xs" onClick={() => setReviewing(true)}>
               Review update
             </button>
           )}

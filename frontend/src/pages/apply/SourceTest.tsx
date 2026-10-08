@@ -102,7 +102,7 @@ export function SourceTestPanel({
                   <td className="py-1 pr-2">
                     {row.application_link ? (
                       <a
-                        className="text-accent underline"
+                        className="rt-link"
                         href={row.application_link}
                         target="_blank"
                         rel="noreferrer"

@@ -185,11 +185,7 @@ export function ApplicationsPanel({
                   {archiveTotal > 0 && (
                     <>
                       {" "}
-                      <button
-                        type="button"
-                        className="text-ink underline underline-offset-2"
-                        onClick={() => onTab("done")}
-                      >
+                      <button type="button" className="rt-link" onClick={() => onTab("done")}>
                         See finished applications
                       </button>
                     </>

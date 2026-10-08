@@ -140,7 +140,7 @@ export function SourcePanel({
           <div className="space-y-2">
             {github && (
               <p className="text-xs">
-                <a className="text-accent underline" href={github} target="_blank" rel="noreferrer">
+                <a className="rt-link" href={github} target="_blank" rel="noreferrer">
                   View on GitHub
                 </a>
               </p>

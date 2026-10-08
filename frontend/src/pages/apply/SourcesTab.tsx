@@ -253,7 +253,7 @@ function ProviderStatus({
       {connected !== null && (
         <button
           type="button"
-          className="ml-auto text-accent underline"
+          className="rt-link ml-auto"
           aria-label={connected ? `Change ${label} keys` : `Connect ${label}`}
           onClick={onConnect}
         >

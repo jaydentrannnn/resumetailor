@@ -45,7 +45,7 @@ export function SubmitEvidenceList({ applicationId }: { applicationId: string })
               {item.files.map((name) => (
                 <a
                   key={name}
-                  className="text-ink underline underline-offset-2"
+                  className="rt-link"
                   href={submitEvidenceFileUrl(applicationId, item.stamp, name)}
                   target="_blank"
                   rel="noreferrer"

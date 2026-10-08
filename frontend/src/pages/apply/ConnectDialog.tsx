@@ -58,12 +58,7 @@ export function ConnectDialog({
       >
         <p className="text-xs text-ink-muted">
           Saved once in your system keychain and used by every {label} search.{" "}
-          <a
-            className="text-accent underline"
-            href={KEY_LINKS[provider]}
-            target="_blank"
-            rel="noreferrer"
-          >
+          <a className="rt-link" href={KEY_LINKS[provider]} target="_blank" rel="noreferrer">
             Get a free key
           </a>
         </p>

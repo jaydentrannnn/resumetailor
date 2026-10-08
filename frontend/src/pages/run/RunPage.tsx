@@ -61,7 +61,7 @@ export function RunPage() {
         <button
           type="button"
           onClick={() => void flushSettings()}
-          className="ml-2 font-medium text-ink underline"
+          className="rt-link ml-2 font-medium"
         >
           Retry
         </button>

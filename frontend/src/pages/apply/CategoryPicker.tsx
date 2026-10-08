@@ -41,7 +41,7 @@ export function CategoryPicker({
       <div className="mt-1">
         <button
           type="button"
-          className="text-xs text-accent underline disabled:opacity-50"
+          className="rt-link text-xs disabled:opacity-50"
           onClick={load}
           disabled={loading}
         >

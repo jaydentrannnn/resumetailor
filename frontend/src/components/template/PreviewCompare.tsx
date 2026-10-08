@@ -114,12 +114,7 @@ export function PreviewCompare({ sourceSha256, profile }: Props) {
           <p className="flex items-center justify-between border-b border-line/80 bg-paper/60 px-3 py-1.5 text-xs font-medium text-ink-muted">
             <span>Original upload</span>
             {sourceUrl ? (
-              <a
-                href={sourceUrl}
-                target="_blank"
-                rel="noreferrer"
-                className="underline-offset-2 hover:text-accent hover:underline"
-              >
+              <a href={sourceUrl} target="_blank" rel="noreferrer" className="rt-link">
                 Open in new tab
               </a>
             ) : null}
@@ -136,12 +131,7 @@ export function PreviewCompare({ sourceSha256, profile }: Props) {
             >
               <p className="p-3 text-xs text-ink-muted">
                 PDF preview unavailable.{" "}
-                <a
-                  href={sourceUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-accent underline"
-                >
+                <a href={sourceUrl} target="_blank" rel="noreferrer" className="rt-link">
                   Open in new tab
                 </a>
                 .
@@ -158,12 +148,7 @@ export function PreviewCompare({ sourceSha256, profile }: Props) {
                 <span className="text-attn">Mapping changed — refresh to update</span>
               ) : null}
               {draftUrl ? (
-                <a
-                  href={draftUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="underline-offset-2 hover:text-accent hover:underline"
-                >
+                <a href={draftUrl} target="_blank" rel="noreferrer" className="rt-link">
                   Open in new tab
                 </a>
               ) : null}
@@ -179,12 +164,7 @@ export function PreviewCompare({ sourceSha256, profile }: Props) {
             >
               <p className="p-3 text-xs text-ink-muted">
                 PDF preview unavailable.{" "}
-                <a
-                  href={draftUrl}
-                  target="_blank"
-                  rel="noreferrer"
-                  className="text-accent underline"
-                >
+                <a href={draftUrl} target="_blank" rel="noreferrer" className="rt-link">
                   Open in new tab
                 </a>
                 .
