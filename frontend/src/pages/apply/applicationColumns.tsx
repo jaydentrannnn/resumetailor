@@ -306,32 +306,29 @@ export function applicationColumns({
           id: "status",
           heading: "Why it needs you",
           sortable: true,
-          className: "w-[24%]",
+          className: "w-[28%]",
           cell: (row) => (
-            <>
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="shrink-0">{statusChip(row)}</span>
               <TruncatedText
-                className="text-[13px] font-medium text-ink"
-                text={reviewReason(row).why}
+                className="flex-1 text-[13px] font-medium text-ink md:min-h-0!"
+                text={`${reviewReason(row).why}${isTabClosed(row, actions.openTabs) ? " · Tab closed" : ""}`}
                 label="Why it needs you"
               />
-              <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-ink-muted">
-                {statusChip(row)}
-                {isTabClosed(row, actions.openTabs) && <span>Tab closed</span>}
-              </p>
-            </>
+            </div>
           ),
         }
       : {
           id: "status",
           heading: "Status",
           sortable: true,
-          className: "w-[17%]",
+          className: "w-[10rem]",
           cell: (row) => (
-            <>
-              {statusChip(row, archived)}
+            <div className="flex min-w-0 items-center gap-2">
+              <span className="shrink-0">{statusChip(row, archived)}</span>
               {row.screen_label && (
                 <TruncatedText
-                  className="mt-1 text-xs text-ink-muted"
+                  className="flex-1 text-xs text-ink-muted md:min-h-0!"
                   text={
                     row.screen?.reasons.length
                       ? `${row.screen_label}: ${row.screen.reasons.join("; ")}`
@@ -342,19 +339,19 @@ export function applicationColumns({
               )}
               {row.error && !archived && (
                 <TruncatedText
-                  className="mt-1 text-xs text-danger"
+                  className="flex-1 text-xs text-danger md:min-h-0!"
                   text={row.error}
                   label="Error details"
                 />
               )}
-            </>
+            </div>
           ),
         };
   const date: TableColumn<ApplicationRow> = {
     id: dateColumn,
     heading: archived ? "Done on" : scope === "review" ? "Waiting since" : "Posted",
     sortable: true,
-    className: "w-[10%] font-mono text-xs text-ink-muted",
+    className: "w-[10%] !pr-1 font-mono text-xs text-ink-muted",
     cell: (row) => {
       if (scope === "review") return <WaitingSince at={row.status_at || row.discovered_at} />;
       if (!archived) return <PostedDate row={row} />;
@@ -368,16 +365,20 @@ export function applicationColumns({
       sortable: true,
       className: "w-[16%]",
       cell: (row) => (
-        <div className="flex flex-wrap items-center gap-1.5">
-          <strong className="font-medium text-ink">{row.company}</strong>
+        <div className="min-w-0 leading-[14px]">
+          <div className="flex min-w-0 items-center gap-1.5">
+            <strong className="truncate font-medium text-ink" title={row.company}>
+              {row.company}
+            </strong>
+            <CapturedBadge row={row} />
+          </div>
           {!!row.resume_review?.warnings.length && (
             <TruncatedText
-              className="w-full text-xs text-attn"
+              className="text-xs leading-[14px] text-attn md:min-h-0!"
               text={`${row.resume_review.required ? "Resume needs review" : "Resume warnings reviewed"} · ${row.resume_review.warnings.join(" ")}`}
               label="Resume warnings"
             />
           )}
-          <CapturedBadge row={row} />
         </div>
       ),
     },
@@ -385,9 +386,9 @@ export function applicationColumns({
       id: "role",
       heading: "Job posting",
       sortable: true,
-      className: "w-[22%]",
+      className: "",
       cell: (row) => (
-        <>
+        <div className="truncate">
           <Link
             className="text-ink-2 underline-offset-2 hover:text-ink hover:underline"
             to={actions.detail(row)}
@@ -395,8 +396,8 @@ export function applicationColumns({
           >
             {row.role}
           </Link>
-          {row.location && <p className="text-xs text-ink-muted">{row.location}</p>}
-        </>
+          {row.location && <span className="text-xs text-ink-muted"> · {row.location}</span>}
+        </div>
       ),
     },
     {
@@ -433,7 +434,7 @@ export function applicationColumns({
     {
       id: "actions",
       heading: "Next step",
-      className: "w-[19%] text-right",
+      className: "w-[11.5rem] text-right",
       cell: (row) => (
         <RowAction row={row} archived={archived} actions={actions} navigate={navigate} />
       ),

@@ -121,7 +121,7 @@ export function ApplyPage() {
         <AttentionRow
           label="Browser"
           action={
-            <Button size="sm" onClick={() => setDrawerOpen(true)}>
+            <Button size="sm" className="rt-row-action" onClick={() => setDrawerOpen(true)}>
               Set up
             </Button>
           }

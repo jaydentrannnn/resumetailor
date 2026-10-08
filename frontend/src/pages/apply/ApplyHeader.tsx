@@ -4,8 +4,7 @@ import { nightlyRunLabel } from "../../lib/applyPage";
 import { ConnectionStatus } from "./BrowserConnection";
 
 /**
- * The Apply page title. The eyebrow is the nightly-run state; it and "Apply settings"
- * both open the settings drawer.
+ * The Apply page title, with nightly-run state beside the settings action.
  */
 export function ApplyHeader({
   apply,
@@ -18,21 +17,14 @@ export function ApplyHeader({
 }) {
   return (
     <PageHeader
-      eyebrow={
-        <button
-          type="button"
-          className="rt-eyebrow hover:text-ink"
-          title="Change the nightly run in Apply settings"
-          onClick={onSettings}
-        >
-          {nightlyRunLabel(apply)}
-        </button>
-      }
       title="Apply"
       description="Postings from your job sources, each prepared with its own tailored resume."
       actions={
         <>
           <ConnectionStatus connected={browserConnected} />
+          <Button size="sm" title="Change the nightly run in Apply settings" onClick={onSettings}>
+            {nightlyRunLabel(apply)}
+          </Button>
           <Button size="sm" onClick={onSettings}>
             Apply settings
           </Button>

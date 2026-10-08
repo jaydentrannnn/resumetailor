@@ -57,6 +57,7 @@ function show(
   archived = false,
   selectedRows: ApplicationRow[] = [],
   patch: Partial<ApplicationRow> = {},
+  review = false,
 ) {
   const state = {
     data: {
@@ -82,7 +83,7 @@ function show(
   render(
     <MemoryRouter>
       <ApplicationsTable
-        scope={archived ? "archive" : "queue"}
+        scope={archived ? "archive" : review ? "review" : "queue"}
         state={state}
         actions={actions}
         empty="Empty"
@@ -135,6 +136,17 @@ describe("ApplicationsTable actions", () => {
 });
 
 describe("ApplicationsTable ready rows and long text", () => {
+  it("opens the complete review question supplied by the server", () => {
+    vi.spyOn(HTMLElement.prototype, "scrollWidth", "get").mockReturnValue(600);
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(100);
+    const question = "What are your salary expectations for this role, including bonus?";
+    show("awaiting_review", false, [], { review_summary: question }, true);
+    fireEvent.keyDown(document, { key: "Escape" });
+    const reason = `Answer "${question}"`;
+    fireEvent.click(screen.getAllByRole("button", { name: `Why it needs you: ${reason}` })[0]);
+    expect(screen.getByRole("dialog", { name: "Why it needs you" }).textContent).toContain(reason);
+  });
+
   it("makes Fill the filled primary button, disabled without the browser", () => {
     show("ready");
     const [fill] = screen.getAllByRole("button", { name: "Fill" });

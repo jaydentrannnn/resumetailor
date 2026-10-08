@@ -189,7 +189,7 @@ def test_review_group_splits_rows_waiting_on_the_applicant(apps_path):
                 ],
                 "required_empty": ["primaryQuestionnaire--98ae4442311e1000caac26c618d00003"],
             },
-            "What are your salary expectations for… +1",
+            "What are your salary expectations for this role? +1",
         ),
         ("awaiting_review", {"field_outcomes": [{"label": "Gender", "state": "ambiguous"}]}, "Gender"),
         ("awaiting_review", {"ready_to_submit": True}, "Ready to submit"),
@@ -199,6 +199,24 @@ def test_review_group_splits_rows_waiting_on_the_applicant(apps_path):
 def test_review_summary(status, fill, summary):
     app = _sample_app(status=status, fill=fill)
     assert store_views.review_summary(app) == summary
+
+
+@pytest.mark.parametrize("source", ["field_outcomes", "leftovers", "required_empty"])
+def test_review_summary_preserves_full_label_and_cleans_whitespace(source):
+    label = "  What are your\n salary expectations\tfor this role, including bonus? *  "
+    outcome = {"label": label, "state": "manual_review", "required": True}
+    fill = {source: [label] if source == "required_empty" else [outcome]}
+    app = _sample_app(status="awaiting_review", fill=fill)
+    assert store_views.review_summary(app) == (
+        "What are your salary expectations for this role, including bonus?"
+    )
+
+
+def test_review_summary_distinguishes_labels_with_the_same_long_prefix():
+    prefix = "Please describe your experience working with "
+    labels = [prefix + "Python", prefix + "SQL"]
+    app = _sample_app(status="awaiting_review", fill={"required_empty": labels + labels})
+    assert store_views.review_summary(app) == labels[0] + " +1"
 
 
 def test_current_registry_imports_once_and_keeps_the_original(apps_path):

@@ -162,16 +162,12 @@ _ATTENTION_STATES = frozenset({"manual_review", "ambiguous", "invalid_existing",
 
 _SIGN_IN_HANDOFF = re.compile(r"sign in|sign-in|password|account terms|create account", re.I)
 
-_SUMMARY_LABEL_CHARS = 40
-
 def _clean_label(label: str) -> str:
-    """A field label fit for a table cell; '' for a bare element id."""
+    """A complete, whitespace-normalized field label; '' for a bare element id."""
     text = " ".join(str(label or "").split()).rstrip("*").strip()
     if not text or text.startswith("#") or (" " not in text and "--" in text):
         return ""
-    if len(text) <= _SUMMARY_LABEL_CHARS:
-        return text
-    return text[: _SUMMARY_LABEL_CHARS - 1].rsplit(" ", 1)[0].rstrip(" ,:;") + "…"
+    return text
 
 def review_summary(app: store_models.Application) -> str | None:
     """A short "what needs you" line for a row in `REVIEW_STATUSES`, else None.

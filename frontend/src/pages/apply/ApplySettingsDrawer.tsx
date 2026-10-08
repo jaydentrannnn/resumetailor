@@ -72,7 +72,7 @@ export function ApplySettingsDrawer({
   }
 
   return (
-    <Modal title="Apply settings" onClose={onClose} placement="right">
+    <Modal title="Apply settings" onClose={onClose} placement="right" size="lg">
       <div className="mt-4 space-y-5 text-sm">
         <Section
           title="Nightly run"
@@ -106,11 +106,11 @@ export function ApplySettingsDrawer({
             It finds new postings and tailors your resume for each. The app must be open (or in the
             tray) at that time.
           </p>
-          <fieldset className="mt-3 space-y-2" disabled={!apply.enabled}>
+          <fieldset className="mt-3 grid gap-4 sm:grid-cols-2" disabled={!apply.enabled}>
             <label className="block">
-              Find up to{" "}
+              <span className="mb-1 block">New postings each night</span>
               <input
-                className="field mx-1 inline-block w-20"
+                className="field w-full"
                 type="number"
                 min={1}
                 max={500}
@@ -119,8 +119,7 @@ export function ApplySettingsDrawer({
                 onChange={(e) =>
                   patch({ max_new_per_day: Math.max(1, Number(e.target.value) || 1) })
                 }
-              />{" "}
-              new postings each night
+              />
             </label>
             <div>
               <p className="mb-1">Only postings from the last</p>
@@ -204,10 +203,10 @@ export function ApplySettingsDrawer({
             </p>
           )}
           <fieldset
-            className="mt-3 space-y-2 rounded-sm border border-line p-3 disabled:opacity-50"
+            className="mt-3 grid gap-3 border-t border-line pt-3 disabled:opacity-50 sm:grid-cols-2"
             disabled={!apply.auto_submit_enabled}
           >
-            <legend className="px-1 text-xs font-medium">Limits on automatic submits</legend>
+            <legend className="text-xs font-medium">Limits on automatic submits</legend>
             <label className="block">
               Parallel fills{" "}
               <input
@@ -224,11 +223,13 @@ export function ApplySettingsDrawer({
                 }
               />
             </label>
-            <p className="text-xs text-ink-muted">More tabs raise the chance of bot checks.</p>
+            <p className="self-center text-xs text-ink-muted">
+              More tabs raise the chance of bot checks.
+            </p>
             <label className="block">
-              Nightly run: at most{" "}
+              <span className="mb-1 block">Nightly run: at most</span>
               <input
-                className="field mx-1 inline-block w-20"
+                className="field w-full"
                 type="number"
                 min={0}
                 max={500}
@@ -243,9 +244,9 @@ export function ApplySettingsDrawer({
               </span>
             </label>
             <label className="block">
-              Any 24 hours, all sites: at most{" "}
+              <span className="mb-1 block">Any 24 hours, all sites: at most</span>
               <input
-                className="field mx-1 inline-block w-20"
+                className="field w-full"
                 type="number"
                 min={0}
                 max={500}
@@ -257,9 +258,9 @@ export function ApplySettingsDrawer({
               />
             </label>
             <label className="block">
-              Any 24 hours, one company: at most{" "}
+              <span className="mb-1 block">Any 24 hours, one company: at most</span>
               <input
-                className="field mx-1 inline-block w-16"
+                className="field w-full"
                 type="number"
                 min={0}
                 max={50}
@@ -290,11 +291,11 @@ export function ApplySettingsDrawer({
             </Link>
             .
           </p>
-          <div className="mt-2 flex flex-wrap gap-3">
+          <div className="mt-2 grid gap-3 sm:grid-cols-2">
             <label>
-              Provider{" "}
+              <span className="mb-1 block">Provider</span>
               <select
-                className="field ml-2 w-auto"
+                className="field w-full"
                 value={apply.model_provider}
                 onChange={(e) =>
                   patch({ model_provider: e.target.value as typeof apply.model_provider })
@@ -308,9 +309,9 @@ export function ApplySettingsDrawer({
               </select>
             </label>
             <label>
-              Model{" "}
+              <span className="mb-1 block">Model</span>
               <input
-                className="field ml-2 w-44"
+                className="field w-full"
                 value={apply.model_name}
                 onChange={(e) => patch({ model_name: e.target.value })}
               />

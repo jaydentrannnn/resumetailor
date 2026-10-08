@@ -19,6 +19,7 @@ export function Modal({
   children,
   wide,
   placement = "center",
+  size = "md",
 }: {
   title: string;
   onClose: () => void;
@@ -27,6 +28,8 @@ export function Modal({
   wide?: boolean;
   /** "right" renders a full-height side drawer (Apply settings). */
   placement?: "center" | "right";
+  /** Width of a right-hand drawer; centered dialogs keep using `wide`. */
+  size?: "md" | "lg";
 }) {
   const titleId = useId();
   const dialogRef = useRef<HTMLDivElement>(null);
@@ -97,7 +100,7 @@ export function Modal({
         tabIndex={-1}
         className={
           placement === "right"
-            ? "h-full w-full max-w-md overflow-y-auto bg-chrome p-5 shadow-lg outline-none"
+            ? `h-full w-full overflow-y-auto bg-chrome p-5 shadow-lg outline-none ${size === "lg" ? "max-w-2xl" : "max-w-md"}`
             : `w-full rounded-sm bg-chrome p-5 shadow-lg outline-none sm:px-6 sm:py-[22px] ${
                 wide ? "max-w-2xl" : "max-w-lg"
               }`
