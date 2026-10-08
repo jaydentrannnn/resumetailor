@@ -1,5 +1,12 @@
-import { applicationsExportUrl, type ApplySettings, type SourcesStatus } from "../../api";
-import { Button } from "../../components/ui";
+import {
+  applicationsExportUrl,
+  type ApplicationRow,
+  type ApplySettings,
+  type SourcesStatus,
+} from "../../api";
+import { Button, buttonClass } from "../../components/ui";
+import { canFillAfterReview } from "../../lib/applicationRows";
+import { canRetailor, fillBlockers, TERMINAL_STATUSES } from "../../lib/applyPage";
 import { GLOSSARY } from "../../lib/glossary";
 import { sourcesHeadline } from "../../lib/sources";
 import { AgeWindowPicker } from "./AgeWindowPicker";
@@ -12,66 +19,36 @@ export interface FindOptions {
   ageDays: number | null;
 }
 
-/** In progress tab: Find jobs and its options, plus Prepare / Tailor again / Fill for the selection. */
-export function ProgressToolbar({
+/** In progress tab, filter row: Find jobs, its one-off Search options, and Export CSV. */
+export function FindJobsTools({
   apply,
-  sourcesStatus,
   options,
   onOptions,
   busy,
   active,
   anySource,
-  browserConnected,
-  prepareCount,
-  retailorCount,
-  fillCount,
-  blockers,
   onFind,
-  onPrepare,
-  onRetailor,
-  onFill,
-  onManageSources,
 }: {
   apply: ApplySettings;
-  sourcesStatus: SourcesStatus | null;
   options: FindOptions;
   onOptions: (next: FindOptions) => void;
   busy: boolean;
   active: boolean;
   anySource: boolean;
-  browserConnected: boolean;
-  prepareCount: number;
-  retailorCount: number;
-  fillCount: number;
-  blockers: string | null;
   onFind: () => void;
-  onPrepare: () => void;
-  onRetailor: () => void;
-  onFill: () => void;
-  onManageSources: () => void;
 }) {
   const { limit, dryRun, ageDays } = options;
-  const idleNote = active ? "Available when the current Apply task finishes" : undefined;
-  const allowedAts = apply.auto_submit_ats;
   return (
-    <div className="flex flex-wrap items-center gap-2 rounded-lg border border-line bg-panel p-3 text-sm">
-      <Button
-        variant="secondary"
-        disabled={busy || active || !anySource}
-        title={anySource ? "Look for new postings now" : "Choose what to search for first"}
-        onClick={onFind}
-      >
-        Find jobs
-      </Button>
+    <>
       <details className="relative">
         <summary
-          className="rt-control inline-flex cursor-pointer items-center rounded-md border border-line bg-panel px-3 text-sm"
+          className={buttonClass("secondary", "md", "rt-control cursor-pointer list-none")}
           title="Options for the next Find jobs only; not saved"
         >
           Search options{limit || dryRun || ageDays != null ? " •" : ""}
         </summary>
-        <div className="absolute left-0 z-20 mt-1 w-72 space-y-3 rounded-md border border-line bg-panel p-3 text-sm shadow-lg">
-          <p className="text-xs font-medium text-ink-muted">This search only (not saved)</p>
+        <div className="absolute right-0 z-20 mt-1 w-72 space-y-3 rounded-sm border border-line bg-chrome p-3 text-sm shadow-lg">
+          <p className="rt-eyebrow">This search only (not saved)</p>
           <div>
             <p className="mb-1">Postings from the last</p>
             <AgeWindowPicker
@@ -108,56 +85,106 @@ export function ProgressToolbar({
           </label>
         </div>
       </details>
-      <a
-        className="rt-control inline-flex items-center rounded-md border border-line bg-panel px-3 font-medium text-ink hover:border-line-hover"
-        href={applicationsExportUrl()}
-      >
+      <a className={buttonClass("secondary", "md", "rt-control")} href={applicationsExportUrl()}>
         Export CSV
       </a>
-      <span aria-hidden className="mx-1 h-6 w-px bg-line" />
       <Button
-        variant="secondary"
-        disabled={busy || active || !prepareCount}
-        title={idleNote ?? GLOSSARY.prepare.help}
-        onClick={onPrepare}
+        disabled={busy || active || !anySource}
+        title={anySource ? "Look for new postings now" : "Choose what to search for first"}
+        onClick={onFind}
       >
-        {GLOSSARY.prepare.label} ({prepareCount})
+        Find jobs
+      </Button>
+    </>
+  );
+}
+
+/** In progress tab, selection bar: Prepare, Tailor again and Fill for the checked rows. */
+export function ProgressBulkActions({
+  selected,
+  busy,
+  active,
+  browserConnected,
+  onPrepare,
+  onRetailor,
+  onFill,
+}: {
+  selected: ApplicationRow[];
+  busy: boolean;
+  active: boolean;
+  browserConnected: boolean;
+  onPrepare: (ids: string[]) => void;
+  onRetailor: (rows: ApplicationRow[]) => void;
+  onFill: (ids: string[]) => void;
+}) {
+  const prepareIds = selected
+    .filter((row) => !TERMINAL_STATUSES.has(row.status))
+    .map((row) => row.source_job_id);
+  const retailorRows = selected.filter(canRetailor);
+  const fillIds = selected
+    .filter((row) => row.status === "ready" && canFillAfterReview(row))
+    .map((row) => row.source_job_id);
+  const idleNote = active ? "Available when the current Apply task finishes" : undefined;
+  return (
+    <>
+      <Button
+        size="sm"
+        disabled={busy || active || !prepareIds.length}
+        title={idleNote ?? GLOSSARY.prepare.help}
+        onClick={() => onPrepare(prepareIds)}
+      >
+        {GLOSSARY.prepare.label} ({prepareIds.length})
       </Button>
       <Button
-        variant="secondary"
-        disabled={busy || active || !retailorCount}
+        size="sm"
+        disabled={busy || active || !retailorRows.length}
         title={
           idleNote ?? "Tailor the selected applications again, replacing files that already exist."
         }
-        onClick={onRetailor}
+        onClick={() => onRetailor(retailorRows)}
       >
-        Tailor again ({retailorCount})
+        Tailor again ({retailorRows.length})
       </Button>
       <Button
+        size="sm"
         variant="primary"
-        disabled={busy || active || !fillCount || !browserConnected}
+        disabled={busy || active || !fillIds.length || !browserConnected}
         title={
           idleNote ??
           (browserConnected
             ? "Open and fill the selected postings"
             : "Connect the browser in Apply settings first")
         }
-        onClick={onFill}
+        onClick={() => onFill(fillIds)}
       >
-        Fill ({fillCount})
+        Fill ({fillIds.length})
       </Button>
-      <span className="ml-auto text-xs text-ink-muted">
+    </>
+  );
+}
+
+/** In progress tab, a quiet line: what Fill does, the sources' last run, and blockers. */
+export function ProgressNote({
+  apply,
+  sourcesStatus,
+  selected,
+}: {
+  apply: ApplySettings;
+  sourcesStatus: SourcesStatus | null;
+  /** The checked rows; the line says why any of them cannot be filled. */
+  selected: ApplicationRow[];
+}) {
+  const blockers = fillBlockers(selected);
+  const allowedAts = apply.auto_submit_ats;
+  return (
+    <div className="space-y-1 text-xs text-ink-muted">
+      <p>
+        {sourcesHeadline(apply.sources, sourcesStatus?.last_run_at)} ·{" "}
         {apply.auto_submit_enabled && allowedAts.length
           ? `Fill submits verified forms on ${allowedAts.join(", ")}`
           : "Fill stops for your review before submitting"}
-      </span>
-      <p className="w-full text-xs text-ink-muted">
-        {sourcesHeadline(apply.sources, sourcesStatus?.last_run_at)} ·{" "}
-        <button type="button" className="text-accent underline" onClick={onManageSources}>
-          Manage
-        </button>
       </p>
-      {blockers && <p className="w-full text-xs text-warn">{blockers}</p>}
+      {blockers && <p className="text-attn">{blockers}</p>}
     </div>
   );
 }

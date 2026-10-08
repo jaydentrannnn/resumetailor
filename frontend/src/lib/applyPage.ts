@@ -2,6 +2,7 @@ import type {
   ApplicationRow,
   ApplyOperation,
   ApplySettings,
+  AttentionItem,
   InFlightItem,
   JobStatus,
 } from "../api";
@@ -334,4 +335,23 @@ export function nightlyRunLabel(
   return settings.enabled
     ? `Nightly run: on · ${scheduleTimeLabel(settings.schedule_time)}`
     : "Nightly run: off";
+}
+
+/** "Needs attention (3) · 1 error · 1 need review": the caption above the list. */
+export function attentionSummary(items: AttentionItem[]): string {
+  const counts = items.reduce(
+    (result, item) => {
+      result[item.kind] = (result[item.kind] ?? 0) + 1;
+      return result;
+    },
+    {} as Partial<Record<AttentionItem["kind"], number>>,
+  );
+  const breakdown = (["failed", "needs_input", "ready_for_review", "blocked"] as const)
+    .filter((kind) => counts[kind])
+    .map(
+      (kind) =>
+        `${counts[kind]} ${kind === "failed" ? (counts[kind] === 1 ? "error" : "errors") : kind === "needs_input" ? "need review" : kind === "ready_for_review" ? "ready for final check" : "blocked"}`,
+    )
+    .join(" · ");
+  return `Needs attention (${items.length})${breakdown ? ` · ${breakdown}` : ""}`;
 }

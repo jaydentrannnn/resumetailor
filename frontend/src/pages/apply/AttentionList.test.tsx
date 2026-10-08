@@ -41,14 +41,23 @@ describe("AttentionList", () => {
       "1 error · 1 need review · 1 ready for final check",
     );
     const links = screen.getAllByRole("link");
-    expect(links.map((link) => link.textContent)).toEqual([
-      "Beta — Designer",
-      "Gamma — Writer",
-      "Alpha — Engineer",
+    expect(links.map((link) => link.getAttribute("aria-label"))).toEqual([
+      "Review Beta — Designer",
+      "Review Gamma — Writer",
+      "Review Alpha — Engineer",
     ]);
     expect(links[0].getAttribute("href")).toBe("/applications/new?tab=review");
-    expect(screen.getByText(/Gamma — Writer/).parentElement?.textContent).toContain(
-      "needs review: Enter code",
+    const gamma = screen.getByText("Gamma — Writer").closest("tr")?.textContent ?? "";
+    expect(gamma).toContain("needs review");
+    expect(gamma).toContain("Enter code");
+  });
+
+  it("renders nothing when the run left nothing", () => {
+    const { container } = render(
+      <MemoryRouter>
+        <AttentionList items={[]} />
+      </MemoryRouter>,
     );
+    expect(container.textContent).toBe("");
   });
 });

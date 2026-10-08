@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import type { AppConfig, JobSettings, SchedulerStatus } from "../../api";
 import { Modal } from "../../components/Modal";
-import { Button } from "../../components/ui";
+import { Button, buttonClass, StatusChip } from "../../components/ui";
 import { autoSubmitCapLabel, autoSubmitSummary, SOURCES_PATH } from "../../lib/applyPage";
 import { tailorModelLabel } from "../../lib/modelLabel";
 import { sourcesSummary } from "../../lib/sources";
@@ -77,11 +77,9 @@ export function ApplySettingsDrawer({
         <Section
           title="Nightly run"
           aside={
-            <span
-              className={`rounded-full px-2 py-0.5 text-micro font-semibold uppercase tracking-wide ${apply.enabled ? "bg-accent-soft text-accent" : "bg-paper text-ink-muted"}`}
-            >
+            <StatusChip tone={apply.enabled ? "done" : "muted"}>
               {apply.enabled ? "On" : "Off"}
-            </span>
+            </StatusChip>
           }
         >
           <div className="flex flex-wrap items-center gap-3">
@@ -143,7 +141,7 @@ export function ApplySettingsDrawer({
               : ""}
           </p>
           {scheduler?.missed_today && (
-            <p className="mt-1 text-xs text-warn">
+            <p className="mt-1 text-xs text-attn">
               Today's run was missed because the app was closed.
             </p>
           )}
@@ -160,7 +158,7 @@ export function ApplySettingsDrawer({
             {sourcesSummary(apply.sources)}
           </p>
           <Link
-            className="rt-control mt-2 inline-flex items-center rounded-md border border-line bg-panel px-3 text-sm font-medium hover:border-accent"
+            className={buttonClass("secondary", "md", "rt-control mt-2")}
             to={SOURCES_PATH}
             onClick={onClose}
           >
@@ -201,12 +199,12 @@ export function ApplySettingsDrawer({
             </div>
           </fieldset>
           {apply.auto_submit_enabled && allowed.size === 0 && (
-            <p className="mt-2 rounded-md bg-warn-soft px-3 py-2 text-xs text-warn">
+            <p className="mt-2 text-xs text-attn">
               No platform is ticked, so every application still stops for your review.
             </p>
           )}
           <fieldset
-            className="mt-3 space-y-2 rounded-md border border-line p-3 disabled:opacity-50"
+            className="mt-3 space-y-2 rounded-sm border border-line p-3 disabled:opacity-50"
             disabled={!apply.auto_submit_enabled}
           >
             <legend className="px-1 text-xs font-medium">Limits on automatic submits</legend>
@@ -287,7 +285,7 @@ export function ApplySettingsDrawer({
         <Section title="Autofill model">
           <p className="text-xs text-ink-muted">
             Writes answers to form questions. Tailoring uses{" "}
-            <Link className="text-accent underline" to="/settings?tab=models">
+            <Link className="text-ink underline underline-offset-2" to="/settings?tab=models">
               {tailorModelLabel(settings, config)}
             </Link>
             .

@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 import type { ApplicationRow, ApplyOperation, JobStatus } from "../api";
 import {
   ageChoice,
+  attentionSummary,
   autoSubmitCapLabel,
   autoSubmitSummary,
   nightlyRunLabel,
@@ -296,5 +297,22 @@ describe("ageChoice", () => {
     expect(ageChoice(7)).toBe("7");
     expect(ageChoice(3)).toBe("custom");
     expect(ageChoice(0)).toBe("custom");
+  });
+});
+
+describe("attentionSummary", () => {
+  const at = "2026-09-30T00:00:00Z";
+  it("counts each kind after the total", () => {
+    expect(
+      attentionSummary([
+        { application_id: "a", label: "A", kind: "failed", message: "", at },
+        { application_id: "b", label: "B", kind: "failed", message: "", at },
+        { application_id: "c", label: "C", kind: "blocked", message: "", at },
+      ]),
+    ).toBe("Needs attention (3) · 2 errors · 1 blocked");
+  });
+
+  it("is just the total when there is nothing", () => {
+    expect(attentionSummary([])).toBe("Needs attention (0)");
   });
 });

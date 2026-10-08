@@ -1,6 +1,8 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
-import type { useSearchParams } from "react-router-dom";
+import { useNavigate, useSearchParams } from "react-router-dom";
 import { listApplications, type ApplicationRow, type ApplicationsList } from "../../api";
+import { recallApplyParams, rememberApplyParams } from "../../lib/applicationNavigation";
+import { SOURCES_PATH } from "../../lib/applyPage";
 
 /** Which list a table shows: "review" = Needs you, "queue" = In progress, "archive" = Done. */
 export type Scope = "queue" | "review" | "archive";
@@ -188,3 +190,56 @@ export function useApplicationTable(
 }
 
 export type ApplicationTableState = ReturnType<typeof useApplicationTable>;
+
+/**
+ * The Apply page's URL state: old `?tab=sources` links go to Job sources, an empty URL
+ * restores the tab, page, sort and filters last used, and the page-wide search (`q`, as
+ * typed; `search`, debounced 250 ms for the tables to query with).
+ */
+export function useApplyParams(workspaceId: string) {
+  const navigate = useNavigate();
+  const [params, setParams] = useSearchParams();
+  // Sources used to be a tab here; old links and bookmarks land on its own page.
+  useEffect(() => {
+    if (params.get("tab") === "sources") navigate(SOURCES_PATH, { replace: true });
+  }, [params, navigate]);
+  // Leaving Apply and coming back (the nav link carries no params) restores the same
+  // tab, page, sort and filters.
+  const paramString = params.toString();
+  useEffect(() => {
+    if (!paramString) {
+      const saved = recallApplyParams(workspaceId);
+      if (saved) {
+        setParams(new URLSearchParams(saved), { replace: true });
+        return;
+      }
+    }
+    if (params.get("tab") !== "sources") rememberApplyParams(workspaceId, paramString);
+  }, [paramString, params, workspaceId, setParams]);
+  // One search covers every tab; `search` is the debounced value the tables query with.
+  const q = params.get("q") ?? "";
+  const [search, setSearch] = useState(q);
+  useEffect(() => {
+    const id = window.setTimeout(() => setSearch(q), 250);
+    return () => window.clearTimeout(id);
+  }, [q]);
+
+  function write(edit: (out: URLSearchParams) => void) {
+    setParams(
+      (previous) => {
+        const out = new URLSearchParams(previous);
+        edit(out);
+        return out;
+      },
+      { replace: true },
+    );
+  }
+  const setQuery = (value: string) =>
+    write((out) => {
+      if (value) out.set("q", value);
+      else out.delete("q");
+      for (const scope of ["review", "queue", "archive"]) out.delete(`${scope}_page`);
+    });
+  const setTab = (next: string) => write((out) => out.set("tab", next));
+  return { params, setParams, write, q, search, setQuery, setTab };
+}

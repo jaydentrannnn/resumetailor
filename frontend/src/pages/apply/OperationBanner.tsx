@@ -1,6 +1,7 @@
 import { useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { AttentionList } from "./AttentionList";
+import { Button, Meter, StatusMark, Tile } from "../../components/ui";
 import { type ApplyOperation, type JobStatus, fetchJob } from "../../api";
 import {
   formatEta,
@@ -96,17 +97,33 @@ export function OperationBanner({
     .filter((event, index, all) => index === 0 || event.message !== all[index - 1].message)
     .reverse();
   const deadline = Date.parse(operation.application_deadline_at || "");
+  const detail =
+    active && !multiple
+      ? `${
+          userPaused
+            ? "Paused by you. Nothing is being filled."
+            : operation.state === "paused"
+              ? operation.message || "Waiting on you before the next application."
+              : operation.current_action_label || operation.message
+        }${!userPaused && operation.current_field_label ? ` · ${operation.current_field_label}` : ""}`
+      : "";
+  const attention = operation.attention ?? [];
 
   return (
-    <section
-      className={`rounded-lg border bg-panel p-4 shadow-sm ${active ? "sticky top-2 z-20 border-accent/40" : "border-line"}`}
+    <Tile
+      padding="sm"
+      className={`sm:px-5 ${active ? "sticky top-2 z-20" : ""}`}
       aria-live="polite"
     >
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h2 className="text-lg font-semibold">{operationHeadline(operation)}</h2>
-          {active && multiple ? (
-            <ul className="mt-0.5 space-y-1 text-sm text-ink-muted">
+      <div className="grid items-center gap-x-5 gap-y-3 lg:grid-cols-[minmax(0,auto)_minmax(120px,1fr)_auto]">
+        <div className="min-w-0 text-[13px]">
+          <div className="flex flex-wrap items-center gap-x-2.5 gap-y-1">
+            {active && <StatusMark tone={userPaused ? "attention" : "live"} />}
+            <h2 className="font-semibold text-ink">{operationHeadline(operation)}</h2>
+            {detail && <p className="text-ink-muted">{detail}</p>}
+          </div>
+          {active && multiple && (
+            <ul className="mt-1 space-y-0.5 text-ink-muted">
               {itemLines.map(({ entry, progress }) => (
                 <li key={entry.application_id}>
                   {entry.label} · {entry.stage || operation.action} ·{" "}
@@ -114,124 +131,65 @@ export function OperationBanner({
                 </li>
               ))}
             </ul>
-          ) : (
-            active && (
-              <p className="mt-0.5 text-sm text-ink-muted">
-                {userPaused
-                  ? "Paused by you. Nothing is being filled."
-                  : operation.state === "paused"
-                    ? operation.message || "Waiting on you before the next application."
-                    : operation.current_action_label || operation.message}
-                {!userPaused && operation.current_field_label
-                  ? ` · ${operation.current_field_label}`
-                  : ""}
-              </p>
-            )
           )}
           {operation.current_application_id && active && !multiple && (
             <Link
-              className="text-xs text-accent underline"
+              className="text-xs text-ink-2 underline decoration-line-hover underline-offset-2 hover:text-ink hover:decoration-ink"
               to={`/applications/${encodeURIComponent(operation.current_application_id)}`}
             >
               Open this application
             </Link>
           )}
         </div>
-        <div className="flex flex-wrap gap-2 text-xs">
-          {operation.state === "running" && operation.action !== "find" && (
-            <button
-              type="button"
-              className="rounded-md border border-line px-2 py-1 font-medium hover:border-accent hover:text-accent disabled:opacity-50"
-              disabled={pauseRequested}
-              title="Stop before the next application; the one in progress finishes first"
-              onClick={() => onControl("pause")}
+        <div className="min-w-0">
+          {finding && search ? (
+            <Meter
+              label="Find jobs progress"
+              value={search.fraction * 100}
+              valueText={search.detail}
+            />
+          ) : !finding && operation.total > 0 ? (
+            <div
+              role="progressbar"
+              aria-label="Apply task progress"
+              aria-valuenow={Math.round(done * 10) / 10}
+              aria-valuemin={0}
+              aria-valuemax={operation.total}
+              aria-valuetext={`${operation.processed} of ${operation.total} done${item ? `; ${item.detail}` : ""}`}
+              className="relative h-1 overflow-hidden rounded-xs bg-sunken"
             >
-              Pause
-            </button>
-          )}
-          {operation.state === "paused" && (
-            <>
-              <button
-                type="button"
-                className="rounded-md bg-accent px-2 py-1 font-medium text-on-accent"
-                onClick={() => onControl("resume")}
-              >
-                Resume
-              </button>
-              {!userPaused && (
-                <button
-                  type="button"
-                  className="rounded-md border border-line px-2 py-1 font-medium"
-                  onClick={() => onControl("skip")}
-                >
-                  Skip this one
-                </button>
-              )}
-            </>
-          )}
-          {active && (
-            <button
-              type="button"
-              className="rounded-md border border-danger px-2 py-1 font-medium text-danger"
-              onClick={() => onControl("cancel")}
-            >
-              Cancel
-            </button>
+              {/* Lighter: the item in flight, by its own progress. Solid: finished items. */}
+              <div
+                className="absolute inset-y-0 left-0 bg-accent/35 transition-[width] duration-500"
+                style={{ width: `${pct(done)}%` }}
+              />
+              <div
+                className="absolute inset-y-0 left-0 bg-accent transition-[width] duration-500"
+                style={{ width: `${pct(operation.processed)}%` }}
+              />
+            </div>
+          ) : (
+            active && <Meter label="Progress total unknown" indeterminate />
           )}
         </div>
+        <OperationControls
+          operation={operation}
+          userPaused={userPaused}
+          pauseRequested={pauseRequested}
+          onControl={onControl}
+        />
       </div>
-      {finding && search ? (
-        <div
-          role="progressbar"
-          aria-label="Find jobs progress"
-          aria-valuenow={Math.round(search.fraction * 100)}
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-valuetext={search.detail}
-          className="relative mt-3 h-2 overflow-hidden rounded-full bg-line"
-        >
-          <div
-            className="absolute inset-y-0 left-0 bg-accent transition-[width] duration-500"
-            style={{ width: `${search.fraction * 100}%` }}
-          />
-        </div>
-      ) : !finding && operation.total > 0 ? (
-        <div
-          role="progressbar"
-          aria-label="Apply task progress"
-          aria-valuenow={Math.round(done * 10) / 10}
-          aria-valuemin={0}
-          aria-valuemax={operation.total}
-          aria-valuetext={`${operation.processed} of ${operation.total} done${item ? `; ${item.detail}` : ""}`}
-          className="relative mt-3 h-2 overflow-hidden rounded-full bg-line"
-        >
-          {/* Lighter: the item in flight, by its own progress. Solid: finished items. */}
-          <div
-            className="absolute inset-y-0 left-0 bg-accent/35 transition-[width] duration-500"
-            style={{ width: `${pct(done)}%` }}
-          />
-          <div
-            className="absolute inset-y-0 left-0 bg-accent transition-[width] duration-500"
-            style={{ width: `${pct(operation.processed)}%` }}
-          />
-        </div>
-      ) : (
-        active && (
-          <div
-            role="progressbar"
-            aria-label="Progress total unknown"
-            className="rt-progress-indeterminate mt-3 h-2 rounded-full bg-accent-soft"
-          />
-        )
-      )}
       <div className="mt-2 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-muted">
-        {finding && search && <span className="font-medium text-ink">{search.detail}</span>}
+        {finding && search && <span className="font-medium text-ink-2">{search.detail}</span>}
         {finding && search && active && (
           <span>Sources and postings each make up half the progress bar.</span>
         )}
         {!finding && active && operation.total > 0 && (
-          <span className="font-medium text-ink">
-            {operation.processed} of {operation.total} done
+          <span className="font-medium text-ink-2">
+            <span className="font-mono">
+              {operation.processed} of {operation.total}
+            </span>{" "}
+            done
             {!multiple && item
               ? ` · ${operation.current_label ? `${operation.current_label}: ` : ""}${item.detail}`
               : ""}
@@ -239,42 +197,133 @@ export function OperationBanner({
         )}
         {eta != null && (
           <span>
-            {formatEta(eta)} left{item?.estimate ? " (estimate)" : ""}
+            <span className="font-mono">{formatEta(eta)}</span> left
+            {item?.estimate ? " (estimate)" : ""}
           </span>
         )}
-        {!finding && <span>{operation.ready_for_review ?? operation.completed} ready for you</span>}
-        {!finding && <span>{operation.submitted} submitted</span>}
-        {!finding && <span>{operation.needs_input ?? operation.blocked} need input</span>}
-        {operation.failed > 0 && <span className="text-danger">{operation.failed} failed</span>}
-      </div>
-      <details className="mt-3 border-t border-line pt-2 text-xs text-ink-muted">
-        <summary className="cursor-pointer">Activity</summary>
-        <p className="mt-2">
-          Model: {operation.effective_model || "—"}
-          {active && Number.isFinite(deadline)
-            ? ` · This application times out in ${Math.max(0, Math.floor((deadline - now) / 1000))}s`
-            : ""}
-          {operation.heartbeat_at
-            ? ` · Last heartbeat ${new Date(operation.heartbeat_at).toLocaleTimeString()}`
-            : ""}
-        </p>
-        <ul className="mt-2 max-h-52 space-y-1 overflow-y-auto">
-          {events.map((event, index) => (
-            <li key={`${event.at}-${index}`}>
-              {event.at ? new Date(event.at).toLocaleTimeString() : ""} {event.message}
-            </li>
-          ))}
-        </ul>
-        {Object.entries(operation.excluded ?? {}).length > 0 && (
-          <p className="mt-2">
-            Left out:{" "}
-            {Object.entries(operation.excluded ?? {})
-              .map(([id, reasons]) => `${id}: ${reasons.join(", ").replaceAll("_", " ")}`)
-              .join("; ")}
-          </p>
+        {!finding && (
+          <Count n={operation.ready_for_review ?? operation.completed} text="ready for you" />
         )}
-      </details>
-      <AttentionList items={operation.attention} />
-    </section>
+        {!finding && <Count n={operation.submitted} text="submitted" />}
+        {!finding && <Count n={operation.needs_input ?? operation.blocked} text="need input" />}
+        {operation.failed > 0 && (
+          <span className="text-danger">
+            <Count n={operation.failed} text="failed" />
+          </span>
+        )}
+      </div>
+      <OperationActivity
+        operation={operation}
+        events={events}
+        timeout={
+          active && Number.isFinite(deadline)
+            ? Math.max(0, Math.floor((deadline - now) / 1000))
+            : null
+        }
+      />
+      {attention.length > 0 && (
+        <div className="mt-3 border-t border-line pt-4">
+          <AttentionList items={attention} />
+        </div>
+      )}
+    </Tile>
+  );
+}
+
+function Count({ n, text }: { n: number; text: string }) {
+  return (
+    <span>
+      <span className="font-mono">{n}</span> {text}
+    </span>
+  );
+}
+
+/** The "Activity" disclosure: model, heartbeat and the task's events, newest first. */
+function OperationActivity({
+  operation,
+  events,
+  timeout,
+}: {
+  operation: ApplyOperation;
+  events: ApplyOperation["events"];
+  /** Seconds before the current application times out, while one runs. */
+  timeout: number | null;
+}) {
+  const excluded = Object.entries(operation.excluded ?? {});
+  return (
+    <details className="mt-2 text-xs text-ink-muted">
+      <summary className="rt-row-action -ml-2 inline-flex cursor-pointer items-center rounded-sm px-2 font-medium hover:bg-sunken hover:text-ink">
+        Activity
+      </summary>
+      <p className="mt-2">
+        Model: <span className="font-mono">{operation.effective_model || "—"}</span>
+        {timeout != null ? ` · This application times out in ${timeout}s` : ""}
+        {operation.heartbeat_at
+          ? ` · Last heartbeat ${new Date(operation.heartbeat_at).toLocaleTimeString()}`
+          : ""}
+      </p>
+      <ul className="mt-2 max-h-52 space-y-1 overflow-y-auto">
+        {events.map((event, index) => (
+          <li key={`${event.at}-${index}`}>
+            <span className="font-mono">
+              {event.at ? new Date(event.at).toLocaleTimeString() : ""}
+            </span>{" "}
+            {event.message}
+          </li>
+        ))}
+      </ul>
+      {excluded.length > 0 && (
+        <p className="mt-2">
+          Left out:{" "}
+          {excluded
+            .map(([id, reasons]) => `${id}: ${reasons.join(", ").replaceAll("_", " ")}`)
+            .join("; ")}
+        </p>
+      )}
+    </details>
+  );
+}
+
+/** Pause / Resume / Skip this one / Cancel, as the task's state allows. */
+function OperationControls({
+  operation,
+  userPaused,
+  pauseRequested,
+  onControl,
+}: {
+  operation: ApplyOperation;
+  userPaused: boolean;
+  pauseRequested: boolean;
+  onControl: (action: OperationControl) => void;
+}) {
+  if (!["queued", "running", "paused"].includes(operation.state)) return null;
+  return (
+    <div className="flex flex-wrap items-center gap-2">
+      {operation.state === "running" && operation.action !== "find" && (
+        <Button
+          size="sm"
+          disabled={pauseRequested}
+          title="Stop before the next application; the one in progress finishes first"
+          onClick={() => onControl("pause")}
+        >
+          Pause
+        </Button>
+      )}
+      {operation.state === "paused" && (
+        <>
+          <Button size="sm" variant="primary" onClick={() => onControl("resume")}>
+            Resume
+          </Button>
+          {!userPaused && (
+            <Button size="sm" onClick={() => onControl("skip")}>
+              Skip this one
+            </Button>
+          )}
+        </>
+      )}
+      <Button size="sm" variant="danger" onClick={() => onControl("cancel")}>
+        Cancel
+      </Button>
+    </div>
   );
 }
