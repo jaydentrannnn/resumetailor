@@ -76,8 +76,8 @@ export function IncludePanel({
 
   if (error) {
     return (
-      <section className="rounded-xl border border-line bg-panel p-5 shadow-sm">
-        <h2 className="font-display text-xl font-semibold">What to include</h2>
+      <section className="min-w-0">
+        <h3 className="rt-tile-title">What to include</h3>
         <p className="mt-2 text-sm text-danger">{error}</p>
       </section>
     );
@@ -85,8 +85,8 @@ export function IncludePanel({
 
   if (!outline) {
     return (
-      <section className="rounded-xl border border-line bg-panel p-5 shadow-sm">
-        <h2 className="font-display text-xl font-semibold">What to include</h2>
+      <section className="min-w-0">
+        <h3 className="rt-tile-title">What to include</h3>
         <p className="mt-2 text-sm text-ink-muted">Loading…</p>
       </section>
     );
@@ -127,8 +127,8 @@ export function IncludePanel({
   }
 
   return (
-    <section className="rounded-xl border border-line bg-panel p-5 shadow-sm">
-      <h2 className="font-display text-xl font-semibold">What to include</h2>
+    <section className="min-w-0">
+      <h3 className="rt-tile-title">What to include</h3>
 
       <fieldset className="mt-4 space-y-2">
         <legend className="text-sm font-semibold text-ink">
@@ -150,7 +150,7 @@ export function IncludePanel({
                 aria-label={`Move ${CONTACT_FIELD_LABELS[field]} up`}
                 disabled={i === 0}
                 onClick={() => moveContactField(i, -1)}
-                className="flex min-h-6 min-w-6 items-center justify-center rounded border border-line text-xs disabled:opacity-30"
+                className="flex min-h-6 min-w-6 items-center justify-center rounded-sm border border-line-hover bg-field text-xs hover:border-ink disabled:opacity-30"
               >
                 ↑
               </button>
@@ -160,7 +160,7 @@ export function IncludePanel({
                 aria-label={`Move ${CONTACT_FIELD_LABELS[field]} down`}
                 disabled={i >= includedOrder.length - 1}
                 onClick={() => moveContactField(i, 1)}
-                className="flex min-h-6 min-w-6 items-center justify-center rounded border border-line text-xs disabled:opacity-30"
+                className="flex min-h-6 min-w-6 items-center justify-center rounded-sm border border-line-hover bg-field text-xs hover:border-ink disabled:opacity-30"
               >
                 ↓
               </button>
@@ -168,7 +168,7 @@ export function IncludePanel({
           ))}
         </ul>
         {excludedFields.length > 0 && (
-          <ul className="space-y-1 border-t border-dashed border-line pt-2">
+          <ul className="space-y-1 border-t border-line pt-2">
             {excludedFields.map((field) => {
               const isAvailable = available.has(field);
               return (
@@ -195,7 +195,7 @@ export function IncludePanel({
         <legend className="text-sm font-semibold text-ink">Section order</legend>
         {!isGeneric && (
           <details className="group text-xs">
-            <summary className="flex cursor-pointer list-none items-center gap-1.5 text-warn">
+            <summary className="flex cursor-pointer list-none items-center gap-1.5 text-attn">
               <span>Reordering here has no effect on this template.</span>
               <span className="text-ink-muted underline-offset-2 group-open:hidden">Why?</span>
               <span className="hidden text-ink-muted underline-offset-2 group-open:inline">
@@ -231,7 +231,7 @@ export function IncludePanel({
                 aria-label={`Move ${section.title} up`}
                 disabled={!isGeneric || i === 0}
                 onClick={() => moveSection(i, -1)}
-                className="flex min-h-6 min-w-6 items-center justify-center rounded border border-line text-xs disabled:opacity-30"
+                className="flex min-h-6 min-w-6 items-center justify-center rounded-sm border border-line-hover bg-field text-xs hover:border-ink disabled:opacity-30"
               >
                 ↑
               </button>
@@ -241,7 +241,7 @@ export function IncludePanel({
                 aria-label={`Move ${section.title} down`}
                 disabled={!isGeneric || i >= orderedSections.length - 1}
                 onClick={() => moveSection(i, 1)}
-                className="flex min-h-6 min-w-6 items-center justify-center rounded border border-line text-xs disabled:opacity-30"
+                className="flex min-h-6 min-w-6 items-center justify-center rounded-sm border border-line-hover bg-field text-xs hover:border-ink disabled:opacity-30"
               >
                 ↓
               </button>

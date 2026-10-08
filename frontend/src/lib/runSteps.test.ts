@@ -1,7 +1,14 @@
 import { describe, expect, it } from "vitest";
 import type { ProgressEvent, RunHistoryEntry } from "../api";
 import { hostOf, wordCount } from "./jdInput";
-import { formatElapsed, formatTypical, runSteps, typicalRunSeconds } from "./runSteps";
+import {
+  formatElapsed,
+  formatStepDuration,
+  formatTypical,
+  runSteps,
+  stepDurations,
+  typicalRunSeconds,
+} from "./runSteps";
 
 const ev = (stage: string): ProgressEvent => ({ stage, message: "", detail: {} });
 const run = (status: RunHistoryEntry["status"], secs: number | null): RunHistoryEntry => ({
@@ -83,5 +90,23 @@ describe("jd input helpers", () => {
     expect(wordCount("   ")).toBe(0);
     expect(hostOf("https://www.example.com/jobs/1")).toBe("example.com");
     expect(hostOf("nonsense")).toBe("");
+  });
+});
+
+describe("stepDurations", () => {
+  it("measures finished steps to the next mark and the live step to now", () => {
+    const marks = { 0: 1000, 1: 4100, 3: 6300 };
+    expect(stepDurations(marks, 3, 6, 9000)).toEqual([3100, 2200, null, 2700, null, null]);
+  });
+
+  it("closes every step on success and leaves unseen steps empty", () => {
+    const marks = { 2: 0, 3: 5000, 6: 20000 };
+    expect(stepDurations(marks, 6, 6, 99999)).toEqual([null, null, 5000, 15000, null, null]);
+  });
+
+  it("formats short steps with a decimal and long ones as minutes", () => {
+    expect(formatStepDuration(3140)).toBe("3.1s");
+    expect(formatStepDuration(41000)).toBe("41s");
+    expect(formatStepDuration(125000)).toBe("2m 05s");
   });
 });

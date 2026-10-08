@@ -67,3 +67,35 @@ export function formatTypical(seconds: number): string {
   if (seconds < 60) return "under a minute";
   return `about ${Math.round(seconds / 60)} min`;
 }
+
+/**
+ * Per-step durations in ms, measured in the browser: `ProgressEvent` carries no
+ * timestamps, so `marks[i]` is when this tab first saw step `i` become current
+ * (`marks[steps.length]` when it saw the run succeed). A finished step lasts until the
+ * next marked step; the step in flight lasts until `now` (the caller freezes `now` when
+ * the run stops). Null for steps not reached, skipped, or begun before this tab started
+ * watching (a reload that re-attaches mid-run).
+ */
+export function stepDurations(
+  marks: Readonly<Record<number, number>>,
+  current: number,
+  total: number,
+  now: number,
+): (number | null)[] {
+  return Array.from({ length: total }, (_, index) => {
+    const start = marks[index];
+    if (start == null || index > current) return null;
+    if (index === current) return Math.max(0, now - start);
+    for (let next = index + 1; next <= total; next++) {
+      if (marks[next] != null) return Math.max(0, marks[next] - start);
+    }
+    return null;
+  });
+}
+
+/** e.g. 3140 -> "3.1s", 41000 -> "41s", 125000 -> "2m 05s". */
+export function formatStepDuration(ms: number): string {
+  const seconds = ms / 1000;
+  if (seconds < 10) return `${seconds.toFixed(1)}s`;
+  return formatElapsed(Math.round(seconds));
+}

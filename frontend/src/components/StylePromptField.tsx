@@ -42,7 +42,7 @@ export function StylePromptField({
         <span className="inline-flex items-center gap-2">
           {label}
           {customized && (
-            <span className="rounded bg-accent/15 px-1.5 py-0.5 text-micro font-semibold uppercase tracking-wide text-accent">
+            <span className="font-mono text-micro uppercase tracking-[0.08em] text-accent">
               Customized
             </span>
           )}
@@ -53,7 +53,7 @@ export function StylePromptField({
         rows={12}
         value={displayText}
         onChange={(e) => onChange(e.target.value)}
-        className="w-full resize-y rounded-lg border border-line bg-paper/40 px-3 py-2 font-mono text-xs leading-relaxed focus:border-accent"
+        className="field resize-y font-mono text-xs leading-relaxed"
       />
       {help && <span className="mt-1 block text-xs text-ink-muted">{help}</span>}
       <div className="mt-2 flex items-center justify-between gap-3">
@@ -62,7 +62,7 @@ export function StylePromptField({
           onClick={() => setCoreOpen((open) => !open)}
           aria-expanded={coreOpen}
           aria-controls={coreId}
-          className="text-xs text-ink-muted underline-offset-2 hover:text-accent hover:underline"
+          className="text-xs text-ink-muted underline-offset-2 hover:text-ink hover:underline"
         >
           Locked safety rules {coreOpen ? "▾" : "▸"}
         </button>
@@ -70,7 +70,7 @@ export function StylePromptField({
           <button
             type="button"
             onClick={resetToDefault}
-            className="text-xs text-ink-muted underline-offset-2 hover:text-accent hover:underline"
+            className="text-xs text-ink-muted underline-offset-2 hover:text-ink hover:underline"
           >
             Reset to default
           </button>
@@ -79,7 +79,7 @@ export function StylePromptField({
       {coreOpen && (
         <pre
           id={coreId}
-          className="mt-2 max-h-48 overflow-auto rounded-md border border-line bg-paper/60 p-3 font-mono text-xs leading-relaxed text-ink-muted whitespace-pre-wrap"
+          className="mt-2 max-h-48 overflow-auto rounded-sm bg-sunken p-3 font-mono text-xs leading-relaxed whitespace-pre-wrap text-ink-2"
         >
           {lockedCoreRules}
         </pre>

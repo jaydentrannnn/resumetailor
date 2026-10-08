@@ -35,5 +35,5 @@ export function RunCostEstimate({
   }, [jdText, settings, enabled]);
   const text = describeEstimate(estimate);
   if (!text) return null;
-  return <p className="mt-2 text-center text-xs text-ink-muted">{text}</p>;
+  return <p className="font-mono text-xs text-ink-muted tabular-nums">{text}</p>;
 }

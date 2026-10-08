@@ -7,7 +7,10 @@ import {
   previewUrl,
   regenerateCoverLetter,
 } from "../api";
+import { buttonClass } from "../lib/buttonClass";
+import { ResultFrame } from "../pages/run/ResultFrame";
 import { CoverLetterActionBar, CoverLetterDetails } from "./CoverLetterPanel";
+import { SEGMENT_BASE, SEGMENT_OFF, SEGMENT_ON, SEGMENT_TRACK } from "./ui/Segmented";
 
 type PreviewTab = "resume" | "cover";
 
@@ -18,6 +21,8 @@ type Props = {
   readOnly?: boolean;
   /** Bumped when the resume was re-rendered, so the preview is fetched fresh. */
   revision?: number;
+  /** Inside the Tailor page's "Last result" tile: no box of its own. */
+  embedded?: boolean;
 };
 
 /**
@@ -32,6 +37,7 @@ export function DocumentsCard({
   onCoverRegenerated,
   readOnly = false,
   revision = 0,
+  embedded = false,
 }: Props) {
   const hasCoverLetter = Boolean(coverLetter);
   const hasCoverPdf = Boolean(coverLetter?.has_pdf);
@@ -56,13 +62,13 @@ export function DocumentsCard({
   }
 
   return (
-    <section className="rounded-xl border border-line bg-panel p-5 shadow-sm">
+    <ResultFrame embedded={embedded}>
       <div className="flex flex-wrap items-center justify-between gap-3">
         {hasCoverLetter ? (
           <div
             role="tablist"
             aria-label="Documents"
-            className="flex flex-wrap gap-2"
+            className={SEGMENT_TRACK}
             onKeyDown={(e) => {
               /** Roving-tabindex arrow navigation, as `role="tablist"` promises. */
               if (e.key !== "ArrowLeft" && e.key !== "ArrowRight") return;
@@ -91,15 +97,17 @@ export function DocumentsCard({
               Cover letter
             </PreviewTabButton>
           </div>
+        ) : embedded ? (
+          <h3 className="rt-tile-title">Tailored resume</h3>
         ) : (
-          <h2 className="font-display text-xl font-semibold">Tailored resume</h2>
+          <h2 className="rt-tile-title">Tailored resume</h2>
         )}
         {activeSrc && (
           <a
             href={activeSrc}
             target="_blank"
             rel="noreferrer"
-            className="text-sm text-ink-muted underline-offset-2 hover:text-accent hover:underline"
+            className="text-[13px] text-ink-muted underline underline-offset-2 hover:text-ink"
           >
             Open in new tab
           </a>
@@ -117,18 +125,10 @@ export function DocumentsCard({
         {tab === "resume" && (
           <>
             <div className="mb-4 flex flex-wrap justify-end gap-2">
-              <a
-                href={downloadPdfUrl(jobId)}
-                download
-                className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-on-accent"
-              >
+              <a href={downloadPdfUrl(jobId)} download className={buttonClass("primary", "sm")}>
                 Download .pdf
               </a>
-              <a
-                href={downloadUrl(jobId)}
-                download
-                className="rounded-md border border-line px-3 py-1.5 text-sm font-medium text-ink hover:border-accent hover:text-accent"
-              >
+              <a href={downloadUrl(jobId)} download className={buttonClass("secondary", "sm")}>
                 Download .docx
               </a>
             </div>
@@ -148,7 +148,7 @@ export function DocumentsCard({
             {hasCoverPdf ? (
               <PdfFrame iframeKey={`cover-${coverPreviewKey}`} title={activeTitle} src={coverSrc} />
             ) : (
-              <p className="rounded-lg border border-line bg-paper/40 px-4 py-6 text-sm text-ink-muted">
+              <p className="py-6 text-sm text-ink-muted">
                 PDF preview is not available for this cover letter. Use the downloads above or the
                 letter text below.
               </p>
@@ -161,7 +161,7 @@ export function DocumentsCard({
           </>
         )}
       </div>
-    </section>
+    </ResultFrame>
   );
 }
 
@@ -177,7 +177,7 @@ function PdfFrame({ iframeKey, title, src }: { iframeKey: string; title: string;
    * download/print controls is one click away.
    */
   return (
-    <div className="overflow-hidden rounded-lg border border-line bg-paper/40">
+    <div className="overflow-hidden rounded-sm border border-line bg-sunken">
       <iframe
         key={iframeKey}
         title={title}
@@ -186,7 +186,7 @@ function PdfFrame({ iframeKey, title, src }: { iframeKey: string; title: string;
       >
         <p className="p-4 text-sm text-ink-muted">
           PDF preview is not available in this browser.{" "}
-          <a href={src} target="_blank" rel="noreferrer" className="text-accent underline">
+          <a href={src} target="_blank" rel="noreferrer" className="text-ink underline">
             Open the PDF in a new tab
           </a>
           .
@@ -219,11 +219,7 @@ function PreviewTabButton({
       aria-controls={panelId}
       tabIndex={selected ? 0 : -1}
       onClick={onSelect}
-      className={
-        selected
-          ? "rounded-lg bg-accent px-3 py-1.5 text-sm font-semibold text-on-accent"
-          : "rounded-lg border border-line px-3 py-1.5 text-sm font-medium text-ink-muted hover:bg-paper"
-      }
+      className={`${SEGMENT_BASE} ${selected ? SEGMENT_ON : SEGMENT_OFF}`}
     >
       {children}
     </button>

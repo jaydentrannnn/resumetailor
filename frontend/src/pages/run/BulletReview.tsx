@@ -2,6 +2,12 @@ import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchJobBullets, rerenderJob, type JobBullet, type RerenderResult } from "../../api";
 import { Button } from "../../components/ui";
 import {
+  SEGMENT_BASE,
+  SEGMENT_OFF,
+  SEGMENT_ON,
+  SEGMENT_TRACK,
+} from "../../components/ui/Segmented";
+import {
   type BulletMode,
   groupRows,
   initialReview,
@@ -12,6 +18,7 @@ import {
 } from "../../lib/bulletReview";
 import { describe } from "../../lib/errors";
 import { useToast } from "../../lib/toast";
+import { ResultFrame } from "./ResultFrame";
 
 const MODES: { id: BulletMode; label: string }[] = [
   { id: "ai", label: "Keep" },
@@ -29,11 +36,14 @@ export function BulletReview({
   jobId,
   ready = true,
   onSaved,
+  embedded = false,
 }: {
   jobId: string;
   /** False while the run is still going: the bullets load once it finishes. */
   ready?: boolean;
   onSaved: () => void;
+  /** Inside the Tailor page's "Last result" tile: no box of its own. */
+  embedded?: boolean;
 }) {
   const toast = useToast();
   const [rows, setRows] = useState<JobBullet[] | null>(null);
@@ -62,19 +72,15 @@ export function BulletReview({
 
   if (!ready) {
     return (
-      <p className="rounded-lg border border-line bg-panel p-5 text-sm text-ink-muted">
+      <p className="text-sm text-ink-muted">
         You can review and edit the bullets when the run finishes.
       </p>
     );
   }
   if (unavailable) {
-    return (
-      <p className="rounded-lg border border-line bg-panel p-5 text-sm text-ink-muted">
-        {unavailable}
-      </p>
-    );
+    return <p className="text-sm text-ink-muted">{unavailable}</p>;
   }
-  if (!rows) return <p className="p-5 text-sm text-ink-muted">Loading bullets…</p>;
+  if (!rows) return <p className="text-sm text-ink-muted">Loading bullets…</p>;
 
   function choose(id: string, mode: BulletMode, text?: string) {
     setOver(null);
@@ -115,113 +121,112 @@ export function BulletReview({
   }
 
   return (
-    <section className="space-y-4 rounded-xl border border-line bg-panel p-5 shadow-sm">
-      <div>
-        <h3 className="font-display text-xl font-semibold">Review bullets</h3>
-        <p className="mt-1 text-sm text-ink-muted">
-          Your original wording is shown in grey above each tailored bullet. Changes are rendered
-          into the same template with no AI involved.
-        </p>
-      </div>
-      {groups.map((group) => (
-        <div key={group.key} className="space-y-3">
-          <h4 className="text-sm font-semibold text-ink">
-            {group.entry} <span className="font-normal text-ink-muted">· {group.section}</span>
-          </h4>
-          {group.rows.map((row) => {
-            const choice = state[row.bullet_id] ?? { mode: "ai", text: row.ai_text };
-            const terms = flagged[row.bullet_id];
-            return (
-              <div
-                key={row.bullet_id}
-                className={`rounded-lg border p-3 ${terms ? "border-warn bg-warn-soft/40" : "border-line"}`}
-              >
-                <p className="text-xs text-ink-muted">
-                  {row.merged_from.length > 0 ? "Combined from: " : "Original: "}
-                  {row.source_text}
-                </p>
-                {choice.mode === "edit" ? (
-                  <textarea
-                    aria-label={`Edit bullet for ${group.entry}`}
-                    className="field mt-2 text-sm"
-                    rows={2}
-                    value={choice.text}
-                    onChange={(e) => choose(row.bullet_id, "edit", e.target.value)}
-                  />
-                ) : (
-                  <p
-                    className={`mt-2 text-sm ${choice.mode === "remove" ? "text-ink-muted line-through" : "text-ink"}`}
-                  >
-                    {choice.mode === "original" ? row.source_text : row.ai_text}
-                  </p>
-                )}
+    <ResultFrame
+      embedded={embedded}
+      title="Review bullets"
+      description="Your original wording is shown in grey above each tailored bullet. Changes are rendered into the same template with no AI involved."
+    >
+      <div className="space-y-6">
+        {groups.map((group) => (
+          <div key={group.key} className="space-y-3">
+            <h4 className="text-sm font-semibold text-ink">
+              {group.entry} <span className="font-normal text-ink-muted">· {group.section}</span>
+            </h4>
+            {group.rows.map((row) => {
+              const choice = state[row.bullet_id] ?? { mode: "ai", text: row.ai_text };
+              const terms = flagged[row.bullet_id];
+              return (
                 <div
-                  role="radiogroup"
-                  aria-label="What to do with this bullet"
-                  className="mt-2 flex flex-wrap gap-1"
+                  key={row.bullet_id}
+                  className={
+                    terms
+                      ? "rounded-sm bg-attn-soft p-3"
+                      : "border-t border-line pt-3 first-of-type:border-t-0"
+                  }
                 >
-                  {MODES.map((m) => (
-                    <button
-                      key={m.id}
-                      type="button"
-                      role="radio"
-                      aria-checked={choice.mode === m.id}
-                      onClick={() =>
-                        choose(
-                          row.bullet_id,
-                          m.id,
-                          m.id === "edit" && choice.mode !== "edit"
-                            ? choice.mode === "original"
-                              ? row.source_text
-                              : row.ai_text
-                            : undefined,
-                        )
-                      }
-                      className={`rounded-md px-2.5 py-1 text-xs font-medium ${
-                        choice.mode === m.id
-                          ? "bg-accent text-on-accent"
-                          : "border border-line text-ink-muted hover:border-accent hover:text-accent"
-                      }`}
-                    >
-                      {m.id === "original" && row.merged_from.length > 0
-                        ? `Use ${row.merged_from.length} originals`
-                        : m.label}
-                    </button>
-                  ))}
-                </div>
-                {terms && (
-                  <label className="mt-2 flex items-start gap-2 text-sm text-warn">
-                    <input
-                      type="checkbox"
-                      className="mt-0.5"
-                      checked={confirmed.includes(row.bullet_id)}
-                      onChange={(e) =>
-                        setConfirmed((prev) =>
-                          e.target.checked
-                            ? [...prev, row.bullet_id]
-                            : prev.filter((id) => id !== row.bullet_id),
-                        )
-                      }
+                  <p className="text-xs text-ink-muted">
+                    {row.merged_from.length > 0 ? "Combined from: " : "Original: "}
+                    {row.source_text}
+                  </p>
+                  {choice.mode === "edit" ? (
+                    <textarea
+                      aria-label={`Edit bullet for ${group.entry}`}
+                      className="field mt-2 text-sm"
+                      rows={2}
+                      value={choice.text}
+                      onChange={(e) => choose(row.bullet_id, "edit", e.target.value)}
                     />
-                    <span>
-                      Not in your master resume: <strong>{terms.join(", ")}</strong>. This is
-                      accurate.
-                    </span>
-                  </label>
-                )}
-              </div>
-            );
-          })}
-        </div>
-      ))}
-      {over && (
-        <p role="alert" className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">
-          That comes to {over.pages} pages, {over.over_by_lines} line
-          {over.over_by_lines === 1 ? "" : "s"} over your {over.target_pages}-page target. Shorten
-          or remove a bullet; nothing was changed.
-        </p>
-      )}
-      <div className="sticky bottom-0 -mx-5 -mb-5 flex flex-wrap items-center gap-3 rounded-b-xl border-t border-line bg-panel px-5 py-3">
+                  ) : (
+                    <p
+                      className={`mt-2 text-sm ${choice.mode === "remove" ? "text-ink-muted line-through" : "text-ink"}`}
+                    >
+                      {choice.mode === "original" ? row.source_text : row.ai_text}
+                    </p>
+                  )}
+                  <div
+                    role="radiogroup"
+                    aria-label="What to do with this bullet"
+                    className={`mt-2 ${SEGMENT_TRACK}`}
+                  >
+                    {MODES.map((m) => (
+                      <button
+                        key={m.id}
+                        type="button"
+                        role="radio"
+                        aria-checked={choice.mode === m.id}
+                        onClick={() =>
+                          choose(
+                            row.bullet_id,
+                            m.id,
+                            m.id === "edit" && choice.mode !== "edit"
+                              ? choice.mode === "original"
+                                ? row.source_text
+                                : row.ai_text
+                              : undefined,
+                          )
+                        }
+                        className={`${SEGMENT_BASE} ${choice.mode === m.id ? SEGMENT_ON : SEGMENT_OFF}`}
+                      >
+                        {m.id === "original" && row.merged_from.length > 0
+                          ? `Use ${row.merged_from.length} originals`
+                          : m.label}
+                      </button>
+                    ))}
+                  </div>
+                  {terms && (
+                    <label className="mt-2 flex items-start gap-2 text-sm text-attn">
+                      <input
+                        type="checkbox"
+                        className="mt-0.5"
+                        checked={confirmed.includes(row.bullet_id)}
+                        onChange={(e) =>
+                          setConfirmed((prev) =>
+                            e.target.checked
+                              ? [...prev, row.bullet_id]
+                              : prev.filter((id) => id !== row.bullet_id),
+                          )
+                        }
+                      />
+                      <span>
+                        Not in your master resume: <strong>{terms.join(", ")}</strong>. This is
+                        accurate.
+                      </span>
+                    </label>
+                  )}
+                </div>
+              );
+            })}
+          </div>
+        ))}
+        {over && (
+          <p role="alert" className="mt-4 rounded-sm bg-danger-soft px-3 py-2 text-sm text-danger">
+            That comes to {over.pages} pages, {over.over_by_lines} line
+            {over.over_by_lines === 1 ? "" : "s"} over your {over.target_pages}-page target. Shorten
+            or remove a bullet; nothing was changed.
+          </p>
+        )}
+      </div>
+      <div className="sticky bottom-0 -mx-5 -mb-5 mt-4 flex flex-wrap items-center gap-3 rounded-b-sm border-t border-line bg-panel px-5 py-3 sm:-mx-6 sm:px-6">
         <span className="text-sm text-ink-muted" role="status">
           {pending === 0
             ? "No changes"
@@ -248,6 +253,6 @@ export function BulletReview({
           Update resume (no AI)
         </Button>
       </div>
-    </section>
+    </ResultFrame>
   );
 }

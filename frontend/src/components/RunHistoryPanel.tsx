@@ -5,6 +5,7 @@ import { useConfirm } from "../state/confirmState";
 import { useRunState } from "../state/runState";
 import { CompareRunsDialog } from "./CompareRunsDialog";
 import { DataTable, Pagination, RowActionsMenu, type TableColumn } from "./TableControls";
+import { Button, SelectionBar, StatusChip, Tile, type Tone } from "./ui";
 
 /** Runs that can be removed from disk-backed history (not queued or running). */
 function isDeletable(run: RunHistoryEntry): boolean {
@@ -112,14 +113,14 @@ export function RunHistoryPanel() {
         <span className="flex flex-wrap items-center gap-2">
           <button
             type="button"
-            className="text-left font-medium text-ink hover:text-accent hover:underline disabled:no-underline"
+            className="text-left font-medium text-ink hover:underline disabled:no-underline"
             disabled={busy || deleting || run.job_id === jobId}
             onClick={() => openRun(run)}
           >
             {run.title || "Untitled posting"}
           </button>
           {run.job_id === jobId && (
-            <span className="rounded bg-accent-soft px-1.5 py-0.5 text-micro font-semibold uppercase tracking-wide text-accent">
+            <span className="font-mono text-micro uppercase tracking-[0.08em] text-accent">
               Showing
             </span>
           )}
@@ -137,7 +138,9 @@ export function RunHistoryPanel() {
       heading: "Started",
       sortable: true,
       cell: (run) => (
-        <span className="tabular-nums text-ink-muted">{formatWhen(run.created_at)}</span>
+        <span className="font-mono text-xs tabular-nums text-ink-muted">
+          {formatWhen(run.created_at)}
+        </span>
       ),
     },
     {
@@ -161,7 +164,7 @@ export function RunHistoryPanel() {
       sortable: true,
       cell: (run) =>
         run.coverage_total != null && run.coverage_total > 0 ? (
-          <span className="tabular-nums" title="Required skills the resume covers">
+          <span className="font-mono tabular-nums" title="Required skills the resume covers">
             {run.coverage_matched ?? 0}/{run.coverage_total} required
           </span>
         ) : (
@@ -175,7 +178,7 @@ export function RunHistoryPanel() {
       className: "w-20",
       cell: (run) =>
         run.pages != null ? (
-          <span className="tabular-nums">{run.pages}</span>
+          <span className="font-mono tabular-nums">{run.pages}</span>
         ) : (
           <span className="text-ink-muted">—</span>
         ),
@@ -224,18 +227,23 @@ export function RunHistoryPanel() {
   );
 
   return (
-    <section className="rounded-xl border border-line bg-panel p-5 shadow-sm lg:col-start-1 lg:col-span-2 lg:row-start-7">
-      <h2 className="font-display text-xl font-semibold">Recent runs</h2>
-      <p className="mt-1 text-sm text-ink-muted">
-        Survives a page reload. Opening a past run shows its report and preview without downloading
-        again.
-      </p>
-
-      <div className="mt-4 space-y-3">
+    <Tile
+      title={
+        <>
+          Recent runs
+          <span className="ml-2 font-mono text-xs font-normal text-ink-muted">
+            {history.length}
+          </span>
+        </>
+      }
+      aria-label="Recent runs"
+      description="Survives a page reload. Opening a past run shows its report and preview without downloading again."
+    >
+      <div className="space-y-3">
         <div className="flex flex-wrap gap-2">
           <input
             type="search"
-            className="min-w-48 flex-1 rounded-md border border-line bg-panel px-3 text-sm"
+            className="field min-w-48 flex-1 sm:w-auto"
             placeholder="Search by role or company"
             aria-label="Search runs by role or company"
             value={query}
@@ -246,7 +254,7 @@ export function RunHistoryPanel() {
           />
           <select
             aria-label="Filter runs by status"
-            className="rounded-md border border-line bg-panel px-2 text-sm"
+            className="field w-auto"
             value={status}
             onChange={(event) => {
               setStatus(event.target.value as RunStatusFilter);
@@ -259,42 +267,36 @@ export function RunHistoryPanel() {
             <option value="cancelled">Cancelled</option>
             <option value="active">Queued or running</option>
           </select>
-          <button
-            type="button"
-            className="rounded-md border border-line bg-panel px-3 text-sm"
-            onClick={() => void refreshHistory()}
-          >
-            Refresh
-          </button>
+          <Button onClick={() => void refreshHistory()}>Refresh</Button>
         </div>
 
         {selectedIds.length > 0 && (
-          <div className="flex flex-wrap items-center gap-3 rounded-md bg-accent-soft p-2 text-sm">
-            <strong>{selectedIds.length} selected</strong>
-            <button type="button" onClick={() => setSelected(new Set())}>
-              Clear
-            </button>
-            <button
-              type="button"
+          <SelectionBar
+            count={selectedIds.length}
+            onClear={() => setSelected(new Set())}
+            clearLabel="Clear"
+          >
+            <Button
+              size="sm"
               disabled={comparable.length !== 2 || selectedIds.length !== 2}
               title="Select two finished runs to compare their bullets"
               onClick={openCompare}
             >
               Compare
-            </button>
-            <button
-              type="button"
-              className="text-danger"
+            </Button>
+            <Button
+              size="sm"
+              variant="danger"
               disabled={deleting || busy}
               onClick={() => void handleDelete(selectedIds)}
             >
               {deleting ? "Deleting…" : "Delete"}
-            </button>
-          </div>
+            </Button>
+          </SelectionBar>
         )}
 
         {deleteError && (
-          <p role="alert" className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">
+          <p role="alert" className="rounded-sm bg-danger-soft px-3 py-2 text-sm text-danger">
             {deleteError}
           </p>
         )}
@@ -325,7 +327,7 @@ export function RunHistoryPanel() {
                 No runs match these filters.{" "}
                 <button
                   type="button"
-                  className="mt-2 block w-full text-accent underline"
+                  className="mt-2 block w-full text-ink underline"
                   onClick={() => {
                     setQuery("");
                     setStatus("");
@@ -344,26 +346,21 @@ export function RunHistoryPanel() {
       {comparing && (
         <CompareRunsDialog a={comparing[0]} b={comparing[1]} onClose={() => setComparing(null)} />
       )}
-    </section>
+    </Tile>
   );
 }
 
+const STATUS: Record<RunHistoryEntry["status"], { tone: Tone; label: string }> = {
+  succeeded: { tone: "done", label: "Succeeded" },
+  failed: { tone: "failed", label: "Failed" },
+  cancelled: { tone: "muted", label: "Cancelled" },
+  queued: { tone: "neutral", label: "Queued" },
+  running: { tone: "live", label: "Running" },
+};
+
 function StatusPill({ status }: { status: RunHistoryEntry["status"] }) {
-  const tone =
-    status === "succeeded"
-      ? "bg-accent-soft text-accent"
-      : status === "failed"
-        ? "bg-danger-soft text-danger"
-        : status === "cancelled"
-          ? "bg-paper text-ink-muted"
-          : "bg-warn-soft text-warn";
-  return (
-    <span
-      className={`rounded-full px-2 py-0.5 text-micro font-semibold uppercase tracking-wide ${tone}`}
-    >
-      {status}
-    </span>
-  );
+  const { tone, label } = STATUS[status] ?? { tone: "neutral", label: status };
+  return <StatusChip tone={tone}>{label}</StatusChip>;
 }
 
 /** Format an ISO timestamp for the history table, or em dash when missing. */

@@ -1,6 +1,8 @@
 import { useEffect, useState } from "react";
 import type { ExpandedEntry, Expansion } from "../api";
 import { expansionUrl } from "../api";
+import { buttonClass } from "../lib/buttonClass";
+import { ResultFrame } from "../pages/run/ResultFrame";
 import { CopyButton } from "./CopyButton";
 
 function bulletsText(bullets: string[]): string {
@@ -41,28 +43,28 @@ function EntryBlock({
   const meta = [entry.location, `${entry.start} – ${entry.end}`].filter(Boolean).join(" · ");
 
   return (
-    <article className="rounded-lg border border-line bg-paper/40">
-      <div className="flex items-start gap-2 p-4">
+    <article className="border-t border-line first:border-t-0">
+      <div className="flex flex-wrap items-start gap-2 py-3">
         <button
           type="button"
           onClick={onToggle}
           aria-expanded={open}
           className="min-w-0 flex-1 text-left"
         >
-          <h3 className="font-medium leading-snug">
+          <h4 className="font-medium leading-snug">
             <span className="mr-1.5 inline-block w-3 text-ink-muted" aria-hidden>
               {open ? "▾" : "▸"}
             </span>
             {entry.title}
             <span className="text-ink-muted"> · {entry.company}</span>
-          </h3>
+          </h4>
           <p className="mt-0.5 pl-4 text-xs text-ink-muted">
             {meta}
             {entry.on_resume ? " · on resume" : ""}
             {" · "}
             {entry.bullets.length} bullet{entry.bullets.length === 1 ? "" : "s"}
             {" · "}
-            <span className={over ? "font-medium text-danger" : undefined}>
+            <span className={over ? "font-mono font-medium text-danger" : "font-mono"}>
               {entry.char_count}/{charLimit} chars
             </span>
           </p>
@@ -75,7 +77,7 @@ function EntryBlock({
       </div>
 
       {open && (
-        <div className="border-t border-line px-4 pb-4 pt-3">
+        <div className="pb-4 pl-4">
           <ul className="space-y-1.5 text-sm leading-relaxed">
             {entry.bullets.map((b, i) => (
               <li key={`${entry.entry_key}-${i}`} className="flex gap-2">
@@ -92,7 +94,7 @@ function EntryBlock({
           )}
 
           {entry.warnings.map((w) => (
-            <p key={w} className="mt-1 text-xs text-warn">
+            <p key={w} className="mt-1 text-xs text-attn">
               {w}
             </p>
           ))}
@@ -108,7 +110,16 @@ function EntryBlock({
  *
  * Entries collapse into an accordion (first open) so a long list does not stretch the page.
  */
-export function ExperienceCard({ expansion, jobId }: { expansion: Expansion; jobId: string }) {
+export function ExperienceCard({
+  expansion,
+  jobId,
+  embedded = false,
+}: {
+  expansion: Expansion;
+  jobId: string;
+  /** Inside the Tailor page's "Last result" tile: no box of its own. */
+  embedded?: boolean;
+}) {
   const firstKey = expansion.entries[0]?.entry_key ?? null;
   const [openKey, setOpenKey] = useState<string | null>(firstKey);
 
@@ -119,39 +130,29 @@ export function ExperienceCard({ expansion, jobId }: { expansion: Expansion; job
 
   if (!expansion.entries.length) {
     return (
-      <section className="rounded-xl border border-line bg-panel p-5 shadow-sm">
-        <h2 className="font-display text-xl font-semibold">Application experience</h2>
-        <p className="mt-2 text-sm text-ink-muted">
-          No experience entries were expanded for this run.
-        </p>
-      </section>
+      <ResultFrame embedded={embedded} title="Application experience">
+        <p className="text-sm text-ink-muted">No experience entries were expanded for this run.</p>
+      </ResultFrame>
     );
   }
 
   const allText = expansion.entries.map(entryBlock).join("\n\n---\n\n");
 
   return (
-    <section className="rounded-xl border border-line bg-panel p-5 shadow-sm">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="font-display text-xl font-semibold">Application experience</h2>
-          <p className="mt-1 text-sm text-ink-muted">
-            Expanded descriptions for application-form paste fields. Hard facts match the master
-            resume; bullets are longer than the one-pager allows.
-          </p>
-        </div>
-        <div className="flex shrink-0 flex-wrap gap-2">
+    <ResultFrame
+      embedded={embedded}
+      title="Application experience"
+      description="Expanded descriptions for application-form paste fields. Hard facts match the master resume; bullets are longer than the one-pager allows."
+      actions={
+        <>
           <CopyButton label="Copy all" text={allText} />
-          <a
-            href={expansionUrl(jobId)}
-            className="shrink-0 rounded-md border border-line px-2.5 py-1 text-xs font-medium text-ink-muted hover:border-accent hover:text-accent"
-          >
+          <a href={expansionUrl(jobId)} className={buttonClass("secondary", "sm")}>
             Download .md
           </a>
-        </div>
-      </div>
-
-      <div className="mt-4 space-y-2">
+        </>
+      }
+    >
+      <div>
         {expansion.entries.map((entry) => (
           <EntryBlock
             key={entry.entry_key}
@@ -166,12 +167,14 @@ export function ExperienceCard({ expansion, jobId }: { expansion: Expansion; job
       </div>
 
       {expansion.warnings.map((w) => (
-        <p key={w} className="mt-3 rounded-md bg-warn-soft px-3 py-2 text-sm text-warn">
+        <p key={w} className="mt-3 text-sm text-attn">
           {w}
         </p>
       ))}
 
-      <p className="mt-3 text-xs text-ink-muted">Model: {expansion.model}</p>
-    </section>
+      <p className="mt-3 text-xs text-ink-muted">
+        Model: <span className="font-mono">{expansion.model}</span>
+      </p>
+    </ResultFrame>
   );
 }

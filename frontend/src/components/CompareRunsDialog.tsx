@@ -44,18 +44,18 @@ export function CompareRunsDialog({
     <Modal title="Compare runs" onClose={onClose} wide>
       <div className="grid grid-cols-2 gap-3 text-sm">
         <p>
-          <span className="text-xs text-ink-muted">First</span>
+          <span className="rt-eyebrow">First</span>
           <br />
           <strong>{name(a)}</strong>
         </p>
         <p>
-          <span className="text-xs text-ink-muted">Second</span>
+          <span className="rt-eyebrow">Second</span>
           <br />
           <strong>{name(b)}</strong>
         </p>
       </div>
       {error && (
-        <p role="alert" className="mt-3 rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">
+        <p role="alert" className="mt-3 rounded-sm bg-danger-soft px-3 py-2 text-sm text-danger">
           {error}
         </p>
       )}
@@ -88,14 +88,10 @@ export function CompareRunsDialog({
               <h4 className="text-sm font-semibold">
                 {g.entry} <span className="font-normal text-ink-muted">· {g.section}</span>
               </h4>
-              <ul className="mt-2 space-y-2">
+              <ul className="mt-2">
                 {rows.map((r) => (
-                  <li key={r.bulletId} className="rounded-lg border border-line p-2 text-sm">
-                    {r.kind !== "same" && (
-                      <p className="text-micro font-semibold uppercase tracking-wide text-ink-muted">
-                        {KIND_LABEL[r.kind]}
-                      </p>
-                    )}
+                  <li key={r.bulletId} className="border-t border-line py-2.5 text-sm">
+                    {r.kind !== "same" && <p className="rt-eyebrow">{KIND_LABEL[r.kind]}</p>}
                     <div className="mt-1 grid grid-cols-1 gap-2 sm:grid-cols-2">
                       <p className={r.a == null ? "text-ink-muted italic" : "text-ink"}>
                         {r.a ?? "Not used"}

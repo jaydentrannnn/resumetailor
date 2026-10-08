@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { CoverLetter } from "../api";
 import { coverLetterDocxUrl, coverLetterMdUrl, coverLetterPdfUrl } from "../api";
+import { buttonClass } from "../lib/buttonClass";
 import { CopyButton } from "./CopyButton";
 
 export function letterText(letter: CoverLetter): string {
@@ -29,32 +30,21 @@ export function CoverLetterActionBar({ letter, jobId }: ActionProps) {
   return (
     <div className="flex flex-wrap items-center justify-between gap-3">
       <p className="text-sm text-ink-muted">
-        {letter.word_count} words · model {letter.model || "—"}
+        <span className="font-mono tabular-nums">{letter.word_count}</span> words · model{" "}
+        <span className="font-mono">{letter.model || "—"}</span>
       </p>
       <div className="flex flex-wrap justify-end gap-2">
         <CopyButton label="Copy all" text={letterText(letter)} />
-        <a
-          href={coverLetterMdUrl(jobId)}
-          download
-          className="rounded-lg border border-line px-3 py-1.5 text-sm hover:bg-paper"
-        >
+        <a href={coverLetterMdUrl(jobId)} download className={buttonClass("secondary", "sm")}>
           Download .md
         </a>
         {letter.has_docx && (
-          <a
-            href={coverLetterDocxUrl(jobId)}
-            download
-            className="rounded-lg border border-line px-3 py-1.5 text-sm hover:bg-paper"
-          >
+          <a href={coverLetterDocxUrl(jobId)} download className={buttonClass("secondary", "sm")}>
             Download .docx
           </a>
         )}
         {letter.has_pdf && (
-          <a
-            href={coverLetterPdfUrl(jobId)}
-            download
-            className="rounded-lg border border-line px-3 py-1.5 text-sm hover:bg-paper"
-          >
+          <a href={coverLetterPdfUrl(jobId)} download className={buttonClass("secondary", "sm")}>
             Download .pdf
           </a>
         )}
@@ -90,7 +80,7 @@ export function CoverLetterDetails({ letter, onRegenerate, readOnly = false }: D
   return (
     <div className="mt-4 space-y-4 border-t border-line pt-4">
       {letter.warnings.length > 0 && (
-        <ul className="list-disc space-y-1 pl-5 text-sm text-warning">
+        <ul className="list-disc space-y-1 pl-5 text-sm text-attn">
           {letter.warnings.map((warning) => (
             <li key={warning}>{warning}</li>
           ))}
@@ -105,7 +95,7 @@ export function CoverLetterDetails({ letter, onRegenerate, readOnly = false }: D
 
       {!readOnly && (
         <div className="space-y-2">
-          <label className="block text-sm font-medium" htmlFor="cover-regen-instruction">
+          <label className="block text-xs font-medium text-ink-2" htmlFor="cover-regen-instruction">
             Regenerate with instruction (optional)
           </label>
           <textarea
@@ -113,7 +103,7 @@ export function CoverLetterDetails({ letter, onRegenerate, readOnly = false }: D
             value={instruction}
             onChange={(e) => setInstruction(e.target.value)}
             rows={3}
-            className="field w-full font-mono text-sm"
+            className="field font-mono text-sm"
             placeholder="e.g. Lead with the RAG project and shorten the close."
           />
           {error && <p className="text-sm text-danger">{error}</p>}
@@ -121,7 +111,7 @@ export function CoverLetterDetails({ letter, onRegenerate, readOnly = false }: D
             type="button"
             disabled={busy}
             onClick={() => void handleRegenerate()}
-            className="rounded-lg border border-line px-3 py-2 text-sm font-medium hover:bg-paper disabled:opacity-50"
+            className={buttonClass("secondary", "md")}
           >
             {busy ? "Regenerating…" : "Regenerate cover letter"}
           </button>

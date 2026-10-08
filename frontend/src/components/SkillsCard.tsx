@@ -1,5 +1,7 @@
 import type { KeywordGap, SkillsPlan, SkillSuggestion } from "../api";
 import { recordSkillsCopy, skillsUrl } from "../api";
+import { buttonClass } from "../lib/buttonClass";
+import { ResultFrame } from "../pages/run/ResultFrame";
 import { CopyButton } from "./CopyButton";
 
 const TIER_LABEL: Record<SkillSuggestion["tier"], string> = {
@@ -41,15 +43,13 @@ function TierGroup({ tier, items }: { tier: SkillSuggestion["tier"]; items: Skil
   if (!items.length) return null;
   return (
     <div>
-      <h3 className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
-        {TIER_LABEL[tier]}
-      </h3>
+      <h4 className="rt-eyebrow">{TIER_LABEL[tier]}</h4>
       <ul className="mt-1.5 flex flex-wrap gap-1.5">
         {items.map((s) => (
           <li
             key={s.skill}
             title={chipTitle(s)}
-            className="rounded-full border border-line bg-paper/40 px-2.5 py-1 text-xs"
+            className="rounded-sm border border-line bg-field px-2.5 py-1 text-xs"
           >
             {s.skill}
           </li>
@@ -72,17 +72,19 @@ export function SkillsCard({
   plan,
   gaps,
   jobId,
+  embedded = false,
 }: {
   plan: SkillsPlan;
   gaps: KeywordGap[];
   jobId: string;
+  /** Inside the Tailor page's "Last result" tile: no box of its own. */
+  embedded?: boolean;
 }) {
   if (!plan.skills.length) {
     return (
-      <section className="rounded-xl border border-line bg-panel p-5 shadow-sm">
-        <h2 className="font-display text-xl font-semibold">Skills to list</h2>
-        <p className="mt-2 text-sm text-ink-muted">No skills were selected for this run.</p>
-      </section>
+      <ResultFrame embedded={embedded} title="Skills to list">
+        <p className="text-sm text-ink-muted">No skills were selected for this run.</p>
+      </ResultFrame>
     );
   }
 
@@ -110,38 +112,31 @@ export function SkillsCard({
     .sort(byBand);
 
   return (
-    <section className="rounded-xl border border-line bg-panel p-5 shadow-sm">
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div>
-          <h2 className="font-display text-xl font-semibold">Skills to list</h2>
-          <p className="mt-1 text-sm text-ink-muted">
-            Ranked for application-form Skills fields. Every entry traces to the master resume —
-            hover a chip for the posting's wording it matches.
-          </p>
-        </div>
-        <div className="flex shrink-0 flex-wrap gap-2">
+    <ResultFrame
+      embedded={embedded}
+      title="Skills to list"
+      description="Ranked for application-form Skills fields. Every entry traces to the master resume — hover a chip for the posting's wording it matches."
+      actions={
+        <>
           <CopyButton
             label="Copy all"
             text={pasteLine(plan)}
             onCopied={() => void recordSkillsCopy(jobId).catch(() => undefined)}
           />
-          <a
-            href={skillsUrl(jobId)}
-            className="shrink-0 rounded-md border border-line px-2.5 py-1 text-xs font-medium text-ink-muted hover:border-accent hover:text-accent"
-          >
+          <a href={skillsUrl(jobId)} className={buttonClass("secondary", "sm")}>
             Download .md
           </a>
-        </div>
-      </div>
-
-      <div className="mt-4 space-y-3">
+        </>
+      }
+    >
+      <div className="space-y-4">
         <TierGroup tier="required" items={required} />
         <TierGroup tier="preferred" items={preferred} />
         <TierGroup tier="additional" items={additional} />
       </div>
 
       {noEvidence.length > 0 && (
-        <p className="mt-3 rounded-md bg-warn-soft px-3 py-2 text-sm text-warn">
+        <p className="mt-4 text-sm text-attn">
           The posting also asks for: {noEvidence.map(annotate).join(", ")} — not supported by the
           master resume, so not suggested above.
         </p>
@@ -159,12 +154,14 @@ export function SkillsCard({
       )}
 
       {plan.warnings.map((w) => (
-        <p key={w} className="mt-3 rounded-md bg-warn-soft px-3 py-2 text-sm text-warn">
+        <p key={w} className="mt-3 text-sm text-attn">
           {w}
         </p>
       ))}
 
-      <p className="mt-3 text-xs text-ink-muted">Model: {plan.model}</p>
-    </section>
+      <p className="mt-4 text-xs text-ink-muted">
+        Model: <span className="font-mono">{plan.model}</span>
+      </p>
+    </ResultFrame>
   );
 }
