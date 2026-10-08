@@ -1,5 +1,5 @@
 import { useState } from "react";
-import type { SourceConfig } from "../../api";
+import type { SourceConfig, SourceField } from "../../api";
 import { Button, Modal } from "../../components/ui";
 import {
   githubPageUrl,
@@ -195,7 +195,7 @@ export function SourceFlows({
 }: {
   controller: ReturnType<typeof useSourcesController>;
   sources: SourceConfig[];
-  fields: import("../../api").SourceField[];
+  fields: SourceField[];
   saveState: SaveState;
   saveError: string | null;
   onFlush?: () => void | Promise<unknown>;
