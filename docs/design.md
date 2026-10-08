@@ -206,3 +206,12 @@ follow the same palette, 4px corners, black/white primary and single green accen
 cannot share this stylesheet: the extension self-hosts its own fonts (`extension/fonts`),
 the chip uses system fonts (it lives in a host page's shadow DOM) and the splash uses a
 system serif. Keep their hex values in step with the token table above.
+
+## Logo
+
+The mark is the "RT" page (`docs/design/logo/resumetailor-mark-{black,white}.svg`, the
+full-size source art). The SPA header uses cropped, downscaled copies
+(`frontend/src/assets/logo-mark-{black,white}.svg`, 154×192, ~7 KB) at `h-5` (20px tall)
+before the serif wordmark; `.rt-logo-light` / `.rt-logo-dark` in `index.css` show the copy
+that matches `data-theme`. Regenerate the header copies from the source art (crop to the
+mask's alpha bounds, scale to 192px tall) rather than editing them by hand.

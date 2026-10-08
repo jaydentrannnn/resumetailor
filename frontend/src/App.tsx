@@ -31,6 +31,8 @@ import { ApplicantProfileProvider } from "./state/applicantProfileState";
 import { useApplicantProfile } from "./state/applicantProfileState";
 import { useEditorState } from "./state/editorState";
 import { useConfirm } from "./state/confirmState";
+import logoMarkBlack from "./assets/logo-mark-black.svg";
+import logoMarkWhite from "./assets/logo-mark-white.svg";
 
 // Text links; the active one is ink with a 2px accent underline sitting on the header rule.
 const navLinkClassName = ({ isActive }: { isActive: boolean }) =>
@@ -130,7 +132,19 @@ function Shell() {
               sideways — the old unwrapped row was the app's one real horizontal-scroll bug. */}
           <div className="flex min-w-0 flex-wrap items-center gap-x-7 gap-y-0">
             <p className="inline-flex items-center gap-2.5 font-display text-lg font-semibold tracking-tight text-ink [overflow-wrap:anywhere]">
-              <span aria-hidden="true" className="size-2.5 rounded-xs bg-accent" />
+              {/* Two copies of the mark; CSS shows the one that matches data-theme. */}
+              <img
+                src={logoMarkBlack}
+                alt=""
+                aria-hidden="true"
+                className="rt-logo-light h-5 w-auto shrink-0"
+              />
+              <img
+                src={logoMarkWhite}
+                alt=""
+                aria-hidden="true"
+                className="rt-logo-dark h-5 w-auto shrink-0"
+              />
               ResumeTailor
             </p>
             <nav className="flex flex-wrap">
