@@ -43,7 +43,7 @@
   --selected: #1f6b4a;
   --on-selected: #ffffff;
   --selected-line: #1f6b4a;
-  --overlay: 0 8px 24px -12px rgb(0 0 0 / .18);
+  --overlay: 0 8px 24px -12px rgb(0 0 0 / .18), 0 0 0 1px var(--line);
   --radius: 4px;
   --font-body: "Geist", system-ui, sans-serif;
   --font-mono: "Geist Mono", ui-monospace, Consolas, monospace;
@@ -73,7 +73,7 @@
     --selected: color-mix(in srgb, #6fbf98 12%, transparent);
     --on-selected: #6fbf98;
     --selected-line: #6fbf98;
-    --overlay: 0 0 0 1px var(--line);
+    --overlay: 0 0 0 1px var(--line-hover);
   }
 }
 
@@ -83,7 +83,8 @@ body { margin: 0; background: var(--page); color: var(--ink); font: 400 14px/1.5
 h1, h2, h3, p { margin: 0; }
 h1 { font: 350 32px/1.1 var(--font-display); letter-spacing: -.015em; text-wrap: balance; }
 h2, h3 { font-size: 15px; font-weight: 600; }
-a { color: var(--accent); text-underline-offset: 3px; }
+a { color: var(--ink); text-decoration: underline; text-underline-offset: 2px; }
+a:not(.button):hover { color: var(--accent); }
 button, input, select, textarea { font: inherit; }
 button, a.button { display: inline-flex; justify-content: center; align-items: center; gap: 6px; min-height: 36px; padding: 7px 12px; border: 1px solid var(--line); border-radius: var(--radius); background: var(--field); color: var(--ink); font-size: 13px; font-weight: 500; line-height: 20px; cursor: pointer; text-decoration: none; }
 button:hover, a.button:hover { background: var(--sunken); border-color: var(--line-hover); }

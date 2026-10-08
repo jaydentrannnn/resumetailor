@@ -46,7 +46,8 @@
       .label{white-space:nowrap;overflow:hidden;text-overflow:ellipsis;min-width:0}
       button{font:inherit;cursor:pointer;border:1px solid #3a3a38;background:#0b0b0b;color:#fff;
         border-radius:4px;padding:3px 10px;white-space:nowrap;flex-shrink:0}
-      button.primary{background:#0b0b0b;border-color:#0b0b0b;color:#fff}
+      button.primary{background:#fff;border-color:#fff;color:#0b0b0b;font-weight:600}
+      button.primary:hover{background:#e2e2df;border-color:#e2e2df}
       button.close{border:none;padding:2px 6px;color:#d4d4d2}
       button:hover{background:#1d1d1d}
       button:focus-visible{outline:2px solid #6fbf98;outline-offset:2px}
@@ -55,7 +56,8 @@
         .chip{background:#f5f5f4;color:#0b0b0b;border-color:#f5f5f4;box-shadow:0 0 0 1px #2a2a2a}
         .chip::before{background:#6fbf98}
         button{background:#f5f5f4;color:#0b0b0b;border-color:#c8c8c4}
-        button.primary{background:#f5f5f4;border-color:#f5f5f4;color:#0b0b0b}
+        button.primary{background:#0b0b0b;border-color:#0b0b0b;color:#fff}
+        button.primary:hover{background:#1d1d1d;border-color:#1d1d1d}
         button.close{color:#3a3a38}
         button:hover{background:#e2e2df}
         button:focus-visible{outline-color:#1f6b4a}
