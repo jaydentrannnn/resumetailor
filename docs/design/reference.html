@@ -1,0 +1,1250 @@
+<!doctype html>
+<html lang="en"><head><meta charset="utf-8"><meta name="viewport" content="width=device-width, initial-scale=1">
+<title>ResumeTailor Redesign Preview</title>
+<link rel="preconnect" href="https://fonts.googleapis.com">
+<link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+<link rel="stylesheet" href="https://fonts.googleapis.com/css2?family=Fraunces:opsz,wght@9..144,300..600&family=Geist+Mono:wght@400..500&family=Geist:wght@300..700&display=swap">
+<style>
+/* v5 design reference. White page, soft grey tiles, black/white primary buttons, racing green for selection,
+   progress and success. Blue = needs you, red = failed; each status has its own mark shape. */
+:root {
+  --page: #ffffff;
+  --chrome: #ffffff;
+  --raised: #f7f7f6;
+  --sunken: #efefed;
+  --field: #ffffff;
+  --doc: #ffffff;
+  --doc-line: #d9d9d6;
+  --line: #e2e2df;
+  --line-strong: #c9c9c6;
+  --ink: #0b0b0b;
+  --ink-2: #3a3a38;
+  --muted: #6b6b68;
+  --on-ink: #ffffff;
+  --acc: #1f6b4a;
+  --success: #1f6b4a;
+  --attn: #1d4ed8;
+  --danger: #c42020;
+  --tint: 10%;
+  --row-tint: 9%;
+  --sel-bg: #1f6b4a;
+  --sel-fg: #ffffff;
+  --sel-bd: #1f6b4a;
+  --overlay: 0 8px 24px -12px rgb(0 0 0 / 0.18), 0 0 0 1px var(--line);
+  --scrim: rgb(0 0 0 / 0.4);
+  --font-display: "Fraunces", Georgia, "Times New Roman", serif;
+  --font-body: "Geist", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono", ui-monospace, "SFMono-Regular", Consolas, monospace;
+  --r: 4px;
+  --ease: cubic-bezier(0.16, 1, 0.3, 1);
+  color-scheme: light;
+}
+@media (prefers-color-scheme: dark) {
+  :root:not([data-theme="light"]) {
+    --page: #0a0a0a; --chrome: #0a0a0a; --raised: #151515; --sunken: #1d1d1d; --field: #0f0f0f;
+    --doc: #e9e9e7; --doc-line: #b9b9b5;
+    --line: #2a2a2a; --line-strong: #3d3d3d; --ink: #f5f5f4; --ink-2: #d4d4d2; --muted: #8f8f8c; --on-ink: #0a0a0a;
+    --acc: #6fbf98; --success: #6fae90; --attn: #8699cb; --danger: #d17875; --tint: 8%; --row-tint: 12%;
+    --sel-bg: color-mix(in srgb, #6fbf98 12%, transparent); --sel-fg: #6fbf98; --sel-bd: #6fbf98;
+    --overlay: 0 0 0 1px var(--line-strong); --scrim: rgb(0 0 0 / 0.6);
+    color-scheme: dark;
+  }
+}
+:root[data-theme="dark"] {
+  --page: #0a0a0a; --chrome: #0a0a0a; --raised: #151515; --sunken: #1d1d1d; --field: #0f0f0f;
+  --doc: #e9e9e7; --doc-line: #b9b9b5;
+  --line: #2a2a2a; --line-strong: #3d3d3d; --ink: #f5f5f4; --ink-2: #d4d4d2; --muted: #8f8f8c; --on-ink: #0a0a0a;
+  --acc: #6fbf98; --success: #6fae90; --attn: #8699cb; --danger: #d17875; --tint: 8%; --row-tint: 12%;
+  --sel-bg: color-mix(in srgb, #6fbf98 12%, transparent); --sel-fg: #6fbf98; --sel-bd: #6fbf98;
+  --overlay: 0 0 0 1px var(--line-strong); --scrim: rgb(0 0 0 / 0.6);
+  color-scheme: dark;
+}
+
+* { box-sizing: border-box; }
+body {
+  margin: 0; padding-inline: clamp(16px, 3vw, 32px); padding-block: 16px 48px;
+  background: var(--page); color: var(--ink); font: 400 14px/1.5 var(--font-body); -webkit-font-smoothing: antialiased;
+}
+::selection { background: color-mix(in srgb, var(--acc) 35%, transparent); }
+:focus-visible { outline: 2px solid var(--acc); outline-offset: 2px; }
+h1, h2, h3 { margin: 0; text-wrap: balance; }
+p { margin: 0; }
+ul, ol { margin: 0; padding: 0; list-style: none; }
+a { color: inherit; }
+.mono { font-family: var(--font-mono); font-variant-numeric: tabular-nums; }
+.muted { color: var(--muted); }
+.sr { position: absolute; width: 1px; height: 1px; overflow: hidden; clip-path: inset(50%); white-space: nowrap; }
+.label { font: 500 11px/1.3 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+.small { font-size: 12px; }
+
+/* ---------- Segmented control: selected = solid green (light) / green outline + wash (dark) ---------- */
+.seg { display: inline-flex; flex-wrap: wrap; gap: 2px; padding: 3px; border: 1px solid var(--line); border-radius: calc(var(--r) + 3px); background: var(--sunken); }
+.seg button {
+  display: inline-flex; align-items: center; gap: 6px; height: 28px; padding: 0 12px; border: 0; border-radius: var(--r);
+  background: transparent; color: var(--muted); font: 500 12px/1 var(--font-body); cursor: pointer; transition: background-color 0.15s, color 0.15s;
+}
+.seg button:hover { color: var(--ink); }
+.seg button[aria-pressed="true"], .seg button[aria-selected="true"] { background: var(--sel-bg); color: var(--sel-fg); box-shadow: inset 0 0 0 1px var(--sel-bd); }
+.seg .n { font: 400 11px/1 var(--font-mono); opacity: 0.8; }
+
+/* ---------- Preview controls ---------- */
+.pv { max-width: 1264px; margin: 0 auto 16px; padding: 14px 16px; border: 1px solid var(--line); border-radius: var(--r); background: var(--raised); display: grid; gap: 12px; }
+.pv-head { display: flex; flex-wrap: wrap; align-items: baseline; gap: 4px 12px; }
+.pv-head strong { font-size: 13px; font-weight: 600; }
+.pv-head span { font-size: 12px; color: var(--muted); }
+.pv-groups { display: flex; flex-wrap: wrap; gap: 12px 28px; }
+.pv-group { border: 0; margin: 0; padding: 0; min-width: 0; }
+.pv-group legend { padding: 0; margin-bottom: 6px; }
+
+/* ---------- App frame ---------- */
+.frame { max-width: 1264px; margin: 0 auto; border: 1px solid var(--line); border-radius: var(--r); background: var(--page); min-width: 0; }
+.top { border-bottom: 1px solid var(--line); position: relative; background: var(--chrome); border-radius: var(--r) var(--r) 0 0; }
+.top-row { display: flex; align-items: center; flex-wrap: wrap; gap: 0 28px; padding-inline: 24px; min-height: 56px; }
+.mark { display: inline-flex; align-items: center; gap: 10px; font: 600 18px/1 var(--font-display); letter-spacing: -0.01em; }
+.mark i { width: 10px; height: 10px; border-radius: 2px; background: var(--acc); }
+.nav { display: flex; align-self: stretch; overflow-x: auto; min-width: 0; scrollbar-width: none; }
+.nav-link {
+  position: relative; display: inline-flex; align-items: center; padding: 0 12px; height: 56px; border: 0; background: none; cursor: pointer;
+  font: 500 13px/1 var(--font-body); color: var(--muted); white-space: nowrap; transition: color 0.15s;
+}
+.nav-link:hover { color: var(--ink); }
+.nav-link[aria-current="page"] { color: var(--ink); }
+.nav-link[aria-current="page"]::after { content: ""; position: absolute; left: 12px; right: 12px; bottom: -1px; height: 2px; background: var(--acc); }
+.top-tools { margin-left: auto; display: flex; align-items: center; gap: 8px; padding-block: 10px; }
+
+.main { max-width: 1200px; margin: 0 auto; padding: 0 24px 48px; }
+.stack { display: grid; gap: 16px; }
+.page-head { padding-block: 40px 24px; display: grid; gap: 10px; }
+.page-head-row { display: flex; flex-wrap: wrap; align-items: end; justify-content: space-between; gap: 16px; }
+.display { font: 350 clamp(34px, 4.4vw, 50px)/1.04 var(--font-display); letter-spacing: -0.015em; }
+.lede { max-width: 62ch; color: var(--muted); font-size: 15px; }
+.back { display: inline-flex; align-items: center; gap: 6px; font-size: 13px; color: var(--muted); text-decoration: none; cursor: pointer; background: none; border: 0; padding: 0; font-family: inherit; }
+.back:hover { color: var(--ink); }
+
+/* ---------- Controls ---------- */
+.btn {
+  display: inline-flex; align-items: center; justify-content: center; gap: 8px; height: 36px; padding: 0 16px;
+  border-radius: var(--r); border: 1px solid transparent; font: 500 13px/1 var(--font-body); cursor: pointer; white-space: nowrap;
+  transition: background-color 0.15s, border-color 0.15s, color 0.15s; text-decoration: none;
+}
+.btn:active { transform: translateY(1px); }
+.btn-primary { background: var(--ink); color: var(--on-ink); }
+.btn-primary:hover { background: var(--ink-2); }
+.btn-secondary { background: var(--field); border-color: var(--line-strong); color: var(--ink); }
+.btn-secondary:hover { border-color: var(--ink); }
+.btn-danger { background: var(--field); border-color: color-mix(in srgb, var(--danger) 45%, var(--field)); color: var(--danger); }
+.btn-danger:hover { border-color: var(--danger); }
+.btn-ghost { background: transparent; color: var(--ink-2); padding-inline: 10px; }
+.btn-ghost:hover { color: var(--ink); text-decoration: underline; text-underline-offset: 3px; }
+.btn-sm { height: 30px; padding: 0 12px; font-size: 12px; }
+.btn-quiet { height: 36px; padding: 0 12px; font-size: 12px; font-weight: 600; background: var(--field); border-color: var(--line); color: var(--ink-2); }
+.btn-quiet:hover { border-color: var(--line-strong); color: var(--ink); }
+.btn svg { width: 10px; height: 10px; }
+.field {
+  height: 36px; padding: 0 12px; min-width: 0; border: 1px solid var(--line-strong); border-radius: var(--r);
+  background: var(--field); color: var(--ink); font: 400 13px/1 var(--font-body); width: 100%;
+}
+.field:focus { border-color: var(--acc); outline: none; box-shadow: 0 0 0 1px var(--acc); }
+textarea.field { height: auto; padding: 12px 14px; line-height: 1.6; resize: vertical; }
+input[type="checkbox"], input[type="radio"] { width: 15px; height: 15px; margin: 0; accent-color: var(--acc); cursor: pointer; }
+.fgrid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 14px 16px; }
+.fgrid.three { grid-template-columns: repeat(3, minmax(0, 1fr)); }
+.f { display: grid; gap: 6px; min-width: 0; }
+.f > span { font-size: 12px; font-weight: 500; color: var(--ink-2); }
+.f .help { font-size: 12px; color: var(--muted); font-weight: 400; }
+.span2 { grid-column: span 2; }
+.toggle { position: relative; width: 34px; height: 20px; flex: none; border-radius: var(--r); background: var(--line-strong); border: 0; cursor: pointer; padding: 0; }
+.toggle::after { content: ""; position: absolute; top: 3px; left: 3px; width: 14px; height: 14px; border-radius: 2px; background: var(--field); transition: transform 0.15s var(--ease); }
+.toggle[aria-checked="true"] { background: var(--acc); }
+.toggle[aria-checked="true"]::after { transform: translateX(14px); }
+
+/* ---------- Tiles ---------- */
+.panel { border: 1px solid var(--line); border-radius: var(--r); background: var(--raised); padding: 20px 24px; min-width: 0; }
+.panel-head { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 8px 16px; margin-bottom: 16px; }
+.panel-head h2 { font-size: 15px; font-weight: 600; letter-spacing: -0.005em; }
+.panel-head .meta { font-size: 12px; color: var(--muted); }
+.panel-head p.meta { flex-basis: 100%; margin-top: -4px; }
+.count { font: 400 12px/1 var(--font-mono); color: var(--muted); margin-left: 8px; }
+.actions { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-top: 16px; }
+.actions .hint { margin-left: auto; font-size: 12px; color: var(--muted); }
+.sect + .sect { border-top: 1px solid var(--line); margin-top: 18px; padding-top: 18px; }
+.sect h3 { font-size: 13px; font-weight: 600; margin-bottom: 12px; }
+
+/* Label/value summary: spaced apart, no dividers */
+.summary { display: flex; flex-wrap: wrap; gap: 14px 48px; }
+.summary > div { display: grid; gap: 4px; min-width: 0; }
+.summary .val { font-size: 15px; font-weight: 500; overflow-wrap: anywhere; }
+.summary .val .mono { font-size: 12px; font-weight: 400; color: var(--muted); margin-left: 4px; }
+.summary .val.mono { font-size: 13px; }
+
+.split { display: grid; grid-template-columns: minmax(0, 1.55fr) minmax(0, 1fr); gap: 16px; align-items: start; }
+.split-even { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; align-items: start; }
+.tabpane { display: grid; gap: 8px; margin-top: 14px; }
+.filerow { display: flex; flex-wrap: wrap; align-items: center; gap: 12px; padding: 18px; border: 1px dashed var(--line-strong); border-radius: var(--r); background: var(--field); }
+.filerow span { color: var(--muted); font-size: 12px; }
+
+/* Progress */
+.meter { height: 3px; border-radius: 2px; background: var(--line); overflow: hidden; }
+.meter span { display: block; height: 100%; width: var(--w); border-radius: 2px; background: var(--acc); animation: grow 1.4s var(--ease) both; }
+@keyframes grow { from { width: 0; } }
+.run-pct { display: flex; align-items: center; justify-content: space-between; margin-bottom: 12px; }
+.run-pct strong { font: 350 38px/1 var(--font-display); letter-spacing: -0.015em; font-variant-numeric: tabular-nums; }
+.stages { margin-top: 16px; }
+.stages li { display: grid; grid-template-columns: 16px minmax(0, 1fr) auto; align-items: center; gap: 12px; padding: 10px 0; border-top: 1px solid var(--line); font-size: 13px; color: var(--muted); }
+.stages li:first-child { border-top: 0; }
+.stages li.done { color: var(--ink-2); }
+.stages li.active { color: var(--ink); font-weight: 500; }
+.stages .t { font-size: 12px; color: var(--muted); font-weight: 400; }
+.st { width: 16px; height: 16px; display: grid; place-items: center; }
+.st svg { width: 14px; height: 14px; color: var(--acc); }
+.st .ring { width: 9px; height: 9px; border-radius: 2px; border: 1px solid var(--line-strong); }
+.pulse { width: 7px; height: 7px; border-radius: 2px; background: var(--acc); animation: pulse 1.6s ease-in-out infinite; flex: none; }
+@keyframes pulse { 50% { opacity: 0.35; transform: scale(0.8); } }
+
+/* Figures */
+.figures { display: flex; flex-wrap: wrap; gap: 16px 64px; padding-block: 4px 8px; }
+.figures > div { display: grid; gap: 6px; min-width: 0; }
+.fig { font: 350 clamp(40px, 4.6vw, 56px)/1 var(--font-display); letter-spacing: -0.015em; font-variant-numeric: tabular-nums lining-nums; }
+.figures.sm .fig { font-size: 34px; }
+.fig-l { font-size: 12px; color: var(--muted); }
+.notes { margin-top: 18px; display: grid; gap: 10px; }
+.notes li { display: flex; flex-wrap: wrap; align-items: center; gap: 6px 12px; font-size: 13px; color: var(--ink-2); }
+
+/* Status chips: hue + shape + text. check = done, ring = needs you, diamond = failed, spinner = live, dash = closed, dot = ready */
+.chip {
+  --tone: var(--ink-2);
+  display: inline-flex; align-items: center; gap: 7px; height: 24px; padding: 0 9px; border-radius: var(--r);
+  background: color-mix(in srgb, var(--tone) var(--tint), var(--raised)); font: 500 12px/1 var(--font-body); color: var(--tone); white-space: nowrap;
+}
+.mk { display: inline-block; flex: none; }
+.s-ready .mk { width: 6px; height: 6px; border-radius: 50%; background: currentColor; }
+.s-ok { --tone: var(--success); }
+.s-ok .mk { width: 4px; height: 8px; border: solid currentColor; border-width: 0 1.7px 1.7px 0; transform: translateY(-1px) rotate(45deg); margin-inline: 1px; }
+.s-attn { --tone: var(--attn); }
+.s-attn .mk { width: 8px; height: 8px; border-radius: 50%; border: 1.7px solid currentColor; }
+.s-fail { --tone: var(--danger); }
+.s-fail .mk { width: 6px; height: 6px; border-radius: 1px; background: currentColor; transform: rotate(45deg); margin-inline: 1px; }
+.s-live { background: transparent; box-shadow: inset 0 0 0 1px var(--line-strong); color: var(--ink-2); }
+.s-live .mk { width: 10px; height: 10px; border-radius: 50%; border: 1.7px solid var(--line-strong); border-top-color: var(--acc); animation: spin 0.9s linear infinite; }
+.s-muted { background: transparent; box-shadow: inset 0 0 0 1px var(--line); color: var(--muted); }
+.s-muted .mk { width: 7px; height: 1.7px; background: currentColor; }
+.header-pill { height: 36px; font-size: 12px; font-weight: 600; padding: 0 12px; }
+@keyframes spin { to { transform: rotate(360deg); } }
+.txt-ok { color: var(--success); } .txt-attn { color: var(--attn); } .txt-fail { color: var(--danger); }
+.inline-mk { display: inline-flex; align-items: center; gap: 8px; }
+
+/* Inline notice row (attention, no box colour flood) */
+.notice { display: flex; flex-wrap: wrap; align-items: center; gap: 10px 14px; padding: 12px 16px; border: 1px solid var(--line); border-left: 2px solid var(--attn); border-radius: var(--r); background: var(--raised); font-size: 13px; }
+.notice .chip { flex: none; }
+.notice p { flex: 1 1 260px; color: var(--ink-2); }
+.notice.fail { border-left-color: var(--danger); }
+
+/* Apply */
+.opbar { display: grid; grid-template-columns: auto minmax(120px, 1fr) auto; align-items: center; gap: 20px; border: 1px solid var(--line); border-radius: var(--r); background: var(--raised); padding: 14px 20px; }
+.opbar-text { display: flex; align-items: center; gap: 10px; flex-wrap: wrap; font-size: 13px; }
+.opbar-text strong { font-weight: 600; }
+.tools { display: flex; flex-wrap: wrap; align-items: center; gap: 8px; }
+.tools .field { width: 220px; }
+.tools .field.narrow { width: 160px; }
+.subbar { display: flex; flex-wrap: wrap; align-items: center; justify-content: space-between; gap: 10px 16px; margin-bottom: 14px; }
+.selbar {
+  display: flex; flex-wrap: wrap; align-items: center; gap: 8px; margin-bottom: 12px; padding: 7px 8px 7px 14px; border-radius: var(--r); font-size: 13px;
+  background: color-mix(in srgb, var(--acc) 10%, var(--raised)); border: 1px solid color-mix(in srgb, var(--acc) 40%, var(--raised));
+}
+.selbar strong { font-weight: 600; margin-right: auto; }
+.table-wrap { position: relative; overflow-x: auto; margin-inline: -24px; padding-inline: 24px; }
+table { width: 100%; min-width: 760px; border-collapse: collapse; font-size: 13px; }
+table.compact { min-width: 560px; }
+th { text-align: left; padding: 0 12px 10px 0; border-bottom: 1px solid var(--line-strong); white-space: nowrap; font: 500 11px/1.3 var(--font-mono); letter-spacing: 0.08em; text-transform: uppercase; color: var(--muted); }
+td { padding: 11px 12px 11px 0; border-bottom: 1px solid var(--line); vertical-align: middle; transition: background-color 0.12s; }
+th:first-child, td:first-child { padding-left: 10px; }
+tbody tr:last-child td { border-bottom: 0; }
+tbody tr:hover td { background: var(--sunken); }
+tbody tr:has(input:checked) td { background: color-mix(in srgb, var(--acc) var(--row-tint), var(--raised)); }
+tbody tr:has(input:checked) td:first-child { box-shadow: inset 2px 0 0 var(--acc); }
+.co { font-weight: 500; color: var(--ink); }
+.job { color: var(--ink-2); }
+.num { text-align: right; font-variant-numeric: tabular-nums; }
+.match { display: inline-flex; align-items: center; gap: 8px; justify-content: flex-end; }
+.match i { display: block; width: 44px; height: 3px; border-radius: 2px; background: var(--line); overflow: hidden; }
+.match i b { display: block; height: 100%; width: var(--w); background: var(--ink-2); }
+.cell-act { text-align: right; padding-right: 10px; white-space: nowrap; }
+.pager { display: flex; align-items: center; justify-content: flex-end; gap: 8px; margin-top: 14px; font-size: 12px; }
+.pager .mono { margin-right: auto; color: var(--muted); }
+
+/* Hairline row list (sources, settings rows, entries) */
+.rows > li, .rows > .row { display: grid; grid-template-columns: minmax(0, 1fr) auto; align-items: center; gap: 8px 24px; padding: 14px 0; border-top: 1px solid var(--line); }
+.rows > li:first-child, .rows > .row:first-child { border-top: 0; padding-top: 2px; }
+.rows .t1 { font-weight: 500; display: flex; flex-wrap: wrap; align-items: center; gap: 4px 10px; }
+.rows .t2 { font-size: 12px; color: var(--muted); margin-top: 2px; }
+.rows .ctl { display: flex; flex-wrap: wrap; align-items: center; justify-content: flex-end; gap: 8px; }
+.rows .ctl .field { width: 240px; }
+
+/* Side rail (settings, editor index, profile sections) */
+.with-rail { display: grid; grid-template-columns: 200px minmax(0, 1fr); gap: 32px; align-items: start; }
+.rail { position: sticky; top: 16px; display: grid; gap: 2px; }
+.rail button, .rail a {
+  display: flex; align-items: center; justify-content: space-between; gap: 8px; width: 100%; padding: 8px 12px; border: 0; border-radius: var(--r);
+  background: transparent; color: var(--muted); font: 500 13px/1.2 var(--font-body); text-align: left; cursor: pointer; text-decoration: none;
+}
+.rail button:hover { color: var(--ink); background: var(--sunken); }
+.rail button[aria-current="true"] { color: var(--ink); background: var(--raised); box-shadow: inset 2px 0 0 var(--acc); }
+.rail .n { font: 400 11px/1 var(--font-mono); color: var(--muted); }
+.rail-label { margin: 0 12px 8px; }
+
+/* Underline tabs (profile sections, detail page) */
+.utabs { display: flex; gap: 4px; border-bottom: 1px solid var(--line); margin-bottom: 20px; overflow-x: auto; scrollbar-width: none; }
+.utabs button { position: relative; height: 40px; padding: 0 12px; border: 0; background: none; font: 500 13px/1 var(--font-body); color: var(--muted); cursor: pointer; white-space: nowrap; }
+.utabs button:hover { color: var(--ink); }
+.utabs button[aria-selected="true"] { color: var(--ink); }
+.utabs button[aria-selected="true"]::after { content: ""; position: absolute; left: 12px; right: 12px; bottom: -1px; height: 2px; background: var(--acc); }
+
+/* Sticky save bar */
+.savebar { position: sticky; bottom: 0; z-index: 2; display: flex; flex-wrap: wrap; align-items: center; gap: 10px 16px; margin: 24px -24px 0; padding: 12px 24px; background: var(--chrome); border-top: 1px solid var(--line); }
+.savebar .status { margin-right: auto; font-size: 13px; color: var(--muted); display: inline-flex; align-items: center; gap: 8px; }
+
+/* Editor */
+.entry { padding: 14px 0; border-top: 1px solid var(--line); }
+.entry:first-of-type { border-top: 0; padding-top: 0; }
+.entry-head { display: flex; flex-wrap: wrap; align-items: baseline; justify-content: space-between; gap: 4px 16px; }
+.entry-head strong { font-size: 14px; font-weight: 600; }
+.entry-head .mono { font-size: 12px; color: var(--muted); }
+.entry-sub { font-size: 13px; color: var(--ink-2); margin-top: 2px; }
+.bullets { margin-top: 10px; display: grid; gap: 6px; }
+.bullets li { display: grid; grid-template-columns: 14px minmax(0, 1fr) auto; gap: 8px; font-size: 13px; color: var(--ink-2); align-items: start; }
+.bullets li::before { content: ""; width: 4px; height: 4px; background: var(--muted); margin: 8px 0 0 4px; }
+.lint { font-size: 12px; color: var(--attn); display: inline-flex; align-items: center; gap: 6px; }
+.entry-tools { display: flex; gap: 4px; }
+.icon-btn { width: 30px; height: 30px; display: inline-grid; place-items: center; border: 1px solid transparent; border-radius: var(--r); background: transparent; color: var(--muted); cursor: pointer; font: 500 14px/1 var(--font-body); }
+.icon-btn:hover { border-color: var(--line-strong); color: var(--ink); }
+
+/* Template */
+.doc { aspect-ratio: 8.5 / 11; background: var(--doc); border: 1px solid var(--line); border-radius: 2px; padding: 9% 9%; display: grid; align-content: start; gap: 5px; }
+.doc i { display: block; height: 4px; border-radius: 1px; background: var(--doc-line); }
+.doc i.h { height: 8px; width: 45%; margin: 0 auto 6px; background: #3a3a38; opacity: 0.85; }
+.doc i.s { height: 5px; width: 28%; margin-top: 8px; background: #6b6b68; }
+.doc i.w9 { width: 92%; } .doc i.w7 { width: 74%; } .doc i.w8 { width: 84%; } .doc i.w5 { width: 55%; }
+.tgrid { display: grid; grid-template-columns: repeat(auto-fill, minmax(160px, 190px)); gap: 14px; }
+.tcard { display: grid; gap: 10px; padding: 12px; border: 1px solid var(--line); border-radius: var(--r); background: var(--field); }
+.tcard.on { border-color: var(--acc); box-shadow: inset 0 0 0 1px var(--acc); }
+.tcard .doc { border-color: var(--line); }
+.tcard-foot { display: flex; align-items: center; justify-content: space-between; gap: 8px; font-size: 13px; font-weight: 500; }
+.cur { display: grid; grid-template-columns: 220px minmax(0, 1fr); gap: 28px; align-items: start; }
+.hsteps { display: flex; flex-wrap: wrap; gap: 6px 22px; margin-bottom: 18px; }
+.hsteps li { display: inline-flex; align-items: center; gap: 8px; font-size: 13px; color: var(--muted); }
+.hsteps .box { width: 18px; height: 18px; display: grid; place-items: center; border: 1px solid var(--line-strong); border-radius: var(--r); font: 500 10px/1 var(--font-mono); }
+.hsteps .done { color: var(--ink-2); }
+.hsteps .done .box { background: var(--acc); border-color: var(--acc); color: var(--on-ink); }
+:root[data-theme="dark"] .hsteps .done .box { color: #0a0a0a; }
+.hsteps .now { color: var(--ink); font-weight: 500; }
+.hsteps .now .box { border-color: var(--acc); color: var(--acc); }
+
+/* Onboarding */
+.narrow-col { max-width: 760px; margin: 0 auto; }
+.choices { display: grid; grid-template-columns: repeat(auto-fill, minmax(200px, 1fr)); gap: 10px; }
+.choice { display: grid; gap: 4px; padding: 14px 16px; border: 1px solid var(--line-strong); border-radius: var(--r); background: var(--field); text-align: left; cursor: pointer; font: inherit; color: var(--ink); }
+.choice:hover { border-color: var(--ink); }
+.choice strong { font-size: 14px; font-weight: 600; }
+.choice span { font-size: 12px; color: var(--muted); }
+.choice[aria-pressed="true"] { border-color: var(--sel-bd); box-shadow: inset 0 0 0 1px var(--sel-bd); background: color-mix(in srgb, var(--acc) 8%, var(--field)); }
+.choice[aria-pressed="true"] strong { color: var(--acc); }
+.foot { display: flex; align-items: center; justify-content: space-between; gap: 12px; margin-top: 22px; padding-top: 16px; border-top: 1px solid var(--line); }
+
+/* Overlays */
+.ov-grid { display: grid; grid-template-columns: repeat(2, minmax(0, 1fr)); gap: 16px; }
+.stage { position: relative; min-height: 300px; border: 1px solid var(--line); border-radius: var(--r); background: var(--page); overflow: hidden; display: grid; place-items: center; padding: 24px; }
+.stage.scrim::before { content: ""; position: absolute; inset: 0; background: var(--scrim); }
+.stage-label { position: absolute; top: 10px; left: 12px; z-index: 1; }
+.modal { position: relative; width: min(440px, 100%); background: var(--chrome); border-radius: var(--r); box-shadow: var(--overlay); padding: 22px 24px; display: grid; gap: 14px; }
+.modal h3 { font: 600 16px/1.3 var(--font-body); }
+.modal p { font-size: 13px; color: var(--ink-2); }
+.modal .actions { justify-content: flex-end; margin-top: 4px; }
+.menu { width: 230px; background: var(--chrome); border-radius: var(--r); box-shadow: var(--overlay); padding: 6px; display: grid; gap: 1px; }
+.menu button { display: flex; justify-content: space-between; width: 100%; padding: 8px 10px; border: 0; border-radius: var(--r); background: none; font: 400 13px/1.2 var(--font-body); color: var(--ink); text-align: left; cursor: pointer; }
+.menu button:hover { background: var(--sunken); }
+.menu hr { border: 0; border-top: 1px solid var(--line); margin: 5px 0; }
+.menu .danger { color: var(--danger); }
+.menu .label { padding: 6px 10px 4px; }
+.toasts { display: grid; gap: 8px; width: min(360px, 100%); }
+.toast { display: flex; align-items: center; gap: 12px; padding: 12px 14px; background: var(--chrome); border-radius: var(--r); box-shadow: var(--overlay); font-size: 13px; }
+.toast p { flex: 1; }
+.empty { display: grid; gap: 10px; justify-items: center; text-align: center; padding: 36px 16px; }
+.empty h3 { font: 350 24px/1.2 var(--font-display); }
+.empty p { color: var(--muted); font-size: 13px; max-width: 42ch; }
+.skel { display: grid; gap: 10px; width: 100%; }
+.skel i { display: block; height: 12px; border-radius: 2px; background: var(--sunken); animation: shimmer 1.4s ease-in-out infinite; }
+@keyframes shimmer { 50% { opacity: 0.5; } }
+
+/* Extension */
+.ext-wrap { display: flex; flex-wrap: wrap; gap: 24px; align-items: flex-start; }
+.popup { width: 360px; max-width: 100%; border: 1px solid var(--line); border-radius: var(--r); background: var(--page); box-shadow: var(--overlay); overflow: hidden; }
+.popup-top { display: flex; align-items: center; justify-content: space-between; gap: 8px; padding: 12px 14px; border-bottom: 1px solid var(--line); }
+.popup-top .mark { font-size: 15px; }
+.popup-body { padding: 14px; display: grid; gap: 12px; }
+.popup .panel { padding: 14px; }
+.popup .panel-head { margin-bottom: 10px; }
+.popup .panel-head h2 { font-size: 13px; }
+.chipdemo { display: inline-flex; align-items: center; gap: 8px; height: 34px; padding: 0 12px; border-radius: var(--r); background: var(--ink); color: var(--on-ink); font: 600 12px/1 system-ui, sans-serif; box-shadow: var(--overlay); }
+.chipdemo i { width: 8px; height: 8px; border-radius: 2px; background: var(--acc); }
+.options { flex: 1 1 420px; min-width: 0; }
+.legend-grid { display: grid; grid-template-columns: repeat(auto-fill, minmax(180px, 1fr)); gap: 10px 16px; }
+.legend-grid > div { display: flex; align-items: center; gap: 10px; font-size: 12px; color: var(--muted); }
+
+@media (max-width: 900px) {
+  .split, .split-even, .ov-grid { grid-template-columns: minmax(0, 1fr); }
+  .opbar { grid-template-columns: minmax(0, 1fr); gap: 12px; }
+  .with-rail { grid-template-columns: minmax(0, 1fr); gap: 16px; }
+  .rail { position: static; display: flex; overflow-x: auto; scrollbar-width: none; border-bottom: 1px solid var(--line); gap: 0; }
+  .rail button { width: auto; white-space: nowrap; border-radius: 0; padding: 10px 12px; }
+  .rail button[aria-current="true"] { background: transparent; box-shadow: inset 0 -2px 0 var(--acc); }
+  .rail-label { display: none; }
+  .cur { grid-template-columns: 140px minmax(0, 1fr); gap: 18px; }
+}
+@media (max-width: 640px) {
+  .top-row { padding-inline: 16px; gap: 0 12px; }
+  .nav { order: 3; width: 100%; margin-inline: -4px; }
+  .nav-link { height: 44px; }
+  .top-tools .hide-sm { display: none; }
+  .main { padding: 0 16px 32px; }
+  .table-wrap { margin-inline: -16px; padding-inline: 16px; }
+  .panel { padding: 16px; }
+  .page-head { padding-block: 28px 16px; }
+  .summary { gap: 12px 28px; }
+  .figures { gap: 16px 36px; }
+  .tools .field, .tools .field.narrow { width: 100%; }
+  .fgrid, .fgrid.three { grid-template-columns: minmax(0, 1fr); }
+  .span2 { grid-column: auto; }
+  .rows > li, .rows > .row { grid-template-columns: minmax(0, 1fr); }
+  .rows .ctl { justify-content: flex-start; }
+  .rows .ctl .field { width: 100%; }
+  .cur { grid-template-columns: minmax(0, 1fr); }
+  .cur .doc { max-width: 180px; }
+  .savebar { margin-inline: -16px; padding-inline: 16px; }
+}
+@media (prefers-reduced-motion: reduce) {
+  *, *::before, *::after { animation: none !important; transition: none !important; }
+}
+</style>
+
+<section class="pv" aria-label="Preview controls">
+  <div class="pv-head">
+    <strong>ResumeTailor redesign · v5 reference</strong>
+    <span>Mock data. Navigation, tabs, rails, choices, toggles and row checkboxes work; other buttons are for looks only.</span>
+  </div>
+  <div class="pv-groups">
+    <fieldset class="pv-group">
+      <legend class="label">Theme</legend>
+      <div class="seg">
+        <button type="button" data-set="theme:system">System</button>
+        <button type="button" data-set="theme:light">Light</button>
+        <button type="button" data-set="theme:dark">Dark</button>
+      </div>
+    </fieldset>
+    <fieldset class="pv-group">
+      <legend class="label">Other screens</legend>
+      <div class="seg">
+        <button type="button" data-set="screen:detail">Application detail</button>
+        <button type="button" data-set="screen:sources">Job sources</button>
+        <button type="button" data-set="screen:editor">Resume editor</button>
+        <button type="button" data-set="screen:vocab">Vocabulary</button>
+        <button type="button" data-set="screen:welcome">Onboarding</button>
+        <button type="button" data-set="screen:ext">Extension</button>
+        <button type="button" data-set="screen:overlays">Overlays &amp; states</button>
+      </div>
+    </fieldset>
+  </div>
+</section>
+
+<div class="frame">
+  <header class="top">
+    <div class="top-row">
+      <span class="mark"><i aria-hidden="true"></i>ResumeTailor</span>
+      <nav class="nav" aria-label="Main">
+        <button type="button" class="nav-link" data-go="tailor">Tailor</button>
+        <button type="button" class="nav-link" data-go="apply">Apply</button>
+        <button type="button" class="nav-link" data-go="profile">Profile</button>
+        <button type="button" class="nav-link" data-go="template">Template</button>
+        <button type="button" class="nav-link" data-go="settings">Settings</button>
+      </nav>
+      <div class="top-tools">
+        <span class="chip s-ok header-pill"><span class="mk"></span>Ready</span>
+        <button type="button" class="btn btn-quiet hide-sm">Pause automation</button>
+        <button type="button" class="btn btn-quiet">Default <svg viewBox="0 0 10 10" aria-hidden="true"><path d="M2 3.5 5 6.5 8 3.5" fill="none" stroke="currentColor" stroke-width="1.4"/></svg></button>
+      </div>
+    </div>
+  </header>
+
+  <main class="main">
+    <!-- ================= Tailor ================= -->
+    <section data-screen="tailor">
+      <div class="page-head">
+        <p class="label">Resume: Jordan Rivera</p>
+        <h1 class="display">Tailor a resume</h1>
+        <p class="lede">Paste a job posting. Your bullets are rewritten to match it, and the document keeps its original layout.</p>
+      </div>
+      <div class="stack">
+        <section class="panel" aria-labelledby="opt-h">
+          <div class="panel-head"><h2 id="opt-h">Options</h2><button type="button" class="btn btn-secondary btn-sm">Change</button></div>
+          <div class="summary">
+            <div><span class="label">Pages</span><span class="val">1 page</span></div>
+            <div><span class="label">Cover letter</span><span class="val">Off</span></div>
+            <div><span class="label">Model</span><span class="val">Ollama<span class="mono">gemma4:cloud</span></span></div>
+            <div><span class="label">Page fit</span><span class="val">Estimated</span></div>
+          </div>
+        </section>
+
+        <div class="split">
+          <section class="panel" aria-labelledby="jd-h">
+            <div class="panel-head"><h2 id="jd-h">Job description</h2></div>
+            <div class="seg" role="tablist" aria-label="How to add the job description">
+              <button type="button" role="tab" data-group="jd" data-tab="paste" aria-selected="true">Paste text</button>
+              <button type="button" role="tab" data-group="jd" data-tab="link" aria-selected="false">From a link</button>
+              <button type="button" role="tab" data-group="jd" data-tab="file" aria-selected="false">Upload a file</button>
+            </div>
+            <div class="tabpane" data-group="jd" data-pane="paste">
+              <label for="jd-text" class="sr">Job description text</label>
+              <textarea id="jd-text" class="field" rows="11">Software Engineer Intern, Data Platform
+Northwind Robotics · Seattle, WA (hybrid) · Summer 2027
+
+You will build the pipelines that move telemetry from our warehouse robots into the analytics platform, and help the fleet team find failures before they reach a customer site.
+
+What you'll need
+- Python and SQL
+- Experience with Airflow, Dagster, or a similar orchestrator
+- Familiarity with Kafka or another event streaming system
+- Comfort reading logs and writing clear incident notes</textarea>
+            </div>
+            <div class="tabpane" data-group="jd" data-pane="link" hidden>
+              <label for="jd-url" class="label">Posting URL</label>
+              <input id="jd-url" class="field" type="url" value="https://boards.greenhouse.io/northwindrobotics/jobs/4410287">
+            </div>
+            <div class="tabpane" data-group="jd" data-pane="file" hidden>
+              <div class="filerow"><button type="button" class="btn btn-secondary btn-sm">Choose a file</button><span>.pdf, .docx or .txt, up to 5 MB</span></div>
+            </div>
+            <div class="actions">
+              <button type="button" class="btn btn-primary">Tailor resume</button>
+              <button type="button" class="btn btn-ghost">Clear</button>
+              <span class="hint mono">~ $0.004 · 612 words</span>
+            </div>
+          </section>
+
+          <aside class="panel" aria-labelledby="run-h">
+            <div class="panel-head"><h2 id="run-h">This run</h2><span class="meta mono">00:41 elapsed</span></div>
+            <div class="run-pct"><strong>58%</strong><span class="chip s-live"><span class="mk"></span>Rewriting bullets</span></div>
+            <div class="meter" aria-hidden="true"><span style="--w:58%"></span></div>
+            <ol class="stages">
+              <li class="done"><span class="st"><svg viewBox="0 0 14 14" aria-hidden="true"><path d="M3 7.2 5.8 10 11 4" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></span><span>Read the job description</span><span class="t mono">3.1s</span></li>
+              <li class="done"><span class="st"><svg viewBox="0 0 14 14" aria-hidden="true"><path d="M3 7.2 5.8 10 11 4" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></span><span>Score bullets for relevance</span><span class="t mono">6.8s</span></li>
+              <li class="done"><span class="st"><svg viewBox="0 0 14 14" aria-hidden="true"><path d="M3 7.2 5.8 10 11 4" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></span><span>Pick project tech and coursework</span><span class="t mono">2.2s</span></li>
+              <li class="active"><span class="st"><span class="pulse"></span></span><span>Rewrite bullets</span><span class="t mono">9 / 14</span></li>
+              <li><span class="st"><span class="ring"></span></span><span>Expand experience</span><span class="t mono">–</span></li>
+              <li><span class="st"><span class="ring"></span></span><span>Select skills</span><span class="t mono">–</span></li>
+            </ol>
+            <div class="actions"><button type="button" class="btn btn-secondary btn-sm">Cancel</button><span class="hint">Details (2)</span></div>
+          </aside>
+        </div>
+
+        <section class="panel" aria-labelledby="res-h">
+          <div class="panel-head"><h2 id="res-h">Last result</h2><span class="meta">Halcyon Health · Data Analyst Intern · 2 hours ago</span></div>
+          <div class="figures">
+            <div><span class="fig">1</span><span class="fig-l">page, 47 of 48 lines used</span></div>
+            <div><span class="fig">82</span><span class="fig-l">skill match out of 100</span></div>
+            <div><span class="fig">11</span><span class="fig-l">bullets rewritten</span></div>
+          </div>
+          <ul class="notes">
+            <li><span class="chip s-attn"><span class="mk"></span>Kept as written</span>2 rewrites used terms that aren't in your resume, so the original wording stayed.</li>
+            <li><span class="chip s-ok"><span class="mk"></span>Fits</span>Every section fit on one page without dropping an entry.</li>
+          </ul>
+          <div class="actions">
+            <button type="button" class="btn btn-primary">Download .docx</button>
+            <button type="button" class="btn btn-secondary">Download PDF</button>
+            <button type="button" class="btn btn-ghost">Review bullets</button>
+          </div>
+        </section>
+
+        <section class="panel" aria-labelledby="hist-h">
+          <div class="panel-head"><h2 id="hist-h">Recent runs<span class="count">5</span></h2></div>
+          <div class="table-wrap">
+            <table class="compact">
+              <thead><tr><th>Job</th><th>When</th><th class="num">Skill match</th><th>Result</th><th class="cell-act"><span class="sr">Actions</span></th></tr></thead>
+              <tbody>
+                <tr><td><span class="co">Halcyon Health</span> <span class="job">· Data Analyst Intern</span></td><td class="mono muted">Oct 7, 1:12 PM</td><td class="num mono">82</td><td><span class="chip s-ok"><span class="mk"></span>1 page</span></td><td class="cell-act"><button class="icon-btn" type="button" aria-label="Actions for Halcyon Health">⋯</button></td></tr>
+                <tr><td><span class="co">Quarry Data</span> <span class="job">· Analytics Engineer Intern</span></td><td class="mono muted">Oct 6, 8:40 PM</td><td class="num mono">77</td><td><span class="chip s-fail"><span class="mk"></span>Overflowed</span></td><td class="cell-act"><button class="icon-btn" type="button" aria-label="Actions for Quarry Data">⋯</button></td></tr>
+                <tr><td><span class="co">Lumen Bio</span> <span class="job">· Computational Biology Intern</span></td><td class="mono muted">Oct 6, 9:02 AM</td><td class="num mono">74</td><td><span class="chip s-ok"><span class="mk"></span>1 page</span></td><td class="cell-act"><button class="icon-btn" type="button" aria-label="Actions for Lumen Bio">⋯</button></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+      </div>
+    </section>
+
+    <!-- ================= Apply ================= -->
+    <section data-screen="apply" hidden>
+      <div class="page-head">
+        <p class="label">Automation on · nightly at 2:00 AM</p>
+        <div class="page-head-row">
+          <h1 class="display">Apply</h1>
+          <div class="tools"><span class="chip s-ok"><span class="mk"></span>Browser connected</span><button type="button" class="btn btn-secondary btn-sm">Apply settings</button></div>
+        </div>
+        <p class="lede">Postings from your job sources, each prepared with its own tailored resume.</p>
+      </div>
+      <div class="stack">
+        <div class="opbar">
+          <div class="opbar-text"><span class="pulse" aria-hidden="true"></span><strong>Finding jobs</strong><span class="muted">3 of 5 sources checked · <span class="mono">37</span> new postings</span></div>
+          <div class="meter" aria-hidden="true"><span style="--w:60%"></span></div>
+          <div class="tools"><button type="button" class="btn btn-ghost btn-sm">Activity</button><button type="button" class="btn btn-secondary btn-sm">Stop</button></div>
+        </div>
+
+        <div class="notice">
+          <span class="chip s-attn"><span class="mk"></span>Profile gaps</span>
+          <p>3 questions on recent forms needed answers your profile doesn't have yet.</p>
+          <button type="button" class="btn btn-secondary btn-sm" data-go="profile">Set up</button>
+        </div>
+
+        <section class="panel" aria-labelledby="rev-h">
+          <div class="panel-head"><h2 id="rev-h">Needs your review<span class="count">2</span></h2><span class="meta">From last night's run</span></div>
+          <div class="table-wrap">
+            <table class="compact">
+              <thead><tr><th>Company</th><th>Job posting</th><th>Why it needs you</th><th>Waiting since</th><th class="cell-act"><span class="sr">Action</span></th></tr></thead>
+              <tbody>
+                <tr><td class="co">Meridian Bank</td><td class="job">Software Engineer Intern</td><td><span class="chip s-attn"><span class="mk"></span>Verification code needed</span></td><td class="mono muted">Oct 6, 9:12 PM</td><td class="cell-act"><button type="button" class="btn btn-secondary btn-sm" data-go="detail">Review</button></td></tr>
+                <tr><td class="co">Quarry Data</td><td class="job">Analytics Engineer Intern</td><td><span class="chip s-fail"><span class="mk"></span>Fill failed twice</span></td><td class="mono muted">Oct 6, 2:40 PM</td><td class="cell-act"><button type="button" class="btn btn-secondary btn-sm" data-go="detail">Review</button></td></tr>
+              </tbody>
+            </table>
+          </div>
+        </section>
+
+        <section class="panel" aria-labelledby="apps-h">
+          <div class="panel-head">
+            <h2 id="apps-h">Applications<span class="count">42</span></h2>
+            <div class="tools">
+              <label for="app-search" class="sr">Search applications</label>
+              <input id="app-search" class="field" type="search" placeholder="Search applications">
+              <button type="button" class="btn btn-ghost btn-sm" data-go="sources">Job sources →</button>
+            </div>
+          </div>
+          <div class="subbar">
+            <div class="seg" role="tablist" aria-label="Application groups">
+              <button type="button" role="tab" data-group="apps" data-tab="needs" aria-selected="true">Needs you <span class="n">6</span></button>
+              <button type="button" role="tab" data-group="apps" data-tab="prog" aria-selected="false">In progress <span class="n">3</span></button>
+              <button type="button" role="tab" data-group="apps" data-tab="done" aria-selected="false">Done <span class="n">33</span></button>
+            </div>
+            <div class="tools">
+              <label for="app-filter" class="sr">Filter by status</label>
+              <select id="app-filter" class="field narrow"><option>All statuses</option><option>Ready</option><option>Needs review</option></select>
+              <button type="button" class="btn btn-secondary btn-sm">Find jobs</button>
+              <button type="button" class="btn btn-primary btn-sm">Fill 3 ready</button>
+            </div>
+          </div>
+          <div class="selbar" id="selbar">
+            <strong id="selcount">1 selected</strong>
+            <button type="button" class="btn btn-secondary btn-sm">Fill</button>
+            <button type="button" class="btn btn-secondary btn-sm">Skip</button>
+            <button type="button" class="btn btn-ghost btn-sm" id="selclear">Clear selection</button>
+          </div>
+          <div class="table-wrap">
+            <table>
+              <thead><tr><th style="width:36px"><input type="checkbox" id="sel-all" aria-label="Select this page"></th><th>Company</th><th>Job posting</th><th>Platform</th><th>Posted</th><th class="num">Skill match</th><th>Status</th><th class="cell-act"><span class="sr">Next step</span></th></tr></thead>
+              <tbody>
+                <tr><td><input type="checkbox" class="rowsel" aria-label="Select Northwind Robotics" checked></td><td class="co">Northwind Robotics</td><td class="job">Software Engineer Intern, Data Platform</td><td class="muted">Greenhouse</td><td class="mono muted">Oct 7</td><td class="num"><span class="match"><span class="mono">86</span><i><b style="--w:86%"></b></i></span></td><td><span class="chip s-ready"><span class="mk"></span>Ready</span></td><td class="cell-act"><button type="button" class="btn btn-secondary btn-sm">Fill</button></td></tr>
+                <tr><td><input type="checkbox" class="rowsel" aria-label="Select Lumen Bio"></td><td class="co">Lumen Bio</td><td class="job">Computational Biology Intern</td><td class="muted">Workday</td><td class="mono muted">Oct 6</td><td class="num"><span class="match"><span class="mono">74</span><i><b style="--w:74%"></b></i></span></td><td><span class="chip s-live"><span class="mk"></span>Preparing</span></td><td class="cell-act"><button type="button" class="btn btn-ghost btn-sm" data-go="detail">View</button></td></tr>
+                <tr><td><input type="checkbox" class="rowsel" aria-label="Select Halcyon Health"></td><td class="co">Halcyon Health</td><td class="job">Data Analyst Intern</td><td class="muted">Lever</td><td class="mono muted">Oct 6</td><td class="num"><span class="match"><span class="mono">82</span><i><b style="--w:82%"></b></i></span></td><td><span class="chip s-ok"><span class="mk"></span>Submitted</span></td><td class="cell-act"><button type="button" class="btn btn-ghost btn-sm" data-go="detail">View</button></td></tr>
+                <tr><td><input type="checkbox" class="rowsel" aria-label="Select Ardent Freight"></td><td class="co">Ardent Freight</td><td class="job">Backend Engineer Intern</td><td class="muted">Ashby</td><td class="mono muted">Oct 5</td><td class="num"><span class="match"><span class="mono">69</span><i><b style="--w:69%"></b></i></span></td><td><span class="chip s-attn"><span class="mk"></span>Browser needed</span></td><td class="cell-act"><button type="button" class="btn btn-secondary btn-sm">Continue fill</button></td></tr>
+                <tr><td><input type="checkbox" class="rowsel" aria-label="Select Quarry Data"></td><td class="co">Quarry Data</td><td class="job">Analytics Engineer Intern</td><td class="muted">Greenhouse</td><td class="mono muted">Oct 5</td><td class="num"><span class="match"><span class="mono">77</span><i><b style="--w:77%"></b></i></span></td><td><span class="chip s-fail"><span class="mk"></span>Fill failed</span></td><td class="cell-act"><button type="button" class="btn btn-danger btn-sm">Retry fill</button></td></tr>
+                <tr><td><input type="checkbox" class="rowsel" aria-label="Select Orbital Ledger"></td><td class="co">Orbital Ledger</td><td class="job">Platform Engineer Intern</td><td class="muted">Workday</td><td class="mono muted">Oct 3</td><td class="num"><span class="match"><span class="mono">71</span><i><b style="--w:71%"></b></i></span></td><td><span class="chip s-attn"><span class="mk"></span>Submission unconfirmed</span></td><td class="cell-act"><button type="button" class="btn btn-secondary btn-sm">Mark submitted</button></td></tr>
+                <tr><td><input type="checkbox" class="rowsel" aria-label="Select Fieldstone Energy"></td><td class="co">Fieldstone Energy</td><td class="job">Software Engineer Intern</td><td class="muted">Lever</td><td class="mono muted">Oct 2</td><td class="num"><span class="match"><span class="mono">58</span><i><b style="--w:58%"></b></i></span></td><td><span class="chip s-muted"><span class="mk"></span>Screened out</span></td><td class="cell-act"><button type="button" class="btn btn-ghost btn-sm">View</button></td></tr>
+              </tbody>
+            </table>
+          </div>
+          <div class="pager"><span class="mono">1–7 of 42</span><button type="button" class="btn btn-ghost btn-sm">Previous</button><button type="button" class="btn btn-secondary btn-sm">Next</button></div>
+        </section>
+      </div>
+    </section>
+
+    <!-- ================= Application detail ================= -->
+    <section data-screen="detail" hidden>
+      <div class="page-head">
+        <button type="button" class="back" data-go="apply">← Applications</button>
+        <p class="label inline-mk"><span class="chip s-attn"><span class="mk"></span>Verification code needed</span> Workday</p>
+        <div class="page-head-row">
+          <h1 class="display">Meridian Bank · Software Engineer Intern</h1>
+          <div class="tools"><a class="btn btn-secondary btn-sm" href="#" onclick="return false">Posting ↗</a><button type="button" class="btn btn-secondary btn-sm">Open application tab</button><button type="button" class="btn btn-secondary btn-sm">Archive</button></div>
+        </div>
+        <p class="lede">New York, NY · Hybrid · posted Oct 4</p>
+      </div>
+      <div class="utabs" role="tablist" aria-label="Application sections">
+        <button type="button" role="tab" data-group="det" data-tab="ov" aria-selected="true">Overview</button>
+        <button type="button" role="tab" data-group="det" data-tab="ans" aria-selected="false">Answers</button>
+        <button type="button" role="tab" data-group="det" data-tab="doc" aria-selected="false">Documents</button>
+        <button type="button" role="tab" data-group="det" data-tab="rev" aria-selected="false">Review</button>
+        <button type="button" role="tab" data-group="det" data-tab="tl" aria-selected="false">Timeline</button>
+        <button type="button" role="tab" data-group="det" data-tab="notes" aria-selected="false">Notes</button>
+      </div>
+      <div class="stack" data-group="det" data-pane="ov">
+        <div class="notice">
+          <span class="chip s-attn"><span class="mk"></span>Needs you</span>
+          <p>Workday sent a one-time code to your school email. Enter it in the open application tab to continue.</p>
+          <button type="button" class="btn btn-primary btn-sm">Open application tab</button>
+        </div>
+        <section class="panel">
+          <div class="panel-head"><h2>Overview</h2></div>
+          <div class="summary">
+            <div><span class="label">Status</span><span class="val">Waiting on a code</span></div>
+            <div><span class="label">Skill match</span><span class="val mono">80</span></div>
+            <div><span class="label">Resume</span><span class="val">1 page</span></div>
+            <div><span class="label">Fields filled</span><span class="val mono">41 / 44</span></div>
+            <div><span class="label">Source</span><span class="val">Company watchlist</span></div>
+          </div>
+        </section>
+        <div class="split-even">
+          <section class="panel">
+            <div class="panel-head"><h2>Tailored resume</h2><span class="meta mono">Oct 6, 8:58 PM</span></div>
+            <div class="figures sm">
+              <div><span class="fig">80</span><span class="fig-l">skill match</span></div>
+              <div><span class="fig">9</span><span class="fig-l">bullets rewritten</span></div>
+            </div>
+            <div class="actions"><button type="button" class="btn btn-secondary btn-sm">Download PDF</button><button type="button" class="btn btn-ghost btn-sm">Review bullets</button></div>
+          </section>
+          <section class="panel">
+            <div class="panel-head"><h2>Answers that need a look</h2><span class="count">3</span></div>
+            <ul class="rows">
+              <li><div><div class="t1">Expected graduation date</div><div class="t2">Answered from your education: May 2027</div></div><span class="chip s-ok"><span class="mk"></span>Filled</span></li>
+              <li><div><div class="t1">Will you require sponsorship?</div><div class="t2">No saved answer yet</div></div><button type="button" class="btn btn-secondary btn-sm">Answer</button></li>
+              <li><div><div class="t1">Upload transcript</div><div class="t2">No transcript on file</div></div><span class="chip s-fail"><span class="mk"></span>Missing file</span></li>
+            </ul>
+          </section>
+        </div>
+      </div>
+      <div class="stack" data-group="det" data-pane="ans" hidden><section class="panel"><div class="empty"><h3>Answers</h3><p>Every question on the form, with the answer used and where it came from.</p></div></section></div>
+      <div class="stack" data-group="det" data-pane="doc" hidden><section class="panel"><div class="empty"><h3>Documents</h3><p>Resume and cover letter for this posting.</p></div></section></div>
+      <div class="stack" data-group="det" data-pane="rev" hidden><section class="panel"><div class="empty"><h3>Review</h3><p>Bullet-by-bullet review, same as on Tailor.</p></div></section></div>
+      <div class="stack" data-group="det" data-pane="tl" hidden>
+        <section class="panel"><div class="panel-head"><h2>Timeline</h2></div>
+          <ol class="stages">
+            <li class="done"><span class="st"><svg viewBox="0 0 14 14" aria-hidden="true"><path d="M3 7.2 5.8 10 11 4" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></span><span>Found by company watchlist</span><span class="t mono">Oct 5, 2:01 AM</span></li>
+            <li class="done"><span class="st"><svg viewBox="0 0 14 14" aria-hidden="true"><path d="M3 7.2 5.8 10 11 4" fill="none" stroke="currentColor" stroke-width="1.6"/></svg></span><span>Resume tailored</span><span class="t mono">Oct 6, 8:58 PM</span></li>
+            <li class="active"><span class="st"><span class="chip s-attn" style="padding:0;background:none"><span class="mk"></span></span></span><span>Fill paused for a verification code</span><span class="t mono">Oct 6, 9:12 PM</span></li>
+          </ol>
+        </section>
+      </div>
+      <div class="stack" data-group="det" data-pane="notes" hidden><section class="panel"><label class="f"><span>Notes</span><textarea class="field" rows="5" placeholder="Anything to remember about this application"></textarea></label></section></div>
+    </section>
+
+    <!-- ================= Job sources ================= -->
+    <section data-screen="sources" hidden>
+      <div class="page-head">
+        <button type="button" class="back" data-go="apply">← Applications</button>
+        <div class="page-head-row"><h1 class="display">Job sources</h1><span class="muted small">Checked nightly at 2:00 AM</span></div>
+        <p class="lede">Where new postings come from. Each source is checked on the nightly run, or now with “Check”.</p>
+      </div>
+      <div class="stack">
+        <section class="panel">
+          <div class="panel-head"><h2>Recommended for your fields</h2><span class="meta">Software engineering · Data</span></div>
+          <div class="tools">
+            <button type="button" class="btn btn-secondary btn-sm">+ SimplifyJobs internships</button>
+            <button type="button" class="btn btn-secondary btn-sm">+ USAJobs: computer science</button>
+            <button type="button" class="btn btn-secondary btn-sm">+ Adzuna: data engineer</button>
+          </div>
+        </section>
+        <section class="panel" aria-label="Job lists">
+          <div class="panel-head"><h2>Job lists<span class="count">2</span></h2><button type="button" class="btn btn-secondary btn-sm">+ Add job list</button></div>
+          <ul class="rows">
+            <li><div><div class="t1">SimplifyJobs Summer 2027 <span class="chip s-ok"><span class="mk"></span>Healthy</span></div><div class="t2 mono">github.com/SimplifyJobs · 214 postings · checked 6h ago</div></div><div class="ctl"><button type="button" class="btn btn-ghost btn-sm" title="Edit">Edit</button><button type="button" class="btn btn-secondary btn-sm">Check</button><button type="button" class="toggle" role="switch" aria-checked="true" aria-label="Enabled"></button></div></li>
+            <li><div><div class="t1">Pitt CSC New Grad <span class="chip s-fail"><span class="mk"></span>Last check failed</span></div><div class="t2"><span class="txt-fail">The list moved; its link returns 404.</span> <span class="mono">checked 6h ago</span></div></div><div class="ctl"><button type="button" class="btn btn-ghost btn-sm" title="Edit">Edit</button><button type="button" class="btn btn-secondary btn-sm">Check</button><button type="button" class="toggle" role="switch" aria-checked="false" aria-label="Enabled"></button></div></li>
+          </ul>
+        </section>
+        <section class="panel" aria-label="Search engines">
+          <div class="panel-head"><h2>Search engines<span class="count">2</span></h2><button type="button" class="btn btn-secondary btn-sm">+ Add search</button></div>
+          <ul class="rows">
+            <li><div><div class="t1">Adzuna <span class="muted small">● Connected</span></div><div class="t2">“data engineer intern”, “analytics engineer” · United States · last 7 days</div></div><div class="ctl"><button type="button" class="btn btn-ghost btn-sm" title="Edit">Edit</button><button type="button" class="btn btn-secondary btn-sm">Check</button><button type="button" class="toggle" role="switch" aria-checked="true" aria-label="Enabled"></button></div></li>
+            <li><div><div class="t1">USAJobs <span class="chip s-attn"><span class="mk"></span>Needs API key</span></div><div class="t2">Connect a free key to search federal internships.</div></div><div class="ctl"><button type="button" class="btn btn-primary btn-sm">Connect</button></div></li>
+          </ul>
+        </section>
+        <section class="panel" aria-label="Company watchlists">
+          <div class="panel-head"><h2>Company watchlists<span class="count">1</span></h2><button type="button" class="btn btn-secondary btn-sm">+ Add watchlist</button></div>
+          <ul class="rows">
+            <li><div><div class="t1">Fintech shortlist <span class="chip s-ok"><span class="mk"></span>Healthy</span></div><div class="t2">Meridian Bank, Orbital Ledger, Stride Pay and 6 more · keep titles containing “intern”</div></div><div class="ctl"><button type="button" class="btn btn-ghost btn-sm" title="Edit">Edit</button><button type="button" class="btn btn-secondary btn-sm">Check</button><button type="button" class="toggle" role="switch" aria-checked="true" aria-label="Enabled"></button></div></li>
+          </ul>
+        </section>
+      </div>
+    </section>
+
+    <!-- ================= Profile ================= -->
+    <section data-screen="profile" hidden>
+      <div class="page-head">
+        <p class="label">Profile · Default</p>
+        <h1 class="display">Profile</h1>
+        <p class="lede">Facts about you that go on resumes and into application forms. Nothing here is invented — the AI only uses what you save.</p>
+      </div>
+      <div class="utabs" role="tablist" aria-label="Profile sections">
+        <button type="button" role="tab" aria-selected="true">Personal</button>
+        <button type="button" role="tab" aria-selected="false" data-go="editor">Resume</button>
+        <button type="button" role="tab" aria-selected="false">Application</button>
+      </div>
+      <div class="stack">
+        <section class="panel">
+          <div class="panel-head"><h2>Basics</h2></div>
+          <div class="fgrid three">
+            <label class="f"><span>First name</span><input class="field" value="Jordan"></label>
+            <label class="f"><span>Last name</span><input class="field" value="Rivera"></label>
+            <label class="f"><span>Pronouns <span class="help">(optional)</span></span><input class="field" value="they/them"></label>
+          </div>
+        </section>
+        <div class="split-even">
+          <section class="panel">
+            <div class="panel-head"><h2>Resume contact</h2><p class="meta">Printed on every resume.</p></div>
+            <div class="fgrid">
+              <label class="f span2"><span>Email</span><input class="field" value="jordan.rivera@example.edu"></label>
+              <label class="f"><span>Phone</span><input class="field" value="(555) 014-2290"></label>
+              <label class="f"><span>City</span><input class="field" value="Irvine, CA"></label>
+            </div>
+          </section>
+          <section class="panel">
+            <div class="panel-head"><h2>Application contact</h2><p class="meta">Used on forms only.</p></div>
+            <div class="fgrid">
+              <label class="f span2"><span>School email</span><input class="field" value="jrivera@uni.example.edu"></label>
+              <label class="f"><span>Visa status</span><select class="field"><option>U.S. citizen</option></select></label>
+              <label class="f"><span>Need sponsorship in the future</span><select class="field"><option>No</option></select></label>
+            </div>
+          </section>
+        </div>
+      </div>
+      <div class="savebar">
+        <span class="status"><span class="chip s-attn"><span class="mk"></span>Unsaved</span>2 fields changed</span>
+        <button type="button" class="btn btn-ghost">Discard</button>
+        <button type="button" class="btn btn-primary">Save changes</button>
+      </div>
+    </section>
+
+    <!-- ================= Resume editor ================= -->
+    <section data-screen="editor" hidden>
+      <div class="page-head">
+        <p class="label">Profile · Default</p>
+        <h1 class="display">Profile</h1>
+        <p class="lede">Your master resume. Every tailored resume is built from these entries and nothing else.</p>
+      </div>
+      <div class="utabs" role="tablist" aria-label="Profile sections">
+        <button type="button" role="tab" aria-selected="false" data-go="profile">Personal</button>
+        <button type="button" role="tab" aria-selected="true">Resume</button>
+        <button type="button" role="tab" aria-selected="false">Application</button>
+      </div>
+      <div class="with-rail">
+        <nav class="rail" aria-label="Resume sections">
+          <p class="label rail-label">Sections</p>
+          <button type="button" data-rail="ed" aria-current="true">Experience <span class="n">3</span></button>
+          <button type="button" data-rail="ed">Projects <span class="n">4</span></button>
+          <button type="button" data-rail="ed">Education <span class="n">1</span></button>
+          <button type="button" data-rail="ed">Skills <span class="n">18</span></button>
+          <button type="button" data-rail="ed">Awards <span class="n">2</span></button>
+          <button type="button" data-rail="ed">CERTIFICATIONS <span class="n">1</span></button>
+        </nav>
+        <div class="stack">
+          <div class="tools" style="justify-content:flex-end"><button type="button" class="btn btn-secondary btn-sm">Import resume content</button><button type="button" class="btn btn-secondary btn-sm">Add section</button></div>
+          <section class="panel" id="resume-section-experience">
+            <div class="panel-head"><h2>Experience<span class="count">3</span></h2><button type="button" class="btn btn-ghost btn-sm">+ Add entry</button></div>
+            <div class="entry" data-resume-entry>
+              <div class="entry-head"><strong>Data Engineering Intern</strong><div class="entry-tools"><span class="mono">Jun 2026 – Sep 2026</span><button class="icon-btn" type="button" aria-label="Collapse Data Engineering Intern">▾</button><button class="icon-btn" type="button" aria-label="More actions">⋯</button></div></div>
+              <div class="entry-sub">Halcyon Health · Irvine, CA</div>
+              <ul class="bullets">
+                <li><span>Built a Dagster pipeline that moved 40M claim rows a day into Snowflake, cutting the nightly load from 3 hours to 25 minutes.</span><span class="mono muted small">#etl #sql</span></li>
+                <li><span>Responsible for writing dbt tests for the claims models.</span><span class="lint"><span class="chip s-attn" style="padding:0;background:none;height:auto"><span class="mk"></span></span>Starts with “Responsible for”</span></li>
+                <li><span>Wrote incident notes for four pipeline failures and the fixes that closed them.</span><span class="mono muted small">#ops</span></li>
+              </ul>
+            </div>
+            <div class="entry" data-resume-entry>
+              <div class="entry-head"><strong>Research Assistant</strong><div class="entry-tools"><span class="mono">Jan 2026 – May 2026</span><button class="icon-btn" type="button" aria-label="Expand Research Assistant">▸</button><button class="icon-btn" type="button" aria-label="More actions">⋯</button></div></div>
+              <div class="entry-sub">UC Irvine, Data Systems Lab · 4 bullets</div>
+            </div>
+            <div class="entry" data-resume-entry>
+              <div class="entry-head"><strong>Teaching Assistant, ICS 33</strong><div class="entry-tools"><span class="mono">Sep 2025 – Dec 2025</span><button class="icon-btn" type="button" aria-label="Expand Teaching Assistant">▸</button><button class="icon-btn" type="button" aria-label="More actions">⋯</button></div></div>
+              <div class="entry-sub">UC Irvine · 3 bullets</div>
+            </div>
+          </section>
+          <section class="panel">
+            <div class="panel-head"><h2>Projects<span class="count">4</span></h2><button type="button" class="btn btn-ghost btn-sm">+ Add entry</button></div>
+            <div class="entry"><div class="entry-head"><strong>Fleet telemetry dashboard</strong><span class="mono">Mar 2026 – Present</span></div><div class="entry-sub">Python, Kafka, Grafana · 3 bullets</div></div>
+            <div class="entry"><div class="entry-head"><strong>Course planner</strong><span class="mono">Oct 2025</span></div><div class="entry-sub">TypeScript, React · 2 bullets</div></div>
+          </section>
+        </div>
+      </div>
+      <div class="savebar">
+        <span class="status">All changes saved</span>
+        <button type="button" class="btn btn-secondary">Review as draft</button>
+        <button type="button" class="btn btn-primary">Save</button>
+      </div>
+    </section>
+
+    <!-- ================= Template ================= -->
+    <section data-screen="template" hidden>
+      <div class="page-head">
+        <p class="label">Active: Default</p>
+        <h1 class="display">Template</h1>
+        <p class="lede">The Word document every tailored resume is poured into. Only the words change; the look stays yours.</p>
+      </div>
+      <div class="stack">
+        <section class="panel">
+          <div class="cur">
+            <div class="doc" role="img" aria-label="First page of Jordan Rivera resume"><i class="h"></i><i class="w5" style="margin:0 auto 8px"></i><i class="s"></i><i class="w9"></i><i class="w8"></i><i class="w9"></i><i class="w7"></i><i class="s"></i><i class="w9"></i><i class="w8"></i><i class="w5"></i><i class="s"></i><i class="w9"></i><i class="w7"></i></div>
+            <div>
+              <div class="panel-head"><h2>Jordan Rivera resume</h2><button type="button" class="btn btn-secondary btn-sm">Refresh</button></div>
+              <div class="summary">
+                <div><span class="label">Layout</span><span class="val">Single column</span></div>
+                <div><span class="label">Sections</span><span class="val mono">6</span></div>
+                <div><span class="label">Body font</span><span class="val">Garamond 11</span></div>
+                <div><span class="label">Lines per page</span><span class="val mono">48</span></div>
+              </div>
+              <div class="actions"><button type="button" class="btn btn-secondary btn-sm">Replace template</button><button type="button" class="btn btn-ghost btn-sm">Technical details</button></div>
+            </div>
+          </div>
+        </section>
+        <section class="panel" aria-labelledby="fit-h">
+          <div class="panel-head"><h2 id="fit-h">Page fit tuning</h2><span class="chip s-ok"><span class="mk"></span>Calibrated for Word</span></div>
+          <div class="figures sm">
+            <div><span class="fig">48</span><span class="fig-l">lines per page</span></div>
+            <div><span class="fig">96</span><span class="fig-l">characters per line</span></div>
+            <div><span class="fig">±1</span><span class="fig-l">line, last 20 runs</span></div>
+          </div>
+        </section>
+        <section class="panel">
+          <div class="panel-head"><h2>Your templates<span class="count">2</span></h2><button type="button" class="btn btn-secondary btn-sm">Import a .docx</button></div>
+          <ul class="tgrid">
+            <li class="tcard on"><div class="doc"><i class="h"></i><i class="s"></i><i class="w9"></i><i class="w8"></i><i class="w7"></i><i class="s"></i><i class="w9"></i></div><div class="tcard-foot">Jordan Rivera resume<span class="chip s-ok"><span class="mk"></span>In use</span></div></li>
+            <li class="tcard"><div class="doc"><i class="h"></i><i class="s"></i><i class="w8"></i><i class="w9"></i><i class="w5"></i><i class="s"></i><i class="w7"></i></div><div class="tcard-foot">Two-column draft<button type="button" class="btn btn-secondary btn-sm">Use</button></div></li>
+          </ul>
+        </section>
+        <section class="panel" aria-label="Starter templates">
+          <div class="panel-head"><h2>Starter templates</h2></div>
+          <ul class="tgrid">
+            <li class="tcard"><div class="doc"><i class="h"></i><i class="s"></i><i class="w9"></i><i class="w9"></i><i class="w8"></i><i class="s"></i><i class="w7"></i></div><div class="tcard-foot">Compact<button type="button" class="btn btn-secondary btn-sm">Use Compact</button></div></li>
+            <li class="tcard"><div class="doc"><i class="h"></i><i class="s"></i><i class="w7"></i><i class="w9"></i><i class="w8"></i><i class="s"></i><i class="w9"></i></div><div class="tcard-foot">Classic<button type="button" class="btn btn-secondary btn-sm">Use Classic</button></div></li>
+            <li class="tcard"><div class="doc"><i class="h"></i><i class="s"></i><i class="w9"></i><i class="w5"></i><i class="w8"></i><i class="s"></i><i class="w8"></i></div><div class="tcard-foot">Modern<button type="button" class="btn btn-secondary btn-sm">Use Modern</button></div></li>
+          </ul>
+        </section>
+        <section class="panel">
+          <div class="panel-head"><h2>Import a template</h2><span class="meta">Two-column draft.docx</span></div>
+          <ol class="hsteps">
+            <li class="done"><span class="box">✓</span>Upload</li>
+            <li class="now"><span class="box">2</span>Map sections</li>
+            <li><span class="box">3</span>Check</li>
+            <li><span class="box">4</span>Preview</li>
+          </ol>
+          <ul class="rows">
+            <li><div><div class="t1">“WORK HISTORY” → Experience</div><div class="t2">3 entries found</div></div><span class="chip s-ok"><span class="mk"></span>Mapped</span></li>
+            <li><div><div class="t1">“SELECTED PROJECTS” → Projects</div><div class="t2">Dates sit in a table cell; they will be filled per row.</div></div><span class="chip s-attn"><span class="mk"></span>Check</span></li>
+            <li><div><div class="t1">Header line with phone and email</div><div class="t2">No contact fields detected.</div></div><span class="chip s-fail"><span class="mk"></span>Not mapped</span></li>
+          </ul>
+          <div class="foot"><button type="button" class="btn btn-ghost">Back</button><button type="button" class="btn btn-primary">Continue</button></div>
+        </section>
+      </div>
+    </section>
+
+    <!-- ================= Vocabulary ================= -->
+    <section data-screen="vocab" hidden>
+      <div class="page-head">
+        <button type="button" class="back" data-go="settings">← Settings</button>
+        <h1 class="display">Vocabulary</h1>
+        <p class="lede">The words the rewriter may use. Packs add verbs and terms for a field; additions are yours.</p>
+        <div class="summary" style="margin-top:6px">
+          <div><span class="label">Packs on</span><span class="val mono">3 of 7</span></div>
+          <div><span class="label">Your additions</span><span class="val mono">12</span></div>
+          <div><span class="label">Suggestions</span><span class="val mono">4</span></div>
+        </div>
+      </div>
+      <div class="subbar">
+        <div class="seg" role="tablist" aria-label="Vocabulary sections">
+          <button type="button" role="tab" data-group="voc" data-tab="packs" aria-selected="true">Packs</button>
+          <button type="button" role="tab" data-group="voc" data-tab="adds" aria-selected="false">Your additions</button>
+          <button type="button" role="tab" data-group="voc" data-tab="sugg" aria-selected="false">Suggestions <span class="n">4</span></button>
+        </div>
+      </div>
+      <section class="panel" data-group="voc" data-pane="packs">
+        <div class="table-wrap">
+          <table class="compact">
+            <thead><tr><th>Pack</th><th>Field</th><th class="num">Verb families</th><th class="num">Terms</th><th>On</th><th class="cell-act"><span class="sr">Actions</span></th></tr></thead>
+            <tbody>
+              <tr><td class="co">Data engineering</td><td class="muted">Software · Data</td><td class="num mono">14</td><td class="num mono">212</td><td><button type="button" class="toggle" role="switch" aria-checked="true" aria-label="Data engineering on"></button></td><td class="cell-act"><button type="button" class="btn btn-ghost btn-sm">Edit</button></td></tr>
+              <tr><td class="co">Backend services</td><td class="muted">Software</td><td class="num mono">11</td><td class="num mono">186</td><td><button type="button" class="toggle" role="switch" aria-checked="true" aria-label="Backend services on"></button></td><td class="cell-act"><button type="button" class="btn btn-ghost btn-sm">Edit</button></td></tr>
+              <tr><td class="co">Research</td><td class="muted">Academia</td><td class="num mono">9</td><td class="num mono">97</td><td><button type="button" class="toggle" role="switch" aria-checked="false" aria-label="Research on"></button></td><td class="cell-act"><button type="button" class="btn btn-ghost btn-sm">Edit</button></td></tr>
+            </tbody>
+          </table>
+        </div>
+      </section>
+      <section class="panel" data-group="voc" data-pane="adds" hidden><div class="empty"><h3>Your additions</h3><p>Terms you added by hand appear here.</p></div></section>
+      <section class="panel" data-group="voc" data-pane="sugg" hidden>
+        <ul class="rows">
+          <li><div><div class="t1 mono">dagster</div><div class="t2">Seen in 3 job descriptions; already in your resume.</div></div><div class="ctl"><button type="button" class="btn btn-ghost btn-sm">Dismiss</button><button type="button" class="btn btn-secondary btn-sm">Accept</button></div></li>
+          <li><div><div class="t1 mono">orchestrated</div><div class="t2">Would rewrite 1 existing bullet tag.</div></div><div class="ctl"><button type="button" class="btn btn-ghost btn-sm">Dismiss</button><button type="button" class="btn btn-secondary btn-sm">Accept</button></div></li>
+        </ul>
+      </section>
+    </section>
+
+    <!-- ================= Settings ================= -->
+    <section data-screen="settings" hidden>
+      <div class="page-head">
+        <h1 class="display">Settings</h1>
+        <p class="lede">How ResumeTailor runs on this computer.</p>
+      </div>
+      <div class="with-rail">
+        <nav class="rail" aria-label="Settings sections">
+          <button type="button" data-rail="set" aria-current="true">AI model</button>
+          <button type="button" data-rail="set">Documents</button>
+          <button type="button" data-rail="set">Data</button>
+          <button type="button" data-rail="set">Advanced</button>
+          <button type="button" data-rail="set">Browser</button>
+          <button type="button" data-rail="set">About</button>
+        </nav>
+        <div class="stack">
+          <section class="panel">
+            <div class="panel-head"><h2>AI model</h2><p class="meta">Used for tailoring, cover letters and form answers.</p></div>
+            <div class="rows">
+              <div class="row"><div><div class="t1">Provider</div><div class="t2">Runs locally through Ollama. No key needed.</div></div><div class="ctl"><select class="field"><option>Ollama</option><option>Claude</option></select></div></div>
+              <div class="row"><div><div class="t1">Model</div><div class="t2 mono">gemma4:cloud</div></div><div class="ctl"><select class="field"><option>gemma4:cloud</option></select></div></div>
+              <div class="row"><div><div class="t1">Effort <button type="button" class="btn btn-ghost btn-sm" style="height:auto;padding:0 4px">What is effort?</button></div><div class="t2">Higher effort is slower and more careful.</div></div><div class="ctl"><div class="seg"><button type="button" data-pick="eff" aria-pressed="false">Low</button><button type="button" data-pick="eff" aria-pressed="true">Medium</button><button type="button" data-pick="eff" aria-pressed="false">High</button></div></div></div>
+              <div class="row"><div><div class="t1">Connection</div><div class="t2 txt-ok inline-mk"><span class="chip s-ok" style="padding:0;background:none;height:auto"><span class="mk"></span></span>Reached Ollama in 140 ms</div></div><div class="ctl"><button type="button" class="btn btn-secondary btn-sm">Test again</button></div></div>
+            </div>
+          </section>
+          <section class="panel">
+            <div class="panel-head"><h2>Updates</h2></div>
+            <div class="rows">
+              <div class="row"><div><div class="t1">Version 0.2.0 is available.</div><div class="t2 mono">You have 0.1.9 · checked 2 min ago</div></div><div class="ctl"><button type="button" class="btn btn-secondary btn-sm">Check now</button><button type="button" class="btn btn-primary btn-sm">Install and restart</button></div></div>
+              <div class="row" style="grid-template-columns:minmax(0,1fr)"><div class="meter" role="progressbar" aria-label="Download progress" aria-valuenow="35" aria-valuemin="0" aria-valuemax="100"><span style="--w:35%"></span></div></div>
+            </div>
+          </section>
+          <section class="panel">
+            <div class="panel-head"><h2>Writing</h2></div>
+            <div class="rows">
+              <div class="row"><div><div class="t1">Vocabulary</div><div class="t2">3 packs on · 12 additions</div></div><div class="ctl"><button type="button" class="btn btn-secondary btn-sm" data-go="vocab">Open vocabulary</button></div></div>
+              <div class="row"><div><div class="t1">Fix overflows by merging bullets</div><div class="t2">Only after a measured overflow; never invents content.</div></div><div class="ctl"><button type="button" class="toggle" role="switch" aria-checked="true" aria-label="Merge bullets"></button></div></div>
+            </div>
+          </section>
+        </div>
+      </div>
+    </section>
+
+    <!-- ================= Onboarding ================= -->
+    <section data-screen="welcome" hidden>
+      <div class="narrow-col">
+        <div class="page-head">
+          <p class="label">Setup · step 1 of 5</p>
+          <h1 class="display">Welcome to ResumeTailor</h1>
+          <p class="lede">Five short steps. You can change any of this later in Settings.</p>
+        </div>
+        <ol class="hsteps" aria-label="Setup steps">
+          <li class="now"><span class="box">1</span>Field</li>
+          <li><span class="box">2</span>Model</li>
+          <li><span class="box">3</span>Resume</li>
+          <li><span class="box">4</span>Basics</li>
+          <li><span class="box">5</span>Review</li>
+        </ol>
+        <section class="panel">
+          <h2 id="step-title" style="font-size:18px;font-weight:600">What kind of jobs are you applying for?</h2>
+          <p class="muted" style="margin:6px 0 18px;font-size:13px">This picks the vocabulary packs and suggested job sources. Choose one or more.</p>
+          <div class="choices">
+            <button type="button" class="choice" data-choice aria-pressed="true"><strong>Software engineering</strong><span>Backend, frontend, platform</span></button>
+            <button type="button" class="choice" data-choice aria-pressed="true"><strong>Data</strong><span>Data engineering, analytics</span></button>
+            <button type="button" class="choice" data-choice aria-pressed="false"><strong>Machine learning</strong><span>ML engineering, research</span></button>
+            <button type="button" class="choice" data-choice aria-pressed="false"><strong>Product &amp; design</strong><span>PM, UX, research</span></button>
+            <button type="button" class="choice" data-choice aria-pressed="false"><strong>Research</strong><span>Labs, academia</span></button>
+            <button type="button" class="choice" data-choice aria-pressed="false"><strong>Something else</strong><span>Describe it in your own words</span></button>
+          </div>
+          <div class="foot"><button type="button" class="btn btn-ghost">Back</button><button type="button" class="btn btn-primary">Next</button></div>
+        </section>
+      </div>
+    </section>
+
+    <!-- ================= Extension ================= -->
+    <section data-screen="ext" hidden>
+      <div class="page-head">
+        <p class="label">Browser extension</p>
+        <h1 class="display">Popup &amp; options</h1>
+        <p class="lede">Same tokens, fonts and statuses as the app, bundled locally. The on-page chip uses system fonts because it lives inside other sites.</p>
+      </div>
+      <div class="ext-wrap">
+        <div class="popup">
+          <div class="popup-top"><span class="mark"><i aria-hidden="true"></i>ResumeTailor</span><span class="mono small muted">Default</span></div>
+          <div class="popup-body">
+            <section class="panel">
+              <div class="panel-head"><h2>This page</h2><span class="chip s-ok"><span class="mk"></span>Job posting</span></div>
+              <p style="font-weight:500">Software Engineer Intern, Data Platform</p>
+              <p class="muted small">Northwind Robotics · Greenhouse</p>
+              <div class="actions" style="margin-top:12px"><button type="button" class="btn btn-primary btn-sm">Save to Apply</button><button type="button" class="btn btn-secondary btn-sm">Tailor now</button></div>
+            </section>
+            <div class="notice" style="padding:10px 12px"><span class="chip s-attn"><span class="mk"></span>App not running</span><p class="small">Start ResumeTailor to fill this form.</p></div>
+            <ul class="rows" style="padding:0 2px">
+              <li><div><div class="t1 small">Lumen Bio</div><div class="t2">Computational Biology Intern</div></div><span class="chip s-live"><span class="mk"></span>Preparing</span></li>
+              <li><div><div class="t1 small">Halcyon Health</div><div class="t2">Data Analyst Intern</div></div><span class="chip s-ok"><span class="mk"></span>Submitted</span></li>
+            </ul>
+          </div>
+        </div>
+        <section class="panel options">
+          <div class="panel-head"><h2>Extension options</h2></div>
+          <div class="rows">
+            <div class="row"><div><div class="t1">App address</div><div class="t2">Where the ResumeTailor app is listening.</div></div><div class="ctl"><input class="field mono" value="http://127.0.0.1:8000"></div></div>
+            <div class="row"><div><div class="t1">Show chip on job pages</div><div class="t2">A small button on postings it recognises.</div></div><div class="ctl"><button type="button" class="toggle" role="switch" aria-checked="true" aria-label="Show chip"></button></div></div>
+            <div class="row"><div><div class="t1">Pairing</div><div class="t2 txt-ok">Paired with this computer</div></div><div class="ctl"><button type="button" class="btn btn-danger btn-sm">Unpair</button></div></div>
+          </div>
+          <div class="sect"><h3>On-page chip</h3><span class="chipdemo"><i aria-hidden="true"></i>Tailor with ResumeTailor</span></div>
+        </section>
+      </div>
+    </section>
+
+    <!-- ================= Overlays & states ================= -->
+    <section data-screen="overlays" hidden>
+      <div class="page-head">
+        <p class="label">Shared components</p>
+        <h1 class="display">Overlays &amp; states</h1>
+        <p class="lede">Modals, menus and toasts carry the only shadow in the app. Everything else is flat.</p>
+      </div>
+      <div class="ov-grid">
+        <div class="stage scrim"><span class="label stage-label" style="color:#ddd">Confirm dialog</span>
+          <div class="modal" role="dialog" aria-label="Skip 2 applications?">
+            <h3>Skip 2 applications?</h3>
+            <p>They move to Done and won't be filled. You can restore them from the Done tab.</p>
+            <div class="actions"><button type="button" class="btn btn-ghost">Cancel</button><button type="button" class="btn btn-primary">Skip (2)</button></div>
+          </div>
+        </div>
+        <div class="stage scrim"><span class="label stage-label" style="color:#ddd">Destructive confirm</span>
+          <div class="modal" role="dialog" aria-label="Delete profile?">
+            <h3>Delete the “Research” profile?</h3>
+            <p>Its resume, answers and templates are removed from this computer. This can't be undone.</p>
+            <div class="actions"><button type="button" class="btn btn-ghost">Cancel</button><button type="button" class="btn btn-danger">Delete profile</button></div>
+          </div>
+        </div>
+        <div class="stage"><span class="label stage-label">Menu</span>
+          <div class="menu" role="menu">
+            <p class="label">Halcyon Health</p>
+            <button type="button" role="menuitem">Download PDF</button>
+            <button type="button" role="menuitem">Download .docx</button>
+            <button type="button" role="menuitem">Showing above <span class="txt-ok">✓</span></button>
+            <hr>
+            <button type="button" role="menuitem" class="danger">Delete run</button>
+          </div>
+        </div>
+        <div class="stage"><span class="label stage-label">Toasts</span>
+          <div class="toasts">
+            <div class="toast"><span class="chip s-ok"><span class="mk"></span>Saved</span><p>Profile changes saved.</p></div>
+            <div class="toast"><span class="chip s-fail"><span class="mk"></span>Failed</span><p>Couldn't reach Ollama.</p><button type="button" class="btn btn-ghost btn-sm">Retry</button></div>
+            <div class="toast"><p>2 applications skipped.</p><button type="button" class="btn btn-secondary btn-sm">Undo</button></div>
+          </div>
+        </div>
+        <div class="stage"><span class="label stage-label">Empty</span>
+          <div class="empty"><h3>No applications yet</h3><p>Add a job source and the nightly run will start finding postings for you.</p><button type="button" class="btn btn-primary btn-sm" data-go="sources">Add a job source</button></div>
+        </div>
+        <div class="stage"><span class="label stage-label">Loading</span>
+          <div class="skel" aria-label="Loading"><i style="width:40%"></i><i></i><i style="width:85%"></i><i style="width:70%"></i><i style="width:55%"></i></div>
+        </div>
+      </div>
+      <section class="panel" style="margin-top:16px">
+        <div class="panel-head"><h2>Status vocabulary</h2><p class="meta">Hue, shape and words together, so no two statuses can be confused.</p></div>
+        <div class="legend-grid">
+          <div><span class="chip s-ready"><span class="mk"></span>Ready</span>waiting to start</div>
+          <div><span class="chip s-live"><span class="mk"></span>Filling</span>working now</div>
+          <div><span class="chip s-ok"><span class="mk"></span>Submitted</span>done</div>
+          <div><span class="chip s-attn"><span class="mk"></span>Needs you</span>your turn</div>
+          <div><span class="chip s-fail"><span class="mk"></span>Failed</span>something broke</div>
+          <div><span class="chip s-muted"><span class="mk"></span>Rejected</span>closed</div>
+        </div>
+      </section>
+    </section>
+  </main>
+</div>
+
+<script>
+(function () {
+  var root = document.documentElement;
+  var KEY = "rt-redesign-preview-v5";
+  var NAV_OF = { detail: "apply", sources: "apply", editor: "profile", vocab: "settings" };
+  var state = { theme: "system", screen: "tailor" };
+  try {
+    var saved = JSON.parse(localStorage.getItem(KEY) || "null");
+    if (saved && typeof saved === "object") {
+      Object.keys(state).forEach(function (k) { if (typeof saved[k] === "string") state[k] = saved[k]; });
+    }
+  } catch (e) {}
+
+  function render() {
+    if (state.theme === "system") root.removeAttribute("data-theme");
+    else root.setAttribute("data-theme", state.theme);
+    document.querySelectorAll("[data-set]").forEach(function (b) {
+      var p = b.getAttribute("data-set").split(":");
+      b.setAttribute("aria-pressed", String(state[p[0]] === p[1]));
+    });
+    var found = false;
+    document.querySelectorAll("[data-screen]").forEach(function (s) {
+      var on = s.getAttribute("data-screen") === state.screen;
+      s.hidden = !on; found = found || on;
+    });
+    if (!found) { state.screen = "tailor"; return render(); }
+    var navOn = NAV_OF[state.screen] || state.screen;
+    document.querySelectorAll(".nav-link").forEach(function (a) {
+      if (a.getAttribute("data-go") === navOn) a.setAttribute("aria-current", "page"); else a.removeAttribute("aria-current");
+    });
+    try { localStorage.setItem(KEY, JSON.stringify(state)); } catch (e) {}
+  }
+
+  function selectTab(t) {
+    var g = t.getAttribute("data-group"), id = t.getAttribute("data-tab");
+    document.querySelectorAll('[data-tab][data-group="' + g + '"]').forEach(function (x) {
+      x.setAttribute("aria-selected", String(x === t));
+    });
+    document.querySelectorAll('[data-pane][data-group="' + g + '"]').forEach(function (p) {
+      p.hidden = p.getAttribute("data-pane") !== id;
+    });
+  }
+
+  function syncSelection() {
+    var boxes = Array.prototype.slice.call(document.querySelectorAll(".rowsel"));
+    var n = boxes.filter(function (b) { return b.checked; }).length;
+    var all = document.getElementById("sel-all");
+    document.getElementById("selbar").hidden = n === 0;
+    document.getElementById("selcount").textContent = n + " selected";
+    all.checked = n === boxes.length;
+    all.indeterminate = n > 0 && n < boxes.length;
+  }
+
+  document.addEventListener("change", function (ev) {
+    if (ev.target.id === "sel-all") document.querySelectorAll(".rowsel").forEach(function (b) { b.checked = ev.target.checked; });
+    if (ev.target.matches(".rowsel, #sel-all")) syncSelection();
+  });
+
+  document.addEventListener("click", function (ev) {
+    if (ev.target.closest("#selclear")) {
+      document.querySelectorAll(".rowsel").forEach(function (b) { b.checked = false; });
+      return syncSelection();
+    }
+    var sw = ev.target.closest('[role="switch"]');
+    if (sw) return sw.setAttribute("aria-checked", String(sw.getAttribute("aria-checked") !== "true"));
+    var ch = ev.target.closest("[data-choice]");
+    if (ch) return ch.setAttribute("aria-pressed", String(ch.getAttribute("aria-pressed") !== "true"));
+    var pk = ev.target.closest("[data-pick]");
+    if (pk) {
+      pk.parentElement.querySelectorAll("[data-pick]").forEach(function (x) { x.setAttribute("aria-pressed", String(x === pk)); });
+      return;
+    }
+    var rl = ev.target.closest("[data-rail]");
+    if (rl) {
+      document.querySelectorAll('[data-rail="' + rl.getAttribute("data-rail") + '"]').forEach(function (x) {
+        if (x === rl) x.setAttribute("aria-current", "true"); else x.removeAttribute("aria-current");
+      });
+      return;
+    }
+    var t = ev.target.closest("[data-tab]");
+    if (t) return selectTab(t);
+    var b = ev.target.closest("[data-set],[data-go]");
+    if (!b) return;
+    if (b.hasAttribute("data-set")) {
+      var p = b.getAttribute("data-set").split(":");
+      state[p[0]] = p[1];
+    } else {
+      state.screen = b.getAttribute("data-go");
+      window.scrollTo(0, 0);
+    }
+    render();
+  });
+
+  render();
+  syncSelection();
+})();
+</script>
+
+</html>
