@@ -6,7 +6,9 @@ const PADDING = { md: "p-5 sm:px-6", sm: "p-4", none: "" };
  * A tile: the soft grey surface with a hairline border and 4px corners. Inside a tile use
  * spacing or a single hairline (`TileSection`), never nested boxes. `title` renders an h2
  * (`rt-tile-title`), `eyebrow` a mono label above it, `meta` quiet text beside it and
- * `actions` sit on the right.
+ * `actions` sit on the right. `embedded` is for a tile's content shown inside another tile
+ * (an onboarding step, the Tailor page's "Last result"): no box of its own and the title
+ * steps down to h3.
  */
 export function Tile({
   title,
@@ -16,6 +18,7 @@ export function Tile({
   actions,
   as: Tag = "section",
   padding = "md",
+  embedded = false,
   children,
   className = "",
   ...rest
@@ -28,22 +31,23 @@ export function Tile({
   actions?: ReactNode;
   as?: ElementType;
   padding?: keyof typeof PADDING;
+  /** Inside another tile: drop the border, fill and padding; the title becomes an h3. */
+  embedded?: boolean;
   children?: ReactNode;
   className?: string;
 } & Partial<Record<`aria-${string}` | `data-${string}` | "id", string>>) {
   const heading = title || eyebrow || meta || actions || description;
+  const Title = embedded ? "h3" : "h2";
+  const box = embedded ? "" : `rounded-sm border border-line bg-panel ${PADDING[padding]}`.trim();
   return (
-    <Tag
-      className={`min-w-0 rounded-sm border border-line bg-panel ${PADDING[padding]} ${className}`.trim()}
-      {...rest}
-    >
+    <Tag className={["min-w-0", box, className].filter(Boolean).join(" ")} {...rest}>
       {heading && (
         <div className="mb-4 flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
           <div className="min-w-0">
             {eyebrow && <p className="rt-eyebrow mb-1">{eyebrow}</p>}
             {(title || meta) && (
               <div className="flex flex-wrap items-baseline gap-x-3 gap-y-1">
-                {title && <h2 className="rt-tile-title">{title}</h2>}
+                {title && <Title className="rt-tile-title">{title}</Title>}
                 {meta && <span className="text-xs text-ink-muted">{meta}</span>}
               </div>
             )}

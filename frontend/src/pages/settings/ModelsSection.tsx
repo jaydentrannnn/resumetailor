@@ -18,8 +18,11 @@ import { useRunState } from "../../state/runState";
 import { CheckResultLine } from "./CheckResultLine";
 import { SettingRow } from "./SettingRow";
 
-/** Settings → Models: which AI to use, its keys, and a live connection test. */
-export function ModelsSection() {
+/**
+ * Settings → Models: which AI to use, its keys, and a live connection test. `embedded`
+ * (the onboarding Model step) drops the two tiles for hairline-separated sections.
+ */
+export function ModelsSection({ embedded = false }: { embedded?: boolean } = {}) {
   const { config, settings, setSettings, settingsLoaded } = useRunState();
   const toast = useToast();
   const [secrets, setSecrets] = useState<SecretState[]>([]);
@@ -72,6 +75,7 @@ export function ModelsSection() {
   return (
     <div className="space-y-4">
       <Card
+        embedded={embedded}
         title="AI model"
         description="Used for every tailoring run and for answering application questions."
       >
@@ -210,6 +214,8 @@ export function ModelsSection() {
       </Card>
 
       <Card
+        embedded={embedded}
+        className={embedded ? "border-t border-line pt-4" : ""}
         title="API keys"
         description={
           storeBackend === "keyring"

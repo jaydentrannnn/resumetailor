@@ -9,7 +9,15 @@ import { InstalledTemplateStep } from "./InstalledTemplateStep";
 import { TemplateContentResult } from "./TemplateContentResult";
 
 /** Analyze → map → install, using the same template state transitions. */
-export function TemplateImportWizard({ title = "Replace template" }: { title?: string } = {}) {
+export function TemplateImportWizard({
+  title = "Replace template",
+  embedded = false,
+}: {
+  title?: string;
+  /** Inside the onboarding step tile: no tile of its own, the title becomes an h3. */
+  embedded?: boolean;
+} = {}) {
+  const Title = embedded ? "h3" : "h2";
   const state = useTemplateState();
   const {
     uploading,
@@ -46,10 +54,10 @@ export function TemplateImportWizard({ title = "Replace template" }: { title?: s
   };
 
   return (
-    <Tile>
+    <Tile embedded={embedded}>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="rt-tile-title">{title}</h2>
+          <Title className="rt-tile-title">{title}</Title>
           <p className="mt-1 text-sm text-ink-muted">
             Upload a single-column Word/Google Docs export. The importer detects section headings
             and field separators, then you confirm before it rebuilds the tagged template. Any

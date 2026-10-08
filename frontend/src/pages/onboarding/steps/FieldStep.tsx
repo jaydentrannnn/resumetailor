@@ -149,7 +149,7 @@ export function FieldStep({
           }
         />
       )}
-      <TargetFieldSection />
+      <TargetFieldSection embedded />
       <div className="flex justify-between border-t border-line pt-4">
         <Button variant="ghost" disabled>
           Back

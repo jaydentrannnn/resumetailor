@@ -22,26 +22,16 @@ export function ResultFrame({
   children?: ReactNode;
   className?: string;
 }) {
-  if (!embedded) {
-    return (
-      <Tile title={title} description={description} actions={actions} className={className}>
-        {children}
-      </Tile>
-    );
-  }
-  const heading = title || description || actions;
   return (
-    <div className={`min-w-0 ${className}`.trim()}>
-      {heading && (
-        <div className="mb-4 flex flex-wrap items-start justify-between gap-x-4 gap-y-2">
-          <div className="min-w-0">
-            {title && <h3 className="rt-tile-title">{title}</h3>}
-            {description && <p className="mt-1 text-sm text-ink-muted">{description}</p>}
-          </div>
-          {actions && <div className="flex flex-wrap items-center gap-2">{actions}</div>}
-        </div>
-      )}
+    <Tile
+      as={embedded ? "div" : "section"}
+      embedded={embedded}
+      title={title}
+      description={description}
+      actions={actions}
+      className={className}
+    >
       {children}
-    </div>
+    </Tile>
   );
 }

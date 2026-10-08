@@ -2,8 +2,11 @@ import { useState } from "react";
 import { Card, DataList } from "../../components/ui";
 import { useRunState } from "../../state/runState";
 
-/** One field belongs to the profile; postings supply role-specific relevance. */
-export function TargetFieldSection() {
+/**
+ * One field belongs to the profile; postings supply role-specific relevance. `embedded`
+ * drops the tile for the onboarding Field step, which is already one.
+ */
+export function TargetFieldSection({ embedded = false }: { embedded?: boolean } = {}) {
   const { config, settings, settingsLoaded, setTargetField } = useRunState();
   const [saving, setSaving] = useState(false);
   const [error, setError] = useState<string | null>(null);
@@ -22,6 +25,8 @@ export function TargetFieldSection() {
 
   return (
     <Card
+      embedded={embedded}
+      className={embedded ? "border-t border-line pt-4" : ""}
       title="Target field"
       description="Saved for this profile and used for every tailoring run."
     >

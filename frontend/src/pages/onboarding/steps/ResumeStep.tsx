@@ -8,7 +8,7 @@ export function ResumeStep({ onScratch }: { onScratch: () => void }) {
   const [pdf, setPdf] = useState(false);
   return (
     <div className="space-y-4">
-      <TemplateImportWizard title="Upload your resume" />
+      <TemplateImportWizard embedded title="Upload your resume" />
       {pdf ? (
         <ImportResumePanel
           embedded
@@ -31,7 +31,7 @@ export function ResumeStep({ onScratch }: { onScratch: () => void }) {
         </button>{" "}
         and add your experience in the editor; you can upload a template later on the Template page.
       </p>
-      <StarterTemplatesPanel />
+      <StarterTemplatesPanel embedded />
     </div>
   );
 }

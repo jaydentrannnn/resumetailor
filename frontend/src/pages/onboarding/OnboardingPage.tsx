@@ -98,7 +98,7 @@ export function OnboardingPage() {
           onNext={next}
           saving={saving}
         >
-          <ModelsSection />
+          <ModelsSection embedded />
         </StepFrame>
       )}
       {state.step === "resume" && (

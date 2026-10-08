@@ -12,7 +12,13 @@ import type { MasterResume } from "../../lib/resumeEdit";
  * Built-in starter templates: a clean layout for students whose own file can't be a
  * template (text boxes, sidebars) or who don't have a .docx at all.
  */
-export function StarterTemplatesPanel() {
+export function StarterTemplatesPanel({
+  embedded = false,
+}: {
+  /** Inside the onboarding step tile: a hairline section instead of its own tile. */
+  embedded?: boolean;
+} = {}) {
+  const Title = embedded ? "h3" : "h2";
   const { defaults, installDefault, libraryBusy, uploading } = useTemplateState();
   const { dirty, syncFromDisk } = useEditorState();
   const { confirm } = useConfirm();
@@ -56,10 +62,15 @@ export function StarterTemplatesPanel() {
 
   if (defaults.length === 0) return null;
   return (
-    <Tile id="starter-templates" aria-labelledby="starter-templates-title">
-      <h2 id="starter-templates-title" className="rt-tile-title">
+    <Tile
+      id="starter-templates"
+      aria-labelledby="starter-templates-title"
+      embedded={embedded}
+      className={embedded ? "border-t border-line pt-4" : ""}
+    >
+      <Title id="starter-templates-title" className="rt-tile-title">
         Starter templates
-      </h2>
+      </Title>
       <p className="mt-1 text-sm text-ink-muted">
         Clean single-column layouts that work with every feature. Pick one if your own file uses
         text boxes or a sidebar, or if you imported a PDF. Your resume content stays the same.
