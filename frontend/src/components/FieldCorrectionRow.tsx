@@ -1,6 +1,7 @@
 import { useState } from "react";
 import type { ApplyFieldOutcome, ApplyReviewField } from "../api";
 import { answerSourceLabel } from "../lib/answerSource";
+import { Button } from "./ui";
 
 export function observedFieldValue(field: ApplyReviewField): string {
   const selected = field.options.filter((option) => option.selected && !option.placeholder);
@@ -54,7 +55,7 @@ export function FieldCorrectionRow({
         ? "Filled value verified on the form"
         : "Needs review");
   const inputProps = {
-    className: "min-w-44 rounded border border-line bg-bg px-2 py-1 disabled:opacity-50",
+    className: "field w-auto min-w-44 py-1 text-xs disabled:opacity-50",
     value,
     disabled,
     maxLength,
@@ -63,7 +64,7 @@ export function FieldCorrectionRow({
       setValue(event.target.value),
   };
   return (
-    <li className="rounded border border-line bg-panel p-2.5 text-xs">
+    <li className="py-3 text-xs">
       <p className="font-medium text-ink">
         {field.label || "Unlabeled field"} · {field.required ? "Required" : "Optional"}
       </p>
@@ -77,7 +78,7 @@ export function FieldCorrectionRow({
         <div className="mt-2 flex flex-wrap items-center gap-2">
           {choice ? (
             <select
-              className="min-w-44 rounded border border-line bg-bg px-2 py-1 disabled:opacity-50"
+              className="field w-auto min-w-44 py-1 text-xs disabled:opacity-50"
               value={optionId}
               disabled={disabled}
               onChange={(event) => setOptionId(event.target.value)}
@@ -104,14 +105,13 @@ export function FieldCorrectionRow({
               }
             />
           )}
-          <button
-            type="button"
-            className="rounded border border-accent px-2 py-1 text-accent disabled:opacity-50"
+          <Button
+            size="sm"
             disabled={disabled || !canSubmit}
             onClick={() => onCorrect(field, choice ? null : value, choice ? [optionId] : [])}
           >
             Apply correction
-          </button>
+          </Button>
           {invalidValue && (
             <span role="alert" className="text-danger">
               Enter a valid value within {maxLength} characters.

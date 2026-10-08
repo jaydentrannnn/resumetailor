@@ -49,7 +49,7 @@ export function AskAnswerCard({
                 <button
                   key={s}
                   type="button"
-                  className="rounded-full border border-line px-3 py-1 text-xs hover:border-accent hover:text-accent"
+                  className="rt-row-action rounded-sm border border-line-hover bg-field px-3 text-xs text-ink hover:border-ink"
                   onClick={() => setQuestion(s)}
                 >
                   {s}
@@ -104,7 +104,7 @@ export function AskAnswerCard({
           </p>
         )}
         {blocked && (
-          <p role="alert" className="text-sm text-warn">
+          <p role="alert" className="text-sm text-attn">
             No answer: the draft claimed things your resume and context do not support (
             {draft.offenders.join(", ")}). If they are true, add them to Extra context.
           </p>
@@ -115,7 +115,7 @@ export function AskAnswerCard({
           </p>
         )}
         {draft?.answer && (
-          <div className="rounded-lg border border-line bg-paper/40 p-4">
+          <div className="border-t border-line pt-4">
             <p className="whitespace-pre-wrap text-sm">{draft.answer}</p>
             <div className="mt-3 flex flex-wrap items-center gap-2 text-xs text-ink-muted">
               <span>{draft.answer.length} characters</span>
@@ -125,7 +125,7 @@ export function AskAnswerCard({
               </Button>
             </div>
             {draft.warnings.map((w) => (
-              <p key={w} className="mt-1 text-xs text-warn">
+              <p key={w} className="mt-1 text-xs text-attn">
                 {w}
               </p>
             ))}

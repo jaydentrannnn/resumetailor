@@ -8,7 +8,7 @@ export function MissingProfileFields({ items }: { items: MissingProfileField[] }
   return (
     <section
       aria-label="Blank profile fields"
-      className="mt-3 rounded border border-warn/50 p-2 text-xs"
+      className="mt-3 border-l-2 border-attn py-1 pl-3 text-xs"
     >
       <p className="font-semibold text-ink">Blank profile fields</p>
       <p className="text-ink-muted">
@@ -18,7 +18,7 @@ export function MissingProfileFields({ items }: { items: MissingProfileField[] }
       <ul className="mt-1 space-y-1">
         {items.map((item) => (
           <li key={item.key}>
-            <Link className="font-medium text-accent underline" to={item.path}>
+            <Link className="font-medium text-ink underline underline-offset-2" to={item.path}>
               {item.field_label}
             </Link>
             <span className="text-ink-muted">

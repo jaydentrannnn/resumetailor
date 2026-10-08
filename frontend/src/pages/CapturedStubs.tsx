@@ -1,7 +1,7 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { listExtensionCaptures, type ApplicationRow, type CapturedItem } from "../api";
-import { Card } from "../components/ui";
+import { buttonClass, StatusChip } from "../components/ui";
 
 /** Board names as users know them (`CapturedItem.site`). */
 const SITE_NAMES: Record<string, string> = { linkedin: "LinkedIn", indeed: "Indeed" };
@@ -27,11 +27,10 @@ export function filterCaptured<T extends Pick<ApplicationRow, "sources">>(
 export function CapturedBadge({ row }: { row: Pick<ApplicationRow, "sources" | "capture_stub"> }) {
   if (!isCaptured(row)) return null;
   return (
-    <span
-      className="rounded-full border border-line px-2 py-0.5 text-micro text-ink-muted"
-      title="Added from the browser extension"
-    >
-      {row.capture_stub ? "Captured · needs description" : "Captured"}
+    <span title="Added from the browser extension">
+      <StatusChip tone={row.capture_stub ? "attention" : "muted"}>
+        {row.capture_stub ? "Captured · needs description" : "Captured"}
+      </StatusChip>
     </span>
   );
 }
@@ -59,11 +58,13 @@ export function NeedsDescriptionGroup({ refreshKey = 0 }: { refreshKey?: number 
   }, [load, refreshKey]);
   if (!stubs.length) return null;
   return (
-    <Card
-      title={`Needs description (${stubs.length})`}
-      description="Saved from search results. Open each job on the job board with the ResumeTailor extension installed and its description is saved automatically."
-    >
-      <ul className="divide-y divide-line">
+    <section className="mb-4 border-b border-line pb-4">
+      <h3 className="text-[13px] font-semibold text-ink">{`Needs description (${stubs.length})`}</h3>
+      <p className="mt-1 text-xs text-ink-muted">
+        Saved from search results. Open each job on the job board with the ResumeTailor extension
+        installed and its description is saved automatically.
+      </p>
+      <ul className="mt-2 divide-y divide-line">
         {stubs.map((stub) => (
           <li
             key={stub.id}
@@ -71,7 +72,7 @@ export function NeedsDescriptionGroup({ refreshKey = 0 }: { refreshKey?: number 
           >
             <div className="min-w-0">
               <Link
-                className="font-medium hover:underline"
+                className="font-medium text-ink underline-offset-2 hover:underline"
                 to={`/applications/${encodeURIComponent(stub.link_id)}`}
               >
                 {stub.role}
@@ -81,7 +82,7 @@ export function NeedsDescriptionGroup({ refreshKey = 0 }: { refreshKey?: number 
               </p>
             </div>
             <a
-              className="rounded-md border border-line px-3 py-1.5 text-sm"
+              className={buttonClass("secondary", "sm")}
               href={stub.posting_url}
               target="_blank"
               rel="noreferrer"
@@ -91,6 +92,6 @@ export function NeedsDescriptionGroup({ refreshKey = 0 }: { refreshKey?: number 
           </li>
         ))}
       </ul>
-    </Card>
+    </section>
   );
 }

@@ -2,6 +2,7 @@ import { useEffect, useState } from "react";
 import { fetchSubmitEvidence, submitEvidenceFileUrl, type SubmitEvidence } from "../api";
 import { applicationStatusLabel } from "../lib/applicationStatus";
 import { evidenceTime } from "../lib/submitEvidence";
+import { Tile } from "./ui";
 
 const FILE_LABELS: Record<string, string> = {
   "before.png": "Screenshot before",
@@ -29,13 +30,14 @@ export function SubmitEvidenceList({ applicationId }: { applicationId: string })
 
   if (!items?.length) return null;
   return (
-    <section className="mt-4 rounded-lg border border-line bg-panel p-5">
-      <h3 className="text-sm font-semibold">Automatic submit evidence</h3>
-      <ul className="mt-2 space-y-3">
+    <Tile title="Automatic submit evidence">
+      <ul className="divide-y divide-line">
         {items.map((item) => (
-          <li key={item.stamp} className="border-t border-line pt-2 text-sm">
+          <li key={item.stamp} className="py-3 text-sm first:pt-0 last:pb-0">
             <p>
-              <strong>{evidenceTime(item.stamp)}</strong>
+              <strong className="font-mono text-[13px] font-medium">
+                {evidenceTime(item.stamp)}
+              </strong>
               {item.status && <> · {applicationStatusLabel(item.status)}</>}
             </p>
             {item.url && <p className="break-all text-xs text-ink-muted">{item.url}</p>}
@@ -43,7 +45,7 @@ export function SubmitEvidenceList({ applicationId }: { applicationId: string })
               {item.files.map((name) => (
                 <a
                   key={name}
-                  className="text-accent underline"
+                  className="text-ink underline underline-offset-2"
                   href={submitEvidenceFileUrl(applicationId, item.stamp, name)}
                   target="_blank"
                   rel="noreferrer"
@@ -55,6 +57,6 @@ export function SubmitEvidenceList({ applicationId }: { applicationId: string })
           </li>
         ))}
       </ul>
-    </section>
+    </Tile>
   );
 }

@@ -3,8 +3,8 @@ import type { ApplyAttachment } from "../api";
 export function AttachmentResults({ uploads }: { uploads: ApplyAttachment[] }) {
   if (uploads.length === 0) return null;
   return (
-    <section className="mt-3">
-      <h4 className="mb-1 text-xs font-semibold text-ink">Documents</h4>
+    <section className="mt-4 border-t border-line pt-4">
+      <h4 className="rt-eyebrow mb-2">Documents</h4>
       <ul className="space-y-1 text-xs text-ink-muted">
         {uploads.map((upload, index) => {
           const state =

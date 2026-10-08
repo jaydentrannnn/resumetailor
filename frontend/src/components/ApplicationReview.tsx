@@ -4,6 +4,7 @@ import { AttachmentResults } from "./AttachmentResults";
 import { FieldCorrectionRow } from "./FieldCorrectionRow";
 import { MissingProfileFields } from "./MissingProfileFields";
 import { Pagination } from "./TableControls";
+import { Button, Segmented, Tile } from "./ui";
 import { answerSourceLabel } from "../lib/answerSource";
 import { reviewGroup, type ReviewGroup } from "../lib/reviewGroups";
 
@@ -91,7 +92,7 @@ export function ApplicationReview({
       );
     const item = entry.outcome;
     return (
-      <li key={entry.key} className="rounded border border-line p-2 text-xs text-ink-muted">
+      <li key={entry.key} className="py-3 text-xs text-ink-muted">
         <p className="font-medium text-ink">
           {item?.label || entry.field?.label || "Unlabeled field"} ·{" "}
           {(item?.required ?? entry.field?.required) == null
@@ -108,8 +109,8 @@ export function ApplicationReview({
             "Verification not recorded"}
         </p>
         {item?.answer_source && <p>Source: {answerSourceLabel(item.answer_source)}</p>}
-        <details>
-          <summary>Full recorded answer</summary>
+        <details className="mt-1">
+          <summary className="cursor-pointer hover:text-ink">Full recorded answer</summary>
           <p className="whitespace-pre-wrap">
             {item?.observed_value || item?.value || entry.field?.current_value || "Blank"}
           </p>
@@ -125,25 +126,29 @@ export function ApplicationReview({
       : fill.ready_to_submit
         ? "Ready for review"
         : "Review needed";
+  const groups = [
+    { id: "all", label: "All recorded fields", count: entries.length },
+    ...(Object.keys(groupLabels) as ReviewGroup[]).map((group) => ({
+      id: group,
+      label: groupLabels[group],
+      count: entries.filter((entry) => reviewGroup(entry.field, entry.outcome) === group).length,
+    })),
+  ].filter((group) => group.count > 0);
   return (
-    <div className="rounded-md border border-line bg-bg p-3">
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <h3 className="text-xs font-semibold uppercase tracking-wider text-ink-muted">
-          Observed Fill Result
-        </h3>
-        {fill.browser_target_id && !tabClosed && (
-          <button
-            type="button"
-            className="rounded border border-line px-2 py-1 text-xs disabled:opacity-50"
-            disabled={disabled}
-            onClick={onRefresh}
-          >
+    <Tile
+      title="Observed fill result"
+      meta={summary}
+      actions={
+        fill.browser_target_id &&
+        !tabClosed && (
+          <Button size="sm" disabled={disabled} onClick={onRefresh}>
             Refresh fields
-          </button>
-        )}
-      </div>
+          </Button>
+        )
+      }
+    >
       {disabled && (
-        <p className="mt-2 text-xs text-ink-muted">
+        <p className="text-xs text-ink-muted">
           Refresh fields and corrections are available when the current Apply operation finishes.
           You can still use Review tab for completed applications.
         </p>
@@ -153,55 +158,25 @@ export function ApplicationReview({
           {reviewErrorMessage(error)}
         </p>
       )}
-      <p className="mt-2 text-sm font-medium text-ink">{summary}</p>
       {(fill.error || fill.handoff_reason) && (
-        <details className="mt-1 text-xs text-ink-muted">
-          <summary>Recorded attempt notes</summary>
-          <p>{fill.error || fill.handoff_reason}</p>
+        <details className="mt-2 text-xs text-ink-muted">
+          <summary className="cursor-pointer hover:text-ink">Recorded attempt notes</summary>
+          <p className="mt-1">{fill.error || fill.handoff_reason}</p>
         </details>
       )}
       <MissingProfileFields items={fill.missing_profile ?? []} />
       {entries.length > 0 ? (
-        <div className="mt-3 space-y-3">
-          <div className="flex flex-wrap gap-2 text-xs">
-            <button
-              className={activeFilter === "all" ? "font-semibold text-accent" : ""}
-              onClick={() => {
-                setFilter("all");
-                setPage(0);
-              }}
-            >
-              All recorded fields ({entries.length})
-            </button>
-            {(Object.keys(groupLabels) as ReviewGroup[]).map((group) => {
-              const count = entries.filter(
-                (entry) => reviewGroup(entry.field, entry.outcome) === group,
-              ).length;
-              return count ? (
-                <button
-                  key={group}
-                  className={activeFilter === group ? "font-semibold text-accent" : ""}
-                  onClick={() => {
-                    setFilter(group);
-                    setPage(0);
-                  }}
-                >
-                  {groupLabels[group]} ({count})
-                </button>
-              ) : null;
-            })}
-          </div>
-          <Pagination
-            page={page}
-            size={size}
-            total={visible.length}
-            onPage={setPage}
-            onSize={(value) => {
-              setSize(value);
+        <div className="mt-4 space-y-3">
+          <Segmented
+            label="Show fields"
+            items={groups}
+            value={activeFilter}
+            onChange={(id) => {
+              setFilter(id as ReviewGroup | "all");
               setPage(0);
             }}
           />
-          <ul className="space-y-2">{pageRows.map(renderEntry)}</ul>
+          <ul className="divide-y divide-line border-y border-line">{pageRows.map(renderEntry)}</ul>
           <Pagination
             page={page}
             size={size}
@@ -214,7 +189,7 @@ export function ApplicationReview({
           />
         </div>
       ) : (
-        <div className="mt-2 space-y-1 text-xs text-ink-muted">
+        <div className="mt-3 space-y-1 text-xs text-ink-muted">
           {(fill.required_empty?.length ?? 0) > 0 && (
             <p className="text-danger">Missing: {fill.required_empty?.join(", ")}</p>
           )}
@@ -233,6 +208,6 @@ export function ApplicationReview({
         </div>
       )}
       <AttachmentResults uploads={fill.uploads ?? []} />
-    </div>
+    </Tile>
   );
 }
