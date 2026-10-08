@@ -1,5 +1,7 @@
+import { EntryCard, useEntryEditor } from "./EntryCard";
+import { resumeEntryKey } from "../../lib/resumeEntryEdit";
 import { ChipListField } from "../../components/ChipListField";
-import { AddButton, EntryControls } from "../../components/ListControls";
+import { AddButton } from "../../components/ListControls";
 import { BulletList } from "./BulletList";
 import { DateField } from "./DateField";
 import { TextField } from "./TextField";
@@ -32,6 +34,7 @@ export function ProjectEntries({
   pushUndo: (message: string) => void;
   onChange: (next: Section) => void;
 }) {
+  const { setExpanded } = useEntryEditor();
   const entries = section.entries;
   function setEntries(next: Project[]) {
     onChange({ ...section, entries: next });
@@ -39,7 +42,9 @@ export function ProjectEntries({
 
   function addEntry() {
     const id = nextEntryId("project", "new project", takenEntryIds);
-    setEntries(insertAt(entries, 0, blankProject(id)));
+    const entry = blankProject(id);
+    setExpanded(resumeEntryKey(entry), true);
+    setEntries(insertAt(entries, 0, entry));
   }
 
   function removeEntry(idx: number) {
@@ -58,21 +63,15 @@ export function ProjectEntries({
           const urlLooksOdd = Boolean(url.trim()) && !looksLikeHttpUrl(url);
 
           return (
-            <div key={proj.id} className="py-4 first:pt-0 last:pb-0">
-              <div className="mb-3 flex items-start justify-between gap-2">
-                <div>
-                  <p className="text-sm font-medium text-ink-muted">
-                    {proj.name.trim() || `Entry #${i + 1}`}
-                  </p>
-                  <code className="text-xs text-ink-muted">{proj.id}</code>
-                </div>
-                <EntryControls
-                  index={i}
-                  total={entries.length}
-                  onMove={(from, to) => setEntries(moveItem(entries, from, to))}
-                  onRemove={removeEntry}
-                />
-              </div>
+            <EntryCard
+              key={resumeEntryKey(proj)}
+              section={section}
+              index={i}
+              title={proj.name.trim() || `Entry #${i + 1}`}
+              onMove={(from, to) => setEntries(moveItem(entries, from, to))}
+              onRemove={removeEntry}
+            >
+              <code className="mb-3 block text-xs text-ink-muted">{proj.id}</code>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <TextField
                   label="Name"
@@ -166,7 +165,7 @@ export function ProjectEntries({
                   setEntries(next);
                 }}
               />
-            </div>
+            </EntryCard>
           );
         })}
       </div>

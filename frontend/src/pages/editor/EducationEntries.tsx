@@ -1,5 +1,7 @@
+import { EntryCard, useEntryEditor } from "./EntryCard";
+import { resumeEntryKey } from "../../lib/resumeEntryEdit";
 import { ChipListField } from "../../components/ChipListField";
-import { AddButton, EntryControls } from "../../components/ListControls";
+import { AddButton } from "../../components/ListControls";
 import { DateField } from "./DateField";
 import { TextField } from "./TextField";
 import {
@@ -20,6 +22,7 @@ export function EducationEntries({
   pushUndo: (message: string) => void;
   onChange: (next: Section) => void;
 }) {
+  const { setExpanded } = useEntryEditor();
   const entries = section.entries;
   function setEntries(next: Education[]) {
     onChange({ ...section, entries: next });
@@ -29,26 +32,28 @@ export function EducationEntries({
     setEntries(removeAt(entries, idx));
   }
 
+  function addEntry() {
+    const entry = blankEducation();
+    setExpanded(resumeEntryKey(entry), true);
+    setEntries([entry, ...entries]);
+  }
+
   return (
     <div className="space-y-4">
       <div className="flex flex-wrap items-center justify-between gap-2">
-        <AddButton label="Add entry" onClick={() => setEntries([blankEducation(), ...entries])} />
+        <AddButton label="Add entry" onClick={addEntry} />
       </div>
       <div className="divide-y divide-line">
         {entries.map((edu, i) => {
           return (
-            <div key={edu._key ?? i} className="py-4 first:pt-0 last:pb-0">
-              <div className="mb-3 flex items-start justify-between gap-2">
-                <p className="text-sm font-medium text-ink-muted">
-                  {edu.school.trim() || `Entry #${i + 1}`}
-                </p>
-                <EntryControls
-                  index={i}
-                  total={entries.length}
-                  onMove={(from, to) => setEntries(moveItem(entries, from, to))}
-                  onRemove={removeEntry}
-                />
-              </div>
+            <EntryCard
+              key={resumeEntryKey(edu)}
+              section={section}
+              index={i}
+              title={edu.school.trim() || `Entry #${i + 1}`}
+              onMove={(from, to) => setEntries(moveItem(entries, from, to))}
+              onRemove={removeEntry}
+            >
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <TextField
                   label="School"
@@ -195,7 +200,7 @@ export function EducationEntries({
                   </div>
                 ))}
               </div>
-            </div>
+            </EntryCard>
           );
         })}
       </div>

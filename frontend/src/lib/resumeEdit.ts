@@ -67,7 +67,7 @@ export type Education = {
 };
 
 /** One line in a plain bulleted section — a certification, an award, a language. */
-export type ListItem = { id: string; text: string; tags?: string[] };
+export type ListItem = { id: string; text: string; tags?: string[]; _key?: string };
 
 export type SectionKind = "experience" | "project" | "list" | "education" | "skills";
 
@@ -323,7 +323,7 @@ export function blankEducation(): Education {
 }
 
 /** Small client-side id for React list identity on rows with no server-assigned id
- * (Education, SkillGroup). Survives object spreads (`{ ...edu, school: v }`) since it
+ * (Education, SkillGroup, and section-local ListItem ids). Survives object spreads since it
  * is a real property, which is exactly what makes it a stable React `key` across
  * edits — unlike `key={i}`, which reattaches to the wrong row on move/remove. */
 export function makeRowKey(): string {
@@ -331,7 +331,7 @@ export function makeRowKey(): string {
 }
 
 /**
- * Backfill `_key` onto every Education/SkillGroup entry that lacks one. A resume
+ * Backfill `_key` onto every Education/SkillGroup/ListItem entry that lacks one. A resume
  * freshly fetched from the server never has it (the field is client-only); call this
  * once right after any load so `EditorPage`'s row components get stable React keys.
  */
@@ -349,6 +349,14 @@ export function withRowKeys(resume: MasterResume): MasterResume {
         return {
           ...section,
           entries: section.entries.map((g) => (g._key ? g : { ...g, _key: makeRowKey() })),
+        };
+      }
+      if (section.kind === "list") {
+        return {
+          ...section,
+          entries: section.entries.map((item) =>
+            item._key ? item : { ...item, _key: makeRowKey() },
+          ),
         };
       }
       return section;
@@ -377,6 +385,12 @@ export function stripRowKeys(resume: MasterResume): MasterResume {
           entries: section.entries.map(({ _key, ...rest }) => rest),
         };
       }
+      if (section.kind === "list") {
+        return {
+          ...section,
+          entries: section.entries.map(({ _key, ...rest }) => rest),
+        };
+      }
       return section;
     }),
   };
@@ -384,7 +398,7 @@ export function stripRowKeys(resume: MasterResume): MasterResume {
 
 /** Empty list-item row with a pre-allocated unique id. */
 export function blankListItem(id: string): ListItem {
-  return { id, text: "", tags: [] };
+  return { id, text: "", tags: [], _key: makeRowKey() };
 }
 
 /** A freshly created, empty section of the given kind. */

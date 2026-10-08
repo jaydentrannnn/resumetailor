@@ -1,3 +1,5 @@
+import { EntryEditorProvider } from "./EntryCard";
+import { moveEntryToSection } from "../../lib/resumeEntryEdit";
 import { useEffect, useRef, useState } from "react";
 import { Modal } from "../../components/Modal";
 import { ResumeHistoryList } from "../../components/ResumeHistoryList";
@@ -149,8 +151,16 @@ export function EditorPage({
     );
   }
 
+  function moveEntry(sourceId: string, key: string, destinationId: string) {
+    const current = resumeRef.current;
+    if (!current || moveEntryToSection(current, sourceId, key, destinationId) === current) return;
+    const destination = current.sections.find((section) => section.id === destinationId);
+    pushUndo(`Moved entry to “${destination?.title || "section"}”`);
+    setResume((previous) => moveEntryToSection(previous, sourceId, key, destinationId));
+  }
+
   return (
-    <>
+    <EntryEditorProvider sections={resume.sections} moveEntry={moveEntry}>
       <div className="space-y-6">
         {/* bg-panel (not bg-paper/85) so the sticky bar reads as a toolbar sitting
           above the page, not a translucent cream-on-cream band that only shows
@@ -391,6 +401,6 @@ export function EditorPage({
           ))}
         </div>
       )}
-    </>
+    </EntryEditorProvider>
   );
 }

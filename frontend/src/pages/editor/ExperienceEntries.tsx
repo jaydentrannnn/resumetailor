@@ -1,4 +1,6 @@
-import { AddButton, EntryControls } from "../../components/ListControls";
+import { EntryCard, useEntryEditor } from "./EntryCard";
+import { resumeEntryKey } from "../../lib/resumeEntryEdit";
+import { AddButton } from "../../components/ListControls";
 import { BulletList } from "./BulletList";
 import { DateField } from "./DateField";
 import { TextField } from "./TextField";
@@ -30,6 +32,7 @@ export function ExperienceEntries({
   pushUndo: (message: string) => void;
   onChange: (next: Section) => void;
 }) {
+  const { setExpanded } = useEntryEditor();
   const entries = section.entries;
   function setEntries(next: Experience[]) {
     onChange({ ...section, entries: next });
@@ -37,7 +40,9 @@ export function ExperienceEntries({
 
   function addEntry() {
     const id = nextEntryId("experience", "new role", takenEntryIds);
-    setEntries(insertAt(entries, 0, blankExperience(id)));
+    const entry = blankExperience(id);
+    setExpanded(resumeEntryKey(entry), true);
+    setEntries(insertAt(entries, 0, entry));
   }
 
   function removeEntry(idx: number) {
@@ -51,21 +56,18 @@ export function ExperienceEntries({
       <div className="divide-y divide-line">
         {entries.map((job, i) => {
           return (
-            <div key={job.id} className="py-4 first:pt-0 last:pb-0">
-              <div className="mb-3 flex items-start justify-between gap-2">
-                <div>
-                  <p className="text-sm font-medium text-ink-muted">
-                    {job.company.trim() || `Entry #${i + 1}`}
-                  </p>
-                  <code className="text-xs text-ink-muted">{job.id}</code>
-                </div>
-                <EntryControls
-                  index={i}
-                  total={entries.length}
-                  onMove={(from, to) => setEntries(moveItem(entries, from, to))}
-                  onRemove={removeEntry}
-                />
-              </div>
+            <EntryCard
+              key={resumeEntryKey(job)}
+              section={section}
+              index={i}
+              title={
+                [job.company.trim(), job.title.trim()].filter(Boolean).join(" · ") ||
+                `Entry #${i + 1}`
+              }
+              onMove={(from, to) => setEntries(moveItem(entries, from, to))}
+              onRemove={removeEntry}
+            >
+              <code className="mb-3 block text-xs text-ink-muted">{job.id}</code>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
                 <TextField
                   label="Company"
@@ -129,7 +131,7 @@ export function ExperienceEntries({
                   setEntries(next);
                 }}
               />
-            </div>
+            </EntryCard>
           );
         })}
       </div>

@@ -1,5 +1,7 @@
+import { EntryCard, useEntryEditor } from "./EntryCard";
+import { resumeEntryKey } from "../../lib/resumeEntryEdit";
 import { ChipListField } from "../../components/ChipListField";
-import { AddButton, EntryControls } from "../../components/ListControls";
+import { AddButton } from "../../components/ListControls";
 import { TextField } from "./TextField";
 import {
   type Section,
@@ -19,6 +21,7 @@ export function SkillsEntries({
   pushUndo: (message: string) => void;
   onChange: (next: Section) => void;
 }) {
+  const { setExpanded } = useEntryEditor();
   const groups = section.entries;
   function setGroups(next: SkillGroup[]) {
     onChange({ ...section, entries: next });
@@ -29,30 +32,35 @@ export function SkillsEntries({
     setGroups(removeAt(groups, idx));
   }
 
+  function addGroup() {
+    const group = blankSkillGroup();
+    setExpanded(resumeEntryKey(group), true);
+    setGroups([group, ...groups]);
+  }
+
   return (
     <div className="space-y-4">
-      <AddButton label="Add group" onClick={() => setGroups([blankSkillGroup(), ...groups])} />
+      <AddButton label="Add group" onClick={addGroup} />
       <div className="divide-y divide-line">
         {groups.map((g, i) => {
           return (
-            <div key={g._key ?? i} className="py-4 first:pt-0 last:pb-0">
-              <div className="mb-2 flex items-start justify-between gap-2">
-                <div className="min-w-0 flex-1">
-                  <TextField
-                    label="Label"
-                    value={g.label}
-                    onChange={(v) => {
-                      const next = [...groups];
-                      next[i] = { ...g, label: v };
-                      setGroups(next);
-                    }}
-                  />
-                </div>
-                <EntryControls
-                  index={i}
-                  total={groups.length}
-                  onMove={(from, to) => setGroups(moveItem(groups, from, to))}
-                  onRemove={removeGroup}
+            <EntryCard
+              key={resumeEntryKey(g)}
+              section={section}
+              index={i}
+              title={g.label.trim() || `Skill group #${i + 1}`}
+              onMove={(from, to) => setGroups(moveItem(groups, from, to))}
+              onRemove={removeGroup}
+            >
+              <div className="mb-3">
+                <TextField
+                  label="Label"
+                  value={g.label}
+                  onChange={(v) => {
+                    const next = [...groups];
+                    next[i] = { ...g, label: v };
+                    setGroups(next);
+                  }}
                 />
               </div>
               <ChipListField
@@ -65,7 +73,7 @@ export function SkillsEntries({
                 }}
                 placeholder="Add a skill"
               />
-            </div>
+            </EntryCard>
           );
         })}
       </div>

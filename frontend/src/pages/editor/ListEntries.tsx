@@ -1,4 +1,6 @@
-import { AddButton, EntryControls } from "../../components/ListControls";
+import { EntryCard, useEntryEditor } from "./EntryCard";
+import { resumeEntryKey } from "../../lib/resumeEntryEdit";
+import { AddButton } from "../../components/ListControls";
 import {
   type ListItem,
   type ListSection as ListSectionData,
@@ -18,6 +20,7 @@ export function ListEntries({
   pushUndo: (message: string) => void;
   onChange: (next: Section) => void;
 }) {
+  const { setExpanded } = useEntryEditor();
   const entries = section.entries;
   function setEntries(next: ListItem[]) {
     onChange({ ...section, entries: next });
@@ -31,7 +34,9 @@ export function ListEntries({
       n += 1;
       id = `item_${n}`;
     }
-    setEntries(insertAt(entries, 0, blankListItem(id)));
+    const item = blankListItem(id);
+    setExpanded(resumeEntryKey(item), true);
+    setEntries(insertAt(entries, 0, item));
   }
 
   function removeItem(idx: number) {
@@ -49,9 +54,17 @@ export function ListEntries({
       </div>
       {entries.map((item, i) => {
         return (
-          <div key={item.id} className="flex items-start gap-2">
+          <EntryCard
+            key={resumeEntryKey(item)}
+            section={section}
+            index={i}
+            title={item.text.trim() || `Line #${i + 1}`}
+            onMove={(from, to) => setEntries(moveItem(entries, from, to))}
+            onRemove={removeItem}
+          >
             <input
               type="text"
+              aria-label="Line text"
               value={item.text}
               onChange={(e) => {
                 const next = [...entries];
@@ -61,13 +74,7 @@ export function ListEntries({
               placeholder="e.g. AWS Certified Cloud Practitioner"
               className="w-full rounded-md border border-line bg-panel px-2 py-1.5 text-sm focus:border-accent"
             />
-            <EntryControls
-              index={i}
-              total={entries.length}
-              onMove={(from, to) => setEntries(moveItem(entries, from, to))}
-              onRemove={removeItem}
-            />
-          </div>
+          </EntryCard>
         );
       })}
     </div>

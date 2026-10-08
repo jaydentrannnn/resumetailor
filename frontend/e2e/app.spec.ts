@@ -76,6 +76,7 @@ test("template page: gallery card and page fit card", async ({ page }) => {
 
 test("resume editor: coach tips and a section preset", async ({ page }) => {
   await page.goto("/profile/resume");
+  await page.getByRole("button", { name: /^Expand Example Corp/ }).click();
   const bullet = page.getByRole("textbox", { name: /^Bullet / }).first();
   await bullet.fill("Responsible for the weekly report");
   await expect(page.getByText(/Starts with "Responsible for"/)).toBeVisible();

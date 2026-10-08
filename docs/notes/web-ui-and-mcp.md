@@ -565,3 +565,9 @@ The two legacy tests that assumed process-wide routing/rebound globals were upda
 - Notice period is a number + unit; conversion to a form's option or unit is deterministic (`apply/answers/notice.py`), never model-picked.
 - Custom answers that restate a built-in field are flagged and merged by `POST /api/applicant-profile/merge-custom-answer` (fills the field only when unset/default, then drops the entry).
 - Remembered answers also list the hybrid resolver's AI picks (`/api/answer-memory/ai-choices`) with Forget.
+
+## 2026-10-07 — Resume content collapsible entries and section moves
+
+**What:** All five entry kinds use collapsed headings by default; new entries open automatically. A Move to dropdown transfers whole entries to the end of another section with the same kind, retaining UI expansion and offering the existing draft Undo.
+**Why:** Section titles are arbitrary, so compatibility uses kind. List ids can repeat across sections, so list rows now receive stripped client-only keys like education and skills. Editors remain mounted while hidden to retain pending field input when collapsed.
+**Impact:** Moves stay unsaved until the existing Save flow; empty source sections remain. No backend schema, template, LLM, or content transformation is required. Expansion is page UI state and resets on leaving the editor or reloading it.
