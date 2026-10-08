@@ -1,6 +1,12 @@
-import { Tile } from "../ui";
-import { buttonClass } from "../../lib/buttonClass";
 import { useState } from "react";
+import { Button, Tile } from "../ui";
+import {
+  GalleryActions,
+  GalleryCard,
+  GalleryRow,
+  TemplateThumb,
+  useButtonClass,
+} from "./TemplateGallery";
 import { useConfirm } from "../../state/confirmState";
 import { useTemplateState } from "../../state/templateState";
 
@@ -74,15 +80,13 @@ export function SavedTemplatesPanel() {
           choose.
         </p>
       ) : (
-        <ul className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-[repeat(auto-fill,minmax(180px,200px))]">
+        <GalleryRow>
           {library.map((entry) => (
-            <li
-              key={entry.id}
-              className={`flex flex-col overflow-hidden rounded-sm border bg-field text-sm ${
-                entry.is_active ? "border-selected-line" : "border-line"
-              }`}
-            >
-              <Thumbnail id={entry.id} version={entry.created_at} label={entry.label} />
+            <GalleryCard key={entry.id} active={entry.is_active}>
+              <TemplateThumb
+                src={`/api/template/library/${encodeURIComponent(entry.id)}/thumb.png?v=${encodeURIComponent(entry.created_at)}`}
+                alt={`First page of ${entry.label}`}
+              />
               <div className="flex flex-1 flex-col gap-2 p-3">
                 {renamingId === entry.id ? (
                   <form
@@ -105,32 +109,16 @@ export function SavedTemplatesPanel() {
                       className="min-w-0 flex-1 rounded-sm border border-line bg-paper px-2 py-1 text-ink"
                       aria-label="New template label"
                     />
-                    <button
-                      type="submit"
-                      disabled={busy || !renameDraft.trim()}
-                      className={buttonClass("secondary", "sm")}
-                    >
+                    <Button type="submit" size="sm" disabled={busy || !renameDraft.trim()}>
                       Save
-                    </button>
-                    <button
-                      type="button"
-                      disabled={busy}
-                      onClick={() => setRenamingId(null)}
-                      className={buttonClass("secondary", "sm")}
-                    >
+                    </Button>
+                    <Button size="sm" disabled={busy} onClick={() => setRenamingId(null)}>
                       Cancel
-                    </button>
+                    </Button>
                   </form>
                 ) : (
                   <div>
-                    <div className="flex flex-wrap items-center gap-2">
-                      <span className="font-medium text-ink">{entry.label}</span>
-                      {entry.is_active ? (
-                        <span className="rounded-sm border border-selected-line bg-selected px-1.5 py-0.5 text-xs font-medium text-on-selected">
-                          In use
-                        </span>
-                      ) : null}
-                    </div>
+                    <span className="font-medium text-ink">{entry.label}</span>
                     <p
                       className="mt-0.5 truncate text-xs text-ink-muted"
                       title={entry.source_filename ?? undefined}
@@ -142,44 +130,39 @@ export function SavedTemplatesPanel() {
                   </div>
                 )}
                 {renamingId === entry.id ? null : (
-                  <div className="mt-auto flex flex-wrap gap-2">
+                  <GalleryActions>
                     <button
                       type="button"
                       disabled={busy || entry.is_active}
                       onClick={() => void activateLibraryEntry(entry.id)}
-                      className={
-                        entry.is_active
-                          ? "rounded-sm border border-selected-line bg-selected px-3 py-1.5 text-xs font-medium text-on-selected"
-                          : buttonClass("secondary", "sm")
-                      }
+                      className={useButtonClass(entry.is_active)}
                     >
                       {entry.is_active ? "In use" : "Use"}
                     </button>
-                    <button
-                      type="button"
+                    <Button
+                      size="sm"
                       disabled={busy}
                       onClick={() => {
                         setRenamingId(entry.id);
                         setRenameDraft(entry.label);
                       }}
-                      className={buttonClass("secondary", "sm")}
                     >
                       Rename
-                    </button>
-                    <button
-                      type="button"
+                    </Button>
+                    <Button
+                      variant="danger"
+                      size="sm"
                       disabled={busy || entry.is_active}
                       onClick={() => void handleDelete(entry.id, entry.label)}
-                      className={buttonClass("danger", "sm")}
                     >
                       Delete
-                    </button>
-                  </div>
+                    </Button>
+                  </GalleryActions>
                 )}
               </div>
-            </li>
+            </GalleryCard>
           ))}
-        </ul>
+        </GalleryRow>
       )}
 
       {error ? (
@@ -188,27 +171,5 @@ export function SavedTemplatesPanel() {
         </p>
       ) : null}
     </Tile>
-  );
-}
-
-/** First page of the template's original document; a plain card when it can't render. */
-function Thumbnail({ id, version, label }: { id: string; version: string; label: string }) {
-  const [failed, setFailed] = useState(false);
-  return (
-    <div className="flex h-56 items-start justify-center overflow-hidden bg-doc-preview">
-      {failed ? (
-        <span className="m-auto px-4 text-center text-xs text-ink-muted">
-          Preview unavailable (needs Word or LibreOffice)
-        </span>
-      ) : (
-        <img
-          src={`/api/template/library/${encodeURIComponent(id)}/thumb.png?v=${encodeURIComponent(version)}`}
-          alt={`First page of ${label}`}
-          loading="lazy"
-          className="h-full w-full object-contain object-top"
-          onError={() => setFailed(true)}
-        />
-      )}
-    </div>
   );
 }

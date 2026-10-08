@@ -64,9 +64,8 @@ export function PageFitCard({ calibration }: { calibration: CalibrationInfo }) {
       </div>
       <p className="mt-4 font-mono text-xs text-ink-muted">
         {tuned && calibration.calibrated_at
-          ? ` · measured ${new Date(calibration.calibrated_at).toLocaleString()}`
-          : "Estimated"}
-        .
+          ? `Measured ${new Date(calibration.calibrated_at).toLocaleString()}.`
+          : "Estimated."}
       </p>
       {calibration.message && <p className="mt-2 text-sm text-attn">{calibration.message}</p>}
       {log && (

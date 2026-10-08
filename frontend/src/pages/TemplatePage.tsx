@@ -1,5 +1,4 @@
-import { buttonClass } from "../lib/buttonClass";
-import { DataList, Page, PageHeader, Tile } from "../components/ui";
+import { Button, DataList, Page, PageHeader, Tile } from "../components/ui";
 import { TemplatePreview } from "../components/template/TemplatePreview";
 import { PageFitCard } from "../components/template/PageFitCard";
 import { SavedTemplatesPanel } from "../components/template/SavedTemplatesPanel";
@@ -52,7 +51,7 @@ export function TemplatePage() {
         description="The Word document every tailored resume is poured into. Only the words change; the look stays yours."
       />
       <Tile aria-label="Current template">
-        <div className="grid min-w-0 gap-6 sm:grid-cols-[220px_minmax(0,1fr)]">
+        <div className="grid min-w-0 gap-6 lg:grid-cols-[minmax(0,1fr)_280px]">
           <div className="min-w-0">
             {info?.tagged.exists ? (
               <TemplatePreview
@@ -69,27 +68,25 @@ export function TemplatePage() {
             )}
           </div>
           <div className="min-w-0 space-y-5">
-            <div className="flex flex-wrap items-start justify-between gap-3">
-              <h2 className="rt-tile-title">
-                {pendingTemplate
-                  ? `Switching to ${pendingTemplate}…`
-                  : info?.active_label || "Current template"}
-              </h2>
-              <button
-                type="button"
-                onClick={() => void refresh()}
-                disabled={loading || uploading || libraryBusy}
-                className={buttonClass("secondary", "sm")}
-              >
-                Refresh
-              </button>
-            </div>
+            <h2 className="rt-tile-title">
+              {pendingTemplate
+                ? `Switching to ${pendingTemplate}…`
+                : info?.active_label || "Current template"}
+            </h2>
+            <Button
+              className="self-start"
+              onClick={() => void refresh()}
+              disabled={loading || uploading || libraryBusy}
+            >
+              Refresh
+            </Button>
             <p className="text-sm text-ink-muted">
               Tagged template filled with your full master resume. Formatting comes from your
               uploaded single-column export.
             </p>
             {info && (
               <DataList
+                className="flex-col"
                 items={[
                   { label: "Layout", value: "Single column" },
                   {

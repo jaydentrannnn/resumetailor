@@ -1,6 +1,12 @@
-import { Tile } from "../ui";
-import { buttonClass } from "../../lib/buttonClass";
 import { useState } from "react";
+import { Tile } from "../ui";
+import {
+  GalleryActions,
+  GalleryCard,
+  GalleryRow,
+  TemplateThumb,
+  useButtonClass,
+} from "./TemplateGallery";
 import { defaultTemplateThumbUrl, fetchMasterResume, saveMasterResume } from "../../api";
 import { educationFirst, needsEducationFirst } from "../../lib/sectionOrder";
 import { useConfirm } from "../../state/confirmState";
@@ -75,45 +81,35 @@ export function StarterTemplatesPanel({
         Clean single-column layouts that work with every feature. Pick one if your own file uses
         text boxes or a sidebar, or if you imported a PDF. Your resume content stays the same.
       </p>
-      <ul className="mt-4 grid grid-cols-1 gap-3 sm:grid-cols-[repeat(auto-fill,minmax(180px,200px))]">
+      <GalleryRow>
         {defaults.map((t) => (
-          <li
-            key={t.name}
-            className={`flex flex-col overflow-hidden rounded-sm border bg-field text-sm ${
-              t.is_active ? "border-selected-line" : "border-line"
-            }`}
-          >
-            <Thumbnail name={t.name} label={t.label} />
+          <GalleryCard key={t.name} active={t.is_active}>
+            <TemplateThumb
+              src={defaultTemplateThumbUrl(t.name)}
+              alt={`Sample page in the ${t.label} template`}
+            />
             <div className="flex flex-1 flex-col gap-2 p-3">
               <div className="flex flex-wrap items-center gap-2">
                 <span className="font-medium text-ink">{t.label}</span>
-                {t.is_active ? (
-                  <span className="rounded-sm border border-selected-line bg-selected px-1.5 py-0.5 text-xs font-medium text-on-selected">
-                    In use
-                  </span>
-                ) : t.library_id ? (
+                {!t.is_active && t.library_id ? (
                   <span className="text-xs text-ink-muted">Saved</span>
                 ) : null}
               </div>
               <p className="text-xs text-ink-muted">{t.description}</p>
-              <div className="mt-auto">
+              <GalleryActions>
                 <button
                   type="button"
                   disabled={busy || t.is_active}
                   onClick={() => void use(t.name, t.education_first)}
-                  className={
-                    t.is_active
-                      ? "rounded-sm border border-selected-line bg-selected px-3 py-1.5 text-xs font-medium text-on-selected"
-                      : buttonClass("secondary", "sm")
-                  }
+                  className={useButtonClass(t.is_active)}
                 >
                   {t.is_active ? "In use" : `Use ${t.label}`}
                 </button>
-              </div>
+              </GalleryActions>
             </div>
-          </li>
+          </GalleryCard>
         ))}
-      </ul>
+      </GalleryRow>
       {busy ? (
         <p className="mt-3 text-sm text-ink-muted" role="status">
           Setting up the template…
@@ -125,27 +121,5 @@ export function StarterTemplatesPanel({
         </p>
       ) : null}
     </Tile>
-  );
-}
-
-/** First page of the design with its sample content; a plain card without a PDF engine. */
-function Thumbnail({ name, label }: { name: string; label: string }) {
-  const [failed, setFailed] = useState(false);
-  return (
-    <div className="flex h-56 items-start justify-center overflow-hidden bg-doc-preview">
-      {failed ? (
-        <span className="m-auto px-4 text-center text-xs text-ink-muted">
-          Preview unavailable (needs Word or LibreOffice)
-        </span>
-      ) : (
-        <img
-          src={defaultTemplateThumbUrl(name)}
-          alt={`Sample page in the ${label} template`}
-          loading="lazy"
-          className="h-full w-full object-contain object-top"
-          onError={() => setFailed(true)}
-        />
-      )}
-    </div>
   );
 }
