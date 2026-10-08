@@ -1,74 +1,37 @@
-import { useState } from "react";
-
-import { AnalyzeReport } from "./AnalyzeReport";
-import { PreviewCompare } from "./PreviewCompare";
-import { SectionMapStep } from "./SectionMapStep";
-import { UploadDropzone } from "./UploadDropzone";
-import { importMasterResumeContent, mergeMasterResume } from "../../api";
-import type { MasterResume } from "../../lib/resumeEdit";
-import {
-  MERGE_CHOICE_MESSAGE,
-  MERGE_CHOICE_OPTIONS,
-  MERGE_CHOICE_TITLE,
-} from "../../lib/mergeConfirm";
-import { useConfirm } from "../../state/confirmState";
-import { useEditorState } from "../../state/editorState";
+import { buttonClass } from "../../lib/buttonClass";
+import { Stepper, Tile } from "../ui";
 import { useTemplateState } from "../../state/templateState";
+import { useTemplateContentImport } from "./useTemplateContentImport";
+import { UploadTemplateStep } from "./UploadTemplateStep";
+import { MapTemplateStep } from "./MapTemplateStep";
+import { InstallTemplateStep } from "./InstallTemplateStep";
+import { InstalledTemplateStep } from "./InstalledTemplateStep";
+import { TemplateContentResult } from "./TemplateContentResult";
 
-type ImportOutcome =
-  | {
-      kind: "merged";
-      updated: string[];
-      added: string[];
-      addedSections: string[];
-      warnings: string[];
-      backup: string | null;
-    }
-  | { kind: "draft"; warnings: string[]; untagged: number }
-  | { kind: "error"; error: string };
-
-/**
- * Multi-step template import: analyze → confirm mapping → install.
- */
-export function TemplateImportWizard({
-  title = "Replace template",
-}: {
-  /** Heading; onboarding calls it a first upload rather than a replacement. */
-  title?: string;
-} = {}) {
+/** Analyze → map → install, using the same template state transitions. */
+export function TemplateImportWizard({ title = "Replace template" }: { title?: string } = {}) {
+  const state = useTemplateState();
   const {
     uploading,
-    error,
-    buildLog,
-    lastBuildOk,
     wizardStep,
     draftFile,
-    analysis,
     profileDraft,
-    headingOverrides,
+    analysis,
+    installLabel,
     remapBusy,
-    remapHeading,
-    beginAnalyze,
-    setProfileDraft,
     confirmInstall,
     resetWizard,
-    info,
-    calibrateAlso,
-    setCalibrateAlso,
-    installLabel,
-    setInstallLabel,
-  } = useTemplateState();
-  const { loadDraft, syncFromDisk } = useEditorState();
-  const { choice } = useConfirm();
-
-  // Content import is a separate action from the template install (it hits a
-  // different endpoint), but the wizard offers it as "one upload does both" — checked
-  // here, run right after a successful install below.
-  const [alsoImportContent, setAlsoImportContent] = useState(false);
-  const [suggestTags, setSuggestTags] = useState(false);
-  const [importBusy, setImportBusy] = useState(false);
-  const [importOutcome, setImportOutcome] = useState<ImportOutcome | null>(null);
-
+  } = state;
+  const {
+    alsoImportContent,
+    setAlsoImportContent,
+    suggestTags,
+    setSuggestTags,
+    importBusy,
+    importOutcome,
+    setImportOutcome,
+    importContent,
+  } = useTemplateContentImport();
   const canInstall =
     Boolean(draftFile && profileDraft && analysis?.ready && installLabel.trim()) &&
     !uploading &&
@@ -82,55 +45,11 @@ export function TemplateImportWizard({
     await importContent(draftFile);
   };
 
-  /** Import the file's words into the master resume (merge or draft, the user's
-   * choice). Used after an install, or on its own when the layout can't be a template. */
-  const importContent = async (file: File) => {
-    setImportOutcome(null);
-    setImportBusy(true);
-    try {
-      const result = await importMasterResumeContent(file, { suggestTags });
-      const picked = await choice({
-        title: MERGE_CHOICE_TITLE,
-        message: MERGE_CHOICE_MESSAGE,
-        options: [...MERGE_CHOICE_OPTIONS],
-      });
-      if (picked === "merge") {
-        const merged = await mergeMasterResume(result.resume);
-        syncFromDisk(
-          merged.resume as MasterResume,
-          "Master resume merged from the template upload.",
-        );
-        setImportOutcome({
-          kind: "merged",
-          updated: merged.updated,
-          added: merged.added,
-          addedSections: merged.added_sections,
-          warnings: merged.warnings,
-          backup: merged.backup,
-        });
-      } else if (picked === "draft") {
-        loadDraft(
-          result.resume as MasterResume,
-          "Imported from the template upload — review on the Master Resume tab and save to keep it.",
-        );
-        setImportOutcome({
-          kind: "draft",
-          warnings: result.warnings,
-          untagged: result.untagged_bullet_count,
-        });
-      }
-    } catch (err) {
-      setImportOutcome({ kind: "error", error: err instanceof Error ? err.message : String(err) });
-    } finally {
-      setImportBusy(false);
-    }
-  };
-
   return (
-    <section className="rounded-xl border border-line bg-panel p-5 shadow-sm">
+    <Tile>
       <div className="flex flex-wrap items-start justify-between gap-3">
         <div>
-          <h2 className="font-display text-xl font-semibold">{title}</h2>
+          <h2 className="rt-tile-title">{title}</h2>
           <p className="mt-1 text-sm text-ink-muted">
             Upload a single-column Word/Google Docs export. The importer detects section headings
             and field separators, then you confirm before it rebuilds the tagged template. Any
@@ -143,236 +62,52 @@ export function TemplateImportWizard({
             type="button"
             onClick={() => resetWizard()}
             disabled={uploading}
-            className="rounded-md border border-line px-3 py-1.5 text-sm font-medium text-ink hover:border-accent hover:text-accent disabled:opacity-50"
+            className={buttonClass("secondary", "sm")}
           >
             Start over
           </button>
         ) : null}
       </div>
-
-      {wizardStep === "idle" || wizardStep === "error" ? (
-        <UploadDropzone
-          disabled={uploading}
-          onFile={(file) => void beginAnalyze(file)}
-          label={
-            uploading
-              ? "Analyzing…"
-              : wizardStep === "error"
-                ? "Fix the source and drop a new Word file, or"
-                : "Drop a Word file here, or"
+      <div className="mt-5">
+        <Stepper
+          label="Template import steps"
+          steps={[
+            { id: "upload", label: "Upload" },
+            { id: "map", label: "Map sections" },
+            { id: "install", label: "Install" },
+          ]}
+          current={
+            wizardStep === "done"
+              ? 3
+              : wizardStep === "installing"
+                ? 2
+                : wizardStep === "mapping"
+                  ? 1
+                  : 0
           }
+          failed={wizardStep === "error" ? 0 : undefined}
         />
-      ) : null}
+      </div>
 
-      {wizardStep === "analyzing" ? (
-        <p className="mt-4 text-sm text-ink-muted">Analyzing document structure…</p>
-      ) : null}
-
+      <UploadTemplateStep state={state} />
       {(wizardStep === "mapping" || wizardStep === "installing" || wizardStep === "done") &&
-      analysis ? (
-        <>
-          <p className="mt-4 text-sm text-ink-muted">
-            File: <span className="font-medium text-ink">{draftFile?.name}</span>
-          </p>
-          <AnalyzeReport
-            analysis={analysis}
-            actions={{
-              busy: uploading || importBusy,
-              onConvertBullets: draftFile
-                ? () => void beginAnalyze(draftFile, { convertBullets: true })
-                : undefined,
-              onImportContent: draftFile
-                ? () =>
-                    void importContent(draftFile).then(() =>
-                      document
-                        .getElementById("starter-templates")
-                        ?.scrollIntoView({ behavior: "smooth", block: "start" }),
-                    )
-                : undefined,
-            }}
-          />
-          {profileDraft ? (
-            <>
-              <SectionMapStep
-                analysis={analysis}
-                profile={profileDraft}
-                onChange={setProfileDraft}
-                headingOverrides={headingOverrides}
-                remapBusy={remapBusy}
-                onRemapHeading={(paragraphId, kind) => void remapHeading(paragraphId, kind)}
-              />
-              <PreviewCompare sourceSha256={analysis.source_sha256} profile={profileDraft} />
-            </>
-          ) : (
-            <p className="mt-4 rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">
-              No suggested mapping — see the issues above for what the analyzer could not map, fix
-              the source document, and upload again.
-            </p>
-          )}
-          <label className="mt-4 block text-sm">
-            <span className="font-medium text-ink">Save as</span>
-            <span className="ml-1 text-xs text-ink-muted">(library label; must be unique)</span>
-            <input
-              type="text"
-              value={installLabel}
-              maxLength={80}
-              disabled={uploading}
-              onChange={(e) => setInstallLabel(e.target.value)}
-              className="mt-1 w-full max-w-md rounded-md border border-line bg-paper px-3 py-2 text-ink"
-              placeholder="e.g. Google Docs export"
+        analysis && (
+          <>
+            <MapTemplateStep state={state} importBusy={importBusy} importContent={importContent} />
+            <InstallTemplateStep
+              state={state}
+              alsoImportContent={alsoImportContent}
+              setAlsoImportContent={setAlsoImportContent}
+              suggestTags={suggestTags}
+              setSuggestTags={setSuggestTags}
+              importBusy={importBusy}
+              canInstall={canInstall}
+              runInstall={runInstall}
             />
-          </label>
-          <label className="mt-4 flex items-start gap-2 text-sm">
-            <input
-              type="checkbox"
-              className="mt-1"
-              checked={calibrateAlso}
-              disabled={uploading}
-              onChange={(e) => setCalibrateAlso(e.target.checked)}
-            />
-            <span>
-              <span className="font-medium text-ink">Also calibrate fit constants</span>
-              <span className="block text-xs text-ink-muted">
-                Runs build + measure (Word/LibreOffice) so page packing matches the new template.
-                Slower; constants reload without restarting the server.
-              </span>
-            </span>
-          </label>
-          <label className="mt-2 flex items-start gap-2 text-sm">
-            <input
-              type="checkbox"
-              className="mt-1"
-              checked={alsoImportContent}
-              disabled={uploading || importBusy}
-              onChange={(e) => setAlsoImportContent(e.target.checked)}
-            />
-            <span>
-              <span className="font-medium text-ink">
-                Also merge this file's content into the master resume
-              </span>
-              <span className="block text-xs text-ink-muted">
-                Matches entries by company/school/project name: matching entries are updated (their
-                bullets refreshed), new ones are added, and everything else in your master resume is
-                left as-is. Backs up the current file first, and asks for confirmation before
-                writing.
-              </span>
-            </span>
-          </label>
-          {alsoImportContent ? (
-            <label className="mt-2 ml-6 flex items-start gap-2 text-sm">
-              <input
-                type="checkbox"
-                className="mt-1"
-                checked={suggestTags}
-                disabled={uploading || importBusy}
-                onChange={(e) => setSuggestTags(e.target.checked)}
-              />
-              <span>
-                <span className="font-medium text-ink">Suggest tags for untagged bullets</span>
-                <span className="block text-xs text-ink-muted">
-                  Uses an LLM call to propose tags for bullets the deterministic import could not
-                  match on its own. Never blocks the import if it fails.
-                </span>
-              </span>
-            </label>
-          ) : null}
-          <div className="mt-4 flex flex-wrap gap-2">
-            <button
-              type="button"
-              disabled={!canInstall || importBusy}
-              onClick={() => void runInstall()}
-              className="rounded-lg bg-accent px-4 py-2.5 text-sm font-semibold text-on-accent disabled:opacity-50"
-            >
-              {wizardStep === "installing"
-                ? calibrateAlso
-                  ? "Installing & calibrating…"
-                  : "Installing…"
-                : importBusy
-                  ? "Importing content…"
-                  : calibrateAlso
-                    ? "Confirm, install & calibrate"
-                    : "Confirm & install"}
-            </button>
-          </div>
-          {importOutcome?.kind === "error" ? (
-            <p className="mt-4 rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">
-              Content import failed: {importOutcome.error}
-            </p>
-          ) : null}
-          {importOutcome?.kind === "draft" ? (
-            <div className="mt-4 rounded-md bg-accent-soft px-3 py-2 text-sm text-accent">
-              <p>
-                Content imported — open the Master Resume tab to review and save it.
-                {importOutcome.untagged > 0
-                  ? ` ${importOutcome.untagged} bullet(s) need a tag.`
-                  : null}
-              </p>
-              {importOutcome.warnings.length > 0 ? (
-                <ul className="mt-1 list-disc pl-5 text-xs text-ink-muted">
-                  {importOutcome.warnings.map((w) => (
-                    <li key={w}>{w}</li>
-                  ))}
-                </ul>
-              ) : null}
-            </div>
-          ) : null}
-          {importOutcome?.kind === "merged" ? (
-            <div className="mt-4 rounded-md bg-accent-soft px-3 py-2 text-sm text-accent">
-              <p>
-                Master resume merged — {importOutcome.updated.length} updated,{" "}
-                {importOutcome.added.length} added
-                {importOutcome.addedSections.length > 0
-                  ? ` (${importOutcome.addedSections.length} new section${
-                      importOutcome.addedSections.length === 1 ? "" : "s"
-                    })`
-                  : ""}
-                .
-                {importOutcome.backup ? ` Previous file backed up as ${importOutcome.backup}.` : ""}
-              </p>
-              {importOutcome.updated.length > 0 ? (
-                <p className="mt-1 text-xs text-ink-muted">
-                  Updated: {importOutcome.updated.join(", ")}
-                </p>
-              ) : null}
-              {importOutcome.added.length > 0 ? (
-                <p className="mt-1 text-xs text-ink-muted">
-                  Added: {importOutcome.added.join(", ")}
-                </p>
-              ) : null}
-              {importOutcome.warnings.length > 0 ? (
-                <ul className="mt-1 list-disc pl-5 text-xs text-ink-muted">
-                  {importOutcome.warnings.map((w) => (
-                    <li key={w}>{w}</li>
-                  ))}
-                </ul>
-              ) : null}
-            </div>
-          ) : null}
-        </>
-      ) : null}
-
-      {error && (wizardStep === "error" || lastBuildOk === false) ? (
-        <p className="mt-4 rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">
-          {error.split("\n")[0]}
-        </p>
-      ) : null}
-
-      {lastBuildOk === true && wizardStep === "done" ? (
-        <p className="mt-4 rounded-md bg-accent-soft px-3 py-2 text-sm text-accent">
-          Template rebuilt successfully.
-          {info?.calibration.stale
-            ? " Fit constants may still be stale — enable calibrate on the next install, or run calibrate.py."
-            : calibrateAlso
-              ? " Fit constants were recalibrated for this template."
-              : null}
-        </p>
-      ) : null}
-
-      {buildLog ? (
-        <pre className="mt-4 max-h-48 overflow-auto rounded-md border border-line bg-paper/60 p-3 text-xs text-ink whitespace-pre-wrap">
-          {buildLog}
-        </pre>
-      ) : null}
-    </section>
+            <TemplateContentResult importOutcome={importOutcome} />
+          </>
+        )}
+      <InstalledTemplateStep state={state} />
+    </Tile>
   );
 }

@@ -127,9 +127,7 @@ export function SectionMapStep({
         </p>
         <div className="mt-2 space-y-1.5">
           {analysis.sections.length === 0 ? (
-            <p className="rounded-lg border border-line/80 bg-paper/40 px-3 py-2 text-ink-muted">
-              No headings detected.
-            </p>
+            <p className="border-t border-line pt-4 text-ink-muted">No headings detected.</p>
           ) : (
             analysis.sections.map((s) => {
               const overridden = headingOverrides[s.heading_paragraph_id];
@@ -138,7 +136,7 @@ export function SectionMapStep({
               return (
                 <div
                   key={s.heading_paragraph_id}
-                  className="flex flex-wrap items-center justify-between gap-2 rounded-lg border border-line/80 bg-paper/40 px-3 py-2"
+                  className="flex flex-wrap items-center justify-between gap-2 border-t border-line pt-4"
                 >
                   <div className="min-w-0">
                     <span className="font-medium text-ink">“{s.heading_text}”</span>
@@ -155,7 +153,7 @@ export function SectionMapStep({
                         (e.target.value || null) as TemplateHeadingKind,
                       )
                     }
-                    className="rounded-md border border-line bg-paper px-2 py-1 text-xs text-ink disabled:opacity-50"
+                    className="rounded-sm border border-line bg-field px-2 py-1 text-xs text-ink disabled:opacity-50"
                   >
                     {KIND_OPTIONS.map(([kind, label]) => (
                       <option key={label} value={kind ?? ""}>
@@ -179,10 +177,7 @@ export function SectionMapStep({
             const detected = sectionsByKey.get(key) ?? [];
             const checked = enabled[key];
             return (
-              <label
-                key={key}
-                className="flex items-start gap-2 rounded-lg border border-line/80 bg-paper/40 px-3 py-2"
-              >
+              <label key={key} className="flex items-start gap-2 border-t border-line pt-4">
                 <input
                   type="checkbox"
                   className="mt-1"
@@ -212,7 +207,7 @@ export function SectionMapStep({
       </div>
 
       {isGeneric && (
-        <div className="rounded-lg border border-accent/40 bg-accent-soft px-3 py-2 text-xs text-ink">
+        <div className="border-t border-line pt-4 text-xs text-ink">
           <p className="font-medium text-accent">
             This template will support multiple &amp; custom sections.
           </p>
@@ -233,14 +228,14 @@ export function SectionMapStep({
           type="text"
           value={contact.separator ?? " • "}
           onChange={(e) => setSeparator(e.target.value)}
-          className="mt-1 w-full rounded-md border border-line bg-paper px-3 py-2 font-mono text-sm"
+          className="mt-1 w-full rounded-sm border border-line bg-field px-3 py-2 font-mono text-sm"
         />
         <p className="mt-1 text-xs text-ink-muted">
           Literal text between location / email / phone / LinkedIn / GitHub.
         </p>
       </div>
 
-      <div className="rounded-lg border border-line/80 bg-paper/40 px-3 py-2">
+      <div className="border-t border-line pt-4">
         <p className="text-xs font-medium uppercase tracking-wide text-ink-muted">
           Name &amp; contact paragraphs
         </p>

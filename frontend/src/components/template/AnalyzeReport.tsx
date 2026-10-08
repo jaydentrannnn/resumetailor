@@ -66,7 +66,7 @@ export function AnalyzeReport({ analysis, actions }: Props) {
 
   return (
     <div className="mt-4 space-y-3 text-sm">
-      <div className="rounded-lg border border-line/80 bg-paper/40 px-3 py-2">
+      <div className="border-t border-line pt-4">
         <p className="text-xs font-medium uppercase tracking-wide text-ink-muted">
           Detected sections
         </p>
@@ -100,11 +100,11 @@ export function AnalyzeReport({ analysis, actions }: Props) {
       {warnings.length > 0 ? <IssueList issues={warnings} tone="warn" actions={actions} /> : null}
 
       {analysis.ready ? (
-        <p className="rounded-md bg-accent-soft px-3 py-2 text-accent">
+        <p className="border-t border-line pt-4 text-accent">
           Suggested mapping looks installable. Review the toggles below, then install.
         </p>
       ) : (
-        <p className="rounded-md bg-danger-soft px-3 py-2 text-danger">
+        <p className="border-t border-line pt-4 text-danger">
           Can't install yet. Fix the items above in your document, save it as .docx, and upload it
           again.
         </p>

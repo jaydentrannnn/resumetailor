@@ -1,3 +1,4 @@
+import { buttonClass } from "../../lib/buttonClass";
 import { useEffect, useState } from "react";
 import { templatePreviewUrl } from "../../api";
 
@@ -59,7 +60,10 @@ export function TemplatePreview({
     return (
       <div role="alert" className="p-5 text-sm text-danger">
         <p>{error}</p>
-        <button className="mt-2 underline" onClick={() => setRetry((r) => r + 1)}>
+        <button
+          className={buttonClass("ghost", "sm", "mt-2")}
+          onClick={() => setRetry((r) => r + 1)}
+        >
           Retry preview
         </button>
       </div>
@@ -71,8 +75,8 @@ export function TemplatePreview({
       </p>
     );
   return (
-    <div className="order-1 mt-4 overflow-hidden rounded-lg border border-line bg-paper/40">
-      <div className="flex justify-end border-b border-line px-3 py-1.5">
+    <div className="min-w-0 overflow-hidden rounded-sm">
+      <div className="flex justify-end pb-2">
         <a
           href={pdf.url}
           target="_blank"
@@ -86,7 +90,7 @@ export function TemplatePreview({
         key={pdf.url}
         title="Template preview"
         src={`${pdf.url}#toolbar=0&navpanes=0`}
-        className="h-[70vh] w-full bg-doc-preview"
+        className="h-[300px] w-full rounded-sm border border-line bg-doc-preview"
       />
     </div>
   );

@@ -1,4 +1,5 @@
-import { Page, PageHeader } from "../components/ui";
+import { buttonClass } from "../lib/buttonClass";
+import { DataList, Page, PageHeader, Tile } from "../components/ui";
 import { TemplatePreview } from "../components/template/TemplatePreview";
 import { PageFitCard } from "../components/template/PageFitCard";
 import { SavedTemplatesPanel } from "../components/template/SavedTemplatesPanel";
@@ -45,123 +46,117 @@ export function TemplatePage() {
 
   return (
     <Page>
-      <PageHeader title="Template" />
-      <section className="rounded-xl border border-line bg-panel p-5 shadow-sm">
-        <div className="flex flex-wrap items-start justify-between gap-3">
-          <div>
-            <h2 className="font-display text-lg font-semibold">
-              {pendingTemplate
-                ? `Switching to ${pendingTemplate}…`
-                : info?.active_label || "Current template"}
-            </h2>
-            <p className="mt-1 text-sm text-ink-muted">
-              Tagged template filled with your full master resume. Formatting comes from your
-              uploaded single-column export; only the words change when you tailor.
-            </p>
+      <PageHeader
+        title="Template"
+        eyebrow={`Active: ${info?.active_label || "No template"}`}
+        description="The Word document every tailored resume is poured into. Only the words change; the look stays yours."
+      />
+      <Tile aria-label="Current template">
+        <div className="grid min-w-0 gap-6 sm:grid-cols-[220px_minmax(0,1fr)]">
+          <div className="min-w-0">
+            {info?.tagged.exists ? (
+              <TemplatePreview
+                revision={previewRevision}
+                pending={pendingTemplate}
+                refreshKey={previewKey}
+              />
+            ) : (
+              <p className="py-8 text-sm text-ink-muted">
+                {loading
+                  ? "Loading template info…"
+                  : "No template yet. Pick a starter template below, or upload your own single-column Word file."}
+              </p>
+            )}
           </div>
-          <button
-            type="button"
-            onClick={() => void refresh()}
-            disabled={loading || uploading || libraryBusy}
-            className="rounded-md border border-line px-3 py-1.5 text-sm font-medium text-ink hover:border-accent hover:text-accent disabled:opacity-50"
-          >
-            Refresh
-          </button>
-        </div>
-
-        {loading && !info ? (
-          <p className="mt-4 text-sm text-ink-muted">Loading template info…</p>
-        ) : info ? (
-          <>
-            <div className="flex flex-col">
-              <details className="order-2 mt-4 border-t border-line pt-3">
-                <summary className="cursor-pointer text-sm font-semibold">
-                  Technical details
-                </summary>
-                <dl className="mt-3 grid grid-cols-1 gap-3 text-sm sm:grid-cols-2 lg:grid-cols-3">
-                  <MetaItem label="Active label" value={info.active_label || "—"} />
-                  <MetaItem
-                    label="Tagged template"
-                    value={
-                      info.tagged.exists
+          <div className="min-w-0 space-y-5">
+            <div className="flex flex-wrap items-start justify-between gap-3">
+              <h2 className="rt-tile-title">
+                {pendingTemplate
+                  ? `Switching to ${pendingTemplate}…`
+                  : info?.active_label || "Current template"}
+              </h2>
+              <button
+                type="button"
+                onClick={() => void refresh()}
+                disabled={loading || uploading || libraryBusy}
+                className={buttonClass("secondary", "sm")}
+              >
+                Refresh
+              </button>
+            </div>
+            <p className="text-sm text-ink-muted">
+              Tagged template filled with your full master resume. Formatting comes from your
+              uploaded single-column export.
+            </p>
+            {info && (
+              <DataList
+                items={[
+                  { label: "Layout", value: "Single column" },
+                  {
+                    label: "Master resume",
+                    value: `${info.experience_entries} jobs · ${info.project_entries} projects · ${info.bullets} bullets`,
+                  },
+                  {
+                    label: "Lines per page",
+                    value: <span className="font-mono">{info.calibration.lines_per_page}</span>,
+                  },
+                ]}
+              />
+            )}
+            {info && (
+              <details className="border-t border-line pt-4">
+                <summary className="cursor-pointer text-sm font-medium">Technical details</summary>
+                <DataList
+                  className="mt-4"
+                  mono
+                  items={[
+                    { label: "Active label", value: info.active_label || "—" },
+                    {
+                      label: "Tagged template",
+                      value: info.tagged.exists
                         ? `${formatBytes(info.tagged.size_bytes)} · ${formatWhen(info.tagged.modified_at)}`
-                        : "Missing — upload a baseline below"
-                    }
-                  />
-                  <MetaItem
-                    label="Baseline export"
-                    value={
-                      info.baseline.exists
+                        : "Missing — upload a baseline below",
+                    },
+                    {
+                      label: "Baseline export",
+                      value: info.baseline.exists
                         ? `${formatBytes(info.baseline.size_bytes)} · ${formatWhen(info.baseline.modified_at)}`
-                        : "Missing"
-                    }
-                  />
-                  <MetaItem
-                    label="Master resume"
-                    value={`${info.experience_entries} jobs · ${info.project_entries} projects · ${info.bullets} bullets`}
-                  />
-                  <MetaItem
-                    label="Profile"
-                    value={
-                      info.profile?.exists
+                        : "Missing",
+                    },
+                    {
+                      label: "Profile",
+                      value: info.profile?.exists
                         ? `v${info.profile.schema_version ?? "?"} · ${
                             Object.entries(info.profile.enabled ?? {})
                               .filter(([, on]) => on)
                               .map(([k]) => k)
                               .join(", ") || "experience"
                           }`
-                        : "Legacy (no profile file)"
-                    }
-                  />
-                </dl>
-              </details>
-
-              {info.profile?.warnings?.length ? (
-                <details className="order-3 mt-4 rounded-md bg-warn-soft px-3 py-2 text-sm text-warn">
-                  <summary className="cursor-pointer">
-                    Warnings ({info.profile.warnings.length})
-                  </summary>
-                  {info.profile.warnings.map((warning, index) => (
-                    <p key={index} className="mt-2">
-                      {warning}
-                    </p>
-                  ))}
-                </details>
-              ) : null}
-
-              {info.tagged.exists ? (
-                <TemplatePreview
-                  revision={previewRevision}
-                  pending={pendingTemplate}
-                  refreshKey={previewKey}
+                        : "Legacy (no profile file)",
+                    },
+                  ]}
                 />
-              ) : (
-                <p className="order-1 mt-4 rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">
-                  No template yet. Pick a starter template below, or upload your own single-column
-                  Word file.
-                </p>
-              )}
-            </div>
-          </>
-        ) : null}
-      </section>
-
+              </details>
+            )}
+            {!!info?.profile?.warnings?.length && (
+              <details className="border-t border-line pt-4 text-sm text-attn">
+                <summary className="cursor-pointer">
+                  Warnings ({info.profile.warnings.length})
+                </summary>
+                {info.profile.warnings.map((warning, index) => (
+                  <p key={index} className="mt-2">
+                    {warning}
+                  </p>
+                ))}
+              </details>
+            )}
+          </div>
+        </div>
+      </Tile>
       {info?.tagged.exists && <PageFitCard calibration={info.calibration} />}
       <SavedTemplatesPanel />
       <StarterTemplatesPanel />
       <TemplateImportWizard />
     </Page>
-  );
-}
-
-/**
- * One labelled metadata cell in the current-template summary grid.
- */
-function MetaItem({ label, value }: { label: string; value: string }) {
-  return (
-    <div className="rounded-lg border border-line/80 bg-paper/40 px-3 py-2">
-      <dt className="text-xs font-medium uppercase tracking-wide text-ink-muted">{label}</dt>
-      <dd className="mt-0.5 text-ink">{value}</dd>
-    </div>
   );
 }

@@ -1,3 +1,4 @@
+import { buttonClass } from "../../lib/buttonClass";
 import { useEffect, useRef, useState } from "react";
 
 import { fetchTemplateDraftPreview, fetchTemplateSourcePreview } from "../../api";
@@ -98,7 +99,7 @@ export function PreviewCompare({ sourceSha256, profile }: Props) {
           type="button"
           disabled={!profile || draftLoading}
           onClick={generateDraft}
-          className="rounded-md border border-line px-3 py-1.5 text-xs font-medium text-ink hover:border-accent hover:text-accent disabled:opacity-50"
+          className={buttonClass("secondary", "sm")}
         >
           {draftLoading
             ? "Rendering draft…"
@@ -109,7 +110,7 @@ export function PreviewCompare({ sourceSha256, profile }: Props) {
       </div>
 
       <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
-        <div className="overflow-hidden rounded-lg border border-line/80 bg-paper/40">
+        <div className="overflow-hidden rounded-sm border border-line/80 bg-paper/40">
           <p className="flex items-center justify-between border-b border-line/80 bg-paper/60 px-3 py-1.5 text-xs font-medium text-ink-muted">
             <span>Original upload</span>
             {sourceUrl ? (
@@ -149,12 +150,12 @@ export function PreviewCompare({ sourceSha256, profile }: Props) {
           ) : null}
         </div>
 
-        <div className="overflow-hidden rounded-lg border border-line/80 bg-paper/40">
+        <div className="overflow-hidden rounded-sm border border-line/80 bg-paper/40">
           <p className="flex items-center justify-between border-b border-line/80 bg-paper/60 px-3 py-1.5 text-xs font-medium text-ink-muted">
             <span>Draft with this mapping</span>
             <span className="flex items-center gap-2">
               {draftUrl && draftStale ? (
-                <span className="text-warn">Mapping changed — refresh to update</span>
+                <span className="text-attn">Mapping changed — refresh to update</span>
               ) : null}
               {draftUrl ? (
                 <a

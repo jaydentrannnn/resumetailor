@@ -1,5 +1,7 @@
+import { buttonClass } from "../../lib/buttonClass";
 import type { TemplateAnalyzeResponse } from "../../api";
 import { issueHelp } from "../../lib/templateIssues";
+import { StatusChip } from "../ui";
 
 type Issue = TemplateAnalyzeResponse["issues"][number];
 
@@ -25,18 +27,19 @@ export function IssueList({
   tone: "danger" | "warn";
   actions?: IssueActions;
 }) {
-  const box = tone === "danger" ? "bg-danger-soft text-danger" : "bg-warn-soft text-warn";
   return (
-    <div className={`rounded-md px-3 py-2 ${box}`}>
-      <p className="font-semibold">
+    <div className="border-t border-line pt-4">
+      <StatusChip tone={tone === "danger" ? "failed" : "attention"}>
         {tone === "danger" ? "Needs fixing before install" : "Worth knowing"}
-      </p>
+      </StatusChip>
       <ul className="mt-2 space-y-3">
         {issues.map((issue) => {
           const help = issueHelp(issue.code);
           return (
-            <li key={issue.code + issue.message} className="text-ink">
-              <p className="font-medium">{help.title}</p>
+            <li key={issue.code + issue.message} className="space-y-2 text-ink">
+              <StatusChip tone={tone === "danger" ? "failed" : "attention"}>
+                {help.title}
+              </StatusChip>
               <p className="text-ink-muted">{help.why}</p>
               {(help.word || help.docs || help.app) && (
                 <dl className="mt-1 space-y-0.5 text-xs">
@@ -65,7 +68,7 @@ export function IssueList({
                   type="button"
                   disabled={actions.busy}
                   onClick={actions.onConvertBullets}
-                  className="mt-2 rounded-md border border-current px-2.5 py-1 text-xs font-semibold disabled:opacity-50"
+                  className={buttonClass("secondary", "sm", "mt-2")}
                 >
                   Convert typed bullets to a real list
                 </button>
@@ -75,7 +78,7 @@ export function IssueList({
                   type="button"
                   disabled={actions.busy}
                   onClick={actions.onImportContent}
-                  className="mt-2 rounded-md border border-current px-2.5 py-1 text-xs font-semibold disabled:opacity-50"
+                  className={buttonClass("secondary", "sm", "mt-2")}
                 >
                   Import the content and pick a starter template
                 </button>
