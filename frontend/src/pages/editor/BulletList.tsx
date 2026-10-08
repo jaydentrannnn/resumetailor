@@ -1,4 +1,4 @@
-import { StatusMark } from "../../components/ui";
+import { buttonClass, StatusMark } from "../../components/ui";
 import { useState } from "react";
 import { suggestTags, suggestTagsAI, type TagSuggestion } from "../../api";
 import { ChipListField } from "../../components/ChipListField";
@@ -238,7 +238,7 @@ function BulletRow({
             type="button"
             onClick={() => addTag(chip.tag)}
             title={chip.matched ? `Matched “${chip.matched}”` : undefined}
-            className="rounded-sm border border-accent/40 px-2 py-0.5 text-accent hover:bg-accent-soft"
+            className={buttonClass("secondary", "sm", "rt-row-action")}
           >
             + {chip.tag}
           </button>
