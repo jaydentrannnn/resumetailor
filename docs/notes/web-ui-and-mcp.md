@@ -621,3 +621,11 @@ The approved visual target is `docs/design/reference.html`, and the rules live i
 **Impact:**
 - The e2e profile test now opens the collapsed groups.
 - Green is still never a button fill, so positive actions use the ink primary. The user declined both a green Save button and green outlines.
+
+### 2026-10-08 — UI polish round 3 (Apply, headers, galleries, settings)
+
+- Page eyebrows removed everywhere (`PageHeader` keeps the prop). Apply's nightly-run status became a secondary chip-button beside "Apply settings" (accessible name still `/^Nightly run: /`); onboarding relies on its stepper. Ledes widened to `max-w-[110ch]`.
+- `review_summary` no longer cuts field labels at 40 chars (`store_views._clean_label` keeps whitespace cleanup only) — the UI truncates to one line via `TruncatedText`, so the popover now shows full text.
+- `Modal` right drawers take `size: "md" | "lg"`; Apply settings uses `lg` (~672px). Apply rows are one line per cell (~52px); both attention notices use `rt-row-action` so they match in height.
+- Template galleries show the top half of the page (`aspect-[8.5/5.5]`, `object-top`); the thumbnail is a "Zoom …" button opening the full page in a modal. Card actions right-aligned; "Tune page fit" sits in the stats row; "Active: …" moved into the preview tile.
+- Settings action rows (test connection, PDF conversion, open template/vocabulary, pair browser, diagnostics) use `SettingRow layout="action"`. Vocabulary tabs share Profile's underline nav classes through one helper. Logo mark offset so it centres on the wordmark caps.
