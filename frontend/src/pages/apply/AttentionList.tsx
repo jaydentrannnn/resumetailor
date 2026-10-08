@@ -1,3 +1,4 @@
+import { useId } from "react";
 import { Link } from "react-router-dom";
 import type { AttentionItem } from "../../api";
 import { buttonClass, StatusChip, type Tone } from "../../components/ui";
@@ -27,16 +28,49 @@ const when = (at: string) => {
 /**
  * What a run left for the user, newest first: the posting, why it needs them (a status
  * chip plus the run's message), since when, and Review (its review tab). Renders nothing
- * when the run left nothing.
+ * when the run left nothing. `collapsible` (the sticky operation banner) folds it into a
+ * closed "Needs attention (n)" disclosure with a height cap, so a long list never
+ * covers the page under the banner.
  */
-export function AttentionList({ items = [] }: { items?: AttentionItem[] }) {
+export function AttentionList({
+  items = [],
+  collapsible = false,
+}: {
+  items?: AttentionItem[];
+  collapsible?: boolean;
+}) {
+  const summaryId = useId();
   if (!items.length) return null;
   const ordered = [...items].sort((a, b) => b.at.localeCompare(a.at));
+  const summary = attentionSummary(ordered);
+  if (!collapsible) return <AttentionTable items={ordered} caption={summary} />;
   return (
-    <table className="w-full table-fixed text-left text-[13px]">
-      <caption className="mb-2 text-left text-xs text-ink-muted">
-        {attentionSummary(ordered)}
-      </caption>
+    <details>
+      <summary
+        id={summaryId}
+        className="rt-row-action -ml-2 inline-flex cursor-pointer items-center rounded-sm px-2 text-xs font-medium text-ink-2 hover:bg-sunken hover:text-ink"
+      >
+        {summary}
+      </summary>
+      <div className="mt-2 max-h-56 overflow-y-auto">
+        <AttentionTable items={ordered} labelledBy={summaryId} />
+      </div>
+    </details>
+  );
+}
+
+function AttentionTable({
+  items,
+  caption,
+  labelledBy,
+}: {
+  items: AttentionItem[];
+  caption?: string;
+  labelledBy?: string;
+}) {
+  return (
+    <table className="w-full table-fixed text-left text-[13px]" aria-labelledby={labelledBy}>
+      {caption && <caption className="mb-2 text-left text-xs text-ink-muted">{caption}</caption>}
       <thead className="border-b border-line-hover">
         <tr>
           <th className="rt-eyebrow w-[34%] py-2 pr-3">Application</th>
@@ -48,7 +82,7 @@ export function AttentionList({ items = [] }: { items?: AttentionItem[] }) {
         </tr>
       </thead>
       <tbody>
-        {ordered.map((item) => (
+        {items.map((item) => (
           <tr key={item.application_id} className="border-b border-line last:border-0">
             <td className="py-2.5 pr-3 align-top font-medium text-ink [overflow-wrap:anywhere]">
               {item.label}

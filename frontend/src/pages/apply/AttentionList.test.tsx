@@ -60,4 +60,24 @@ describe("AttentionList", () => {
     );
     expect(container.textContent).toBe("");
   });
+
+  it("folds into a closed, height-capped disclosure in the sticky banner", () => {
+    const { container } = render(
+      <MemoryRouter>
+        <AttentionList
+          collapsible
+          items={[
+            { application_id: "a", label: "Alpha", kind: "failed", message: "", at: "2026-09-29" },
+          ]}
+        />
+      </MemoryRouter>,
+    );
+    const details = container.querySelector("details");
+    expect(details?.open).toBe(false);
+    expect(details?.querySelector("summary")?.textContent).toMatch(/^Needs attention \(1\)/);
+    expect(details?.querySelector(".max-h-56.overflow-y-auto table")).not.toBeNull();
+    expect(screen.getByRole("table", { hidden: true }).getAttribute("aria-labelledby")).toBe(
+      details?.querySelector("summary")?.id,
+    );
+  });
 });

@@ -222,8 +222,8 @@ export function OperationBanner({
         }
       />
       {attention.length > 0 && (
-        <div className="mt-3 border-t border-line pt-4">
-          <AttentionList items={attention} />
+        <div className="mt-3 border-t border-line pt-3">
+          <AttentionList items={attention} collapsible />
         </div>
       )}
     </Tile>
