@@ -9,6 +9,8 @@ from __future__ import annotations
 
 import re
 
+from resume_tailor.apply.answers import education
+
 #: Every flat key ``build_fields`` may emit (plan section 3.4).
 CANONICAL_FIELD_KEYS: frozenset[str] = frozenset(
     {
@@ -45,6 +47,9 @@ CANONICAL_FIELD_KEYS: frozenset[str] = frozenset(
         "education_start_month",
         "graduation_month",
         "degree_level",
+        education.KEY,
+        education.MIXED_KEY,
+        education.DETAIL_KEY,
         "major",
         "school",
         "gpa",
@@ -171,6 +176,11 @@ SYNONYMS: list[tuple[str, str]] = [
     (r"zip|postal", "postal_code"),
     (r"country", "country"),
     (r"website|url", "website"),
+    (education.DETAIL_PATTERN, education.DETAIL_KEY),
+    (education.MIXED_PATTERN, education.MIXED_KEY),
+    (education.HIGHEST_PATTERN, education.KEY),
+    (education.COMPLETED_PATTERN, education.KEY),
+    (education.PURSUING_PATTERN, "degree_level"),
     (r"degree", "degree_level"),
     (r"major|field of study|discipline", "major"),
     (r"school|university|college", "school"),

@@ -7,6 +7,11 @@
   };
   const css = (value) => CSS.escape(String(value));
   const text = (el) => (el?.innerText || el?.textContent || "").trim();
+  const help = (el, parent) => {
+    const described = (el.getAttribute("aria-describedby") || "").split(/\s+/)
+      .map(id => text(el.getRootNode().getElementById?.(id))).filter(Boolean).join(" ");
+    return described || text(parent?.querySelector("[class*='help' i], [class*='description' i], [class*='hint' i]"));
+  };
   const selector = (el) => {
     if (el.id && document.querySelectorAll(`#${css(el.id)}`).length === 1) return `#${css(el.id)}`;
     const pieces = [];
@@ -101,7 +106,7 @@
         (/^(?:school|degree|discipline|end-year|start-year)--(\d+)$/.exec(el.id || "")?.[1] ?? ""),
       label: el.matches(".file-upload") ? uploadLabel :
         controlKind === "radio_group" ? text(parent?.querySelector("legend")) || label(el) : label(el),
-      help_text: text(parent?.querySelector("[class*='help' i], [aria-describedby]")),
+      help_text: help(el, parent),
       control_kind: controlKind, required: Boolean(el.required || el.getAttribute("aria-required") === "true" || (controlKind === "file" && /\*$/.test(uploadLabel))),
       enabled: !el.disabled, visible: visible(el), current_value: String(current).trim(),
       selection_state: controlKind === "combobox" ? (selectedText ? "committed" : "unselected") : "",

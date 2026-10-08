@@ -5,8 +5,9 @@ from __future__ import annotations
 import re
 from typing import Any
 
+from resume_tailor.apply.answers import education
 from resume_tailor.apply.forms.field_catalog import classify
-from resume_tailor.apply.forms.field_matcher import normalize
+from resume_tailor.apply.forms.field_matcher import choice_values, normalize
 from resume_tailor.apply.forms.field_types import FieldObservation
 from resume_tailor.apply.funnel.packet_models import Packet
 
@@ -23,6 +24,8 @@ class FormAdapter:
         return classify(field)
 
     def value_for(self, field: FieldObservation, key: str, packet: Packet, fields: dict[str, str]) -> str:
+        if key == education.MIXED_KEY:
+            return next(iter(choice_values(key, fields)), "")
         return fields.get(key, "")
 
     async def advance(self, page: Any) -> Any | None:
@@ -67,7 +70,7 @@ class GreenhouseAdapter(FormAdapter):
 
     def value_for(self, field: FieldObservation, key: str, packet: Packet, fields: dict[str, str]) -> str:
         if key not in {"school", "degree_level", "major", "education_start_year", "education_end_year"}:
-            return fields.get(key, "")
+            return super().value_for(field, key, packet, fields)
         row_id = field.repeater_row_id
         if not row_id.isdigit():
             if len(packet.education) != 1:
@@ -100,7 +103,7 @@ class WorkdayAdapter(FormAdapter):
 
     def value_for(self, field: FieldObservation, key: str, packet: Packet, fields: dict[str, str]) -> str:
         if key not in {"education_start_year", "education_end_year"}:
-            return fields.get(key, "")
+            return super().value_for(field, key, packet, fields)
         row = re.fullmatch(r"education-(\d+)--.*", str(field.constraints.get("id") or ""))
         if row is None or len(packet.education) != 1:
             return ""

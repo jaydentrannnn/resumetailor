@@ -9,6 +9,7 @@ from typing import Any, Literal
 from pydantic import BaseModel, Field
 
 from resume_tailor import config
+from resume_tailor.apply.answers import education
 from resume_tailor.apply.forms.field_catalog import classify
 from resume_tailor.apply.forms.field_matcher import match_option
 from resume_tailor.apply.forms.field_types import FieldObservation
@@ -55,6 +56,8 @@ def validate(
     if field is None or field.current_value or field.control_kind not in {"native_select", "radio_group"}:
         return None
     if classify(field)[0] == "manual_review":
+        return None
+    if education.question_key(field.label, field.help_text) in education.RESERVED_KEYS:
         return None
     fact = facts.get(proposal.fact_id)
     if not fact:

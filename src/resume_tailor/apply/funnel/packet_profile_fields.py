@@ -86,6 +86,9 @@ PROFILE_FIELDS: dict[str, ProfileFieldInfo] = {
     "school": ProfileFieldInfo(label="School", section=_EDUCATION, common=True),
     "gpa": ProfileFieldInfo(label="GPA", section=_EDUCATION),
     "degree_level": ProfileFieldInfo(label="Degree level", section=_EDUCATION, common=True),
+    "highest_education_obtained": ProfileFieldInfo(
+        label="Highest education completed", section=_EDUCATION,
+    ),
     "major": ProfileFieldInfo(label="Major", section=_EDUCATION, common=True),
     "education_start_month": ProfileFieldInfo(label="Education start month", section=_EDUCATION),
     "graduation_month": ProfileFieldInfo(label="Graduation month", section=_EDUCATION, common=True),
@@ -142,12 +145,12 @@ def class_year_for(graduation: str, degree_level: str, today: date | None = None
 DEFAULTS: dict[str, str] = {"phone_device_type": "Mobile"}
 
 #: Education facts the applicant profile holds itself (the rest live on the resume).
-_PROFILE_EDUCATION_KEYS = frozenset({"class_year", "school_email"})
+_PROFILE_EDUCATION_KEYS = frozenset({"class_year", "school_email", "highest_education_obtained"})
 
 def profile_path(section: str, key: str = "") -> str:
     """The Profile page tab that holds ``section`` (or, for education, ``key``)."""
     if section == _EDUCATION and key not in _PROFILE_EDUCATION_KEYS:
-        return "/profile/resume"  # education lives on the resume, not the profile
+        return "/profile/resume"
     return "/profile/personal" if section == _CONTACT else "/profile/application"
 
 _US_STATES = frozenset({

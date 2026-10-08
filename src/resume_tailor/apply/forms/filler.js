@@ -12,7 +12,7 @@
  * given a plan, a planned question takes its key from it (null: leave it for review)
  * and its ``value``, when set, over ``fields[key]`` (`fill._fill_frame`).
  */
-({ fields, hints, synonyms, eeo = {}, correct = false, scan = false, plan = null }) => {
+({ fields, hints, synonyms, eeo = {}, educationAliases = {}, correct = false, scan = false, plan = null }) => {
   const filled = [];
   const leftovers = [];
   const long_text = [];
@@ -398,7 +398,29 @@
 
   /** Match a field key via the DOM's own facts, then label synonyms. */
   function matchKey(el, label) {
+    const degreeLabel = /\b(degree|qualification|highest.*education|education level|level of education|educational attainment)\b/i.test(label);
+    const semantic = degreeLabel ? educationKey(label + " " + helpFor(el)) : null;
+    if (semantic) return semantic;
+    if (/highest\s+degree\s+of\s+(?!education\b)/i.test(label)) return null;
     return attrKey(el, label) || labelKey(el, label);
+  }
+
+  function educationKey(text) {
+    text = text.replace(/\b(do not|don't|not|exclude|excluding)\b.{0,45}\b(pursuing|in progress|working toward)\b(?:\s+degrees?)?/gi, "");
+    for (const [pattern, key] of synonymList) {
+      if (["highest_education_obtained", "education_completed_or_pursuing", "completed_education_other"].includes(key)
+          || (key === "degree_level" && pattern.includes("pursuing"))) {
+        if (new RegExp(pattern, "i").test(text)) return key;
+      }
+    }
+    return null;
+  }
+
+  function valueForKey(key) {
+    if (key === "education_completed_or_pursuing") {
+      return fields.degree_level ? fields.degree_name || fields.degree_level : fields.highest_education_obtained;
+    }
+    return fields[key];
   }
 
   /**
@@ -584,7 +606,23 @@
     const options = Array.from(selectEl.options).filter(o => !o.disabled && String(o.value).trim() && !/^(select|choose|please select)/i.test(o.text.trim()));
     let matches = [];
     const target = norm(value);
-    if (key === "phone_country_code") {
+    if (["highest_education_obtained", "education_completed_or_pursuing"].includes(key)) {
+      // Labels decide education; opaque option values cannot hide "in progress".
+      matches = options.filter(o => norm(o.text) === target);
+      if (!matches.length) {
+        const canonical = educationAliases[target];
+        if (canonical) matches = options.filter(o => {
+          const parts = o.text.split(/\s+or\s+|\s*[/;]\s*/i);
+          return educationAliases[norm(o.text)] === canonical ||
+            (parts.length > 1 && parts.some(part => educationAliases[norm(part)] === canonical));
+        });
+      }
+      if (!matches.length) {
+        const clean = options.filter(o => !/\b(pursuing|in progress|incomplete|not completed|no degree)\b/i.test(o.text));
+        const named = degreeMatches(clean.map(o => ({ text: o.text, value: "", original: o })), value);
+        matches = named.map(o => o.original);
+      }
+    } else if (key === "phone_country_code") {
       const escaped = String(value).replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
       const code = new RegExp(`(^|[^0-9])${escaped}(?![0-9])`);
       matches = options.filter(o => code.test(o.text) || norm(o.value) === target);
@@ -645,6 +683,8 @@
     const texts = options.map((option) => norm(option.tagName === "BUTTON" ? textOf(option) : optionText(option)));
     const wanted = norm(value);
     let index = texts.indexOf(wanted);
+    if (["highest_education_obtained", "education_completed_or_pursuing"].includes(key)
+        && texts.filter(text => text === wanted).length > 1) return null;
     if (index < 0 && (wanted === "yes" || wanted === "no")) {
       const heads = texts.flatMap((text, i) => (text.split(" ")[0] === wanted ? [i] : []));
       if (heads.length === 1) index = heads[0];
@@ -987,11 +1027,11 @@
         filled.push({ key: "existing", label, value: answered.tagName === "BUTTON" ? textOf(answered) : optionText(answered), selector: selectorFor(answered), preserved: true });
         continue;
       }
-      const value = planned && planned.value ? planned.value : (key ? fields[key] : "");
+      const value = planned && planned.value === null ? "" : planned && planned.value ? planned.value : (key ? valueForKey(key) : "");
       const texts = options.map((option) => option.tagName === "BUTTON" ? textOf(option) : optionText(option));
       if (!key || !value) {
         leftovers.push({ key, label, type, options: texts, required, selector: sel,
-          reason: key ? "Profile field is blank" : "Unrecognized field" });
+          reason: planned && planned.value === null ? "No unique matching option" : key ? "Profile field is blank" : "Unrecognized field" });
         if (required) required_empty.push(label || qid);
         continue;
       }
@@ -1149,7 +1189,7 @@
       continue;
     }
 
-    const value = planned && planned.value ? planned.value : fields[key];
+    const value = planned && planned.value === null ? "" : planned && planned.value ? planned.value : valueForKey(key);
     if (value === undefined || value === null || String(value).trim() === "") {
       // A recognised question whose profile fact is blank: the fill result names the
       // profile field to set (`packet.missing_profile`).
@@ -1163,7 +1203,7 @@
             : [],
         required,
         selector: sel,
-        reason: "Profile field is blank",
+        reason: planned && planned.value === null ? "No unique matching option" : "Profile field is blank",
       });
       if (required) required_empty.push(label || sel);
       continue;
@@ -1177,7 +1217,7 @@
       if (key === "degree_level" && fields.degree_name) written = selectByText(el, fields.degree_name, key) || "";
       if (!written) written = selectByText(el, yearOnly ? String(value).slice(0, 4) : value, key) || "";
       if (!written) {
-        leftovers.push({ label, type, options: Array.from(el.options).map((o) => o.text.trim()), required, selector: sel, reason: "No unique matching option" });
+        leftovers.push({ key, label, help: helpFor(el), type, options: Array.from(el.options).map((o) => o.text.trim()), required, selector: sel, reason: "No unique matching option" });
         if (required) required_empty.push(label || sel);
         continue;
       }
@@ -1185,7 +1225,7 @@
       const chosen = fillChoiceGroup(el, value, label, key);
       if (chosen === "skip") continue;
       if (!chosen) {
-        leftovers.push({ label, type, options: [], required, selector: sel, reason: "No exact matching choice" });
+        leftovers.push({ key, label, help: helpFor(el), type, options: [], required, selector: sel, reason: "No exact matching choice" });
         if (required) required_empty.push(label || sel);
         continue;
       }

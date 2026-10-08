@@ -84,7 +84,10 @@ def build_fields(profile: ApplicantProfile, resume: MasterResume) -> dict[str, s
         current_company = current.company
         current_title = current.title
 
+    from resume_tailor.apply.answers import education as education_answers  # noqa: PLC0415
+
     fields: dict[str, str] = {}
+    education_answers.refresh_fields(fields, profile.highest_education_obtained)
     _maybe_set(fields, "first_name", first_name or None)
     _maybe_set(fields, "middle_name", profile.middle_name or None)
     _maybe_set(fields, "last_name", last_name or None)

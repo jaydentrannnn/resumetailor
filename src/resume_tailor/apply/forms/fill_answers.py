@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from resume_tailor import config
-from resume_tailor.apply.answers import answer, answer_memory, widget_actions
+from resume_tailor.apply.answers import answer, answer_memory, education, widget_actions
 from resume_tailor.apply.forms import form_guards, form_routes
 
 from . import fill_buttons, fill_outcomes, fill_state, fill_widgets
@@ -184,6 +184,19 @@ class _FillAnswers(fill_state._FillState):
                 self._answer_one_long_text(item, label)
 
     def _answer_one_long_text(self, item: dict[str, Any], label: str) -> None:
+        edu_key = education.question_key(label, str(item.get("help") or ""))
+        if edu_key in education.RESERVED_KEYS:
+            if education.compound(label):
+                if item.get("required"):
+                    self.needs_review.append(label)
+                return
+            value = self.fields.get(edu_key, "")
+            if value and len(value) <= int(item.get("maxlength") or 1500):
+                self._fill_if_empty(item, value)
+                self.long_text_answers[label] = value
+            elif item.get("required"):
+                self.needs_review.append(label)
+            return
         maxlength = int(item.get("maxlength") or 1500)
         recalled = answer_memory.recall(
             label, company=self.app.company or self.pkt.company or "", ats=self.ats_name
@@ -278,6 +291,12 @@ class _FillAnswers(fill_state._FillState):
                 if leftover["key"] == "how_heard" and selected != self.fields.get("how_heard"):
                     self.other_chosen = True
                 return
+        edu_key = education.question_key(label, str(leftover.get("help") or ""))
+        if leftover.get("key") in education.RESERVED_KEYS or edu_key in education.RESERVED_KEYS:
+            if leftover.get("required"):
+                reason = leftover.get("reason") or "Set Highest education completed in Profile"
+                needs_review.append(f"{label}: {reason}")
+            return
         recalled = answer_memory.recall(
             label, company=self.app.company or self.pkt.company or "", ats=self.ats_name,
             canonical_key=str(leftover.get("key") or ""),

@@ -11,6 +11,7 @@ import {
 } from "../../lib/profileForm";
 import type { FieldContext } from "./fieldContext";
 import { FieldFrame } from "./FieldFrame";
+import { EducationField } from "./EducationField";
 import { LocationField } from "./LocationFields";
 import { NoticePeriodField } from "./NoticePeriodField";
 import { PhoneCountryField } from "./PhoneCountryField";
@@ -73,6 +74,7 @@ export function ProfileField({
   if (name === "notice_period") return <NoticePeriodField {...frame} />;
   if (name === "phone_country_code") return <PhoneCountryField {...frame} />;
   if (name === "pronouns") return <PronounsField {...frame} />;
+  if (name === "highest_education_obtained") return <EducationField ctx={ctx} />;
   if (name === "country" || name === "state" || name === "authorization_country")
     return <LocationField {...frame} />;
   const precision = DATE_FIELDS[name];

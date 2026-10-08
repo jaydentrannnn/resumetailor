@@ -163,8 +163,13 @@ class _FillState:
     # -- inputs ------------------------------------------------------------------------
 
     def _build_fields(self) -> dict[str, Any]:
+        from resume_tailor.apply.answers import education  # noqa: PLC0415
+
         app, pkt, profile = self.app, self.pkt, self.profile
         fields = dict(pkt.fields)
+        education.refresh_fields(fields, profile.highest_education_obtained)
+        # ATS flows that consume the packet directly must see the same live fact.
+        education.refresh_fields(pkt.fields, profile.highest_education_obtained)
         if fields.get("degree_level") and not fields.get("degree_name"):
             # Packets prepared before ``degree_name`` existed.
             fields["degree_name"] = packet_fields.degree_name(pkt.education, fields["degree_level"])

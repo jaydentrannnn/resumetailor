@@ -12,8 +12,15 @@ from pathlib import Path
 from typing import Literal
 
 from resume_tailor import config
-from resume_tailor.infra import model_queue
-from resume_tailor.apply.answers import answer, answer_memory, model_resolver, notice, profile, salary
+from resume_tailor.apply.answers import (
+    answer,
+    answer_memory,
+    education,
+    model_resolver,
+    notice,
+    profile,
+    salary,
+)
 from resume_tailor.apply.ats import (
     adapters,
     workday_auth,
@@ -31,6 +38,7 @@ from resume_tailor.apply.funnel import (
     store_models,
 )
 from resume_tailor.content import data
+from resume_tailor.infra import model_queue
 from resume_tailor.pipeline.jd import JobRequirements
 from resume_tailor.web.schemas import ApplySettings
 
@@ -125,6 +133,8 @@ async def fill_application(
         applicant, _seeded = profile.load_profile()
     resume = data.load()
     fields = dict(pkt.fields)
+    education.refresh_fields(fields, applicant.highest_education_obtained)
+    education.refresh_fields(pkt.fields, applicant.highest_education_obtained)
     # A posting clearly in another country than the profile's authorization: its
     # eligibility questions are the applicant's (`packet_profile_fields.authorization_mismatch`).
     authorization_elsewhere = packet_profile_fields.authorization_mismatch(
@@ -340,7 +350,8 @@ async def fill_application(
                             value = ""
                         generated = False
                         remembered = False
-                        if not value and not field.current_value:
+                        if (not value and not field.current_value
+                                and key not in education.RESERVED_KEYS):
                             recalled = answer_memory.recall(
                                 field.label, company=app.company or "", ats=app.ats or "",
                                 canonical_key=key or "",
@@ -356,7 +367,9 @@ async def fill_application(
                             if recalled is not None:
                                 value = recalled.answer
                                 remembered = True
-                        if not value and not field.current_value and field_catalog.may_generate_written_answer(field):
+                        if (not value and not field.current_value
+                                and key not in education.RESERVED_KEYS
+                                and field_catalog.may_generate_written_answer(field)):
                             progress(f"Step {step_number}: drafting {field.label}")
                             max_length = field.constraints.get("max_length")
                             max_chars = min(1500, max_length) if isinstance(max_length, int) and max_length > 0 else 1500
@@ -419,6 +432,16 @@ async def fill_application(
                             phone_region=fields.get("phone_country_region", ""),
                             replace_existing=bool(correct_preferred),
                         )
+                        if (
+                            key == education.KEY and education.level(value) is None
+                            and value != "Other" and fields.get(education.DETAIL_KEY)
+                            and field.control_kind in {"combobox", "native_select", "radio_group"}
+                            and outcome.state == "unanswered" and outcome.reason_code == "no_match"
+                        ):
+                            outcome = await controls.apply_value(
+                                page, field_snapshot, field, "Other",
+                                phone_region=fields.get("phone_country_region", ""),
+                            )
                         if (
                             key == "race" and value == fields.get("race_detail")
                             and outcome.state == "unanswered" and outcome.reason_code == "no_match"

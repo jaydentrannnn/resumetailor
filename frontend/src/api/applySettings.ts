@@ -208,6 +208,8 @@ export type ApplicantProfileResponse = {
 
 /** Fixed option lists for the Profile pickers (`GET /api/reference/profile-options`). */
 export type ProfileOptions = {
+  education_levels: string[];
+  education_level_aliases: Record<string, string>;
   countries: { code: string; name: string; dial: string; aliases: string[] }[];
   subdivisions: Record<string, { code: string; name: string }[]>;
   pronouns: string[];

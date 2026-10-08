@@ -23,7 +23,7 @@ SAFE_PROFILE_FIELDS: tuple[tuple[str, str], ...] = (
     ("requires_sponsorship_future", "Requires sponsorship in the future"),
     ("earliest_start", "Earliest start"),
     ("notice_period", "Notice period"),
-    ("highest_education_obtained", "Highest education"),
+    ("highest_education_obtained", "Highest education completed"),
 )
 
 

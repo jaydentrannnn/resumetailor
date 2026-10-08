@@ -171,6 +171,8 @@ PROMPTS_JS = r"""() => {
         input_id: input ? input.id : '',
         field: f.getAttribute('data-automation-id'),
         label: (l ? l.innerText : '').replace(/\*\s*$/, '').trim(),
+        help: (input?.getAttribute('aria-describedby') || '').split(/\s+/)
+          .map(id => document.getElementById(id)?.textContent || '').join(' ').trim(),
         chips: f.querySelectorAll("[data-automation-id='selectedItem']").length,
       };
     })
@@ -202,7 +204,8 @@ def fill_prompts(
     for item in found:
         if not isinstance(item, dict) or item.get("chips") or workday_skills.is_skills_prompt(item):
             continue
-        question = questions.Question(str(item.get("label") or ""), kind="typeahead")
+        question = questions.Question(str(item.get("label") or ""), kind="typeahead",
+                                      help_text=str(item.get("help") or ""))
         match = questions.classify(question)
         key = match.key if match else None
         answers = questions.answers(match, question, questions.facts_for(fields))

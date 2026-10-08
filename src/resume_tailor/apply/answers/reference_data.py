@@ -9,6 +9,8 @@ from __future__ import annotations
 
 from typing import Any
 
+from resume_tailor.apply.answers import education
+
 #: ISO2|name|dial code|aliases (``;``-separated). Dial codes shared by several countries
 #: ("+1") are told apart by name, which is why the phone picker stores a region too.
 _COUNTRIES = """\
@@ -431,4 +433,6 @@ def options() -> dict[str, Any]:
         "races": RACES,
         "race_details": RACE_DETAILS,
         "disability": DISABILITY,
+        "education_levels": list(education.LEVELS),
+        "education_level_aliases": dict(education.LEVEL_BY_ALIAS),
     }

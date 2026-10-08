@@ -48,7 +48,6 @@ _TARGETS: dict[str, tuple[str, Kind]] = {
 }
 #: Wording the classifier has no rule for, but that names one of the fields above.
 _EXTRA = (
-    (re.compile(r"highest (?:level of )?(?:education|degree)|level of education", re.I), "highest_education_obtained"),
     (re.compile(r"relatives?|family members?|related to", re.I), "relatives_at_company"),
     (re.compile(r"\breferred\b|\breferral\b", re.I), "referred_by"),
 )

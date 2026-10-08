@@ -14,7 +14,7 @@ from typing import Any
 import pytest
 
 from resume_tailor import config
-from resume_tailor.apply.answers import answer_memory
+from resume_tailor.apply.answers import answer, answer_memory
 from resume_tailor.apply.answers import profile as profile_mod
 from resume_tailor.apply.answers.profile import ApplicantProfile
 from resume_tailor.apply.ats import adapters
@@ -189,6 +189,67 @@ EMAIL = {
 
 
 # -- end-to-end outcomes -------------------------------------------------------------
+
+
+def test_completed_education_uses_profile_instead_of_stale_packet(engine_env, monkeypatch):
+    state = engine_env([[{
+        "field_id": "completed", "label": "Highest education completed",
+        "control_kind": "text", "required": True,
+    }]])
+    monkeypatch.setattr(profile_mod, "load_profile", lambda: (
+        ApplicantProfile(highest_education_obtained="High school diploma"), False,
+    ))
+    _seed_app()
+    result = _run()
+    assert state["applied"] == [("Highest education completed", "High school diploma")]
+    assert result.ready_to_submit
+
+
+def test_custom_completed_education_fills_other_qualification_detail(engine_env, monkeypatch):
+    state = engine_env([[{
+        "field_id": "completed", "label": "Highest education completed",
+        "control_kind": "native_select", "required": True,
+    }]])
+    monkeypatch.setattr(profile_mod, "load_profile", lambda: (
+        ApplicantProfile(highest_education_obtained="Custom qualification"), False,
+    ))
+    apply_value = controls.apply_value
+
+    async def custom_choice(page, snapshot, field, value, **kwargs):
+        if field.field_id == "completed" and value != "Other":
+            return FieldOutcome(
+                field_id=field.field_id, state="unanswered", reason_code="no_match",
+            )
+        outcome = await apply_value(page, snapshot, field, value, **kwargs)
+        if field.field_id == "completed":
+            page.steps[0].append({
+                "field_id": "detail", "label": "If Other, specify your qualification",
+                "control_kind": "text", "required": True,
+            })
+        return outcome
+
+    monkeypatch.setattr(controls, "apply_value", custom_choice)
+    _seed_app()
+    result = _run()
+    assert state["applied"] == [
+        ("Highest education completed", "Other"),
+        ("If Other, specify your qualification", "Custom qualification"),
+    ]
+    assert result.ready_to_submit
+
+
+def test_blank_completed_education_never_uses_memory_or_model(engine_env, monkeypatch):
+    state = engine_env([[{
+        "field_id": "completed", "label": "Highest education completed",
+        "control_kind": "text", "required": True,
+    }]])
+    monkeypatch.setattr(answer_memory, "recall", lambda *_a, **_k: pytest.fail("Read saved answer"))
+    monkeypatch.setattr(answer, "answer_question_async", lambda *_a, **_k: pytest.fail("Asked model"))
+    _seed_app()
+    result = _run()
+    assert state["applied"] == []
+    assert not result.ready_to_submit
+    assert result.required_empty == ["Highest education completed"]
 
 
 def test_fills_known_fields_and_reports_ready_for_review(engine_env):

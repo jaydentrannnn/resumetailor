@@ -419,6 +419,14 @@ named degree and "Bachelor's Degree" as the bare level. The packet's `degree_nam
 named degree in the resume rows at the first entry's level) is tried before `degree_level`
 (`choice_values`); it picks its own name or abbreviation, else the bare-level option, and a
 bare level never picks a named degree. `filler.js` mirrors this for native selects.
+The Profile page's **Highest education completed** picker stores an explicit completed
+qualification, with **Other** for custom text. Completed or ambiguous highest-education
+questions use that field; blank stays unanswered. Explicitly pursuing or
+completed-or-pursuing questions use the resume degree, falling back to the completed
+qualification when no resume degree exists. Resume education rows still use their own
+degree. Matching preserves GED versus diploma and broad versus named degrees; uncertain
+options go to review. Legacy custom values remain editable, and a custom qualification
+can select **Other** and fill its qualification detail without filling a school field.
 Country is re-checked just before a step advances (a saved "Vietnam" re-labels the form);
 the phone code must name the whole region (`_phone_option`), not merely contain it.
 

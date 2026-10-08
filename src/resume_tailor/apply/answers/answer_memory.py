@@ -68,6 +68,7 @@ _PROFILE_TEXT: dict[str, str] = {
         "linkedin_url", "github_url", "portfolio_url", "address_line1", "address_line2",
         "city", "state", "postal_code", "country", "earliest_start", "notice_period",
         "location_preference", "authorization_country", "referred_by", "school_email",
+        "highest_education_obtained",
     )
 }  # fmt: skip
 #: The one-off pass that moved profile-duplicate rows out (`cleanup_profile_duplicates`).
@@ -155,6 +156,11 @@ def profile_key(label: str, canonical_key: str = "") -> str | None:
     if canonical_key in covered:
         return canonical_key
     text = (label or "").strip()
+    # Education level questions commonly use a full sentence, not a short label.
+    from resume_tailor.apply.answers import education  # noqa: PLC0415
+
+    if education.question_key(text) == education.KEY and not education.compound(text):
+        return education.KEY
     if not text or len(text.split()) > _PROFILE_LABEL_WORDS:
         return None
     if _REFERRAL.search(text):

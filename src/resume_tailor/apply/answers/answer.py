@@ -85,6 +85,10 @@ def normalize_question(question: str) -> str:
 
 def _profile_answer(question: str, profile: ApplicantProfile) -> str | None:
     """Return a canned answer when the question matches ``custom_answers``."""
+    from resume_tailor.apply.answers import education  # noqa: PLC0415
+
+    if education.question_key(question) == education.KEY and not education.compound(question):
+        return profile.highest_education_obtained.strip() or None
     norm_q = normalize_question(question)
     for key, answer in profile.custom_answers.items():
         norm_key = normalize_question(key)
@@ -494,7 +498,7 @@ async def answer_question_async(
 
 
 #: Bumped when ``_CLASSIFY_SYSTEM`` or the request shape changes; part of each cache key.
-_CLASSIFY_PROMPT_VERSION = 1
+_CLASSIFY_PROMPT_VERSION = 2
 #: Seconds one classification call may take before the fill carries on without it.
 _CLASSIFY_TIMEOUT = 45.0
 

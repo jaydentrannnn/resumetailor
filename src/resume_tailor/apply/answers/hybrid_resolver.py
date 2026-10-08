@@ -356,9 +356,13 @@ class _StepResolver:
 
         self._load_options(unresolved)
         unresolved = self._select_phone_codes(unresolved)
+        from resume_tailor.apply.answers import education  # noqa: PLC0415
+
         reserved = [
             f for f in unresolved
-            if re.search(
+            if education.question_key(
+                str(f.get("label") or ""), str(f.get("help") or f.get("help_text") or ""),
+            ) in education.RESERVED_KEYS or re.search(
                 r"salary|compensation|race|ethnic|hispanic|latino",
                 str(f.get("label") or ""), re.I,
             )
@@ -367,6 +371,10 @@ class _StepResolver:
         unresolved = [f for f in unresolved if f not in reserved]
         if not unresolved:
             # Validation errors alone give the model nothing it may act on.
+            if any(education.question_key(
+                str(f.get("label") or ""), str(f.get("help") or f.get("help_text") or ""),
+            ) in education.RESERVED_KEYS for f in reserved):
+                return False
             return not errors and not advance_disabled
 
         self.log(

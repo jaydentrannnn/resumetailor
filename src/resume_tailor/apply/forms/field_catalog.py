@@ -5,6 +5,7 @@ from __future__ import annotations
 import re
 from typing import Literal
 
+from resume_tailor.apply.answers import education, questions
 from resume_tailor.apply.ats import ats_hints
 from resume_tailor.apply.forms.field_matcher import normalize
 from resume_tailor.apply.forms.field_types import FieldObservation
@@ -23,6 +24,8 @@ def classify(field: FieldObservation) -> tuple[Classification, str]:
     identity = f"{name} {normalize(str(attrs.get('id') or ''))} {normalize(str(attrs.get('automation_id') or ''))}"
     if input_type == "password" or auto in {"current password", "new password", "one time code"} or re.search(r"\b(password|passcode|verification code|one time code)\b", label):
         return "manual_review", "credential_or_verification"
+    if education.not_education(field.label):
+        return "manual_review", "not_an_education_question"
     # Self-identification before salary: VEVRAA's veteran question quotes "entitled to
     # compensation" (CACI, 2026-09).
     if "veteran" in label:
@@ -37,6 +40,16 @@ def classify(field: FieldObservation) -> tuple[Classification, str]:
         return "known", f"{unit}_number" if input_type == "number" else unit
     if re.search(r"\b(agree|agreement|certif\w*|attest\w*|signature|arbitration|terms of service)\b", label):
         return "manual_review", "agreement_or_signature"
+    edu_key = education.question_key(field.label, field.help_text)
+    if edu_key:
+        choice = field.control_kind in {"native_select", "radio_group", "combobox"}
+        kind = "choice" if choice else "text"
+        question = questions.Question(field.label, kind=kind, help_text=field.help_text,
+                                      options=tuple(option.label for option in field.options))
+        match = questions.classify(question)
+        if match is None:
+            return "manual_review", "education_question_needs_review"
+        return "known", match.key
     if field.canonical_key:
         return "known", field.canonical_key
     if auto == "tel country code" or re.search(r"\b(calling|dialing|dialling) code\b", label):

@@ -67,6 +67,9 @@ _INSPECT_PAGE_JS = """
     return '';
   };
 
+  const helpFor = (el) => (el.getAttribute('aria-describedby') || '').split(/\\s+/)
+    .map(id => document.getElementById(id)?.textContent || '').join(' ').trim();
+
   const errors = [];
   document.querySelectorAll('[data-automation-id*="error" i], [role="alert"], .alert-danger, .field-error, [aria-invalid="true"]').forEach(el => {
     if (isVisible(el)) {
@@ -116,6 +119,7 @@ _INSPECT_PAGE_JS = """
           type: 'combobox',
           selector: sel,
           label: label || 'Dropdown selection',
+          help: helpFor(el),
           current: current,
           invalid: invalid(el)
         });
@@ -131,12 +135,16 @@ _INSPECT_PAGE_JS = """
       const group = Array.from(document.querySelectorAll(`input[type="radio"][name="${r.name}"]`));
       const anyChecked = group.some(g => g.checked);
       if (!anyChecked) {
-        const label = getLabel(r) || r.name;
+        const question = r.closest(
+          '[data-automation-id^="formField-"], fieldset, [role="radiogroup"]');
+        const title = question?.querySelector('legend, label:not([for])');
+        const label = title?.textContent?.trim() || getLabel(r) || r.name;
         const options = group.map(g => getLabel(g) || g.value);
         unresolved.push({
           type: 'radiogroup',
           selector: `input[type="radio"][name="${r.name}"]`,
           label: label,
+          help: helpFor(r),
           options: options,
           invalid: group.some(invalid)
         });

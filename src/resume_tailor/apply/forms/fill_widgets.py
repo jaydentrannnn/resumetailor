@@ -12,7 +12,7 @@ from pathlib import Path
 from typing import Any, Literal
 
 from resume_tailor import config
-from resume_tailor.apply.answers import questions, widget_actions
+from resume_tailor.apply.answers import education, questions, widget_actions
 from resume_tailor.apply.ats import workday_dropdowns, workday_page
 from resume_tailor.apply.driver import browser
 from resume_tailor.apply.forms import field_matcher
@@ -89,6 +89,7 @@ def _fill_frame(
     args = {
         "fields": fields, "hints": hints, "synonyms": fill_page._synonym_payload(),
         "eeo": field_matcher.eeo_patterns(fields),
+        "educationAliases": education.LEVEL_BY_ALIAS,
     }
     plan = None
     with contextlib.suppress(Exception):

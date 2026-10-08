@@ -142,7 +142,8 @@ def test_degree_select_takes_the_abbreviation_of_the_named_degree(page):
       <select id="lvl"><option value="">Select</option><option>Associate's Degree</option>
         <option>Bachelor's Degree</option><option>Master's Degree</option></select>
     """)
-    _fill(page, {"degree_level": "Bachelors", "degree_name": "Bachelor of Science"})
+    _fill(page, {"degree_level": "Bachelors", "degree_name": "Bachelor of Science",
+                 "highest_education_obtained": "Bachelors"})
     assert page.locator("#deg").input_value() == "bs"
     assert page.locator("#lvl").input_value() == "Bachelor's Degree"
 

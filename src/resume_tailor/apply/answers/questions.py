@@ -29,7 +29,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import TYPE_CHECKING, Literal
 
-from resume_tailor.apply.answers import salary
+from resume_tailor.apply.answers import education, salary
 from resume_tailor.apply.ats import ats_hints
 from resume_tailor.apply.forms import field_matcher
 
@@ -55,6 +55,7 @@ class Question:
     part: str = ""
     #: The enclosing group's heading ("Education", "Start Date"), for split dates.
     section: str = ""
+    help_text: str = ""
 
 
 @dataclass(frozen=True)
@@ -163,6 +164,8 @@ _DERIVED: tuple[tuple[str, str], ...] = (
 
 #: The profile field a derived answer comes from: the field to fill in when it is blank.
 SOURCE_FIELD = {
+    education.MIXED_KEY: education.KEY,
+    education.DETAIL_KEY: education.KEY,
     "currently_enrolled": "graduation_month",
     "degree_by": "graduation_month",
     "returning_to_school": "graduation_month",
@@ -280,13 +283,24 @@ def classify(question: Question) -> Match | None:
     if not text:
         return None
     low = text.casefold()
-    if _CONSENT.search(low) or _FOLLOW_UP.search(low):
+    if _CONSENT.search(low):
+        return None
+    if education.not_education(text):
+        return None
+    edu_key = education.question_key(text, question.help_text)
+    if edu_key == education.DETAIL_KEY:
+        return Match(edu_key)
+    if _FOLLOW_UP.search(low):
         return None
     if _LOCATION.search(low.rstrip("?*: ")) and question.kind in {"text", "typeahead"}:
         return Match("location")
     for pattern, key in _DERIVED:
         if re.search(pattern, low) and _compatible(key, question):
             return Match(key, _param(key, text))
+    if edu_key:
+        if education.compound(text):
+            return None
+        return Match(edu_key) if _compatible(edu_key, question) else None
     if question.part in {"month", "year"}:
         context = f"{question.section} {text}".casefold()
         if re.search(r"\bend\b|graduat|complet|finish", context):
@@ -498,7 +512,7 @@ def date_text(value: str, *, placeholder: str = "", input_type: str = "") -> str
 
 
 #: Keys whose answer the fill runner cannot read from the packet's fields.
-_COMPUTED = frozenset({key for _pattern, key in _DERIVED} | {"location"})
+_COMPUTED = frozenset({key for _pattern, key in _DERIVED} | {"location", education.MIXED_KEY})
 _DATE_KEYS = frozenset({"graduation_month", "education_start_month"})
 _PLACEHOLDER_OPTION = re.compile(r"^(?:select|choose|please select|month|year|day)\b|^-+$|^$", re.I)
 
@@ -521,6 +535,7 @@ MODEL_KEYS: dict[str, str] = {
     "has_prior_internship": "has completed an internship before",
     "previous_worker": "has worked for this company before",
     "degree_level": "the degree they are pursuing or hold (Bachelor's, Master's, ...)",
+    education.KEY: "their highest education already completed, excluding in-progress degrees",
     "major": "their field of study",
     "gender": "their gender",
     "race": "their race or ethnicity",
@@ -556,11 +571,16 @@ def plan_for(
         question = Question(
             str(item.get("label") or ""), kind=item.get("kind") or "text", options=options,
             part=str(item.get("part") or ""), section=str(item.get("section") or ""),
+            help_text=str(item.get("help") or item.get("help_text") or ""),
         )
         stated = str(item.get("attr_key") or "")
-        match = Match(stated) if stated else classify(question)
+        edu_key = education.question_key(question.text, question.help_text)
+        blocked = education.not_education(question.text)
+        match = (None if blocked else classify(question) if edu_key
+                 else Match(stated) if stated else classify(question))
         name_key = str(item.get("name_key") or "")
-        if match is None and name_key and _compatible(name_key, question):
+        if (match is None and not edu_key and not blocked and name_key
+                and _compatible(name_key, question)):
             match = Match(name_key)
         asked.append((qid, item, question, match))
     if classifier is not None:
@@ -578,6 +598,8 @@ def _classify_rest(
         if match is None and question.kind in {"choice", "multi"} and question.options
         and _clean(question.text) and not _CONSENT.search(question.text.casefold())
         and not _FOLLOW_UP.search(_clean(question.text).casefold())
+        and education.question_key(question.text, question.help_text) is None
+        and not education.not_education(question.text)
     ]
     if not unkeyed:
         return asked
@@ -598,7 +620,10 @@ def _step(
     found = answers(match, question, facts)
     value = ""
     if found and question.options and question.kind in {"choice", "multi"}:
-        value = choose(question, match.key, found) or ""
+        chosen = choose(question, match.key, found)
+        if chosen is None and match.key in education.RESERVED_KEYS:
+            return {"key": match.key, "value": None}
+        value = chosen or ""
     elif found and question.kind == "date" and match.key in _DATE_KEYS:
         value = date_text(
             facts.fields.get(match.key, ""), placeholder=str(item.get("placeholder") or ""),

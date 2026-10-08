@@ -1,0 +1,16 @@
+<!-- Offline replay: Fidelity question wording from the saved Workday fill log.
+     Other controls are explicit regression variants, not a full captured posting. -->
+<label for="completed">Highest education completed</label>
+<select id="completed" name="degree" required>
+  <option value="">Select</option><option>High school diploma</option><option>Bachelor's Degree</option>
+</select>
+<label for="mixed">Please select your highest level of education obtained or, if a current student, select the degree you are pursuing</label>
+<select id="mixed"><option value="">Select</option><option>High school diploma</option><option>Bachelor of Science</option></select>
+<fieldset><legend>Education history</legend><label for="row">Degree</label>
+<select id="row"><option value="">Select</option><option>B.S.</option><option>High school diploma</option></select></fieldset>
+<label for="helper">Highest degree</label>
+<span id="degree-help">For most recent or in progress degree.</span>
+<input id="helper" aria-describedby="degree-help">
+<label for="exclude">Highest degree</label>
+<span id="exclude-help">Do not include degrees in progress.</span>
+<input id="exclude" aria-describedby="exclude-help">

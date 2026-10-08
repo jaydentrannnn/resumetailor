@@ -10,6 +10,7 @@ from typing import Literal
 
 from pydantic import BaseModel
 
+from resume_tailor.apply.answers import education
 from resume_tailor.apply.forms.field_types import ObservedOption
 
 
@@ -136,6 +137,8 @@ def match_option(
     if not wanted:
         return OptionMatch(status="unsupported")
     available = [option for option in options if option.enabled and not option.placeholder]
+    if key in {education.KEY, education.MIXED_KEY}:
+        return _match_completed_education(available, target)
     for method, field in (("exact_label", "label"), ("exact_value", "value")):
         matches = [option for option in available if normalize(getattr(option, field)) == wanted]
         if len(matches) == 1:
@@ -430,6 +433,24 @@ def _match_degree(available: list[ObservedOption], target: str) -> OptionMatch:
     return OptionMatch(status="no_match")
 
 
+def _match_completed_education(available: list[ObservedOption], target: str) -> OptionMatch:
+    """Education labels are authoritative; opaque values must not hide qualifiers."""
+    exact = [option for option in available if normalize(option.label) == normalize(target)]
+    if exact:
+        return OptionMatch(status="matched" if len(exact) == 1 else "ambiguous",
+                           option_id=exact[0].option_id if len(exact) == 1 else "",
+                           method="exact_label" if len(exact) == 1 else "")
+    matches = [option for option in available if education.equivalent(option.label, target)]
+    if matches:
+        return OptionMatch(status="matched" if len(matches) == 1 else "ambiguous",
+                           option_id=matches[0].option_id if len(matches) == 1 else "",
+                           method="alias" if len(matches) == 1 else "")
+    clean = [option.model_copy(update={"value": ""}) for option in available
+             if not re.search(r"\b(?:pursuing|in progress|incomplete|not completed|no degree)\b",
+                              option.label, re.I)]
+    return _match_degree(clean, target)
+
+
 #: Words that name an institution's kind, not the institution: searching them alone
 #: returns hundreds of schools.
 _SCHOOL_GENERIC = frozenset({
@@ -466,7 +487,7 @@ def search_terms(key: str, value: str) -> list[str]:
         if distinctive:
             terms.append(" ".join(distinctive))
         terms.extend(_SCHOOL_SEARCH.get(normalize(value), []))
-    elif key == "degree_level":
+    elif key in {"degree_level", education.KEY, education.MIXED_KEY}:
         if normalize(value).startswith("bachelor"):
             terms.insert(0, "bachelor")
         # A list of abbreviations ("BS", "BA") filters to nothing on "bachelor".
@@ -519,6 +540,11 @@ def choice_values(key: str, fields: dict[str, str]) -> list[str]:
     the race, the named degree ("Bachelor of Science", which also matches "BS" and falls
     back to a bare "Bachelor's" option) before the profile's level ("Bachelors")."""
     value = fields.get(key, "")
+    if key == education.MIXED_KEY:
+        source = "degree_level" if fields.get("degree_level") else education.KEY
+        return choice_values(source, fields)
+    if key == education.KEY and value and education.level(value) is None:
+        return [value, "Other"]
     if key == "race":
         candidates = [fields.get("race_detail", ""), value]
     elif key == "degree_level" and value:

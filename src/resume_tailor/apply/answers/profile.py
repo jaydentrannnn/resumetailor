@@ -156,7 +156,8 @@ class ApplicantProfile(BaseModel):
     notice_period_value: int | None = Field(default=None, ge=0, le=999)
     notice_period_unit: NoticeUnit = "week"
     notice_period: str = ""
-    #: Free-text answer; school, major, degree, GPA and dates come from the master
+    #: Completed qualification (a standard picker value or custom text). Other education
+    #: facts (school, major, degree, GPA and dates) come from the master
     #: resume's education entries (`packet_fields._build_education`).
     highest_education_obtained: str = ""
     salary_expectation: str = ""

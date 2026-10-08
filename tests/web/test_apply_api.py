@@ -601,3 +601,18 @@ def test_profile_options_are_served(client):
     c, _q = client
     options = c.get("/api/reference/profile-options").json()
     assert {"countries", "subdivisions", "pronouns", "genders", "races", "race_details", "disability"} <= set(options)
+    assert "High school diploma" in options["education_levels"]
+    assert options["education_level_aliases"]["bachelors"] == "Bachelor's degree"
+
+
+@pytest.mark.parametrize("qualification", ["Bachelors", "Higher National Diploma", ""])
+def test_completed_education_survives_profile_roundtrip(client, qualification):
+    c, _q = client
+    profile = c.get("/api/applicant-profile").json()["profile"]
+    profile["highest_education_obtained"] = qualification
+    assert c.put("/api/applicant-profile", json={"profile": profile}).status_code == 200
+    loaded = c.get("/api/applicant-profile").json()["profile"]
+    assert loaded["highest_education_obtained"] == qualification
+    loaded["earliest_start"] = "2027-06-01"
+    assert c.put("/api/applicant-profile", json={"profile": loaded}).status_code == 200
+    assert c.get("/api/applicant-profile").json()["profile"]["highest_education_obtained"] == qualification

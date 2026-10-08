@@ -35,6 +35,8 @@ DROPDOWNS_JS = r"""() => {
     .map(b => ({
       selector: b.id ? `#${CSS.escape(b.id)}` : '',
       label: labelOf(b).replace(/\*\s*$/, '').trim(),
+      help: (b.getAttribute('aria-describedby') || '').split(/\s+/)
+        .map(id => document.getElementById(id)?.textContent || '').join(' ').trim(),
       current: (b.innerText || '').trim(),
       required: /\*\s*$/.test(labelOf(b)) ||
         /\bRequired\b/.test(b.getAttribute('aria-label') || ''),
@@ -252,7 +254,8 @@ def fill_dropdowns(
             selector = item["selector"]
             if selector in tried:
                 continue
-            question = questions.Question(item["label"], kind="choice")
+            question = questions.Question(item["label"], kind="choice",
+                                          help_text=str(item.get("help") or ""))
             match = questions.classify(question)
             key = match.key if match else None
             answers = questions.answers(match, question, facts)
