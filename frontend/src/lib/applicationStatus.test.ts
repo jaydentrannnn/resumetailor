@@ -3,7 +3,7 @@ import { applicationStatusTone } from "./applicationStatus";
 
 describe("applicationStatusTone", () => {
   it("groups statuses by what the user needs to do next", () => {
-    expect(applicationStatusTone("ready")).toBe("neutral");
+    expect(applicationStatusTone("ready")).toBe("ready");
     expect(applicationStatusTone("awaiting_review")).toBe("attention");
     expect(applicationStatusTone("submit_unconfirmed")).toBe("attention");
     expect(applicationStatusTone("fill_failed")).toBe("failed");

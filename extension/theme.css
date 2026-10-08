@@ -37,7 +37,7 @@
   --on-primary: #ffffff;
   --accent: #1f6b4a;
   --success: #1f6b4a;
-  --attention: #1d4ed8;
+  --attention: #c2410c;
   --danger: #c42020;
   --status-tint: 10%;
   --selected: #1f6b4a;
@@ -67,7 +67,7 @@
     --on-primary: #0b0b0b;
     --accent: #6fbf98;
     --success: #6fae90;
-    --attention: #8699cb;
+    --attention: #e0965c;
     --danger: #d17875;
     --status-tint: 8%;
     --selected: color-mix(in srgb, #6fbf98 12%, transparent);

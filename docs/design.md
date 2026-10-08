@@ -43,7 +43,7 @@ Use the Tailwind classes (`bg-panel`, `text-ink-muted`, `border-line`), never ra
 | `selected` / `on-selected` / `selected-line` | `#1f6b4a` / `#fff` / `#1f6b4a` | 12% mint / `#6fbf98` / `#6fbf98` | selected segment, tab, filter |
 | `selected-row` | 9% accent | 12% mint | selected table row wash |
 | `success` | `#1f6b4a` | `#6fae90` | done mark (chips only) |
-| `attn` / `attn-soft` | `#1d4ed8` / 10% | `#8699cb` / 8% | "needs you" |
+| `attn` / `attn-soft` | `#c2410c` / 10% | `#e0965c` / 8% | "needs you" |
 | `danger` / `danger-soft` | `#c42020` / 10% | `#d17875` / 8% | failed, destructive |
 | `scrim` | 40% black | 60% black | modal backdrop |
 | `doc-preview` | `#ffffff` | `#ffffff` | an actual white PDF page; not a UI surface |
@@ -103,13 +103,15 @@ One accent, two renderings, exposed as tokens so pages only write classes:
 | Tone | Mark | Hue | Means |
 |---|---|---|---|
 | `done` | check | success green | submitted, fits, saved |
-| `attention` | ring | blue | needs you |
+| `ready` | dot | success green | ready to act on now (an application ready to fill) |
+| `attention` | ring | orange | needs you — urgent, waiting on the user |
 | `failed` | diamond | red | something broke |
 | `live` | spinner | outline | working now |
-| `neutral` | dot | ink | ready to fill, unknown, early pipeline |
+| `neutral` | dot | ink | unknown, early pipeline |
 | `muted` | dash | outline, muted | closed, rejected, ghosted |
 
-`ready` is a neutral dot, not a green check. There is no amber "warn". Application
+`ready` is a green dot, not a check: actionable, not yet done. Attention is orange (urgent)
+and failed is red; there is no blue status. Application
 statuses map through `lib/applicationStatus.ts` (`applicationStatusTone`).
 
 ## Anatomy
@@ -126,8 +128,18 @@ statuses map through `lib/applicationStatus.ts` (`applicationStatusTone`).
 
 - **Buttons** (`Button` / `buttonClass`): primary is ink — black in light, **white in
   dark**; secondary is a bordered `field`; danger is a red outline (also the destructive
-  confirm); ghost is muted text. Sizes `sm` (30px feel), `md`, `lg`. Green is never a fill.
-  Use one primary per tile or dialog.
+  confirm); ghost is muted text. Every button and button-styled link has the same 36px
+  floor (44px on touch, via `rt-control` in `buttonClass`); `sm` only changes text and
+  padding. Use `md` for page and tile actions and `sm` only in dense rows; table row
+  actions use `rt-row-action` (28px). Green is never a fill. Use one primary per tile or
+  dialog; positive actions (Save changes, Fill) are primary.
+- **Settings rows** (`pages/settings/SettingRow`): `layout="split"` (label | control),
+  `"stacked"` (control under the label, full width) or `"action"` (text left, buttons
+  right-aligned) — buttons in one tile line up on the right.
+- **Long text in rows** (`TruncatedText`): table cells and notice rows show one line;
+  when it is cut off the line is a button that opens the full text in a floating box at
+  the click point (outside click, Escape or Close dismiss it). Never let descriptions wrap
+  a table row.
 - **Tables** (`DataTable`, `Pagination`, `RowActionsMenu`): eyebrow headers over a
   stronger hairline, hairlines between rows, hover `bg-sunken`, selected rows as above,
   mono pager. Below `md` the same rows render as record cards.
@@ -170,6 +182,7 @@ All exported from `components/ui` (`import { … } from "../components/ui"`).
 | `Stepper` | `steps: {id,label,meta?}[]`, `current`, `failed?`, `onSelect?`, `label?`, `orientation?`, `divided?` | Wizards and run progress; square marks, optional mono meta per step. `divided` (vertical only) puts hairlines between rows and right-aligns `meta` — the Tailor run stages. |
 | `Modal` | `title`, `onClose`, `wide?`, `placement?: "center" \| "right"` | Dialogs and the Apply settings drawer. |
 | `InlineHelp` | `label`, `children` | A "?" explanation next to a label. |
+| `TruncatedText` | `text`, `className`, `label` | One-line text; click-to-expand floating box when cut off. |
 | `EmptyState` | `title`, `icon?`, `children?`, `action?` | A list/page with nothing yet. |
 | `Skeleton` | `className` | Loading placeholder blocks. |
 | `Kbd` | `children` | A keyboard key. |

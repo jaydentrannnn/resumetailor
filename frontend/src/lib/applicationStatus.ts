@@ -27,7 +27,7 @@ export function applicationStatusLabel(status: string): string {
 const statusTones: Record<string, Tone> = {
   tailoring: "live",
   filling: "live",
-  ready: "neutral",
+  ready: "ready",
   awaiting_review: "attention",
   awaiting_otp: "attention",
   needs_browser: "attention",

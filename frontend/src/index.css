@@ -44,8 +44,8 @@
   /* Status hues, always paired with a mark shape and a text label (lib/tone.ts). */
   --color-success: #1f6b4a;
   --color-success-soft: color-mix(in srgb, #1f6b4a 10%, transparent);
-  --color-attn: #1d4ed8;
-  --color-attn-soft: color-mix(in srgb, #1d4ed8 10%, transparent);
+  --color-attn: #c2410c;
+  --color-attn-soft: color-mix(in srgb, #c2410c 10%, transparent);
   --color-danger: #c42020;
   --color-danger-soft: color-mix(in srgb, #c42020 10%, transparent);
 
@@ -116,8 +116,8 @@
   --color-selected-row: color-mix(in srgb, #6fbf98 12%, transparent);
   --color-success: #6fae90;
   --color-success-soft: color-mix(in srgb, #6fae90 8%, transparent);
-  --color-attn: #8699cb;
-  --color-attn-soft: color-mix(in srgb, #8699cb 8%, transparent);
+  --color-attn: #e0965c;
+  --color-attn-soft: color-mix(in srgb, #e0965c 8%, transparent);
   --color-danger: #d17875;
   --color-danger-soft: color-mix(in srgb, #d17875 8%, transparent);
   --color-scrim: rgb(0 0 0 / 0.6);

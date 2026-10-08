@@ -9,6 +9,7 @@ export { type Tone, toneChipClass } from "../../lib/tone";
 export { Segmented, type SegmentedItem } from "./Segmented";
 export { DataList, type DataItem, Meter, SelectionBar, Stat } from "./Data";
 export { InlineHelp } from "./InlineHelp";
+export { TruncatedText } from "./TruncatedText";
 export { Page, PageHeader } from "./Page";
 export { ResultFrame } from "./ResultFrame";
 export { Stepper, type StepItem } from "./Stepper";
