@@ -52,6 +52,16 @@ SourceField = Literal[
     "government",
 ]
 
+#: How early-career a catalog list is. Kept apart from `SourceField` and stored as plain
+#: strings on the entry: an app build that predates a new value must still validate (and
+#: ignore) the remote catalog, instead of rejecting the whole file.
+SOURCE_LEVELS = ("intern", "new_grad", "off_cycle", "program")
+#: Finer focus inside a field ("banking" and "accounting" are both `finance`). Same
+#: forward-compatibility rule as `SOURCE_LEVELS`; mirrors the SPA's `SourceTrack`.
+SOURCE_TRACKS = (
+    "banking", "markets", "accounting", "corp_finance", "strategy", "marketing", "operations",
+)
+
 
 class BoardConfig(BaseModel):
     """One company job board on a watchlist source (`apply/boards.py`)."""

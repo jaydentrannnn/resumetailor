@@ -7,6 +7,7 @@ import {
   catalogDiff,
   compareVersions,
   duplicateSource,
+  entriesForFilters,
   githubPageUrl,
   groupOf,
   joinPhrases,
@@ -350,5 +351,39 @@ describe("sourceHealth with saved keys", () => {
     // Any other failure stays a failure.
     const other = { ...failed, error: "HTTP 500 from api.adzuna.com" };
     expect(sourceHealth(search, other, NOW, true).tone).toBe("error");
+  });
+});
+
+describe("entriesForFilters", () => {
+  const cat = catalog([
+    entry({ id: "a", fields: ["finance"], levels: ["intern"], tracks: ["banking"] }),
+    entry({ id: "b", fields: ["finance"], levels: ["new_grad"], tracks: ["accounting"] }),
+    entry({ id: "c", fields: ["consulting"], levels: ["intern", "new_grad"] }),
+    entry({ id: "d", fields: ["swe"] }),
+  ]);
+  const ids = (f: Parameters<typeof entriesForFilters>[1]) =>
+    entriesForFilters(cat, f).map((e) => e.id);
+
+  it("returns everything when no group is selected", () => {
+    expect(ids({ fields: [], levels: [], tracks: [] })).toEqual(["a", "b", "c", "d"]);
+  });
+
+  it("ors within a group and ands across groups", () => {
+    expect(ids({ fields: ["finance", "consulting"], levels: [], tracks: [] })).toEqual([
+      "a",
+      "b",
+      "c",
+    ]);
+    expect(ids({ fields: ["finance", "consulting"], levels: ["intern"], tracks: [] })).toEqual([
+      "a",
+      "c",
+    ]);
+    expect(ids({ fields: ["finance"], levels: ["new_grad"], tracks: ["accounting"] })).toEqual([
+      "b",
+    ]);
+  });
+
+  it("hides entries with no level tags once a level is selected", () => {
+    expect(ids({ fields: [], levels: ["intern"], tracks: [] })).toEqual(["a", "c"]);
   });
 });

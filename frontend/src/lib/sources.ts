@@ -4,7 +4,9 @@ import type {
   SourceConfig,
   SourceField,
   SourceKind,
+  SourceLevel,
   SourceRunStatus,
+  SourceTrack,
 } from "../api";
 
 /** Most phrases one keyword search holds; the backend searches each one separately. */
@@ -27,6 +29,29 @@ export const FIELD_LABELS: Record<SourceField, string> = {
 };
 
 export const SOURCE_FIELDS = Object.keys(FIELD_LABELS) as SourceField[];
+
+/** Labels for the catalog's level tags, in the order the pickers show them. */
+export const LEVEL_LABELS: Record<SourceLevel, string> = {
+  intern: "Internship",
+  new_grad: "New grad",
+  off_cycle: "Off-cycle / co-op",
+  program: "Early-career program",
+};
+
+export const SOURCE_LEVELS = Object.keys(LEVEL_LABELS) as SourceLevel[];
+
+/** Labels for the finer focus tags (finance and business lists). */
+export const TRACK_LABELS: Record<SourceTrack, string> = {
+  banking: "Investment banking",
+  markets: "Markets & trading",
+  accounting: "Accounting & audit",
+  corp_finance: "Corporate finance",
+  strategy: "Strategy consulting",
+  marketing: "Marketing",
+  operations: "Operations & analytics",
+};
+
+export const SOURCE_TRACKS = Object.keys(TRACK_LABELS) as SourceTrack[];
 
 const KIND_LABELS: Record<SourceKind, string> = {
   simplify_html: "Job list",
@@ -272,6 +297,26 @@ export function restoreDefaults(
 export function entriesForFields(catalog: SourceCatalog, fields: SourceField[]): CatalogEntry[] {
   const wanted = new Set(fields);
   return catalog.entries.filter((entry) => entry.fields.some((f) => wanted.has(f)));
+}
+
+/** The filters the catalog dialog narrows by; an empty list means "any" for that group. */
+export type CatalogFilters = {
+  fields: SourceField[];
+  levels: SourceLevel[];
+  tracks: SourceTrack[];
+};
+
+/** Entries matching every non-empty group (any one value within a group), in catalog order. */
+export function entriesForFilters(
+  catalog: SourceCatalog,
+  { fields, levels, tracks }: CatalogFilters,
+): CatalogEntry[] {
+  return catalog.entries.filter(
+    (entry) =>
+      (fields.length === 0 || entry.fields.some((f) => fields.includes(f))) &&
+      (levels.length === 0 || (entry.levels ?? []).some((l) => levels.includes(l))) &&
+      (tracks.length === 0 || (entry.tracks ?? []).some((t) => tracks.includes(t))),
+  );
 }
 
 /** A new keyword search; it can only be saved once it has at least one phrase. */

@@ -78,6 +78,43 @@ def test_bundled_catalog_validates_and_templates_are_sources():
     assert {"simplify_html", "pipe_table", "company_link_table", "job_search"} <= kinds
 
 
+def test_bundled_entries_carry_level_and_track_tags():
+    catalog = source_catalog.bundled()
+    levels = {tag for entry in catalog.entries for tag in entry.levels}
+    tracks = {tag for entry in catalog.entries for tag in entry.tracks}
+    assert {"intern", "new_grad"} <= levels
+    assert {"accounting", "strategy"} <= tracks
+    # Every internship/new-grad list is tagged with the level its id names.
+    for entry in catalog.entries:
+        if "internship" in entry.id:
+            assert "intern" in entry.levels, entry.id
+        if "newgrad" in entry.id:
+            assert "new_grad" in entry.levels, entry.id
+    # No tag was silently dropped by the validator when the file was written.
+    raw = json.loads(
+        (Path(source_catalog.__file__).parent / "catalog" / "sources.json").read_text("utf-8")
+    )
+    for entry, row in zip(catalog.entries, raw["entries"], strict=True):
+        assert entry.levels == row.get("levels", []), entry.id
+        assert entry.tracks == row.get("tracks", []), entry.id
+
+
+def test_unknown_level_and_track_tags_are_dropped_not_fatal():
+    raw = _remote_catalog()
+    raw["entries"][0]["levels"] = ["intern", "from_the_future"]
+    raw["entries"][0]["tracks"] = ["banking", "quantum"]
+    parsed = source_catalog._parse(raw)
+    assert parsed is not None
+    assert parsed.entries[0].levels == ["intern"]
+    assert parsed.entries[0].tracks == ["banking"]
+
+
+def test_entries_without_level_tags_still_validate():
+    parsed = source_catalog._parse(_remote_catalog())
+    assert parsed is not None
+    assert parsed.entries[0].levels == [] and parsed.entries[0].tracks == []
+
+
 def test_defaults_come_from_catalog_ids():
     defaults = ApplySettings().sources
     assert [s.id for s in defaults] == ["simplify-internships", "simplify-newgrad", "speedyapply"]
@@ -206,7 +243,10 @@ def test_catalog_endpoint(client, monkeypatch):
     assert body["origin"] == "bundled"
     assert body["schema_version"] == 1
     entry = next(e for e in body["entries"] if e["id"] == "northwesternfintech-quant")
-    assert set(entry) == {"id", "name", "description", "fields", "version", "template"}
+    assert set(entry) == {
+        "id", "name", "description", "fields", "levels", "tracks", "version", "template",
+    }
+    assert entry["levels"] == ["intern"] and entry["tracks"] == ["markets"]
     assert entry["template"]["kind"] == "company_link_table"
     assert entry["template"]["catalog_id"] == "northwesternfintech-quant"
 

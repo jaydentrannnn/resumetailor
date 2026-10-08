@@ -44,12 +44,28 @@ export type SourceField =
   | "hardware"
   | "government";
 
+/** How early-career a catalog list is; an entry may carry several (e.g. internships and new grad). */
+export type SourceLevel = "intern" | "new_grad" | "off_cycle" | "program";
+
+/** Finer focus inside a field: "banking" and "accounting" are both `finance`. */
+export type SourceTrack =
+  | "banking"
+  | "markets"
+  | "accounting"
+  | "corp_finance"
+  | "strategy"
+  | "marketing"
+  | "operations";
+
 /** One curated source in the catalog. `template` is copied into `ApplySettings.sources`. */
 export type CatalogEntry = {
   id: string;
   name: string;
   description: string;
   fields: SourceField[];
+  /** Absent in catalogs written before levels existed. */
+  levels?: SourceLevel[];
+  tracks?: SourceTrack[];
   version: string;
   /** A ready-to-add source; `id` is regenerated if it collides with an existing source. */
   template: SourceConfig;

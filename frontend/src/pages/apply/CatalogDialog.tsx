@@ -1,8 +1,26 @@
 import { useState } from "react";
-import type { ResolvedBoard, SourceCatalog, SourceConfig, SourceField } from "../../api";
+import type {
+  ResolvedBoard,
+  SourceCatalog,
+  SourceConfig,
+  SourceField,
+  SourceLevel,
+  SourceTrack,
+} from "../../api";
 import { Button, Modal } from "../../components/ui";
-import { catalogAdded, FIELD_LABELS, SOURCE_FIELDS, sourceFromCatalog } from "../../lib/sources";
+import {
+  catalogAdded,
+  entriesForFilters,
+  FIELD_LABELS,
+  LEVEL_LABELS,
+  SOURCE_FIELDS,
+  SOURCE_LEVELS,
+  SOURCE_TRACKS,
+  sourceFromCatalog,
+  TRACK_LABELS,
+} from "../../lib/sources";
 import { PasteLinkField, type KnownInspection } from "./AddFlows";
+import { FilterChips } from "./FilterChips";
 /** "+ Add from catalog": the curated lists, prefiltered to ``fields`` (the user's fields). */
 export function CatalogDialog({
   sources,
@@ -75,12 +93,14 @@ function CatalogList({
   setSearch: (next: string) => void;
   onAdd: (source: SourceConfig) => void;
 }) {
+  const [levels, setLevels] = useState<SourceLevel[]>([]);
+  const [tracks, setTracks] = useState<SourceTrack[]>([]);
   const offered = SOURCE_FIELDS.filter((f) => catalog.entries.some((e) => e.fields.includes(f)));
+  const offeredLevels = SOURCE_LEVELS.filter((l) => catalog.entries.some((e) => e.levels?.includes(l)));
+  const offeredTracks = SOURCE_TRACKS.filter((t) => catalog.entries.some((e) => e.tracks?.includes(t)));
   const needle = search.trim().toLowerCase();
-  const shown = catalog.entries.filter(
-    (entry) =>
-      (fields.length === 0 || entry.fields.some((f) => fields.includes(f))) &&
-      (!needle || `${entry.name} ${entry.description}`.toLowerCase().includes(needle)),
+  const shown = entriesForFilters(catalog, { fields, levels, tracks }).filter(
+    (entry) => !needle || `${entry.name} ${entry.description}`.toLowerCase().includes(needle),
   );
   return (
     <>
@@ -92,22 +112,27 @@ function CatalogList({
         value={search}
         onChange={(e) => setSearch(e.target.value)}
       />
-      <div role="group" aria-label="Filter by field" className="flex flex-wrap gap-1.5">
-        {offered.map((field) => {
-          const on = fields.includes(field);
-          return (
-            <button
-              key={field}
-              type="button"
-              aria-pressed={on}
-              className={`rounded-sm border px-2.5 py-0.5 text-xs ${on ? "border-selected-line bg-selected text-on-selected" : "border-line text-ink-muted hover:border-accent"}`}
-              onClick={() => setFields(on ? fields.filter((f) => f !== field) : [...fields, field])}
-            >
-              {FIELD_LABELS[field]}
-            </button>
-          );
-        })}
-      </div>
+      <FilterChips
+        label="Filter by field"
+        options={offered}
+        labels={FIELD_LABELS}
+        selected={fields}
+        onChange={setFields}
+      />
+      <FilterChips
+        label="Filter by level"
+        options={offeredLevels}
+        labels={LEVEL_LABELS}
+        selected={levels}
+        onChange={setLevels}
+      />
+      <FilterChips
+        label="Filter by focus"
+        options={offeredTracks}
+        labels={TRACK_LABELS}
+        selected={tracks}
+        onChange={setTracks}
+      />
       {shown.length === 0 ? (
         <p className="text-ink-muted">No catalog source matches.</p>
       ) : (
@@ -120,9 +145,13 @@ function CatalogList({
                   <p className="font-medium">{entry.name}</p>
                   <p className="text-xs text-ink-muted">{entry.description}</p>
                   <div className="mt-1 flex flex-wrap gap-1">
-                    {entry.fields.map((field) => (
-                      <span key={field} className="text-xs text-ink-muted">
-                        {FIELD_LABELS[field] ?? field}
+                    {[
+                      ...entry.fields.map((f) => FIELD_LABELS[f] ?? f),
+                      ...(entry.levels ?? []).map((l) => LEVEL_LABELS[l] ?? l),
+                      ...(entry.tracks ?? []).map((t) => TRACK_LABELS[t] ?? t),
+                    ].map((label) => (
+                      <span key={label} className="text-xs text-ink-muted">
+                        {label}
                       </span>
                     ))}
                   </div>

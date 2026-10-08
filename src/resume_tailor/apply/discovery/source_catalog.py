@@ -22,10 +22,22 @@ from pathlib import Path
 from typing import Any, Literal
 
 import httpx
-from pydantic import BaseModel, Field, ValidationError, model_validator
+from pydantic import (
+    BaseModel,
+    Field,
+    ValidationError,
+    ValidationInfo,
+    field_validator,
+    model_validator,
+)
 
 from resume_tailor import config
-from resume_tailor.web.schemas import SourceConfig, SourceField
+from resume_tailor.web.schemas import (
+    SOURCE_LEVELS,
+    SOURCE_TRACKS,
+    SourceConfig,
+    SourceField,
+)
 
 log = logging.getLogger(__name__)
 
@@ -49,8 +61,19 @@ class CatalogEntry(BaseModel):
     name: str = Field(min_length=1)
     description: str = ""
     fields: list[SourceField] = Field(min_length=1)
+    levels: list[str] = Field(default_factory=list)
+    tracks: list[str] = Field(default_factory=list)
     version: str = Field(min_length=1)
     template: SourceConfig
+
+    @field_validator("levels", "tracks", mode="before")
+    @classmethod
+    def _known_tags_only(cls, value: Any, info: ValidationInfo) -> Any:
+        """Drop tags this build does not know, so a newer catalog still loads."""
+        known = SOURCE_LEVELS if info.field_name == "levels" else SOURCE_TRACKS
+        if not isinstance(value, list):
+            return value
+        return [tag for tag in value if tag in known]
 
     @model_validator(mode="after")
     def _stamp_template(self) -> CatalogEntry:

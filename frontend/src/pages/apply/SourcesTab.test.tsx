@@ -741,6 +741,30 @@ describe("the catalog", () => {
     ).toBe(true);
     expect(within(dialog).getByText("speedyapply name")).toBeTruthy();
   });
+
+  it("narrows by level and focus alongside the field chips", async () => {
+    const levelled: SourceCatalog = {
+      ...CATALOG,
+      entries: [
+        { ...mk("bank-intern", "1", ["finance"]), levels: ["intern"], tracks: ["banking"] },
+        { ...mk("audit-newgrad", "1", ["finance"]), levels: ["new_grad"], tracks: ["accounting"] },
+        mk("plain-list", "1", ["finance"]),
+      ],
+    };
+    renderTab([SRC], { catalog: levelled });
+    await act(async () => {});
+    fireEvent.click(screen.getByRole("button", { name: "+ Add job list" }));
+    const dialog = await screen.findByRole("dialog", { name: "Add a job list" });
+    expect(within(dialog).getByText("plain-list name")).toBeTruthy();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Internship" }));
+    expect(within(dialog).getByText("bank-intern name")).toBeTruthy();
+    expect(within(dialog).queryByText("audit-newgrad name")).toBeNull();
+    expect(within(dialog).queryByText("plain-list name")).toBeNull();
+    fireEvent.click(within(dialog).getByRole("button", { name: "Internship" }));
+    fireEvent.click(within(dialog).getByRole("button", { name: "Accounting & audit" }));
+    expect(within(dialog).getByText("audit-newgrad name")).toBeTruthy();
+    expect(within(dialog).queryByText("bank-intern name")).toBeNull();
+  });
 });
 
 describe("watchlists", () => {
