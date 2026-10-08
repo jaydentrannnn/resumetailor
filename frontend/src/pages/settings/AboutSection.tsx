@@ -6,10 +6,11 @@ import {
   installUpdate,
   type UpdateStatus,
 } from "../../api";
-import { Button, Card, Kbd } from "../../components/ui";
+import { Button, Card, Kbd, Meter } from "../../components/ui";
 import { buttonClass } from "../../lib/buttonClass";
 import { SHORTCUTS } from "../../lib/shortcuts";
 import { UPDATE_IN_PROGRESS, updateStatusLine } from "../../lib/updateStatus";
+import { SettingRow } from "./SettingRow";
 
 /** Settings → About: version, updates, diagnostics for support, shortcuts. */
 export function AboutSection() {
@@ -20,7 +21,7 @@ export function AboutSection() {
       .catch(() => setVersion(null));
   }, []);
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <Card title="ResumeTailor" description={version ? `Version ${version}` : undefined}>
         <p className="text-sm text-ink">
           Tailors your resume to each job without changing its look, and never adds anything you did
@@ -28,13 +29,15 @@ export function AboutSection() {
         </p>
       </Card>
       <UpdatesCard />
-      <Card
-        title="Get help"
-        description="The diagnostics file shows what the app did, with your name, contact details, keys and passwords removed. Attach it when you report a problem."
-      >
-        <a className={buttonClass("secondary")} href="/api/diagnostics.zip" download>
-          Download diagnostics
-        </a>
+      <Card title="Get help">
+        <SettingRow
+          label="Diagnostics"
+          description="The diagnostics file shows what the app did, with your name, contact details, keys and passwords removed. Attach it when you report a problem."
+        >
+          <a className={buttonClass("secondary")} href="/api/diagnostics.zip" download>
+            Download diagnostics
+          </a>
+        </SettingRow>
       </Card>
       <Card title="Keyboard shortcuts">
         <ul className="space-y-2 text-sm">
@@ -139,16 +142,7 @@ export function UpdatesCard() {
         {updateStatusLine(status)}
       </p>
       {status.state === "downloading" && status.pct != null && (
-        <div
-          role="progressbar"
-          aria-label="Download progress"
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-valuenow={status.pct}
-          className="mt-3 h-2 overflow-hidden rounded-full bg-line"
-        >
-          <div className="h-full bg-accent" style={{ width: `${status.pct}%` }} />
-        </div>
+        <Meter label="Download progress" value={status.pct} className="mt-4" />
       )}
       {notes && status.state === "available" && (
         <div className="mt-3">

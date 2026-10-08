@@ -1,5 +1,5 @@
 import { useState } from "react";
-import { Card } from "../../components/ui";
+import { Card, DataList } from "../../components/ui";
 import { useRunState } from "../../state/runState";
 
 /** One field belongs to the profile; postings supply role-specific relevance. */
@@ -25,10 +25,10 @@ export function TargetFieldSection() {
       title="Target field"
       description="Saved for this profile and used for every tailoring run."
     >
-      <label className="block space-y-2 text-sm">
+      <label className="grid min-w-0 gap-3 text-sm sm:grid-cols-2 sm:items-center">
         <span className="font-medium text-ink">Which field are you targeting?</span>
         <select
-          className="w-full rounded-md border border-line bg-paper px-3 py-2 text-ink"
+          className="field"
           value={config?.target_field ?? ""}
           disabled={!settingsLoaded || !config || saving}
           onChange={(event) => void choose(event.target.value)}
@@ -48,26 +48,23 @@ export function TargetFieldSection() {
         Each posting determines which of your experiences matter. Every field uses your source facts
         and the same length limits. Your custom writing styles are preserved.
       </p>
-      <dl className="mt-3 space-y-1 text-sm text-ink-muted">
-        {(["rewrite", "expand", "cover"] as const).map((stage) => (
-          <div key={stage} className="flex justify-between gap-3">
-            <dt>
-              {stage === "rewrite"
-                ? "Resume bullets"
-                : stage === "expand"
-                  ? "Experience expansion"
-                  : "Cover letter"}
-            </dt>
-            <dd>
-              {settings[`${stage}_style`] !== null
-                ? "Custom style"
-                : config?.target_field
-                  ? "Field default"
-                  : "Existing default"}
-            </dd>
-          </div>
-        ))}
-      </dl>
+      <DataList
+        className="mt-4"
+        items={(["rewrite", "expand", "cover"] as const).map((stage) => ({
+          label:
+            stage === "rewrite"
+              ? "Resume bullets"
+              : stage === "expand"
+                ? "Experience expansion"
+                : "Cover letter",
+          value:
+            settings[`${stage}_style`] !== null
+              ? "Custom style"
+              : config?.target_field
+                ? "Field default"
+                : "Existing default",
+        }))}
+      />
       {error && (
         <p role="alert" className="mt-2 text-sm text-danger">
           {error}

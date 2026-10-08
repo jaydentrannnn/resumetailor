@@ -1,3 +1,5 @@
+import { SettingRow } from "./SettingRow";
+import { buttonClass } from "../../lib/buttonClass";
 import { useState } from "react";
 import { Link } from "react-router-dom";
 import { testPdf, type CheckResult } from "../../api";
@@ -32,47 +34,54 @@ export function DocumentsSection() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <Card
         title="PDF engine"
         description="Makes the PDF of your resume and measures how much fits on a page."
       >
-        <p className="text-sm text-ink">
-          Using <strong>{ENGINE_NAMES[engine] ?? engine}</strong>.
-          {engine === "soffice" && " LibreOffice is free; install it if the test below fails."}
-        </p>
-        <div className="mt-3 flex flex-wrap items-center gap-3">
-          <Button variant="primary" onClick={run} loading={testing}>
-            Test PDF conversion
-          </Button>
-          {engine === "soffice" && (
-            <a
-              className="text-sm font-medium text-accent underline-offset-2 hover:underline"
-              href="https://www.libreoffice.org/download/download/"
-              target="_blank"
-              rel="noreferrer"
-            >
-              Get LibreOffice
-            </a>
-          )}
-        </div>
+        <SettingRow
+          label="Conversion"
+          description={
+            <>
+              Using <strong>{ENGINE_NAMES[engine] ?? engine}</strong>.
+              {engine === "soffice" && " LibreOffice is free; install it if the test below fails."}
+            </>
+          }
+        >
+          <div className="flex flex-wrap items-center gap-3">
+            <Button variant="secondary" onClick={run} loading={testing}>
+              Test PDF conversion
+            </Button>
+            {engine === "soffice" && (
+              <a
+                className="text-sm font-medium text-accent underline-offset-2 hover:underline"
+                href="https://www.libreoffice.org/download/download/"
+                target="_blank"
+                rel="noreferrer"
+              >
+                Get LibreOffice
+              </a>
+            )}
+          </div>
+        </SettingRow>
         {result && <CheckResultLine result={result} />}
       </Card>
       <Card
         title="Page fit"
         description="ResumeTailor measures your template once so tailored resumes fill the page without spilling over."
       >
-        <p className="text-sm text-ink">
-          {calibrated
-            ? `Tuned for your template (${config?.chars_per_line} characters per line, ${config?.lines_per_page} lines per page).`
-            : "Using estimates. Tune it once from the Template page for exact page fit."}
-        </p>
-        <Link
-          to="/template"
-          className="mt-2 inline-block text-sm font-medium text-accent underline-offset-2 hover:underline"
+        <SettingRow
+          label="Calibration"
+          description={
+            calibrated
+              ? `Tuned for your template (${config?.chars_per_line} characters per line, ${config?.lines_per_page} lines per page).`
+              : "Using estimates. Tune it once from the Template page for exact page fit."
+          }
         >
-          Open Template
-        </Link>
+          <Link to="/template" className={buttonClass("secondary", "sm")}>
+            Open Template
+          </Link>
+        </SettingRow>
       </Card>
     </div>
   );

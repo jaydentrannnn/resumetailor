@@ -9,6 +9,7 @@ import { Button, Card, Modal } from "../../components/ui";
 import { describe } from "../../lib/errors";
 import { useToast } from "../../lib/toast";
 import { pairingCountdown, pairingDate, secondsRemaining } from "./browserPairing";
+import { SettingRow } from "./SettingRow";
 
 const RELEASES_URL = "https://github.com/jaydentrannnn/resumetailor/releases/latest";
 /** Chrome Web Store / Edge Add-ons pages, once published (extension/store/SUBMITTING.md). */
@@ -83,7 +84,7 @@ export function BrowserSection() {
 
   const remaining = secondsRemaining(expiresAt, now);
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <Card
         title="Browser extension"
         description="Capture the job you are viewing, save jobs from LinkedIn and Indeed search results, and see what is already in your queue."
@@ -93,7 +94,7 @@ export function BrowserSection() {
             {STORE_LINKS.map((store) => (
               <a
                 key={store.label}
-                className="rounded-md border border-line px-3 py-2 text-sm"
+                className="rounded-sm border border-line px-3 py-2 text-sm"
                 href={store.url}
                 target="_blank"
                 rel="noreferrer"
@@ -129,28 +130,30 @@ export function BrowserSection() {
           results and complete them when you open them. Everything stays on this computer.
         </p>
       </Card>
-      <Card
-        title="Pair a browser"
-        description="Type the code into the ResumeTailor extension popup."
-      >
-        {code && remaining > 0 ? (
-          <div className="space-y-2">
-            <p className="font-mono text-3xl tracking-widest" aria-label={`Pairing code ${code}`}>
-              {code}
-            </p>
-            <p className="text-sm text-ink-muted" role="timer">
-              Expires in {pairingCountdown(remaining)}
-            </p>
-          </div>
-        ) : code ? (
-          <p className="text-sm text-ink-muted">Code expired.</p>
-        ) : null}
-        <Button loading={creating} onClick={() => void createCode()}>
-          {code ? "New code" : "Pair a browser"}
-        </Button>
-        {code && (
-          <p className="mt-2 text-xs text-ink-muted">A new code replaces the previous one.</p>
-        )}
+      <Card title="Pair a browser">
+        <SettingRow
+          label="Pairing code"
+          description="Type the code into the ResumeTailor extension popup."
+        >
+          {code && remaining > 0 ? (
+            <div className="space-y-2">
+              <p className="font-mono text-3xl tracking-widest" aria-label={`Pairing code ${code}`}>
+                {code}
+              </p>
+              <p className="text-sm text-ink-muted" role="timer">
+                Expires in {pairingCountdown(remaining)}
+              </p>
+            </div>
+          ) : code ? (
+            <p className="text-sm text-ink-muted">Code expired.</p>
+          ) : null}
+          <Button loading={creating} onClick={() => void createCode()}>
+            {code ? "New code" : "Pair a browser"}
+          </Button>
+          {code && (
+            <p className="mt-2 text-xs text-ink-muted">A new code replaces the previous one.</p>
+          )}
+        </SettingRow>
       </Card>
       <Card title="Paired browsers">
         {pairings.length === 0 ? (

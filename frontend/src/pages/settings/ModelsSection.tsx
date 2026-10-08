@@ -1,9 +1,8 @@
+import { KeyRow } from "./KeyRow";
 import { useCallback, useEffect, useId, useState } from "react";
 import {
-  deleteSecret,
   fetchLocalModels,
   fetchSecrets,
-  saveSecret,
   testModel,
   type CheckResult,
   type SecretState,
@@ -13,10 +12,11 @@ import { emitAppEvent } from "../../lib/appEvents";
 import { describe } from "../../lib/errors";
 import { GLOSSARY } from "../../lib/glossary";
 import { profileDefaultModel } from "../../lib/modelLabel";
-import { KEY_HELP, KEY_LABELS, PROVIDERS, providerInfo } from "../../lib/providers";
+import { PROVIDERS, providerInfo } from "../../lib/providers";
 import { useToast } from "../../lib/toast";
 import { useRunState } from "../../state/runState";
 import { CheckResultLine } from "./CheckResultLine";
+import { SettingRow } from "./SettingRow";
 
 /** Settings → Models: which AI to use, its keys, and a live connection test. */
 export function ModelsSection() {
@@ -70,48 +70,51 @@ export function ModelsSection() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <Card
         title="AI model"
         description="Used for every tailoring run and for answering application questions."
       >
-        <fieldset disabled={!settingsLoaded} className="grid gap-3 sm:grid-cols-2">
-          <legend className="sr-only">Provider</legend>
-          {options.map((id) => {
-            const info = providerInfo(id);
-            const checked = settings.model === id;
-            return (
-              <label
-                key={id}
-                className={`flex cursor-pointer gap-3 rounded-lg border p-3 ${
-                  checked
-                    ? "border-accent bg-accent-soft/40"
-                    : "border-line hover:border-line-hover"
-                }`}
-              >
-                <input
-                  type="radio"
-                  name="provider"
-                  className="mt-1"
-                  checked={checked}
-                  onChange={() => setSettings({ ...settings, model: id, model_name: null })}
-                />
-                <span>
-                  <span className="block font-semibold text-ink">{info?.name ?? id}</span>
-                  <span className="block text-sm text-ink-muted">
-                    {info?.summary ?? "Advanced routing profile."}
+        <SettingRow
+          label="Provider"
+          description="Choose where the model runs. Local providers need no API key."
+        >
+          <fieldset disabled={!settingsLoaded} className="divide-y divide-line">
+            <legend className="sr-only">Provider</legend>
+            {options.map((id) => {
+              const info = providerInfo(id);
+              const checked = settings.model === id;
+              return (
+                <label
+                  key={id}
+                  className={`flex cursor-pointer gap-3 py-3 first:pt-0 ${
+                    checked ? "text-accent" : "text-ink-muted"
+                  }`}
+                >
+                  <input
+                    type="radio"
+                    name="provider"
+                    className="mt-1"
+                    checked={checked}
+                    onChange={() => setSettings({ ...settings, model: id, model_name: null })}
+                  />
+                  <span>
+                    <span className="block font-semibold text-ink">{info?.name ?? id}</span>
+                    <span className="block text-sm text-ink-muted">
+                      {info?.summary ?? "Advanced routing profile."}
+                    </span>
                   </span>
-                </span>
-              </label>
-            );
-          })}
-        </fieldset>
+                </label>
+              );
+            })}
+          </fieldset>
+        </SettingRow>
 
-        <div className="mt-4 grid gap-4 sm:grid-cols-2">
+        <div className="mt-4 grid gap-4 border-t border-line pt-4 sm:grid-cols-2">
           <label className="block text-sm">
             <span className="rt-model-label font-medium text-ink">Model</span>
             <input
-              className="field mt-1"
+              className="field mt-1 font-mono"
               list={local?.models.length ? modelListId : undefined}
               value={settings.model_name ?? ""}
               placeholder={profileDefaultModel(settings, config)}
@@ -164,34 +167,46 @@ export function ModelsSection() {
           </label>
         </div>
 
-        <div className="mt-4 flex flex-wrap items-center gap-3">
-          <Button variant="primary" loading={testing} onClick={runTest}>
-            Test connection
-          </Button>
-          {provider?.link && (
-            <a
-              className="text-sm font-medium text-accent underline-offset-2 hover:underline"
-              href={provider.link.href}
-              target="_blank"
-              rel="noreferrer"
-            >
-              {provider.link.label}
-            </a>
-          )}
-          {!provider?.local && (
-            <span className="text-xs text-ink-muted">
-              {settings.model === "ollama-cloud"
-                ? "The test sends one tiny request (counts toward your Ollama plan)."
-                : "The test sends one tiny request (a fraction of a cent)."}
-            </span>
-          )}
+        <div className="mt-4 border-t border-line pt-4">
+          <SettingRow
+            label="Connection"
+            description={
+              result ? (
+                <CheckResultLine result={result} />
+              ) : (
+                "Send a small request to check the selected model."
+              )
+            }
+          >
+            <div className="flex flex-wrap items-center gap-3">
+              <Button variant="secondary" loading={testing} onClick={runTest}>
+                Test connection
+              </Button>
+              {provider?.link && (
+                <a
+                  className="text-sm font-medium text-accent underline-offset-2 hover:underline"
+                  href={provider.link.href}
+                  target="_blank"
+                  rel="noreferrer"
+                >
+                  {provider.link.label}
+                </a>
+              )}
+              {!provider?.local && (
+                <span className="text-xs text-ink-muted">
+                  {settings.model === "ollama-cloud"
+                    ? "The test sends one tiny request (counts toward your Ollama plan)."
+                    : "The test sends one tiny request (a fraction of a cent)."}
+                </span>
+              )}
+            </div>
+          </SettingRow>
         </div>
         {needsKey && (
-          <p className="mt-3 rounded-md bg-warn-soft px-3 py-2 text-sm text-warn">
+          <p className="mt-3 rounded-sm bg-attn-soft px-3 py-2 text-sm text-attn">
             {provider?.name} needs an API key. Add it below.
           </p>
         )}
-        {result && <CheckResultLine result={result} />}
       </Card>
 
       <Card
@@ -202,7 +217,7 @@ export function ModelsSection() {
             : "Saved encrypted in your data folder. Keys set in a .env file take priority."
         }
       >
-        <ul className="space-y-4">
+        <ul className="divide-y divide-line">
           {secrets.map((secret) => (
             <KeyRow
               key={secret.name}
@@ -214,102 +229,5 @@ export function ModelsSection() {
         </ul>
       </Card>
     </div>
-  );
-}
-
-function KeyRow({
-  secret,
-  highlighted,
-  onChange,
-}: {
-  secret: SecretState;
-  highlighted: boolean;
-  onChange: () => void;
-}) {
-  const toast = useToast();
-  const [value, setValue] = useState("");
-  const [busy, setBusy] = useState(false);
-  const inputId = useId();
-  const status = secret.set ? (secret.source === "env" ? "Set in .env" : "Saved") : "Not set";
-
-  async function save() {
-    setBusy(true);
-    try {
-      await saveSecret(secret.name, value.trim());
-      setValue("");
-      toast.success("Key saved");
-      emitAppEvent("rt:setup-changed");
-      onChange();
-    } catch (err) {
-      const d = describe(err);
-      toast.error("Could not save the key", d.detail);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  async function remove() {
-    setBusy(true);
-    try {
-      await deleteSecret(secret.name);
-      toast.success("Key removed");
-      emitAppEvent("rt:setup-changed");
-      onChange();
-    } catch (err) {
-      toast.error("Could not remove the key", describe(err).detail);
-    } finally {
-      setBusy(false);
-    }
-  }
-
-  const help = KEY_HELP[secret.name];
-
-  return (
-    <li className={highlighted ? "rounded-lg border border-accent/40 p-3" : "px-3"}>
-      <div className="flex flex-wrap items-center justify-between gap-2">
-        <div>
-          <label htmlFor={inputId} className="text-sm font-medium text-ink">
-            {KEY_LABELS[secret.name] ?? secret.name}
-          </label>
-          {help && (
-            <a
-              href={help.href}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="ml-2 text-xs text-accent underline hover:text-accent-hover"
-            >
-              {help.label}
-            </a>
-          )}
-        </div>
-        <span
-          className={`rounded-full px-2 py-0.5 text-xs ${
-            secret.set ? "bg-success-soft text-success" : "bg-paper text-ink-muted"
-          }`}
-        >
-          {status}
-        </span>
-      </div>
-      <div className="mt-2 flex flex-wrap gap-2">
-        <input
-          id={inputId}
-          type="password"
-          autoComplete="off"
-          spellCheck={false}
-          className="field min-w-48 flex-1"
-          placeholder={secret.set ? "Paste a new key to replace it" : "Paste your key"}
-          value={value}
-          onChange={(e) => setValue(e.target.value)}
-        />
-        <Button onClick={save} loading={busy} disabled={!value.trim()}>
-          Save
-        </Button>
-        {secret.source === "saved" && (
-          <Button variant="ghost" onClick={remove} disabled={busy}>
-            Remove
-          </Button>
-        )}
-      </div>
-    </li>
   );
 }

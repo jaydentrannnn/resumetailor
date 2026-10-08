@@ -16,6 +16,7 @@ import { describe } from "../../lib/errors";
 import { formatBytes } from "../../lib/format";
 import { useToast } from "../../lib/toast";
 import { useWorkspaceState } from "../../state/workspaceState";
+import { SettingRow } from "./SettingRow";
 
 const MAX_IMPORT_BYTES = 2 * 1024 * 1024 * 1024;
 
@@ -78,7 +79,7 @@ export function DataSection() {
   }
 
   return (
-    <div className="space-y-6">
+    <div className="space-y-4">
       <Card title="Where your data lives" description="Everything stays on this computer.">
         {info ? (
           <dl className="space-y-2 text-sm">
@@ -119,63 +120,76 @@ export function DataSection() {
         )}
       </Card>
 
-      <Card
-        title="Back up or move to another computer"
-        description="Export saves this profile as one .zip file. Import adds a zip as a new profile and never overwrites an existing one (up to 2 GB)."
-      >
-        <label className="flex items-center gap-2 text-sm">
-          <input
-            type="checkbox"
-            checked={includeOutput}
-            onChange={(e) => setIncludeOutput(e.target.checked)}
-          />
-          Include generated resumes and cover letters
-        </label>
-        <p className="mt-2 text-xs text-ink-muted">
-          API keys and passwords are never included. Enter them again on the new computer.
-        </p>
-        <div className="mt-3 flex flex-wrap gap-2">
-          <a className={buttonClass("primary")} href={exportDataUrl(includeOutput)} download>
-            Export this profile
-          </a>
-          <Button loading={importing} onClick={() => fileInput.current?.click()}>
-            Import from a .zip
-          </Button>
-          <input
-            ref={fileInput}
-            type="file"
-            accept=".zip,application/zip"
-            className="hidden"
-            aria-label="Choose an export .zip to import"
-            onChange={(e) => {
-              const file = e.target.files?.[0];
-              if (file) void onImport(file);
-            }}
-          />
-        </div>
+      <Card title="Back up or move to another computer">
+        <SettingRow
+          label="Export and import"
+          description="Export saves this profile as one .zip file. Import adds a zip as a new profile and never overwrites an existing one (up to 2 GB)."
+        >
+          <div>
+            <label className="flex items-center gap-2 text-sm">
+              <input
+                type="checkbox"
+                checked={includeOutput}
+                onChange={(e) => setIncludeOutput(e.target.checked)}
+              />
+              Include generated resumes and cover letters
+            </label>
+            <p className="mt-2 text-xs text-ink-muted">
+              API keys and passwords are never included. Enter them again on the new computer.
+            </p>
+            <div className="mt-3 flex flex-wrap gap-2">
+              <a className={buttonClass("primary")} href={exportDataUrl(includeOutput)} download>
+                Export this profile
+              </a>
+              <Button loading={importing} onClick={() => fileInput.current?.click()}>
+                Import from a .zip
+              </Button>
+              <input
+                ref={fileInput}
+                type="file"
+                accept=".zip,application/zip"
+                className="hidden"
+                aria-label="Choose an export .zip to import"
+                onChange={(e) => {
+                  const file = e.target.files?.[0];
+                  if (file) void onImport(file);
+                }}
+              />
+            </div>
+          </div>
+        </SettingRow>
       </Card>
 
-      <Card
-        title="Saved AI results"
-        description="Results are reused when you tailor for the same posting again, which saves time and money. Clearing them is safe."
-      >
-        <div className="flex flex-wrap items-center gap-3">
-          <span className="text-sm text-ink">
-            {cache ? `${cache.files} saved results · ${formatBytes(cache.bytes)}` : "…"}
-          </span>
+      <Card title="Saved AI results">
+        <SettingRow
+          label="Cache"
+          description={
+            <>
+              <p>
+                Results are reused when you tailor for the same posting again, which saves time and
+                money. Clearing them is safe.
+              </p>
+              <p className="mt-2 font-mono">
+                {cache ? `${cache.files} saved results · ${formatBytes(cache.bytes)}` : "…"}
+              </p>
+            </>
+          }
+        >
           <Button onClick={onClearCache} loading={clearing} disabled={!cache?.files}>
             Clear cache
           </Button>
-        </div>
+        </SettingRow>
       </Card>
 
-      <Card
-        title="Delete all data"
-        description="Removes this profile's resume, templates, applications and files."
-      >
-        <Button variant="danger" onClick={() => setResetOpen(true)}>
-          Delete all data…
-        </Button>
+      <Card title="Delete all data">
+        <SettingRow
+          label="This profile"
+          description="Removes this profile's resume, templates, applications and files."
+        >
+          <Button variant="danger" onClick={() => setResetOpen(true)}>
+            Delete all data…
+          </Button>
+        </SettingRow>
       </Card>
       {resetOpen && <ResetDialog onClose={() => setResetOpen(false)} onDone={load} />}
     </div>
