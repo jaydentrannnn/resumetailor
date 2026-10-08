@@ -553,6 +553,213 @@
         "provider": "usajobs",
         "query": "analyst, program specialist"
       }
+    },
+    {
+      "id": "adzuna-finance-intern",
+      "name": "Adzuna search: finance internships",
+      "description": "Keyword search for banking, finance and accounting internships. Needs free Adzuna API keys (connect them once on this page).",
+      "fields": [
+        "finance"
+      ],
+      "levels": [
+        "intern"
+      ],
+      "tracks": [
+        "banking",
+        "accounting",
+        "corp_finance"
+      ],
+      "version": "2026.10.08",
+      "template": {
+        "id": "adzuna-finance-intern",
+        "kind": "job_search",
+        "provider": "adzuna",
+        "query": "investment banking analyst intern, financial analyst intern, audit associate intern, m&a analyst intern, finance analyst intern",
+        "include": [
+          "intern",
+          "summer analyst",
+          "summer associate"
+        ],
+        "exclude": [
+          "senior",
+          "sr",
+          "principal",
+          "director",
+          "vice president",
+          "vp",
+          "managing director",
+          "head of",
+          "chief"
+        ]
+      }
+    },
+    {
+      "id": "adzuna-finance-newgrad",
+      "name": "Adzuna search: finance entry level",
+      "description": "Keyword search for entry-level banking, finance and accounting roles. Entry titles such as Analyst carry no level word, so only senior titles are skipped. Needs free Adzuna API keys (connect them once on this page).",
+      "fields": [
+        "finance"
+      ],
+      "levels": [
+        "new_grad"
+      ],
+      "tracks": [
+        "banking",
+        "accounting",
+        "corp_finance"
+      ],
+      "version": "2026.10.08",
+      "template": {
+        "id": "adzuna-finance-newgrad",
+        "kind": "job_search",
+        "provider": "adzuna",
+        "query": "entry level investment banking analyst, entry level financial analyst, entry level audit associate, entry level m&a analyst, entry level finance analyst",
+        "include": [],
+        "exclude": [
+          "senior",
+          "sr",
+          "principal",
+          "director",
+          "vice president",
+          "vp",
+          "managing director",
+          "head of",
+          "chief"
+        ]
+      }
+    },
+    {
+      "id": "adzuna-consulting-intern",
+      "name": "Adzuna search: consulting internships",
+      "description": "Keyword search for strategy, technology and business-analyst consulting internships. Needs free Adzuna API keys (connect them once on this page).",
+      "fields": [
+        "consulting"
+      ],
+      "levels": [
+        "intern"
+      ],
+      "tracks": [
+        "strategy",
+        "operations"
+      ],
+      "version": "2026.10.08",
+      "template": {
+        "id": "adzuna-consulting-intern",
+        "kind": "job_search",
+        "provider": "adzuna",
+        "query": "strategy consultant intern, technology consultant intern, business analyst intern, management consulting analyst intern, digital consultant intern",
+        "include": [
+          "intern",
+          "summer analyst",
+          "summer associate"
+        ],
+        "exclude": [
+          "senior",
+          "sr",
+          "principal",
+          "director",
+          "vice president",
+          "vp",
+          "managing director",
+          "head of",
+          "chief"
+        ]
+      }
+    },
+    {
+      "id": "adzuna-consulting-newgrad",
+      "name": "Adzuna search: consulting entry level",
+      "description": "Keyword search for entry-level consulting and business-analyst roles. Needs free Adzuna API keys (connect them once on this page).",
+      "fields": [
+        "consulting"
+      ],
+      "levels": [
+        "new_grad"
+      ],
+      "tracks": [
+        "strategy",
+        "operations"
+      ],
+      "version": "2026.10.08",
+      "template": {
+        "id": "adzuna-consulting-newgrad",
+        "kind": "job_search",
+        "provider": "adzuna",
+        "query": "entry level strategy consultant, entry level technology consultant, entry level business analyst, entry level management consulting analyst, entry level digital consultant",
+        "include": [],
+        "exclude": [
+          "senior",
+          "sr",
+          "principal",
+          "director",
+          "vice president",
+          "vp",
+          "managing director",
+          "head of",
+          "chief"
+        ]
+      }
+    },
+    {
+      "id": "usajobs-pathways-internships",
+      "name": "USAJobs Pathways: student internships",
+      "description": "Federal Pathways internships for current students (student trainee, intern). Needs a free USAJobs API key and your email.",
+      "fields": [
+        "government"
+      ],
+      "levels": [
+        "intern"
+      ],
+      "tracks": [],
+      "version": "2026.10.08",
+      "template": {
+        "id": "usajobs-pathways-internships",
+        "kind": "job_search",
+        "provider": "usajobs",
+        "query": "student trainee, pathways intern, student intern",
+        "exclude": [
+          "senior",
+          "sr",
+          "principal",
+          "director",
+          "vice president",
+          "vp",
+          "managing director",
+          "head of",
+          "chief"
+        ]
+      }
+    },
+    {
+      "id": "usajobs-pathways-recent-grads",
+      "name": "USAJobs Pathways: recent graduates",
+      "description": "Federal Pathways Recent Graduates program (within two years of graduating). Needs a free USAJobs API key and your email.",
+      "fields": [
+        "government"
+      ],
+      "levels": [
+        "new_grad",
+        "program"
+      ],
+      "tracks": [],
+      "version": "2026.10.08",
+      "template": {
+        "id": "usajobs-pathways-recent-grads",
+        "kind": "job_search",
+        "provider": "usajobs",
+        "query": "recent graduate, pathways recent graduate",
+        "exclude": [
+          "senior",
+          "sr",
+          "principal",
+          "director",
+          "vice president",
+          "vp",
+          "managing director",
+          "head of",
+          "chief"
+        ]
+      }
     }
   ]
 }

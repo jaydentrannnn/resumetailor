@@ -121,6 +121,19 @@ describe("onboarding helpers", () => {
     );
   });
 
+  it("never preselects keyword searches, which need an API key", () => {
+    const search: CatalogEntry = {
+      id: "adzuna-finance-intern",
+      name: "search",
+      description: "",
+      fields: ["finance"],
+      version: "1",
+      template: { id: "adzuna-finance-intern", kind: "job_search", provider: "adzuna", query: "x", enabled: true },
+    } as CatalogEntry;
+    const catalog = { schema_version: 1, origin: "bundled", entries: [search] } as SourceCatalog;
+    expect(suggestedEntries(catalog, ["finance"])).toEqual([]);
+  });
+
   it("summarises the resume and flags gaps", () => {
     const resume: MasterResume = {
       contact: { name: "Your Name", email: "you@example.com" },

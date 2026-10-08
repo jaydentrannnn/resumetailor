@@ -8,6 +8,7 @@ import {
   type SearchProvider,
 } from "../../lib/sources";
 import { ChipInput } from "./ChipInput";
+import { SearchPresetPicker } from "./SearchPresetPicker";
 /**
  * Search phrases (at most five). Each phrase is one search; the list is stored
  * comma-joined in `SourceConfig.query`.
@@ -97,6 +98,12 @@ export function JobSearchEditor({
           )}
         </p>
       )}
+
+      <SearchPresetPicker
+        onApply={(preset) =>
+          onChange({ ...source, query: preset.query, include: preset.include, exclude: preset.exclude })
+        }
+      />
 
       <PhraseChips
         query={source.query ?? ""}

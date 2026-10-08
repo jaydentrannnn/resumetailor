@@ -30,6 +30,29 @@ export async function fetchSourceSections(url: string): Promise<string[]> {
   ).sections;
 }
 
+// --- Keyword-search presets (position x level x industry) -------------------------------
+
+export type PresetChoice = { id: string; label: string };
+
+export type SearchPresetChoices = {
+  positions: PresetChoice[];
+  levels: PresetChoice[];
+  industries: (PresetChoice & { positions: string[] })[];
+};
+
+/** What a preset fills into a keyword search. */
+export type SearchPresetBuild = { query: string; include: string[]; exclude: string[] };
+
+export function fetchSearchPresets(): Promise<SearchPresetChoices> {
+  return request<SearchPresetChoices>("/api/apply/search-presets");
+}
+
+export function buildSearchPreset(positions: string[], level: string): Promise<SearchPresetBuild> {
+  const params = new URLSearchParams({ level });
+  for (const position of positions) params.append("positions", position);
+  return request<SearchPresetBuild>(`/api/apply/search-presets/build?${params.toString()}`);
+}
+
 // --- Source catalog, inspect and test (user-managed sources) ----------------------------
 
 /** Field tags a catalog entry can carry; onboarding's field picker uses the same set. */

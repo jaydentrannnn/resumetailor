@@ -79,9 +79,13 @@ export function sourceFieldsFor(field: OnboardingField): SourceField[] {
   return field ? [...FIELD_SOURCE_FIELDS[field]] : [];
 }
 
-/** Catalog entries a set of source fields preselects, in catalog order. */
+/**
+ * Catalog entries a set of source fields preselects, in catalog order. Keyword searches are
+ * left out: they return nothing until the student connects an API key, so onboarding does
+ * not add them silently (the Sources page offers them under "Recommended").
+ */
 export function suggestedEntries(catalog: SourceCatalog, fields: SourceField[]): CatalogEntry[] {
-  return entriesForFields(catalog, fields);
+  return entriesForFields(catalog, fields).filter((entry) => entry.template.kind !== "job_search");
 }
 
 /**

@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
-import { cleanup, fireEvent, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
 import { afterEach, describe, expect, it, vi } from "vitest";
+import * as api from "../../api";
 import type { SourceConfig } from "../../api";
 import { JobSearchEditor } from "./SourceEditors";
 
@@ -49,6 +50,49 @@ describe("JobSearchEditor", () => {
       ...defaultSource,
       query: "python developer, golang engineer",
     });
+  });
+
+  it("fills phrases and title filters from a preset", async () => {
+    vi.spyOn(api, "fetchSearchPresets").mockResolvedValue({
+      positions: [
+        { id: "fpa", label: "FP&A & treasury" },
+        { id: "markets", label: "Sales, trading & research" },
+      ],
+      levels: [
+        { id: "intern", label: "Internship" },
+        { id: "new_grad", label: "New grad / entry level" },
+      ],
+      industries: [{ id: "corporate-finance", label: "Corporate finance", positions: ["fpa"] }],
+    });
+    const build = vi.spyOn(api, "buildSearchPreset").mockResolvedValue({
+      query: "fp&a analyst intern",
+      include: ["intern"],
+      exclude: ["senior"],
+    });
+    const onChange = vi.fn();
+    render(
+      <MemoryRouter>
+        <JobSearchEditor source={defaultSource} onChange={onChange} />
+      </MemoryRouter>,
+    );
+    const fill = await screen.findByRole("button", { name: "Fill search" });
+    expect((fill as HTMLButtonElement).disabled).toBe(true);
+    fireEvent.change(screen.getByLabelText("Preset industry"), {
+      target: { value: "corporate-finance" },
+    });
+    expect(screen.getByRole("button", { name: "FP&A & treasury" }).getAttribute("aria-pressed")).toBe(
+      "true",
+    );
+    fireEvent.click(fill);
+    await waitFor(() =>
+      expect(onChange).toHaveBeenCalledWith({
+        ...defaultSource,
+        query: "fp&a analyst intern",
+        include: ["intern"],
+        exclude: ["senior"],
+      }),
+    );
+    expect(build).toHaveBeenCalledWith(["fpa"], "intern");
   });
 
   it("hides the country for USAJobs", () => {
