@@ -70,10 +70,20 @@ export function ApplicationReview({
         outcome,
       });
   });
+  const groups = [
+    { id: "all", label: "All recorded fields", count: entries.length },
+    ...(Object.keys(groupLabels) as ReviewGroup[]).map((group) => ({
+      id: group,
+      label: groupLabels[group],
+      count: entries.filter((entry) => reviewGroup(entry.field, entry.outcome) === group).length,
+    })),
+  ].filter((group) => group.count > 0);
   const attentionCount = entries.filter(
     (entry) => reviewGroup(entry.field, entry.outcome) === "attention",
   ).length;
-  const activeFilter = filter ?? (attentionCount ? "attention" : "all");
+  const chosen = filter ?? (attentionCount ? "attention" : "all");
+  // A group empties when its last field is corrected: fall back to every field.
+  const activeFilter = groups.some((group) => group.id === chosen) ? chosen : "all";
   const visible =
     activeFilter === "all"
       ? entries
@@ -126,14 +136,6 @@ export function ApplicationReview({
       : fill.ready_to_submit
         ? "Ready for review"
         : "Review needed";
-  const groups = [
-    { id: "all", label: "All recorded fields", count: entries.length },
-    ...(Object.keys(groupLabels) as ReviewGroup[]).map((group) => ({
-      id: group,
-      label: groupLabels[group],
-      count: entries.filter((entry) => reviewGroup(entry.field, entry.outcome) === group).length,
-    })),
-  ].filter((group) => group.count > 0);
   return (
     <Tile
       title="Observed fill result"
@@ -173,6 +175,16 @@ export function ApplicationReview({
             value={activeFilter}
             onChange={(id) => {
               setFilter(id as ReviewGroup | "all");
+              setPage(0);
+            }}
+          />
+          <Pagination
+            page={page}
+            size={size}
+            total={visible.length}
+            onPage={setPage}
+            onSize={(value) => {
+              setSize(value);
               setPage(0);
             }}
           />

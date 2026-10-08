@@ -51,6 +51,10 @@ export function Segmented({
     onChange(next.id);
     (event.currentTarget.querySelector(`[data-seg="${next.id}"]`) as HTMLElement | null)?.focus();
   }
+  // When no item matches `value`, the first enabled one keeps the group in the Tab order.
+  const stop = items.some((item) => item.id === value && !item.disabled)
+    ? value
+    : items.find((item) => !item.disabled)?.id;
   return (
     <div
       role="radiogroup"
@@ -68,7 +72,7 @@ export function Segmented({
             data-seg={item.id}
             aria-checked={on}
             disabled={item.disabled}
-            tabIndex={on ? 0 : -1}
+            tabIndex={item.id === stop ? 0 : -1}
             className={`${SEGMENT_BASE} ${on ? SEGMENT_ON : SEGMENT_OFF}`}
             onClick={() => onChange(item.id)}
           >

@@ -63,6 +63,8 @@ export function Tabs({
     (event.currentTarget.querySelector(`[data-tab="${next.id}"]`) as HTMLElement | null)?.focus();
   }
   const segmented = variant === "segmented";
+  // When no tab matches `value`, the first one keeps the tablist in the Tab order.
+  const stop = items.some((item) => item.id === value) ? value : items[0]?.id;
   const track = segmented
     ? `${SEGMENT_TRACK} ${vertical ? "flex-col" : ""}`
     : vertical
@@ -91,7 +93,7 @@ export function Tabs({
             role="tab"
             data-tab={item.id}
             aria-selected={on}
-            tabIndex={on ? 0 : -1}
+            tabIndex={item.id === stop ? 0 : -1}
             className={look}
             onClick={() => onChange(item.id)}
           >
