@@ -1,4 +1,4 @@
-import { type KeyboardEvent } from "react";
+import { type KeyboardEvent, useEffect, useRef } from "react";
 import { SEGMENT_BASE, SEGMENT_OFF, SEGMENT_ON, SEGMENT_TRACK } from "./ui/Segmented";
 
 type TabItem = { id: string; label: string; count?: number };
@@ -9,7 +9,8 @@ type TabItem = { id: string; label: string; count?: number };
  * a 2px accent underline. `variant="segmented"` is a contained control with the green
  * `selected` look, for switching a panel's view. `orientation="vertical"` stacks the tabs
  * as a side rail (Up/Down move). The roles and keyboard contract are identical in every
- * combination.
+ * combination. A horizontal strip that overflows narrow screens scrolls the selected tab
+ * into view on mount and whenever the selection changes.
  */
 export function Tabs({
   items,
@@ -27,6 +28,18 @@ export function Tabs({
   orientation?: "horizontal" | "vertical";
 }) {
   const vertical = orientation === "vertical";
+  const list = useRef<HTMLDivElement>(null);
+  useEffect(() => {
+    // Scroll only the strip, never the page (scrollIntoView would also move the window
+    // when the tablist sits below the fold). jsdom reports zero widths, so it is a no-op.
+    const strip = list.current;
+    const tab = strip?.querySelector<HTMLElement>('[role="tab"][aria-selected="true"]');
+    if (!strip || !tab || strip.scrollWidth <= strip.clientWidth) return;
+    const box = strip.getBoundingClientRect();
+    const rect = tab.getBoundingClientRect();
+    if (rect.left < box.left) strip.scrollLeft -= box.left - rect.left;
+    else if (rect.right > box.right) strip.scrollLeft += rect.right - box.right;
+  }, [value]);
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
     const current = Math.max(
       0,
@@ -57,6 +70,7 @@ export function Tabs({
       : "flex gap-1 overflow-x-auto border-b border-line [scrollbar-width:none]";
   return (
     <div
+      ref={list}
       role="tablist"
       aria-label={label}
       aria-orientation={vertical ? "vertical" : undefined}

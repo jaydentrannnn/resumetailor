@@ -101,6 +101,7 @@ export function ProgressPanel() {
               failed={steps.failed}
               label="Run steps"
               orientation="vertical"
+              divided
             />
           </div>
           {error && (
