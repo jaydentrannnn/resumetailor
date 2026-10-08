@@ -6,6 +6,7 @@ import {
   type ExtensionPairing,
 } from "../../api";
 import { Button, Card, Modal } from "../../components/ui";
+import { buttonClass } from "../../lib/buttonClass";
 import { describe } from "../../lib/errors";
 import { useToast } from "../../lib/toast";
 import { pairingCountdown, pairingDate, secondsRemaining } from "./browserPairing";
@@ -94,7 +95,7 @@ export function BrowserSection() {
             {STORE_LINKS.map((store) => (
               <a
                 key={store.label}
-                className="rounded-sm border border-line px-3 py-2 text-sm"
+                className={buttonClass("secondary")}
                 href={store.url}
                 target="_blank"
                 rel="noreferrer"

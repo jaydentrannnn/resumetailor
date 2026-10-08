@@ -53,13 +53,9 @@ export function CustomAnswers() {
           <div key={text} className="mt-2 text-sm">
             <div className="flex items-baseline justify-between gap-2">
               <label htmlFor={`ca-${text}`}>{text}</label>
-              <button
-                type="button"
-                className="text-xs text-ink-muted underline hover:text-danger"
-                onClick={() => setAnswers(rest)}
-              >
+              <Button variant="ghost" size="sm" onClick={() => setAnswers(rest)}>
                 Remove
-              </button>
+              </Button>
             </div>
             <textarea
               id={`ca-${text}`}

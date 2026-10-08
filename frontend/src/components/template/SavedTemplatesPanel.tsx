@@ -5,7 +5,7 @@ import {
   GalleryCard,
   GalleryRow,
   TemplateThumb,
-  useButtonClass,
+  selectButtonClass,
 } from "./TemplateGallery";
 import { useConfirm } from "../../state/confirmState";
 import { useTemplateState } from "../../state/templateState";
@@ -135,7 +135,7 @@ export function SavedTemplatesPanel() {
                       type="button"
                       disabled={busy || entry.is_active}
                       onClick={() => void activateLibraryEntry(entry.id)}
-                      className={useButtonClass(entry.is_active)}
+                      className={selectButtonClass(entry.is_active)}
                     >
                       {entry.is_active ? "In use" : "Use"}
                     </button>

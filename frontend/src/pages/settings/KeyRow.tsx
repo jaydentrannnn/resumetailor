@@ -53,37 +53,28 @@ export function KeyRow({
   const help = KEY_HELP[secret.name];
 
   return (
-    <li className="grid min-w-0 gap-3 py-4 first:pt-0 last:pb-0 sm:grid-cols-[minmax(0,1fr)_minmax(180px,0.9fr)] sm:gap-6">
-      <div className="min-w-0 space-y-2">
-        <div>
-          <label
-            htmlFor={inputId}
-            className={`text-sm font-medium ${highlighted ? "text-accent" : "text-ink"}`}
-          >
-            {KEY_LABELS[secret.name] ?? secret.name}
-          </label>
-          {help && (
-            <a
-              href={help.href}
-              target="_blank"
-              rel="noopener noreferrer"
-              className="rt-link ml-2 text-xs"
-            >
-              {help.label}
-            </a>
-          )}
-        </div>
-        <div>
-          <StatusChip tone={secret.set ? "done" : "muted"}>{status}</StatusChip>
-        </div>
+    <li className="min-w-0 space-y-2 py-4 first:pt-0 last:pb-0">
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-1">
+        <label
+          htmlFor={inputId}
+          className={`text-sm font-medium ${highlighted ? "text-accent" : "text-ink"}`}
+        >
+          {KEY_LABELS[secret.name] ?? secret.name}
+        </label>
+        {help && (
+          <a href={help.href} target="_blank" rel="noopener noreferrer" className="rt-link text-xs">
+            {help.label}
+          </a>
+        )}
+        <StatusChip tone={secret.set ? "done" : "muted"}>{status}</StatusChip>
       </div>
-      <div className="flex min-w-0 flex-wrap gap-2">
+      <div className="flex min-w-0 flex-wrap items-center gap-2 sm:flex-nowrap">
         <input
           id={inputId}
           type="password"
           autoComplete="off"
           spellCheck={false}
-          className="field min-w-0 flex-1 basis-full"
+          className="field min-w-0 flex-1 basis-full sm:basis-0"
           placeholder={secret.set ? "Paste a new key to replace it" : "Paste your key"}
           value={value}
           onChange={(e) => setValue(e.target.value)}

@@ -82,7 +82,7 @@ export function DataSection() {
     <div className="space-y-4">
       <Card title="Where your data lives" description="Everything stays on this computer.">
         {info ? (
-          <dl className="space-y-2 text-sm">
+          <dl className="space-y-3 text-sm">
             {[
               ["Profile data", info.data_dir, info.data_bytes],
               ["Generated files", info.output_dir, info.output_bytes],
@@ -90,27 +90,29 @@ export function DataSection() {
             ].map(([label, path, bytes]) => (
               <div
                 key={label as string}
-                className="flex flex-col gap-1 sm:flex-row sm:items-center sm:gap-2"
+                className="grid grid-cols-[minmax(0,1fr)_auto] items-center gap-x-3 gap-y-1 sm:grid-cols-[8rem_minmax(0,1fr)_5.5rem_auto]"
               >
-                <dt className="shrink-0 text-ink-muted sm:w-32">
+                <dt className="col-span-2 text-ink-muted sm:col-span-1">
                   {label}
                   {bytes !== null && (
-                    <span className="ml-2 text-xs sm:hidden">{formatBytes(bytes as number)}</span>
+                    <span className="ml-2 font-mono text-xs sm:hidden">
+                      {formatBytes(bytes as number)}
+                    </span>
                   )}
                 </dt>
-                <dd className="flex min-w-0 flex-1 items-center gap-2">
+                <dd className="m-0 min-w-0">
                   <code
-                    className="min-w-0 flex-1 truncate font-mono text-xs text-ink"
+                    className="block truncate font-mono text-xs text-ink"
                     title={path as string}
                   >
                     {path}
                   </code>
+                </dd>
+                <dd className="m-0 hidden text-right font-mono text-xs tabular-nums text-ink-muted sm:block">
+                  {bytes !== null ? formatBytes(bytes as number) : null}
+                </dd>
+                <dd className="m-0 justify-self-end">
                   <CopyButton label="Copy path" text={path as string} />
-                  {bytes !== null && (
-                    <span className="hidden whitespace-nowrap text-xs text-ink-muted sm:inline">
-                      {formatBytes(bytes as number)}
-                    </span>
-                  )}
                 </dd>
               </div>
             ))}
@@ -123,46 +125,51 @@ export function DataSection() {
       <Card title="Back up or move to another computer">
         <SettingRow
           label="Export and import"
-          description="Export saves this profile as one .zip file. Import adds a zip as a new profile and never overwrites an existing one (up to 2 GB)."
+          layout="action"
+          description={
+            <>
+              <p>
+                Export saves this profile as one .zip file. Import adds a zip as a new profile and
+                never overwrites an existing one (up to 2 GB).
+              </p>
+              <label className="mt-3 flex items-center gap-2 text-sm text-ink">
+                <input
+                  type="checkbox"
+                  checked={includeOutput}
+                  onChange={(e) => setIncludeOutput(e.target.checked)}
+                />
+                Include generated resumes and cover letters
+              </label>
+              <p className="mt-2">
+                API keys and passwords are never included. Enter them again on the new computer.
+              </p>
+            </>
+          }
         >
-          <div>
-            <label className="flex items-center gap-2 text-sm">
-              <input
-                type="checkbox"
-                checked={includeOutput}
-                onChange={(e) => setIncludeOutput(e.target.checked)}
-              />
-              Include generated resumes and cover letters
-            </label>
-            <p className="mt-2 text-xs text-ink-muted">
-              API keys and passwords are never included. Enter them again on the new computer.
-            </p>
-            <div className="mt-3 flex flex-wrap gap-2">
-              <a className={buttonClass("primary")} href={exportDataUrl(includeOutput)} download>
-                Export this profile
-              </a>
-              <Button loading={importing} onClick={() => fileInput.current?.click()}>
-                Import from a .zip
-              </Button>
-              <input
-                ref={fileInput}
-                type="file"
-                accept=".zip,application/zip"
-                className="hidden"
-                aria-label="Choose an export .zip to import"
-                onChange={(e) => {
-                  const file = e.target.files?.[0];
-                  if (file) void onImport(file);
-                }}
-              />
-            </div>
-          </div>
+          <a className={buttonClass("primary")} href={exportDataUrl(includeOutput)} download>
+            Export this profile
+          </a>
+          <Button loading={importing} onClick={() => fileInput.current?.click()}>
+            Import from a .zip
+          </Button>
+          <input
+            ref={fileInput}
+            type="file"
+            accept=".zip,application/zip"
+            className="hidden"
+            aria-label="Choose an export .zip to import"
+            onChange={(e) => {
+              const file = e.target.files?.[0];
+              if (file) void onImport(file);
+            }}
+          />
         </SettingRow>
       </Card>
 
       <Card title="Saved AI results">
         <SettingRow
           label="Cache"
+          layout="action"
           description={
             <>
               <p>
@@ -184,6 +191,7 @@ export function DataSection() {
       <Card title="Delete all data">
         <SettingRow
           label="This profile"
+          layout="action"
           description="Removes this profile's resume, templates, applications and files."
         >
           <Button variant="danger" onClick={() => setResetOpen(true)}>

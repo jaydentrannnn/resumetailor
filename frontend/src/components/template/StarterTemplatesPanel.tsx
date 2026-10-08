@@ -5,7 +5,7 @@ import {
   GalleryCard,
   GalleryRow,
   TemplateThumb,
-  useButtonClass,
+  selectButtonClass,
 } from "./TemplateGallery";
 import { defaultTemplateThumbUrl, fetchMasterResume, saveMasterResume } from "../../api";
 import { educationFirst, needsEducationFirst } from "../../lib/sectionOrder";
@@ -101,7 +101,7 @@ export function StarterTemplatesPanel({
                   type="button"
                   disabled={busy || t.is_active}
                   onClick={() => void use(t.name, t.education_first)}
-                  className={useButtonClass(t.is_active)}
+                  className={selectButtonClass(t.is_active)}
                 >
                   {t.is_active ? "In use" : `Use ${t.label}`}
                 </button>

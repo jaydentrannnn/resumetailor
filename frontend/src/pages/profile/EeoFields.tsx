@@ -1,5 +1,6 @@
 import { VETERAN_OPTIONS, type ApplicantProfile, type VeteranStatus } from "../../api";
 import { ChoiceOrOther } from "../../components/ChoiceOrOther";
+import { Button } from "../../components/ui";
 import { fieldLabel } from "../../lib/profileForm";
 import { useProfileOptions } from "../../lib/profileOptions";
 
@@ -87,13 +88,9 @@ export function EeoFields({ eeo, onChange }: { eeo: Eeo; onChange: (next: Eeo) =
           <span className="mt-1 flex flex-wrap items-center gap-2 text-xs text-attn">
             Converted from your earlier answer “{eeo.veteran_legacy}”. Forms tell apart “not a
             veteran” and “not a protected veteran”, so please check it.
-            <button
-              type="button"
-              className="rounded-md border border-line px-2 py-0.5 font-medium text-ink hover:border-accent"
-              onClick={() => onChange({ ...eeo, veteran_legacy: "" })}
-            >
+            <Button size="sm" onClick={() => onChange({ ...eeo, veteran_legacy: "" })}>
               Looks right
-            </button>
+            </Button>
           </span>
         )}
       </div>

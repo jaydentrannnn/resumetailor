@@ -25,7 +25,7 @@ export function GalleryActions({ children }: { children: ReactNode }) {
 }
 
 /** Class for the "In use" / "Use" button: the selected state reads as a selection, not an action. */
-export function useButtonClass(active: boolean): string {
+export function selectButtonClass(active: boolean): string {
   return active
     ? buttonClass(
         "secondary",

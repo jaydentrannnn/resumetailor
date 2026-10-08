@@ -81,6 +81,7 @@ export function ModelsSection({ embedded = false }: { embedded?: boolean } = {})
       >
         <SettingRow
           label="Provider"
+          layout="stacked"
           description="Choose where the model runs. Local providers need no API key."
         >
           <ProviderPicker

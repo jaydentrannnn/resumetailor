@@ -78,7 +78,7 @@ export function DocumentsSection() {
               : "Using estimates. Tune it once from the Template page for exact page fit."
           }
         >
-          <Link to="/template" className={buttonClass("secondary", "sm")}>
+          <Link to="/template" className={buttonClass("secondary", "md")}>
             Open Template
           </Link>
         </SettingRow>
