@@ -59,7 +59,7 @@ export function CopyButton({
       type="button"
       aria-label={label}
       onClick={() => void onCopy()}
-      className="inline-grid shrink-0 place-items-center whitespace-nowrap rounded-sm border border-line-hover bg-field px-2.5 py-1 text-xs font-medium text-ink-2 hover:border-ink hover:text-ink"
+      className="inline-grid shrink-0 place-items-center whitespace-nowrap rounded-sm bg-primary px-2.5 py-1 text-xs font-medium text-on-primary hover:bg-primary/85"
     >
       {/* Both labels occupy the same grid cell so the track sizes to the wider of
           the two — visibility, not display, so the button never reflows its

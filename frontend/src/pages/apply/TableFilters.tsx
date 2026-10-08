@@ -77,7 +77,7 @@ export function TableFilters({
             ))}
         </select>
         <details className="relative">
-          <summary className="rt-control inline-flex cursor-pointer list-none items-center rounded-sm border border-line-hover bg-field px-3 text-[13px] font-medium text-ink hover:border-ink">
+          <summary className="rt-control inline-flex cursor-pointer list-none items-center rounded-sm bg-primary px-3 text-[13px] font-medium text-on-primary hover:bg-primary/85">
             Columns
           </summary>
           <div className="absolute right-0 z-20 mt-1 w-40 space-y-2 rounded-sm border border-line bg-chrome p-3 text-xs shadow-lg">

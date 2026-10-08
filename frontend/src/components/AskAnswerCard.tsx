@@ -49,7 +49,7 @@ export function AskAnswerCard({
                 <button
                   key={s}
                   type="button"
-                  className="rt-row-action rounded-sm border border-line-hover bg-field px-3 text-xs text-ink hover:border-ink"
+                  className="rt-row-action rounded-sm bg-primary px-3 text-xs text-on-primary hover:bg-primary/85"
                   onClick={() => setQuestion(s)}
                 >
                   {s}

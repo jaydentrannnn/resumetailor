@@ -34,7 +34,7 @@ Use the Tailwind classes (`bg-panel`, `text-ink-muted`, `border-line`), never ra
 | `chrome` | `#ffffff` | `#0a0a0a` | header, overlays, sticky bars |
 | `panel` | `#f7f7f6` | `#151515` | tile surface |
 | `sunken` | `#efefed` | `#1d1d1d` | segment track, hover, skeleton, meter track |
-| `field` | `#ffffff` | `#0f0f0f` | input background, secondary button |
+| `field` | `#ffffff` | `#0f0f0f` | input background |
 | `line` / `line-hover` | `#e2e2df` / `#c8c8c4` | `#2a2a2a` / `#3d3d3d` | hairline / control border |
 | `ink` / `ink-2` / `ink-muted` | `#0b0b0b` / `#3a3a38` / `#6b6b68` | `#f5f5f4` / `#d4d4d2` / `#8f8f8c` | text |
 | `primary` / `on-primary` | `#0b0b0b` / `#fff` | `#ffffff` / `#0b0b0b` | primary button |
@@ -127,7 +127,8 @@ statuses map through `lib/applicationStatus.ts` (`applicationStatusTone`).
 ## Buttons, tables, selection
 
 - **Buttons** (`Button` / `buttonClass`): primary is ink — black in light, **white in
-  dark**; secondary is a bordered `field`; danger is a red outline (also the destructive
+  dark**; secondary is the same ink fill (a `field`-coloured secondary vanished into its
+  tile in both themes, so it was dropped 2026-10-08); danger is a red outline (also the destructive
   confirm); ghost is muted text. Every button and button-styled link has the same 36px
   floor (44px on touch, via `rt-control` in `buttonClass`); `sm` only changes text and
   padding. Use `md` for page and tile actions and `sm` only in dense rows; table row

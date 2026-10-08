@@ -109,7 +109,7 @@ export function ProfileSwitcher({ stacked = false }: { stacked?: boolean }) {
         type="button"
         onClick={() => setManagerOpen(true)}
         disabled={switching}
-        className="rounded-sm border border-line-hover bg-field px-2.5 py-1.5 text-xs font-medium text-ink-2 hover:border-ink hover:text-ink disabled:opacity-50"
+        className="rounded-sm bg-primary px-2.5 py-1.5 text-xs font-medium text-on-primary hover:bg-primary/85 disabled:opacity-50"
       >
         {stacked ? "Manage profiles…" : "Manage"}
       </button>

@@ -1,9 +1,11 @@
 export type ButtonVariant = "primary" | "secondary" | "danger" | "ghost";
 
-// Green is never a button fill: primary is ink (black in light, white in dark).
+// Green is never a button fill. Primary and secondary are both ink (black in light, white
+// in dark): a field-coloured secondary vanished into its tile in both themes.
+const INK = "bg-primary font-medium text-on-primary hover:bg-primary/85";
 const VARIANT: Record<ButtonVariant, string> = {
-  primary: "bg-primary font-medium text-on-primary hover:bg-primary/85",
-  secondary: "border border-line-hover bg-field font-medium text-ink hover:border-ink",
+  primary: INK,
+  secondary: INK,
   danger: "border border-danger/45 bg-field font-medium text-danger hover:border-danger",
   ghost: "font-medium text-ink-muted hover:bg-sunken hover:text-ink",
 };
