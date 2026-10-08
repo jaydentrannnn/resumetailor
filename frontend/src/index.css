@@ -28,7 +28,7 @@
 
   /* The one accent: progress, ticks, focus, active nav. */
   --color-accent: #1f6b4a;
-  --color-accent-soft: color-mix(in srgb, #1f6b4a 10%, transparent);
+  --color-accent-soft: color-mix(in srgb, #1f6b4a 6%, transparent);
   /* Foreground on a solid accent fill (Stepper "done" box, legacy accent buttons). */
   --color-on-accent: #ffffff;
 

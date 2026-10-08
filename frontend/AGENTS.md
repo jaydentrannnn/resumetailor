@@ -39,6 +39,9 @@ hermetic backend).
   dashboards run full width. Don't hand-roll page widths or title sizes.
 - Polling goes through `lib/adaptivePoll.ts` / `conditionalGet` (in `api/core.ts`); errors through
   `lib/errors.ts`; toasts through `lib/toast.ts`.
+- Visual language (tokens, fonts, primitives, status marks, selected state): `docs/design.md`;
+  the approved target to match is `docs/design/reference.html`. Use `components/ui`
+  primitives; never hand-build tiles, buttons or status pills.
 - Don't re-propose declined features: per-stage model overrides, hybrid routing,
   always-on repair toggles, run history.
 

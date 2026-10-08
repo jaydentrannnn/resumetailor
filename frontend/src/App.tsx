@@ -163,7 +163,7 @@ function Shell() {
         </div>
       </header>
       <KeyboardShortcuts />
-      <main className="mx-auto max-w-[1920px] px-4 pb-12 pt-0 sm:px-6">
+      <main className="mx-auto max-w-[1920px] px-4 pb-12 pt-6 sm:px-6">
         <Suspense fallback={<PageLoading />}>
           <Routes>
             <Route path="/" element={<RunPage />} />

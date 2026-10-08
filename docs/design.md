@@ -1,20 +1,181 @@
 # ResumeTailor interface guide
 
-The five top-level views are Tailor, Apply, Profile, Template, and Vocabulary. Profile switching, profile management, and the theme live in one settings menu at the right of the header, not as separate header controls. They use the same warm neutral surfaces, teal actions, and IBM Plex Sans type. The charcoal dark theme keeps its original low-glare background. Use IBM Plex Mono only for technical values, IDs, and code. Do not introduce page-specific palettes or decorative gradients.
+Visual target: `docs/design/reference.html` (serve `docs/design` with
+`python -m http.server` and open it; the theme switch is at the top, the "Other screens"
+bar shows sub-screens). This file is the written contract behind it. The tokens live in
+`frontend/src/index.css`, the components in `frontend/src/components/ui/`.
 
-| Role | Light | Dark |
+## Principles
+
+- **Deep black, bright white, one racing-green accent, serif titles, 4px corners, calm
+  grey tiles.** The page is white (`#0a0a0a` in dark); content sits on soft grey tiles set
+  off by a hairline border.
+- **Flat.** No gradients, no blur, no card shadows. Only overlays (menus, popovers,
+  toasts, modals) carry one shadow, the same everywhere.
+- **Spacing before boxes.** Inside a tile separate things with space or one hairline
+  (`TileSection`). Never nest boxes. Label/value data is separated by spacing, not divider
+  cells (`DataList`).
+- **Status is never colour alone.** Every status has a text label and its own mark shape.
+- **Green means selected, progress, tick or focus — never a button fill.**
+
+Don'ts: `rounded-xl/2xl/full` (except the Spinner and Meter tracks), `shadow-sm/md`,
+`backdrop-blur`, `bg-white`, new colour tokens, hand-built `bg-accent text-on-accent`
+buttons, the retired `warn`/`info` tokens, nested bordered boxes, dashed borders on empty
+states.
+
+## Tokens
+
+Defined in the `@theme` block of `index.css`; dark values under `:root[data-theme="dark"]`.
+Use the Tailwind classes (`bg-panel`, `text-ink-muted`, `border-line`), never raw hex.
+
+| Token | Light | Dark | Use |
+|---|---|---|---|
+| `paper` | `#ffffff` | `#0a0a0a` | page |
+| `chrome` | `#ffffff` | `#0a0a0a` | header, overlays, sticky bars |
+| `panel` | `#f7f7f6` | `#151515` | tile surface |
+| `sunken` | `#efefed` | `#1d1d1d` | segment track, hover, skeleton, meter track |
+| `field` | `#ffffff` | `#0f0f0f` | input background, secondary button |
+| `line` / `line-hover` | `#e2e2df` / `#c8c8c4` | `#2a2a2a` / `#3d3d3d` | hairline / control border |
+| `ink` / `ink-2` / `ink-muted` | `#0b0b0b` / `#3a3a38` / `#6b6b68` | `#f5f5f4` / `#d4d4d2` / `#8f8f8c` | text |
+| `primary` / `on-primary` | `#0b0b0b` / `#fff` | `#ffffff` / `#0b0b0b` | primary button |
+| `accent` | `#1f6b4a` | `#6fbf98` | progress, ticks, focus, active nav |
+| `accent-soft` | 6% accent | 12% accent | quiet green wash |
+| `selected` / `on-selected` / `selected-line` | `#1f6b4a` / `#fff` / `#1f6b4a` | 12% mint / `#6fbf98` / `#6fbf98` | selected segment, tab, filter |
+| `selected-row` | 9% accent | 12% mint | selected table row wash |
+| `success` | `#1f6b4a` | `#6fae90` | done mark (chips only) |
+| `attn` / `attn-soft` | `#1d4ed8` / 10% | `#8699cb` / 8% | "needs you" |
+| `danger` / `danger-soft` | `#c42020` / 10% | `#d17875` / 8% | failed, destructive |
+| `scrim` | 40% black | 60% black | modal backdrop |
+| `doc-preview` | `#ffffff` | `#ffffff` | an actual white PDF page; not a UI surface |
+
+Retired, kept only as aliases until integration deletes them: `warn`, `warn-soft`,
+`warning`, `info`, `info-soft` (all → `attn`) and `bg` (→ `paper`). Do not use them.
+
+Radius: `--radius-sm` … `--radius-4xl` are all 4px, so `rounded-md` and `rounded-lg` are
+4px too; prefer `rounded-sm`. `rounded-xs` is 2px for tiny marks. Shadow: `shadow-2xs` …
+`shadow-md` are none; `shadow-lg/xl/2xl` are the single overlay shadow (light: soft drop +
+hairline ring; dark: 1px ring only).
+
+## Type
+
+Fraunces Variable (titles, big figures), Geist Variable (body and UI), Geist Mono Variable
+(data), all self-hosted via `@fontsource-variable/*` imported in `main.tsx` — nothing is
+fetched from a CDN, so the desktop app works offline.
+
+| Role | Class | Spec |
 |---|---|---|
-| Page | `#F7F6F2` | `#1A1C1E` |
-| Panel | `#FFFFFF` | `#242628` |
-| Text | `#202725` | `#E8E4DB` |
-| Secondary text | `#626A65` | `#A8A296` |
-| Border | `#DEDCD4` | `#3D4145` |
-| Accent | `#087F73` | `#3DBA95` |
-| Accent background | `#E2F0EB` | `#1A3D32` |
-| On accent | `#FFFFFF` | `#0A1A14` |
+| Page title | `rt-title` | Fraunces 350, 32→50px fluid, −0.015em |
+| Big figure | `rt-figure` | Fraunces 350, 40→56px, tabular numbers |
+| Eyebrow / table head / `dt` | `rt-eyebrow` | Geist Mono 11px caps, 0.08em, muted |
+| Tile title | `rt-tile-title` | 15px / 600 |
+| Body, table text | — | 14px (13px dense) |
+| Supporting text | — | 12px, `text-ink-muted` |
+| Times, counts, IDs, model names | `font-mono` | Geist Mono, tabular numbers |
 
-Keep semantic warning and danger colors separate from the accent. Always label statuses in text. Preserve the shared focus ring and reduced-motion rule. Page headings are 28px/600, section headings 18px/600, body and table text 14px, and supporting text 12px. Controls are at least 36px tall, or 44px for coarse pointers. Controls have 6px corners; major panels have 8px corners; pills are reserved for short status badges. Space on the existing 4px scale. Prefer dividers and spacing inside a panel to nested borders.
+Controls are at least 36px tall (44px on coarse pointers). Header pills are exactly
+`rt-header-pill rt-control`: 36px/44px at 12px/16px/600 — a Playwright test pins this.
+Never add an unlayered `font: inherit` reset; it beats Tailwind text utilities.
 
-Tailor is **settings-first**: its always-visible settings summary comes before the job description and progress, followed by results and recent runs. Apply places compact settings and operation progress above independent tables: a "Needs your review" table first (only when applications are waiting on the applicant), then working applications, then the archived disclosure. Archive state is organization, not application status. Profile has Personal information, Resume content, and Application details with separate saves. Application details use their own route and saved artifacts; opening them never triggers generation or filling.
+## Selected state
 
-Tables use a consistent selection column, sortable headings where available, one primary row action, an overflow menu, a contextual selection toolbar, and pagination above and below. “Select this page” never reaches other pages or tables. On narrow screens, show readable record cards from the same rows and selection state. Menus render outside clipped table containers and return focus on dismissal. Search/filter/sort/page state lives in URL parameters so navigation restores context.
+One accent, two renderings, exposed as tokens so pages only write classes:
+
+- **Light:** solid green fill, white text — `bg-selected text-on-selected`.
+- **Dark:** mint text, 1px mint border, ~12% mint wash — the same classes plus the inset
+  ring `shadow-[inset_0_0_0_1px_var(--color-selected-line)]` (in light the ring is the
+  same colour as the fill, so it is invisible).
+- **Table rows / record cards (both themes):** wash plus a 2px inset accent bar on the
+  left, via `data-selected="true"` on the `<tr>` (`DataTable` sets it) or on an element
+  with class `rt-record`.
+
+## Status taxonomy
+
+`Tone` (`lib/tone.ts`): each tone has a hue, a mark shape and always a word.
+
+| Tone | Mark | Hue | Means |
+|---|---|---|---|
+| `done` | check | success green | submitted, fits, saved |
+| `attention` | ring | blue | needs you |
+| `failed` | diamond | red | something broke |
+| `live` | spinner | outline | working now |
+| `neutral` | dot | ink | ready to fill, unknown, early pipeline |
+| `muted` | dash | outline, muted | closed, rejected, ghosted |
+
+`ready` is a neutral dot, not a green check. There is no amber "warn". Application
+statuses map through `lib/applicationStatus.ts` (`applicationStatusTone`).
+
+## Anatomy
+
+- **PageHeader:** mono `eyebrow`, serif `rt-title` h1, one-line lede, `actions` on the
+  right, optional `back` link above. Every page starts with it, then tiles.
+- **Tile:** grey surface, 1px `line` border, 4px corners, 20–24px padding. Optional
+  eyebrow, `rt-tile-title` h2, `meta`, `actions`. Sub-sections use `TileSection` (one
+  hairline).
+- **DataList:** wrapping `<dl>`, `gap-x-8`; `dt` is an eyebrow, `dd` 15px/500. No dividers.
+- **Stat:** serif figure over a 12px caption.
+
+## Buttons, tables, selection
+
+- **Buttons** (`Button` / `buttonClass`): primary is ink — black in light, **white in
+  dark**; secondary is a bordered `field`; danger is a red outline (also the destructive
+  confirm); ghost is muted text. Sizes `sm` (30px feel), `md`, `lg`. Green is never a fill.
+  Use one primary per tile or dialog.
+- **Tables** (`DataTable`, `Pagination`, `RowActionsMenu`): eyebrow headers over a
+  stronger hairline, hairlines between rows, hover `bg-sunken`, selected rows as above,
+  mono pager. Below `md` the same rows render as record cards.
+- **SelectionBar:** `role=toolbar`, mono count, bulk actions, Clear. Only while rows are
+  selected.
+- **Overlays** (`Modal`, menus, `InlineHelp`, `Toast`): `bg-chrome`, 4px, the overlay
+  shadow, `bg-scrim` backdrop without blur. Toasts carry a status chip for the kind.
+
+## Accessibility
+
+- Contrast: all light text/hue values are ≥ 5.3:1; dark attention/danger/success are
+  ≥ 5.8/5.8/7.0 on `#151515`; white primary on black is 18.2:1. Axe must pass in both
+  themes.
+- Focus: one 2px accent ring (`:focus-visible`), never removed.
+- Marks are `aria-hidden` and paired with text; progress uses `role=progressbar` with a
+  name; tabs/radiogroups keep full ARIA and arrow-key behaviour.
+- Reduced motion is honoured globally in `index.css`.
+- Layouts must not scroll horizontally at 390px; header wraps instead.
+
+## Primitives
+
+All exported from `components/ui` (`import { … } from "../components/ui"`).
+
+| Primitive | Props | Use it when |
+|---|---|---|
+| `Page` | `width?: "standard" \| "wide"`, `className` | The shell of every page: `standard` is one centred 6xl column, `wide` is a full-width dashboard. |
+| `PageHeader` | `title`, `eyebrow?`, `description?`, `back?`, `actions?` | The first thing on every page. |
+| `Tile` (alias `Card`) | `title?`, `eyebrow?`, `meta?`, `description?`, `actions?`, `as?`, `padding?: "md" \| "sm" \| "none"`, `className`, `id`/`aria-*`/`data-*` | Any grouped content. Default element is `<section>`; pass `as="aside"` etc. |
+| `TileSection` | `title?`, `actions?`, `className` | A second group inside a tile, separated by one hairline instead of a nested box. |
+| `Button` | `variant?: "primary" \| "secondary" \| "danger" \| "ghost"`, `size?: "sm" \| "md" \| "lg"`, `loading?`, + button attrs | Every button. `buttonClass(variant, size, extra)` styles links as buttons. |
+| `StatusChip` | `tone: Tone`, `children` (label), `className` | A status pill: mark + word. |
+| `StatusMark` | `tone: Tone` | Just the mark, inside your own labelled element (the label must still be text). |
+| `Segmented` | `items: {id,label,count?,disabled?}[]`, `value`, `onChange(id)`, `label`, `className` | One-of-N choice that is not a content switch (theme, view mode, filter). Renders a radiogroup. |
+| `Tabs` | `items: {id,label,count?}[]`, `value`, `onChange(id)`, `label`, `variant?: "underline" \| "segmented"`, `orientation?: "horizontal" \| "vertical"` | Switching panels. `underline` for page sections, `segmented` for a view inside a tile, `vertical` for a side rail. |
+| `Meter` | `value?` (0–100), `label`, `valueText?`, `indeterminate?`, `tone?: "accent" \| "danger" \| "ink"`, `className` | Progress. Always give it a `label`. |
+| `DataList` | `items: {label,value}[]`, `mono?`, `className` | Summaries of label/value pairs (options, report facts). |
+| `Stat` | `value`, `label`, `className` | Big serif figures (page count, match score). |
+| `SelectionBar` | `count`, `noun?`, `onClear`, `clearLabel?`, `children` (actions) | The toolbar above a table while rows are selected; render only when `count > 0`. |
+| `Stepper` | `steps: {id,label,meta?}[]`, `current`, `failed?`, `onSelect?`, `label?`, `orientation?` | Wizards and run progress; square marks, optional mono meta per step. |
+| `Modal` | `title`, `onClose`, `wide?`, `placement?: "center" \| "right"` | Dialogs and the Apply settings drawer. |
+| `InlineHelp` | `label`, `children` | A "?" explanation next to a label. |
+| `EmptyState` | `title`, `icon?`, `children?`, `action?` | A list/page with nothing yet. |
+| `Skeleton` | `className` | Loading placeholder blocks. |
+| `Kbd` | `children` | A keyboard key. |
+| `Field` / `Toggle` | `label`, `help?`, … | Label + control pairs; inputs use the `.field` class. |
+| `ToastProvider` + `useToast()` | `success/error/info(title, detail?, action?)` | Transient messages (`lib/toast.ts`). |
+| `DataTable`, `Pagination`, `RowActionsMenu` | see `components/TableControls.tsx` | Tables with selection, paging and row menus. |
+| `useConfirm()` | `confirm({title,message,tone?,…})`, `choice({…})` | Promise-based dialogs; never `window.confirm`. |
+
+If a page needs something these do not cover, ask for a primitive rather than patching a
+shared file or hand-building the look.
+
+## Parity (extension, splash, icons)
+
+The extension popup/options, the content-script chip, the desktop splash and the icons
+follow the same palette, 4px corners, black/white primary and single green accent, but
+cannot share this stylesheet: the extension self-hosts its own fonts (`extension/fonts`),
+the chip uses system fonts (it lives in a host page's shadow DOM) and the splash uses a
+system serif. Keep their hex values in step with the token table above.

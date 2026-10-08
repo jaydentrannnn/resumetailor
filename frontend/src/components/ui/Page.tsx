@@ -37,7 +37,7 @@ export function PageHeader({
   actions?: ReactNode;
 }) {
   return (
-    <header className="space-y-2.5 pb-2 pt-4 sm:pt-8">
+    <header className="space-y-2.5 pb-2 sm:pt-4">
       {back}
       {eyebrow && <p className="rt-eyebrow">{eyebrow}</p>}
       <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-3">
