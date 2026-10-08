@@ -1,6 +1,6 @@
 import { useEffect, useRef, useState } from "react";
 import { testSource, type SourceConfig, type SourceTestResult } from "../../api";
-import { Button } from "../../components/ui";
+import { Button, DataList, StatusMark } from "../../components/ui";
 import { describe } from "../../lib/errors";
 
 const DROPPED_REASONS: Record<string, (result: SourceTestResult) => string> = {
@@ -38,7 +38,8 @@ export function SourceTestPanel({
 }) {
   if (loading)
     return (
-      <p role="status" className="mt-2 text-xs text-ink-muted">
+      <p role="status" className="mt-2 flex items-center gap-2 text-xs text-ink-muted">
+        <StatusMark tone="live" />
         Reading the source…
       </p>
     );
@@ -53,12 +54,19 @@ export function SourceTestPanel({
     <div
       role="region"
       aria-label="Test result"
-      className="mt-2 space-y-2 rounded-md border border-line bg-paper p-3 text-xs"
+      className="mt-4 space-y-3 border-t border-line pt-4 text-xs"
     >
       <p className="font-medium" aria-live="polite">
         {result.rows_total} posting{result.rows_total === 1 ? "" : "s"} found · {result.rows_kept}{" "}
         would be kept by your filters
       </p>
+      <DataList
+        mono
+        items={[
+          { label: "Found", value: result.rows_total },
+          { label: "Kept", value: result.rows_kept },
+        ]}
+      />
       {droppedNote(result) && <p className="text-ink-muted">{droppedNote(result)}</p>}
       {result.errors.length > 0 && (
         <ul role="alert" className="list-disc space-y-0.5 pl-4 text-danger">
@@ -69,7 +77,7 @@ export function SourceTestPanel({
       )}
       {result.sample.length > 0 ? (
         <div className="overflow-x-auto">
-          <table className="w-full min-w-[28rem] text-left">
+          <table className="w-full table-fixed text-left [overflow-wrap:anywhere]">
             <caption className="sr-only">Sample postings</caption>
             <thead className="text-ink-muted">
               <tr>

@@ -9,7 +9,9 @@ import {
   splitPhrases,
   type SearchProvider,
 } from "../../lib/sources";
-import { NameField } from "./AddFlows";
+import { NameField, BoardTargetDialog, CatalogDialog, ConnectDialog } from "./AddFlows";
+import { addBoard } from "../../lib/watchlist";
+import type { useSourcesController } from "./sourceHooks";
 import { CategoryPicker, FiltersEditor, JobSearchEditor, WatchlistEditor } from "./SourceEditors";
 import { SourceTest } from "./SourceTest";
 
@@ -179,5 +181,117 @@ export function SourcePanel({
         </div>
       </div>
     </Modal>
+  );
+}
+
+/** The active add, edit or connection flow; mounted only while its dialog is open. */
+export function SourceFlows({
+  controller,
+  sources,
+  fields,
+  saveState,
+  saveError,
+  onFlush,
+}: {
+  controller: ReturnType<typeof useSourcesController>;
+  sources: SourceConfig[];
+  fields: import("../../api").SourceField[];
+  saveState: SaveState;
+  saveError: string | null;
+  onFlush?: () => void | Promise<unknown>;
+}) {
+  const {
+    toast,
+    providers,
+    catalog,
+    catalogError,
+    flow,
+    setFlow,
+    connecting,
+    setConnecting,
+    editingSource,
+    setEditing,
+    sourcesRef,
+    update,
+    remove,
+    added,
+    connections,
+    newWatchlist,
+    newList,
+  } = controller;
+  const watchlists = sources.filter((s) => s.kind === "ats_board");
+  return (
+    <>
+      {flow?.type === "catalog" && (
+        <CatalogDialog
+          sources={sources}
+          catalog={catalog}
+          catalogError={catalogError}
+          fields={fields}
+          onAdd={(source) => added(source, false)}
+          onReadme={newList}
+          onBoard={(board) =>
+            sourcesRef.current.some((s) => s.kind === "ats_board")
+              ? setFlow({ type: "board", board })
+              : newWatchlist(board)
+          }
+          onClose={() => setFlow(null)}
+        />
+      )}
+      {flow?.type === "board" && (
+        <BoardTargetDialog
+          board={flow.board}
+          watchlists={watchlists}
+          onNew={() => newWatchlist(flow.board)}
+          onAddTo={(id) => {
+            const target = sourcesRef.current.find((s) => s.id === id);
+            if (target) {
+              const { ats, slug, company } = flow.board;
+              update(id, {
+                ...target,
+                boards: addBoard(target.boards ?? [], { ats, slug, company }),
+              });
+              toast.success(`Added ${flow.board.company || flow.board.slug}`);
+            }
+            setFlow(null);
+          }}
+          onClose={() => setFlow(null)}
+        />
+      )}
+      {flow?.type === "new" && (
+        <SourcePanel
+          mode="new"
+          source={flow.source}
+          initialSections={flow.sections}
+          connections={connections}
+          onConnect={setConnecting}
+          onAdd={added}
+          onClose={() => setFlow(null)}
+        />
+      )}
+      {editingSource && (
+        <SourcePanel
+          source={editingSource}
+          saveState={saveState}
+          saveError={saveError}
+          connections={connections}
+          onConnect={setConnecting}
+          onChange={(next) => update(editingSource.id, next)}
+          onRemove={() => remove(new Set([editingSource.id]))}
+          onClose={() => {
+            setEditing(null);
+            void onFlush?.();
+          }}
+        />
+      )}
+      {connecting && (
+        <ConnectDialog
+          provider={connecting}
+          savedKeys={providers.savedKeys}
+          onSaved={providers.refresh}
+          onClose={() => setConnecting(null)}
+        />
+      )}
+    </>
   );
 }

@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { CatalogEntry, SourceConfig, SourceRunStatus } from "../../api";
 import { RowActionsMenu } from "../../components/TableControls";
-import { Button } from "../../components/ui";
+import { Button, StatusChip, StatusMark } from "../../components/ui";
 import {
   applyCatalogUpdate,
   catalogDiff,
@@ -65,40 +65,16 @@ export function SourceRow({
   }
 
   return (
-    <li className="rounded-lg border border-line bg-panel p-3">
-      <div className="flex items-start gap-3">
+    <li className="rt-record py-4 first:pt-0 last:pb-0" data-selected={selected}>
+      <div className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <input
           type="checkbox"
           aria-label={`Select ${name}`}
-          className="mt-1 h-4 w-4 accent-[var(--color-accent)]"
+          className="h-4 w-4 shrink-0 accent-[var(--color-accent)]"
           checked={selected}
           onChange={(e) => onSelect(e.target.checked)}
         />
-        {/* A pill switch, not a second checkbox: the row's select box sits right beside it. */}
-        <button
-          type="button"
-          role="switch"
-          aria-label={`${name} on`}
-          aria-checked={source.enabled}
-          title={source.enabled ? "On: searched every run" : "Off: skipped"}
-          // The button keeps the global 36px touch floor; the pill is drawn inside it.
-          className="-my-2 inline-flex shrink-0 items-center"
-          onClick={() => onChange({ ...source, enabled: !source.enabled })}
-        >
-          <span
-            aria-hidden="true"
-            className={`inline-flex h-5 w-9 items-center rounded-full border transition-colors ${
-              source.enabled ? "border-accent bg-accent" : "border-line bg-paper"
-            }`}
-          >
-            <span
-              className={`inline-block h-3.5 w-3.5 rounded-full bg-white shadow transition-transform ${
-                source.enabled ? "translate-x-[17px]" : "translate-x-0.5"
-              }`}
-            />
-          </span>
-        </button>
-        <div className="min-w-0 flex-1">
+        <div className="min-w-0 flex-1 basis-[calc(100%-2rem)] sm:basis-0">
           {renaming ? (
             <input
               autoFocus
@@ -120,47 +96,73 @@ export function SourceRow({
               <button
                 type="button"
                 title="Edit"
-                className={`min-w-0 max-w-full truncate text-left hover:text-accent ${source.enabled ? "" : "text-ink-muted"}`}
+                className={`min-w-0 text-left hover:text-accent [overflow-wrap:anywhere] ${source.enabled ? "" : "text-ink-muted"}`}
                 onClick={onEdit}
               >
                 {name}
               </button>
-              <span className="rounded-full bg-paper px-2 py-0.5 text-micro font-normal text-ink-muted">
-                {sourceBadge(source)}
-              </span>
-              {update && (
-                <span className="rounded-full bg-warn-soft px-2 py-0.5 text-micro font-semibold text-warn">
-                  Update available
-                </span>
-              )}
+              <span className="text-xs font-normal text-ink-muted">{sourceBadge(source)}</span>
+              {health.tone === "ok" && <StatusChip tone="done">Healthy</StatusChip>}
+              {health.tone === "error" && <StatusChip tone="failed">Last check failed</StatusChip>}
+              {update && <StatusChip tone="attention">Update available</StatusChip>}
             </p>
           )}
-          <p className="mt-0.5 truncate text-xs text-ink-muted">{sourceSummary(source)}</p>
-          <p className={`mt-0.5 text-xs ${HEALTH_TONE[health.tone]}`}>
+          <p className="mt-1 text-xs text-ink-muted [overflow-wrap:anywhere]">
+            {sourceSummary(source)}
+          </p>
+          <p
+            className={`mt-1 flex items-center gap-1.5 font-mono text-xs [overflow-wrap:anywhere] ${HEALTH_TONE[health.tone]}`}
+          >
+            <StatusMark
+              tone={health.tone === "ok" ? "done" : health.tone === "error" ? "failed" : "muted"}
+            />
             <span className="sr-only">Last run: </span>
             {health.text}
           </p>
-          {notice && source.enabled && <p className="mt-0.5 text-xs text-warn">{notice}</p>}
+          {notice && source.enabled && <p className="mt-1 text-xs text-attn">{notice}</p>}
         </div>
-        <RowActionsMenu
-          label={`Actions for ${name}`}
-          items={[
-            { label: "Edit", action: onEdit },
-            {
-              label: "Rename",
-              action: () => {
-                setDraftName(name);
-                setRenaming(true);
+        <div className="ml-7 flex shrink-0 items-center gap-2 sm:ml-0">
+          <Button size="sm" variant="ghost" onClick={onEdit}>
+            Edit
+          </Button>
+          <Button
+            size="sm"
+            variant="ghost"
+            role="switch"
+            aria-label={`${name} on`}
+            aria-checked={source.enabled}
+            title={source.enabled ? "On: searched every run" : "Off: skipped"}
+            onClick={() => onChange({ ...source, enabled: !source.enabled })}
+          >
+            <span
+              aria-hidden="true"
+              className={`inline-flex h-5 w-9 items-center rounded-sm border ${source.enabled ? "border-selected-line bg-selected" : "border-line-hover bg-sunken"}`}
+            >
+              <span
+                className={`inline-block size-3.5 rounded-xs transition-transform ${source.enabled ? "translate-x-[17px] bg-on-selected" : "translate-x-0.5 bg-ink-muted"}`}
+              />
+            </span>
+          </Button>
+          <RowActionsMenu
+            label={`Actions for ${name}`}
+            items={[
+              { label: "Edit", action: onEdit },
+              {
+                label: "Rename",
+                action: () => {
+                  setDraftName(name);
+                  setRenaming(true);
+                },
               },
-            },
-            { label: "Duplicate", action: onDuplicate },
-            { label: "Remove", action: onRemove, danger: true },
-          ]}
-        />
+              { label: "Duplicate", action: onDuplicate },
+              { label: "Remove", action: onRemove, danger: true },
+            ]}
+          />
+        </div>
       </div>
 
       {update && (
-        <div className="mt-2 pl-14">
+        <div className="mt-3 pl-7">
           {reviewing ? (
             <UpdateDiff
               source={source}
@@ -203,7 +205,7 @@ function UpdateDiff({
     <div
       role="region"
       aria-label={`Update for ${sourceDisplayName(source)}`}
-      className="space-y-2 rounded-md border border-line bg-paper p-3 text-xs"
+      className="space-y-2 border-t border-line pt-3 text-xs"
     >
       <p className="font-medium">
         Version {source.catalog_version || "?"} → {entry.version}

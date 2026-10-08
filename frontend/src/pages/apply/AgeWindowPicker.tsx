@@ -1,4 +1,5 @@
 import { useState } from "react";
+import { Segmented } from "../../components/ui";
 import { ageChoice } from "../../lib/applyPage";
 
 const PRESETS: Array<[value: "1" | "7" | "custom", label: string]> = [
@@ -31,24 +32,12 @@ export function AgeWindowPicker({
 
   return (
     <div className="space-y-2">
-      <div
-        role="radiogroup"
-        aria-label={ariaLabel}
-        className="grid grid-cols-3 gap-1 rounded-md border border-line p-1"
-      >
-        {PRESETS.map(([choice, label]) => (
-          <button
-            key={choice}
-            type="button"
-            role="radio"
-            aria-checked={selected === choice}
-            onClick={() => pick(choice)}
-            className={`min-h-9 rounded px-2 text-sm ${selected === choice ? "bg-accent text-on-accent" : "text-ink-muted hover:text-ink"}`}
-          >
-            {label}
-          </button>
-        ))}
-      </div>
+      <Segmented
+        label={ariaLabel}
+        items={PRESETS.map(([id, label]) => ({ id, label }))}
+        value={selected}
+        onChange={(id) => pick(id as "1" | "7" | "custom")}
+      />
       {selected === "custom" && (
         <label className="block">
           Last{" "}
