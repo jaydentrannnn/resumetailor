@@ -36,7 +36,8 @@ test("tailor a resume, edit a bullet and re-render without AI", async ({ page })
 });
 
 test("profile: one save bar validates, then saves", async ({ page }) => {
-  await page.goto("/profile/application");
+  // Groups start collapsed once onboarding is done; ?setup=1 opens them all.
+  await page.goto("/profile/application?setup=1");
   await page.getByLabel("Visa status").selectOption("f1_opt");
   await expect(
     page.getByLabel("Need sponsorship in the future", { exact: true }).locator("option").first(),

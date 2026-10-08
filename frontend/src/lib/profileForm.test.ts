@@ -1,13 +1,18 @@
 import { describe, expect, it } from "vitest";
 import type { ApplicantProfile } from "../api";
 import {
+  ALL_PROFILE_GROUP_IDS,
   PROFILE_GROUPS,
+  REMEMBERED_ANSWERS_GROUP,
   changedKeys,
   classYearFor,
   groupForField,
+  inSetup,
+  initialOpenGroups,
   sponsorshipFromVisa,
   tabForField,
   validateProfile,
+  withGroupOpen,
 } from "./profileForm";
 
 const base = {
@@ -132,5 +137,45 @@ describe("profile groups", () => {
 
   it("accepts a phone extension", () => {
     expect(validateProfile({ ...base, phone: "(555) 010-0000 ext. 12" }).phone).toBeUndefined();
+  });
+});
+
+describe("open-group store", () => {
+  it("lists every profile group plus the remembered-answers tile", () => {
+    expect(ALL_PROFILE_GROUP_IDS).toHaveLength(PROFILE_GROUPS.length + 1);
+    expect(ALL_PROFILE_GROUP_IDS).toContain(REMEMBERED_ANSWERS_GROUP);
+  });
+
+  it("starts empty once setup is done and full during setup", () => {
+    expect(initialOpenGroups(false).size).toBe(0);
+    expect([...initialOpenGroups(true)]).toEqual(ALL_PROFILE_GROUP_IDS);
+  });
+
+  it("is in setup until onboarding is completed or skipped", () => {
+    expect(inSetup({ completed: false, skipped: false })).toBe(true);
+    expect(inSetup({ completed: true, skipped: false })).toBe(false);
+    expect(inSetup({ completed: false, skipped: true })).toBe(false);
+  });
+
+  it("treats unknown onboarding state as finished", () => {
+    expect(inSetup(null)).toBe(false);
+    expect(inSetup(null, "")).toBe(false);
+  });
+
+  it("opens everything for ?setup=1 whatever onboarding says", () => {
+    expect(inSetup({ completed: true, skipped: false }, "?setup=1")).toBe(true);
+    expect(inSetup(null, "?setup=1")).toBe(true);
+    expect(inSetup({ completed: true, skipped: false }, "?setup=0")).toBe(false);
+  });
+
+  it("opens and closes a group without mutating, and keeps identity on no-ops", () => {
+    const empty = new Set<string>();
+    const opened = withGroupOpen(empty, "Education", true);
+    expect(opened).not.toBe(empty);
+    expect(empty.size).toBe(0);
+    expect(opened.has("Education")).toBe(true);
+    expect(withGroupOpen(opened, "Education", true)).toBe(opened);
+    expect(withGroupOpen(opened, "Education", false).has("Education")).toBe(false);
+    expect(withGroupOpen(empty, "Education", false)).toBe(empty);
   });
 });

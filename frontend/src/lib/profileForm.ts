@@ -1,4 +1,4 @@
-import type { ApplicantProfile, NoticeUnit, VisaStatus } from "../api";
+import type { ApplicantProfile, NoticeUnit, OnboardingState, VisaStatus } from "../api";
 import type { DatePrecision } from "./dates";
 
 /** Form labels for profile fields; anything unlisted is its key in words. */
@@ -160,25 +160,6 @@ export function tabForField(key: string): "personal" | "application" {
     : "application";
 }
 
-const CLOSED_KEY = "rt.profile.closedGroups";
-
-/** Groups the student collapsed (all groups start open). */
-export function loadClosedGroups(): Set<string> {
-  try {
-    return new Set(JSON.parse(window.localStorage.getItem(CLOSED_KEY) ?? "[]") as string[]);
-  } catch {
-    return new Set();
-  }
-}
-
-export function saveClosedGroups(closed: Set<string>): void {
-  try {
-    window.localStorage.setItem(CLOSED_KEY, JSON.stringify([...closed]));
-  } catch {
-    /* private mode: collapse state just isn't remembered */
-  }
-}
-
 /** One collapsible block on the Application details tab. `id` is the backend section name
  * (`packet.PROFILE_FIELDS`), so a profile gap opens the group that holds it. */
 export type ProfileGroup = { id: string; title: string; fields: (keyof ApplicantProfile)[] };
@@ -264,6 +245,42 @@ export const PROFILE_GROUPS: ProfileGroup[] = [
 /** The group that holds `key`, if it is on the Application details tab. */
 export function groupForField(key: string): string | undefined {
   return PROFILE_GROUPS.find((group) => group.fields.includes(key as keyof ApplicantProfile))?.id;
+}
+
+/** The "Remembered answers" tile: collapsible like the groups, but not a profile section. */
+export const REMEMBERED_ANSWERS_GROUP = "remembered-answers";
+
+/** Every collapsible block on the Application details tab. */
+export const ALL_PROFILE_GROUP_IDS = [
+  ...PROFILE_GROUPS.map((group) => group.id),
+  REMEMBERED_ANSWERS_GROUP,
+];
+
+/**
+ * Whether Application details should open fully expanded: while first-run setup is still
+ * going (neither completed nor skipped), or when a link asks for it with `?setup=1`.
+ * Unknown setup state (still loading, or the request failed) counts as finished.
+ */
+export function inSetup(
+  onboarding: Pick<OnboardingState, "completed" | "skipped"> | null,
+  search = "",
+): boolean {
+  if (new URLSearchParams(search).get("setup") === "1") return true;
+  return onboarding != null && !onboarding.completed && !onboarding.skipped;
+}
+
+/** The groups open on arrival: all of them during setup, none after it. */
+export function initialOpenGroups(setup: boolean): Set<string> {
+  return new Set(setup ? ALL_PROFILE_GROUP_IDS : []);
+}
+
+/** `open` with group `id` opened or closed; the same set when nothing changes. */
+export function withGroupOpen(open: Set<string>, id: string, isOpen: boolean): Set<string> {
+  if (open.has(id) === isOpen) return open;
+  const next = new Set(open);
+  if (isOpen) next.add(id);
+  else next.delete(id);
+  return next;
 }
 
 /** Yes/No questions: rendered as a three-way select (blank = not set). */

@@ -1,17 +1,19 @@
 import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import type { ApplicantProfile } from "../../api";
+import { getOnboarding, type ApplicantProfile } from "../../api";
 import { ProfileGapBanner } from "../../components/ProfileGapBanner";
 import { Button, Page, PageHeader, StatusMark } from "../../components/ui";
 import {
   GAP_FIELD_ALIASES,
   changedKeys,
   fieldLabel,
+  ALL_PROFILE_GROUP_IDS,
   groupForField,
-  loadClosedGroups,
-  saveClosedGroups,
+  inSetup,
+  initialOpenGroups,
   tabForField,
   validateProfile,
+  withGroupOpen,
 } from "../../lib/profileForm";
 import { useToast } from "../../lib/toast";
 import { useApplicantProfile } from "../../state/applicantProfileState";
@@ -37,7 +39,7 @@ const TABS: [Tab, string][] = [
  * saves whichever store changed and says which part failed, if one did.
  */
 export function ProfilePage() {
-  const path = useLocation().pathname;
+  const { pathname: path, search } = useLocation();
   const navigate = useNavigate();
   const tab: Tab = path.endsWith("/resume")
     ? "resume"
@@ -51,7 +53,7 @@ export function ProfilePage() {
   const { confirm } = useConfirm();
   const draft = applicant.draft;
 
-  const [closed, setClosed] = useState<Set<string>>(loadClosedGroups);
+  const [open, setOpen] = useState<Set<string>>(() => initialOpenGroups(inSetup(null, search)));
   const [touched, setTouched] = useState<Set<string>>(new Set());
   const [attempted, setAttempted] = useState(false);
   const [pendingFocus, setPendingFocus] = useState<string | null>(null);
@@ -73,16 +75,26 @@ export function ProfilePage() {
   const profileChanges = changedKeys(applicant.saved, draft).length;
   const changeCount = profileChanges + (editor.dirty ? 1 : 0);
 
-  const setGroupOpen = useCallback((id: string, open: boolean) => {
-    setClosed((current) => {
-      if (open === !current.has(id)) return current;
-      const next = new Set(current);
-      if (open) next.delete(id);
-      else next.add(id);
-      saveClosedGroups(next);
-      return next;
-    });
+  const setGroupOpen = useCallback((id: string, isOpen: boolean) => {
+    setOpen((current) => withGroupOpen(current, id, isOpen));
   }, []);
+
+  // Groups start collapsed; during first-run setup (or `?setup=1`) they all start open.
+  useEffect(() => {
+    if (inSetup(null, search)) {
+      setOpen(new Set(ALL_PROFILE_GROUP_IDS));
+      return;
+    }
+    let cancelled = false;
+    getOnboarding()
+      .then((state) => {
+        if (!cancelled && inSetup(state)) setOpen(new Set(ALL_PROFILE_GROUP_IDS));
+      })
+      .catch(() => undefined); // setup progress is a convenience; collapsed is fine
+    return () => {
+      cancelled = true;
+    };
+  }, [search]);
 
   function openGroup(id: string) {
     setGroupOpen(id, true);
@@ -107,7 +119,7 @@ export function ProfilePage() {
     el.scrollIntoView({ block: "center" });
     el.querySelector<HTMLElement>("input, select, textarea")?.focus({ preventScroll: true });
     setPendingFocus(null);
-  }, [pendingFocus, tab, closed]);
+  }, [pendingFocus, tab, open]);
 
   /** The first problem on the tab being viewed, else the first anywhere. */
   function firstInvalid(): string {
@@ -213,7 +225,7 @@ export function ProfilePage() {
       {ctx && tab === "application" && (
         <ApplicationTab
           ctx={ctx}
-          closed={closed}
+          open={open}
           onToggle={setGroupOpen}
           onOpenGroup={openGroup}
           education={educationSection?.kind === "education" ? educationSection.entries : []}

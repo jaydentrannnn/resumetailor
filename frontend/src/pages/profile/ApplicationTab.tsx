@@ -4,7 +4,12 @@ import type { ApplicantProfile } from "../../api";
 import { LanguagesEditor } from "../../components/LanguagesEditor";
 import { ProfileGapBanner } from "../../components/ProfileGapBanner";
 import { DataList, Tile, TileSection } from "../../components/ui";
-import { PROFILE_GROUPS, classYearFor, sponsorshipFromVisa } from "../../lib/profileForm";
+import {
+  PROFILE_GROUPS,
+  REMEMBERED_ANSWERS_GROUP,
+  classYearFor,
+  sponsorshipFromVisa,
+} from "../../lib/profileForm";
 import type { Education } from "../../lib/resumeEdit";
 import { useApplicantProfile } from "../../state/applicantProfileState";
 import type { FieldContext } from "./fieldContext";
@@ -62,18 +67,18 @@ function autoAnswered(key: keyof ApplicantProfile, draft: ApplicantProfile): boo
 }
 
 /**
- * Application details: collapsible groups of the facts forms ask for. Every group starts
- * open; the ones the student collapses stay collapsed on the next visit.
+ * Application details: collapsible groups of the facts forms ask for. `open` holds the
+ * expanded ones (all during first-run setup, none after it).
  */
 export function ApplicationTab({
   ctx,
-  closed,
+  open,
   onToggle,
   onOpenGroup,
   education,
 }: {
   ctx: FieldContext;
-  closed: Set<string>;
+  open: Set<string>;
   onToggle: (id: string, open: boolean) => void;
   onOpenGroup: (id: string) => void;
   education: Education[];
@@ -93,7 +98,7 @@ export function ApplicationTab({
       {PROFILE_GROUPS.map((group) => (
         <Tile key={group.id} id={`profile-group-${group.id}`}>
           <details
-            open={!closed.has(group.id)}
+            open={open.has(group.id)}
             onToggle={(e) => onToggle(group.id, e.currentTarget.open)}
           >
             <summary className="rt-tile-title cursor-pointer">{group.title}</summary>
@@ -152,8 +157,8 @@ export function ApplicationTab({
       ))}
       <Tile id="profile-group-remembered-answers">
         <details
-          open={!closed.has("remembered-answers")}
-          onToggle={(e) => onToggle("remembered-answers", e.currentTarget.open)}
+          open={open.has(REMEMBERED_ANSWERS_GROUP)}
+          onToggle={(e) => onToggle(REMEMBERED_ANSWERS_GROUP, e.currentTarget.open)}
         >
           <summary className="rt-tile-title cursor-pointer">Remembered answers</summary>
           <TileSection className="mt-4" title="Saved answers">

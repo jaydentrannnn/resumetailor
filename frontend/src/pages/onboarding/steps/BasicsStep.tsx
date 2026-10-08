@@ -94,7 +94,7 @@ export function BasicsStep({
         </div>
         <p className="mt-4 text-sm text-ink-muted">
           More (address, links, demographics) lives on{" "}
-          <Link to="/profile/application" className="font-semibold text-accent">
+          <Link to="/profile/application?setup=1" className="font-semibold text-accent">
             Profile → Application details
           </Link>
           .
