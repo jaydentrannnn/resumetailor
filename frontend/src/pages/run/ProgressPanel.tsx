@@ -1,4 +1,5 @@
 import { useEffect, useMemo, useRef, useState } from "react";
+import { Link } from "react-router-dom";
 import { Button, Meter, Stat, StatusChip, Stepper, Tile, type Tone } from "../../components/ui";
 import { runProgress } from "../../lib/runProgress";
 import { formatElapsed, formatTypical, runSteps, typicalRunSeconds } from "../../lib/runSteps";
@@ -70,7 +71,10 @@ export function ProgressPanel() {
       }
     >
       {!showStatus ? (
-        <IdleNote rejection={config?.calibration_rejection ?? null} />
+        <IdleNote
+          estimated={config?.calibration_source === "fallback"}
+          rejection={config?.calibration_rejection ?? null}
+        />
       ) : (
         <>
           <div className="mb-3 flex flex-wrap items-center justify-between gap-3">
@@ -128,12 +132,21 @@ export function ProgressPanel() {
   );
 }
 
-function IdleNote({ rejection }: { rejection: string | null }) {
+function IdleNote({ estimated, rejection }: { estimated: boolean; rejection: string | null }) {
   return (
     <>
       <p className="text-sm text-ink-muted">
         No run yet. Progress shows here once you tailor a resume.
       </p>
+      {estimated && (
+        <p className="mt-2 text-sm text-ink-muted">
+          Page fit is estimated. Tune it once on the{" "}
+          <Link className="rt-link" to="/template">
+            Template page
+          </Link>{" "}
+          for exact results.
+        </p>
+      )}
       {rejection && <p className="mt-3 text-sm text-attn">{rejection}</p>}
     </>
   );

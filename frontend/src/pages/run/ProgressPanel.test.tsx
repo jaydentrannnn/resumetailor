@@ -1,6 +1,7 @@
 // @vitest-environment jsdom
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { cleanup, render, screen } from "@testing-library/react";
+import { MemoryRouter } from "react-router-dom";
 
 const state = vi.hoisted(() => ({ value: {} as Record<string, unknown> }));
 vi.mock("../../state/runState", async (importOriginal) => {
@@ -45,5 +46,39 @@ describe("ProgressPanel", () => {
     render(<ProgressPanel />);
     expect(screen.getByRole("alert").textContent).toBe("Model unreachable");
     expect(screen.getByText("(failed)")).toBeTruthy();
+  });
+
+  it("points an estimated page fit at the Template page before any run", () => {
+    state.value = {
+      ...base,
+      status: null,
+      busy: false,
+      events: [],
+      config: { calibration_source: "fallback", calibration_rejection: null },
+    };
+    render(
+      <MemoryRouter>
+        <ProgressPanel />
+      </MemoryRouter>,
+    );
+    const note = screen.getByText(/Page fit is estimated/);
+    expect(note.textContent).toBe(
+      "Page fit is estimated. Tune it once on the Template page for exact results.",
+    );
+    expect(screen.getByRole("link", { name: "Template page" }).getAttribute("href")).toBe(
+      "/template",
+    );
+  });
+
+  it("says nothing about page fit once it is measured", () => {
+    state.value = {
+      ...base,
+      status: null,
+      busy: false,
+      events: [],
+      config: { calibration_source: "measured", calibration_rejection: null },
+    };
+    render(<ProgressPanel />);
+    expect(screen.queryByText(/Page fit is estimated/)).toBeNull();
   });
 });
