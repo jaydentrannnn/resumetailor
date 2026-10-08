@@ -12,11 +12,11 @@ from collections.abc import Callable
 from typing import Literal
 
 from resume_tailor import config
-from resume_tailor.infra import model_queue
 from resume_tailor.apply.answers import profile as profile_mod
-from resume_tailor.apply.driver import browser
+from resume_tailor.apply.driver import browser, watchdog
 from resume_tailor.apply.funnel import store
 from resume_tailor.apply.funnel.store_models import FillResult
+from resume_tailor.infra import model_queue
 from resume_tailor.web.schemas import ApplySettings, JobSettings
 
 from . import fill_entry, fill_finish, fill_widgets, fill_wizard
@@ -87,35 +87,46 @@ class _FillRun(fill_entry._FillEntry, fill_wizard._FillWizard, fill_finish._Fill
     """
 
     def run(self) -> FillResult:
+        stall = watchdog.Stall()
         try:
             self.progress("connecting to browser")
             with browser.cdp_browser() as pw_browser:
-                self.context = (
-                    pw_browser.contexts[0]
-                    if pw_browser.contexts
-                    else pw_browser.new_context()
-                )
-                handoff = self._open_form()
-                if handoff is None:
-                    handoff = self._choose_route_and_sign_in()
-                if handoff is not None:
-                    return handoff
-                fill_widgets._guard_file_chooser(self.page, self.progress)
-                self._start_fill()
-                handoff = self._walk_wizard()
-                if handoff is not None:
-                    return handoff
-                return self._finish()
+                pid = watchdog.driver_pid(pw_browser)
+                with watchdog.stall_guard(
+                    lambda: self.deadline,
+                    cut=(lambda: watchdog.kill_driver(pid)) if pid else None,
+                    label=f"{self.app.company or 'fill'} {self.source_job_id[:8]}",
+                ) as stall:
+                    return self._run_connected(pw_browser)
         except Exception as exc:  # noqa: BLE001
+            error = stall.message() if stall.fired else str(exc)
             result = self.previous_fill.model_copy(update={
-                "error": str(exc), "status": "fill_failed", "browser_target_id": self.target_id,
+                "error": error, "status": "fill_failed", "browser_target_id": self.target_id,
                 "browser_url": (
                     self.page.url if self.page is not None else self.previous_fill.browser_url
                 ),
-                "handoff_reason": "fill failed",
+                "handoff_reason": "fill stopped responding" if stall.fired else "fill failed",
             })
-            store.set_status(self.app, "fill_failed", note=str(exc))
+            store.set_status(self.app, "fill_failed", note=error)
             self.app.fill = result
-            self.app.error = str(exc)
+            self.app.error = error
             store.upsert(self.app)
             return result
+
+    def _run_connected(self, pw_browser: object) -> FillResult:
+        self.context = (
+            pw_browser.contexts[0]
+            if pw_browser.contexts
+            else pw_browser.new_context()
+        )
+        handoff = self._open_form()
+        if handoff is None:
+            handoff = self._choose_route_and_sign_in()
+        if handoff is not None:
+            return handoff
+        fill_widgets._guard_file_chooser(self.page, self.progress)
+        self._start_fill()
+        handoff = self._walk_wizard()
+        if handoff is not None:
+            return handoff
+        return self._finish()
