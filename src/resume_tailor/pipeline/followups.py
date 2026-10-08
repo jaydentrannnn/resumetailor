@@ -18,7 +18,7 @@ The wording is already right — the only problem is length. Bring each one to a
 number, every required technical keyword, and the opening verb exactly as written.
 """
 
-_REPAIR_PROMPT_VERSION = 6
+_REPAIR_PROMPT_VERSION = 7
 
 _TARGET_INSTRUCTION = """\
 Each bullet has a character window. For SHORTEN, cut secondary detail while preserving
@@ -44,12 +44,15 @@ def _format_targets(targets: dict[str, tuple[int, int]], texts: dict[str, str],
     )
 
 _VERB_INSTRUCTION = """\
-Each bullet below opens with a verb another bullet already used, or with a near-synonym of \
-one. Replace ONLY the opening verb with one that is not in its `avoid` list and does not \
-mean the same thing as those. Keep the rest of the bullet word for word, including every \
-number, unless the new verb makes the grammar wrong — then change as little as possible. \
-Do not lengthen the bullet. Do not restate the claim in different words: this is a \
-one-word substitution, not a rewrite.
+Each bullet below opens with a verb another bullet already used, a near-synonym of one, \
+or a vague verb that names no action ("Assisted", "Helped", "Handled"). Replace ONLY the \
+opening verb with one that is not in its `avoid` list and does not mean the same thing as \
+those. The new verb must claim exactly the scope the bullet already states: never upgrade \
+helping or assisting into leading, owning or creating, and keep any named party, such as \
+a manager or a team, that the bullet credits. Keep the rest of the bullet word for word, \
+including every number, unless the new verb makes the grammar wrong — then change as \
+little as possible. Do not lengthen the bullet. Do not restate the claim in different \
+words: this is a one-word substitution, not a rewrite.
 """
 
 _RETRY_INSTRUCTION = """\

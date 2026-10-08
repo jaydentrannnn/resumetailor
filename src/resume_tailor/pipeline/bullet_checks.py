@@ -379,8 +379,12 @@ def verb_collisions(texts: dict[str, str]) -> dict[str, list[str]]:
     so the returned ids are the minimum set that has to change. Iteration follows the
     dict's insertion order, which is selection order, making the choice reproducible.
 
+    A third rule needs no neighbour: **weak opener**. A bullet opening with one of
+    `config.WEAK_OPENERS` ("Assisted…", "Helped…") always changes, and never claims its
+    opener, so the repair also has to leave the weak set.
+
     The value is the list of verbs that bullet must not come back with: every opener
-    currently in use, plus the whole family when the family is what overflowed.
+    currently in use, plus the whole family (or the weak set) when that is what flagged it.
     """
     openers = {bid: opening_verb(text) for bid, text in texts.items()}
     family_cap = config.family_opener_cap(len(texts))
@@ -394,7 +398,9 @@ def verb_collisions(texts: dict[str, str]) -> dict[str, list[str]]:
             continue
         family = config.verb_family(word)
 
-        if word in used_words:
+        if word in config.WEAK_OPENERS:
+            offenders[bullet_id] = set(config.WEAK_OPENERS)
+        elif word in used_words:
             offenders[bullet_id] = set()
         elif family is not None and family_counts.get(family, 0) >= family_cap:
             offenders[bullet_id] = set(config.family_verbs(family))

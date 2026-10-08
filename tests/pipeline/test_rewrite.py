@@ -1368,6 +1368,24 @@ def test_verb_collisions_flags_exact_duplicate_openers():
     assert "designed" in collisions["b"]
 
 
+def test_verb_collisions_flags_weak_openers_without_a_neighbour():
+    """A vague opener is an offender on its own and never claims its word."""
+    texts = {
+        "a": "Assisted the deal team with a pitch book.",
+        "b": "Modeled a three-statement forecast.",
+        "c": "Helped reconcile 40 vendor accounts.",
+    }
+    collisions = bullet_checks.verb_collisions(texts)
+    assert set(collisions) == {"a", "c"}
+    assert {"assisted", "helped"} <= set(collisions["a"])
+    assert "modeled" in collisions["a"]
+
+
+def test_verb_collisions_leaves_strong_trade_verbs_alone():
+    texts = {"a": "Performed due diligence on 12 targets.", "b": "Served 200 retail clients."}
+    assert bullet_checks.verb_collisions(texts) == {}
+
+
 def test_verb_collisions_flags_family_over_concentration():
     """More than MAX_SAME_FAMILY_OPENERS near-synonyms must flag the extras."""
     texts = {
@@ -1598,7 +1616,7 @@ def test_measured_target_window_accepts_only_guard_clean_numeric_preserving_repl
     )
     assert out["a"] == "Trained 30+ staff on IT practices."
     assert fixed == 1 and rejected == {}
-    assert "<repair_prompt_version>6" in calls[0]["messages"][0]["content"]
+    assert "<repair_prompt_version>7" in calls[0]["messages"][0]["content"]
 
     rewrite_calls(_reply(a="Trained 30+ staff."))
     out, fixed, _, _ = followups._polish(

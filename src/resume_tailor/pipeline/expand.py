@@ -325,7 +325,7 @@ def _accept_bullets(
     collisions = verb_collisions(numbered)
     if collisions:
         warnings.append(
-            f"{len(collisions)} bullet(s) share an opening verb with an earlier one"
+            f"{len(collisions)} bullet(s) share an opening verb with an earlier one, or open with a vague verb"
         )
 
     # Trim from the end until under the hard cap.

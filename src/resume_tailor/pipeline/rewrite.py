@@ -219,7 +219,7 @@ def rewrite_bullets(
         if stranded:
             wanted.append(f"{stranded} bullet(s) that spilled onto a near-empty line")
         if colliding:
-            wanted.append(f"{colliding} repeated opening verb(s)")
+            wanted.append(f"{colliding} repeated or vague opening verb(s)")
         events.emit(
             on_event,
             "rewrite",

@@ -579,7 +579,7 @@ def format_report(
     revoiced = (
         f" ({result.verbs_diversified} verb(s) replaced)" if result.verbs_diversified else ""
     )
-    lines.append(f"Verb variety: {result.verb_collisions_remaining} repeated opener(s){revoiced}")
+    lines.append(f"Verb variety: {result.verb_collisions_remaining} repeated or vague opener(s){revoiced}")
 
     lines.append(f"Output: {result.out_path}")
 

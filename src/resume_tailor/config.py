@@ -1510,6 +1510,16 @@ MAX_SAME_FAMILY_OPENERS = 2
 #: pushed the repair toward weaker unlisted verbs ("Coded", "Programmed").
 BULLETS_PER_FAMILY_OPENER = 5
 
+#: Openers that name no action or no ownership ("Assisted…", "Helped…", "Responsible
+#: for…"). `bullet_checks.verb_collisions` flags them like a repeated opener, so the same
+#: bounded verb repair re-voices them. Deliberately short and unambiguous: a verb that is
+#: strong in some trades ("Performed due diligence", "Served 200 clients") stays out, and
+#: `libraries.py` packs never extend it — the repair swaps the verb, never the claim.
+WEAK_OPENERS = frozenset({
+    "assisted", "aided", "helped", "handled", "worked", "participated", "responsible",
+    "involved", "tasked", "utilized", "utilised", "used", "attended",
+})
+
 
 def family_opener_cap(bullet_count: int) -> int:
     """Same-family openers allowed across `bullet_count` bullets (exact repeats never are)."""

@@ -321,5 +321,5 @@ class _FitRun(fit_topup._FitTopUp):
         if outcome.verb_collisions_remaining:
             self.warnings.append(
                 f"{outcome.verb_collisions_remaining} bullet(s) still open with a verb "
-                f"another bullet already used, or a near-synonym of one."
+                f"another bullet already used, a near-synonym of one, or a vague verb."
             )
