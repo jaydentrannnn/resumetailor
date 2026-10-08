@@ -23,6 +23,10 @@ def source_keyword_filters(
     )
 
 # --- company watchlists (``kind="ats_board"``, plan P4-D2) -------------------------
+#: Word-start keywords whose stem begins a different, unrelated word. "intern" must not
+#: find "Internal Audit Analyst" or "International Tax" — common finance titles.
+_WORD_START_EXCEPTIONS = {"intern": r"(?!al\b|ally\b|ation)"}
+
 def _keyword_re(words: list[str], *, whole: bool) -> re.Pattern[str] | None:
     """One case-insensitive pattern for ``words``; None when there are none.
 
@@ -33,7 +37,10 @@ def _keyword_re(words: list[str], *, whole: bool) -> re.Pattern[str] | None:
     if not cleaned:
         return None
     tail = r"(?!\w)" if whole else ""
-    alternatives = "|".join(re.escape(w) for w in cleaned)
+    alternatives = "|".join(
+        re.escape(w) + ("" if whole else _WORD_START_EXCEPTIONS.get(w.lower(), ""))
+        for w in cleaned
+    )
     return re.compile(rf"(?<!\w)(?:{alternatives}){tail}", re.IGNORECASE)
 
 def iso_date(value: str) -> str:

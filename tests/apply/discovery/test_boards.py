@@ -255,6 +255,22 @@ def test_board_rows_filters_keywords_and_locations(monkeypatch):
     assert undated.posted_at == ""
 
 
+@pytest.mark.parametrize(
+    ("title", "keeps"),
+    [
+        ("Finance Intern", True),
+        ("Summer Internship - Audit", True),
+        ("Audit Interns", True),
+        ("Internal Audit Analyst", False),
+        ("International Tax Associate", False),
+        ("Internationally Mobile Associate", False),
+    ],
+)
+def test_intern_keyword_does_not_match_internal_or_international(title, keeps):
+    include, _, _ = source_watchlists.source_keyword_filters(_source(include=["intern"]))
+    assert source_watchlists.matches_filters(title, "", include=include) is keeps
+
+
 def test_board_rows_reports_a_bad_board_and_keeps_the_rest(monkeypatch):
     slept: list[float] = []
     monkeypatch.setattr(boards, "_sleep", slept.append)
