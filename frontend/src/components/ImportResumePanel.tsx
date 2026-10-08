@@ -1,3 +1,4 @@
+import { StatusMark, Tile } from "./ui";
 import { useState } from "react";
 import { importMasterResumeContent, mergeMasterResume } from "../api";
 import type { MasterResume } from "../lib/resumeEdit";
@@ -33,9 +34,11 @@ type Outcome =
 export function ImportResumePanel({
   title = "Import from a document",
   intro,
+  embedded = false,
 }: {
   title?: string;
   intro?: string;
+  embedded?: boolean;
 } = {}) {
   const { loadDraft, syncFromDisk } = useEditorState();
   const { choice } = useConfirm();
@@ -88,8 +91,7 @@ export function ImportResumePanel({
   }
 
   return (
-    <section className="rounded-xl border border-line bg-panel p-5 shadow-sm">
-      <h2 className="font-display text-lg font-semibold">{title}</h2>
+    <Tile title={title} className={embedded ? "border-0 bg-transparent p-0 sm:px-0" : ""}>
       <p className="mt-1 text-sm text-ink-muted">
         {intro ??
           "Upload a .docx or PDF resume to fold its content into the master resume below — matching entries are updated, new ones are added, nothing else changes."}
@@ -132,12 +134,12 @@ export function ImportResumePanel({
       </label>
 
       {outcome?.kind === "error" && (
-        <p className="mt-4 rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">
-          Import failed: {outcome.error}
+        <p className="mt-4 flex items-center gap-2 text-sm text-danger">
+          <StatusMark tone="failed" /> Import failed: {outcome.error}
         </p>
       )}
       {outcome?.kind === "draft" && (
-        <div className="mt-4 rounded-md bg-accent-soft px-3 py-2 text-sm text-accent">
+        <div className="mt-4 border-t border-line pt-4 text-sm text-ink">
           <p>
             Content imported as an unsaved draft — review below and Save to keep it.
             {outcome.untagged > 0 ? ` ${outcome.untagged} bullet(s) need a tag.` : null}
@@ -152,7 +154,7 @@ export function ImportResumePanel({
         </div>
       )}
       {outcome?.kind === "merged" && (
-        <div className="mt-4 rounded-md bg-accent-soft px-3 py-2 text-sm text-accent">
+        <div className="mt-4 border-t border-line pt-4 text-sm text-ink">
           <p>
             Master resume merged — {outcome.updated.length} updated, {outcome.added.length} added
             {outcome.addedSections.length > 0
@@ -177,6 +179,6 @@ export function ImportResumePanel({
           )}
         </div>
       )}
-    </section>
+    </Tile>
   );
 }

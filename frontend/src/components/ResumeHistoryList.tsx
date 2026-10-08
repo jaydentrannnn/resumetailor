@@ -5,7 +5,7 @@ import type { MasterResume } from "../lib/resumeEdit";
 import { useToast } from "../lib/toast";
 import { useConfirm } from "../state/confirmState";
 import { useEditorState } from "../state/editorState";
-import { Button } from "./ui";
+import { Button, StatusChip } from "./ui";
 
 /**
  * Saved master-resume versions, newest first, each with Restore. `showUndo` adds an
@@ -81,12 +81,12 @@ export function ResumeHistoryList({
               <span className="block text-ink">
                 {new Date(version.saved_at).toLocaleString()} · {version.note || "saved"}
               </span>
-              <span className="block text-xs text-ink-muted">
+              <span className="block font-mono text-xs text-ink-muted">
                 {version.sections} sections · {version.bullets} bullets
               </span>
             </span>
             {version.current ? (
-              <span className="text-xs text-ink-muted">Current</span>
+              <StatusChip tone="done">Current</StatusChip>
             ) : (
               <Button
                 size="sm"

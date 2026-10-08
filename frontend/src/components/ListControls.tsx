@@ -1,3 +1,4 @@
+import { buttonClass } from "../lib/buttonClass";
 /**
  * Shared move / remove / add controls for master-resume editor lists.
  */
@@ -36,7 +37,7 @@ export function EntryControls({
             aria-label="Move up"
             disabled={index === 0}
             onClick={() => onMove(index, index - 1)}
-            className="flex min-h-6 min-w-6 items-center justify-center rounded border border-line text-xs disabled:opacity-30"
+            className={buttonClass("ghost", "sm", "min-w-9 px-2")}
           >
             ↑
           </button>
@@ -46,7 +47,7 @@ export function EntryControls({
             aria-label="Move down"
             disabled={index >= total - 1}
             onClick={() => onMove(index, index + 1)}
-            className="flex min-h-6 min-w-6 items-center justify-center rounded border border-line text-xs disabled:opacity-30"
+            className={buttonClass("ghost", "sm", "min-w-9 px-2")}
           >
             ↓
           </button>
@@ -56,7 +57,7 @@ export function EntryControls({
         type="button"
         title="Remove"
         onClick={() => onRemove(index)}
-        className="rounded border border-line px-2 py-0.5 text-xs text-danger hover:border-danger"
+        className={buttonClass("danger", "sm")}
       >
         Remove
       </button>
@@ -72,11 +73,7 @@ type AddButtonProps = {
 /** Secondary-styled button that appends a blank row. */
 export function AddButton({ label, onClick }: AddButtonProps) {
   return (
-    <button
-      type="button"
-      onClick={onClick}
-      className="rounded-md border border-dashed border-line px-3 py-2 text-sm font-medium text-ink-muted hover:border-accent hover:text-accent"
-    >
+    <button type="button" onClick={onClick} className={buttonClass("secondary", "sm")}>
       {label}
     </button>
   );

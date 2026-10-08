@@ -1,3 +1,4 @@
+import { Tile } from "../../components/ui";
 import { useState } from "react";
 import { AddButton, EntryControls } from "../../components/ListControls";
 import { EducationEntries } from "./EducationEntries";
@@ -21,14 +22,10 @@ export function AddSectionPanel({ onAdd }: { onAdd: (kind: SectionKind, title: s
   const preset = choice === "custom" ? null : SECTION_PRESETS[Number(choice)];
 
   return (
-    <section className="flex flex-wrap items-end gap-3 rounded-xl border border-dashed border-line p-4">
+    <Tile className="flex flex-wrap items-end gap-3">
       <label className="text-sm text-ink-muted">
         <span className="mb-1 block">New section</span>
-        <select
-          value={choice}
-          onChange={(e) => setChoice(e.target.value)}
-          className="rounded-md border border-line bg-paper/40 px-2 py-1.5 text-sm focus:border-accent"
-        >
+        <select value={choice} onChange={(e) => setChoice(e.target.value)} className="field">
           {SECTION_PRESETS.map((item, index) => (
             <option key={item.title} value={String(index)}>
               {item.title} · {item.hint}
@@ -45,7 +42,7 @@ export function AddSectionPanel({ onAdd }: { onAdd: (kind: SectionKind, title: s
               value={title}
               onChange={(e) => setTitle(e.target.value)}
               placeholder={DEFAULT_SECTION_TITLES[kind]}
-              className="rounded-md border border-line bg-paper/40 px-2 py-1.5 text-sm focus:border-accent"
+              className="field"
             />
           </label>
           <label className="text-sm text-ink-muted">
@@ -53,7 +50,7 @@ export function AddSectionPanel({ onAdd }: { onAdd: (kind: SectionKind, title: s
             <select
               value={kind}
               onChange={(e) => setKind(e.target.value as SectionKind)}
-              className="rounded-md border border-line bg-paper/40 px-2 py-1.5 text-sm focus:border-accent"
+              className="field"
             >
               {kinds.map((k) => (
                 <option key={k} value={k}>
@@ -72,7 +69,7 @@ export function AddSectionPanel({ onAdd }: { onAdd: (kind: SectionKind, title: s
             : onAdd(kind, title.trim() || DEFAULT_SECTION_TITLES[kind])
         }
       />
-    </section>
+    </Tile>
   );
 }
 
@@ -102,7 +99,7 @@ export function SectionShell({
   onChange: (next: Section) => void;
 }) {
   return (
-    <section className="space-y-4 rounded-xl border border-line bg-panel p-5 shadow-sm">
+    <Tile className="space-y-4">
       <div className="flex flex-wrap items-start justify-between gap-2">
         <div className="min-w-0 flex-1">
           <div className="flex items-center gap-2">
@@ -111,9 +108,9 @@ export function SectionShell({
               value={section.title}
               onChange={(e) => onChange({ ...section, title: e.target.value } as Section)}
               placeholder="Section title"
-              className="w-full max-w-sm rounded-md border border-line bg-paper/40 px-2 py-1.5 font-display text-lg font-semibold focus:border-accent"
+              className="min-h-9 w-full max-w-sm rounded-sm border border-transparent bg-transparent text-[15px] font-semibold hover:border-line focus:border-accent"
             />
-            <span className="shrink-0 rounded-full bg-accent-soft px-2 py-0.5 text-xs font-medium text-accent">
+            <span className="shrink-0 font-mono text-xs text-ink-muted">
               {SECTION_KIND_LABELS[section.kind]}
             </span>
           </div>
@@ -153,6 +150,6 @@ export function SectionShell({
       {section.kind === "skills" && (
         <SkillsEntries section={section} pushUndo={pushUndo} onChange={onChange} />
       )}
-    </section>
+    </Tile>
   );
 }

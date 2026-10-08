@@ -143,12 +143,12 @@ export function ProjectEntries({
                 />
               </div>
               {linkWithoutUrl && (
-                <p className="mt-2 text-xs text-warn">
+                <p className="mt-2 text-xs text-attn">
                   Label renders as plain text with no hyperlink — add a GitHub URL.
                 </p>
               )}
               {urlLooksOdd && (
-                <p className="mt-2 text-xs text-warn">
+                <p className="mt-2 text-xs text-attn">
                   URL should start with http:// or https:// for a working link.
                 </p>
               )}

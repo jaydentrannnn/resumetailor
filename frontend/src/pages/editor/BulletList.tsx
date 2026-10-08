@@ -1,3 +1,4 @@
+import { StatusMark } from "../../components/ui";
 import { useState } from "react";
 import { suggestTags, suggestTagsAI, type TagSuggestion } from "../../api";
 import { ChipListField } from "../../components/ChipListField";
@@ -171,7 +172,7 @@ function BulletRow({
   }
 
   return (
-    <div className="border-l-2 border-line/60 pl-4">
+    <div className="border-t border-line pt-4">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs text-ink-muted">
         <code>{b.id}</code>
         <div className="flex items-center gap-2">
@@ -195,11 +196,11 @@ function BulletRow({
           setSuggested(null);
           setAiAsked(false);
         }}
-        className="w-full rounded-md border border-line bg-panel px-2 py-1.5 text-sm focus:border-accent"
+        className="field"
       />
       <p
         className={`mt-1 text-xs tabular-nums ${
-          overMax ? "text-warn" : len >= softMin ? "text-accent" : "text-ink-muted"
+          overMax ? "text-attn" : len >= softMin ? "text-accent" : "text-ink-muted"
         }`}
       >
         {len} / {charMax}
@@ -210,9 +211,12 @@ function BulletRow({
             : ""}
       </p>
       {hints.length > 0 && (
-        <ul aria-label="Bullet tips" className="mt-1 space-y-0.5 text-xs text-ink-muted">
+        <ul aria-label="Bullet tips" className="mt-2 space-y-1 text-xs text-attn">
           {hints.map((hint) => (
-            <li key={hint.code}>· {hint.message}</li>
+            <li key={hint.code} className="flex items-start gap-2">
+              <StatusMark tone="attention" />
+              <span>{hint.message}</span>
+            </li>
           ))}
         </ul>
       )}
@@ -234,7 +238,7 @@ function BulletRow({
             type="button"
             onClick={() => addTag(chip.tag)}
             title={chip.matched ? `Matched “${chip.matched}”` : undefined}
-            className="rounded-full border border-accent/40 px-2 py-0.5 text-accent hover:bg-accent-soft"
+            className="rounded-sm border border-accent/40 px-2 py-0.5 text-accent hover:bg-accent-soft"
           >
             + {chip.tag}
           </button>

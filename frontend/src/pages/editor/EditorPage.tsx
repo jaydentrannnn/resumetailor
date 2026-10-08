@@ -7,18 +7,19 @@ import { ImportResumePanel } from "../../components/ImportResumePanel";
 import { useEditorState } from "../../state/editorState";
 import { AddSectionPanel, SectionShell } from "./SectionShell";
 import { TagVocabularyPanel } from "./TagVocabularyPanel";
-import { TextField } from "./TextField";
+import { ContactSection } from "./ContactSection";
+import { SectionIndex } from "./SectionIndex";
+import { UndoBar } from "./UndoBar";
+import { Button, PageHeader, StatusChip, Tile } from "../../components/ui";
 import {
   type MasterResume,
   type Section,
   type SectionKind,
-  SECTION_KIND_LABELS,
   addToVocabulary,
   blankSection,
   collectBulletIds,
   collectEntryIds,
   collectSectionIds,
-  looksLikeHttpUrl,
   moveItem,
   nextSectionId,
   removeAt,
@@ -162,67 +163,44 @@ export function EditorPage({
   return (
     <EntryEditorProvider sections={resume.sections} moveEntry={moveEntry}>
       <div className="space-y-6">
-        {/* bg-panel (not bg-paper/85) so the sticky bar reads as a toolbar sitting
-          above the page, not a translucent cream-on-cream band that only shows
-          up as a faint seam. shadow-sm carries the same "this is elevated"
-          signal the rest of the app's panels use. Rounded and inset like the other
-          cards: it lives inside the Profile page now, not full-bleed under the nav. */}
-        <div className="sticky top-0 z-20 rounded-xl border border-line bg-panel px-5 py-3 shadow-sm">
-          <div className="flex flex-wrap items-center justify-between gap-3">
-            <div>
-              <h1 className="font-display text-2xl font-semibold">Master resume</h1>
-              <p className="text-sm text-ink-muted">
-                Every fact a tailored resume can use lives here. Tags double as the fabrication
-                guard&apos;s whitelist.
-              </p>
-            </div>
-            <div className="flex items-center gap-2">
-              {dirty && !embedded && (
-                <span className="rounded-full bg-warn-soft px-2.5 py-1 text-xs font-medium text-warn">
-                  Unsaved changes
-                </span>
-              )}
-              <button
-                type="button"
-                onClick={() => setHistoryOpen(true)}
-                className="rounded-md border border-line px-3 py-2 text-sm font-medium hover:border-accent"
-              >
-                History
-              </button>
-              <button
-                type="button"
-                onClick={onValidate}
-                disabled={busy}
-                className="rounded-md border border-line px-3 py-2 text-sm font-medium hover:border-accent disabled:opacity-50"
-              >
-                Validate
-              </button>
-              {!embedded && (
-                <button
-                  type="button"
-                  onClick={onSave}
-                  disabled={busy}
-                  className="rounded-md bg-accent px-3 py-2 text-sm font-medium text-on-accent disabled:opacity-50"
-                >
-                  Save
-                </button>
-              )}
-            </div>
+        {!embedded && (
+          <PageHeader
+            title="Master resume"
+            eyebrow="PROFILE · RESUME CONTENT"
+            description="Every fact a tailored resume can use lives here."
+          />
+        )}
+        <div className="flex flex-wrap items-center justify-between gap-3">
+          <p className="text-sm text-ink-muted">
+            Tags are the vocabulary used to check your resume's facts.
+          </p>
+          <div className="flex flex-wrap items-center gap-2">
+            {dirty && !embedded && <StatusChip tone="attention">Unsaved changes</StatusChip>}
+            <Button size="sm" onClick={() => setHistoryOpen(true)}>
+              History
+            </Button>
+            <Button size="sm" onClick={onValidate} disabled={busy}>
+              Validate
+            </Button>
+            {!embedded && (
+              <Button variant="primary" size="sm" onClick={onSave} disabled={busy}>
+                Save
+              </Button>
+            )}
           </div>
+        </div>
+        <div>
           {message && (
             <p
               role="status"
               aria-live="polite"
-              className="mt-2 max-h-32 overflow-y-auto rounded-md bg-accent-soft px-3 py-2 text-sm text-accent"
+              className="max-h-32 overflow-y-auto text-sm text-ink-muted"
             >
               {message}
             </p>
           )}
           {errors.length > 0 && (
-            <ul
-              role="alert"
-              className="mt-2 max-h-32 overflow-y-auto rounded-md bg-danger-soft px-3 py-2 text-sm text-danger"
-            >
+            <ul role="alert" className="max-h-32 overflow-y-auto text-sm text-danger">
               {errors.map((e) => (
                 <li key={e}>{e}</li>
               ))}
@@ -230,107 +208,22 @@ export function EditorPage({
           )}
         </div>
 
-        <details className="rounded-lg border border-line bg-panel p-4">
-          <summary className="cursor-pointer text-sm font-medium text-accent">
-            Import resume content
-          </summary>
-          <div className="mt-3">
-            <ImportResumePanel />
-          </div>
-        </details>
-
-        <TagVocabularyPanel resume={resume} onChange={setResume} />
-
-        {showContact && (
-          <section className="rounded-xl border border-line bg-panel p-5 shadow-sm">
-            <h2 className="font-display text-lg font-semibold">Contact</h2>
-            <div className="mt-3 grid grid-cols-1 gap-3 sm:grid-cols-2">
-              <TextField
-                label="Name"
-                value={resume.contact.name}
-                onChange={(v) => setResume({ ...resume, contact: { ...resume.contact, name: v } })}
-              />
-              <TextField
-                label="Email"
-                value={resume.contact.email}
-                onChange={(v) => setResume({ ...resume, contact: { ...resume.contact, email: v } })}
-              />
-              <TextField
-                label="Phone"
-                value={resume.contact.phone ?? ""}
-                onChange={(v) => setResume({ ...resume, contact: { ...resume.contact, phone: v } })}
-              />
-              <TextField
-                label="Location"
-                value={resume.contact.location ?? ""}
-                onChange={(v) =>
-                  setResume({ ...resume, contact: { ...resume.contact, location: v } })
-                }
-              />
-              <TextField
-                label="LinkedIn URL"
-                value={resume.contact.linkedin ?? ""}
-                onChange={(v) =>
-                  setResume({ ...resume, contact: { ...resume.contact, linkedin: v } })
-                }
-              />
-              <TextField
-                label="GitHub URL"
-                value={resume.contact.github ?? ""}
-                onChange={(v) =>
-                  setResume({ ...resume, contact: { ...resume.contact, github: v } })
-                }
-              />
-            </div>
-            {(resume.contact.linkedin ?? "").trim() &&
-              !looksLikeHttpUrl(resume.contact.linkedin ?? "") && (
-                <p className="mt-2 text-xs text-warn">
-                  LinkedIn URL should start with http:// or https://.
-                </p>
-              )}
-            {(resume.contact.github ?? "").trim() &&
-              !looksLikeHttpUrl(resume.contact.github ?? "") && (
-                <p className="mt-2 text-xs text-warn">
-                  GitHub URL should start with http:// or https://.
-                </p>
-              )}
-          </section>
-        )}
-
         <div className="lg:grid lg:grid-cols-[11rem_minmax(0,1fr)] lg:items-start lg:gap-5">
-          <label className="mb-3 block text-sm lg:hidden">
-            Jump to section
-            <select
-              className="field mt-1"
-              defaultValue=""
-              onChange={(event) =>
-                document
-                  .getElementById(`resume-section-${event.target.value}`)
-                  ?.scrollIntoView({ behavior: "smooth", block: "start" })
-              }
-            >
-              <option value="" disabled>
-                Choose a section
-              </option>
-              {resume.sections.map((section) => (
-                <option key={section.id} value={section.id}>
-                  {section.title || SECTION_KIND_LABELS[section.kind]}
-                </option>
-              ))}
-            </select>
-          </label>
-          <nav aria-label="Resume sections" className="sticky top-4 hidden space-y-1 lg:block">
-            {resume.sections.map((section) => (
-              <a
-                key={section.id}
-                href={`#resume-section-${section.id}`}
-                className="block rounded-md px-2 py-1.5 text-sm text-ink-muted hover:bg-accent-soft hover:text-accent"
-              >
-                {section.title || SECTION_KIND_LABELS[section.kind]}
-              </a>
-            ))}
-          </nav>
+          <SectionIndex sections={resume.sections} />
           <div className="space-y-5">
+            <Tile>
+              <details>
+                <summary className="cursor-pointer text-sm font-medium text-accent">
+                  Import resume content
+                </summary>
+                <div className="mt-3">
+                  <ImportResumePanel embedded />
+                </div>
+              </details>
+            </Tile>
+
+            {showContact && <ContactSection resume={resume} setResume={setResume} />}
+
             {resume.sections.map((section, i) => (
               <div
                 key={section.id}
@@ -369,6 +262,7 @@ export function EditorPage({
         </p>
 
         <AddSectionPanel onAdd={addSection} />
+        <TagVocabularyPanel resume={resume} onChange={setResume} />
       </div>
       {historyOpen && (
         <Modal title="Resume history" onClose={() => setHistoryOpen(false)} placement="right">
@@ -381,26 +275,7 @@ export function EditorPage({
           </div>
         </Modal>
       )}
-      {toasts.length > 0 && (
-        <div className="fixed inset-x-0 bottom-4 z-30 flex flex-col items-center gap-2 px-4 sm:items-end sm:pr-6">
-          {toasts.map((t) => (
-            <div
-              key={t.id}
-              role="status"
-              className="flex items-center gap-3 rounded-lg border border-line bg-panel px-4 py-2.5 text-sm text-ink shadow-lg"
-            >
-              <span>{t.message}</span>
-              <button
-                type="button"
-                onClick={() => undoToast(t.id)}
-                className="font-semibold text-accent underline-offset-2 hover:underline"
-              >
-                Undo
-              </button>
-            </div>
-          ))}
-        </div>
-      )}
+      <UndoBar toasts={toasts} onUndo={undoToast} />
     </EntryEditorProvider>
   );
 }

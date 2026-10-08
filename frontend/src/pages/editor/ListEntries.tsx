@@ -46,7 +46,7 @@ export function ListEntries({
 
   return (
     <div className="space-y-3">
-      <div className="flex items-center justify-between gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-2">
         <p className="text-xs text-ink-muted">
           Plain bullet lines — never rewritten or resized, always shown in full.
         </p>
@@ -72,7 +72,7 @@ export function ListEntries({
                 setEntries(next);
               }}
               placeholder="e.g. AWS Certified Cloud Practitioner"
-              className="w-full rounded-md border border-line bg-panel px-2 py-1.5 text-sm focus:border-accent"
+              className="field"
             />
           </EntryCard>
         );

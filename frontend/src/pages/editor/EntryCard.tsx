@@ -64,9 +64,24 @@ export function EntryCard({
   const open = expanded.has(key);
   const bodyId = useId();
   const destinations = sections.filter((s) => s.id !== section.id && s.kind === section.kind);
+  const entry = section.entries[index];
+  const dates =
+    "start" in entry
+      ? [entry.start, entry.end].filter(Boolean).join(" – ")
+      : "dates" in entry
+        ? entry.dates
+        : "";
+  const detail =
+    "bullets" in entry
+      ? `${entry.bullets.length} bullets`
+      : "items" in entry
+        ? `${entry.items.length} skills`
+        : "degree" in entry
+          ? entry.degree
+          : "";
 
   return (
-    <div data-resume-entry className="py-4 first:pt-0 last:pb-0">
+    <div data-resume-entry className="border-t border-line py-4 last:pb-0">
       <div className="flex flex-wrap items-center justify-between gap-2">
         <button
           type="button"
@@ -74,7 +89,7 @@ export function EntryCard({
           aria-controls={bodyId}
           aria-label={`${open ? "Collapse" : "Expand"} ${title}`}
           onClick={() => setExpanded(key, !open)}
-          className="flex min-w-0 flex-1 items-center gap-2 rounded py-1 text-left text-sm font-medium hover:text-accent focus-visible:outline-accent"
+          className="rt-control flex min-w-0 flex-1 items-center gap-2 rounded-sm py-1 text-left text-sm font-semibold hover:text-accent focus-visible:outline-accent"
         >
           <span aria-hidden="true" className="shrink-0">
             {open ? "▾" : "▸"}
@@ -87,7 +102,7 @@ export function EntryCard({
               value=""
               aria-label={`Move ${title} to section`}
               onChange={(event) => moveEntry(section.id, key, event.target.value)}
-              className="max-w-48 rounded border border-line bg-panel px-2 py-1 text-xs focus:border-accent"
+              className="field max-w-48 text-xs"
             >
               <option value="" disabled>
                 Move to…
@@ -110,6 +125,12 @@ export function EntryCard({
           />
         </div>
       </div>
+      {(dates || detail) && (
+        <p className="mt-1 flex flex-wrap gap-x-3 gap-y-1 text-xs text-ink-muted">
+          {dates && <span className="font-mono">{dates}</span>}
+          {detail && <span>{detail}</span>}
+        </p>
+      )}
       <div id={bodyId} hidden={!open} className="mt-3">
         {children}
       </div>

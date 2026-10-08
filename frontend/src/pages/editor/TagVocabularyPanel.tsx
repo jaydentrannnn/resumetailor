@@ -1,3 +1,4 @@
+import { Tile } from "../../components/ui";
 import { ChipListField } from "../../components/ChipListField";
 import { useConfirm } from "../../state/confirmState";
 import { type MasterResume, countTagUsage, removeTagFromResume } from "../../lib/resumeEdit";
@@ -47,35 +48,37 @@ export function TagVocabularyPanel({
   }
 
   return (
-    <details className="group rounded-xl border border-line bg-panel p-5 shadow-sm">
-      {/* Closed by default — this is a shared option list (settings), not resume
+    <Tile>
+      <details className="group">
+        {/* Closed by default — this is a shared option list (settings), not resume
           content, and at ~150 tags it would otherwise dominate the page above
           Contact and every actual section. `list-none` + a manual marker keeps
           the disclosure triangle in the design system's own voice instead of the
           browser default. */}
-      <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
-        <span>
-          <span className="font-display text-lg font-semibold">Tag options</span>
-          <span className="ml-2 text-sm text-ink-muted">
-            {vocab.length} tag{vocab.length === 1 ? "" : "s"}
+        <summary className="flex cursor-pointer list-none items-center justify-between gap-3">
+          <span>
+            <span className="rt-tile-title">Tag options</span>
+            <span className="ml-2 text-sm text-ink-muted">
+              {vocab.length} tag{vocab.length === 1 ? "" : "s"}
+            </span>
           </span>
-        </span>
-        <span className="text-ink-muted transition-transform duration-[var(--dur-short)] ease-out group-open:rotate-180">
-          ▾
-        </span>
-      </summary>
-      <p className="mt-2 text-sm text-ink-muted">
-        Shared list for bullet tags. Adding a tag on a bullet also adds it here; removing an option
-        strips it from every bullet that uses it.
-      </p>
-      <div className="mt-3">
-        <ChipListField
-          label="Vocabulary"
-          items={vocab}
-          onChange={(items) => void applyVocabulary(items)}
-          placeholder="Add a tag option"
-        />
-      </div>
-    </details>
+          <span className="text-ink-muted transition-transform duration-[var(--dur-short)] ease-out group-open:rotate-180">
+            ▾
+          </span>
+        </summary>
+        <p className="mt-2 text-sm text-ink-muted">
+          Shared list for bullet tags. Adding a tag on a bullet also adds it here; removing an
+          option strips it from every bullet that uses it.
+        </p>
+        <div className="mt-3">
+          <ChipListField
+            label="Vocabulary"
+            items={vocab}
+            onChange={(items) => void applyVocabulary(items)}
+            placeholder="Add a tag option"
+          />
+        </div>
+      </details>
+    </Tile>
   );
 }
