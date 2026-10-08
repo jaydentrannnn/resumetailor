@@ -43,7 +43,7 @@ export function PageFitCard({ calibration }: { calibration: CalibrationInfo }) {
               {status}
             </StatusChip>
           </div>
-          <p className="mt-1 max-w-prose text-sm text-ink-muted">
+          <p className="mt-1 text-sm text-ink-muted">
             The app measures how much text fits on a line and a page of this template, so it can
             keep your resume to the page count you ask for. Tune it again after switching templates
             or installing fonts.
