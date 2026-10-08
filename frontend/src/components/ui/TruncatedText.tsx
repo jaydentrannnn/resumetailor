@@ -78,6 +78,8 @@ export function TruncatedText({
     });
   }
 
+  // clientWidth excludes the page scrollbar, so the box never slides underneath it.
+  const viewW = document.documentElement.clientWidth || window.innerWidth;
   const below = at ? at.y + GAP + 200 <= window.innerHeight : true;
   return (
     <>
@@ -99,8 +101,8 @@ export function TruncatedText({
             aria-label={label}
             className="fixed z-50 max-h-[60vh] overflow-auto rounded-sm bg-chrome p-3 text-[13px] leading-relaxed text-ink shadow-xl"
             style={{
-              width: Math.min(WIDTH, window.innerWidth - 16),
-              left: Math.max(8, Math.min(at.x - 16, window.innerWidth - WIDTH - 8)),
+              width: Math.min(WIDTH, viewW - 16),
+              left: Math.max(8, Math.min(at.x - 16, viewW - Math.min(WIDTH, viewW - 16) - 8)),
               top: below ? at.y + GAP : undefined,
               bottom: below ? undefined : window.innerHeight - Math.min(at.y, at.top) + GAP,
             }}
