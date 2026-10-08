@@ -125,12 +125,8 @@ export function ApplyPage() {
               Set up
             </Button>
           }
-        >
-          <strong className="font-semibold text-ink">
-            Connect your browser to fill applications.
-          </strong>{" "}
-          {readyCount} application{readyCount === 1 ? " is" : "s are"} ready or waiting on you.
-        </AttentionRow>
+          text={`Connect your browser to fill applications. ${readyCount} application${readyCount === 1 ? " is" : "s are"} ready or waiting on you.`}
+        />
       )}
       <NightlyRunTile daily={op.daily} />
       {!tabDecided ? (

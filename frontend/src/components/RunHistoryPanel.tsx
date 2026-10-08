@@ -5,7 +5,7 @@ import { useConfirm } from "../state/confirmState";
 import { useRunState } from "../state/runState";
 import { CompareRunsDialog } from "./CompareRunsDialog";
 import { DataTable, Pagination, RowActionsMenu, type TableColumn } from "./TableControls";
-import { Button, SelectionBar, StatusChip, Tile, type Tone } from "./ui";
+import { Button, SelectionBar, StatusChip, Tile, TruncatedText, type Tone } from "./ui";
 
 /** Runs that can be removed from disk-backed history (not queued or running). */
 function isDeletable(run: RunHistoryEntry): boolean {
@@ -148,12 +148,11 @@ export function RunHistoryPanel() {
       heading: "Status",
       sortable: true,
       cell: (run) => (
-        <span className="flex flex-col items-start gap-1">
+        <span className="flex min-w-0 flex-col items-start gap-1">
           <StatusPill status={run.status} />
+          {/* One line (newlines collapse, so the first line leads); the box keeps them. */}
           {run.error && (
-            <span className="text-xs text-danger" title={run.error}>
-              {run.error.split("\n")[0]}
-            </span>
+            <TruncatedText className="text-xs text-danger" text={run.error} label="Error details" />
           )}
         </span>
       ),

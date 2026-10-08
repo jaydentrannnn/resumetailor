@@ -1,13 +1,32 @@
 // @vitest-environment jsdom
-import { cleanup, render, screen } from "@testing-library/react";
+import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter } from "react-router-dom";
-import { afterEach, describe, expect, it } from "vitest";
+import { afterEach, describe, expect, it, vi } from "vitest";
 import type { AttentionItem } from "../../api";
 import { AttentionList } from "./AttentionList";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 describe("AttentionList", () => {
+  it("keeps a long message on one line with the full text a click away", () => {
+    vi.spyOn(HTMLElement.prototype, "scrollWidth", "get").mockReturnValue(400);
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(100);
+    const message = "The site timed out while uploading the resume, so the fill stopped";
+    render(
+      <MemoryRouter>
+        <AttentionList
+          items={[{ application_id: "a", label: "Alpha", kind: "failed", message, at: null }]}
+        />
+      </MemoryRouter>,
+    );
+    const line = screen.getByRole("button", { name: `Why it needs you: ${message}` });
+    fireEvent.click(line, { clientX: 10, clientY: 10 });
+    expect(screen.getByRole("dialog", { name: "Why it needs you" }).textContent).toContain(message);
+  });
+
   it("counts outcomes and links the newest item first to its review tab", () => {
     const items: AttentionItem[] = [
       {

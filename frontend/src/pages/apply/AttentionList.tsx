@@ -1,7 +1,7 @@
 import { useId } from "react";
 import { Link } from "react-router-dom";
 import type { AttentionItem } from "../../api";
-import { buttonClass, StatusChip, type Tone } from "../../components/ui";
+import { buttonClass, StatusChip, TruncatedText, type Tone } from "../../components/ui";
 import { attentionSummary } from "../../lib/applyPage";
 
 const names: Record<AttentionItem["kind"], string> = {
@@ -90,9 +90,11 @@ function AttentionTable({
             <td className="py-2.5 pr-3 align-top">
               <StatusChip tone={tones[item.kind]}>{names[item.kind]}</StatusChip>
               {item.kind !== "ready_for_review" && item.message && (
-                <p className="mt-1 text-xs text-ink-muted [overflow-wrap:anywhere]">
-                  {item.message}
-                </p>
+                <TruncatedText
+                  className="mt-1 text-xs text-ink-muted"
+                  text={item.message}
+                  label="Why it needs you"
+                />
               )}
             </td>
             <td className="hidden py-2.5 pr-3 align-top font-mono text-xs text-ink-muted sm:table-cell">

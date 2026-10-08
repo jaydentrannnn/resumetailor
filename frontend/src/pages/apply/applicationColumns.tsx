@@ -2,7 +2,13 @@ import type { ReactNode } from "react";
 import { Link, type NavigateFunction } from "react-router-dom";
 import type { ApplicationRow } from "../../api";
 import { RowActionsMenu, type MenuItem, type TableColumn } from "../../components/TableControls";
-import { buttonClass, Meter, StatusChip, type ButtonVariant } from "../../components/ui";
+import {
+  buttonClass,
+  Meter,
+  StatusChip,
+  TruncatedText,
+  type ButtonVariant,
+} from "../../components/ui";
 import { applicationStatusLabel, applicationStatusTone } from "../../lib/applicationStatus";
 import {
   canContinueFill,
@@ -12,7 +18,13 @@ import {
   retryShortLabel,
   retryTitle,
 } from "../../lib/applicationRows";
-import { REVIEW_STATUSES, TERMINAL_STATUSES, canRetailor, reviewReason } from "../../lib/applyPage";
+import {
+  REVIEW_STATUSES,
+  TERMINAL_STATUSES,
+  canRetailor,
+  readyBlockLabel,
+  reviewReason,
+} from "../../lib/applyPage";
 import { CapturedBadge } from "../CapturedStubs";
 import type { TableActions } from "./ApplicationsTable";
 import { PostedDate, WaitingSince } from "./PostedDate";
@@ -90,7 +102,10 @@ function rowMenu(row: ApplicationRow, archived: boolean, actions: TableActions):
   ];
 }
 
-/** The row's next step as one button (Continue / Reopen / Fill / Retry / Review / View) plus its menu. */
+/**
+ * The row's next step as one button (Continue / Reopen / Fill / Retry / Review / View) plus
+ * its menu. A ready row the server won't fill ("Check resume") gets Review, not View.
+ */
 function RowAction({
   row,
   archived,
@@ -112,6 +127,7 @@ function RowAction({
     row.retry_kind
       ? retryShortLabel(row.retry_kind, row.status)
       : null;
+  const blocked = !archived && !!readyBlockLabel(row);
   const kind: "continue" | "reopen" | "review" | "fill" | "retry" | "view" =
     archived || TERMINAL_STATUSES.has(row.status)
       ? "view"
@@ -123,9 +139,11 @@ function RowAction({
             : "review"
         : row.status === "ready" && canFillAfterReview(row)
           ? "fill"
-          : retryLabel
-            ? "retry"
-            : "view";
+          : blocked
+            ? "review"
+            : retryLabel
+              ? "retry"
+              : "view";
   // The primary action is left out of the menu; Review stays one menu item away
   // when Continue or Reopen takes its place.
   const primaryLabel =
@@ -172,7 +190,7 @@ function RowAction({
     primary = (
       <button
         type="button"
-        className={action("secondary")}
+        className={action("primary")}
         title={browserConnected ? "Open the posting and fill the form" : needsBrowser}
         disabled={busy || active || !browserConnected}
         onClick={() => actions.start("fill", [row.source_job_id])}
@@ -203,10 +221,10 @@ function RowAction({
       <Link
         to={actions.detail(row, kind === "review" ? "review" : "overview")}
         onClick={actions.rememberScroll}
-        title={reason?.why}
+        title={reason?.why ?? (blocked ? "Open the application to check its files" : undefined)}
         className={action(kind === "review" ? "secondary" : "ghost")}
       >
-        {kind === "review" ? reason!.action : "View"}
+        {kind === "review" ? (reason?.action ?? "Review") : "View"}
       </Link>
     );
   return (
@@ -240,11 +258,17 @@ function SkillMatch({ row }: { row: ApplicationRow }) {
   );
 }
 
-const statusChip = (row: ApplicationRow) => (
-  <StatusChip tone={applicationStatusTone(row.status)}>
-    {applicationStatusLabel(row.status)}
-  </StatusChip>
-);
+/** The row's status; a ready row the server won't fill reads "Check resume" (attention). */
+const statusChip = (row: ApplicationRow, archived = false) => {
+  const blocked = archived ? null : readyBlockLabel(row);
+  return blocked ? (
+    <StatusChip tone="attention">{blocked}</StatusChip>
+  ) : (
+    <StatusChip tone={applicationStatusTone(row.status)}>
+      {applicationStatusLabel(row.status)}
+    </StatusChip>
+  );
+};
 
 /**
  * The table's columns for one tab: company, posting, platform, status (or "Why it needs
@@ -285,7 +309,11 @@ export function applicationColumns({
           className: "w-[24%]",
           cell: (row) => (
             <>
-              <p className="text-[13px] font-medium text-ink">{reviewReason(row).why}</p>
+              <TruncatedText
+                className="text-[13px] font-medium text-ink"
+                text={reviewReason(row).why}
+                label="Why it needs you"
+              />
               <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-ink-muted">
                 {statusChip(row)}
                 {isTabClosed(row, actions.openTabs) && <span>Tab closed</span>}
@@ -300,19 +328,24 @@ export function applicationColumns({
           className: "w-[17%]",
           cell: (row) => (
             <>
-              {statusChip(row)}
+              {statusChip(row, archived)}
               {row.screen_label && (
-                <p
-                  className="mt-1 line-clamp-1 text-xs text-ink-muted"
-                  title={row.screen?.reasons.join("; ")}
-                >
-                  {row.screen_label}
-                </p>
+                <TruncatedText
+                  className="mt-1 text-xs text-ink-muted"
+                  text={
+                    row.screen?.reasons.length
+                      ? `${row.screen_label}: ${row.screen.reasons.join("; ")}`
+                      : row.screen_label
+                  }
+                  label="Screening details"
+                />
               )}
               {row.error && !archived && (
-                <p className="mt-1 line-clamp-1 text-xs text-danger" title={row.error}>
-                  {row.error}
-                </p>
+                <TruncatedText
+                  className="mt-1 text-xs text-danger"
+                  text={row.error}
+                  label="Error details"
+                />
               )}
             </>
           ),
@@ -338,10 +371,11 @@ export function applicationColumns({
         <div className="flex flex-wrap items-center gap-1.5">
           <strong className="font-medium text-ink">{row.company}</strong>
           {!!row.resume_review?.warnings.length && (
-            <p className="w-full text-xs text-attn" title={row.resume_review.warnings.join("\n")}>
-              {row.resume_review.required ? "Resume needs review" : "Resume warnings reviewed"} ·{" "}
-              {row.resume_review.warnings.join(" ")}
-            </p>
+            <TruncatedText
+              className="w-full text-xs text-attn"
+              text={`${row.resume_review.required ? "Resume needs review" : "Resume warnings reviewed"} · ${row.resume_review.warnings.join(" ")}`}
+              label="Resume warnings"
+            />
           )}
           <CapturedBadge row={row} />
         </div>

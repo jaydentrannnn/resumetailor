@@ -6,7 +6,10 @@ import type { ApplicationRow } from "../../api";
 import { ApplicationsTable, type TableActions } from "./ApplicationsTable";
 import type { ApplicationTableState } from "./useApplicationTable";
 
-afterEach(cleanup);
+afterEach(() => {
+  cleanup();
+  vi.restoreAllMocks();
+});
 
 const row = (status: string, archived = false, id = "one"): ApplicationRow => ({
   source_job_id: id,
@@ -49,9 +52,18 @@ const actions: TableActions = {
   rememberScroll: vi.fn(),
 };
 
-function show(status: string, archived = false, selectedRows: ApplicationRow[] = []) {
+function show(
+  status: string,
+  archived = false,
+  selectedRows: ApplicationRow[] = [],
+  patch: Partial<ApplicationRow> = {},
+) {
   const state = {
-    data: { applications: [row(status, archived)], counts: { [status]: 1 }, total: 1 },
+    data: {
+      applications: [{ ...row(status, archived), ...patch }],
+      counts: { [status]: 1 },
+      total: 1,
+    },
     selected: new Set(selectedRows.map((item) => item.source_job_id)),
     selectedRows,
     setSelected: vi.fn(),
@@ -120,6 +132,39 @@ describe("ApplicationsTable actions", () => {
       expect(screen.queryByRole("menuitem", { name: /Tailor files again/ })).toBeNull();
     },
   );
+});
+
+describe("ApplicationsTable ready rows and long text", () => {
+  it("makes Fill the filled primary button, disabled without the browser", () => {
+    show("ready");
+    const [fill] = screen.getAllByRole("button", { name: "Fill" });
+    expect(fill.className).toContain("bg-primary");
+    expect(screen.getAllByText("Ready").length).toBeGreaterThan(0);
+  });
+
+  it("shows Check resume and a Review link on a ready row the server won't fill", () => {
+    show("ready", false, [], {
+      preparation_eligible: false,
+      preparation_reasons: ["resume_quality_unverified"],
+    });
+    expect(screen.queryByRole("button", { name: "Fill" })).toBeNull();
+    expect(screen.getAllByText("Check resume").length).toBeGreaterThan(0);
+    const [review] = screen.getAllByRole("link", { name: "Review" });
+    expect(review.getAttribute("href")).toBe("/applications/one");
+    expect(screen.queryByRole("link", { name: "View" })).toBeNull();
+  });
+
+  it("keeps a long error on one line and opens it in a box on click", () => {
+    vi.spyOn(HTMLElement.prototype, "scrollWidth", "get").mockReturnValue(400);
+    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(100);
+    const error = "The form rejected the upload because the file was larger than allowed";
+    show("tailor_failed", false, [], { error });
+    fireEvent.keyDown(document, { key: "Escape" });
+    const [line] = screen.getAllByRole("button", { name: `Error details: ${error}` });
+    expect(line.className).toContain("truncate");
+    fireEvent.click(line, { clientX: 30, clientY: 30 });
+    expect(screen.getByRole("dialog", { name: "Error details" }).textContent).toContain(error);
+  });
 });
 
 describe("ApplicationsTable bulk bar", () => {
