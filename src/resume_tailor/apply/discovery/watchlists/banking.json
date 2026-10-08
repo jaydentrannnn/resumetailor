@@ -1,0 +1,15 @@
+{
+  "description": "Banks, asset managers and insurers on Workday. These boards list every role at the firm, so add title keywords such as analyst, associate, intern or rotational. Suggestions only: each board is checked live before it is added.",
+  "boards": [
+    {"ats": "workday", "slug": "ms.wd5/ms/External", "company": "Morgan Stanley"},
+    {"ats": "workday", "slug": "citi.wd5/citi/2", "company": "Citi"},
+    {"ats": "workday", "slug": "capitalone.wd12/capitalone/Capital_One", "company": "Capital One"},
+    {"ats": "workday", "slug": "blackrock.wd1/blackrock/BlackRock_Professional", "company": "BlackRock"},
+    {"ats": "workday", "slug": "statestreet.wd1/statestreet/Global", "company": "State Street"},
+    {"ats": "workday", "slug": "vanguard.wd5/vanguard/vanguard_external", "company": "Vanguard"},
+    {"ats": "workday", "slug": "invesco.wd1/invesco/IVZ", "company": "Invesco"},
+    {"ats": "workday", "slug": "tiaa.wd1/tiaa/Search", "company": "TIAA"},
+    {"ats": "workday", "slug": "aig.wd1/aig/aig", "company": "AIG"},
+    {"ats": "workday", "slug": "mastercard.wd1/mastercard/CorporateCareers", "company": "Mastercard"}
+  ]
+}

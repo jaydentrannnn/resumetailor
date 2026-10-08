@@ -337,13 +337,13 @@ def test_filter_rows_uses_the_source_age_limit():
 
 def test_shipped_watchlists_are_well_formed():
     lists = boards.watchlists()
-    assert set(lists) == {"finance", "tech"}
+    assert set(lists) == {"banking", "consulting", "finance", "tech"}
     for entries in lists.values():
         assert entries
         assert len({(b["ats"], b["slug"].lower()) for b in entries}) == len(entries)
         for board in entries:
             assert board["ats"] in boards.BOARD_ATS
-            assert boards.valid_slug(board["slug"])
+            assert boards.valid_slug(board["slug"], board["ats"])
             assert board["company"]
 
 
@@ -515,7 +515,7 @@ def test_career_page_fetch_has_a_size_cap(monkeypatch):
 
 def test_watchlists_and_sections_routes(client, monkeypatch):
     body = client.get("/api/apply/watchlists").json()
-    assert set(body["fields"]) == {"finance", "tech"}
+    assert set(body["fields"]) == {"banking", "consulting", "finance", "tech"}
     readme = "# Title\n## Software Engineering Internship Roles\n## Quantitative Finance Internship Roles\n## Software Engineering Internship Roles\n"
     monkeypatch.setattr(sources, "fetch_readme", lambda url: readme)
     sections = client.get(

@@ -1,5 +1,5 @@
 {
-  "description": "Fintech, payments and trading firms with public job boards. Suggestions only: each board is checked live before it is added.",
+  "description": "Fintech, payments, hedge funds and trading firms with public job boards. Suggestions only: each board is checked live before it is added.",
   "boards": [
     {"ats": "greenhouse", "slug": "stripe", "company": "Stripe"},
     {"ats": "greenhouse", "slug": "robinhood", "company": "Robinhood"},
@@ -10,6 +10,13 @@
     {"ats": "greenhouse", "slug": "sofi", "company": "SoFi"},
     {"ats": "greenhouse", "slug": "gusto", "company": "Gusto"},
     {"ats": "greenhouse", "slug": "wehrtyou", "company": "Hudson River Trading"},
+    {"ats": "greenhouse", "slug": "drweng", "company": "DRW"},
+    {"ats": "greenhouse", "slug": "point72", "company": "Point72"},
+    {"ats": "greenhouse", "slug": "bridgewater89", "company": "Bridgewater Associates"},
+    {"ats": "greenhouse", "slug": "imc", "company": "IMC Trading"},
+    {"ats": "greenhouse", "slug": "akunacapital", "company": "Akuna Capital"},
+    {"ats": "greenhouse", "slug": "clearstreet", "company": "Clear Street"},
+    {"ats": "greenhouse", "slug": "betterment", "company": "Betterment"},
     {"ats": "lever", "slug": "plaid", "company": "Plaid"},
     {"ats": "ashby", "slug": "ramp", "company": "Ramp"},
     {"ats": "smartrecruiters", "slug": "Visa", "company": "Visa"}

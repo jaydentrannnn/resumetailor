@@ -1,0 +1,11 @@
+{
+  "description": "Consulting and advisory firms with public job boards. Most large consultancies (McKinsey, BCG, Bain, Deloitte, PwC, EY) use private career sites, so only firms with a readable board are listed. Suggestions only: each board is checked live before it is added.",
+  "boards": [
+    {"ats": "greenhouse", "slug": "alixpartners", "company": "AlixPartners"},
+    {"ats": "greenhouse", "slug": "charlesriverassociates", "company": "Charles River Associates"},
+    {"ats": "lever", "slug": "oliverwyman", "company": "Oliver Wyman"},
+    {"ats": "workday", "slug": "mmc.wd1/mmc/MMC", "company": "Marsh McLennan (Oliver Wyman, Mercer)"},
+    {"ats": "workday", "slug": "huron.wd1/huron/huroncareers", "company": "Huron"},
+    {"ats": "workday", "slug": "guidehouse.wd1/guidehouse/External", "company": "Guidehouse"}
+  ]
+}
