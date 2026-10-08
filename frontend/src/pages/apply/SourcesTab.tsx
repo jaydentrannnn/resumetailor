@@ -1,5 +1,5 @@
 import { type SourceConfig, type SourceField, type SourcesStatus } from "../../api";
-import { Button, SelectionBar, StatusMark } from "../../components/ui";
+import { Button, SelectionBar, StatusChip, StatusMark } from "../../components/ui";
 import {
   availableUpdate,
   duplicateSource,
@@ -236,20 +236,19 @@ function ProviderStatus({
       className="flex flex-wrap items-center gap-2 py-2 first:pt-0 last:pb-0"
     >
       <span className="font-medium">{label}</span>
-      <span
-        className={
-          connected ? "text-success" : connected === false ? "text-attn" : "text-ink-muted"
-        }
-      >
-        {connected ? (
-          "● Connected"
-        ) : (
-          <span className="inline-flex items-center gap-1.5">
-            {connected === null && <StatusMark tone="live" />}
-            {connected === false ? "○ Not connected" : "Checking…"}
-          </span>
-        )}
-      </span>
+      {connected ? (
+        // The literal "● Connected" is an e2e anchor; its typed dot stands in for the mark.
+        <StatusChip tone="done" mark={false}>
+          ● Connected
+        </StatusChip>
+      ) : connected === false ? (
+        <StatusChip tone="attention">Not connected</StatusChip>
+      ) : (
+        <span className="inline-flex items-center gap-1.5 text-ink-muted">
+          <StatusMark tone="live" />
+          Checking…
+        </span>
+      )}
       {connected !== null && (
         <button
           type="button"

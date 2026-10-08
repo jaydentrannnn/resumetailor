@@ -256,7 +256,7 @@ describe("connecting a search engine", () => {
     const usajobs = screen.getByRole("group", { name: "USAJobs" });
     await within(adzuna).findByText("● Connected");
     expect(within(adzuna).getByRole("button", { name: "Change Adzuna keys" })).toBeTruthy();
-    expect(within(usajobs).getByText("○ Not connected")).toBeTruthy();
+    expect(within(usajobs).getByText("Not connected")).toBeTruthy();
     expect(within(usajobs).getByRole("button", { name: "Connect USAJobs" })).toBeTruthy();
   });
 
@@ -292,7 +292,7 @@ describe("connecting a search engine", () => {
   it("adds a search without asking for keys, pointing at Connect instead", async () => {
     const { onChange } = renderTab([]);
     const adzuna = screen.getByRole("group", { name: "Adzuna" });
-    await within(adzuna).findByText("○ Not connected");
+    await within(adzuna).findByText("Not connected");
     fireEvent.click(screen.getByRole("button", { name: "+ Add search" }));
     const dialog = await screen.findByRole("dialog", { name: "New Adzuna search" });
     expect(within(dialog).queryByLabelText("Adzuna app key")).toBeNull();

@@ -56,21 +56,26 @@ export function StatusMark({ tone, className = "" }: { tone: Tone; className?: s
   }
 }
 
-/** A status chip: tinted pill, mark, then the label (always a word, never colour alone). */
+/**
+ * A status chip: tinted pill, mark, then the label (always a word, never colour alone).
+ * `mark={false}` drops the shape for a label that carries its own typed glyph.
+ */
 export function StatusChip({
   tone,
   children,
   className = "",
+  mark = true,
 }: {
   tone: Tone;
   children: ReactNode;
   className?: string;
+  mark?: boolean;
 }) {
   return (
     <span
       className={`inline-flex h-6 items-center gap-[7px] whitespace-nowrap rounded-sm px-[9px] text-xs font-medium ${toneChipClass(tone)} ${className}`.trim()}
     >
-      <StatusMark tone={tone} />
+      {mark && <StatusMark tone={tone} />}
       {children}
     </span>
   );
