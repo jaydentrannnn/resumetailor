@@ -8,7 +8,12 @@ const VARIANT: Record<ButtonVariant, string> = {
   ghost: "font-medium text-ink-muted hover:bg-sunken hover:text-ink",
 };
 
-const SIZE = { sm: "px-3 py-1.5 text-xs", md: "px-4 py-2 text-[13px]", lg: "px-4 py-3 text-sm" };
+const SIZE = {
+  sm: "px-3 py-1.5 text-xs",
+  md: "px-4 py-2 text-[13px]",
+  lg: "px-4 py-3 text-sm",
+  xl: "h-14 px-7 text-base",
+};
 
 export type ButtonSize = keyof typeof SIZE;
 

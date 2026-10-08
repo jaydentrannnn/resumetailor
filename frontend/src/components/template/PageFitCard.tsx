@@ -50,13 +50,14 @@ export function PageFitCard({ calibration }: { calibration: CalibrationInfo }) {
           </p>
         </div>
       </div>
-      <div className="mt-5 flex flex-wrap items-end justify-between gap-4">
+      <div className="mt-5 flex flex-wrap items-center justify-between gap-4">
         <div className="flex flex-wrap gap-x-10 gap-y-4">
           <Stat value={calibration.lines_per_page} label="lines per page" />
           <Stat value={calibration.chars_per_line} label="characters per line" />
         </div>
         <Button
           variant={tuned && !calibration.stale ? "secondary" : "primary"}
+          size="xl"
           loading={running}
           disabled={uploading || libraryBusy}
           onClick={() => void tune()}
@@ -64,11 +65,11 @@ export function PageFitCard({ calibration }: { calibration: CalibrationInfo }) {
           {running ? "Measuring…" : "Tune page fit"}
         </Button>
       </div>
-      <p className="mt-4 font-mono text-xs text-ink-muted">
-        {tuned && calibration.calibrated_at
-          ? `Measured ${new Date(calibration.calibrated_at).toLocaleString()}.`
-          : "Estimated."}
-      </p>
+      {tuned && calibration.calibrated_at && (
+        <p className="mt-4 font-mono text-xs text-ink-muted">
+          Measured {new Date(calibration.calibrated_at).toLocaleString()}.
+        </p>
+      )}
       {calibration.message && <p className="mt-2 text-sm text-attn">{calibration.message}</p>}
       {log && (
         <details className="mt-2 text-xs text-ink-muted">
