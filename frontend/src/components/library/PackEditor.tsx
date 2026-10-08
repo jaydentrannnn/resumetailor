@@ -1,3 +1,4 @@
+import { buttonClass } from "../../lib/buttonClass";
 import { useEffect, useMemo, useState } from "react";
 import { type LibraryPackDraft, fetchLibraryPack } from "../../api";
 import { errorsFor, validatePackDraft } from "../../lib/packValidation";
@@ -231,11 +232,7 @@ export function PackEditor({ packId, onClose }: { packId: string | null; onClose
                   />
                 );
               })}
-              <button
-                type="button"
-                onClick={addVerbRow}
-                className="rounded-md border border-dashed border-line px-2 py-1 text-xs text-ink-muted hover:border-accent hover:text-accent"
-              >
+              <button type="button" onClick={addVerbRow} className={buttonClass("secondary", "sm")}>
                 + Add family
               </button>
             </div>
@@ -254,23 +251,19 @@ export function PackEditor({ packId, onClose }: { packId: string | null; onClose
           )}
 
           {error && (
-            <p className="whitespace-pre-line rounded-md bg-danger-soft px-3 py-2 text-xs text-danger">
+            <p className="whitespace-pre-line rounded-sm bg-danger-soft px-3 py-2 text-xs text-danger">
               {error}
             </p>
           )}
 
           <div className="flex items-center gap-3">
-            <button
-              type="button"
-              onClick={onClose}
-              className="rounded-md border border-line px-3 py-1.5 text-sm font-medium text-ink hover:border-accent hover:text-accent"
-            >
+            <button type="button" onClick={onClose} className={buttonClass("secondary", "sm")}>
               Cancel
             </button>
             <button
               type="submit"
               disabled={saving || validationErrors.length > 0}
-              className="rounded-md bg-accent px-4 py-1.5 text-sm font-medium text-on-accent hover:bg-accent/90 disabled:opacity-50"
+              className={buttonClass("primary", "sm")}
             >
               {saving ? "Saving…" : canForce ? "Overwrite and save" : "Save pack"}
             </button>

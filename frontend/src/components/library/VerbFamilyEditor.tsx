@@ -1,3 +1,4 @@
+import { buttonClass } from "../../lib/buttonClass";
 import { ChipListField } from "../ChipListField";
 import { normalizeVerb, verbTokenError } from "../../lib/packValidation";
 
@@ -20,7 +21,7 @@ export function VerbFamilyCard({
   error?: string | null;
 }) {
   return (
-    <div className="rounded-lg border border-line bg-paper/40 p-3">
+    <div className="border-t border-line py-3">
       <div className="mb-2 flex items-center gap-1.5">
         <div className="w-40 flex-none">
           <input
@@ -31,11 +32,7 @@ export function VerbFamilyCard({
             className="field font-medium"
           />
         </div>
-        <button
-          type="button"
-          onClick={onRemove}
-          className="ml-auto flex-none rounded-md border border-line px-2 py-1 text-xs text-ink-muted hover:border-danger hover:text-danger"
-        >
+        <button type="button" onClick={onRemove} className={buttonClass("danger", "sm")}>
           Remove
         </button>
       </div>

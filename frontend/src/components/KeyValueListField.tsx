@@ -1,3 +1,4 @@
+import { buttonClass } from "../lib/buttonClass";
 import { useRef, useState } from "react";
 
 type Row = { rowId: string; key: string; value: string };
@@ -142,7 +143,7 @@ export function KeyValueListField({
                   placeholder={keyPlaceholder}
                   onChange={(e) => updateField(row.rowId, "key", e.target.value)}
                   onBlur={() => emit(rows)}
-                  className="field flex-1"
+                  className="field min-w-0 flex-1"
                 />
                 <span className="text-ink-muted">&rarr;</span>
                 <input
@@ -151,14 +152,14 @@ export function KeyValueListField({
                   placeholder={valuePlaceholder}
                   onChange={(e) => updateField(row.rowId, "value", e.target.value)}
                   onBlur={() => emit(rows)}
-                  className="field flex-1"
+                  className="field min-w-0 flex-1"
                 />
                 <button
                   type="button"
                   onClick={() => removeRow(row.rowId)}
                   title="Remove"
                   aria-label={`Remove row${row.key ? ` ${row.key}` : ""}`}
-                  className="rounded-full px-1.5 text-ink-muted hover:text-danger"
+                  className={buttonClass("danger", "sm")}
                 >
                   ×
                 </button>
@@ -167,11 +168,7 @@ export function KeyValueListField({
             </div>
           );
         })}
-        <button
-          type="button"
-          onClick={addRow}
-          className="rounded-md border border-dashed border-line px-2 py-1 text-xs text-ink-muted hover:border-accent hover:text-accent"
-        >
+        <button type="button" onClick={addRow} className={buttonClass("secondary", "sm")}>
           Add row
         </button>
       </div>
