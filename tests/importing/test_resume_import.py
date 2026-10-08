@@ -79,7 +79,7 @@ def test_full_featured_resume_round_trips_every_field():
     proj = resume.projects[0]
     assert proj.name == "Note Engine"
     assert proj.tech == ["Python", "FastAPI"]
-    assert proj.date == "2024"
+    assert (proj.start, proj.end, proj.date) == ("2024", "", "")
     assert proj.link == "Github"
     assert proj.url == "https://github.com/jordanrivera/note-engine"
     assert len(proj.bullets) == 1

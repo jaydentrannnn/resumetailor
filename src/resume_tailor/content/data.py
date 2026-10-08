@@ -144,7 +144,13 @@ class Project(_Strict):
     name: str
     #: Technologies as shown in the resume's project header line.
     tech: list[str] = Field(default_factory=list)
-    #: ``YYYY-MM`` (printed in the template's month style) or free text ("Spring 2025").
+    #: Start and end as ``YYYY-MM`` (or ``Present`` for an ongoing project), printed in the
+    #: template's month style like an experience's. A blank end, or an end equal to the
+    #: start, prints the start once ("Mar 2025"), not "Mar 2025 - Mar 2025".
+    start: str = ""
+    end: str = ""
+    #: Free text printed when no start/end is set ("Spring 2025"). A file that held a real
+    #: date here ("2025-03", "Mar 2025 - May 2025") is read into start/end on load.
     date: str = ""
     #: Link label as it appears in the resume, e.g. "Github". Empty means no link shown.
     link: str = ""
@@ -152,6 +158,22 @@ class Project(_Strict):
     #: shared URL was a live bug in the first template draft.
     url: str = ""
     bullets: list[Bullet] = Field(default_factory=list)
+
+    @model_validator(mode="before")
+    @classmethod
+    def _read_date(cls, data: object) -> object:
+        """A real date in the old single `date` field moves into `start`/`end`."""
+        if not isinstance(data, dict) or data.get("start") or data.get("end"):
+            return data
+        text = data.get("date")
+        span = dates.read_span(text) if isinstance(text, str) else None
+        return data if span is None else {**data, "start": span[0], "end": span[1], "date": ""}
+
+    @field_validator("start", "end", mode="before")
+    @classmethod
+    def _read_month(cls, value: object) -> object:
+        """"Mar 2025" -> "2025-03"; "Present" and other free text pass through untouched."""
+        return dates.normalize(value.strip(), "month") if isinstance(value, str) else value
 
 
 class SkillGroup(_Strict):

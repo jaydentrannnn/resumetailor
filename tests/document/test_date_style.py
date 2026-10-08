@@ -28,3 +28,33 @@ def test_format_range_follows_the_detected_style():
     dotted = {"month": "abbr_dot", "separator": " - "}
     assert render.format_range("2020-01", "2021-09", dotted) == "Jan. 2020 - Sept. 2021"
     assert render.format_range("2020-05", "2021-02", {"month": "numeric", "separator": "-"}) == "05/2020-02/2021"
+
+
+def _project(**fields):
+    from resume_tailor.content.data import Project
+
+    return Project(id="p", name="Demo", **fields)
+
+
+def test_a_range_with_matching_ends_prints_one_date():
+    assert render.format_range("2025-03", "2025-03") == "Mar 2025"
+    assert render.project_date(_project(start="2025-03", end="2025-03")) == "Mar 2025"
+    assert render.project_date(_project(start="2025-03")) == "Mar 2025"
+
+
+def test_project_dates_print_a_range_present_or_free_text():
+    assert render.project_date(_project(start="2025-03", end="2025-05")) == "Mar 2025 - May 2025"
+    assert render.project_date(_project(start="2025-03", end="Present")) == "Mar 2025 - Present"
+    assert render.project_date(_project(date="Spring 2025")) == "Spring 2025"
+    style = {"month": "full", "separator": " – "}
+    assert render.project_date(_project(start="2025-03", end="2025-05"), style) == (
+        "March 2025 – May 2025"
+    )
+
+
+def test_an_old_single_project_date_is_read_into_start_and_end():
+    project = _project(date="2025-03")
+    assert (project.start, project.end, project.date) == ("2025-03", "", "")
+    project = _project(date="Mar 2025 - May 2025")
+    assert (project.start, project.end) == ("2025-03", "2025-05")
+    assert _project(date="Spring 2025").date == "Spring 2025"

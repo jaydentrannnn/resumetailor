@@ -77,6 +77,36 @@ def normalize(text: str, precision: Precision = "month") -> str:
     return text if parsed is None else format_iso(*parsed, precision)
 
 
+_ONGOING = re.compile(r"^(present|current|now|ongoing|today)$", re.IGNORECASE)
+_SPAN_SPLIT = re.compile(r"\s*[–—]\s*|\s+-\s+|(?<=\d)-(?=[A-Za-z])")
+
+
+def read_span(text: str) -> tuple[str, str] | None:
+    """``("2025-03", "2025-05")`` for "Mar 2025 - May 2025"; ``("2025-03", "")`` for one date.
+
+    ``Present`` (and "current", "ongoing") reads as ``"Present"``. None when any part is
+    not a date, so free text such as "Spring 2025" is left for the caller to keep as written.
+    """
+    value = text.strip()
+    if not value:
+        return None
+    if parse(value) is not None:
+        return normalize(value, "month"), ""
+    parts = _SPAN_SPLIT.split(value)
+    if len(parts) != 2:
+        return None
+    read: list[str] = []
+    for part in parts:
+        part = part.strip()
+        if _ONGOING.match(part):
+            read.append("Present")
+        elif parse(part) is not None:
+            read.append(normalize(part, "month"))
+        else:
+            return None
+    return read[0], read[1]
+
+
 def month_name(month: int) -> str:
     """``6`` -> "June"."""
     return MONTH_NAMES[month - 1]

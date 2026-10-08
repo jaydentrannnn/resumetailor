@@ -342,7 +342,10 @@ def verify_roundtrip(
             _check(proj.name, f"Project name for {proj.name!r}")
             date = proj_fields.get("date")
             if date is not None and date.present:
-                _check(proj.date, f"Project date for {proj.name!r}")
+                _check(
+                    render_mod.project_date(proj, layout.get("date_style")),
+                    f"Project date for {proj.name!r}",
+                )
             if profile.projects.link.present:
                 _check(proj.link, f"Project link label for {proj.name!r}")
 

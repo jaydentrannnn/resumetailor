@@ -171,7 +171,12 @@ def entry_recency(entry: object, *, today: tuple[int, int] | None = None) -> flo
     """
     if config.RECENCY_WEIGHT <= 0:
         return 1.0
-    text = str(getattr(entry, "end", "") or getattr(entry, "date", "") or "")
+    text = str(
+        getattr(entry, "end", "")
+        or getattr(entry, "start", "")
+        or getattr(entry, "date", "")
+        or ""
+    )
     if not text.strip():
         return 1.0
     if _ONGOING.search(text):

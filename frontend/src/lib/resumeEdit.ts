@@ -28,6 +28,10 @@ export type Project = {
   id: string;
   name: string;
   tech?: string[];
+  /** Month (`YYYY-MM`) or `Present`; an end equal to the start, or none, prints one date. */
+  start?: string;
+  end?: string;
+  /** Free text printed only when no start/end is set ("Spring 2025"). */
   date?: string;
   link?: string;
   url?: string;
@@ -285,7 +289,17 @@ export function blankExperience(id: string): Experience {
  * real hyperlink without a second field fill (render needs both link + url).
  */
 export function blankProject(id: string): Project {
-  return { id, name: "", tech: [], date: "", link: "Github", url: "", bullets: [] };
+  return {
+    id,
+    name: "",
+    tech: [],
+    start: "",
+    end: "",
+    date: "",
+    link: "Github",
+    url: "",
+    bullets: [],
+  };
 }
 
 /** Empty skill-group row. */

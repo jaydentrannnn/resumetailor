@@ -331,6 +331,8 @@ async def get_resume_facts(client: BackendClient) -> dict[str, Any]:
                         "name": entry.get("name"),
                         "tech": entry.get("tech") or [],
                         "date": entry.get("date"),
+                        "start": entry.get("start"),
+                        "end": entry.get("end"),
                     }
                 )
         elif kind == "education":

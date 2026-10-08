@@ -103,6 +103,8 @@ def _merge_projects(
                     update={
                         "name": inc.name,
                         "tech": inc.tech,
+                        "start": inc.start,
+                        "end": inc.end,
                         "date": inc.date,
                         "link": inc.link,
                         "url": inc.url,

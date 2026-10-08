@@ -83,15 +83,34 @@ export function ProjectEntries({
                     setEntries(next);
                   }}
                 />
-                <DateField
-                  label="Date"
-                  value={proj.date ?? ""}
-                  onChange={(v) => {
-                    const next = [...entries];
-                    next[i] = { ...proj, date: v };
-                    setEntries(next);
-                  }}
-                />
+                <div className="grid grid-cols-1 gap-3 sm:col-span-2 sm:grid-cols-2">
+                  <DateField
+                    label="Start"
+                    value={proj.start ?? ""}
+                    onChange={(v) => {
+                      const next = [...entries];
+                      next[i] = { ...proj, start: v, date: "" };
+                      setEntries(next);
+                    }}
+                  />
+                  <DateField
+                    label="End"
+                    allowPresent
+                    value={proj.end ?? ""}
+                    onChange={(v) => {
+                      const next = [...entries];
+                      next[i] = { ...proj, end: v, date: "" };
+                      setEntries(next);
+                    }}
+                  />
+                  <p className="text-xs text-ink-muted sm:col-span-2">
+                    {proj.date?.trim() && !proj.start && !proj.end ? (
+                      <>Printed as written: “{proj.date}”. Pick a start (and end) to replace it.</>
+                    ) : (
+                      "Leave End empty, or the same as Start, to print a single date."
+                    )}
+                  </p>
+                </div>
                 <div className="sm:col-span-2">
                   <ChipListField
                     label="Tech"

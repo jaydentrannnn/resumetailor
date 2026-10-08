@@ -788,3 +788,9 @@ comes back `updated` (not `added`), still exactly one education entry, coursewor
 - `edu_dates.months()` reads date *tokens* in order: ISO `2022-09`, `09/2022`, month names, seasons, `May '27`, and "Present" as an open end. It doesn't split on dashes, which broke `2022-09 to 2026-06`. Two tokens give start and end; one token is the graduation date. Bare years give "", because inventing a month would be a fabricated fact on a form. Seasons map by convention (Fall start → 09, Spring graduation → 05) and are shown in the editor for correction.
 - Filling happens in `_write_master_resume` (the one web write path), and only fills empty fields, so a month the student picked survives. Editing Dates in the editor clears both months, so they are re-read on save rather than going stale.
 - The packet's single-value questions ("School", "Graduation date") use `current_education()`: the row with the latest `end`, so a transfer student's new school or the later of two degrees wins. Ties and undated rows keep resume order. Repeaters still fill every row in resume order. Old files with no months fall back to `render.parse_range`, as before.
+
+## Project dates are start/end like experience (2026-10-08)
+
+- `Project` gained `start`/`end` (`YYYY-MM` or `Present`); the old single `date` stays only as free text ("Spring 2025") printed when no start/end is set. A `before` validator reads a real date in `date` ("2025-03", "Mar 2025 - May 2025") into start/end on load, so old files and both importers migrate without code in the importers (`dates.read_span`).
+- Printing: `render.project_date` -> `format_range`; start equal to end, or a blank end, prints one month ("Mar 2025"). `format_range` collapses equal ends for experience too. The template tag stays `{{ proj.date }}`, so templates are untouched.
+- Header-length budgeting (`facets_budget`), template verification and recency scoring read the printed/ended date, not `date`.

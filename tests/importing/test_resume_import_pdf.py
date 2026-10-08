@@ -70,10 +70,12 @@ def test_single_column_resume_becomes_a_structured_draft():
     assert beta.location == "Remote"
 
     project = sections["PROJECTS"].entries[0]
-    assert (project.name, project.tech, project.date) == (
+    assert (project.name, project.tech, project.start, project.end, project.date) == (
         "Portfolio Tracker",
         ["Python", "SQL"],
-        "Mar 2025",
+        "2025-03",
+        "",
+        "",
     )
     assert project.bullets[0].tags == ["python"]
 

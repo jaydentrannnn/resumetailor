@@ -6,6 +6,7 @@ import math
 
 from .. import config
 from ..content.data import Project
+from ..document.render import project_date
 from . import facets_labels
 
 #: Prefix of the coursework bullet; subtracted from the two-line character budget.
@@ -33,7 +34,7 @@ def header_overhead(proj: Project, *, include_project_links: bool = True) -> int
     link_suffix = ""
     if include_project_links and proj.link:
         link_suffix = f" | {proj.link}"
-    return len(proj.name) + len(" | ") + len(link_suffix) + len(proj.date)
+    return len(proj.name) + len(" | ") + len(link_suffix) + len(project_date(proj))
 
 
 def header_text(proj: Project, *, include_project_links: bool = True) -> str:
@@ -43,7 +44,7 @@ def header_text(proj: Project, *, include_project_links: bool = True) -> str:
         text += " | " + ", ".join(proj.tech)
     if include_project_links and proj.link:
         text += " | " + proj.link
-    return f"{text} {proj.date}".rstrip()
+    return f"{text} {project_date(proj)}".rstrip()
 
 def coursework_char_budget() -> int:
     """Max characters for the joined coursework list under a two-line bullet."""

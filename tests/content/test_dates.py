@@ -30,3 +30,13 @@ def test_experience_months_are_read_into_iso_and_free_text_is_kept():
     job = Experience(company="Acme", title="Intern", start="Jan 2023", end="Present")
     assert (job.start, job.end) == ("2023-01", "Present")
     assert Experience(company="A", title="T", start="Fall 2022", end="2023-05").start == "Fall 2022"
+
+
+def test_read_span_reads_a_range_a_single_date_or_declines():
+    assert dates.read_span("Mar 2025 - May 2025") == ("2025-03", "2025-05")
+    assert dates.read_span("Jan 2024-Mar 2024") == ("2024-01", "2024-03")
+    assert dates.read_span("Mar 2025 – present") == ("2025-03", "Present")
+    assert dates.read_span("2025-03") == ("2025-03", "")
+    assert dates.read_span("Spring 2025") is None
+    assert dates.read_span("Mar 2025 - sometime") is None
+    assert dates.read_span("") is None

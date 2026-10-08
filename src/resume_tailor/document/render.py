@@ -203,8 +203,19 @@ def format_range(start: str, end: str, style: date_style.DateStyle | None = None
     ``style`` is the original resume's month style and separator (`date_style`); None is
     the legacy `Mon YYYY - Mon YYYY`.
     """
+    if start == end:
+        return format_month(start, style)
     separator = (style or date_style.DEFAULT)["separator"]
     return f"{format_month(start, style)}{separator}{format_month(end, style)}"
+
+
+def project_date(proj, style: date_style.DateStyle | None = None) -> str:
+    """A project's printed date: its range (one month when start and end match or one is
+    blank), else the free-text `date`."""
+    start, end = proj.start.strip(), proj.end.strip()
+    if start or end:
+        return format_range(start, end, style) if start and end else format_month(start or end, style)
+    return format_month(proj.date, style)
 
 
 _MONTH_ABBR = {
@@ -413,7 +424,7 @@ def build_context(
                     "name": proj.name,
                     "tech": ", ".join(proj.tech),
                     "link": link,
-                    "date": format_month(proj.date, layout.get("date_style")),
+                    "date": project_date(proj, layout.get("date_style")),
                     "bullets": rendered,
                 }
             )
