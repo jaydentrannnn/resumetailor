@@ -73,13 +73,14 @@ export function PacksSection() {
         </p>
       )}
 
-      <div className="mt-5 [&>div]:border-0 [&>div]:rounded-none [&_thead]:bg-sunken [&_th:first-child]:hidden [&_td:first-child]:hidden [&_.rt-record>label]:hidden [&>div>div>label]:hidden">
+      <div className="mt-5 bg-panel [&_thead]:bg-sunken">
         <DataTable
+          bare
           rows={packs}
           id={(pack) => pack.id}
           selected={new Set()}
           onSelected={() => {}}
-          selectable={() => false}
+          selectable={false}
           sort=""
           direction="asc"
           onSort={() => {}}

@@ -101,13 +101,15 @@ export function Stat({
 
 /**
  * The contextual toolbar above a table or list while rows are selected: mono count,
- * the bulk actions, and Clear. Render it only when `count > 0`.
+ * the bulk actions, and Clear. Render it only when `count > 0`. `label` is the toolbar's
+ * accessible name.
  */
 export function SelectionBar({
   count,
   noun = "selected",
   onClear,
   clearLabel = "Clear selection",
+  label = "Selection actions",
   children,
   className = "",
 }: {
@@ -115,6 +117,8 @@ export function SelectionBar({
   noun?: string;
   onClear: () => void;
   clearLabel?: string;
+  /** The toolbar's aria-label. */
+  label?: string;
   /** Bulk-action buttons. */
   children?: ReactNode;
   className?: string;
@@ -122,7 +126,7 @@ export function SelectionBar({
   return (
     <div
       role="toolbar"
-      aria-label="Selection actions"
+      aria-label={label}
       className={`flex flex-wrap items-center gap-2 rounded-sm border border-selected-line/40 bg-accent-soft px-3.5 py-1.5 text-[13px] ${className}`.trim()}
     >
       <strong className="mr-auto font-semibold">

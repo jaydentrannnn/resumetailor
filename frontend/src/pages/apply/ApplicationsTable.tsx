@@ -120,45 +120,45 @@ export function ApplicationsTable({
         </SelectionBar>
       )}
       {/* The table sits on the tile itself: no second box around it. */}
-      <div className="[&>div]:rounded-none [&>div]:border-x-0 [&>div]:border-b-0 [&>div]:bg-transparent">
-        <DataTable
-          rows={rows}
-          id={(row) => row.source_job_id}
-          rowLabel={(row) => `${row.company} ${row.role}`}
-          columns={applicationColumns({ scope, actions, extraColumns, navigate })}
-          selected={state.selected}
-          onSelected={state.setSelected}
-          sort={state.sort}
-          direction={state.direction}
-          onSort={(id) =>
-            state.change({
-              sort: id,
-              direction: state.sort === id && state.direction === "asc" ? "desc" : "asc",
-            })
-          }
-          loading={state.loading}
-          error={state.error}
-          empty={
-            state.q || state.status ? (
-              <>
-                No applications match these filters.{" "}
-                <button
-                  type="button"
-                  className="mt-2 block w-full text-ink underline underline-offset-2"
-                  onClick={() => {
-                    if (state.status) state.change({ status: "" });
-                    onClearSearch();
-                  }}
-                >
-                  Clear filters
-                </button>
-              </>
-            ) : (
-              empty
-            )
-          }
-        />
-      </div>
+      <DataTable
+        bare
+        className="border-t border-line"
+        rows={rows}
+        id={(row) => row.source_job_id}
+        rowLabel={(row) => `${row.company} ${row.role}`}
+        columns={applicationColumns({ scope, actions, extraColumns, navigate })}
+        selected={state.selected}
+        onSelected={state.setSelected}
+        sort={state.sort}
+        direction={state.direction}
+        onSort={(id) =>
+          state.change({
+            sort: id,
+            direction: state.sort === id && state.direction === "asc" ? "desc" : "asc",
+          })
+        }
+        loading={state.loading}
+        error={state.error}
+        empty={
+          state.q || state.status ? (
+            <>
+              No applications match these filters.{" "}
+              <button
+                type="button"
+                className="mt-2 block w-full text-ink underline underline-offset-2"
+                onClick={() => {
+                  if (state.status) state.change({ status: "" });
+                  onClearSearch();
+                }}
+              >
+                Clear filters
+              </button>
+            </>
+          ) : (
+            empty
+          )
+        }
+      />
       <Pagination
         page={state.page}
         size={state.size}

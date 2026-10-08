@@ -66,6 +66,26 @@ describe("shared table controls", () => {
     fireEvent.click(screen.getAllByRole("checkbox", { name: "Select this page" })[0]);
     expect([...onSelected.mock.lastCall![0]]).toEqual(["a"]);
   });
+  it("drops the selection UI when selectable is false", () => {
+    const { container } = render(
+      <DataTable
+        bare
+        rows={rows}
+        id={(row) => row.id}
+        columns={columns}
+        selected={new Set()}
+        onSelected={() => {}}
+        selectable={false}
+        sort="name"
+        direction="asc"
+        onSort={() => {}}
+        empty="Empty"
+      />,
+    );
+    expect(screen.queryAllByRole("checkbox")).toHaveLength(0);
+    expect(container.querySelectorAll("thead th")).toHaveLength(1);
+    expect((container.firstChild as HTMLElement).className).not.toContain("border");
+  });
   it("shows an empty range with disabled navigation", () => {
     render(<Pagination page={0} size={25} total={0} onPage={() => {}} onSize={() => {}} />);
     expect(screen.getByText("0 results")).toBeTruthy();

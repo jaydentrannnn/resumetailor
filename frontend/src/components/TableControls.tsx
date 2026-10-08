@@ -92,7 +92,9 @@ export function DataTable<T>({
   loadingText = "Loading applications…",
   rowLabel,
   error,
-  selectable = () => true,
+  selectable = true,
+  bare = false,
+  className = "",
 }: {
   rows: T[];
   id: (row: T) => string;
@@ -108,12 +110,21 @@ export function DataTable<T>({
   /** The row's name for its checkbox ("Select Data Analyst at Acme"); defaults to its id. */
   rowLabel?: (row: T) => string;
   error?: string | null;
-  selectable?: (row: T) => boolean;
+  /**
+   * Which rows can be ticked. `false` drops the selection UI entirely (no checkbox
+   * column, no "Select" labels) for read-only lists.
+   */
+  selectable?: boolean | ((row: T) => boolean);
+  /** Inside a `Tile`: no own border, corners or panel fill (the tile is the box). */
+  bare?: boolean;
+  className?: string;
 }) {
   const label = (row: T) => `Select ${rowLabel ? rowLabel(row) : id(row)}`;
+  const withSelection = selectable !== false;
+  const canSelect = (row: T) => (typeof selectable === "function" ? selectable(row) : selectable);
   const checkbox = useRef<HTMLInputElement>(null);
   const mobileCheckbox = useRef<HTMLInputElement>(null);
-  const eligible = rows.filter(selectable);
+  const eligible = rows.filter(canSelect);
   const all = eligible.length > 0 && eligible.every((row) => selected.has(id(row)));
   const some = eligible.some((row) => selected.has(id(row)));
   useEffect(() => {
@@ -121,7 +132,9 @@ export function DataTable<T>({
     if (mobileCheckbox.current) mobileCheckbox.current.indeterminate = some && !all;
   }, [some, all]);
   return (
-    <div className="overflow-x-auto rounded-sm border border-line bg-panel">
+    <div
+      className={`overflow-x-auto ${bare ? "" : "rounded-sm border border-line bg-panel"} ${className}`.trim()}
+    >
       {error && (
         <p role="alert" className="border-b border-line p-3 text-sm text-danger">
           {error}
@@ -130,22 +143,24 @@ export function DataTable<T>({
       <table className="hidden w-full table-fixed text-left text-sm md:table">
         <thead className="border-b border-line-hover text-ink-muted">
           <tr>
-            <th className="w-10 px-2 py-2">
-              <input
-                ref={checkbox}
-                type="checkbox"
-                aria-label="Select this page"
-                checked={all}
-                disabled={!eligible.length}
-                onChange={(e) => {
-                  const next = new Set(selected);
-                  eligible.forEach((row) =>
-                    e.target.checked ? next.add(id(row)) : next.delete(id(row)),
-                  );
-                  onSelected(next);
-                }}
-              />
-            </th>
+            {withSelection && (
+              <th className="w-10 px-2 py-2">
+                <input
+                  ref={checkbox}
+                  type="checkbox"
+                  aria-label="Select this page"
+                  checked={all}
+                  disabled={!eligible.length}
+                  onChange={(e) => {
+                    const next = new Set(selected);
+                    eligible.forEach((row) =>
+                      e.target.checked ? next.add(id(row)) : next.delete(id(row)),
+                    );
+                    onSelected(next);
+                  }}
+                />
+              </th>
+            )}
             {columns.map((col) => (
               <th
                 key={col.id}
@@ -185,20 +200,22 @@ export function DataTable<T>({
               data-selected={selected.has(id(row)) || undefined}
               className="border-b border-line last:border-0 hover:bg-sunken"
             >
-              <td className="px-2 py-3 align-top">
-                <input
-                  type="checkbox"
-                  aria-label={label(row)}
-                  checked={selected.has(id(row))}
-                  disabled={!selectable(row)}
-                  onChange={() => {
-                    const next = new Set(selected);
-                    if (next.has(id(row))) next.delete(id(row));
-                    else next.add(id(row));
-                    onSelected(next);
-                  }}
-                />
-              </td>
+              {withSelection && (
+                <td className="px-2 py-3 align-top">
+                  <input
+                    type="checkbox"
+                    aria-label={label(row)}
+                    checked={selected.has(id(row))}
+                    disabled={!canSelect(row)}
+                    onChange={() => {
+                      const next = new Set(selected);
+                      if (next.has(id(row))) next.delete(id(row));
+                      else next.add(id(row));
+                      onSelected(next);
+                    }}
+                  />
+                </td>
+              )}
               {columns.map((col) => (
                 <td
                   key={col.id}
@@ -212,7 +229,7 @@ export function DataTable<T>({
         </tbody>
       </table>
       <div className="divide-y divide-line md:hidden">
-        {!!rows.length && (
+        {withSelection && !!rows.length && (
           <label className="flex items-center gap-2 p-3 text-xs text-ink-muted">
             <input
               ref={mobileCheckbox}
@@ -237,21 +254,23 @@ export function DataTable<T>({
             data-selected={selected.has(id(row)) || undefined}
             className="rt-record space-y-2 p-3 text-sm"
           >
-            <label className="flex items-center gap-2 text-xs text-ink-muted">
-              <input
-                type="checkbox"
-                aria-label={label(row)}
-                checked={selected.has(id(row))}
-                disabled={!selectable(row)}
-                onChange={() => {
-                  const next = new Set(selected);
-                  if (next.has(id(row))) next.delete(id(row));
-                  else next.add(id(row));
-                  onSelected(next);
-                }}
-              />{" "}
-              Select
-            </label>
+            {withSelection && (
+              <label className="flex items-center gap-2 text-xs text-ink-muted">
+                <input
+                  type="checkbox"
+                  aria-label={label(row)}
+                  checked={selected.has(id(row))}
+                  disabled={!canSelect(row)}
+                  onChange={() => {
+                    const next = new Set(selected);
+                    if (next.has(id(row))) next.delete(id(row));
+                    else next.add(id(row));
+                    onSelected(next);
+                  }}
+                />{" "}
+                Select
+              </label>
+            )}
             {columns.map((col) => (
               <div key={col.id} className="min-w-0 [overflow-wrap:anywhere]">
                 <span className="mr-2 text-xs text-ink-muted">{col.heading}</span>

@@ -136,29 +136,23 @@ export function SourcesTab({
       )}
 
       {selectedIds.size > 0 && (
-        <div
-          ref={(node) => {
-            // SelectionBar currently fixes its name; keep this page's established selector.
-            node?.querySelector('[role="toolbar"]')?.setAttribute("aria-label", "Selected sources");
-          }}
+        <SelectionBar
+          count={selectedIds.size}
+          noun="selected"
+          clearLabel="Clear"
+          label="Selected sources"
+          onClear={() => setSelected(new Set())}
         >
-          <SelectionBar
-            count={selectedIds.size}
-            noun="selected"
-            clearLabel="Clear"
-            onClear={() => setSelected(new Set())}
-          >
-            <Button size="sm" variant="secondary" onClick={() => setEnabled(selectedIds, true)}>
-              Turn on
-            </Button>
-            <Button size="sm" variant="secondary" onClick={() => setEnabled(selectedIds, false)}>
-              Turn off
-            </Button>
-            <Button size="sm" variant="secondary" onClick={() => remove(selectedIds)}>
-              Remove
-            </Button>
-          </SelectionBar>
-        </div>
+          <Button size="sm" variant="secondary" onClick={() => setEnabled(selectedIds, true)}>
+            Turn on
+          </Button>
+          <Button size="sm" variant="secondary" onClick={() => setEnabled(selectedIds, false)}>
+            Turn off
+          </Button>
+          <Button size="sm" variant="secondary" onClick={() => remove(selectedIds)}>
+            Remove
+          </Button>
+        </SelectionBar>
       )}
 
       <SourceGroup

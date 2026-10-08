@@ -10,8 +10,9 @@ export function SuggestionTable({
   impactByAlias,
 }: Pick<State, "pageProposals" | "selected" | "setSelected" | "busy" | "impactByAlias">) {
   return (
-    <div className="my-4 [&>div]:border-0 [&>div]:rounded-none [&_thead]:bg-sunken">
+    <div className="my-4 bg-panel [&_thead]:bg-sunken">
       <DataTable
+        bare
         rows={pageProposals}
         id={(proposal) => proposal.id}
         selected={selected}
