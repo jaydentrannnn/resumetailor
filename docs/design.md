@@ -43,7 +43,7 @@ Use the Tailwind classes (`bg-panel`, `text-ink-muted`, `border-line`), never ra
 | `selected` / `on-selected` / `selected-line` | `#1f6b4a` / `#fff` / `#1f6b4a` | 12% mint / `#6fbf98` / `#6fbf98` | selected segment, tab, filter |
 | `selected-row` | 9% accent | 12% mint | selected table row wash |
 | `success` | `#1f6b4a` | `#6fae90` | done mark (chips only) |
-| `attn` / `attn-soft` | `#c2410c` / 10% | `#e0965c` / 8% | "needs you" |
+| `attn` / `attn-soft` | `#b0390a` / 10% | `#e0965c` / 8% | "needs you" |
 | `danger` / `danger-soft` | `#c42020` / 10% | `#d17875` / 8% | failed, destructive |
 | `scrim` | 40% black | 60% black | modal backdrop |
 | `doc-preview` | `#ffffff` | `#ffffff` | an actual white PDF page; not a UI surface |
