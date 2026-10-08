@@ -23,7 +23,11 @@ export function OverviewPanel({ app, job }: { app: ApplicationRow; job: JobStatu
             },
             {
               label: "Coverage",
-              value: <span className="font-mono text-[13px]">{coverage}</span>,
+              value: screen?.coverage_total ? (
+                <span className="font-mono text-[13px]">{coverage}</span>
+              ) : (
+                coverage
+              ),
             },
             ...(app.ats ? [{ label: "Platform", value: siteName(app.ats) }] : []),
             {
