@@ -2,7 +2,7 @@ import { useCallback, useEffect, useMemo, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
 import type { ApplicantProfile } from "../../api";
 import { ProfileGapBanner } from "../../components/ProfileGapBanner";
-import { Button, Page, PageHeader } from "../../components/ui";
+import { Button, Page, PageHeader, StatusMark } from "../../components/ui";
 import {
   GAP_FIELD_ALIASES,
   changedKeys,
@@ -17,6 +17,7 @@ import { useToast } from "../../lib/toast";
 import { useApplicantProfile } from "../../state/applicantProfileState";
 import { useConfirm } from "../../state/confirmState";
 import { useEditorState } from "../../state/editorState";
+import { useWorkspaceState } from "../../state/workspaceState";
 import { EditorPage } from "../editor/EditorPage";
 import { ApplicationTab } from "./ApplicationTab";
 import type { FieldContext, FieldValue } from "./fieldContext";
@@ -44,6 +45,7 @@ export function ProfilePage() {
       ? "application"
       : "personal";
   const editor = useEditorState();
+  const { activeLabel } = useWorkspaceState();
   const applicant = useApplicantProfile();
   const toast = useToast();
   const { confirm } = useConfirm();
@@ -173,15 +175,16 @@ export function ProfilePage() {
     <Page className="pb-4">
       <PageHeader
         title="Profile"
+        eyebrow={`PROFILE · ${activeLabel ?? "Default"}`}
         description="Your resume content and the details application forms ask for, saved together."
       />
-      <nav aria-label="Profile sections" className="flex flex-wrap gap-2 border-b border-line pb-2">
+      <nav aria-label="Profile sections" className="flex flex-wrap gap-4 border-b border-line">
         {TABS.map(([id, label]) => (
           <Link
             key={id}
             to={`/profile/${id}`}
             aria-current={tab === id ? "page" : undefined}
-            className={`rounded-md px-3 py-2 text-sm ${tab === id ? "bg-accent text-on-accent" : "text-ink-muted hover:bg-accent-soft"}`}
+            className={`rt-control -mb-px border-b px-3 py-2 text-sm ${tab === id ? "border-selected-line font-semibold text-ink" : "border-transparent text-ink-muted hover:text-ink"}`}
           >
             {label}
           </Link>
@@ -220,17 +223,19 @@ export function ProfilePage() {
       <div
         role="region"
         aria-label="Save profile"
-        className="sticky bottom-0 z-10 flex flex-wrap items-center gap-3 rounded-lg border border-line bg-panel p-3 shadow-sm"
+        className="sticky bottom-0 z-10 flex flex-wrap items-center gap-3 border-t border-line bg-chrome py-3"
       >
         <Button
           variant="primary"
+          className="order-3"
           loading={saving || applicant.saving}
           disabled={changeCount === 0 || editor.busy}
           onClick={() => void saveAll()}
         >
           Save changes
         </Button>
-        <span className="text-sm text-ink-muted" aria-live="polite">
+        <span className="mr-auto flex items-center gap-2 text-sm text-ink-muted" aria-live="polite">
+          <StatusMark tone={changeCount === 0 ? "done" : "attention"} />
           {changeCount === 0
             ? "All changes saved"
             : `${changeCount} unsaved change${changeCount === 1 ? "" : "s"}`}

@@ -3,6 +3,7 @@ import { Link } from "react-router-dom";
 import type { ApplicantProfile } from "../../api";
 import { LanguagesEditor } from "../../components/LanguagesEditor";
 import { ProfileGapBanner } from "../../components/ProfileGapBanner";
+import { DataList, Tile, TileSection } from "../../components/ui";
 import { PROFILE_GROUPS, classYearFor, sponsorshipFromVisa } from "../../lib/profileForm";
 import type { Education } from "../../lib/resumeEdit";
 import { useApplicantProfile } from "../../state/applicantProfileState";
@@ -90,76 +91,79 @@ export function ApplicationTab({
         onOpen={onOpenGroup}
       />
       {PROFILE_GROUPS.map((group) => (
-        <details
-          key={group.id}
-          id={`profile-group-${group.id}`}
-          open={!closed.has(group.id)}
-          onToggle={(e) => onToggle(group.id, e.currentTarget.open)}
-          className="rounded-lg border border-line bg-panel p-4"
-        >
-          <summary className="cursor-pointer font-semibold">{group.title}</summary>
-          {group.id === "Education" && <EducationSummary education={education} />}
-          {group.id === "Salary" && (
-            <p className="mt-3 text-xs text-ink-muted">
-              Salary questions are answered from your maximum: the posting's top pay when it is
-              below your maximum, otherwise your maximum, in the posting's unit (hourly ↔ yearly at
-              2,080 hours). With no posted pay, intern and co-op roles use your hourly maximum and
-              other roles your yearly maximum. Leave the maximums empty to answer salary questions
-              yourself.
-            </p>
-          )}
-          {group.id === "Voluntary information" && (
-            <p className="mt-3 rounded-md bg-accent-soft px-3 py-2 text-xs text-accent">
-              Only used to answer voluntary EEO questions; "Decline to answer" is always allowed.
-              These answers never affect how your resume is tailored.
-            </p>
-          )}
-          {group.id === "Application accounts" && (
-            <p className="mt-3 text-xs text-ink-muted">
-              The Workday password is kept in your system's password store (or an encrypted file),
-              never in your profile file.
-            </p>
-          )}
-          {group.fields.length > 0 && (
-            <div className="mt-3 grid gap-3 sm:grid-cols-2">
-              {group.fields.map((key) => (
-                <ProfileField
-                  key={key}
-                  name={key}
-                  ctx={ctx}
-                  hint={hintFor(key)}
-                  blankLabel={blankLabelFor(key, draft)}
-                  auto={autoAnswered(key, draft)}
-                />
-              ))}
-              {group.id === "Education" && <DocumentUpload kind="transcript" />}
-              {group.id === "Saved answers and other preferences" && (
-                <DocumentUpload kind="portfolio" />
-              )}
-            </div>
-          )}
-          {group.id === "Voluntary information" && (
-            <EeoFields eeo={draft.eeo} onChange={(eeo) => setDraft({ eeo })} />
-          )}
-          {group.id === "Languages" && (
-            <LanguagesEditor
-              languages={draft.languages ?? []}
-              onChange={(languages) => setDraft({ languages })}
-            />
-          )}
-          {group.id === "Saved answers and other preferences" && <CustomAnswers />}
-        </details>
+        <Tile key={group.id} id={`profile-group-${group.id}`}>
+          <details
+            open={!closed.has(group.id)}
+            onToggle={(e) => onToggle(group.id, e.currentTarget.open)}
+          >
+            <summary className="rt-tile-title cursor-pointer">{group.title}</summary>
+            {group.id === "Education" && <EducationSummary education={education} />}
+            {group.id === "Salary" && (
+              <p className="mt-3 text-xs text-ink-muted">
+                Salary questions are answered from your maximum: the posting's top pay when it is
+                below your maximum, otherwise your maximum, in the posting's unit (hourly ↔ yearly
+                at 2,080 hours). With no posted pay, intern and co-op roles use your hourly maximum
+                and other roles your yearly maximum. Leave the maximums empty to answer salary
+                questions yourself.
+              </p>
+            )}
+            {group.id === "Voluntary information" && (
+              <p className="mt-3 text-xs text-ink-muted">
+                Only used to answer voluntary EEO questions; "Decline to answer" is always allowed.
+                These answers never affect how your resume is tailored.
+              </p>
+            )}
+            {group.id === "Application accounts" && (
+              <p className="mt-3 text-xs text-ink-muted">
+                The Workday password is kept in your system's password store (or an encrypted file),
+                never in your profile file.
+              </p>
+            )}
+            {group.fields.length > 0 && (
+              <div className="mt-3 grid gap-3 sm:grid-cols-2">
+                {group.fields.map((key) => (
+                  <ProfileField
+                    key={key}
+                    name={key}
+                    ctx={ctx}
+                    hint={hintFor(key)}
+                    blankLabel={blankLabelFor(key, draft)}
+                    auto={autoAnswered(key, draft)}
+                  />
+                ))}
+                {group.id === "Education" && <DocumentUpload kind="transcript" />}
+                {group.id === "Saved answers and other preferences" && (
+                  <DocumentUpload kind="portfolio" />
+                )}
+              </div>
+            )}
+            {group.id === "Voluntary information" && (
+              <EeoFields eeo={draft.eeo} onChange={(eeo) => setDraft({ eeo })} />
+            )}
+            {group.id === "Languages" && (
+              <LanguagesEditor
+                languages={draft.languages ?? []}
+                onChange={(languages) => setDraft({ languages })}
+              />
+            )}
+            {group.id === "Saved answers and other preferences" && <CustomAnswers />}
+          </details>
+        </Tile>
       ))}
-      <details
-        id="profile-group-remembered-answers"
-        open={!closed.has("remembered-answers")}
-        onToggle={(e) => onToggle("remembered-answers", e.currentTarget.open)}
-        className="rounded-lg border border-line bg-panel p-4"
-      >
-        <summary className="cursor-pointer font-semibold">Remembered answers</summary>
-        <SavedAnswersList />
-        <AIChoicesList />
-      </details>
+      <Tile id="profile-group-remembered-answers">
+        <details
+          open={!closed.has("remembered-answers")}
+          onToggle={(e) => onToggle("remembered-answers", e.currentTarget.open)}
+        >
+          <summary className="rt-tile-title cursor-pointer">Remembered answers</summary>
+          <TileSection className="mt-4" title="Saved answers">
+            <SavedAnswersList />
+          </TileSection>
+          <TileSection className="mt-4">
+            <AIChoicesList />
+          </TileSection>
+        </details>
+      </Tile>
     </div>
   );
 }
@@ -167,25 +171,33 @@ export function ApplicationTab({
 /** What forms read from the resume's Education section (edited there, not here). */
 function EducationSummary({ education }: { education: Education[] }) {
   return (
-    <div className="mt-3 rounded-md border border-line px-3 py-2 text-xs">
+    <div className="mt-3 space-y-3 text-xs">
       <p className="text-ink-muted">
         School, degree, major and dates come from the Education section of your resume.
       </p>
       {education.length > 0 ? (
-        <ul className="mt-1 space-y-0.5">
-          {education.map((entry, index) => (
-            <li key={index}>
-              <span className="font-medium">{entry.school || "School not set"}</span>
-              {entry.degree && ` · ${entry.degree}`}
-              {entry.major && ` · ${entry.major}`}
-              {entry.dates && ` · ${entry.dates}`}
-              {entry.end && ` · graduates ${entry.end}`}
-              {entry.gpa && ` · GPA ${entry.gpa}`}
-            </li>
-          ))}
-        </ul>
+        education.map((entry, index) => (
+          <DataList
+            key={index}
+            items={[
+              { label: "School", value: entry.school || "School not set" },
+              {
+                label: "Degree",
+                value: [entry.degree, entry.major].filter(Boolean).join(" · ") || "—",
+              },
+              {
+                label: "Dates",
+                value:
+                  [entry.dates, entry.end && `graduates ${entry.end}`]
+                    .filter(Boolean)
+                    .join(" · ") || "—",
+              },
+              ...(entry.gpa ? [{ label: "GPA", value: entry.gpa }] : []),
+            ]}
+          />
+        ))
       ) : (
-        <p className="mt-1 text-warn">Your resume has no Education entry yet.</p>
+        <p className="mt-1 text-attn">Your resume has no Education entry yet.</p>
       )}
       <Link className="mt-1 inline-block text-accent underline" to="/profile/resume">
         Edit on resume

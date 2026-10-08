@@ -68,7 +68,7 @@ export function CustomAnswers() {
               onChange={(e) => setAnswers({ ...answers, [text]: e.target.value })}
             />
             {field && (
-              <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-warn">
+              <p className="mt-1 flex flex-wrap items-center gap-2 text-xs text-attn">
                 This repeats “{fieldLabel(field)}” above.
                 <Button
                   size="sm"

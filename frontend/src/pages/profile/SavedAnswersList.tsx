@@ -95,20 +95,17 @@ export function SavedAnswersList() {
             const draft = drafts[item.id] ?? item.answer;
             const changed = draft.trim() !== item.answer;
             return (
-              <li key={item.id} className="rounded-md border border-line p-3 text-sm">
+              <li key={item.id} className="border-t border-line py-3 text-sm">
                 <label className="block">
                   <span className="flex flex-wrap items-center gap-1.5">
                     <span className="font-medium">{item.label}</span>
                     {(item.sites ?? []).map((site) => (
-                      <span
-                        key={site}
-                        className="rounded-full border border-line px-2 py-0.5 text-[11px] text-ink-muted"
-                      >
+                      <span key={site} className="font-mono text-[11px] text-ink-muted">
                         {site}
                       </span>
                     ))}
                     {item.differs && (
-                      <span className="text-[11px] text-warn">
+                      <span className="text-[11px] text-attn">
                         differs by site: showing the latest
                       </span>
                     )}

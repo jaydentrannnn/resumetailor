@@ -49,7 +49,7 @@ export function FieldFrame({
         )
       )}
       {!auto && ctx.gapFields.has(name) && blank && (
-        <span className="mt-1 block text-xs text-warn">
+        <span className="mt-1 block text-xs text-attn">
           Forms ask for this; blank means autofill skips it.
         </span>
       )}

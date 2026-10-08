@@ -47,14 +47,12 @@ export function AIChoicesList() {
           {choices.map((choice) => (
             <li
               key={choice.key}
-              className="flex flex-wrap items-center justify-between gap-2 rounded-md border border-line p-3 text-sm"
+              className="flex flex-wrap items-center justify-between gap-2 border-t border-line py-3 text-sm"
             >
               <span>
                 <span className="font-medium">{choice.label || "Untitled question"}</span>
                 <span className="text-ink-muted"> → {choice.answer}</span>
-                <span className="ml-2 rounded-full border border-line px-2 py-0.5 text-[11px] text-ink-muted">
-                  AI
-                </span>
+                <span className="ml-2 font-mono text-[11px] text-ink-muted">AI</span>
               </span>
               <Button
                 size="sm"

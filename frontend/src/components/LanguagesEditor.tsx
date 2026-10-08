@@ -31,9 +31,9 @@ export function LanguagesEditor({ languages, onChange }: Props) {
         speak?" questions. Leave a level blank to answer it yourself.
       </p>
       {languages.map((entry, index) => (
-        <div key={index} className="rounded-md border border-line p-3" data-testid="language-row">
+        <div key={index} className="border-t border-line py-4" data-testid="language-row">
           <div className="flex flex-wrap items-end gap-3">
-            <label className="min-w-40 flex-1 text-sm">
+            <label className="min-w-0 basis-40 flex-1 text-sm">
               Language
               <input
                 className="field mt-1"

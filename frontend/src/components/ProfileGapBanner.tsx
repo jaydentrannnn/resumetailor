@@ -1,3 +1,5 @@
+import { StatusMark, Tile } from "./ui";
+import { buttonClass } from "../lib/buttonClass";
 import type { ProfileGap } from "../api";
 
 /** Blank profile fields application forms ask for; each opens the group that holds it. */
@@ -10,11 +12,11 @@ export function ProfileGapBanner({
 }) {
   if (!gaps.length) return null;
   return (
-    <section
-      aria-label="Blank profile fields"
-      className="rounded-lg border border-warn/50 bg-panel p-4 text-sm"
-    >
-      <p className="font-semibold">Forms ask for these, and your profile leaves them blank</p>
+    <Tile aria-label="Blank profile fields" className="text-sm">
+      <p className="mb-1 flex items-center gap-2 font-semibold">
+        <StatusMark tone="attention" />
+        Forms ask for these, and your profile leaves them blank
+      </p>
       <p className="text-xs text-ink-muted">
         Autofill skips a question whose answer is blank here. Set each one once and every form that
         asks it is answered. Decline is a valid voluntary-information answer; blank is not.
@@ -24,7 +26,7 @@ export function ProfileGapBanner({
           <li key={gap.key}>
             <button
               type="button"
-              className="rounded-md border border-line px-2 py-1 text-xs hover:bg-accent-soft"
+              className={buttonClass("secondary", "sm", "h-auto flex-wrap justify-start text-left")}
               onClick={() => onOpen(gap.section)}
             >
               {gap.label}
@@ -39,6 +41,6 @@ export function ProfileGapBanner({
           </li>
         ))}
       </ul>
-    </section>
+    </Tile>
   );
 }

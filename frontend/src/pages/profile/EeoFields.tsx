@@ -84,7 +84,7 @@ export function EeoFields({ eeo, onChange }: { eeo: Eeo; onChange: (next: Eeo) =
           </select>
         </label>
         {eeo.veteran_legacy && (
-          <span className="mt-1 flex flex-wrap items-center gap-2 text-xs text-warn">
+          <span className="mt-1 flex flex-wrap items-center gap-2 text-xs text-attn">
             Converted from your earlier answer “{eeo.veteran_legacy}”. Forms tell apart “not a
             veteran” and “not a protected veteran”, so please check it.
             <button
