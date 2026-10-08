@@ -1,6 +1,6 @@
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { fetchJobBullets, rerenderJob, type JobBullet, type RerenderResult } from "../../api";
-import { Button } from "../../components/ui";
+import { Button, ResultFrame } from "../../components/ui";
 import {
   SEGMENT_BASE,
   SEGMENT_OFF,
@@ -18,7 +18,6 @@ import {
 } from "../../lib/bulletReview";
 import { describe } from "../../lib/errors";
 import { useToast } from "../../lib/toast";
-import { ResultFrame } from "./ResultFrame";
 
 const MODES: { id: BulletMode; label: string }[] = [
   { id: "ai", label: "Keep" },

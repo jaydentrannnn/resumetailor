@@ -10,6 +10,7 @@ export { Segmented, type SegmentedItem } from "./Segmented";
 export { DataList, type DataItem, Meter, SelectionBar, Stat } from "./Data";
 export { InlineHelp } from "./InlineHelp";
 export { Page, PageHeader } from "./Page";
+export { ResultFrame } from "./ResultFrame";
 export { Stepper, type StepItem } from "./Stepper";
 export { stepState, type StepState } from "../../lib/stepState";
 export { ToastProvider } from "./Toast";

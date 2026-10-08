@@ -8,9 +8,9 @@ import {
   regenerateCoverLetter,
 } from "../api";
 import { buttonClass } from "../lib/buttonClass";
-import { ResultFrame } from "../pages/run/ResultFrame";
 import { CoverLetterActionBar, CoverLetterDetails } from "./CoverLetterPanel";
 import { SEGMENT_BASE, SEGMENT_OFF, SEGMENT_ON, SEGMENT_TRACK } from "./ui/Segmented";
+import { ResultFrame } from "./ui";
 
 type PreviewTab = "resume" | "cover";
 

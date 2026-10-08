@@ -2,8 +2,7 @@ import { useState } from "react";
 import type { Expansion } from "../api";
 import { generateExpansion } from "../api";
 import { describe } from "../lib/errors";
-import { ResultFrame } from "../pages/run/ResultFrame";
-import { Button } from "./ui";
+import { Button, ResultFrame } from "./ui";
 
 /**
  * Stand-in for the Application experience tile when a run skipped expansion (the

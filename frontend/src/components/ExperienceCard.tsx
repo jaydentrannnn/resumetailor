@@ -2,8 +2,8 @@ import { useEffect, useState } from "react";
 import type { ExpandedEntry, Expansion } from "../api";
 import { expansionUrl } from "../api";
 import { buttonClass } from "../lib/buttonClass";
-import { ResultFrame } from "../pages/run/ResultFrame";
 import { CopyButton } from "./CopyButton";
+import { ResultFrame } from "./ui";
 
 function bulletsText(bullets: string[]): string {
   /** Join bullets the way most application forms expect pasted lists. */

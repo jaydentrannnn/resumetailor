@@ -3,7 +3,7 @@ import type { RunReport } from "../../api";
 import { gapGroups, missingSummary, reportHeadline } from "../../lib/reportSummary";
 import { ReportFigures } from "./ReportFigures";
 import { ReportNotes } from "./ReportNotes";
-import { ResultFrame } from "./ResultFrame";
+import { ResultFrame } from "../../components/ui";
 
 /**
  * End-of-run summary: one headline, the run's figures (`ReportFigures`), then notes,

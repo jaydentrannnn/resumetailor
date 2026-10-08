@@ -1,8 +1,8 @@
 import type { KeywordGap, SkillsPlan, SkillSuggestion } from "../api";
 import { recordSkillsCopy, skillsUrl } from "../api";
 import { buttonClass } from "../lib/buttonClass";
-import { ResultFrame } from "../pages/run/ResultFrame";
 import { CopyButton } from "./CopyButton";
+import { ResultFrame } from "./ui";
 
 const TIER_LABEL: Record<SkillSuggestion["tier"], string> = {
   required: "Required",

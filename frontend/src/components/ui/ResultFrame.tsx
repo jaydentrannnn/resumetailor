@@ -1,11 +1,11 @@
 import type { ReactNode } from "react";
-import { Tile } from "../../components/ui";
+import { Tile } from "./Tile";
 
 /**
  * The frame of a result card (report, documents, skills, experience, bullet review).
- * Standalone (the application page) it is its own `Tile`; `embedded` inside the Tailor
- * page's "Last result" tile it drops the box and steps the heading down to h3, so there
- * is never a box inside a box.
+ * Standalone (the application page) it is its own `Tile`; `embedded` inside another tile
+ * (the Tailor page's "Last result", the application page's bullet editor) it drops the
+ * box and steps the heading down to h3, so there is never a box inside a box.
  */
 export function ResultFrame({
   embedded = false,

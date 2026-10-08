@@ -75,7 +75,7 @@ export function FilesPanel({
             </summary>
             <p className="mt-2 text-xs text-ink-muted">The next fill uploads the updated resume.</p>
             <div className="mt-3">
-              <BulletReview jobId={app.job_id} onSaved={onBulletsSaved} />
+              <BulletReview embedded jobId={app.job_id} onSaved={onBulletsSaved} />
             </div>
           </details>
         </Tile>
