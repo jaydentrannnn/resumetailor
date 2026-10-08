@@ -571,3 +571,33 @@ The two legacy tests that assumed process-wide routing/rebound globals were upda
 **What:** All five entry kinds use collapsed headings by default; new entries open automatically. A Move to dropdown transfers whole entries to the end of another section with the same kind, retaining UI expansion and offering the existing draft Undo.
 **Why:** Section titles are arbitrary, so compatibility uses kind. List ids can repeat across sections, so list rows now receive stripped client-only keys like education and skills. Editors remain mounted while hidden to retain pending field input when collapsed.
 **Impact:** Moves stay unsaved until the existing Save flow; empty source sections remain. No backend schema, template, LLM, or content transformation is required. Expansion is page UI state and resets on leaving the editor or reloading it.
+
+## 2026-10-08 — Black/white redesign (SPA, extension, splash, icons)
+
+**What:** Every page, the extension popup and options page, the content-script chip, the desktop splash and the icons moved to a black/white system:
+- white or `#0a0a0a` pages with soft grey (`#f7f7f6`) or `#151515` tiles;
+- one racing-green accent (`#1f6b4a`, mint `#6fbf98` in dark);
+- Fraunces titles, Geist for UI, Geist Mono for data;
+- 4px corners; no gradients or blur; one flat overlay shadow.
+
+The approved visual target is `docs/design/reference.html`, and the rules live in `docs/design.md`.
+
+**Why:**
+- The old cream/teal/Plex/rounded-xl look read as generic AI UI.
+- Green was rejected as a button fill. The primary button is ink: black in light, white in dark.
+- Dark status colours are muted (attention `#8699cb`, danger `#d17875`, success `#6fae90`) at an 8% chip tint, so they don't glow.
+- Each status pairs a text label with its own mark shape (check, ring, diamond, spinner, dash or dot), so meaning never depends on hue.
+- Dark selected states are a mint outline plus a ~12% wash, not a solid fill.
+
+**Impact:**
+- **Tokens:** `chrome`, `sunken`, `field`, `primary`/`on-primary`, `selected*` and `attn*` were added. `warn`, `warning`, `info`, `info-soft` and `bg` were deleted after every page moved off them; use `attn` (needs you) or `ink-muted` (plain note). The Tailwind radius scale is 4px everywhere, and `shadow-2xs`…`md` are none.
+- **Base CSS:** the unlayered `font: inherit` rule is gone, because Tailwind preflight already handles it.
+- **Fonts:** self-hosted through `@fontsource-variable/*` 5.3.0 in the SPA, and copied woff2 files in `extension/fonts/`. There are no Google Fonts requests, so the desktop app and the MV3 CSP both work offline.
+- **Accessibility:** `e2e/a11y.ts` now runs axe in both light and dark on every route that calls `expectAccessible`.
+- **New primitives:**
+  - `Tile` (with `embedded`), `TileSection`, `StatusMark`/`StatusChip`, `Segmented`, `Meter`, `DataList`, `Stat`, `SelectionBar` (`label`), `ResultFrame`
+  - `DataTable` gains `bare` and `selectable={false}`
+  - `Stepper` gains `divided` and `meta`
+  - `Tabs` gains a `variant` (`underline` or `segmented`) and an `orientation`
+  - an `rt-link` utility
+- **No behaviour changes:** all selectors the e2e tests rely on were kept. The build ran as parallel Orca worktree workers merged in order onto main.
