@@ -159,7 +159,7 @@ All exported from `components/ui` (`import { … } from "../components/ui"`).
 | `ResultFrame` | `embedded?`, `title?`, `description?`, `actions?`, `className` | The frame of a result card (report, documents, skills, experience, bullet review): a `Tile` standalone, unboxed with an h3 when `embedded` inside another tile. |
 | `TileSection` | `title?`, `actions?`, `className` | A second group inside a tile, separated by one hairline instead of a nested box. |
 | `Button` | `variant?: "primary" \| "secondary" \| "danger" \| "ghost"`, `size?: "sm" \| "md" \| "lg"`, `loading?`, + button attrs | Every button. `buttonClass(variant, size, extra)` styles links as buttons. |
-| `StatusChip` | `tone: Tone`, `children` (label), `className` | A status pill: mark + word. |
+| `StatusChip` | `tone: Tone`, `children` (label), `className`, `mark?` (default `true`) | A status pill: mark + word. `mark={false}` only where the label carries its own typed glyph (the e2e-anchored "● Connected" on Job sources). |
 | `StatusMark` | `tone: Tone` | Just the mark, inside your own labelled element (the label must still be text). |
 | `Segmented` | `items: {id,label,count?,disabled?}[]`, `value`, `onChange(id)`, `label`, `className` | One-of-N choice that is not a content switch (theme, view mode, filter). Renders a radiogroup. |
 | `Tabs` | `items: {id,label,count?}[]`, `value`, `onChange(id)`, `label`, `variant?: "underline" \| "segmented"`, `orientation?: "horizontal" \| "vertical"` | Switching panels. `underline` for page sections, `segmented` for a view inside a tile, `vertical` for a side rail. A horizontal strip that overflows (390px) scrolls itself so the selected tab stays visible; the page never scrolls. |
@@ -176,12 +176,12 @@ All exported from `components/ui` (`import { … } from "../components/ui"`).
 | `Field` / `Toggle` | `label`, `help?`, … | Label + control pairs; inputs use the `.field` class. |
 | `ToastProvider` + `useToast()` | `success/error/info(title, detail?, action?)` | Transient messages (`lib/toast.ts`). |
 | `DataTable`, `Pagination`, `RowActionsMenu` | see `components/TableControls.tsx`; `DataTable` also takes `bare?`, `selectable?: boolean \| (row) => boolean`, `className` | Tables with selection, paging and row menus. `bare` drops the table's own border, corners and panel fill when it sits directly on a `Tile`; `selectable={false}` removes the checkbox column and the mobile "Select" labels for read-only lists. |
+| `useConfirm()` | `confirm({title,message,tone?,…})`, `choice({…})` | Promise-based dialogs; never `window.confirm`. |
 
 Shared sections with an `embedded` prop (the onboarding steps pass it; Settings and
 Template keep the tiled default): `ModelsSection`, `TargetFieldSection`,
 `TemplateImportWizard`, `StarterTemplatesPanel` (and `ImportResumePanel`). Embedded they
 render as hairline-separated sections inside the step tile instead of tiles of their own.
-| `useConfirm()` | `confirm({title,message,tone?,…})`, `choice({…})` | Promise-based dialogs; never `window.confirm`. |
 
 If a page needs something these do not cover, ask for a primitive rather than patching a
 shared file or hand-building the look.
