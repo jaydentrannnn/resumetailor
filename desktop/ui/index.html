@@ -5,20 +5,26 @@
     <meta name="viewport" content="width=device-width, initial-scale=1" />
     <title>ResumeTailor</title>
     <style>
-      :root { color-scheme: light dark; --bg: #f7f7f5; --ink: #1d1d1b; --muted: #6b6b66; }
-      @media (prefers-color-scheme: dark) { :root { --bg: #161615; --ink: #ededea; --muted: #a3a39c; } }
+      :root { color-scheme: light; --bg: #ffffff; --ink: #0b0b0b; --muted: #6b6b68; --accent: #1f6b4a; --danger: #c42020; }
+      @media (prefers-color-scheme: dark) { :root { color-scheme: dark; --bg: #0a0a0a; --ink: #f5f5f4; --muted: #8f8f8c; --accent: #6fbf98; --danger: #d17875; } }
+      * { box-sizing: border-box; }
       body { margin: 0; min-height: 100vh; display: grid; place-items: center; background: var(--bg);
              color: var(--ink); font: 15px/1.5 system-ui, sans-serif; }
-      main { max-width: 32rem; padding: 0 16px; text-align: center; }
-      p { color: var(--muted); }
-      code { user-select: all; word-break: break-all; }
+      main { max-width: 32rem; padding: 24px; text-align: center; }
+      h1 { margin: 0; font: 350 36px/1.15 Georgia, "Times New Roman", serif; letter-spacing: -.015em; text-wrap: balance; }
+      .wordmark { display: inline-flex; align-items: center; justify-content: center; gap: 12px; }
+      .wordmark i { width: 12px; height: 12px; flex: none; border-radius: 4px; background: var(--accent); }
+      p { margin: 16px 0 0; color: var(--muted); }
+      #starting p { font: 12px/1.5 ui-monospace, Consolas, monospace; }
+      #failed::before { content: ""; display: block; width: 10px; height: 10px; margin: 0 auto 20px; background: var(--danger); transform: rotate(45deg); }
+      code { user-select: all; word-break: break-all; font: 12px/1.5 ui-monospace, Consolas, monospace; }
       [hidden] { display: none; }
     </style>
   </head>
   <body>
     <!-- Shown while the local server starts; the shell then navigates to it. -->
     <main id="starting" aria-live="polite">
-      <h1>ResumeTailor</h1>
+      <h1 class="wordmark"><i aria-hidden="true"></i>ResumeTailor</h1>
       <p>Starting…</p>
     </main>
     <main id="failed" hidden role="alert">
