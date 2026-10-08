@@ -1,5 +1,10 @@
 import { StrictMode } from "react";
 import { createRoot } from "react-dom/client";
+// Self-hosted fonts (no Google Fonts request: the desktop app may run offline). Fraunces
+// ships its optical-size axis so large titles get the display cut.
+import "@fontsource-variable/fraunces/opsz.css";
+import "@fontsource-variable/geist";
+import "@fontsource-variable/geist-mono";
 import App from "./App";
 import "./index.css";
 

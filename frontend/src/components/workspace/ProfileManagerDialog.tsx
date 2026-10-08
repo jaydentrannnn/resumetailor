@@ -98,7 +98,7 @@ export function ProfileManagerDialog({
         at once.
       </p>
 
-      <ul className="mt-4 max-h-64 divide-y divide-line/80 overflow-y-auto rounded-lg border border-line">
+      <ul className="mt-4 max-h-64 divide-y divide-line/80 overflow-y-auto rounded-sm border border-line">
         {workspaces.map((w) => (
           <li
             key={w.id}
@@ -118,14 +118,14 @@ export function ProfileManagerDialog({
                   maxLength={80}
                   disabled={disabled}
                   onChange={(e) => setRenameDraft(e.target.value)}
-                  className="min-w-[10rem] flex-1 rounded-md border border-line bg-paper px-2 py-1 text-ink"
+                  className="min-w-[10rem] flex-1 rounded-sm border border-line-hover bg-field px-2 py-1 text-ink"
                   aria-label="New profile name"
                   autoFocus
                 />
                 <button
                   type="submit"
                   disabled={disabled || !renameDraft.trim()}
-                  className="rounded-md border border-line px-2 py-1 text-xs font-medium hover:border-accent hover:text-accent disabled:opacity-50"
+                  className="rounded-sm border border-line-hover px-2 py-1 text-xs font-medium hover:border-ink disabled:opacity-50"
                 >
                   Save
                 </button>
@@ -133,7 +133,7 @@ export function ProfileManagerDialog({
                   type="button"
                   disabled={disabled}
                   onClick={() => setRenamingId(null)}
-                  className="rounded-md border border-line px-2 py-1 text-xs font-medium disabled:opacity-50"
+                  className="rounded-sm border border-line-hover px-2 py-1 text-xs font-medium disabled:opacity-50"
                 >
                   Cancel
                 </button>
@@ -143,7 +143,7 @@ export function ProfileManagerDialog({
                 <div className="flex items-center gap-2">
                   <span className="font-medium text-ink">{w.label}</span>
                   {w.id === activeId ? (
-                    <span className="rounded bg-accent-soft px-1.5 py-0.5 text-xs font-medium text-accent">
+                    <span className="rounded-sm bg-accent-soft px-1.5 py-0.5 text-xs font-medium text-accent">
                       Active
                     </span>
                   ) : null}
@@ -153,7 +153,7 @@ export function ProfileManagerDialog({
                     type="button"
                     disabled={disabled || w.id === activeId}
                     onClick={() => void handleActivate(w.id)}
-                    className="rounded-md border border-line px-2.5 py-1 text-xs font-medium text-ink hover:border-accent hover:text-accent disabled:opacity-50"
+                    className="rounded-sm border border-line-hover px-2.5 py-1 text-xs font-medium text-ink hover:border-ink disabled:opacity-50"
                   >
                     {w.id === activeId ? "Active" : "Switch"}
                   </button>
@@ -164,7 +164,7 @@ export function ProfileManagerDialog({
                       setRenamingId(w.id);
                       setRenameDraft(w.label);
                     }}
-                    className="rounded-md border border-line px-2.5 py-1 text-xs font-medium text-ink hover:border-accent hover:text-accent disabled:opacity-50"
+                    className="rounded-sm border border-line-hover px-2.5 py-1 text-xs font-medium text-ink hover:border-ink disabled:opacity-50"
                   >
                     Rename
                   </button>
@@ -172,7 +172,7 @@ export function ProfileManagerDialog({
                     type="button"
                     disabled={disabled || w.id === activeId || workspaces.length <= 1}
                     onClick={() => void handleDelete(w.id, w.label)}
-                    className="rounded-md border border-line px-2.5 py-1 text-xs font-medium text-danger hover:border-danger disabled:opacity-50"
+                    className="rounded-sm border border-danger/45 px-2.5 py-1 text-xs font-medium text-danger hover:border-danger disabled:opacity-50"
                   >
                     Delete
                   </button>
@@ -196,12 +196,12 @@ export function ProfileManagerDialog({
             disabled={disabled}
             onChange={(e) => setNewLabel(e.target.value)}
             placeholder="e.g. Data Science"
-            className="min-w-[12rem] flex-1 rounded-md border border-line bg-paper px-2 py-1.5 text-ink"
+            className="min-w-[12rem] flex-1 rounded-sm border border-line-hover bg-field px-2 py-1.5 text-ink"
           />
           <button
             type="submit"
             disabled={disabled || !newLabel.trim()}
-            className="rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-on-accent hover:bg-accent/90 disabled:opacity-50"
+            className="rounded-sm bg-primary px-3 py-1.5 text-[13px] font-medium text-on-primary hover:bg-primary/85 disabled:opacity-50"
           >
             Create
           </button>
@@ -218,7 +218,7 @@ export function ProfileManagerDialog({
       </form>
 
       {localError ? (
-        <p className="mt-3 rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">
+        <p className="mt-3 rounded-sm bg-danger-soft px-3 py-2 text-sm text-danger">
           {localError.split("\n")[0]}
         </p>
       ) : null}

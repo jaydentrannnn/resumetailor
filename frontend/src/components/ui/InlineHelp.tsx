@@ -31,7 +31,7 @@ export function InlineHelp({ label, children }: { label: string; children: React
         aria-expanded={open}
         aria-controls={id}
         onClick={() => setOpen((v) => !v)}
-        className="rt-row-action inline-flex size-5 min-h-0 items-center justify-center rounded-full border border-line text-micro font-semibold text-ink-muted hover:border-accent hover:text-accent"
+        className="rt-row-action inline-flex size-5 min-h-0 items-center justify-center rounded-sm border border-line-hover text-micro font-semibold text-ink-muted hover:border-ink hover:text-ink"
       >
         ?
       </button>
@@ -39,7 +39,7 @@ export function InlineHelp({ label, children }: { label: string; children: React
         <span
           id={id}
           role="note"
-          className="absolute left-1/2 top-full z-40 mt-2 w-64 -translate-x-1/2 rounded-lg border border-line bg-panel p-3 text-left text-xs font-normal leading-relaxed text-ink shadow-lg"
+          className="absolute left-1/2 top-full z-40 mt-2 w-64 -translate-x-1/2 rounded-sm bg-chrome p-3 text-left text-xs font-normal leading-relaxed text-ink shadow-lg"
         >
           {children}
         </span>

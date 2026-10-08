@@ -1,7 +1,9 @@
 import { useCallback, useEffect, useState } from "react";
 import { Link } from "react-router-dom";
 import { fetchUpdateStatus, type UpdateStatus } from "../api";
+import { toneChipClass } from "../lib/tone";
 import { updateChipLabel, updateChipVisible } from "../lib/updateStatus";
+import { StatusMark } from "./ui/Status";
 
 const POLL_MS = 30 * 60_000;
 
@@ -38,9 +40,9 @@ export function UpdateChip() {
   return (
     <Link
       to="/settings?tab=about"
-      className="rt-header-pill rt-control inline-flex items-center justify-center gap-1 whitespace-nowrap rounded-full border border-accent/40 bg-accent-soft px-3 py-1 text-accent"
+      className={`rt-header-pill rt-control inline-flex items-center justify-center gap-[7px] whitespace-nowrap rounded-sm px-3 py-1 ${toneChipClass("attention")}`}
     >
-      <span aria-hidden="true">↑ </span>
+      <StatusMark tone="attention" />
       {updateChipLabel(status)}
     </Link>
   );

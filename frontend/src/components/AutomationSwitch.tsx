@@ -2,6 +2,8 @@ import { useCallback, useEffect, useState } from "react";
 import { fetchAutomation, setAutomationPaused, type AutomationState } from "../api";
 import { describe } from "../lib/errors";
 import { useToast } from "../lib/toast";
+import { toneChipClass } from "../lib/tone";
+import { StatusMark } from "./ui/Status";
 
 /**
  * Header "Pause all automation" switch (plan P4-S). While paused, batches wait before
@@ -57,13 +59,13 @@ export function AutomationSwitch() {
       disabled={saving}
       onClick={toggle}
       title={state.paused ? `Automation is paused. ${usage}.` : `Pause all automation. ${usage}.`}
-      className={`rt-header-pill rt-control inline-flex items-center justify-center gap-1 whitespace-nowrap rounded-full border px-3 py-1 ${
+      className={`rt-header-pill rt-control inline-flex items-center justify-center gap-[7px] whitespace-nowrap rounded-sm px-3 py-1 ${
         state.paused
-          ? "border-warn/40 bg-warn-soft text-warn"
-          : "border-line bg-panel text-ink-muted hover:text-ink"
+          ? toneChipClass("attention")
+          : "border border-line bg-field text-ink-2 hover:border-line-hover hover:text-ink"
       }`}
     >
-      <span aria-hidden="true">{state.paused ? "▶ " : "❚❚ "}</span>
+      {state.paused && <StatusMark tone="attention" />}
       {state.paused ? "Automation paused · Resume" : "Pause automation"}
     </button>
   );

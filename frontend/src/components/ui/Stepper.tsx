@@ -3,12 +3,14 @@ import { type StepState, stepState } from "../../lib/stepState";
 export interface StepItem {
   id: string;
   label: string;
+  /** Quiet mono detail after the label (a duration, "9 / 14"). */
+  meta?: string;
 }
 
 const DOT: Record<StepState, string> = {
   done: "border-accent bg-accent text-on-accent",
-  current: "border-accent bg-accent-soft text-accent",
-  upcoming: "border-line bg-panel text-ink-muted",
+  current: "border-accent text-accent",
+  upcoming: "border-line-hover text-ink-muted",
   error: "border-danger bg-danger-soft text-danger",
 };
 
@@ -46,7 +48,7 @@ export function Stepper({
         const content = (
           <>
             <span
-              className={`flex size-6 shrink-0 items-center justify-center rounded-full border text-xs font-semibold ${DOT[state]}`}
+              className={`flex size-[18px] shrink-0 items-center justify-center rounded-sm border font-mono text-[10px] font-medium ${DOT[state]}`}
             >
               {GLYPH[state] || index + 1}
             </span>
@@ -55,6 +57,7 @@ export function Stepper({
             >
               {step.label}
             </span>
+            {step.meta && <span className="font-mono text-xs text-ink-muted">{step.meta}</span>}
           </>
         );
         return (
@@ -66,7 +69,7 @@ export function Stepper({
             {clickable ? (
               <button
                 type="button"
-                className="flex items-center gap-2 rounded-md px-1 hover:bg-paper"
+                className="flex items-center gap-2 rounded-sm px-1 hover:bg-sunken"
                 onClick={() => onSelect(index)}
               >
                 {content}

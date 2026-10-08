@@ -3,6 +3,8 @@ import { Link, useLocation } from "react-router-dom";
 import { fetchSetupStatus, type SetupStatus } from "../api";
 import { onAppEvent } from "../lib/appEvents";
 import { setupPillLabel } from "../lib/setupStatus";
+import { toneChipClass } from "../lib/tone";
+import { StatusMark } from "./ui/Status";
 
 /**
  * Header pill + checklist of prerequisites (model reachable, template, resume, profile).
@@ -71,35 +73,27 @@ export function SetupHealth() {
         aria-expanded={open}
         aria-controls={panelId}
         onClick={() => setOpen((v) => !v)}
-        className={`rt-header-pill rt-control inline-flex items-center justify-center gap-1 whitespace-nowrap rounded-full border px-3 py-1 ${
-          status.ready
-            ? "border-success/40 bg-success-soft text-success"
-            : "border-warn/40 bg-warn-soft text-warn"
-        }`}
+        className={`rt-header-pill rt-control inline-flex items-center justify-center gap-[7px] whitespace-nowrap rounded-sm px-3 py-1 ${toneChipClass(status.ready ? "done" : "attention")}`}
       >
-        <span aria-hidden="true">{status.ready ? "● " : "◐ "}</span>
+        <StatusMark tone={status.ready ? "done" : "attention"} />
         {setupPillLabel(status)}
       </button>
       {open && (
         <div
           id={panelId}
-          className="absolute left-0 top-full z-40 mt-2 w-80 max-w-[calc(100vw-2rem)] rounded-xl sm:left-auto sm:right-0 border border-line bg-panel p-4 shadow-lg"
+          className="absolute left-0 top-full z-40 mt-2 w-80 max-w-[calc(100vw-2rem)] rounded-sm sm:left-auto sm:right-0 bg-chrome p-4 shadow-lg"
         >
-          <p className="mb-3 text-sm font-semibold text-ink">Setup checklist</p>
+          <p className="rt-tile-title mb-3">Setup checklist</p>
           <ul className="space-y-3">
             {status.items.map((item) => (
               <li key={item.id} className="flex gap-3 text-sm">
                 <span
                   aria-hidden="true"
-                  className={`mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-full text-xs font-bold ${
-                    item.ok
-                      ? "bg-success-soft text-success"
-                      : item.optional
-                        ? "bg-paper text-ink-muted"
-                        : "bg-warn-soft text-warn"
-                  }`}
+                  className={`mt-0.5 flex size-5 shrink-0 items-center justify-center rounded-sm ${toneChipClass(
+                    item.ok ? "done" : item.optional ? "muted" : "attention",
+                  )}`}
                 >
-                  {item.ok ? "✓" : item.optional ? "–" : "!"}
+                  <StatusMark tone={item.ok ? "done" : item.optional ? "muted" : "attention"} />
                 </span>
                 <div className="min-w-0 flex-1">
                   <p className="font-medium text-ink">
@@ -129,7 +123,7 @@ export function SetupHealth() {
             <Link
               to="/welcome"
               onClick={() => setOpen(false)}
-              className="mt-4 block rounded-md border border-line px-3 py-2 text-center text-sm font-semibold text-accent hover:bg-accent-soft"
+              className="mt-4 block rounded-sm border border-line-hover px-3 py-2 text-center text-[13px] font-medium text-ink hover:border-ink"
             >
               Open guided setup
             </Link>

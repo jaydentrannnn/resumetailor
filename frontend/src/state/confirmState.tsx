@@ -8,6 +8,7 @@ import {
   type ReactNode,
 } from "react";
 import { Modal } from "../components/Modal";
+import { buttonClass } from "../lib/buttonClass";
 
 type ConfirmTone = "default" | "danger";
 
@@ -119,7 +120,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
               type="button"
               onClick={() => closeWith(false)}
               autoFocus={active.opts.tone === "danger"}
-              className="rounded-md border border-line px-3 py-1.5 text-sm font-medium text-ink-muted hover:border-accent hover:text-accent"
+              className={buttonClass("ghost", "md")}
             >
               {active.opts.cancelLabel ?? "Cancel"}
             </button>
@@ -127,11 +128,7 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
               type="button"
               onClick={() => closeWith(true)}
               autoFocus={active.opts.tone !== "danger"}
-              className={
-                active.opts.tone === "danger"
-                  ? "rounded-md bg-danger px-3 py-1.5 text-sm font-medium text-on-accent hover:bg-danger/85"
-                  : "rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-on-accent hover:bg-accent/90"
-              }
+              className={buttonClass(active.opts.tone === "danger" ? "danger" : "primary", "md")}
             >
               {active.opts.confirmLabel ?? "Confirm"}
             </button>
@@ -145,20 +142,19 @@ export function ConfirmProvider({ children }: { children: ReactNode }) {
             <button
               type="button"
               onClick={() => closeWith(null)}
-              className="rounded-md border border-line px-3 py-1.5 text-sm font-medium text-ink-muted hover:border-accent hover:text-accent"
+              className={buttonClass("ghost", "md")}
             >
               {active.opts.cancelLabel ?? "Cancel"}
             </button>
-            {active.opts.options.map((opt) => (
+            {active.opts.options.map((opt, index) => (
               <button
                 key={opt.id}
                 type="button"
                 onClick={() => closeWith(opt.id)}
-                className={
-                  opt.tone === "danger"
-                    ? "rounded-md bg-danger px-3 py-1.5 text-sm font-medium text-on-accent hover:bg-danger/85"
-                    : "rounded-md bg-accent px-3 py-1.5 text-sm font-medium text-on-accent hover:bg-accent/90"
-                }
+                className={buttonClass(
+                  opt.tone === "danger" ? "danger" : index === 0 ? "primary" : "secondary",
+                  "md",
+                )}
               >
                 {opt.label}
               </button>

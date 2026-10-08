@@ -18,7 +18,7 @@ export function Field({
 }) {
   return (
     <label className="block text-sm">
-      <span className="mb-1 block text-ink-muted">{label}</span>
+      <span className="mb-1.5 block text-xs font-medium text-ink-2">{label}</span>
       {children}
       {help && <span className="mt-1 block text-xs text-ink-muted">{help}</span>}
     </label>

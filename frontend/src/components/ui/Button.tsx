@@ -34,6 +34,7 @@ export function Button({
   );
 }
 
+/** The one loading spinner. `rounded-full` is allowed here: a ring is circular by nature. */
 export function Spinner({ label }: { label?: string }) {
   return (
     <span

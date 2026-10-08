@@ -3,7 +3,11 @@
 // to import from.
 export { Button, Spinner } from "./Button";
 export { buttonClass, type ButtonVariant } from "../../lib/buttonClass";
-export { Card, EmptyState, Kbd, Skeleton } from "./Card";
+export { Card, EmptyState, Kbd, Skeleton, Tile, TileSection } from "./Tile";
+export { StatusChip, StatusMark } from "./Status";
+export { type Tone, toneChipClass } from "../../lib/tone";
+export { Segmented, type SegmentedItem } from "./Segmented";
+export { DataList, type DataItem, Meter, SelectionBar, Stat } from "./Data";
 export { InlineHelp } from "./InlineHelp";
 export { Page, PageHeader } from "./Page";
 export { Stepper, type StepItem } from "./Stepper";

@@ -17,7 +17,7 @@ export function Pagination({
   const pages = Math.max(1, Math.ceil(total / size));
   return (
     <div className="flex flex-wrap items-center justify-between gap-2 text-xs text-ink-muted">
-      <span>
+      <span className="font-mono tabular-nums">
         {total
           ? `Showing ${page * size + 1}–${Math.min(total, (page + 1) * size)} of ${total}`
           : "0 results"}
@@ -27,7 +27,7 @@ export function Pagination({
           Rows{" "}
           <select
             aria-label="Rows per page"
-            className="rounded-md border border-line bg-panel px-2"
+            className="rounded-sm border border-line-hover bg-field px-2 font-mono"
             value={size}
             onChange={(e) => onSize(Number(e.target.value))}
           >
@@ -37,7 +37,7 @@ export function Pagination({
           </select>
         </label>
         <button
-          className="rounded-md border border-line bg-panel px-3 disabled:opacity-40"
+          className="rounded-sm border border-line-hover bg-field px-3 text-ink hover:border-ink disabled:opacity-40"
           disabled={page === 0 || !total}
           onClick={() => onPage(page - 1)}
         >
@@ -47,7 +47,7 @@ export function Pagination({
           Page{" "}
           <select
             aria-label="Page"
-            className="rounded-md border border-line bg-panel px-2"
+            className="rounded-sm border border-line-hover bg-field px-2 font-mono"
             value={Math.min(page, pages - 1)}
             onChange={(e) => onPage(Number(e.target.value))}
           >
@@ -60,7 +60,7 @@ export function Pagination({
           of {pages}
         </label>
         <button
-          className="rounded-md border border-line bg-panel px-3 disabled:opacity-40"
+          className="rounded-sm border border-line-hover bg-field px-3 text-ink hover:border-ink disabled:opacity-40"
           disabled={page >= pages - 1 || !total}
           onClick={() => onPage(page + 1)}
         >
@@ -121,14 +121,14 @@ export function DataTable<T>({
     if (mobileCheckbox.current) mobileCheckbox.current.indeterminate = some && !all;
   }, [some, all]);
   return (
-    <div className="overflow-x-auto rounded-lg border border-line bg-panel">
+    <div className="overflow-x-auto rounded-sm border border-line bg-panel">
       {error && (
         <p role="alert" className="border-b border-line p-3 text-sm text-danger">
           {error}
         </p>
       )}
       <table className="hidden w-full table-fixed text-left text-sm md:table">
-        <thead className="border-b border-line bg-bg text-ink-muted">
+        <thead className="border-b border-line-hover text-ink-muted">
           <tr>
             <th className="w-10 px-2 py-2">
               <input
@@ -149,7 +149,7 @@ export function DataTable<T>({
             {columns.map((col) => (
               <th
                 key={col.id}
-                className={`px-2 py-2 font-medium ${col.className ?? ""}`}
+                className={`rt-eyebrow px-2 py-2.5 text-left ${col.className ?? ""}`}
                 aria-sort={
                   col.sortable
                     ? sort === col.id
@@ -163,7 +163,7 @@ export function DataTable<T>({
                 {col.sortable ? (
                   <button
                     type="button"
-                    className="text-left hover:text-accent"
+                    className="rt-eyebrow rt-row-action text-left hover:text-ink"
                     onClick={() => onSort(col.id)}
                   >
                     {col.heading}{" "}
@@ -182,7 +182,8 @@ export function DataTable<T>({
           {rows.map((row) => (
             <tr
               key={id(row)}
-              className="border-b border-line/60 last:border-0 hover:bg-accent-soft/20"
+              data-selected={selected.has(id(row)) || undefined}
+              className="border-b border-line last:border-0 hover:bg-sunken"
             >
               <td className="px-2 py-3 align-top">
                 <input
@@ -231,7 +232,11 @@ export function DataTable<T>({
           </label>
         )}
         {rows.map((row) => (
-          <article key={id(row)} className="space-y-2 p-3 text-sm">
+          <article
+            key={id(row)}
+            data-selected={selected.has(id(row)) || undefined}
+            className="rt-record space-y-2 p-3 text-sm"
+          >
             <label className="flex items-center gap-2 text-xs text-ink-muted">
               <input
                 type="checkbox"
@@ -267,11 +272,9 @@ export function DataTable<T>({
 
 // Links and buttons share one box: the global 36px min-height covers only <button>,
 // so without `rt-control` a link item ("Tailored PDF") rendered shorter than "Skip".
-// Size comes from the menu container, not the item: index.css's unlayered
-// `button { font: inherit }` beats a `text-sm` utility on a <button>, so buttons
-// only match links when both inherit one font size.
+// Items inherit the menu container's size and share one box, so both match.
 const menuItemClass =
-  "rt-control flex w-full items-center rounded px-3 py-1.5 text-left hover:bg-accent-soft";
+  "rt-control flex w-full items-center rounded-sm px-3 py-1.5 text-left hover:bg-sunken";
 export type MenuItem = {
   label: string;
   action?: () => void;
@@ -340,7 +343,7 @@ export function RowActionsMenu({ label, items }: { label: string; items: MenuIte
         aria-label={label}
         aria-haspopup="menu"
         aria-expanded={open}
-        className="rt-row-action inline-flex w-7 shrink-0 items-center justify-center rounded-md border border-line bg-panel text-ink hover:border-line-hover"
+        className="rt-row-action inline-flex w-7 shrink-0 items-center justify-center rounded-sm border border-line-hover bg-field text-ink hover:border-ink"
         onClick={() => {
           setRect(button.current?.getBoundingClientRect() ?? null);
           setOpen(!open);
@@ -355,7 +358,7 @@ export function RowActionsMenu({ label, items }: { label: string; items: MenuIte
             ref={menu}
             role="menu"
             onKeyDown={keyDown}
-            className="fixed z-50 max-h-[70vh] w-52 overflow-auto rounded-md border border-line bg-panel p-1 text-sm shadow-xl"
+            className="fixed z-50 max-h-[70vh] w-52 overflow-auto rounded-sm bg-chrome p-1 text-sm shadow-xl"
             style={{
               left: Math.max(8, Math.min(rect.right - 208, window.innerWidth - 216)),
               top: rect.bottom + 220 > window.innerHeight ? undefined : rect.bottom + 4,

@@ -1,6 +1,6 @@
 import { useEffect, useState } from "react";
 import { SHORTCUTS, shortcutFor } from "../lib/shortcuts";
-import { Kbd } from "./ui/Card";
+import { Kbd } from "./ui/Tile";
 import { Modal } from "./Modal";
 
 /**

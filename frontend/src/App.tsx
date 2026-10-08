@@ -32,9 +32,10 @@ import { useApplicantProfile } from "./state/applicantProfileState";
 import { useEditorState } from "./state/editorState";
 import { useConfirm } from "./state/confirmState";
 
+// Text links; the active one is ink with a 2px accent underline sitting on the header rule.
 const navLinkClassName = ({ isActive }: { isActive: boolean }) =>
-  `whitespace-nowrap rounded-md px-3 py-1.5 text-sm font-medium transition-colors duration-[var(--dur-short)] ease-out ${
-    isActive ? "bg-accent text-on-accent" : "text-ink-muted hover:bg-accent-soft hover:text-ink"
+  `relative inline-flex h-11 items-center whitespace-nowrap px-3 text-[13px] font-medium transition-colors duration-[var(--dur-short)] ease-out after:absolute after:inset-x-3 after:-bottom-px after:h-0.5 sm:h-14 ${
+    isActive ? "text-ink after:bg-accent" : "text-ink-muted after:bg-transparent hover:text-ink"
   }`;
 
 /**
@@ -121,17 +122,18 @@ function Shell() {
     <div className="min-h-screen">
       <NavigationGuard />
       <OnboardingGate />
-      <header className="relative z-30 border-b border-line/80 bg-panel/80 backdrop-blur-sm">
-        <div className="mx-auto flex max-w-[1920px] flex-wrap items-center justify-between gap-x-6 gap-y-3 px-6 py-4">
+      <header className="relative z-30 border-b border-line bg-chrome">
+        <div className="mx-auto flex max-w-[1920px] flex-wrap items-center justify-between gap-x-6 gap-y-1 px-4 py-2 sm:px-6 sm:py-0">
           {/* Brand and nav read left-to-right as one group; profile and theme
               utilities sit on the right. min-w-0 lets each group shrink below its
               max-content width, and flex-wrap keeps a 320px viewport from scrolling
               sideways — the old unwrapped row was the app's one real horizontal-scroll bug. */}
-          <div className="flex min-w-0 flex-wrap items-center gap-x-6 gap-y-2">
-            <p className="font-display text-2xl font-bold tracking-tight text-ink [overflow-wrap:anywhere]">
+          <div className="flex min-w-0 flex-wrap items-center gap-x-7 gap-y-0">
+            <p className="inline-flex items-center gap-2.5 font-display text-lg font-semibold tracking-tight text-ink [overflow-wrap:anywhere]">
+              <span aria-hidden="true" className="size-2.5 rounded-xs bg-accent" />
               ResumeTailor
             </p>
-            <nav className="flex flex-wrap gap-1">
+            <nav className="flex flex-wrap">
               <NavLink to="/" end className={navLinkClassName}>
                 Tailor
               </NavLink>
@@ -152,7 +154,7 @@ function Shell() {
               </NavLink>
             </nav>
           </div>
-          <div className="flex min-w-0 flex-wrap items-end gap-4">
+          <div className="flex min-w-0 flex-wrap items-center gap-2 py-2.5">
             <SetupHealth />
             <UpdateChip />
             <AutomationSwitch />
@@ -161,7 +163,7 @@ function Shell() {
         </div>
       </header>
       <KeyboardShortcuts />
-      <main className="mx-auto max-w-[1920px] px-6 py-8">
+      <main className="mx-auto max-w-[1920px] px-4 pb-12 pt-0 sm:px-6">
         <Suspense fallback={<PageLoading />}>
           <Routes>
             <Route path="/" element={<RunPage />} />

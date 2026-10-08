@@ -1,38 +1,94 @@
-/* Shared light and charcoal interface tokens; see docs/design.md. */
+/* Black/white interface tokens with one racing-green accent; see docs/design.md and the
+   approved visual target docs/design/reference.html. */
 @import "tailwindcss";
 
 @theme {
-  --font-display: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
-  --font-sans: "IBM Plex Sans", ui-sans-serif, system-ui, sans-serif;
-  --font-mono: "IBM Plex Mono", ui-monospace, "SFMono-Regular", monospace;
-  --color-ink: #202725;
-  --color-ink-muted: #626a65;
-  --color-paper: #f7f6f2;
-  --color-panel: #ffffff;
-  --color-line: #dedcd4;
-  --color-accent: #077468;
-  --color-accent-soft: #e2f0eb;
-  --color-bg: #f7f6f2;
-  --color-warning: #9a3412;
-  --color-line-hover: #bcbab2;
-  /* Foreground on accent/warn solid buttons — white in light, near-black in dark. */
+  --font-display: "Fraunces Variable", Georgia, "Times New Roman", serif;
+  --font-sans: "Geist Variable", ui-sans-serif, system-ui, sans-serif;
+  --font-mono: "Geist Mono Variable", ui-monospace, "SFMono-Regular", Consolas, monospace;
+
+  /* Surfaces: page and header chrome are pure white; a tile ("panel") is a soft grey set
+     off by a hairline; "sunken" is a segment track, table head or hover; "field" is an
+     input's own background. */
+  --color-paper: #ffffff;
+  --color-chrome: #ffffff;
+  --color-panel: #f7f7f6;
+  --color-sunken: #efefed;
+  --color-field: #ffffff;
+  --color-line: #e2e2df;
+  --color-line-hover: #c8c8c4;
+  --color-ink: #0b0b0b;
+  --color-ink-2: #3a3a38;
+  --color-ink-muted: #6b6b68;
+
+  /* The primary button is ink: black fill in light, white fill in dark. Green is never a
+     button fill. */
+  --color-primary: #0b0b0b;
+  --color-on-primary: #ffffff;
+
+  /* The one accent: progress, ticks, focus, active nav. */
+  --color-accent: #1f6b4a;
+  --color-accent-soft: color-mix(in srgb, #1f6b4a 10%, transparent);
+  /* Foreground on a solid accent fill (Stepper "done" box, legacy accent buttons). */
   --color-on-accent: #ffffff;
-  --color-warn: #9a3412;
-  --color-warn-soft: #ffedd5;
-  --color-danger: #9f1239;
-  --color-danger-soft: #ffe4e6;
-  /* Status tones for application pills and the browser-connection dot; always
-     paired with a text label, never color alone. */
-  --color-success: #166534;
-  --color-success-soft: #dcfce7;
-  --color-info: #1d4ed8;
-  --color-info-soft: #dbeafe;
+
+  /* Selected segment, tab or filter: solid green with white text in light; mint text,
+     mint hairline and a ~12% wash in dark. Pages use `bg-selected text-on-selected` plus
+     an inset `selected-line` ring, never raw accent classes. */
+  --color-selected: #1f6b4a;
+  --color-on-selected: #ffffff;
+  --color-selected-line: #1f6b4a;
+  /* Selected table row (both themes): accent wash; the 2px inset bar is index.css's. */
+  --color-selected-row: color-mix(in srgb, #1f6b4a 9%, transparent);
+
+  /* Status hues, always paired with a mark shape and a text label (lib/tone.ts). */
+  --color-success: #1f6b4a;
+  --color-success-soft: color-mix(in srgb, #1f6b4a 10%, transparent);
+  --color-attn: #1d4ed8;
+  --color-attn-soft: color-mix(in srgb, #1d4ed8 10%, transparent);
+  --color-danger: #c42020;
+  --color-danger-soft: color-mix(in srgb, #c42020 10%, transparent);
+
+  /* Modal / drawer backdrop. */
+  --color-scrim: rgb(0 0 0 / 0.4);
+
+  /* Retired tokens, kept as aliases until every page has moved off them; deleted at
+     integration (plan Phase 3). Do not use in new code. */
+  --color-bg: var(--color-paper);
+  --color-warn: var(--color-attn);
+  --color-warn-soft: var(--color-attn-soft);
+  --color-warning: var(--color-attn);
+  --color-info: var(--color-attn);
+  --color-info-soft: var(--color-attn-soft);
+
   /* Same value in both themes — represents an actual white document/PDF page
      behind a preview iframe, not a UI surface, so it does not follow data-theme. */
   --color-doc-preview: #ffffff;
-  /* Shared size for uppercase micro-labels (status pills, "Customized" tags) —
-     was five different arbitrary text-[…] values before this token existed. */
+
+  /* Shared size for uppercase micro-labels (status pills, "Customized" tags). */
   --text-micro: 0.6875rem;
+
+  /* 4px corners on everything; `rounded-xs` is the 2px exception for tiny marks. */
+  --radius-xs: 2px;
+  --radius-sm: 4px;
+  --radius-md: 4px;
+  --radius-lg: 4px;
+  --radius-xl: 4px;
+  --radius-2xl: 4px;
+  --radius-3xl: 4px;
+  --radius-4xl: 4px;
+
+  /* Flat by default: only overlays (menus, popovers, toasts, modals) carry a shadow, and
+     it is the same one everywhere. The value is a var so the dark theme can swap it. */
+  --shadow-2xs: 0 0 #0000;
+  --shadow-xs: 0 0 #0000;
+  --shadow-sm: 0 0 #0000;
+  --shadow: 0 0 #0000;
+  --shadow-md: 0 0 #0000;
+  --shadow-lg: var(--rt-overlay);
+  --shadow-xl: var(--rt-overlay);
+  --shadow-2xl: var(--rt-overlay);
+
   --ease-out: cubic-bezier(0.16, 1, 0.3, 1);
   --ease-in: cubic-bezier(0.7, 0, 0.84, 0);
   --ease-in-out: cubic-bezier(0.65, 0, 0.35, 1);
@@ -40,28 +96,75 @@
   --dur-base: 220ms;
 }
 
+:root {
+  --rt-overlay: 0 8px 24px -12px rgb(0 0 0 / 0.18), 0 0 0 1px var(--color-line);
+  accent-color: var(--color-accent);
+}
+
 /* Resolved theme is always set on <html data-theme="light|dark"> by themeState
    (and a FOUC script in index.html). Light tokens are the @theme defaults above. */
 :root[data-theme="dark"] {
-  --color-ink: #e8e4db;
-  --color-ink-muted: #a8a296;
-  --color-paper: #1a1c1e;
-  --color-panel: #242628;
-  --color-line: #3d4145;
-  --color-bg: #1a1c1e;
-  --color-warning: #fb923c;
-  --color-line-hover: #73777b;
-  --color-accent: #3dba95;
-  --color-accent-soft: #1a3d32;
-  --color-on-accent: #0a1a14;
-  --color-warn: #fb923c;
-  --color-warn-soft: #3d2a1a;
-  --color-danger: #fb7185;
-  --color-danger-soft: #3d1a22;
-  --color-success: #4ade80;
-  --color-success-soft: #173d25;
-  --color-info: #93c5fd;
-  --color-info-soft: #1c2c4a;
+  --color-paper: #0a0a0a;
+  --color-chrome: #0a0a0a;
+  --color-panel: #151515;
+  --color-sunken: #1d1d1d;
+  --color-field: #0f0f0f;
+  --color-line: #2a2a2a;
+  --color-line-hover: #3d3d3d;
+  --color-ink: #f5f5f4;
+  --color-ink-2: #d4d4d2;
+  --color-ink-muted: #8f8f8c;
+  --color-primary: #ffffff;
+  --color-on-primary: #0b0b0b;
+  --color-accent: #6fbf98;
+  --color-accent-soft: color-mix(in srgb, #6fbf98 12%, transparent);
+  --color-on-accent: #0a0a0a;
+  --color-selected: color-mix(in srgb, #6fbf98 12%, transparent);
+  --color-on-selected: #6fbf98;
+  --color-selected-line: #6fbf98;
+  --color-selected-row: color-mix(in srgb, #6fbf98 12%, transparent);
+  --color-success: #6fae90;
+  --color-success-soft: color-mix(in srgb, #6fae90 8%, transparent);
+  --color-attn: #8699cb;
+  --color-attn-soft: color-mix(in srgb, #8699cb 8%, transparent);
+  --color-danger: #d17875;
+  --color-danger-soft: color-mix(in srgb, #d17875 8%, transparent);
+  --color-scrim: rgb(0 0 0 / 0.6);
+  --rt-overlay: 0 0 0 1px var(--color-line-hover);
+}
+
+/* Type roles. Titles and big figures are Fraunces; everything else is Geist. */
+@utility rt-title {
+  font-family: var(--font-display);
+  font-weight: 350;
+  font-size: clamp(2rem, 4.4vw, 3.125rem);
+  line-height: 1.06;
+  letter-spacing: -0.015em;
+  text-wrap: balance;
+}
+@utility rt-figure {
+  font-family: var(--font-display);
+  font-weight: 350;
+  font-size: clamp(2.5rem, 4.6vw, 3.5rem);
+  line-height: 1;
+  letter-spacing: -0.015em;
+  font-variant-numeric: tabular-nums lining-nums;
+}
+@utility rt-eyebrow {
+  font-family: var(--font-mono);
+  font-size: 11px;
+  font-weight: 500;
+  line-height: 1.3;
+  letter-spacing: 0.08em;
+  text-transform: uppercase;
+  color: var(--color-ink-muted);
+}
+@utility rt-tile-title {
+  font-size: 15px;
+  font-weight: 600;
+  line-height: 1.35;
+  letter-spacing: -0.005em;
+  color: var(--color-ink);
 }
 
 html,
@@ -75,14 +178,17 @@ body {
   font-family: var(--font-sans);
   color: var(--color-ink);
   background: var(--color-paper);
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
 }
 
-button,
-input,
-select,
-textarea {
-  font: inherit;
+::selection {
+  background: color-mix(in srgb, var(--color-accent) 35%, transparent);
 }
+
+/* Fonts on form controls come from Tailwind preflight's layered `font: inherit`, so a
+   text-* utility on a <button> wins. Do not add an unlayered font reset here: it beat
+   every utility and caused two shipped bugs (docs/notes/web-ui-and-mcp.md). */
 button,
 select,
 input:not([type="checkbox"]):not([type="radio"]),
@@ -103,7 +209,8 @@ input:not([type="checkbox"]):not([type="radio"]),
   min-height: 28px;
   height: 28px;
 }
-/* Override the unlayered button font reset consistently for header links and buttons. */
+/* Header pills (setup, update, automation, settings) share one exact type size; the
+   uiDisplay e2e pins 12px/16px/600 at a 36px (44px touch) height. */
 .rt-header-pill {
   font-size: 0.75rem;
   line-height: 1rem;
@@ -129,28 +236,39 @@ input:not([type="checkbox"]):not([type="radio"]),
   box-sizing: border-box;
 }
 
-/* Single focus ring for every interactive control — replaces per-input outline:none
-   that only changed border-color (inadequate contrast, especially on green-on-white). */
+/* Single focus ring for every interactive control. */
 :focus-visible {
   outline: 2px solid var(--color-accent);
   outline-offset: 2px;
 }
 
-/* Shared text-input/select styling for label+control pairs — used by RunPage's
-   SettingsPanel and VocabularyPage's pack editor, both via the `Field` component. */
-/* Layered so a utility on the element wins: `field w-20` is a 5rem box, not a full-width
-   one (unlayered, `width: 100%` beat every w-* class and broke inline number inputs). */
+/* Shared text-input/select styling for label+control pairs (`Field` children and raw
+   inputs). Layered so a utility on the element wins: `field w-20` is a 5rem box. */
 @layer components {
   .field {
     width: 100%;
-    border: 1px solid var(--color-line);
-    border-radius: 0.5rem;
+    border: 1px solid var(--color-line-hover);
+    border-radius: var(--radius-sm);
     padding: 0.4rem 0.65rem;
     font-size: 0.875rem;
-    background: color-mix(in srgb, var(--color-paper) 40%, var(--color-panel));
+    color: var(--color-ink);
+    background: var(--color-field);
   }
   .field:focus {
     border-color: var(--color-accent);
+  }
+
+  /* Selected table row / record card: accent wash plus a 2px inset accent bar. Set
+     `data-selected="true"` on the <tr> (or card); DataTable does this itself. */
+  tr[data-selected="true"] > td {
+    background: var(--color-selected-row);
+  }
+  tr[data-selected="true"] > td:first-child,
+  .rt-record[data-selected="true"] {
+    box-shadow: inset 2px 0 0 var(--color-accent);
+  }
+  .rt-record[data-selected="true"] {
+    background: var(--color-selected-row);
   }
 }
 

@@ -7,12 +7,16 @@ import {
   type ToastInput,
   toastReducer,
 } from "../../lib/toast";
+import type { Tone } from "../../lib/tone";
+import { StatusChip } from "./Status";
 
-const KIND_CLASS: Record<Toast["kind"], string> = {
-  success: "border-success/40 bg-success-soft text-success",
-  error: "border-danger/40 bg-danger-soft text-danger",
-  info: "border-info/40 bg-info-soft text-info",
+// A toast is a flat overlay: a status chip (shape + word) carries the kind, the text stays ink.
+const KIND_TONE: Record<Toast["kind"], Tone | null> = {
+  success: "done",
+  error: "failed",
+  info: null,
 };
+const KIND_WORD: Record<Toast["kind"], string> = { success: "Done", error: "Failed", info: "" };
 
 /** Provides `useToast()` and renders the stack in the bottom-right corner. */
 export function ToastProvider({ children }: { children: ReactNode }) {
@@ -56,9 +60,14 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: (id: number)
   return (
     <div
       role={toast.kind === "error" ? "alert" : "status"}
-      className={`pointer-events-auto w-full rounded-lg border px-4 py-3 text-sm shadow-lg ${KIND_CLASS[toast.kind]}`}
+      className="pointer-events-auto w-full rounded-sm bg-chrome px-3.5 py-3 text-[13px] text-ink shadow-lg"
     >
       <div className="flex items-start gap-3">
+        {KIND_TONE[toast.kind] && (
+          <StatusChip tone={KIND_TONE[toast.kind]!} className="shrink-0">
+            {KIND_WORD[toast.kind]}
+          </StatusChip>
+        )}
         <div className="min-w-0 flex-1">
           <p className="font-semibold">{toast.title}</p>
           {toast.detail && (
@@ -67,7 +76,7 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: (id: number)
           {toast.action && (
             <button
               type="button"
-              className="mt-2 font-semibold underline underline-offset-2"
+              className="mt-2 font-semibold text-ink underline underline-offset-2"
               onClick={() => {
                 toast.action?.onClick();
                 onDismiss(toast.id);
@@ -80,7 +89,7 @@ function ToastItem({ toast, onDismiss }: { toast: Toast; onDismiss: (id: number)
         <button
           type="button"
           aria-label="Dismiss"
-          className="rt-row-action -mr-1 rounded px-1 text-lg leading-none opacity-70 hover:opacity-100"
+          className="rt-row-action -mr-1 rounded-sm px-1 text-lg leading-none text-ink-muted hover:text-ink"
           onClick={() => onDismiss(toast.id)}
         >
           ×

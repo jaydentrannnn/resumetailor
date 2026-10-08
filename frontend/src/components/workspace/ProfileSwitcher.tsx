@@ -94,7 +94,7 @@ export function ProfileSwitcher({ stacked = false }: { stacked?: boolean }) {
           value={activeId ?? ""}
           disabled={switching || applicant.saving || workspaces.length === 0}
           onChange={(e) => void handleSwitch(e.target.value)}
-          className={`rounded-md border border-line bg-paper px-2 py-1.5 text-ink disabled:opacity-50 ${stacked ? "w-full" : ""}`}
+          className={`rounded-sm border border-line-hover bg-field px-2 py-1.5 text-ink disabled:opacity-50 ${stacked ? "w-full" : ""}`}
           aria-label="Active profile"
         >
           {workspaces.length === 0 ? <option value="">—</option> : null}
@@ -109,14 +109,14 @@ export function ProfileSwitcher({ stacked = false }: { stacked?: boolean }) {
         type="button"
         onClick={() => setManagerOpen(true)}
         disabled={switching}
-        className="rounded-md border border-line px-2.5 py-1.5 text-xs font-medium text-ink-muted hover:border-accent hover:text-accent disabled:opacity-50"
+        className="rounded-sm border border-line-hover bg-field px-2.5 py-1.5 text-xs font-medium text-ink-2 hover:border-ink hover:text-ink disabled:opacity-50"
       >
         {stacked ? "Manage profiles…" : "Manage"}
       </button>
       {switching ? <span className="text-xs text-ink-muted">Switching…</span> : null}
       {error ? <span className="text-xs text-danger">{error.split("\n")[0]}</span> : null}
-      {/* Portaled: a fixed overlay inside the blurred header would be laid out against
-          the header box (backdrop-filter makes it the containing block), not the viewport. */}
+      {/* Portaled so the dialog's fixed overlay is laid out against the viewport, not the
+          menu panel it is opened from. */}
       {managerOpen
         ? createPortal(
             <ProfileManagerDialog

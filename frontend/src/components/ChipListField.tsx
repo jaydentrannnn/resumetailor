@@ -106,7 +106,7 @@ export function ChipListField({
           {label}
         </span>
       )}
-      <div className="flex min-h-[2.25rem] flex-wrap items-center gap-1.5 rounded-md border border-line bg-paper/40 px-2 py-1.5 focus-within:border-accent">
+      <div className="flex min-h-[2.25rem] flex-wrap items-center gap-1.5 rounded-sm border border-line-hover bg-field px-2 py-1.5 focus-within:border-accent">
         {/* Neutral by default — a committed token, not a selection state. At the
             volumes this renders (a resume's full tag vocabulary, every bullet's
             own tags) an accent-filled pill per item turned the accent colour into
@@ -115,7 +115,7 @@ export function ChipListField({
         {uniqueItems.map((item, i) => (
           <span
             key={item.toLowerCase()}
-            className="inline-flex items-center gap-1 rounded-full border border-line bg-paper px-2 py-0.5 text-xs font-medium text-ink"
+            className="inline-flex items-center gap-1 rounded-sm border border-line bg-panel px-2 py-0.5 text-xs font-medium text-ink"
           >
             {item}
             <button
@@ -123,7 +123,7 @@ export function ChipListField({
               title={`Remove ${item}`}
               aria-label={`Remove ${item}`}
               onClick={() => removeAt(i)}
-              className="flex min-h-6 min-w-6 items-center justify-center rounded-full text-ink-muted hover:bg-accent hover:text-on-accent"
+              className="flex min-h-6 min-w-6 items-center justify-center rounded-xs text-ink-muted hover:bg-sunken hover:text-ink"
             >
               ×
             </button>

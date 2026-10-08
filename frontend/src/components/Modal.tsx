@@ -78,8 +78,8 @@ export function Modal({
       // (a vocabulary pack with 6+ verb families) can easily exceed viewport height.
       className={
         placement === "right"
-          ? "fixed inset-0 z-50 flex justify-end bg-ink/40"
-          : "fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-ink/40 px-4 py-12"
+          ? "fixed inset-0 z-50 flex justify-end bg-scrim"
+          : "fixed inset-0 z-50 flex items-start justify-center overflow-y-auto bg-scrim px-4 py-12"
       }
       onMouseDown={(e) => {
         overlayMouseDown.current = e.target === e.currentTarget;
@@ -97,8 +97,8 @@ export function Modal({
         tabIndex={-1}
         className={
           placement === "right"
-            ? "h-full w-full max-w-md overflow-y-auto border-l border-line bg-panel p-5 shadow-lg outline-none"
-            : `w-full rounded-xl border border-line bg-panel p-5 shadow-lg outline-none ${
+            ? "h-full w-full max-w-md overflow-y-auto bg-chrome p-5 shadow-lg outline-none"
+            : `w-full rounded-sm bg-chrome p-5 shadow-lg outline-none sm:px-6 sm:py-[22px] ${
                 wide ? "max-w-2xl" : "max-w-lg"
               }`
         }
@@ -106,13 +106,13 @@ export function Modal({
         onMouseDown={(e) => e.stopPropagation()}
       >
         <div className="flex items-center justify-between gap-3">
-          <h2 id={titleId} className="font-display text-lg font-semibold">
+          <h2 id={titleId} className="text-base font-semibold">
             {title}
           </h2>
           <button
             type="button"
             onClick={onClose}
-            className="rounded-md px-2 py-1 text-sm text-ink-muted hover:text-ink"
+            className="rounded-sm px-2 py-1 text-sm text-ink-muted hover:text-ink"
           >
             Close
           </button>

@@ -16,31 +16,35 @@ export function Page({
   children: ReactNode;
 }) {
   const column = width === "standard" ? "mx-auto w-full max-w-6xl" : "";
-  return <div className={`${column} space-y-6 ${className}`.trim()}>{children}</div>;
+  return <div className={`${column} space-y-4 ${className}`.trim()}>{children}</div>;
 }
 
-/** Page title with an optional back link, description and right-aligned actions. */
+/**
+ * Page title: an optional mono `eyebrow`, the serif h1, a one-line lede (`description`),
+ * a back link above and right-aligned `actions`.
+ */
 export function PageHeader({
   title,
+  eyebrow,
   description,
   back,
   actions,
 }: {
   title: ReactNode;
+  eyebrow?: ReactNode;
   description?: ReactNode;
   back?: ReactNode;
   actions?: ReactNode;
 }) {
   return (
-    <header className="space-y-2">
+    <header className="space-y-2.5 pb-2 pt-4 sm:pt-8">
       {back}
-      <div className="flex flex-wrap items-start justify-between gap-3">
-        <div className="min-w-0">
-          <h1 className="font-display text-[28px] font-semibold text-ink">{title}</h1>
-          {description && <div className="mt-1 text-sm text-ink-muted">{description}</div>}
-        </div>
+      {eyebrow && <p className="rt-eyebrow">{eyebrow}</p>}
+      <div className="flex flex-wrap items-end justify-between gap-x-4 gap-y-3">
+        <h1 className="rt-title min-w-0 text-ink">{title}</h1>
         {actions && <div className="flex flex-wrap items-center gap-3 text-sm">{actions}</div>}
       </div>
+      {description && <div className="max-w-[62ch] text-[15px] text-ink-muted">{description}</div>}
     </header>
   );
 }

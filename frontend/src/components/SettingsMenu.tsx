@@ -2,6 +2,7 @@ import { useEffect, useId, useRef, useState } from "react";
 import { useTheme, type ThemePreference } from "../state/themeState";
 import { useWorkspaceState } from "../state/workspaceState";
 import { ProfileSwitcher } from "./workspace/ProfileSwitcher";
+import { Segmented } from "./ui/Segmented";
 
 const THEMES: Array<[ThemePreference, string]> = [
   ["system", "System"],
@@ -55,7 +56,7 @@ export function SettingsMenu() {
         aria-controls={panelId}
         aria-haspopup="true"
         onClick={() => setOpen((value) => !value)}
-        className="inline-flex min-h-9 max-w-64 items-center gap-2 rounded-md border border-line bg-panel px-3 py-1.5 text-sm font-medium text-ink hover:border-accent"
+        className="inline-flex min-h-9 max-w-64 items-center gap-2 rounded-sm border border-line bg-field px-3 py-1.5 text-xs font-semibold text-ink hover:border-line-hover"
         title="Settings: profile and theme"
       >
         <svg
@@ -82,34 +83,21 @@ export function SettingsMenu() {
           id={panelId}
           role="group"
           aria-label="Settings"
-          className="absolute right-0 z-40 mt-2 w-72 max-w-[calc(100vw-2rem)] space-y-4 rounded-lg border border-line bg-panel p-4 shadow-lg"
+          className="absolute right-0 z-40 mt-2 w-72 max-w-[calc(100vw-2rem)] space-y-4 rounded-sm bg-chrome p-4 shadow-lg"
         >
           <section className="space-y-2">
-            <h2 className="text-xs font-semibold uppercase tracking-wide text-ink-muted">
-              Profile
-            </h2>
+            <h2 className="rt-eyebrow">Profile</h2>
             <ProfileSwitcher stacked />
           </section>
           <section className="space-y-2 border-t border-line pt-3">
-            <h2 className="text-xs font-semibold uppercase tracking-wide text-ink-muted">Theme</h2>
-            <div
-              role="radiogroup"
-              aria-label="Theme"
-              className="grid grid-cols-3 gap-1 rounded-md border border-line p-1"
-            >
-              {THEMES.map(([value, label]) => (
-                <button
-                  key={value}
-                  type="button"
-                  role="radio"
-                  aria-checked={preference === value}
-                  onClick={() => setPreference(value)}
-                  className={`min-h-9 rounded px-2 text-sm ${preference === value ? "bg-accent text-on-accent" : "text-ink-muted hover:text-ink"}`}
-                >
-                  {label}
-                </button>
-              ))}
-            </div>
+            <h2 className="rt-eyebrow">Theme</h2>
+            <Segmented
+              label="Theme"
+              items={THEMES.map(([id, label]) => ({ id, label }))}
+              value={preference}
+              onChange={(id) => setPreference(id as ThemePreference)}
+              className="w-full [&>button]:flex-1 [&>button]:justify-center"
+            />
           </section>
         </div>
       )}

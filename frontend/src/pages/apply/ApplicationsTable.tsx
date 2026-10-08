@@ -2,6 +2,7 @@ import { useState, type ReactNode } from "react";
 import { CapturedBadge } from "../CapturedStubs";
 import { Link, useNavigate, type To } from "react-router-dom";
 import type { ApplicationRow } from "../../api";
+import { StatusChip } from "../../components/ui";
 import {
   DataTable,
   Pagination,
@@ -9,11 +10,7 @@ import {
   type MenuItem,
   type TableColumn,
 } from "../../components/TableControls";
-import {
-  applicationStatusLabel,
-  applicationStatusTone,
-  statusToneClass,
-} from "../../lib/applicationStatus";
+import { applicationStatusLabel, applicationStatusTone } from "../../lib/applicationStatus";
 import {
   canContinueFill,
   canFillAfterReview,
@@ -41,7 +38,7 @@ const TONE = {
 // A retry after a failure is red; the same button as a routine next step
 // (e.g. "Fetch JD" on a newly discovered row) is a teal outline, not an alarm.
 const retryTone = (status: string) =>
-  applicationStatusTone(status) === "danger"
+  applicationStatusTone(status) === "failed"
     ? "border border-danger/50 bg-panel text-danger hover:bg-danger-soft"
     : "border border-accent/60 bg-panel text-accent hover:bg-accent-soft";
 const ALL_STATUSES = [
@@ -305,11 +302,9 @@ export function ApplicationsTable({
   }
 
   const statusPill = (row: ApplicationRow) => (
-    <span
-      className={`inline-block rounded-full px-2 py-0.5 text-xs font-medium ${statusToneClass[applicationStatusTone(row.status)]}`}
-    >
+    <StatusChip tone={applicationStatusTone(row.status)}>
       {applicationStatusLabel(row.status)}
-    </span>
+    </StatusChip>
   );
 
   const cols: TableColumn<ApplicationRow>[] = [
