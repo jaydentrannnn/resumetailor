@@ -601,3 +601,23 @@ The approved visual target is `docs/design/reference.html`, and the rules live i
   - `Tabs` gains a `variant` (`underline` or `segmented`) and an `orientation`
   - an `rt-link` utility
 - **No behaviour changes:** all selectors the e2e tests rely on were kept. The build ran as parallel Orca worktree workers merged in order onto main.
+
+## 2026-10-08 — Redesign polish: orange attention, one-line rows, uniform buttons
+
+**What:**
+- "Needs you" (`attn`) is now orange: `#b0390a` in light mode, `#e0965c` in dark. Red stays for failures, and no status uses blue any more.
+- An application that is ready to fill gets a green-dot `ready` tone.
+- A ready row the server will not fill (for example `resume_quality_unverified`) shows "Check resume" with a Review action. A fillable row gets a filled primary Fill button.
+- `buttonClass` includes `rt-control`, so links and buttons share the 36px floor (44px on touch). `rt-row-action` stays at 28px.
+- Descriptive and error text in table cells and notice rows uses `TruncatedText`. It shows one line; when cut off, a click opens a floating box at the click point.
+- `SettingRow` gains `layout="stacked"|"action"`. Application details groups start collapsed, opening only until onboarding is done or when the URL has `?setup=1`.
+- The Template page has a large preview with a 280px info rail, and its galleries scroll horizontally in a single row.
+
+**Why:**
+- The user found blue too calm for urgent states, and wrapped error text made the tables look broken.
+- Links styled as buttons were 28px tall next to 36px buttons.
+- The first orange, `#c2410c`, failed axe contrast on its own 10% chip tint (3.9–4.5:1), so it was darkened to `#b0390a` (4.6–5.2:1).
+
+**Impact:**
+- The e2e profile test now opens the collapsed groups.
+- Green is still never a button fill, so positive actions use the ink primary. The user declined both a green Save button and green outlines.
