@@ -1,9 +1,10 @@
 import { useEffect, useRef, type ReactNode } from "react";
-import { Link, useNavigate } from "react-router-dom";
-import { Button, buttonClass, EmptyState, Tabs, Tile } from "../../components/ui";
+import { Link } from "react-router-dom";
+import { buttonClass, EmptyState, Tabs, Tile } from "../../components/ui";
 import { SOURCES_PATH, type ApplyTab } from "../../lib/applyPage";
 import { NeedsDescriptionGroup } from "../CapturedStubs";
 import { ApplicationsTable, type TableActions } from "./ApplicationsTable";
+import { ProgressEmpty } from "./ProgressEmpty";
 import type { ApplicationTableState } from "./useApplicationTable";
 
 /**
@@ -44,9 +45,9 @@ export function ApplicationsPanel({
   lastChecked: string | null | undefined;
   onFind: () => void;
 }) {
-  const navigate = useNavigate();
   const doneCount = search ? (archive.data?.total ?? 0) : archiveTotal;
   const counts = { needs: review.data?.total ?? 0, progress: queue.data?.total ?? 0 };
+  const tables = { needs: review, progress: queue, done: archive };
 
   // A new search that finds nothing on this tab jumps to the first tab that has matches,
   // once per search, so it never fights a tab the user clicks afterwards.
@@ -56,7 +57,6 @@ export function ApplicationsPanel({
       switchedFor.current = "";
       return;
     }
-    const tables = { needs: review, progress: queue, done: archive };
     const trimmed = search.trim();
     if (switchedFor.current === search || Object.values(tables).some((t) => t.dataQ !== trimmed))
       return;
@@ -90,7 +90,30 @@ export function ApplicationsPanel({
       onChange={(id) => onTab(id as ApplyTab)}
     />
   );
-  const common = { actions, lead: tabs, onClearSearch: () => onQuery("") };
+  const scopes = { needs: "review", progress: "queue", done: "archive" } as const;
+  const empties = {
+    needs: (
+      <EmptyState title="Nothing needs you right now">
+        Applications that need a sign-in, an emailed code or an answer only you can give will show
+        up here.
+      </EmptyState>
+    ),
+    progress: (
+      <ProgressEmpty
+        anySource={anySource}
+        finding={actions.busy || actions.active}
+        lastChecked={lastChecked}
+        hasDone={archiveTotal > 0}
+        onFind={onFind}
+        onDone={() => onTab("done")}
+      />
+    ),
+    done: (
+      <EmptyState title="Nothing finished yet">
+        Submitted, skipped and archived applications appear here.
+      </EmptyState>
+    ),
+  };
 
   return (
     <Tile
@@ -130,84 +153,19 @@ export function ApplicationsPanel({
         </>
       }
     >
-      <div role="tabpanel">
-        {tab === "needs" && (
-          <>
-            <NeedsDescriptionGroup />
-            <ApplicationsTable
-              scope="review"
-              state={review}
-              bulk={reviewBulk}
-              {...common}
-              empty={
-                <EmptyState title="Nothing needs you right now">
-                  Applications that need a sign-in, an emailed code or an answer only you can give
-                  will show up here.
-                </EmptyState>
-              }
-            />
-          </>
-        )}
-        {tab === "progress" && (
-          <ApplicationsTable
-            scope="queue"
-            state={queue}
-            {...progress}
-            {...common}
-            empty={
-              !anySource ? (
-                <EmptyState
-                  title="Choose what to search for"
-                  action={
-                    <Button variant="primary" onClick={() => navigate(SOURCES_PATH)}>
-                      Pick job sources
-                    </Button>
-                  }
-                >
-                  Every job board is turned off, so there is nothing to find.
-                </EmptyState>
-              ) : (
-                <EmptyState
-                  title="No new postings"
-                  action={
-                    <Button
-                      variant="primary"
-                      disabled={actions.busy || actions.active}
-                      onClick={onFind}
-                    >
-                      Find jobs now
-                    </Button>
-                  }
-                >
-                  {lastChecked
-                    ? `Last checked ${new Date(lastChecked).toLocaleString(undefined, { dateStyle: "medium", timeStyle: "short" })}.`
-                    : "Nothing has been searched yet."}
-                  {archiveTotal > 0 && (
-                    <>
-                      {" "}
-                      <button type="button" className="rt-link" onClick={() => onTab("done")}>
-                        See finished applications
-                      </button>
-                    </>
-                  )}
-                </EmptyState>
-              )
-            }
-          />
-        )}
-        {tab === "done" && (
-          <ApplicationsTable
-            scope="archive"
-            state={archive}
-            {...common}
-            empty={
-              <EmptyState title="Nothing finished yet">
-                Submitted, skipped and archived applications appear here.
-              </EmptyState>
-            }
-          />
-        )}
-      </div>
+      {/* One table for every tab, so switching tabs keeps the tablist (and its focus). */}
+      <ApplicationsTable
+        scope={scopes[tab]}
+        state={tables[tab]}
+        actions={actions}
+        lead={tabs}
+        intro={tab === "needs" && <NeedsDescriptionGroup />}
+        bulk={tab === "needs" ? reviewBulk : tab === "progress" ? progress.bulk : undefined}
+        tools={tab === "progress" ? progress.tools : undefined}
+        note={tab === "progress" ? progress.note : undefined}
+        empty={empties[tab]}
+        onClearSearch={() => onQuery("")}
+      />
     </Tile>
   );
 }

@@ -41,14 +41,17 @@ export interface TableActions {
 
 /**
  * One tab's application list: the filter row (group tabs, status filter, Columns,
- * Refresh, the tab's tools), the selection bar while rows are checked, and a paginated
- * table whose primary row action names the next step.
+ * Refresh, the tab's tools), then the tab panel: the selection bar while rows are
+ * checked and a paginated table whose primary row action names the next step. The page
+ * keeps one instance mounted across tabs (only `scope`/`state` change), so the tablist in
+ * `lead` stays in the DOM and keeps focus while the arrow keys switch tabs.
  */
 export function ApplicationsTable({
   scope,
   state,
   actions,
   lead,
+  intro,
   tools,
   bulk,
   note,
@@ -60,6 +63,8 @@ export function ApplicationsTable({
   actions: TableActions;
   /** Left of the filter row: the group tabs. */
   lead?: ReactNode;
+  /** The top of the tab panel, above the table (the Needs you descriptions). */
+  intro?: ReactNode;
   /** The tab's own tools in the filter row (Find jobs and its options). */
   tools?: ReactNode;
   /** The tab's bulk actions, in the selection bar while rows are checked. */
@@ -73,7 +78,11 @@ export function ApplicationsTable({
 }) {
   const navigate = useNavigate();
   const { busy, active } = actions;
-  const [extraColumns, setExtraColumns] = useState<string[]>([]);
+  // Optional columns are per tab (the archive has its own), as when each tab had a table.
+  const [extraByScope, setExtraByScope] = useState<Partial<Record<Scope, string[]>>>({});
+  const extraColumns = extraByScope[scope] ?? [];
+  const setExtraColumns = (next: string[]) =>
+    setExtraByScope((prev) => ({ ...prev, [scope]: next }));
   const archived = scope === "archive";
   const rows = state.data?.applications ?? [];
   const selectedIds = state.selectedRows.map((row) => row.source_job_id);
@@ -91,90 +100,99 @@ export function ApplicationsTable({
         lead={lead}
         tools={tools}
       />
-      {note}
-      {selectedIds.length > 0 && (
-        <SelectionBar count={selectedIds.length} onClear={state.clearSelection} clearLabel="Clear">
-          {elsewhere > 0 && (
-            <span className="mr-1 text-xs text-ink-muted">({elsewhere} on other pages)</span>
-          )}
-          {bulk}
-          <Button
-            size="sm"
-            disabled={busy || active}
-            title={active ? "Available when the current Apply task finishes" : undefined}
-            onClick={() => actions.move(selectedIds, !archived)}
+      {/* The filter row (with the tablist) stays outside the panel: a tablist must not
+          sit inside its own tabpanel. */}
+      <div role="tabpanel" className="space-y-3">
+        {intro}
+        {note}
+        {selectedIds.length > 0 && (
+          <SelectionBar
+            count={selectedIds.length}
+            onClear={state.clearSelection}
+            clearLabel="Clear"
           >
-            {archived ? "Restore" : "Archive"}
-          </Button>
-          {!archived && (
+            {elsewhere > 0 && (
+              <span className="mr-1 text-xs text-ink-muted">({elsewhere} on other pages)</span>
+            )}
+            {bulk}
             <Button
               size="sm"
-              variant="danger"
-              disabled={busy || !skippable.length}
-              title="Mark the selected applications as skipped and move them to Done"
-              onClick={() => actions.skip(skippable)}
+              disabled={busy || active}
+              title={active ? "Available when the current Apply task finishes" : undefined}
+              onClick={() => actions.move(selectedIds, !archived)}
             >
-              Skip ({skippable.length})
+              {archived ? "Restore" : "Archive"}
             </Button>
-          )}
-        </SelectionBar>
-      )}
-      {/* The table sits on the tile itself: no second box around it. */}
-      <DataTable
-        bare
-        className="border-t border-line"
-        rows={rows}
-        id={(row) => row.source_job_id}
-        rowLabel={(row) => `${row.company} ${row.role}`}
-        columns={applicationColumns({ scope, actions, extraColumns, navigate })}
-        selected={state.selected}
-        onSelected={state.setSelected}
-        sort={state.sort}
-        direction={state.direction}
-        onSort={(id) =>
-          state.change({
-            sort: id,
-            direction: state.sort === id && state.direction === "asc" ? "desc" : "asc",
-          })
-        }
-        loading={state.loading}
-        error={state.error}
-        empty={
-          state.q || state.status ? (
-            <>
-              No applications match these filters.{" "}
-              <button
-                type="button"
-                className="rt-link mt-2 block w-full"
-                onClick={() => {
-                  if (state.status) state.change({ status: "" });
-                  onClearSearch();
-                }}
+            {!archived && (
+              <Button
+                size="sm"
+                variant="danger"
+                disabled={busy || !skippable.length}
+                title="Mark the selected applications as skipped and move them to Done"
+                onClick={() => actions.skip(skippable)}
               >
-                Clear filters
-              </button>
-            </>
-          ) : (
-            empty
-          )
-        }
-      />
-      <Pagination
-        page={state.page}
-        size={state.size}
-        total={state.data?.total ?? 0}
-        onPage={(page) => {
-          state.change({ page: String(page + 1) });
-          document.getElementById(`${scope}-toolbar`)?.scrollIntoView();
-        }}
-        onSize={(size) =>
-          // Keep the first row in view: the new page is the one that still holds it.
-          state.change({
-            size: String(size),
-            page: String(Math.floor((state.page * state.size) / size) + 1),
-          })
-        }
-      />
+                Skip ({skippable.length})
+              </Button>
+            )}
+          </SelectionBar>
+        )}
+        {/* The table sits on the tile itself: no second box around it. */}
+        <DataTable
+          bare
+          className="border-t border-line"
+          rows={rows}
+          id={(row) => row.source_job_id}
+          rowLabel={(row) => `${row.company} ${row.role}`}
+          columns={applicationColumns({ scope, actions, extraColumns, navigate })}
+          selected={state.selected}
+          onSelected={state.setSelected}
+          sort={state.sort}
+          direction={state.direction}
+          onSort={(id) =>
+            state.change({
+              sort: id,
+              direction: state.sort === id && state.direction === "asc" ? "desc" : "asc",
+            })
+          }
+          loading={state.loading}
+          error={state.error}
+          empty={
+            state.q || state.status ? (
+              <>
+                No applications match these filters.{" "}
+                <button
+                  type="button"
+                  className="rt-link mt-2 block w-full"
+                  onClick={() => {
+                    if (state.status) state.change({ status: "" });
+                    onClearSearch();
+                  }}
+                >
+                  Clear filters
+                </button>
+              </>
+            ) : (
+              empty
+            )
+          }
+        />
+        <Pagination
+          page={state.page}
+          size={state.size}
+          total={state.data?.total ?? 0}
+          onPage={(page) => {
+            state.change({ page: String(page + 1) });
+            document.getElementById(`${scope}-toolbar`)?.scrollIntoView();
+          }}
+          onSize={(size) =>
+            // Keep the first row in view: the new page is the one that still holds it.
+            state.change({
+              size: String(size),
+              page: String(Math.floor((state.page * state.size) / size) + 1),
+            })
+          }
+        />
+      </div>
     </div>
   );
 }
