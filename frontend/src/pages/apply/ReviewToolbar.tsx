@@ -8,7 +8,7 @@ export function ReviewToolbar({
   openTabs,
   busy,
   active,
-  browserConnected,
+  browserUsable,
   onContinue,
   onReopen,
 }: {
@@ -16,7 +16,7 @@ export function ReviewToolbar({
   openTabs: OpenTabs;
   busy: boolean;
   active: boolean;
-  browserConnected: boolean;
+  browserUsable: boolean;
   onContinue: (ids: string[]) => void;
   onReopen: (rows: ApplicationRow[]) => void;
 }) {
@@ -24,7 +24,7 @@ export function ReviewToolbar({
     .filter((row) => canContinueFill(row, openTabs))
     .map((row) => row.source_job_id);
   const reopenRows = selected.filter(canReopenFill);
-  const notConnected = "Connect the browser in Apply settings first";
+  const notConnected = "The browser isn't available — see Apply settings";
   const idleNote = active ? "Available when the current Apply task finishes" : undefined;
   return (
     <>
@@ -36,9 +36,9 @@ export function ReviewToolbar({
       <Button
         variant="attention"
         size="sm"
-        disabled={busy || active || !continueIds.length || !browserConnected}
+        disabled={busy || active || !continueIds.length || !browserUsable}
         title={
-          idleNote ?? (browserConnected ? "Resume the fills in their open tabs" : notConnected)
+          idleNote ?? (browserUsable ? "Resume the fills in their open tabs" : notConnected)
         }
         onClick={() => onContinue(continueIds)}
       >
@@ -47,10 +47,10 @@ export function ReviewToolbar({
       <Button
         variant="attention"
         size="sm"
-        disabled={busy || active || !reopenRows.length || !browserConnected}
+        disabled={busy || active || !reopenRows.length || !browserUsable}
         title={
           idleNote ??
-          (browserConnected ? "Open the postings again and fill from the start" : notConnected)
+          (browserUsable ? "Open the postings again and fill from the start" : notConnected)
         }
         onClick={() => onReopen(reopenRows)}
       >

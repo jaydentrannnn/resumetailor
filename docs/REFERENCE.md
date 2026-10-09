@@ -193,11 +193,20 @@ the same `extract_runs`, so the tailor job's own extraction is a cache hit.
 Apply page's "Autofill model") covers only Fill's LLM calls — prepared long answers and
 hybrid/model resolver assistance — which run under `config.pinned(settings.model_spec)`.
 
-Form filling injects `filler.js` into the user's host browser (Edge recommended — see
-README; Chrome refuses remote debugging while another Chrome window is already running,
-which Edge sidesteps as a separate process) over CDP (`CHROME_CDP_URL`, default
-`http://host.docker.internal:9222` — name kept for backward compatibility, value is
-browser-agnostic) — no Chromium in the Docker image.
+Form filling injects `filler.js` into the user's host browser over CDP (`CHROME_CDP_URL`,
+default `http://127.0.0.1:9222`, or `http://host.docker.internal:9222` in the Docker image
+— name kept for backward compatibility, value is browser-agnostic) — no Chromium in the
+Docker image. **The app starts the browser itself** (`apply/driver/browser_launch.py`):
+`browser.cdp_browser`/`async_cdp_browser` and the nightly batch submit call
+`ensure_browser()`, which, when the port is closed and launching is allowed, starts
+`ApplySettings.browser` (Edge/Chrome/Comet; `None` = first installed, Edge first) detached
+with fixed flags and a dedicated `--user-data-dir`, then polls `/json/version` for 15 s. It
+never kills anything: a port held by another program, or the profile already open without
+the port, becomes a `RuntimeError` reason that `GET /api/browser/status` reports
+(`state`: ready / idle / unavailable). Launching is off in Docker
+(`RESUME_TAILOR_IN_DOCKER`), in extension-relay mode, for a non-loopback `CHROME_CDP_URL`,
+and under `RESUME_TAILOR_BROWSER_LAUNCH=off` (the test suite). `POST /api/browser/launch`
+is the Apply drawer's **Launch now**.
 
 **Browser extension (P4-X).** The unpacked MV3 extension pairs through Settings → Browser:
 the app issues one six-digit, 120-second code at a time, which the extension exchanges
@@ -273,6 +282,11 @@ A keyword search (`kind="job_search"`, `apply/discovery/job_apis.py`) queries Ad
 comma-separated phrases, each searched on its own and merged by `job_id` — then applies the same
 `include`/`exclude`/`locations` filters (`source_watchlists.matches_filters`) and its own
 `max_age_days` (default 14). Paging stops at `MAX_PAGES` with a polite delay between pages.
+**Filters for every source** (`ApplySettings.source_filters`: `include`/`exclude`/`locations`) are
+added to each source's own words by `apply/discovery/source_filters.with_global_filters` before
+`sources.fetch_source_rows` (nightly run and the source Test); `SourceConfig.ignore_global_include`
+opts one source out of the global keep words. Settings saved without `source_filters` get the
+words every source shares hoisted into it on load (`source_filters.hoist_shared`, ≥2 sources).
 Keys (`ADZUNA_APP_ID`, `ADZUNA_APP_KEY`, `USAJOBS_API_KEY`, `USAJOBS_EMAIL`) are
 `config.SAVABLE_CREDENTIALS`, never `settings.json`; a missing key is one run error for that
 source, and error text is redacted because Adzuna carries its keys in the query string.

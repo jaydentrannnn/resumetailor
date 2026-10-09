@@ -9,8 +9,14 @@ from pathlib import Path
 from typing import Any
 
 from resume_tailor import config
-from resume_tailor.apply.discovery import identity, source_rows, source_status, sources
-from resume_tailor.apply.driver import browser
+from resume_tailor.apply.discovery import (
+    identity,
+    source_filters,
+    source_rows,
+    source_status,
+    sources,
+)
+from resume_tailor.apply.driver import browser, browser_launch
 from resume_tailor.apply.forms import fill, submit_guard
 from resume_tailor.apply.funnel import store, store_models, store_views
 from resume_tailor.content import data
@@ -113,7 +119,9 @@ def _filter_source(
         or (f"{src.provider}: {src.query}" if src.kind == "job_search" else ""),
     )
     try:
-        rows, source_errors = sources.fetch_source_rows(src)
+        rows, source_errors = sources.fetch_source_rows(
+            source_filters.with_global_filters(src, settings.source_filters)
+        )
         for message in source_errors:
             summary.errors.append(f"{src.id}: {message}")
             daily_rows._append_log(log_file, f"[source {src.id}] {message}", log)
@@ -287,7 +295,11 @@ def _run_batch_submit(
             daily_rows._append_log(log_path, f"[would-submit] {label}", log)
         return
 
-    status = browser.browser_status()
+    try:
+        # Starts the chosen browser when it isn't running (`browser_launch`).
+        status = browser_launch.ensure_browser()
+    except RuntimeError:
+        status = browser.BrowserStatus(reachable=False)
     if not status.reachable:
         summary.submit_skipped_no_browser = True
         daily_rows._append_log(log_path, "[batch-submit] skipped: browser CDP unreachable", log)

@@ -223,22 +223,23 @@ you don't meet.
 
 ### Set up the browser
 
-Fill drives a browser through its remote-debugging port. Use a **dedicated Microsoft Edge
-profile**: Chrome refuses to open the port while any other Chrome window is running,
-which would mean closing your normal browsing every time. (If Edge is your everyday
-browser, the same applies to Edge; use whichever you use less.) The Apply page's browser
-card shows the exact command; for a shortcut or a Task Scheduler "At log on" action:
+Fill drives a browser through its remote-debugging port, and the app starts that browser
+for you. In **Apply settings → Browser** pick **Edge**, **Chrome** or **Comet** (browsers not
+installed on this computer are greyed out; Firefox is not supported). Whenever Fill, a job
+fetch or the nightly run needs the browser and it isn't running, the app opens it with the
+debugging port on `127.0.0.1:9222` and a dedicated profile folder (`ResumeTailorEdge`,
+`ResumeTailorChrome` or `ResumeTailorComet` under `%LOCALAPPDATA%`, or
+`~/Library/Application Support` on macOS). That profile runs beside your everyday windows of
+the same browser. **Launch now** opens it early so you can sign in to Workday and other ATS
+accounts there once; use that profile only for job-site logins, since the debugging port is
+open to any local process. The chip reads *Browser ready*, *Launches when needed*, or
+*Browser not available* with the reason (not installed, port 9222 held by another program,
+or that profile already open without the port — close its window and try again).
 
-```text
-"C:\Program Files (x86)\Microsoft\Edge\Application\msedge.exe" --remote-debugging-port=9222 --disable-background-timer-throttling --disable-renderer-backgrounding --disable-backgrounding-occluded-windows --user-data-dir="%LOCALAPPDATA%\ResumeTailorEdge"
-```
-
-macOS: `"/Applications/Microsoft Edge.app/Contents/MacOS/Microsoft Edge" --remote-debugging-port=9222 --disable-background-timer-throttling --disable-renderer-backgrounding --disable-backgrounding-occluded-windows --user-data-dir="$HOME/Library/Application Support/ResumeTailorEdge"`.
-Do not add `--remote-allow-origins=*`: it lets any web page open in that browser drive your
-logged-in sessions, and the app does not need it. The debugging port is open to any local
-process, so keep it on localhost and use only job-site logins in that profile. Log into
-Workday and other ATS accounts there once. The browser pill on the Apply page turns green
-when it is connected. (The [browser extension](#browser-extension) is an alternative.)
+In Docker the app can't start a host program: start a Chromium browser on the host yourself
+with `--remote-debugging-port=9222` and a separate `--user-data-dir`. Never add
+`--remote-allow-origins=*`: it lets any web page open in that browser drive your logged-in
+sessions. (The [browser extension](#browser-extension) is an alternative.)
 
 ### Day to day
 

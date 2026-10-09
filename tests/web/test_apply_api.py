@@ -289,6 +289,44 @@ def test_browser_status_shape(client):
     assert "cdp_url" in body
 
 
+def test_browser_status_reports_launch_state(client, monkeypatch):
+    """The status names the state, what's installed, and the saved choice."""
+    from resume_tailor.apply.driver import browser as browser_mod
+    from resume_tailor.apply.driver import browser_launch
+
+    c, _q = client
+    monkeypatch.setattr(browser_launch, "can_launch", lambda: True)
+    monkeypatch.setattr(browser_launch, "_port_in_use", lambda port: False)
+    monkeypatch.setattr(browser_launch, "_debug_port", lambda: 9222)
+    monkeypatch.setattr(
+        browser_launch, "installed_browsers",
+        lambda: {"edge": False, "chrome": True, "comet": False},
+    )
+    monkeypatch.setattr(
+        browser_mod, "browser_status", lambda: browser_mod.BrowserStatus(reachable=False)
+    )
+    body = c.get("/api/browser/status").json()
+    assert body["state"] == "idle"
+    assert body["can_launch"] is True
+    assert body["installed"] == {"edge": False, "chrome": True, "comet": False}
+    assert (body["selected"], body["resolved"]) == (None, "chrome")
+
+
+def test_browser_launch_route_reports_failure_as_status(client, monkeypatch):
+    """A failed launch is a 200 with the reason, never a 500."""
+    from resume_tailor.apply.driver import browser_launch
+
+    c, _q = client
+
+    def _fail():
+        raise RuntimeError("Port 9222 is used by another program")
+
+    monkeypatch.setattr(browser_launch, "ensure_browser", _fail)
+    res = c.post("/api/browser/launch")
+    assert res.status_code == 200
+    assert "reachable" in res.json()
+
+
 @pytest.mark.parametrize(("ids", "expected"), [
     ({"tab-b", "tab-a"}, {"reachable": True, "target_ids": ["tab-a", "tab-b"]}),
     (set(), {"reachable": True, "target_ids": []}),

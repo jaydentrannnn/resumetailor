@@ -20,6 +20,7 @@ from resume_tailor.apply.answers import answer_facts, custom_answers
 from resume_tailor.apply.answers import profile as apply_profile
 from resume_tailor.apply.answers.answer import AnswerExtras, answer_question
 from resume_tailor.apply.driver import browser as apply_browser
+from resume_tailor.apply.driver import browser_launch
 from resume_tailor.apply.funnel import (
     daily_progress,
     daily_retry,
@@ -413,17 +414,41 @@ def answer_job_question(job_id: str, body: AnswerRequest) -> AnswerResponse:
     )
 
 
+def _browser_status_response() -> BrowserStatusResponse:
+    status = browser_launch.launch_status()
+    probe = status.probe
+    return BrowserStatusResponse(
+        reachable=probe.reachable,
+        browser=probe.browser,
+        user_agent=probe.user_agent,
+        error=probe.error,
+        cdp_url=probe.cdp_url,
+        state=status.state,
+        reason=status.reason,
+        can_launch=status.can_launch,
+        docker=status.docker,
+        installed=dict(status.installed),
+        selected=status.selected,
+        resolved=status.resolved,
+    )
+
+
 @router.get("/api/browser/status", response_model=BrowserStatusResponse)
 def get_browser_status() -> BrowserStatusResponse:
-    """Probe host browser CDP reachability for JD fetch and form fill."""
-    status = apply_browser.browser_status()
-    return BrowserStatusResponse(
-        reachable=status.reachable,
-        browser=status.browser,
-        user_agent=status.user_agent,
-        error=status.error,
-        cdp_url=status.cdp_url,
-    )
+    """Probe the host browser, and say whether the app can start it when needed."""
+    return _browser_status_response()
+
+
+@router.post("/api/browser/launch", response_model=BrowserStatusResponse)
+def launch_browser() -> BrowserStatusResponse:
+    """Start the chosen browser now (so the user can sign in to job sites first).
+
+    Takes no arguments: the program and flags are fixed in `browser_launch`. A failed
+    launch is reported through the status's ``reason``, not an error response.
+    """
+    with suppress(RuntimeError):
+        browser_launch.ensure_browser()
+    return _browser_status_response()
 
 
 @router.get("/api/applications/open-tabs")

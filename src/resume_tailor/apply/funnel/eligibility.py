@@ -21,6 +21,18 @@ class EligibilitySettings(BaseModel):
     extra_text_block: list[str] = Field(default_factory=list)
 
 
+def _block_hit(pattern: str, text: str) -> bool:
+    """Whether a user block entry matches ``text``, case-insensitively.
+
+    Entries are regexes, but the Job sources page saves plain words, so one that is not a
+    valid regex ("C++") is matched literally instead of raising.
+    """
+    try:
+        return re.search(pattern, text, re.I) is not None
+    except re.error:
+        return re.search(re.escape(pattern), text, re.I) is not None
+
+
 class Eligibility(BaseModel):
     """Outcome of a title or JD-text eligibility check."""
 
@@ -203,7 +215,7 @@ def check_title(
     if _TITLE_LEVEL_FLAG.search(role):
         flags.append("title_level_token")
     for pattern in settings.extra_title_block:
-        if re.search(pattern, role, re.I):
+        if _block_hit(pattern, role):
             reasons.append(f"title_block:{pattern}")
     return Eligibility(passed=not reasons, reasons=reasons, flags=flags)
 
@@ -239,7 +251,7 @@ def check_text(
         flags.append("return_intern_wording")
 
     for pattern in settings.extra_text_block:
-        if re.search(pattern, jd_text, re.I):
+        if _block_hit(pattern, jd_text):
             reasons.append(f"text_block:{pattern}")
 
     return Eligibility(passed=not reasons, reasons=reasons, flags=flags)

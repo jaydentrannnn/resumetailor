@@ -100,7 +100,7 @@ export function ProgressBulkActions({
   selected,
   busy,
   active,
-  browserConnected,
+  browserUsable,
   onPrepare,
   onRetailor,
   onFill,
@@ -108,7 +108,7 @@ export function ProgressBulkActions({
   selected: ApplicationRow[];
   busy: boolean;
   active: boolean;
-  browserConnected: boolean;
+  browserUsable: boolean;
   onPrepare: (ids: string[]) => void;
   onRetailor: (rows: ApplicationRow[]) => void;
   onFill: (ids: string[]) => void;
@@ -146,12 +146,12 @@ export function ProgressBulkActions({
       <Button
         size="sm"
         variant="success"
-        disabled={busy || active || !fillIds.length || !browserConnected}
+        disabled={busy || active || !fillIds.length || !browserUsable}
         title={
           idleNote ??
-          (browserConnected
+          (browserUsable
             ? "Open and fill the selected postings"
-            : "Connect the browser in Apply settings first")
+            : "The browser isn't available — see Apply settings")
         }
         onClick={() => onFill(fillIds)}
       >

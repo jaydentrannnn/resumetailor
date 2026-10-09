@@ -32,6 +32,8 @@ export type SourceConfig = {
   include?: string[];
   exclude?: string[];
   locations?: string[];
+  /** Skip the global keep words (`ApplySettings.source_filters.include`) for this source. */
+  ignore_global_include?: boolean;
   /** Widens the funnel-wide age limit (the longer wins); watchlists default to 7 days, job_search 14 days. */
   max_age_days?: number | null;
   /** Keyword job search (`job_search`) sources only. */
@@ -40,6 +42,13 @@ export type SourceConfig = {
   query?: string;
   location?: string;
   country?: string;
+};
+
+/** Filters for every source: added to each source's own words before it is fetched. */
+export type SourceFilters = {
+  include: string[];
+  exclude: string[];
+  locations: string[];
 };
 
 export type EligibilitySettings = {
@@ -55,6 +64,8 @@ export type ApplySettings = {
   readme_url: string;
   categories: string[];
   sources: SourceConfig[];
+  /** Missing on settings saved by an older server. */
+  source_filters?: SourceFilters;
   max_age_days: number;
   /** Job fields this profile searches for; drives "Recommended for your fields". */
   fields?: SourceField[];
@@ -78,7 +89,11 @@ export type ApplySettings = {
   // Tailor model setting. See `ApplySettings.model_spec` on the backend.
   model_provider: "ollama" | "ollama-cloud" | "lmstudio" | "gemini" | "anthropic";
   model_name: string;
+  /** Browser the app starts for Fill and job fetches; null picks the first installed. */
+  browser?: BrowserId | null;
 };
+
+export type BrowserId = "edge" | "chrome" | "comet";
 
 /** Veteran self-identification (`profile.VeteranStatus`); "" skips the question. */
 export type VeteranStatus = "" | "protected" | "veteran_not_protected" | "not_veteran" | "decline";

@@ -4,10 +4,13 @@ import {
   getApplyOperation,
   getBrowserStatus,
   getDailyStatus,
+  launchBrowser,
   listApplyOperations,
   runDailyNow,
   type ApplicationsList,
   type ApplyOperation,
+  type BrowserId,
+  type BrowserStatus,
   type DailyStatus,
 } from "../../api";
 import { startAdaptivePoll } from "../../lib/adaptivePoll";
@@ -18,6 +21,7 @@ import {
   setNotifyPreference,
 } from "../../lib/applyNotify";
 import { pollSignature, shouldRefreshTables } from "../../lib/applyPoll";
+import { browserView } from "../../lib/browserState";
 import { useToast } from "../../lib/toast";
 import type { OperationControl } from "./OperationBanner";
 
@@ -35,6 +39,7 @@ export function useApplyOperation({
   inFlight,
   review,
   tabsReachable,
+  selectedBrowser,
   showError,
 }: {
   workspaceId: string;
@@ -44,16 +49,19 @@ export function useApplyOperation({
   /** The Needs you table's data, for notifications. */
   review: ApplicationsList | null;
   tabsReachable: boolean | null;
+  /** The browser chosen in Apply settings (null = automatic). */
+  selectedBrowser: BrowserId | null;
   showError: (title: string, reason: unknown) => void;
 }) {
   const toast = useToast();
   const [operation, setOperation] = useState<ApplyOperation | null>(null);
   const [daily, setDaily] = useState<DailyStatus | null>(null);
   const dailyRunning = daily?.running ?? false;
-  const [browserConnected, setBrowserConnected] = useState(false);
-  useEffect(() => {
-    if (tabsReachable != null) setBrowserConnected(tabsReachable);
-  }, [tabsReachable]);
+  const [browserStatus, setBrowserStatus] = useState<BrowserStatus | null>(null);
+  const [launching, setLaunching] = useState(false);
+  const browser = browserView(browserStatus, selectedBrowser);
+  // Ready, or the app will start it when Fill needs it.
+  const browserUsable = browser.state !== "unavailable";
   const [notify, setNotify] = useState(notifyPreference);
   const active = dailyRunning || (!!operation && ACTIVE_STATES.includes(operation.state));
 
@@ -68,10 +76,24 @@ export function useApplyOperation({
 
   const checkBrowser = useCallback(() => {
     getBrowserStatus()
-      .then((result) => setBrowserConnected(result.reachable))
+      .then(setBrowserStatus)
       .catch(() => {});
   }, []);
-  useEffect(checkBrowser, [checkBrowser, workspaceId]);
+  // The open-tabs poll notices the browser opening or closing; a task starting or ending
+  // may have launched it.
+  const operationState = operation?.state;
+  useEffect(checkBrowser, [checkBrowser, workspaceId, tabsReachable, operationState]);
+
+  async function startBrowser() {
+    setLaunching(true);
+    try {
+      setBrowserStatus(await launchBrowser());
+    } catch (reason) {
+      showError("Could not start the browser", reason);
+    } finally {
+      setLaunching(false);
+    }
+  }
 
   useEffect(() => {
     let live = true;
@@ -164,8 +186,11 @@ export function useApplyOperation({
     daily,
     dailyRunning,
     active,
-    browserConnected,
+    browser,
+    browserStatus,
+    browserUsable,
     checkBrowser,
+    launchBrowser: { run: () => void startBrowser(), busy: launching },
     wake,
     control,
     runNow,

@@ -15,6 +15,21 @@ function cleanChips(items: string[], max = Infinity): string[] {
   return out;
 }
 
+/** The small globe on a chip that comes from the filters for every source. */
+function GlobeMark() {
+  return (
+    <svg viewBox="0 0 12 12" aria-hidden="true" className="size-3 shrink-0 text-accent">
+      <circle cx="6" cy="6" r="4.8" fill="none" stroke="currentColor" strokeWidth="1.2" />
+      <path
+        d="M1.2 6h9.6M6 1.2c1.5 1.4 2.2 3 2.2 4.8S7.5 9.4 6 10.8C4.5 9.4 3.8 7.8 3.8 6S4.5 2.6 6 1.2z"
+        fill="none"
+        stroke="currentColor"
+        strokeWidth="1.1"
+      />
+    </svg>
+  );
+}
+
 /**
  * The one list input every source editor uses: removable chips plus a box. Enter, a
  * comma or leaving the box adds what was typed (pasting "a, b, c" adds three);
@@ -28,6 +43,8 @@ export function ChipInput({
   placeholder,
   hint,
   max,
+  locked = [],
+  lockedOff = false,
 }: {
   label: string;
   chips: string[];
@@ -38,14 +55,20 @@ export function ChipInput({
   hint?: string;
   /** The most chips allowed; the box is disabled once reached. */
   max?: number;
+  /** Chips set elsewhere (the filters for every source): shown first, never removable here. */
+  locked?: string[];
+  /** The locked chips do not apply here; they are shown struck through. */
+  lockedOff?: boolean;
 }) {
   const inputId = useId();
   const hintId = useId();
   const [text, setText] = useState("");
   const full = max !== undefined && chips.length >= max;
 
+  const lockedKeys = new Set(locked.map((c) => c.trim().toLowerCase()));
   const commit = (extra: string[]) => {
-    const next = cleanChips([...chips, ...extra], max);
+    const fresh = extra.filter((c) => !lockedKeys.has(c.trim().toLowerCase()));
+    const next = cleanChips([...chips, ...fresh], max);
     if (next.length !== chips.length) onChange(next);
   };
   const add = () => {
@@ -58,8 +81,25 @@ export function ChipInput({
       <label htmlFor={inputId} className="font-medium">
         {label}
       </label>
-      {chips.length > 0 && (
+      {chips.length + locked.length > 0 && (
         <ul aria-label={label} className="mt-1 flex flex-wrap gap-1.5">
+          {locked.map((chip) => (
+            <li
+              key={`locked-${chip}`}
+              title={
+                lockedOff
+                  ? "Not used for this source"
+                  : "From Filters for every source. Change it there."
+              }
+              className={`flex min-w-0 items-center gap-1 rounded-sm px-2 py-0.5 [overflow-wrap:anywhere] ${lockedOff ? "text-ink-muted line-through ring-1 ring-line-hover ring-inset" : "bg-selected-row ring-1 ring-selected-line/45 ring-inset"}`}
+            >
+              <GlobeMark />
+              {chip}
+              <span className="sr-only">
+                {lockedOff ? " (every-source filter, not used here)" : " (every-source filter)"}
+              </span>
+            </li>
+          ))}
           {chips.map((chip) => (
             <li
               key={chip}

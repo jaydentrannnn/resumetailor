@@ -7,7 +7,7 @@ const DROPPED_REASONS: Record<string, (result: SourceTestResult) => string> = {
   no_date: () => "with no posting date the list gives",
   too_old: (r) => {
     const days = r.max_age_days ?? 0;
-    return `older than ${days} day${days === 1 ? "" : "s"} (this list's limit or Apply settings)`;
+    return `older than ${days} day${days === 1 ? "" : "s"} (this source's limit or Filters for every source)`;
   },
   title: () => "titles your profile rules out",
   citizenship: () => "needing US citizenship",

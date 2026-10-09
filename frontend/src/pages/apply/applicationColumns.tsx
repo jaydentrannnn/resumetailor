@@ -119,7 +119,7 @@ function RowAction({
   actions: TableActions;
   navigate: NavigateFunction;
 }) {
-  const { busy, active, browserConnected, openTabs } = actions;
+  const { busy, active, browserUsable, openTabs } = actions;
   const needsYou = !archived && REVIEW_STATUSES.has(row.status);
   const reason = needsYou ? reviewReason(row) : null;
   const retryLabel =
@@ -162,15 +162,15 @@ function RowAction({
       : []),
     ...rowMenu(row, archived, actions).filter((item) => item.label !== primaryLabel),
   ];
-  const needsBrowser = "Connect the browser in Apply settings first";
+  const needsBrowser = "The browser isn't available — see Apply settings";
   let primary: ReactNode;
   if (kind === "continue")
     primary = (
       <button
         type="button"
         className={action("attention")}
-        title={browserConnected ? "Continue the fill in its open tab" : needsBrowser}
-        disabled={busy || active || !browserConnected}
+        title={browserUsable ? "Continue the fill in its open tab" : needsBrowser}
+        disabled={busy || active || !browserUsable}
         onClick={() => actions.start("fill", [row.source_job_id], "continue")}
       >
         Continue
@@ -182,7 +182,7 @@ function RowAction({
         type="button"
         className={action("attention")}
         title="The tab was closed: open the posting again and fill it from the start"
-        disabled={busy || active || !browserConnected}
+        disabled={busy || active || !browserUsable}
         onClick={() => actions.reopen([row])}
       >
         Reopen
@@ -193,8 +193,8 @@ function RowAction({
       <button
         type="button"
         className={action("success")}
-        title={browserConnected ? "Open the posting and fill the form" : needsBrowser}
-        disabled={busy || active || !browserConnected}
+        title={browserUsable ? "Open the posting and fill the form" : needsBrowser}
+        disabled={busy || active || !browserUsable}
         onClick={() => actions.start("fill", [row.source_job_id])}
       >
         Fill

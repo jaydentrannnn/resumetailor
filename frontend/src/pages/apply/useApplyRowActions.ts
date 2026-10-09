@@ -33,7 +33,7 @@ export function useApplyRowActions({
   tables,
   openTabs,
   active,
-  browserConnected,
+  browserUsable,
   workspaceId,
   refresh,
   setOperation,
@@ -44,7 +44,7 @@ export function useApplyRowActions({
   tables: ApplicationTableState[];
   openTabs: OpenTabs;
   active: boolean;
-  browserConnected: boolean;
+  browserUsable: boolean;
   workspaceId: string;
   refresh: () => void;
   setOperation: (operation: ApplyOperation) => void;
@@ -286,7 +286,7 @@ export function useApplyRowActions({
   const actions: TableActions = {
     busy,
     active,
-    browserConnected,
+    browserUsable,
     openTabs,
     start: (action, ids, mode, force) => void start(action, ids, mode, force),
     reopen,

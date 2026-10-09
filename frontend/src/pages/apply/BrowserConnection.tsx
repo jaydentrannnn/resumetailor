@@ -1,51 +1,73 @@
-import { useState } from "react";
-import { CopyButton } from "../../components/CopyButton";
-import { StatusChip, Tabs } from "../../components/ui";
-import {
-  BROWSER_DEBUG_COMMANDS,
-  BROWSER_TARGET_LABELS,
-  defaultTarget,
-  type BrowserTarget,
-} from "../../lib/browserCommand";
+import type { BrowserId, BrowserStatus } from "../../api";
+import { Button, Segmented, StatusChip } from "../../components/ui";
+import { BROWSERS, CHIP_LABEL, type BrowserView } from "../../lib/browserState";
 
-/** Browser reachability as a status chip: a check when connected, a ring when it needs you. */
-export function ConnectionStatus({ connected }: { connected: boolean }) {
+const CHIP_TONE = { ready: "done", idle: "neutral", unavailable: "attention" } as const;
+
+/** The browser's state as a status chip; the reason, when there is one, as its tooltip. */
+export function ConnectionStatus({ view }: { view: BrowserView }) {
   return (
-    <StatusChip tone={connected ? "done" : "attention"}>
-      {connected ? "Browser connected" : "Browser not connected"}
-    </StatusChip>
+    <span title={view.reason || undefined}>
+      <StatusChip tone={CHIP_TONE[view.state]}>{CHIP_LABEL[view.state]}</StatusChip>
+    </span>
   );
 }
 
-/** The remote-debugging command for the selected browser/OS. */
-export function BrowserCommand() {
-  const [target, setTarget] = useState<BrowserTarget>(() => defaultTarget());
-  const { browser, shell, command } = BROWSER_DEBUG_COMMANDS[target];
+/**
+ * Which browser the app starts for Fill and job fetches. Browsers not installed here are
+ * greyed out. In Docker the app can't start a host program, so only the manual flag shows.
+ */
+export function BrowserPicker({
+  status,
+  view,
+  selected,
+  onSelect,
+  launch,
+}: {
+  status: BrowserStatus | null;
+  view: BrowserView;
+  selected: BrowserId | null;
+  onSelect: (id: BrowserId) => void;
+  launch: { run: () => void; busy: boolean };
+}) {
+  if (status?.docker)
+    return (
+      <p className="text-xs text-ink-muted">
+        Start a Chromium browser on the host with{" "}
+        <code className="font-mono">--remote-debugging-port=9222</code> and a separate{" "}
+        <code className="font-mono">--user-data-dir</code>.
+      </p>
+    );
+  const installed = status?.installed ?? {};
   return (
     <>
-      <div className="mt-2">
-        <Tabs
-          label="Operating system and browser"
-          variant="segmented"
-          items={(Object.keys(BROWSER_TARGET_LABELS) as BrowserTarget[]).map((key) => ({
-            id: key,
-            label: BROWSER_TARGET_LABELS[key],
+      <div className="flex flex-wrap items-center gap-2">
+        <Segmented
+          label="Browser for Fill"
+          items={BROWSERS.map(({ id, label }) => ({
+            id,
+            label: installed[id] || !status ? label : `${label} · not installed`,
+            disabled: !!status && !installed[id],
           }))}
-          value={target}
-          onChange={(id) => setTarget(id as BrowserTarget)}
+          value={selected ?? view.resolved ?? ""}
+          onChange={(id) => onSelect(id as BrowserId)}
         />
+        <Button
+          variant="plain"
+          size="sm"
+          disabled={launch.busy || view.state !== "idle"}
+          onClick={launch.run}
+        >
+          {launch.busy ? "Starting…" : "Launch now"}
+        </Button>
       </div>
+      {view.state === "unavailable" && view.reason && (
+        <p className="mt-2 text-xs text-ink-muted">{view.reason}</p>
+      )}
       <p className="mt-2 text-xs text-ink-muted">
-        For browser-assisted Fill, run this in {shell} to start {browser} with remote debugging on
-        port 9222, then check the connection. Keep the browser open while reviewing forms, and use
-        this {browser} profile only for job-site logins.
+        It opens by itself when Fill or a job fetch needs it, in its own ResumeTailor profile
+        beside your everyday windows. Sign in to job sites there, and use it only for them.
       </p>
-      <div className="mt-2 flex items-center gap-2">
-        <code className="min-w-0 flex-1 rounded-sm border border-line bg-field px-3 py-2 font-mono text-xs [overflow-wrap:anywhere]">
-          {command}
-        </code>
-        <CopyButton label="Copy command" text={command} />
-      </div>
     </>
   );
 }

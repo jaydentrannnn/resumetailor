@@ -123,3 +123,13 @@ def test_intern_title_downgrades_years_floor_to_flag():
     result = eligibility.check_text(text, role="Data Analyst Intern")
     assert result.passed
     assert "years_5" in result.flags
+
+
+def test_block_words_that_are_not_valid_regexes_match_literally():
+    from resume_tailor.apply.funnel.eligibility import EligibilitySettings, check_text, check_title
+
+    settings = EligibilitySettings(extra_text_block=["C++"], extra_title_block=[r"sales\b"])
+    assert not check_text("Strong C++ required", settings).passed
+    assert check_text("Strong Python required", settings).passed
+    assert not check_title("Sales Analyst", settings).passed
+    assert check_title("Salesforce Analyst", settings).passed

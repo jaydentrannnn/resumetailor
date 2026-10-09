@@ -990,6 +990,32 @@ def test_run_batch_submit_skips_when_browser_unreachable(apply_paths, monkeypatc
     assert store.get("a1").status == "ready"
 
 
+def test_run_batch_submit_skips_when_the_browser_fails_to_start(apply_paths, monkeypatch):
+    """A failed auto-launch (`browser_launch.ensure_browser`) skips the stage like an unreachable one."""
+    from resume_tailor.apply.driver import browser_launch
+
+    store.upsert(_ready_app("a1", ats="greenhouse", discovered_at="2026-01-01T00:00:00+00:00"))
+    monkeypatch.setattr(
+        fill, "fill_application", lambda *a, **k: pytest.fail("must not be called")
+    )
+
+    def _fail():
+        raise RuntimeError("Port 9222 is used by another program")
+
+    monkeypatch.setattr(browser_launch, "ensure_browser", _fail)
+    summary = daily_progress.DailySummary()
+    daily_batch._run_batch_submit(
+        settings=ApplySettings(auto_submit_ats=["greenhouse"]),
+        cap=5,
+        dry_run=False,
+        log_path=apply_paths / "log.txt",
+        log=lambda *_: None,
+        summary=summary,
+    )
+    assert summary.submit_skipped_no_browser is True
+    assert store.get("a1").status == "ready"
+
+
 def test_run_batch_submit_dry_run_logs_without_calling_fill(apply_paths, monkeypatch):
     """dry_run only logs the would-be submissions; no real fill call, no status change."""
     store.upsert(_ready_app("a1", ats="greenhouse", discovered_at="2026-01-01T00:00:00+00:00"))

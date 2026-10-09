@@ -104,7 +104,7 @@ export function SourcePanel({
   const isReadme = current.kind !== "ats_board" && current.kind !== "job_search";
 
   return (
-    <Modal title={titleFor(current, mode)} onClose={close} placement="right">
+    <Modal title={titleFor(current, mode)} onClose={close} placement="right" size="lg">
       <div className="mt-3 space-y-4 text-sm">
         {mode === "edit" && (
           <p
@@ -153,6 +153,7 @@ export function SourcePanel({
           source={current}
           onChange={edit}
           defaultDays={current.kind === "ats_board" ? 7 : current.kind === "job_search" ? 14 : null}
+          canChangeGlobal={mode === "edit"}
         />
 
         <SourceTest source={current} disabled={!!blocker} autoRun={mode === "edit" || isReadme} />

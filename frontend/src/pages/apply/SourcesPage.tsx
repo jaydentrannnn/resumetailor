@@ -35,6 +35,10 @@ export function SourcesPage() {
           setSettings({ ...settings, apply: { ...settings.apply, fields } })
         }
         onChange={(sources) => setSettings({ ...settings, apply: { ...settings.apply, sources } })}
+        apply={settings.apply}
+        onApplyChange={(patch) =>
+          setSettings({ ...settings, apply: { ...settings.apply, ...patch } })
+        }
       />
     </Page>
   );

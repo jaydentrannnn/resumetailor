@@ -1,4 +1,5 @@
-import { type SourceConfig, type SourceField, type SourcesStatus } from "../../api";
+import { useMemo, useState } from "react";
+import type { ApplySettings, SourceConfig, SourceField, SourcesStatus } from "../../api";
 import { Button, SelectionBar, StatusChip, StatusMark } from "../../components/ui";
 import {
   availableUpdate,
@@ -15,6 +16,9 @@ import { SourceFlows, type SaveState } from "./SourcePanel";
 import { SourceRow } from "./SourceRow";
 import { SourceGroup, SourceToolbar } from "./SourceGroup";
 import { RecommendedStrip } from "./RecommendedStrip";
+import { eligibilitySummary, globalFiltersOf } from "../../lib/globalFilters";
+import { EverySourceContext, type EverySource } from "./everySource";
+import { GlobalFiltersTile } from "./GlobalFiltersTile";
 
 /**
  * The job-sources page body: every place the nightly run looks for jobs, in three
@@ -31,6 +35,8 @@ export function SourcesTab({
   status = null,
   fields = [],
   onFieldsChange,
+  apply,
+  onApplyChange,
 }: {
   sources: SourceConfig[];
   onChange: (next: SourceConfig[]) => void;
@@ -43,6 +49,9 @@ export function SourcesTab({
   /** The job fields this profile searches for (`apply.fields`). */
   fields?: SourceField[];
   onFieldsChange?: (fields: SourceField[]) => void;
+  /** The profile's apply settings: with `onApplyChange`, shows "Filters for every source". */
+  apply?: ApplySettings;
+  onApplyChange?: (patch: Partial<ApplySettings>) => void;
 }) {
   const controller = useSourcesController(sources, onChange);
   const {
@@ -68,6 +77,28 @@ export function SourcesTab({
     newWatchlist,
     searchNotice,
   } = controller;
+  const [editingGlobal, setEditingGlobal] = useState(false);
+  const everySource = useMemo<EverySource | null>(
+    () =>
+      apply
+        ? {
+            filters: globalFiltersOf(apply),
+            eligibility: eligibilitySummary(apply),
+            openGlobal: () => {
+              setEditing(null);
+              void onFlush?.();
+              setEditingGlobal(true);
+              document.getElementById("every-source-filters")?.scrollIntoView({
+                block: "start",
+                behavior: matchMedia("(prefers-reduced-motion: reduce)").matches
+                  ? "auto"
+                  : "smooth",
+              });
+            },
+          }
+        : null,
+    [apply, setEditing, onFlush],
+  );
 
   function renderRow(source: SourceConfig) {
     return (
@@ -105,116 +136,127 @@ export function SourcesTab({
     !!onFieldsChange && !dismissed && (fields.length === 0 || recommended.length > 0);
 
   return (
-    <section aria-label="Sources" className="space-y-5">
-      <SourceToolbar
-        sources={sources}
-        status={status}
-        controller={controller}
-        canChangeFields={!!onFieldsChange}
-      />
-
-      {saveError && !editingSource && (
-        <p role="alert" className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">
-          Your sources could not be saved: {saveError}
-        </p>
-      )}
-
-      {(showRecommended || pickingFields) && onFieldsChange && (
-        <RecommendedStrip
-          fields={fields}
-          recommended={recommended}
-          picking={pickingFields}
-          onPicking={setPickingFields}
-          onFieldsChange={onFieldsChange}
-          onAdd={(entry) => added(sourceFromCatalog(entry, sourcesRef.current), false)}
-          onDismiss={() => {
-            setDismissed(true);
-            writeDismissed(true);
-            setPickingFields(false);
-          }}
+    <EverySourceContext.Provider value={everySource}>
+      <section aria-label="Sources" className="space-y-5">
+        <SourceToolbar
+          sources={sources}
+          status={status}
+          controller={controller}
+          canChangeFields={!!onFieldsChange}
         />
-      )}
 
-      {selectedIds.size > 0 && (
-        <SelectionBar
-          count={selectedIds.size}
-          noun="selected"
-          clearLabel="Clear"
-          label="Selected sources"
-          onClear={() => setSelected(new Set())}
-        >
-          <Button size="sm" variant="secondary" onClick={() => setEnabled(selectedIds, true)}>
-            Turn on
-          </Button>
-          <Button size="sm" variant="secondary" onClick={() => setEnabled(selectedIds, false)}>
-            Turn off
-          </Button>
-          <Button size="sm" variant="secondary" onClick={() => remove(selectedIds)}>
-            Remove
-          </Button>
-        </SelectionBar>
-      )}
+        {saveError && !editingSource && (
+          <p role="alert" className="rounded-md bg-danger-soft px-3 py-2 text-sm text-danger">
+            Your sources could not be saved: {saveError}
+          </p>
+        )}
 
-      <SourceGroup
-        id="lists"
-        title="Job lists"
-        explanation="GitHub lists of internships and new-grad roles, from the catalog or any repo you paste."
-        action={
-          <Button size="sm" variant="secondary" onClick={() => setFlow({ type: "catalog" })}>
-            + Add job list
-          </Button>
-        }
-        empty="No job lists yet."
-        rows={lists.map(renderRow)}
-      />
+        {(showRecommended || pickingFields) && onFieldsChange && (
+          <RecommendedStrip
+            fields={fields}
+            recommended={recommended}
+            picking={pickingFields}
+            onPicking={setPickingFields}
+            onFieldsChange={onFieldsChange}
+            onAdd={(entry) => added(sourceFromCatalog(entry, sourcesRef.current), false)}
+            onDismiss={() => {
+              setDismissed(true);
+              writeDismissed(true);
+              setPickingFields(false);
+            }}
+          />
+        )}
 
-      <SourceGroup
-        id="search"
-        title="Search engines"
-        explanation="Keyword searches through Adzuna or USAJobs. Connect a free API key once, then add as many searches as you like."
-        action={
-          <Button size="sm" variant="secondary" onClick={newSearch}>
-            + Add search
-          </Button>
-        }
-        extra={
-          <div className="divide-y divide-line text-xs">
-            {(["adzuna", "usajobs"] as const).map((provider) => (
-              <ProviderStatus
-                key={provider}
-                provider={provider}
-                connected={connections ? connections[provider] : null}
-                onConnect={() => setConnecting(provider)}
-              />
-            ))}
-          </div>
-        }
-        empty="No searches yet."
-        rows={searches.map(renderRow)}
-      />
+        {selectedIds.size > 0 && (
+          <SelectionBar
+            count={selectedIds.size}
+            noun="selected"
+            clearLabel="Clear"
+            label="Selected sources"
+            onClear={() => setSelected(new Set())}
+          >
+            <Button size="sm" variant="secondary" onClick={() => setEnabled(selectedIds, true)}>
+              Turn on
+            </Button>
+            <Button size="sm" variant="secondary" onClick={() => setEnabled(selectedIds, false)}>
+              Turn off
+            </Button>
+            <Button size="sm" variant="secondary" onClick={() => remove(selectedIds)}>
+              Remove
+            </Button>
+          </SelectionBar>
+        )}
 
-      <SourceGroup
-        id="watchlists"
-        title="Company watchlists"
-        explanation="Companies whose careers pages are read directly (Greenhouse, Lever, Ashby and more). The best way to catch finance and consulting roles."
-        action={
-          <Button size="sm" variant="secondary" onClick={() => newWatchlist()}>
-            + Add watchlist
-          </Button>
-        }
-        empty="No watchlists yet."
-        rows={watchlists.map(renderRow)}
-      />
+        {apply && onApplyChange && (
+          <GlobalFiltersTile
+            apply={apply}
+            onChange={onApplyChange}
+            editing={editingGlobal}
+            onEditingChange={setEditingGlobal}
+          />
+        )}
 
-      <SourceFlows
-        controller={controller}
-        sources={sources}
-        fields={fields}
-        saveState={saveState}
-        saveError={saveError}
-        onFlush={onFlush}
-      />
-    </section>
+        <SourceGroup
+          id="lists"
+          title="Job lists"
+          explanation="GitHub lists of internships and new-grad roles, from the catalog or any repo you paste."
+          action={
+            <Button size="sm" variant="secondary" onClick={() => setFlow({ type: "catalog" })}>
+              + Add job list
+            </Button>
+          }
+          empty="No job lists yet."
+          rows={lists.map(renderRow)}
+        />
+
+        <SourceGroup
+          id="search"
+          title="Search engines"
+          explanation="Keyword searches through Adzuna or USAJobs. Connect a free API key once, then add as many searches as you like."
+          action={
+            <Button size="sm" variant="secondary" onClick={newSearch}>
+              + Add search
+            </Button>
+          }
+          extra={
+            <div className="divide-y divide-line text-xs">
+              {(["adzuna", "usajobs"] as const).map((provider) => (
+                <ProviderStatus
+                  key={provider}
+                  provider={provider}
+                  connected={connections ? connections[provider] : null}
+                  onConnect={() => setConnecting(provider)}
+                />
+              ))}
+            </div>
+          }
+          empty="No searches yet."
+          rows={searches.map(renderRow)}
+        />
+
+        <SourceGroup
+          id="watchlists"
+          title="Company watchlists"
+          explanation="Companies whose careers pages are read directly (Greenhouse, Lever, Ashby and more). The best way to catch finance and consulting roles."
+          action={
+            <Button size="sm" variant="secondary" onClick={() => newWatchlist()}>
+              + Add watchlist
+            </Button>
+          }
+          empty="No watchlists yet."
+          rows={watchlists.map(renderRow)}
+        />
+
+        <SourceFlows
+          controller={controller}
+          sources={sources}
+          fields={fields}
+          saveState={saveState}
+          saveError={saveError}
+          onFlush={onFlush}
+        />
+      </section>
+    </EverySourceContext.Provider>
   );
 }
 

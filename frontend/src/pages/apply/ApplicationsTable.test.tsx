@@ -37,7 +37,7 @@ const row = (status: string, archived = false, id = "one"): ApplicationRow => ({
 const actions: TableActions = {
   busy: false,
   active: false,
-  browserConnected: true,
+  browserUsable: true,
   openTabs: { reachable: true, target_ids: [] },
   start: vi.fn(),
   reopen: vi.fn(),

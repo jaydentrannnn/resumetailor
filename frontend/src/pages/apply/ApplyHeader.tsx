@@ -1,6 +1,7 @@
 import type { ApplySettings } from "../../api";
 import { Button, PageHeader } from "../../components/ui";
 import { nightlyRunLabel } from "../../lib/applyPage";
+import type { BrowserView } from "../../lib/browserState";
 import { ConnectionStatus } from "./BrowserConnection";
 
 /**
@@ -8,11 +9,11 @@ import { ConnectionStatus } from "./BrowserConnection";
  */
 export function ApplyHeader({
   apply,
-  browserConnected,
+  browser,
   onSettings,
 }: {
   apply: Pick<ApplySettings, "enabled" | "schedule_time">;
-  browserConnected: boolean;
+  browser: BrowserView;
   onSettings: () => void;
 }) {
   return (
@@ -21,7 +22,7 @@ export function ApplyHeader({
       description="Postings from your job sources, each prepared with its own tailored resume."
       actions={
         <>
-          <ConnectionStatus connected={browserConnected} />
+          <ConnectionStatus view={browser} />
           <Button
             variant="plain"
             size="sm"

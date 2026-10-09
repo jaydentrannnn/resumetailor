@@ -95,10 +95,15 @@ WORKSPACES_DIRNAME = "workspaces"
 
 #: Per-workspace JD text + fill artifacts for the apply funnel (not the tailor job dirs).
 
-#: Host browser remote-debugging endpoint (Edge recommended — see README; name
-#: kept for backward compatibility). Docker reaches the Windows host via
-#: `host.docker.internal`; a host-side uvicorn uses `localhost` instead.
-CHROME_CDP_URL = os.environ.get("CHROME_CDP_URL", "http://host.docker.internal:9222")
+#: Host browser remote-debugging endpoint (name kept for backward compatibility).
+#: Docker reaches the host via `host.docker.internal` (the image sets
+#: `RESUME_TAILOR_IN_DOCKER`); a host-side run uses loopback, where the app can start
+#: the browser itself (`apply.driver.browser_launch`).
+_IN_DOCKER = os.environ.get("RESUME_TAILOR_IN_DOCKER") == "1" or Path("/.dockerenv").exists()
+CHROME_CDP_URL = os.environ.get(
+    "CHROME_CDP_URL",
+    "http://host.docker.internal:9222" if _IN_DOCKER else "http://127.0.0.1:9222",
+)
 
 
 def apply_fill_engine() -> str:

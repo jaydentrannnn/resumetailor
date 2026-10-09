@@ -1,6 +1,6 @@
 /** Tracked applications: rows, review fields, operations, daily status, extension. */
 
-import type { ApplySettings } from "./applySettings";
+import type { ApplySettings, BrowserId } from "./applySettings";
 import { conditionalGet, request } from "./core";
 
 export type ApplyFieldOutcome = {
@@ -322,6 +322,15 @@ export type BrowserStatus = {
   user_agent: string;
   error: string;
   cdp_url: string;
+  /** ready = connected; idle = the app starts it when needed; unavailable = see reason. */
+  state: "ready" | "idle" | "unavailable";
+  reason: string;
+  /** Whether the app may start the browser itself (false in Docker / relay mode). */
+  can_launch: boolean;
+  docker: boolean;
+  installed: Partial<Record<BrowserId, boolean>>;
+  selected: BrowserId | null;
+  resolved: BrowserId | null;
 };
 
 export type Packet = {
@@ -459,6 +468,11 @@ export function runDailyNow(): Promise<DailyStatus> {
 /** Probe host browser CDP reachability (Edge recommended — see README). */
 export function getBrowserStatus(): Promise<BrowserStatus> {
   return request("/api/browser/status");
+}
+
+/** Start the chosen browser now; a failure comes back as an `unavailable` status. */
+export function launchBrowser(): Promise<BrowserStatus> {
+  return request("/api/browser/launch", { method: "POST" });
 }
 
 export type ExtensionPairing = {

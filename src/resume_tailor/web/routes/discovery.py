@@ -31,6 +31,7 @@ from resume_tailor import workspace
 from resume_tailor.apply.discovery import (
     boards,
     source_catalog,
+    source_filters,
     source_headings,
     source_status,
     sources,
@@ -284,11 +285,13 @@ def test_source(body: SourceTestRequest) -> SourceTestResult:
     src = body.source
     if src.kind in sources.README_KINDS:
         _require_public_url(src.url.strip(), what="README")
+    settings = JobSettings.model_validate(workspace.load_settings()["defaults"]).apply
     try:
-        rows, errors = sources.fetch_source_rows(src)
+        rows, errors = sources.fetch_source_rows(
+            source_filters.with_global_filters(src, settings.source_filters)
+        )
     except Exception as exc:  # noqa: BLE001 - a failed source is a result, not a 500
         return SourceTestResult(rows_total=0, rows_kept=0, sample=[], errors=[str(exc)])
-    settings = JobSettings.model_validate(workspace.load_settings()["defaults"]).apply
     age_limit = (
         max(src.max_age_days, settings.max_age_days)
         if src.max_age_days is not None

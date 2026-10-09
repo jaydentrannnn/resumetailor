@@ -1,5 +1,7 @@
-"""CDP connection to the user's host browser (Edge recommended — see README) for
-JD fetch and form fill.
+"""CDP connection to the user's host browser for JD fetch and form fill.
+
+Every connection first goes through `browser_launch.ensure_browser`, which starts the
+browser chosen in Apply settings when nothing answers on the debug port.
 
 The legacy filler uses synchronous Playwright from a worker thread. The gated
 verified engine and review actions use the async CDP connection below.
@@ -186,6 +188,29 @@ def _tab_gone() -> bool:
     return extension_mode() and not browser_status().reachable
 
 
+def _ensure() -> BrowserStatus:
+    """Probe the browser, starting the chosen one first when the app may (`browser_launch`)."""
+    from resume_tailor.apply.driver import browser_launch
+
+    return browser_launch.ensure_browser()
+
+
+def _require_browser(status: BrowserStatus) -> None:
+    """Raise a clear ``RuntimeError`` when the browser is still unreachable."""
+    if status.reachable:
+        return
+    if extension_mode():
+        raise RuntimeError(
+            f"Extension relay unavailable at {status.cdp_url}: {status.error}. "
+            "Start the relay and choose Use this tab for Fill in the extension."
+        )
+    raise RuntimeError(
+        f"Browser CDP unreachable at {status.cdp_url}: {status.error}. "
+        "Start a Chromium browser on the host with --remote-debugging-port=9222 "
+        "and a dedicated --user-data-dir (see README Automation)."
+    )
+
+
 @contextmanager
 def cdp_browser() -> Iterator[Any]:
     """Connect to the host browser over CDP; yield a Playwright ``Browser``.
@@ -194,21 +219,7 @@ def cdp_browser() -> Iterator[Any]:
     objects cannot be shared across worker threads. Raises ``RuntimeError`` with a clear
     message when the endpoint is unreachable.
     """
-    status = browser_status()
-    if not status.reachable:
-        if extension_mode():
-            raise RuntimeError(
-                f"Extension relay unavailable at {status.cdp_url}: {status.error}. "
-                "Start the relay and choose Use this tab for Fill in the extension."
-            )
-        raise RuntimeError(
-            f"Browser CDP unreachable at {status.cdp_url}: {status.error}. "
-            "Launch a debug-enabled browser (Edge recommended) with "
-            "--remote-debugging-port=9222, --disable-background-timer-throttling "
-            "--disable-renderer-backgrounding "
-            "--disable-backgrounding-occluded-windows and a dedicated "
-            "--user-data-dir (see README Automation)."
-        )
+    _require_browser(_ensure())
     try:
         from playwright.sync_api import sync_playwright
     except ImportError as exc:
@@ -276,9 +287,7 @@ def focus_target(expected_id: str) -> str:
 @asynccontextmanager
 async def async_cdp_browser():
     """Async CDP connection for the deadline-bounded verified Apply engine."""
-    status = browser_status()
-    if not status.reachable:
-        raise RuntimeError(f"Browser CDP unreachable at {status.cdp_url}: {status.error}")
+    _require_browser(await asyncio.to_thread(_ensure))
     try:
         from playwright.async_api import async_playwright
     except ImportError as exc:

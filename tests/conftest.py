@@ -71,6 +71,8 @@ os.environ["RESUME_TAILOR_SECRETS_BACKEND"] = "memory"
 # TestClient sends `Host: testserver` (the MCP tests `test`); the session token is off unless a test sets it.
 os.environ["RESUME_TAILOR_ALLOWED_HOSTS"] = "testserver,test"
 os.environ.pop("RESUME_TAILOR_TOKEN", None)
+# Never start a real browser from a test that finds the debug port closed.
+os.environ["RESUME_TAILOR_BROWSER_LAUNCH"] = "off"
 
 import pytest  # noqa: E402
 

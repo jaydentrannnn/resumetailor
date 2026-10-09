@@ -1,14 +1,14 @@
-import type { ReactNode } from "react";
+import { type ReactNode, useEffect } from "react";
 import { Link } from "react-router-dom";
-import type { AppConfig, JobSettings, SchedulerStatus } from "../../api";
+import type { AppConfig, BrowserStatus, JobSettings, SchedulerStatus } from "../../api";
 import { Modal } from "../../components/Modal";
 import { Button, buttonClass, StatusChip, Switch } from "../../components/ui";
 import { autoSubmitCapLabel, autoSubmitSummary, SOURCES_PATH } from "../../lib/applyPage";
 import { tailorModelLabel } from "../../lib/modelLabel";
 import { sourcesSummary } from "../../lib/sources";
 import { useConfirm } from "../../state/confirmState";
-import { AgeWindowPicker } from "./AgeWindowPicker";
-import { BrowserCommand, ConnectionStatus } from "./BrowserConnection";
+import type { BrowserView } from "../../lib/browserState";
+import { BrowserPicker, ConnectionStatus } from "./BrowserConnection";
 
 /**
  * Platforms that may auto-submit. Workday, LinkedIn, Indeed, Handshake and SmartRecruiters
@@ -25,7 +25,7 @@ const AUTO_SUBMIT_ATS: { id: string; label: string }[] = [
 /**
  * Apply settings in a right-hand drawer: the nightly run first (on/off, time, how much
  * it finds), then what to search, whether and where to auto-submit, the Autofill model,
- * the browser connection and desktop notifications. Every change autosaves through
+ * the browser to start for Fill and desktop notifications. Every change autosaves through
  * `runState`. One-off search options ("this search only") live beside Find jobs.
  */
 export function ApplySettingsDrawer({
@@ -36,8 +36,10 @@ export function ApplySettingsDrawer({
   scheduler,
   dailyRunning,
   onRunNow,
-  browserConnected,
+  browser,
+  browserStatus,
   onCheckBrowser,
+  launch,
   notify,
 }: {
   settings: JobSettings;
@@ -47,11 +49,15 @@ export function ApplySettingsDrawer({
   scheduler: SchedulerStatus | null;
   dailyRunning: boolean;
   onRunNow: () => void;
-  browserConnected: boolean;
+  browser: BrowserView;
+  browserStatus: BrowserStatus | null;
   onCheckBrowser: () => void;
+  launch: { run: () => void; busy: boolean };
   notify: { enabled: boolean; supported: boolean; onChange: (on: boolean) => void };
 }) {
   const { confirm } = useConfirm();
+  // Re-read which browsers are installed and whether one is running each time it opens.
+  useEffect(onCheckBrowser, [onCheckBrowser]);
   const apply = settings.apply;
   const patch = (fields: Partial<JobSettings["apply"]>) =>
     setSettings({ ...settings, apply: { ...apply, ...fields } });
@@ -114,17 +120,13 @@ export function ApplySettingsDrawer({
                 }
               />
             </label>
-            <div>
-              <p className="mb-1">Only postings from the last</p>
-              <AgeWindowPicker
-                ariaLabel="Posting age in days"
-                value={apply.max_age_days}
-                onChange={(days) => patch({ max_age_days: days })}
-              />
-              <p className="mt-1 text-xs text-ink-muted">
-                A company watchlist keeps its own limit when that one is longer.
-              </p>
-            </div>
+            <p className="self-end text-xs text-ink-muted">
+              Posting age, title words and eligibility are set in Filters for every source on{" "}
+              <Link className="rt-link" to={SOURCES_PATH}>
+                Job sources
+              </Link>
+              .
+            </p>
           </fieldset>
           <div className="mt-4 flex items-center gap-3">
             <Button variant="plain" onClick={onRunNow} disabled={dailyRunning}>
@@ -316,11 +318,14 @@ export function ApplySettingsDrawer({
           </div>
         </Section>
 
-        <Section title="Browser" aside={<ConnectionStatus connected={browserConnected} />}>
-          <Button variant="plain" onClick={onCheckBrowser}>
-            Check connection
-          </Button>
-          <BrowserCommand />
+        <Section title="Browser" aside={<ConnectionStatus view={browser} />}>
+          <BrowserPicker
+            status={browserStatus}
+            view={browser}
+            selected={apply.browser ?? null}
+            onSelect={(id) => patch({ browser: id })}
+            launch={launch}
+          />
         </Section>
 
         <Section title="Notifications">

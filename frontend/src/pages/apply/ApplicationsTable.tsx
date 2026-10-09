@@ -17,7 +17,7 @@ export interface TableActions {
   busy: boolean;
   /** An Apply task or the nightly run is in progress: workflow actions wait. */
   active: boolean;
-  browserConnected: boolean;
+  browserUsable: boolean;
   openTabs: OpenTabs;
   start: (
     action: "find" | "prepare" | "fill",

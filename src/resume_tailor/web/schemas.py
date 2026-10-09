@@ -109,6 +109,8 @@ class SourceConfig(BaseModel):
     include: list[str] = Field(default_factory=list)
     exclude: list[str] = Field(default_factory=list)
     locations: list[str] = Field(default_factory=list)
+    #: Skip the global keep words (`ApplySettings.source_filters.include`) for this source.
+    ignore_global_include: bool = False
     max_age_days: int | None = Field(default=None, ge=0, le=365)
     provider: Literal["adzuna", "usajobs"] | None = None
     query: str = ""
@@ -148,6 +150,15 @@ def _default_apply_sources() -> list[SourceConfig]:
     return [source_catalog.bundled_template(entry_id) for entry_id in DEFAULT_SOURCE_IDS]
 
 
+class SourceFilters(BaseModel):
+    """Filters for every source: added to each source's own words before it is fetched
+    (`apply.discovery.source_filters.with_global_filters`)."""
+
+    include: list[str] = Field(default_factory=list)
+    exclude: list[str] = Field(default_factory=list)
+    locations: list[str] = Field(default_factory=list)
+
+
 class ApplySettings(BaseModel):
     """Daily apply-funnel knobs nested on ``JobSettings`` so they persist with settings."""
 
@@ -166,6 +177,7 @@ class ApplySettings(BaseModel):
         ]
     )
     sources: list[SourceConfig] = Field(default_factory=_default_apply_sources)
+    source_filters: SourceFilters = Field(default_factory=SourceFilters)
     max_age_days: int = 1
     #: The job fields this profile searches for (onboarding's picker, the Sources tab's
     #: "Recommended for your fields"); empty until the user picks some.
@@ -203,6 +215,9 @@ class ApplySettings(BaseModel):
     #: whenever `_ACTIVE` is empty (e.g. right after a fresh restart) — see CLAUDE.md.
     model_provider: Literal["ollama", "ollama-cloud", "lmstudio", "gemini", "anthropic"] = "ollama"
     model_name: str = "nemotron-3-super:cloud"
+    #: Browser the app starts for Fill and JD fetch (`apply.driver.browser_launch`);
+    #: ``None`` picks the first installed one, Edge first.
+    browser: Literal["edge", "chrome", "comet"] | None = None
 
     @property
     def model_spec(self) -> str:
@@ -214,6 +229,14 @@ class ApplySettings(BaseModel):
         if self.model_provider == "ollama-cloud":
             return f"ollama:{self.model_name}@{config.OLLAMA_CLOUD_BASE_URL}"
         return f"{self.model_provider}:{self.model_name}"
+
+    @model_validator(mode="before")
+    @classmethod
+    def _hoist_shared_filters(cls, data: Any) -> Any:
+        """Settings saved before global filters: move words every source shares into them."""
+        from ..apply.discovery import source_filters
+
+        return source_filters.hoist_shared(data) if isinstance(data, dict) else data
 
     @model_validator(mode="after")
     def _link_catalog_sources(self) -> ApplySettings:
@@ -1338,6 +1361,18 @@ class BrowserStatusResponse(BaseModel):
     user_agent: str = ""
     error: str = ""
     cdp_url: str = ""
+    #: ``ready`` = reachable; ``idle`` = the app will start it when needed;
+    #: ``unavailable`` = it can't be started (``reason`` says why).
+    state: Literal["ready", "idle", "unavailable"] = "unavailable"
+    reason: str = ""
+    #: Whether the app may start the browser itself (false in Docker / relay mode).
+    can_launch: bool = False
+    #: True only in the Docker image: the UI shows the manual launch flag there.
+    docker: bool = False
+    installed: dict[str, bool] = Field(default_factory=dict)
+    selected: Literal["edge", "chrome", "comet"] | None = None
+    #: The browser the app would start now (the selection, or the automatic pick).
+    resolved: Literal["edge", "chrome", "comet"] | None = None
 
 
 class ApplyOperationRequest(BaseModel):

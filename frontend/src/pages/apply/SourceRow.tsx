@@ -11,6 +11,7 @@ import {
   sourceHealth,
   sourceSummary,
 } from "../../lib/sources";
+import { ownFilterCount } from "../../lib/globalFilters";
 
 const HEALTH_TONE = {
   ok: "text-success",
@@ -109,6 +110,8 @@ export function SourceRow({
           )}
           <p className="mt-1 text-xs text-ink-muted [overflow-wrap:anywhere]">
             {sourceSummary(source)}
+            {ownFilterCount(source) > 0 &&
+              ` · ${ownFilterCount(source)} filter word${ownFilterCount(source) === 1 ? "" : "s"} of its own`}
           </p>
           <p
             className={`mt-1 flex items-center gap-1.5 font-mono text-xs [overflow-wrap:anywhere] ${HEALTH_TONE[health.tone]}`}

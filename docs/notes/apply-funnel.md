@@ -1656,3 +1656,30 @@ Magnite (op 5c6c59f2) blocked inside the Workday Skills loop at 23:07:40 (second
 **Watchlists:** every board was read live with `boards.list_board` before it was listed (`banking.json` and `consulting.json` are new). Most large consultancies (McKinsey, BCG, Bain, Deloitte, PwC, EY) and several banks answer 404/422/401 or an empty board, so they are not listed; Wells Fargo, JPMorgan, Goldman and KPMG Workday sites returned 422.
 **Search presets:** Adzuna and USAJobs accept no level parameter, so a preset fills only query phrases plus title `include`/`exclude`. New-grad searches set no `include` because entry titles ("Investment Banking Analyst") carry no level word. Word-start matching made `intern` keep "Internal Audit Analyst"; `source_watchlists._WORD_START_EXCEPTIONS` fixes that with a negative lookahead.
 **Impact:** Seven new catalog entries (four Adzuna finance/consulting searches, two USAJobs Pathways searches) need API keys. No new community README lists were added: the only finance list found that parses (drewdavis0302) was already there.
+
+## 2026-10-08 - Filters for every source
+**Decision:** Global keep/skip/location words (`ApplySettings.source_filters`) are *added* to each source's own words (add-on, not override), merged once in `source_filters.with_global_filters` right before `fetch_source_rows`, so `source_keyword_filters` and every fetch path stay unchanged. A source can only narrow with skip words and locations; `ignore_global_include` is the one opt-out (keep words only). The Job sources page shows a "Filters for every source" tile above Job lists, in the Tailor Options-tile pattern (DataList summary, Change/Done in place); source panels show global words as locked chips (`ChipInput` `locked`) via `EverySourceContext`, and open at the Apply-settings width (`Modal size="lg"`).
+**Posting age:** kept the existing rule (a source's own `max_age_days` only widens the funnel-wide one) rather than the mockup's "source replaces global", because replace would shrink watchlists under Find's catch-up window. The global age control moved out of the Apply settings drawer into the tile.
+**Eligibility:** `exclude_no_sponsorship`/`exclude_citizenship_required`/`exclude_advanced_degree` and `eligibility.hard_reject_years`/`flag_years`/`extra_text_block` got UI for the first time, in the tile; a source shows them read-only. `extra_title_block` stays without UI (global "Skip titles" covers it). Block entries are regexes, but the UI saves plain words, so `eligibility._block_hit` falls back to a literal match when an entry is not a valid regex ("C++").
+**Migration:** a `mode="before"` validator on `ApplySettings` hoists words every source shares (case-insensitive intersection, ≥2 sources) into `source_filters` when the key is absent; union semantics keep each source's effective filters identical.
+
+## One-click browser: the app starts it (2026-10-08)
+
+- The copy-paste launch command (per-OS tabs in the Apply drawer, `frontend/src/lib/browserCommand.ts`)
+  is gone. `apply/driver/browser_launch.py` starts the browser chosen in
+  `ApplySettings.browser` (Edge/Chrome/Comet; `None` = first installed, Edge first) whenever
+  `cdp_browser`/`async_cdp_browser` or the nightly batch submit find the port closed.
+- Subprocess launch + CDP connect, not Playwright `chromium.launch()`: a launched browser
+  carries automation markers (`navigator.webdriver`, infobar) and closes when the connection
+  drops. Started detached (Windows `DETACHED_PROCESS | CREATE_NEW_PROCESS_GROUP`, breakaway
+  from a job when allowed; POSIX new session), so it outlives the app.
+- Firefox excluded: Gecko no longer exposes CDP. Comet is Chromium.
+- "Browser in use" is not a blocker: the dedicated `--user-data-dir` runs a separate instance.
+  The real blockers, reported as `state: unavailable` + `reason`: not installed, port held
+  by another program, the ResumeTailor profile already open without the port (a launch
+  that times out, remembered per browser). Never kills a process.
+- Host-side default `CHROME_CDP_URL` is now `http://127.0.0.1:9222`; the Docker image sets
+  `RESUME_TAILOR_IN_DOCKER=1` and keeps `host.docker.internal`, and the UI shows a one-line
+  manual flag note only there. Tests set `RESUME_TAILOR_BROWSER_LAUNCH=off`.
+- Fill buttons are enabled when the browser is `ready` or `idle` (it will launch), not only
+  when connected (`browserUsable` in the SPA).

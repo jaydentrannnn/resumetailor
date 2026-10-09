@@ -327,6 +327,26 @@ def test_source_test_endpoint_applies_the_sources_own_filters(client, monkeypatc
     assert body["rows_total"] < 3
 
 
+def test_source_test_endpoint_adds_the_global_filters(client, monkeypatch):
+    c, settings = client
+    text = (_FIXTURES / "zapplyjobs_readme.md").read_text(encoding="utf-8")
+    monkeypatch.setattr(sources, "fetch_readme", lambda url: text)
+    source = {
+        "id": "z",
+        "kind": "pipe_table",
+        "url": "https://raw.githubusercontent.com/zapplyjobs/Internships-2027/main/README.md",
+        "categories": ["Software Engineering"],
+    }
+    settings["defaults"]["apply"]["source_filters"] = {"exclude": ["engineer"]}
+    assert c.post("/api/apply/sources/test", json={"source": source}).json()["rows_total"] < 3
+
+    # A keep word that matches nothing drops every row, unless the source opts out of it.
+    settings["defaults"]["apply"]["source_filters"] = {"include": ["zzz-no-such-title"]}
+    assert c.post("/api/apply/sources/test", json={"source": source}).json()["rows_total"] == 0
+    source["ignore_global_include"] = True
+    assert c.post("/api/apply/sources/test", json={"source": source}).json()["rows_total"] == 3
+
+
 def test_source_test_endpoint_reports_failure(client, monkeypatch):
     c, _settings = client
 

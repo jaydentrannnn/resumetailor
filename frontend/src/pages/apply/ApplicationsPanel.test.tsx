@@ -38,7 +38,7 @@ const table = () =>
 const actions = {
   busy: false,
   active: false,
-  browserConnected: true,
+  browserUsable: true,
   openTabs: { reachable: true, target_ids: [] },
 } as unknown as TableActions;
 

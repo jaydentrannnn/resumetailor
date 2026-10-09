@@ -86,9 +86,10 @@ export function ApplyPage() {
     ),
     review: review.data,
     tabsReachable,
+    selectedBrowser: settings.apply.browser ?? null,
     showError,
   });
-  const { active, browserConnected } = op;
+  const { active, browserUsable } = op;
   // Re-read each source's health whenever a run starts or finishes.
   const sourcesStatus = useSourcesStatus(active);
   const { busy, findOptions, setFindOptions, actions } = useApplyRowActions({
@@ -96,7 +97,7 @@ export function ApplyPage() {
     tables: [queue, review, archive],
     openTabs,
     active,
-    browserConnected,
+    browserUsable,
     workspaceId,
     refresh,
     setOperation: op.setOperation,
@@ -105,19 +106,19 @@ export function ApplyPage() {
   });
   const readyCount = (queue.data?.counts.ready ?? 0) + (review.data?.total ?? 0);
   const anySource = settings.apply.sources.some((source) => source.enabled);
-  const flags = { busy, active, browserConnected };
+  const flags = { busy, active, browserUsable };
   const find = () => actions.start("find");
 
   return (
     <Page width="wide">
       <ApplyHeader
         apply={settings.apply}
-        browserConnected={browserConnected}
+        browser={op.browser}
         onSettings={() => setDrawerOpen(true)}
       />
       {op.operation && <OperationBanner operation={op.operation} onControl={op.control} />}
       <ProfileGapsNotice gaps={profileGaps} />
-      {!browserConnected && readyCount > 0 && (
+      {!browserUsable && readyCount > 0 && (
         <AttentionRow
           label="Browser"
           action={
@@ -130,7 +131,7 @@ export function ApplyPage() {
               Set up
             </Button>
           }
-          text={`Connect your browser to fill applications. ${readyCount} application${readyCount === 1 ? " is" : "s are"} ready or waiting on you.`}
+          text={`${op.browser.reason || "The browser isn't available."} ${readyCount} application${readyCount === 1 ? " is" : "s are"} ready or waiting on you.`}
         />
       )}
       <NightlyRunTile daily={op.daily} />
@@ -193,8 +194,10 @@ export function ApplyPage() {
           scheduler={op.daily?.scheduler ?? null}
           dailyRunning={op.dailyRunning}
           onRunNow={() => void op.runNow()}
-          browserConnected={browserConnected}
+          browser={op.browser}
+          browserStatus={op.browserStatus}
           onCheckBrowser={op.checkBrowser}
+          launch={op.launchBrowser}
           notify={op.notify}
         />
       )}

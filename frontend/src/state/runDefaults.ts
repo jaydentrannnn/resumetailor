@@ -105,6 +105,7 @@ export const DEFAULT_SETTINGS: JobSettings = {
         enabled: true,
       },
     ],
+    source_filters: { include: [], exclude: [], locations: [] },
     max_age_days: 1,
     exclude_advanced_degree: true,
     exclude_citizenship_required: true,
@@ -131,5 +132,6 @@ export const DEFAULT_SETTINGS: JobSettings = {
     cover_letter: true,
     model_provider: "ollama",
     model_name: "nemotron-3-super:cloud",
+    browser: null,
   },
 };
