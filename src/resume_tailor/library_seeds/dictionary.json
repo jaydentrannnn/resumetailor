@@ -1,0 +1,689 @@
+{
+  "schema_version": 1,
+  "terms": {
+    "a/b testing": [
+      "a/b tests",
+      "ab testing",
+      "split testing"
+    ],
+    "account reconciliation": [
+      "balance sheet reconciliation",
+      "bank reconciliations",
+      "reconciliations"
+    ],
+    "accounts payable": [
+      "a/p"
+    ],
+    "accounts receivable": [
+      "a/r"
+    ],
+    "accretion dilution analysis": [
+      "acc/dil",
+      "accretion and dilution",
+      "accretion dilution",
+      "accretion/dilution",
+      "accretion/dilution analysis"
+    ],
+    "adaptive insights": [
+      "adaptive planning"
+    ],
+    "alteryx": [
+      "alteryx designer"
+    ],
+    "audit": [
+      "auditing",
+      "external audit"
+    ],
+    "bloomberg": [
+      "bloomberg terminal"
+    ],
+    "budgeting": [
+      "budget management",
+      "budget planning"
+    ],
+    "buy-side": [
+      "buy side"
+    ],
+    "capital iq": [
+      "cap iq",
+      "capiq",
+      "s&p capital iq"
+    ],
+    "certified financial planner": [
+      "cfp"
+    ],
+    "cfa level 1": [
+      "cfa l1",
+      "cfa level i",
+      "cfa level one"
+    ],
+    "cfa level 2": [
+      "cfa l2",
+      "cfa level ii",
+      "cfa level two"
+    ],
+    "cfa level 3": [
+      "cfa l3",
+      "cfa level iii",
+      "cfa level three"
+    ],
+    "change management": [
+      "organisational change management",
+      "organizational change management"
+    ],
+    "cicd": [
+      "ci / cd",
+      "ci/cd"
+    ],
+    "comparable company analysis": [
+      "comparable companies",
+      "comps",
+      "trading comps"
+    ],
+    "content strategy": [
+      "content marketing strategy"
+    ],
+    "cost reduction": [
+      "cost optimisation",
+      "cost optimization",
+      "cost savings"
+    ],
+    "cpa": [
+      "certified public accountant"
+    ],
+    "crm": [
+      "customer relationship management"
+    ],
+    "discounted cash flow": [
+      "dcf",
+      "discounted cash flows"
+    ],
+    "due diligence": [
+      "financial due diligence"
+    ],
+    "email marketing": [
+      "email campaigns"
+    ],
+    "embeddings": [
+      "dense embeddings",
+      "dense retrieval"
+    ],
+    "erp": [
+      "enterprise resource planning"
+    ],
+    "evaluation": [
+      "offline evaluation"
+    ],
+    "eviews": [
+      "e-views"
+    ],
+    "excel": [
+      "adv excel",
+      "advanced excel",
+      "microsoft excel",
+      "ms excel",
+      "pivot table",
+      "pivot tables",
+      "vlookup",
+      "xlookup"
+    ],
+    "excel vba": [
+      "excel macros",
+      "vba"
+    ],
+    "factset": [
+      "factset data",
+      "factset research"
+    ],
+    "financial modeling": [
+      "3 statement model",
+      "3-statement model",
+      "fin modeling",
+      "financial modelling",
+      "three statement model",
+      "three-statement model"
+    ],
+    "financial planning and analysis": [
+      "financial planning & analysis",
+      "fp and a",
+      "fp&a"
+    ],
+    "financial risk manager": [
+      "frm"
+    ],
+    "fine-tuning": [
+      "fine tuning",
+      "finetuning",
+      "model fine-tuning"
+    ],
+    "forecasting": [
+      "demand forecasting",
+      "demand planning"
+    ],
+    "full stack": [
+      "full-stack",
+      "fullstack"
+    ],
+    "gaap": [
+      "generally accepted accounting principles",
+      "u.s. gaap",
+      "us gaap"
+    ],
+    "go-to-market": [
+      "go to market",
+      "go to market strategy",
+      "gtm",
+      "gtm strategy"
+    ],
+    "google ads": [
+      "adwords",
+      "google adwords"
+    ],
+    "google analytics": [
+      "ga4",
+      "google analytics 4"
+    ],
+    "google drive suite": [
+      "g suite",
+      "google workspace"
+    ],
+    "hubspot": [
+      "hubspot crm"
+    ],
+    "hybrid retrieval": [
+      "hybrid search"
+    ],
+    "hyperion": [
+      "hyperion planning",
+      "oracle hyperion"
+    ],
+    "hypothesis-driven": [
+      "hypothesis driven",
+      "hypothesis-driven analysis"
+    ],
+    "ifrs": [
+      "international financial reporting standards"
+    ],
+    "information retrieval": [
+      "keyword matching",
+      "keyword search"
+    ],
+    "internal audit": [
+      "internal auditing"
+    ],
+    "inventory management": [
+      "inventory control"
+    ],
+    "investment banking": [
+      "ibd"
+    ],
+    "irr": [
+      "internal rate of return"
+    ],
+    "javascript": [
+      "js"
+    ],
+    "journal entries": [
+      "journal entry"
+    ],
+    "kpi": [
+      "key performance indicator",
+      "key performance indicators",
+      "kpis"
+    ],
+    "kubernetes": [
+      "k8s"
+    ],
+    "lean": [
+      "lean manufacturing"
+    ],
+    "leveraged buyout": [
+      "lbo",
+      "leveraged buyouts"
+    ],
+    "llm": [
+      "large language model",
+      "large language models",
+      "llms"
+    ],
+    "llm-as-judge": [
+      "llm as judge",
+      "llm-as-judge evaluation"
+    ],
+    "logistics": [
+      "logistics management"
+    ],
+    "lseg workspace": [
+      "eikon",
+      "lseg",
+      "refinitiv",
+      "refinitiv eikon"
+    ],
+    "machine learning": [
+      "ml"
+    ],
+    "market sizing": [
+      "market size analysis",
+      "tam sam som"
+    ],
+    "mergers and acquisitions": [
+      "m & a",
+      "m&a",
+      "mergers & acquisitions"
+    ],
+    "meta ads": [
+      "facebook ads",
+      "instagram ads"
+    ],
+    "microsoft 365": [
+      "ms 365",
+      "ms office",
+      "office 365"
+    ],
+    "month end close": [
+      "month end closing",
+      "month-end close"
+    ],
+    "natural language processing": [
+      "nlp"
+    ],
+    "net present value": [
+      "npv"
+    ],
+    "netsuite": [
+      "oracle netsuite"
+    ],
+    "nodejs": [
+      "node",
+      "node.js"
+    ],
+    "operating model": [
+      "target operating model"
+    ],
+    "paid search": [
+      "pay per click",
+      "pay-per-click",
+      "ppc"
+    ],
+    "performance": [
+      "latency optimization",
+      "performance measurement"
+    ],
+    "pitch book": [
+      "pitch books"
+    ],
+    "pitchbook": [
+      "pitchbook data",
+      "pitchbook platform"
+    ],
+    "pmo": [
+      "project management office"
+    ],
+    "postgresql": [
+      "postgres"
+    ],
+    "power bi": [
+      "microsoft power bi",
+      "power-bi",
+      "powerbi"
+    ],
+    "powerpoint": [
+      "microsoft powerpoint",
+      "ms powerpoint"
+    ],
+    "precedent transactions": [
+      "precedent transaction analysis",
+      "precedents"
+    ],
+    "private equity": [
+      "pe"
+    ],
+    "process optimization": [
+      "continuous improvement",
+      "process improvement"
+    ],
+    "procurement": [
+      "purchasing",
+      "strategic sourcing"
+    ],
+    "profit and loss": [
+      "p and l",
+      "p&l",
+      "pnl",
+      "profit & loss"
+    ],
+    "python": [
+      "py",
+      "py3",
+      "python3"
+    ],
+    "quickbooks": [
+      "qbo",
+      "quickbooks online"
+    ],
+    "rag": [
+      "retrieval augmented generation",
+      "retrieval-augmented generation"
+    ],
+    "reinforcement learning": [
+      "rl"
+    ],
+    "reranking": [
+      "cross-encoder",
+      "re-ranking",
+      "reranker",
+      "reranker tuning",
+      "rerankers"
+    ],
+    "rest": [
+      "rest api",
+      "restful"
+    ],
+    "retrieval eval": [
+      "recall@k"
+    ],
+    "return on invested capital": [
+      "roic"
+    ],
+    "salesforce": [
+      "salesforce crm",
+      "sfdc"
+    ],
+    "sap": [
+      "sap fi/co",
+      "sap fico"
+    ],
+    "sarbanes-oxley": [
+      "sox",
+      "sox compliance"
+    ],
+    "sec filings": [
+      "10-k",
+      "10-q"
+    ],
+    "sell-side": [
+      "sell side"
+    ],
+    "sem": [
+      "search engine marketing"
+    ],
+    "semantic search": [
+      "vector search"
+    ],
+    "sensitivity analysis": [
+      "sensitivity analyses"
+    ],
+    "seo": [
+      "search engine optimisation",
+      "search engine optimization"
+    ],
+    "series 63": [
+      "series 63 license"
+    ],
+    "series 7": [
+      "series 7 license"
+    ],
+    "series 79": [
+      "series 79 license"
+    ],
+    "sie": [
+      "securities industry essentials"
+    ],
+    "six sigma": [
+      "6 sigma",
+      "6σ",
+      "lean six sigma",
+      "six-sigma"
+    ],
+    "social media marketing": [
+      "smm",
+      "social media management"
+    ],
+    "stakeholder management": [
+      "stakeholder communications",
+      "stakeholder engagement"
+    ],
+    "supply chain": [
+      "scm",
+      "supply chain management"
+    ],
+    "tableau": [
+      "tableau desktop"
+    ],
+    "typescript": [
+      "ts"
+    ],
+    "underwriting": [
+      "commercial underwriting",
+      "credit underwriting"
+    ],
+    "variance analysis": [
+      "budget variance analysis",
+      "variance analyses"
+    ],
+    "vector database": [
+      "vector databases",
+      "vector store"
+    ],
+    "venture capital": [
+      "vc"
+    ],
+    "wacc": [
+      "weighted average cost of capital"
+    ]
+  },
+  "verb_families": {
+    "advise": [
+      "advised",
+      "counseled",
+      "counselled",
+      "recommended",
+      "represented",
+      "steered"
+    ],
+    "analyse": [
+      "analysed",
+      "analyzed",
+      "appraised",
+      "assessed",
+      "audited",
+      "benchmarked",
+      "debugged",
+      "diagnosed",
+      "evaluated",
+      "examined",
+      "forecasted",
+      "hypothesised",
+      "hypothesized",
+      "identified",
+      "investigated",
+      "measured",
+      "profiled",
+      "projected",
+      "quantified",
+      "researched",
+      "scoped",
+      "sized",
+      "synthesised",
+      "synthesized",
+      "tested",
+      "triangulated",
+      "troubleshooted",
+      "underwrote",
+      "validated",
+      "valued"
+    ],
+    "build": [
+      "architected",
+      "assembled",
+      "built",
+      "composed",
+      "constructed",
+      "crafted",
+      "created",
+      "designed",
+      "developed",
+      "engineered",
+      "established",
+      "founded",
+      "implemented",
+      "initiated",
+      "launched",
+      "modeled",
+      "modelled",
+      "prototyped",
+      "shipped",
+      "spearheaded"
+    ],
+    "collaborate": [
+      "collaborated",
+      "consulted",
+      "liaised",
+      "partnered"
+    ],
+    "coordinate": [
+      "coordinated",
+      "organised",
+      "organized"
+    ],
+    "engage": [
+      "attracted",
+      "converted",
+      "engaged",
+      "retained"
+    ],
+    "execute": [
+      "closed",
+      "completed",
+      "executed",
+      "originated",
+      "structured",
+      "syndicated"
+    ],
+    "gained": [
+      "earned",
+      "gained",
+      "obtained",
+      "received"
+    ],
+    "improve": [
+      "accelerated",
+      "boosted",
+      "condensed",
+      "consolidated",
+      "cut",
+      "decreased",
+      "doubled",
+      "enhanced",
+      "expanded",
+      "grew",
+      "improved",
+      "increased",
+      "lowered",
+      "optimised",
+      "optimized",
+      "overhauled",
+      "rationalised",
+      "rationalized",
+      "redesigned",
+      "reduced",
+      "refactored",
+      "refined",
+      "restructured",
+      "revamped",
+      "saved",
+      "scaled",
+      "simplified",
+      "standardised",
+      "standardized",
+      "streamlined",
+      "strengthened",
+      "tightened",
+      "tripled",
+      "tuned"
+    ],
+    "lead": [
+      "chaired",
+      "directed",
+      "headed",
+      "led",
+      "managed",
+      "oversaw",
+      "supervised"
+    ],
+    "negotiate": [
+      "brokered",
+      "negotiated"
+    ],
+    "operate": [
+      "administered",
+      "automated",
+      "configured",
+      "delivered",
+      "deployed",
+      "dispatched",
+      "enabled",
+      "integrated",
+      "inventoried",
+      "maintained",
+      "migrated",
+      "monitored",
+      "operated",
+      "processed",
+      "procured",
+      "provisioned",
+      "resolved",
+      "scheduled",
+      "secured",
+      "stocked"
+    ],
+    "promote": [
+      "advertised",
+      "branded",
+      "curated",
+      "influenced",
+      "marketed",
+      "promoted",
+      "publicized"
+    ],
+    "recruit": [
+      "enlisted",
+      "recruited",
+      "sourced"
+    ],
+    "teach": [
+      "facilitated",
+      "guided",
+      "mentored",
+      "onboarded",
+      "trained"
+    ],
+    "track": [
+      "accrued",
+      "booked",
+      "journalized",
+      "logged",
+      "posted",
+      "reconciled",
+      "tracked"
+    ],
+    "verify": [
+      "substantiated",
+      "verified",
+      "vouched"
+    ],
+    "write": [
+      "authored",
+      "briefed",
+      "documented",
+      "drafted",
+      "pitched",
+      "presented",
+      "published",
+      "reported",
+      "summarised",
+      "summarized",
+      "wrote"
+    ]
+  }
+}

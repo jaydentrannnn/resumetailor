@@ -1,7 +1,7 @@
 """Profile-owned field guidance, resolved once and frozen with each tailoring run.
 
-This module never calls a model. Catalog data selects concise instructions and existing
-vocabulary packs; the posting still determines relevance and the source determines truth.
+This module never calls a model. Catalog data selects concise instructions; the posting
+still determines relevance and the source determines truth.
 """
 
 from __future__ import annotations
@@ -136,7 +136,6 @@ class GuidanceSnapshot:
     styles: dict[str, str | None]
     tag_aliases: dict[str, str]
     verb_families: dict[str, tuple[str, ...]]
-    packs: list[str]
     systems: dict[str, str] = field(default_factory=dict)
     entry_context: dict[str, str] = field(default_factory=dict)
     stage_guidance: dict[str, str] = field(default_factory=dict)
@@ -152,6 +151,7 @@ class GuidanceSnapshot:
     def from_dict(cls, raw: dict[str, Any]) -> GuidanceSnapshot:
         # Saved snapshots remain usable even when their preset no longer exists.
         values = dict(raw)
+        values.pop("packs", None)  # retired with vocabulary packs; old runs still load
         values["verb_families"] = {
             name: tuple(verbs) for name, verbs in values["verb_families"].items()
         }
@@ -211,11 +211,7 @@ def capture(
     from . import libraries
 
     preset = catalog()[target_field]
-    state = libraries.read_workspace_state(workspace_id)
-    combined = state.model_copy(update={
-        "enabled_packs": list(dict.fromkeys([*preset["packs"], *state.enabled_packs]))
-    })
-    effective = libraries.resolve_effective(workspace_id, state=combined)
+    effective = libraries.resolve_effective()
     emphasis = "\nField emphasis\n- " + preset["priorities"] + "\n- " + preset["cautions"]
     entries: dict[str, str] = {}
     if resume is not None:
@@ -234,7 +230,7 @@ def capture(
          for stage, text in {"rewrite": _REWRITE_STYLE, "expand": _EXPAND_STYLE,
                              "cover": _COVER_STYLE}.items()},
         dict(styles), dict(effective.tag_aliases), dict(effective.verb_families),
-        combined.enabled_packs, entry_context=entries,
+        entry_context=entries,
         stage_guidance=dict(preset.get("stage_guidance", {})),
     )
     context = replace(config.default_context(), guidance=snapshot, styles=dict(styles))

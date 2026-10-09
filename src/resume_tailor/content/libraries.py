@@ -1,670 +1,456 @@
-"""Vocabulary libraries: user-editable tag-alias and verb-family packs.
+"""The vocabulary dictionary: the built-in table plus the user's app-wide additions.
 
-`config.TAG_ALIASES` / `config.VERB_FAMILIES` used to be hardcoded literals — this module
-is what makes them data instead. A **pack** (`Pack`) is a named bundle of aliases and verb
-families, either shipped (`library_seeds/` JSON bundled in the package) or user-authored
-(`data/libraries/packs/<id>.json`, the central store — under `DATA_ROOT`, which
-`config.set_active_workspace` never rebinds, so it is shared across every profile and
-survives the Docker bind mount). Each workspace selects which packs are enabled and may
-hold its own alias/verb overrides, in `data/workspaces/<id>/libraries.json`
-(`workspace_file`).
+`config.TAG_ALIASES` / `config.VERB_FAMILIES` come from here. The built-in dictionary
+(`library_seeds/dictionary.json`) is always on; the user layers additions (new terms, new
+spellings of a term, new opening verbs) and hidden built-ins on top, in one app-wide
+`libraries/vocabulary.json` under `DATA_ROOT` — shared by every profile, never rebound per
+workspace. Built-in entries are never deleted, only hidden; the user's own are removed.
 
-`resolve_effective()` composes enabled packs (in list order, last wins) plus overrides
-into the tables the rest of the pipeline actually reads, and `apply_to_config()` rebinds
-`config.TAG_ALIASES` / `config.VERB_FAMILIES` to the result — always to a *new* dict
-object, never mutated in place, because `config.verb_family`'s index cache is invalidated
-by identity. `reload()` is called from `workspace.bootstrap` / `workspace.activate` right
-after `config.set_active_workspace(...)`, and from every mutating route in this module's
-web-layer callers, after the write.
+Each workspace's `libraries.json` now holds only its pending/rejected proposals (drafted
+from that profile's runs). It used to also select which vocabulary *packs* were enabled
+and hold per-profile overrides; `migrate_legacy` folds those overrides (and any
+user-authored pack in the old `libraries/packs/` store) into the app-wide additions once.
 
-This module owns no locks. It inherits `config.set_active_workspace`'s contract: a caller
-that mutates state here while a job or template operation could be touching the same
-workspace must hold `JobQueue.busy()` and `template_ops.LOCK` first — enforced at the
-routes, not here. Imports `config`, `library_seeds`, and `data` (for `alias_impact`, which
-needs to read the master resume); never `llm` or `web`.
+No vocabulary change rewrites resume data: bullet tags are stored as typed and
+canonicalised at match time (`content/bullet_tags.py`), so an alias only ever widens
+matching. That is why there is no impact preview or confirmation step any more.
+
+`resolve_effective()` composes the tables and `apply_to_config()` rebinds `config`'s —
+always to *new* dict objects, never mutated in place, because `config.verb_family`'s
+index cache is invalidated by identity. `reload()` runs from `workspace.bootstrap` /
+`workspace.activate` and after every write here.
+
+This module owns no locks: a mutating caller that could race a job holds
+`JobQueue.busy()` and `template_ops.LOCK` first, enforced at the routes. Imports `config`
+and `library_seeds`; never `llm` or `web`.
 """
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import os
-import re
-import secrets
-from collections.abc import Iterable
-from datetime import UTC, datetime
+import shutil
+from dataclasses import dataclass
 from pathlib import Path
 
-from pydantic import ValidationError
+from pydantic import BaseModel, ValidationError
 
 from .. import config, library_seeds
 from . import library_models
 
+_MAX_LEN = 120
+
+
 # --------------------------------------------------------------------------------------
-# Paths
+# Paths and I/O
 # --------------------------------------------------------------------------------------
-
-_PACK_ID_RE = re.compile(r"^[a-z0-9][a-z0-9-]{0,39}$")
-
-
 def store_root() -> Path:
-    """Root of the central pack store, under `DATA_ROOT` (never rebound per-workspace).
+    """Root of the app-wide vocabulary store, under `DATA_ROOT` (never per-workspace).
 
     The test seam: `tests/conftest.py` monkeypatches this to a temp directory so a bare
-    test run never reads (or is broken by) a real installation's approved packs.
+    test run never reads (or is broken by) a real installation's additions.
     """
     return config.DATA_ROOT / "libraries"
 
 
-def _index_path() -> Path:
-    return store_root() / "index.json"
-
-
-def _pack_path(pack_id: str) -> Path:
-    """The on-disk path for `pack_id`'s shadow file.
-
-    Every read/write/delete/reset of a pack funnels through here, so this is the one
-    place `_PACK_ID_RE` needs enforcing to cover all of them — previously only
-    `write_pack`/`new_pack_id` checked it. Not just POSIX traversal (a `/`-containing
-    id can't reach a route param, and pack ids never arrive in a JSON body): on Windows,
-    `PureWindowsPath('.../packs') / 'C:foo'` discards the left side entirely and
-    resolves to `C:foo.json`, so an unvalidated id here is a drive-relative escape,
-    not merely a same-directory one.
-    """
-    if not _PACK_ID_RE.match(pack_id):
-        raise library_models.LibraryError(f"Invalid pack id: {pack_id!r}")
-    return store_root() / "packs" / f"{pack_id}.json"
+def vocabulary_path() -> Path:
+    return store_root() / "vocabulary.json"
 
 
 def workspace_file(workspace_id: str | None = None) -> Path:
-    """Path to `libraries.json` for `workspace_id`, or the active workspace if None.
-
-    Mirrors `workspace.settings_path`'s shape exactly.
-    """
+    """Path to `libraries.json` for `workspace_id`, or the active workspace if None."""
     if workspace_id is None:
         return config.LIBRARIES_PATH
     return config.workspace_paths(workspace_id)["LIBRARIES_PATH"]
 
 
-def new_pack_id(label: str, *, existing: Iterable[str]) -> str:
-    """A filesystem-friendly id derived from `label`, unique against `existing`.
-
-    Mirrors `workspace.new_workspace_id`. `existing` should include built-in pack ids
-    (`list_packs()` supplies both) so a new pack can never shadow `core-tech`.
-    """
-    existing_set = set(existing)
-    base = config.slugify(label) or "pack"
-    if base not in existing_set and _PACK_ID_RE.match(base):
-        return base
-    candidate = f"{base}-{secrets.token_hex(2)}"
-    while candidate in existing_set or not _PACK_ID_RE.match(candidate):
-        candidate = f"{base}-{secrets.token_hex(2)}"
-    return candidate
-
-
-def _now_iso() -> str:
-    return datetime.now(UTC).isoformat(timespec="seconds")
-
-
-# --------------------------------------------------------------------------------------
-# Pack registry I/O
-# --------------------------------------------------------------------------------------
-
-
-def _read_pack_index() -> library_models._PackIndex:
-    path = _index_path()
+def _read_model[M: BaseModel](path: Path, model: type[M]) -> M:
+    """`model` from `path`; missing, unreadable or malformed all degrade to the default."""
     if path.exists():
         try:
-            raw = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            raw = None
-        if isinstance(raw, dict):
-            try:
-                return library_models._PackIndex.model_validate(raw)
-            except ValidationError:
-                pass
-    return _rebuild_pack_index()
+            return model.model_validate(json.loads(path.read_text(encoding="utf-8")))
+        except (OSError, json.JSONDecodeError, ValidationError):
+            pass
+    return model()
 
 
-def _rebuild_pack_index() -> library_models._PackIndex:
-    """Recover the registry by scanning `packs/*.json`, the `workspace._rebuild_index`
-    precedent for a lost or corrupt `index.json`."""
-    packs_dir = store_root() / "packs"
-    entries: list[library_models._PackIndexEntry] = []
-    if packs_dir.exists():
-        for child in sorted(packs_dir.glob("*.json")):
-            try:
-                raw = json.loads(child.read_text(encoding="utf-8"))
-                pack = library_models.Pack.model_validate(raw)
-            except (OSError, json.JSONDecodeError, ValidationError):
-                continue
-            if pack.id != child.stem:
-                continue
-            entries.append(
-                library_models._PackIndexEntry(
-                    id=pack.id,
-                    label=pack.label,
-                    description=pack.description,
-                    created_at=pack.created_at,
-                    updated_at=pack.updated_at,
-                )
-            )
-    index = library_models._PackIndex(packs=entries)
-    if entries:
-        _write_pack_index(index)
-    return index
-
-
-def _write_pack_index(index: library_models._PackIndex) -> None:
-    path = _index_path()
+def _write_model(path: Path, value: BaseModel) -> None:
+    """Atomic write: temp file, then `os.replace`."""
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
-    tmp.write_text(index.model_dump_json(indent=2) + "\n", encoding="utf-8")
+    tmp.write_text(value.model_dump_json(indent=2) + "\n", encoding="utf-8")
     os.replace(tmp, path)
-
-
-# --------------------------------------------------------------------------------------
-# Pack CRUD
-# --------------------------------------------------------------------------------------
-
-
-def _pack_from_seed(seed: library_seeds.Pack) -> library_models.Pack:
-    return library_models.Pack(
-        id=seed["id"],
-        label=seed["label"],
-        description=seed.get("description", ""),
-        tag_aliases=dict(seed["tag_aliases"]),
-        verb_families={family: list(verbs) for family, verbs in seed["verb_families"].items()},
-    )
-
-
-def is_builtin_pack(pack_id: str) -> bool:
-    """Whether `pack_id` names a shipped (package-bundled) pack rather than a
-    user-authored one. Lets `web/app.py` report this without importing
-    `library_seeds` itself."""
-    return pack_id in library_seeds.shipped_pack_ids()
-
-
-def is_customized_pack(pack_id: str) -> bool:
-    """Whether a store file shadows the shipped copy for `pack_id`."""
-    return _pack_path(pack_id).exists()
-
-
-def read_pack(pack_id: str) -> library_models.Pack:
-    """A shipped or user-authored pack by id. Store file wins over the shipped seed.
-    Raises `LibraryError` if neither exists."""
-    path = _pack_path(pack_id)
-    if path.exists():
-        try:
-            raw = json.loads(path.read_text(encoding="utf-8"))
-            return library_models.Pack.model_validate(raw)
-        except (OSError, json.JSONDecodeError, ValidationError) as exc:
-            raise library_models.LibraryError(f"Pack {pack_id!r} is corrupt: {exc}") from exc
-    seed = library_seeds.BUILTIN_PACKS.get(pack_id)
-    if seed is not None:
-        return _pack_from_seed(seed)
-    raise library_models.LibraryError(f"Unknown pack: {pack_id!r}")
-
-
-def list_packs() -> list[library_models.PackMeta]:
-    """Shipped packs first (via `read_pack` so shadows show edited counts), then
-    user-authored packs from the registry not already listed.
-
-    A registry entry whose pack file has since gone missing or corrupt is skipped
-    rather than raised — a listing must not crash the whole Settings tab over one bad
-    pack; `resolve_effective` is where a *selected* missing pack becomes a diagnostic.
-    """
-    out: list[library_models.PackMeta] = []
-    seen: set[str] = set()
-
-    for seed in library_seeds.BUILTIN_PACKS.values():
-        pack_id = seed["id"]
-        seen.add(pack_id)
-        try:
-            pack = read_pack(pack_id)
-        except library_models.LibraryError:
-            continue
-        out.append(
-            library_models.PackMeta(
-                id=pack.id,
-                label=pack.label,
-                description=pack.description,
-                builtin=True,
-                customized=is_customized_pack(pack_id),
-                tag_alias_count=len(pack.tag_aliases),
-                verb_count=sum(len(v) for v in pack.verb_families.values()),
-                created_at=pack.created_at,
-                updated_at=pack.updated_at,
-            )
-        )
-
-    for entry in _read_pack_index().packs:
-        if entry.id in seen:
-            continue
-        try:
-            pack = read_pack(entry.id)
-        except library_models.LibraryError:
-            continue
-        seen.add(pack.id)
-        out.append(
-            library_models.PackMeta(
-                id=pack.id,
-                label=pack.label,
-                description=pack.description,
-                builtin=False,
-                customized=False,
-                tag_alias_count=len(pack.tag_aliases),
-                verb_count=sum(len(v) for v in pack.verb_families.values()),
-                created_at=pack.created_at,
-                updated_at=pack.updated_at,
-            )
-        )
-    return out
-
-
-def write_pack(pack: library_models.Pack, *, force: bool = False) -> library_models.Pack:
-    """Validate and atomically write a pack to the store. Shipped ids are allowed —
-    the write creates or updates a shadow file that `read_pack` prefers over the seed.
-
-    Preserves `created_at` across an update by reading the existing file first; sets
-    both timestamps on a brand-new pack. Returns the pack actually written (with
-    timestamps filled in), not the input.
-    """
-    if not _PACK_ID_RE.match(pack.id):
-        raise library_models.LibraryError(
-            f"Invalid pack id {pack.id!r}: must match {_PACK_ID_RE.pattern!r}."
-        )
-
-    baseline = resolve_effective(exclude_pack_id=pack.id)
-    errors = validate_pack(pack, against=baseline, force=force)
-    if errors:
-        raise library_models.LibraryValidationError(errors)
-
-    now = _now_iso()
-    path = _pack_path(pack.id)
-    created_at = pack.created_at
-    if not created_at:
-        if path.exists():
-            try:
-                created_at = library_models.Pack.model_validate_json(
-                    path.read_text(encoding="utf-8")
-                ).created_at
-            except (OSError, ValidationError):
-                created_at = now
-        else:
-            created_at = now
-    to_write = pack.model_copy(update={"created_at": created_at or now, "updated_at": now})
-
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(to_write.model_dump_json(indent=2) + "\n", encoding="utf-8")
-    os.replace(tmp, path)
-
-    index = _read_pack_index()
-    entries = [e for e in index.packs if e.id != pack.id]
-    entries.append(
-        library_models._PackIndexEntry(
-            id=to_write.id,
-            label=to_write.label,
-            description=to_write.description,
-            created_at=to_write.created_at,
-            updated_at=to_write.updated_at,
-        )
-    )
-    _write_pack_index(library_models._PackIndex(packs=entries))
-    _invalidate_memo()
-    return to_write
-
-
-def delete_pack(pack_id: str) -> None:
-    """Remove a user-authored pack. Refuses a shipped id.
-
-    A workspace that still lists `pack_id` in `enabled_packs` is left as-is —
-    `resolve_effective` skips a missing pack with a diagnostic rather than erroring, so
-    deleting a pack out from under an active selection degrades gracefully.
-    """
-    if is_builtin_pack(pack_id):
-        raise library_models.LibraryError(f"{pack_id!r} is a shipped pack and cannot be deleted.")
-    path = _pack_path(pack_id)
-    if not path.exists():
-        raise library_models.LibraryError(f"Unknown pack: {pack_id!r}")
-    path.unlink()
-    index = _read_pack_index()
-    _write_pack_index(library_models._PackIndex(packs=[e for e in index.packs if e.id != pack_id]))
     _invalidate_memo()
 
 
-def reset_pack(pack_id: str) -> None:
-    """Delete a shipped pack's shadow file, restoring the bundled seed on next read.
-
-    Raises `LibraryError` when `pack_id` is not shipped, when no shadow exists, or
-    when the store file is missing/corrupt.
-    """
-    if not is_builtin_pack(pack_id):
-        raise library_models.LibraryError(f"{pack_id!r} is not a shipped pack and cannot be reset.")
-    path = _pack_path(pack_id)
-    if not path.exists():
-        raise library_models.LibraryError(
-            f"Pack {pack_id!r} has no customized copy to reset."
-        )
-    path.unlink()
-    index = _read_pack_index()
-    _write_pack_index(library_models._PackIndex(packs=[e for e in index.packs if e.id != pack_id]))
-    _invalidate_memo()
+def read_user_vocabulary() -> library_models.UserVocabulary:
+    return _read_model(vocabulary_path(), library_models.UserVocabulary)
 
 
-# --------------------------------------------------------------------------------------
-# Per-workspace state I/O
-# --------------------------------------------------------------------------------------
+def write_user_vocabulary(user: library_models.UserVocabulary) -> None:
+    _write_model(vocabulary_path(), user)
 
 
 def read_workspace_state(workspace_id: str | None = None) -> library_models.WorkspaceLibraryState:
-    """Read `libraries.json`. Never raises — missing, unreadable, or malformed all
-    degrade to the default state (`core-tech` enabled, nothing else), the same
-    tolerance `workspace.load_settings` gives `settings.json`."""
-    path = workspace_file(workspace_id)
-    if path.exists():
-        try:
-            raw = json.loads(path.read_text(encoding="utf-8"))
-        except (OSError, json.JSONDecodeError):
-            raw = None
-        if isinstance(raw, dict):
-            try:
-                return library_models.WorkspaceLibraryState.model_validate(raw)
-            except ValidationError:
-                pass
-    return library_models.WorkspaceLibraryState()
+    """Read `libraries.json`. Never raises, like `workspace.load_settings`."""
+    return _read_model(workspace_file(workspace_id), library_models.WorkspaceLibraryState)
 
 
 def write_workspace_state(
     state: library_models.WorkspaceLibraryState, workspace_id: str | None = None
 ) -> None:
-    """Atomically write `libraries.json`: temp file, then `os.replace`."""
-    path = workspace_file(workspace_id)
-    path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(state.model_dump_json(indent=2) + "\n", encoding="utf-8")
-    os.replace(tmp, path)
-    _invalidate_memo()
+    _write_model(workspace_file(workspace_id), state)
 
 
 # --------------------------------------------------------------------------------------
 # Composition
 # --------------------------------------------------------------------------------------
-
-#: Memoised result for the active workspace only (the hot path — every pipeline run and
-#: every `apply_to_config()` call reads it). Explicit lookups for a *different*
-#: workspace (`resolve_effective(workspace_id=...)`, used by pack validation previews
-#: and workspace duplication) are always recomputed fresh rather than cached under a
-#: second key, which would risk staleness with no invalidation signal.
-_ACTIVE_MEMO: dict[Path, library_models.EffectiveLibrary] = {}
+#: Memoised effective table, keyed by the vocabulary file it was composed from.
+_MEMO: dict[Path, library_models.EffectiveLibrary] = {}
 
 
 def _invalidate_memo() -> None:
-    """Drop the memoised effective table. Called by every write in this module
-    (`write_pack`, `delete_pack`, `write_workspace_state`) so `resolve_effective()`
-    never silently serves a result computed before that write — cheap to recompute
-    (a few hundred dict entries), so clearing unconditionally rather than trying to
-    determine whether *this* write actually affects the active workspace is the safer
-    default. Distinct from `reload()`, which additionally rebinds `config`'s tables —
-    that stays caller-driven (after a route's write, or a workspace switch)."""
-    _ACTIVE_MEMO.clear()
+    _MEMO.clear()
+
+
+def _norm(value: str) -> str:
+    return value.strip().lower()
 
 
 def resolve_effective(
-    workspace_id: str | None = None, *, exclude_pack_id: str | None = None,
-    state: library_models.WorkspaceLibraryState | None = None,
+    user: library_models.UserVocabulary | None = None,
 ) -> library_models.EffectiveLibrary:
-    """The composed alias/verb tables for `workspace_id`, or the active workspace.
-
-    `exclude_pack_id` composes as if that pack were not enabled, without touching
-    `enabled_packs` on disk. `write_pack` uses this to validate a pack being updated
-    against everything *else* — without it, re-saving an already-enabled pack with a
-    tweaked alias would spuriously conflict with its own current-on-disk version, since
-    that old version is still part of `enabled_packs`' composition until the write
-    lands. Bypasses the memo like an explicit `workspace_id` does.
-    """
-    if workspace_id is not None or exclude_pack_id is not None or state is not None:
-        return _resolve_effective_uncached(
-            workspace_id, exclude_pack_id=exclude_pack_id, state=state
-        )
-    key = config.LIBRARIES_PATH
-    if key not in _ACTIVE_MEMO:
-        _ACTIVE_MEMO[key] = _resolve_effective_uncached(None)
-    return _ACTIVE_MEMO[key]
+    """Built-in dictionary − hidden + additions. `user` composes a draft without a write."""
+    if user is not None:
+        return _compose(user)
+    key = vocabulary_path()
+    if key not in _MEMO:
+        _MEMO[key] = _compose(read_user_vocabulary())
+    return _MEMO[key]
 
 
-def _resolve_effective_uncached(
-    workspace_id: str | None, *, exclude_pack_id: str | None = None,
-    state: library_models.WorkspaceLibraryState | None = None,
-) -> library_models.EffectiveLibrary:
-    state = state if state is not None else read_workspace_state(workspace_id)
+def _compose(user: library_models.UserVocabulary) -> library_models.EffectiveLibrary:
+    hidden_terms = {_norm(t) for t in user.hidden_terms}
+    hidden_aliases = {_norm(a) for a in user.hidden_aliases}
+    hidden_verbs = {_norm(v) for v in user.hidden_verbs}
     diagnostics: list[str] = []
 
-    aliases: dict[str, str] = {}
-    verb_owner: dict[str, str] = {}  # verb -> family
-    verb_source: dict[str, str] = {}  # verb -> id of the pack that last claimed it
-    pack_labels: dict[str, str] = {}
-
-    for pack_id in state.enabled_packs:
-        if pack_id == exclude_pack_id:
-            continue
-        try:
-            pack = read_pack(pack_id)
-        except library_models.LibraryError:
-            diagnostics.append(f"Pack {pack_id!r} is enabled but no longer exists; skipped.")
-            continue
-        pack_labels[pack_id] = pack.label
-
-        for raw_k, raw_v in pack.tag_aliases.items():
-            k, v = raw_k.strip().lower(), raw_v.strip().lower()
-            if k and v:
-                aliases[k] = v
-
-        for family, verbs in pack.verb_families.items():
-            for raw_verb in verbs:
-                verb = raw_verb.strip().lower()
-                if not verb:
-                    continue
-                prev_family = verb_owner.get(verb)
-                prev_pack = verb_source.get(verb)
-                if prev_family is not None and prev_pack != pack_id:
-                    prev_label = pack_labels.get(prev_pack, prev_pack or "?")
-                    diagnostics.append(
-                        f"{verb!r} moved from {prev_family!r} ({prev_label}) to "
-                        f"{family!r} ({pack.label})."
-                    )
-                verb_owner[verb] = family
-                verb_source[verb] = pack_id
-
-    for raw_k, raw_v in state.overrides.tag_aliases.items():
-        k, v = raw_k.strip().lower(), raw_v.strip().lower()
-        if k and v:
-            aliases[k] = v
-    for raw_verb, raw_family in state.overrides.verb_families.items():
-        verb, family = raw_verb.strip().lower(), raw_family.strip().lower()
-        if verb and family:
-            verb_owner[verb] = family
-
-    for raw_k in state.overrides.tag_aliases_removed:
-        aliases.pop(raw_k.strip().lower(), None)
-    for raw_verb in state.overrides.verb_families_removed:
-        verb_owner.pop(raw_verb.strip().lower(), None)
-
-    # Drop empty/self-aliases before the chain check so a self-alias never counts as a
-    # "key" a chain could route through.
-    aliases = {k: v for k, v in aliases.items() if k and v and k != v}
-
-    # Chain repair: any alias whose target is itself a key is dropped, keeping every
-    # surviving value a fixed point (`config.canonical_tag(v) == v`) no matter what a
-    # hand-edited pack or override says. Snapshotting `keys` before the loop is what
-    # makes a single pass sufficient — see `libraries.py`'s module docstring for why.
+    terms = {t for t in library_seeds.load()["terms"] if t not in hidden_terms}
+    aliases = {
+        alias: term
+        for alias, term in library_seeds.builtin_aliases().items()
+        if term in terms and alias not in hidden_aliases
+    }
+    terms |= {_norm(t) for t in user.terms if _norm(t)}
+    for raw_alias, raw_term in user.tag_aliases.items():
+        alias, term = _norm(raw_alias), _norm(raw_term)
+        if alias and term and alias != term:
+            aliases[alias] = term
+            terms.add(term)
+    # Chain repair: an alias whose target is itself an alias key is dropped, keeping every
+    # target a fixed point (`config.canonical_tag(v) == v`) whatever the file says.
     keys = set(aliases)
-    for k, v in list(aliases.items()):
-        if v in keys:
-            diagnostics.append(
-                f"Alias {k!r} -> {v!r} dropped to break a chain: {v!r} is itself an "
-                f"alias key elsewhere in the effective table."
-            )
-            del aliases[k]
+    for alias, term in list(aliases.items()):
+        if term in keys:
+            diagnostics.append(f"{alias!r} -> {term!r} skipped: {term!r} is itself an alias.")
+            del aliases[alias]
+    terms -= set(aliases)
 
-    verb_families: dict[str, list[str]] = {}
-    for verb, family in verb_owner.items():
-        verb_families.setdefault(family, []).append(verb)
-    verb_families_t = {family: tuple(sorted(verbs)) for family, verbs in verb_families.items()}
+    verb_index = {
+        verb: family
+        for family, verbs in library_seeds.builtin_verb_families().items()
+        for verb in verbs
+        if verb not in hidden_verbs
+    }
+    for raw_verb, raw_family in user.verb_families.items():
+        verb, family = _norm(raw_verb), _norm(raw_family)
+        if verb and family:
+            verb_index[verb] = family
+    families: dict[str, list[str]] = {}
+    for verb, family in verb_index.items():
+        families.setdefault(family, []).append(verb)
 
     return library_models.EffectiveLibrary(
         tag_aliases=aliases,
-        verb_families=verb_families_t,
-        verb_index=dict(verb_owner),
+        verb_families={f: tuple(sorted(v)) for f, v in families.items()},
+        verb_index=verb_index,
+        terms=frozenset(terms),
         diagnostics=diagnostics,
     )
 
 
 # --------------------------------------------------------------------------------------
-# Validation
+# Edits (each returns the new UserVocabulary; the caller writes and reloads)
 # --------------------------------------------------------------------------------------
+def _check(value: str, what: str) -> str:
+    value = _norm(value)
+    if not value:
+        raise library_models.LibraryError(f"The {what} cannot be empty.")
+    if len(value) > _MAX_LEN:
+        raise library_models.LibraryError(f"The {what} is longer than {_MAX_LEN} characters.")
+    return value
 
-_MAX_ALIASES = 2000
-_MAX_ALIAS_LEN = 120
-_MAX_FAMILIES = 60
-_MAX_VERBS_PER_FAMILY = 500
+
+def add_alias(
+    user: library_models.UserVocabulary, alias: str, term: str
+) -> library_models.UserVocabulary:
+    """Record `alias` as another name for `term` (an existing or brand-new term)."""
+    alias, term = _check(alias, "spelling"), _check(term, "term")
+    effective = resolve_effective(user)
+    term = effective.tag_aliases.get(term, term)  # adding to "py" means adding to "python"
+    if alias == term:
+        raise library_models.LibraryError(f"{alias!r} is already the term itself.")
+    if alias in effective.terms:
+        raise library_models.LibraryError(
+            f"{alias!r} is its own term in the dictionary, so it can't also be another name."
+        )
+    current = effective.tag_aliases.get(alias)
+    if current is not None and current != term and alias not in user.tag_aliases:
+        raise library_models.LibraryError(f"{alias!r} already means {current!r}.")
+    return user.model_copy(update={"tag_aliases": {**user.tag_aliases, alias: term}})
 
 
-def validate_pack(
-    pack: library_models.Pack,
-    *,
-    against: library_models.EffectiveLibrary | None = None,
-    force: bool = False,
-) -> list[str]:
-    """Everything checked before a pack is written. Empty list means OK.
+def add_term(user: library_models.UserVocabulary, term: str) -> library_models.UserVocabulary:
+    term = _check(term, "term")
+    effective = resolve_effective(user)
+    if term in effective.tag_aliases:
+        raise library_models.LibraryError(
+            f"{term!r} is already another name for {effective.tag_aliases[term]!r}."
+        )
+    if term in effective.terms:
+        raise library_models.LibraryError(f"{term!r} is already in the dictionary.")
+    return user.model_copy(update={"terms": sorted({*user.terms, term})})
 
-    `against` is the effective table this pack would be composed into — defaults to the
-    active workspace's. Every rule here mirrors a real cross-pack failure mode:
-    self-aliasing, chains (both directions), a verb double-booked within one pack, and
-    (unless `force`) silently overwriting what another pack already claims.
+
+def add_verb(
+    user: library_models.UserVocabulary, verb: str, family: str
+) -> library_models.UserVocabulary:
+    verb, family = _check(verb, "verb"), _check(family, "family")
+    if not verb.isalpha():
+        raise library_models.LibraryError("A verb is a single word of letters only.")
+    if family not in resolve_effective(user).verb_families:
+        raise library_models.LibraryError(f"Unknown verb family {family!r}.")
+    return user.model_copy(update={"verb_families": {**user.verb_families, verb: family}})
+
+
+def remove_addition(
+    user: library_models.UserVocabulary, kind: str, value: str
+) -> library_models.UserVocabulary:
+    """Delete one of the user's own entries; built-ins can only be hidden."""
+    value = _norm(value)
+    if kind == "alias" and value in user.tag_aliases:
+        return user.model_copy(
+            update={"tag_aliases": {k: v for k, v in user.tag_aliases.items() if k != value}}
+        )
+    if kind == "term" and value in user.terms:
+        return user.model_copy(update={
+            "terms": [t for t in user.terms if t != value],
+            "tag_aliases": {k: v for k, v in user.tag_aliases.items() if v != value},
+        })
+    if kind == "verb" and value in user.verb_families:
+        return user.model_copy(
+            update={"verb_families": {k: v for k, v in user.verb_families.items() if k != value}}
+        )
+    raise library_models.LibraryError(f"{value!r} is not one of your additions.")
+
+
+_HIDDEN_FIELD = {"term": "hidden_terms", "alias": "hidden_aliases", "verb": "hidden_verbs"}
+
+
+def _builtin(kind: str) -> set[str]:
+    seed = library_seeds.load()
+    if kind == "term":
+        return set(seed["terms"])
+    if kind == "alias":
+        return set(library_seeds.builtin_aliases())
+    return {v for verbs in seed["verb_families"].values() for v in verbs}
+
+
+def set_hidden(
+    user: library_models.UserVocabulary, kind: str, value: str, hidden: bool
+) -> library_models.UserVocabulary:
+    """Hide (or show again) one built-in term, spelling or verb."""
+    if kind not in _HIDDEN_FIELD:
+        raise library_models.LibraryError(f"Unknown entry kind {kind!r}.")
+    value = _norm(value)
+    if value not in _builtin(kind):
+        raise library_models.LibraryError(f"{value!r} is not a built-in {kind}.")
+    field = _HIDDEN_FIELD[kind]
+    current = set(getattr(user, field))
+    current = current | {value} if hidden else current - {value}
+    return user.model_copy(update={field: sorted(current)})
+
+
+# --------------------------------------------------------------------------------------
+# Browsing view (the Vocabulary page's searchable list)
+# --------------------------------------------------------------------------------------
+@dataclass(frozen=True)
+class Item:
+    value: str
+    builtin: bool
+    hidden: bool
+
+
+@dataclass(frozen=True)
+class Entry:
+    kind: str  # "term" | "family"
+    name: str
+    builtin: bool
+    hidden: bool
+    items: list[Item]
+
+
+def dictionary_view() -> list[Entry]:
+    """Every term (with its spellings) and verb family, flagged built-in/yours/hidden."""
+    user = read_user_vocabulary()
+    seed = library_seeds.load()
+    hidden_terms, hidden_aliases = set(user.hidden_terms), set(user.hidden_aliases)
+    hidden_verbs = set(user.hidden_verbs)
+
+    spellings: dict[str, list[Item]] = {}
+    for term, aliases in seed["terms"].items():
+        spellings[term] = [Item(a, True, a in hidden_aliases) for a in aliases]
+    for alias, term in user.tag_aliases.items():
+        spellings.setdefault(term, []).append(Item(alias, False, False))
+    for term in user.terms:
+        spellings.setdefault(term, [])
+    entries = [
+        Entry("term", term, term in seed["terms"], term in hidden_terms,
+              sorted(items, key=lambda i: i.value))
+        for term, items in spellings.items()
+    ]
+
+    verbs: dict[str, list[Item]] = {
+        family: [Item(v, True, v in hidden_verbs) for v in members]
+        for family, members in seed["verb_families"].items()
+    }
+    for verb, family in user.verb_families.items():
+        verbs.setdefault(family, []).append(Item(verb, False, False))
+    entries += [
+        Entry("family", family, True, False, sorted(items, key=lambda i: i.value))
+        for family, items in verbs.items()
+    ]
+    return sorted(entries, key=lambda e: (e.kind != "term", e.name))
+
+
+# --------------------------------------------------------------------------------------
+# One-time migration from vocabulary packs
+# --------------------------------------------------------------------------------------
+def migrate_legacy() -> list[str]:
+    """Fold every workspace's pack-era overrides and user-authored packs into the
+    app-wide additions. Idempotent (`migrated_workspaces`, `packs/` renamed once done).
+
+    Enabled packs need no migration: every shipped pack is part of the dictionary now.
+    A shipped pack the user had edited is folded like a user-authored one — its extra
+    aliases/verbs become additions; edits that *removed* a shipped entry can't be told
+    apart from the merge and are reported instead.
     """
-    errors: list[str] = []
-    baseline = against if against is not None else resolve_effective()
+    user = read_user_vocabulary()
+    notes: list[str] = []
+    changed = False
+    builtin_aliases = library_seeds.builtin_aliases()
+    builtin_verbs = {
+        v: f for f, vs in library_seeds.builtin_verb_families().items() for v in vs
+    }
 
-    if not _PACK_ID_RE.match(pack.id):
-        errors.append(f"Invalid pack id {pack.id!r}: must match {_PACK_ID_RE.pattern!r}.")
-    if not pack.label.strip():
-        errors.append("Pack label cannot be empty.")
-
-    aliases = pack.tag_aliases
-    if len(aliases) > _MAX_ALIASES:
-        errors.append(f"Too many aliases ({len(aliases)} > {_MAX_ALIASES}).")
-
-    pack_keys = {raw_k.strip().lower() for raw_k in aliases}
-    for raw_k, raw_v in aliases.items():
-        k, v = raw_k.strip().lower(), raw_v.strip().lower()
-        if not k or not v:
-            errors.append(f"Alias {raw_k!r} -> {raw_v!r}: key and value must be non-empty.")
-            continue
-        if len(k) > _MAX_ALIAS_LEN or len(v) > _MAX_ALIAS_LEN:
-            errors.append(f"Alias {raw_k!r} -> {raw_v!r} exceeds {_MAX_ALIAS_LEN} characters.")
-        if k == v:
-            errors.append(f"Alias {raw_k!r} maps to itself.")
-            continue
-        if v in pack_keys:
-            errors.append(
-                f"Alias {raw_k!r} -> {raw_v!r} chains: {raw_v!r} is itself an alias key "
-                f"in this pack."
-            )
-        if k in baseline.tag_aliases.values():
-            errors.append(
-                f"{raw_k!r} is already used as an alias target in the effective table; "
-                f"adding it as a key would create a chain."
-            )
-        if v in baseline.tag_aliases:
-            errors.append(
-                f"{raw_v!r} is already an alias key in the effective table (-> "
-                f"{baseline.tag_aliases[v]!r}); mapping to it would create a chain."
-            )
-        existing_target = baseline.tag_aliases.get(k)
-        if existing_target is not None and existing_target != v and not force:
-            errors.append(
-                f"{raw_k!r} already maps to {existing_target!r} in the effective table; "
-                f"pass force=true to override it."
-            )
-
-    families = pack.verb_families
-    if len(families) > _MAX_FAMILIES:
-        errors.append(f"Too many verb families ({len(families)} > {_MAX_FAMILIES}).")
-    seen_verbs: dict[str, str] = {}
-    for family, verbs in families.items():
-        if not config.slugify(family):
-            errors.append(f"Invalid family id {family!r}.")
-        if len(verbs) > _MAX_VERBS_PER_FAMILY:
-            errors.append(
-                f"Family {family!r} has too many verbs ({len(verbs)} > "
-                f"{_MAX_VERBS_PER_FAMILY})."
-            )
-        for raw_verb in verbs:
-            verb = raw_verb.strip().lower()
-            if not verb or not verb.isalpha():
-                errors.append(
-                    f"Verb {raw_verb!r} in family {family!r} must be alphabetic."
-                )
+    def fold(aliases: dict[str, str], verbs: dict[str, str], source: str) -> None:
+        nonlocal user, changed
+        for raw_alias, raw_term in aliases.items():
+            alias, term = _norm(raw_alias), _norm(raw_term)
+            if not alias or not term or builtin_aliases.get(alias) == term:
                 continue
-            if verb in seen_verbs and seen_verbs[verb] != family:
-                errors.append(
-                    f"Verb {verb!r} appears in both {seen_verbs[verb]!r} and "
-                    f"{family!r} within this pack."
+            existing = user.tag_aliases.get(alias)
+            if existing and existing != term:
+                notes.append(f"{source}: kept {alias!r} -> {existing!r} over {term!r}.")
+                continue
+            user = user.model_copy(update={"tag_aliases": {**user.tag_aliases, alias: term}})
+            changed = True
+        for raw_verb, raw_family in verbs.items():
+            verb, family = _norm(raw_verb), _norm(raw_family)
+            if verb and family and builtin_verbs.get(verb) != family:
+                user = user.model_copy(
+                    update={"verb_families": {**user.verb_families, verb: family}}
                 )
-            seen_verbs[verb] = family
+                changed = True
 
-    return errors
+    workspaces_dir = store_root().parent / config.WORKSPACES_DIRNAME
+    candidates = sorted(workspaces_dir.glob("*/libraries.json")) if workspaces_dir.exists() else []
+    for path in candidates:
+        workspace_id = path.parent.name
+        if workspace_id in user.migrated_workspaces:
+            continue
+        state = _read_model(path, library_models.WorkspaceLibraryState)
+        legacy = state.overrides
+        fold(legacy.tag_aliases, legacy.verb_families, f"profile {workspace_id}")
+        removed = [a for a in legacy.tag_aliases_removed if _norm(a) in builtin_aliases]
+        verbs_removed = [v for v in legacy.verb_families_removed if _norm(v) in builtin_verbs]
+        if removed or verbs_removed:
+            user = user.model_copy(update={
+                "hidden_aliases": sorted({*user.hidden_aliases, *map(_norm, removed)}),
+                "hidden_verbs": sorted({*user.hidden_verbs, *map(_norm, verbs_removed)}),
+            })
+        user = user.model_copy(
+            update={"migrated_workspaces": [*user.migrated_workspaces, workspace_id]}
+        )
+        changed = True
+        if state.enabled_packs or legacy != library_models.LegacyOverrides():
+            _write_model(path, state.model_copy(update={
+                "enabled_packs": [], "overrides": library_models.LegacyOverrides(),
+            }))
+
+    packs_dir = store_root() / "packs"
+    if packs_dir.is_dir():
+        for child in sorted(packs_dir.glob("*.json")):
+            try:
+                raw = json.loads(child.read_text(encoding="utf-8"))
+            except (OSError, json.JSONDecodeError):
+                notes.append(f"pack {child.stem}: unreadable, skipped.")
+                continue
+            verbs = {
+                v: family for family, vs in raw.get("verb_families", {}).items() for v in vs
+            }
+            fold(raw.get("tag_aliases", {}), verbs, f"pack {child.stem}")
+        shutil.move(str(packs_dir), str(store_root() / "packs.migrated"))
+
+    if changed:
+        write_user_vocabulary(user)
+    return notes
 
 
 # --------------------------------------------------------------------------------------
 # Fingerprint, apply, reload, reset
 # --------------------------------------------------------------------------------------
-
-
 def effective_fingerprint(effective: library_models.EffectiveLibrary | None = None) -> str:
-    """Digest of the composed alias + verb tables, for `propose.py`'s cache key."""
+    """Digest of the composed tables, for `propose.py`'s cache key."""
     eff = effective if effective is not None else resolve_effective()
-    payload = "\n".join(
-        [
-            *(f"a:{k}={v}" for k, v in sorted(eff.tag_aliases.items())),
-            *(f"v:{verb}={family}" for verb, family in sorted(eff.verb_index.items())),
-        ]
-    )
+    payload = "\n".join([
+        *(f"a:{k}={v}" for k, v in sorted(eff.tag_aliases.items())),
+        *(f"t:{t}" for t in sorted(eff.terms)),
+        *(f"v:{verb}={family}" for verb, family in sorted(eff.verb_index.items())),
+    ])
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:12]
 
 
-def apply_to_config(workspace_id: str | None = None) -> library_models.EffectiveLibrary:
-    """Rebind `config.TAG_ALIASES` / `config.VERB_FAMILIES` to the resolved tables.
-
-    Always assigns new dict objects — never mutates the existing ones in place — since
-    `config.verb_family`'s index cache is invalidated by identity
-    (`_VERB_INDEX_SOURCE is not VERB_FAMILIES`). Mirrors `config.set_active_workspace`'s
-    "rebind, don't mutate" contract for the path globals.
-    """
-    effective = resolve_effective(workspace_id)
+def apply_to_config() -> library_models.EffectiveLibrary:
+    """Rebind `config.TAG_ALIASES` / `config.VERB_FAMILIES` to new dicts (never mutate)."""
+    effective = resolve_effective()
     config.set_vocabulary(dict(effective.tag_aliases), dict(effective.verb_families))
     return effective
 
 
-def reload(workspace_id: str | None = None) -> library_models.EffectiveLibrary:
-    """Drop the memo and rebind `config`'s tables.
-
-    Call after any write in this module, and from `workspace.bootstrap` /
-    `workspace.activate` immediately after `config.set_active_workspace(...)` — mirrors
-    the existing `reload_calibration()` call in the same spot.
-    """
+def reload() -> library_models.EffectiveLibrary:
+    """Run the one-time migration if needed, drop the memo, and rebind `config`'s tables."""
+    # A read-only or half-written store must never block startup.
+    with contextlib.suppress(OSError):
+        migrate_legacy()
     _invalidate_memo()
-    return apply_to_config(workspace_id)
+    return apply_to_config()
 
 
 def reset() -> None:
-    """Restore `config`'s tables to the built-in `core-tech` pack alone, dropping the
-    memo. Test seam — pairs with monkeypatching `store_root` in `tests/conftest.py`."""
+    """Restore `config`'s tables to the built-in dictionary. Test seam — pairs with
+    monkeypatching `store_root` in `tests/conftest.py`."""
     _invalidate_memo()
-    core = library_seeds.BUILTIN_PACKS["core-tech"]
-    config.set_vocabulary(
-        dict(core["tag_aliases"]),
-        {family: tuple(verbs) for family, verbs in core["verb_families"].items()},
-    )
+    config.set_vocabulary(library_seeds.builtin_aliases(), library_seeds.builtin_verb_families())

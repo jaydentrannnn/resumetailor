@@ -196,36 +196,6 @@ def test_create_job_and_activate_workspace_share_one_lock(client, tmp_path, monk
         holder2.join(timeout=5)
 
 
-def test_library_selection_is_per_profile_and_activate_reloads_it(client, tmp_path, monkeypatch):
-    """Each profile has its own pack selection, and switching profiles must rebind
-    config.TAG_ALIASES to the newly active one's — the web-layer companion to
-    test_workspace.py::test_activate_reloads_the_effective_library."""
-    c, _ = client
-    _point_workspaces_at(tmp_path, monkeypatch)
-    real_bootstrap()
-    c.post("/api/workspaces", json={"label": "Nursing"})
-
-    c.post("/api/workspaces/nursing/activate")
-    created = c.post(
-        "/api/libraries/packs",
-        json={"label": "Nursing", "tag_aliases": {"bls": "basic life support"}},
-    )
-    nursing_pack_id = created.json()["packs"][-1]["id"]
-    c.put("/api/libraries/selection", json={"enabled_packs": [nursing_pack_id]})
-    assert config.TAG_ALIASES.get("bls") == "basic life support"
-    assert "py" not in config.TAG_ALIASES  # core-tech is not enabled for this profile
-
-    c.post("/api/workspaces/default/activate")
-
-    assert config.TAG_ALIASES.get("py") == "python"
-    assert "bls" not in config.TAG_ALIASES
-
-    # Switching back must restore the nursing profile's own selection, not the default's.
-    c.post("/api/workspaces/nursing/activate")
-    assert c.get("/api/libraries").json()["enabled_packs"] == [nursing_pack_id]
-    assert config.TAG_ALIASES.get("bls") == "basic life support"
-
-
 def test_settings_round_trip_is_per_workspace(client, tmp_path, monkeypatch):
     """Each profile keeps its own settings.json; switching swaps which one is live."""
     c, _ = client

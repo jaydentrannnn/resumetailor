@@ -5,7 +5,6 @@
       "id": "general",
       "label": "General",
       "summary": "Relevant contributions, deliverables, scope, and supported outcomes.",
-      "packs": ["core-tech"],
       "priorities": "Evaluate contributions, deliverables, responsibilities, methods, scope, and outcomes against this posting. Relevant nonnumeric evidence is valid.",
       "cautions": "Do not infer a specialty or professional authority from the candidate's field or a keyword."
     },
@@ -13,7 +12,6 @@
       "id": "software-data",
       "label": "Software & Data",
       "summary": "Implementation, evaluation, reliability, and documented technical impact.",
-      "packs": ["core-tech"],
       "priorities": "Emphasize implementation, evaluation, reliability, data analysis, and technical impact where relevant to the posting and documented by the source.",
       "cautions": "A prototype is not a production deployment; evaluation is not an improvement unless the source states the comparison. The employer's industry does not change the candidate's field."
     },
@@ -21,7 +19,6 @@
       "id": "finance-consulting",
       "label": "Finance & Consulting",
       "summary": "Analysis, valuation, research, recommendations, and decision support.",
-      "packs": ["core-tech", "finance-consulting"],
       "priorities": "Emphasize analysis, financial modeling, valuation, research, reporting, recommendations, and decision support only where documented and relevant to this role. Distinguish FP&A, investment banking, and consulting needs using the posting.",
       "cautions": "Analyzed assets are not managed assets; forecasts are not realized results; recommendations are not implemented decisions. Academic cases and simulated portfolios are not professional advisory or investment authority."
     },
@@ -29,7 +26,6 @@
       "id": "accounting",
       "label": "Accounting",
       "summary": "Reconciliation, reporting, controls, and documented accuracy.",
-      "packs": ["core-tech", "accounting"],
       "priorities": "Emphasize reconciliation, accounting analysis, reporting, controls, documentation, and accuracy where supported and relevant to the posting.",
       "cautions": "Do not infer audit sign-off, regulatory compliance, professional certification, or authority to approve accounts from preparing or reviewing supporting material."
     },
@@ -37,7 +33,6 @@
       "id": "marketing",
       "label": "Marketing",
       "summary": "Audience research, campaigns, channels, and measured results.",
-      "packs": ["core-tech", "marketing"],
       "priorities": "Emphasize audience research, campaign execution, content, channel analysis, and measured engagement or conversion where supported and relevant to the posting.",
       "cautions": "Reach and engagement are not sales or conversion; campaign participation is not strategy ownership. Do not infer attribution or causal business impact."
     },
@@ -45,7 +40,6 @@
       "id": "operations-supply-chain",
       "label": "Operations & Supply Chain",
       "summary": "Planning, processes, inventory, service, and documented efficiency.",
-      "packs": ["core-tech", "ops-supply-chain"],
       "priorities": "Emphasize planning, process execution, inventory, logistics, service, coordination, and efficiency where supported and relevant to this posting.",
       "cautions": "Tracking or coordinating a process is not owning its budget or approving procurement. Do not infer savings, throughput improvements, or service-level compliance."
     }

@@ -191,7 +191,7 @@ def test_create_without_copy_from_writes_a_default_libraries_file(isolated_roots
     paths = config.workspace_paths(entry.id)
     assert paths["LIBRARIES_PATH"].exists()
     state = libraries.read_workspace_state(entry.id)
-    assert state.enabled_packs == ["core-tech"]
+    assert state.proposals == [] and state.enabled_packs == []
     assert workspace.load_settings(entry.id)["target_field"] == "general"
 
 
@@ -211,15 +211,13 @@ def test_create_duplicate_copies_libraries_json(isolated_roots):
     from resume_tailor.content import libraries, library_models
 
     bootstrap()  # empty "default"
-    libraries.write_pack(library_models.Pack(id="a", label="A", tag_aliases={"x": "y"}))
-    libraries.write_workspace_state(
-        library_models.WorkspaceLibraryState(enabled_packs=["core-tech", "a"])
-    )
+    proposal = library_models.LibraryProposal(id="p-1", kind="verb_family", verb="zorped", family="build")
+    libraries.write_workspace_state(library_models.WorkspaceLibraryState(proposals=[proposal]))
 
     entry = workspace.create("Data Science", copy_from="default")
 
     dup_state = libraries.read_workspace_state(entry.id)
-    assert dup_state.enabled_packs == ["core-tech", "a"]
+    assert dup_state.proposals == [proposal]
 
 
 def test_create_without_copy_from_seeds_a_loadable_resume(isolated_roots):
@@ -243,33 +241,22 @@ def test_create_without_copy_from_seeds_a_loadable_resume(isolated_roots):
     assert data.load().contact.name == "Your Name"
 
 
-def test_activate_reloads_the_effective_library(isolated_roots):
-    """Switching profiles must rebind config.TAG_ALIASES to the new profile's own
-    pack selection, the same way it already rebinds the path globals."""
+def test_vocabulary_additions_are_app_wide_across_profiles(isolated_roots):
+    """The dictionary and the user's additions are shared by every profile: switching
+    profiles rebinds config but never changes which aliases are in effect."""
     from resume_tailor.content import libraries, library_models
 
-    bootstrap()  # "default", core-tech only
+    bootstrap()
     workspace.create("Nina")
-    libraries.write_pack(
-        library_models.Pack(
-            id="nursing", label="Nursing", tag_aliases={"bls": "basic life support"}
-        )
+    libraries.write_user_vocabulary(
+        library_models.UserVocabulary(tag_aliases={"bls": "basic life support"})
     )
-    libraries.write_workspace_state(
-        library_models.WorkspaceLibraryState(enabled_packs=["nursing"]), workspace_id="nina"
-    )
-
-    assert "bls" not in config.TAG_ALIASES
-
     workspace.activate("nina")
-
     assert config.TAG_ALIASES.get("bls") == "basic life support"
-    assert "py" not in config.TAG_ALIASES  # core-tech is not enabled for this profile
+    assert config.TAG_ALIASES.get("py") == "python"
 
     workspace.activate("default")
-
-    assert config.TAG_ALIASES.get("py") == "python"
-    assert "bls" not in config.TAG_ALIASES
+    assert config.TAG_ALIASES.get("bls") == "basic life support"
 
 
 def test_activate_heals_a_workspace_missing_its_resume(isolated_roots):

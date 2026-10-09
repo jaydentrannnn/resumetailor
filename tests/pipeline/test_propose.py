@@ -176,10 +176,7 @@ def test_cache_key_varies_with_the_effective_library(calls):
     )
     propose.propose_vocabulary(**kwargs)
 
-    libraries.write_pack(library_models.Pack(id="a", label="A", tag_aliases={"x": "y"}))
-    libraries.write_workspace_state(
-        library_models.WorkspaceLibraryState(enabled_packs=["core-tech", "a"])
-    )
+    libraries.write_user_vocabulary(library_models.UserVocabulary(tag_aliases={"x": "y"}))
 
     propose.propose_vocabulary(**kwargs)
     assert len(calls) == 2

@@ -85,7 +85,6 @@ def test_settings_field_survives_old_clients_and_invalid_ids_are_rejected(profil
         assert result.status_code == 200
         body = result.json()
         assert len(body["target_fields"]) == 6
-        assert "finance-consulting" in body["effective_vocabulary_packs"]
         assert "financial modeling" in body["rewrite_style_default"]
         assert "or the job posting" not in body["cover_core_rules"]
         assert client.get("/api/settings").json()["settings"]["rewrite_style"] == "My custom style."
@@ -103,17 +102,15 @@ def test_settings_field_survives_old_clients_and_invalid_ids_are_rejected(profil
         assert client.get("/api/config").json()["rewrite_style_default"] == style.DEFAULT_REWRITE_STYLE.strip()
 
 
-def test_pack_composition_preserves_files_custom_overrides_and_source_limits(profile):
-    state = library_models.WorkspaceLibraryState(
-        enabled_packs=["core-tech", "marketing"],
-        overrides=library_models.LibraryOverrides(tag_aliases={"dcf": "custom valuation"}),
+def test_capture_freezes_the_users_vocabulary_without_writing_it(profile):
+    libraries.write_user_vocabulary(
+        library_models.UserVocabulary(tag_aliases={"dcfx": "discounted cash flow"})
     )
-    libraries.write_workspace_state(state)
-    before = libraries.workspace_file().read_bytes()
+    before = libraries.vocabulary_path().read_bytes()
     snapshot = capture()
-    assert snapshot.tag_aliases["dcf"] == "custom valuation"
-    assert "marketing" in snapshot.packs
-    assert libraries.workspace_file().read_bytes() == before
+    assert snapshot.tag_aliases["dcfx"] == "discounted cash flow"
+    assert snapshot.tag_aliases["ga4"] == "google analytics"  # every former pack is built in
+    assert libraries.vocabulary_path().read_bytes() == before
     industries.bind(snapshot)
     source = Bullet(id="excel", text="Analyzed records using Excel.", tags=["excel"])
     assert fabrication.check_fabrication(source, "Analyzed records using Bloomberg.")
@@ -197,9 +194,9 @@ def test_concurrent_guidance_is_isolated_and_inherited_by_worker_calls(profile):
     with ThreadPoolExecutor(max_workers=2) as executor:
         results = list(executor.map(run, snapshots))
     assert "Profile target field: Software & Data" in results[0][0]
-    assert results[0][1] is None
     assert "Profile target field: Finance & Consulting" in results[1][0]
-    assert results[1][1] == "discounted cash flow"
+    # Vocabulary no longer varies by field: the dictionary is the same for every profile.
+    assert results[0][1] == results[1][1] == "discounted cash flow"
     assert industries.active() is None
 
 

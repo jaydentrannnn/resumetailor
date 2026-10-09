@@ -1,210 +1,88 @@
-"""Vocabulary libraries and proposals (`/api/libraries*`, `/api/proposals*`)."""
+"""Vocabulary dictionary and proposals (`/api/libraries*`)."""
 
 from __future__ import annotations
 
 from resume_tailor import config
+from resume_tailor.content import libraries as libraries_mod
+from resume_tailor.content import library_models
 from resume_tailor.web import job_types
 from resume_tailor.web.schemas import JobSettings
 from tests.web.helpers import _FakeProposeClient, _FakeSDKError, _write_test_resume
 
 
-def test_get_libraries_lists_shipped_packs_and_effective_counts(client):
-    c, _ = client
-    res = c.get("/api/libraries")
-    assert res.status_code == 200
-    body = res.json()
-    # Every shipped pack is always listed, whether or not it is enabled — only
-    # "core-tech" is enabled by default in a fresh workspace's libraries.json.
-    ids = [p["id"] for p in body["packs"]]
-    assert "core-tech" in ids
-    shipped = [p for p in body["packs"] if p["builtin"]]
-    assert {p["id"] for p in shipped} == {
-        "core-tech",
-        "finance-consulting",
-        "accounting",
-        "marketing",
-        "ops-supply-chain",
-    }
-    core = next(p for p in body["packs"] if p["id"] == "core-tech")
-    assert core["customized"] is False
-    assert body["enabled_packs"] == ["core-tech"]
-    assert body["effective"]["tag_alias_count"] == core["tag_alias_count"]
-    assert body["diagnostics"] == []
-
-
-def test_get_library_pack_returns_full_contents(client):
-    c, _ = client
-    res = c.get("/api/libraries/packs/core-tech")
-    assert res.status_code == 200
-    body = res.json()
-    assert body["tag_aliases"]["py"] == "python"
-    assert "build" in body["verb_families"]
-
-
-def test_get_library_pack_404s_for_an_unknown_id(client):
-    c, _ = client
-    res = c.get("/api/libraries/packs/does-not-exist")
-    assert res.status_code == 404
-
-
-def test_create_library_pack_then_selection_makes_it_effective(client):
-    c, _ = client
-    created = c.post(
-        "/api/libraries/packs",
-        json={"label": "Nursing", "tag_aliases": {"bls": "basic life support"}},
-    )
-    assert created.status_code == 200
-    pack_id = next(p["id"] for p in created.json()["packs"] if p["label"] == "Nursing")
-    assert pack_id != "core-tech"
-
-    res = c.put(
-        "/api/libraries/selection",
-        json={"enabled_packs": ["core-tech", pack_id]},
-    )
-    assert res.status_code == 200
-    assert res.json()["enabled_packs"] == ["core-tech", pack_id]
-
-    from resume_tailor import config as config_mod
-
-    assert config_mod.TAG_ALIASES.get("bls") == "basic life support"
-
-
-def test_create_library_pack_rejects_a_builtin_id(client):
-    c, _ = client
-    res = c.post("/api/libraries/packs", json={"label": "core-tech"})
-    # "core-tech" the label slugs to the existing builtin id, so a fresh id is minted
-    # instead of colliding — this call must succeed, not 400.
-    assert res.status_code == 200
-
-
-def test_update_library_pack_returns_400_with_every_validation_error(client):
-    c, _ = client
-    c.post("/api/libraries/packs", json={"label": "A"})
-    pack_id = c.get("/api/libraries").json()["packs"][-1]["id"]
-
-    res = c.put(
-        f"/api/libraries/packs/{pack_id}",
-        json={"label": "A", "tag_aliases": {"python": "python"}},
-    )
-
-    assert res.status_code == 400
-    assert "errors" in res.json()["detail"]
-    assert any("itself" in e for e in res.json()["detail"]["errors"])
-
-
-def test_update_library_pack_conflict_needs_force(client):
-    c, _ = client
-    res = c.post("/api/libraries/packs", json={"label": "A", "tag_aliases": {"py": "not-python"}})
-    assert res.status_code == 400
-
-    ok = c.post(
-        "/api/libraries/packs",
-        json={"label": "A", "tag_aliases": {"py": "not-python"}, "force": True},
-    )
-    assert ok.status_code == 200
-
-
-def test_update_an_enabled_pack_does_not_conflict_with_its_own_prior_version(client):
-    """Web-layer regression companion to
-    test_libraries.py::test_updating_an_enabled_pack_does_not_conflict_with_its_own_prior_version."""
-    c, _ = client
-    created = c.post("/api/libraries/packs", json={"label": "A", "tag_aliases": {"x": "y"}})
-    pack_id = created.json()["packs"][-1]["id"]
-    c.put("/api/libraries/selection", json={"enabled_packs": ["core-tech", pack_id]})
-
-    res = c.put(f"/api/libraries/packs/{pack_id}", json={"label": "A", "tag_aliases": {"x": "z"}})
-
-    assert res.status_code == 200
-
-
-def test_update_shipped_pack_writes_a_shadow(client):
-    c, _ = client
-    body = c.get("/api/libraries/packs/core-tech").json()
-    body["tag_aliases"] = {**body["tag_aliases"], "custom-alias": "custom-target"}
-    res = c.put(
-        "/api/libraries/packs/core-tech",
-        json={
-            "label": body["label"],
-            "description": body["description"],
-            "tag_aliases": body["tag_aliases"],
-            "verb_families": body["verb_families"],
-        },
-    )
-    assert res.status_code == 200
-    core = next(p for p in res.json()["packs"] if p["id"] == "core-tech")
-    assert core["customized"] is True
-    reread = c.get("/api/libraries/packs/core-tech").json()
-    assert reread["tag_aliases"]["custom-alias"] == "custom-target"
-
-
-def test_reset_shipped_pack_restores_the_seed(client):
-    c, _ = client
-    body = c.get("/api/libraries/packs/core-tech").json()
-    body["tag_aliases"] = {**body["tag_aliases"], "custom-alias": "custom-target"}
-    c.put(
-        "/api/libraries/packs/core-tech",
-        json={
-            "label": body["label"],
-            "description": body["description"],
-            "tag_aliases": body["tag_aliases"],
-            "verb_families": body["verb_families"],
-        },
-    )
-    res = c.post("/api/libraries/packs/core-tech/reset")
-    assert res.status_code == 200
-    core = next(p for p in res.json()["packs"] if p["id"] == "core-tech")
-    assert core["customized"] is False
-    reread = c.get("/api/libraries/packs/core-tech").json()
-    assert "custom-alias" not in reread["tag_aliases"]
-
-
-def test_delete_library_pack_refuses_a_shipped_id(client):
-    c, _ = client
-    res = c.delete("/api/libraries/packs/core-tech")
-    assert res.status_code == 400
-
-
-def test_delete_library_pack_removes_it_from_the_list(client):
-    c, _ = client
-    created = c.post("/api/libraries/packs", json={"label": "A"})
-    pack_id = created.json()["packs"][-1]["id"]
-
-    res = c.delete(f"/api/libraries/packs/{pack_id}")
-
-    assert res.status_code == 200
-    assert pack_id not in [p["id"] for p in res.json()["packs"]]
-
-
-def test_library_impact_distinguishes_additive_from_rewriting(client, tmp_path, monkeypatch):
-    c, _ = client
-    monkeypatch.setattr(config, "MASTER_RESUME_PATH", tmp_path / "no-such-resume.json")
-
-    res = c.post("/api/libraries/impact", json={"tag_aliases": {"rust": "rust-lang"}})
-
-    assert res.status_code == 200
-    impacts = res.json()["impacts"]
-    assert impacts[0]["alias"] == "rust"
-    assert impacts[0]["affected_tags"] == []
-
-
-def test_library_routes_reject_when_queue_busy(client):
-    c, q = client
-    # Direct insertion, not submit() — see test_upload_template_rejects_when_queue_busy
-    # for why: submit() starts a real background worker regardless of reassigning
-    # `job.status` afterward.
+def _queue_busy(q) -> None:
+    # Direct insertion, not submit() — see test_upload_template_rejects_when_queue_busy:
+    # submit() starts a real background worker regardless of reassigning `job.status`.
     job = job_types.Job(
         job_id="fake-busy", jd_text="placeholder jd", settings=JobSettings(), status="running"
     )
     q._jobs[job.job_id] = job
 
+
+def _propose(*proposals: library_models.LibraryProposal) -> None:
+    state = libraries_mod.read_workspace_state()
+    state.proposals = list(proposals)
+    libraries_mod.write_workspace_state(state)
+
+
+def _alias_proposal(alias: str, canonical: str, pid: str = "p-1") -> library_models.LibraryProposal:
+    return library_models.LibraryProposal(
+        id=pid, kind="tag_alias", alias=alias, canonical=canonical, source="manual",
+        created_at="2026-01-01T00:00:00+00:00",
+    )
+
+
+def test_get_libraries_lists_terms_and_families_with_counts(client):
+    c, _ = client
+    body = c.get("/api/libraries").json()
+    python = next(e for e in body["entries"] if e["kind"] == "term" and e["name"] == "python")
+    assert python["builtin"] is True
+    assert {"value": "py", "builtin": True, "hidden": False} in python["items"]
+    assert any(e["kind"] == "family" and e["name"] == "build" for e in body["entries"])
+    assert body["effective"]["tag_alias_count"] > 0
+    assert body["diagnostics"] == []
+
+
+def test_add_hide_and_remove_round_trip(client):
+    c, _ = client
+    res = c.post("/api/libraries/additions", json={"kind": "alias", "value": "PGX", "target": "postgresql"})
+    assert res.status_code == 200
+    assert config.canonical_tag("pgx") == "postgresql"
+
+    assert c.post("/api/libraries/additions", json={"kind": "term", "value": "quuxware"}).status_code == 200
+    assert c.post("/api/libraries/additions", json={"kind": "verb", "value": "zorped", "target": "build"}).status_code == 200
+    assert config.verb_family("zorped") == "build"
+
+    hidden = c.post("/api/libraries/hidden", json={"kind": "alias", "value": "py", "hidden": True})
+    assert hidden.status_code == 200 and config.canonical_tag("py") == "py"
+
+    removed = c.post("/api/libraries/additions/remove", json={"kind": "alias", "value": "pgx"})
+    assert removed.status_code == 200 and config.canonical_tag("pgx") == "pgx"
+
+
+def test_vocabulary_edits_are_app_wide_not_per_profile(client):
+    c, _ = client
+    c.post("/api/libraries/additions", json={"kind": "alias", "value": "pgx", "target": "postgresql"})
+    assert libraries_mod.read_workspace_state().model_dump()["overrides"]["tag_aliases"] == {}
+    assert libraries_mod.read_user_vocabulary().tag_aliases == {"pgx": "postgresql"}
+
+
+def test_bad_additions_are_400_and_builtins_cannot_be_removed(client):
+    c, _ = client
+    assert c.post("/api/libraries/additions", json={"kind": "alias", "value": "py", "target": "pytorch"}).status_code == 400
+    assert c.post("/api/libraries/additions/remove", json={"kind": "alias", "value": "py"}).status_code == 400
+    assert c.post("/api/libraries/hidden", json={"kind": "alias", "value": "not-builtin"}).status_code == 400
+
+
+def test_vocabulary_edits_reject_when_queue_busy(client):
+    c, q = client
+    _queue_busy(q)
     for res in (
-        c.post("/api/libraries/packs", json={"label": "A"}),
-        c.put("/api/libraries/packs/core-tech", json={"label": "core-tech"}),
-        c.delete("/api/libraries/packs/core-tech"),
-        c.put("/api/libraries/selection", json={"enabled_packs": ["core-tech"]}),
+        c.post("/api/libraries/additions", json={"kind": "term", "value": "quuxware"}),
+        c.post("/api/libraries/additions/remove", json={"kind": "term", "value": "quuxware"}),
+        c.post("/api/libraries/hidden", json={"kind": "alias", "value": "py"}),
     ):
         assert res.status_code == 409
-        assert "progress" in res.json()["detail"].lower() or "job" in res.json()["detail"].lower()
 
 
 def test_generate_proposals_finds_an_unknown_opening_verb(client, tmp_path, monkeypatch):
@@ -238,6 +116,7 @@ def test_generate_proposals_finds_an_unknown_opening_verb(client, tmp_path, monk
         "rationale": "diagnostic work",
         "source": "manual",
         "created_at": body["proposals"][0]["created_at"],
+        "target_exists": True,
     }
 
 
@@ -303,83 +182,43 @@ def test_generate_proposals_non_runtimeerror_failure_is_not_fatal(client, tmp_pa
     assert body["warning"] and "credit balance" in body["warning"]
 
 
-def test_approve_requires_acknowledgement_when_it_rewrites_an_existing_tag(
-    client, tmp_path, monkeypatch
-):
+def test_approve_adds_to_an_existing_term_without_touching_the_resume(client, tmp_path, monkeypatch):
     c, _ = client
-    _write_test_resume(monkeypatch, tmp_path, bullet_text="Used Postgres.", bullet_tags=["pg"])
-    created = c.post("/api/libraries/packs", json={"label": "A"})
-    pack_id = created.json()["packs"][-1]["id"]
+    _write_test_resume(monkeypatch, tmp_path, bullet_text="Used Postgres.", bullet_tags=["pgx"])
+    before = config.MASTER_RESUME_PATH.read_bytes()
+    _propose(_alias_proposal("pgx", "postgresql"))
+    assert c.get("/api/libraries").json()["proposals"][0]["target_exists"] is True
 
-    from resume_tailor.content import libraries as libraries_mod
-    from resume_tailor.content import library_models
+    res = c.post("/api/libraries/proposals/approve", json={"proposal_ids": ["p-1"]})
 
-    state = libraries_mod.read_workspace_state()
-    state.proposals = [
-        library_models.LibraryProposal(
-            id="p-1", kind="tag_alias", alias="pg", canonical="postgresql", source="manual",
-            created_at="2026-01-01T00:00:00+00:00",
-        )
-    ]
-    libraries_mod.write_workspace_state(state)
-
-    refused = c.post(
-        "/api/libraries/proposals/approve",
-        json={"proposal_ids": ["p-1"], "target_pack_id": pack_id},
-    )
-    assert refused.status_code == 409
-    assert refused.json()["detail"]["impact"][0]["alias"] == "pg"
-    # No backup should exist yet — refused before any write.
+    assert res.status_code == 200
+    assert res.json()["proposals"] == []
+    assert config.canonical_tag("pgx") == "postgresql"
+    assert config.MASTER_RESUME_PATH.read_bytes() == before
     assert list(tmp_path.glob("*.bak.json")) == []
 
-    ok = c.post(
-        "/api/libraries/proposals/approve",
-        json={"proposal_ids": ["p-1"], "target_pack_id": pack_id, "acknowledge_rewrites": True},
-    )
-    assert ok.status_code == 200
-    assert ok.json()["proposals"] == []
-    pack_after = c.get(f"/api/libraries/packs/{pack_id}").json()
-    assert pack_after["tag_aliases"]["pg"] == "postgresql"
-    assert list(tmp_path.glob("*.bak.json")) != []
 
-
-def test_approve_into_a_shipped_target_pack_writes_a_shadow(client, tmp_path, monkeypatch):
-    from resume_tailor.content import libraries as libraries_mod
-    from resume_tailor.content import library_models
-
+def test_approve_creates_a_new_term_or_follows_a_redirected_target(client, tmp_path, monkeypatch):
     c, _ = client
     _write_test_resume(monkeypatch, tmp_path, bullet_text="Did a thing.", bullet_tags=["python"])
-
-    state = libraries_mod.read_workspace_state()
-    state.proposals = [
-        library_models.LibraryProposal(
-            id="p-1", kind="tag_alias", alias="pg", canonical="postgresql", source="manual",
-            created_at="2026-01-01T00:00:00+00:00",
-        )
-    ]
-    libraries_mod.write_workspace_state(state)
+    _propose(_alias_proposal("qxw", "quuxware"), _alias_proposal("pgx", "postgres sql", pid="p-2"))
+    proposals = {p["id"]: p for p in c.get("/api/libraries").json()["proposals"]}
+    assert proposals["p-1"]["target_exists"] is False
 
     res = c.post(
         "/api/libraries/proposals/approve",
-        json={"proposal_ids": ["p-1"], "target_pack_id": "core-tech"},
+        json={"proposal_ids": ["p-1", "p-2"], "targets": {"p-2": "postgresql"}},
     )
+
     assert res.status_code == 200
-    core = next(p for p in res.json()["packs"] if p["id"] == "core-tech")
-    assert core["customized"] is True
-    pack_after = c.get("/api/libraries/packs/core-tech").json()
-    assert pack_after["tag_aliases"]["pg"] == "postgresql"
+    assert config.canonical_tag("qxw") == "quuxware"
+    assert config.canonical_tag("pgx") == "postgresql"
 
 
 def test_approve_404s_for_unknown_proposal_ids(client, tmp_path, monkeypatch):
     c, _ = client
     _write_test_resume(monkeypatch, tmp_path, bullet_text="Did a thing.", bullet_tags=["python"])
-    created = c.post("/api/libraries/packs", json={"label": "A"})
-    pack_id = created.json()["packs"][-1]["id"]
-
-    res = c.post(
-        "/api/libraries/proposals/approve",
-        json={"proposal_ids": ["does-not-exist"], "target_pack_id": pack_id},
-    )
+    res = c.post("/api/libraries/proposals/approve", json={"proposal_ids": ["does-not-exist"]})
     assert res.status_code == 404
 
 
@@ -392,10 +231,7 @@ def test_approve_rejects_when_queue_busy(client, tmp_path, monkeypatch):
     )
     q._jobs[job.job_id] = job
 
-    res = c.post(
-        "/api/libraries/proposals/approve",
-        json={"proposal_ids": ["p-1"], "target_pack_id": "some-pack"},
-    )
+    res = c.post("/api/libraries/proposals/approve", json={"proposal_ids": ["p-1"]})
     assert res.status_code == 409
 
 

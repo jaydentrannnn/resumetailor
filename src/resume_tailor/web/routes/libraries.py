@@ -1,238 +1,123 @@
-"""Vocabulary pack and proposal routes."""
+"""Vocabulary dictionary and proposal routes (the Vocabulary page)."""
 
 from __future__ import annotations
 
 import logging
+from collections.abc import Callable
 
 from fastapi import APIRouter, HTTPException
 
 from resume_tailor import config
-from resume_tailor.content import data, libraries, library_impact, library_models
+from resume_tailor.content import data, libraries, library_models
 from resume_tailor.pipeline import jd, propose
 from resume_tailor.web import template_ops
 from resume_tailor.web.jobs import get_queue
-from resume_tailor.web.routes.resume import _backup_master_resume
 from resume_tailor.web.routes.workspaces import _busy_conflict
 from resume_tailor.web.schemas import (
-    LibraryAliasImpactOut,
     LibraryEffectiveOut,
-    LibraryImpactRequest,
-    LibraryImpactResponse,
-    LibraryOverridesOut,
-    LibraryPackOut,
-    LibraryPackSummaryOut,
-    LibraryPackWriteRequest,
     LibraryProposalOut,
-    LibrarySelectionRequest,
     LibraryStateResponse,
     ProposalApproveRequest,
     ProposalGenerateRequest,
     ProposalRejectRequest,
+    VocabularyAddRequest,
+    VocabularyEntryOut,
+    VocabularyHideRequest,
+    VocabularyItemOut,
+    VocabularyRemoveRequest,
 )
 
 router = APIRouter()
 _log = logging.getLogger(__name__)
 
 
-def _library_pack_summary_out(pack: library_models.PackMeta) -> LibraryPackSummaryOut:
-    return LibraryPackSummaryOut(
-        id=pack.id,
-        label=pack.label,
-        description=pack.description,
-        builtin=pack.builtin,
-        customized=pack.customized,
-        tag_alias_count=pack.tag_alias_count,
-        verb_count=pack.verb_count,
-        created_at=pack.created_at,
-        updated_at=pack.updated_at,
-    )
-
-
-def _library_proposal_out(p: library_models.LibraryProposal) -> LibraryProposalOut:
+def _library_proposal_out(
+    p: library_models.LibraryProposal, effective: library_models.EffectiveLibrary
+) -> LibraryProposalOut:
+    target = (p.canonical or "").strip().lower()
     return LibraryProposalOut(
-        id=p.id,
-        kind=p.kind,
-        alias=p.alias,
-        canonical=p.canonical,
-        verb=p.verb,
-        family=p.family,
-        rationale=p.rationale,
-        source=p.source,
-        created_at=p.created_at,
+        id=p.id, kind=p.kind, alias=p.alias, canonical=p.canonical, verb=p.verb,
+        family=p.family, rationale=p.rationale, source=p.source, created_at=p.created_at,
+        target_exists=p.kind != "tag_alias" or target in effective.terms,
     )
 
 
 def _library_state_response(*, warning: str | None = None) -> LibraryStateResponse:
-    """Current pack list, active profile's selection/overrides/proposals, and the
-    composed table's summary — the one payload every library route returns, so the
-    Settings tab can re-render from a mutation's response instead of issuing a second
-    fetch."""
     state = libraries.read_workspace_state()
     effective = libraries.resolve_effective()
     return LibraryStateResponse(
-        packs=[_library_pack_summary_out(p) for p in libraries.list_packs()],
-        enabled_packs=state.enabled_packs,
-        overrides=LibraryOverridesOut(**state.overrides.model_dump()),
+        entries=[
+            VocabularyEntryOut(
+                kind=e.kind, name=e.name, builtin=e.builtin, hidden=e.hidden,
+                items=[VocabularyItemOut(value=i.value, builtin=i.builtin, hidden=i.hidden)
+                       for i in e.items],
+            )
+            for e in libraries.dictionary_view()
+        ],
         effective=LibraryEffectiveOut(
+            term_count=len(effective.terms),
             tag_alias_count=len(effective.tag_aliases),
             verb_count=len(effective.verb_index),
             fingerprint=libraries.effective_fingerprint(effective),
         ),
         diagnostics=effective.diagnostics,
-        proposals=[_library_proposal_out(p) for p in state.proposals],
+        proposals=[_library_proposal_out(p, effective) for p in state.proposals],
         warning=warning,
-    )
-
-
-def _library_pack_out(pack: library_models.Pack) -> LibraryPackOut:
-    return LibraryPackOut(
-        id=pack.id,
-        label=pack.label,
-        description=pack.description,
-        builtin=libraries.is_builtin_pack(pack.id),
-        customized=libraries.is_customized_pack(pack.id),
-        tag_aliases=pack.tag_aliases,
-        verb_families=pack.verb_families,
-        created_at=pack.created_at,
-        updated_at=pack.updated_at,
     )
 
 
 @router.get("/api/libraries", response_model=LibraryStateResponse)
 def get_libraries() -> LibraryStateResponse:
-    """Every pack (built-in and user-authored), the active profile's selection and
-    overrides, and the composed table's summary."""
+    """The whole dictionary (built-in + yours, hidden flagged) and pending suggestions."""
     return _library_state_response()
 
 
-@router.get("/api/libraries/packs/{pack_id}", response_model=LibraryPackOut)
-def get_library_pack(pack_id: str) -> LibraryPackOut:
-    """One pack's full contents, for the pack editor."""
-    try:
-        pack = libraries.read_pack(pack_id)
-    except library_models.LibraryError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return _library_pack_out(pack)
-
-
 def _library_write_conflict() -> HTTPException:
-    return _busy_conflict("editing vocabulary packs")
+    return _busy_conflict("editing the vocabulary")
 
 
-@router.post("/api/libraries/packs", response_model=LibraryStateResponse)
-def create_library_pack(body: LibraryPackWriteRequest) -> LibraryStateResponse:
-    """Create a new user-authored pack. The id is derived from the label."""
-    if get_queue().busy():
-        raise _library_write_conflict()
-    with template_ops.LOCK:
-        existing_ids = {p.id for p in libraries.list_packs()}
-        pack_id = libraries.new_pack_id(body.label, existing=existing_ids)
-        pack = library_models.Pack(
-            id=pack_id,
-            label=body.label,
-            description=body.description,
-            tag_aliases=body.tag_aliases,
-            verb_families=body.verb_families,
-        )
-        try:
-            libraries.write_pack(pack, force=body.force)
-        except library_models.LibraryValidationError as exc:
-            raise HTTPException(
-                status_code=400, detail={"message": str(exc), "errors": exc.errors}
-            ) from exc
-        except library_models.LibraryError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        libraries.reload()
-        return _library_state_response()
+def _edit_vocabulary(
+    edit: Callable[[library_models.UserVocabulary], library_models.UserVocabulary],
+) -> LibraryStateResponse:
+    """Apply one edit to the app-wide additions under the usual write guards.
 
-
-@router.put("/api/libraries/packs/{pack_id}", response_model=LibraryStateResponse)
-def update_library_pack(pack_id: str, body: LibraryPackWriteRequest) -> LibraryStateResponse:
-    """Update a pack's contents. Shipped ids write a shadow file over the bundled seed."""
-    if get_queue().busy():
-        raise _library_write_conflict()
-    with template_ops.LOCK:
-        pack = library_models.Pack(
-            id=pack_id,
-            label=body.label,
-            description=body.description,
-            tag_aliases=body.tag_aliases,
-            verb_families=body.verb_families,
-        )
-        try:
-            libraries.write_pack(pack, force=body.force)
-        except library_models.LibraryValidationError as exc:
-            raise HTTPException(
-                status_code=400, detail={"message": str(exc), "errors": exc.errors}
-            ) from exc
-        except library_models.LibraryError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        libraries.reload()
-        return _library_state_response()
-
-
-@router.delete("/api/libraries/packs/{pack_id}", response_model=LibraryStateResponse)
-def delete_library_pack(pack_id: str) -> LibraryStateResponse:
-    """Delete a user-authored pack. Refuses a shipped id.
-
-    A profile that still has `pack_id` in its selection is left as-is —
-    `libraries.resolve_effective` skips a missing pack with a diagnostic rather than
-    erroring, so this cannot brick a profile that had it enabled.
+    Vocabulary edits never touch the master resume (tags are canonicalised at match
+    time), so there is no impact preview or backup — only the busy/lock guard, because
+    a running job reads `config.TAG_ALIASES`.
     """
     if get_queue().busy():
         raise _library_write_conflict()
     with template_ops.LOCK:
         try:
-            libraries.delete_pack(pack_id)
+            updated = edit(libraries.read_user_vocabulary())
         except library_models.LibraryError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        libraries.write_user_vocabulary(updated)
         libraries.reload()
         return _library_state_response()
 
 
-@router.post("/api/libraries/packs/{pack_id}/reset", response_model=LibraryStateResponse)
-def reset_library_pack(pack_id: str) -> LibraryStateResponse:
-    """Restore a shipped pack to its bundled seed by deleting its shadow file."""
-    if get_queue().busy():
-        raise _library_write_conflict()
-    with template_ops.LOCK:
-        try:
-            libraries.reset_pack(pack_id)
-        except library_models.LibraryError as exc:
-            raise HTTPException(status_code=400, detail=str(exc)) from exc
-        libraries.reload()
-        return _library_state_response()
+@router.post("/api/libraries/additions", response_model=LibraryStateResponse)
+def add_vocabulary(body: VocabularyAddRequest) -> LibraryStateResponse:
+    """Add a term, another spelling of a term, or an opening verb to a family."""
+    if body.kind == "term":
+        return _edit_vocabulary(lambda user: libraries.add_term(user, body.value))
+    if body.kind == "alias":
+        return _edit_vocabulary(lambda user: libraries.add_alias(user, body.value, body.target))
+    return _edit_vocabulary(lambda user: libraries.add_verb(user, body.value, body.target))
 
 
-@router.put("/api/libraries/selection", response_model=LibraryStateResponse)
-def put_library_selection(body: LibrarySelectionRequest) -> LibraryStateResponse:
-    """Set the active profile's enabled packs and overrides."""
-    if get_queue().busy():
-        raise _library_write_conflict()
-    with template_ops.LOCK:
-        state = libraries.read_workspace_state()
-        state.enabled_packs = body.enabled_packs
-        state.overrides = library_models.LibraryOverrides(**body.overrides.model_dump())
-        libraries.write_workspace_state(state)
-        libraries.reload()
-        return _library_state_response()
+@router.post("/api/libraries/additions/remove", response_model=LibraryStateResponse)
+def remove_vocabulary(body: VocabularyRemoveRequest) -> LibraryStateResponse:
+    """Delete one of the user's own entries (built-ins can only be hidden)."""
+    return _edit_vocabulary(lambda user: libraries.remove_addition(user, body.kind, body.value))
 
 
-@router.post("/api/libraries/impact", response_model=LibraryImpactResponse)
-def preview_library_impact(body: LibraryImpactRequest) -> LibraryImpactResponse:
-    """What approving each of `tag_aliases` would rewrite in the current master
-    resume, if anything — the confirmation step before a destructive alias write."""
-    impacts = library_impact.alias_impact(body.tag_aliases)
-    return LibraryImpactResponse(
-        impacts=[
-            LibraryAliasImpactOut(
-                alias=i.alias,
-                canonical=i.canonical,
-                affected_tags=i.affected_tags,
-                affected_bullets=i.affected_bullets,
-            )
-            for i in impacts
-        ]
+@router.post("/api/libraries/hidden", response_model=LibraryStateResponse)
+def hide_vocabulary(body: VocabularyHideRequest) -> LibraryStateResponse:
+    """Hide (or show again) one built-in term, spelling or verb."""
+    return _edit_vocabulary(
+        lambda user: libraries.set_hidden(user, body.kind, body.value, body.hidden)
     )
 
 
@@ -249,7 +134,7 @@ def generate_library_proposals(body: ProposalGenerateRequest) -> LibraryStateRes
 
     Not a tailoring job, so `config._ACTIVE` is never populated for it (only the job
     runner does that) — both LLM calls below are pinned to `config.ONE_OFF_PROFILE`
-    (same as the import route's tag-suggestion pass), so this never silently falls
+    so this never silently falls
     through to `backend_for`'s claude default on a fresh server with no Anthropic key,
     regardless of the user's saved Model setting.
     """
@@ -320,13 +205,11 @@ def generate_library_proposals(body: ProposalGenerateRequest) -> LibraryStateRes
 
 @router.post("/api/libraries/proposals/approve", response_model=LibraryStateResponse)
 def approve_library_proposals(body: ProposalApproveRequest) -> LibraryStateResponse:
-    """Fold selected pending proposals into an existing pack (user-authored or shipped).
+    """Add selected pending proposals to the app-wide vocabulary.
 
-    `Bullet._normalise_tags` re-canonicalises every tag on every master-resume save, so
-    approving an alias whose key is already used as a literal bullet tag would silently
-    rewrite it the next time the resume is saved. Refuses with 409 and the exact impact
-    list unless `acknowledge_rewrites` is set, and takes a timestamped backup of the
-    current master resume before writing whenever it is.
+    An alias goes to its proposed term (or `body.targets[id]`), creating that term when
+    the dictionary lacks it. Nothing in the master resume changes: tags are stored as
+    typed and canonicalised at match time, so there is no rewrite to confirm.
     """
     if get_queue().busy():
         raise _library_write_conflict()
@@ -337,59 +220,18 @@ def approve_library_proposals(body: ProposalApproveRequest) -> LibraryStateRespo
         if not selected:
             raise HTTPException(status_code=404, detail="No matching pending proposals.")
 
-        alias_map = {p.alias: p.canonical for p in selected if p.kind == "tag_alias" and p.alias}
-        impacts = library_impact.alias_impact(alias_map) if alias_map else []
-        rewriting = [i for i in impacts if i.affected_tags]
-        if rewriting and not body.acknowledge_rewrites:
-            raise HTTPException(
-                status_code=409,
-                detail={
-                    "message": (
-                        f"Approving this rewrites {len(rewriting)} tag(s) already used "
-                        f"in your master resume the next time it is saved."
-                    ),
-                    "impact": [
-                        {
-                            "alias": i.alias,
-                            "canonical": i.canonical,
-                            "affected_tags": i.affected_tags,
-                            "affected_bullets": i.affected_bullets,
-                        }
-                        for i in rewriting
-                    ],
-                },
-            )
-
+        user = libraries.read_user_vocabulary()
         try:
-            pack = libraries.read_pack(body.target_pack_id)
-        except library_models.LibraryError as exc:
-            raise HTTPException(status_code=404, detail=str(exc)) from exc
-
-        if rewriting:
-            _backup_master_resume(config.MASTER_RESUME_PATH)
-
-        tag_aliases = dict(pack.tag_aliases)
-        verb_families = {family: list(verbs) for family, verbs in pack.verb_families.items()}
-        for p in selected:
-            if p.kind == "tag_alias" and p.alias and p.canonical:
-                tag_aliases[p.alias] = p.canonical
-            elif p.kind == "verb_family" and p.verb and p.family:
-                verbs = verb_families.setdefault(p.family, [])
-                if p.verb not in verbs:
-                    verbs.append(p.verb)
-
-        updated = pack.model_copy(
-            update={"tag_aliases": tag_aliases, "verb_families": verb_families}
-        )
-        try:
-            libraries.write_pack(updated)
-        except library_models.LibraryValidationError as exc:
-            raise HTTPException(
-                status_code=400, detail={"message": str(exc), "errors": exc.errors}
-            ) from exc
+            for p in selected:
+                if p.kind == "tag_alias" and p.alias and p.canonical:
+                    target = body.targets.get(p.id, "").strip() or p.canonical
+                    user = libraries.add_alias(user, p.alias, target)
+                elif p.kind == "verb_family" and p.verb and p.family:
+                    user = libraries.add_verb(user, p.verb, p.family)
         except library_models.LibraryError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
 
+        libraries.write_user_vocabulary(user)
         state.proposals = [p for p in state.proposals if p.id not in wanted_ids]
         libraries.write_workspace_state(state)
         libraries.reload()

@@ -1,537 +1,225 @@
-"""Tests for `libraries.py`: pack storage, composition, validation, and the
-tag-alias/verb-family fingerprint.
+"""Tests for `libraries.py`: the dictionary + app-wide additions, hiding, the one-time
+pack migration, and the fingerprint.
 
-`tests/conftest.py`'s autouse `_isolated_libraries` fixture redirects
-`libraries.store_root()` and `config.DATA_DIR` into a fresh `tmp_path` for every test
-and calls `libraries.reset()` before and after, so every test here starts from the
-built-in `core-tech` pack alone with no on-disk state — the same default a fresh
-install has.
+`tests/conftest.py`'s autouse `_isolated_libraries` redirects `libraries.store_root()`
+into a fresh `tmp_path` and calls `libraries.reset()` around every test, so each starts
+from the built-in dictionary alone — the same default a fresh install has.
 """
 
 from __future__ import annotations
 
+import json
+
 import pytest
 
 from resume_tailor import config, library_seeds
-from resume_tailor.content import data, libraries, library_impact, library_models
+from resume_tailor.content import libraries, library_models
+
+UV = library_models.UserVocabulary
 
 
-def _pack(pack_id: str, **kwargs) -> library_models.Pack:
-    fields = {
-        "id": pack_id,
-        "label": kwargs.pop("label", pack_id.title()),
-        "tag_aliases": {},
-        "verb_families": {},
-    }
-    fields.update(kwargs)
-    return library_models.Pack(**fields)
-
-
-def _resume_with_tags(*tags: str) -> data.MasterResume:
-    return data.MasterResume.model_validate(
-        {
-            "contact": {"name": "Test User", "email": "test@example.com"},
-            "experience": [
-                {
-                    "company": "Acme",
-                    "title": "Engineer",
-                    "start": "2020",
-                    "end": "2021",
-                    "bullets": [{"id": "b1", "text": "Did a thing.", "tags": list(tags)}],
-                }
-            ],
-        }
-    )
+def _save(user: library_models.UserVocabulary) -> None:
+    libraries.write_user_vocabulary(user)
+    libraries.reload()
 
 
 # --------------------------------------------------------------------------------------
 # Defaults and read tolerance
 # --------------------------------------------------------------------------------------
-
-
-def test_defaults_equal_the_builtin_tables():
+def test_defaults_equal_the_builtin_dictionary():
     eff = libraries.resolve_effective()
-    core = library_seeds.BUILTIN_PACKS["core-tech"]
-    assert eff.tag_aliases == core["tag_aliases"]
-    assert set(eff.verb_families) == set(core["verb_families"])
-    for family, verbs in core["verb_families"].items():
-        assert set(eff.verb_families[family]) == set(verbs)
+    assert eff.tag_aliases == library_seeds.builtin_aliases()
+    assert eff.terms == frozenset(library_seeds.load()["terms"])
     assert eff.diagnostics == []
 
 
-def test_corrupt_workspace_file_degrades_to_defaults():
+def test_corrupt_vocabulary_file_degrades_to_defaults():
+    libraries.vocabulary_path().parent.mkdir(parents=True)
+    libraries.vocabulary_path().write_text("{not json", encoding="utf-8")
+    assert libraries.read_user_vocabulary() == UV()
+
+
+def test_old_workspace_file_still_validates():
     path = libraries.workspace_file()
     path.parent.mkdir(parents=True, exist_ok=True)
-    path.write_text("{not json", encoding="utf-8")
-
-    state = libraries.read_workspace_state()
-
-    assert state.enabled_packs == ["core-tech"]
-    assert state.overrides.tag_aliases == {}
-
-
-def test_missing_workspace_file_returns_defaults():
-    assert not libraries.workspace_file().exists()
-    state = libraries.read_workspace_state()
-    assert state == library_models.WorkspaceLibraryState()
-
-
-def test_missing_pack_id_is_skipped_with_a_diagnostic():
-    state = library_models.WorkspaceLibraryState(enabled_packs=["core-tech", "ghost"])
-    libraries.write_workspace_state(state)
-
-    eff = libraries.resolve_effective()
-
-    assert eff.tag_aliases == library_seeds.BUILTIN_PACKS["core-tech"]["tag_aliases"]
-    assert any("ghost" in d for d in eff.diagnostics)
+    path.write_text(json.dumps({"enabled_packs": ["core-tech"], "overrides": {}}), "utf-8")
+    assert libraries.read_workspace_state().enabled_packs == ["core-tech"]
 
 
 # --------------------------------------------------------------------------------------
-# Composition order
+# Additions
 # --------------------------------------------------------------------------------------
+def test_add_alias_to_an_existing_term():
+    _save(libraries.add_alias(UV(), "Postgres", "postgresql"))
+    assert config.canonical_tag("postgres") == "postgresql"
 
 
-def test_pack_order_decides_alias_precedence():
-    libraries.write_pack(_pack("a", tag_aliases={"x": "alpha"}))
-    libraries.write_pack(_pack("b", tag_aliases={"x": "beta"}))
-
-    libraries.write_workspace_state(
-        library_models.WorkspaceLibraryState(enabled_packs=["a", "b"])
-    )
-    assert libraries.resolve_effective().tag_aliases["x"] == "beta"
-
-    libraries.write_workspace_state(
-        library_models.WorkspaceLibraryState(enabled_packs=["b", "a"])
-    )
-    assert libraries.resolve_effective().tag_aliases["x"] == "alpha"
+def test_add_alias_through_an_alias_lands_on_its_term():
+    user = libraries.add_alias(UV(), "python3", "py")
+    assert user.tag_aliases == {"python3": "python"}
 
 
-def test_pack_order_decides_verb_precedence():
-    libraries.write_pack(_pack("a", verb_families={"care": ["administered"]}))
-    libraries.write_pack(_pack("b", verb_families={"operate": ["administered"]}))
-
-    libraries.write_workspace_state(
-        library_models.WorkspaceLibraryState(enabled_packs=["a", "b"])
-    )
-    assert libraries.resolve_effective().verb_index["administered"] == "operate"
-
-    libraries.write_workspace_state(
-        library_models.WorkspaceLibraryState(enabled_packs=["b", "a"])
-    )
-    assert libraries.resolve_effective().verb_index["administered"] == "care"
+def test_add_alias_creates_a_new_term():
+    _save(libraries.add_alias(UV(), "qxw", "quuxware"))
+    assert "quuxware" in libraries.resolve_effective().terms
+    assert config.canonical_tag("QXW") == "quuxware"
 
 
-def test_cross_pack_verb_collision_is_a_diagnostic_not_an_error():
-    libraries.write_pack(_pack("a", verb_families={"care": ["administered"]}))
-    libraries.write_workspace_state(
-        library_models.WorkspaceLibraryState(enabled_packs=["core-tech", "a"])
-    )
-
-    eff = libraries.resolve_effective()
-
-    assert eff.verb_index["administered"] == "care"
-    assert any("administered" in d for d in eff.diagnostics)
+def test_add_alias_refuses_a_term_and_a_conflicting_builtin():
+    with pytest.raises(library_models.LibraryError):
+        libraries.add_alias(UV(), "python", "java")
+    with pytest.raises(library_models.LibraryError, match="already means"):
+        libraries.add_alias(UV(), "py", "pytorch")
 
 
-def test_removals_win_over_additions():
-    state = library_models.WorkspaceLibraryState(
-        enabled_packs=["core-tech"],
-        overrides=library_models.LibraryOverrides(
-            tag_aliases={"foo": "bar"},
-            tag_aliases_removed=["foo", "py"],
-            verb_families={"triaged": "analyse"},
-            verb_families_removed=["triaged", "designed"],
-        ),
-    )
-    libraries.write_workspace_state(state)
+def test_add_alias_may_retarget_the_users_own_alias():
+    user = libraries.add_alias(UV(), "sql", "mysql")
+    user = libraries.add_alias(user, "sql", "postgresql")
+    assert user.tag_aliases == {"sql": "postgresql"}
 
-    eff = libraries.resolve_effective()
 
-    assert "foo" not in eff.tag_aliases
+def test_add_term_and_refusals():
+    user = libraries.add_term(UV(), "Quuxware")
+    assert user.terms == ["quuxware"]
+    with pytest.raises(library_models.LibraryError):
+        libraries.add_term(user, "quuxware")
+    with pytest.raises(library_models.LibraryError, match="another name"):
+        libraries.add_term(UV(), "py")
+
+
+def test_add_verb_requires_a_known_family_and_letters():
+    _save(libraries.add_verb(UV(), "zorped", "build"))
+    assert config.verb_family("zorped") == "build"
+    with pytest.raises(library_models.LibraryError):
+        libraries.add_verb(UV(), "zorped", "nope")
+    with pytest.raises(library_models.LibraryError):
+        libraries.add_verb(UV(), "re-built", "build")
+
+
+def test_remove_addition_only_removes_the_users_own():
+    user = libraries.add_term(libraries.add_alias(UV(), "qxw", "quuxware"), "flarnhub")
+    assert libraries.remove_addition(user, "alias", "qxw").tag_aliases == {}
+    assert libraries.remove_addition(user, "term", "flarnhub").terms == []
+    with pytest.raises(library_models.LibraryError, match="not one of your additions"):
+        libraries.remove_addition(user, "alias", "py")
+
+
+def test_removing_a_term_drops_its_aliases():
+    user = libraries.add_alias(libraries.add_term(UV(), "quuxware"), "qxw", "quuxware")
+    assert libraries.remove_addition(user, "term", "quuxware").tag_aliases == {}
+
+
+# --------------------------------------------------------------------------------------
+# Hiding built-ins
+# --------------------------------------------------------------------------------------
+def test_hiding_a_builtin_alias_and_showing_it_again():
+    _save(libraries.set_hidden(UV(), "alias", "py", True))
+    assert config.canonical_tag("py") == "py"
+    _save(libraries.set_hidden(libraries.read_user_vocabulary(), "alias", "py", False))
+    assert config.canonical_tag("py") == "python"
+
+
+def test_hiding_a_term_hides_its_aliases_and_detection():
+    eff = libraries.resolve_effective(libraries.set_hidden(UV(), "term", "python", True))
+    assert "python" not in eff.terms
     assert "py" not in eff.tag_aliases
-    assert "triaged" not in eff.verb_index
-    assert "designed" not in eff.verb_index
 
 
-def test_overrides_win_over_packs():
-    state = library_models.WorkspaceLibraryState(
-        enabled_packs=["core-tech"],
-        overrides=library_models.LibraryOverrides(tag_aliases={"py": "override-target"}),
-    )
-    libraries.write_workspace_state(state)
-
-    assert libraries.resolve_effective().tag_aliases["py"] == "override-target"
+def test_hiding_a_builtin_verb():
+    _save(libraries.set_hidden(UV(), "verb", "designed", True))
+    assert config.verb_family("designed") is None
 
 
-def test_resolver_drops_a_chain():
-    """Two packs, each individually valid against the baseline at the moment it was
-    written, can still compose into a chain once *both* are enabled together —
-    `validate_pack` only checks a pack against what is enabled *at write time*, so this
-    is a case its checks cannot catch and `resolve_effective`'s own repair must.
-
-    Every alias value must remain a fixed point of canonical_tag, the same invariant
-    `test_config.py::test_no_transitive_alias_resolution` pins for the built-in table.
-    """
-    libraries.write_pack(_pack("a", tag_aliases={"foo": "bar"}))
-    libraries.write_pack(_pack("b", tag_aliases={"bar": "baz"}))
-    libraries.write_workspace_state(
-        library_models.WorkspaceLibraryState(enabled_packs=["core-tech", "a", "b"])
-    )
-
-    eff = libraries.resolve_effective()
-
-    # foo -> bar -> baz would be a two-hop chain; foo -> bar must be dropped so every
-    # surviving value (here, "baz") is a fixed point.
-    assert "foo" not in eff.tag_aliases
-    assert eff.tag_aliases["bar"] == "baz"
-    for value in eff.tag_aliases.values():
-        assert value not in eff.tag_aliases
-    assert any("chain" in d.lower() for d in eff.diagnostics)
+def test_only_builtins_can_be_hidden():
+    with pytest.raises(library_models.LibraryError, match="not a built-in"):
+        libraries.set_hidden(UV(), "alias", "qxw", True)
 
 
 # --------------------------------------------------------------------------------------
-# Pack CRUD
+# Composition safety
 # --------------------------------------------------------------------------------------
-
-
-def test_write_pack_shadows_a_shipped_id():
-    seed = library_seeds.BUILTIN_PACKS["core-tech"]
-    customized = library_models.Pack(
-        id="core-tech",
-        label=seed["label"],
-        description=seed["description"],
-        tag_aliases={**seed["tag_aliases"], "custom-alias": "custom-target"},
-        verb_families={f: list(v) for f, v in seed["verb_families"].items()},
-    )
-    written = libraries.write_pack(customized)
-    assert written.tag_aliases["custom-alias"] == "custom-target"
-    assert libraries.is_customized_pack("core-tech")
-    reread = libraries.read_pack("core-tech")
-    assert reread.tag_aliases["custom-alias"] == "custom-target"
-
-
-def test_delete_pack_refuses_a_shipped_id():
-    with pytest.raises(library_models.LibraryError):
-        libraries.delete_pack("core-tech")
-
-
-def test_reset_pack_restores_the_shipped_seed():
-    seed = library_seeds.BUILTIN_PACKS["core-tech"]
-    customized = library_models.Pack(
-        id="core-tech",
-        label=seed["label"],
-        description=seed["description"],
-        tag_aliases={**seed["tag_aliases"], "custom-alias": "custom-target"},
-        verb_families={f: list(v) for f, v in seed["verb_families"].items()},
-    )
-    libraries.write_pack(customized)
-    assert libraries.is_customized_pack("core-tech")
-
-    libraries.reset_pack("core-tech")
-
-    assert not libraries.is_customized_pack("core-tech")
-    assert "custom-alias" not in libraries.read_pack("core-tech").tag_aliases
-
-
-def test_reset_pack_refuses_a_non_shipped_id():
-    libraries.write_pack(_pack("a"))
-    with pytest.raises(library_models.LibraryError):
-        libraries.reset_pack("a")
-
-
-def test_reset_pack_refuses_when_no_shadow_exists():
-    with pytest.raises(library_models.LibraryError):
-        libraries.reset_pack("core-tech")
-
-
-def test_list_packs_marks_a_customized_shipped_pack():
-    seed = library_seeds.BUILTIN_PACKS["core-tech"]
-    libraries.write_pack(
-        library_models.Pack(
-            id="core-tech",
-            label=seed["label"],
-            description=seed["description"],
-            tag_aliases=dict(seed["tag_aliases"]),
-            verb_families={f: list(v) for f, v in seed["verb_families"].items()},
-        )
-    )
-    core = next(p for p in libraries.list_packs() if p.id == "core-tech")
-    assert core.builtin is True
-    assert core.customized is True
-
-
-def test_delete_pack_refuses_an_unknown_id():
-    with pytest.raises(library_models.LibraryError):
-        libraries.delete_pack("nonexistent")
-
-
-def test_read_pack_raises_for_an_unknown_id():
-    with pytest.raises(library_models.LibraryError):
-        libraries.read_pack("nonexistent")
-
-
-def test_list_packs_includes_shipped_and_user_packs():
-    libraries.write_pack(_pack("nursing", label="Nursing"))
-
-    ids = {p.id for p in libraries.list_packs()}
-
-    assert "core-tech" in ids
-    assert "nursing" in ids
-    core = next(p for p in libraries.list_packs() if p.id == "core-tech")
-    assert core.builtin is True
-    assert core.customized is False
-    nursing = next(p for p in libraries.list_packs() if p.id == "nursing")
-    assert nursing.builtin is False
-    assert nursing.customized is False
-
-
-def test_write_pack_is_atomic():
-    libraries.write_pack(_pack("a", tag_aliases={"x": "y"}))
-
-    packs_dir = libraries.store_root() / "packs"
-    tmp_files = list(packs_dir.glob("*.tmp"))
-
-    assert tmp_files == []
-    assert (packs_dir / "a.json").exists()
-
-
-def test_write_pack_preserves_created_at_across_an_update():
-    written = libraries.write_pack(_pack("a", tag_aliases={"x": "y"}))
-    created_at = written.created_at
-    assert created_at
-
-    updated = libraries.write_pack(_pack("a", tag_aliases={"x": "y", "p": "q"}))
-
-    assert updated.created_at == created_at
-    assert updated.updated_at >= created_at
-
-
-def test_updating_an_enabled_pack_does_not_conflict_with_its_own_prior_version():
-    """Regression: `validate_pack`'s default baseline is `resolve_effective()`, which
-    (before `write_pack` started excluding the pack being written) still contained the
-    pack's own *old* contents while it was enabled — so re-saving an enabled pack with
-    a tweaked value for an existing key always looked like a conflict with itself and
-    needed `force=True` just to keep going."""
-    libraries.write_pack(_pack("a", tag_aliases={"x": "y"}))
-    libraries.write_workspace_state(library_models.WorkspaceLibraryState(enabled_packs=["a"]))
-    assert libraries.resolve_effective().tag_aliases["x"] == "y"
-
-    updated = libraries.write_pack(_pack("a", tag_aliases={"x": "z"}))
-
-    assert updated.tag_aliases["x"] == "z"
-
-
-def test_new_pack_id_avoids_existing_ids():
-    existing = {p.id for p in libraries.list_packs()}
-    assert "core-tech" in existing
-
-    new_id = libraries.new_pack_id("Core Tech", existing=existing)
-
-    assert new_id != "core-tech"
-
-
-def test_deleting_an_enabled_pack_degrades_to_a_diagnostic_not_a_crash():
-    libraries.write_pack(_pack("a", tag_aliases={"x": "y"}))
-    libraries.write_workspace_state(
-        library_models.WorkspaceLibraryState(enabled_packs=["core-tech", "a"])
-    )
-    assert libraries.resolve_effective().tag_aliases["x"] == "y"
-
-    libraries.delete_pack("a")
-
-    eff = libraries.resolve_effective()
-    assert "x" not in eff.tag_aliases
-    assert any("a" in d for d in eff.diagnostics)
-
-
-# --------------------------------------------------------------------------------------
-# Validation
-# --------------------------------------------------------------------------------------
-
-
-def test_validate_rejects_self_alias():
-    errors = libraries.validate_pack(_pack("a", tag_aliases={"python": "python"}))
-    assert any("maps to itself" in e for e in errors)
-
-
-def test_validate_rejects_a_chain_within_one_pack():
-    errors = libraries.validate_pack(
-        _pack("a", tag_aliases={"x": "y", "y": "z"})
-    )
-    assert any("chains" in e for e in errors)
-
-
-def test_validate_rejects_a_verb_in_two_families_within_one_pack():
-    errors = libraries.validate_pack(
-        _pack("a", verb_families={"build": ["led"], "lead": ["led"]})
-    )
-    assert any("led" in e and "both" in e for e in errors)
-
-
-def test_validate_treats_two_families_differing_only_by_case_as_distinct():
-    # The collision check (line ~763) compares family names raw and case-sensitively,
-    # so "Care" and "care" are two distinct families that still collide on a shared verb
-    # — the frontend's client-side mirror of this rule must match, not lowercase-compare.
-    errors = libraries.validate_pack(
-        _pack("a", verb_families={"Care": ["led"], "care": ["led"]})
-    )
-    assert any("Care" in e and "care" in e for e in errors)
-
-
-def test_validate_rejects_an_empty_alias_key():
-    errors = libraries.validate_pack(_pack("a", tag_aliases={"": "python"}))
-    assert any("non-empty" in e for e in errors)
-
-
-def test_validate_rejects_a_non_alpha_verb():
-    errors = libraries.validate_pack(_pack("a", verb_families={"build": ["re-factored"]}))
-    assert any("alphabetic" in e for e in errors)
-
-
-def test_validate_rejects_a_key_that_is_already_an_effective_value():
-    # core-tech already has "ml" -> "machine learning", so "machine learning" is an
-    # effective value; using it as a new key would create a two-hop cycle.
-    errors = libraries.validate_pack(_pack("a", tag_aliases={"machine learning": "ml"}))
-    assert any("already used as an alias target" in e for e in errors)
-
-
-def test_validate_rejects_a_value_that_is_already_an_effective_key():
-    errors = libraries.validate_pack(_pack("a", tag_aliases={"foo": "ml"}))
-    assert any("already an alias key" in e for e in errors)
-
-
-def test_validate_rejects_a_conflicting_target_without_force():
-    errors = libraries.validate_pack(_pack("a", tag_aliases={"py": "not-python"}))
-    assert any("force=true" in e for e in errors)
-
-
-def test_validate_allows_a_conflicting_target_with_force():
-    errors = libraries.validate_pack(
-        _pack("a", tag_aliases={"py": "not-python"}), force=True
-    )
-    assert errors == []
-
-
-def test_write_pack_raises_library_validation_error_with_every_message():
-    with pytest.raises(library_models.LibraryValidationError) as excinfo:
-        libraries.write_pack(_pack("a", tag_aliases={"python": "python"}))
-    assert excinfo.value.errors
-    assert any("maps to itself" in e for e in excinfo.value.errors)
-
-
-def test_pack_id_must_match_the_slug_pattern():
-    with pytest.raises(library_models.LibraryError):
-        libraries.write_pack(_pack("Not A Valid Id!"))
-
-
-# --------------------------------------------------------------------------------------
-# apply_to_config / reload / reset
-# --------------------------------------------------------------------------------------
-
-
-def test_apply_to_config_rebinds_both_tables_and_invalidates_the_verb_index():
-    libraries.write_pack(_pack("a", verb_families={"custom": ["zorped"]}))
-    libraries.write_workspace_state(
-        library_models.WorkspaceLibraryState(enabled_packs=["core-tech", "a"])
-    )
-
-    libraries.apply_to_config()
-
-    assert config.verb_family("zorped") == "custom"
-    assert config.verb_family("designed") == "build"
+def test_a_hand_edited_chain_is_dropped_with_a_diagnostic():
+    eff = libraries.resolve_effective(UV(tag_aliases={"pyy": "py"}))
+    assert "pyy" not in eff.tag_aliases
+    assert eff.diagnostics
 
 
 def test_writes_invalidate_the_memo_but_leave_config_unrebound():
-    """`write_pack`/`write_workspace_state` bust the memo (so `resolve_effective()`
-    never serves a stale result) but do not touch `config.TAG_ALIASES` — only
-    `reload()`/`apply_to_config()` do that. The two are deliberately separate: a write
-    should never silently change what the running pipeline uses until something calls
-    `reload()`, e.g. from a route, after the caller has decided the write should take
-    effect immediately."""
-    libraries.write_pack(_pack("a", tag_aliases={"x": "y"}))
-    libraries.write_workspace_state(
-        library_models.WorkspaceLibraryState(enabled_packs=["core-tech", "a"])
-    )
-
+    libraries.write_user_vocabulary(UV(tag_aliases={"x": "y"}))
     assert "x" in libraries.resolve_effective().tag_aliases
     assert "x" not in config.TAG_ALIASES
-
     libraries.reload()
-
-    assert "x" in config.TAG_ALIASES
     assert config.TAG_ALIASES.get("x") == "y"
 
 
-def test_reset_restores_the_builtin_table_only():
-    libraries.write_pack(_pack("a", tag_aliases={"x": "y"}))
-    libraries.write_workspace_state(
-        library_models.WorkspaceLibraryState(enabled_packs=["core-tech", "a"])
-    )
-    libraries.reload()
-    assert "x" in config.TAG_ALIASES
-
+def test_reset_restores_the_builtin_dictionary():
+    _save(UV(tag_aliases={"x": "y"}))
     libraries.reset()
-
-    assert library_seeds.BUILTIN_PACKS["core-tech"]["tag_aliases"] == config.TAG_ALIASES
-    assert "x" not in config.TAG_ALIASES
+    assert library_seeds.builtin_aliases() == config.TAG_ALIASES
 
 
-# --------------------------------------------------------------------------------------
-# Fingerprint
-# --------------------------------------------------------------------------------------
-
-
-def test_effective_fingerprint_is_stable_under_key_reordering():
-    reordered = dict(reversed(list(library_seeds.BUILTIN_PACKS["core-tech"]["tag_aliases"].items())))
-    a = libraries.effective_fingerprint(
-        library_models.EffectiveLibrary(
-            tag_aliases=library_seeds.BUILTIN_PACKS["core-tech"]["tag_aliases"],
-            verb_families={},
-            verb_index={},
-            diagnostics=[],
-        )
-    )
-    b = libraries.effective_fingerprint(
-        library_models.EffectiveLibrary(
-            tag_aliases=reordered, verb_families={}, verb_index={}, diagnostics=[]
-        )
-    )
-    assert a == b
-
-
-def test_effective_fingerprint_changes_when_aliases_change():
+def test_effective_fingerprint_changes_with_additions():
     before = libraries.effective_fingerprint()
-    libraries.write_pack(_pack("a", tag_aliases={"x": "y"}))
-    libraries.write_workspace_state(
-        library_models.WorkspaceLibraryState(enabled_packs=["core-tech", "a"])
+    libraries.write_user_vocabulary(UV(terms=["quuxware"]))
+    assert libraries.effective_fingerprint() != before
+
+
+# --------------------------------------------------------------------------------------
+# Browsing view
+# --------------------------------------------------------------------------------------
+def test_dictionary_view_flags_builtin_yours_and_hidden():
+    _save(libraries.set_hidden(libraries.add_alias(UV(), "python3", "python"), "alias", "py", True))
+    python = next(e for e in libraries.dictionary_view() if e.name == "python")
+    flags = {i.value: (i.builtin, i.hidden) for i in python.items}
+    assert flags["py"] == (True, True)
+    assert flags["python3"] == (False, False)
+    assert any(e.kind == "family" and e.name == "build" for e in libraries.dictionary_view())
+
+
+# --------------------------------------------------------------------------------------
+# One-time migration from packs
+# --------------------------------------------------------------------------------------
+def _legacy_workspace(workspace_id: str, payload: dict) -> None:
+    path = libraries.store_root().parent / config.WORKSPACES_DIRNAME / workspace_id
+    path.mkdir(parents=True, exist_ok=True)
+    (path / "libraries.json").write_text(json.dumps(payload), encoding="utf-8")
+
+
+def test_migration_folds_every_profiles_overrides_once():
+    _legacy_workspace("default", {
+        "enabled_packs": ["core-tech"],
+        "overrides": {"tag_aliases": {"sql": "mysql"}, "verb_families": {"zorped": "build"},
+                      "tag_aliases_removed": ["py"]},
+    })
+    _legacy_workspace("nina", {"enabled_packs": ["core-tech", "marketing"]})
+    libraries.reload()
+
+    user = libraries.read_user_vocabulary()
+    assert user.tag_aliases == {"sql": "mysql"}
+    assert user.verb_families == {"zorped": "build"}
+    assert user.hidden_aliases == ["py"]
+    assert sorted(user.migrated_workspaces) == ["default", "nina"]
+    assert config.canonical_tag("sql") == "mysql"
+    cleared = json.loads(
+        (libraries.store_root().parent / "workspaces" / "default" / "libraries.json").read_text()
     )
-    after = libraries.effective_fingerprint()
-    assert before != after
+    assert cleared["overrides"]["tag_aliases"] == {} and cleared["enabled_packs"] == []
+
+    libraries.reload()  # idempotent
+    assert libraries.read_user_vocabulary() == user
 
 
-# --------------------------------------------------------------------------------------
-# Alias impact
-# --------------------------------------------------------------------------------------
+def test_migration_folds_user_authored_packs_and_renames_the_store():
+    packs = libraries.store_root() / "packs"
+    packs.mkdir(parents=True)
+    (packs / "nursing.json").write_text(json.dumps({
+        "id": "nursing", "label": "Nursing",
+        "tag_aliases": {"bls": "basic life support", "py": "python"},
+        "verb_families": {"care": ["triaged"]},
+    }), encoding="utf-8")
+    libraries.reload()
 
-
-def test_alias_impact_distinguishes_additive_from_rewriting():
-    resume = _resume_with_tags("python", "docker")
-
-    impacts = library_impact.alias_impact({"rust": "rust-lang", "python": "py-lang"}, resume=resume)
-    by_alias = {i.alias: i for i in impacts}
-
-    assert by_alias["rust"].affected_tags == []
-    assert by_alias["rust"].affected_bullets == []
-
-    assert by_alias["python"].affected_tags == ["python"]
-    assert by_alias["python"].affected_bullets == [("Acme", "b1")]
-
-
-def test_alias_impact_missing_resume_returns_additive_only(tmp_path, monkeypatch):
-    monkeypatch.setattr(config, "MASTER_RESUME_PATH", tmp_path / "no-such-resume.json")
-
-    impacts = library_impact.alias_impact({"x": "y"})
-
-    assert impacts == [
-        library_models.AliasImpact(alias="x", canonical="y", affected_tags=[], affected_bullets=[])
-    ]
+    user = libraries.read_user_vocabulary()
+    assert user.tag_aliases == {"bls": "basic life support"}  # "py" was already built in
+    assert user.verb_families == {"triaged": "care"}
+    assert not packs.exists() and (libraries.store_root() / "packs.migrated").is_dir()

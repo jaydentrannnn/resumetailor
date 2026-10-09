@@ -9,7 +9,7 @@ from dataclasses import replace
 from fastapi import APIRouter
 
 from resume_tailor import config, workspace
-from resume_tailor.content import data, industries, libraries, style
+from resume_tailor.content import data, industries, style
 from resume_tailor.infra import model_queue
 from resume_tailor.pipeline import coverletter, expand, fit_types, rewrite_prompts
 from resume_tailor.pipeline.events import ProgressEvent
@@ -138,12 +138,9 @@ def _config_response(*, consume_migrated: bool = True) -> ConfigResponse:
         target_field=target_field,
         target_field_summary=snapshot.summary if snapshot else "Existing profile guidance.",
         target_fields=[
-            {key: item[key] for key in ("id", "label", "summary", "packs")}
+            {key: item[key] for key in ("id", "label", "summary")}
             for item in industries.catalog().values()
         ],
-        effective_vocabulary_packs=(
-            snapshot.packs if snapshot else libraries.read_workspace_state().enabled_packs
-        ),
         active_workspace_id=active_id,
         active_workspace_label=active_label,
         migrated_from_legacy=migrated,

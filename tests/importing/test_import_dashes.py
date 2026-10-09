@@ -20,7 +20,7 @@ def test_skills_section_terms_join_the_tag_vocabulary():
         "contact": {"name": "Nina", "email": "n@example.com", "phone": "1"},
         "sections": [{
             "kind": "skills", "id": "skills", "title": "Skills",
-            "entries": [{"label": "Tools", "items": ["Pivot Tables", "VLOOKUP", "a very long phrase that is not a tag"]}],
+            "entries": [{"label": "Tools", "items": ["Figma", "Notion", "a very long phrase that is not a tag"]}],
         }],
     })
-    assert import_common.with_skill_terms(resume, ["excel"]) == ["excel", "pivot tables", "vlookup"]
+    assert import_common.with_skill_terms(resume, ["excel"]) == ["excel", "figma", "notion"]

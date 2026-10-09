@@ -715,7 +715,6 @@ class ConfigResponse(BaseModel):
     target_field: str | None = None
     target_field_summary: str = ""
     target_fields: list[dict[str, Any]] = Field(default_factory=list)
-    effective_vocabulary_packs: list[str] = Field(default_factory=list)
     active_workspace_id: str | None = None
     active_workspace_label: str | None = None
     #: True on the first response after the legacy single-slot layout was migrated
@@ -1045,67 +1044,28 @@ class WorkspaceActivateResponse(BaseModel):
     template: TemplateInfoResponse
 
 
-class LibraryOverridesOut(BaseModel):
-    """A workspace's own additions and removals, layered on top of its enabled packs.
-    Wire shape of `library_models.LibraryOverrides`."""
+class VocabularyItemOut(BaseModel):
+    """One spelling of a term, or one verb of a family."""
 
-    tag_aliases: dict[str, str] = Field(default_factory=dict)
-    tag_aliases_removed: list[str] = Field(default_factory=list)
-    #: verb -> family. One family per overridden verb, not a pack's family -> [verbs].
-    verb_families: dict[str, str] = Field(default_factory=dict)
-    verb_families_removed: list[str] = Field(default_factory=list)
+    value: str
+    builtin: bool
+    hidden: bool = False
 
 
-class LibraryPackSummaryOut(BaseModel):
-    """One pack's summary row for the Settings tab's pack list — no alias/verb bodies,
-    since a workspace may have several packs enabled and the list view doesn't need
-    every one's full contents."""
+class VocabularyEntryOut(BaseModel):
+    """One dictionary term (with its other spellings) or one verb family."""
 
-    id: str
-    label: str
-    description: str = ""
-    builtin: bool = False
-    customized: bool = False
-    tag_alias_count: int = 0
-    verb_count: int = 0
-    created_at: str = ""
-    updated_at: str = ""
-
-
-class LibraryPackOut(BaseModel):
-    """One pack's full contents, for `GET /api/libraries/packs/{id}` (the edit form)."""
-
-    id: str
-    label: str
-    description: str = ""
-    builtin: bool = False
-    customized: bool = False
-    tag_aliases: dict[str, str] = Field(default_factory=dict)
-    verb_families: dict[str, list[str]] = Field(default_factory=dict)
-    created_at: str = ""
-    updated_at: str = ""
-
-
-class LibraryPackWriteRequest(BaseModel):
-    """Body for `POST /api/libraries/packs` and `PUT /api/libraries/packs/{id}`.
-
-    `label` is required for both; create derives a fresh id from it, update takes the
-    id from the path and uses this field only to change the label itself.
-    """
-
-    label: str
-    description: str = ""
-    tag_aliases: dict[str, str] = Field(default_factory=dict)
-    verb_families: dict[str, list[str]] = Field(default_factory=dict)
-    #: Allow overwriting a target another pack already claims — see
-    #: `libraries.validate_pack`. Without this, a genuine conflict is a 400.
-    force: bool = False
+    kind: Literal["term", "family"]
+    name: str
+    builtin: bool
+    hidden: bool = False
+    items: list[VocabularyItemOut] = Field(default_factory=list)
 
 
 class LibraryEffectiveOut(BaseModel):
-    """Summary of the composed table. Per-pack contents already sit in `packs`, so this
-    is counts and a fingerprint, not the tables themselves."""
+    """Counts and a fingerprint of the composed table."""
 
+    term_count: int = 0
     tag_alias_count: int = 0
     verb_count: int = 0
     fingerprint: str = ""
@@ -1115,7 +1075,8 @@ ProposalKindOut = Literal["tag_alias", "verb_family"]
 
 
 class LibraryProposalOut(BaseModel):
-    """One LLM-drafted addition awaiting approval."""
+    """One LLM-drafted addition awaiting approval. `target_exists` tells the UI whether
+    approving adds a spelling to an existing term or creates a new term."""
 
     id: str
     kind: ProposalKindOut
@@ -1126,74 +1087,64 @@ class LibraryProposalOut(BaseModel):
     rationale: str = ""
     source: Literal["run", "manual"] = "manual"
     created_at: str = ""
+    target_exists: bool = True
 
 
 class LibraryStateResponse(BaseModel):
-    """Response for `GET /api/libraries` and every mutating library route, so the
-    Settings tab can always re-render from what a mutation returns rather than issuing
-    a second fetch."""
+    """Response for `GET /api/libraries` and every mutating vocabulary route, so the
+    Vocabulary page re-renders from what a mutation returns, never a second fetch."""
 
-    packs: list[LibraryPackSummaryOut] = Field(default_factory=list)
-    enabled_packs: list[str] = Field(default_factory=list)
-    overrides: LibraryOverridesOut = Field(default_factory=LibraryOverridesOut)
+    entries: list[VocabularyEntryOut] = Field(default_factory=list)
     effective: LibraryEffectiveOut = Field(default_factory=LibraryEffectiveOut)
-    #: Human-readable notes from composition: a missing pack, a cross-pack verb
-    #: collision, or a dropped alias chain. Never errors — see `libraries.py`.
+    #: Notes from composition (a user alias skipped because it would chain).
     diagnostics: list[str] = Field(default_factory=list)
     proposals: list[LibraryProposalOut] = Field(default_factory=list)
-    #: Set only by `POST /api/libraries/proposals` when generation partially failed
-    #: (an `LLMError`) — that route still returns 200 with whatever succeeded rather
-    #: than failing the whole request over an advisory feature.
+    #: Set only by `POST /api/libraries/proposals` when generation partially failed —
+    #: that route still returns 200 rather than failing over an advisory feature.
     warning: str | None = None
 
 
-class LibrarySelectionRequest(BaseModel):
-    """Body for `PUT /api/libraries/selection`."""
-
-    enabled_packs: list[str]
-    overrides: LibraryOverridesOut = Field(default_factory=LibraryOverridesOut)
+VocabularyKind = Literal["term", "alias", "verb"]
 
 
-class LibraryAliasImpactOut(BaseModel):
-    """What approving one alias would rewrite in the current master resume, if
-    anything. Empty `affected_tags` means the alias is purely additive."""
+class VocabularyAddRequest(BaseModel):
+    """Body for `POST /api/libraries/additions`: a new term, a new spelling of `target`
+    (a term), or a new verb in family `target`."""
 
-    alias: str
-    canonical: str
-    affected_tags: list[str] = Field(default_factory=list)
-    #: (entry label, bullet id) pairs carrying the affected tag.
-    affected_bullets: list[tuple[str, str]] = Field(default_factory=list)
+    kind: VocabularyKind
+    value: str = Field(max_length=120)
+    target: str = Field(default="", max_length=120)
 
 
-class LibraryImpactRequest(BaseModel):
-    """Body for `POST /api/libraries/impact`."""
+class VocabularyRemoveRequest(BaseModel):
+    """Body for `POST /api/libraries/additions/remove` — the user's own entries only."""
 
-    tag_aliases: dict[str, str]
+    kind: VocabularyKind
+    value: str
 
 
-class LibraryImpactResponse(BaseModel):
-    impacts: list[LibraryAliasImpactOut] = Field(default_factory=list)
+class VocabularyHideRequest(BaseModel):
+    """Body for `POST /api/libraries/hidden` — hide or show again one built-in entry."""
+
+    kind: VocabularyKind
+    value: str
+    hidden: bool = True
 
 
 class ProposalGenerateRequest(BaseModel):
     """Body for `POST /api/libraries/proposals`. `jd_text` is optional context — the
-    request's own gaps (near-miss tags, unclassified opening verbs) drive most of the
+    request's own gaps (near-miss terms, unclassified opening verbs) drive most of the
     prompt regardless."""
 
     jd_text: str = Field(default="", max_length=50_000)
 
 
 class ProposalApproveRequest(BaseModel):
-    """Body for `POST /api/libraries/proposals/approve`."""
+    """Body for `POST /api/libraries/proposals/approve`. `targets` optionally redirects
+    an alias proposal (by id) to a different term than the one the model picked."""
 
     proposal_ids: list[str]
-    #: An existing user-authored pack to fold the approved items into. Never a built-in
-    #: id — `libraries.write_pack` refuses those.
-    target_pack_id: str
-    #: Required (re-POST with this set) once `library_impact.alias_impact` reports that an
-    #: approved alias would rewrite an existing bullet tag on the next master-resume
-    #: save — see `approve_library_proposals`'s 409 path.
-    acknowledge_rewrites: bool = False
+    targets: dict[str, str] = Field(default_factory=dict)
 
 
 class ProposalRejectRequest(BaseModel):

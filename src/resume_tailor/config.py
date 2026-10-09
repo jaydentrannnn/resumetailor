@@ -82,7 +82,8 @@ WORKSPACES_DIRNAME = "workspaces"
 
 #: Per-workspace run defaults, served by GET/PUT /api/settings.
 
-#: Per-workspace vocabulary-library selection, overrides, and pending proposals. See
+#: Per-workspace pending vocabulary proposals (and the legacy pack selection the one-time
+#: dictionary migration reads). See
 #: `libraries.py`. Lives beside `SETTINGS_PATH` rather than inside it — `settings.json`
 #: is rewritten wholesale by `workspace.save_settings`, which would silently drop this
 #: on any `PUT /api/settings` if the two shared a file.
@@ -1262,8 +1263,8 @@ _INITIAL_PATHS = _legacy_paths()
 _DEFAULT = RunContext(
     None, _INITIAL_PATHS, _ACTIVE,
     _load_calibration(PDF_BACKEND, _INITIAL_PATHS["CALIBRATION_DIR"], paths=_INITIAL_PATHS),
-    dict(library_seeds.BUILTIN_PACKS["core-tech"]["tag_aliases"]),
-    dict(library_seeds.BUILTIN_PACKS["core-tech"]["verb_families"]),
+    library_seeds.builtin_aliases(),
+    library_seeds.builtin_verb_families(),
 )
 _RUN_CONTEXT: ContextVar[RunContext | None] = ContextVar("run_context", default=None)
 
@@ -1301,7 +1302,7 @@ def context_for_workspace(workspace_id: str) -> RunContext:
     calibration = _load_calibration(PDF_BACKEND, paths["CALIBRATION_DIR"], paths=paths)
     from .content import libraries
 
-    effective = libraries.resolve_effective(workspace_id)
+    effective = libraries.resolve_effective()
     return RunContext(
         workspace_id, paths, {}, calibration,
         dict(effective.tag_aliases), dict(effective.verb_families),
@@ -1501,9 +1502,9 @@ MAX_GROW_ATTEMPTS = 4
 
 #: Near-synonymous bullet openers, grouped by the claim they make. Past tense, because
 #: that is the register `rewrite_prompts._SYSTEM` asks for. Initialised from the built-in
-#: `core-tech` pack (`library_seeds.py`) and reassigned wholesale by
-#: `libraries.apply_to_config()` once a workspace has its own pack selection — never
-#: mutated in place, since `verb_family`'s index cache below keys on object identity.
+#: dictionary (`library_seeds`) and reassigned wholesale by `libraries.apply_to_config()`
+#: once the user's additions and hidden entries are layered on — never mutated in place,
+#: since `verb_family`'s index cache below keys on object identity.
 
 #: How many bullets may open with verbs from the same family before it reads repetitive.
 #: Two is the point where a pattern becomes visible but is still plausibly incidental; a
@@ -1519,7 +1520,7 @@ BULLETS_PER_FAMILY_OPENER = 5
 #: for…"). `bullet_checks.verb_collisions` flags them like a repeated opener, so the same
 #: bounded verb repair re-voices them. Deliberately short and unambiguous: a verb that is
 #: strong in some trades ("Performed due diligence", "Served 200 clients") stays out, and
-#: `libraries.py` packs never extend it — the repair swaps the verb, never the claim.
+#: the vocabulary dictionary never extends it — the repair swaps the verb, never the claim.
 WEAK_OPENERS = frozenset({
     "assisted", "aided", "helped", "handled", "worked", "participated", "responsible",
     "involved", "tasked", "utilized", "utilised", "used", "attended",
@@ -1534,13 +1535,9 @@ def family_opener_cap(bullet_count: int) -> int:
 def _build_verb_index(families: dict[str, tuple[str, ...]]) -> dict[str, str]:
     """Invert `families` into {verb: family}, first-wins on a verb listed twice.
 
-    A verb in two families is expected once families come from separately-authored
-    packs — "administered" is legitimately both core-tech's `operate` and a nursing
-    pack's `care`. Composing packs is `libraries.py`'s job (it resolves the collision by
-    pack order and reports it as a diagnostic); this function stays total so a
-    hand-edited or partially-composed table can never crash an entrypoint. Duplicate
-    detection *within one pack* is a save-time validation rule instead, in
-    `libraries.validate_pack`.
+    `libraries.resolve_effective` already gives every verb exactly one family (a user
+    addition replaces the built-in claim); this function stays total so a hand-edited or
+    monkeypatched table can never crash an entrypoint.
     """
     index: dict[str, str] = {}
     for family, verbs in families.items():
@@ -1656,9 +1653,9 @@ WIDOW_SAFETY = 5
 
 #: Maps the many ways a JD might name a skill onto the canonical tag used in
 #: master_resume.json. Keys and values are lowercase. Initialised from the built-in
-#: `core-tech` pack (`library_seeds.py`) and reassigned wholesale by
-#: `libraries.apply_to_config()` once a workspace has its own pack selection — extend
-#: via a pack, not by hand-editing this dict; an unmatched alias costs a missed bullet,
+#: dictionary (`library_seeds`) and reassigned wholesale by `libraries.apply_to_config()`
+#: once the user's additions are layered on — extend via the Vocabulary page, not by
+#: hand-editing this dict; an unmatched alias costs a missed bullet,
 #: never a crash.
 
 
