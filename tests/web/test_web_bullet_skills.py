@@ -7,6 +7,7 @@ from resume_tailor import config
 from resume_tailor.content.data import load
 from resume_tailor.pipeline import tag_infer
 from resume_tailor.web import skill_refresh
+from tests.fixtures import synthetic_resume
 
 
 def _one_bullet_resume(text: str, *tags: str) -> dict:
@@ -55,7 +56,7 @@ def test_skills_endpoint_shows_detected_and_inferred_minus_extra_skills(
 
 def test_refresh_runs_under_the_workspace_it_was_scheduled_for(tmp_path, monkeypatch):
     """A refresh records its error against its own profile and writes nothing on failure."""
-    resume = load()
+    resume = synthetic_resume()
 
     def boom(texts, preferred=()):
         raise RuntimeError("model unreachable")

@@ -60,7 +60,9 @@ describe("validateProfile", () => {
   it("supports Auto and an explicit four-digit high-school year", () => {
     expect(validateProfile({ ...base, high_school_graduation_year: "" })).toEqual({});
     expect(validateProfile({ ...base, high_school_graduation_year: "2023" })).toEqual({});
-    expect(validateProfile({ ...base, high_school_graduation_year: "23" }).high_school_graduation_year).toBeTruthy();
+    expect(
+      validateProfile({ ...base, high_school_graduation_year: "23" }).high_school_graduation_year,
+    ).toBeTruthy();
     expect(groupForField("high_school_graduation_year")).toBe(groupForField("class_year"));
     expect(tabForField("auto_accept_routine_acknowledgements")).toBe("application");
   });

@@ -243,7 +243,13 @@ export const PROFILE_GROUPS: ProfileGroup[] = [
   {
     id: "Saved answers and other preferences",
     title: "Saved answers",
-    fields: ["referred_by", "how_heard", "portfolio_url", "portfolio_only_when_asked", "auto_accept_routine_acknowledgements"],
+    fields: [
+      "referred_by",
+      "how_heard",
+      "portfolio_url",
+      "portfolio_only_when_asked",
+      "auto_accept_routine_acknowledgements",
+    ],
   },
 ];
 
@@ -302,7 +308,10 @@ export const BOOLEAN_FIELDS = new Set<string>([
 ]);
 
 /** Plain on/off settings (never blank on the server). */
-export const CHECKBOX_FIELDS = new Set<string>(["portfolio_only_when_asked", "auto_accept_routine_acknowledgements"]);
+export const CHECKBOX_FIELDS = new Set<string>([
+  "portfolio_only_when_asked",
+  "auto_accept_routine_acknowledgements",
+]);
 
 /** Gap keys (`packet.PROFILE_FIELDS`) whose profile field is named differently. */
 export const GAP_FIELD_ALIASES: Record<string, string> = {
