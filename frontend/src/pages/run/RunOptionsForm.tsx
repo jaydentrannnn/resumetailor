@@ -60,48 +60,32 @@ export function RunOptionsForm({
   return (
     <>
       <fieldset disabled={disabled} className="grid grid-cols-1 gap-4 sm:grid-cols-2">
-        <div className="space-y-4">
-          <Field label="Pages">
-            <select
-              className="field"
-              value={settings.pages}
-              onChange={(e) => set("pages", Number(e.target.value))}
-            >
-              {[1, 2, ...(settings.pages > 2 ? [settings.pages] : [])].map((n) => (
-                <option key={n} value={n}>
-                  {n} page{n === 1 ? "" : "s"}
-                </option>
-              ))}
-            </select>
-          </Field>
-          {settings.cover_letter && (
-            <Field label="Cover letter tone">
-              <select
-                value={settings.cover_angles.tone}
-                onChange={(e) =>
-                  set("cover_angles", {
-                    ...settings.cover_angles,
-                    tone: e.target.value as JobSettings["cover_angles"]["tone"],
-                  })
-                }
-                className="field"
-              >
-                <option value="">Default</option>
-                <option value="formal">Formal</option>
-                <option value="direct">Direct</option>
-                <option value="conversational">Conversational</option>
-                <option value="mirror">Match the posting</option>
-              </select>
-            </Field>
-          )}
-        </div>
-        <div className="space-y-3 sm:pt-6">
+        <Field label="Pages">
+          <select
+            className="field"
+            value={settings.pages}
+            onChange={(e) => set("pages", Number(e.target.value))}
+          >
+            {[1, 2, ...(settings.pages > 2 ? [settings.pages] : [])].map((n) => (
+              <option key={n} value={n}>
+                {n} page{n === 1 ? "" : "s"}
+              </option>
+            ))}
+          </select>
+        </Field>
+        <div className="sm:pt-6">
           <Toggle
             label="Application-form text"
             help="Paragraphs for each job, ready to paste into application forms. Apply turns this on for its own runs."
             checked={!settings.no_expand}
             onChange={(v) => set("no_expand", !v)}
           />
+        </div>
+        {/* The tone sits beside its switch; the cell stays (empty) so the switch keeps its column. */}
+        <div className="hidden sm:block">
+          {settings.cover_letter && <CoverTone settings={settings} set={set} />}
+        </div>
+        <div className="sm:pt-6">
           <Toggle
             label="Cover letter"
             help="Also write a cover letter from the tailored resume."
@@ -109,6 +93,11 @@ export function RunOptionsForm({
             onChange={(v) => set("cover_letter", v)}
           />
         </div>
+        {settings.cover_letter && (
+          <div className="sm:hidden">
+            <CoverTone settings={settings} set={set} />
+          </div>
+        )}
       </fieldset>
 
       <div className="mt-5 border-t border-line pt-4">
@@ -208,6 +197,29 @@ function MoreOptions({ config, settings, onChange, disabled }: FormProps) {
 }
 
 type Setter = <K extends keyof JobSettings>(key: K, value: JobSettings[K]) => void;
+
+function CoverTone({ settings, set }: { settings: JobSettings; set: Setter }) {
+  return (
+    <Field label="Cover letter tone">
+      <select
+        value={settings.cover_angles.tone}
+        onChange={(e) =>
+          set("cover_angles", {
+            ...settings.cover_angles,
+            tone: e.target.value as JobSettings["cover_angles"]["tone"],
+          })
+        }
+        className="field"
+      >
+        <option value="">Default</option>
+        <option value="formal">Formal</option>
+        <option value="direct">Direct</option>
+        <option value="conversational">Conversational</option>
+        <option value="mirror">Match the posting</option>
+      </select>
+    </Field>
+  );
+}
 
 /** Optional cover-letter angles, shown while a cover letter is on. */
 function CoverAngles({ settings, set }: { settings: JobSettings; set: Setter }) {
