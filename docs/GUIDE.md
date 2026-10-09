@@ -351,7 +351,7 @@ cd frontend; npm ci; npm run build; cd ..
 pyinstaller desktop\sidecar\resumetailor.spec --noconfirm --distpath desktop\sidecar\dist --workpath build\pyinstaller
 python desktop\sidecar\smoke.py desktop\sidecar\dist\resumetailor-server\resumetailor-server.exe
 cd desktop
-npx --yes @tauri-apps/cli@2 icon app-icon.svg
+npx --yes @tauri-apps/cli@2 icon app-icon.png
 npx --yes @tauri-apps/cli@2 build --bundles nsis
 ```
 

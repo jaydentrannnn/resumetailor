@@ -146,7 +146,7 @@ jobs:
         # The real server folder comes from PyInstaller in release.yml; the build script
         # only needs the resource path to exist.
         run: |
-          npx --yes @tauri-apps/cli@2 icon app-icon.svg
+          npx --yes @tauri-apps/cli@2 icon app-icon.png
           mkdir -p sidecar/dist/resumetailor-server
       - working-directory: desktop/src-tauri
         run: cargo fmt --check && cargo test

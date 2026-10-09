@@ -106,7 +106,7 @@ jobs:
           cp LICENSE desktop/sidecar/dist/resumetailor-server/LICENSE.txt
       - name: Icons
         working-directory: desktop
-        run: npx --yes @tauri-apps/cli@2 icon app-icon.svg
+        run: npx --yes @tauri-apps/cli@2 icon app-icon.png
       - name: Shell (Tauri)
         working-directory: desktop
         env:

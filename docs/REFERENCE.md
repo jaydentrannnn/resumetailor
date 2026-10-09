@@ -165,7 +165,7 @@ Storage defaults to the per-user app-data folder (`desktop_main.app_data_dir`); 
 `RESUME_TAILOR_*_DIR` already set wins. `--exit-with-stdin` stops the server when its parent
 goes away. Build locally: `npm run build` in `frontend/`, then `pyinstaller
 desktop/sidecar/resumetailor.spec --noconfirm --distpath desktop/sidecar/dist`, then in
-`desktop/`: `npx @tauri-apps/cli@2 icon app-icon.svg` and `npx @tauri-apps/cli@2 build`.
+`desktop/`: `npx @tauri-apps/cli@2 icon app-icon.png` and `npx @tauri-apps/cli@2 build`.
 Installers: `.github/workflows/release.yml` on a `v*` tag (draft release, not
 code-signed; updater bundles signed with `TAURI_SIGNING_PRIVATE_KEY`, plus `latest.json`
 from `scripts/release_manifest.py`). **In-app updates** (`desktop/src-tauri/src/update.rs`,
