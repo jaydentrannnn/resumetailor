@@ -199,7 +199,7 @@ Tick these off in the running app. Each line says what to do and what should hap
 **Setup and safety**
 - [ ] A new profile (the header menu's profile switcher, or an empty data folder) opens `/welcome`
       with the header nav hidden; every other page bounces back until you finish or press
-      **Skip setup for now**. Steps: target field (with its skill vocabulary and job lists),
+      **Skip setup for now**. Steps: target field (with its job lists),
       AI & browser (API keys, a tested tailoring model, the Autofill model, the browser),
       resume upload, personal information, resume content, application details, then a
       Review of everything entered.
@@ -220,8 +220,8 @@ Tick these off in the running app. Each line says what to do and what should hap
 - [ ] In the bullet review, edit one bullet and click **Update resume (no AI)**: the PDF
       updates without a model call. An edit that pushes the resume past one page is
       refused with "Over by N lines". **Reset to AI version** undoes your edits.
-- [ ] Coverage gaps split into skills that are *missing* and skills you have but haven't
-      *tagged*.
+- [ ] Coverage gaps split into skills that are *missing* and skills your resume lists
+      but no bullet shows.
 - [ ] Run history: search, open an old run, and compare two runs.
 
 **Profile, editor, template**
@@ -230,8 +230,11 @@ Tick these off in the running app. Each line says what to do and what should hap
 - [ ] Profile → Application: the visa status fills in the sponsorship defaults. Upload a
       transcript (Education) and a portfolio PDF (Saved answers and other preferences).
 - [ ] Editor: add a section from a preset (Research, Leadership, Awards...). The bullet
-      coach flags weak verbs and missing numbers. **Suggest tags** offers tags. History
-      restores an earlier version.
+      coach flags weak verbs and missing numbers. After **Save**, each bullet lists the
+      skills it shows ("Detecting skills…" while the model works); **Extra skills** stays
+      collapsed. History restores an earlier version.
+- [ ] Vocabulary (Settings): search a skill, add a missing one as a new term or another
+      name for an existing one, hide a built-in and show it again, remove your own.
 - [ ] Template: a gallery of your saved templates plus the three built-in ones
       (classic, compact, business). Analyzer issues are in plain language. **Tune page
       fit** recalibrates.

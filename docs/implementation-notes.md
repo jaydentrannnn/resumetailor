@@ -16,7 +16,7 @@ against the code.
 |---|---|---|
 | [`fit-and-calibration.md`](notes/fit-and-calibration.md) | PDF measurement (Word/LibreOffice), calibration, underflow/overflow thresholds, SHORTEN_SCHEDULE, bullet shares, widow repair | 12 |
 | [`llm-backends.md`](notes/llm-backends.md) | model profiles (ollama/lmstudio/gemini/claude), default models, token ceilings, timeouts, routing, cache-key origin | 13 |
-| [`pipeline-and-guards.md`](notes/pipeline-and-guards.md) | rewrite prompts, fabrication/rebound-number guards, merge, polish, facets, skills stage, expansion, vocabulary packs, writing style, career-ops bands | 15 |
+| [`pipeline-and-guards.md`](notes/pipeline-and-guards.md) | rewrite prompts, fabrication/rebound-number guards, merge, polish, facets, skills stage, expansion, vocabulary dictionary, computed bullet skills, writing style, career-ops bands | 16 |
 | [`template-and-render.md`](notes/template-and-render.md) | template build/tagging, header/bullet formatting, project links, hyperlinks in PDF, contact/name line, template tab & library, build verification, legacy build retirement | 15 |
 | [`import-and-sections.md`](notes/import-and-sections.md) | arbitrary sections model, flexible template import, heading analyzer, wizard, content importer/merge, table layout | 9 |
 | [`web-ui-and-mcp.md`](notes/web-ui-and-mcp.md) | SPA pages, job runner, Docker, downloads, settings, run history, theme, MCP server | 14 |

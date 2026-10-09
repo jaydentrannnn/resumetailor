@@ -102,11 +102,10 @@ UI label stays "Profile"; code (`workspace.py`, `config.set_active_workspace`,
 job-discovery settings. Missing/null retains legacy guidance; new empty profiles use
 `general`, and duplicates inherit their source's field and custom styles. Profile →
 Tailoring and setup expose the backend catalog (`industry_presets.json`). Adding a preset
-requires catalog data and existing vocabulary-pack ids, without a pipeline branch or an
-extra model call. Catalog/policy changes must bump their versions.
+requires catalog data only, without a pipeline branch or an extra model call. Catalog/policy changes must bump their versions.
 
 `industries.capture()` resolves field guidance, custom styles, entry context, and the
-union of preset + profile vocabulary packs (profile order and explicit overrides win).
+and the effective vocabulary dictionary (§4).
 It freezes the seven stage system prompts at submission. `RunContext` isolates this
 guidance per job, and cache fingerprints include the snapshot. Each opted-in output job
 archives `tailoring_context.json`; cover-letter regeneration uses it rather than current
@@ -119,7 +118,8 @@ Each workspace is a directory tree replicated under the existing storage roots:
 data/workspaces/index.json                 registry: {active_id, entries:[...]}
 data/workspaces/<id>/master_resume.json
 data/workspaces/<id>/settings.json
-data/workspaces/<id>/libraries.json        vocabulary-library selection — see §4
+data/workspaces/<id>/libraries.json        pending vocabulary suggestions — see §4
+data/workspaces/<id>/inferred_tags.json    inferred bullet skills cache — see §4
 data/workspaces/<id>/calibration/<backend>.json
 templates/workspaces/<id>/{original_export.docx, main_template.docx, template_profile.json}
 templates/workspaces/<id>/library/ , backups/
@@ -585,34 +585,49 @@ It never fills or submits ATS forms; the deterministic Playwright filler does th
 
 ---
 
-## 4. Vocabulary libraries
+## 4. Vocabulary and bullet skills
 
-`config.TAG_ALIASES`/`VERB_FAMILIES` are composed at runtime from **packs**: shipped
-`core-tech`/`finance-consulting` starter packs plus user-authored ones, selected per
-workspace.
+`config.TAG_ALIASES`/`VERB_FAMILIES` are composed at runtime from **one always-on
+dictionary**: the shipped `library_seeds/dictionary.json` (terms with their spellings,
+plus opening-verb families) minus what the user hid, plus what the user added.
 
-- **`library_seeds/`** holds shipped packs as packaged JSON (`core-tech.json`,
-  `finance-consulting.json`), loaded via `importlib.resources` into `BUILTIN_PACKS`. Edits
-  write a shadow file under `data/libraries/packs/` that `read_pack` prefers; `reset_pack`
-  deletes the shadow to restore the starter. Shipped packs are not deletable.
-- **`libraries.py`** is the engine: pack storage/validation (central store at
-  `data/libraries/packs/`, shared across profiles, never rebound per-workspace),
-  composition (`resolve_effective`: enabled packs merge in list order, a workspace's own
-  overrides/`*_removed` win), and `apply_to_config()`, which rebinds
-  `TAG_ALIASES`/`VERB_FAMILIES` to *new* dict objects — `config.verb_family`'s index cache
-  invalidates by identity, not equality. A verb claimed by two packs' families is a
-  diagnostic, not an error — two packs can legitimately disagree and have to compose.
-- **Per-workspace state** (`enabled_packs`, `overrides`, pending `proposals`, `rejected`)
-  lives in `data/workspaces/<id>/libraries.json`, a sibling of `settings.json` rather than a
-  key inside it — `PUT /api/settings` rewrites that file wholesale.
-- **Weak openers** (`config.WEAK_OPENERS`: assisted, helped, handled, ...) are not a pack field:
-  `bullet_checks.verb_collisions` flags them like a repeated opener and the existing bounded
-  `followups._polish` call re-voices them at equal scope. Removing a verb from a family does
-  not ban it (an unclassified verb is never flagged); the constant does.
-- **`propose.py`** drafts new aliases/verb assignments from a run's own near-miss keyword
-  gaps and unclassified opening verbs, then a deterministic code-side filter enforces every
-  hard constraint (an alias target must already be a known tag, a verb family must already
-  exist) — same "model selects, code enforces" split `facets.py` uses for renames.
+- **`libraries.py`** is the engine. User edits live app-wide in
+  `data/libraries/vocabulary.json` (`UserVocabulary`: added spellings/terms/verbs, hidden
+  built-ins), shared by every profile and never rebound per workspace. Built-ins can be
+  hidden, never deleted; additions can be removed. `resolve_effective` composes the
+  dictionary (memoised; chain-repairs an alias whose target is itself an alias) and
+  `apply_to_config()` rebinds `TAG_ALIASES`/`VERB_FAMILIES` to *new* dict objects —
+  `config.verb_family`'s index cache invalidates by identity, not equality.
+- **Migration** (`migrate_legacy`, run by `reload()`, idempotent via
+  `migrated_workspaces`) folds the old per-profile pack overrides and edited/custom packs
+  into the user store and renames `libraries/packs/` to `packs.migrated/`.
+- **Per-workspace `libraries.json`** now holds only pending `proposals` and `rejected`
+  entries (generated from that profile's runs); approving one writes the app-wide store.
+- **Bullet skills are computed** (`content/bullet_tags.py`). A bullet's match tags are
+  its Extra skills (`Bullet.tags`, optional, stored as typed) ∪ skills **detected** in its
+  text (dictionary terms/spellings plus the resume's own Skills items, project tech and
+  coursework; one- and two-letter names and ordinary-English words in `AMBIGUOUS` need
+  capitals) ∪ skills **inferred** by `pipeline/tag_infer.py`. Everything is canonicalised
+  at read time, so vocabulary edits never rewrite resume data. Selection, coverage, the
+  gap report, merge affinity (without inferred) and JD canonicalisation
+  (`known_terms`) read match tags; the Skills pool reads Extra skills + detected surface
+  text (`skill_evidence`).
+- **`tag_infer.py`** asks the extract-purpose model which skills each bullet shows, one
+  batched call per uncached chunk; cached in the workspace's `inferred_tags.json`, keyed by
+  text + `_PROMPT_VERSION` + `config.fingerprint("extract")`. Every master-resume save
+  schedules `web/skill_refresh.py` (coalesced background thread, under the saving profile's
+  context and Tailor routing); each run calls `prepare_run` first, which fills anything
+  missing and installs the run's annotation. A failed call is a run warning, never an
+  error. **Inferred skills are matching-only** (§10).
+- **Weak openers** (`config.WEAK_OPENERS`: assisted, helped, handled, ...) are not a
+  dictionary field: `bullet_checks.verb_collisions` flags them like a repeated opener and
+  the existing bounded `followups._polish` call re-voices them at equal scope. Hiding a
+  verb does not ban it (an unclassified verb is never flagged); the constant does.
+- **`propose.py`** drafts new spellings/verb assignments from a run's own near-miss
+  keyword gaps and unclassified opening verbs, then a deterministic code-side filter
+  enforces every hard constraint (a spelling's target must be a skill the resume shows,
+  a verb family must already exist) — same "model selects, code enforces" split
+  `facets.py` uses for renames.
 
 ---
 
@@ -757,18 +772,13 @@ substring alone:
 
 `resume_import.py` turns an uploaded document's own *content* (not just its layout) into a
 `MasterResume` draft — `POST /api/master-resume/import` (multipart, optional
-`suggest_tags` field) returns `{resume, warnings, untagged_bullet_count}` and writes
-nothing; the editor loads the result as unsaved state via `editorState.loadDraft`.
+`use_model` field for PDFs) returns `{resume, warnings}` and writes nothing; the editor loads the result as unsaved state via `editorState.loadDraft`.
 
 - Deterministic, no LLM required: reuses `template_analyze`'s own paragraph-level helpers
   (`_split_entries`, `_header_fields_from_text`, `_skills_spans`) to parse *every* entry
-  (not one prototype), and seeds tags by whole-word substring match against a known-tag
-  vocabulary (`import_common._seed_tags`). A bullet nothing matched gets the sentinel tag
-  `"untagged"` (`Bullet.tags` requires ≥1 entry) and is counted, not silently guessed at.
-- **Optional, explicitly opt-in LLM pass**: `propose.propose_bullet_tags(bullets,
-  known_tags)` — same "model selects, code enforces" contract as `propose_vocabulary` (a
-  tag outside `known_tags` is dropped). Never part of `resume_import`'s own call graph; a
-  failure there becomes a warning in the response, never a failed import.
+  (not one prototype). Bullets import with no Extra skills — their skills are computed
+  (§4); only certification/award list items get deterministic tags
+  (`import_common._seed_tags`).
 - `render.parse_month`/`render.parse_range` are the literal inverse of
   `format_month`/`format_range`, living next to them. `docx_text.hyperlink_target` resolves
   a `w:hyperlink`'s actual target URL (every other caller only ever needed the visible
@@ -868,7 +878,7 @@ these app-wide limits and shows active/waiting requests; settings persist under
   them would silently reroute callers that never asked for a backend.
 - **`config._ACTIVE` is only ever populated by `web/job_tailor_run.py`'s tailoring-job runner** — it
   is the sole `config.resolve()` call site under `src/`. A web route reached outside a job
-  (the import wizard's "suggest tags" pass, vocabulary-proposal generation) that calls an
+  (PDF structuring on import, vocabulary-proposal generation) that calls an
   LLM stage therefore hits `backend_for`'s `"claude"` fallback on a freshly started server,
   regardless of the saved Model setting. A route that must not do that — and must not call
   `resolve()` either, since that would repoint a job's remaining stages mid-run — wraps its
@@ -1044,9 +1054,9 @@ fixed overhead the fit loop never trims.
   groups by verbatim `phrase`, keeps a phrase only if a majority proposed it, and prefers a
   canonical that hits `known_tags` over a more frequent one that doesn't.
 - **A missed keyword says why, not just that it missed.** `report.diagnose_gaps`
-  classifies every unmatched canonical as `near_miss` (a bullet tag names the same thing,
-  spelled differently), `untagged_evidence` (matches `Project.tech`/skills/coursework but
-  no bullet tag), or `no_evidence`. Takes the *pre-facets* `master=` resume specifically,
+  classifies every unmatched canonical as `near_miss` (a skill some bullet shows names the
+  same thing, spelled differently), `untagged_evidence` (matches `Project.tech`/skills/
+  coursework but no bullet shows it), or `no_evidence`. Takes the *pre-facets* `master=` resume specifically,
   because `facets.apply` truncates `Project.tech` to its render budget before the report is
   built.
 - **`bullets: dict[id -> text]` is the pipeline's currency.** `render.build_context` uses
@@ -1097,6 +1107,10 @@ fixed overhead the fit loop never trims.
   `config.COVER_CONTACT_FIELDS` (location/email/phone only — drops LinkedIn/GitHub from
   the letterhead), 1.15 body line spacing, and a cloned section-heading rule under the
   contact line.
+- **The fabrication guard's whitelist is the source text plus Extra skills
+  (`bullet.tags`) only.** Detected skills are already in the text; inferred skills
+  (`tag_infer`) never reach the guard, `<permitted_skills>` or the Skills pool — a model's
+  guess is not a user claim (pinned by `tests/content/test_bullet_tags.py`).
 - **The fabrication guard** decomposes compounds on both sides (`Python/FastAPI`,
   `Recall@k/MRR`) and matches plurals; only letter-bearing parts license a match (`96.3`
   never licenses a `3`), and numbers are checked whole (`99%`/`GPT-4.1` still fail if
@@ -1194,8 +1208,9 @@ fixed overhead the fit loop never trims.
   itself at runtime with a skip if the file isn't present, since it's gitignored and
   won't exist on a clean checkout or in CI.
 - **`tests/conftest.py`'s `_isolated_libraries` autouse fixture** redirects the vocabulary
-  pack store and resets `config.TAG_ALIASES`/`VERB_FAMILIES` per test, so a bare run never
-  picks up a developer's own approved packs.
+  store, resets `config.TAG_ALIASES`/`VERB_FAMILIES` and clears the `bullet_tags` run
+  annotation per test, so a bare run never picks up a developer's own additions;
+  `_no_skill_inference` stubs `tag_infer.infer` and `skill_refresh.schedule`.
 - **A staged/profile-based template build has an in-process fallback** —
   `template_install._install_with_profile` shells out to `scripts/build_template.py` first,
   but falls back to calling `template_build.build_from_profile` directly whenever the

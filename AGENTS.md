@@ -27,7 +27,7 @@ the Claude Desktop fallback for `needs_browser` postings.
 
 **The LLM produces plain strings and nothing else. It never sees, receives, or emits XML,
 styling, template markup, or anything about layout.** Only `jd.py`, `rewrite.py` (with
-`relevance.py`, `followups.py`, `bullet_merge.py`), `facets.py`, `expand.py`, `skills.py`, `coverletter.py`, `review.py`, `propose.py` — plus
+`relevance.py`, `followups.py`, `bullet_merge.py`), `facets.py`, `expand.py`, `skills.py`, `coverletter.py`, `review.py`, `propose.py`, `tag_infer.py` — plus
 the apply funnel's `apply/answers/` `answer.py`, `model_resolver.py`, `hybrid_resolver.py`
 (form-field labels/options and resume text, never document XML) — call the API,
 exchanging plain text/JSON only. `llm.py` routes which backend; `render.py` is
@@ -68,8 +68,11 @@ stop. That is the bug this project exists to avoid.
   target field or override → legacy prompt byte-for-byte; selected field → resolved
   defaults, with custom overrides preserved and locked core prepended;
   `style.activate()` beside `config.resolve()` in `web/job_tailor_run.py` and `cli/run.py`).
-- **A vocabulary-proposal approval that would rewrite an existing bullet tag 409s for
-  explicit acknowledgement and backs up the master resume first** — do not weaken that.
+- **Bullet skills are computed, never hand-maintained.** Match tags = Extra skills
+  (`Bullet.tags`, stored as typed) ∪ detected in the text ∪ inferred (`tag_infer.py`),
+  canonicalised at read time (`content/bullet_tags.py`), so a vocabulary edit never
+  rewrites resume data. **Inferred skills are matching-only** — never the fabrication
+  whitelist, `<permitted_skills>`, or the Skills pool; those read `bullet.tags` alone.
 
 ## Setup
 
@@ -126,10 +129,10 @@ Docs cite bare module names (`fit.py`, `render.py`); the few that repeat across 
 |---|---|
 | `config`, `workspace` | top-level modules — config globals rebound per workspace |
 | `cli/` | the `tailor.py` CLI: `args` (flags), `run` (one invocation, `_CliRun` steps) |
-| `pipeline/` | `jd`, `rewrite` (+ `rewrite_prompts`, `bullet_checks`), `facets` (+ `facets_models`, `facets_budget`, `facets_labels`, `facets_resolve`), `expand`, `skills`, `coverletter` (+ `coverletter_models`, `coverletter_style`, `coverletter_format`), `review`, `propose` (the LLM callers; prompts and LLM calls stay in the named module), `fit` (`fit()` + `_FitRun.run`; layers `fit_state` → `fit_shrink` → `fit_topup`; helpers `fit_types`, `fit_lines`, `fit_selection`), `merge`, `include`, `report`, `estimate`, `events`, `runs`, `jd_input`, `jdsim` |
+| `pipeline/` | `jd`, `rewrite` (+ `rewrite_prompts`, `bullet_checks`), `facets` (+ `facets_models`, `facets_budget`, `facets_labels`, `facets_resolve`), `expand`, `skills`, `coverletter` (+ `coverletter_models`, `coverletter_style`, `coverletter_format`), `review`, `propose`, `tag_infer` (the LLM callers; prompts and LLM calls stay in the named module), `fit` (`fit()` + `_FitRun.run`; layers `fit_state` → `fit_shrink` → `fit_topup`; helpers `fit_types`, `fit_lines`, `fit_selection`), `merge`, `include`, `report`, `estimate`, `events`, `runs`, `jd_input`, `jdsim` |
 | `document/` | `render`, `convert`, `docx_text`, `docx_normalize`, `template_*` (analysis helpers: `analysis_types`, `contact_detect`, `entry_structure`, `field_candidates`, `header_fields`, `section_mapping`, `table_layout`, `profile_validation`), `cover_template`, `default_templates`, `calibrate`, `rerender`, `thumbnails` — no LLM, ever |
-| `content/` | `data` (the master-resume model), `data_transfer`, `edu_dates`, `libraries` (+ `library_models`, `library_impact`), `industries`, `style`, `labels`, `onboarding`, `resume_versions` |
-| `importing/` | `resume_import` (.docx entry; `import_common`, `import_contact`, `import_entries`, `import_merge_match`, `import_merge`, `import_layout`), `resume_import_pdf` (PDF entry + its LLM call; `pdf_patterns`, `pdf_lines`, `pdf_structure`, `pdf_build`), `tag_suggest` |
+| `content/` | `data` (the master-resume model), `data_transfer`, `edu_dates`, `libraries` (+ `library_models`; one built-in dictionary + app-wide user additions), `bullet_tags` (computed match tags), `industries`, `style`, `labels`, `onboarding`, `resume_versions` |
+| `importing/` | `resume_import` (.docx entry; `import_common`, `import_contact`, `import_entries`, `import_merge_match`, `import_merge`, `import_layout`), `resume_import_pdf` (PDF entry + its LLM call; `pdf_patterns`, `pdf_lines`, `pdf_structure`, `pdf_build`) |
 | `infra/` | `llm`, `fake_llm`, `logs`, `secret_store`, `housekeeping`, `desktop_main`, `desktop_update` |
 | `apply/`, `web/`, `mcp_server/`, `storage/`, `library_seeds/` | see their own `CLAUDE.md` / docstrings |
 
@@ -153,6 +156,7 @@ Two halves that never mix, joined by a measure-and-retry loop (`fit.py` owns the
 
 ```
 master_resume.json + jd.txt
+  → tag_infer.prepare_run()   inferred bullet skills (LLM, cached per text) + annotate
   → jd.extract()              JD → JobRequirements (LLM, voted ×3, cached)
   → relevance.score_table()     all bullets → 0-10 relevance (LLM, once, cached)
   → include.apply()           drop exclusions (pure)
@@ -178,7 +182,7 @@ fit.fit(): over → combine → pull back near-widows → drop weakest (else Fit
   first.
 - **`bullets: dict[id -> text]` is the pipeline's currency** — content source *and*
   selection filter; an entry whose bullets all dropped is omitted entirely. **JD keywords
-  are canonicalised against the resume's own tags**; extraction is voted. Education/skills
+  are canonicalised against the skills the resume shows** (`bullet_tags.known_terms`); extraction is voted. Education/skills
   are tailored in wording, never resized. `include.py` is applied once, after scoring,
   before facets.
 - **Web UI and MCP are front doors, not second pipelines**; jobs run one at a time because
