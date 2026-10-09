@@ -236,7 +236,10 @@ own **Job sources** page, `/applications/sources`, opened from Apply settings). 
 this repo's `main` or `RESUME_TAILOR_CATALOG_URL`, cached under `DATA_ROOT`, falling back to
 the bundled copy on any failure or a newer `schema_version`). Catalog entries carry field
 tags (swe, data, quant, finance, consulting, product, business, hardware, government) used by
-onboarding's field picker; a source keeps `catalog_id`/`catalog_version`, and the SPA offers
+onboarding's field picker, plus optional `levels` (intern, new_grad, off_cycle, program) and
+`tracks` (banking, markets, accounting, corp_finance, strategy, marketing, operations) that the
+catalog dialog filters by (plain strings on the entry; a tag an older build does not know is
+dropped, so a newer remote catalog still validates there); a source keeps `catalog_id`/`catalog_version`, and the SPA offers
 an update only when the catalog's version is newer — settings never change unasked. Sources
 saved before the catalog are linked back on load when id *and* url match a bundled entry
 (`ApplySettings._link_catalog_sources`). An explicitly empty `sources` list stays empty.
@@ -247,7 +250,13 @@ raw README. `sources.fetch_source_rows` is the one fetch path for every kind, sh
 daily run and `POST /api/apply/sources/test` (no LLM, nothing saved); `GET /api/apply/catalog`
 and `POST /api/apply/sources/inspect` complete the set. Season rollover (repo names carry the
 year) is handled by `scripts/refresh_source_catalog.py`, which proposes new URLs and never
-commits. Dedupe is by **ATS
+commits. Keyword searches have position x level x industry presets
+(`discovery/search_presets.py`, `GET /api/apply/search-presets[/build]`): a preset only fills
+`query`/`include`/`exclude`, because Adzuna and USAJobs take no level parameter; the real
+seniority gate stays `screen.allowed_seniority`. The word-start title matcher special-cases
+`intern` so it never keeps "Internal Audit" or "International" titles. Suggested company boards
+live in `discovery/watchlists/*.json` (finance, banking, consulting, tech); add a board only after
+`boards.list_board` reads it. Dedupe is by **ATS
 requisition** (`identity.canonical_key`); same-company same-role across locations share a
 `group_key` and reuse one tailor run. Application rows (the `applications` table of the
 workspace's `app.db`) are keyed by canonical key, with `source_refs` listing every sighting.
@@ -582,6 +591,10 @@ workspace.
 - **Per-workspace state** (`enabled_packs`, `overrides`, pending `proposals`, `rejected`)
   lives in `data/workspaces/<id>/libraries.json`, a sibling of `settings.json` rather than a
   key inside it — `PUT /api/settings` rewrites that file wholesale.
+- **Weak openers** (`config.WEAK_OPENERS`: assisted, helped, handled, ...) are not a pack field:
+  `bullet_checks.verb_collisions` flags them like a repeated opener and the existing bounded
+  `followups._polish` call re-voices them at equal scope. Removing a verb from a family does
+  not ban it (an unclassified verb is never flagged); the constant does.
 - **`propose.py`** drafts new aliases/verb assignments from a run's own near-miss keyword
   gaps and unclassified opening verbs, then a deterministic code-side filter enforces every
   hard constraint (an alias target must already be a known tag, a verb family must already

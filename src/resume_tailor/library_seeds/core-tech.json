@@ -78,17 +78,17 @@
     "analyse": [
       "analysed", "analyzed", "assessed", "audited", "benchmarked", "debugged",
       "diagnosed", "evaluated", "examined", "identified", "investigated", "measured",
-      "profiled", "researched", "reviewed", "selected", "tested", "troubleshooted",
+      "profiled", "researched", "tested", "troubleshooted",
       "validated"
     ],
     "write": [
-      "authored", "communicated", "documented", "drafted", "presented", "published",
+      "authored", "documented", "drafted", "presented", "published",
       "reported", "summarised", "summarized", "wrote"
     ],
     "operate": [
-      "addressed", "administered", "automated", "configured", "delivered", "deployed",
-      "enabled", "handled", "integrated", "maintained", "migrated", "monitored",
-      "operated", "processed", "provisioned", "resolved", "secured", "supported"
+      "administered", "automated", "configured", "delivered", "deployed",
+      "enabled", "integrated", "maintained", "migrated", "monitored",
+      "operated", "processed", "provisioned", "resolved", "secured"
     ]
   },
   "created_at": "",

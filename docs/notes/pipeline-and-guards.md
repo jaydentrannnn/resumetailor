@@ -521,3 +521,9 @@ opener (`_REPAIR_PROMPT_VERSION = 6`).
   ever matched. Words are now x-sorted within a line (bullets with links benefit too).
 - **Cache:** facets cache key now includes `project_header_chars()` (it changes the
   advertised `tech_char_budget`).
+
+## 2026-10-08 - Weak openers and finance/consulting vocabulary
+**Decision:** "Remove weak verbs" is enforced in code, not only by pruning packs, because `config.verb_family` only drives the repeated-opener cap and an unlisted verb is never flagged. `config.WEAK_OPENERS` is a short constant; `bullet_checks.verb_collisions` flags those openers as offenders (never claiming their word), so the existing bounded `followups._polish` call re-voices them. No extra call. `_REPAIR_PROMPT_VERSION` 6 -> 7, and the verb-repair instruction now requires equal scope (never upgrade helping into leading) because the fabrication guard checks terms, not verb scope.
+**Pruned from core-tech:** handled, addressed, supported (operate); selected, reviewed (analyse); communicated (write). Pack edits only reach a profile that never edited the pack (a shadow under `data/libraries/packs/` wins until `reset_pack`).
+**finance-consulting:** adds data-tool and credential spellings (Refinitiv/Eikon/LSEG, FactSet, Alteryx, FRM, CFP, CFA levels 2 and 3, Series licences) and consulting terms; `pitch book` (the document) deliberately does not alias to `pitchbook` (the platform). Verbs added: analyse (appraised, synthesized, hypothesized, triangulated, sized, scoped), advise, improve, and a new `execute` family. Aliases that would chain through ops-supply-chain's `process improvement` were dropped.
+**Impact:** Runs with a weak opener now cost one polish call they previously skipped; the report line reads "repeated or vague opener(s)".

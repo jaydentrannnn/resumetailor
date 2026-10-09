@@ -212,6 +212,51 @@ def test_business_spellings_canonicalise(monkeypatch):
         assert config.canonical_tag(raw) == canonical, raw
 
 
+def test_finance_and_consulting_data_tool_and_credential_spellings_canonicalise(monkeypatch):
+    eff = _compose(monkeypatch, ["core-tech", *BUSINESS_PACKS])
+    monkeypatch.setattr(config, "TAG_ALIASES", eff.tag_aliases)
+    expected = {
+        "Refinitiv Eikon": "lseg workspace",
+        "FactSet Research": "factset",
+        "Tableau Desktop": "tableau",
+        "FRM": "financial risk manager",
+        "CFA Level II": "cfa level 2",
+        "Accretion/Dilution": "accretion dilution analysis",
+        "Variance Analyses": "variance analysis",
+        "Go to Market": "go-to-market",
+        "GTM": "go-to-market",
+        "Hypothesis Driven": "hypothesis-driven",
+        "Organizational Change Management": "change management",
+        "PMO": "pmo",
+    }
+    for raw, canonical in expected.items():
+        assert config.canonical_tag(raw) == canonical, raw
+    # The platform and the document are different things: "pitch book" must not become the tool.
+    assert config.canonical_tag("pitch book") == "pitch book"
+    assert config.canonical_tag("PitchBook") == "pitchbook"
+
+
+def test_weak_verbs_are_out_of_every_family_and_strong_ones_are_classified(monkeypatch):
+    eff = _compose(monkeypatch, ["core-tech", *BUSINESS_PACKS])
+    monkeypatch.setattr(config, "VERB_FAMILIES", eff.verb_families)
+    for weak in ("handled", "addressed", "supported", "selected", "reviewed", "communicated"):
+        assert config.verb_family(weak) is None, weak
+    for weak in config.WEAK_OPENERS:
+        assert config.verb_family(weak) is None, weak
+    assert config.verb_family("syndicated") == "execute"
+    assert config.verb_family("originated") == "execute"
+    assert config.verb_family("triangulated") == "analyse"
+    assert config.verb_family("restructured") == "improve"
+
+
+def test_a_weak_opener_is_re_voiced_even_when_it_is_the_only_bullet(monkeypatch):
+    eff = _compose(monkeypatch, ["core-tech", *BUSINESS_PACKS])
+    monkeypatch.setattr(config, "VERB_FAMILIES", eff.verb_families)
+    collisions = bullet_checks.verb_collisions({"a": "Assisted senior bankers with 12 pitch books."})
+    assert set(collisions) == {"a"}
+    assert "assisted" in collisions["a"]
+
+
 def test_no_shipped_pack_claims_an_ambiguous_student_abbreviation():
     """"IB" is the International Baccalaureate and "AP" Advanced Placement on a
     student's resume as often as investment banking or accounts payable in a posting."""
