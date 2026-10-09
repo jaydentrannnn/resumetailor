@@ -20,7 +20,7 @@ type Outcome =
       warnings: string[];
       backup: string | null;
     }
-  | { kind: "draft"; warnings: string[]; untagged: number }
+  | { kind: "draft"; warnings: string[] }
   | { kind: "error"; error: string };
 
 /**
@@ -42,7 +42,6 @@ export function ImportResumePanel({
 } = {}) {
   const { loadDraft, syncFromDisk } = useEditorState();
   const { choice } = useConfirm();
-  const [suggestTags, setSuggestTags] = useState(false);
   const [useModel, setUseModel] = useState(false);
   const [busy, setBusy] = useState(false);
   const [outcome, setOutcome] = useState<Outcome | null>(null);
@@ -51,7 +50,7 @@ export function ImportResumePanel({
     setBusy(true);
     setOutcome(null);
     try {
-      const result = await importMasterResumeContent(file, { suggestTags, useModel });
+      const result = await importMasterResumeContent(file, { useModel });
       const picked = await choice({
         title: MERGE_CHOICE_TITLE,
         message: MERGE_CHOICE_MESSAGE,
@@ -76,11 +75,7 @@ export function ImportResumePanel({
           result.resume as MasterResume,
           "Imported from the uploaded document — review below and save to keep it.",
         );
-        setOutcome({
-          kind: "draft",
-          warnings: result.warnings,
-          untagged: result.untagged_bullet_count,
-        });
+        setOutcome({ kind: "draft", warnings: result.warnings });
       }
       // picked === null → user cancelled; leave the editor unchanged.
     } catch (err) {
@@ -116,23 +111,6 @@ export function ImportResumePanel({
         </span>
       </label>
 
-      <label className="mt-3 flex items-start gap-2 text-sm">
-        <input
-          type="checkbox"
-          className="mt-1"
-          checked={suggestTags}
-          disabled={busy}
-          onChange={(e) => setSuggestTags(e.target.checked)}
-        />
-        <span>
-          <span className="font-medium text-ink">Suggest tags for untagged bullets</span>
-          <span className="block text-xs text-ink-muted">
-            Uses an LLM call to propose tags for bullets the deterministic import could not match on
-            its own. Never blocks the import if it fails.
-          </span>
-        </span>
-      </label>
-
       {outcome?.kind === "error" && (
         <p className="mt-4 flex items-center gap-2 text-sm text-danger">
           <StatusMark tone="failed" /> Import failed: {outcome.error}
@@ -140,10 +118,7 @@ export function ImportResumePanel({
       )}
       {outcome?.kind === "draft" && (
         <div className="mt-4 border-t border-line pt-4 text-sm text-ink">
-          <p>
-            Content imported as an unsaved draft — review below and Save to keep it.
-            {outcome.untagged > 0 ? ` ${outcome.untagged} bullet(s) need a tag.` : null}
-          </p>
+          <p>Content imported as an unsaved draft — review below and Save to keep it.</p>
           {outcome.warnings.length > 0 && (
             <ul className="mt-1 list-disc pl-5 text-xs text-ink-muted">
               {outcome.warnings.map((w) => (

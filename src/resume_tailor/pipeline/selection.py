@@ -6,6 +6,7 @@ import re
 from collections import Counter
 
 from .. import config
+from ..content import bullet_tags
 from ..content.data import Bullet, Experience, Project
 from .jd import JobRequirements
 
@@ -26,11 +27,11 @@ def _keyword_weight(kw) -> float:
     return config.SOFT_SKILL_WEIGHT if kw.kind == "soft" else config.MUST_HAVE_WEIGHT
 
 def _keyword_score(bullet: Bullet, requirements: JobRequirements) -> float:
-    """Tag-overlap score: exact set membership against the bullet's canonical tags.
+    """Tag-overlap score: exact set membership against the bullet's match tags.
 
     A soft keyword also matches the related tags in `config.SOFT_SKILL_RELATED_TAGS`.
     """
-    tags = set(bullet.tags)
+    tags = bullet_tags.match_tags(bullet)
     return sum(_keyword_weight(kw) for kw in requirements.keywords if _matches(kw, tags))
 
 def _matches(kw, tags: set[str]) -> bool:
@@ -303,7 +304,7 @@ def _marginal_score(
     covered: Counter[str],
 ) -> float:
     """`score` with each keyword discounted by how often the page already shows it."""
-    tags = set(bullet.tags)
+    tags = bullet_tags.match_tags(bullet)
     total = sum(
         _keyword_weight(kw) * _coverage_discount(covered[kw.canonical])
         for kw in requirements.keywords if _matches(kw, tags)
@@ -316,7 +317,7 @@ def _marginal_score(
 
 def _cover(bullet: Bullet, requirements: JobRequirements, covered: Counter[str]) -> None:
     """Record the posting keywords `bullet` shows."""
-    tags = set(bullet.tags)
+    tags = bullet_tags.match_tags(bullet)
     for kw in requirements.keywords:
         if _matches(kw, tags):
             covered[kw.canonical] += 1

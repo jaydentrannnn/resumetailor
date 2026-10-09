@@ -791,7 +791,6 @@ class MasterResumeImportResponse(BaseModel):
 
     resume: dict[str, Any]
     warnings: list[str] = Field(default_factory=list)
-    untagged_bullet_count: int = 0
 
 
 class MasterResumeMergeResponse(BaseModel):

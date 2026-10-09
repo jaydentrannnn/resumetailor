@@ -41,8 +41,8 @@ export function ReportNotes({ report }: { report: RunReport }) {
       {gaps.untagged.length > 0 && (
         <GapList
           title="In your resume, but not on a bullet"
-          note="Tag a bullet that shows this skill so future runs can pick it."
-          action={<Link to="/profile/resume">Add tags in the editor</Link>}
+          note="Mention it in a bullet that shows it (or add it to that bullet's Extra skills) so future runs can pick it."
+          action={<Link to="/profile/resume">Open the editor</Link>}
           items={gaps.untagged.map((g) => ({
             key: g.phrase,
             text: g.phrase,

@@ -30,7 +30,7 @@ from typing import Literal
 from pydantic import BaseModel, Field
 
 from .. import config
-from ..content import industries
+from ..content import bullet_tags, industries
 from ..content.data import MasterResume
 from ..infra import llm, telemetry
 from . import events
@@ -183,7 +183,7 @@ def build_pool(
         for course in edu.coursework:
             observe(course, _SOURCE_RANK["coursework"], "coursework")
     for bullet in resume.all_bullets():
-        for tag in bullet.tags:
+        for tag in bullet_tags.skill_evidence(bullet):
             key = pool_key(tag)
             if key:
                 bullet_counts[key] = bullet_counts.get(key, 0) + 1

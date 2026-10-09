@@ -146,8 +146,8 @@ export function SkillsCard({
         <div className="mt-2 text-sm text-ink-muted">
           {claimableGaps.map((g) => (
             <p key={g.canonical}>
-              {annotate(g)}: claimable but untagged — consider adding the tag (
-              {g.evidence.join("; ")})
+              {annotate(g)}: listed, but no bullet shows it — mention it in a bullet or its Extra
+              skills ({g.evidence.join("; ")})
             </p>
           ))}
         </div>

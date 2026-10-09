@@ -86,28 +86,6 @@ def _drain(c, job_id: str) -> dict:
     pytest.fail("job did not finish in time")
 
 
-def _resume_docx_bytes_with_an_untaggable_bullet() -> bytes:
-    """`_resume_docx_bytes`'s own bullets ("Built numerical engines in Python.",
-    "Indexed research notes with embeddings.") both match the default tag vocabulary
-    on their own — no good for exercising the untagged/suggest-tags path. This is the
-    same fixture with one experience bullet whose words match nothing in it."""
-    import io
-
-    import docx as docx_mod
-
-    raw = _resume_docx_bytes()
-    document = docx_mod.Document(io.BytesIO(raw))
-    for p in document.paragraphs:
-        if p.text == "Built numerical engines in Python.":
-            for run in list(p.runs):
-                run.text = ""
-            p.runs[0].text = "Coordinated stakeholder alignment across the org."
-            break
-    buf = io.BytesIO()
-    document.save(buf)
-    return buf.getvalue()
-
-
 class _FakeSDKError(Exception):
     """Stands in for `anthropic.BadRequestError` (an `Exception`, not a `RuntimeError`)
     without pulling the real SDK's exception hierarchy into this hermetic suite."""

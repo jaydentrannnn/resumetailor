@@ -45,6 +45,10 @@ class _Strict(BaseModel):
     model_config = ConfigDict(extra="forbid", populate_by_name=True)
 
 
+#: Placeholder tag older importers wrote for bullets nothing matched.
+_LEGACY_UNTAGGED = "untagged"
+
+
 class Bullet(_Strict):
     """One achievement line, the atomic unit of selection and rewriting."""
 
@@ -53,10 +57,11 @@ class Bullet(_Strict):
     id: str
     text: str = Field(min_length=1)
 
-    #: Skills/tools this bullet demonstrates. Doubles as the fabrication guard's
-    #: whitelist, so it must name every technology mentioned in `text`.
-    #: Stored as a JSON array but set-valued: duplicates (incl. aliases) collapse on load.
-    tags: list[str] = Field(min_length=1)
+    #: "Extra skills": optional skills the user vouches for beyond what the text names.
+    #: Extends the fabrication guard's whitelist. Stored as typed (vocabulary changes
+    #: never rewrite them); matching canonicalises at read time — `bullet_tags.match_tags`
+    #: adds the skills detected in, or inferred from, the text.
+    tags: list[str] = Field(default_factory=list)
 
     #: Whether the bullet carries a concrete number. Nudges selection ordering.
     metric: bool = False
@@ -64,8 +69,13 @@ class Bullet(_Strict):
     @field_validator("tags")
     @classmethod
     def _normalise_tags(cls, tags: list[str]) -> list[str]:
-        """Collapse to a sorted set of canonical tags (no case/alias duplicates)."""
-        return sorted({config.canonical_tag(t) for t in tags if t.strip()})
+        """Strip, drop blanks and the legacy import sentinel, dedupe case-insensitively."""
+        kept: dict[str, str] = {}
+        for raw in tags:
+            tag = " ".join(raw.split())
+            if tag and tag.lower() != _LEGACY_UNTAGGED:
+                kept.setdefault(tag.lower(), tag)
+        return sorted(kept.values(), key=str.lower)
 
 
 class Contact(_Strict):
@@ -415,40 +425,6 @@ def load(path: Path | None = None) -> MasterResume:
     return MasterResume.model_validate(raw)
 
 
-def _alias_rewrites(raw: dict) -> list[tuple[str, str]]:
-    """Every raw bullet tag `TAG_ALIASES` silently rewrote, as (original, canonical) pairs.
-
-    `Bullet._normalise_tags` runs `config.canonical_tag` at load time with no way to see
-    the transform happen — a tag typed as `"performance measurement"` becomes
-    `"performance"` and the person who typed it never finds out. This exists so
-    `--validate` makes that visible instead. Deliberately checks membership in
-    `TAG_ALIASES` specifically, not `canonical_tag(tag) != tag`, so a pure case/whitespace
-    fold ("Python" -> "python") — expected and not surprising — doesn't drown out an
-    actual alias substitution in the output.
-
-    Reads the raw dict, not the model, so it must handle both shapes: a `sections`-native
-    file, and a legacy file with top-level `experience`/`projects` lists.
-    """
-    seen: dict[str, str] = {}
-
-    def scan(entries: list[dict]) -> None:
-        for entry in entries:
-            for bullet in entry.get("bullets", []):
-                for tag in bullet.get("tags", []):
-                    cleaned = tag.strip().lower()
-                    if cleaned in config.TAG_ALIASES and tag not in seen:
-                        seen[tag] = config.TAG_ALIASES[cleaned]
-
-    if "sections" in raw:
-        for section in raw.get("sections", []):
-            if section.get("kind") in ("experience", "project"):
-                scan(section.get("entries", []))
-    else:
-        for key in ("experience", "projects"):
-            scan(raw.get(key, []))
-    return sorted(seen.items())
-
-
 def _validate_cli() -> int:
     """Back the `--validate` entrypoint. Returns a process exit code."""
     parser = argparse.ArgumentParser(description="Validate the master resume store.")
@@ -460,7 +436,6 @@ def _validate_cli() -> int:
         parser.print_help()
         return 0
 
-    path = args.path or config.MASTER_RESUME_PATH
     try:
         resume = load(args.path)
     except Exception as exc:
@@ -468,22 +443,14 @@ def _validate_cli() -> int:
         return 1
 
     bullets = resume.all_bullets()
-    tags = sorted({t for b in bullets for t in b.tags})
+    extra = {t.lower() for b in bullets for t in b.tags}
     print(f"OK  {resume.contact.name}")
     print(f"    {len(resume.sections)} sections: " + ", ".join(
         f"{s.title!r} ({s.kind}, {len(s.entries)})" for s in resume.sections
     ))
     print(f"    {len(resume.experience)} experience entries, {len(resume.projects)} projects")
     print(f"    {len(bullets)} bullets, {sum(b.metric for b in bullets)} with metrics")
-    print(f"    {len(tags)} distinct tags")
-
-    raw = json.loads(path.read_text(encoding="utf-8"))
-    rewrites = _alias_rewrites(raw)
-    if rewrites:
-        print(f"    {len(rewrites)} tag(s) rewritten by TAG_ALIASES on load:")
-        for original, canonical in rewrites:
-            print(f"      {original!r} -> {canonical!r}")
-
+    print(f"    {len(extra)} distinct extra skills")
     return 0
 
 

@@ -1,10 +1,5 @@
-"""Tests for `data._alias_rewrites` and the `--validate` CLI.
-
-Focused on the alias-visibility feature added to `--validate`: `Bullet._normalise_tags`
-runs `config.canonical_tag` silently at load time, so a tag typed as `"performance
-measurement"` becomes `"performance"` with nothing telling the person who typed it that
-happened. `_alias_rewrites` is what makes that transform visible.
-"""
+"""Tests for the master-resume model: bullet Extra skills, ids, legacy migration, and
+the `--validate` CLI."""
 
 from __future__ import annotations
 
@@ -15,7 +10,7 @@ from pathlib import Path
 import pytest
 
 from resume_tailor import config
-from resume_tailor.content.data import MasterResume, _alias_rewrites, _validate_cli
+from resume_tailor.content.data import MasterResume, _validate_cli
 
 _RESUME_TEMPLATE: dict = {
     "contact": {"name": "Test User", "email": "test@example.com"},
@@ -42,51 +37,27 @@ def _resume_with_tags(*tags: str) -> dict:
     return resume
 
 
-def test_no_rewrites_when_every_tag_is_already_canonical():
-    assert _alias_rewrites(_resume_with_tags("python", "docker")) == []
+def test_extra_skills_are_stored_as_typed_not_canonicalised():
+    """A vocabulary change must never rewrite resume data, so tags keep the user's
+    spelling; matching canonicalises at read time (`bullet_tags.match_tags`)."""
+    resume = MasterResume.model_validate(_resume_with_tags("ML", "PostgreSQL", "ml", " "))
+    assert resume.all_bullets()[0].tags == ["ML", "PostgreSQL"]
 
 
-def test_reports_a_tag_the_alias_table_rewrites():
-    assert _alias_rewrites(_resume_with_tags("ml", "python")) == [("ml", "machine learning")]
+def test_legacy_untagged_sentinel_is_dropped_and_tags_are_optional():
+    resume = MasterResume.model_validate(_resume_with_tags("untagged"))
+    assert resume.all_bullets()[0].tags == []
+    bare = json.loads(json.dumps(_RESUME_TEMPLATE))
+    bare["experience"][0]["bullets"] = [{"id": "b1", "text": "Did a thing."}]
+    assert MasterResume.model_validate(bare).all_bullets()[0].tags == []
 
 
-def test_deduplicates_the_same_raw_tag_seen_twice():
-    resume = json.loads(json.dumps(_RESUME_TEMPLATE))
-    resume["experience"][0]["bullets"] = [
-        {"id": "b1", "text": "A.", "tags": ["ml"]},
-        {"id": "b2", "text": "B.", "tags": ["ml"]},
-    ]
-    assert _alias_rewrites(resume) == [("ml", "machine learning")]
-
-
-def test_a_pure_case_fold_is_not_reported_as_an_alias_rewrite():
-    """"Python" -> "python" is expected canonicalisation, not a surprising substitution —
-    only genuine `TAG_ALIASES` hits belong in this output."""
-    assert _alias_rewrites(_resume_with_tags("Python")) == []
-
-
-def test_validate_cli_prints_alias_rewrites(tmp_path: Path, monkeypatch, capsys):
-    resume = _resume_with_tags("ml", "python")
+def test_validate_cli_reports_ok(tmp_path: Path, monkeypatch, capsys):
     path = tmp_path / "master_resume.json"
-    path.write_text(json.dumps(resume), encoding="utf-8")
-
+    path.write_text(json.dumps(_resume_with_tags("ml", "python")), encoding="utf-8")
     monkeypatch.setattr(sys, "argv", ["data.py", "--validate", "--path", str(path)])
     assert _validate_cli() == 0
-    out = capsys.readouterr().out
-    assert "'ml' -> 'machine learning'" in out
-
-
-def test_validate_cli_omits_the_rewrite_line_when_nothing_was_rewritten(
-    tmp_path: Path, monkeypatch, capsys
-):
-    resume = _resume_with_tags("python")
-    path = tmp_path / "master_resume.json"
-    path.write_text(json.dumps(resume), encoding="utf-8")
-
-    monkeypatch.setattr(sys, "argv", ["data.py", "--validate", "--path", str(path)])
-    assert _validate_cli() == 0
-    out = capsys.readouterr().out
-    assert "rewritten by TAG_ALIASES" not in out
+    assert "2 distinct extra skills" in capsys.readouterr().out
 
 
 # ----------------------------------------------------------------------------------------

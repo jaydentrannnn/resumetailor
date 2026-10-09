@@ -59,25 +59,20 @@ export function fetchMasterResume(): Promise<Record<string, unknown>> {
 export type MasterResumeImportResponse = {
   resume: Record<string, unknown>;
   warnings: string[];
-  untagged_bullet_count: number;
 };
 
 /**
  * Parse an uploaded .docx or PDF into a `MasterResume` draft — content, not just layout.
  * Writes nothing; the caller loads the result as unsaved editor state and saves
- * through `saveMasterResume` when ready. `suggestTags` additionally runs an opt-in LLM
- * pass for whatever the deterministic import left untagged; `useModel` lets the model
- * sort a PDF's lines into sections (every field is checked against the PDF's text).
+ * through `saveMasterResume` when ready. `useModel` lets the model sort a PDF's lines
+ * into sections (every field is checked against the PDF's text).
  */
 export async function importMasterResumeContent(
   file: File,
-  options?: { suggestTags?: boolean; useModel?: boolean },
+  options?: { useModel?: boolean },
 ): Promise<MasterResumeImportResponse> {
   const form = new FormData();
   form.append("file", file);
-  if (options?.suggestTags) {
-    form.append("suggest_tags", "true");
-  }
   if (options?.useModel) {
     form.append("use_model", "true");
   }

@@ -7,6 +7,7 @@ import io
 import docx
 
 from resume_tailor import config
+from resume_tailor.content import bullet_tags
 from resume_tailor.content.data import (
     Bullet,
     Contact,
@@ -97,20 +98,20 @@ def test_bullet_ids_are_entry_scoped_and_sequential():
     assert proj_bullet.id == f"{imported.resume.projects[0].id}_b1"
 
 
-def test_known_tag_is_seeded_deterministically():
-    """A bullet whose text names a known tag (e.g. "embeddings") gets it without any
-    LLM call — the deterministic pass this whole module is built around."""
+def test_known_skill_in_an_imported_bullet_is_detected_without_a_tag():
+    """A bullet whose text names a known skill (e.g. "embeddings") matches it with no
+    stored tag and no LLM call — detection replaces import-time seeding."""
     imported = _import(_full_featured_resume)
     proj_bullet = imported.resume.projects[0].bullets[0]
-    assert "embeddings" in proj_bullet.tags
+    assert "embeddings" in bullet_tags.match_tags(proj_bullet)
 
 
-def test_unmatched_bullet_gets_the_untagged_sentinel_and_is_counted():
+def test_imported_bullets_carry_no_extra_skills():
+    """Skills a bullet shows are computed from its text at run time (`bullet_tags`);
+    the importer seeds nothing and never warns about tags."""
     imported = _import(_full_featured_resume)
-    exp_bullet = imported.resume.experience[0].bullets[0]
-    assert exp_bullet.tags == [import_common.UNTAGGED]
-    assert imported.untagged_bullet_count >= 1
-    assert any("untagged" in w.lower() for w in imported.warnings)
+    assert all(b.tags == [] for b in imported.resume.all_bullets())
+    assert not any("tag" in w.lower() for w in imported.warnings)
 
 
 def test_entry_ids_collide_safely_across_kinds():

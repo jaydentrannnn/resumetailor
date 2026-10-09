@@ -19,7 +19,7 @@ from pathlib import Path
 
 from resume_tailor import config, workspace
 from resume_tailor.cli.args import parse_args, validate_argument_ranges
-from resume_tailor.content import data, industries, style
+from resume_tailor.content import bullet_tags, data, industries, style
 from resume_tailor.content.data import MasterResume
 from resume_tailor.document.template_profile import active_layout
 from resume_tailor.infra import logs, telemetry
@@ -195,7 +195,8 @@ class _CliRun:
             # The resume's own tag vocabulary steers `canonical`, so the extractor stops
             # coining tags that can never match anything ("communication skills" against a
             # resume tagged `communication`). An unmatched canonical then means a real gap.
-            known_tags = sorted({t for b in resume.all_bullets() for t in b.tags})
+            bullet_tags.annotate(resume)
+            known_tags = bullet_tags.known_terms(resume)
             requirements = jd.extract_consensus(
                 jd_text,
                 known_tags=known_tags,

@@ -17,11 +17,6 @@ from ..document import (
 from ..document.analysis_types import _Para
 from ..document.template_profile import HeaderFieldMapping
 
-#: Sentinel tag for a bullet the deterministic pass matched nothing for — `Bullet.tags`
-#: requires at least one entry, so this stands in until the user (or an opt-in LLM
-#: pass) supplies a real one. Never treated as a real tag anywhere else in the pipeline.
-UNTAGGED = "untagged"
-
 _COURSEWORK_RE = re.compile(r"(?i)^relevant coursework:\s*(.+)$")
 
 _GPA_RE = re.compile(r"(?i)\s*\|\s*GPA:\s*(.+)$")
@@ -39,7 +34,6 @@ class ImportedResume(BaseModel):
     #: user reviewing the draft knows exactly what to check rather than discovering a
     #: blank field on its own.
     warnings: list[str] = Field(default_factory=list)
-    untagged_bullet_count: int = 0
 
 #: A typed dash: ``---`` is an em dash and ``--`` an en dash, but only when set off by
 #: spaces, so a hyphenated range ("2020--2022" stays) or a word is never touched.
@@ -174,18 +168,16 @@ def _paragraph_hyperlink_target(
             break
     return label, url, start
 
-def _import_bullets(bullet_paras: list[_Para], entry_id: str, vocabulary: set[str]) -> list[Bullet]:
+def _import_bullets(bullet_paras: list[_Para], entry_id: str) -> list[Bullet]:
     bullets: list[Bullet] = []
     for i, p in enumerate(bullet_paras, start=1):
         text = p.text.strip()
         if not text:
             continue
-        tags = _seed_tags(text, vocabulary) or [UNTAGGED]
         bullets.append(
             Bullet(
                 id=f"{entry_id}_b{i}",
                 text=text,
-                tags=tags,
                 # Coarse draft heuristic, not a claim about the source resume's own
                 # writing style: any digit is treated as "carries a metric". The user
                 # reviews every imported bullet before saving, same as every other

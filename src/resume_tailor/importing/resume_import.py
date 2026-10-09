@@ -8,19 +8,10 @@ header field, date, and bullet in an uploaded document (Phase 4's move to reconc
 the prerequisite this needed); this module turns that same structural analysis into a
 `MasterResume` draft instead of a template mapping.
 
-No LLM call is required to produce a usable draft. Tags are seeded deterministically by
-substring-matching each bullet's text against a known-tag vocabulary
-(`_seed_tags`) — the same "cheap and free first" instinct the rest of the pipeline
-follows (tag-overlap scoring before the semantic LLM blend, `TAG_ALIASES` before a
-model call). A bullet nothing matched gets the sentinel tag `"untagged"` (required
-since `Bullet.tags` has `min_length=1`) and is counted in `ImportedResume.
-untagged_bullet_count`, surfaced to the user rather than silently guessed at.
-
-An optional, explicitly opt-in LLM pass — `propose.propose_bullet_tags` — can suggest
-real tags for whatever the deterministic pass left untagged. It is never part of this
-module's own call graph; the caller (the web route) decides whether to run it, exactly
-as `propose.py`'s existing vocabulary proposals are opt-in Settings-tab actions, never
-pipeline stages.
+No LLM call is required to produce a usable draft. Bullets import with no Extra skills:
+the skills a bullet shows are computed from its text at run time (`bullet_tags`), so
+nothing needs seeding here. Certification/award list items still get deterministic
+tags (`_seed_tags`).
 
 Reuses `template_analyze`'s own private paragraph-level helpers (`_load_paras`,
 `_split_entries`, `_header_fields_from_text`, `_skills_spans`) rather than re-deriving
@@ -76,13 +67,13 @@ def import_from_analysis(
         body = paras[sec.body_start : sec.body_end]
         section_id = import_common._fresh_id(sec.heading_text, section_ids)
         if sec.key == "experience":
-            entries, warns = import_entries._import_experience_entries(body, vocabulary, entry_ids)
+            entries, warns = import_entries._import_experience_entries(body, entry_ids)
             warnings.extend(warns)
             sections.append(
                 ExperienceSection(id=section_id, title=sec.heading_text, entries=entries)
             )
         elif sec.key == "projects":
-            entries, warns = import_entries._import_project_entries(body, vocabulary, entry_ids)
+            entries, warns = import_entries._import_project_entries(body, entry_ids)
             warnings.extend(warns)
             sections.append(
                 ProjectSection(id=section_id, title=sec.heading_text, entries=entries)
@@ -106,21 +97,7 @@ def import_from_analysis(
             )
 
     resume = import_common.normalize_resume_dashes(MasterResume(contact=contact, sections=sections))
-    used_tags = sorted(
-        {t for b in resume.all_bullets() for t in b.tags if t != import_common.UNTAGGED}
-    )
     resume = resume.model_copy(
-        update={"tag_vocabulary": import_common.with_skill_terms(resume, used_tags)}
+        update={"tag_vocabulary": import_common.with_skill_terms(resume, [])}
     )
-
-    untagged = sum(1 for b in resume.all_bullets() for t in b.tags if t == import_common.UNTAGGED)
-    if untagged:
-        warnings.append(
-            f"{untagged} bullet(s) could not be matched to a known tag and were "
-            f'marked "{import_common.UNTAGGED}" — retag them before saving, or run the optional '
-            "tag suggestion pass."
-        )
-
-    return import_common.ImportedResume(
-        resume=resume, warnings=warnings, untagged_bullet_count=untagged
-    )
+    return import_common.ImportedResume(resume=resume, warnings=warnings)

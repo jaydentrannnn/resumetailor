@@ -8,7 +8,7 @@ from collections.abc import Callable
 from fastapi import APIRouter, HTTPException
 
 from resume_tailor import config
-from resume_tailor.content import data, libraries, library_models
+from resume_tailor.content import bullet_tags, data, libraries, library_models
 from resume_tailor.pipeline import jd, propose
 from resume_tailor.web import template_ops
 from resume_tailor.web.jobs import get_queue
@@ -144,7 +144,7 @@ def generate_library_proposals(body: ProposalGenerateRequest) -> LibraryStateRes
     except (FileNotFoundError, ValueError) as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
-    known_tags = sorted({t for b in resume.all_bullets() for t in b.tags})
+    known_tags = bullet_tags.known_terms(resume)
     jd_text = body.jd_text.strip()
 
     unmatched: list[tuple[str, str]] = []

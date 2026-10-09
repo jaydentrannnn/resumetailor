@@ -24,7 +24,7 @@ from ..content.data import (
 from ..document import analysis_types
 from ..document.render import parse_range
 from . import pdf_lines, pdf_patterns, pdf_structure
-from .import_common import UNTAGGED, _fresh_id, _seed_tags, with_skill_terms
+from .import_common import _fresh_id, _seed_tags, with_skill_terms
 
 
 # --------------------------------------------------------------------------------------
@@ -100,12 +100,11 @@ def _contact(
     )
     return contact, " ".join(summary)
 
-def _bullets(texts: list[str], entry_id: str, vocabulary: set[str]) -> list[Bullet]:
+def _bullets(texts: list[str], entry_id: str) -> list[Bullet]:
     return [
         Bullet(
             id=f"{entry_id}_b{i}",
             text=text,
-            tags=_seed_tags(text, vocabulary) or [UNTAGGED],
             metric=bool(re.search(r"\d", text)),
         )
         for i, text in enumerate((t.strip() for t in texts), start=1)
@@ -207,7 +206,7 @@ def _build(
                         location=e.location,
                         start=start,
                         end=end,
-                        bullets=_bullets(e.bullets, eid, vocabulary),
+                        bullets=_bullets(e.bullets, eid),
                     )
                 )
             sections.append(ExperienceSection(id=sid, title=draft.title, entries=jobs))
@@ -225,7 +224,7 @@ def _build(
                         name=e.primary,
                         tech=[t.strip() for t in re.split(r"[,;]", tech_text) if t.strip()],
                         date=e.dates,
-                        bullets=_bullets(e.bullets, pid, vocabulary),
+                        bullets=_bullets(e.bullets, pid),
                     )
                 )
             sections.append(ProjectSection(id=sid, title=draft.title, entries=projects))
@@ -250,5 +249,4 @@ def _build(
             ]
             sections.append(ListSection(id=sid, title=draft.title, entries=items))
     resume = MasterResume(contact=contact, summary_variants=summaries, sections=sections)
-    used = sorted({t for b in resume.all_bullets() for t in b.tags if t != UNTAGGED})
-    return resume.model_copy(update={"tag_vocabulary": with_skill_terms(resume, used)})
+    return resume.model_copy(update={"tag_vocabulary": with_skill_terms(resume, [])})

@@ -8,9 +8,7 @@ from resume_tailor import config
 from resume_tailor.content.data import load
 from tests.web.helpers import (
     _DOCX_MIME,
-    _FakeSDKError,
     _resume_docx_bytes,
-    _resume_docx_bytes_with_an_untaggable_bullet,
 )
 
 
@@ -165,7 +163,7 @@ def test_import_master_resume_returns_a_draft_without_writing(client, tmp_path, 
     assert body["resume"]["contact"]["name"] == "Ada Lovelace"
     assert any(s["kind"] == "experience" for s in body["resume"]["sections"])
     assert "warnings" in body
-    assert "untagged_bullet_count" in body
+    assert "untagged_bullet_count" not in body
 
     assert path.read_text(encoding="utf-8") == before
     assert path.stat().st_mtime == before_mtime
@@ -285,131 +283,3 @@ def test_put_master_resume_rejects_an_invalid_body(client):
     res = c.put("/api/master-resume", json={"not": "a valid resume"})
     assert res.status_code == 400
     assert "detail" in res.json()
-
-
-def test_import_master_resume_suggest_tags_fills_in_untagged_bullets(client, monkeypatch):
-    """`suggest_tags=true` runs the opt-in LLM pass for whatever the deterministic
-    seeding left untagged, and the response's untagged count drops to reflect it."""
-    c, _ = client
-    upload = _resume_docx_bytes_with_an_untaggable_bullet()
-
-    baseline = c.post(
-        "/api/master-resume/import",
-        files={"file": ("resume.docx", upload, _DOCX_MIME)},
-    ).json()
-    assert baseline["untagged_bullet_count"] >= 1
-
-    from resume_tailor.pipeline import propose as propose_mod
-
-    def fake_propose_bullet_tags(bullets, known_tags, **_kwargs):
-        return {0: ["python"]}
-
-    monkeypatch.setattr(propose_mod, "propose_bullet_tags", fake_propose_bullet_tags)
-
-    res = c.post(
-        "/api/master-resume/import",
-        data={"suggest_tags": "true"},
-        files={"file": ("resume.docx", upload, _DOCX_MIME)},
-    )
-    assert res.status_code == 200
-    body = res.json()
-    assert body["untagged_bullet_count"] == baseline["untagged_bullet_count"] - 1
-
-
-def test_import_master_resume_suggest_tags_failure_is_a_warning_not_a_500(client, monkeypatch):
-    """The LLM pass must never fail the import itself — a raised error becomes a
-    warning in the response, and the deterministic draft is still returned."""
-    c, _ = client
-    from resume_tailor.pipeline import propose as propose_mod
-
-    def fake_propose_bullet_tags(bullets, known_tags, **_kwargs):
-        raise RuntimeError("model unreachable")
-
-    monkeypatch.setattr(propose_mod, "propose_bullet_tags", fake_propose_bullet_tags)
-
-    res = c.post(
-        "/api/master-resume/import",
-        data={"suggest_tags": "true"},
-        files={"file": ("resume.docx", _resume_docx_bytes_with_an_untaggable_bullet(), _DOCX_MIME)},
-    )
-    assert res.status_code == 200
-    body = res.json()
-    assert any("model unreachable" in w for w in body["warnings"])
-    assert body["resume"]["contact"]["name"] == "Ada Lovelace"
-
-
-def test_import_master_resume_suggest_tags_is_pinned_to_ollama_regardless_of__active(
-    client, monkeypatch
-):
-    """The import's tag-suggestion pass must not fall through to `backend_for`'s claude
-    default. Resolving a claude job first (as a prior tailoring run would leave `_ACTIVE`)
-    and then checking what backend the LLM call actually observes pins the fix: without
-    `config.pinned(config.ONE_OFF_PROFILE)` around the call, this would come back
-    provider='anthropic'."""
-    c, _ = client
-    config.resolve("claude")
-
-    from resume_tailor.pipeline import propose as propose_mod
-
-    observed: dict[str, object] = {}
-
-    def fake_propose_bullet_tags(bullets, known_tags, **_kwargs):
-        backend = config.backend_for("extract")
-        observed["origin"] = backend.origin
-        observed["model"] = backend.model
-        observed["provider"] = backend.provider
-        return {}
-
-    monkeypatch.setattr(propose_mod, "propose_bullet_tags", fake_propose_bullet_tags)
-
-    res = c.post(
-        "/api/master-resume/import",
-        data={"suggest_tags": "true"},
-        files={
-            "file": (
-                "resume.docx",
-                _resume_docx_bytes_with_an_untaggable_bullet(),
-                _DOCX_MIME,
-            )
-        },
-    )
-    assert res.status_code == 200
-    assert observed == {
-        "origin": "ollama",
-        "model": config.OLLAMA_MODEL,
-        "provider": "openai",
-    }
-    # The pin must not leak into the ambient job routing.
-    assert config.backend_for("extract").provider == "anthropic"
-    config.resolve("claude")
-
-
-def test_import_master_resume_suggest_tags_survives_a_non_runtimeerror_failure(
-    client, monkeypatch
-):
-    """Regression for the reported bug: a real backend SDK error (e.g.
-    `anthropic.BadRequestError`, which is neither `LLMError` nor `RuntimeError`) must
-    still become a warning, not an unhandled 500."""
-    c, _ = client
-    from resume_tailor.pipeline import propose as propose_mod
-
-    def fake_propose_bullet_tags(bullets, known_tags, **_kwargs):
-        raise _FakeSDKError("Your credit balance is too low to access the Anthropic API.")
-
-    monkeypatch.setattr(propose_mod, "propose_bullet_tags", fake_propose_bullet_tags)
-
-    res = c.post(
-        "/api/master-resume/import",
-        data={"suggest_tags": "true"},
-        files={
-            "file": (
-                "resume.docx",
-                _resume_docx_bytes_with_an_untaggable_bullet(),
-                _DOCX_MIME,
-            )
-        },
-    )
-    assert res.status_code == 200
-    body = res.json()
-    assert any("credit balance" in w for w in body["warnings"])
-    assert body["resume"]["contact"]["name"] == "Ada Lovelace"

@@ -11,6 +11,7 @@ import re
 from dataclasses import dataclass
 
 from .. import config
+from ..content import bullet_tags
 from ..content.data import Bullet, Experience, Project
 from .jd import JobRequirements
 
@@ -65,7 +66,7 @@ def _jaccard(a: set[str], b: set[str]) -> float:
 
 def _keyword_score(bullet: Bullet, requirements: JobRequirements) -> float:
     """Compute the same keyword-overlap signal as `selection.score` (minus semantic)."""
-    tags = set(bullet.tags)
+    tags = bullet_tags.match_tags(bullet)
     total = 0.0
     for kw in requirements.keywords:
         if kw.canonical not in tags:
@@ -106,7 +107,12 @@ def _affinity(members: list[Bullet]) -> tuple[float, float, float]:
     content_overlaps: list[float] = []
     for i in range(len(members)):
         for j in range(i + 1, len(members)):
-            tag_jaccards.append(_jaccard(set(members[i].tags), set(members[j].tags)))
+            tag_jaccards.append(
+                _jaccard(
+                    bullet_tags.match_tags(members[i], inferred=False),
+                    bullet_tags.match_tags(members[j], inferred=False),
+                )
+            )
             content_overlaps.append(
                 _jaccard(_content_tokens(members[i]), _content_tokens(members[j]))
             )

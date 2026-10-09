@@ -78,7 +78,7 @@ import pytest  # noqa: E402
 
 from resume_tailor import config, workspace  # noqa: E402
 from resume_tailor.apply.forms import form_guards, submit_guard  # noqa: E402
-from resume_tailor.content import libraries, style  # noqa: E402
+from resume_tailor.content import bullet_tags, libraries, style  # noqa: E402
 from resume_tailor.document import template_analyze, template_build  # noqa: E402
 from resume_tailor.infra import secret_store  # noqa: E402
 from resume_tailor.web import extension as web_extension  # noqa: E402
@@ -102,6 +102,7 @@ def _isolated_libraries(tmp_path, monkeypatch):
     resume at its own separately-set path.
     """
     monkeypatch.setattr(libraries, "store_root", lambda: tmp_path / "libraries")
+    bullet_tags.clear()
     paths = {
         **config._DEFAULT.paths,
         "LIBRARIES_PATH": tmp_path / "workspace_data" / "libraries.json",

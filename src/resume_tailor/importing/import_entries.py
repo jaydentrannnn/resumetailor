@@ -20,7 +20,7 @@ from . import import_common
 
 
 def _import_experience_entries(
-    body: list[_Para], vocabulary: set[str], taken_ids: set[str]
+    body: list[_Para], taken_ids: set[str]
 ) -> tuple[list[Experience], list[str]]:
     warnings: list[str] = []
     entries: list[Experience] = []
@@ -73,13 +73,13 @@ def _import_experience_entries(
                 location=location,
                 start=start,
                 end=end,
-                bullets=import_common._import_bullets(bullet_paras, entry_id, vocabulary),
+                bullets=import_common._import_bullets(bullet_paras, entry_id),
             )
         )
     return entries, warnings
 
 def _import_project_entries(
-    body: list[_Para], vocabulary: set[str], taken_ids: set[str]
+    body: list[_Para], taken_ids: set[str]
 ) -> tuple[list[Project], list[str]]:
     warnings: list[str] = []
     entries: list[Project] = []
@@ -122,7 +122,7 @@ def _import_project_entries(
                 date=date_text,
                 link=link,
                 url=url,
-                bullets=import_common._import_bullets(bullet_paras, entry_id, vocabulary),
+                bullets=import_common._import_bullets(bullet_paras, entry_id),
             )
         )
     return entries, warnings

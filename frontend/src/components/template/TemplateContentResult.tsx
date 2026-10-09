@@ -10,10 +10,7 @@ export function TemplateContentResult({ importOutcome }: { importOutcome: Import
       ) : null}
       {importOutcome?.kind === "draft" ? (
         <div className="mt-4 border-t border-line pt-4 text-sm text-accent">
-          <p>
-            Content imported — open the Master Resume tab to review and save it.
-            {importOutcome.untagged > 0 ? ` ${importOutcome.untagged} bullet(s) need a tag.` : null}
-          </p>
+          <p>Content imported — open the Master Resume tab to review and save it.</p>
           {importOutcome.warnings.length > 0 ? (
             <ul className="mt-1 list-disc pl-5 text-xs text-ink-muted">
               {importOutcome.warnings.map((w) => (

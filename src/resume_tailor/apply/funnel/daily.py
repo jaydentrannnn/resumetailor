@@ -9,7 +9,7 @@ from contextlib import contextmanager
 from resume_tailor import workspace
 from resume_tailor.apply.discovery import source_rows
 from resume_tailor.apply.funnel import store, store_models, store_views
-from resume_tailor.content import data
+from resume_tailor.content import bullet_tags, data
 from resume_tailor.web.jobs import get_queue
 from resume_tailor.web.schemas import ApplySettings, JobSettings
 
@@ -110,7 +110,7 @@ def prepare_application(
     raw = workspace.load_settings()
     job_defaults = JobSettings.model_validate(raw["defaults"])
     resume = data.load()
-    known_tags = sorted({t for b in resume.all_bullets() for t in b.tags})
+    known_tags = bullet_tags.known_terms(resume)
     row = source_rows.SourceRow(
         company=app.company,
         role=app.role,
@@ -212,7 +212,7 @@ def run_daily(
         settings = apply_settings
 
         resume = data.load()
-        known_tags = sorted({t for b in resume.all_bullets() for t in b.tags})
+        known_tags = bullet_tags.known_terms(resume)
 
         try:
             from resume_tailor.apply.discovery import ats_api

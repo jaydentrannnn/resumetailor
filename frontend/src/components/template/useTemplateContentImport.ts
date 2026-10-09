@@ -17,7 +17,7 @@ export type ImportOutcome =
       warnings: string[];
       backup: string | null;
     }
-  | { kind: "draft"; warnings: string[]; untagged: number }
+  | { kind: "draft"; warnings: string[] }
   | { kind: "error"; error: string };
 
 export function useTemplateContentImport() {
@@ -27,7 +27,6 @@ export function useTemplateContentImport() {
   // different endpoint), but the wizard offers it as "one upload does both" — checked
   // here, run right after a successful install below.
   const [alsoImportContent, setAlsoImportContent] = useState(false);
-  const [suggestTags, setSuggestTags] = useState(false);
   const [importBusy, setImportBusy] = useState(false);
   const [importOutcome, setImportOutcome] = useState<ImportOutcome | null>(null);
 
@@ -37,7 +36,7 @@ export function useTemplateContentImport() {
     setImportOutcome(null);
     setImportBusy(true);
     try {
-      const result = await importMasterResumeContent(file, { suggestTags });
+      const result = await importMasterResumeContent(file);
       const picked = await choice({
         title: MERGE_CHOICE_TITLE,
         message: MERGE_CHOICE_MESSAGE,
@@ -62,11 +61,7 @@ export function useTemplateContentImport() {
           result.resume as MasterResume,
           "Imported from the template upload — review on the Master Resume tab and save to keep it.",
         );
-        setImportOutcome({
-          kind: "draft",
-          warnings: result.warnings,
-          untagged: result.untagged_bullet_count,
-        });
+        setImportOutcome({ kind: "draft", warnings: result.warnings });
       }
     } catch (err) {
       setImportOutcome({ kind: "error", error: err instanceof Error ? err.message : String(err) });
@@ -78,8 +73,6 @@ export function useTemplateContentImport() {
   return {
     alsoImportContent,
     setAlsoImportContent,
-    suggestTags,
-    setSuggestTags,
     importBusy,
     importOutcome,
     setImportOutcome,

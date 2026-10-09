@@ -386,7 +386,7 @@ def test_diagnosis_reads_the_unfaceted_master():
 
     result = _result(resume, {"b1": "Did a thing."})
     text = report.format_report(faceted, reqs, result, master=resume)
-    assert "Evidence exists but no bullet is tagged for it:" in text
+    assert "Listed elsewhere but no bullet shows it" in text
     assert "PyTorch" in text
     assert "No evidence in the master resume" not in text
 

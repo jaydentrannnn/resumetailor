@@ -77,7 +77,7 @@ def test_single_column_resume_becomes_a_structured_draft():
         "",
         "",
     )
-    assert project.bullets[0].tags == ["python"]
+    assert project.bullets[0].tags == []
 
     labels = [g.label for g in sections["SKILLS"].entries]
     assert labels == ["Tools", "Languages"]

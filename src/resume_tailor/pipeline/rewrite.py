@@ -18,6 +18,7 @@ from __future__ import annotations
 from dataclasses import dataclass, field
 
 from .. import config
+from ..content import bullet_tags
 from ..content.data import Bullet, MasterResume
 from ..infra import llm, telemetry
 from . import bullet_checks, bullet_merge, events, followups, rewrite_prompts
@@ -254,6 +255,6 @@ def keyword_coverage(
     Reported by the CLI so an obviously poor-fit posting is visible before applying.
     """
     must = requirements.by_importance("must_have")
-    available = {t for b in resume.all_bullets() for t in b.tags}
+    available = set(bullet_tags.known_terms(resume))
     matched = sum(1 for kw in must if kw.canonical in available)
     return matched, len(must)

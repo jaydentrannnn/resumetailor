@@ -8,7 +8,7 @@ from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
 from resume_tailor import config
-from resume_tailor.content import data, industries, style
+from resume_tailor.content import bullet_tags, data, industries, style
 from resume_tailor.content.data import MasterResume
 from resume_tailor.document import rerender
 from resume_tailor.document.template_profile import active_layout
@@ -129,7 +129,8 @@ class _TailorJobRun:
             raise RuntimeError(str(exc)) from exc
 
         self.resume = data.load()
-        self.known_tags = sorted({t for b in self.resume.all_bullets() for t in b.tags})
+        bullet_tags.annotate(self.resume)
+        self.known_tags = bullet_tags.known_terms(self.resume)
         job.check_cancelled()
 
     def _extract(self) -> None:

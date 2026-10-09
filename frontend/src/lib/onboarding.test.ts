@@ -146,7 +146,6 @@ describe("onboarding helpers", () => {
       "Your name is missing.",
       "No dates found for Acme.",
       "Model has no bullets.",
-      "1 bullet has no skill tags; untagged bullets rank lower for every job.",
     ]);
     expect(review.blocking).toEqual(["Your name is missing."]);
     expect(contentComplete(review)).toBe(false);

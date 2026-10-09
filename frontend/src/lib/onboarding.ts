@@ -64,8 +64,7 @@ export function personalComplete(
 
 /**
  * Whether the resume content is usable: at least one bullet to tailor and nothing
- * blocking (a missing name). Missing dates, empty entries and untagged bullets are
- * warnings: they weaken a resume but never stop a run.
+ * blocking (a missing name). Missing dates and empty entries are warnings: they weaken a resume but never stop a run.
  */
 export function contentComplete(review: ResumeReview): boolean {
   return review.bullets > 0 && review.blocking.length === 0;
@@ -162,7 +161,6 @@ export function reviewResume(resume: MasterResume | null): ResumeReview {
     blocking: [],
   };
   if (!resume) return review;
-  let untagged = 0;
   for (const section of resume.sections) {
     review.sections.push({ title: section.title, count: section.entries.length });
     if (section.kind === "experience" || section.kind === "project") {
@@ -178,7 +176,6 @@ export function reviewResume(resume: MasterResume | null): ResumeReview {
       review.entries += entries.length;
       for (const { name, dated, bullets } of entries) {
         review.bullets += bullets.length;
-        untagged += bullets.filter((b) => b.tags.length === 0).length;
         if (!dated) review.warnings.push(`No dates found for ${name || "an entry"}.`);
         if (bullets.length === 0) review.warnings.push(`${name || "An entry"} has no bullets.`);
       }
@@ -189,10 +186,6 @@ export function reviewResume(resume: MasterResume | null): ResumeReview {
   if (!resume.contact.name.trim() || resume.contact.name === "Your Name")
     review.blocking.unshift("Your name is missing.");
   review.warnings.unshift(...review.blocking);
-  if (untagged)
-    review.warnings.push(
-      `${untagged} bullet${untagged === 1 ? " has" : "s have"} no skill tags; untagged bullets rank lower for every job.`,
-    );
   return review;
 }
 

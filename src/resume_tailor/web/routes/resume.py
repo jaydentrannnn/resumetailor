@@ -228,29 +228,23 @@ def validate_master_resume(body: dict[str, Any]) -> ValidateResponse:
 @router.post("/api/master-resume/import", response_model=MasterResumeImportResponse)
 def import_master_resume(
     file: UploadFile = File(...),
-    suggest_tags: str | None = Form(None),
     use_model: str | None = Form(None),
 ) -> MasterResumeImportResponse:
     """Parse an uploaded .docx or PDF into a `MasterResume` draft — content, not just layout.
 
     A PDF (by extension or its ``%PDF`` signature) goes through `resume_import_pdf`;
     truthy `use_model` adds that module's guarded model-assisted structuring pass,
-    pinned to `config.ONE_OFF_PROFILE` like the tag suggestions below.
+    pinned to `config.ONE_OFF_PROFILE` (`config.pinned`) — not a tailoring job, so it
+    never touches `config._ACTIVE` or falls through to `backend_for`'s claude default.
 
     Writes nothing: the editor loads the result as unsaved state and the user saves
-    through the existing `PUT /api/master-resume`, same as a hand edit. Tags are seeded
-    deterministically (`import_common._seed_tags`); optional multipart field
-    `suggest_tags` (truthy: `1`/`true`/`yes`) additionally runs `propose.
-    propose_bullet_tags` for whatever the deterministic pass left untagged — an LLM
-    call that must never fail the import itself, so a failure there is appended to
-    `warnings` instead of raised. Not a tailoring job, so it never touches `config._ACTIVE`
-    (which only a running job resolves); it is pinned to `config.ONE_OFF_PROFILE`
-    (`config.pinned`) instead, so it never falls through to `backend_for`'s claude default.
+    through the existing `PUT /api/master-resume`, same as a hand edit. Bullets carry no
+    Extra skills; the skills they show are computed at run time (`bullet_tags`).
 
     A plain `def`, not `async def`: this does real work synchronously (docx parsing,
-    structural analysis, and — when `suggest_tags` is set — a live blocking LLM call),
-    so FastAPI must run it in its threadpool rather than on the event loop, or every
-    other request (including any open SSE stream) stalls for the duration.
+    structural analysis, and — with `use_model` — a live blocking LLM call), so FastAPI
+    must run it in its threadpool rather than on the event loop, or every other request
+    (including any open SSE stream) stalls for the duration.
     """
     raw = file.file.read()
     filename = file.filename or "upload.docx"
@@ -262,7 +256,9 @@ def import_master_resume(
         imported = _import_pdf(raw, known_tags, _truthy(use_model))
     else:
         imported = _import_docx(raw, filename, known_tags)
-    return _suggest_tags(imported, known_tags, _truthy(suggest_tags))
+    return MasterResumeImportResponse(
+        resume=imported.resume.model_dump(by_alias=True), warnings=imported.warnings
+    )
 
 
 def _truthy(value: str | None) -> bool:
@@ -315,44 +311,6 @@ def _import_docx(raw: bytes, filename: str, known_tags: set[str]) -> import_comm
             tmp_path.unlink(missing_ok=True)
     except template_ops.TemplateValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
-
-
-def _suggest_tags(
-    imported: import_common.ImportedResume, known_tags: set[str], do_suggest: bool
-) -> MasterResumeImportResponse:
-    """Optional model pass proposing tags for bullets the import left untagged."""
-    if do_suggest and imported.untagged_bullet_count:
-        all_bullets = imported.resume.all_bullets()
-        untagged_indices = [
-            i for i, b in enumerate(all_bullets) if b.tags == [import_common.UNTAGGED]
-        ]
-        try:
-            with config.pinned(config.ONE_OFF_PROFILE):
-                suggestions = propose.propose_bullet_tags(
-                    [all_bullets[i].text for i in untagged_indices], sorted(known_tags)
-                )
-        except Exception as exc:
-            # Broad on purpose: this is a convenience pass over a deterministic import
-            # that must always succeed on its own. Backend SDK errors (e.g.
-            # `anthropic.BadRequestError`) are neither `LLMError` nor `RuntimeError`, so a
-            # narrower catch here previously let them escape as a 500 despite this
-            # function's own contract.
-            imported.warnings.append(f"Tag suggestion pass failed: {exc}")
-        else:
-            for local_i, global_i in enumerate(untagged_indices):
-                if local_i in suggestions:
-                    all_bullets[global_i].tags = sorted(
-                        {config.canonical_tag(t) for t in suggestions[local_i]}
-                    )
-            imported.untagged_bullet_count = sum(
-                1 for b in all_bullets if b.tags == [import_common.UNTAGGED]
-            )
-
-    return MasterResumeImportResponse(
-        resume=imported.resume.model_dump(by_alias=True),
-        warnings=imported.warnings,
-        untagged_bullet_count=imported.untagged_bullet_count,
-    )
 
 
 @router.post("/api/master-resume/merge", response_model=MasterResumeMergeResponse)

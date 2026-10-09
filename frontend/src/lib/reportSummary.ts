@@ -42,7 +42,7 @@ export function describeEvidence(raw: string): string {
   m = raw.match(/^coursework: "(.*)"$/);
   if (m) return `in your coursework as "${m[1]}"`;
   m = raw.match(/^bullet tag: "(.*)"$/);
-  if (m) return `a bullet is tagged "${m[1]}"`;
+  if (m) return `a bullet shows "${m[1]}"`;
   return raw;
 }
 
@@ -50,7 +50,7 @@ export interface GapGroups {
   /** Nothing in the master resume supports these. Never added for you. `required` is
    * the posting's must-have list (what "Required skills covered" counts), not `band`. */
   missing: { phrase: string; band?: string; required: boolean }[];
-  /** The resume mentions them, but no bullet is tagged with them. */
+  /** The resume lists them (skills, tech, coursework), but no bullet shows them. */
   untagged: { phrase: string; where: string[] }[];
   /** A bullet uses a different name for the same thing. */
   renamed: { phrase: string; where: string[] }[];
@@ -61,7 +61,7 @@ export function gapGroups(report: RunReport): GapGroups {
   const missing: GapGroups["missing"] = gaps
     .filter((g) => g.reason === "no_evidence")
     .map((g) => ({ phrase: g.phrase, band: g.band, required: g.importance === "must_have" }));
-  // Every diagnosed gap, whatever its group: a must-have the resume mentions untagged
+  // Every diagnosed gap, whatever its group: a must-have the resume lists off-bullet
   // belongs under "not on a bullet", not a second time under "missing".
   const seen = new Set(gaps.map((g) => g.phrase.toLowerCase()));
   for (const phrase of report.missing_must_haves) {

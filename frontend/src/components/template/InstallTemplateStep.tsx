@@ -5,8 +5,6 @@ export function InstallTemplateStep({
   state,
   alsoImportContent,
   setAlsoImportContent,
-  suggestTags,
-  setSuggestTags,
   importBusy,
   canInstall,
   runInstall,
@@ -14,8 +12,6 @@ export function InstallTemplateStep({
   state: TemplateState;
   alsoImportContent: boolean;
   setAlsoImportContent: (value: boolean) => void;
-  suggestTags: boolean;
-  setSuggestTags: (value: boolean) => void;
   importBusy: boolean;
   canInstall: boolean;
   runInstall: () => Promise<void>;
@@ -73,24 +69,6 @@ export function InstallTemplateStep({
           </span>
         </span>
       </label>
-      {alsoImportContent ? (
-        <label className="mt-2 ml-6 flex items-start gap-2 text-sm">
-          <input
-            type="checkbox"
-            className="mt-1"
-            checked={suggestTags}
-            disabled={uploading || importBusy}
-            onChange={(e) => setSuggestTags(e.target.checked)}
-          />
-          <span>
-            <span className="font-medium text-ink">Suggest tags for untagged bullets</span>
-            <span className="block text-xs text-ink-muted">
-              Uses an LLM call to propose tags for bullets the deterministic import could not match
-              on its own. Never blocks the import if it fails.
-            </span>
-          </span>
-        </label>
-      ) : null}
       <div className="mt-4 flex flex-wrap gap-2">
         <button
           type="button"

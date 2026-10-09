@@ -51,7 +51,7 @@ describe("report summary", () => {
     expect(describeEvidence(`coursework: "Corporate Finance"`)).toBe(
       `in your coursework as "Corporate Finance"`,
     );
-    expect(describeEvidence(`bullet tag: "ml"`)).toBe(`a bullet is tagged "ml"`);
+    expect(describeEvidence(`bullet tag: "ml"`)).toBe(`a bullet shows "ml"`);
     expect(describeEvidence("something new")).toBe("something new");
   });
 
@@ -71,7 +71,7 @@ describe("report summary", () => {
     expect(groups.untagged).toEqual([
       { phrase: "SQL", where: [`listed as "SQL" under Tools skills`] },
     ]);
-    expect(groups.renamed[0].where[0]).toBe(`a bullet is tagged "ml"`);
+    expect(groups.renamed[0].where[0]).toBe(`a bullet shows "ml"`);
   });
 
   it("marks required skills by importance, not band, lists them first, and never twice", () => {

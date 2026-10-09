@@ -18,6 +18,7 @@ from dataclasses import dataclass, field
 from typing import TYPE_CHECKING, Literal
 
 from .. import config
+from ..content import bullet_tags as computed_tags
 from ..content.data import Experience, MasterResume, Project
 from .facets_labels import labels_are_equivalent
 from .fit_types import FitResult
@@ -115,7 +116,7 @@ def missing_must_haves(requirements: JobRequirements, resume: MasterResume) -> l
     Surfaced rather than hidden: these are the gaps no amount of rewriting can close, and
     the honest answer is that the candidate does not have that experience.
     """
-    available = {t for b in resume.all_bullets() for t in b.tags}
+    available = set(computed_tags.known_terms(resume))
     return [
         kw.phrase for kw in requirements.by_importance("must_have") if kw.canonical not in available
     ]
@@ -137,7 +138,7 @@ def unmatched_canonicals(
     A run showing many unmatched canonicals is a signal to check the master resume's tags,
     or to conclude the posting is a poor fit.
     """
-    available = {t for b in resume.all_bullets() for t in b.tags}
+    available = set(computed_tags.known_terms(resume))
     seen: dict[str, str] = {}
     for kw in requirements.keywords:
         if kw.canonical not in available:
@@ -209,7 +210,7 @@ def diagnose_gaps(requirements: JobRequirements, master: MasterResume) -> list[K
     Does not consult `tag_vocabulary`: the editor keeps it set-identical to the bullet-tag
     set, so it can only ever duplicate a `near_miss` this function already finds via tags.
     """
-    bullet_tags = sorted({t for b in master.all_bullets() for t in b.tags})
+    bullet_tags = computed_tags.known_terms(master)
     unmatched = unmatched_canonicals(requirements, master)
     if not unmatched:
         return []
@@ -500,11 +501,14 @@ def format_report(
             + ", ".join(_annotate(g) for g in no_evidence)
         )
     if untagged:
-        lines.append("  Evidence exists but no bullet is tagged for it:")
+        lines.append(
+            "  Listed elsewhere but no bullet shows it"
+            " (mention it in a bullet or its Extra skills):"
+        )
         for g in untagged:
             lines.append(f"    {_annotate(g)} <- {'; '.join(g.evidence)}")
     if near_miss:
-        lines.append("  Tagged under a different name:")
+        lines.append("  Shown under a different name:")
         for g in near_miss:
             lines.append(f"    {_annotate(g)} <- {'; '.join(g.evidence)}")
 

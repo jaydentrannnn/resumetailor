@@ -33,8 +33,6 @@ export function TemplateImportWizard({
   const {
     alsoImportContent,
     setAlsoImportContent,
-    suggestTags,
-    setSuggestTags,
     importBusy,
     importOutcome,
     setImportOutcome,
@@ -106,8 +104,6 @@ export function TemplateImportWizard({
               state={state}
               alsoImportContent={alsoImportContent}
               setAlsoImportContent={setAlsoImportContent}
-              suggestTags={suggestTags}
-              setSuggestTags={setSuggestTags}
               importBusy={importBusy}
               canInstall={canInstall}
               runInstall={runInstall}
