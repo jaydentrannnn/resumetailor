@@ -134,17 +134,6 @@ _RUN_LOCK = threading.Lock()
 
 
 @contextmanager
-def batch_browser_owner():
-    """Reserve the Apply browser for a daily batch and all of its fill workers."""
-    if not _RUN_LOCK.acquire(blocking=False):
-        raise RuntimeError("Another Apply operation owns the browser")
-    try:
-        yield
-    finally:
-        _RUN_LOCK.release()
-
-
-@contextmanager
 def registry_edit_idle():
     """Exclude explicit and daily Apply workers during a registry mutation."""
     if not _RUN_LOCK.acquire(blocking=False):
@@ -760,7 +749,6 @@ def _worker(
                 limit=request.limit,
                 dry_run=request.dry_run,
                 fetch_only=True,
-                auto_submit_max_per_run=0,
                 log=lambda message: _event(operation, "discovering", message),
                 on_progress=lambda progress: _set_find_progress(operation, progress),
             )

@@ -573,7 +573,8 @@ def test_daily_funnel_and_prepare_skip_stubs(client, monkeypatch):
     settings.sources = []  # no discovery: only the rows already pending
     summary = daily.run_daily(settings=settings, log=lambda _m: None)
     assert not summary.already_running
-    assert processed == ["s1"]
+    # The nightly run only prepares what it discovers itself; waiting rows are the user's.
+    assert processed == []
     assert store.get("linkedin:jobs:111").status == "discovered"
 
 

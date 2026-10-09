@@ -23,7 +23,7 @@ from resume_tailor.apply.discovery import (
     sources,
 )
 from resume_tailor.apply.driver import browser
-from resume_tailor.apply.forms import fill, fill_widgets, submit_guard
+from resume_tailor.apply.forms import fill_widgets
 from resume_tailor.apply.funnel import (
     daily,
     daily_batch,
@@ -876,303 +876,6 @@ def test_daily_status_reflects_progress(apply_paths, monkeypatch):
     assert final.summary.processed == 1
 
 
-def _ready_app(source_job_id: str, *, ats: str, discovered_at: str) -> store_models.Application:
-    """Build one `ready`, tailored application for batch-submit tests."""
-    return store_models.Application(
-        source="simplify-internships",
-        source_job_id=source_job_id,
-        company="Acme Corp",
-        role="Software Intern",
-        ats=ats,
-        status="ready",
-        job_id="tailor-job-1",
-        canonical_key=f"{ats}:acme:{source_job_id}",
-        discovered_at=discovered_at,
-    )
-
-
-def test_run_batch_submit_noop_when_cap_zero(apply_paths, monkeypatch):
-    """cap=0 (the default) must not touch any application or call fill."""
-    app = _ready_app("a1", ats="greenhouse", discovered_at="2026-01-01T00:00:00+00:00")
-    store.upsert(app)
-    monkeypatch.setattr(
-        fill, "fill_application", lambda *a, **k: pytest.fail("must not be called")
-    )
-
-    summary = daily_progress.DailySummary()
-    daily_batch._run_batch_submit(
-        settings=ApplySettings(auto_submit_ats=["greenhouse"]),
-        cap=0,
-        dry_run=False,
-        log_path=apply_paths / "log.txt",
-        log=lambda *_: None,
-        summary=summary,
-    )
-
-    assert summary.submit_attempted == 0
-    assert store.get("a1").status == "ready"
-
-
-def test_run_batch_submit_respects_cap_oldest_first(apply_paths, monkeypatch):
-    """Only the cap's worth of eligible ready apps are submitted, oldest discovered first."""
-    for i, ts in enumerate(
-        ["2026-01-03T00:00:00+00:00", "2026-01-01T00:00:00+00:00", "2026-01-02T00:00:00+00:00"]
-    ):
-        store.upsert(_ready_app(f"a{i}", ats="greenhouse", discovered_at=ts))
-
-    calls: list[str] = []
-
-    def _fake_fill(key, **kwargs):
-        calls.append(key)
-        return store_models.FillResult(status="submitted")
-
-    monkeypatch.setattr(fill, "fill_application", _fake_fill)
-    monkeypatch.setattr(browser, "browser_status", lambda: browser.BrowserStatus(reachable=True))
-
-    summary = daily_progress.DailySummary()
-    daily_batch._run_batch_submit(
-        settings=ApplySettings(auto_submit_ats=["greenhouse"], max_parallel_fills=1),
-        cap=2,
-        dry_run=False,
-        log_path=apply_paths / "log.txt",
-        log=lambda *_: None,
-        summary=summary,
-    )
-
-    # a1 (Jan 1) then a2 (Jan 2) — a0 (Jan 3) is left for the next run.
-    assert calls == ["greenhouse:acme:a1", "greenhouse:acme:a2"]
-    assert summary.submit_attempted == 2
-    assert summary.submitted == 2
-
-
-def test_run_batch_submit_skips_non_eligible_ats(apply_paths, monkeypatch):
-    """A ready app whose ATS isn't in auto_submit_ats is left untouched."""
-    store.upsert(_ready_app("a1", ats="lever", discovered_at="2026-01-01T00:00:00+00:00"))
-    monkeypatch.setattr(
-        fill, "fill_application", lambda *a, **k: pytest.fail("must not be called")
-    )
-    monkeypatch.setattr(browser, "browser_status", lambda: browser.BrowserStatus(reachable=True))
-
-    summary = daily_progress.DailySummary()
-    daily_batch._run_batch_submit(
-        settings=ApplySettings(auto_submit_ats=["greenhouse"]),
-        cap=5,
-        dry_run=False,
-        log_path=apply_paths / "log.txt",
-        log=lambda *_: None,
-        summary=summary,
-    )
-
-    assert summary.submit_attempted == 0
-    assert store.get("a1").status == "ready"
-
-
-def test_run_batch_submit_skips_when_browser_unreachable(apply_paths, monkeypatch):
-    """An unreachable Chrome CDP endpoint skips the whole stage, not a mass fill_failed."""
-    store.upsert(_ready_app("a1", ats="greenhouse", discovered_at="2026-01-01T00:00:00+00:00"))
-    monkeypatch.setattr(
-        fill, "fill_application", lambda *a, **k: pytest.fail("must not be called")
-    )
-    monkeypatch.setattr(browser, "browser_status", lambda: browser.BrowserStatus(reachable=False))
-
-    summary = daily_progress.DailySummary()
-    daily_batch._run_batch_submit(
-        settings=ApplySettings(auto_submit_ats=["greenhouse"]),
-        cap=5,
-        dry_run=False,
-        log_path=apply_paths / "log.txt",
-        log=lambda *_: None,
-        summary=summary,
-    )
-
-    assert summary.submit_skipped_no_browser is True
-    assert summary.submit_attempted == 0
-    assert store.get("a1").status == "ready"
-
-
-def test_run_batch_submit_skips_when_the_browser_fails_to_start(apply_paths, monkeypatch):
-    """A failed auto-launch (`browser_launch.ensure_browser`) skips the stage like an unreachable one."""
-    from resume_tailor.apply.driver import browser_launch
-
-    store.upsert(_ready_app("a1", ats="greenhouse", discovered_at="2026-01-01T00:00:00+00:00"))
-    monkeypatch.setattr(
-        fill, "fill_application", lambda *a, **k: pytest.fail("must not be called")
-    )
-
-    def _fail():
-        raise RuntimeError("Port 9222 is used by another program")
-
-    monkeypatch.setattr(browser_launch, "ensure_browser", _fail)
-    summary = daily_progress.DailySummary()
-    daily_batch._run_batch_submit(
-        settings=ApplySettings(auto_submit_ats=["greenhouse"]),
-        cap=5,
-        dry_run=False,
-        log_path=apply_paths / "log.txt",
-        log=lambda *_: None,
-        summary=summary,
-    )
-    assert summary.submit_skipped_no_browser is True
-    assert store.get("a1").status == "ready"
-
-
-def test_run_batch_submit_dry_run_logs_without_calling_fill(apply_paths, monkeypatch):
-    """dry_run only logs the would-be submissions; no real fill call, no status change."""
-    store.upsert(_ready_app("a1", ats="greenhouse", discovered_at="2026-01-01T00:00:00+00:00"))
-    monkeypatch.setattr(
-        fill, "fill_application", lambda *a, **k: pytest.fail("must not be called")
-    )
-    monkeypatch.setattr(browser, "browser_status", lambda: browser.BrowserStatus(reachable=True))
-
-    logged: list[str] = []
-    summary = daily_progress.DailySummary()
-    daily_batch._run_batch_submit(
-        settings=ApplySettings(auto_submit_ats=["greenhouse"]),
-        cap=5,
-        dry_run=True,
-        log_path=apply_paths / "log.txt",
-        log=logged.append,
-        summary=summary,
-    )
-
-    assert summary.submit_attempted == 0
-    assert any("would-submit" in line for line in logged)
-    assert store.get("a1").status == "ready"
-
-
-def test_run_batch_submit_one_failure_does_not_sink_the_batch(apply_paths, monkeypatch):
-    """A per-item fill exception is recorded and the batch continues to the next item."""
-    store.upsert(_ready_app("a1", ats="greenhouse", discovered_at="2026-01-01T00:00:00+00:00"))
-    store.upsert(_ready_app("a2", ats="greenhouse", discovered_at="2026-01-02T00:00:00+00:00"))
-
-    def _fake_fill(key, **kwargs):
-        if key.endswith("a1"):
-            raise RuntimeError("boom")
-        return store_models.FillResult(status="submitted")
-
-    monkeypatch.setattr(fill, "fill_application", _fake_fill)
-    monkeypatch.setattr(browser, "browser_status", lambda: browser.BrowserStatus(reachable=True))
-
-    summary = daily_progress.DailySummary()
-    daily_batch._run_batch_submit(
-        settings=ApplySettings(auto_submit_ats=["greenhouse"]),
-        cap=5,
-        dry_run=False,
-        log_path=apply_paths / "log.txt",
-        log=lambda *_: None,
-        summary=summary,
-    )
-
-    assert summary.submit_attempted == 2
-    assert summary.submitted == 1
-    assert summary.submit_failed == 1
-
-
-def test_run_batch_submit_bounds_workers_and_copies_context(apply_paths, monkeypatch):
-    monkeypatch.setattr(config, "DATA_ROOT", apply_paths / "data")
-    monkeypatch.setattr(config, "OUTPUT_ROOT", apply_paths / "output-root")
-    monkeypatch.setattr(config, "CACHE_ROOT", apply_paths / "cache-root")
-    monkeypatch.setattr(config, "TEMPLATES_ROOT", apply_paths / "templates-root")
-    monkeypatch.setattr(browser, "browser_status", lambda: browser.BrowserStatus(reachable=True))
-    monkeypatch.setattr(browser, "extension_mode", lambda: False)
-    monkeypatch.setattr(submit_guard, "is_paused", lambda: False)
-    lock = threading.Lock()
-    seen: list[str] = []
-    active = peak = 0
-
-    def fake_fill(key, **kwargs):
-        nonlocal active, peak
-        assert config.workspace_paths("parallel")["DATA_DIR"] == config.DATA_DIR
-        assert config.backend_for("score").origin == "ollama"
-        with lock:
-            active += 1
-            peak = max(peak, active)
-            seen.append(key)
-        time.sleep(0.02)
-        with lock:
-            active -= 1
-        return store_models.FillResult(status="submitted")
-
-    monkeypatch.setattr(fill, "fill_application", fake_fill)
-    summary = daily_progress.DailySummary()
-    with config.use_context(config.context_for_workspace("parallel")):
-        config.resolve("ollama")
-        for i in range(5):
-            store.upsert(_ready_app(f"a{i}", ats="greenhouse", discovered_at=f"2026-01-0{i + 1}T00:00:00+00:00"))
-        daily_batch._run_batch_submit(
-            settings=ApplySettings(auto_submit_ats=["greenhouse"], max_parallel_fills=2),
-            cap=5, dry_run=False, log_path=apply_paths / "log.txt",
-            log=lambda *_: None, summary=summary,
-        )
-    assert 1 < peak <= 2
-    assert len(seen) == 5
-    assert summary.submit_attempted == summary.submitted == 5
-    assert summary.submit_failed == 0
-
-
-def test_run_batch_submit_pause_stops_new_starts_and_pending_submits(apply_paths, monkeypatch):
-    for i in range(5):
-        store.upsert(_ready_app(f"a{i}", ats="greenhouse", discovered_at=f"2026-01-0{i + 1}T00:00:00+00:00"))
-    monkeypatch.setattr(browser, "browser_status", lambda: browser.BrowserStatus(reachable=True))
-    monkeypatch.setattr(browser, "extension_mode", lambda: False)
-    paused = threading.Event()
-    both_started = threading.Barrier(2)
-    monkeypatch.setattr(submit_guard, "is_paused", paused.is_set)
-    seen: list[str] = []
-    lock = threading.Lock()
-
-    def fake_fill(key, **kwargs):
-        with lock:
-            seen.append(key)
-        both_started.wait(timeout=5)
-        paused.set()
-        assert kwargs["should_cancel"]()
-        return store_models.FillResult(status="awaiting_review")
-
-    monkeypatch.setattr(fill, "fill_application", fake_fill)
-    summary = daily_progress.DailySummary()
-    daily_batch._run_batch_submit(
-        settings=ApplySettings(auto_submit_ats=["greenhouse"], max_parallel_fills=2),
-        cap=5, dry_run=False, log_path=apply_paths / "log.txt",
-        log=lambda *_: None, summary=summary,
-    )
-    assert len(seen) == 2
-    assert summary.submit_attempted == summary.submit_failed == 2
-    assert summary.submitted == 0
-
-
-def test_extension_batch_falls_back_to_serial_fills(apply_paths, monkeypatch):
-    for i in range(3):
-        store.upsert(_ready_app(f"a{i}", ats="greenhouse", discovered_at=f"2026-01-0{i + 1}T00:00:00+00:00"))
-    monkeypatch.setattr(browser, "browser_status", lambda: browser.BrowserStatus(reachable=True))
-    monkeypatch.setattr(browser, "extension_mode", lambda: True)
-    monkeypatch.setattr(submit_guard, "is_paused", lambda: False)
-    active = peak = 0
-    seen: list[str] = []
-
-    def fake_fill(key, **_kwargs):
-        nonlocal active, peak
-        active += 1
-        peak = max(peak, active)
-        seen.append(key)
-        time.sleep(0.01)
-        active -= 1
-        return store_models.FillResult(status="submitted")
-
-    monkeypatch.setattr(fill, "fill_application", fake_fill)
-    logged: list[str] = []
-    summary = daily_progress.DailySummary()
-    daily_batch._run_batch_submit(
-        settings=ApplySettings(auto_submit_ats=["greenhouse"], max_parallel_fills=3),
-        cap=3, dry_run=False, log_path=apply_paths / "log.txt",
-        log=logged.append, summary=summary,
-    )
-    assert peak == 1
-    assert seen == [f"greenhouse:acme:a{i}" for i in range(3)]
-    assert summary.submit_attempted == summary.submitted == 3
-    assert any("parallel fills disabled" in line for line in logged)
-
-
 def test_batch_settings_load_without_parallel_field():
     old = ApplySettings().model_dump()
     old.pop("max_parallel_fills")
@@ -1281,8 +984,12 @@ def test_cancelled_async_upload_waiter_does_not_take_slot_later():
     asyncio.run(check())
 
 
-def test_run_daily_fetch_only(stub_pipeline, apply_paths):
-    """fetch_only=True ingests applications as 'discovered' without JD fetch or tailoring."""
+def test_run_daily_fetch_only(stub_pipeline, apply_paths, monkeypatch):
+    """Find jobs (fetch_only) fetches the JD and prefilters, but never extracts or tailors."""
+    extracted: list[str] = []
+    monkeypatch.setattr(
+        jd, "extract_consensus", lambda text, known_tags, **kwargs: extracted.append(text)
+    )
     summary = daily.run_daily(
         settings=ApplySettings(enabled=True, max_new_per_day=5),
         fetch_only=True,
@@ -1290,41 +997,116 @@ def test_run_daily_fetch_only(stub_pipeline, apply_paths):
     assert summary.already_running is False
     assert summary.new_rows == 1
     assert summary.discovered == 1
+    assert summary.jd_fetched == 1
     assert summary.processed == 1
-    assert summary.ready == 0
-    assert summary.tailored == 0
-    assert summary.jd_fetched == 0
+    assert summary.ready == summary.tailored == 0
+    assert extracted == []
 
     app = store.get("aaa11111-1111-1111-1111-111111111111")
     assert app is not None
-    assert app.status == "discovered"
+    assert app.status == "jd_fetched"
+    assert app.jd_text_path
     assert app.job_id is None
 
-    # A subsequent normal daily run should pick up the pending discovered app and progress it to ready
-    summary2 = daily.run_daily(
-        settings=ApplySettings(enabled=True, max_new_per_day=5),
-        fetch_only=False,
+
+def test_nightly_run_leaves_found_rows_for_the_user(stub_pipeline, apply_paths):
+    """A row Find left waiting is not swept into the next nightly run; Prepare tailors it."""
+    application_id = "aaa11111-1111-1111-1111-111111111111"
+    daily.run_daily(settings=ApplySettings(enabled=True, max_new_per_day=5), fetch_only=True)
+
+    nightly = daily.run_daily(settings=ApplySettings(enabled=True, max_new_per_day=5))
+    assert nightly.ready == nightly.tailored == 0
+    waiting = store.get(application_id)
+    assert waiting is not None and waiting.status == "jd_fetched"
+
+    prepared = daily.prepare_application(application_id, settings=ApplySettings(enabled=True))
+    assert prepared.status == "ready"
+    assert prepared.job_id == "tailor-job-1"
+
+
+def test_find_prefilter_screens_out(stub_pipeline, apply_paths, monkeypatch):
+    from resume_tailor.apply.funnel.screen import ScreenResult
+
+    monkeypatch.setattr(
+        daily_rows,
+        "prefilter_screen",
+        lambda *a, **k: ScreenResult(passed=False, reasons=["requires citizenship"]),
     )
-    assert summary2.already_running is False
-    assert summary2.ready == 1
-    assert summary2.tailored == 1
-    app_ready = store.get("aaa11111-1111-1111-1111-111111111111")
-    assert app_ready is not None
-    assert app_ready.status == "ready"
-    assert app_ready.job_id == "tailor-job-1"
+    summary = daily.run_daily(
+        settings=ApplySettings(enabled=True, max_new_per_day=5), fetch_only=True
+    )
+    assert summary.prefiltered_out == summary.screened_out == 1
+    app = store.get("aaa11111-1111-1111-1111-111111111111")
+    assert app is not None and app.status == "screened_out"
 
 
-def test_archived_discovery_is_not_prepared_by_daily_run(stub_pipeline, apply_paths):
+def _untailored_group_primary(monkeypatch) -> None:
+    """Seed a discovered (untailored) Northrop primary; the README yields its sibling."""
+    from resume_tailor.apply.discovery import identity
+
+    role = "Embedded Software Engineer Intern"
+    store.upsert(
+        store_models.Application(
+            source="simplify",
+            source_job_id="northrop-balt",
+            company="Northrop Grumman",
+            role=role,
+            posting_url="https://boards.greenhouse.io/northrop/jobs/1",
+            canonical_key="greenhouse:northrop:1",
+            group_key=identity.group_key("Northrop Grumman", role),
+            status="discovered",
+        )
+    )
+    sibling = _sample_row(
+        job_id="northrop-cam",
+        company="Northrop Grumman",
+        role=role,
+        application_link="https://boards.greenhouse.io/northrop/jobs/2",
+    )
+    monkeypatch.setattr(identity, "resolve_final_url", lambda url, **k: url)
+    monkeypatch.setattr(sources, "parse_readme", lambda text, categories: [sibling])
+    monkeypatch.setattr(
+        sources,
+        "filter_rows",
+        lambda rows, **kwargs: source_rows.FilterResult(
+            new_rows=list(rows), total_candidates=len(rows)
+        ),
+    )
+
+
+def test_find_never_tailors_a_group_duplicate(stub_pipeline, apply_paths, monkeypatch):
+    """Regression: a same-role sibling of an untailored primary fell through to tailoring."""
+    _untailored_group_primary(monkeypatch)
+    extracted: list[str] = []
+    monkeypatch.setattr(
+        jd, "extract_consensus", lambda text, known_tags, **kwargs: extracted.append(text)
+    )
+    summary = daily.run_daily(
+        settings=ApplySettings(enabled=True, max_new_per_day=5), fetch_only=True
+    )
+    assert summary.tailored == 0
+    assert extracted == []
+    dup = store.get("northrop-cam")
+    assert dup is not None
+    assert dup.status == "jd_fetched"
+    assert dup.job_id is None
+
+
+def test_dry_run_group_duplicate_writes_nothing(stub_pipeline, apply_paths, monkeypatch):
+    _untailored_group_primary(monkeypatch)
+    daily.run_daily(settings=ApplySettings(enabled=True, max_new_per_day=5), dry_run=True)
+    assert store.get("northrop-cam") is None
+
+
+def test_archived_discovery_is_not_prepared(stub_pipeline, apply_paths):
     daily.run_daily(settings=ApplySettings(enabled=True, max_new_per_day=5), fetch_only=True)
     application_id = "aaa11111-1111-1111-1111-111111111111"
     store.set_archived([application_id], True)
-    result = daily.run_daily(settings=ApplySettings(enabled=True, max_new_per_day=5), fetch_only=False)
     archived = store.get(application_id)
-    assert result.ready == 0
     assert archived is not None and archived.archived_at
-    assert archived.status == "discovered"
     with pytest.raises(RuntimeError, match="archived"):
         daily.prepare_application(application_id, settings=ApplySettings(enabled=True))
+
 
 def _retry_app(status: str, *, note: str = "", **overrides: Any) -> store_models.Application:
     """One application at ``status`` whose last history note is ``note``."""

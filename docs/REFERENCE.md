@@ -206,7 +206,7 @@ Form filling injects `filler.js` into the user's host browser over CDP (`CHROME_
 default `http://127.0.0.1:9222`, or `http://host.docker.internal:9222` in the Docker image
 — name kept for backward compatibility, value is browser-agnostic) — no Chromium in the
 Docker image. **The app starts the browser itself** (`apply/driver/browser_launch.py`):
-`browser.cdp_browser`/`async_cdp_browser` and the nightly batch submit call
+`browser.cdp_browser`/`async_cdp_browser` call
 `ensure_browser()`, which, when the port is closed and launching is allowed, starts
 `ApplySettings.browser` (Edge/Chrome/Comet; `None` = first installed, Edge first) detached
 with fixed flags and a dedicated `--user-data-dir`, then polls `/json/version` for 15 s. It
@@ -293,7 +293,7 @@ comma-separated phrases, each searched on its own and merged by `job_id` — the
 `max_age_days` (default 14). Paging stops at `MAX_PAGES` with a polite delay between pages.
 **Filters for every source** (`ApplySettings.source_filters`: `include`/`exclude`/`locations`) are
 added to each source's own words by `apply/discovery/source_filters.with_global_filters` before
-`sources.fetch_source_rows` (nightly run and the source Test); `SourceConfig.ignore_global_include`
+`sources.fetch_source_rows` (Find jobs, the nightly run and the source Test); `SourceConfig.ignore_global_include`
 opts one source out of the global keep words. Settings saved without `source_filters` get the
 words every source shares hoisted into it on load (`source_filters.hoist_shared`, ≥2 sources).
 Keys (`ADZUNA_APP_ID`, `ADZUNA_APP_KEY`, `USAJOBS_API_KEY`, `USAJOBS_EMAIL`) are
@@ -336,12 +336,23 @@ Per-workspace state:
 - `output/workspaces/<id>/applications/` — JD text, fill screenshots, nightly logs,
   `url_resolve_cache.json`, `readme_cache/`
 
+**Find jobs** (`daily.run_daily(fetch_only=True)`) discovers new postings, fetches each JD
+and runs the no-LLM prefilter (`daily_rows.prefilter_screen`), leaving rows `jd_fetched`,
+`screened_out` or `needs_browser`; it never extracts, screens with the model, or tailors —
+the user chooses what to Prepare. A same-role sibling of an untailored primary
+(`_join_group`) obeys the same stop. **The nightly run** (`run_daily()`, scheduler or
+`scripts/apply_daily.py`) discovers, fetches, screens and tailors only the postings *it*
+found (up to `max_new_per_day`); rows already waiting from an earlier Find are left for the
+user (`_process_one(include_known=False)`). It never fills or submits: autofill and
+auto-submit happen only from Fill. Because it never submits, the scheduler starts a missed
+run on the next tick however late, and the automation pause does not hold it.
+
 The SPA starts persistent `find`, `prepare`, and `fill` operations through
 `apply/funnel/operations.py`; operation state and a bounded event history live in
 `output/.../applications/operations.json`, so progress survives page refreshes. Fill verifies
 required fields and each intended attachment before submission. Auto-submit additionally
-requires `auto_submit_enabled`, ATS membership in `auto_submit_ats`, and remaining room under
-`auto_submit_max_per_run`. Workday is never auto-submitted (`fill_buttons.decide_submit_action`
+requires the Fill request's `auto_submit` (seeded from `auto_submit_enabled`), ATS membership
+in `auto_submit_ats`, and remaining room under `auto_submit_max_per_run` (per Fill operation). Workday is never auto-submitted (`fill_buttons.decide_submit_action`
 returns `awaiting_review` for it whatever the settings). Right before the click,
 `apply/submit_guard.check` can still hold the form for review with a plain note. It holds when
 the header's "Pause all automation" switch is on (`<DATA_ROOT>/automation.json`, shared by every
@@ -349,16 +360,14 @@ profile). It holds when the rolling 24-hour caps are reached (`auto_submit_max_p
 default 25, `auto_submit_max_per_company_per_day` default 2), counted from `auto_submit`
 status notes. It also holds a possible duplicate: the row was already submitted, or a row in
 the same group or with the same company and role was submitted in the last 30 days.
-`submit_guard.pace` spaces automatic submits 20–90 s apart, one at a time. The nightly batch
-fills up to `ApplySettings.max_parallel_fills` (default 2, range 1–4) applications at once,
-each in its own tab over its own CDP connection (Playwright sync objects are thread-bound);
-file uploads share `browser.UPLOAD_LOCK`, submits still pass through `pace`, the batch holds
-`operations.batch_browser_owner()` so a user operation cannot share the browser, and extension
-mode (one relayed tab) always runs one at a time. Each submit writes
+`submit_guard.pace` spaces automatic submits 20–90 s apart, one at a time. Fill runs up to
+`ApplySettings.max_parallel_fills` (default 2, range 1–4) applications at once, each in its
+own tab over its own CDP connection (Playwright sync objects are thread-bound); file uploads
+share `browser.UPLOAD_LOCK`, submits still pass through `pace`, and extension mode (one
+relayed tab) always runs one at a time. Each submit writes
 `submit-<UTC stamp>/{before,after}.{json,png}` next to `fill.json`, shown on the detail page's
 Timeline. `fill_page.confirmation_markers` adds per-ATS confirmation selectors, phrases and URL
-fragments. The pause switch also holds the operation worker between applications, stops the
-nightly batch submit, and makes the scheduler wait. The Apply page sends
+fragments. The pause switch also holds the operation worker between applications. The Apply page sends
 `blocker_mode="continue"` for Fill selected; older API callers may still request pause.
 Fill results persist a CDP tab target ID for same-tab Continue and Review actions, and
 Workday verification returns a handoff instead of waiting in the worker. Applicant-profile API

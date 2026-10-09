@@ -6,11 +6,9 @@ landed inside the scheduled minute exactly, so drift or a busy minute skipped a 
 day, and a machine that was asleep or off at 02:00 never ran at all.
 
 - **Catch-up.** A run that is due but hasn't happened today starts on the next tick,
-  including the first tick after startup, as long as it is less than
-  `CATCH_UP_WINDOW` late.
-- **Missed.** Later than that (the laptop was closed all night), it does not start in
-  the middle of the day unannounced. The day is recorded as missed, which the Apply
-  page shows next to "Run now".
+  including the first tick after startup, however late. The nightly pass finds and
+  tailors but never fills or submits, so starting it mid-day is harmless, and the
+  automation pause (which guards submits) does not hold it back.
 - **Persistence.** The last run date is stored per profile in
   ``<DATA_DIR>/apply_scheduler.json``, so a restart the same day does not run twice.
 
@@ -22,7 +20,6 @@ waits for the per-request workspace context planned for the hosted version.
 from __future__ import annotations
 
 import json
-import logging
 import threading
 from collections.abc import Callable
 from datetime import date, datetime, time, timedelta
@@ -31,13 +28,10 @@ from typing import Any, Literal
 
 from resume_tailor import config
 
-_log = logging.getLogger(__name__)
-
 TICK_SECONDS = 30.0
-CATCH_UP_WINDOW = timedelta(hours=12)
 STATE_FILENAME = "apply_scheduler.json"
 
-Decision = Literal["run", "wait", "done", "missed", "invalid"]
+Decision = Literal["run", "wait", "done", "invalid"]
 
 _STATE_LOCK = threading.Lock()
 
@@ -66,9 +60,7 @@ def decide(now: datetime, schedule_time: str, last_run_date: date | None) -> Dec
     due = datetime.combine(today, at)
     if now < due:
         return "wait"
-    if now - due < CATCH_UP_WINDOW:
-        return "run"
-    return "missed"
+    return "run"
 
 
 def next_due(now: datetime, schedule_time: str, last_run_date: date | None) -> datetime | None:
@@ -115,20 +107,17 @@ def _parse_date(value: Any) -> date | None:
 
 
 def status(*, enabled: bool, schedule_time: str, now: datetime | None = None) -> dict[str, Any]:
-    """Scheduler facts for the Apply page: last run, next run, missed day, error."""
+    """Scheduler facts for the Apply page: last run, next run, error."""
     now = now or datetime.now()
     state = load_state()
     last_run = _parse_date(state.get("last_run_date"))
     upcoming = next_due(now, schedule_time, last_run) if enabled else None
-    missed = _parse_date(state.get("missed_date"))
     return {
         "enabled": enabled,
         "schedule_time": schedule_time,
         "last_run_date": last_run.isoformat() if last_run else None,
         "last_started_at": state.get("last_started_at"),
         "next_run_at": upcoming.isoformat(timespec="minutes") if upcoming else None,
-        # Only today's miss is news; yesterday's is history.
-        "missed_today": bool(missed and missed == now.date() and last_run != now.date()),
         "last_error": state.get("last_error"),
     }
 
@@ -161,12 +150,6 @@ def run_now(
     return True
 
 
-def _automation_paused() -> bool:
-    from resume_tailor.apply.forms import submit_guard
-
-    return submit_guard.is_paused()
-
-
 def tick(
     *,
     enabled: bool,
@@ -174,8 +157,7 @@ def tick(
     busy: Callable[[], bool],
     start: Callable[[], None],
     now: Callable[[], datetime] = datetime.now,
-    paused: Callable[[], bool] | None = None,
-) -> Decision | Literal["busy", "disabled", "paused"]:
+) -> Decision | Literal["busy", "disabled"]:
     """One scheduler wake: start the day's run when it is due and nothing else runs.
 
     ``busy`` reports whether another Apply workflow owns the browser (retried next
@@ -192,19 +174,8 @@ def tick(
         if state.get("last_error") != message:
             _save_state(last_error=message)
         return decision
-    if decision == "missed":
-        if _parse_date(state.get("missed_date")) != current.date():
-            _log.info(
-                "nightly Apply run missed: more than %s past %s", CATCH_UP_WINDOW, schedule_time
-            )
-            _save_state(missed_date=current.date().isoformat())
-        return decision
     if decision != "run":
         return decision
-    if (paused or _automation_paused)():
-        # Retried every tick like "busy": turning automation back on inside the
-        # catch-up window still runs today's pass.
-        return "paused"
     if busy():
         return "busy"
     # Recorded before starting: a crash mid-run must not restart it on every boot.

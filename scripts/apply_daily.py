@@ -1,8 +1,9 @@
 """CLI entry for one daily apply-funnel pass.
 
+The pass finds and tailors new postings; it never fills or submits (that is Fill's job).
 Use either this host-side script *or* the in-process Docker scheduler — not both
 against the same workspace at once. Both write the workspace's ``app.db`` (safe: SQLite
-transactions), but two runs would discover and fill the same postings.
+transactions), but two runs would discover and tailor the same postings.
 
     python scripts/apply_daily.py --dry-run
     python scripts/apply_daily.py --workspace default --limit 5 --no-browser
@@ -30,17 +31,11 @@ def main(argv: list[str] | None = None) -> int:
     parser = argparse.ArgumentParser(description="ResumeTailor daily apply funnel")
     parser.add_argument("--workspace", default=None, help="Workspace id (default: active)")
     parser.add_argument("--limit", type=int, default=None, help="Cap new discoveries")
-    parser.add_argument(
-        "--max-submissions",
-        type=int,
-        default=None,
-        help="Cap unattended fill+submit this run (overrides auto_submit_max_per_run)",
-    )
     parser.add_argument("--dry-run", action="store_true", help="Discover only; no writes")
     parser.add_argument(
         "--fetch-only",
         action="store_true",
-        help="Fetch job boards only — record as discovered without tailoring or applying",
+        help="Find jobs only — discover, fetch each JD and prefilter; no tailoring",
     )
     parser.add_argument(
         "--no-browser",
@@ -76,7 +71,6 @@ def main(argv: list[str] | None = None) -> int:
         limit=args.limit,
         dry_run=args.dry_run,
         allow_browser=not args.no_browser,
-        auto_submit_max_per_run=args.max_submissions,
         fetch_only=args.fetch_only,
         log=print,
     )
@@ -85,8 +79,7 @@ def main(argv: list[str] | None = None) -> int:
         return 2
     print(
         f"ready={summary.ready} screened_out={summary.screened_out} "
-        f"needs_browser={summary.needs_browser} errors={len(summary.errors)} "
-        f"submitted={summary.submitted} submit_failed={summary.submit_failed}"
+        f"needs_browser={summary.needs_browser} errors={len(summary.errors)}"
     )
     return 0 if not summary.errors else 1
 

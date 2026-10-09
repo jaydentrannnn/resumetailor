@@ -29,9 +29,9 @@ describe("applyNotifications", () => {
     expect(
       applyNotifications(
         { ...base, dailyRunning: true },
-        { ...base, dailySummary: { new_rows: 12, tailored: 8, submitted: 5 } },
+        { ...base, dailySummary: { new_rows: 12, tailored: 8 } },
       ),
-    ).toEqual(["Nightly run finished: 12 found, 8 tailored, 5 submitted"]);
+    ).toEqual(["Nightly run finished: 12 found, 8 tailored"]);
     expect(
       applyNotifications(
         { ...base, operationId: "o", operationState: "running", operationAction: "fill" },

@@ -1694,3 +1694,10 @@ Magnite (op 5c6c59f2) blocked inside the Workday Skills loop at 23:07:40 (second
 - Continue repairs prior automated dates only when the current value still matches that automation; manual edits are preserved. Both fill engines share these facts and scoped checks.
 - Regression fixtures reconstruct the observed DOM without applicant data; local browser tests cover both engines. Live Chrome rechecking remains pending because CDP was unavailable. Work is isolated in fix/greenhouse-autofill.
 - Validation: 1,501 Apply/API tests and 440 frontend tests passed; the frontend built and the frozen sidecar passed its startup/health/UI/shutdown smoke check. Ruff reported no new diagnostics in changed lines; repository-wide lint and a targeted type check retain existing baseline failures.
+
+### 2026-10-09 - Find never tailors; nightly run never submits
+
+- Find jobs (`run_daily(fetch_only=True)`) now fetches each JD and runs the no-LLM prefilter, leaving rows `jd_fetched`/`screened_out`/`needs_browser`; the user chooses what to Prepare. It previously stopped at `discovered`, except that `_join_group` let a same-role sibling of an untailored primary fall through to extraction and tailoring (fixed; a dry-run sibling no longer writes either).
+- The nightly run discovers, fetches, screens and tailors only the postings it found itself; rows waiting from an earlier Find are left alone (`_process_one(include_known=False)`; `_rows_to_process` no longer sweeps pending `discovered` rows). Prepare still carries a known row on (default `include_known=True`).
+- The nightly run never fills or submits: `_run_batch_submit`, `operations.batch_browser_owner`, `run_daily(auto_submit_max_per_run=)`, `apply_daily.py --max-submissions` and the summary's submit counters are gone. Auto-submit lives only in Fill, which still honours `auto_submit_*` (the per-run cap now reads "per Fill" in the UI).
+- Since it never submits, the scheduler dropped the 12 h catch-up window / "missed" day (`missed_today`) and the automation-pause gate: a due run starts on the next tick however late.

@@ -200,8 +200,8 @@ The container uses LibreOffice for PDF measurement. Host Ollama / LM Studio are 
 ## Automation (Apply page)
 
 The **Apply** page finds postings, tailors an application kit for each, and fills the
-application forms in a browser on your PC. It can run all of that on a nightly schedule,
-or you drive it with three buttons: **Find jobs**, **Tailor files for selected**, and
+application forms in a browser on your PC. A nightly schedule can find and tailor new
+postings for you (it never fills or submits), or you drive it with three buttons: **Find jobs**, **Tailor files for selected**, and
 **Fill selected**. Postings are split into **Needs you** (sign-ins, emailed codes,
 CAPTCHAs, questions it won't guess, final checks), **In progress** and **Done**, sorted
 by the date each job was posted.
@@ -247,8 +247,11 @@ sessions. (The [browser extension](#browser-extension) is an alternative.)
    range, equal-opportunity answers). Fill answers only from these facts and from answers
    you saved earlier; a question they don't cover is left for you, never guessed.
 2. **Find jobs**, or schedule the nightly run in the Apply settings drawer (**Nightly
-   run**). The app must be running; the tray is enough, and a run missed while the PC was
-   off catches up at the next start within 12 hours.
+   run**). Find jobs fetches each posting and drops ones you're not eligible for, but
+   tailors nothing; you pick what to tailor. The nightly run finds *and* tailors new
+   postings, never fills or submits, and leaves postings you found earlier for you. The
+   app must be running; the tray is enough, and a run missed while the PC was off starts
+   at the next launch.
 3. Select postings and press **Tailor files for selected**. It tailors with the Tailor
    page's model settings, several at once (Settings → AI → Advanced → **Resumes at once**,
    default 2, up to 4).

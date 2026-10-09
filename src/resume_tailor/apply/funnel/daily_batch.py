@@ -1,4 +1,4 @@
-"""Discovering, filtering and batching source rows for a nightly run, and batch submit."""
+"""Discovering, filtering and batching source rows for a nightly or Find jobs run."""
 
 from __future__ import annotations
 
@@ -16,9 +16,7 @@ from resume_tailor.apply.discovery import (
     source_status,
     sources,
 )
-from resume_tailor.apply.driver import browser, browser_launch
-from resume_tailor.apply.forms import fill, submit_guard
-from resume_tailor.apply.funnel import store, store_models, store_views
+from resume_tailor.apply.funnel import store, store_models
 from resume_tailor.content import data
 from resume_tailor.web.schemas import ApplySettings, JobSettings
 
@@ -155,34 +153,11 @@ def _filter_source(
     return filtered
 
 def _rows_to_process(
-    all_new: list[source_rows.SourceRow], *, cap: int, fetch_only: bool
+    all_new: list[source_rows.SourceRow], *, cap: int
 ) -> list[source_rows.SourceRow]:
-    """This run's rows: earlier discoveries still waiting first (unless fetch-only),
-    then the new ones, up to `cap`."""
-    if fetch_only:
-        return all_new[:cap]
-    pending_discovered: list[source_rows.SourceRow] = []
-    for app in store.load_all().values():
-        if (
-            app.status == "discovered"
-            and app.source_job_id
-            and not app.archived_at
-            and not app.capture_stub  # the extension completes it, never a fetch
-        ):
-            pending_discovered.append(
-                source_rows.SourceRow(
-                    company=app.company,
-                    role=app.role,
-                    location=app.location,
-                    application_link=app.posting_url or app.final_url or None,
-                    source_id=app.source,
-                    job_id=app.source_job_id,
-                    age=f"{app.age_days}d" if app.age_days is not None else "0d",
-                    salary=app.salary or "",
-                    flags=list(app.eligibility_flags or []),
-                )
-            )
-    return (pending_discovered + all_new)[:cap]
+    """This run's new rows, up to `cap`. Applications already waiting (found by an
+    earlier Find jobs) are the user's to Prepare, so they are never swept in here."""
+    return all_new[:cap]
 
 def _process_rows(
     to_process: list[source_rows.SourceRow],
@@ -230,6 +205,7 @@ def _process_rows(
                     summary=summary,
                     index=index,
                     index_lock=index_lock,
+                    include_known=False,
                 )
             except Exception as exc:  # noqa: BLE001
                 daily_progress._row_error(
@@ -259,135 +235,3 @@ def _process_rows(
                     phase="processing", processed=completed, total=len(to_process),
                     current=f"{row.company} — {row.role}",
                 ))
-
-def _run_batch_submit(
-    *,
-    settings: ApplySettings,
-    cap: int,
-    dry_run: bool,
-    log_path: Path,
-    log: Callable[[str], None],
-    summary: daily_progress.DailySummary,
-) -> None:
-    """Fill+submit up to ``cap`` ready, auto-submit-eligible applications, oldest first.
-
-    Reuses `fill.fill_application` — the exact function the manual "Open & fill"
-    button calls — so there is no separate submit code path to keep in sync. A
-    per-item failure is logged and skipped rather than aborting the batch. Workday
-    is never eligible regardless of `auto_submit_ats`: `fill_buttons.decide_submit_action`
-    hard-excludes it.
-    """
-    if cap <= 0:
-        return
-
-    eligible_ats = {a.lower() for a in settings.auto_submit_ats}
-    candidates = [
-        app
-        for app in store.load_all().values()
-        if app.status == "ready" and not app.archived_at and app.ats.lower() in eligible_ats
-    ]
-    candidates.sort(key=lambda app: app.discovered_at)
-    to_submit = candidates[:cap]
-
-    if dry_run:
-        for app in to_submit:
-            label = f"{app.company} — {app.role}".strip(" —")
-            daily_rows._append_log(log_path, f"[would-submit] {label}", log)
-        return
-
-    try:
-        # Starts the chosen browser when it isn't running (`browser_launch`).
-        status = browser_launch.ensure_browser()
-    except RuntimeError:
-        status = browser.BrowserStatus(reachable=False)
-    if not status.reachable:
-        summary.submit_skipped_no_browser = True
-        daily_rows._append_log(log_path, "[batch-submit] skipped: browser CDP unreachable", log)
-        return
-    extension = browser.extension_mode()
-    workers = 1 if extension else settings.max_parallel_fills
-    if extension and settings.max_parallel_fills > 1:
-        daily_rows._append_log(
-            log_path, "[batch-submit] extension relay: parallel fills disabled", log
-        )
-
-    from resume_tailor.apply.funnel import operations
-
-    next_app = iter(to_submit)
-    dispatch_lock = threading.Lock()
-    log_lock = threading.Lock()
-    stopped = False
-
-    def process_next() -> None:
-        nonlocal stopped
-        while True:
-            with dispatch_lock:
-                if stopped:
-                    return
-                if submit_guard.is_paused():
-                    stopped = True
-                    with log_lock:
-                        daily_rows._append_log(
-                            log_path, "[batch-submit] stopped: automation is paused", log
-                        )
-                    return
-                app = next(next_app, None)
-                if app is None:
-                    return
-                daily_progress._bump(summary, "submit_attempted")
-            label = f"{app.company} — {app.role}".strip(" —")
-            try:
-                result = fill.fill_application(
-                    app.canonical_key or app.source_job_id,
-                    settings=settings,
-                    should_cancel=submit_guard.is_paused,
-                )
-            except Exception as exc:  # noqa: BLE001 - one bad posting must not sink the batch
-                daily_progress._bump(summary, "submit_failed")
-                daily_progress._row_attention(summary, app, "failed", str(exc))
-                with log_lock:
-                    daily_rows._append_log(log_path, f"[batch-submit] {label}: {exc}", log)
-                continue
-            daily_progress._bump(
-                summary, "submitted" if result.status == "submitted" else "submit_failed"
-            )
-            if result.status == "awaiting_review" and result.ready_to_submit:
-                daily_progress._row_attention(
-                    summary, app, "ready_for_review", "Ready to submit — final check"
-                )
-            elif result.status in {"awaiting_review", "awaiting_otp"}:
-                daily_progress._row_attention(
-                    summary,
-                    app,
-                    "needs_input",
-                    result.handoff_reason
-                    or result.error
-                    or store_views.review_summary(store.get(app.source_job_id) or app)
-                    or result.status.replace("_", " "),
-                )
-            elif result.status != "submitted":
-                daily_progress._row_attention(
-                    summary,
-                    app,
-                    "failed",
-                    result.error or result.handoff_reason or result.status.replace("_", " "),
-                )
-            with log_lock:
-                daily_rows._append_log(log_path, f"[batch-submit] {label}: {result.status}", log)
-
-    owned = False
-    try:
-        with operations.batch_browser_owner(), ThreadPoolExecutor(
-            max_workers=workers
-        ) as executor:
-            owned = True
-            futures = [
-                config.submit_in_context(executor, process_next)
-                for _ in range(min(workers, len(to_submit)))
-            ]
-            for future in futures:
-                future.result()
-    except RuntimeError as exc:
-        if owned:
-            raise
-        daily_rows._append_log(log_path, f"[batch-submit] skipped: {exc}", log)

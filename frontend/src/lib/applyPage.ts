@@ -176,7 +176,7 @@ export function fillBlockers(rows: ApplicationRow[]): string | null {
 /** The submission-cap field's meaning; 0 must never read as "unlimited". */
 export function autoSubmitCapLabel(cap: number): string {
   if (!cap || cap <= 0) return "No auto-submits";
-  return `At most ${cap} per run`;
+  return `At most ${cap} per Fill`;
 }
 
 /** Which posting-age segment a day count selects; anything but 1 or 7 is a custom window. */
@@ -324,18 +324,18 @@ type AutoSubmitCaps = Pick<
 >;
 
 /**
- * The three auto-submit caps as one sentence. The per-run cap applies to the nightly
- * run's unattended submits; the 24-hour caps to every automatic submit.
+ * The three auto-submit caps as one sentence. The per-run cap applies to each Fill (the
+ * nightly run never submits); the 24-hour caps to every automatic submit.
  */
 export function autoSubmitSummary(caps: AutoSubmitCaps): string {
   if (!caps.auto_submit_enabled) return "Auto-submit is off: every application waits for you.";
   if (caps.auto_submit_max_per_day <= 0 || caps.auto_submit_max_per_company_per_day <= 0)
     return "A limit is 0, so nothing is submitted automatically.";
-  const nightly =
+  const perFill =
     caps.auto_submit_max_per_run > 0
-      ? `Nightly run: up to ${caps.auto_submit_max_per_run}`
-      : "Nightly run: none";
-  return `${nightly} · no more than ${caps.auto_submit_max_per_day} a day · no more than ${caps.auto_submit_max_per_company_per_day} per company.`;
+      ? `Each Fill: up to ${caps.auto_submit_max_per_run}`
+      : "Each Fill: none";
+  return `${perFill} · no more than ${caps.auto_submit_max_per_day} a day · no more than ${caps.auto_submit_max_per_company_per_day} per company.`;
 }
 
 /** "2:00 AM" for a stored "02:00" (the viewer's locale); the raw value if unparseable. */

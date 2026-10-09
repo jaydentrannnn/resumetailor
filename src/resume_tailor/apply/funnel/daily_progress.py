@@ -55,12 +55,6 @@ class DailySummary(BaseModel):
     already_known: int = 0
     grouped: int = 0
     prefiltered_out: int = 0
-    #: Populated by the unattended batch-submit stage (`_run_batch_submit`), which
-    #: only runs when `ApplySettings.auto_submit_max_per_run > 0`.
-    submit_attempted: int = 0
-    submitted: int = 0
-    submit_failed: int = 0
-    submit_skipped_no_browser: bool = False
     errors: list[str] = Field(default_factory=list)
     attention: list[attention_mod.AttentionItem] = Field(default_factory=list)
     log_path: str = ""

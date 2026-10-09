@@ -1,4 +1,7 @@
-"""Processing one source row end to end: screen, prepare (tailor), and optionally fill."""
+"""Processing one source row end to end: fetch its JD, screen it, and prepare (tailor) it.
+
+``fetch_only`` (Find jobs) stops after the JD fetch and the no-LLM prefilter; only the
+nightly run and an explicit Prepare go on to the model screen and tailoring."""
 
 from __future__ import annotations
 
@@ -71,8 +74,12 @@ def _process_one(
     index_lock: threading.Lock | None = None,
     force_tailor: bool = False,
     on_job: Callable[[str], None] | None = None,
+    include_known: bool = True,
 ) -> None:
-    """Run the funnel for one newly discovered posting."""
+    """Run the funnel for one newly discovered posting.
+
+    ``include_known=False`` (the nightly run) leaves an application that already exists
+    and is waiting for the user alone; Prepare passes True to carry it on."""
     if not row.job_id:
         daily_progress._bump(summary, "skipped_count")
         return
@@ -92,6 +99,7 @@ def _process_one(
         index_lock=index_lock,
         force_tailor=force_tailor,
         on_job=on_job,
+        include_known=include_known,
     ).run()
 
 class _RowRun:
@@ -116,6 +124,7 @@ class _RowRun:
         index_lock: threading.Lock | None,
         force_tailor: bool,
         on_job: Callable[[str], None] | None,
+        include_known: bool = True,
     ) -> None:
         self.row = row
         self.settings = settings
@@ -132,6 +141,7 @@ class _RowRun:
         self.index_lock = index_lock
         self.force_tailor = force_tailor
         self.on_job = on_job
+        self.include_known = include_known
 
         wrapper_or_direct = row.application_link or ""
         self.final_url = (
@@ -155,6 +165,13 @@ class _RowRun:
             return
         fetch = self._fetch_jd(app)
         if fetch is None:
+            return
+        if not self._prefilter(app, fetch.text):
+            return
+        if self.fetch_only:
+            # Find jobs: the user chooses what to prepare, so no model call from here.
+            store.upsert(app)
+            self._count("processed")
             return
         requirements = self._screen(app, fetch.text)
         if requirements is None:
@@ -181,7 +198,7 @@ class _RowRun:
         if index.by_group.get(self.gkey):
             return self._join_group()
         app = self._discover()
-        if self.dry_run or self.fetch_only:
+        if self.dry_run:
             self._count("processed")
             return None
         return app
@@ -203,7 +220,12 @@ class _RowRun:
         if existing.archived_at:
             self._count("already_known")
             return None
-        if existing.status == "discovered" and not self.fetch_only and not existing.capture_stub:
+        if (
+            self.include_known
+            and existing.status == "discovered"
+            and not self.fetch_only
+            and not existing.capture_stub
+        ):
             return existing
         self._count("already_known")
         self._log(f"[merge-ref] {self.row.company} → {self.ckey} via {self.ref.source}")
@@ -250,7 +272,11 @@ class _RowRun:
             self._log(f"[grouped-reuse] {row.company} ← {primary.job_id}")
             self._add_to_index(app)
             return None
+        if dry_run:
+            self._count("processed")
+            return None
         # Primary not tailored yet — continue as a normal discovery; first to finish wins.
+        # Under Find (fetch_only) `run()` stops after the prefilter, so nothing is tailored.
         return app
 
     def _discover(self) -> store_models.Application:
@@ -324,22 +350,22 @@ class _RowRun:
         self._count("jd_fetched")
         return fetch
 
-    def _screen(self, app: store_models.Application, jd_text: str) -> jd.JobRequirements | None:
-        """Prefilter, extract and screen; the requirements when the posting passes."""
+    def _prefilter(self, app: store_models.Application, jd_text: str) -> bool:
+        """The deterministic (no-LLM) eligibility prefilter; False when it screens out."""
         elig = daily_rows.prefilter_screen(jd_text, app.role, self.settings)
-        if not elig.passed:
-            app.screen = elig
-            app.eligibility_flags = list(self.row.flags) + list(elig.flags)
-            store.set_status(
-                app, "screened_out", note="prefilter: " + "; ".join(elig.reasons)
-            )
-            store.upsert(app)
-            self._count("prefiltered_out", "screened_out")
-            self._log(f"[prefilter] {app.company}: {elig.reasons}")
-            self._count("processed")
-            return None
         app.eligibility_flags = list(self.row.flags) + list(elig.flags)
+        if elig.passed:
+            return True
+        app.screen = elig
+        store.set_status(app, "screened_out", note="prefilter: " + "; ".join(elig.reasons))
+        store.upsert(app)
+        self._count("prefiltered_out", "screened_out")
+        self._log(f"[prefilter] {app.company}: {elig.reasons}")
+        self._count("processed")
+        return False
 
+    def _screen(self, app: store_models.Application, jd_text: str) -> jd.JobRequirements | None:
+        """Extract and screen a prefiltered posting; the requirements when it passes."""
         requirements = self._extract(app, jd_text)
         if requirements is None:
             return None

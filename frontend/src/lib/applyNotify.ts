@@ -32,9 +32,7 @@ export function applyNotifications(prev: ApplySnapshot | null, next: ApplySnapsh
     out.push(`${next.needsYou} application${next.needsYou === 1 ? " needs" : "s need"} you`);
   if (prev.dailyRunning && !next.dailyRunning) {
     const s = next.dailySummary ?? {};
-    const parts = [`${num(s.new_rows)} found`, `${num(s.tailored)} tailored`];
-    if (num(s.submitted)) parts.push(`${num(s.submitted)} submitted`);
-    out.push(`Nightly run finished: ${parts.join(", ")}`);
+    out.push(`Nightly run finished: ${num(s.new_rows)} found, ${num(s.tailored)} tailored`);
   }
   if (
     prev.operationId &&

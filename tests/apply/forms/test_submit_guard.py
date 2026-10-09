@@ -229,7 +229,8 @@ def test_final_submit_guard_runs_in_paced_slot(clock):
 # --- scheduler and operation worker -------------------------------------------------
 
 
-def test_scheduler_does_not_start_while_paused(tmp_path, monkeypatch):
+def test_scheduler_starts_while_paused(tmp_path, monkeypatch):
+    """The nightly run never submits, so the automation pause does not hold it back."""
     monkeypatch.setattr(config, "DATA_DIR", tmp_path)
     started: list[int] = []
     now = datetime(2026, 9, 25, 2, 1)
@@ -244,9 +245,6 @@ def test_scheduler_does_not_start_while_paused(tmp_path, monkeypatch):
         )
 
     submit_guard.set_paused(True)
-    assert tick() == "paused"
-    assert started == []
-    submit_guard.set_paused(False)
     assert tick() == "run"
     assert started == [1]
 

@@ -1,4 +1,4 @@
-"""The nightly Apply scheduler: due window, catch-up, missed days, persistence."""
+"""The nightly Apply scheduler: due window, catch-up, persistence."""
 
 from __future__ import annotations
 
@@ -24,7 +24,8 @@ def _state_dir(tmp_path, monkeypatch):
         (datetime(2026, 9, 25, 2, 1, 5), None, "run"),
         # Machine asleep at 02:00, opened at 09:00: catch up.
         (datetime(2026, 9, 25, 9, 0), date(2026, 9, 24), "run"),
-        (datetime(2026, 9, 25, 14, 1), date(2026, 9, 24), "missed"),
+        # However late: the nightly run never submits, so a mid-day start is harmless.
+        (datetime(2026, 9, 25, 23, 0), date(2026, 9, 24), "run"),
         (datetime(2026, 9, 25, 3, 0), date(2026, 9, 25), "done"),
     ],
 )
@@ -64,12 +65,12 @@ def test_busy_defers_to_the_next_tick():
     assert _tick(datetime(2026, 9, 25, 2, 10), started=started) == "run"
 
 
-def test_missed_day_is_recorded_not_run():
+def test_a_late_start_still_runs_once():
     started: list[datetime] = []
-    assert _tick(datetime(2026, 9, 25, 15, 0), started=started) == "missed"
-    assert started == []
+    assert _tick(datetime(2026, 9, 25, 15, 0), started=started) == "run"
+    assert _tick(datetime(2026, 9, 25, 16, 0), started=started) == "done"
+    assert len(started) == 1
     info = scheduler.status(enabled=True, schedule_time="02:00", now=datetime(2026, 9, 25, 16, 0))
-    assert info["missed_today"] is True
     assert info["next_run_at"] == "2026-09-26T02:00"
 
 
@@ -90,7 +91,6 @@ def test_status_after_a_run():
     info = scheduler.status(enabled=True, schedule_time="02:00", now=datetime(2026, 9, 25, 8, 0))
     assert info["last_run_date"] == "2026-09-25"
     assert info["next_run_at"] == "2026-09-26T02:00"
-    assert info["missed_today"] is False
 
 
 def _run_now(now, *, busy=False, schedule="02:00", started=None):

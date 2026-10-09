@@ -212,7 +212,7 @@ describe("operation banner", () => {
 
   it("never lets a cap of 0 read as unlimited", () => {
     expect(autoSubmitCapLabel(0)).toBe("No auto-submits");
-    expect(autoSubmitCapLabel(5)).toBe("At most 5 per run");
+    expect(autoSubmitCapLabel(5)).toBe("At most 5 per Fill");
   });
 });
 
@@ -225,11 +225,9 @@ describe("autoSubmitSummary", () => {
   };
   it("reads the three caps as one sentence", () => {
     expect(autoSubmitSummary(caps)).toBe(
-      "Nightly run: up to 5 · no more than 25 a day · no more than 2 per company.",
+      "Each Fill: up to 5 · no more than 25 a day · no more than 2 per company.",
     );
-    expect(autoSubmitSummary({ ...caps, auto_submit_max_per_run: 0 })).toContain(
-      "Nightly run: none",
-    );
+    expect(autoSubmitSummary({ ...caps, auto_submit_max_per_run: 0 })).toContain("Each Fill: none");
   });
   it("says when nothing is submitted", () => {
     expect(autoSubmitSummary({ ...caps, auto_submit_enabled: false })).toContain("off");

@@ -443,7 +443,6 @@ export type SchedulerStatus = {
   last_run_date: string | null;
   last_started_at: string | null;
   next_run_at: string | null;
-  missed_today: boolean;
   last_error: string | null;
 };
 

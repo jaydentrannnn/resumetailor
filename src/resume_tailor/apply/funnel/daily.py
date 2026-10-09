@@ -1,4 +1,4 @@
-"""Daily discover → screen → tailor orchestration for the apply funnel."""
+"""Daily discover → screen → tailor orchestration for the apply funnel (never submits)."""
 
 from __future__ import annotations
 
@@ -169,12 +169,16 @@ def run_daily(
     limit: int | None = None,
     dry_run: bool = False,
     allow_browser: bool = True,
-    auto_submit_max_per_run: int | None = None,
     fetch_only: bool = False,
     log: Callable[[str], None] = print,
     on_progress: daily_progress.ProgressCallback | None = None,
 ) -> daily_progress.DailySummary:
-    """Execute one daily discover/screen/tailor pass; idempotent on known ids."""
+    """Execute one discover → fetch → screen → tailor pass over this run's new postings.
+
+    Never fills or submits: autofill and auto-submit happen only from Fill. Applications
+    already known (e.g. found by an earlier Find jobs) are left for the user to Prepare.
+    ``fetch_only`` (Find jobs) stops each row after the JD fetch and no-LLM prefilter.
+    Idempotent on known ids."""
     if not daily_progress._DAILY_LOCK.acquire(blocking=False):
         return daily_progress.DailySummary(
             already_running=True, date=daily_rows._today(), reason="already running"
@@ -227,7 +231,7 @@ def run_daily(
             on_progress=on_progress,
         )
         cap = limit if limit is not None else settings.max_new_per_day
-        to_process = daily_batch._rows_to_process(all_new, cap=cap, fetch_only=fetch_only)
+        to_process = daily_batch._rows_to_process(all_new, cap=cap)
 
         index = store.build_index()
         daily_progress._progress_set(
@@ -253,23 +257,6 @@ def run_daily(
             on_progress=on_progress,
         )
         daily_progress._progress_set(processed=len(to_process), current="")
-
-        if not fetch_only:
-            submit_cap = (
-                auto_submit_max_per_run
-                if auto_submit_max_per_run is not None
-                else settings.auto_submit_max_per_run
-            )
-            if not settings.auto_submit_enabled:
-                submit_cap = 0
-            daily_batch._run_batch_submit(
-                settings=settings,
-                cap=submit_cap,
-                dry_run=dry_run,
-                log_path=log_file,
-                log=log,
-                summary=summary,
-            )
 
         daily_rows._append_log(
             log_file,

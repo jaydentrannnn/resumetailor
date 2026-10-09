@@ -71,7 +71,7 @@ export function ApplySettingsDrawer({
     }
     const ok = await confirm({
       title: "Turn on auto-submit?",
-      message: `Applications on the platforms you tick below will be submitted without you seeing them first. Workday always stops for your review. Nightly run: ${autoSubmitCapLabel(apply.auto_submit_max_per_run).toLowerCase()}; at most ${apply.auto_submit_max_per_day} in any 24 hours.`,
+      message: `Applications on the platforms you tick below will be submitted without you seeing them first. Workday always stops for your review. Each Fill: ${autoSubmitCapLabel(apply.auto_submit_max_per_run).toLowerCase()}; at most ${apply.auto_submit_max_per_day} in any 24 hours.`,
       confirmLabel: "Turn on",
       tone: "danger",
     });
@@ -103,8 +103,9 @@ export function ApplySettingsDrawer({
             />
           </div>
           <p className="mt-1 text-xs text-ink-muted">
-            It finds new postings and tailors your resume for each. The app must be open (or in the
-            tray) at that time.
+            It finds new postings and tailors your resume for each. It never fills or submits; that
+            only happens when you press Fill. The app must be open (or in the tray); a run missed
+            while it was closed starts when it next opens.
           </p>
           <fieldset className="mt-3 grid gap-4 sm:grid-cols-2" disabled={!apply.enabled}>
             <label className="block">
@@ -141,11 +142,6 @@ export function ApplySettingsDrawer({
                 : ""}
             </p>
           </div>
-          {scheduler?.missed_today && (
-            <p className="mt-1 text-xs text-attn">
-              Today's run was missed because the app was closed.
-            </p>
-          )}
           {scheduler?.last_error && (
             <p className="mt-1 text-xs text-danger">{scheduler.last_error}</p>
           )}
@@ -227,13 +223,13 @@ export function ApplySettingsDrawer({
               More tabs raise the chance of bot checks.
             </p>
             <label className="block">
-              <span className="mb-1 block">Nightly run: at most</span>
+              <span className="mb-1 block">Each Fill: at most</span>
               <input
                 className="field w-full"
                 type="number"
                 min={0}
                 max={500}
-                aria-label="Automatic submits per nightly run"
+                aria-label="Automatic submits per Fill"
                 value={apply.auto_submit_max_per_run}
                 onChange={(e) =>
                   patch({ auto_submit_max_per_run: Math.max(0, Number(e.target.value) || 0) })

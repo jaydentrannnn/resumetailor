@@ -7,7 +7,7 @@ plain-language note:
 
 - **Pause switch.** "Pause all automation" in the header. It is stored in one file under
   ``config.DATA_ROOT`` because it covers every profile. It also stops the operation
-  worker between applications, the nightly batch and the scheduler.
+  worker between applications. (The nightly run never submits, so it is not held.)
 - **Caps.** At most ``auto_submit_max_per_day`` automatic submits, and at most
   ``auto_submit_max_per_company_per_day`` to one company. Both count over the last 24
   hours, not by calendar day, so there is no burst at midnight. The count comes from
