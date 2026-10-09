@@ -25,6 +25,7 @@ import {
   readyBlockLabel,
   reviewReason,
 } from "../../lib/applyPage";
+import { DetailChip } from "../../components/ui/DetailChip";
 import { CapturedBadge } from "../CapturedStubs";
 import type { TableActions } from "./ApplicationsTable";
 import { PostedDate, WaitingSince } from "./PostedDate";
@@ -260,10 +261,16 @@ function SkillMatch({ row }: { row: ApplicationRow }) {
 }
 
 /** The row's status; a ready row the server won't fill reads "Check resume" (attention). */
-const statusChip = (row: ApplicationRow, archived = false) => {
+const statusChip = (row: ApplicationRow, archived = false, withError = false) => {
   const blocked = archived ? null : readyBlockLabel(row);
   return blocked ? (
     <StatusChip tone="attention">{blocked}</StatusChip>
+  ) : withError && row.error ? (
+    // The error rides on the chip (hover, focus or tap): beside it, the narrow Status
+    // column squeezed it to a single character.
+    <DetailChip tone={applicationStatusTone(row.status)} detail={row.error} label="Why it failed">
+      {applicationStatusLabel(row.status)}
+    </DetailChip>
   ) : (
     <StatusChip tone={applicationStatusTone(row.status)}>
       {applicationStatusLabel(row.status)}
@@ -326,7 +333,7 @@ export function applicationColumns({
           className: "w-[10rem]",
           cell: (row) => (
             <div className="flex min-w-0 items-center gap-2">
-              <span className="shrink-0">{statusChip(row, archived)}</span>
+              <span className="shrink-0">{statusChip(row, archived, !archived)}</span>
               {row.screen_label && (
                 <TruncatedText
                   className="flex-1 text-xs text-ink-muted md:min-h-0!"
@@ -336,13 +343,6 @@ export function applicationColumns({
                       : row.screen_label
                   }
                   label="Screening details"
-                />
-              )}
-              {row.error && !archived && (
-                <TruncatedText
-                  className="flex-1 text-xs text-danger md:min-h-0!"
-                  text={row.error}
-                  label="Error details"
                 />
               )}
             </div>

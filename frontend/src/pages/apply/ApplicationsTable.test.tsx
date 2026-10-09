@@ -166,16 +166,16 @@ describe("ApplicationsTable ready rows and long text", () => {
     expect(screen.queryByRole("link", { name: "View" })).toBeNull();
   });
 
-  it("keeps a long error on one line and opens it in a box on click", () => {
-    vi.spyOn(HTMLElement.prototype, "scrollWidth", "get").mockReturnValue(400);
-    vi.spyOn(HTMLElement.prototype, "clientWidth", "get").mockReturnValue(100);
+  it("puts a failed row's error on its status chip, shown on hover", () => {
     const error = "The form rejected the upload because the file was larger than allowed";
     show("tailor_failed", false, [], { error });
     fireEvent.keyDown(document, { key: "Escape" });
-    const [line] = screen.getAllByRole("button", { name: `Error details: ${error}` });
-    expect(line.className).toContain("truncate");
-    fireEvent.click(line, { clientX: 30, clientY: 30 });
-    expect(screen.getByRole("dialog", { name: "Error details" }).textContent).toContain(error);
+    const [chip] = screen.getAllByRole("button", { name: new RegExp(`: ${error}$`) });
+    expect(screen.queryByRole("tooltip")).toBeNull();
+    fireEvent.mouseEnter(chip);
+    expect(screen.getByRole("tooltip").textContent).toContain(error);
+    fireEvent.mouseLeave(chip);
+    expect(screen.queryByRole("tooltip")).toBeNull();
   });
 });
 
