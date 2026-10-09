@@ -3,6 +3,7 @@ import { fetchModelQueue, saveModelQueue, type ModelQueueStatus } from "../../ap
 import { Button, Card } from "../../components/ui";
 import { startAdaptivePoll } from "../../lib/adaptivePoll";
 import { useToast } from "../../lib/toast";
+import { SELECT_WIDTH } from "./selectWidth";
 
 export function ModelQueueCard() {
   const [status, setStatus] = useState<ModelQueueStatus | null>(null);
@@ -46,10 +47,10 @@ export function ModelQueueCard() {
   }
 
   const limit = (label: string, key: string, value: number) => (
-    <label className="grid min-w-0 gap-3 text-sm sm:grid-cols-[minmax(0,1fr)_80px] sm:items-center">
+    <label className="grid min-w-0 gap-3 text-sm sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-6">
       <span className="break-words font-medium">{label}</span>
       <select
-        className="field w-20"
+        className={`field ${SELECT_WIDTH}`}
         aria-label={label}
         value={value}
         disabled={busy}

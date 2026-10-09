@@ -129,8 +129,9 @@ statuses map through `lib/applicationStatus.ts` (`applicationStatusTone`).
 - **Buttons** (`Button` / `buttonClass`): primary is ink — black in light, **white in
   dark**; secondary is the same ink fill (a `field`-coloured secondary vanished into its
   tile in both themes, so it was dropped 2026-10-08); outline is the quiet one — ink border
-  and ink text on `sunken` — for low-weight actions (pagination, Save beside an input,
-  Copy, Export, drawer links); danger is a red outline (also the destructive confirm);
+  and ink text on `field` — for low-weight actions (pagination, Save beside an input,
+  Copy, Export, drawer links, Set up, Validate); `attention`/`success` are the same outline in
+  orange/green for row actions that need you / are ready to fill; danger is a red outline (also the destructive confirm);
   ghost is muted text. On/off settings that apply at once use `Switch` (the Job sources
   track), not a checkbox; checkboxes stay for picking items from a list. Header utilities
   (Pause automation, the settings menu) are borderless text like the nav; the menu marks

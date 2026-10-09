@@ -647,3 +647,12 @@ became a list with an accent bar and the theme `Segmented` uses `variant="underl
 `DataTable`'s narrow-screen cards put each heading and value on one line; a heading-less
 column (a "…" menu) joins the line above at its end, and `end: true` right-aligns a cell
 (Apply's Next step).
+
+**2026-10-08 — Tone-coloured row actions; outline fill is the page colour.** Apply's row
+action colour now names the step: `attention` (orange outline) for needs-you steps
+(Answer, Review, Continue, Reopen), `success` (green outline) for Fill, `danger` for a
+failed retry, plain `outline` for routine steps and View. `outline`'s fill moved from
+`sunken` to `field` (white in light, near-black in dark). Set up, Nightly run, profile-gap
+buttons, Validate and Import from a .zip use it, so neighbouring buttons alternate ink and
+outline. Tailor's failed rows put the error beside the chip on one line, like Apply.
+Settings → Advanced selects share one width (`selectWidth.ts`) and centre in their rows.

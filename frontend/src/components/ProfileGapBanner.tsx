@@ -26,7 +26,7 @@ export function ProfileGapBanner({
           <li key={gap.key}>
             <button
               type="button"
-              className={buttonClass("secondary", "sm", "h-auto flex-wrap justify-start text-left")}
+              className={buttonClass("outline", "sm", "h-auto flex-wrap justify-start text-left")}
               onClick={() => onOpen(gap.section)}
             >
               {gap.label}

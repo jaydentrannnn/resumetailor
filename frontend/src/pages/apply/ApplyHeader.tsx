@@ -22,7 +22,12 @@ export function ApplyHeader({
       actions={
         <>
           <ConnectionStatus connected={browserConnected} />
-          <Button size="sm" title="Change the nightly run in Apply settings" onClick={onSettings}>
+          <Button
+            variant="outline"
+            size="sm"
+            title="Change the nightly run in Apply settings"
+            onClick={onSettings}
+          >
             {nightlyRunLabel(apply)}
           </Button>
           <Button size="sm" onClick={onSettings}>

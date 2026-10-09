@@ -37,7 +37,7 @@ export function Pagination({
           </select>
         </label>
         <button
-          className="rounded-sm border border-ink/55 bg-sunken font-medium text-ink hover:border-ink hover:bg-line px-3 disabled:opacity-40"
+          className="rounded-sm border border-ink/55 bg-field font-medium text-ink hover:border-ink hover:bg-sunken px-3 disabled:opacity-40"
           disabled={page === 0 || !total}
           onClick={() => onPage(page - 1)}
         >
@@ -60,7 +60,7 @@ export function Pagination({
           of {pages}
         </label>
         <button
-          className="rounded-sm border border-ink/55 bg-sunken font-medium text-ink hover:border-ink hover:bg-line px-3 disabled:opacity-40"
+          className="rounded-sm border border-ink/55 bg-field font-medium text-ink hover:border-ink hover:bg-sunken px-3 disabled:opacity-40"
           disabled={page >= pages - 1 || !total}
           onClick={() => onPage(page + 1)}
         >

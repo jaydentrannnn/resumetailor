@@ -35,10 +35,11 @@ import type { Scope } from "./useApplicationTable";
 // `rt-row-action` height.
 const action = (variant: ButtonVariant) =>
   buttonClass(variant, "sm", "rt-row-action w-[5.5rem] shrink-0 whitespace-nowrap px-2");
-// A retry after a failure is a red outline; the same button as a routine next step
-// (e.g. "Fetch JD" on a newly discovered row) is an ordinary secondary button.
+// The button's colour says what the step is: orange when it needs you (answer, review,
+// continue a fill), green when it is ready to fill, red to retry a failure, and a plain
+// outline for a routine step (e.g. "Fetch JD" on a newly discovered row) or View.
 const retryVariant = (status: string): ButtonVariant =>
-  applicationStatusTone(status) === "failed" ? "danger" : "secondary";
+  applicationStatusTone(status) === "failed" ? "danger" : "outline";
 
 /** The row's overflow menu: files, links and every action that is not the primary one. */
 function rowMenu(row: ApplicationRow, archived: boolean, actions: TableActions): MenuItem[] {
@@ -166,7 +167,7 @@ function RowAction({
     primary = (
       <button
         type="button"
-        className={action("secondary")}
+        className={action("attention")}
         title={browserConnected ? "Continue the fill in its open tab" : needsBrowser}
         disabled={busy || active || !browserConnected}
         onClick={() => actions.start("fill", [row.source_job_id], "continue")}
@@ -178,7 +179,7 @@ function RowAction({
     primary = (
       <button
         type="button"
-        className={action("secondary")}
+        className={action("attention")}
         title="The tab was closed: open the posting again and fill it from the start"
         disabled={busy || active || !browserConnected}
         onClick={() => actions.reopen([row])}
@@ -190,7 +191,7 @@ function RowAction({
     primary = (
       <button
         type="button"
-        className={action("primary")}
+        className={action("success")}
         title={browserConnected ? "Open the posting and fill the form" : needsBrowser}
         disabled={busy || active || !browserConnected}
         onClick={() => actions.start("fill", [row.source_job_id])}
@@ -212,7 +213,7 @@ function RowAction({
     );
   else if (kind === "review" && reason?.profilePath)
     primary = (
-      <Link to={reason.profilePath} title={reason.why} className={action("secondary")}>
+      <Link to={reason.profilePath} title={reason.why} className={action("attention")}>
         {reason.action}
       </Link>
     );
@@ -222,7 +223,7 @@ function RowAction({
         to={actions.detail(row, kind === "review" ? "review" : "overview")}
         onClick={actions.rememberScroll}
         title={reason?.why ?? (blocked ? "Open the application to check its files" : undefined)}
-        className={action(kind === "review" ? "secondary" : "ghost")}
+        className={action(kind === "review" ? "attention" : "outline")}
       >
         {kind === "review" ? (reason?.action ?? "Review") : "View"}
       </Link>

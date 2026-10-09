@@ -148,11 +148,17 @@ export function RunHistoryPanel() {
       heading: "Status",
       sortable: true,
       cell: (run) => (
-        <span className="flex min-w-0 flex-col items-start gap-1">
-          <StatusPill status={run.status} />
+        <span className="flex min-w-0 items-center gap-2">
+          <span className="shrink-0">
+            <StatusPill status={run.status} />
+          </span>
           {/* One line (newlines collapse, so the first line leads); the box keeps them. */}
           {run.error && (
-            <TruncatedText className="text-xs text-danger" text={run.error} label="Error details" />
+            <TruncatedText
+              className="flex-1 text-xs text-danger md:min-h-0!"
+              text={run.error}
+              label="Error details"
+            />
           )}
         </span>
       ),

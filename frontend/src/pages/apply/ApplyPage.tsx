@@ -121,7 +121,12 @@ export function ApplyPage() {
         <AttentionRow
           label="Browser"
           action={
-            <Button size="sm" className="rt-row-action" onClick={() => setDrawerOpen(true)}>
+            <Button
+              variant="outline"
+              size="sm"
+              className="rt-row-action"
+              onClick={() => setDrawerOpen(true)}
+            >
               Set up
             </Button>
           }

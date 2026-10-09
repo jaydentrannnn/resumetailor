@@ -112,15 +112,16 @@ export function ProfileSwitcher() {
             </button>
           );
         })}
+        {/* A row like the profiles above, so the gaps either side match theirs. */}
+        <button
+          type="button"
+          onClick={() => setManagerOpen(true)}
+          disabled={switching}
+          className="rt-row-action block px-2.5 py-1 text-left text-xs text-ink-muted underline underline-offset-2 hover:text-ink disabled:opacity-50"
+        >
+          Manage profiles…
+        </button>
       </div>
-      <button
-        type="button"
-        onClick={() => setManagerOpen(true)}
-        disabled={switching}
-        className="rt-link text-xs disabled:opacity-50"
-      >
-        Manage profiles…
-      </button>
       {switching ? <span className="text-xs text-ink-muted">Switching…</span> : null}
       {error ? <span className="text-xs text-danger">{error.split("\n")[0]}</span> : null}
       {/* Portaled so the dialog's fixed overlay is laid out against the viewport, not the

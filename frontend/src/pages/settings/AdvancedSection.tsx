@@ -6,6 +6,7 @@ import { ResumeHistoryList } from "../../components/ResumeHistoryList";
 import { Card } from "../../components/ui";
 import { useRunState } from "../../state/runState";
 import { ModelQueueCard } from "./ModelQueueCard";
+import { SELECT_WIDTH } from "./selectWidth";
 
 /** Settings → Advanced: extraction votes, vocabulary, and master resume history. */
 export function AdvancedSection() {
@@ -16,15 +17,16 @@ export function AdvancedSection() {
       <Card title="Tailoring and writing">
         <SettingRow
           label="Job description reading"
+          layout="action"
           description="How many times the AI reads each posting before agreeing on its requirements. More reads are steadier but slower and cost more on paid models."
         >
           <select
-            className="field"
+            className={`field ${SELECT_WIDTH}`}
             aria-label="Job description reads"
             value={settings.extract_runs}
             onChange={(e) => setSettings({ ...settings, extract_runs: Number(e.target.value) })}
           >
-            <option value={0}>Automatic (1 on paid models, 3 on local ones)</option>
+            <option value={0}>Automatic (1 paid, 3 local)</option>
             <option value={1}>1 read</option>
             <option value={3}>3 reads</option>
             <option value={5}>5 reads</option>
@@ -32,10 +34,11 @@ export function AdvancedSection() {
         </SettingRow>
         <SettingRow
           label="Concurrent tailoring runs"
+          layout="action"
           description="How many tailoring jobs may run together. PDF conversion is queued separately."
         >
           <select
-            className="field"
+            className={`field ${SELECT_WIDTH}`}
             aria-label="Concurrent tailoring runs"
             value={settings.max_concurrent_jobs}
             onChange={(e) =>

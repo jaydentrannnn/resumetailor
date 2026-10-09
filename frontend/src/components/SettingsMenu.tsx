@@ -86,13 +86,13 @@ export function SettingsMenu() {
           id={panelId}
           role="group"
           aria-label="Settings"
-          className="absolute right-0 z-40 mt-2 w-72 max-w-[calc(100vw-2rem)] space-y-4 rounded-sm border border-line bg-chrome p-4 shadow-lg"
+          className="absolute right-0 z-40 mt-2 w-72 max-w-[calc(100vw-2rem)] space-y-2 rounded-sm border border-line bg-chrome p-4 shadow-lg"
         >
           <section className="space-y-2">
             <h2 className="rt-eyebrow">Profile</h2>
             <ProfileSwitcher />
           </section>
-          <section className="space-y-1 border-t border-line pt-3">
+          <section className="space-y-1 border-t border-line pt-2.5">
             <h2 className="rt-eyebrow">Theme</h2>
             <Segmented
               variant="underline"
