@@ -35,11 +35,11 @@ import type { Scope } from "./useApplicationTable";
 // `rt-row-action` height.
 const action = (variant: ButtonVariant) =>
   buttonClass(variant, "sm", "rt-row-action w-[5.5rem] shrink-0 whitespace-nowrap px-2");
-// The button's colour says what the step is: orange when it needs you (answer, review,
-// continue a fill), green when it is ready to fill, red to retry a failure, and a plain
-// outline for a routine step (e.g. "Fetch JD" on a newly discovered row) or View.
+// The button's colour says what the step is: an orange wash when it needs you (answer,
+// review, continue a fill), solid green when it is ready to fill, a red wash to retry a
+// failure, and plain grey for a routine step (e.g. "Fetch JD" on a new row) or View.
 const retryVariant = (status: string): ButtonVariant =>
-  applicationStatusTone(status) === "failed" ? "danger" : "outline";
+  applicationStatusTone(status) === "failed" ? "danger" : "plain";
 
 /** The row's overflow menu: files, links and every action that is not the primary one. */
 function rowMenu(row: ApplicationRow, archived: boolean, actions: TableActions): MenuItem[] {
@@ -223,7 +223,7 @@ function RowAction({
         to={actions.detail(row, kind === "review" ? "review" : "overview")}
         onClick={actions.rememberScroll}
         title={reason?.why ?? (blocked ? "Open the application to check its files" : undefined)}
-        className={action(kind === "review" ? "attention" : "outline")}
+        className={action(kind === "review" ? "attention" : "plain")}
       >
         {kind === "review" ? (reason?.action ?? "Review") : "View"}
       </Link>

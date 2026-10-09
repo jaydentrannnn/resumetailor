@@ -79,7 +79,7 @@ export function KeyRow({
           value={value}
           onChange={(e) => setValue(e.target.value)}
         />
-        <Button variant="outline" onClick={save} loading={busy} disabled={!value.trim()}>
+        <Button variant="plain" onClick={save} loading={busy} disabled={!value.trim()}>
           Save
         </Button>
         {secret.source === "saved" && (

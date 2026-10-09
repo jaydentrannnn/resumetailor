@@ -126,12 +126,16 @@ statuses map through `lib/applicationStatus.ts` (`applicationStatusTone`).
 
 ## Buttons, tables, selection
 
-- **Buttons** (`Button` / `buttonClass`): primary is ink — black in light, **white in
-  dark**; secondary is the same ink fill (a `field`-coloured secondary vanished into its
-  tile in both themes, so it was dropped 2026-10-08); outline is the quiet one — ink border
-  and ink text on `field` — for low-weight actions (pagination, Save beside an input,
-  Copy, Export, drawer links, Set up, Validate); `attention`/`success` are the same outline in
-  orange/green for row actions that need you / are ready to fill; danger is a red outline (also the destructive confirm);
+- **Buttons** (`Button` / `buttonClass`) come in three levels with no outlines (2026-10-08).
+  **Solid**: ink (`primary`/`secondary`, black in light, **white in dark**) for a tile's
+  one main action; green (`success`) only for the step that moves an application forward
+  (Fill). **Tinted** (a wash stronger than the chips', coloured text): `attention` orange
+  for steps that need you or redo work (Answer, Review, Continue, Tailor again), `danger`
+  red for a failed retry, Skip, Remove and destructive confirms. **Plain** (`plain`, grey
+  a step off the tile): housekeeping and navigation (View, Archive, Columns, Refresh,
+  Export, pagination, the row "⋯" menu, Save beside an input). The selection bar is
+  neutral `sunken`; selected rows keep their green tint. Buttons carry no status mark, so a
+  tinted button and a status chip stay distinct.
   ghost is muted text. On/off settings that apply at once use `Switch` (the Job sources
   track), not a checkbox; checkboxes stay for picking items from a list. Header utilities
   (Pause automation, the settings menu) are borderless text like the nav; the menu marks
@@ -177,7 +181,7 @@ All exported from `components/ui` (`import { … } from "../components/ui"`).
 | `Tile` (alias `Card`) | `title?`, `eyebrow?`, `meta?`, `description?`, `actions?`, `as?`, `padding?: "md" \| "sm" \| "none"`, `embedded?`, `className`, `id`/`aria-*`/`data-*` | Any grouped content. Default element is `<section>`; pass `as="aside"` etc. `embedded` renders the same heading and content with no box (no border, fill or padding) and the title as an h3 — for a tile's content shown inside another tile. |
 | `ResultFrame` | `embedded?`, `title?`, `description?`, `actions?`, `className` | The frame of a result card (report, documents, skills, experience, bullet review): a `Tile` standalone, unboxed with an h3 when `embedded` inside another tile. |
 | `TileSection` | `title?`, `actions?`, `className` | A second group inside a tile, separated by one hairline instead of a nested box. |
-| `Button` | `variant?: "primary" \| "secondary" \| "outline" \| "danger" \| "ghost"`, `size?: "sm" \| "md" \| "lg"`, `loading?`, + button attrs | Every button. `buttonClass(variant, size, extra)` styles links as buttons. |
+| `Button` | `variant?: "primary" \| "secondary" \| "success" \| "attention" \| "danger" \| "plain" \| "ghost"`, `size?: "sm" \| "md" \| "lg"`, `loading?`, + button attrs | Every button. `buttonClass(variant, size, extra)` styles links as buttons. |
 | `StatusChip` | `tone: Tone`, `children` (label), `className`, `mark?` (default `true`) | A status pill: mark + word. `mark={false}` only where the label carries its own typed glyph (the e2e-anchored "● Connected" on Job sources). |
 | `StatusMark` | `tone: Tone` | Just the mark, inside your own labelled element (the label must still be text). |
 | `Segmented` | `items: {id,label,count?,disabled?}[]`, `value`, `onChange(id)`, `label`, `className` | One-of-N choice that is not a content switch (theme, view mode, filter). Renders a radiogroup. |

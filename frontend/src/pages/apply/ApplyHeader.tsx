@@ -23,7 +23,7 @@ export function ApplyHeader({
         <>
           <ConnectionStatus connected={browserConnected} />
           <Button
-            variant="outline"
+            variant="plain"
             size="sm"
             title="Change the nightly run in Apply settings"
             onClick={onSettings}

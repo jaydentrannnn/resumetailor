@@ -150,7 +150,7 @@ export function DataSection() {
             Export this profile
           </a>
           <Button
-            variant="outline"
+            variant="plain"
             loading={importing}
             onClick={() => fileInput.current?.click()}
           >

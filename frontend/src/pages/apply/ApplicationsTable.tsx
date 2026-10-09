@@ -116,6 +116,7 @@ export function ApplicationsTable({
             )}
             {bulk}
             <Button
+              variant="plain"
               size="sm"
               disabled={busy || active}
               title={active ? "Available when the current Apply task finishes" : undefined}

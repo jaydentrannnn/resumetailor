@@ -178,7 +178,7 @@ export function EditorPage({
             <Button size="sm" onClick={() => setHistoryOpen(true)}>
               History
             </Button>
-            <Button variant="outline" size="sm" onClick={onValidate} disabled={busy}>
+            <Button variant="plain" size="sm" onClick={onValidate} disabled={busy}>
               Validate
             </Button>
             {!embedded && (

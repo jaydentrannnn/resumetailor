@@ -48,6 +48,13 @@
   --color-attn-soft: color-mix(in srgb, #b0390a 10%, transparent);
   --color-danger: #c42020;
   --color-danger-soft: color-mix(in srgb, #c42020 10%, transparent);
+  /* Buttons: plain grey a step off the tile; tinted = a stronger wash than the chips'. */
+  --color-plain: #ececea;
+  --color-plain-hover: #e2e2df;
+  --color-attn-tint: color-mix(in srgb, #b0390a 11%, transparent);
+  --color-attn-tint-hover: color-mix(in srgb, #b0390a 18%, transparent);
+  --color-danger-tint: color-mix(in srgb, #c42020 11%, transparent);
+  --color-danger-tint-hover: color-mix(in srgb, #c42020 18%, transparent);
 
   /* Modal / drawer backdrop. */
   --color-scrim: rgb(0 0 0 / 0.4);
@@ -120,6 +127,12 @@
   --color-attn-soft: color-mix(in srgb, #e0965c 8%, transparent);
   --color-danger: #d17875;
   --color-danger-soft: color-mix(in srgb, #d17875 8%, transparent);
+  --color-plain: #242424;
+  --color-plain-hover: #2e2e2e;
+  --color-attn-tint: color-mix(in srgb, #e0965c 14%, transparent);
+  --color-attn-tint-hover: color-mix(in srgb, #e0965c 22%, transparent);
+  --color-danger-tint: color-mix(in srgb, #d17875 14%, transparent);
+  --color-danger-tint-hover: color-mix(in srgb, #d17875 22%, transparent);
   --color-scrim: rgb(0 0 0 / 0.6);
   --rt-overlay: 0 0 0 1px var(--color-line-hover);
 }

@@ -147,10 +147,10 @@ describe("ApplicationsTable ready rows and long text", () => {
     expect(screen.getByRole("dialog", { name: "Why it needs you" }).textContent).toContain(reason);
   });
 
-  it("makes Fill the green ready-to-fill button", () => {
+  it("makes Fill the solid green ready-to-fill button", () => {
     show("ready");
     const [fill] = screen.getAllByRole("button", { name: "Fill" });
-    expect(fill.className).toContain("text-accent");
+    expect(fill.className).toContain("bg-accent");
     expect(screen.getAllByText("Ready").length).toBeGreaterThan(0);
   });
 

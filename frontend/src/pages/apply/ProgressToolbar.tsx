@@ -42,7 +42,7 @@ export function FindJobsTools({
     <>
       <details className="relative">
         <summary
-          className={buttonClass("secondary", "md", "rt-control cursor-pointer list-none")}
+          className={buttonClass("plain", "md", "rt-control cursor-pointer list-none")}
           title="Options for the next Find jobs only; not saved"
         >
           Search options{limit || dryRun || ageDays != null ? " •" : ""}
@@ -81,7 +81,7 @@ export function FindJobsTools({
           </label>
         </div>
       </details>
-      <a className={buttonClass("outline", "md", "rt-control")} href={applicationsExportUrl()}>
+      <a className={buttonClass("plain", "md", "rt-control")} href={applicationsExportUrl()}>
         Export CSV
       </a>
       <Button
@@ -124,6 +124,7 @@ export function ProgressBulkActions({
   return (
     <>
       <Button
+        variant="plain"
         size="sm"
         disabled={busy || active || !prepareIds.length}
         title={idleNote ?? GLOSSARY.prepare.help}
@@ -132,6 +133,7 @@ export function ProgressBulkActions({
         {GLOSSARY.prepare.label} ({prepareIds.length})
       </Button>
       <Button
+        variant="attention"
         size="sm"
         disabled={busy || active || !retailorRows.length}
         title={
@@ -143,7 +145,7 @@ export function ProgressBulkActions({
       </Button>
       <Button
         size="sm"
-        variant="primary"
+        variant="success"
         disabled={busy || active || !fillIds.length || !browserConnected}
         title={
           idleNote ??

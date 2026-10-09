@@ -1,28 +1,26 @@
 export type ButtonVariant =
   | "primary"
   | "secondary"
-  | "outline"
+  | "plain"
   | "attention"
   | "success"
   | "danger"
   | "ghost";
 
-// Green is never a button fill. Primary and secondary are both ink (black in light, white
-// in dark): a field-coloured secondary vanished into its tile in both themes. `outline` is
-// the quiet one (pagination, Save beside an input, Copy): an ink outline and ink text on
-// the page colour (white in light, near-black in dark), a step off the tile. `attention`
-// and `success` are the same outline in orange and green, for row actions whose colour
-// says what they are (needs you / ready to fill), beside `danger` (failed, retry).
+// Three levels, no outlines. Solid: ink for a tile's one main action (`primary`,
+// `secondary`), green for the step that moves an application forward (`success`, Fill).
+// Tinted: a colour wash for steps that need a decision (`attention`: needs you, tailor
+// again) or that failed or discard (`danger`). Plain: grey a step off the tile for
+// housekeeping and navigation (pagination, Columns, View, Archive, Save beside an input).
 const INK = "bg-primary font-medium text-on-primary hover:bg-primary/85";
-export const OUTLINE =
-  "border border-ink/55 bg-field font-medium text-ink hover:border-ink hover:bg-sunken";
+export const PLAIN = "bg-plain font-medium text-ink hover:bg-plain-hover";
 const VARIANT: Record<ButtonVariant, string> = {
   primary: INK,
   secondary: INK,
-  outline: OUTLINE,
-  attention: "border border-attn/55 bg-field font-medium text-attn hover:border-attn",
-  success: "border border-accent/55 bg-field font-medium text-accent hover:border-accent",
-  danger: "border border-danger/45 bg-field font-medium text-danger hover:border-danger",
+  success: "bg-accent font-medium text-on-accent hover:bg-accent/85",
+  attention: "bg-attn-tint font-medium text-attn hover:bg-attn-tint-hover",
+  danger: "bg-danger-tint font-medium text-danger hover:bg-danger-tint-hover",
+  plain: PLAIN,
   ghost: "font-medium text-ink-muted hover:bg-sunken hover:text-ink",
 };
 

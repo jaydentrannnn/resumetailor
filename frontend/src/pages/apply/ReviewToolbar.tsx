@@ -34,6 +34,7 @@ export function ReviewToolbar({
         </span>
       )}
       <Button
+        variant="attention"
         size="sm"
         disabled={busy || active || !continueIds.length || !browserConnected}
         title={
@@ -44,6 +45,7 @@ export function ReviewToolbar({
         Continue fill ({continueIds.length})
       </Button>
       <Button
+        variant="attention"
         size="sm"
         disabled={busy || active || !reopenRows.length || !browserConnected}
         title={

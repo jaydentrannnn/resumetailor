@@ -127,7 +127,7 @@ export function SelectionBar({
     <div
       role="toolbar"
       aria-label={label}
-      className={`flex flex-wrap items-center gap-2 rounded-sm border border-selected-line/40 bg-accent-soft px-3.5 py-1.5 text-[13px] ${className}`.trim()}
+      className={`flex flex-wrap items-center gap-2 rounded-sm border border-line bg-sunken px-3.5 py-1.5 text-[13px] ${className}`.trim()}
     >
       <strong className="mr-auto font-semibold">
         <span className="font-mono tabular-nums">{count}</span> {noun}

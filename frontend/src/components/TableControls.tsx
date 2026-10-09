@@ -37,7 +37,7 @@ export function Pagination({
           </select>
         </label>
         <button
-          className="rounded-sm border border-ink/55 bg-field font-medium text-ink hover:border-ink hover:bg-sunken px-3 disabled:opacity-40"
+          className="rounded-sm bg-plain font-medium text-ink hover:bg-plain-hover px-3 disabled:opacity-40"
           disabled={page === 0 || !total}
           onClick={() => onPage(page - 1)}
         >
@@ -60,7 +60,7 @@ export function Pagination({
           of {pages}
         </label>
         <button
-          className="rounded-sm border border-ink/55 bg-field font-medium text-ink hover:border-ink hover:bg-sunken px-3 disabled:opacity-40"
+          className="rounded-sm bg-plain font-medium text-ink hover:bg-plain-hover px-3 disabled:opacity-40"
           disabled={page >= pages - 1 || !total}
           onClick={() => onPage(page + 1)}
         >
@@ -383,7 +383,7 @@ export function RowActionsMenu({ label, items }: { label: string; items: MenuIte
         aria-label={label}
         aria-haspopup="menu"
         aria-expanded={open}
-        className="rt-row-action inline-flex w-7 shrink-0 items-center justify-center rounded-sm border border-line-hover bg-field text-ink hover:border-ink"
+        className="rt-row-action inline-flex w-7 shrink-0 items-center justify-center rounded-sm bg-plain text-ink hover:bg-plain-hover"
         onClick={() => {
           setRect(button.current?.getBoundingClientRect() ?? null);
           setOpen(!open);

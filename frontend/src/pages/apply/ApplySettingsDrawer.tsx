@@ -127,7 +127,7 @@ export function ApplySettingsDrawer({
             </div>
           </fieldset>
           <div className="mt-4 flex items-center gap-3">
-            <Button variant="outline" onClick={onRunNow} disabled={dailyRunning}>
+            <Button variant="plain" onClick={onRunNow} disabled={dailyRunning}>
               {dailyRunning ? "Running…" : "Run now"}
             </Button>
             <p className="min-w-0 text-xs text-ink-muted">
@@ -151,7 +151,7 @@ export function ApplySettingsDrawer({
         <Section title="What to search">
           <div className="flex items-center gap-3">
             <Link
-              className={buttonClass("outline", "md", "shrink-0")}
+              className={buttonClass("plain", "md", "shrink-0")}
               to={SOURCES_PATH}
               onClick={onClose}
             >
@@ -317,7 +317,7 @@ export function ApplySettingsDrawer({
         </Section>
 
         <Section title="Browser" aside={<ConnectionStatus connected={browserConnected} />}>
-          <Button variant="outline" onClick={onCheckBrowser}>
+          <Button variant="plain" onClick={onCheckBrowser}>
             Check connection
           </Button>
           <BrowserCommand />

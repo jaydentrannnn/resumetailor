@@ -50,7 +50,7 @@ export function ProfileGapsNotice({ gaps }: { gaps: ProfileGap[] }) {
       text={`Autofill will skip questions your profile leaves blank: ${shown}${more}.`}
       action={
         <Link
-          className={buttonClass("outline", "sm", "rt-row-action")}
+          className={buttonClass("plain", "sm", "rt-row-action")}
           to={gaps[0].path}
           title="Set them in your profile"
         >

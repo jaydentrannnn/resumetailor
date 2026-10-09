@@ -77,7 +77,7 @@ export function TableFilters({
             ))}
         </select>
         <details className="relative">
-          <summary className="rt-control inline-flex cursor-pointer list-none items-center rounded-sm border border-ink/55 bg-field font-medium text-ink hover:border-ink hover:bg-sunken px-3 text-[13px]">
+          <summary className="rt-control inline-flex cursor-pointer list-none items-center rounded-sm bg-plain font-medium text-ink hover:bg-plain-hover px-3 text-[13px]">
             Columns
           </summary>
           <div className="absolute right-0 z-20 mt-1 w-40 space-y-2 rounded-sm border border-line bg-chrome p-3 text-xs shadow-lg">
@@ -103,7 +103,9 @@ export function TableFilters({
             ))}
           </div>
         </details>
-        <Button onClick={state.refresh}>Refresh</Button>
+        <Button variant="plain" onClick={state.refresh}>
+          Refresh
+        </Button>
         {tools}
       </div>
     </div>

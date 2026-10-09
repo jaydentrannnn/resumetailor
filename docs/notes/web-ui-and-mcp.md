@@ -656,3 +656,11 @@ failed retry, plain `outline` for routine steps and View. `outline`'s fill moved
 buttons, Validate and Import from a .zip use it, so neighbouring buttons alternate ink and
 outline. Tailor's failed rows put the error beside the chip on one line, like Apply.
 Settings → Advanced selects share one width (`selectWidth.ts`) and centre in their rows.
+
+**2026-10-08 — Button levels (Proposal A): solid, tinted, plain; no outlines.** Outlined
+buttons read poorly in dark and black/white everywhere flattened the hierarchy. `outline`
+became `plain` (`--color-plain`, grey a step off the tile); `attention` and `danger` are
+washes (`--color-attn-tint` / `--color-danger-tint`, stronger than the chips' `*-soft`);
+`success` is solid green and only Fill uses it. Bulk bar: Tailor again / Continue / Reopen
+orange, Fill green, Prepare and Archive plain, Skip red; the bar itself moved from the green
+wash to `sunken`. Archive was suggested green and declined: green is reserved for "ready".
