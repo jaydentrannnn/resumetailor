@@ -6,6 +6,7 @@
  * callers apply directly rather than through this wrapper.
  */
 import type { ReactNode } from "react";
+import { Switch } from "./ui/Switch";
 
 export function Field({
   label,
@@ -42,14 +43,8 @@ export function Toggle({
   onChange: (v: boolean) => void;
 }) {
   return (
-    <label className="flex cursor-pointer gap-2 text-sm">
-      <input
-        type="checkbox"
-        checked={checked}
-        disabled={disabled}
-        onChange={(e) => onChange(e.target.checked)}
-        className="mt-0.5 accent-[var(--color-accent)] disabled:opacity-50"
-      />
+    <label className="flex cursor-pointer items-start gap-2.5 text-sm">
+      <Switch checked={checked} disabled={disabled} onChange={onChange} />
       <span>
         <span className="font-medium">{label}</span>
         {(disabled ? disabledHint : help) && (

@@ -4,7 +4,7 @@ import {
   type ApplySettings,
   type SourcesStatus,
 } from "../../api";
-import { Button, buttonClass } from "../../components/ui";
+import { Button, buttonClass, Switch } from "../../components/ui";
 import { canFillAfterReview } from "../../lib/applicationRows";
 import { canRetailor, fillBlockers, TERMINAL_STATUSES } from "../../lib/applyPage";
 import { GLOSSARY } from "../../lib/glossary";
@@ -76,16 +76,12 @@ export function FindJobsTools({
             />
           </label>
           <label className="flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={dryRun}
-              onChange={(e) => onOptions({ ...options, dryRun: e.target.checked })}
-            />
+            <Switch checked={dryRun} onChange={(on) => onOptions({ ...options, dryRun: on })} />
             Only list what's found (don't tailor)
           </label>
         </div>
       </details>
-      <a className={buttonClass("secondary", "md", "rt-control")} href={applicationsExportUrl()}>
+      <a className={buttonClass("outline", "md", "rt-control")} href={applicationsExportUrl()}>
         Export CSV
       </a>
       <Button

@@ -632,3 +632,18 @@ The approved visual target is `docs/design/reference.html`, and the rules live i
 
 ## 2026-10-08 Secondary buttons use the ink fill
 Secondary buttons were `bg-field` with a faint `line-hover` border on a `panel` tile (#0f0f0f on #151515 dark, #fff on #f7f7f6 light), so they read as black-on-black / white-on-white. The CSS matched docs/design/reference.html; it was a design flaw, not a token bug. The user chose ink fill for secondary too (same as primary: white in dark, black in light). Changed `lib/buttonClass.ts` plus hand-built buttons in AskAnswerCard, TableControls (Previous/Next), ProfileSwitcher (Manage), CopyButton, and TableFilters (Columns). Inputs, selects, chips and steppers keep `bg-field`.
+
+**2026-10-08 — Quiet `outline` button, `Switch`, nav-style header utilities.** After
+secondary became ink-filled, every low-weight action shouted as loud as the page's main
+one. `buttonClass("outline")` (ink border/text on `sunken`) now carries pagination,
+API-key Save, Copy, Columns, Export CSV and the Apply drawer's Run now / Job sources /
+Check connection; key-row Remove is the bordered `danger` variant so the gaps either side
+of Save read equal. `ui/Switch` (native checkbox, `role="switch"`, Job sources' track)
+replaces checkboxes for immediate on/off settings (`Toggle`, nightly run, auto-submit,
+notifications, vocabulary packs, dry run, compare's identical bullets); list picks such as
+auto-submit platforms stay checkboxes. Pause automation and the settings trigger lost
+their boxes (pause becomes an attention chip only while paused); the profile `<select>`
+became a list with an accent bar and the theme `Segmented` uses `variant="underline"`.
+`DataTable`'s narrow-screen cards put each heading and value on one line; a heading-less
+column (a "…" menu) joins the line above at its end, and `end: true` right-aligns a cell
+(Apply's Next step).

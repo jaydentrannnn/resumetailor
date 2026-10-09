@@ -40,7 +40,7 @@ export function BrowserCommand() {
         port 9222, then check the connection. Keep the browser open while reviewing forms, and use
         this {browser} profile only for job-site logins.
       </p>
-      <div className="mt-2 flex items-start gap-2">
+      <div className="mt-2 flex items-center gap-2">
         <code className="min-w-0 flex-1 rounded-sm border border-line bg-field px-3 py-2 font-mono text-xs [overflow-wrap:anywhere]">
           {command}
         </code>

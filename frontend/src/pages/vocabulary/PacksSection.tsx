@@ -1,7 +1,7 @@
 import { useState } from "react";
 import { DataTable } from "../../components/TableControls";
 import { PackEditor } from "../../components/library/PackEditor";
-import { StatusChip, Tile } from "../../components/ui";
+import { StatusChip, Switch, Tile } from "../../components/ui";
 import { buttonClass } from "../../lib/buttonClass";
 import { useConfirm } from "../../state/confirmState";
 import { useLibraryState } from "../../state/libraryState";
@@ -123,13 +123,12 @@ export function PacksSection() {
             {
               id: "on",
               heading: "On",
-              className: "w-[3rem] text-right font-mono",
+              className: "w-[4rem] text-right",
               cell: (pack) => (
-                <input
-                  type="checkbox"
-                  aria-label={pack.label}
+                <Switch
+                  label={pack.label}
                   checked={enabledPacks.includes(pack.id)}
-                  onChange={(e) => togglePack(pack.id, e.target.checked)}
+                  onChange={(on) => togglePack(pack.id, on)}
                   disabled={busy}
                 />
               ),

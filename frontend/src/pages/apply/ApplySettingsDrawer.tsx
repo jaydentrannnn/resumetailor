@@ -2,7 +2,7 @@ import type { ReactNode } from "react";
 import { Link } from "react-router-dom";
 import type { AppConfig, JobSettings, SchedulerStatus } from "../../api";
 import { Modal } from "../../components/Modal";
-import { Button, buttonClass, StatusChip } from "../../components/ui";
+import { Button, buttonClass, StatusChip, Switch } from "../../components/ui";
 import { autoSubmitCapLabel, autoSubmitSummary, SOURCES_PATH } from "../../lib/applyPage";
 import { tailorModelLabel } from "../../lib/modelLabel";
 import { sourcesSummary } from "../../lib/sources";
@@ -83,15 +83,8 @@ export function ApplySettingsDrawer({
           }
         >
           <div className="flex flex-wrap items-center gap-3">
-            <label className="flex items-center gap-2 font-medium">
-              <input
-                type="checkbox"
-                role="switch"
-                aria-checked={apply.enabled}
-                className="h-4 w-4"
-                checked={apply.enabled}
-                onChange={(e) => patch({ enabled: e.target.checked })}
-              />
+            <label className="flex items-center gap-2.5 font-medium">
+              <Switch checked={apply.enabled} onChange={(on) => patch({ enabled: on })} />
               Run automatically every day at
             </label>
             <input
@@ -133,12 +126,18 @@ export function ApplySettingsDrawer({
               </p>
             </div>
           </fieldset>
-          <p className="mt-3 text-xs text-ink-muted">
-            Last run: {scheduler?.last_started_at ? formatWhen(scheduler.last_started_at) : "never"}
-            {apply.enabled && scheduler?.next_run_at
-              ? ` · Next: ${formatWhen(scheduler.next_run_at)}`
-              : ""}
-          </p>
+          <div className="mt-4 flex items-center gap-3">
+            <Button variant="outline" onClick={onRunNow} disabled={dailyRunning}>
+              {dailyRunning ? "Running…" : "Run now"}
+            </Button>
+            <p className="min-w-0 text-xs text-ink-muted">
+              Last run:{" "}
+              {scheduler?.last_started_at ? formatWhen(scheduler.last_started_at) : "never"}
+              {apply.enabled && scheduler?.next_run_at
+                ? ` · Next: ${formatWhen(scheduler.next_run_at)}`
+                : ""}
+            </p>
+          </div>
           {scheduler?.missed_today && (
             <p className="mt-1 text-xs text-attn">
               Today's run was missed because the app was closed.
@@ -147,30 +146,28 @@ export function ApplySettingsDrawer({
           {scheduler?.last_error && (
             <p className="mt-1 text-xs text-danger">{scheduler.last_error}</p>
           )}
-          <Button className="mt-2" variant="secondary" onClick={onRunNow} disabled={dailyRunning}>
-            {dailyRunning ? "Running…" : "Run now"}
-          </Button>
         </Section>
 
         <Section title="What to search">
-          <p className="text-sm" aria-live="polite">
-            {sourcesSummary(apply.sources)}
-          </p>
-          <Link
-            className={buttonClass("secondary", "md", "rt-control mt-2")}
-            to={SOURCES_PATH}
-            onClick={onClose}
-          >
-            Job sources →
-          </Link>
+          <div className="flex items-center gap-3">
+            <Link
+              className={buttonClass("outline", "md", "shrink-0")}
+              to={SOURCES_PATH}
+              onClick={onClose}
+            >
+              Job sources →
+            </Link>
+            <p className="min-w-0 text-sm" aria-live="polite">
+              {sourcesSummary(apply.sources)}
+            </p>
+          </div>
         </Section>
 
         <Section title="Auto-submit">
-          <label className="flex items-center gap-2 font-medium">
-            <input
-              type="checkbox"
+          <label className="flex items-center gap-2.5 font-medium">
+            <Switch
               checked={apply.auto_submit_enabled}
-              onChange={(e) => void toggleAutoSubmit(e.target.checked)}
+              onChange={(on) => void toggleAutoSubmit(on)}
             />
             Submit verified forms without stopping for review
           </label>
@@ -320,7 +317,7 @@ export function ApplySettingsDrawer({
         </Section>
 
         <Section title="Browser" aside={<ConnectionStatus connected={browserConnected} />}>
-          <Button variant="secondary" onClick={onCheckBrowser}>
+          <Button variant="outline" onClick={onCheckBrowser}>
             Check connection
           </Button>
           <BrowserCommand />
@@ -328,12 +325,8 @@ export function ApplySettingsDrawer({
 
         <Section title="Notifications">
           {notify.supported ? (
-            <label className="flex items-center gap-2">
-              <input
-                type="checkbox"
-                checked={notify.enabled}
-                onChange={(e) => notify.onChange(e.target.checked)}
-              />
+            <label className="flex items-center gap-2.5">
+              <Switch checked={notify.enabled} onChange={notify.onChange} />
               Notify me when an application needs me or a run finishes
             </label>
           ) : (

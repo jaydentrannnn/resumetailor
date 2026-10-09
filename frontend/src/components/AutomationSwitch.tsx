@@ -8,7 +8,8 @@ import { StatusMark } from "./ui/Status";
 /**
  * Header "Pause all automation" switch (plan P4-S). While paused, batches wait before
  * their next application, the nightly run does not start and nothing is auto-submitted.
- * Refreshes when the tab regains focus and every minute, like the setup pill.
+ * Refreshes when the tab regains focus and every minute, like the setup pill. Running, it
+ * is plain text like the nav; paused, it becomes an attention chip so the state stands out.
  */
 export function AutomationSwitch() {
   const [state, setState] = useState<AutomationState | null>(null);
@@ -62,11 +63,21 @@ export function AutomationSwitch() {
       className={`rt-header-pill rt-control inline-flex items-center justify-center gap-[7px] whitespace-nowrap rounded-sm px-3 py-1 ${
         state.paused
           ? toneChipClass("attention")
-          : "border border-line bg-field text-ink-2 hover:border-line-hover hover:text-ink"
+          : "text-ink-muted hover:text-ink"
       }`}
     >
-      {state.paused && <StatusMark tone="attention" />}
+      {state.paused ? <StatusMark tone="attention" /> : <PauseIcon />}
       {state.paused ? "Automation paused · Resume" : "Pause automation"}
     </button>
+  );
+}
+
+/** Two bars, drawn in the text colour so the running state needs no box. */
+function PauseIcon() {
+  return (
+    <svg aria-hidden viewBox="0 0 12 12" className="size-3 shrink-0" fill="currentColor">
+      <rect x="2.5" y="2" width="2.25" height="8" />
+      <rect x="7.25" y="2" width="2.25" height="8" />
+    </svg>
   );
 }

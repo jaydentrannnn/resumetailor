@@ -7,6 +7,7 @@ export { Card, EmptyState, Kbd, Skeleton, Tile, TileSection } from "./Tile";
 export { StatusChip, StatusMark } from "./Status";
 export { type Tone, toneChipClass } from "../../lib/tone";
 export { Segmented, type SegmentedItem } from "./Segmented";
+export { Switch, SwitchTrack } from "./Switch";
 export { DataList, type DataItem, Meter, SelectionBar, Stat } from "./Data";
 export { InlineHelp } from "./InlineHelp";
 export { TruncatedText } from "./TruncatedText";

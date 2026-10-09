@@ -3,6 +3,7 @@ import { type JobBullet, type RunHistoryEntry, fetchJobBullets } from "../api";
 import { describe } from "../lib/errors";
 import { type CompareGroup, compareCounts, compareRuns } from "../lib/runHistory";
 import { Modal } from "./Modal";
+import { Switch } from "./ui/Switch";
 
 const KIND_LABEL = {
   changed: "Worded differently",
@@ -70,11 +71,7 @@ export function CompareRunsDialog({
             · {counts.only_b} only in second
           </span>
           <label className="ml-auto flex items-center gap-2">
-            <input
-              type="checkbox"
-              checked={showSame}
-              onChange={(e) => setShowSame(e.target.checked)}
-            />
+            <Switch checked={showSame} onChange={setShowSame} />
             Show identical bullets
           </label>
         </div>

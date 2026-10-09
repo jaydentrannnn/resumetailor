@@ -17,8 +17,7 @@ import { ProfileManagerDialog } from "./ProfileManagerDialog";
  * Run/Editor/Template scope (see App.tsx) — at the moment a switch is requested it
  * is still the *old* profile's editor state, which is exactly what needs checking.
  */
-/** `stacked` lays the control out for the header settings menu. */
-export function ProfileSwitcher({ stacked = false }: { stacked?: boolean }) {
+export function ProfileSwitcher() {
   const { workspaces, activeId, switching, error, activate } = useWorkspaceState();
   const { dirty } = useEditorState();
   const applicant = useApplicantProfile();
@@ -86,32 +85,41 @@ export function ProfileSwitcher({ stacked = false }: { stacked?: boolean }) {
     }
   }
 
+  const locked = switching || applicant.saving;
   return (
-    <div className={stacked ? "space-y-2" : "flex items-center gap-2"}>
-      <label className={stacked ? "block space-y-1 text-sm" : "flex items-center gap-2 text-sm"}>
-        <span className={stacked ? "block text-ink-muted" : "text-ink-muted"}>Active profile</span>
-        <select
-          value={activeId ?? ""}
-          disabled={switching || applicant.saving || workspaces.length === 0}
-          onChange={(e) => void handleSwitch(e.target.value)}
-          className={`rounded-sm border border-line-hover bg-field px-2 py-1.5 text-ink disabled:opacity-50 ${stacked ? "w-full" : ""}`}
-          aria-label="Active profile"
-        >
-          {workspaces.length === 0 ? <option value="">—</option> : null}
-          {workspaces.map((w) => (
-            <option key={w.id} value={w.id}>
+    <div className="space-y-2">
+      {/* A list, not a <select>: the active profile is marked like the header nav (ink
+          text, accent bar) instead of sitting in a box. */}
+      <div role="group" aria-label="Active profile" className="-mx-2 space-y-px">
+        {workspaces.length === 0 ? <p className="px-2 text-sm text-ink-muted">—</p> : null}
+        {workspaces.map((w) => {
+          const on = w.id === activeId;
+          return (
+            <button
+              key={w.id}
+              type="button"
+              aria-current={on || undefined}
+              title={on ? "Active profile" : `Switch to ${w.label}`}
+              disabled={locked}
+              onClick={() => void handleSwitch(w.id)}
+              className={`rt-row-action relative block w-full truncate px-2.5 py-1 text-left text-[13px] transition-colors duration-[var(--dur-short)] before:absolute before:inset-y-1 before:left-0 before:w-0.5 disabled:opacity-50 ${
+                on
+                  ? "font-medium text-ink before:bg-accent"
+                  : "text-ink-muted before:bg-transparent hover:text-ink"
+              }`}
+            >
               {w.label}
-            </option>
-          ))}
-        </select>
-      </label>
+            </button>
+          );
+        })}
+      </div>
       <button
         type="button"
         onClick={() => setManagerOpen(true)}
         disabled={switching}
-        className="rounded-sm bg-primary px-2.5 py-1.5 text-xs font-medium text-on-primary hover:bg-primary/85 disabled:opacity-50"
+        className="rt-link text-xs disabled:opacity-50"
       >
-        {stacked ? "Manage profiles…" : "Manage"}
+        Manage profiles…
       </button>
       {switching ? <span className="text-xs text-ink-muted">Switching…</span> : null}
       {error ? <span className="text-xs text-danger">{error.split("\n")[0]}</span> : null}

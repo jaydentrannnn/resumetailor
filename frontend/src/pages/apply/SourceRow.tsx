@@ -1,7 +1,7 @@
 import { useState } from "react";
 import type { CatalogEntry, SourceConfig, SourceRunStatus } from "../../api";
 import { RowActionsMenu } from "../../components/TableControls";
-import { Button, StatusChip, StatusMark } from "../../components/ui";
+import { Button, StatusChip, StatusMark, SwitchTrack } from "../../components/ui";
 import {
   applyCatalogUpdate,
   catalogDiff,
@@ -134,14 +134,7 @@ export function SourceRow({
             title={source.enabled ? "On: searched every run" : "Off: skipped"}
             onClick={() => onChange({ ...source, enabled: !source.enabled })}
           >
-            <span
-              aria-hidden="true"
-              className={`inline-flex h-5 w-9 items-center rounded-sm border ${source.enabled ? "border-selected-line bg-selected" : "border-line-hover bg-sunken"}`}
-            >
-              <span
-                className={`inline-block size-3.5 rounded-xs transition-transform ${source.enabled ? "translate-x-[17px] bg-on-selected" : "translate-x-0.5 bg-ink-muted"}`}
-              />
-            </span>
+            <SwitchTrack on={source.enabled} />
           </Button>
           <RowActionsMenu
             label={`Actions for ${name}`}

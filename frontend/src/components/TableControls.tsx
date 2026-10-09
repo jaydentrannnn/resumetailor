@@ -37,7 +37,7 @@ export function Pagination({
           </select>
         </label>
         <button
-          className="rounded-sm bg-primary px-3 text-on-primary hover:bg-primary/85 disabled:opacity-40"
+          className="rounded-sm border border-ink/55 bg-sunken font-medium text-ink hover:border-ink hover:bg-line px-3 disabled:opacity-40"
           disabled={page === 0 || !total}
           onClick={() => onPage(page - 1)}
         >
@@ -60,7 +60,7 @@ export function Pagination({
           of {pages}
         </label>
         <button
-          className="rounded-sm bg-primary px-3 text-on-primary hover:bg-primary/85 disabled:opacity-40"
+          className="rounded-sm border border-ink/55 bg-sunken font-medium text-ink hover:border-ink hover:bg-line px-3 disabled:opacity-40"
           disabled={page >= pages - 1 || !total}
           onClick={() => onPage(page + 1)}
         >
@@ -77,6 +77,8 @@ export type TableColumn<T> = {
   cell: (row: T) => ReactNode;
   sortable?: boolean;
   className?: string;
+  /** Narrow screens: the cell sits at the right end of its "heading value" line. */
+  end?: boolean;
 };
 export function DataTable<T>({
   rows,
@@ -238,12 +240,25 @@ export function DataTable<T>({
                 Select
               </label>
             )}
-            {columns.map((col) => (
-              <div key={col.id} className="min-w-0 [overflow-wrap:anywhere]">
-                <span className="mr-2 text-xs text-ink-muted">{col.heading}</span>
-                {col.cell(row)}
-              </div>
-            ))}
+            {columns.map((col, at) => {
+              // A heading-less column (a row's "…" menu) joins the line above, at its end.
+              if (!col.heading && at > 0) return null;
+              const joined = columns[at + 1]?.heading === "" ? columns[at + 1] : null;
+              return (
+                <div
+                  key={col.id}
+                  className="flex min-w-0 items-baseline gap-2 [overflow-wrap:anywhere]"
+                >
+                  {col.heading && (
+                    <span className="shrink-0 text-xs text-ink-muted">{col.heading}</span>
+                  )}
+                  <div className={`min-w-0 ${col.end ? "ml-auto" : "flex-1"}`}>
+                    {col.cell(row)}
+                  </div>
+                  {joined && <div className="ml-auto shrink-0">{joined.cell(row)}</div>}
+                </div>
+              );
+            })}
           </article>
         ))}
       </div>

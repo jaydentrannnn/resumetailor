@@ -16,17 +16,24 @@ export const SEGMENT_BASE =
 export const SEGMENT_ON =
   "bg-selected text-on-selected shadow-[inset_0_0_0_1px_var(--color-selected-line)]";
 export const SEGMENT_OFF = "text-ink-muted hover:text-ink";
+// The header nav's look: text only, the chosen one ink with a 2px accent underline.
+const UNDERLINE_BASE =
+  "rt-row-action relative inline-flex items-center px-2 text-[13px] font-medium transition-colors duration-[var(--dur-short)] after:absolute after:inset-x-2 after:bottom-0 after:h-0.5 disabled:opacity-50";
+const UNDERLINE_ON = "text-ink after:bg-accent";
+const UNDERLINE_OFF = "text-ink-muted after:bg-transparent hover:text-ink";
 
 /**
  * A one-of-N choice as a radiogroup (theme, view mode, filter). Selected = solid green in
  * light, mint outline + wash in dark (`selected` tokens). Arrow keys move and select.
- * For content panels use `Tabs variant="segmented"` instead.
+ * `variant="underline"` drops the box for the header nav's text-and-underline look (the
+ * settings menu). For content panels use `Tabs variant="segmented"` instead.
  */
 export function Segmented({
   items,
   value,
   onChange,
   label,
+  variant = "boxed",
   className = "",
 }: {
   items: SegmentedItem[];
@@ -34,6 +41,7 @@ export function Segmented({
   onChange: (id: string) => void;
   /** Accessible name of the group. */
   label: string;
+  variant?: "boxed" | "underline";
   className?: string;
 }) {
   function onKeyDown(event: KeyboardEvent<HTMLDivElement>) {
@@ -51,6 +59,7 @@ export function Segmented({
     onChange(next.id);
     (event.currentTarget.querySelector(`[data-seg="${next.id}"]`) as HTMLElement | null)?.focus();
   }
+  const underline = variant === "underline";
   // When no item matches `value`, the first enabled one keeps the group in the Tab order.
   const stop = items.some((item) => item.id === value && !item.disabled)
     ? value
@@ -59,7 +68,7 @@ export function Segmented({
     <div
       role="radiogroup"
       aria-label={label}
-      className={`${SEGMENT_TRACK} ${className}`.trim()}
+      className={`${underline ? "-mx-2 flex gap-1" : SEGMENT_TRACK} ${className}`.trim()}
       onKeyDown={onKeyDown}
     >
       {items.map((item) => {
@@ -73,7 +82,11 @@ export function Segmented({
             aria-checked={on}
             disabled={item.disabled}
             tabIndex={item.id === stop ? 0 : -1}
-            className={`${SEGMENT_BASE} ${on ? SEGMENT_ON : SEGMENT_OFF}`}
+            className={
+              underline
+                ? `${UNDERLINE_BASE} ${on ? UNDERLINE_ON : UNDERLINE_OFF}`
+                : `${SEGMENT_BASE} ${on ? SEGMENT_ON : SEGMENT_OFF}`
+            }
             onClick={() => onChange(item.id)}
           >
             {item.label}

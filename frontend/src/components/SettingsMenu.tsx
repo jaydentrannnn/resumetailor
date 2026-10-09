@@ -56,13 +56,13 @@ export function SettingsMenu() {
         aria-controls={panelId}
         aria-haspopup="true"
         onClick={() => setOpen((value) => !value)}
-        className="inline-flex min-h-9 max-w-64 items-center gap-2 rounded-sm border border-line bg-field px-3 py-1.5 text-xs font-semibold text-ink hover:border-line-hover"
+        className={`rt-header-pill rt-control inline-flex max-w-64 items-center gap-2 rounded-sm px-2 hover:text-ink ${open ? "text-ink" : "text-ink-2"}`}
         title="Settings: profile and theme"
       >
         <svg
           aria-hidden
           viewBox="0 0 20 20"
-          className="size-4 shrink-0 text-ink-muted"
+          className="size-4 shrink-0"
           fill="none"
           stroke="currentColor"
           strokeWidth="1.6"
@@ -74,7 +74,10 @@ export function SettingsMenu() {
           />
         </svg>
         <span className="truncate">{switching ? "Switching…" : (active?.label ?? "Settings")}</span>
-        <span aria-hidden className="text-xs text-ink-muted">
+        <span
+          aria-hidden
+          className={`text-xs text-ink-muted transition-transform duration-[var(--dur-short)] ${open ? "rotate-180" : ""}`}
+        >
           ▾
         </span>
       </button>
@@ -83,20 +86,20 @@ export function SettingsMenu() {
           id={panelId}
           role="group"
           aria-label="Settings"
-          className="absolute right-0 z-40 mt-2 w-72 max-w-[calc(100vw-2rem)] space-y-4 rounded-sm bg-chrome p-4 shadow-lg"
+          className="absolute right-0 z-40 mt-2 w-72 max-w-[calc(100vw-2rem)] space-y-4 rounded-sm border border-line bg-chrome p-4 shadow-lg"
         >
           <section className="space-y-2">
             <h2 className="rt-eyebrow">Profile</h2>
-            <ProfileSwitcher stacked />
+            <ProfileSwitcher />
           </section>
-          <section className="space-y-2 border-t border-line pt-3">
+          <section className="space-y-1 border-t border-line pt-3">
             <h2 className="rt-eyebrow">Theme</h2>
             <Segmented
+              variant="underline"
               label="Theme"
               items={THEMES.map(([id, label]) => ({ id, label }))}
               value={preference}
               onChange={(id) => setPreference(id as ThemePreference)}
-              className="w-full [&>button]:flex-1 [&>button]:justify-center"
             />
           </section>
         </div>
