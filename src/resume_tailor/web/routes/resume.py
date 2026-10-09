@@ -15,7 +15,7 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import ValidationError
 
 from resume_tailor import config
-from resume_tailor.content import data, edu_dates, resume_versions
+from resume_tailor.content import bullet_tags, data, edu_dates, resume_versions
 from resume_tailor.content.data import MasterResume
 from resume_tailor.document import template_analyze
 from resume_tailor.importing import (
@@ -27,9 +27,10 @@ from resume_tailor.importing import (
     resume_import_pdf,
     tag_suggest,
 )
-from resume_tailor.pipeline import propose
-from resume_tailor.web import template_ops, template_uploads
+from resume_tailor.pipeline import propose, tag_infer
+from resume_tailor.web import skill_refresh, template_ops, template_uploads
 from resume_tailor.web.schemas import (
+    BulletSkillsResponse,
     MasterResumeImportResponse,
     MasterResumeMergeResponse,
     SuggestTagsRequest,
@@ -98,6 +99,7 @@ def _write_master_resume(resume: MasterResume, note: str = "") -> Path | None:
     text = json.dumps(payload, indent=2, ensure_ascii=False) + "\n"
     path.write_text(text, encoding="utf-8")
     _record_version(text, note)
+    skill_refresh.schedule(resume)
     return backup
 
 
@@ -175,6 +177,33 @@ def restore_master_resume_version(version: int) -> dict[str, Any]:
             ) from exc
         _write_master_resume(resume, note=f"restored version {version}")
     return {"resume": resume.model_dump(by_alias=True), "restored": version}
+
+
+@router.get("/api/master-resume/skills", response_model=BulletSkillsResponse)
+def get_bullet_skills() -> BulletSkillsResponse:
+    """The skills each saved bullet shows beyond its Extra skills — detected in the text
+    and inferred by the model — plus whether a background refresh is still running.
+    Reads only: no model call (`skill_refresh` fills the cache after every save)."""
+    running, error = skill_refresh.status()
+    try:
+        resume = data.load()
+    except (FileNotFoundError, ValueError):
+        return BulletSkillsResponse(running=running, error=error)
+    extra = bullet_tags.resume_terms(resume)
+    inferred = tag_infer.cached(resume).skills
+    bullets: dict[str, list[str]] = {}
+    waiting = 0
+    for bullet in resume.all_bullets():
+        have = {config.canonical_tag(t) for t in bullet.tags}
+        shown: dict[str, str] = {}
+        for canonical, surface in bullet_tags.detect(bullet.text, extra):
+            shown.setdefault(canonical, surface)
+        if bullet.text not in inferred:
+            waiting += 1
+        for skill in inferred.get(bullet.text, []):
+            shown.setdefault(config.canonical_tag(skill), skill)
+        bullets[bullet.id] = [s for c, s in shown.items() if c not in have]
+    return BulletSkillsResponse(running=running, error=error, waiting=waiting, bullets=bullets)
 
 
 @router.post("/api/master-resume/suggest-tags")

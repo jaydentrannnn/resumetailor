@@ -784,6 +784,18 @@ class ValidateResponse(BaseModel):
     summary: dict[str, Any] | None = None
 
 
+class BulletSkillsResponse(BaseModel):
+    """`GET /api/master-resume/skills`: per saved bullet, the skills it shows beyond its
+    Extra skills (detected in the text, then inferred), surface spelling."""
+
+    running: bool = False
+    #: Last background inference failure for this profile, if any.
+    error: str | None = None
+    #: Bullets whose text has not been through inference yet.
+    waiting: int = 0
+    bullets: dict[str, list[str]] = Field(default_factory=dict)
+
+
 class MasterResumeImportResponse(BaseModel):
     """Result of `POST /api/master-resume/import`: a draft the editor loads as unsaved
     state — nothing is written to disk here. The user reviews and saves through the

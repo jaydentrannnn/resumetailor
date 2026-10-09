@@ -27,6 +27,7 @@ from resume_tailor.pipeline import (
     relevance,
     report,
     skills,
+    tag_infer,
 )
 from resume_tailor.pipeline.events import ProgressCallback, ProgressEvent
 from resume_tailor.pipeline.fabrication import FabricationError
@@ -129,7 +130,7 @@ class _TailorJobRun:
             raise RuntimeError(str(exc)) from exc
 
         self.resume = data.load()
-        bullet_tags.annotate(self.resume)
+        tag_infer.prepare_run(self.resume, on_event=self.on_event)
         self.known_tags = bullet_tags.known_terms(self.resume)
         job.check_cancelled()
 

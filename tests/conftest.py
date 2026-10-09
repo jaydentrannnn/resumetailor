@@ -81,13 +81,23 @@ from resume_tailor.apply.forms import form_guards, submit_guard  # noqa: E402
 from resume_tailor.content import bullet_tags, libraries, style  # noqa: E402
 from resume_tailor.document import template_analyze, template_build  # noqa: E402
 from resume_tailor.infra import secret_store  # noqa: E402
+from resume_tailor.pipeline import tag_infer  # noqa: E402
 from resume_tailor.web import extension as web_extension  # noqa: E402
+from resume_tailor.web import skill_refresh  # noqa: E402
 from tests.fixtures import _docx_bytes, _full_featured_resume  # noqa: E402
 
 
 @pytest.fixture(autouse=True)
 def _no_workspace_bootstrap(monkeypatch):
     monkeypatch.setattr(workspace, "bootstrap", lambda **kwargs: None)
+
+
+@pytest.fixture(autouse=True)
+def _no_skill_inference(monkeypatch):
+    """No model call for inferred bullet skills, and no background refresh thread after a
+    save. `tests/pipeline/test_tag_infer.py` restores the real `infer` behind a fake client."""
+    monkeypatch.setattr(tag_infer, "infer", lambda texts, preferred=(): {})
+    monkeypatch.setattr(skill_refresh, "schedule", lambda resume: None)
 
 
 @pytest.fixture(autouse=True)

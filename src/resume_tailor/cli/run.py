@@ -39,6 +39,7 @@ from resume_tailor.pipeline import (
     review,
     runs,
     skills,
+    tag_infer,
 )
 from resume_tailor.pipeline.fabrication import FabricationError
 
@@ -195,7 +196,9 @@ class _CliRun:
             # The resume's own tag vocabulary steers `canonical`, so the extractor stops
             # coining tags that can never match anything ("communication skills" against a
             # resume tagged `communication`). An unmatched canonical then means a real gap.
-            bullet_tags.annotate(resume)
+            inference = tag_infer.prepare_run(resume)
+            if inference.error:
+                print(f"warning: {inference.error}", file=sys.stderr)
             known_tags = bullet_tags.known_terms(resume)
             requirements = jd.extract_consensus(
                 jd_text,
