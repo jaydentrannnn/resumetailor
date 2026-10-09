@@ -125,7 +125,6 @@ def _config_response(*, consume_migrated: bool = True) -> ConfigResponse:
         tag_vocabulary=tags,
         contact_name=contact_name,
         fill_target=config.UNDERFLOW_THRESHOLD,
-        initial_bullet_share=config.INITIAL_BULLET_SHARE,
         experience_bullet_share=config.EXPERIENCE_BULLET_SHARE,
         max_bullets_per_entry=config.MAX_BULLETS_PER_ENTRY,
         rewrite_style_default=defaults["rewrite"].strip(),
@@ -193,7 +192,7 @@ def get_settings() -> SettingsResponse:
     return SettingsResponse(
         workspace_id=config.active_workspace_id(),
         settings=settings,
-        seeded=not raw["defaults"],
+        seeded=raw["empty"],
         target_field=raw.get("target_field"),
     )
 

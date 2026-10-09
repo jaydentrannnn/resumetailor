@@ -126,6 +126,8 @@ export interface ResumeVersion {
   bullets: number;
   sections: number;
   current: boolean;
+  /** Plain-language changes from the next-older version; null on the oldest one kept. */
+  changes: string[] | null;
 }
 
 /** What each saved bullet shows beyond its Extra skills: detected in its text, then

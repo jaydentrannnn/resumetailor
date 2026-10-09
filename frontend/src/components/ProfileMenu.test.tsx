@@ -2,7 +2,8 @@
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { afterEach, describe, expect, it, vi } from "vitest";
 import { ThemeProvider } from "../state/themeState";
-import { SettingsMenu } from "./SettingsMenu";
+import { ProfileMenu } from "./ProfileMenu";
+import { ThemeButton } from "./ThemeButton";
 
 vi.mock("./workspace/ProfileSwitcher", () => ({ ProfileSwitcher: () => <p>profile switcher</p> }));
 vi.mock("../state/workspaceState", () => ({
@@ -25,22 +26,28 @@ window.matchMedia ??= ((query: string) => ({
 function renderMenu() {
   return render(
     <ThemeProvider>
-      <SettingsMenu />
+      <ProfileMenu />
+      <ThemeButton />
       <p>outside</p>
     </ThemeProvider>,
   );
 }
 
-describe("SettingsMenu", () => {
-  it("names the active profile and opens the profile and theme settings", () => {
+describe("ProfileMenu", () => {
+  it("names the active profile and opens the profile switcher", () => {
     renderMenu();
     const button = screen.getByRole("button", { name: /Alex/ });
     expect(screen.queryByText("profile switcher")).toBeNull();
     fireEvent.click(button);
     expect(button.getAttribute("aria-expanded")).toBe("true");
     expect(screen.getByText("profile switcher")).toBeTruthy();
-    fireEvent.click(screen.getByRole("radio", { name: "Dark" }));
-    expect(screen.getByRole("radio", { name: "Dark" }).getAttribute("aria-checked")).toBe("true");
+  });
+
+  it("the theme button cycles System, Light, Dark and names the current mode", () => {
+    renderMenu();
+    fireEvent.click(screen.getByRole("button", { name: /Theme: System/ }));
+    fireEvent.click(screen.getByRole("button", { name: /Theme: Light/ }));
+    expect(screen.getByRole("button", { name: /Theme: Dark\. Switch to System/ })).toBeTruthy();
   });
 
   it("closes on Escape and on a click outside, but not while a modal is open", () => {

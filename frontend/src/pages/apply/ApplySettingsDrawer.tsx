@@ -5,10 +5,10 @@ import { Modal } from "../../components/Modal";
 import { Button, buttonClass, StatusChip, Switch } from "../../components/ui";
 import { autoSubmitCapLabel, autoSubmitSummary, SOURCES_PATH } from "../../lib/applyPage";
 import { tailorModelLabel } from "../../lib/modelLabel";
+import { autofillLabel } from "../../lib/providers";
 import { sourcesSummary } from "../../lib/sources";
 import { useConfirm } from "../../state/confirmState";
 import type { BrowserView } from "../../lib/browserState";
-import { AutofillModelFields } from "./AutofillModelFields";
 import { BrowserPicker, ConnectionStatus } from "./BrowserConnection";
 
 /**
@@ -283,17 +283,18 @@ export function ApplySettingsDrawer({
           </p>
         </Section>
 
-        <Section title="Autofill model">
+        <Section title="AI models">
           <p className="text-xs text-ink-muted">
-            Writes answers to form questions. Tailoring uses{" "}
-            <Link className="rt-link" to="/settings?tab=models">
-              {tailorModelLabel(settings, config)}
+            Autofill writes answers with{" "}
+            <span className="font-mono text-ink">
+              {autofillLabel(apply.model_provider)} · {apply.model_name}
+            </span>
+            ; tailoring uses{" "}
+            <span className="font-mono text-ink">{tailorModelLabel(settings, config)}</span>.{" "}
+            <Link className="rt-link" to="/settings?tab=ai" onClick={onClose}>
+              Change in Settings
             </Link>
-            .
           </p>
-          <div className="mt-2">
-            <AutofillModelFields apply={apply} patch={patch} />
-          </div>
         </Section>
 
         <Section title="Browser" aside={<ConnectionStatus view={browser} />}>

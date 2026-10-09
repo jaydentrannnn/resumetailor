@@ -14,8 +14,15 @@ from resume_tailor.pipeline import coverletter, coverletter_models, jd, skills
 from resume_tailor.web import jobs as jobs_mod
 from resume_tailor.web.app import app
 from resume_tailor.web.jobs import JobQueue
+from resume_tailor.web.routes import system as system_routes
 from tests.fixtures import synthetic_resume
 from tests.web.helpers import _stub_extract_consensus
+
+
+@pytest.fixture(autouse=True)
+def _no_cached_pdf_check(monkeypatch):
+    """The last PDF test result is process-wide; no test may see another's."""
+    monkeypatch.setattr(system_routes, "_PDF_CHECK", None)
 
 
 @pytest.fixture

@@ -315,10 +315,14 @@ class JobSettings(BaseModel):
     no_cover_letter: bool = False
     no_facets: bool = False
     no_project_links: bool = False
-    #: Fraction of page capacity below which the fit loop grows (0.80–0.95).
-    fill_target: float | None = Field(default=None, ge=0.8, le=0.95)
+    #: Fraction of page capacity below which the fit loop grows (0.80–0.98). Not 1.0: a
+    #: measured page almost never reaches exactly full, so every run would spend all its
+    #: grow attempts and end on an under-fill warning.
+    fill_target: float | None = Field(default=None, ge=0.8, le=0.98)
     #: Fraction of the chosen entries' bullets the first selection may claim (0.30–1.00).
     #: Bounds only the first draft — see `fit.fit`'s docstring for the `fill_target` pairing.
+    #: Request-only (MCP/scripts): the web UI no longer offers it and a saved value is
+    #: dropped on load (`workspace._RETIRED_KEYS`).
     initial_bullet_share: float | None = Field(default=None, ge=0.3, le=1.0)
     #: Fraction of the *overall* selected bullets given to experience, budgeted separately
     #: from projects (0.00–1.00). `None` is one flat pool ranked by relevance, which lets a
@@ -697,8 +701,6 @@ class ConfigResponse(BaseModel):
     contact_name: str | None = None
     #: Default page-fill target (UNDERFLOW_THRESHOLD) for the settings slider.
     fill_target: float = 0.93
-    #: Default first-draft bullet-share ceiling (INITIAL_BULLET_SHARE) for the settings slider.
-    initial_bullet_share: float = 1.0
     #: Default experience-vs-projects share (EXPERIENCE_BULLET_SHARE); `None` means
     #: unweighted, matching the config default.
     experience_bullet_share: float | None = None

@@ -664,3 +664,13 @@ washes (`--color-attn-tint` / `--color-danger-tint`, stronger than the chips' `*
 `success` is solid green and only Fill uses it. Bulk bar: Tailor again / Continue / Reopen
 orange, Fill green, Prepare and Archive plain, Skip red; the bar itself moved from the green
 wash to `sunken`. Archive was suggested green and declined: green is reserved for "ready".
+
+### Settings cleanup (2026-10-09)
+
+**Four tabs: AI, Data & backups, Browser extension, About.** Documents (PDF engine + calibration numbers) and Advanced were removed: the PDF test lives in About → System check, and a failed test also shows on the setup checklist (`setup.py` only reads `system.last_pdf_check()`, never converts on a poll). Calibration already shows on the Template page and setup checklist; characters per line meant nothing to users. Resume history moved to the editor's History drawer, with `content/resume_diff.py` lines ("Acme (Experience): edited 2 bullets") — deterministic, raw-dict based so an unvalidatable old version still diffs.
+
+**AI settings are app-wide** (`app_settings.py`, `DATA_ROOT/ai_settings.json`): one computer, one model; profiles are about content. Split/overlay sits inside `workspace.load_settings`/`save_settings` so the ~15 callers were untouched. `seeded` on `GET /api/settings` now reads `load_settings()["empty"]` (the profile's own keys), since the overlay makes `defaults` non-empty.
+
+**Retired from the UI**: First-draft bullets (default 1.0 = no cap, so web runs are unchanged; the CLI flag stays), Force fresh results (Clear cache covers it), Skip skills list and Skip tech/coursework (facets choose *which* tech/courses show; skipping only truncated in listed order — leaving things out is the Include panel's job). Saved values are dropped on load so a hidden `True` cannot keep skipping a stage. Expansion became a positive "Application-form text" toggle beside Cover letter. Fill target max is 0.98, not 1.0: a measured page almost never reaches exactly full, so 100% would spend every grow attempt and warn on every run.
+
+**Connection tests run automatically** (`useModelCheck`: ~800 ms debounce, results cached per target+provider+model, in-flight calls shared, skipped while a key is missing; a key save clears the cache). Status shows on the model cards and as a chip beside the key. **Usage** (`GET /api/usage`, `infra/usage_spend.py`) prices measured telemetry tokens with `estimate.price_for`; unreported usage and unknown models are never estimated. The price table has no Claude 5 entries yet, so those show "Price unknown". Header: the gear became a profile pill (person icon); theme is its own cycling button — users read the gear as a sun.

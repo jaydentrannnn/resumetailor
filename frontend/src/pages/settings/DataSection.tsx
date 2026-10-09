@@ -10,13 +10,20 @@ import {
   type DataInfo,
 } from "../../api";
 import { CopyButton } from "../../components/CopyButton";
-import { Button, Card, Modal } from "../../components/ui";
+import { Button, Card, Modal, StatusChip } from "../../components/ui";
 import { buttonClass } from "../../lib/buttonClass";
 import { describe } from "../../lib/errors";
 import { formatBytes } from "../../lib/format";
 import { useToast } from "../../lib/toast";
 import { useWorkspaceState } from "../../state/workspaceState";
+import { ResetSettingsCard } from "./ResetSettingsCard";
 import { SettingRow } from "./SettingRow";
+
+const PROFILE_ONLY = (
+  <StatusChip tone="neutral" mark={false}>
+    This profile
+  </StatusChip>
+);
 
 const MAX_IMPORT_BYTES = 2 * 1024 * 1024 * 1024;
 
@@ -80,7 +87,11 @@ export function DataSection() {
 
   return (
     <div className="space-y-4">
-      <Card title="Where your data lives" description="Everything stays on this computer.">
+      <Card
+        title="Where your data lives"
+        description="Everything stays on this computer."
+        actions={PROFILE_ONLY}
+      >
         {info ? (
           <dl className="space-y-3 text-sm">
             {[
@@ -122,7 +133,7 @@ export function DataSection() {
         )}
       </Card>
 
-      <Card title="Back up or move to another computer">
+      <Card title="Back up or move to another computer" actions={PROFILE_ONLY}>
         <SettingRow
           label="Export and import"
           layout="action"
@@ -188,7 +199,8 @@ export function DataSection() {
         </SettingRow>
       </Card>
 
-      <Card title="Delete all data">
+      <ResetSettingsCard />
+      <Card title="Delete all data" actions={PROFILE_ONLY}>
         <SettingRow
           label="This profile"
           layout="action"

@@ -1,22 +1,21 @@
 import { useEffect, useId, useState, type ReactNode } from "react";
-import { fetchLocalModels, testModel, type CheckResult, type SecretState } from "../../api";
-import { Button, Card, InlineHelp } from "../../components/ui";
-import { emitAppEvent } from "../../lib/appEvents";
-import { describe } from "../../lib/errors";
+import { fetchLocalModels, type CheckResult, type SecretState } from "../../api";
+import { Card, InlineHelp } from "../../components/ui";
 import { GLOSSARY } from "../../lib/glossary";
 import { profileDefaultModel } from "../../lib/modelLabel";
-import { PROVIDERS, providerInfo } from "../../lib/providers";
+import { PROVIDERS, privacyFor, providerInfo } from "../../lib/providers";
 import { useRunState } from "../../state/runState";
-import { CheckResultLine } from "./CheckResultLine";
+import { ModelCheckRow } from "./ModelCheckRow";
 import { SettingRow } from "./SettingRow";
+import { useModelCheck } from "./useModelCheck";
 
-/** The Tailor model: provider, model, effort and a live connection test. */
+/** The Tailor model: provider, model, effort and an automatic connection test. */
 export function TailorModelCard({
   secrets,
   embedded = false,
   className = "",
-  title = "AI model",
-  description = "Used for every tailoring run and for answering application questions.",
+  title = "Tailoring model",
+  description = "Writes your tailored resume and cover letter.",
   onResult,
 }: {
   secrets: SecretState[];
@@ -24,13 +23,11 @@ export function TailorModelCard({
   className?: string;
   title?: string;
   description?: ReactNode;
-  /** Every test result, and null when the provider or model changes (the result is stale). */
+  /** Every finished test result, and null while untested (the result is stale). */
   onResult?: (result: CheckResult | null) => void;
 }) {
   const { config, settings, setSettings, settingsLoaded } = useRunState();
   const [local, setLocal] = useState<{ reachable: boolean; models: string[] } | null>(null);
-  const [testing, setTesting] = useState(false);
-  const [result, setResult] = useState<CheckResult | null>(null);
   const modelListId = useId();
 
   const provider = providerInfo(settings.model);
@@ -48,25 +45,14 @@ export function TailorModelCard({
   const needsKey = provider?.keys.length
     ? !secrets.some((s) => provider.keys.includes(s.name) && s.set)
     : false;
-
-  function report(next: CheckResult | null) {
-    setResult(next);
-    onResult?.(next);
-  }
-
-  async function runTest() {
-    setTesting(true);
-    report(null);
-    try {
-      const result = await testModel(settings);
-      report(result);
-      if (result.ok) emitAppEvent("rt:setup-changed");
-    } catch (err) {
-      report({ ok: false, detail: describe(err).detail });
-    } finally {
-      setTesting(false);
-    }
-  }
+  const { check, retest } = useModelCheck("tailor", settings, settingsLoaded && !needsKey);
+  useEffect(() => {
+    if (check !== "testing") onResult?.(check);
+    // onResult is a fresh closure each render; only the result matters.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [check]);
+  const modelName = settings.model_name || profileDefaultModel(settings, config);
+  const privacy = privacyFor(settings.model, modelName);
 
   return (
     <Card embedded={embedded} className={className} title={title} description={description}>
@@ -79,11 +65,13 @@ export function TailorModelCard({
           options={options}
           value={settings.model}
           disabled={!settingsLoaded}
-          onPick={(id) => {
-            setSettings({ ...settings, model: id, model_name: null });
-            report(null);
-          }}
+          onPick={(id) => setSettings({ ...settings, model: id, model_name: null })}
         />
+        {privacy && (
+          <p className="mt-3 rounded-sm bg-sunken px-3 py-2 text-xs text-ink-2">
+            <span className="font-medium text-ink">Privacy:</span> {privacy}
+          </p>
+        )}
       </SettingRow>
 
       <div className="mt-4 grid gap-4 border-t border-line pt-4 sm:grid-cols-2">
@@ -94,10 +82,7 @@ export function TailorModelCard({
             list={local?.models.length ? modelListId : undefined}
             value={settings.model_name ?? ""}
             placeholder={profileDefaultModel(settings, config)}
-            onChange={(e) => {
-              setSettings({ ...settings, model_name: e.target.value || null });
-              report(null);
-            }}
+            onChange={(e) => setSettings({ ...settings, model_name: e.target.value || null })}
           />
           {local?.models.length ? (
             <datalist id={modelListId}>
@@ -146,49 +131,7 @@ export function TailorModelCard({
         </label>
       </div>
 
-      <div className="mt-4 border-t border-line pt-4">
-        <SettingRow
-          label="Connection"
-          layout="action"
-          description={
-            <>
-              {result ? (
-                <CheckResultLine result={result} />
-              ) : (
-                "Send a small request to check the selected model."
-              )}
-              {!provider?.local && (
-                <p className="mt-2">
-                  {settings.model === "ollama-cloud"
-                    ? "The test sends one tiny request (counts toward your Ollama plan)."
-                    : "The test sends one tiny request (a fraction of a cent)."}
-                </p>
-              )}
-            </>
-          }
-        >
-          <div className="flex w-full flex-wrap items-center justify-end gap-3">
-            {provider?.link && (
-              <a
-                className="rt-link text-sm font-medium"
-                href={provider.link.href}
-                target="_blank"
-                rel="noreferrer"
-              >
-                {provider.link.label}
-              </a>
-            )}
-            <Button variant="secondary" loading={testing} onClick={runTest}>
-              Test connection
-            </Button>
-          </div>
-        </SettingRow>
-      </div>
-      {needsKey && (
-        <p className="mt-3 rounded-sm bg-attn-soft px-3 py-2 text-sm text-attn">
-          {provider?.name} needs an API key. Add it under API keys.
-        </p>
-      )}
+      <ModelCheckRow check={check} provider={provider} needsKey={needsKey} onRetest={retest} />
     </Card>
   );
 }

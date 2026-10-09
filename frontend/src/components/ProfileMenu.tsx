@@ -1,14 +1,6 @@
 import { useEffect, useId, useRef, useState } from "react";
-import { useTheme, type ThemePreference } from "../state/themeState";
 import { useWorkspaceState } from "../state/workspaceState";
 import { ProfileSwitcher } from "./workspace/ProfileSwitcher";
-import { Segmented } from "./ui/Segmented";
-
-const THEMES: Array<[ThemePreference, string]> = [
-  ["system", "System"],
-  ["light", "Light"],
-  ["dark", "Dark"],
-];
 
 /** A modal (the profile manager) owns the keyboard and clicks while it is open. */
 function modalOpen() {
@@ -16,16 +8,16 @@ function modalOpen() {
 }
 
 /**
- * The header's one settings control: a gear button (named after the active profile)
- * that opens the profile switcher, profile management, and the theme choice.
+ * The header's profile pill: a person icon and the active profile's name, opening the
+ * profile switcher and profile management. Theme has its own button (`ThemeButton`);
+ * everything else is on the Settings page.
  */
-export function SettingsMenu() {
+export function ProfileMenu() {
   const [open, setOpen] = useState(false);
   const rootRef = useRef<HTMLDivElement>(null);
   const buttonRef = useRef<HTMLButtonElement>(null);
   const panelId = useId();
   const { workspaces, activeId, switching } = useWorkspaceState();
-  const { preference, setPreference } = useTheme();
   const active = workspaces.find((workspace) => workspace.id === activeId);
 
   useEffect(() => {
@@ -57,7 +49,7 @@ export function SettingsMenu() {
         aria-haspopup="true"
         onClick={() => setOpen((value) => !value)}
         className={`rt-header-pill rt-control inline-flex max-w-64 items-center gap-2 rounded-sm px-2 hover:text-ink ${open ? "text-ink" : "text-ink-2"}`}
-        title="Settings: profile and theme"
+        title="Profile: switch or manage profiles"
       >
         <svg
           aria-hidden
@@ -67,13 +59,10 @@ export function SettingsMenu() {
           stroke="currentColor"
           strokeWidth="1.6"
         >
-          <circle cx="10" cy="10" r="2.6" />
-          <path
-            d="M10 1.8v2.4M10 15.8v2.4M1.8 10h2.4M15.8 10h2.4M4.2 4.2l1.7 1.7M14.1 14.1l1.7 1.7M4.2 15.8l1.7-1.7M14.1 5.9l1.7-1.7"
-            strokeLinecap="round"
-          />
+          <circle cx="10" cy="7" r="3.2" />
+          <path d="M3.8 17.2c.9-3.2 3.3-4.9 6.2-4.9s5.3 1.7 6.2 4.9" strokeLinecap="round" />
         </svg>
-        <span className="truncate">{switching ? "Switching…" : (active?.label ?? "Settings")}</span>
+        <span className="truncate">{switching ? "Switching…" : (active?.label ?? "Profile")}</span>
         <span
           aria-hidden
           className={`text-xs text-ink-muted transition-transform duration-[var(--dur-short)] ${open ? "rotate-180" : ""}`}
@@ -85,22 +74,12 @@ export function SettingsMenu() {
         <div
           id={panelId}
           role="group"
-          aria-label="Settings"
+          aria-label="Profile"
           className="absolute right-0 z-40 mt-2 w-72 max-w-[calc(100vw-2rem)] space-y-2 rounded-sm border border-line bg-chrome p-4 shadow-lg"
         >
           <section className="space-y-2">
             <h2 className="rt-eyebrow">Profile</h2>
             <ProfileSwitcher />
-          </section>
-          <section className="space-y-1 border-t border-line pt-2.5">
-            <h2 className="rt-eyebrow">Theme</h2>
-            <Segmented
-              variant="underline"
-              label="Theme"
-              items={THEMES.map(([id, label]) => ({ id, label }))}
-              value={preference}
-              onChange={(id) => setPreference(id as ThemePreference)}
-            />
           </section>
         </div>
       )}

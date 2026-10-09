@@ -21,7 +21,7 @@ from resume_tailor.apply.funnel import operations as apply_operations
 from resume_tailor.apply.funnel import store as apply_store
 from resume_tailor.content import data_transfer, libraries
 from resume_tailor.document import convert
-from resume_tailor.infra import llm
+from resume_tailor.infra import llm, usage_spend
 from resume_tailor.web import template_ops
 from resume_tailor.web.job_routing import model_routing
 from resume_tailor.web.jobs import get_queue
@@ -106,9 +106,33 @@ def local_models(origin: str = "ollama") -> dict[str, Any]:
     return {"reachable": True, "base_url": base_url, "models": models, "detail": ""}
 
 
+@router.get("/api/usage")
+def usage(days: int = 30) -> dict[str, Any]:
+    """Measured model usage and list-price cost over the last `days` days, all profiles."""
+    outputs = [
+        config.workspace_paths(entry.id)["OUTPUT_DIR"] for entry in workspace.list_workspaces()
+    ] or [config.OUTPUT_DIR]
+    return usage_spend.collect(outputs, days=max(1, min(days, 365)))
+
+
+#: The last PDF test result this process saw, so the setup checklist can flag a broken
+#: engine without converting a document on every poll (it never runs the test itself).
+_PDF_CHECK: dict[str, Any] | None = None
+
+
+def last_pdf_check() -> dict[str, Any] | None:
+    return _PDF_CHECK
+
+
 @router.post("/api/pdf/test")
 def test_pdf() -> dict[str, Any]:
     """Convert a one-line document with the configured PDF engine and time it."""
+    global _PDF_CHECK
+    _PDF_CHECK = result = _convert_test()
+    return result
+
+
+def _convert_test() -> dict[str, Any]:
     started = time.monotonic()
     with tempfile.TemporaryDirectory(prefix="rt-pdf-test-") as tmp:
         source = Path(tmp) / "test.docx"

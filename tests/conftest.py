@@ -76,7 +76,7 @@ os.environ["RESUME_TAILOR_BROWSER_LAUNCH"] = "off"
 
 import pytest  # noqa: E402
 
-from resume_tailor import config, workspace  # noqa: E402
+from resume_tailor import app_settings, config, workspace  # noqa: E402
 from resume_tailor.apply.forms import form_guards, submit_guard  # noqa: E402
 from resume_tailor.content import bullet_tags, libraries, style  # noqa: E402
 from resume_tailor.document import template_analyze, template_build  # noqa: E402
@@ -122,6 +122,12 @@ def _isolated_libraries(tmp_path, monkeypatch):
     libraries.reset()
     yield
     libraries.reset()
+
+
+@pytest.fixture(autouse=True)
+def _isolated_app_settings(tmp_path, monkeypatch):
+    """App-wide AI settings live under `config.DATA_ROOT`; never the developer's own."""
+    monkeypatch.setattr(app_settings, "path", lambda: tmp_path / "ai_settings.json")
 
 
 @pytest.fixture(autouse=True)

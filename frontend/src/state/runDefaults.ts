@@ -1,7 +1,7 @@
 /** Default run settings: the starting point for a fresh Tailor session and the merge
  * base for settings loaded from the server. */
 
-import type { IncludeOptions, JobSettings } from "../api";
+import type { AppConfig, IncludeOptions, JobSettings } from "../api";
 
 /** All-included defaults for a fresh `IncludeOptions` — the merge base whenever a
  * settings.json predates this field or a fresh session needs a starting point. */
@@ -135,3 +135,23 @@ export const DEFAULT_SETTINGS: JobSettings = {
     browser: null,
   },
 };
+
+/**
+ * Settings → Data → Reset settings: every run option and the advanced AI tuning back to
+ * its default (writing style rules and include/exclude choices too). The model choices,
+ * API keys, Apply settings and all data are kept.
+ */
+export function resetSettings(settings: JobSettings, config: AppConfig | null): JobSettings {
+  return {
+    ...DEFAULT_SETTINGS,
+    model: settings.model,
+    model_name: settings.model_name,
+    ollama_model: settings.ollama_model,
+    gemini_model: settings.gemini_model,
+    effort: settings.effort,
+    apply: settings.apply,
+    pages: config?.pages ?? DEFAULT_SETTINGS.pages,
+    experience: config?.experience ?? 3,
+    projects: config?.projects ?? 2,
+  };
+}

@@ -19,6 +19,7 @@ from pathlib import Path
 from typing import Any
 
 from resume_tailor import config
+from resume_tailor.content import resume_diff
 from resume_tailor.storage import db
 
 KEEP = 50
@@ -99,7 +100,11 @@ def _summary(text: str) -> dict[str, Any]:
 
 
 def list_versions() -> list[dict[str, Any]]:
-    """Newest first: ``{version, saved_at, note, name, bullets, sections, current}``."""
+    """Newest first: ``{version, saved_at, note, name, bullets, sections, current, changes}``.
+
+    ``changes`` is the plain-language diff against the next-older version
+    (`resume_diff.changes`); ``None`` on the oldest one kept.
+    """
     sync_external()
     conn = _conn()
     rows = conn.execute(
@@ -107,8 +112,10 @@ def list_versions() -> list[dict[str, Any]]:
     ).fetchall()
     out = []
     for index, (version, saved_at, note, text) in enumerate(rows):
+        older = rows[index + 1][3] if index + 1 < len(rows) else None
         out.append(
-            {"version": version, "saved_at": saved_at, "note": note, "current": index == 0}
+            {"version": version, "saved_at": saved_at, "note": note, "current": index == 0,
+             "changes": resume_diff.changes(older, text) if older is not None else None}
             | _summary(text)
         )
     return out

@@ -5,14 +5,30 @@ import { emitAppEvent } from "../../lib/appEvents";
 import { describe } from "../../lib/errors";
 import { KEY_HELP, KEY_LABELS } from "../../lib/providers";
 import { useToast } from "../../lib/toast";
+import { clearModelChecks, type ModelCheck } from "./useModelCheck";
+
+/** The chosen model's automatic test, shown beside the key it used. */
+function CheckChip({ check }: { check: ModelCheck }) {
+  if (check === "testing") return <StatusChip tone="live">Testing…</StatusChip>;
+  if (!check) return null;
+  return check.ok ? (
+    <StatusChip tone="done">Working</StatusChip>
+  ) : (
+    <StatusChip tone="failed">Not working</StatusChip>
+  );
+}
+
 export function KeyRow({
   secret,
   highlighted,
   onChange,
+  check = null,
 }: {
   secret: SecretState;
   highlighted: boolean;
   onChange: () => void;
+  /** The connection test of a model that uses this key (set keys only). */
+  check?: ModelCheck;
 }) {
   const toast = useToast();
   const [value, setValue] = useState("");
@@ -27,6 +43,7 @@ export function KeyRow({
       setValue("");
       toast.success("Key saved");
       emitAppEvent("rt:setup-changed");
+      clearModelChecks();
       onChange();
     } catch (err) {
       const d = describe(err);
@@ -42,6 +59,7 @@ export function KeyRow({
       await deleteSecret(secret.name);
       toast.success("Key removed");
       emitAppEvent("rt:setup-changed");
+      clearModelChecks();
       onChange();
     } catch (err) {
       toast.error("Could not remove the key", describe(err).detail);
@@ -67,6 +85,7 @@ export function KeyRow({
           </a>
         )}
         <StatusChip tone={secret.set ? "done" : "muted"}>{status}</StatusChip>
+        {secret.set && <CheckChip check={check} />}
       </div>
       <div className="flex min-w-0 flex-wrap items-center gap-2 sm:flex-nowrap">
         <input

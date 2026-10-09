@@ -379,11 +379,11 @@ def test_settings_round_trip(isolated_roots):
 def test_settings_missing_file_returns_empty_defaults(isolated_roots):
     bootstrap()
     config.SETTINGS_PATH.unlink()
-    assert workspace.load_settings() == {"schema_version": 1, "defaults": {}}
+    assert workspace.load_settings() == {"schema_version": 1, "defaults": {}, "empty": True}
 
 
 def test_settings_corrupt_file_falls_back_to_empty_defaults(isolated_roots):
     bootstrap()
     config.SETTINGS_PATH.write_text("{not valid json", encoding="utf-8")
 
-    assert workspace.load_settings() == {"schema_version": 1, "defaults": {}}
+    assert workspace.load_settings() == {"schema_version": 1, "defaults": {}, "empty": True}

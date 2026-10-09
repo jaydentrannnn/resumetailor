@@ -126,6 +126,15 @@ templates/workspaces/<id>/library/ , backups/
 output/workspaces/<id>/{cache/, jobs/<job_id>/, template/}
 ```
 
+**AI settings are app-wide, not per profile**: `model`, `model_name`, `ollama_model`,
+`gemini_model`, `effort`, `extract_runs`, `max_concurrent_jobs` and the Autofill model
+(`apply.model_provider`/`apply.model_name`) live in `DATA_ROOT/ai_settings.json`
+(`app_settings.py`). `workspace.load_settings` lays them over a profile's `defaults` and
+`save_settings` strips them back out, so every caller still reads one merged dict. Only keys
+present in the app file override; `bootstrap` seeds it once from the active profile, so an
+upgrade keeps the model in use. Retired run options (`no_cache`, `no_skills`, `no_facets`,
+`initial_bullet_share`) are dropped on load — a request (MCP, scripts) may still set them.
+
 Ids are slugs derived from the label, not opaque — browsed by hand. **Rename never moves
 the directory**; the id is fixed at creation. Template library cap is 20 entries, per
 workspace.
@@ -866,8 +875,8 @@ writes each bundle plus a filled sample PDF for checking a design change by eye.
 Every physical model request enters one shared FIFO queue per endpoint, including
 retries. Local servers default to one simultaneous request; cloud endpoints default
 to three. A queued request starts as soon as a slot opens, with no pause between
-batches. HTTP 429 Retry-After delays the whole endpoint. Settings > Advanced controls
-these app-wide limits and shows active/waiting requests; settings persist under
+batches. HTTP 429 Retry-After delays the whole endpoint. Settings > AI > Advanced > Speed
+(presets over these limits; Custom shows them raw) controls these app-wide limits and shows active/waiting requests; settings persist under
 `DATA_ROOT/model_queue.json`. Limits are shared within one server process.
 
 - **The default profile is `ollama`, not `claude`.** Both `tailor.py --model` and

@@ -197,7 +197,9 @@ def test_create_job_and_activate_workspace_share_one_lock(client, tmp_path, monk
 
 
 def test_settings_round_trip_is_per_workspace(client, tmp_path, monkeypatch):
-    """Each profile keeps its own settings.json; switching swaps which one is live."""
+    """Each profile keeps its own settings.json; switching swaps which one is live.
+
+    The model is app-wide (`app_settings`), so it survives the switch either way."""
     c, _ = client
     _point_workspaces_at(tmp_path, monkeypatch)
     real_bootstrap()

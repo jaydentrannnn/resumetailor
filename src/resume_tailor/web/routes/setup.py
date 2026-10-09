@@ -18,6 +18,7 @@ from resume_tailor import config, workspace
 from resume_tailor.apply.answers import profile as apply_profile
 from resume_tailor.content import data
 from resume_tailor.web.job_routing import model_routing
+from resume_tailor.web.routes import system
 from resume_tailor.web.schemas import JobSettings
 
 router = APIRouter()
@@ -185,5 +186,11 @@ def setup_status() -> dict[str, Any]:
         "Filled." if basics else "Name and email for application forms (only needed to apply).",
         "Fill in profile", "/profile/application", optional=True,
     ))
+    pdf = system.last_pdf_check()
+    if pdf is not None and not pdf["ok"]:
+        items.append(_item(
+            "pdf", "PDF conversion", False, pdf["detail"] or "The PDF engine is not working.",
+            "Run system check", "/settings?tab=about",
+        ))
     remaining = sum(1 for i in items if not i["ok"] and not i["optional"])
     return {"items": items, "ready": remaining == 0, "remaining": remaining}

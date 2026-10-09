@@ -250,8 +250,8 @@ sessions. (The [browser extension](#browser-extension) is an alternative.)
    run**). The app must be running; the tray is enough, and a run missed while the PC was
    off catches up at the next start within 12 hours.
 3. Select postings and press **Tailor files for selected**. It tailors with the Tailor
-   page's model settings, several at once (Settings → Advanced → **Concurrent tailoring
-   runs**, default 2, up to 4).
+   page's model settings, several at once (Settings → AI → Advanced → **Resumes at once**,
+   default 2, up to 4).
 4. Select prepared postings and press **Fill selected**. It fills several at once, each in
    its own tab (**Parallel fills** in the Apply settings drawer, default 2, up to 4), and
    the progress banner shows each one. Each tab stays open for you to review.

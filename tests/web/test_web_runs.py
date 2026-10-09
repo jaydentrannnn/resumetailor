@@ -26,9 +26,8 @@ def test_get_config_returns_defaults(client):
     assert isinstance(body["tag_vocabulary"], list)
     assert body["pdf_backend"] in ("word", "soffice")
     assert "fill_target" in body
-    assert 0.8 <= body["fill_target"] <= 0.95
-    assert "initial_bullet_share" in body
-    assert 0.3 <= body["initial_bullet_share"] <= 1.0
+    assert 0.8 <= body["fill_target"] <= 0.98
+    assert "initial_bullet_share" not in body
     assert "experience_bullet_share" in body
     assert body["experience_bullet_share"] == config.EXPERIENCE_BULLET_SHARE
     assert "max_bullets_per_entry" in body

@@ -11,6 +11,7 @@ import { buttonClass } from "../../lib/buttonClass";
 import { SHORTCUTS } from "../../lib/shortcuts";
 import { UPDATE_IN_PROGRESS, updateStatusLine } from "../../lib/updateStatus";
 import { SettingRow } from "./SettingRow";
+import { SystemCheckCard } from "./SystemCheckCard";
 
 /** Settings → About: version, updates, diagnostics for support, shortcuts. */
 export function AboutSection() {
@@ -29,6 +30,7 @@ export function AboutSection() {
         </p>
       </Card>
       <UpdatesCard />
+      <SystemCheckCard />
       <Card title="Get help">
         <SettingRow
           label="Diagnostics"

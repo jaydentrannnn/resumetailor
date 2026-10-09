@@ -2,8 +2,6 @@ import { useEffect, useId, useState } from "react";
 import type { AppConfig, JobSettings } from "../../api";
 import { Field, Toggle } from "../../components/Field";
 import { IncludePanel } from "../../components/IncludePanel";
-import { useConfirm } from "../../state/confirmState";
-import { DEFAULT_SETTINGS } from "../../state/runDefaults";
 import { RunStyleRules } from "./RunStyleRules";
 
 const OPEN_KEY = "rt.runOptions.open.";
@@ -83,6 +81,14 @@ export function RunOptionsForm({
             onChange={(v) => set("cover_letter", v)}
           />
         </div>
+        <div className="sm:pt-6">
+          <Toggle
+            label="Application-form text"
+            help="Paragraphs for each job, ready to paste into application forms. Apply turns this on for its own runs."
+            checked={!settings.no_expand}
+            onChange={(v) => set("no_expand", !v)}
+          />
+        </div>
         {settings.cover_letter && (
           <Field label="Cover letter tone">
             <select
@@ -137,32 +143,8 @@ const SLIDER = "w-full accent-[var(--color-accent)]";
 
 /** Selection sizing, fill targets, the opt-out stages, and the writing style rules. */
 function MoreOptions({ config, settings, onChange, disabled }: FormProps) {
-  const { confirm } = useConfirm();
-
   function set<K extends keyof JobSettings>(key: K, value: JobSettings[K]) {
     onChange({ ...settings, [key]: value });
-  }
-
-  async function resetDefaults() {
-    const ok = await confirm({
-      title: "Reset tailoring options?",
-      message:
-        "Every option on this form goes back to its default, including writing style rules and include/exclude choices. Your model choice is kept.",
-      confirmLabel: "Reset",
-      tone: "danger",
-    });
-    if (!ok) return;
-    // The model choice belongs to Settings, so a reset here keeps it.
-    onChange({
-      ...DEFAULT_SETTINGS,
-      model: settings.model,
-      model_name: settings.model_name,
-      effort: settings.effort,
-      apply: settings.apply,
-      pages: config?.pages ?? DEFAULT_SETTINGS.pages,
-      experience: config?.experience ?? 3,
-      projects: config?.projects ?? 2,
-    });
   }
 
   const coverOn = settings.cover_letter && !settings.no_cover_letter;
@@ -221,13 +203,6 @@ function MoreOptions({ config, settings, onChange, disabled }: FormProps) {
       </Field>
       <StageToggles settings={settings} set={set} />
       <RunStyleRules config={config} settings={settings} set={set} />
-      <button
-        type="button"
-        onClick={() => void resetDefaults()}
-        className="text-xs text-ink-muted underline-offset-2 hover:text-ink hover:underline"
-      >
-        Reset options to defaults
-      </button>
     </fieldset>
   );
 }
@@ -263,7 +238,7 @@ function CoverAngles({ settings, set }: { settings: JobSettings; set: Setter }) 
   );
 }
 
-/** Page fill target, first-draft share and the experience/projects weighting. */
+/** Page fill target and the experience/projects weighting. */
 function BulletBudget({
   config,
   settings,
@@ -274,7 +249,6 @@ function BulletBudget({
   set: Setter;
 }) {
   const fillValue = settings.fill_target ?? config?.fill_target ?? 0.93;
-  const initialShareValue = settings.initial_bullet_share ?? config?.initial_bullet_share ?? 1;
   const experienceShareValue =
     settings.experience_bullet_share ?? config?.experience_bullet_share ?? 0.65;
   return (
@@ -286,24 +260,10 @@ function BulletBudget({
         <input
           type="range"
           min={80}
-          max={95}
+          max={98}
           step={1}
           value={Math.round(fillValue * 100)}
           onChange={(e) => set("fill_target", Number(e.target.value) / 100)}
-          className={SLIDER}
-        />
-      </Field>
-      <Field
-        label={`First-draft bullets (${Math.round(initialShareValue * 100)}%)`}
-        help="Cap the opening selection to this share of available bullets. Lower starts sparser — but the page fill target above may still grow it back, so lower both to end sparser."
-      >
-        <input
-          type="range"
-          min={30}
-          max={100}
-          step={5}
-          value={Math.round(initialShareValue * 100)}
-          onChange={(e) => set("initial_bullet_share", Number(e.target.value) / 100)}
           className={SLIDER}
         />
       </Field>
@@ -333,7 +293,7 @@ function BulletBudget({
 }
 
 const STAGE_TOGGLES: {
-  key: "merge" | "no_cache" | "no_expand" | "no_skills" | "no_facets" | "suggest_vocabulary";
+  key: "merge" | "suggest_vocabulary";
   label: string;
   help: string;
 }[] = [
@@ -341,26 +301,6 @@ const STAGE_TOGGLES: {
     key: "merge",
     label: "Merge redundant bullets",
     help: "Only after a measured page overflow; the first thing tried before shortening or dropping bullets.",
-  },
-  {
-    key: "no_cache",
-    label: "Force fresh results",
-    help: "Ask the AI again instead of reusing saved results for this posting. Slower, and costs more on paid models.",
-  },
-  {
-    key: "no_expand",
-    label: "Skip experience expansion",
-    help: "Do not generate application-form paste text after a successful fit.",
-  },
-  {
-    key: "no_skills",
-    label: "Skip skills list",
-    help: "Do not generate the tailored skills list for application-form Skills fields.",
-  },
-  {
-    key: "no_facets",
-    label: "Skip tech / coursework selection",
-    help: "Do not ask the model which project tech and courses to show; truncate pools in listed order to fit the line budgets.",
   },
   {
     key: "suggest_vocabulary",

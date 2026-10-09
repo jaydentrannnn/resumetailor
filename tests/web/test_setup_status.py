@@ -145,3 +145,19 @@ def test_ollama_cloud_profile_is_probed_with_its_key(monkeypatch):
         assert calls[0]["url"] == "https://ollama.com/v1/models"
         # Ollama Cloud's own key, not the custom-server one.
         assert calls[0]["headers"] == {"Authorization": "Bearer sk-cloud"}
+
+
+def test_failed_pdf_test_is_a_setup_gap_and_never_run_by_the_checklist(monkeypatch):
+    from resume_tailor.web.routes import system as system_routes
+
+    calls: list[object] = []
+    monkeypatch.setattr(system_routes.convert, "convert", lambda *a: calls.append(a))
+    with TestClient(app) as c:
+        _, items = _status(c)
+        assert "pdf" not in items and not calls
+        monkeypatch.setattr(
+            system_routes, "_PDF_CHECK", {"ok": False, "backend": "word", "detail": "No Word."}
+        )
+        _, items = _status(c)
+        assert items["pdf"]["ok"] is False and items["pdf"]["detail"] == "No Word."
+        assert items["pdf"]["fix"]["to"] == "/settings?tab=about"

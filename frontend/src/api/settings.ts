@@ -35,7 +35,6 @@ export type AppConfig = {
   tag_vocabulary: string[];
   contact_name: string | null;
   fill_target: number;
-  initial_bullet_share: number;
   /** Server default share; null means unweighted. */
   experience_bullet_share: number | null;
   /** Server default per-entry cap; null means uncapped. */
@@ -341,4 +340,33 @@ export function putOnboarding(
     method: "PUT",
     body: JSON.stringify(patch),
   });
+}
+
+export interface UsageModel {
+  origin: string;
+  model: string;
+  runs: number;
+  requests: number;
+  /** Requests whose provider did not report token counts (counted, never estimated). */
+  unreported: number;
+  input_tokens: number;
+  output_tokens: number;
+  /** "no_per_token": Ollama / LM Studio (on this computer, or billed by plan). */
+  billing: "per_token" | "no_per_token";
+  /** List-price estimate; null when the model has no known price or is not per-token. */
+  usd: number | null;
+}
+
+export interface UsageSummary {
+  days: number;
+  runs: number;
+  models: UsageModel[];
+  usd: number | null;
+  /** False when some usage was unreported or a per-token model had no known price. */
+  complete: boolean;
+}
+
+/** Measured model usage and its estimated cost over the last `days` days, all profiles. */
+export function fetchUsage(days = 30): Promise<UsageSummary> {
+  return request(`/api/usage?days=${days}`);
 }

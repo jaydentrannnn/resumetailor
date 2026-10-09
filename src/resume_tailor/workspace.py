@@ -27,7 +27,7 @@ from dataclasses import dataclass
 from datetime import UTC, datetime
 from pathlib import Path
 
-from resume_tailor import config
+from resume_tailor import app_settings, config
 from resume_tailor.content import industries, libraries, library_models
 from resume_tailor.content.labels import label_taken, normalize_label
 
@@ -436,14 +436,26 @@ def load_settings(workspace_id: str | None = None) -> dict:
             raw = None
         if isinstance(raw, dict):
             defaults = raw.get("defaults")
+            own = {
+                k: v for k, v in (defaults if isinstance(defaults, dict) else {}).items()
+                if k not in _RETIRED_KEYS
+            }
             return {
                 "schema_version": raw.get("schema_version", 1),
-                "defaults": defaults if isinstance(defaults, dict) else {},
+                "defaults": app_settings.overlay(own),
+                #: True when the profile itself has saved nothing yet (app-wide AI
+                #: settings may still be laid over its defaults).
+                "empty": not own,
                 **({"target_field": industries.validate_target(raw["target_field"])}
                    if "target_field" in raw else {}),
             }
-    return {"schema_version": 1, "defaults": {}}
+    return {"schema_version": 1, "defaults": app_settings.overlay({}), "empty": True}
 
+
+#: Saved run options the UI no longer offers. A stale `True` would otherwise silently keep
+#: skipping a stage nobody can see a switch for, so a saved value is ignored on load; a
+#: single request (MCP, scripts) may still set them.
+_RETIRED_KEYS = ("no_cache", "no_skills", "no_facets", "initial_bullet_share")
 
 _KEEP_TARGET = object()
 
@@ -459,7 +471,8 @@ def save_settings(
     path.parent.mkdir(parents=True, exist_ok=True)
     tmp = path.with_suffix(".tmp")
     tmp.write_text(
-        json.dumps({"schema_version": 1, "defaults": defaults, "target_field": target_field},
+        json.dumps({"schema_version": 1, "defaults": app_settings.split(defaults),
+                    "target_field": target_field},
                    indent=2) + "\n",
         encoding="utf-8",
     )
@@ -574,6 +587,17 @@ def _migrate_legacy(default_id: str = _DEFAULT_ID) -> BootstrapResult:
 
 
 def bootstrap(*, workspace_id: str | None = None, migrate: bool = True) -> BootstrapResult:
+    """`_bootstrap`, then seed the app-wide AI settings from the resolved profile.
+
+    The seed runs once per install (`app_settings.seed` is a no-op once the file
+    exists), so upgrading from per-profile settings keeps the model that was in use.
+    """
+    result = _bootstrap(workspace_id=workspace_id, migrate=migrate)
+    app_settings.seed(load_settings()["defaults"])
+    return result
+
+
+def _bootstrap(*, workspace_id: str | None = None, migrate: bool = True) -> BootstrapResult:
     """Resolve and activate a workspace, migrating the legacy layout on first boot.
 
     Resolution order: an explicit `workspace_id` (process-local only — never persisted

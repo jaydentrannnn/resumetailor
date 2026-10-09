@@ -52,7 +52,7 @@ export function RunOptions({
             Using <strong className="font-medium text-ink">{provider}</strong>
             {modelName && <span className="ml-1.5 font-mono text-xs">{modelName}</span>}
             {" · "}
-            <Link to="/settings?tab=models" className="rt-link font-medium">
+            <Link to="/settings?tab=ai" className="rt-link font-medium">
               Change model in Settings
             </Link>
           </p>

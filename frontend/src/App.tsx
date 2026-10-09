@@ -13,10 +13,11 @@ import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { getOnboarding } from "./api";
 import { needsWelcome, setupActive } from "./lib/onboarding";
 import { ErrorBoundary } from "./components/ErrorBoundary";
-import { SettingsMenu } from "./components/SettingsMenu";
+import { ProfileMenu } from "./components/ProfileMenu";
 import { KeyboardShortcuts } from "./components/KeyboardShortcuts";
 import { AutomationSwitch } from "./components/AutomationSwitch";
 import { SetupHealth } from "./components/SetupHealth";
+import { ThemeButton } from "./components/ThemeButton";
 import { UpdateChip } from "./components/UpdateChip";
 import { ToastProvider } from "./components/ui/Toast";
 import { RunPage } from "./pages/run/RunPage";
@@ -176,7 +177,8 @@ function Shell() {
               <SetupHealth />
               <UpdateChip />
               <AutomationSwitch />
-              <SettingsMenu />
+              <ThemeButton />
+              <ProfileMenu />
             </div>
           )}
         </div>

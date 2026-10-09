@@ -10,7 +10,13 @@ export interface ProviderInfo {
   local: boolean;
   /** Where to get a key or the app. */
   link?: { label: string; href: string };
+  /** Where the resume text goes when this provider runs (shown under the picker). */
+  privacy: string;
 }
+
+const LOCAL_PRIVACY = "Your resume stays on this computer.";
+const sentTo = (company: string) =>
+  `Your resume text and the job posting are sent to ${company} to write the result.`;
 
 export const PROVIDERS: ProviderInfo[] = [
   {
@@ -19,6 +25,7 @@ export const PROVIDERS: ProviderInfo[] = [
     summary:
       "Free. Uses the Ollama app on this computer (run `ollama signin` for cloud models). Needs Ollama installed.",
     keys: [],
+    privacy: LOCAL_PRIVACY,
     local: true,
     link: { label: "Get Ollama", href: "https://ollama.com/download" },
   },
@@ -28,6 +35,7 @@ export const PROVIDERS: ProviderInfo[] = [
     summary:
       "Runs on Ollama's servers with your Ollama account, so there is nothing to install. Needs an Ollama API key.",
     keys: ["OLLAMA_API_KEY", "LLM_API_KEY"],
+    privacy: sentTo("Ollama"),
     local: false,
     link: { label: "Get an API key", href: "https://ollama.com/settings/keys" },
   },
@@ -36,6 +44,7 @@ export const PROVIDERS: ProviderInfo[] = [
     name: "Anthropic Claude",
     summary: "Best writing quality. You pay Anthropic per run (usually a few cents).",
     keys: ["ANTHROPIC_API_KEY"],
+    privacy: sentTo("Anthropic"),
     local: false,
     link: { label: "Get an API key", href: "https://console.anthropic.com/settings/keys" },
   },
@@ -44,6 +53,7 @@ export const PROVIDERS: ProviderInfo[] = [
     name: "Google Gemini",
     summary: "Good quality with a free tier. Needs a Google AI Studio key.",
     keys: ["GEMINI_API_KEY", "GOOGLE_API_KEY"],
+    privacy: sentTo("Google"),
     local: false,
     link: { label: "Get an API key", href: "https://aistudio.google.com/apikey" },
   },
@@ -52,6 +62,7 @@ export const PROVIDERS: ProviderInfo[] = [
     name: "LM Studio",
     summary: "Free. Runs a model you load in LM Studio on this computer.",
     keys: [],
+    privacy: LOCAL_PRIVACY,
     local: true,
     link: { label: "Get LM Studio", href: "https://lmstudio.ai" },
   },
@@ -59,6 +70,12 @@ export const PROVIDERS: ProviderInfo[] = [
 
 export function providerInfo(id: string): ProviderInfo | undefined {
   return PROVIDERS.find((p) => p.id === id);
+}
+
+/** Where `model` on provider `id` sends the resume: an Ollama `:cloud` model leaves the machine. */
+export function privacyFor(id: string, model: string): string | undefined {
+  if (id === "ollama" && /[:-]cloud$/.test(model)) return sentTo("Ollama");
+  return providerInfo(id)?.privacy;
 }
 
 /** Readable names for the savable key slots. */
@@ -96,3 +113,11 @@ export const AUTOFILL_PROVIDERS: { id: ApplySettings["model_provider"]; label: s
   { id: "gemini", label: "Gemini" },
   { id: "anthropic", label: "Anthropic" },
 ];
+
+export function autofillLabel(id: ApplySettings["model_provider"]): string {
+  return AUTOFILL_PROVIDERS.find((p) => p.id === id)?.label ?? id;
+}
+
+/** Autofill providers use Anthropic's own name; the provider list files it under "claude". */
+export const autofillProviderId = (provider: ApplySettings["model_provider"]) =>
+  provider === "anthropic" ? "claude" : provider;

@@ -1,6 +1,7 @@
 import type { SecretState } from "../../api";
 import { Card } from "../../components/ui";
 import { KeyRow } from "./KeyRow";
+import type { ModelCheck } from "./useModelCheck";
 
 /** Every API key the app can use; the ones the chosen providers need are highlighted. */
 export function ApiKeysCard({
@@ -11,6 +12,7 @@ export function ApiKeysCard({
   embedded = false,
   className = "",
   only,
+  checks = {},
 }: {
   secrets: SecretState[];
   storeBackend: string;
@@ -20,6 +22,8 @@ export function ApiKeysCard({
   className?: string;
   /** Show just these key names (the setup wizard lists model keys only). */
   only?: string[];
+  /** Connection-test status per key name, for the models that use it. */
+  checks?: Record<string, ModelCheck>;
 }) {
   return (
     <Card
@@ -40,6 +44,7 @@ export function ApiKeysCard({
               key={secret.name}
               secret={secret}
               highlighted={highlighted.includes(secret.name)}
+              check={checks[secret.name] ?? null}
               onChange={reload}
             />
           ))}

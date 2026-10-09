@@ -2,22 +2,26 @@ import { useSearchParams } from "react-router-dom";
 import { useEffect, useState } from "react";
 import { Page, PageHeader, Tabs } from "../../components/ui";
 import { AboutSection } from "./AboutSection";
-import { AdvancedSection } from "./AdvancedSection";
-import { DataSection } from "./DataSection";
-import { DocumentsSection } from "./DocumentsSection";
-import { ModelsSection } from "./ModelsSection";
+import { AiSection } from "./AiSection";
 import { BrowserSection } from "./BrowserSection";
+import { DataSection } from "./DataSection";
 
 const TABS = [
-  { id: "models", label: "AI model" },
-  { id: "documents", label: "Documents" },
-  { id: "data", label: "Data" },
-  { id: "advanced", label: "Advanced" },
-  { id: "browser", label: "Browser" },
+  { id: "ai", label: "AI" },
+  { id: "data", label: "Data & backups" },
+  { id: "browser", label: "Browser extension" },
   { id: "about", label: "About" },
 ] as const;
 
 type TabId = (typeof TABS)[number]["id"];
+
+/** Tabs that were folded into others, so old links still land somewhere sensible. */
+const MOVED: Record<string, TabId> = { models: "ai", advanced: "ai", documents: "about" };
+
+function tabFor(requested: string | null): TabId {
+  if (requested && requested in MOVED) return MOVED[requested];
+  return TABS.some((t) => t.id === requested) ? (requested as TabId) : "ai";
+}
 
 /** App-wide settings. The tab lives in the URL (`?tab=`) so links can open one directly. */
 export function SettingsPage() {
@@ -29,11 +33,13 @@ export function SettingsPage() {
     return () => query.removeEventListener("change", change);
   }, []);
   const [params, setParams] = useSearchParams();
-  const requested = params.get("tab");
-  const tab: TabId = TABS.some((t) => t.id === requested) ? (requested as TabId) : "models";
+  const tab = tabFor(params.get("tab"));
   return (
     <Page>
-      <PageHeader title="Settings" description="How ResumeTailor runs on this computer." />
+      <PageHeader
+        title="Settings"
+        description="AI, data and app preferences. Shared by every profile unless marked."
+      />
       <div className="grid min-w-0 gap-6 lg:grid-cols-[180px_minmax(0,1fr)] lg:gap-8">
         <Tabs
           label="Settings sections"
@@ -43,10 +49,8 @@ export function SettingsPage() {
           onChange={(id) => setParams({ tab: id }, { replace: true })}
         />
         <div role="tabpanel" className="min-w-0 space-y-4">
-          {tab === "models" && <ModelsSection />}
-          {tab === "documents" && <DocumentsSection />}
+          {tab === "ai" && <AiSection />}
           {tab === "data" && <DataSection />}
-          {tab === "advanced" && <AdvancedSection />}
           {tab === "browser" && <BrowserSection />}
           {tab === "about" && <AboutSection />}
         </div>
