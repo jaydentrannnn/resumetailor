@@ -14,6 +14,8 @@ from __future__ import annotations
 
 import logging
 import threading
+from collections.abc import Iterator
+from contextlib import contextmanager
 from dataclasses import dataclass
 
 from resume_tailor import config, workspace
@@ -44,12 +46,26 @@ def _slot(workspace_id: str | None) -> str:
     return workspace_id or ""
 
 
+def tailor_routing() -> tuple[str, dict[str, str] | None, str | None]:
+    """The active profile's Tailor routing — the backend inference runs (and is cached)
+    under, so anything reading the cache must pin the same one."""
+    settings = JobSettings.model_validate(workspace.load_settings()["defaults"])
+    return job_routing.model_routing(settings)
+
+
+@contextmanager
+def pinned_tailor() -> Iterator[None]:
+    """Route this block through the Tailor settings, as the refresh does."""
+    profile, overrides, effort = tailor_routing()
+    with config.pinned(profile, overrides=overrides, effort=effort):
+        yield
+
+
 def schedule(resume: MasterResume) -> None:
     """Queue a refresh for the active workspace's freshly saved `resume`."""
     global _pending, _thread
     try:
-        settings = JobSettings.model_validate(workspace.load_settings()["defaults"])
-        routing = job_routing.model_routing(settings)
+        routing = tailor_routing()
     except Exception:  # noqa: BLE001 - a refresh is a convenience; the save already landed
         _log.warning("skill refresh not scheduled", exc_info=True)
         return

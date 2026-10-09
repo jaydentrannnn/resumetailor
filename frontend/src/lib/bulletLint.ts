@@ -1,31 +1,3 @@
-export function suggestMissingTags(
-  text: string,
-  tags: string[],
-  vocabLower: Set<string>,
-  vocabList: string[],
-): string[] {
-  /**
-   * Flag vocabulary words that appear in the bullet text but not its tags.
-   * Tags are the fabrication guard's whitelist — a miss here is a future false positive.
-   */
-  const have = new Set(tags.map((t) => t.toLowerCase()));
-  const lower = text.toLowerCase();
-  const hits: string[] = [];
-  for (const tag of vocabList) {
-    if (!vocabLower.has(tag.toLowerCase())) continue;
-    if (have.has(tag.toLowerCase())) continue;
-    // Whole-word-ish match: avoid flagging "go" inside "google".
-    const re = new RegExp(`(?:^|[^a-z0-9])${escapeReg(tag.toLowerCase())}(?:[^a-z0-9]|$)`);
-    if (re.test(lower)) hits.push(tag);
-  }
-  return hits.slice(0, 8);
-}
-
-function escapeReg(s: string): string {
-  /** Escape a string for safe use inside a RegExp. */
-  return s.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
-}
-
 /** Openers that describe a duty instead of an achievement. */
 const WEAK_OPENERS = [
   "responsible for",
@@ -43,7 +15,7 @@ const WEAK_OPENERS = [
 ];
 
 export type BulletHint = {
-  code: "no_metric" | "weak_verb" | "too_long" | "no_tags" | "repeat_verb";
+  code: "no_metric" | "weak_verb" | "too_long" | "repeat_verb";
   message: string;
 };
 
@@ -58,7 +30,6 @@ export function firstVerb(text: string): string {
  */
 export function lintBullet(
   text: string,
-  tags: string[],
   { charsPerLine = 0, siblings = [] }: { charsPerLine?: number; siblings?: string[] } = {},
 ): BulletHint[] {
   const trimmed = text.trim();
@@ -86,11 +57,6 @@ export function lintBullet(
     hints.push({
       code: "too_long",
       message: `About ${Math.ceil(trimmed.length / charsPerLine)} lines on your template; 1–2 lines reads best.`,
-    });
-  if (tags.length === 0)
-    hints.push({
-      code: "no_tags",
-      message: "No tags. Tailoring matches jobs to bullets by their tags.",
     });
   return hints;
 }

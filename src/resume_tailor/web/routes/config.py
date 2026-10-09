@@ -9,7 +9,7 @@ from dataclasses import replace
 from fastapi import APIRouter
 
 from resume_tailor import config, workspace
-from resume_tailor.content import data, industries, style
+from resume_tailor.content import bullet_tags, data, industries, style
 from resume_tailor.infra import model_queue
 from resume_tailor.pipeline import coverletter, expand, fit_types, rewrite_prompts
 from resume_tailor.pipeline.events import ProgressEvent
@@ -58,9 +58,8 @@ def _config_response(*, consume_migrated: bool = True) -> ConfigResponse:
     try:
         resume = data.load()
         contact_name = resume.contact.name
-        tags = list(resume.tag_vocabulary) or sorted(
-            {t for b in resume.all_bullets() for t in b.tags}
-        )
+        # Autocomplete for a bullet's Extra skills: every skill the resume already shows.
+        tags = bullet_tags.known_terms(resume)
     except (FileNotFoundError, ValueError):
         # A missing or malformed master resume still lets the UI load; the editor and
         # the run page will surface the real error when the user tries to use them.

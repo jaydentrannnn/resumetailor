@@ -21,8 +21,9 @@ same text (`tests/tooling/test_agent_docs.py` enforces it).
   exception). **Assert on the specific warning**, not on warnings being empty —
   `FitResult` carries underflow *and* widow warnings.
 - **Hermetic**: `fixtures.py`'s synthetic builders + `synthetic_resume()`, never
-  `data.load()`; `conftest.py` autouse fixtures pin calibration, template paths and
-  vocabulary packs. Fixture entry headers need real bold/italic/alignment or
+  `data.load()`; `conftest.py` autouse fixtures pin calibration, template paths, the
+  vocabulary store, and stub skill inference (`tag_infer.infer`,
+  `skill_refresh.schedule`). Fixture entry headers need real bold/italic/alignment or
   `_split_entries`' fingerprint re-split mis-splits them. Verify:
   `RESUME_TAILOR_DATA_DIR=<empty> RESUME_TAILOR_TEMPLATES_DIR=<empty> pytest`.
 - **Real-`master_resume.json` tests are `@pytest.mark.owner`** (excluded by default;

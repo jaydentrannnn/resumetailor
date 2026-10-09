@@ -143,7 +143,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
   }, [resume]);
 
   const save = useCallback(async () => {
-    /** Persist the draft and reload so tags come back canonicalised. */
+    /** Persist the draft and reload so the editor shows exactly what was stored. */
     if (!resume) return false;
     setBusy(true);
     setMessage(null);

@@ -1,11 +1,9 @@
-import { buttonClass, StatusMark } from "../../components/ui";
-import { useState } from "react";
-import { suggestTags, suggestTagsAI, type TagSuggestion } from "../../api";
+import { StatusMark } from "../../components/ui";
 import { ChipListField } from "../../components/ChipListField";
-import { describe } from "../../lib/errors";
 import { AddButton, EntryControls } from "../../components/ListControls";
 import { useEditorState } from "../../state/editorState";
-import { lintBullet, suggestMissingTags } from "../../lib/bulletLint";
+import { useBulletSkills } from "../../state/bulletSkillsState";
+import { lintBullet } from "../../lib/bulletLint";
 import {
   type Bullet,
   blankBullet,
@@ -22,7 +20,6 @@ export function BulletList({
   vocabList,
   takenIds,
   entryName,
-  onEnsureVocab,
   pushUndo,
   onChange,
 }: {
@@ -30,7 +27,6 @@ export function BulletList({
   vocabList: string[];
   takenIds: Set<string>;
   entryName: string;
-  onEnsureVocab: (token: string) => void;
   pushUndo: (message: string) => void;
   onChange: (b: Bullet[]) => void;
 }) {
@@ -52,8 +48,6 @@ export function BulletList({
     onChange(removeAt(bullets, idx));
   }
 
-  const vocabSet = new Set(vocabList.map((t) => t.toLowerCase()));
-
   function update(index: number, patch: Partial<Bullet>) {
     const next = [...bullets];
     next[index] = { ...bullets[index], ...patch };
@@ -74,11 +68,9 @@ export function BulletList({
           total={bullets.length}
           siblings={bullets.filter((other) => other.id !== b.id).map((other) => other.text)}
           vocabList={vocabList}
-          missing={suggestMissingTags(b.text, b.tags, vocabSet, vocabList)}
           softMin={softMin}
           charMax={charMax}
           charsPerLine={config?.chars_per_line ?? 0}
-          onEnsureVocab={onEnsureVocab}
           onMove={(from, to) => onChange(moveItem(bullets, from, to))}
           onRemove={removeBullet}
           onChange={(patch) => update(i, patch)}
@@ -94,11 +86,9 @@ function BulletRow({
   total,
   siblings,
   vocabList,
-  missing,
   softMin,
   charMax,
   charsPerLine,
-  onEnsureVocab,
   onMove,
   onRemove,
   onChange,
@@ -108,69 +98,20 @@ function BulletRow({
   total: number;
   siblings: string[];
   vocabList: string[];
-  missing: string[];
   softMin: number;
   charMax: number;
   charsPerLine: number;
-  onEnsureVocab: (token: string) => void;
   onMove: (from: number, to: number) => void;
   onRemove: (index: number) => void;
   onChange: (patch: Partial<Bullet>) => void;
 }) {
-  const [suggested, setSuggested] = useState<TagSuggestion[] | null>(null);
-  const [suggesting, setSuggesting] = useState(false);
-  const [suggestError, setSuggestError] = useState<string | null>(null);
-  const [asking, setAsking] = useState(false);
-  const [aiAsked, setAiAsked] = useState(false);
   const len = b.text.length;
   const overMax = len >= charMax;
   // The counter already warns past the character cap, and a ticked "has metric" means the
   // student knows the number (it may be spelled out), so those tips would only repeat.
-  const hints = lintBullet(b.text, b.tags, { charsPerLine, siblings }).filter(
+  const hints = lintBullet(b.text, { charsPerLine, siblings }).filter(
     (hint) => !(hint.code === "too_long" && overMax) && !(hint.code === "no_metric" && b.metric),
   );
-  const tagged = new Set(b.tags.map((tag) => tag.toLowerCase()));
-  // Local vocabulary hits first, then the server's alias matches, minus what is tagged.
-  const chips = [
-    ...missing.map((tag) => ({ tag, matched: "" })),
-    ...(suggested ?? []).filter(
-      (s) => !missing.some((tag) => tag.toLowerCase() === s.tag.toLowerCase()),
-    ),
-  ].filter((chip) => !tagged.has(chip.tag.toLowerCase()));
-
-  function addTag(tag: string) {
-    onEnsureVocab(tag);
-    onChange({ tags: uniqueTags([...b.tags, tag]) });
-  }
-
-  async function suggest() {
-    setSuggesting(true);
-    setSuggestError(null);
-    try {
-      const res = await suggestTags(b.text, b.tags, vocabList);
-      setSuggested(res.suggestions);
-    } catch (reason) {
-      setSuggestError(describe(reason).title);
-    } finally {
-      setSuggesting(false);
-    }
-  }
-
-  /** Model fallback for a bullet no known skill matched; it only returns words the bullet says. */
-  async function askAI() {
-    setAsking(true);
-    setSuggestError(null);
-    try {
-      const res = await suggestTagsAI(b.text, b.tags);
-      setSuggested((current) => [...(current ?? []), ...res.suggestions]);
-      setAiAsked(true);
-    } catch (reason) {
-      setSuggestError(describe(reason).title);
-    } finally {
-      setAsking(false);
-    }
-  }
-
   return (
     <div className="border-t border-line pt-4">
       <div className="mb-2 flex flex-wrap items-center justify-between gap-2 text-xs text-ink-muted">
@@ -193,8 +134,6 @@ function BulletRow({
         aria-label={`Bullet ${b.id}`}
         onChange={(e) => {
           onChange({ text: e.target.value });
-          setSuggested(null);
-          setAiAsked(false);
         }}
         className="field"
       />
@@ -220,58 +159,62 @@ function BulletRow({
           ))}
         </ul>
       )}
-      <div className="mt-2">
+      <BulletSkillsLine bulletId={b.id} />
+      <ExtraSkills
+        tags={b.tags}
+        vocabList={vocabList}
+        onChange={(tags) => onChange({ tags: uniqueTags(tags) })}
+      />
+    </div>
+  );
+}
+
+/** Read-only: what this saved bullet already shows (detected in its words, or inferred). */
+function BulletSkillsLine({ bulletId }: { bulletId: string }) {
+  const skills = useBulletSkills();
+  const shown = skills?.bullets[bulletId] ?? [];
+  if (shown.length === 0 && !skills?.running) return null;
+  return (
+    <div className="mt-2 flex flex-wrap items-center gap-1.5 text-xs text-ink-muted">
+      <span>Skills it shows:</span>
+      {shown.map((skill) => (
+        <span key={skill} className="rounded-sm border border-line px-1.5 py-0.5 text-ink">
+          {skill}
+        </span>
+      ))}
+      {skills?.running && <span>Detecting skills…</span>}
+    </div>
+  );
+}
+
+/** Optional skills the words don't name. Collapsed: most bullets never need one. */
+function ExtraSkills({
+  tags,
+  vocabList,
+  onChange,
+}: {
+  tags: string[];
+  vocabList: string[];
+  onChange: (tags: string[]) => void;
+}) {
+  return (
+    <details className="mt-2 text-xs">
+      <summary className="cursor-pointer text-ink-muted hover:text-ink">
+        Extra skills{tags.length > 0 ? ` (${tags.length})` : ""}
+      </summary>
+      <p className="mt-1 text-ink-muted">
+        Skills this bullet demonstrates that its words don&apos;t name. Rewrites may mention them,
+        so add only what you really used.
+      </p>
+      <div className="mt-1">
         <ChipListField
-          label="Tags"
-          items={b.tags}
+          label="Extra skills"
+          items={tags}
           suggestions={vocabList}
-          onAddNew={onEnsureVocab}
-          onChange={(tags) => onChange({ tags: uniqueTags(tags) })}
-          placeholder="Add a tag"
+          onChange={onChange}
+          placeholder="Add a skill"
         />
       </div>
-      <div className="mt-1 flex flex-wrap items-center gap-1.5 text-xs">
-        {chips.length > 0 && <span className="text-ink-muted">Mentioned but not tagged:</span>}
-        {chips.map((chip) => (
-          <button
-            key={chip.tag}
-            type="button"
-            onClick={() => addTag(chip.tag)}
-            title={chip.matched ? `Matched “${chip.matched}”` : undefined}
-            className={buttonClass("secondary", "sm", "rt-row-action")}
-          >
-            + {chip.tag}
-          </button>
-        ))}
-        {b.text.trim() && (
-          <button
-            type="button"
-            onClick={() => void suggest()}
-            disabled={suggesting}
-            className="rt-link disabled:opacity-50"
-          >
-            {suggesting ? "Looking…" : suggested ? "Suggest again" : "Suggest tags"}
-          </button>
-        )}
-        {suggested && chips.length === 0 && (
-          <span className="text-ink-muted">
-            {aiAsked
-              ? "The AI found no skills stated in this bullet."
-              : "No skill from your vocabulary appears in this bullet."}
-          </span>
-        )}
-        {b.text.trim() && !aiAsked && (
-          <button
-            type="button"
-            onClick={() => void askAI()}
-            disabled={asking}
-            className="rt-link disabled:opacity-50"
-          >
-            {asking ? "Asking…" : "Ask AI for more"}
-          </button>
-        )}
-        {suggestError && <span className="text-danger">{suggestError}</span>}
-      </div>
-    </div>
+    </details>
   );
 }

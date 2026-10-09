@@ -4,9 +4,9 @@ import { useEffect, useRef, useState } from "react";
 import { Modal } from "../../components/Modal";
 import { ResumeHistoryList } from "../../components/ResumeHistoryList";
 import { ImportResumePanel } from "../../components/ImportResumePanel";
+import { BulletSkillsProvider } from "../../state/bulletSkillsState";
 import { useEditorState } from "../../state/editorState";
 import { AddSectionPanel, SectionShell } from "./SectionShell";
-import { TagVocabularyPanel } from "./TagVocabularyPanel";
 import { ContactSection } from "./ContactSection";
 import { SectionIndex } from "./SectionIndex";
 import { UndoBar } from "./UndoBar";
@@ -15,7 +15,6 @@ import {
   type MasterResume,
   type Section,
   type SectionKind,
-  addToVocabulary,
   blankSection,
   collectBulletIds,
   collectEntryIds,
@@ -55,8 +54,9 @@ export function EditorPage({
     save: onSave,
   } = useEditorState();
 
-  const tagVocab = new Set([...(resume?.tag_vocabulary ?? []), ...(config?.tag_vocabulary ?? [])]);
-  const vocabList = [...tagVocab].sort((a, b) => a.toLowerCase().localeCompare(b.toLowerCase()));
+  const vocabList = [...(config?.tag_vocabulary ?? [])].sort((a, b) =>
+    a.toLowerCase().localeCompare(b.toLowerCase()),
+  );
 
   const takenBulletIds = resume ? collectBulletIds(resume) : new Set<string>();
   const takenEntryIds = resume ? collectEntryIds(resume) : new Set<string>();
@@ -123,14 +123,6 @@ export function EditorPage({
     );
   }
 
-  function ensureVocab(token: string) {
-    /** Promote a newly typed tag into the stored vocabulary list. */
-    setResume((prev) => ({
-      ...prev,
-      tag_vocabulary: addToVocabulary(prev.tag_vocabulary ?? [], token),
-    }));
-  }
-
   function updateSection(index: number, next: Section) {
     setResume((prev) => {
       const sections = [...prev.sections];
@@ -162,119 +154,122 @@ export function EditorPage({
 
   return (
     <EntryEditorProvider sections={resume.sections} moveEntry={moveEntry}>
-      <div className="space-y-6">
-        {!embedded && (
-          <PageHeader
-            title="Master resume"
-            description="Every fact a tailored resume can use lives here."
-          />
-        )}
-        <div className="flex flex-wrap items-center justify-between gap-3">
-          <p className="text-sm text-ink-muted">
-            Tags are the vocabulary used to check your resume's facts.
-          </p>
-          <div className="flex flex-wrap items-center gap-2">
-            {dirty && !embedded && <StatusChip tone="attention">Unsaved changes</StatusChip>}
-            <Button size="sm" onClick={() => setHistoryOpen(true)}>
-              History
-            </Button>
-            <Button variant="plain" size="sm" onClick={onValidate} disabled={busy}>
-              Validate
-            </Button>
-            {!embedded && (
-              <Button variant="primary" size="sm" onClick={onSave} disabled={busy}>
-                Save
+      <BulletSkillsProvider dirty={dirty}>
+        <div className="space-y-6">
+          {!embedded && (
+            <PageHeader
+              title="Master resume"
+              description="Every fact a tailored resume can use lives here."
+            />
+          )}
+          <div className="flex flex-wrap items-center justify-between gap-3">
+            <p className="text-sm text-ink-muted">
+              The skills each bullet shows are worked out automatically when you save.
+            </p>
+            <div className="flex flex-wrap items-center gap-2">
+              {dirty && !embedded && <StatusChip tone="attention">Unsaved changes</StatusChip>}
+              <Button size="sm" onClick={() => setHistoryOpen(true)}>
+                History
               </Button>
+              <Button variant="plain" size="sm" onClick={onValidate} disabled={busy}>
+                Validate
+              </Button>
+              {!embedded && (
+                <Button variant="primary" size="sm" onClick={onSave} disabled={busy}>
+                  Save
+                </Button>
+              )}
+            </div>
+          </div>
+          <div>
+            {message && (
+              <p
+                role="status"
+                aria-live="polite"
+                className="max-h-32 overflow-y-auto text-sm text-ink-muted"
+              >
+                {message}
+              </p>
+            )}
+            {errors.length > 0 && (
+              <ul role="alert" className="max-h-32 overflow-y-auto text-sm text-danger">
+                {errors.map((e) => (
+                  <li key={e}>{e}</li>
+                ))}
+              </ul>
             )}
           </div>
-        </div>
-        <div>
-          {message && (
-            <p
-              role="status"
-              aria-live="polite"
-              className="max-h-32 overflow-y-auto text-sm text-ink-muted"
-            >
-              {message}
-            </p>
-          )}
-          {errors.length > 0 && (
-            <ul role="alert" className="max-h-32 overflow-y-auto text-sm text-danger">
-              {errors.map((e) => (
-                <li key={e}>{e}</li>
-              ))}
-            </ul>
-          )}
-        </div>
 
-        <div className="lg:grid lg:grid-cols-[11rem_minmax(0,1fr)] lg:items-start lg:gap-5">
-          <SectionIndex sections={resume.sections} />
-          <div className="space-y-5">
-            <Tile>
-              <details>
-                <summary className="cursor-pointer text-sm font-medium text-accent">
-                  Import resume content
-                </summary>
-                <div className="mt-3">
-                  <ImportResumePanel embedded />
-                </div>
-              </details>
-            </Tile>
+          <div className="lg:grid lg:grid-cols-[11rem_minmax(0,1fr)] lg:items-start lg:gap-5">
+            <SectionIndex sections={resume.sections} />
+            <div className="space-y-5">
+              <Tile>
+                <details>
+                  <summary className="cursor-pointer text-sm font-medium text-accent">
+                    Import resume content
+                  </summary>
+                  <div className="mt-3">
+                    <ImportResumePanel embedded />
+                  </div>
+                </details>
+              </Tile>
 
-            {showContact && <ContactSection resume={resume} setResume={setResume} />}
+              {showContact && <ContactSection resume={resume} setResume={setResume} />}
 
-            {resume.sections.map((section, i) => (
-              <div
-                key={section.id}
-                id={`resume-section-${section.id}`}
-                data-resume-section
-                className="scroll-mt-4"
-              >
-                <SectionShell
+              {resume.sections.map((section, i) => (
+                <div
                   key={section.id}
-                  section={section}
-                  index={i}
-                  total={resume.sections.length}
-                  vocabList={vocabList}
-                  takenBulletIds={takenBulletIds}
-                  takenEntryIds={takenEntryIds}
-                  onEnsureVocab={ensureVocab}
-                  pushUndo={pushUndo}
-                  onRemove={(idx) => {
-                    const removedTitle = resume.sections[idx]?.title || "section";
-                    pushUndo(`Removed “${removedTitle}”`);
-                    setResume((prev) => ({ ...prev, sections: removeAt(prev.sections, idx) }));
-                  }}
-                  onMove={(from, to) =>
-                    setResume((prev) => ({ ...prev, sections: moveItem(prev.sections, from, to) }))
-                  }
-                  onChange={(next) => updateSection(i, next)}
-                />
-              </div>
-            ))}
+                  id={`resume-section-${section.id}`}
+                  data-resume-section
+                  className="scroll-mt-4"
+                >
+                  <SectionShell
+                    key={section.id}
+                    section={section}
+                    index={i}
+                    total={resume.sections.length}
+                    vocabList={vocabList}
+                    takenBulletIds={takenBulletIds}
+                    takenEntryIds={takenEntryIds}
+                    pushUndo={pushUndo}
+                    onRemove={(idx) => {
+                      const removedTitle = resume.sections[idx]?.title || "section";
+                      pushUndo(`Removed “${removedTitle}”`);
+                      setResume((prev) => ({ ...prev, sections: removeAt(prev.sections, idx) }));
+                    }}
+                    onMove={(from, to) =>
+                      setResume((prev) => ({
+                        ...prev,
+                        sections: moveItem(prev.sections, from, to),
+                      }))
+                    }
+                    onChange={(next) => updateSection(i, next)}
+                  />
+                </div>
+              ))}
+            </div>
           </div>
-        </div>
 
-        <p className="text-xs text-ink-muted">
-          Reordering sections changes bullet scoring order — the next Tailor run will re-score once
-          (one extra LLM call) before using the new order.
-        </p>
-
-        <AddSectionPanel onAdd={addSection} />
-        <TagVocabularyPanel resume={resume} onChange={setResume} />
-      </div>
-      {historyOpen && (
-        <Modal title="Resume history" onClose={() => setHistoryOpen(false)} placement="right">
-          <p className="mt-2 text-sm text-ink-muted">
-            Every save is kept. Restoring saves the older version as a new one, so it can be undone
-            too.
+          <p className="text-xs text-ink-muted">
+            Reordering sections changes bullet scoring order — the next Tailor run will re-score
+            once (one extra LLM call) before using the new order.
           </p>
-          <div className="mt-4">
-            <ResumeHistoryList showUndo />
-          </div>
-        </Modal>
-      )}
-      <UndoBar toasts={toasts} onUndo={undoToast} />
+
+          <AddSectionPanel onAdd={addSection} />
+        </div>
+        {historyOpen && (
+          <Modal title="Resume history" onClose={() => setHistoryOpen(false)} placement="right">
+            <p className="mt-2 text-sm text-ink-muted">
+              Every save is kept. Restoring saves the older version as a new one, so it can be
+              undone too.
+            </p>
+            <div className="mt-4">
+              <ResumeHistoryList showUndo />
+            </div>
+          </Modal>
+        )}
+        <UndoBar toasts={toasts} onUndo={undoToast} />
+      </BulletSkillsProvider>
     </EntryEditorProvider>
   );
 }

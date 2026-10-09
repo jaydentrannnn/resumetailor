@@ -22,7 +22,6 @@ export function ProjectEntries({
   vocabList,
   takenBulletIds,
   takenEntryIds,
-  onEnsureVocab,
   pushUndo,
   onChange,
 }: {
@@ -30,7 +29,6 @@ export function ProjectEntries({
   vocabList: string[];
   takenBulletIds: Set<string>;
   takenEntryIds: Set<string>;
-  onEnsureVocab: (token: string) => void;
   pushUndo: (message: string) => void;
   onChange: (next: Section) => void;
 }) {
@@ -157,7 +155,6 @@ export function ProjectEntries({
                 vocabList={vocabList}
                 takenIds={takenBulletIds}
                 entryName={proj.name}
-                onEnsureVocab={onEnsureVocab}
                 pushUndo={pushUndo}
                 onChange={(bullets) => {
                   const next = [...entries];

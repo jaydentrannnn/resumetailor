@@ -14,8 +14,12 @@ vi.mock("../../api", () => ({
   fetchMasterResume: vi.fn(),
   saveMasterResume: vi.fn(),
   validateMasterResume: vi.fn(),
-  suggestTags: vi.fn(),
-  suggestTagsAI: vi.fn(),
+  fetchBulletSkills: vi.fn(async () => ({
+    running: false,
+    error: null,
+    waiting: 0,
+    bullets: { acme_b1: ["tooling"] },
+  })),
 }));
 vi.mock("../../components/ImportResumePanel", () => ({ ImportResumePanel: () => null }));
 vi.mock("../../components/ResumeHistoryList", () => ({ ResumeHistoryList: () => null }));
@@ -259,4 +263,15 @@ describe("moveEntryToSection", () => {
     ])
       expect(moveEntryToSection(resume, source, key, destination)).toBe(resume);
   });
+});
+
+it("shows the skills a bullet already shows and keeps Extra skills collapsed", async () => {
+  await editor();
+  fireEvent.click(screen.getByRole("button", { name: "Expand Acme · Engineer" }));
+  const experience = section("experience");
+  expect(await experience.findByText("tooling")).toBeInTheDocument();
+  expect(experience.getByText("Skills it shows:")).toBeInTheDocument();
+  const extra = experience.getByText("Extra skills (1)").closest("details")!;
+  expect(extra).not.toHaveAttribute("open");
+  expect(experience.queryByText(/Suggest tags/)).not.toBeInTheDocument();
 });

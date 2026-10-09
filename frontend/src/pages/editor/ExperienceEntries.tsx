@@ -20,7 +20,6 @@ export function ExperienceEntries({
   vocabList,
   takenBulletIds,
   takenEntryIds,
-  onEnsureVocab,
   pushUndo,
   onChange,
 }: {
@@ -28,7 +27,6 @@ export function ExperienceEntries({
   vocabList: string[];
   takenBulletIds: Set<string>;
   takenEntryIds: Set<string>;
-  onEnsureVocab: (token: string) => void;
   pushUndo: (message: string) => void;
   onChange: (next: Section) => void;
 }) {
@@ -123,7 +121,6 @@ export function ExperienceEntries({
                 vocabList={vocabList}
                 takenIds={takenBulletIds}
                 entryName={job.company}
-                onEnsureVocab={onEnsureVocab}
                 pushUndo={pushUndo}
                 onChange={(bullets) => {
                   const next = [...entries];

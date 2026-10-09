@@ -43,7 +43,9 @@ def test_skills_endpoint_shows_detected_and_inferred_minus_extra_skills(
         "infer",
         lambda texts, preferred=(): {t: ["financial modeling", "excel"] for t in texts},
     )
-    tag_infer.ensure(load())
+    # Cached under the Tailor routing, exactly as the background refresh writes it.
+    with skill_refresh.pinned_tailor():
+        tag_infer.ensure(load())
 
     body = c.get("/api/master-resume/skills").json()
     assert body["bullets"]["b1"] == ["DCF", "financial modeling"]

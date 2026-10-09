@@ -80,7 +80,6 @@ export function SectionShell({
   vocabList,
   takenBulletIds,
   takenEntryIds,
-  onEnsureVocab,
   pushUndo,
   onRemove,
   onMove,
@@ -92,7 +91,6 @@ export function SectionShell({
   vocabList: string[];
   takenBulletIds: Set<string>;
   takenEntryIds: Set<string>;
-  onEnsureVocab: (token: string) => void;
   pushUndo: (message: string) => void;
   onRemove: (index: number) => void;
   onMove: (from: number, to: number) => void;
@@ -125,7 +123,6 @@ export function SectionShell({
           vocabList={vocabList}
           takenBulletIds={takenBulletIds}
           takenEntryIds={takenEntryIds}
-          onEnsureVocab={onEnsureVocab}
           pushUndo={pushUndo}
           onChange={onChange}
         />
@@ -136,7 +133,6 @@ export function SectionShell({
           vocabList={vocabList}
           takenBulletIds={takenBulletIds}
           takenEntryIds={takenEntryIds}
-          onEnsureVocab={onEnsureVocab}
           pushUndo={pushUndo}
           onChange={onChange}
         />

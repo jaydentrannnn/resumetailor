@@ -16,8 +16,10 @@ same text (`tests/tooling/test_agent_docs.py` enforces it).
   fallback. `style.activate()` sits beside `config.resolve()` in the runner.
 - **Mutating workspace routes hold `get_queue().busy()` then `template_ops.LOCK`**, in that
   order.
-- **Vocabulary-proposal approvals that rewrite an existing bullet tag 409** for explicit
-  acknowledgement and back up the master resume first.
+- **Vocabulary edits never touch resume data**: additions/hides/approvals write the
+  app-wide `libraries/vocabulary.json` only. Every master-resume save schedules
+  `skill_refresh` (background `tag_infer`, under the saving profile + Tailor routing); a
+  reader of the inferred cache must pin that routing too (`skill_refresh.pinned_tailor`).
 - Client-side SPA routes rely on `_SPAStaticFiles`' 404 fallback (excludes `/api/*`).
 - `security.py` gates every request (Host check, cross-site writes, optional token); the
   extension lane (`/api/extension/*`) authenticates with `X-RT-Extension` instead.

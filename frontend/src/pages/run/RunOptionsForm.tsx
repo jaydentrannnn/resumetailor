@@ -360,12 +360,12 @@ const STAGE_TOGGLES: {
   {
     key: "no_facets",
     label: "Skip tech / coursework selection",
-    help: "Do not ask the model which project tags and courses to show; truncate pools in listed order to fit the line budgets.",
+    help: "Do not ask the model which project tech and courses to show; truncate pools in listed order to fit the line budgets.",
   },
   {
     key: "suggest_vocabulary",
     label: "Suggest vocabulary from this run",
-    help: "One extra call after a successful run: drafts tag-alias/verb suggestions from this posting's own keyword gaps for review on the Settings tab. Uses this run's own backend.",
+    help: "One extra call after a successful run: drafts spelling and opening-verb suggestions from this posting's own keyword gaps for review on the Vocabulary page. Uses this run's own backend.",
   },
 ];
 

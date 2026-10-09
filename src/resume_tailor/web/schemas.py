@@ -1431,14 +1431,3 @@ class DailyStatusResponse(BaseModel):
     summary: dict[str, Any] | None = None
     #: `apply.scheduler.status()`: last/next scheduled run, today's miss, bad time.
     scheduler: dict[str, Any] | None = None
-
-
-class SuggestTagsRequest(BaseModel):
-    """Body for ``POST /api/master-resume/suggest-tags`` (the editor's per-bullet chips).
-
-    ``vocabulary`` is the editor's draft tag list, so tags added but not yet saved count.
-    """
-
-    text: str = Field(max_length=5_000)
-    tags: list[str] = Field(default_factory=list, max_length=200)
-    vocabulary: list[str] = Field(default_factory=list, max_length=5_000)

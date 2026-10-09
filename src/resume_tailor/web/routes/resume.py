@@ -25,15 +25,13 @@ from resume_tailor.importing import (
     pdf_lines,
     resume_import,
     resume_import_pdf,
-    tag_suggest,
 )
-from resume_tailor.pipeline import propose, tag_infer
+from resume_tailor.pipeline import tag_infer
 from resume_tailor.web import skill_refresh, template_ops, template_uploads
 from resume_tailor.web.schemas import (
     BulletSkillsResponse,
     MasterResumeImportResponse,
     MasterResumeMergeResponse,
-    SuggestTagsRequest,
     ValidateResponse,
 )
 
@@ -190,7 +188,11 @@ def get_bullet_skills() -> BulletSkillsResponse:
     except (FileNotFoundError, ValueError):
         return BulletSkillsResponse(running=running, error=error)
     extra = bullet_tags.resume_terms(resume)
-    inferred = tag_infer.cached(resume).skills
+    try:
+        with skill_refresh.pinned_tailor():
+            inferred = tag_infer.cached(resume).skills
+    except ValueError:  # unusable routing settings: show detection alone
+        inferred = {}
     bullets: dict[str, list[str]] = {}
     waiting = 0
     for bullet in resume.all_bullets():
@@ -204,28 +206,6 @@ def get_bullet_skills() -> BulletSkillsResponse:
             shown.setdefault(config.canonical_tag(skill), skill)
         bullets[bullet.id] = [s for c, s in shown.items() if c not in have]
     return BulletSkillsResponse(running=running, error=error, waiting=waiting, bullets=bullets)
-
-
-@router.post("/api/master-resume/suggest-tags")
-def suggest_bullet_tags(body: SuggestTagsRequest) -> dict[str, Any]:
-    """Known skills a bullet's text names but its tags lack (pure matching, no model)."""
-    return {
-        "suggestions": tag_suggest.suggest_tags(
-            body.text, body.tags, body.vocabulary, config.TAG_ALIASES, config.canonical_tag
-        )
-    }
-
-
-@router.post("/api/master-resume/suggest-tags-ai")
-def suggest_bullet_tags_ai(body: SuggestTagsRequest) -> dict[str, Any]:
-    """Model fallback for a bullet no known skill matched: tags the bullet's own words say."""
-    try:
-        with config.pinned(config.ONE_OFF_PROFILE):
-            suggestions = propose.suggest_open_tags(body.text, body.tags)
-    except Exception as exc:  # noqa: BLE001 - a convenience; the editor shows the reason
-        _log.warning("AI tag suggestion failed", exc_info=True)
-        raise HTTPException(status_code=502, detail=f"The model could not suggest tags: {exc}") from exc
-    return {"suggestions": suggestions}
 
 
 @router.post("/api/master-resume/validate", response_model=ValidateResponse)

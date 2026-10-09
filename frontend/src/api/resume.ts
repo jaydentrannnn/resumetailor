@@ -1,4 +1,4 @@
-/** The master resume: outline, read/write/import/merge, versions, tag suggestions. */
+/** The master resume: outline, read/write/import/merge, versions, computed bullet skills. */
 
 import { request, templateErrorDetail } from "./core";
 
@@ -128,29 +128,17 @@ export interface ResumeVersion {
   current: boolean;
 }
 
-export type TagSuggestion = { tag: string; matched: string };
+/** What each saved bullet shows beyond its Extra skills: detected in its text, then
+ * inferred by the model. `running` while the background refresh after a save works. */
+export type BulletSkills = {
+  running: boolean;
+  error: string | null;
+  waiting: number;
+  bullets: Record<string, string[]>;
+};
 
-export function suggestTags(
-  text: string,
-  tags: string[],
-  vocabulary: string[],
-): Promise<{ suggestions: TagSuggestion[] }> {
-  /** Known skills (resume vocabulary + pack aliases) the text names but the tags lack. */
-  return request("/api/master-resume/suggest-tags", {
-    method: "POST",
-    body: JSON.stringify({ text, tags, vocabulary }),
-  });
-}
-
-/** Model fallback for a bullet no known skill matched; tags come from the bullet's own words. */
-export function suggestTagsAI(
-  text: string,
-  tags: string[],
-): Promise<{ suggestions: TagSuggestion[] }> {
-  return request("/api/master-resume/suggest-tags-ai", {
-    method: "POST",
-    body: JSON.stringify({ text, tags, vocabulary: [] }),
-  });
+export function fetchBulletSkills(): Promise<BulletSkills> {
+  return request("/api/master-resume/skills");
 }
 
 export function listResumeVersions(): Promise<{ versions: ResumeVersion[]; keep: number }> {
