@@ -1,14 +1,15 @@
 import { type FormEvent, useState } from "react";
 import { Modal } from "../Modal";
+import { Button, StatusChip } from "../ui";
 import { useConfirm } from "../../state/confirmState";
 import { useWorkspaceState } from "../../state/workspaceState";
 
 /**
  * Modal: create, duplicate, rename, and delete profiles.
  *
- * Mirrors the affordances of `SavedTemplatesPanel` (activate / rename / delete rows
- * with inline rename forms and a confirm delete guard) so the two lists of
- * saved things in this app feel the same.
+ * Rows follow the app's list standard (hairlines between rows, no box): the active
+ * profile wears a status chip, Switch/Rename are plain housekeeping buttons and Delete
+ * is the tinted danger level, like Remove on Settings → AI model.
  */
 export function ProfileManagerDialog({
   onClose,
@@ -98,15 +99,17 @@ export function ProfileManagerDialog({
         at once.
       </p>
 
-      <ul className="mt-4 max-h-64 divide-y divide-line/80 overflow-y-auto rounded-sm border border-line">
+      {/* One grid, rows on its subgrid, so Switch / Rename / Delete line up in columns
+          even on the active row, which has a chip and no Delete. */}
+      <ul className="mt-4 grid max-h-64 grid-cols-[minmax(0,1fr)_auto_auto_auto] divide-y divide-line overflow-y-auto">
         {workspaces.map((w) => (
           <li
             key={w.id}
-            className="flex flex-wrap items-center justify-between gap-2 px-3 py-2 text-sm"
+            className="col-span-4 grid min-h-12 grid-cols-subgrid items-center gap-x-2 py-2 text-sm"
           >
             {renamingId === w.id ? (
               <form
-                className="flex flex-1 flex-wrap items-center gap-2"
+                className="col-span-4 flex flex-wrap items-center gap-2"
                 onSubmit={(e) => {
                   e.preventDefault();
                   void handleRename(w.id);
@@ -118,72 +121,74 @@ export function ProfileManagerDialog({
                   maxLength={80}
                   disabled={disabled}
                   onChange={(e) => setRenameDraft(e.target.value)}
-                  className="min-w-[10rem] flex-1 rounded-sm border border-line-hover bg-field px-2 py-1 text-ink"
+                  className="field min-w-[10rem] flex-1"
                   aria-label="New profile name"
                   autoFocus
                 />
-                <button
+                <Button
                   type="submit"
+                  variant="plain"
+                  size="sm"
                   disabled={disabled || !renameDraft.trim()}
-                  className="rounded-sm border border-line-hover px-2 py-1 text-xs font-medium hover:border-ink disabled:opacity-50"
                 >
                   Save
-                </button>
-                <button
-                  type="button"
+                </Button>
+                <Button
+                  variant="ghost"
+                  size="sm"
                   disabled={disabled}
                   onClick={() => setRenamingId(null)}
-                  className="rounded-sm border border-line-hover px-2 py-1 text-xs font-medium disabled:opacity-50"
                 >
                   Cancel
-                </button>
+                </Button>
               </form>
             ) : (
               <>
-                <div className="flex items-center gap-2">
-                  <span className="font-medium text-ink">{w.label}</span>
-                  {w.id === activeId ? (
-                    <span className="rounded-sm bg-accent-soft px-1.5 py-0.5 text-xs font-medium text-accent">
-                      Active
-                    </span>
-                  ) : null}
-                </div>
-                <div className="flex flex-wrap gap-2">
-                  <button
-                    type="button"
-                    disabled={disabled || w.id === activeId}
-                    onClick={() => void handleActivate(w.id)}
-                    className="rounded-sm border border-line-hover px-2.5 py-1 text-xs font-medium text-ink hover:border-ink disabled:opacity-50"
-                  >
-                    {w.id === activeId ? "Active" : "Switch"}
-                  </button>
-                  <button
-                    type="button"
+                <span className="min-w-0 truncate font-medium text-ink">{w.label}</span>
+                {w.id === activeId ? (
+                  <StatusChip tone="done" className="justify-self-center">
+                    Active
+                  </StatusChip>
+                ) : (
+                  <Button
+                    variant="plain"
+                    size="sm"
                     disabled={disabled}
-                    onClick={() => {
-                      setRenamingId(w.id);
-                      setRenameDraft(w.label);
-                    }}
-                    className="rounded-sm border border-line-hover px-2.5 py-1 text-xs font-medium text-ink hover:border-ink disabled:opacity-50"
+                    onClick={() => void handleActivate(w.id)}
                   >
-                    Rename
-                  </button>
-                  <button
-                    type="button"
-                    disabled={disabled || w.id === activeId || workspaces.length <= 1}
+                    Switch
+                  </Button>
+                )}
+                <Button
+                  variant="plain"
+                  size="sm"
+                  disabled={disabled}
+                  onClick={() => {
+                    setRenamingId(w.id);
+                    setRenameDraft(w.label);
+                  }}
+                >
+                  Rename
+                </Button>
+                {w.id === activeId ? (
+                  <span />
+                ) : (
+                  <Button
+                    variant="danger"
+                    size="sm"
+                    disabled={disabled}
                     onClick={() => void handleDelete(w.id, w.label)}
-                    className="rounded-sm border border-danger/45 px-2.5 py-1 text-xs font-medium text-danger hover:border-danger disabled:opacity-50"
                   >
                     Delete
-                  </button>
-                </div>
+                  </Button>
+                )}
               </>
             )}
           </li>
         ))}
       </ul>
 
-      <form onSubmit={handleCreate} className="mt-4 space-y-2 border-t border-line/80 pt-4">
+      <form onSubmit={handleCreate} className="space-y-2 border-t border-line pt-4">
         <label className="block text-sm font-medium text-ink" htmlFor="new-profile-label">
           New profile
         </label>
@@ -196,15 +201,11 @@ export function ProfileManagerDialog({
             disabled={disabled}
             onChange={(e) => setNewLabel(e.target.value)}
             placeholder="e.g. Data Science"
-            className="min-w-[12rem] flex-1 rounded-sm border border-line-hover bg-field px-2 py-1.5 text-ink"
+            className="field min-w-[12rem] flex-1"
           />
-          <button
-            type="submit"
-            disabled={disabled || !newLabel.trim()}
-            className="rounded-sm bg-primary px-3 py-1.5 text-[13px] font-medium text-on-primary hover:bg-primary/85 disabled:opacity-50"
-          >
+          <Button type="submit" variant="primary" disabled={disabled || !newLabel.trim()}>
             Create
-          </button>
+          </Button>
         </div>
         <label className="flex items-center gap-2 text-xs text-ink-muted">
           <input

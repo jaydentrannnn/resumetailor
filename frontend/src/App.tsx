@@ -9,9 +9,9 @@ import {
   useLocation,
   useNavigate,
 } from "react-router-dom";
-import { lazy, Suspense, useEffect, useRef } from "react";
+import { lazy, Suspense, useEffect, useRef, useState } from "react";
 import { getOnboarding } from "./api";
-import { needsWelcome } from "./lib/onboarding";
+import { needsWelcome, setupActive } from "./lib/onboarding";
 import { ErrorBoundary } from "./components/ErrorBoundary";
 import { SettingsMenu } from "./components/SettingsMenu";
 import { KeyboardShortcuts } from "./components/KeyboardShortcuts";
@@ -120,10 +120,10 @@ function WorkspaceScope() {
  * store just to check for unsaved edits.
  */
 function Shell() {
+  const settingUp = useOnboardingGate();
   return (
     <div className="min-h-screen">
       <NavigationGuard />
-      <OnboardingGate />
       <header className="relative z-30 border-b border-line bg-chrome">
         <div className="mx-auto flex max-w-[1920px] flex-wrap items-center justify-between gap-x-6 gap-y-1 px-4 py-2 sm:px-6 sm:py-0">
           {/* Brand and nav read left-to-right as one group; profile and theme
@@ -147,33 +147,38 @@ function Shell() {
               />
               ResumeTailor
             </p>
-            <nav className="flex flex-wrap">
-              <NavLink to="/" end className={navLinkClassName}>
-                Tailor
-              </NavLink>
-              <NavLink to="/applications" className={navLinkClassName}>
-                Apply
-              </NavLink>
-              {/* "/profile", not "/profile/personal": a non-`end` NavLink matches every
+            {/* During first-run setup the wizard is the only page: no nav to wander off by. */}
+            {!settingUp && (
+              <nav className="flex flex-wrap">
+                <NavLink to="/" end className={navLinkClassName}>
+                  Tailor
+                </NavLink>
+                <NavLink to="/applications" className={navLinkClassName}>
+                  Apply
+                </NavLink>
+                {/* "/profile", not "/profile/personal": a non-`end` NavLink matches every
                   /profile/* sub-tab, so Profile stays highlighted on Resume content and
                   Application details. The route redirects to the personal tab. */}
-              <NavLink to="/profile" className={navLinkClassName}>
-                Profile
-              </NavLink>
-              <NavLink to="/template" className={navLinkClassName}>
-                Template
-              </NavLink>
-              <NavLink to="/settings" className={navLinkClassName}>
-                Settings
-              </NavLink>
-            </nav>
+                <NavLink to="/profile" className={navLinkClassName}>
+                  Profile
+                </NavLink>
+                <NavLink to="/template" className={navLinkClassName}>
+                  Template
+                </NavLink>
+                <NavLink to="/settings" className={navLinkClassName}>
+                  Settings
+                </NavLink>
+              </nav>
+            )}
           </div>
-          <div className="flex min-w-0 flex-wrap items-center gap-2 py-2.5">
-            <SetupHealth />
-            <UpdateChip />
-            <AutomationSwitch />
-            <SettingsMenu />
-          </div>
+          {!settingUp && (
+            <div className="flex min-w-0 flex-wrap items-center gap-2 py-2.5">
+              <SetupHealth />
+              <UpdateChip />
+              <AutomationSwitch />
+              <SettingsMenu />
+            </div>
+          )}
         </div>
       </header>
       <KeyboardShortcuts />
@@ -188,6 +193,7 @@ function Shell() {
             <Route path="/profile/personal" element={<ProfilePage />} />
             <Route path="/profile/resume" element={<ProfilePage />} />
             <Route path="/profile/application" element={<ProfilePage />} />
+            <Route path="/profile/tailoring" element={<ProfilePage />} />
             <Route path="/editor" element={<Navigate to="/profile/resume" replace />} />
             <Route path="/template" element={<TemplatePage />} />
             <Route path="/vocabulary" element={<VocabularyPage />} />
@@ -237,24 +243,28 @@ function PageLoading() {
 }
 
 /**
- * Sends a profile that has not finished (or skipped) first-run setup to `/welcome`,
- * once per load: after that the student may leave the wizard (to the editor, say)
- * and come back through the header's setup checklist.
+ * Keeps a profile that has not finished (or skipped) first-run setup on `/welcome`: the
+ * progress is re-read on every navigation, so no link, shortcut or typed URL leaves the
+ * wizard. Returns whether setup is running (the shell hides its nav meanwhile).
  */
-function OnboardingGate() {
+function useOnboardingGate(): boolean {
   const navigate = useNavigate();
-  const location = useLocation();
-  const checked = useRef(false);
+  const { pathname } = useLocation();
+  const [active, setActive] = useState(false);
   useEffect(() => {
-    if (checked.current) return;
-    checked.current = true;
+    let live = true;
     getOnboarding()
       .then((state) => {
-        if (needsWelcome(state, location.pathname)) navigate("/welcome", { replace: true });
+        if (!live) return;
+        setActive(setupActive(state));
+        if (needsWelcome(state, pathname)) navigate("/welcome", { replace: true });
       })
       .catch(() => undefined); // setup progress is a convenience; never block the app
-  }, [navigate, location.pathname]);
-  return null;
+    return () => {
+      live = false;
+    };
+  }, [navigate, pathname]);
+  return active;
 }
 
 function NavigationGuard() {

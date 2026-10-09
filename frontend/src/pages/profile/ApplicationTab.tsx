@@ -76,12 +76,15 @@ export function ApplicationTab({
   onToggle,
   onOpenGroup,
   education,
+  onEditResume,
 }: {
   ctx: FieldContext;
   open: Set<string>;
   onToggle: (id: string, open: boolean) => void;
   onOpenGroup: (id: string) => void;
   education: Education[];
+  /** Replaces the "Edit on resume" link (the setup wizard edits the resume in a step). */
+  onEditResume?: () => void;
 }) {
   const applicant = useApplicantProfile();
   const { draft } = ctx;
@@ -102,7 +105,9 @@ export function ApplicationTab({
             onToggle={(e) => onToggle(group.id, e.currentTarget.open)}
           >
             <summary className="rt-tile-title cursor-pointer">{group.title}</summary>
-            {group.id === "Education" && <EducationSummary education={education} />}
+            {group.id === "Education" && (
+              <EducationSummary education={education} onEditResume={onEditResume} />
+            )}
             {group.id === "Salary" && (
               <p className="mt-3 text-xs text-ink-muted">
                 Salary questions are answered from your maximum: the posting's top pay when it is
@@ -174,7 +179,13 @@ export function ApplicationTab({
 }
 
 /** What forms read from the resume's Education section (edited there, not here). */
-function EducationSummary({ education }: { education: Education[] }) {
+function EducationSummary({
+  education,
+  onEditResume,
+}: {
+  education: Education[];
+  onEditResume?: () => void;
+}) {
   return (
     <div className="mt-3 space-y-3 text-xs">
       <p className="text-ink-muted">
@@ -204,9 +215,15 @@ function EducationSummary({ education }: { education: Education[] }) {
       ) : (
         <p className="mt-1 text-attn">Your resume has no Education entry yet.</p>
       )}
-      <Link className="rt-link mt-1 inline-block" to="/profile/resume">
-        Edit on resume
-      </Link>
+      {onEditResume ? (
+        <button type="button" className="rt-link mt-1 inline-block" onClick={onEditResume}>
+          Edit on resume
+        </button>
+      ) : (
+        <Link className="rt-link mt-1 inline-block" to="/profile/resume">
+          Edit on resume
+        </Link>
+      )}
     </div>
   );
 }

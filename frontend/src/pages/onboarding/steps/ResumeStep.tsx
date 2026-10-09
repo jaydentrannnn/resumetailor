@@ -2,12 +2,38 @@ import { useState } from "react";
 import { ImportResumePanel } from "../../../components/ImportResumePanel";
 import { TemplateImportWizard } from "../../../components/template/TemplateImportWizard";
 import { StarterTemplatesPanel } from "../../../components/template/StarterTemplatesPanel";
+import { SKIP_WARNINGS } from "../../../lib/onboarding";
+import { useEditorState } from "../../../state/editorState";
+import { useTemplateState } from "../../../state/templateState";
+import { StepFrame, type StepNav } from "../StepFrame";
+
 /** Step 3: upload the .docx; its design becomes the template and its words the content.
  * A PDF gives the content only, so a starter template supplies the design. */
-export function ResumeStep({ onScratch }: { onScratch: () => void }) {
+export function ResumeStep({
+  nav,
+  fromScratch,
+  onScratch,
+}: {
+  nav: StepNav;
+  fromScratch: boolean;
+  onScratch: () => void;
+}) {
   const [pdf, setPdf] = useState(false);
+  const editor = useEditorState();
+  const { info } = useTemplateState();
+  const hasContent = !!editor.resume?.sections.some((s) => s.entries.length > 0);
+  const complete = fromScratch || !!info?.tagged.exists || hasContent;
+
   return (
-    <div className="space-y-4">
+    <StepFrame
+      title="Add your resume"
+      intro="Upload your resume as a Word (.docx) file. ResumeTailor keeps its exact look and only changes the words."
+      nav={nav}
+      complete={complete}
+      onSave={() => (editor.dirty ? editor.save() : Promise.resolve(true))}
+      skipWarning={SKIP_WARNINGS.resume}
+      error={editor.dirty ? editor.errors[0] : null}
+    >
       <TemplateImportWizard embedded title="Upload your resume" />
       {pdf ? (
         <ImportResumePanel
@@ -29,9 +55,10 @@ export function ResumeStep({ onScratch }: { onScratch: () => void }) {
         <button type="button" onClick={onScratch} className="rt-link font-semibold">
           Start from scratch
         </button>{" "}
-        and add your experience in the editor; you can upload a template later on the Template page.
+        and add your experience in the Resume content step; you can upload a template later on the
+        Template page.
       </p>
       <StarterTemplatesPanel embedded />
-    </div>
+    </StepFrame>
   );
 }

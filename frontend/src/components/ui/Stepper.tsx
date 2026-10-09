@@ -30,6 +30,7 @@ export function Stepper({
   label = "Progress",
   orientation = "horizontal",
   divided = false,
+  stretch = false,
 }: {
   steps: StepItem[];
   current: number;
@@ -40,6 +41,9 @@ export function Stepper({
   orientation?: "horizontal" | "vertical";
   /** Vertical only: hairlines between rows and the meta pushed to the right edge. */
   divided?: boolean;
+  /** Horizontal only: on wide screens the steps span the full row on one line, the
+   * connectors growing to fill it (narrower screens wrap as usual). */
+  stretch?: boolean;
 }) {
   const vertical = orientation === "vertical";
   const lined = vertical && divided;
@@ -51,7 +55,7 @@ export function Stepper({
           ? "flex flex-col"
           : vertical
             ? "flex flex-col gap-2"
-            : "flex flex-wrap items-center gap-x-2 gap-y-2"
+            : `flex flex-wrap items-center gap-x-2 gap-y-2 ${stretch ? "lg:flex-nowrap" : ""}`
       }
     >
       {steps.map((step, index) => {
@@ -65,7 +69,7 @@ export function Stepper({
               {GLYPH[state] || index + 1}
             </span>
             <span
-              className={`text-sm ${state === "current" ? "font-semibold text-ink" : "text-ink-muted"}`}
+              className={`whitespace-nowrap text-sm ${state === "current" ? "font-semibold text-ink" : "text-ink-muted"}`}
             >
               {step.label}
             </span>
@@ -81,7 +85,7 @@ export function Stepper({
         return (
           <li
             key={step.id}
-            className={`flex items-center gap-2 ${lined ? "border-t border-line py-2.5 first:border-t-0" : ""}`}
+            className={`flex items-center gap-2 ${lined ? "border-t border-line py-2.5 first:border-t-0" : ""} ${stretch && !vertical ? "lg:flex-1 lg:last:flex-none" : ""}`}
             aria-current={state === "current" ? "step" : undefined}
           >
             {clickable ? (
@@ -98,7 +102,10 @@ export function Stepper({
               </span>
             )}
             {!vertical && index < steps.length - 1 && (
-              <span aria-hidden="true" className="h-px w-4 bg-line sm:w-8" />
+              <span
+                aria-hidden="true"
+                className={`h-px w-4 bg-line sm:w-8 ${stretch ? "lg:w-auto lg:min-w-4 lg:flex-1" : ""}`}
+              />
             )}
             {state === "error" && <span className="sr-only">(failed)</span>}
             {state === "done" && <span className="sr-only">(done)</span>}

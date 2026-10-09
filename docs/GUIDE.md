@@ -197,9 +197,15 @@ prints an `open http://127.0.0.1:8000/?t=...` link, and requests without the tok
 Tick these off in the running app. Each line says what to do and what should happen.
 
 **Setup and safety**
-- [ ] A new profile (the header menu's profile switcher, or an empty data folder) opens `/welcome`: pick
-      your field, choose a model, then import a resume (.docx or PDF) or start from
-      scratch.
+- [ ] A new profile (the header menu's profile switcher, or an empty data folder) opens `/welcome`
+      with the header nav hidden; every other page bounces back until you finish or press
+      **Skip setup for now**. Steps: target field (with its skill vocabulary and job lists),
+      AI & browser (API keys, a tested tailoring model, the Autofill model, the browser),
+      resume upload, personal information, resume content, application details, then a
+      Review of everything entered.
+- [ ] In the wizard, **Next** stays greyed until a step's required fields are done and
+      **Skip** greys out once they are; Skip warns what won't work. Back, Skip and Next
+      all save the page (reload mid-way and the values are still there).
 - [ ] The header pill says "Ready" or "N setup steps left", and each step links to its fix.
 - [ ] Settings → Models: paste an API key and use **Test**. The key is stored in Credential
       Manager and the page only ever says it is set.

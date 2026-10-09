@@ -15,6 +15,8 @@ class OnboardingUpdate(BaseModel):
     field: onboarding.Field | None = None
     completed: bool | None = None
     skipped: bool | None = None
+    skipped_steps: list[onboarding.Step] | None = None
+    resume_from_scratch: bool | None = None
 
 
 @router.get("/api/onboarding", response_model=onboarding.OnboardingState)

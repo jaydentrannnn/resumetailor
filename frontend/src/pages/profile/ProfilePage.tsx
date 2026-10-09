@@ -1,11 +1,10 @@
-import { useCallback, useEffect, useMemo, useState } from "react";
+import { useCallback, useEffect, useState } from "react";
 import { Link, useLocation, useNavigate } from "react-router-dom";
-import { getOnboarding, type ApplicantProfile } from "../../api";
+import { getOnboarding } from "../../api";
 import { ProfileGapBanner } from "../../components/ProfileGapBanner";
 import { underlineTabClass } from "../../components/Tabs";
 import { Button, Page, PageHeader, StatusMark } from "../../components/ui";
 import {
-  GAP_FIELD_ALIASES,
   changedKeys,
   fieldLabel,
   ALL_PROFILE_GROUP_IDS,
@@ -13,24 +12,24 @@ import {
   inSetup,
   initialOpenGroups,
   tabForField,
-  validateProfile,
   withGroupOpen,
 } from "../../lib/profileForm";
 import { useToast } from "../../lib/toast";
-import { useApplicantProfile } from "../../state/applicantProfileState";
 import { useConfirm } from "../../state/confirmState";
 import { useEditorState } from "../../state/editorState";
 import { EditorPage } from "../editor/EditorPage";
 import { ApplicationTab } from "./ApplicationTab";
-import type { FieldContext, FieldValue } from "./fieldContext";
 import { PersonalTab } from "./PersonalTab";
+import { TailoringTab } from "./TailoringTab";
+import { useProfileFields } from "./useProfileFields";
 
-type Tab = "personal" | "resume" | "application";
+type Tab = "personal" | "resume" | "application" | "tailoring";
 
 const TABS: [Tab, string][] = [
   ["personal", "Personal information"],
   ["resume", "Resume content"],
   ["application", "Application details"],
+  ["tailoring", "Tailoring"],
 ];
 
 /**
@@ -45,16 +44,15 @@ export function ProfilePage() {
     ? "resume"
     : path.endsWith("/application")
       ? "application"
-      : "personal";
+      : path.endsWith("/tailoring")
+        ? "tailoring"
+        : "personal";
   const editor = useEditorState();
-  const applicant = useApplicantProfile();
+  const { applicant, draft, ctx, allErrors, attempted, setAttempted, reset } = useProfileFields();
   const toast = useToast();
   const { confirm } = useConfirm();
-  const draft = applicant.draft;
 
   const [open, setOpen] = useState<Set<string>>(() => initialOpenGroups(inSetup(null, search)));
-  const [touched, setTouched] = useState<Set<string>>(new Set());
-  const [attempted, setAttempted] = useState(false);
   const [pendingFocus, setPendingFocus] = useState<string | null>(null);
   const [saving, setSaving] = useState(false);
   const [failed, setFailed] = useState<{ resume: boolean; profile: boolean }>({
@@ -62,14 +60,6 @@ export function ProfilePage() {
     profile: false,
   });
 
-  const allErrors = useMemo(() => (draft ? validateProfile(draft) : {}), [draft]);
-  const shownErrors = useMemo(
-    () =>
-      attempted
-        ? allErrors
-        : Object.fromEntries(Object.entries(allErrors).filter(([key]) => touched.has(key))),
-    [allErrors, attempted, touched],
-  );
   const invalidCount = Object.keys(allErrors).length;
   const profileChanges = changedKeys(applicant.saved, draft).length;
   const changeCount = profileChanges + (editor.dirty ? 1 : 0);
@@ -144,8 +134,7 @@ export function ProfilePage() {
     }
     setFailed(result);
     if (!result.resume && !result.profile) {
-      setAttempted(false);
-      setTouched(new Set());
+      reset();
       toast.success("Profile saved");
     }
   }
@@ -160,26 +149,10 @@ export function ProfilePage() {
     if (!ok) return;
     editor.discard();
     applicant.discard();
-    setAttempted(false);
-    setTouched(new Set());
+    reset();
     setFailed({ resume: false, profile: false });
   }
 
-  const ctx: FieldContext | null = draft
-    ? {
-        draft,
-        set: (key: keyof ApplicantProfile, value: FieldValue) =>
-          applicant.setDraft({ ...draft, [key]: value }),
-        setMany: (patch) => applicant.setDraft({ ...draft, ...patch }),
-        errors: shownErrors,
-        gapFields: new Set(applicant.gaps.map((gap) => GAP_FIELD_ALIASES[gap.key] ?? gap.key)),
-        defaults: applicant.defaults,
-        fallbacks: applicant.fallbacks,
-        passwordSet: applicant.passwordSet,
-        touch: (key) =>
-          setTouched((current) => (current.has(key) ? current : new Set(current).add(key))),
-      }
-    : null;
   const educationSection = editor.resume?.sections.find((section) => section.kind === "education");
 
   return (
@@ -214,7 +187,8 @@ export function ProfilePage() {
           <EditorPage showContact={false} embedded />
         </div>
       )}
-      {!ctx && tab !== "resume" && (
+      {tab === "tailoring" && <TailoringTab />}
+      {!ctx && (tab === "personal" || tab === "application") && (
         <p className="text-sm text-ink-muted">{applicant.error ?? "Loading your profile…"}</p>
       )}
       {ctx && tab === "personal" && (

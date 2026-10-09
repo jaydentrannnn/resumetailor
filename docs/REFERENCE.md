@@ -100,8 +100,8 @@ UI label stays "Profile"; code (`workspace.py`, `config.set_active_workspace`,
 
 **Target field** is profile metadata in `settings.json`, separate from `JobSettings` and
 job-discovery settings. Missing/null retains legacy guidance; new empty profiles use
-`general`, and duplicates inherit their source's field and custom styles. Settings → AI
-model and setup expose the backend catalog (`industry_presets.json`). Adding a preset
+`general`, and duplicates inherit their source's field and custom styles. Profile →
+Tailoring and setup expose the backend catalog (`industry_presets.json`). Adding a preset
 requires catalog data and existing vocabulary-pack ids, without a pipeline branch or an
 extra model call. Catalog/policy changes must bump their versions.
 

@@ -50,7 +50,7 @@ export type AppConfig = {
   cover_core_rules: string;
   target_field?: string | null;
   target_field_summary?: string;
-  target_fields?: { id: string; label: string; summary: string }[];
+  target_fields?: { id: string; label: string; summary: string; packs?: string[] }[];
   effective_vocabulary_packs?: string[];
   active_workspace_id: string | null;
   active_workspace_label: string | null;
@@ -208,9 +208,15 @@ export interface CheckResult {
   backend?: string;
 }
 
-export function testModel(settings: JobSettings): Promise<CheckResult> {
+export function testModel(
+  settings: JobSettings,
+  target: "tailor" | "autofill" = "tailor",
+): Promise<CheckResult> {
   /** One tiny model call with these settings (a fraction of a cent on paid APIs). */
-  return request("/api/models/test", { method: "POST", body: JSON.stringify({ settings }) });
+  return request("/api/models/test", {
+    method: "POST",
+    body: JSON.stringify({ settings, target }),
+  });
 }
 
 export function fetchLocalModels(
@@ -304,11 +310,18 @@ export function clearCache(): Promise<{ removed: number; freed: number }> {
 
 export type OnboardingField = "" | "cs" | "business" | "engineering" | "other";
 
+export type OnboardingStepId =
+  "field" | "tools" | "resume" | "personal" | "content" | "application" | "review" | "done";
+
 export interface OnboardingState {
-  step: "field" | "model" | "resume" | "review" | "basics" | "done";
+  step: OnboardingStepId;
   field: OnboardingField;
   completed: boolean;
   skipped: boolean;
+  /** Steps the student skipped; the Review step marks them. */
+  skipped_steps: OnboardingStepId[];
+  /** "Start from scratch" on the Resume step (no upload, step answered). */
+  resume_from_scratch: boolean;
   updated_at: string;
 }
 
@@ -318,7 +331,12 @@ export function getOnboarding(): Promise<OnboardingState> {
 }
 
 export function putOnboarding(
-  patch: Partial<Pick<OnboardingState, "step" | "field" | "completed" | "skipped">>,
+  patch: Partial<
+    Pick<
+      OnboardingState,
+      "step" | "field" | "completed" | "skipped" | "skipped_steps" | "resume_from_scratch"
+    >
+  >,
 ): Promise<OnboardingState> {
   return request("/api/onboarding", {
     method: "PUT",

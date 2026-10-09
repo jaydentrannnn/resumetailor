@@ -5,10 +5,12 @@ import { AttentionList } from "./AttentionList";
 
 /**
  * The nightly run: its progress while it runs, then "Needs your review" listing what it
- * left for the user. Renders nothing once a finished run left nothing to review.
+ * left for the user. Renders nothing once a finished run left nothing to review, and
+ * nothing for a Find jobs, which runs through the same pass with `fetch_only` and shows
+ * its own progress in the operation banner.
  */
 export function NightlyRunTile({ daily }: { daily: DailyStatus | null }) {
-  if (!daily?.summary || !(daily.running || daily.finished_at)) return null;
+  if (!daily?.summary || daily.fetch_only || !(daily.running || daily.finished_at)) return null;
   const items = daily.summary.attention ?? [];
   if (!daily.running && !items.length) return null;
   const progress = `${daily.processed} of ${daily.total} processed${daily.current ? ` · ${daily.current}` : ""}`;

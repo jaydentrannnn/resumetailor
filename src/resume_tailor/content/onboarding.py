@@ -22,8 +22,14 @@ from resume_tailor.content import data
 from resume_tailor.storage import db
 
 KEY = "onboarding"
-Step = Literal["field", "model", "resume", "review", "basics", "done"]
+Step = Literal[
+    "field", "tools", "resume", "personal", "content", "application", "review", "done"
+]
 Field = Literal["", "cs", "business", "engineering", "other"]
+
+#: Step ids from the five-step wizard, mapped onto the step that replaced each, so a
+#: student mid-setup during an upgrade resumes where they were instead of at step one.
+_LEGACY_STEPS = {"model": "tools", "basics": "application"}
 
 
 class OnboardingState(BaseModel):
@@ -31,7 +37,22 @@ class OnboardingState(BaseModel):
     field: Field = ""
     completed: bool = False
     skipped: bool = False
+    #: Steps the student skipped (the Review step marks them); cleared when completed later.
+    skipped_steps: list[Step] = []
+    #: "Start from scratch" on the Resume step: no upload, but the step is answered.
+    resume_from_scratch: bool = False
     updated_at: str = ""
+
+
+def _upgrade(raw: dict) -> dict:
+    """Map a stored row from the older wizard onto the current step ids."""
+    step = raw.get("step")
+    if step in _LEGACY_STEPS:
+        return {**raw, "step": _LEGACY_STEPS[step]}
+    if step == "review" and "skipped_steps" not in raw:
+        # The old "review" step checked the imported content; that is "content" now.
+        return {**raw, "step": "content"}
+    return raw
 
 
 def _conn():
@@ -54,7 +75,7 @@ def load() -> OnboardingState:
         raw = db.kv_get(conn, KEY)
         if isinstance(raw, dict):
             try:
-                return OnboardingState.model_validate(raw)
+                return OnboardingState.model_validate(_upgrade(raw))
             except ValueError:
                 pass  # a malformed row restarts the wizard rather than 500ing
         state = OnboardingState()
@@ -69,7 +90,9 @@ def save(**changes) -> OnboardingState:
     with db.transaction(conn):
         raw = db.kv_get(conn, KEY)
         try:
-            current = OnboardingState.model_validate(raw) if isinstance(raw, dict) else None
+            current = (
+                OnboardingState.model_validate(_upgrade(raw)) if isinstance(raw, dict) else None
+            )
         except ValueError:
             current = None
         merged = (current or OnboardingState()).model_dump() | changes

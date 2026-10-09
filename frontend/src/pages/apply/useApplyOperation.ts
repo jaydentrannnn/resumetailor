@@ -135,7 +135,8 @@ export function useApplyOperation({
       otp: review.applications
         .filter((row) => row.status === "awaiting_otp")
         .map((row) => `${row.source_job_id}:${row.company}`),
-      dailyRunning: daily.running,
+      // A Find jobs runs the same pass with `fetch_only`; it isn't the nightly run.
+      dailyRunning: daily.running && !daily.fetch_only,
       dailySummary: daily.summary,
       operationId: operation?.operation_id ?? null,
       operationState: operation?.state ?? null,

@@ -1,14 +1,12 @@
 import { SettingRow } from "./SettingRow";
-import { buttonClass } from "../../lib/buttonClass";
 import { useState } from "react";
-import { Link } from "react-router-dom";
 import { ResumeHistoryList } from "../../components/ResumeHistoryList";
 import { Card } from "../../components/ui";
 import { useRunState } from "../../state/runState";
 import { ModelQueueCard } from "./ModelQueueCard";
 import { SELECT_WIDTH } from "./selectWidth";
 
-/** Settings → Advanced: extraction votes, vocabulary, and master resume history. */
+/** Settings → Advanced: extraction votes, concurrency, and master resume history. */
 export function AdvancedSection() {
   const { settings, setSettings } = useRunState();
   return (
@@ -51,15 +49,6 @@ export function AdvancedSection() {
               </option>
             ))}
           </select>
-        </SettingRow>
-        <SettingRow
-          label="Skill vocabulary"
-          layout="action"
-          description="Teach ResumeTailor that different spellings mean the same skill (for example, “MS Excel” and “Excel”)."
-        >
-          <Link to="/vocabulary" className={buttonClass("secondary", "md", "ml-auto")}>
-            Open vocabulary
-          </Link>
         </SettingRow>
       </Card>
       <ResumeHistory />

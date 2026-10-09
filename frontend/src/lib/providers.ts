@@ -1,3 +1,5 @@
+import type { ApplySettings } from "../api";
+
 /** Plain-language descriptions of the model profiles a student chooses between. */
 export interface ProviderInfo {
   id: string;
@@ -85,3 +87,12 @@ export const KEY_HELP: Record<string, { label: string; href: string }> = {
     href: "https://developer.usajobs.gov/APIRequest/Index",
   },
 };
+
+/** Providers the Autofill model can use (`ApplySettings.model_provider`), labelled. */
+export const AUTOFILL_PROVIDERS: { id: ApplySettings["model_provider"]; label: string }[] = [
+  { id: "ollama", label: "Ollama" },
+  { id: "ollama-cloud", label: "Ollama Cloud" },
+  { id: "lmstudio", label: "LM Studio" },
+  { id: "gemini", label: "Gemini" },
+  { id: "anthropic", label: "Anthropic" },
+];

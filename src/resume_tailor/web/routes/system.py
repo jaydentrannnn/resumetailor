@@ -6,7 +6,7 @@ from __future__ import annotations
 import tempfile
 import time
 from pathlib import Path
-from typing import Any
+from typing import Any, Literal
 
 import docx
 import httpx
@@ -38,6 +38,9 @@ _LOCAL_BASES = {
 class ModelTestRequest(BaseModel):
     #: Settings to test with; omitted = the profile's saved defaults.
     settings: JobSettings | None = None
+    #: ``tailor`` tests the Tailor routing; ``autofill`` tests ``apply``'s Autofill model,
+    #: pinned exactly as Fill pins it (`ApplySettings.model_spec`).
+    target: Literal["tailor", "autofill"] = "tailor"
 
 
 class _Ping(BaseModel):
@@ -52,11 +55,16 @@ def test_model(body: ModelTestRequest) -> dict[str, Any]:
     of a cent). Failures come back as ``ok: false`` with the provider's message.
     """
     settings = body.settings or JobSettings.model_validate(workspace.load_settings()["defaults"])
-    profile, overrides, effort = model_routing(settings)
+    if body.target == "autofill":
+        pin = config.pinned(settings.apply.model_spec)
+        label = settings.apply.model_spec
+    else:
+        profile, overrides, effort = model_routing(settings)
+        pin = config.pinned(profile, overrides=overrides, effort=effort)
+        label = profile
     started = time.monotonic()
-    label = profile
     try:
-        with config.pinned(profile, overrides=overrides, effort=effort):
+        with pin:
             backend = config.backend_for("extract")
             label = f"{backend.origin or backend.provider}:{backend.model}"
             client = llm.client_for("extract")

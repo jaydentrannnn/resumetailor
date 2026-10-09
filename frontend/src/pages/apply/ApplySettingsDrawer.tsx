@@ -8,6 +8,7 @@ import { tailorModelLabel } from "../../lib/modelLabel";
 import { sourcesSummary } from "../../lib/sources";
 import { useConfirm } from "../../state/confirmState";
 import type { BrowserView } from "../../lib/browserState";
+import { AutofillModelFields } from "./AutofillModelFields";
 import { BrowserPicker, ConnectionStatus } from "./BrowserConnection";
 
 /**
@@ -290,31 +291,8 @@ export function ApplySettingsDrawer({
             </Link>
             .
           </p>
-          <div className="mt-2 grid gap-3 sm:grid-cols-2">
-            <label>
-              <span className="mb-1 block">Provider</span>
-              <select
-                className="field w-full"
-                value={apply.model_provider}
-                onChange={(e) =>
-                  patch({ model_provider: e.target.value as typeof apply.model_provider })
-                }
-              >
-                <option value="ollama">Ollama</option>
-                <option value="ollama-cloud">Ollama Cloud</option>
-                <option value="lmstudio">LM Studio</option>
-                <option value="gemini">Gemini</option>
-                <option value="anthropic">Anthropic</option>
-              </select>
-            </label>
-            <label>
-              <span className="mb-1 block">Model</span>
-              <input
-                className="field w-full"
-                value={apply.model_name}
-                onChange={(e) => patch({ model_name: e.target.value })}
-              />
-            </label>
+          <div className="mt-2">
+            <AutofillModelFields apply={apply} patch={patch} />
           </div>
         </Section>
 

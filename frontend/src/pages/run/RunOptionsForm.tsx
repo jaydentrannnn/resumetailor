@@ -2,6 +2,7 @@ import { useEffect, useId, useState } from "react";
 import type { AppConfig, JobSettings } from "../../api";
 import { Field, Toggle } from "../../components/Field";
 import { IncludePanel } from "../../components/IncludePanel";
+import { useConfirm } from "../../state/confirmState";
 import { DEFAULT_SETTINGS } from "../../state/runDefaults";
 import { RunStyleRules } from "./RunStyleRules";
 
@@ -136,11 +137,21 @@ const SLIDER = "w-full accent-[var(--color-accent)]";
 
 /** Selection sizing, fill targets, the opt-out stages, and the writing style rules. */
 function MoreOptions({ config, settings, onChange, disabled }: FormProps) {
+  const { confirm } = useConfirm();
+
   function set<K extends keyof JobSettings>(key: K, value: JobSettings[K]) {
     onChange({ ...settings, [key]: value });
   }
 
-  function resetDefaults() {
+  async function resetDefaults() {
+    const ok = await confirm({
+      title: "Reset tailoring options?",
+      message:
+        "Every option on this form goes back to its default, including writing style rules and include/exclude choices. Your model choice is kept.",
+      confirmLabel: "Reset",
+      tone: "danger",
+    });
+    if (!ok) return;
     // The model choice belongs to Settings, so a reset here keeps it.
     onChange({
       ...DEFAULT_SETTINGS,
@@ -212,7 +223,7 @@ function MoreOptions({ config, settings, onChange, disabled }: FormProps) {
       <RunStyleRules config={config} settings={settings} set={set} />
       <button
         type="button"
-        onClick={resetDefaults}
+        onClick={() => void resetDefaults()}
         className="text-xs text-ink-muted underline-offset-2 hover:text-ink hover:underline"
       >
         Reset options to defaults

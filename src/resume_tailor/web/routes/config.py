@@ -138,7 +138,7 @@ def _config_response(*, consume_migrated: bool = True) -> ConfigResponse:
         target_field=target_field,
         target_field_summary=snapshot.summary if snapshot else "Existing profile guidance.",
         target_fields=[
-            {key: item[key] for key in ("id", "label", "summary")}
+            {key: item[key] for key in ("id", "label", "summary", "packs")}
             for item in industries.catalog().values()
         ],
         effective_vocabulary_packs=(

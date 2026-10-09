@@ -73,7 +73,7 @@ profiles you can switch between, each exported or imported as one `.zip` of up t
 action-verb libraries the rewriter uses), **Apply** (see [Automation](#automation-apply-page)),
 and **Settings** (models, browser, extension pairing, updates).
 
-Choose **Target field** in **Settings → AI model** or during setup. Options are General,
+Choose **Target field** in **Profile → Tailoring** or during setup. Options are General,
 Software & Data, Finance & Consulting, Accounting, Marketing, and Operations & Supply
 Chain. The choice applies to every tailoring run for that profile; each posting determines
 which evidence is most relevant. Custom writing styles stay intact. Existing profiles

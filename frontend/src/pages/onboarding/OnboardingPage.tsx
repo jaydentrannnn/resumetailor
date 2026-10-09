@@ -1,29 +1,35 @@
-import { StepFrame } from "./StepFrame";
-import { useEffect, useState } from "react";
+import { useEffect, useRef, useState } from "react";
 import { useNavigate } from "react-router-dom";
-import {
-  getOnboarding,
-  putOnboarding,
-  type OnboardingField,
-  type OnboardingState,
-} from "../../api";
+import { getOnboarding, putOnboarding, type OnboardingState } from "../../api";
 import { Button, Page, PageHeader, Stepper } from "../../components/ui";
 import { describe } from "../../lib/errors";
 import { ONBOARDING_STEPS, stepIndex, type OnboardingStep } from "../../lib/onboarding";
 import { useToast } from "../../lib/toast";
-import { ModelsSection } from "../settings/ModelsSection";
-import { BasicsStep, DoneStep, FieldStep, ResumeStep, ReviewStep } from "./OnboardingSteps";
+import { useConfirm } from "../../state/confirmState";
+import {
+  ApplicationStep,
+  ContentStep,
+  DoneStep,
+  FieldStep,
+  PersonalStep,
+  ResumeStep,
+  SummaryStep,
+  ToolsStep,
+} from "./OnboardingSteps";
+import type { StepNav } from "./StepFrame";
 
 /**
- * First-run wizard (`/welcome`). Every step saves where the student got to, so closing
- * the app mid-way resumes here. Each step can be skipped; "Skip setup" leaves the
- * wizard for good (the header's setup checklist links back to it).
+ * First-run wizard (`/welcome`). Every move (Back, Skip, Next, a stepper jump) saves the
+ * page first, and the step reached is stored, so closing the app mid-way resumes here.
+ * The rest of the app stays closed until setup is finished or "Skip setup for now".
  */
 export function OnboardingPage() {
   const toast = useToast();
   const navigate = useNavigate();
+  const { confirm } = useConfirm();
   const [state, setState] = useState<OnboardingState | null>(null);
   const [saving, setSaving] = useState(false);
+  const saveRef = useRef<() => Promise<boolean>>(() => Promise.resolve(true));
 
   useEffect(() => {
     getOnboarding()
@@ -54,96 +60,87 @@ export function OnboardingPage() {
     );
   }
 
-  const current = stepIndex(state.step);
-  const goTo = (step: OnboardingStep) => update({ step });
-  const next = () => goTo(ONBOARDING_STEPS[Math.min(current + 1, ONBOARDING_STEPS.length - 1)].id);
-  const back = current > 0 ? () => goTo(ONBOARDING_STEPS[current - 1].id) : undefined;
+  const step = state.step;
+  const current = stepIndex(step);
+  const skippedSteps = state.skipped_steps ?? [];
+  const goTo = (target: OnboardingStep) => update({ step: target });
+  const following = ONBOARDING_STEPS[Math.min(current + 1, ONBOARDING_STEPS.length - 1)].id;
+  const without = skippedSteps.filter((s) => s !== step);
+  const nav: StepNav = {
+    onBack: current > 0 ? () => void goTo(ONBOARDING_STEPS[current - 1].id) : undefined,
+    onNext: () =>
+      void update(
+        step === "review"
+          ? { completed: true, skipped_steps: without }
+          : { step: following, skipped_steps: without },
+      ),
+    onSkip: () => void update({ step: following, skipped_steps: [...without, step] }),
+    saving,
+    saveRef,
+  };
+
+  async function jump(index: number) {
+    if (await saveRef.current()) void goTo(ONBOARDING_STEPS[index].id);
+  }
 
   async function skipAll() {
+    const ok = await confirm({
+      title: "Leave setup?",
+      message:
+        "Anything you haven't set up won't work yet: tailoring needs a model and your resume, and autofill needs your application details. The setup checklist in the header brings you back here.",
+      confirmLabel: "Skip setup",
+    });
+    if (!ok || !(await saveRef.current())) return;
     if (await update({ skipped: true })) navigate("/");
   }
 
   return (
-    <Page className="max-w-3xl!">
+    <Page>
       <PageHeader
         title="Welcome to ResumeTailor"
-        description="Five short steps. You can change any of this later in Settings."
+        description="Set up once and you're ready to tailor and apply. Everything can be changed later."
         actions={
           !state.completed && (
-            <Button variant="ghost" size="sm" onClick={skipAll} disabled={saving}>
+            <Button variant="ghost" size="sm" onClick={() => void skipAll()} disabled={saving}>
               Skip setup for now
             </Button>
           )
         }
       />
       <Stepper
-        steps={ONBOARDING_STEPS.filter((step) => step.id !== "done")}
+        steps={ONBOARDING_STEPS.filter((s) => s.id !== "done")}
         current={current}
         label="Setup steps"
-        onSelect={(index) => void goTo(ONBOARDING_STEPS[index].id)}
+        stretch
+        onSelect={state.completed ? undefined : (index) => void jump(index)}
       />
-      {state.step === "field" && (
-        <FieldStep
-          field={state.field}
-          saving={saving}
-          onChoose={(field: OnboardingField) => update({ field, step: "model" })}
+      {step === "field" && (
+        <FieldStep nav={nav} saveField={async (field) => !!(await update({ field }))} />
+      )}
+      {step === "tools" && <ToolsStep nav={nav} />}
+      {step === "resume" && (
+        <ResumeStep
+          nav={nav}
+          fromScratch={state.resume_from_scratch}
+          onScratch={() =>
+            void update({ resume_from_scratch: true, step: following, skipped_steps: without })
+          }
         />
       )}
-      {state.step === "model" && (
-        <StepFrame
-          title="Choose the AI that writes for you"
-          intro="Ollama runs free on this computer. A paid API key gives better writing for a few cents per resume. You can change this any time in Settings."
-          onBack={back}
-          onNext={next}
-          saving={saving}
-        >
-          <ModelsSection embedded />
-        </StepFrame>
+      {step === "personal" && <PersonalStep nav={nav} />}
+      {step === "content" && <ContentStep nav={nav} />}
+      {step === "application" && (
+        <ApplicationStep nav={nav} onEditResume={() => void goTo("content")} />
       )}
-      {state.step === "resume" && (
-        <StepFrame
-          title="Add your resume"
-          intro="Upload your resume as a Word (.docx) file. ResumeTailor keeps its exact look and only changes the words."
-          onBack={back}
-          onNext={next}
-          nextLabel="Continue"
-          saving={saving}
-        >
-          <ResumeStep onScratch={next} />
-        </StepFrame>
-      )}
-      {state.step === "review" && (
-        <StepFrame
-          title="Check what we found"
-          intro="Everything tailored later comes from this content, so fix anything missing now."
-          onBack={back}
-          onNext={next}
-          saving={saving}
-        >
-          <ReviewStep />
-        </StepFrame>
-      )}
-      {state.step === "basics" && (
-        <StepFrame
-          title="Application basics (optional)"
-          intro="Only used to fill in job application forms. Skip it if you only want tailored resumes."
-          saving={saving}
-        >
-          <BasicsStep
-            onDone={() => update({ completed: true })}
-            onSkip={next}
-            onBack={() => void goTo("review")}
-          />
-        </StepFrame>
-      )}
-      {state.step === "done" && (
-        <DoneStep
-          onFinish={async () => {
-            if (state.completed || (await update({ completed: true }))) navigate("/");
-          }}
-          saving={saving}
+      {step === "review" && (
+        <SummaryStep
+          nav={nav}
+          skipped={skippedSteps}
+          fromScratch={state.resume_from_scratch}
+          onEdit={(target) => void goTo(target)}
         />
       )}
+      {step === "done" && <DoneStep onFinish={() => navigate("/")} saving={saving} />}
     </Page>
   );
 }

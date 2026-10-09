@@ -167,6 +167,25 @@ def test_model_test_route_reports_success_and_failure(monkeypatch):
         assert bad == {"ok": False, "model": bad["model"], "detail": "Could not reach x"}
 
 
+def test_model_test_route_can_test_the_autofill_model(monkeypatch):
+    from fastapi.testclient import TestClient
+
+    from resume_tailor.infra import llm
+    from resume_tailor.web.app import app
+
+    fake = _FakeClient()
+    monkeypatch.setattr(llm, "client_for", lambda purpose: fake)
+    settings = {
+        "model": "ollama",
+        "apply": {"model_provider": "gemini", "model_name": "gemini-3-flash"},
+    }
+    with TestClient(app) as c:
+        body = c.post("/api/models/test", json={"settings": settings, "target": "autofill"}).json()
+    assert body["ok"] is True
+    assert body["model"].endswith("gemini-3-flash")
+    assert fake.messages.kwargs["model"] == "gemini-3-flash"
+
+
 def test_pdf_test_route(monkeypatch):
     from fastapi.testclient import TestClient
 

@@ -8,12 +8,15 @@ import type {
 } from "../api";
 import {
   ONBOARDING_STEPS,
+  applicationSummary,
+  contentComplete,
   needsWelcome,
-  packsForField,
+  openGaps,
+  personalComplete,
   reviewResume,
-  sourceFieldsFor,
-  sourcesForField,
+  sourceFieldsForTarget,
   sourcesFromCatalogPicks,
+  studyFieldForTarget,
   suggestedEntries,
   stepIndex,
   withSourceChoice,
@@ -38,6 +41,8 @@ const state = (over: Partial<OnboardingState> = {}): OnboardingState => ({
   field: "",
   completed: false,
   skipped: false,
+  skipped_steps: [],
+  resume_from_scratch: false,
   updated_at: "",
   ...over,
 });
@@ -48,48 +53,18 @@ describe("onboarding helpers", () => {
     expect(stepIndex("done")).toBe(ONBOARDING_STEPS.length - 1);
   });
 
-  it("swaps field packs but keeps packs the user added", () => {
-    const available = ["core-tech", "finance-consulting", "custom"];
-    expect(packsForField(["core-tech", "custom"], "business", available)).toEqual([
-      "core-tech",
-      "finance-consulting",
-      "custom",
-    ]);
-    expect(packsForField(["core-tech", "finance-consulting"], "cs", available)).toEqual([
-      "core-tech",
-    ]);
-    const shipped = [
-      "core-tech",
-      "finance-consulting",
-      "accounting",
-      "marketing",
-      "ops-supply-chain",
-    ];
-    expect(packsForField(["core-tech"], "business", shipped)).toEqual(shipped);
-    // Switching away from Business turns every business pack off again.
-    expect(packsForField(shipped, "cs", shipped)).toEqual(["core-tech"]);
-    // A pack missing from this install is skipped, not enabled by id.
-    expect(packsForField([], "business", ["core-tech"])).toEqual(["core-tech"]);
-    expect(packsForField(["x"], "", available)).toEqual(["x"]);
+  it("preselects job fields from the target field", () => {
+    expect(sourceFieldsForTarget("software-data")).toEqual(["swe", "data"]);
+    expect(sourceFieldsForTarget("finance-consulting")).toContain("finance");
+    expect(sourceFieldsForTarget("general")).toEqual([]);
+    expect(sourceFieldsForTarget("unknown")).toEqual([]);
+    expect(sourceFieldsForTarget(null)).toEqual([]);
+    expect(studyFieldForTarget("marketing")).toBe("business");
+    expect(studyFieldForTarget("software-data")).toBe("cs");
+    expect(studyFieldForTarget(null)).toBe("");
   });
 
-  it("points business students at finance and product boards", () => {
-    const out = sourcesForField(SOURCES, "business");
-    expect(out[0].categories).toEqual([
-      "Quantitative Finance Internship Roles",
-      "Product Management Internship Roles",
-    ]);
-    expect(out[1].categories[0]).toBe("Quantitative Finance New Grad Roles");
-    expect(out[2].enabled).toBe(false);
-    expect(out[3]).toBe(SOURCES[3]);
-    expect(out[4]).toMatchObject({ kind: "ats_board", boards: [], enabled: true });
-    // Choosing business again never adds a second watchlist.
-    expect(sourcesForField(out, "business").filter((s) => s.kind === "ats_board")).toHaveLength(1);
-    expect(sourcesForField(SOURCES, "cs").some((s) => s.kind === "ats_board")).toBe(false);
-    expect(sourcesForField(SOURCES, "other")).toBe(SOURCES);
-  });
-
-  it("maps a study field to catalog entries and writes them as the sources", () => {
+  it("maps a target field to catalog entries and writes them as the sources", () => {
     const entry = (id: string, fields: CatalogEntry["fields"]): CatalogEntry => ({
       id,
       name: id,
@@ -107,10 +82,7 @@ describe("onboarding helpers", () => {
         entry("cons", ["consulting", "business"]),
       ],
     };
-    expect(sourceFieldsFor("business")).toContain("finance");
-    expect(sourceFieldsFor("other")).toEqual([]);
-    expect(sourceFieldsFor("")).toEqual([]);
-    const picked = suggestedEntries(catalog, sourceFieldsFor("business"));
+    const picked = suggestedEntries(catalog, sourceFieldsForTarget("finance-consulting"));
     expect(picked.map((e) => e.id)).toEqual(["fin", "cons"]);
     const out = sourcesFromCatalogPicks(SOURCES, picked, "business");
     // Built-in defaults are replaced, the student's own source stays, business gets a watchlist.
@@ -176,7 +148,54 @@ describe("onboarding helpers", () => {
       "Model has no bullets.",
       "1 bullet has no skill tags; untagged bullets rank lower for every job.",
     ]);
+    expect(review.blocking).toEqual(["Your name is missing."]);
+    expect(contentComplete(review)).toBe(false);
+    resume.contact.name = "Ada Lovelace";
+    expect(contentComplete(reviewResume(resume))).toBe(true);
+    expect(contentComplete(reviewResume(null))).toBe(false);
     expect(reviewResume(null).entries).toBe(0);
+  });
+
+  it("requires names, an email and a phone, falling back to the resume contact", () => {
+    const draft = { first_name: "Ada", last_name: "L", email: "", phone: "" };
+    expect(personalComplete(draft, {})).toBe(false);
+    expect(personalComplete(draft, {}, { email: "a@b.co", phone: "555 0100" })).toBe(true);
+    // The starter resume's placeholder email does not count.
+    expect(personalComplete(draft, {}, { email: "you@example.com", phone: "1" })).toBe(false);
+    const typed = { ...draft, email: "a@b.co", phone: "5550100" };
+    expect(personalComplete(typed, {})).toBe(true);
+    expect(personalComplete(typed, { email: "bad" })).toBe(false);
+    expect(personalComplete(null, {})).toBe(false);
+    // A blank name the server fills from the resume header counts.
+    const unnamed = { ...typed, first_name: "" };
+    expect(personalComplete(unnamed, {})).toBe(false);
+    expect(personalComplete(unnamed, {}, null, { first_name: "Ada" })).toBe(true);
+  });
+
+  it("lists the form questions still unanswered", () => {
+    const draft = { city: "Irvine", state: " ", graduation_date: null, consent: false };
+    expect(openGaps(["city", "state", "graduation_date", "consent"], draft)).toEqual([
+      "state",
+      "graduation_date",
+    ]);
+    expect(openGaps(["city"], null)).toEqual(["city"]);
+  });
+
+  it("echoes only filled application answers, with option labels", () => {
+    const rows = applicationSummary(
+      { visa_status: "f1", city: "", requires_sponsorship_now: true, gpa_display: "3.9" },
+      [
+        { fields: ["visa_status", "city"] },
+        { fields: ["requires_sponsorship_now", "gpa_display"] },
+      ],
+      { visa_status: [["f1", "F-1 student"]] },
+      (key) => key.toUpperCase(),
+    );
+    expect(rows).toEqual([
+      { label: "VISA_STATUS", value: "F-1 student" },
+      { label: "REQUIRES_SPONSORSHIP_NOW", value: "Yes" },
+      { label: "GPA_DISPLAY", value: "3.9" },
+    ]);
   });
 
   it("stores the chosen job fields beside the sources", () => {
@@ -188,9 +207,10 @@ describe("onboarding helpers", () => {
     expect(apply.fields).toEqual(["swe"]);
   });
 
-  it("redirects only an unfinished profile, never from Settings", () => {
+  it("keeps an unfinished profile on the wizard, Settings included", () => {
     expect(needsWelcome(state(), "/")).toBe(true);
-    expect(needsWelcome(state(), "/settings")).toBe(false);
+    expect(needsWelcome(state(), "/settings")).toBe(true);
+    expect(needsWelcome(state(), "/profile/resume")).toBe(true);
     expect(needsWelcome(state(), "/welcome")).toBe(false);
     expect(needsWelcome(state({ skipped: true }), "/")).toBe(false);
     expect(needsWelcome(state({ completed: true }), "/")).toBe(false);

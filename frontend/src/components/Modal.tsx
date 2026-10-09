@@ -1,4 +1,5 @@
 import { type ReactNode, useEffect, useId, useRef } from "react";
+import { createPortal } from "react-dom";
 
 /** Open dialogs, newest last: only the topmost handles Escape and Tab (a confirm over a drawer). */
 const openDialogs: object[] = [];
@@ -12,6 +13,10 @@ const FOCUSABLE_SELECTOR =
  * Backdrop closes only when both mousedown and click land on the overlay itself —
  * a text selection dragged outside the panel and released must not dismiss the dialog
  * (that used to discard a half-typed profile label).
+ *
+ * Portalled to `document.body` so dialogs stack in the order they open: a confirm
+ * raised from inside another dialog (delete a profile) lands on top of it, whatever
+ * each one's place in the React tree.
  */
 export function Modal({
   title,
@@ -74,7 +79,7 @@ export function Modal({
     };
   }, []);
 
-  return (
+  return createPortal(
     <div
       // `overflow-y-auto` here (not on the panel) so content taller than the viewport
       // scrolls the whole dialog, header included — a wide modal over dense content
@@ -122,6 +127,7 @@ export function Modal({
         </div>
         {children}
       </div>
-    </div>
+    </div>,
+    document.body,
   );
 }

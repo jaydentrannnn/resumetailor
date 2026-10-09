@@ -61,14 +61,32 @@ def test_malformed_row_restarts_the_wizard(profile_dir):
     conn = db.connect(db.db_path(profile_dir))
     db.kv_set(conn, onboarding.KEY, {"step": "nonsense"})
     assert onboarding.load().step == "field"
-    assert onboarding.save(step="model").step == "model"
+    assert onboarding.save(step="tools").step == "tools"
+
+
+@pytest.mark.parametrize(
+    ("old", "new"), [("model", "tools"), ("review", "content"), ("basics", "application")]
+)
+def test_old_wizard_steps_resume_at_their_replacement(profile_dir, old, new):
+    conn = db.connect(db.db_path(profile_dir))
+    db.kv_set(conn, onboarding.KEY, {"step": old, "field": "cs", "completed": False})
+    assert (onboarding.load().step, onboarding.load().field) == (new, "cs")
+    # A row the new wizard saved keeps "review" as the summary step.
+    onboarding.save(step="review")
+    assert onboarding.load().step == "review"
+
+
+def test_skipped_steps_and_scratch_round_trip(profile_dir):
+    onboarding.save(skipped_steps=["tools", "personal"], resume_from_scratch=True)
+    state = onboarding.load()
+    assert (state.skipped_steps, state.resume_from_scratch) == (["tools", "personal"], True)
 
 
 def test_api_round_trip_and_validation(profile_dir):
     with TestClient(app) as c:
         assert c.get("/api/onboarding").json()["step"] == "field"
-        body = c.put("/api/onboarding", json={"field": "cs", "step": "model"}).json()
-        assert (body["field"], body["step"]) == ("cs", "model")
+        body = c.put("/api/onboarding", json={"field": "cs", "step": "tools"}).json()
+        assert (body["field"], body["step"]) == ("cs", "tools")
         assert c.put("/api/onboarding", json={"step": "bogus"}).status_code == 422
         assert c.put("/api/onboarding", json={"skipped": True}).json()["skipped"] is True
         assert c.get("/api/onboarding").json()["field"] == "cs"
