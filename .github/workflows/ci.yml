@@ -90,7 +90,7 @@ jobs:
       - run: python -m pytest tests/extension/test_extension_manifest.py -q
       - name: Extension zip (as release.yml builds it)
         run: python extension/build_zip.py --out dist-extension
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         with:
           name: resumetailor-extension
           path: dist-extension/*.zip
@@ -120,7 +120,7 @@ jobs:
         run: npm run e2e
       - name: Extension extraction in Chromium
         run: python -m pytest tests/extension/test_extension_dom.py -q
-      - uses: actions/upload-artifact@v4
+      - uses: actions/upload-artifact@v7
         if: failure()
         with:
           name: playwright-traces
