@@ -73,15 +73,13 @@ export function RunOptionsForm({
             ))}
           </select>
         </Field>
-        <div className="sm:pt-6">
+        <div className="space-y-3 sm:pt-6">
           <Toggle
             label="Cover letter"
             help="Also write a cover letter from the tailored resume."
             checked={settings.cover_letter}
             onChange={(v) => set("cover_letter", v)}
           />
-        </div>
-        <div className="sm:pt-6">
           <Toggle
             label="Application-form text"
             help="Paragraphs for each job, ready to paste into application forms. Apply turns this on for its own runs."
