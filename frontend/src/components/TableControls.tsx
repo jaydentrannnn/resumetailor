@@ -157,8 +157,9 @@ export function DataTable<T>({
         <thead className="border-b border-line-hover text-ink-muted">
           <tr>
             {withSelection && (
-              <th className="w-10 px-2 py-2">
+              <th className="w-10 px-2 py-2 align-middle">
                 <input
+                  className="block"
                   ref={checkbox}
                   type="checkbox"
                   aria-label="Select this page"
@@ -186,8 +187,10 @@ export function DataTable<T>({
               className="border-b border-line last:border-0 hover:bg-sunken"
             >
               {withSelection && (
-                <td className="px-2 py-3 align-top">
+                <td className="px-2 py-3 align-middle">
+                  {/* block: an inline box sits on the text baseline, a few px above centre. */}
                   <input
+                    className="block"
                     type="checkbox"
                     aria-label={label(row)}
                     checked={selected.has(id(row))}
@@ -199,7 +202,7 @@ export function DataTable<T>({
               {columns.map((col) => (
                 <td
                   key={col.id}
-                  className={`min-w-0 px-2 py-3 align-top [overflow-wrap:anywhere] ${col.className ?? ""}`}
+                  className={`min-w-0 px-2 py-3 align-middle [overflow-wrap:anywhere] ${col.className ?? ""}`}
                 >
                   {col.cell(row)}
                 </td>
