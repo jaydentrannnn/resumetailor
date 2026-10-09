@@ -203,9 +203,10 @@ def test_ashby_location_and_school_are_searched_with_planned_text(quora):
     assert leftovers["School"]["key"] == "school"
 
 
-def test_consent_is_never_answered(quora):
+def test_routine_consent_without_preference_is_not_answered(quora):
     scanned, plan, result = quora
-    assert _planned(scanned, plan, "Check Yes or No to indicate your agreement")["key"] is None
+    step = _planned(scanned, plan, "Check Yes or No to indicate your agreement")
+    assert step == {"key": "routine_acknowledgement", "value": None}
     assert not _filled(result, "Check Yes or No to indicate your agreement")
 
 

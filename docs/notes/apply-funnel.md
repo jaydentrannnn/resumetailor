@@ -1683,3 +1683,14 @@ Magnite (op 5c6c59f2) blocked inside the Workday Skills loop at 23:07:40 (second
   manual flag note only there. Tests set `RESUME_TAILOR_BROWSER_LAUNCH=off`.
 - Fill buttons are enabled when the browser is `ready` or `idle` (it will launch), not only
   when connected (`browserUsable` in the SPA).
+
+### 2026-10-09 - Greenhouse autofill gaps
+
+- Added a blank/Auto high-school graduation year, derived from the earliest dated undergraduate start, with a saved override. High-school year questions precede School and match explicit offered year bounds.
+- Programming-language checkbox groups use the complete master Skills list, distinguish C/C++/C#, and preserve existing selections. Grade level uses class standing; relatives use the declared Yes/No without inventing names.
+- Routine privacy/data/read notices require the acknowledgement preference. Certifications, signatures and other commitments remain manual. Saved answers and model fallback cannot bypass these decisions.
+- Phone Country resolves the declared region beyond the first visible options and verifies its committed option. Known dates retry resume facts; resolver cache identity includes packet facts, full Skills, option punctuation, help text and resolver version.
+- Transcript inputs use their enclosing upload question rather than Attach, select the transcript artifact, and verify/preserve its filename. Successful final scans replace stale missing-field lists; scan failures block readiness.
+- Continue repairs prior automated dates only when the current value still matches that automation; manual edits are preserved. Both fill engines share these facts and scoped checks.
+- Regression fixtures reconstruct the observed DOM without applicant data; local browser tests cover both engines. Live Chrome rechecking remains pending because CDP was unavailable. Work is isolated in fix/greenhouse-autofill.
+- Validation: 1,501 Apply/API tests and 440 frontend tests passed; the frontend built and the frozen sidecar passed its startup/health/UI/shutdown smoke check. Ruff reported no new diagnostics in changed lines; repository-wide lint and a targeted type check retain existing baseline failures.

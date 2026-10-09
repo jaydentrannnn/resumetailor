@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from typing import Any
 
-from resume_tailor.apply.answers import education
+from resume_tailor.apply.answers import education, form_facts, questions
 from resume_tailor.apply.forms.field_catalog import classify
 from resume_tailor.apply.forms.field_matcher import choice_values, normalize
 from resume_tailor.apply.forms.field_types import FieldObservation
@@ -24,6 +24,28 @@ class FormAdapter:
         return classify(field)
 
     def value_for(self, field: FieldObservation, key: str, packet: Packet, fields: dict[str, str]) -> str:
+        if key in form_facts.PROTECTED_KEYS | {"education_start_month", "graduation_month"}:
+            import json
+
+            kind: questions.Kind = "text"
+            if field.control_kind == "checkbox_group":
+                kind = "multi"
+            elif field.control_kind in {"combobox", "native_select", "radio_group"}:
+                kind = "choice"
+            elif field.control_kind == "checkbox":
+                kind = "checkbox"
+            question = questions.Question(
+                field.label, kind=kind, options=tuple(o.label for o in field.options),
+                help_text=field.help_text, part=questions._part_from_text(field.label),
+            )
+            values = questions.answers(
+                questions.Match(key), question, questions.facts_from_packet(packet, fields=fields),
+            )
+            if key == form_facts.SKILLS:
+                return json.dumps(values) if values else ""
+            if values and question.options and kind == "choice":
+                return questions.choose(question, key, values) or ""
+            return next(iter(values), "")
         if key == education.MIXED_KEY:
             return next(iter(choice_values(key, fields)), "")
         return fields.get(key, "")

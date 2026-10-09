@@ -85,6 +85,8 @@ def test_applicant_profile_round_trip(client, tmp_path, monkeypatch):
 
     body["profile"]["email"] = "test@example.com"
     body["profile"]["first_name"] = "Ada"
+    body["profile"]["high_school_graduation_year"] = "2023"
+    body["profile"]["auto_accept_routine_acknowledgements"] = True
     put = c.put("/api/applicant-profile", json={"profile": body["profile"]})
     assert put.status_code == 200
     assert put.json()["profile"]["email"] == "test@example.com"
@@ -92,6 +94,8 @@ def test_applicant_profile_round_trip(client, tmp_path, monkeypatch):
 
     again = c.get("/api/applicant-profile")
     assert again.json()["profile"]["first_name"] == "Ada"
+    assert again.json()["profile"]["high_school_graduation_year"] == "2023"
+    assert again.json()["profile"]["auto_accept_routine_acknowledgements"] is True
     assert again.json()["profile"]["languages"] == []
 
     body["profile"]["languages"] = [{"language": "Vietnamese", "fluent": True, "levels": {"Speaking": "Native"}}]

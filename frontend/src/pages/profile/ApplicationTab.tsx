@@ -47,6 +47,8 @@ function blankLabelFor(key: keyof ApplicantProfile, draft: ApplicantProfile): st
 /** Explanations that are not "what a blank value means" (those live inside the control). */
 function hintFor(key: keyof ApplicantProfile): ReactNode {
   switch (key) {
+    case "auto_accept_routine_acknowledgements":
+      return "Accepts routine privacy and read-notice acknowledgements. Certifications and signatures stay for your review.";
     case "visa_status":
       return "Sets the sponsorship answers below unless you choose them yourself.";
     case "hours_per_week_available":

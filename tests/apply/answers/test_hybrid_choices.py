@@ -5,7 +5,8 @@ import json
 import pytest
 
 from resume_tailor import config
-from resume_tailor.apply.answers import hybrid_resolver, profile as profile_mod
+from resume_tailor.apply.answers import hybrid_resolver
+from resume_tailor.apply.answers import profile as profile_mod
 
 
 @pytest.fixture(autouse=True)
@@ -22,7 +23,8 @@ def _write(entries):
 def test_only_picks_for_the_current_profile_are_listed():
     digest = hybrid_resolver.current_digest()
     _write({
-        "k1": {"action": "select_combobox", "value": "Yes", "label": "Remote ok?", "digest": digest},
+        "k1": {"action": "select_combobox", "value": "Yes", "label": "Remote ok?", "digest": digest,
+               "version": hybrid_resolver._RESOLVER_PROMPT_VERSION},
         "k2": {"action": "select_combobox", "value": "No", "label": "Old", "digest": "stale"},
         "k3": {"action": "select_combobox", "value": "Yes", "label": "Legacy entry"},
     })

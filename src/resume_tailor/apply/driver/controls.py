@@ -7,7 +7,7 @@ import re
 from datetime import datetime
 from typing import Any
 
-from resume_tailor.apply.answers import reference_data
+from resume_tailor.apply.answers import form_facts, questions, reference_data
 from resume_tailor.apply.driver.scanner import ScanSnapshot, scan
 from resume_tailor.apply.forms.field_matcher import match_option, normalize, school_short_term
 from resume_tailor.apply.forms.field_types import FieldObservation, FieldOutcome, ObservedOption
@@ -207,6 +207,28 @@ async def apply_value(
             if after and len(after.options) > index and after.options[index].selected:
                 return _outcome(field, "verified_filled", value=after.options[index].label)
             return _outcome(field, "failed", reason="selection_not_committed")
+        if kind == "checkbox_group":
+            wanted = json.loads(value)
+            if (not isinstance(wanted, list) or not wanted
+                    or not all(isinstance(x, str) for x in wanted)):
+                return _outcome(field, "unanswered", reason="unsupported_checkbox_answer")
+            labels = [o.label for o in field.options if o.enabled]
+            if len(set(wanted)) != len(wanted) or any(labels.count(x) != 1 for x in wanted):
+                return _outcome(field, "ambiguous", reason="checkbox_options_changed")
+            frame, _selector = snapshot.locators[field.field_id]
+            name = await target.get_attribute('name')
+            group = frame.locator(f"input[type='checkbox'][name={json.dumps(name)}]")
+            if await group.count() != len(field.options):
+                return _outcome(field, "ambiguous", reason="checkbox_group_changed")
+            for index, option in enumerate(field.options):
+                box = group.nth(index)
+                if option.enabled and await box.is_checked() != (option.label in wanted):
+                    await clicks.async_safe_click(box, purpose="select", timeout=5000)
+            after = await _same_field(page, field)
+            selected = [o.label for o in after.options if o.selected] if after else []
+            if set(selected) == set(wanted):
+                return _outcome(field, "verified_filled", value='; '.join(selected))
+            return _outcome(field, "failed", reason="selection_not_committed")
         if kind == "checkbox":
             if normalize(value) not in {"yes", "no"}:
                 return _outcome(field, "unanswered", reason="unsupported_checkbox_answer")
@@ -258,6 +280,13 @@ async def _select_combobox(
     else:
         match = match_option(observed, value, key=field.canonical_key)
         match_id, match_status = match.option_id, match.status
+        if field.canonical_key == form_facts.HIGH_SCHOOL:
+            label = questions.choose(questions.Question(
+                field.label, kind="choice", options=tuple(o.label for o in observed if o.enabled),
+            ), field.canonical_key, [value])
+            hits = [o for o in observed if o.enabled and o.label == label]
+            match_id = hits[0].option_id if len(hits) == 1 else ""
+            match_status = "matched" if len(hits) == 1 else "no_match"
     if match_status != "matched":
         await trigger.press("Escape")
         return _outcome(field, "ambiguous" if match_status == "ambiguous" else "unanswered", reason=match_status)

@@ -29,7 +29,7 @@ from dataclasses import dataclass, field
 from datetime import date
 from typing import TYPE_CHECKING, Literal
 
-from resume_tailor.apply.answers import education, salary
+from resume_tailor.apply.answers import education, form_facts, salary
 from resume_tailor.apply.ats import ats_hints
 from resume_tailor.apply.forms import field_matcher
 
@@ -76,6 +76,7 @@ class Facts:
     role: str = ""
     employers: tuple[str, ...] = ()
     experience_titles: tuple[str, ...] = ()
+    skills: tuple[str, ...] = ()
 
 
 # --- classify -------------------------------------------------------------------------
@@ -283,6 +284,14 @@ def classify(question: Question) -> Match | None:
     if not text:
         return None
     low = text.casefold()
+    semantic = form_facts.semantic_key(text, question.help_text)
+    if semantic:
+        if (
+            semantic == form_facts.ACKNOWLEDGEMENT
+            and form_facts.acknowledgement(f"{text} {question.help_text}") != "routine"
+        ):
+            return None
+        return Match(semantic)
     if _CONSENT.search(low):
         return None
     if education.not_education(text):
@@ -427,6 +436,19 @@ def answers(match: Match | None, question: Question, facts: Facts) -> list[str]:
     """Answers to try for ``question``, most specific first; [] when no fact answers it."""
     if match is None:
         return []
+    if match.key == form_facts.SKILLS:
+        return form_facts.skill_options(question.options, facts.skills)
+    if match.key == form_facts.ACKNOWLEDGEMENT:
+        context = " ".join((question.text, question.help_text, *question.options))
+        routine = form_facts.acknowledgement(context) == "routine"
+        opted_in = facts.fields.get("auto_accept_routine_acknowledgements") == "Yes"
+        return ["Yes"] if routine and opted_in else []
+    if match.key == "relatives_at_company":
+        value = facts.fields.get(match.key, "")
+        if (value == "Yes" and question.kind in {"text", "textarea"}
+                and re.search(r"list|details|relationship|name", question.text, re.I)):
+            return []
+        return [value] if value else []
     derived = _derived(match, facts)
     if derived or match.key in {key for _pattern, key in _DERIVED}:
         return derived
@@ -462,6 +484,12 @@ def choose(question: Question, key: str, candidates: Iterable[str]) -> str | Non
     """The one option of ``question`` that says the first answer any option says."""
     options = [option for option in question.options if _clean(option)]
     for candidate in candidates:
+        if key == form_facts.HIGH_SCHOOL:
+            return form_facts.year_option(options, candidate)
+        if key == form_facts.ACKNOWLEDGEMENT:
+            hits = [option for option in options
+                    if re.match(r"^(?:yes\b|i agree\b|acknowledge\b)", option, re.I)]
+            return hits[0] if len(hits) == 1 else None
         wanted = field_matcher.normalize(candidate)
         if wanted in {"yes", "no"} and yes_no_options(options):
             hits = [option for option in options if _yes_no_head(option) == wanted]
@@ -550,7 +578,7 @@ Classifier = Callable[[list[Question]], list[str | None]]
 
 def plan_for(
     items: Iterable[dict], facts: Facts, *, classifier: Classifier | None = None,
-) -> dict[str, dict[str, str | None]]:
+) -> dict[str, dict[str, str | list[str] | None]]:
     """What ``filler.js`` should do with each scanned question, by its question id.
 
     ``key`` is the fact (None: nothing covers the question, so it is left alone and
@@ -575,8 +603,12 @@ def plan_for(
         )
         stated = str(item.get("attr_key") or "")
         edu_key = education.question_key(question.text, question.help_text)
-        blocked = education.not_education(question.text)
-        match = (None if blocked else classify(question) if edu_key
+        semantic = form_facts.semantic_key(question.text, question.help_text)
+        blocked = education.not_education(question.text) or (
+            semantic == form_facts.ACKNOWLEDGEMENT
+            and form_facts.acknowledgement(f"{question.text} {question.help_text}") != "routine"
+        )
+        match = (None if blocked else classify(question) if edu_key or semantic
                  else Match(stated) if stated else classify(question))
         name_key = str(item.get("name_key") or "")
         if (match is None and not edu_key and not blocked and name_key
@@ -614,14 +646,18 @@ def _classify_rest(
 
 def _step(
     item: dict, question: Question, match: Match | None, facts: Facts,
-) -> dict[str, str | None]:
+) -> dict[str, str | list[str] | None]:
     if match is None:
         return {"key": None, "value": ""}
     found = answers(match, question, facts)
     value = ""
+    if match.key == form_facts.SKILLS:
+        return {"key": match.key, "value": "", "values": found}
+    if match.key in form_facts.PROTECTED_KEYS and not found:
+        return {"key": match.key, "value": None}
     if found and question.options and question.kind in {"choice", "multi"}:
         chosen = choose(question, match.key, found)
-        if chosen is None and match.key in education.RESERVED_KEYS:
+        if chosen is None and match.key in education.RESERVED_KEYS | form_facts.PROTECTED_KEYS:
             return {"key": match.key, "value": None}
         value = chosen or ""
     elif found and question.kind == "date" and match.key in _DATE_KEYS:
@@ -633,7 +669,8 @@ def _step(
         question.part or _part_from_text(question.text)
     ):
         value = found[0]
-    elif found and (match.key in _COMPUTED or (question.part and question.kind == "typeahead")):
+    elif found and (match.key in _COMPUTED or match.key in form_facts.PROTECTED_KEYS
+                    or (question.part and question.kind == "typeahead")):
         # A split date's month typeahead is searched by name ("June"); a plain text
         # box takes the filler's own number formatting.
         value = found[0]
@@ -647,16 +684,19 @@ def facts_from_packet(packet: Packet, *, fields: dict[str, str] | None = None) -
         company=packet.company, role=packet.role,
         employers=[entry.employer for entry in packet.experience],
         experience_titles=[entry.title for entry in packet.experience],
+        skills=packet.master_skills,
     )
 
 
 def facts_for(
     fields: dict[str, str], *, company: str = "", role: str = "",
     employers: Iterable[str] = (), experience_titles: Iterable[str] = (),
+    skills: Iterable[str] = (),
     today: date | None = None,
 ) -> Facts:
     """Facts for one application (``today`` is fixed in tests)."""
     return Facts(
         fields=dict(fields), today=today or date.today(), company=company, role=role,
         employers=tuple(employers), experience_titles=tuple(experience_titles),
+        skills=tuple(skills),
     )

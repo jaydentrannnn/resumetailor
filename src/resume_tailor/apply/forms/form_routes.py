@@ -8,6 +8,8 @@ import re
 import time
 from typing import Any
 
+from resume_tailor.apply.answers import form_facts
+
 _EMAIL_CHOICES = (
     re.compile(r"^(?:sign in|log in|login|continue) with (?:your )?email(?: address)?$", re.I),
     re.compile(r"^(?:create (?:an? )?account|sign up|register) with (?:your )?email(?: address)?$", re.I),
@@ -103,9 +105,14 @@ CONSENT_JS = r"""() => [...document.querySelectorAll('input[type="checkbox"]')].
   const box = el.closest('[data-automation-id^="formField-"], fieldset, .form-group') || el.parentElement;
   const labels = [...(el.labels || [])].map(node => node.innerText || node.textContent || '');
   const copy = labels.join(' ').trim() || (box?.querySelector('legend, label, [class*="description" i]')?.textContent || '').trim();
+  const described = (el.getAttribute('aria-describedby') || '').split(/\s+/)
+    .map(id => document.getElementById(id)?.textContent || '').join(' ');
+  const explanation = box?.querySelector('[class*="description" i], [class*="help" i]');
+  const context = [copy, described, explanation?.textContent || ''].join(' ');
   const validation = !!box?.querySelector('[role="alert"], [aria-invalid="true"], [data-automation-id="errorMessage"]');
   const marker = !!box?.querySelector('[aria-required="true"], [class*="required" i]');
-  return {index, id: el.id || '', label: copy, required: el.required || el.getAttribute('aria-required') === 'true' || validation || marker,
+  return {index, id: el.id || '', label: copy, context,
+    required: el.required || el.getAttribute('aria-required') === 'true' || validation || marker,
     checked: el.checked, enabled: !el.disabled, visible: !!(el.getClientRects().length || (el.labels?.[0]?.getClientRects().length))};
 })"""
 
@@ -113,7 +120,9 @@ _CONSENT = re.compile(r"consent|privacy|personal data|data processing|terms|agre
 _EXCLUDE = re.compile(r"marketing|job alert|talent community|newsletter|background check|arbitration|signature", re.I)
 
 
-def consent_candidates(rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]], list[str]]:
+def consent_candidates(
+    rows: list[dict[str, Any]], *, allow_routine: bool = False,
+) -> tuple[list[dict[str, Any]], list[str]]:
     accepted = []
     unresolved = []
     for row in rows:
@@ -123,15 +132,20 @@ def consent_candidates(rows: list[dict[str, Any]]) -> tuple[list[dict[str, Any]]
         if not label:
             unresolved.append(row)
             continue
-        if _CONSENT.search(label):
-            (accepted if row.get("enabled") and row.get("visible") else unresolved).append(row)
+        if _CONSENT.search(label) or re.search(r"acknowledge|confirm|read", label, re.I):
+            routine = form_facts.acknowledgement(str(row.get("context") or label)) == "routine"
+            target = accepted if allow_routine and routine and row.get("enabled") \
+                and row.get("visible") else unresolved
+            target.append(row)
         elif re.search(r"acknowledge|understand|authorize|declaration", label, re.I):
             unresolved.append(row)
     return accepted, [str(row.get("label") or "Consent") for row in unresolved]
 
 
-def accept_workday_sync(page: Any) -> tuple[list[dict[str, str]], list[str]]:
-    rows, unresolved = consent_candidates(page.evaluate(CONSENT_JS))
+def accept_workday_sync(
+    page: Any, *, allow_routine: bool = False,
+) -> tuple[list[dict[str, str]], list[str]]:
+    rows, unresolved = consent_candidates(page.evaluate(CONSENT_JS), allow_routine=allow_routine)
     completed = []
     for row in rows:
         box = page.locator('input[type="checkbox"]').nth(row["index"])
@@ -154,8 +168,12 @@ def accept_workday_sync(page: Any) -> tuple[list[dict[str, str]], list[str]]:
     return completed, unresolved
 
 
-async def accept_workday_async(page: Any) -> tuple[list[dict[str, str]], list[str]]:
-    rows, unresolved = consent_candidates(await page.evaluate(CONSENT_JS))
+async def accept_workday_async(
+    page: Any, *, allow_routine: bool = False,
+) -> tuple[list[dict[str, str]], list[str]]:
+    rows, unresolved = consent_candidates(
+        await page.evaluate(CONSENT_JS), allow_routine=allow_routine,
+    )
     completed = []
     for row in rows:
         box = page.locator('input[type="checkbox"]').nth(row["index"])

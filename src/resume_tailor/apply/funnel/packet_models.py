@@ -79,6 +79,7 @@ class Packet(BaseModel):
     education: list[PacketEducation] = Field(default_factory=list)
     experience: list[PacketExperience] = Field(default_factory=list)
     skills: list[str] = Field(default_factory=list)
+    master_skills: list[str] = Field(default_factory=list)
     languages: list[PacketLanguage] = Field(default_factory=list)
     cover_letter: str = ""
     artifacts: dict[str, str] = Field(default_factory=dict)

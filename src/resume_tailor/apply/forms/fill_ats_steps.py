@@ -159,7 +159,9 @@ class _FillAtsSteps(fill_state._FillState):
         from resume_tailor.apply.forms import form_routes  # noqa: PLC0415
 
         merged = self.merged
-        consent_filled, consent_review = form_routes.accept_workday_sync(self.page)
+        consent_filled, consent_review = form_routes.accept_workday_sync(
+            self.page, allow_routine=self.profile.auto_accept_routine_acknowledgements,
+        )
         merged["filled"].extend({**item, "frame_index": 0} for item in consent_filled)
         accepted_labels = {item["label"] for item in consent_filled}
         merged["required_empty"] = [

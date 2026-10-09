@@ -153,6 +153,12 @@ class _FillEntry(fill_state._FillState):
         # Questions recognised as a profile fact the profile leaves blank (every step).
         self.blank_facts: list[dict[str, Any]] = []
         self.facts = questions.facts_from_packet(self.pkt, fields=self.fields)
+        if self.fill_mode == "continue":
+            from . import fill_repairs
+
+            self.merged["filled"].extend(fill_repairs.correct_previous_answers(
+                self.page, self.previous_fill.filled, self.facts,
+            ))
         posting_text = self.jd_text
         with contextlib.suppress(Exception):
             posting_text += "\n" + self.page.locator("body").inner_text(timeout=2000)[:50000]

@@ -143,13 +143,14 @@ export function ProfileField({
         {...common}
         type={password ? "password" : "text"}
         autoComplete={password ? "new-password" : undefined}
-        inputMode={name.endsWith("email") ? "email" : name.endsWith("_url") ? "url" : undefined}
+        inputMode={name === "high_school_graduation_year" ? "numeric" : name.endsWith("email") ? "email" : name.endsWith("_url") ? "url" : undefined}
+        maxLength={name === "high_school_graduation_year" ? 4 : undefined}
         value={String(value ?? "")}
         placeholder={
           password && ctx.passwordSet
             ? "Saved password · leave blank to keep"
             : fromResume
-              ? `From resume: ${fromResume}`
+              ? name === "high_school_graduation_year" ? `Auto from college start: ${fromResume}` : `From resume: ${fromResume}`
               : fallback
                 ? `Default: ${fallback}`
                 : undefined

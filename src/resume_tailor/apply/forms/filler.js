@@ -387,6 +387,7 @@
     if (/tel-country-code|dial(?:ling|ing)?[ _-]*code|calling[ _-]*code|phone[ _-]*country|country[ _/-]*code/.test(clues)) return true;
     if (!/country/.test(clues)) return false;
     if (el.tagName !== "SELECT" && el.getAttribute("role") !== "combobox") return false;
+    if (el.id === "country" && /^phone\b/i.test(sectionHeading(el))) return true;
     const group = el.closest("fieldset, [class*='phone' i], [data-field*='phone' i], .form-group");
     const nearPhone = group && group.querySelector("input[type='tel'], input[name*='phone' i]");
     if (nearPhone && el.getAttribute("role") === "combobox" &&
@@ -839,6 +840,10 @@
 
   /** A checkbox group's question: its legend or group label, not one option's label. */
   function groupQuestion(el) {
+    if (el.getAttribute("description")) return el.getAttribute("description");
+    const described = (el.getAttribute("aria-describedby") || "").split(/\s+/)
+      .map(id => rootOf(el).getElementById?.(id)).find(node => node && !/error/i.test(node.id));
+    if (described && textOf(described)) return textOf(described);
     const lever = leverQuestion(el);
     if (lever) return lever.text;
     const fieldset = el.closest("fieldset");
@@ -914,7 +919,7 @@
   for (const fileEl of deepQueryAll(document, 'input[type="file"]')) {
     const fileSel = selectorFor(fileEl);
     const section = sectionHeading(fileEl);
-    const fileLbl = labelFor(fileEl) || section;
+    const fileLbl = textOf(fileEl.closest('.file-upload')?.querySelector('.upload-label, .file-upload__label')) || labelFor(fileEl) || section;
     if (!file_inputs.some((f) => f.selector === fileSel)) {
       // Workday labels its resume input "Upload a file (5MB max)"; the hint and the
       // "Resume/CV" heading say what it is for.
@@ -993,6 +998,7 @@
     // Workday: a honeypot "for robots only" input, and the search box of a multiselect
     // prompt (typing there does not commit a choice; the fill runner owns those).
     if (el.getAttribute("data-automation-id") === "beecatcher") continue;
+    if (el.closest('.select__control, [class*="-control"]') && el.getAttribute('role') !== 'combobox' && !isReactSelect(el)) continue;
     // The options of an open prompt popup (Skills search results) are not questions.
     if (el.closest("[data-automation-id='promptOption'], [data-automation-id='promptLeafNode'], [data-automation-id='activeListContainer'], [role='listbox']")) continue;
     if (el.closest("[data-automation-id='multiselectInputContainer']")) {
@@ -1012,6 +1018,35 @@
       if (!doneQuestions.has(qid)) {
         doneQuestions.add(qid);
         questions_out.push(describe(el, { qid, members, buttonGroup, label, sel, required }));
+      }
+      continue;
+    }
+    if (!plan && members.length > 1 && members.every(member => member.type === 'checkbox')) {
+      if (doneQuestions.has(qid)) continue;
+      const selected = members.filter(member => member.checked).map(optionText);
+      if (selected.length) {
+        doneQuestions.add(qid);
+        filled.push({key: 'existing', label, value: selected.join('; '), selector: sel, preserved: true});
+        continue;
+      }
+    }
+    if (planned && Array.isArray(planned.values)) {
+      if (doneQuestions.has(qid)) continue;
+      doneQuestions.add(qid);
+      const options = questionOptions(el);
+      const existing = options.filter(option => option.checked);
+      const wanted = existing.length ? existing.map(optionText) : planned.values;
+      if (!existing.length) {
+        for (const option of options) {
+          if (wanted.includes(optionText(option))) tick(option);
+        }
+      }
+      const selected = options.filter(option => option.checked).map(optionText);
+      if (selected.length && selected.length === wanted.length && wanted.every(value => selected.includes(value))) {
+        filled.push({key: planned.key, label, value: selected.join('; '), selector: sel, preserved: existing.length > 0});
+      } else {
+        leftovers.push({key: planned.key, label, type: 'checkboxgroup', options: options.map(optionText), required, selector: sel, reason: 'No supported skill selection committed'});
+        if (required) required_empty.push(label || qid);
       }
       continue;
     }
@@ -1069,7 +1104,9 @@
       continue;
     }
     if (el.getAttribute("role") === "combobox" || isReactSelect(el)) {
-      const selectedText = (el.closest(".select__control, [class*='-control']")?.querySelector(".select__single-value, [class*='-singleValue']")?.textContent || "").trim();
+      const control = el.closest(".select__control, [class*='-control']");
+      const selectedText = (control?.querySelector(".select__single-value, [class*='-singleValue']")?.textContent ||
+        Array.from(control?.querySelectorAll('.select__multi-value__label, [class*="-multiValue"]') || []).map(textOf).join('; ')).trim();
       if (selectedText) {
         filled.push({ key: "existing", label, value: selectedText, selector: sel, preserved: true });
         continue;

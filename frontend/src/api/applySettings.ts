@@ -174,6 +174,8 @@ export type ApplicantProfile = {
   graduation_date?: string;
   /** Blank = derived from the graduation date. */
   class_year?: "" | "freshman" | "sophomore" | "junior" | "senior" | "graduate";
+  high_school_graduation_year?: string;
+  auto_accept_routine_acknowledgements?: boolean;
   gpa_display?: string;
   /** Server-owned: set only by the transcript upload route. */
   transcript_path?: string;

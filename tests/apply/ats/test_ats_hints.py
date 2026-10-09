@@ -74,6 +74,8 @@ def test_canonical_field_keys_match_plan():
         # Profile fields added for students (plan PR3).
         "visa_status",
         "class_year",
+        "high_school_graduation_year",
+        "relatives_at_company",
         "school_email",
         "security_clearance",
         "drivers_license",

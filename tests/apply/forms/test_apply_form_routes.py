@@ -96,15 +96,15 @@ def test_social_only_auth_chooser_hands_off(page):
     assert form_routes.choose_email_sync(page, deadline=time.monotonic() + 5) == "unavailable"
 
 
-def test_required_consent_is_checked_without_optional_opt_in(page):
+def test_required_certification_stays_for_review_even_with_routine_opt_in(page):
     page.set_content("""
       <div class="form-group"><label><input type="checkbox" required>I certify that this application is accurate</label></div>
       <div class="form-group"><label><input type="checkbox">Join the talent community</label></div>
     """)
-    filled, unresolved = form_routes.accept_workday_sync(page)
-    assert unresolved == []
-    assert len(filled) == 1
-    assert page.locator("input[type=checkbox]").nth(0).is_checked()
+    filled, unresolved = form_routes.accept_workday_sync(page, allow_routine=True)
+    assert unresolved == ["I certify that this application is accurate"]
+    assert filled == []
+    assert not page.locator("input[type=checkbox]").nth(0).is_checked()
     assert not page.locator("input[type=checkbox]").nth(1).is_checked()
 
 
@@ -152,7 +152,7 @@ def test_consent_checkbox_that_cannot_be_ticked_is_not_reported_ticked(page):
     assert not form_routes.tick_consent(page, _ICIMS_LEFTOVER)
 
 
-def test_icims_step_ticks_consent_and_clears_it_from_the_blocking_lists(page):
+def test_icims_unqualified_agreement_stays_for_review(page):
     from types import SimpleNamespace
 
     from resume_tailor.apply.forms.fill_answers import _FillAnswers
@@ -167,11 +167,11 @@ def test_icims_step_ticks_consent_and_clears_it_from_the_blocking_lists(page):
     run._resolve_leftover = lambda item: _FillAnswers._resolve_leftover(run, item)
     run._stop_if_out_of_time = lambda _msg: False
     _FillAnswers._resolve_leftovers(run)
-    assert page.locator("#accept_gdpr").is_checked()
-    assert run.merged["required_empty"] == ["Other"]
-    assert run.merged["leftovers"] == []
-    assert run.needs_review == []
-    assert run.merged["filled"][0]["key"] == "consent"
+    assert not page.locator("#accept_gdpr").is_checked()
+    assert run.merged["required_empty"] == ["accept_gdpr", "Other"]
+    assert run.merged["leftovers"] == [leftover]
+    assert run.needs_review == ["I agree"]
+    assert run.merged["filled"] == []
 
 
 def test_verified_workday_hidden_year_control_uses_matched_education_row():

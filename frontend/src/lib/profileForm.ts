@@ -48,6 +48,8 @@ export const PROFILE_LABELS: Partial<Record<keyof ApplicantProfile | string, str
   visa_status: "Visa status",
   graduation_date: "Expected graduation",
   class_year: "Class standing",
+  high_school_graduation_year: "High-school graduation year",
+  auto_accept_routine_acknowledgements: "Accept routine privacy and read-notice acknowledgements",
   gpa_display: "GPA shown on forms",
   school_email: "School email",
   security_clearance: "Security clearance",
@@ -142,6 +144,8 @@ export function validateProfile(profile: ApplicantProfile): Record<string, strin
   }
   if (profile.graduation_date && !/^\d{4}-(0[1-9]|1[0-2])$/.test(profile.graduation_date))
     errors.graduation_date = "Pick a month and year.";
+  if (profile.high_school_graduation_year && !/^\d{4}$/.test(profile.high_school_graduation_year))
+    errors.high_school_graduation_year = "Enter a four-digit year or leave blank for Auto.";
   if (profile.earliest_start && !/^\d{4}-(0[1-9]|1[0-2])-\d{2}$/.test(profile.earliest_start))
     errors.earliest_start = "Pick a month, year and day.";
   const hours = profile.hours_per_week_available;
@@ -184,6 +188,7 @@ export const PROFILE_GROUPS: ProfileGroup[] = [
     fields: [
       "graduation_date",
       "class_year",
+      "high_school_graduation_year",
       "gpa_display",
       "highest_education_obtained",
       "school_email",
@@ -238,7 +243,7 @@ export const PROFILE_GROUPS: ProfileGroup[] = [
   {
     id: "Saved answers and other preferences",
     title: "Saved answers",
-    fields: ["referred_by", "how_heard", "portfolio_url", "portfolio_only_when_asked"],
+    fields: ["referred_by", "how_heard", "portfolio_url", "portfolio_only_when_asked", "auto_accept_routine_acknowledgements"],
   },
 ];
 
@@ -297,7 +302,7 @@ export const BOOLEAN_FIELDS = new Set<string>([
 ]);
 
 /** Plain on/off settings (never blank on the server). */
-export const CHECKBOX_FIELDS = new Set<string>(["portfolio_only_when_asked"]);
+export const CHECKBOX_FIELDS = new Set<string>(["portfolio_only_when_asked", "auto_accept_routine_acknowledgements"]);
 
 /** Gap keys (`packet.PROFILE_FIELDS`) whose profile field is named differently. */
 export const GAP_FIELD_ALIASES: Record<string, string> = {

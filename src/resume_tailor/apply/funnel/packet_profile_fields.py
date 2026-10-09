@@ -106,6 +106,13 @@ PROFILE_FIELDS: dict[str, ProfileFieldInfo] = {
     "portfolio_url": ProfileFieldInfo(label="Portfolio URL", section=_SAVED),
     "visa_status": ProfileFieldInfo(label="Visa status", section=_WORK_AUTH),
     "class_year": ProfileFieldInfo(label="Class standing", section=_EDUCATION),
+    "high_school_graduation_year": ProfileFieldInfo(
+        label="High-school graduation year", section=_EDUCATION,
+    ),
+    "relatives_at_company": ProfileFieldInfo(label="Relatives at the company", section=_VOLUNTARY),
+    "auto_accept_routine_acknowledgements": ProfileFieldInfo(
+        label="Routine acknowledgements", section=_SAVED,
+    ),
     "school_email": ProfileFieldInfo(label="School email", section=_EDUCATION),
     "security_clearance": ProfileFieldInfo(label="Security clearance", section=_AVAILABILITY),
     "drivers_license": ProfileFieldInfo(label="Driver's license", section=_AVAILABILITY),
@@ -145,7 +152,9 @@ def class_year_for(graduation: str, degree_level: str, today: date | None = None
 DEFAULTS: dict[str, str] = {"phone_device_type": "Mobile"}
 
 #: Education facts the applicant profile holds itself (the rest live on the resume).
-_PROFILE_EDUCATION_KEYS = frozenset({"class_year", "school_email", "highest_education_obtained"})
+_PROFILE_EDUCATION_KEYS = frozenset({
+    "class_year", "school_email", "highest_education_obtained", "high_school_graduation_year",
+})
 
 def profile_path(section: str, key: str = "") -> str:
     """The Profile page tab that holds ``section`` (or, for education, ``key``)."""
@@ -258,6 +267,8 @@ def missing_profile(blank: list[dict], filled_labels: set[str]) -> list[dict]:
     required: set[str] = set()
     for item in blank:
         key = str(item.get("key") or "")
+        if key == "routine_acknowledgement":
+            key = "auto_accept_routine_acknowledgements"
         if key not in PROFILE_FIELDS:
             # Not a profile field: the preferred-name tick, resume-derived employer, ...
             continue

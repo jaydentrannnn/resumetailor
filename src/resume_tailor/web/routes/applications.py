@@ -168,6 +168,7 @@ _RESUME_FALLBACKS = {
     "first_name": "first_name", "last_name": "last_name", "email": "email", "phone": "phone",
     "linkedin_url": "linkedin_url", "github_url": "github_url",
     "graduation_date": "graduation_month", "gpa_display": "gpa", "school_email": "school_email",
+    "high_school_graduation_year": "high_school_graduation_year",
 }
 
 

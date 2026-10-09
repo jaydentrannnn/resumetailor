@@ -213,6 +213,7 @@ def build_packet(
         education=education,
         experience=experience,
         skills=_load_skills(job_dir / "skills.json"),
+        master_skills=list(dict.fromkeys(item for group in resume.skills for item in group.items)),
         languages=[
             packet_models.PacketLanguage(language=entry.language.strip(), fluent=entry.fluent,
                            levels={k: v for k, v in entry.levels.items() if v.strip()})

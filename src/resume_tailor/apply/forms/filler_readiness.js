@@ -70,7 +70,7 @@
     }
     if (el.getAttribute("role") === "combobox") {
       const container = el.closest(".select__control, [class*='-control'], [data-automation-id*='formField']");
-      return !container?.querySelector(".select__single-value, [class*='-singleValue'], [data-automation-id*='selected']");
+      return !container?.querySelector(".select__single-value, [class*='-singleValue'], .select__multi-value, [class*='-multiValue'], [data-automation-id*='selected']");
     }
     if (type === "checkbox" || type === "radio") {
       const name = el.name;
@@ -105,6 +105,8 @@
     if (!isVisible(el)) continue;
     const type = (el.getAttribute("type") || el.tagName.toLowerCase()).toLowerCase();
     if (skipTypes.has(type)) continue;
+    // React Select's internal required/search inputs belong to the parent question.
+    if (el.closest('.select__control, [class*="-control"]') && el.getAttribute('role') !== 'combobox') continue;
     const lever = leverQuestion(el);
     const required = el.required || el.getAttribute("aria-required") === "true" || lever?.required === true;
     if (!required) continue;

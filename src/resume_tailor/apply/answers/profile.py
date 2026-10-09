@@ -183,6 +183,9 @@ class ApplicantProfile(BaseModel):
     graduation_date: str = ""
     #: Blank = derived from the graduation date (`packet_profile_fields.class_year_for`).
     class_year: ClassYear = ""
+    #: Blank = earliest undergraduate start year, like automatic class standing.
+    high_school_graduation_year: str = Field(default="", pattern=r"^$|^\d{4}$")
+    auto_accept_routine_acknowledgements: bool = False
     #: Overrides the resume's GPA on forms ("3.7/4.0"). Blank = resume.
     gpa_display: str = ""
     #: Uploaded transcript (PDF) in the workspace's files folder, for transcript uploads.

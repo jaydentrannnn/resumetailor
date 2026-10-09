@@ -59,17 +59,22 @@ class _FillFinish(fill_state._FillState):
 
     def _final_required_empty(self) -> list[str]:
         required_empty: list[str] = []
-        for frame in self.page.frames:
+        for frame_index, frame in enumerate(self.page.frames):
             try:
                 ready = frame.evaluate(self.readiness_js)
                 if isinstance(ready, list):
                     required_empty.extend(str(item) for item in ready)
                 elif isinstance(ready, dict):
                     required_empty.extend(str(item) for item in ready.get("required_empty") or [])
+                else:
+                    raise ValueError("Unexpected readiness result")
             except Exception:  # noqa: BLE001
-                continue
-        if not required_empty:
-            required_empty = list(self.merged.get("required_empty") or [])
+                required_empty.extend(
+                    str(item.get("label") or item.get("selector"))
+                    for item in self.merged.get("leftovers") or []
+                    if item.get("required") and item.get("frame_index", 0) == frame_index
+                )
+                required_empty.append(f"Could not verify required fields in frame {frame_index}")
         return list(dict.fromkeys(required_empty))
 
     def _reconcile_observed(self) -> None:
@@ -88,7 +93,13 @@ class _FillFinish(fill_state._FillState):
             **self.completed_step_outcomes,
             **fill_widgets._observe_fields(self.page, self.filler_js, self.hints, attempted),
         }
-        observed_labels = {str(item.get("label") or "") for item in observed.values()}
+        unresolved_labels = {
+            str(item.get("label") or "") for identity, item in attempted.items()
+            if identity not in observed
+        }
+        observed_labels = (
+            {str(item.get("label") or "") for item in observed.values()} - unresolved_labels
+        )
         self.needs_review = [
             label for label in self.needs_review
             if label not in observed_labels or label == "No salary range in the applicant profile"
@@ -154,7 +165,7 @@ class _FillFinish(fill_state._FillState):
             for prior in self.previous_fill.uploads:
                 purpose = prior.get("purpose")
                 filename = prior.get("filename")
-                if purpose not in {"resume", "cover_letter"} or any(
+                if purpose not in {"resume", "cover_letter", "transcript", "portfolio"} or any(
                     item.get("purpose") == purpose and item.get("verified") for item in uploads
                 ):
                     continue
