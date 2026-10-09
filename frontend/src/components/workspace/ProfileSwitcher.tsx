@@ -5,7 +5,6 @@ import { useEditorState } from "../../state/editorState";
 import { useWorkspaceState } from "../../state/workspaceState";
 import { useApplicantProfile } from "../../state/applicantProfileState";
 import { useRunState } from "../../state/runState";
-import { useLibraryState } from "../../state/libraryState";
 import { ProfileManagerDialog } from "./ProfileManagerDialog";
 
 /**
@@ -22,7 +21,6 @@ export function ProfileSwitcher() {
   const { dirty } = useEditorState();
   const applicant = useApplicantProfile();
   const { flushSettings, discardSettings, settingsSaveState } = useRunState();
-  const { flushOverrides, discardOverrides, overridesSaveState } = useLibraryState();
   const { confirm, choice } = useConfirm();
   const [managerOpen, setManagerOpen] = useState(false);
 
@@ -54,26 +52,6 @@ export function ProfileSwitcher() {
         if (decision === "retry") saved = await flushSettings();
         else if (decision === "discard") {
           await discardSettings();
-          break;
-        } else return;
-      }
-    }
-    if (overridesSaveState !== "saved") {
-      let saved = await flushOverrides();
-      while (!saved) {
-        const decision = await choice({
-          title: "Vocabulary additions could not be saved",
-          message:
-            "Retry saving before switching profiles, stay here, or discard these vocabulary changes.",
-          options: [
-            { id: "retry", label: "Retry save" },
-            { id: "discard", label: "Discard changes", tone: "danger" },
-          ],
-          cancelLabel: "Stay",
-        });
-        if (decision === "retry") saved = await flushOverrides();
-        else if (decision === "discard") {
-          await discardOverrides();
           break;
         } else return;
       }

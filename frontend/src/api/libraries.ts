@@ -1,59 +1,31 @@
-/** Vocabulary libraries (packs, selection, impact) and vocabulary proposals. */
+/** The vocabulary dictionary (built-in + the user's additions) and vocabulary proposals. */
 
 import { request } from "./core";
 
-/** A workspace's own additions and removals, layered on top of its enabled packs. */
-export type LibraryOverrides = {
-  tag_aliases: Record<string, string>;
-  tag_aliases_removed: string[];
-  /** verb -> family, one family per overridden verb (not a pack's family -> verbs[]). */
-  verb_families: Record<string, string>;
-  verb_families_removed: string[];
-};
+/** One spelling of a term, or one verb of a family. */
+export type VocabularyItem = { value: string; builtin: boolean; hidden: boolean };
 
-/** One pack's summary row for the pack list — no alias/verb bodies. */
-export type LibraryPackSummary = {
-  id: string;
-  label: string;
-  description: string;
+/** One dictionary term with its other spellings, or one opening-verb family. */
+export type VocabularyEntry = {
+  kind: "term" | "family";
+  name: string;
   builtin: boolean;
-  customized: boolean;
-  tag_alias_count: number;
-  verb_count: number;
-  created_at: string;
-  updated_at: string;
+  hidden: boolean;
+  items: VocabularyItem[];
 };
 
-/** One pack's full contents, for the pack editor. */
-export type LibraryPack = {
-  id: string;
-  label: string;
-  description: string;
-  builtin: boolean;
-  customized: boolean;
-  tag_aliases: Record<string, string>;
-  verb_families: Record<string, string[]>;
-  created_at: string;
-  updated_at: string;
-};
+export type VocabularyKind = "term" | "alias" | "verb";
 
-export type LibraryPackDraft = {
-  label: string;
-  description: string;
-  tag_aliases: Record<string, string>;
-  verb_families: Record<string, string[]>;
-  /** Allow overwriting a target another pack already claims. */
-  force?: boolean;
-};
-
-/** Summary of the composed table — per-pack contents already sit in `packs`. */
+/** Counts and a fingerprint of the composed table. */
 export type LibraryEffective = {
+  term_count: number;
   tag_alias_count: number;
   verb_count: number;
   fingerprint: string;
 };
 
-/** One LLM-drafted vocabulary addition awaiting approval. */
+/** One LLM-drafted vocabulary addition awaiting approval. `target_exists` says whether
+ * approving an alias adds it to an existing term or creates that term. */
 export type LibraryProposal = {
   id: string;
   kind: "tag_alias" | "verb_family";
@@ -64,127 +36,53 @@ export type LibraryProposal = {
   rationale: string;
   source: "run" | "manual";
   created_at: string;
+  target_exists: boolean;
 };
 
 export type LibraryState = {
-  packs: LibraryPackSummary[];
-  enabled_packs: string[];
-  overrides: LibraryOverrides;
+  entries: VocabularyEntry[];
   effective: LibraryEffective;
-  /** Notes from composition: a missing pack, a cross-pack verb collision, or a
-   * dropped alias chain. Never errors. */
+  /** Notes from composition (a user alias skipped because it would chain). */
   diagnostics: string[];
   proposals: LibraryProposal[];
-  /** Set only by generateLibraryProposals when a draft partially failed (e.g. the
-   * model was unreachable) — the call still returns 200 with whatever succeeded. */
+  /** Set only by generateLibraryProposals when a draft partially failed. */
   warning: string | null;
 };
 
-/** What approving one alias would rewrite in the current master resume, if anything. */
-export type LibraryAliasImpact = {
-  alias: string;
-  canonical: string;
-  affected_tags: string[];
-  affected_bullets: [string, string][];
-};
-
 export function fetchLibraries(): Promise<LibraryState> {
-  /** Every pack (built-in and user-authored), the active profile's selection and
-   * overrides, and the composed table's summary. */
+  /** The whole dictionary (hidden entries flagged) and pending suggestions. */
   return request<LibraryState>("/api/libraries");
 }
 
-export function fetchLibraryPack(id: string): Promise<LibraryPack> {
-  /** One pack's full contents, for the pack editor. */
-  return request<LibraryPack>(`/api/libraries/packs/${encodeURIComponent(id)}`);
-}
-
-/**
- * Parse a `{message, errors}` validation-error body from a pack write, joining every
- * message rather than showing only the first — mirrors `templateErrorDetail`.
- *
- * `message` is itself `"; ".join(errors)` (`LibraryValidationError.__init__`,
- * libraries.py) — a summary derived from `errors`, not a distinct piece of information.
- * Appending `errors.join("\n")` after it would print the same text twice (obviously so
- * when there's exactly one error); `errors` alone is the complete, better-formatted
- * version, so it wins whenever present.
- */
-async function libraryErrorDetail(res: Response): Promise<string> {
-  let detail = res.statusText;
-  try {
-    const body = await res.json();
-    const d = body.detail;
-    if (typeof d === "string") {
-      detail = d;
-    } else if (d && typeof d === "object" && "message" in d) {
-      const errors = (d as { errors?: string[] }).errors ?? [];
-      detail = errors.length ? errors.join("\n") : String((d as { message: string }).message);
-    } else {
-      detail = JSON.stringify(d ?? body);
-    }
-  } catch {
-    /* keep statusText */
-  }
-  return detail;
-}
-
-export async function createLibraryPack(draft: LibraryPackDraft): Promise<LibraryState> {
-  /** Create a new user-authored pack. The id is derived from the label. */
-  const res = await fetch("/api/libraries/packs", {
-    method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(draft),
-  });
-  if (!res.ok) throw new Error(await libraryErrorDetail(res));
-  return res.json();
-}
-
-export async function updateLibraryPack(
-  id: string,
-  draft: LibraryPackDraft,
+export function addVocabulary(
+  kind: VocabularyKind,
+  value: string,
+  target = "",
 ): Promise<LibraryState> {
-  /** Update a user-authored pack's contents. Refuses a built-in id. */
-  const res = await fetch(`/api/libraries/packs/${encodeURIComponent(id)}`, {
-    method: "PUT",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify(draft),
-  });
-  if (!res.ok) throw new Error(await libraryErrorDetail(res));
-  return res.json();
-}
-
-export function deleteLibraryPack(id: string): Promise<LibraryState> {
-  /** Delete a user-authored pack. Refuses a shipped id. */
-  return request<LibraryState>(`/api/libraries/packs/${encodeURIComponent(id)}`, {
-    method: "DELETE",
-  });
-}
-
-export function resetLibraryPack(id: string): Promise<LibraryState> {
-  /** Restore a shipped pack to its bundled seed by deleting its shadow file. */
-  return request<LibraryState>(`/api/libraries/packs/${encodeURIComponent(id)}/reset`, {
+  /** Add a term, another spelling of term `target`, or a verb to family `target`. */
+  return request<LibraryState>("/api/libraries/additions", {
     method: "POST",
+    body: JSON.stringify({ kind, value, target }),
   });
 }
 
-export function setLibrarySelection(
-  enabledPacks: string[],
-  overrides: LibraryOverrides,
+export function removeVocabulary(kind: VocabularyKind, value: string): Promise<LibraryState> {
+  /** Delete one of the user's own entries (built-ins can only be hidden). */
+  return request<LibraryState>("/api/libraries/additions/remove", {
+    method: "POST",
+    body: JSON.stringify({ kind, value }),
+  });
+}
+
+export function setVocabularyHidden(
+  kind: VocabularyKind,
+  value: string,
+  hidden: boolean,
 ): Promise<LibraryState> {
-  /** Set the active profile's enabled packs and overrides. */
-  return request<LibraryState>("/api/libraries/selection", {
-    method: "PUT",
-    body: JSON.stringify({ enabled_packs: enabledPacks, overrides }),
-  });
-}
-
-export function previewLibraryImpact(
-  tagAliases: Record<string, string>,
-): Promise<{ impacts: LibraryAliasImpact[] }> {
-  /** What approving each of `tagAliases` would rewrite in the current master resume. */
-  return request<{ impacts: LibraryAliasImpact[] }>("/api/libraries/impact", {
+  /** Hide, or show again, one built-in term, spelling or verb. */
+  return request<LibraryState>("/api/libraries/hidden", {
     method: "POST",
-    body: JSON.stringify({ tag_aliases: tagAliases }),
+    body: JSON.stringify({ kind, value, hidden }),
   });
 }
 
@@ -197,47 +95,15 @@ export function generateLibraryProposals(jdText?: string): Promise<LibraryState>
   });
 }
 
-/** Thrown by `approveLibraryProposals` when approving would rewrite an existing bullet
- * tag and the caller has not yet confirmed that. Carries the exact impact so the UI can
- * show it before re-submitting with `acknowledgeRewrites: true`. */
-export class LibraryApprovalConflict extends Error {
-  impact: LibraryAliasImpact[];
-  constructor(message: string, impact: LibraryAliasImpact[]) {
-    super(message);
-    this.name = "LibraryApprovalConflict";
-    this.impact = impact;
-  }
-}
-
-export async function approveLibraryProposals(
+export function approveLibraryProposals(
   proposalIds: string[],
-  targetPackId: string,
-  acknowledgeRewrites: boolean,
+  targets: Record<string, string> = {},
 ): Promise<LibraryState> {
-  /** Fold selected proposals into an existing user-authored pack. Throws
-   * `LibraryApprovalConflict` (409) when the change would rewrite an existing tag and
-   * `acknowledgeRewrites` was not set. */
-  const res = await fetch("/api/libraries/proposals/approve", {
+  /** Add proposals to the vocabulary; `targets[id]` sends an alias to another term. */
+  return request<LibraryState>("/api/libraries/proposals/approve", {
     method: "POST",
-    headers: { "Content-Type": "application/json" },
-    body: JSON.stringify({
-      proposal_ids: proposalIds,
-      target_pack_id: targetPackId,
-      acknowledge_rewrites: acknowledgeRewrites,
-    }),
+    body: JSON.stringify({ proposal_ids: proposalIds, targets }),
   });
-  if (res.status === 409) {
-    const body = await res.json().catch(() => ({}));
-    const detail = (body.detail ?? {}) as { message?: string; impact?: LibraryAliasImpact[] };
-    throw new LibraryApprovalConflict(
-      detail.message ?? "Approving this would rewrite existing tags.",
-      detail.impact ?? [],
-    );
-  }
-  if (!res.ok) {
-    throw new Error(await libraryErrorDetail(res));
-  }
-  return res.json();
 }
 
 export function rejectLibraryProposals(proposalIds: string[]): Promise<LibraryState> {

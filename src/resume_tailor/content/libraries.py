@@ -244,7 +244,7 @@ def remove_addition(
         return user.model_copy(
             update={"tag_aliases": {k: v for k, v in user.tag_aliases.items() if k != value}}
         )
-    if kind == "term" and value in user.terms:
+    if kind == "term" and (value in user.terms or value in user.tag_aliases.values()):
         return user.model_copy(update={
             "terms": [t for t in user.terms if t != value],
             "tag_aliases": {k: v for k, v in user.tag_aliases.items() if v != value},

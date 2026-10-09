@@ -9,7 +9,6 @@ import { AUTOFILL_PROVIDERS } from "../../../lib/providers";
 import { FIELD_LABELS } from "../../../lib/sources";
 import { useApplicantProfile } from "../../../state/applicantProfileState";
 import { useEditorState } from "../../../state/editorState";
-import { useLibraryState } from "../../../state/libraryState";
 import { useRunState } from "../../../state/runState";
 import { useTemplateState } from "../../../state/templateState";
 import { StepFrame, type StepNav } from "../StepFrame";
@@ -35,13 +34,11 @@ export function SummaryStep({
   onEdit: (step: OnboardingStepId) => void;
 }) {
   const { config, settings } = useRunState();
-  const { packs, enabledPacks } = useLibraryState();
   const { draft } = useApplicantProfile();
   const { resume } = useEditorState();
   const { info } = useTemplateState();
   const apply = settings.apply;
   const target = config?.target_fields?.find((f) => f.id === config?.target_field);
-  const packLabel = (id: string) => packs.find((p) => p.id === id)?.label ?? id;
   const review = reviewResume(resume);
   const contact = resume?.contact;
   const autofillProvider =
@@ -86,13 +83,6 @@ export function SummaryStep({
           <DataList
             items={[
               { label: "Target field", value: target?.label ?? none },
-              {
-                label: "Skill vocabulary",
-                value:
-                  [...new Set([...(target?.packs ?? []), ...enabledPacks])]
-                    .map(packLabel)
-                    .join(", ") || none,
-              },
               {
                 label: "Jobs to look for",
                 value: (apply.fields ?? []).map((f) => FIELD_LABELS[f]).join(", ") || none,

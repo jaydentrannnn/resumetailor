@@ -104,6 +104,11 @@ def test_remove_addition_only_removes_the_users_own():
         libraries.remove_addition(user, "alias", "py")
 
 
+def test_removing_a_term_that_only_an_alias_created():
+    user = libraries.add_alias(UV(), "sql", "mysql")
+    assert libraries.remove_addition(user, "term", "mysql").tag_aliases == {}
+
+
 def test_removing_a_term_drops_its_aliases():
     user = libraries.add_alias(libraries.add_term(UV(), "quuxware"), "qxw", "quuxware")
     assert libraries.remove_addition(user, "term", "quuxware").tag_aliases == {}

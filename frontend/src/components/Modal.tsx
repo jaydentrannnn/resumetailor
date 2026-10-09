@@ -83,7 +83,7 @@ export function Modal({
     <div
       // `overflow-y-auto` here (not on the panel) so content taller than the viewport
       // scrolls the whole dialog, header included — a wide modal over dense content
-      // (a vocabulary pack with 6+ verb families) can easily exceed viewport height.
+      // (a long form or list) can easily exceed viewport height.
       className={
         placement === "right"
           ? "fixed inset-0 z-50 flex justify-end bg-scrim"

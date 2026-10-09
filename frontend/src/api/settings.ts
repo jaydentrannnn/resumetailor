@@ -50,8 +50,7 @@ export type AppConfig = {
   cover_core_rules: string;
   target_field?: string | null;
   target_field_summary?: string;
-  target_fields?: { id: string; label: string; summary: string; packs?: string[] }[];
-  effective_vocabulary_packs?: string[];
+  target_fields?: { id: string; label: string; summary: string }[];
   active_workspace_id: string | null;
   active_workspace_label: string | null;
   /** True once, on the first /api/config response after a legacy-layout migration. */

@@ -16,13 +16,12 @@ import {
   withSourceChoice,
 } from "../../../lib/onboarding";
 import { useRunState } from "../../../state/runState";
-import { VocabularyPacks } from "../../profile/VocabularyPacks";
 import { StepFrame, type StepNav } from "../StepFrame";
 import { JobSourcePicker } from "./JobSourcePicker";
 
 /**
- * Step 1: the target field. It steers the writing, brings its skill vocabulary (more
- * packs can be ticked) and preselects which job lists to search.
+ * Step 1: the target field. It steers the writing and preselects which job lists to
+ * search.
  */
 export function FieldStep({
   nav,
@@ -142,11 +141,6 @@ export function FieldStep({
           </Tile>
         ))}
       </div>
-      {target && (
-        <div className="border-t border-line pt-4">
-          <VocabularyPacks />
-        </div>
-      )}
       {target && catalog && (
         <JobSourcePicker
           fields={jobFields}

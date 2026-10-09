@@ -90,7 +90,7 @@ export function Tabs({
           ? `${SEGMENT_BASE} ${on ? SEGMENT_ON : SEGMENT_OFF}`
           : vertical
             ? `flex items-center justify-between gap-2 rounded-sm px-3 py-2 text-left text-[13px] font-medium ${on ? "bg-panel text-ink shadow-[inset_2px_0_0_var(--color-accent)]" : "text-ink-muted hover:bg-sunken hover:text-ink"}`
-            : `${underlineTabClass(on)} shrink-0 whitespace-nowrap`;
+            : `${underlineTabClass(on)} inline-flex shrink-0 items-center gap-1.5 whitespace-nowrap`;
         return (
           <button
             type="button"

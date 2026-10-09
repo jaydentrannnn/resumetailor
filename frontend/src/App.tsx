@@ -22,7 +22,7 @@ import { ToastProvider } from "./components/ui/Toast";
 import { RunPage } from "./pages/run/RunPage";
 import { ConfirmProvider } from "./state/confirmState";
 import { EditorProvider } from "./state/editorState";
-import { LibraryProvider, useLibraryState } from "./state/libraryState";
+import { LibraryProvider } from "./state/libraryState";
 import { RunProvider, useRunState } from "./state/runState";
 import { TemplateProvider } from "./state/templateState";
 import { ThemeProvider } from "./state/themeState";
@@ -271,7 +271,6 @@ function NavigationGuard() {
   const { dirty: resumeDirty, discard: discardResume } = useEditorState();
   const applicant = useApplicantProfile();
   const { settingsSaveState } = useRunState();
-  const { overridesSaveState } = useLibraryState();
   const { confirm } = useConfirm();
   const location = useLocation();
   const prompted = useRef(false);
@@ -282,13 +281,7 @@ function NavigationGuard() {
       (resumeDirty || applicant.dirty),
   );
   useEffect(() => {
-    if (
-      !resumeDirty &&
-      !applicant.dirty &&
-      !applicant.saving &&
-      settingsSaveState === "saved" &&
-      overridesSaveState === "saved"
-    )
+    if (!resumeDirty && !applicant.dirty && !applicant.saving && settingsSaveState === "saved")
       return;
     const warn = (event: BeforeUnloadEvent) => {
       event.preventDefault();
@@ -296,7 +289,7 @@ function NavigationGuard() {
     };
     window.addEventListener("beforeunload", warn);
     return () => window.removeEventListener("beforeunload", warn);
-  }, [resumeDirty, applicant.dirty, applicant.saving, settingsSaveState, overridesSaveState]);
+  }, [resumeDirty, applicant.dirty, applicant.saving, settingsSaveState]);
   useEffect(() => {
     if (blocker.state !== "blocked") {
       prompted.current = false;
