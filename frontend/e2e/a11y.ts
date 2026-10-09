@@ -14,6 +14,9 @@ async function blockingViolations(page: Page): Promise<string[]> {
 /** Fail on serious or critical accessibility violations on the current page, checked in
  *  the light theme and again in the dark theme (most dark-only colours live there). */
 export async function expectAccessible(page: Page) {
+  // Reduced motion makes `transition-colors` instant (index.css), so axe never measures a
+  // control halfway through its fade from the light colours to the dark ones.
+  await page.emulateMedia({ reducedMotion: "reduce" });
   const previous = await page.evaluate(() => document.documentElement.dataset.theme ?? null);
   for (const theme of ["light", "dark"] as const) {
     await page.evaluate((t) => {

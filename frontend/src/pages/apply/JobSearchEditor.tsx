@@ -101,7 +101,12 @@ export function JobSearchEditor({
 
       <SearchPresetPicker
         onApply={(preset) =>
-          onChange({ ...source, query: preset.query, include: preset.include, exclude: preset.exclude })
+          onChange({
+            ...source,
+            query: preset.query,
+            include: preset.include,
+            exclude: preset.exclude,
+          })
         }
       />
 

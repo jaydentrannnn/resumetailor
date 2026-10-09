@@ -31,7 +31,8 @@ export function SearchPresetPicker({ onApply }: { onApply: (preset: SearchPreset
     };
   }, []);
 
-  if (loadFailed) return <p className="text-xs text-ink-muted">Presets are unavailable right now.</p>;
+  if (loadFailed)
+    return <p className="text-xs text-ink-muted">Presets are unavailable right now.</p>;
   if (!choices) return null;
 
   const labels = Object.fromEntries(choices.positions.map((p) => [p.id, p.label]));

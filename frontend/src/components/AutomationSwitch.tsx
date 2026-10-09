@@ -61,9 +61,7 @@ export function AutomationSwitch() {
       onClick={toggle}
       title={state.paused ? `Automation is paused. ${usage}.` : `Pause all automation. ${usage}.`}
       className={`rt-header-pill rt-control inline-flex items-center justify-center gap-[7px] whitespace-nowrap rounded-sm px-3 py-1 ${
-        state.paused
-          ? toneChipClass("attention")
-          : "text-ink-muted hover:text-ink"
+        state.paused ? toneChipClass("attention") : "text-ink-muted hover:text-ink"
       }`}
     >
       {state.paused ? <StatusMark tone="attention" /> : <PauseIcon />}

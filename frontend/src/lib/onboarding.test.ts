@@ -128,7 +128,13 @@ describe("onboarding helpers", () => {
       description: "",
       fields: ["finance"],
       version: "1",
-      template: { id: "adzuna-finance-intern", kind: "job_search", provider: "adzuna", query: "x", enabled: true },
+      template: {
+        id: "adzuna-finance-intern",
+        kind: "job_search",
+        provider: "adzuna",
+        query: "x",
+        enabled: true,
+      },
     } as CatalogEntry;
     const catalog = { schema_version: 1, origin: "bundled", entries: [search] } as SourceCatalog;
     expect(suggestedEntries(catalog, ["finance"])).toEqual([]);

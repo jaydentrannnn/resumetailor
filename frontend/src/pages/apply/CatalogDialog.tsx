@@ -96,8 +96,12 @@ function CatalogList({
   const [levels, setLevels] = useState<SourceLevel[]>([]);
   const [tracks, setTracks] = useState<SourceTrack[]>([]);
   const offered = SOURCE_FIELDS.filter((f) => catalog.entries.some((e) => e.fields.includes(f)));
-  const offeredLevels = SOURCE_LEVELS.filter((l) => catalog.entries.some((e) => e.levels?.includes(l)));
-  const offeredTracks = SOURCE_TRACKS.filter((t) => catalog.entries.some((e) => e.tracks?.includes(t)));
+  const offeredLevels = SOURCE_LEVELS.filter((l) =>
+    catalog.entries.some((e) => e.levels?.includes(l)),
+  );
+  const offeredTracks = SOURCE_TRACKS.filter((t) =>
+    catalog.entries.some((e) => e.tracks?.includes(t)),
+  );
   const needle = search.trim().toLowerCase();
   const shown = entriesForFilters(catalog, { fields, levels, tracks }).filter(
     (entry) => !needle || `${entry.name} ${entry.description}`.toLowerCase().includes(needle),

@@ -40,7 +40,11 @@ describe("browserView", () => {
   });
 
   it("is idle when the app can start an installed browser", () => {
-    expect(browserView(status(), "chrome")).toEqual({ state: "idle", reason: "", resolved: "chrome" });
+    expect(browserView(status(), "chrome")).toEqual({
+      state: "idle",
+      reason: "",
+      resolved: "chrome",
+    });
   });
 
   it("names an uninstalled choice before the autosave reaches the server", () => {

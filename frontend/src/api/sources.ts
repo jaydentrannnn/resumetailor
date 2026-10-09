@@ -72,13 +72,7 @@ export type SourceLevel = "intern" | "new_grad" | "off_cycle" | "program";
 
 /** Finer focus inside a field: "banking" and "accounting" are both `finance`. */
 export type SourceTrack =
-  | "banking"
-  | "markets"
-  | "accounting"
-  | "corp_finance"
-  | "strategy"
-  | "marketing"
-  | "operations";
+  "banking" | "markets" | "accounting" | "corp_finance" | "strategy" | "marketing" | "operations";
 
 /** One curated source in the catalog. `template` is copied into `ApplySettings.sources`. */
 export type CatalogEntry = {

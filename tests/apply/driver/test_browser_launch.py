@@ -2,11 +2,15 @@
 
 from __future__ import annotations
 
+import sys
 from pathlib import Path
 
 import pytest
 
 from resume_tailor.apply.driver import browser, browser_launch
+
+#: Windows install paths use backslashes, which only `Path` on Windows splits.
+windows_only = pytest.mark.skipif(sys.platform != "win32", reason="Windows paths")
 
 
 def _touch(path: Path) -> Path:
@@ -15,6 +19,7 @@ def _touch(path: Path) -> Path:
     return path
 
 
+@windows_only
 def test_find_executable_windows_falls_back_to_known_folders(tmp_path, monkeypatch):
     monkeypatch.setattr(browser_launch, "_app_path_from_registry", lambda exe: None)
     exe = _touch(tmp_path / "local" / "Perplexity" / "Comet" / "Application" / "comet.exe")
@@ -45,11 +50,15 @@ def test_find_executable_linux_uses_path(monkeypatch):
     assert browser_launch.find_executable("comet", platform="linux") is None
 
 
-def test_profile_dir_matches_the_old_launch_commands(tmp_path):
+@windows_only
+def test_profile_dir_windows_matches_the_old_launch_command():
     env = {"LOCALAPPDATA": r"C:\Users\u\AppData\Local"}
     assert browser_launch.profile_dir("edge", platform="win32", env=env) == Path(
         r"C:\Users\u\AppData\Local\ResumeTailorEdge"
     )
+
+
+def test_profile_dir_mac_matches_the_old_launch_command(tmp_path):
     assert browser_launch.profile_dir("chrome", platform="darwin", home=tmp_path) == (
         tmp_path / "Library" / "Application Support" / "ResumeTailorChrome"
     )

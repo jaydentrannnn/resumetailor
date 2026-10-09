@@ -23,7 +23,9 @@ export function FilterChips<T extends string>({
             type="button"
             aria-pressed={on}
             className={`rounded-sm border px-2.5 py-0.5 text-xs ${on ? "border-selected-line bg-selected text-on-selected" : "border-line text-ink-muted hover:border-accent"}`}
-            onClick={() => onChange(on ? selected.filter((o) => o !== option) : [...selected, option])}
+            onClick={() =>
+              onChange(on ? selected.filter((o) => o !== option) : [...selected, option])
+            }
           >
             {labels[option]}
           </button>

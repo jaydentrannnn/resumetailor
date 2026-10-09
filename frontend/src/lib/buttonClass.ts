@@ -1,11 +1,5 @@
 export type ButtonVariant =
-  | "primary"
-  | "secondary"
-  | "plain"
-  | "attention"
-  | "success"
-  | "danger"
-  | "ghost";
+  "primary" | "secondary" | "plain" | "attention" | "success" | "danger" | "ghost";
 
 // Three levels, no outlines. Solid: ink for a tile's one main action (`primary`,
 // `secondary`), green for the step that moves an application forward (`success`, Fill).

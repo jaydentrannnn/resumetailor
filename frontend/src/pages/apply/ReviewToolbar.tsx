@@ -37,9 +37,7 @@ export function ReviewToolbar({
         variant="attention"
         size="sm"
         disabled={busy || active || !continueIds.length || !browserUsable}
-        title={
-          idleNote ?? (browserUsable ? "Resume the fills in their open tabs" : notConnected)
-        }
+        title={idleNote ?? (browserUsable ? "Resume the fills in their open tabs" : notConnected)}
         onClick={() => onContinue(continueIds)}
       >
         Continue fill ({continueIds.length})

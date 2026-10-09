@@ -65,8 +65,8 @@ export function BrowserPicker({
         <p className="mt-2 text-xs text-ink-muted">{view.reason}</p>
       )}
       <p className="mt-2 text-xs text-ink-muted">
-        It opens by itself when Fill or a job fetch needs it, in its own ResumeTailor profile
-        beside your everyday windows. Sign in to job sites there, and use it only for them.
+        It opens by itself when Fill or a job fetch needs it, in its own ResumeTailor profile beside
+        your everyday windows. Sign in to job sites there, and use it only for them.
       </p>
     </>
   );

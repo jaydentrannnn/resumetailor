@@ -255,9 +255,7 @@ export function DataTable<T>({
                   {col.heading && (
                     <span className="shrink-0 text-xs text-ink-muted">{col.heading}</span>
                   )}
-                  <div className={`min-w-0 ${col.end ? "ml-auto" : "flex-1"}`}>
-                    {col.cell(row)}
-                  </div>
+                  <div className={`min-w-0 ${col.end ? "ml-auto" : "flex-1"}`}>{col.cell(row)}</div>
                   {joined && <div className="ml-auto shrink-0">{joined.cell(row)}</div>}
                 </div>
               );

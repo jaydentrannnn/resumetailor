@@ -149,11 +149,7 @@ export function DataSection() {
           <a className={buttonClass("primary")} href={exportDataUrl(includeOutput)} download>
             Export this profile
           </a>
-          <Button
-            variant="plain"
-            loading={importing}
-            onClick={() => fileInput.current?.click()}
-          >
+          <Button variant="plain" loading={importing} onClick={() => fileInput.current?.click()}>
             Import from a .zip
           </Button>
           <input

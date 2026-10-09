@@ -80,9 +80,9 @@ describe("JobSearchEditor", () => {
     fireEvent.change(screen.getByLabelText("Preset industry"), {
       target: { value: "corporate-finance" },
     });
-    expect(screen.getByRole("button", { name: "FP&A & treasury" }).getAttribute("aria-pressed")).toBe(
-      "true",
-    );
+    expect(
+      screen.getByRole("button", { name: "FP&A & treasury" }).getAttribute("aria-pressed"),
+    ).toBe("true");
     fireEvent.click(fill);
     await waitFor(() =>
       expect(onChange).toHaveBeenCalledWith({
