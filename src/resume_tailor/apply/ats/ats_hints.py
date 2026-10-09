@@ -75,6 +75,8 @@ CANONICAL_FIELD_KEYS: frozenset[str] = frozenset(
         "noncompete",
         "visa_status",
         "class_year",
+        "high_school_graduation_year",
+        "relatives_at_company",
         "school_email",
         "security_clearance",
         "drivers_license",

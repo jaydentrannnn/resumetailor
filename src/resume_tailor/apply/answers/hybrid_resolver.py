@@ -26,7 +26,7 @@ from resume_tailor.apply.driver import clicks
 from resume_tailor.apply.funnel.packet_models import Packet
 from resume_tailor.infra import llm
 
-from . import page_blockers, resolver_types, widget_actions
+from . import form_facts, page_blockers, questions, resolver_types, widget_actions
 
 _log = logging.getLogger(__name__)
 
@@ -116,7 +116,7 @@ _MAX_REVEAL_ROUNDS = 2
 
 
 #: Bump when `_SYSTEM_PROMPT` or the payload changes: cached choices are keyed on it.
-_RESOLVER_PROMPT_VERSION = "resolver-v1"
+_RESOLVER_PROMPT_VERSION = "resolver-v2"
 #: Model calls one control may be sent in before it is left for the applicant. The
 #: prompt asks for a decision per control; a control the model still leaves out is sent
 #: once more, alone.
@@ -137,10 +137,11 @@ def _choices_path() -> Any:
 def _choice_key(field: dict[str, Any], profile_digest: str) -> str:
     """Identity of one choice question: the same question, options, applicant and model
     get the same answer on every posting and every run (parallel tabs included)."""
-    options = sorted(widget_actions._norm(str(option)) for option in field.get("options") or [])
+    options = sorted(str(option).strip().casefold() for option in field.get("options") or [])
     payload = "\n".join([
         _RESOLVER_PROMPT_VERSION, config.fingerprint("answer"), profile_digest,
         str(field.get("type") or ""), widget_actions._norm(str(field.get("label") or "")), *options,
+        str(field.get("help") or field.get("help_text") or ""),
     ])
     return hashlib.sha256(payload.encode("utf-8")).hexdigest()[:16]
 
@@ -168,7 +169,8 @@ def list_choices() -> list[dict[str, str]]:
     rows = [
         {"key": key, "label": str(entry.get("label") or ""), "answer": str(entry.get("value") or "")}
         for key, entry in _read_choices().items()
-        if isinstance(entry, dict) and entry.get("digest") == digest and entry.get("value")
+        if isinstance(entry, dict) and entry.get("version") == _RESOLVER_PROMPT_VERSION
+        and entry.get("digest") == digest and entry.get("value")
     ]
     return sorted(rows, key=lambda row: row["label"].casefold())
 
@@ -356,6 +358,9 @@ class _StepResolver:
 
         self._load_options(unresolved)
         unresolved = self._select_phone_codes(unresolved)
+        unresolved = self._resolve_known(unresolved)
+        if not unresolved and present - ledger.done:
+            return False
         from resume_tailor.apply.answers import education  # noqa: PLC0415
 
         reserved = [
@@ -449,7 +454,7 @@ class _StepResolver:
 
         resolved_phone: set[str] = set()
         for field in unresolved:
-            if field.get("phone_code_menu") and field.get("phone_match"):
+            if field.get("phone_code_menu"):
                 selected = widget_actions._select_combobox_option(
                     self.page, str(field["selector"]), profile.phone_country_code,
                     key="phone_country_code", phone_region=profile.phone_country_region,
@@ -459,6 +464,47 @@ class _StepResolver:
                     self.log(f"selected phone calling code for {field.get('label')}")
         self.ledger.done |= resolved_phone
         return [field for field in unresolved if str(field.get("selector")) not in resolved_phone]
+
+    def _resolve_known(self, unresolved: list[dict[str, Any]]) -> list[dict[str, Any]]:
+        """Retry authoritative facts; neither a model nor its cache may replace them."""
+        remaining = []
+        facts = questions.facts_from_packet(self.packet)
+        for field in unresolved:
+            label = str(field.get("label") or "")
+            question = questions.Question(label, kind="typeahead",
+                part=questions._part_from_text(label),  # noqa: SLF001
+                options=tuple(field.get("options") or []), help_text=str(field.get("help") or ""))
+            match = questions.classify(question)
+            semantic = form_facts.semantic_key(label, question.help_text)
+            if semantic == form_facts.ACKNOWLEDGEMENT and match is None:
+                self.ledger.asked.add(str(field.get("selector") or ""))
+                continue
+            if (match is not None and match.key in form_facts.PROTECTED_KEYS
+                    and field.get("type") != "combobox"):
+                self.ledger.asked.add(str(field.get("selector") or ""))
+                continue
+            if (
+                match is None or field.get("type") != "combobox"
+                or match.key not in form_facts.PROTECTED_KEYS | {
+                    "education_start_month", "graduation_month", "class_year",
+                }
+            ):
+                remaining.append(field)
+                continue
+            values = questions.answers(match, question, facts)
+            selector = str(field.get("selector") or "")
+            self.ledger.asked.add(selector)
+            chosen = questions.choose(question, match.key, values) if values else None
+            # Search the known fact even when a virtualized menu did not render it yet.
+            candidates = [chosen] if chosen else values
+            for value in candidates:
+                if widget_actions._select_combobox_option(
+                    self.page, selector, value, key=match.key,
+                ):
+                    self.ledger.done.add(selector)
+                    self.log(f"selected known fact for {label}")
+                    break
+        return remaining
 
     # -- answering ---------------------------------------------------------------------
 
@@ -472,7 +518,8 @@ class _StepResolver:
             exclude={"workday_password", "workday_email"},
             mode="json",
         )
-        profile_digest = _profile_digest(safe_profile)
+        profile_digest = _profile_digest({"profile": safe_profile, "fields": self.packet.fields,
+                                          "skills": self.packet.master_skills})
         observed = {str(item.get("selector")): item for item in unresolved if item.get("selector")}
         keys = {
             selector: _choice_key(field, profile_digest) for selector, field in observed.items()
@@ -582,6 +629,7 @@ class _StepResolver:
                         "action": action.action, "value": action.value,
                         "label": str(observed[action.selector].get("label") or "")[:200],
                         "digest": _profile_digest(safe_profile),
+                        "version": _RESOLVER_PROMPT_VERSION,
                     }
                     for action in model_actions
                     if action.action in {"select_combobox", "choose_radio", "check_options"}

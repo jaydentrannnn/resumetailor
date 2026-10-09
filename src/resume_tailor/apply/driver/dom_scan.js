@@ -36,7 +36,7 @@
     if (el.getAttribute("aria-label")) return el.getAttribute("aria-label").trim();
     return text(el.closest("label")) || el.getAttribute("placeholder") || el.getAttribute("name") || "";
   };
-  const group = (el) => el.closest("fieldset, [role='radiogroup'], [class*='question' i], [data-automation-id*='formField' i], .form-group");
+  const group = (el) => el.closest("fieldset, [role='radiogroup'], [class*='question' i], [data-automation-id*='formField' i], .form-group, .checkbox-group, .phone-input");
   const section = (el) => {
     const parent = group(el);
     let node = el.parentElement;
@@ -67,12 +67,21 @@
     if (!upload.querySelector("input[type='file']") && upload.querySelector(".file-upload__filename")) controls.push(upload);
   }
   const seenRadio = new Set();
+  const seenCheckbox = new Set();
   const fields = [];
   for (const el of controls) {
     if (el.getAttribute("data-automation-id") === "beecatcher") continue;
-    const controlKind = el.matches(".file-upload") ? "file" : kind(el);
+    let controlKind = el.matches(".file-upload") ? "file" : kind(el);
+    const checkboxOptions = controlKind === 'checkbox' && el.name
+      ? Array.from(document.querySelectorAll(`input[type='checkbox'][name='${css(el.name)}']`)) : [];
+    if (checkboxOptions.length > 1) {
+      if (seenCheckbox.has(el.name)) continue;
+      seenCheckbox.add(el.name);
+      controlKind = 'checkbox_group';
+    }
     if (controlKind === "unsupported") continue;
     if (controlKind !== "file" && !visible(el)) continue;
+    if (el.closest('.select__control, [class*="-control"]') && controlKind === 'text') continue;
     if (controlKind === "radio_group" && el.name) {
       if (seenRadio.has(el.name)) continue;
       seenRadio.add(el.name);
@@ -81,7 +90,7 @@
     const nativeOptions = el.tagName === "SELECT" ? Array.from(el.options) : [];
     const radioOptions = controlKind === "radio_group" && el.name
       ? Array.from(document.querySelectorAll(`input[type='radio'][name='${css(el.name)}']`)) : [];
-    const options = (nativeOptions.length ? nativeOptions : radioOptions).map((option, index) => ({
+    const options = (nativeOptions.length ? nativeOptions : checkboxOptions.length > 1 ? checkboxOptions : radioOptions).map((option, index) => ({
       option_id: `${path}::${index}`,
       label: label(option) || text(option),
       value: option.value || "",
@@ -89,22 +98,24 @@
       placeholder: nativeOptions.length ? placeholder(option) : false,
       selected: nativeOptions.length ? option.selected : option.checked,
     }));
-    const selectedText = text(el.closest(".select__control, [class*='-control']")?.querySelector(".select__single-value, [class*='-singleValue']"));
+    const selectControl = el.closest(".select__control, [class*='-control']");
+    const selectedText = text(selectControl?.querySelector(".select__single-value, [class*='-singleValue']")) ||
+      Array.from(selectControl?.querySelectorAll(".select__multi-value__label, [class*='-multiValue']") || []).map(text).filter(Boolean).join('; ');
     const uploadFilename = text(el.closest(".file-upload")?.querySelector(".file-upload__filename"));
-    const current = controlKind === "combobox" ? selectedText : controlKind === "radio_group"
+    const current = controlKind === 'checkbox_group' ? options.filter(o => o.selected).map(o => o.label).join('; ') : controlKind === "combobox" ? selectedText : controlKind === "radio_group"
       ? (options.find(option => option.selected)?.label || "")
       : controlKind === "checkbox" ? (el.checked ? "checked" : "")
       : controlKind === "file" ? (el.files?.[0]?.name || uploadFilename || "")
       : controlKind === "native_select" ? (options.find(option => option.selected && !option.placeholder)?.label || "")
       : (el.value || "");
     const parent = group(el);
-    const uploadLabel = text(el.closest(".file-upload")?.querySelector(".upload-label"));
+    const uploadLabel = text(el.closest(".file-upload")?.querySelector(".upload-label, .file-upload__label"));
     const errors = parent ? Array.from(parent.querySelectorAll("[role='alert'], [class*='error' i], [aria-invalid='true']")).map(text).filter(Boolean) : [];
     fields.push({
       field_id: path, selector: path, document_generation: String(performance.timeOrigin),
       section_id: section(el), repeater_row_id: parent?.getAttribute("data-automation-id") ||
         (/^(?:school|degree|discipline|end-year|start-year)--(\d+)$/.exec(el.id || "")?.[1] ?? ""),
-      label: el.matches(".file-upload") ? uploadLabel :
+      label: controlKind === 'file' ? uploadLabel || label(el) : controlKind === 'checkbox_group' ? el.getAttribute('description') || help(el, parent) || text(parent?.querySelector('legend')) || label(el) :
         controlKind === "radio_group" ? text(parent?.querySelector("legend")) || label(el) : label(el),
       help_text: help(el, parent),
       control_kind: controlKind, required: Boolean(el.required || el.getAttribute("aria-required") === "true" || (controlKind === "file" && /\*$/.test(uploadLabel))),

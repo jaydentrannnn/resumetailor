@@ -143,7 +143,7 @@ def _observe_fields(page: Any, filler_js: str, hints: dict[str, str], attempted:
                     observed[(frame_index, selector)].update(
                         corrected=True,
                         previous=prior["previous"],
-                        reason_text=(
+                        reason_text=prior.get("reason_text") or (
                             "Corrected after the resume upload "
                             f"(the form had “{prior['previous']}”)"
                         ),

@@ -7,7 +7,7 @@ from pathlib import Path
 from typing import Any
 
 from resume_tailor import config
-from resume_tailor.apply.answers import answer, answer_memory, education, widget_actions
+from resume_tailor.apply.answers import answer, answer_memory, education, form_facts, widget_actions
 from resume_tailor.apply.forms import form_guards, form_routes
 
 from . import fill_buttons, fill_outcomes, fill_state, fill_widgets
@@ -184,6 +184,10 @@ class _FillAnswers(fill_state._FillState):
                 self._answer_one_long_text(item, label)
 
     def _answer_one_long_text(self, item: dict[str, Any], label: str) -> None:
+        if form_facts.semantic_key(label, str(item.get("help") or "")) in form_facts.PROTECTED_KEYS:
+            if item.get("required"):
+                self.needs_review.append(label)
+            return
         edu_key = education.question_key(label, str(item.get("help") or ""))
         if edu_key in education.RESERVED_KEYS:
             if education.compound(label):
@@ -272,6 +276,13 @@ class _FillAnswers(fill_state._FillState):
                 needs_review.append(label)
             return
         if label in needs_review:
+            return
+        if form_facts.semantic_key(
+            label, str(leftover.get("help") or ""),
+        ) in form_facts.PROTECTED_KEYS:
+            # Only the shared deterministic plan may answer these facts or notices.
+            if leftover.get("required"):
+                needs_review.append(label)
             return
         if (
             self.ats_name == "icims"

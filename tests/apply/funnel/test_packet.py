@@ -22,6 +22,15 @@ from resume_tailor.apply.funnel.packet_profile_fields import (
 from tests.fixtures import synthetic_resume
 
 
+def test_packet_carries_all_master_skills_separately_from_tailored_skills(job_dir):
+    pkt = build_packet(job_dir.name)
+    master = synthetic_resume()
+    assert pkt.master_skills == list(dict.fromkeys(
+        item for group in master.skills for item in group.items
+    ))
+    assert pkt.skills == ['Python', 'Git']
+
+
 @pytest.fixture
 def job_dir(tmp_path, monkeypatch):
     """Isolated job output directory with a minimal successful run."""

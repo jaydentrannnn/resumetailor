@@ -16,7 +16,11 @@ from resume_tailor.pipeline import report
 
 def purpose_for(field: FieldObservation) -> str:
     name = str(field.constraints.get("name") or "")
-    label = f"{field.label} {name}".casefold()
+    label = f"{field.label} {field.help_text} {field.section_id} {name}".casefold()
+    if "transcript" in label:
+        return "transcript"
+    if ("portfolio" in label or "work sample" in label) and "resume" not in label:
+        return "portfolio"
     if "cover" in label and "letter" in label:
         return "cover_letter"
     if "resume" in label or "curriculum vitae" in label or " cv" in label:
@@ -28,7 +32,7 @@ def _source(packet: Packet, purpose: str, accept: str) -> str:
     accepted = accept.casefold()
     pdf_allowed = not accepted or ".pdf" in accepted or "application/pdf" in accepted
     docx_allowed = not accepted or ".docx" in accepted or "wordprocessingml" in accepted
-    prefix = "resume" if purpose == "resume" else "cover"
+    prefix = "resume" if purpose == "resume" else "cover" if purpose == "cover_letter" else purpose
     if pdf_allowed and packet.artifacts.get(f"{prefix}_pdf"):
         return packet.artifacts[f"{prefix}_pdf"]
     if docx_allowed and packet.artifacts.get(f"{prefix}_docx"):
@@ -39,6 +43,8 @@ def _source(packet: Packet, purpose: str, accept: str) -> str:
 def _stage(source: str, *, purpose: str, name: str, role: str, out_dir: Path) -> Path:
     original = Path(source)
     filename = report.export_filename(name, role, suffix=original.suffix)
+    if purpose in {"transcript", "portfolio"}:
+        filename = filename.split(" Resume - ", 1)[0] + f" {purpose.title()}{original.suffix}"
     if purpose == "cover_letter":
         filename = filename.replace(" Resume - ", " Cover Letter - ", 1)
     directory = out_dir / "attachments"

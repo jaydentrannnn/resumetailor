@@ -7,7 +7,7 @@ import logging
 import re
 from typing import Any
 
-from resume_tailor.apply.answers import reference_data
+from resume_tailor.apply.answers import questions, reference_data
 from resume_tailor.apply.driver import clicks
 from resume_tailor.apply.forms import field_matcher
 from resume_tailor.apply.forms.field_matcher import match_option
@@ -85,7 +85,12 @@ def _select_combobox_option(
                     if not chosen_text:
                         chosen_text = _option_match(option_texts, target_value, key=key)
                 else:
-                    chosen_text = field_matcher.closest_option(option_texts, target_value, key=key)
+                    chosen_text = questions.choose(questions.Question(
+                        "", kind="choice", options=tuple(option_texts),
+                        part=("month" if key in {
+                            "education_start_month", "graduation_month",
+                        } else ""),
+                    ), key, [target_value])
                 if chosen_text:
                     match = next(choice for choice in choices if choice.inner_text().strip() == chosen_text)
                     break

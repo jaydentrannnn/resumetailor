@@ -16,6 +16,7 @@ from resume_tailor.apply.answers import (
     answer,
     answer_memory,
     education,
+    form_facts,
     model_resolver,
     notice,
     profile,
@@ -331,7 +332,24 @@ async def fill_application(
                             and field.current_value.strip().casefold() == fields["first_name"].strip().casefold()
                             and fields["preferred_name"].strip().casefold() != fields["first_name"].strip().casefold()
                         )
-                        if has_committed_value and not correct_preferred:
+                        from . import fill_repairs  # noqa: PLC0415
+
+                        value = (
+                            adapter.value_for(field, key, pkt, fields) if policy == "known" else ""
+                        )
+                        correct_date = False
+                        if (
+                            fill_mode == "continue" and previous.filled and value
+                            and value != field.current_value and key in {
+                                form_facts.HIGH_SCHOOL, "education_start_month", "graduation_month",
+                            }
+                        ):
+                            frame, selector = field_snapshot.locators[field.field_id]
+                            correct_date = fill_repairs.previous_automated_answer(
+                                previous.filled, selector,
+                                page.frames.index(frame), field.current_value,
+                            )
+                        if has_committed_value and not (correct_preferred or correct_date):
                             record(step_id, FieldOutcome(
                                 field_id=field.field_id, frame_id=field.frame_id,
                                 label=field.label, canonical_key=key,
@@ -342,7 +360,6 @@ async def fill_application(
                                 reason_code="site_validation" if field.validation_messages else "",
                             ))
                             continue
-                        value = adapter.value_for(field, key, pkt, fields) if policy == "known" else ""
                         if key == "race" and fields.get("race_detail"):
                             value = fields["race_detail"]
                         # "decline" picks a decline option; it is never typed into a text box.
@@ -351,7 +368,7 @@ async def fill_application(
                         generated = False
                         remembered = False
                         if (not value and not field.current_value
-                                and key not in education.RESERVED_KEYS):
+                                and key not in education.RESERVED_KEYS | form_facts.PROTECTED_KEYS):
                             recalled = answer_memory.recall(
                                 field.label, company=app.company or "", ats=app.ats or "",
                                 canonical_key=key or "",
@@ -368,7 +385,7 @@ async def fill_application(
                                 value = recalled.answer
                                 remembered = True
                         if (not value and not field.current_value
-                                and key not in education.RESERVED_KEYS
+                                and key not in education.RESERVED_KEYS | form_facts.PROTECTED_KEYS
                                 and field_catalog.may_generate_written_answer(field)):
                             progress(f"Step {step_number}: drafting {field.label}")
                             max_length = field.constraints.get("max_length")
@@ -430,7 +447,7 @@ async def fill_application(
                         outcome = await controls.apply_value(
                             page, field_snapshot, field, value,
                             phone_region=fields.get("phone_country_region", ""),
-                            replace_existing=bool(correct_preferred),
+                            replace_existing=bool(correct_preferred or correct_date),
                         )
                         if (
                             key == education.KEY and education.level(value) is None
@@ -454,6 +471,8 @@ async def fill_application(
                         outcome.answer_source = (
                             "generated" if generated else "memory" if remembered else "profile"
                         )
+                        if correct_date and outcome.state == "verified_filled":
+                            outcome.reason_code = "corrected_automated_answer"
                         record(step_id, outcome)
                         if (
                             outcome.state == "verified_filled"
@@ -511,7 +530,9 @@ async def fill_application(
                     settled = await scanner.scan(page)
                     inspection_errors.extend(settled.errors)
                     if isinstance(adapter, adapters.WorkdayAdapter):
-                        accepted, unresolved = await form_routes.accept_workday_async(page)
+                        accepted, unresolved = await form_routes.accept_workday_async(
+                            page, allow_routine=applicant.auto_accept_routine_acknowledgements,
+                        )
                         for item in accepted:
                             matched = [field for field in settled.fields if field.control_kind == "checkbox" and
                                        (field.label == item["label"] or item["id"] and field.constraints.get("id") == item["id"])]

@@ -147,6 +147,10 @@ def build_fields(profile: ApplicantProfile, resume: MasterResume) -> dict[str, s
     _maybe_set(fields, "f1_opt_eligible", _yes_no(f1_opt))
     _maybe_set(fields, "visa_status", profile_mod.VISA_LABELS.get(profile.visa_status))
     _maybe_set(fields, "over_18", _yes_no(profile.over_18))
+    _maybe_set(fields, "relatives_at_company", _yes_no(profile.relatives_at_company))
+    fields["auto_accept_routine_acknowledgements"] = (
+        _yes_no(profile.auto_accept_routine_acknowledgements)
+    )
     _maybe_set(fields, "noncompete", _yes_no(profile.subject_to_noncompete))
     _maybe_set(fields, "earliest_start", profile.earliest_start or None)
     _maybe_set(fields, "notice_period", profile.notice_period or None)
@@ -158,6 +162,12 @@ def build_fields(profile: ApplicantProfile, resume: MasterResume) -> dict[str, s
     # school: the entry graduating last (a transfer student's new school, the later of
     # two degrees), else the first entry.
     education = _build_education(resume)
+    from resume_tailor.apply.answers import form_facts
+
+    _maybe_set(
+        fields, form_facts.HIGH_SCHOOL,
+        profile.high_school_graduation_year or form_facts.high_school_year(education) or None,
+    )
     if education:
         primary = current_education(education)
         _maybe_set(fields, "education_start_month", primary.start or None)

@@ -5,7 +5,7 @@ from __future__ import annotations
 import re
 from typing import Literal
 
-from resume_tailor.apply.answers import education, questions
+from resume_tailor.apply.answers import education, form_facts, questions
 from resume_tailor.apply.ats import ats_hints
 from resume_tailor.apply.forms.field_matcher import normalize
 from resume_tailor.apply.forms.field_types import FieldObservation
@@ -26,6 +26,12 @@ def classify(field: FieldObservation) -> tuple[Classification, str]:
         return "manual_review", "credential_or_verification"
     if education.not_education(field.label):
         return "manual_review", "not_an_education_question"
+    semantic = form_facts.semantic_key(field.label, field.help_text)
+    if semantic:
+        if (semantic == form_facts.ACKNOWLEDGEMENT
+                and form_facts.acknowledgement(f"{field.label} {field.help_text}") != "routine"):
+            return "manual_review", "agreement_or_signature"
+        return "known", semantic
     # Self-identification before salary: VEVRAA's veteran question quotes "entitled to
     # compensation" (CACI, 2026-09).
     if "veteran" in label:
@@ -146,6 +152,8 @@ def classify(field: FieldObservation) -> tuple[Classification, str]:
 def may_generate_written_answer(field: FieldObservation) -> bool:
     """Limit prose generation to clear professional, job-related questions."""
     if field.control_kind not in {"textarea", "text"}:
+        return False
+    if form_facts.semantic_key(field.label, field.help_text) in form_facts.PROTECTED_KEYS:
         return False
     label = normalize(field.label)
     if re.search(

@@ -415,10 +415,10 @@ def test_a_tab_waits_for_the_answer_another_tab_is_fetching(resolver_page):
     state = resolver_page
     question = "Is any immediate family member employed by a competitor?"
     profile = ApplicantProfile()
-    digest = hybrid_resolver.hashlib.sha256(
-        hybrid_resolver.json.dumps(profile.model_dump(exclude={"workday_password", "workday_email"}, mode="json"),
-                                   sort_keys=True).encode("utf-8"),
-    ).hexdigest()
+    digest = hybrid_resolver._profile_digest({
+        "profile": profile.model_dump(exclude={"workday_password", "workday_email"}, mode="json"),
+        "fields": {}, "skills": [],
+    })
     field = {**_yes_no("#fam", question), "options": ["Yes", "No"]}
     key = hybrid_resolver._choice_key(field, digest)  # noqa: SLF001
     event = threading.Event()
@@ -456,10 +456,10 @@ def test_an_answer_landing_during_the_cache_read_is_not_asked_again(resolver_pag
     state = resolver_page
     question = "Is any immediate family member employed by a competitor?"
     profile = ApplicantProfile()
-    digest = hybrid_resolver.hashlib.sha256(
-        hybrid_resolver.json.dumps(profile.model_dump(exclude={"workday_password", "workday_email"}, mode="json"),
-                                   sort_keys=True).encode("utf-8"),
-    ).hexdigest()
+    digest = hybrid_resolver._profile_digest({
+        "profile": profile.model_dump(exclude={"workday_password", "workday_email"}, mode="json"),
+        "fields": {}, "skills": [],
+    })
     field = {**_yes_no("#fam", question), "options": ["Yes", "No"]}
     key = hybrid_resolver._choice_key(field, digest)  # noqa: SLF001
     event = threading.Event()
