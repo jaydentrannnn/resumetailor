@@ -2,6 +2,7 @@ import { type CSSProperties, useEffect, useId, useState } from "react";
 import type { AppConfig, JobSettings } from "../../api";
 import { Field, Toggle } from "../../components/Field";
 import { IncludePanel } from "../../components/IncludePanel";
+import { useResumeOutline } from "../../lib/useResumeOutline";
 import { RunStyleRules } from "./RunStyleRules";
 import { SectionBalance } from "./SectionBalance";
 
@@ -168,6 +169,7 @@ function MoreOptions({ config, settings, onChange, disabled }: FormProps) {
           />
         </Field>
       </div>
+      <ProjectLinksToggle settings={settings} set={set} />
       {coverOn && <CoverAngles settings={settings} set={set} />}
       <BulletBudget config={config} settings={settings} onChange={onChange} />
       <Field
@@ -196,6 +198,24 @@ function MoreOptions({ config, settings, onChange, disabled }: FormProps) {
 }
 
 type Setter = <K extends keyof JobSettings>(key: K, value: JobSettings[K]) => void;
+
+/** Global project-link switch; hidden when the template or resume has no projects. */
+function ProjectLinksToggle({ settings, set }: { settings: JobSettings; set: Setter }) {
+  const { outline } = useResumeOutline();
+  const hasProjects =
+    outline !== null &&
+    outline.sections_enabled.projects !== false &&
+    outline.sections.some((s) => s.kind === "project" && s.entries.length > 0);
+  if (!hasProjects) return null;
+  return (
+    <Toggle
+      label="Show project links"
+      help="Label and hyperlink in each project's header line."
+      checked={!settings.no_project_links}
+      onChange={(v) => set("no_project_links", !v)}
+    />
+  );
+}
 
 function CoverTone({ settings, set }: { settings: JobSettings; set: Setter }) {
   return (

@@ -1,5 +1,6 @@
 import { EntryCard, useEntryEditor } from "./EntryCard";
 import { resumeEntryKey } from "../../lib/resumeEntryEdit";
+import { labelForUrl, nextLinkLabel } from "../../lib/linkLabel";
 import { ChipListField } from "../../components/ChipListField";
 import { AddButton } from "../../components/ListControls";
 import { BulletList } from "./BulletList";
@@ -123,6 +124,7 @@ export function ProjectEntries({
                 <TextField
                   label="Link label"
                   value={link}
+                  placeholder={labelForUrl(url) || undefined}
                   onChange={(v) => {
                     const next = [...entries];
                     next[i] = { ...proj, link: v };
@@ -130,19 +132,18 @@ export function ProjectEntries({
                   }}
                 />
                 <TextField
-                  label="GitHub URL"
+                  label="Project link"
                   value={url}
                   onChange={(v) => {
                     const next = [...entries];
-                    const nextLink = v.trim() && !link.trim() ? "Github" : proj.link;
-                    next[i] = { ...proj, url: v, link: nextLink };
+                    next[i] = { ...proj, url: v, link: nextLinkLabel(link, url, v) };
                     setEntries(next);
                   }}
                 />
               </div>
               {linkWithoutUrl && (
                 <p className="mt-2 text-xs text-attn">
-                  Label renders as plain text with no hyperlink — add a GitHub URL.
+                  Label renders as plain text with no hyperlink — add a project link.
                 </p>
               )}
               {urlLooksOdd && (

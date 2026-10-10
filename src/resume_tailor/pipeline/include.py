@@ -14,7 +14,7 @@ from __future__ import annotations
 
 from pydantic import BaseModel, Field
 
-from ..content.data import MasterResume
+from ..content.data import Education, MasterResume
 from ..document.template_profile import ContactField
 
 
@@ -34,6 +34,12 @@ class IncludeOptions(BaseModel):
     exclude_entries: list[str] = Field(default_factory=list)
     #: Whole sections omitted from this run entirely (see `data.MasterResume.sections`).
     exclude_sections: list[str] = Field(default_factory=list)
+    #: Skill-group labels omitted from this run. `SkillGroup` has no id, so the label is
+    #: the key — renaming a group simply brings it back (fail open, like a stale entry id).
+    exclude_skill_groups: list[str] = Field(default_factory=list)
+    #: Education entries omitted from this run, keyed by `education_key` — `Education`
+    #: has no id either. Same fail-open rule on a rename.
+    exclude_education: list[str] = Field(default_factory=list)
     #: Per-run display order for `resume.sections`, by section id. `None` keeps the
     #: resume's own order. Sections named here come first, in this order; any section not
     #: named (new since this was saved, or simply never reordered) keeps its relative
@@ -47,6 +53,16 @@ class IncludeOptions(BaseModel):
     exclude_experience: list[str] = Field(default_factory=list)
     #: Legacy: project ids omitted. Same treatment as `exclude_experience`.
     exclude_projects: list[str] = Field(default_factory=list)
+
+
+def _norm_key(text: str) -> str:
+    """Case- and whitespace-insensitive form of a label key."""
+    return " ".join(text.split()).casefold()
+
+
+def education_key(edu: Education) -> str:
+    """Stable per-run key for an education entry: ``school|degree``."""
+    return f"{edu.school.strip()}|{edu.degree.strip()}"
 
 
 def _excluded_entry_ids(options: IncludeOptions) -> set[str]:
@@ -70,10 +86,32 @@ def apply(resume: MasterResume, options: IncludeOptions) -> MasterResume:
     excluded_entries = _excluded_entry_ids(options)
     excluded_sections = set(options.exclude_sections)
 
+    excluded_groups = {_norm_key(label) for label in options.exclude_skill_groups}
+    excluded_education = {_norm_key(key) for key in options.exclude_education}
+
     copy.sections = [s for s in copy.sections if s.id not in excluded_sections]
+    kept = []
     for section in copy.sections:
         if section.kind in ("experience", "project"):
             section.entries = [e for e in section.entries if e.id not in excluded_entries]
+        elif section.kind == "skills" and excluded_groups:
+            section.entries = [
+                g for g in section.entries if _norm_key(g.label) not in excluded_groups
+            ]
+            if not section.entries:
+                continue
+        elif section.kind == "education" and excluded_education:
+            section.entries = [
+                e for e in section.entries
+                if _norm_key(education_key(e)) not in excluded_education
+            ]
+            if not section.entries:
+                continue
+        kept.append(section)
+    # A skills/education section the user emptied entry by entry is dropped like an
+    # excluded section. Experience/project sections keep today's behaviour (an emptied
+    # one renders nothing under a generic template either way).
+    copy.sections = kept
 
     if options.section_order:
         order_index = {sid: i for i, sid in enumerate(options.section_order)}

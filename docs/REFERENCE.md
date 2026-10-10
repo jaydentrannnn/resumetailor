@@ -1100,7 +1100,12 @@ fixed overhead the fit loop never trims.
   section); `exclude_experience`/`exclude_projects` are accepted as legacy aliases folded
   into the same set. Placement matters: earlier would invalidate the score cache on every
   toggle; later would let an excluded entry's tech/coursework still shape what facets
-  shows.
+  shows. `exclude_skill_groups` (labels) and `exclude_education` (`include.education_key`,
+  `school|degree`) cover the two kinds without ids; both match case/whitespace-insensitively
+  and fail open on a rename. A skills/education section emptied this way is dropped, so a
+  generic template prints no heading (a fixed template still prints its static heading).
+  The application-form skills list reads the post-include resume, so an excluded group
+  is not suggested there either; the fabrication guard is per-bullet and unaffected.
 - **Web UI is an alternate front door, not a second pipeline** — `src/resume_tailor/web/`
   queues jobs into the same pipeline. Jobs run concurrently up to
   `JobSettings.max_concurrent_jobs` (§2), each in its own `RunContext`; the process-wide

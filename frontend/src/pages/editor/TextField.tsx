@@ -1,10 +1,12 @@
 export function TextField({
   label,
   value,
+  placeholder,
   onChange,
 }: {
   label: string;
   value: string;
+  placeholder?: string;
   onChange: (v: string) => void;
 }) {
   return (
@@ -13,6 +15,7 @@ export function TextField({
       <input
         type="text"
         value={value}
+        placeholder={placeholder}
         onChange={(e) => onChange(e.target.value)}
         className="field"
       />

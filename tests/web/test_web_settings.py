@@ -217,6 +217,8 @@ def test_settings_json_predating_include_key_still_loads(client, tmp_path, monke
         "coursework": True,
         "exclude_entries": [],
         "exclude_sections": [],
+        "exclude_skill_groups": [],
+        "exclude_education": [],
         "exclude_experience": [],
         "exclude_projects": [],
         "section_order": None,

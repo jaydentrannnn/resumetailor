@@ -6,6 +6,9 @@ export type ResumeOutlineEntry = {
   id: string;
   label: string;
   bullets: number;
+  /** Secondary text for bullet-less entries: education dates, a skill group's first
+   * few items. Empty for experience/project entries. */
+  detail?: string;
 };
 
 /** One resume section (any kind, any count), as the include tile lists it. */

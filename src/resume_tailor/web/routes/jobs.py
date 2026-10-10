@@ -138,6 +138,47 @@ def estimate_job(body: CreateJobRequest) -> dict[str, Any]:
         raise HTTPException(status_code=400, detail=str(exc)) from exc
 
 
+#: How many of a skill group's items the include tile previews.
+_SKILL_PREVIEW = 4
+
+
+def _outline_entries(section) -> list[ResumeOutlineEntryOut]:
+    """The include tile's per-entry rows for one section (none for a list section)."""
+    if section.kind == "experience":
+        return [
+            ResumeOutlineEntryOut(
+                id=e.id, label=f"{e.company} — {e.title}", bullets=len(e.bullets)
+            )
+            for e in section.entries
+        ]
+    if section.kind == "project":
+        return [
+            ResumeOutlineEntryOut(id=p.id, label=p.name, bullets=len(p.bullets))
+            for p in section.entries
+        ]
+    if section.kind == "education":
+        return [
+            ResumeOutlineEntryOut(
+                id=include.education_key(edu),
+                label=" — ".join(part for part in (edu.school, edu.degree) if part.strip()),
+                bullets=0,
+                detail=edu.dates,
+            )
+            for edu in section.entries
+        ]
+    if section.kind == "skills":
+        out = []
+        for group in section.entries:
+            preview = ", ".join(group.items[:_SKILL_PREVIEW])
+            if len(group.items) > _SKILL_PREVIEW:
+                preview += ", …"
+            out.append(
+                ResumeOutlineEntryOut(id=group.label, label=group.label, bullets=0, detail=preview)
+            )
+        return out
+    return []
+
+
 @router.get("/api/resume-outline", response_model=ResumeOutlineResponse)
 def get_resume_outline() -> ResumeOutlineResponse:
     """Master-resume shape the include tile needs — refetched every Tailor tab visit.
@@ -194,26 +235,10 @@ def get_resume_outline() -> ResumeOutlineResponse:
                 id=section.id,
                 title=section.title,
                 kind=section.kind,
-                entries=(
-                    [
-                        ResumeOutlineEntryOut(
-                            id=entry.id,
-                            label=(
-                                f"{entry.company} — {entry.title}"
-                                if section.kind == "experience"
-                                else entry.name
-                            ),
-                            bullets=len(entry.bullets),
-                        )
-                        for entry in section.entries
-                    ]
-                    if section.kind in ("experience", "project")
-                    else []
-                ),
+                entries=_outline_entries(section),
             )
-            # Every section, not just entry sections — education/skills/list sections are
-            # orderable from the include tile too, even though they have no per-entry
-            # excludes and so contribute an empty `entries` list here.
+            # Every section — list sections are orderable from the include tile too, even
+            # though they have no per-entry excludes and so contribute no entries here.
             for section in resume.sections
         ],
         sections_enabled=dict(layout.get("enabled") or {}),

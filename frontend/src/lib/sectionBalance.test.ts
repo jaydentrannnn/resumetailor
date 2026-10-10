@@ -18,6 +18,8 @@ const include: IncludeOptions = {
   coursework: true,
   exclude_entries: [],
   exclude_sections: [],
+  exclude_skill_groups: [],
+  exclude_education: [],
   exclude_experience: [],
   exclude_projects: [],
   section_order: null,

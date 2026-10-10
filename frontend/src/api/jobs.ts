@@ -16,6 +16,12 @@ export type IncludeOptions = {
   exclude_entries: string[];
   /** Whole section ids omitted from this run entirely. */
   exclude_sections: string[];
+  /** Skill-group labels omitted from this run (groups have no id; matched
+   * case-insensitively server-side). */
+  exclude_skill_groups: string[];
+  /** Education entries omitted from this run, keyed `school|degree` — the outline's
+   * education entry ids. */
+  exclude_education: string[];
   /** Legacy: folded into the same exclusion set as `exclude_entries` server-side. Kept
    * only so a `settings.json` saved before `exclude_entries` existed still round-trips. */
   exclude_experience: string[];

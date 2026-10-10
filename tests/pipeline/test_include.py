@@ -162,3 +162,54 @@ def test_section_order_applies_after_section_exclusion():
         IncludeOptions(exclude_sections=[excluded], section_order=list(reversed(kept))),
     )
     assert [s.id for s in result.sections] == list(reversed(kept))
+
+
+def _with_two_skill_groups():
+    from resume_tailor.content.data import SkillGroup
+
+    resume = _resume()
+    skills = next(s for s in resume.sections if s.kind == "skills")
+    skills.entries.append(SkillGroup(label="Languages", items=["Python", "Go"]))
+    return resume
+
+
+def test_apply_drops_named_skill_groups_case_insensitively():
+    resume = _with_two_skill_groups()
+    result = apply(resume, IncludeOptions(exclude_skill_groups=["  languages "]))
+    assert [g.label for g in result.skills] == ["Tools"]
+    assert len(resume.skills) == 2  # input untouched
+
+
+def test_apply_drops_skills_section_when_every_group_is_excluded():
+    resume = _with_two_skill_groups()
+    result = apply(resume, IncludeOptions(exclude_skill_groups=["Tools", "Languages"]))
+    assert all(s.kind != "skills" for s in result.sections)
+    assert result.skills == []
+
+
+def test_apply_ignores_stale_skill_group_labels():
+    resume = _with_two_skill_groups()
+    result = apply(resume, IncludeOptions(exclude_skill_groups=["Renamed away"]))
+    assert len(result.skills) == 2
+
+
+def test_apply_drops_education_by_school_and_degree_key():
+    from resume_tailor.pipeline.include import education_key
+
+    resume = _resume()
+    edu_section = next(s for s in resume.sections if s.kind == "education")
+    extra = edu_section.entries[0].model_copy(update={"school": "Community College"})
+    edu_section.entries.append(extra)
+    key = education_key(resume.education[0])
+    result = apply(resume, IncludeOptions(exclude_education=[key.upper()]))
+    assert [e.school for e in result.education] == ["Community College"]
+
+
+def test_apply_drops_education_section_when_every_entry_is_excluded():
+    from resume_tailor.pipeline.include import education_key
+
+    resume = _resume()
+    keys = [education_key(e) for e in resume.education]
+    result = apply(resume, IncludeOptions(exclude_education=keys))
+    assert all(s.kind != "education" for s in result.sections)
+    assert validate(resume, IncludeOptions(exclude_education=keys)) == []

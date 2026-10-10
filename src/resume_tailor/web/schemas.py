@@ -737,11 +737,15 @@ class ConfigResponse(BaseModel):
 
 
 class ResumeOutlineEntryOut(BaseModel):
-    """One experience/project entry as the include tile lists it."""
+    """One entry as the include tile lists it: an experience/project entry, an education
+    entry (id = `include.education_key`) or a skill group (id = its label)."""
 
     id: str
     label: str
     bullets: int
+    #: Secondary text for entries without bullets — education dates, a skill group's
+    #: first few items. Empty for experience/project entries.
+    detail: str = ""
 
 
 class ResumeOutlineSectionOut(BaseModel):

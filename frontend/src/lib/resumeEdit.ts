@@ -285,8 +285,9 @@ export function blankExperience(id: string): Experience {
 }
 
 /**
- * Empty project row. `link` defaults to "Github" so a typed URL produces a
- * real hyperlink without a second field fill (render needs both link + url).
+ * Empty project row. `link` starts empty: typing a URL fills it from the site's name
+ * (`linkLabel.labelForUrl`), so one field fill still yields a real hyperlink (render
+ * needs both link + url).
  */
 export function blankProject(id: string): Project {
   return {
@@ -296,7 +297,7 @@ export function blankProject(id: string): Project {
     start: "",
     end: "",
     date: "",
-    link: "Github",
+    link: "",
     url: "",
     bullets: [],
   };

@@ -236,19 +236,27 @@ def test_get_resume_outline(client):
         "education", "experience", "projects", "skills", "list_section",
     }
 
-    # `sections` covers every section (any kind), not just entry sections — education
-    # and skills are orderable from the include tile too, even though they carry no
-    # per-entry excludes and so contribute an empty `entries` list.
+    # `sections` covers every section (any kind). Experience/project entries carry their
+    # ids; education entries are keyed `school|degree` and skill groups by label, each
+    # with a `detail` line, since neither has an id of its own.
     section_kinds = {s["kind"] for s in body["sections"]}
     assert {"education", "skills"} <= section_kinds
-    entry_ids_via_sections = {e["id"] for s in body["sections"] for e in s["entries"]}
+    entry_ids_via_sections = {
+        e["id"]
+        for s in body["sections"]
+        if s["kind"] in ("experience", "project")
+        for e in s["entries"]
+    }
     entry_ids_via_flat = {e["id"] for e in body["experience"]} | {
         p["id"] for p in body["projects"]
     }
     assert entry_ids_via_sections == entry_ids_via_flat
-    for s in body["sections"]:
-        if s["kind"] not in ("experience", "project"):
-            assert s["entries"] == []
+    by_kind = {s["kind"]: s for s in body["sections"]}
+    assert [e["id"] for e in by_kind["education"]["entries"]] == [
+        f"{edu.school}|{edu.degree}" for edu in resume.education
+    ]
+    assert [e["id"] for e in by_kind["skills"]["entries"]] == [g.label for g in resume.skills]
+    assert all(e["detail"] for e in by_kind["skills"]["entries"])
     assert all(isinstance(v, bool) for v in body["sections_enabled"].values())
     assert body["section_mode"] in ("fixed", "generic")
 
