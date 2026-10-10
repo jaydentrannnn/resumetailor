@@ -1,9 +1,15 @@
 import { useRef, type KeyboardEvent, type PointerEvent } from "react";
 import { type BalanceSection, STEP, moveDivider, setDivider } from "../lib/sectionBalance";
 
+/** Segment `i` of `n`: full accent on the left, fading towards the track colour. */
+function tint(i: number, n: number): string {
+  const strength = n > 1 ? 100 - (i * 85) / (n - 1) : 100;
+  return `color-mix(in srgb, var(--color-accent) ${strength}%, var(--color-line-hover))`;
+}
+
 /**
  * A slider track with one thumb between each pair of sections, styled like the native
- * range inputs beside it. Dragging (or arrow-keying) a thumb trades share only between
+ * range inputs beside it, each section's span tinted from full green (left) to pale. Dragging (or arrow-keying) a thumb trades share only between
  * the two sections either side of it; each section's name and share sit under its span.
  */
 export function SectionBalanceBar({
@@ -47,7 +53,14 @@ export function SectionBalanceBar({
   return (
     <div>
       <div ref={track} className="relative h-6 touch-none select-none">
-        <div className="absolute inset-x-0 top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-line-hover" />
+        <div className="absolute inset-x-0 top-1/2 flex h-1.5 -translate-y-1/2 overflow-hidden rounded-full">
+          {sections.map((s, i) => (
+            <div
+              key={s.id}
+              style={{ width: `${shares[i]}%`, background: tint(i, sections.length) }}
+            />
+          ))}
+        </div>
         {edges.map((edge, i) => (
           <div
             key={sections[i].id}
@@ -64,7 +77,7 @@ export function SectionBalanceBar({
             style={{ left: `${edge}%` }}
             className="group absolute top-1/2 flex size-6 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize touch-none items-center justify-center rounded-sm"
           >
-            <span className="size-4 rounded-full bg-accent" />
+            <span className="size-4 rounded-full border-2 border-panel bg-accent" />
           </div>
         ))}
       </div>
