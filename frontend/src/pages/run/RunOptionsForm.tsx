@@ -1,4 +1,4 @@
-import { useEffect, useId, useState } from "react";
+import { type CSSProperties, useEffect, useId, useState } from "react";
 import type { AppConfig, JobSettings } from "../../api";
 import { Field, Toggle } from "../../components/Field";
 import { IncludePanel } from "../../components/IncludePanel";
@@ -128,8 +128,6 @@ export function RunOptionsForm({
     </>
   );
 }
-
-const SLIDER = "w-full accent-[var(--color-accent)]";
 
 /** Selection sizing, fill targets, the opt-out stages, and the writing style rules. */
 function MoreOptions({ config, settings, onChange, disabled }: FormProps) {
@@ -267,7 +265,8 @@ function BulletBudget({ config, settings, onChange }: Omit<FormProps, "disabled"
           step={1}
           value={Math.round(fillValue * 100)}
           onChange={(e) => onChange({ ...settings, fill_target: Number(e.target.value) / 100 })}
-          className={SLIDER}
+          className="rt-range"
+          style={{ "--rt-range-fill": `${((fillValue * 100 - 80) / 18) * 100}%` } as CSSProperties}
         />
       </Field>
       <SectionBalance settings={settings} onChange={onChange} />
