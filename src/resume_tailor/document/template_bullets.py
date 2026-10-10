@@ -94,25 +94,56 @@ def discover_noto_num_id(doc) -> str | None:
             return num_id
     return candidates[0] if candidates else None
 
-def normalize_bullet_numbering(doc) -> None:
-    """Pin Noto Sans Symbols on every lvl0 bullet marker in numbering.xml."""
-    numbering = doc.part.numbering_part
-    root = numbering.element
+#: Word stores its Symbol/Wingdings bullets as private-use code points that only those
+#: fonts can draw (Word's default bullet is U+F0B7 in Symbol). Pinning another font on such a
+#: marker renders a box or a stray glyph, so the marker is first swapped for the real
+#: Unicode character it shows. A private-use marker not listed here keeps its own font.
+_SYMBOL_FONT_GLYPHS = {
+    "\uf0b7": "\u2022",  # Symbol bullet
+    "\uf0a7": "\u25aa",  # Wingdings small square
+    "\uf0d8": "\u27a2",  # Wingdings arrowhead
+    "\uf076": "\u2756",  # Wingdings diamond
+    "\uf0fc": "\u2713",  # Wingdings check
+}
 
-    ref_rfonts = None
+
+def _is_private_use(text: str) -> bool:
+    return any(0xF000 <= ord(c) <= 0xF0FF for c in text)
+
+
+def _canonical_glyph(text: str | None) -> str | None:
+    """`text` as it reads on the page: a Symbol/Wingdings code point as its Unicode twin."""
+    if text is None:
+        return None
+    return "".join(_SYMBOL_FONT_GLYPHS.get(c, c) for c in text)
+
+
+def _bullet_lvl0s(root):
+    """Every abstract definition's lvl0 `w:lvl` element that draws a bullet."""
     for anum in root.findall(qn("w:abstractNum")):
         for lvl in anum.findall(qn("w:lvl")):
             if lvl.get(qn("w:ilvl")) != "0":
                 continue
             num_fmt = lvl.find(qn("w:numFmt"))
-            if num_fmt is None or num_fmt.get(qn("w:val")) != "bullet":
-                continue
-            rPr = lvl.find(qn("w:rPr"))
-            rf = rPr.find(qn("w:rFonts")) if rPr is not None else None
-            if rf is not None and rf.get(qn("w:ascii")) == template_tags.NOTO_MARKER_FONT:
-                ref_rfonts = copy.deepcopy(rf)
-                break
-        if ref_rfonts is not None:
+            if num_fmt is not None and num_fmt.get(qn("w:val")) == "bullet":
+                yield lvl
+
+
+def normalize_bullet_numbering(doc) -> None:
+    """Pin Noto Sans Symbols on every lvl0 bullet marker in numbering.xml.
+
+    A Symbol/Wingdings private-use marker is rewritten to its Unicode character first
+    (`_SYMBOL_FONT_GLYPHS`); one with no known equivalent keeps its own font, since Noto
+    would draw it as a box."""
+    numbering = doc.part.numbering_part
+    root = numbering.element
+
+    ref_rfonts = None
+    for lvl in _bullet_lvl0s(root):
+        rPr = lvl.find(qn("w:rPr"))
+        rf = rPr.find(qn("w:rFonts")) if rPr is not None else None
+        if rf is not None and rf.get(qn("w:ascii")) == template_tags.NOTO_MARKER_FONT:
+            ref_rfonts = copy.deepcopy(rf)
             break
 
     if ref_rfonts is None:
@@ -120,21 +151,22 @@ def normalize_bullet_numbering(doc) -> None:
         for attr in ("ascii", "hAnsi", "cs", "eastAsia"):
             ref_rfonts.set(qn(f"w:{attr}"), template_tags.NOTO_MARKER_FONT)
 
-    for anum in root.findall(qn("w:abstractNum")):
-        for lvl in anum.findall(qn("w:lvl")):
-            if lvl.get(qn("w:ilvl")) != "0":
+    for lvl in _bullet_lvl0s(root):
+        text_el = lvl.find(qn("w:lvlText"))
+        text = text_el.get(qn("w:val"), "") if text_el is not None else ""
+        if _is_private_use(text):
+            canonical = "".join(_SYMBOL_FONT_GLYPHS.get(c, c) for c in text)
+            if _is_private_use(canonical):
                 continue
-            num_fmt = lvl.find(qn("w:numFmt"))
-            if num_fmt is None or num_fmt.get(qn("w:val")) != "bullet":
-                continue
-            rPr = lvl.find(qn("w:rPr"))
-            if rPr is None:
-                rPr = OxmlElement("w:rPr")
-                lvl.append(rPr)
-            old_rf = rPr.find(qn("w:rFonts"))
-            if old_rf is not None:
-                rPr.remove(old_rf)
-            rPr.insert(0, copy.deepcopy(ref_rfonts))
+            text_el.set(qn("w:val"), canonical)
+        rPr = lvl.find(qn("w:rPr"))
+        if rPr is None:
+            rPr = OxmlElement("w:rPr")
+            lvl.append(rPr)
+        old_rf = rPr.find(qn("w:rFonts"))
+        if old_rf is not None:
+            rPr.remove(old_rf)
+        rPr.insert(0, copy.deepcopy(ref_rfonts))
 
 #: Most fonts (Times New Roman included) draw U+25CF "●" as a near-full-em disc, not
 #: the small list dot a dedicated symbol font would give it. Pinning a symbol font at the
@@ -153,12 +185,15 @@ _MIN_MARKER_HALF_POINTS = 8  # 4pt floor so a tiny body font can't shrink the do
 #: same ~53% that tames a "●" renders it as a near-invisible hairline, not a smaller dot.
 _SHRINKABLE_MARKERS = frozenset("●⬤○◉■□◆◇")
 
-def _marker_glyph(doc, paragraph: Paragraph) -> str | None:
-    """The literal lvl0 bullet character governing `paragraph`'s numbering marker."""
+def _paragraph_num_id(paragraph: Paragraph) -> str | None:
     pPr = paragraph._p.find(qn("w:pPr"))
     numPr = pPr.find(qn("w:numPr")) if pPr is not None else None
     num_id_el = numPr.find(qn("w:numId")) if numPr is not None else None
-    num_id = num_id_el.get(qn("w:val")) if num_id_el is not None else None
+    return num_id_el.get(qn("w:val")) if num_id_el is not None else None
+
+
+def _list_glyph(doc, num_id: str | None) -> str | None:
+    """The literal lvl0 bullet character of list instance `num_id`."""
     if num_id is None:
         return None
     root = doc.part.numbering_part.element
@@ -174,6 +209,11 @@ def _marker_glyph(doc, paragraph: Paragraph) -> str | None:
             text = lvl.find(qn("w:lvlText"))
             return text.get(qn("w:val")) if text is not None else None
     return None
+
+
+def _marker_glyph(doc, paragraph: Paragraph) -> str | None:
+    """The literal lvl0 bullet character governing `paragraph`'s numbering marker."""
+    return _list_glyph(doc, _paragraph_num_id(paragraph))
 
 def _body_run_size(paragraph: Paragraph) -> int | None:
     """Font size in half-points of the paragraph's first run that sets one explicitly."""
@@ -210,8 +250,18 @@ def shrink_bullet_marker(doc, paragraph: Paragraph) -> None:
         sz_cs.set(qn("w:val"), marker_size)
 
 def retarget_bullet(doc, paragraph: Paragraph, num_id: str | None) -> None:
-    """Use the canonical small-marker list id and drop any right-indent inflation."""
-    if num_id is not None:
+    """Move `paragraph` onto the canonical small-marker list `num_id` and drop any
+    right-indent inflation.
+
+    Only when that list draws the same marker the paragraph already shows (or the
+    paragraph has no list yet): merging near-duplicate lists of one glyph is what this is
+    for, and moving a "•" section onto an education list of "-" would change the page.
+    """
+    own = _paragraph_num_id(paragraph)
+    if num_id is not None and (
+        own is None
+        or _canonical_glyph(_list_glyph(doc, own)) == _canonical_glyph(_list_glyph(doc, num_id))
+    ):
         template_xml.set_num_id(paragraph, num_id)
     template_xml.strip_right_indent(paragraph)
     shrink_bullet_marker(doc, paragraph)
