@@ -41,6 +41,7 @@ class _FitState:
         fill_target: float | None,
         initial_bullet_share: float | None,
         experience_bullet_share: float | None,
+        section_weights: dict[str, float] | None,
         max_bullets_per_entry: int | None,
         coursework_pool: list[str] | None,
         on_event: events.ProgressCallback | None,
@@ -70,6 +71,8 @@ class _FitState:
             if experience_bullet_share is not None
             else config.EXPERIENCE_BULLET_SHARE
         )
+        #: Relative per-section weights; beats `section_share` (see `_section_pools`).
+        self.section_balance = section_weights
         self.entry_cap = (
             max_bullets_per_entry
             if max_bullets_per_entry is not None
@@ -133,7 +136,7 @@ class _FitState:
         self.total_bullets = sum(len(e.bullets) for e in entries)
         self.growth_ceiling = selectable_total(entries, max_per_entry=self.entry_cap)
         self.section_pools, self.section_weights = fit_selection._section_pools(
-            self.resume, entries, self.section_share
+            self.resume, entries, self.section_share, self.section_balance
         )
         self.limit = fit_selection._initial_selection_size(
             self.resume, entries, self.requirements, self.target_pages, self.semantic,
@@ -154,6 +157,7 @@ class _FitState:
             total_bullets=self.total_bullets,
             initial_bullet_share=self.initial_share,
             experience_bullet_share=self.section_share,
+            section_weights=self.section_balance,
             max_bullets_per_entry=self.entry_cap,
         )
         self.by_id: dict[str, Bullet] = {b.id: b for e in entries for b in e.bullets}

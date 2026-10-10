@@ -416,3 +416,13 @@ Two code-only changes:
   `_shortfall`'s room is now capped one line under that, so after rung B overflows,
   rung C no longer rewrites and renders an entry that needs even more lines. Rung B
   refreshes `p.room` after a failed add for the same reason.
+
+- **Section balance replaces "Weight bullets toward experience" in the web UI (2026-10).**
+  One bar with a segment per included experience/project section; a divider trades share
+  only between its two neighbours (5% steps, 5% minimum). Stored as relative weights keyed
+  by section id (`section_weights`), not sum-to-100 percentages, so unticking a section
+  rescales the rest and re-ticking restores it, and a deleted section's id is just ignored.
+  Off (null) stays the default: one flat pool where the most relevant bullets win. A saved
+  legacy `experience_bullet_share` displays as its split and is replaced on the first edit
+  (only the frontend has section kinds at hand, so there is no backend migration). The CLI
+  keeps `--experience-bullet-share`.

@@ -158,7 +158,10 @@ def _initial_selection_size(
     return low
 
 def _section_pools(
-    resume: MasterResume, entries: list, experience_share: float | None
+    resume: MasterResume,
+    entries: list,
+    experience_share: float | None,
+    section_weights: dict[str, float] | None = None,
 ) -> tuple[list[list] | None, list[float | None] | None]:
     """Group `entries` (already narrowed to the chosen subset) back into per-section
     pools, with one weight per pool derived from `experience_share`.
@@ -170,13 +173,21 @@ def _section_pools(
     old single-float experience-vs-projects split to any number of sections. Pools are
     built from section identity, not `isinstance` — two experience-kind sections are the
     same Python class, so only the section itself can tell them apart.
+
+    `section_weights` ({section id: relative weight}, the web UI's section balance bar)
+    takes precedence over `experience_share`. Weights are relative, normalised over the
+    sections that actually have chosen entries, so an excluded section drops out and the
+    rest keep their ratios. A present section missing from the dict (added after the
+    weights were saved) gets the mean of the known weights.
     """
-    if experience_share is None:
+    if experience_share is None and section_weights is None:
         return None, None
     chosen_ids = {id(e) for e in entries}
     pools = [
         [e for e in section.entries if id(e) in chosen_ids] for section in resume.entry_sections
     ]
+    if section_weights is not None:
+        return pools, _balance_weights(resume, pools, section_weights)
     kinds = [section.kind for section in resume.entry_sections]
     present = {i for i, pool in enumerate(pools) if pool}
     n_experience = sum(1 for i in present if kinds[i] == "experience")
@@ -192,6 +203,22 @@ def _section_pools(
         else:
             weights.append(remainder / n_project if n_project else None)
     return pools, weights
+
+def _balance_weights(
+    resume: MasterResume, pools: list[list], section_weights: dict[str, float]
+) -> list[float | None]:
+    """Per-pool shares of the total from relative `section_weights` (see `_section_pools`)."""
+    ids = [section.id for section in resume.entry_sections]
+    present = [i for i, pool in enumerate(pools) if pool]
+    known = [max(0.0, section_weights[ids[i]]) for i in present if ids[i] in section_weights]
+    fallback = sum(known) / len(known) if known else 1.0
+    raw = {
+        i: max(0.0, section_weights.get(ids[i], fallback)) for i in present
+    }
+    total = sum(raw.values())
+    if total <= 0:
+        return [None] * len(pools)
+    return [raw[i] / total if i in raw else None for i in range(len(pools))]
 
 def _overflow_report(
     resume: MasterResume, bullets: dict[str, str], target_pages: int, measured_lines: int

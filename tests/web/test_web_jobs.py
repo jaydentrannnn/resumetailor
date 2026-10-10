@@ -60,6 +60,7 @@ def test_job_runs_to_success_with_stubbed_pipeline(client, monkeypatch, tmp_path
         fill_target=None,
         initial_bullet_share=None,
         experience_bullet_share=None,
+        section_weights=None,
         max_bullets_per_entry=None,
         coursework_pool=None,
         on_event=None,
@@ -73,6 +74,7 @@ def test_job_runs_to_success_with_stubbed_pipeline(client, monkeypatch, tmp_path
             fill_target=fill_target,
             initial_bullet_share=initial_bullet_share,
             experience_bullet_share=experience_bullet_share,
+            section_weights=section_weights,
             max_bullets_per_entry=max_bullets_per_entry,
         )
         out = Path(out)
@@ -152,6 +154,7 @@ def test_job_runs_to_success_with_stubbed_pipeline(client, monkeypatch, tmp_path
                 "fill_target": 0.88,
                 "initial_bullet_share": 0.6,
                 "experience_bullet_share": 0.7,
+                "section_weights": {"experience": 2, "projects": 1},
                 "max_bullets_per_entry": 4,
             },
         },
@@ -182,6 +185,7 @@ def test_job_runs_to_success_with_stubbed_pipeline(client, monkeypatch, tmp_path
         "fill_target": 0.88,
         "initial_bullet_share": 0.6,
         "experience_bullet_share": 0.7,
+        "section_weights": {"experience": 2, "projects": 1},
         "max_bullets_per_entry": 4,
     }
     assert any(e["stage"] == "extract" for e in status["events"])

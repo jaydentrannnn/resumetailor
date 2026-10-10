@@ -3,6 +3,7 @@ import type { AppConfig, JobSettings } from "../../api";
 import { Field, Toggle } from "../../components/Field";
 import { IncludePanel } from "../../components/IncludePanel";
 import { RunStyleRules } from "./RunStyleRules";
+import { SectionBalance } from "./SectionBalance";
 
 const OPEN_KEY = "rt.runOptions.open.";
 
@@ -170,7 +171,7 @@ function MoreOptions({ config, settings, onChange, disabled }: FormProps) {
         </Field>
       </div>
       {coverOn && <CoverAngles settings={settings} set={set} />}
-      <BulletBudget config={config} settings={settings} set={set} />
+      <BulletBudget config={config} settings={settings} onChange={onChange} />
       <Field
         label="Max bullets per entry"
         help="Cap on how many bullets any single job or project may take."
@@ -250,19 +251,9 @@ function CoverAngles({ settings, set }: { settings: JobSettings; set: Setter }) 
   );
 }
 
-/** Page fill target and the experience/projects weighting. */
-function BulletBudget({
-  config,
-  settings,
-  set,
-}: {
-  config: AppConfig | null;
-  settings: JobSettings;
-  set: Setter;
-}) {
+/** Page fill target and how bullets split across sections. */
+function BulletBudget({ config, settings, onChange }: Omit<FormProps, "disabled">) {
   const fillValue = settings.fill_target ?? config?.fill_target ?? 0.93;
-  const experienceShareValue =
-    settings.experience_bullet_share ?? config?.experience_bullet_share ?? 0.65;
   return (
     <>
       <Field
@@ -275,31 +266,11 @@ function BulletBudget({
           max={98}
           step={1}
           value={Math.round(fillValue * 100)}
-          onChange={(e) => set("fill_target", Number(e.target.value) / 100)}
+          onChange={(e) => onChange({ ...settings, fill_target: Number(e.target.value) / 100 })}
           className={SLIDER}
         />
       </Field>
-      <Toggle
-        label="Weight bullets toward experience"
-        help="Budget experience and projects separately instead of one shared pool, where a keyword-dense project can otherwise out-rank every job."
-        checked={settings.experience_bullet_share !== null}
-        onChange={(v) => set("experience_bullet_share", v ? 0.65 : null)}
-      />
-      {settings.experience_bullet_share !== null && (
-        <Field
-          label={`${Math.round(experienceShareValue * 100)}% experience / ${100 - Math.round(experienceShareValue * 100)}% projects`}
-        >
-          <input
-            type="range"
-            min={0}
-            max={100}
-            step={5}
-            value={Math.round(experienceShareValue * 100)}
-            onChange={(e) => set("experience_bullet_share", Number(e.target.value) / 100)}
-            className={SLIDER}
-          />
-        </Field>
-      )}
+      <SectionBalance settings={settings} onChange={onChange} />
     </>
   );
 }

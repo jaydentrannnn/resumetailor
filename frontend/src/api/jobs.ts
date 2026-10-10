@@ -80,8 +80,12 @@ export type JobSettings = {
   /** First-draft bullet-share ceiling (0.30–1.00); null uses the server default. */
   initial_bullet_share: number | null;
   /** Fraction of overall selected bullets given to experience (0.00–1.00), budgeted
-   * separately from projects; null means unweighted (one flat relevance-ranked pool). */
+   * separately from projects; null means unweighted (one flat relevance-ranked pool).
+   * Legacy shorthand: the Section balance control replaces it on its first edit. */
   experience_bullet_share: number | null;
+  /** Section balance: {section id: relative weight} over experience/project sections,
+   * normalised per run over the included ones; null = off. Beats `experience_bullet_share`. */
+  section_weights: Record<string, number> | null;
   /** Cap on bullets any single job or project may take; null means uncapped. */
   max_bullets_per_entry: number | null;
   /** What to leave out — contact fields/order, GPA, coursework, whole entries. */

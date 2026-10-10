@@ -251,6 +251,7 @@ class _TailorJobRun:
                 fill_target=settings.fill_target,
                 initial_bullet_share=settings.initial_bullet_share,
                 experience_bullet_share=settings.experience_bullet_share,
+                section_weights=settings.section_weights,
                 max_bullets_per_entry=settings.max_bullets_per_entry,
                 coursework_pool=self.facet_result.coursework_pool,
                 on_event=self.on_event,

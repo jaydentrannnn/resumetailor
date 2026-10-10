@@ -1,10 +1,6 @@
-import { useEffect, useState } from "react";
-import {
-  type ContactField,
-  type JobSettings,
-  type ResumeOutline,
-  fetchResumeOutline,
-} from "../api";
+import type { ContactField, JobSettings } from "../api";
+import { effectiveSectionOrder } from "../lib/sectionOrder";
+import { useResumeOutline } from "../lib/useResumeOutline";
 import { Toggle } from "./Field";
 import { type SectionKind, SECTION_KIND_LABELS, moveItem } from "../lib/resumeEdit";
 
@@ -17,24 +13,6 @@ const CONTACT_FIELD_LABELS: Record<ContactField, string> = {
   linkedin: "LinkedIn",
   github: "GitHub",
 };
-
-/**
- * Merge a saved per-run section order against what the resume currently has: sections
- * named in `saved` come first (in that order, dropping ids that no longer exist), then
- * every other section keeps its resume-order relative position and is appended after.
- * Pure so it is testable without mounting React — mirrors `include._apply_section_order`
- * on the server, which resolves the same way at run time.
- */
-export function effectiveSectionOrder(
-  saved: string[] | null,
-  sections: { id: string }[],
-): string[] {
-  const known = new Set(sections.map((s) => s.id));
-  const namedValid = (saved ?? []).filter((id) => known.has(id));
-  const namedSet = new Set(namedValid);
-  const unnamed = sections.filter((s) => !namedSet.has(s.id)).map((s) => s.id);
-  return [...namedValid, ...unnamed];
-}
 
 /**
  * Centralized "what to leave out" tile: contact field order/visibility, GPA and
@@ -53,22 +31,7 @@ export function IncludePanel({
   settings: JobSettings;
   onChange: (s: JobSettings) => void;
 }) {
-  const [outline, setOutline] = useState<ResumeOutline | null>(null);
-  const [error, setError] = useState<string | null>(null);
-
-  useEffect(() => {
-    let cancelled = false;
-    fetchResumeOutline()
-      .then((o) => {
-        if (!cancelled) setOutline(o);
-      })
-      .catch((err) => {
-        if (!cancelled) setError(err instanceof Error ? err.message : String(err));
-      });
-    return () => {
-      cancelled = true;
-    };
-  }, []);
+  const { outline, error } = useResumeOutline();
 
   function setInclude(patch: Partial<JobSettings["include"]>) {
     onChange({ ...settings, include: { ...settings.include, ...patch } });

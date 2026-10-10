@@ -327,7 +327,12 @@ class JobSettings(BaseModel):
     #: Fraction of the *overall* selected bullets given to experience, budgeted separately
     #: from projects (0.00–1.00). `None` is one flat pool ranked by relevance, which lets a
     #: keyword-dense project out-rank every job for the shared discretionary budget.
+    #: Legacy two-group shorthand (CLI/MCP, old saved settings); `section_weights` wins.
     experience_bullet_share: float | None = Field(default=None, ge=0.0, le=1.0)
+    #: Section balance: {section id: relative weight} over experience/project sections,
+    #: normalised per run over the sections that have chosen entries. `None` = off (one
+    #: flat pool). Ids of deleted sections are ignored.
+    section_weights: dict[str, float] | None = Field(default=None, max_length=50)
     #: Ceiling on how many bullets any single job or project may take. `None` is uncapped.
     max_bullets_per_entry: int | None = Field(default=None, ge=1, le=10)
     #: What to leave out — contact fields/order, GPA, coursework, whole entries. See
@@ -353,6 +358,13 @@ class JobSettings(BaseModel):
     model_name: str | None = None
     #: Daily discover/screen/fill funnel settings (persisted with profile defaults).
     apply: ApplySettings = Field(default_factory=ApplySettings)
+
+    @field_validator("section_weights")
+    @classmethod
+    def _non_negative_weights(cls, value: dict[str, float] | None) -> dict[str, float] | None:
+        if value is not None and any(w < 0 for w in value.values()):
+            raise ValueError("section weights must be non-negative")
+        return value
 
 
 class RunMetadata(BaseModel):

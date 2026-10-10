@@ -46,6 +46,7 @@ def fit(
     fill_target: float | None = None,
     initial_bullet_share: float | None = None,
     experience_bullet_share: float | None = None,
+    section_weights: dict[str, float] | None = None,
     max_bullets_per_entry: int | None = None,
     coursework_pool: list[str] | None = None,
     on_event: events.ProgressCallback | None = None,
@@ -110,6 +111,11 @@ def fit(
     `score`, which is how a keyword-dense project can otherwise out-rank every job for the
     shared discretionary budget.
 
+    `section_weights` ({section id: relative weight}) generalises that split to every
+    experience/project section and takes precedence over `experience_bullet_share`;
+    weights are normalised over the sections that have chosen entries
+    (`fit_selection._section_pools`).
+
     `max_bullets_per_entry` overrides `config.MAX_BULLETS_PER_ENTRY`: a ceiling on how many
     bullets any single job or project may take. Because this can make the achievable total
     lower than the raw bullet pool, the loop's grow ceiling is
@@ -143,6 +149,7 @@ def fit(
         fill_target=fill_target,
         initial_bullet_share=initial_bullet_share,
         experience_bullet_share=experience_bullet_share,
+        section_weights=section_weights,
         max_bullets_per_entry=max_bullets_per_entry,
         coursework_pool=coursework_pool,
         on_event=on_event,

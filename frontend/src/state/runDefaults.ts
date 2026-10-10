@@ -60,6 +60,7 @@ export const DEFAULT_SETTINGS: JobSettings = {
   fill_target: null,
   initial_bullet_share: null,
   experience_bullet_share: null,
+  section_weights: null,
   max_bullets_per_entry: null,
   include: DEFAULT_INCLUDE,
   suggest_vocabulary: false,

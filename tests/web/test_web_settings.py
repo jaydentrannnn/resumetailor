@@ -66,6 +66,20 @@ def test_settings_round_trip_with_section_weighting(client, tmp_path, monkeypatc
     assert got["max_bullets_per_entry"] == 3
 
 
+def test_settings_round_trip_with_section_balance(client, tmp_path, monkeypatch):
+    """Per-section weights persist; a negative weight is rejected."""
+    c, _ = client
+    _point_settings_at(tmp_path, monkeypatch)
+
+    weights = {"experience": 3.0, "projects": 1.0}
+    res = c.put("/api/settings", json={"settings": {"section_weights": weights}})
+    assert res.status_code == 200
+    assert c.get("/api/settings").json()["settings"]["section_weights"] == weights
+
+    bad = c.put("/api/settings", json={"settings": {"section_weights": {"projects": -1}}})
+    assert bad.status_code == 422
+
+
 def test_settings_round_trip_with_cover_angles(client, tmp_path, monkeypatch):
     """CoverAngles nested on JobSettings survive a settings PUT/GET."""
     c, _ = client
