@@ -16,7 +16,10 @@ export function SkillMatchMeter({
 }) {
   const pct = Math.round((matched / total) * 100);
   return (
-    <span className="inline-flex items-center gap-2" title={`${matched} of ${total} skills matched`}>
+    <span
+      className="inline-flex items-center gap-2"
+      title={`${matched} of ${total} skills matched`}
+    >
       <span className="font-mono text-[13px] tabular-nums text-ink">{pct}</span>
       <Meter
         className="w-11"

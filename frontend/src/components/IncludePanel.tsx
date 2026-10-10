@@ -188,10 +188,10 @@ function FixedOrderNote() {
         <span className="hidden text-ink-muted underline-offset-2 group-open:inline">Hide</span>
       </summary>
       <p className="mt-1.5 text-ink-muted">
-        This template renders sections in a fixed order baked into the file — reordering here is
-        a per-run override and has no effect until the template is re-imported through the
-        Template tab in multi-section (&quot;generic&quot;) mode. Stored section order lives on
-        the Master resume tab.
+        This template renders sections in a fixed order baked into the file — reordering here is a
+        per-run override and has no effect until the template is re-imported through the Template
+        tab in multi-section (&quot;generic&quot;) mode. Stored section order lives on the Master
+        resume tab.
       </p>
     </details>
   );

@@ -2,12 +2,7 @@ import type { ReactNode } from "react";
 import { Link, type NavigateFunction } from "react-router-dom";
 import type { ApplicationRow } from "../../api";
 import { RowActionsMenu, type MenuItem, type TableColumn } from "../../components/TableControls";
-import {
-  buttonClass,
-  StatusChip,
-  TruncatedText,
-  type ButtonVariant,
-} from "../../components/ui";
+import { buttonClass, StatusChip, TruncatedText, type ButtonVariant } from "../../components/ui";
 import { applicationStatusLabel, applicationStatusTone } from "../../lib/applicationStatus";
 import {
   canContinueFill,

@@ -75,9 +75,7 @@ export function SectionIncludeRow({
           {kindLabel.toLowerCase() !== section.title.trim().toLowerCase() && (
             <span className="shrink-0 text-xs text-ink-muted">{kindLabel}</span>
           )}
-          {summary && (
-            <span className="truncate text-xs text-ink-muted">· {summary}</span>
-          )}
+          {summary && <span className="truncate text-xs text-ink-muted">· {summary}</span>}
         </button>
         <label className="flex shrink-0 cursor-pointer items-center gap-1.5 text-xs text-ink-muted">
           <input
@@ -110,10 +108,7 @@ export function SectionIncludeRow({
         </button>
       </div>
       {open && expandable && (
-        <div
-          id={bodyId}
-          className={`space-y-2 pt-1.5 pb-2.5 pl-5 ${included ? "" : "opacity-60"}`}
-        >
+        <div id={bodyId} className={`space-y-2 pt-1.5 pb-2.5 pl-5 ${included ? "" : "opacity-60"}`}>
           {extra}
           {section.entries.map((entry) => {
             const help = entryHelp(section.kind, entry.bullets, entry.detail);

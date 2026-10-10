@@ -14,7 +14,12 @@ const outline = vi.hoisted(() => ({
     experience: [],
     projects: [],
     sections: [
-      { id: "proj", title: "Projects", kind: "project", entries: [{ id: "p", label: "P", bullets: 2 }] },
+      {
+        id: "proj",
+        title: "Projects",
+        kind: "project",
+        entries: [{ id: "p", label: "P", bullets: 2 }],
+      },
     ],
     sections_enabled: { projects: true } as Record<string, boolean>,
     section_mode: "generic",

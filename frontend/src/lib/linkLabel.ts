@@ -40,7 +40,10 @@ export function labelForUrl(url: string): string {
   } catch {
     return "";
   }
-  host = host.toLowerCase().replace(/^www\./, "").replace(/\.$/, "");
+  host = host
+    .toLowerCase()
+    .replace(/^www\./, "")
+    .replace(/\.$/, "");
   const parts = host.split(".");
   if (parts.length < 2 || parts.some((p) => !p)) return "";
   for (const [domain, label] of Object.entries(KNOWN_HOSTS)) {
