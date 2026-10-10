@@ -51,8 +51,8 @@ export function SectionIncludeRow({
   const kindLabel = SECTION_KIND_LABELS[section.kind as SectionKind] ?? section.kind;
 
   return (
-    <li className="rounded-sm border border-line">
-      <div className="flex items-center gap-2 px-2 py-1.5 text-sm">
+    <li>
+      <div className="flex items-center gap-2 py-2 text-sm">
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
@@ -112,7 +112,7 @@ export function SectionIncludeRow({
       {open && expandable && (
         <div
           id={bodyId}
-          className={`space-y-2 border-t border-line px-3 py-2.5 ${included ? "" : "opacity-60"}`}
+          className={`space-y-2 pb-3 pl-5 ${included ? "" : "opacity-60"}`}
         >
           {extra}
           {section.entries.map((entry) => {
