@@ -50,8 +50,8 @@ describe("SectionBalance", () => {
 
   it("shows a saved legacy share as its split", async () => {
     setup({ experience_bullet_share: 0.65 });
-    expect(await screen.findByText("about 65%")).toBeTruthy();
-    expect(screen.getByText("about 35%")).toBeTruthy();
+    expect(await screen.findByText("~65%")).toBeTruthy();
+    expect(screen.getByText("~35%")).toBeTruthy();
   });
 
   it("is disabled with one section", async () => {

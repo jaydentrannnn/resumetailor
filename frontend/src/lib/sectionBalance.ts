@@ -8,16 +8,19 @@ const UNITS = 100 / STEP;
 export type BalanceSection = { id: string; title: string; kind: string };
 
 /**
- * The sections the balance bar splits: experience/project sections in the run's section
- * order that are ticked in Include, keep at least one included entry with bullets, and
- * (for projects) are enabled in the template. Same rules as `IncludePanel`.
+ * The sections the weights bar splits, in the order the resume prints them:
+ * experience/project sections that are ticked in Include, keep at least one included
+ * entry with bullets, and (for projects) are enabled in the template. Include's per-run
+ * order applies only under a "generic" template; a fixed template prints the resume's
+ * own order, so the bar follows that.
  */
 export function activeSections(outline: ResumeOutline, include: IncludeOptions): BalanceSection[] {
   const excludedSections = new Set(include.exclude_sections);
   const excludedEntries = new Set(include.exclude_entries);
   const projectsEnabled = outline.sections_enabled.projects !== false;
   const byId = new Map(outline.sections.map((s) => [s.id, s]));
-  return effectiveSectionOrder(include.section_order, outline.sections)
+  const order = outline.section_mode === "generic" ? include.section_order : null;
+  return effectiveSectionOrder(order, outline.sections)
     .map((id) => byId.get(id))
     .filter((s): s is ResumeOutline["sections"][number] => Boolean(s))
     .filter((s) => s.kind === "experience" || (s.kind === "project" && projectsEnabled))

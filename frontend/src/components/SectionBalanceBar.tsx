@@ -1,16 +1,10 @@
 import { useRef, type KeyboardEvent, type PointerEvent } from "react";
 import { type BalanceSection, STEP, moveDivider, setDivider } from "../lib/sectionBalance";
 
-/** Segment fills: ink mixed into the sunken surface, darkest first (no accent fills). */
-const SHADES = [78, 48, 26, 12];
-
-function shade(i: number): string {
-  return `color-mix(in srgb, var(--color-ink) ${SHADES[i % SHADES.length]}%, var(--color-sunken))`;
-}
-
 /**
- * One bar split into a segment per section, with a divider between each pair. Dragging
- * (or arrow-keying) a divider trades share only between the two sections beside it.
+ * A slider track with one thumb between each pair of sections, styled like the native
+ * range inputs beside it. Dragging (or arrow-keying) a thumb trades share only between
+ * the two sections either side of it; each section's name and share sit under its span.
  */
 export function SectionBalanceBar({
   sections,
@@ -52,15 +46,8 @@ export function SectionBalanceBar({
 
   return (
     <div>
-      <div
-        ref={track}
-        className="relative flex h-7 touch-none select-none overflow-hidden rounded-sm border border-line"
-      >
-        {sections.map((s, i) => (
-          <div key={s.id} style={{ width: `${shares[i]}%`, background: shade(i) }} />
-        ))}
-      </div>
-      <div className="relative -mt-7 h-7">
+      <div ref={track} className="relative h-6 touch-none select-none">
+        <div className="absolute inset-x-0 top-1/2 h-1.5 -translate-y-1/2 rounded-full bg-line-hover" />
         {edges.map((edge, i) => (
           <div
             key={sections[i].id}
@@ -75,25 +62,22 @@ export function SectionBalanceBar({
             onPointerMove={(e) => drag(i, e)}
             onKeyDown={(e) => key(i, e)}
             style={{ left: `${edge}%` }}
-            className="group absolute top-0 flex h-7 w-6 -translate-x-1/2 cursor-ew-resize touch-none items-center justify-center rounded-sm outline-none focus-visible:ring-2 focus-visible:ring-[var(--color-accent)]"
+            className="group absolute top-1/2 flex size-6 -translate-x-1/2 -translate-y-1/2 cursor-ew-resize touch-none items-center justify-center rounded-sm"
           >
-            <span className="h-9 w-2 rounded-full border-2 border-paper bg-ink shadow-sm transition-transform group-hover:scale-x-125 group-active:scale-x-125" />
+            <span className="size-4 rounded-full bg-accent" />
           </div>
         ))}
       </div>
-      <ul className="mt-2.5 flex flex-wrap gap-x-4 gap-y-1 text-xs text-ink-2">
+      <div className="mt-1 flex text-xs">
         {sections.map((s, i) => (
-          <li key={s.id} className="flex min-w-0 items-center gap-1.5">
-            <span
-              aria-hidden
-              className="size-2.5 shrink-0 rounded-[2px] border border-line"
-              style={{ background: shade(i) }}
-            />
-            <span className="truncate">{s.title}</span>
-            <span className="tabular-nums text-ink-muted">about {shares[i]}%</span>
-          </li>
+          <div key={s.id} style={{ width: `${shares[i]}%` }} className="min-w-0 px-0.5 text-center">
+            <span className="block truncate text-ink-2" title={s.title}>
+              {s.title}
+            </span>
+            <span className="block truncate tabular-nums text-ink-muted">~{shares[i]}%</span>
+          </div>
         ))}
-      </ul>
+      </div>
     </div>
   );
 }

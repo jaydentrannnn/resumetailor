@@ -15,7 +15,7 @@ describe("SectionBalanceBar", () => {
   it("renders one divider per neighbouring pair and a legend", () => {
     render(<SectionBalanceBar sections={sections} shares={[50, 25, 25]} onChange={() => {}} />);
     expect(screen.getAllByRole("slider")).toHaveLength(2);
-    expect(screen.getByText("about 50%")).toBeTruthy();
+    expect(screen.getByText("~50%")).toBeTruthy();
   });
 
   it("arrow keys trade 5% between the two neighbours only", () => {

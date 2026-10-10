@@ -5,7 +5,7 @@ import { activeSections, evenWeights, fromShares, toShares } from "../../lib/sec
 import { useResumeOutline } from "../../lib/useResumeOutline";
 
 /**
- * "Section balance": how the bullet budget splits across the included experience and
+ * "Section weights": how the bullet budget splits across the included experience and
  * project sections. Off is one shared pool where the most relevant bullets win. A saved
  * legacy experience share shows as its split and is replaced on the first edit.
  */
@@ -33,8 +33,8 @@ export function SectionBalance({
   return (
     <div className="space-y-3">
       <Toggle
-        label="Section balance"
-        help="Choose how many bullets each section gets. Off: the most relevant bullets win wherever they are."
+        label="Section weights"
+        help="Give some sections more bullets than others."
         disabledHint={hint}
         disabled={!canBalance}
         checked={on && canBalance}

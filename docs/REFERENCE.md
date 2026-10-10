@@ -28,7 +28,7 @@ full (§11).
 | `--no-facets` | Skip project-tech/coursework selection |
 | `--fill-target` | Overrides `UNDERFLOW_THRESHOLD` for one run |
 | `--initial-bullet-share` | Caps the *first* draft's bullet count, default 1.0 — pair with a lower `--fill-target` to actually end sparser (at the default threshold it mostly buys extra rewrite rounds for the same final page) |
-| `--experience-bullet-share` | Fraction of selected bullets given to experience vs projects; unweighted default is one flat pool ranked by relevance. Shorthand for the web UI's per-section `section_weights` (Section balance), which wins when both are set |
+| `--experience-bullet-share` | Fraction of selected bullets given to experience vs projects; unweighted default is one flat pool ranked by relevance. Shorthand for the web UI's per-section `section_weights` (Section weights), which wins when both are set |
 | `--max-bullets-per-entry` | Per-entry ceiling; default uncapped — a capped entry's forfeited slot spills to the next-best bullet elsewhere |
 | `--no-gpa`, `--no-coursework` | Include/exclude controls (`include.py`) |
 | `--contact-fields email,phone,linkedin` | Which contact fields render |
@@ -1051,7 +1051,7 @@ fixed overhead the fit loop never trims.
   (`isinstance(e, Project)`-derived) for callers with no section wrapper at all; the
   `pools`/`weights` params are what `fit.py` uses once a resume can hold more than one
   section of a kind, since `isinstance` can no longer tell two same-kind sections apart.
-- **Section balance** (`JobSettings.section_weights`, {section id: relative weight}) is
+- **Section weights** (`JobSettings.section_weights`, {section id: relative weight}) is
   the web UI's per-section form of `experience_share`: `fit_selection._section_pools`
   normalises it over the sections that have chosen entries (an excluded section drops
   out, the rest keep their ratios; a section missing from the dict gets the mean). It

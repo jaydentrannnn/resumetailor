@@ -52,12 +52,19 @@ const outline = {
     },
   ],
   sections_enabled: { projects: true },
+  section_mode: "generic",
 } as unknown as ResumeOutline;
 
 describe("activeSections", () => {
   it("keeps experience/project sections with bullets, in the run's order", () => {
     const ids = activeSections(outline, { ...include, section_order: ["proj"] }).map((s) => s.id);
     expect(ids).toEqual(["proj", "work", "lab"]);
+  });
+
+  it("ignores Include's order under a fixed template, which prints the resume's order", () => {
+    const fixed = { ...outline, section_mode: "fixed" } as ResumeOutline;
+    const ids = activeSections(fixed, { ...include, section_order: ["proj"] }).map((s) => s.id);
+    expect(ids).toEqual(["work", "lab", "proj"]);
   });
 
   it("drops unticked sections, sections whose entries are all excluded, and disabled projects", () => {

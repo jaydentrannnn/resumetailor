@@ -426,3 +426,9 @@ Two code-only changes:
   legacy `experience_bullet_share` displays as its split and is replaced on the first edit
   (only the frontend has section kinds at hand, so there is no backend migration). The CLI
   keeps `--experience-bullet-share`.
+- **Section weights: renamed, restyled, order follows the printed page (2026-10).** The
+  control is "Section weights" and looks like the native range sliders beside it (a
+  line-hover track, accent thumbs, the global focus ring; no shadows or tinted segments).
+  Its order is the order the resume prints: Include's per-run section order under a
+  "generic" template, the resume's own order under a fixed one (which ignores Include's
+  order). Reordering never changes a share, only which neighbours a thumb trades between.
