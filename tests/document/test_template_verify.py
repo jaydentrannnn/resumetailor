@@ -21,6 +21,7 @@ from tests.fixtures import (
     _docx_bytes,
     _full_featured_resume,
     _multi_section_resume,
+    as_fixed,
     synthetic_resume,
 )
 
@@ -102,8 +103,8 @@ def test_expected_tags_omits_a_disabled_kind():
 
 
 def test_expected_tags_includes_section_title_only_under_generic_mode():
-    _, fixed_profile = _build(_full_featured_resume)
-    assert fixed_profile.section_mode == "fixed"
+    _, profile = _build(_full_featured_resume)
+    fixed_profile = as_fixed(profile)
     assert "{{ section.title }}" not in template_verify.expected_tags(fixed_profile)
 
     _, generic_profile = _build(_multi_section_resume)

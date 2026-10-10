@@ -7,6 +7,7 @@ import io
 import docx
 from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
+from docx.shared import Pt
 
 from resume_tailor.document import analysis_types, contact_detect, header_fields, template_analyze
 from tests.fixtures import _sidebar_table_resume, _table_resume
@@ -191,15 +192,34 @@ def test_generic_mode_suggested_when_multiple_same_kind_sections_found():
     }
 
 
-def test_fixed_mode_unchanged_for_a_single_heading_per_kind():
-    """The ordinary case — one heading per kind — still suggests fixed mode, byte-for-byte
-    the same profile shape as before generic mode existed."""
+def test_single_heading_per_kind_is_generic():
+    """Every new template is generic — even one heading per kind, which used to get fixed
+    mode — so its sections can be moved and renamed without a rebuild."""
     result = template_analyze.analyze_docx(raw=_docx_bytes(_standard_resume))
     profile = result.suggested_profile
     assert profile is not None
-    assert profile.section_mode == "fixed"
-    assert profile.sections == []
-    assert profile.heading_prototype is None
+    assert profile.section_mode == "generic"
+    assert {s.kind for s in profile.sections} == {"experience", "project", "education", "skills"}
+    assert profile.heading_prototype is not None
+    assert profile.heading_prototype.paragraph_id == profile.sections[0].heading_paragraph_id
+
+
+def test_heading_with_different_formatting_is_a_warning():
+    """A heading that won't look like the shared heading donor is named in a non-blocking
+    warning, never a reason to fall back to fixed mode."""
+    def build(document):
+        _standard_resume(document)
+        for paragraph in document.paragraphs:
+            if paragraph.text == "PROJECTS":
+                paragraph.paragraph_format.space_before = Pt(18)
+
+    result = template_analyze.analyze_docx(raw=_docx_bytes(build))
+    profile = result.suggested_profile
+    assert profile is not None and result.ready
+    assert profile.section_mode == "generic"
+    flagged = [w for w in profile.warnings if w.startswith("Heading ")]
+    assert len(flagged) == 1
+    assert "'PROJECTS'" in flagged[0] and "paragraph formatting" in flagged[0]
 
 
 def test_plain_education_line_is_a_non_blocking_warning():
@@ -372,18 +392,6 @@ def test_spacer_donors_absent_on_the_existing_multi_section_fixture():
     profile = result.suggested_profile
     assert profile is not None
     assert profile.section_mode == "generic"
-    assert profile.spacing.before_heading == []
-    assert profile.spacing.after_heading == []
-    assert profile.spacing.between_entries == []
-
-
-def test_spacer_donors_absent_under_fixed_mode():
-    """`_standard_resume` has one heading per kind, so it stays on fixed mode — spacing
-    detection never runs there (`build_generic` is never used to consume it)."""
-    result = template_analyze.analyze_docx(raw=_docx_bytes(_standard_resume))
-    profile = result.suggested_profile
-    assert profile is not None
-    assert profile.section_mode == "fixed"
     assert profile.spacing.before_heading == []
     assert profile.spacing.after_heading == []
     assert profile.spacing.between_entries == []

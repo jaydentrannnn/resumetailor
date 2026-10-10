@@ -38,7 +38,7 @@ from tests.document.test_template_analyze import (
     _make_bullet,
     _standard_resume,
 )
-from tests.fixtures import _table_resume
+from tests.fixtures import _table_resume, as_fixed
 
 
 def _run_bold(run) -> bool:
@@ -135,7 +135,7 @@ def test_build_from_profile_inserts_jinja_tags(tmp_path: Path):
     dst = tmp_path / "main_template.docx"
     src.write_bytes(raw)
 
-    template_build.build_from_profile(src, dst, analysis.suggested_profile)
+    template_build.build_from_profile(src, dst, as_fixed(analysis.suggested_profile))
     assert dst.exists()
 
     doc = docx.Document(str(dst))
@@ -157,7 +157,7 @@ def test_build_omits_disabled_projects(tmp_path: Path):
     profile = analysis.suggested_profile
     assert profile is not None
 
-    profile = profile.model_copy(
+    profile = as_fixed(profile).model_copy(
         update={
             "enabled": profile.enabled.model_copy(update={"projects": False}),
             "projects": None,
@@ -1165,7 +1165,7 @@ def test_entry_bullet_matching_another_headings_text_does_not_truncate_body(tmp_
     src = tmp_path / "baseline.docx"
     dst = tmp_path / "out.docx"
     src.write_bytes(raw)
-    template_build.build_from_profile(src, dst, result.suggested_profile)
+    template_build.build_from_profile(src, dst, as_fixed(result.suggested_profile))
 
     doc = docx.Document(str(dst))
     texts = [p.text for p in doc.paragraphs]

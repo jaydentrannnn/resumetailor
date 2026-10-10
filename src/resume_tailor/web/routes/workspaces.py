@@ -10,7 +10,7 @@ from resume_tailor import (
     workspace,
 )
 from resume_tailor.apply.funnel import daily_progress
-from resume_tailor.web import template_info, template_ops
+from resume_tailor.web import section_title_sync, template_info, template_ops
 from resume_tailor.web.jobs import get_queue
 from resume_tailor.web.routes.config import (
     _config_response,
@@ -98,6 +98,8 @@ def activate_workspace(workspace_id: str) -> WorkspaceActivateResponse:
             workspace.activate(workspace_id)
         except workspace.WorkspaceError as exc:
             raise HTTPException(status_code=400, detail=str(exc)) from exc
+        # Its template was switched to movable sections while another profile was active.
+        section_title_sync.apply_pending_unlocked()
 
         entries = workspace.list_workspaces()
         raw_defaults = workspace.load_settings()["defaults"]

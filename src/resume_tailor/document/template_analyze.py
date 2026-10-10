@@ -15,6 +15,7 @@ from . import (
     contact_detect,
     docx_text,
     entry_structure,
+    heading_uniformity,
     profile_validation,
     section_mapping,
     table_layout,
@@ -503,26 +504,23 @@ class _Analyzer(section_mapping._SectionMapper):
                 separator=contact_detect._contact_separator(self.contact_para.text),
             )
 
-        # Generic mode is needed the moment fixed mode could not represent what was found:
-        # more than one heading of some kind (two experience-shaped sections cannot both
-        # keep their own title/position under one hard-coded heading), a `list`-kind
-        # section (fixed mode has no such prototype at all), or a table layout (always
-        # generic — see `TemplateProfile.layout`'s docstring). Otherwise today's exact
-        # single-heading-per-kind case stays on fixed mode, byte-identical to before this
-        # existed.
+        # Every new template is generic, so sections can be moved, renamed and added
+        # without a rebuild. Fixed mode survives only for profiles saved before this (and
+        # is being retired); a heading whose formatting the shared heading donor will not
+        # reproduce is named in a non-blocking warning instead of keeping fixed mode.
         is_table_layout = self.table_shape is not None
-        needs_generic = (
-            is_table_layout
-            or "list" in self.by_kind
-            or any(len(v) > 1 for v in self.by_kind.values())
-        )
+        needs_generic = bool(self.section_candidates)
         detected_sections: list[DetectedSection] = []
         heading_prototype: HeadingPrototype | None = None
         spacing = SpacingProfile()
+        warnings = [i.message for i in self.issues if not i.blocking]
         if needs_generic:
             detected_sections = _detected_sections(self.section_candidates)
             heading_prototype = HeadingPrototype(
                 paragraph_id=self.section_candidates[0].heading_paragraph_id
+            )
+            warnings += heading_uniformity.heading_differences(
+                self.doc, heading_prototype.paragraph_id, self.section_candidates
             )
             # A table layout's inter-section gaps come from heading rows' own paragraph
             # spacing and dedicated spacer rows, not counted blank paragraphs —
@@ -546,7 +544,7 @@ class _Analyzer(section_mapping._SectionMapper):
             skills=self.skills_mapping if enabled.skills else None,
             list_section=self.list_mapping if enabled.list_section else None,
             normalization=NormalizationFlags(),
-            warnings=[i.message for i in self.issues if not i.blocking],
+            warnings=warnings,
             section_mode="generic" if needs_generic else "fixed",
             sections=detected_sections,
             heading_prototype=heading_prototype,

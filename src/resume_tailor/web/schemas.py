@@ -901,6 +901,8 @@ class TemplateBuildResponse(BaseModel):
     log: str = ""
     info: TemplateInfoResponse | None = None
     snapshot: dict | None = None
+    #: `[old, new]` master-resume section titles renamed to the template's headings.
+    title_changes: list[list[str]] = Field(default_factory=list)
 
 
 class TemplateLibraryEntry(BaseModel):
@@ -913,6 +915,11 @@ class TemplateLibraryEntry(BaseModel):
     size_bytes: int | None = None
     has_profile: bool = False
     is_active: bool = False
+    #: `"generic"` (movable sections) or `"fixed"`; `None` without a profile.
+    section_mode: str | None = None
+    #: Switched to movable sections automatically, with the fixed layout kept aside —
+    #: "Revert to fixed layout" is offered.
+    can_revert_fixed: bool = False
 
 
 class TemplateLibraryResponse(BaseModel):

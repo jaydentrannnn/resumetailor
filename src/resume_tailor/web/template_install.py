@@ -21,13 +21,14 @@ from resume_tailor.document import (
     template_profile,
     template_verify,
 )
-from resume_tailor.document.template_profile import TemplateProfile, save_profile
+from resume_tailor.document.template_profile import TemplateProfile, load_profile, save_profile
 from resume_tailor.web.schemas import (
     CalibrateResponse,
     TemplateBuildResponse,
 )
 
 from . import (
+    section_title_sync,
     template_info,
     template_library,
     template_library_store,
@@ -216,10 +217,19 @@ def install_baseline(
     # `_prune_upload_cache`'s 24h sweep got to it.
     template_uploads.clear_upload_cache()
 
+    # Before calibrating: the calibration digest covers the master resume, so renaming
+    # its sections afterwards would mark a fresh measurement stale straight away.
+    installed = load_profile()
+    title_changes = section_title_sync.sync_active(installed) if installed else []
+    log = response.log
     if do_calibrate:
-        new_log = _maybe_calibrate(response.log, do_calibrate=True)
-        return TemplateBuildResponse(ok=True, log=new_log, info=template_info.info())
-    return TemplateBuildResponse(ok=True, log=response.log, info=template_info.info())
+        log = _maybe_calibrate(log, do_calibrate=True)
+    return TemplateBuildResponse(
+        ok=True,
+        log=log,
+        info=template_info.info(),
+        title_changes=[list(change) for change in title_changes],
+    )
 
 def _install_with_profile(
     raw: bytes,

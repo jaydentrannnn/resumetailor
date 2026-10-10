@@ -57,7 +57,20 @@ export type TemplateBuildResponse = {
   log: string;
   info: TemplateInfo | null;
   snapshot?: TemplateSnapshot | null;
+  /** `[old, new]` resume section titles renamed to the template's headings. */
+  title_changes?: [string, string][];
 };
+
+/** The build log with any section-title renames listed first. */
+export function buildLogWithTitles(result: TemplateBuildResponse): string | null {
+  const changes = result.title_changes ?? [];
+  const note = changes.length
+    ? `Section titles now match the template: ${changes
+        .map(([from, to]) => `“${from}” → “${to}”`)
+        .join(", ")}. Edit them on the Resume page.`
+    : "";
+  return [note, result.log].filter(Boolean).join("\n\n") || null;
+}
 
 export type TemplateSnapshot = {
   info: TemplateInfo;
@@ -75,6 +88,10 @@ export type TemplateLibraryEntry = {
   size_bytes: number | null;
   has_profile: boolean;
   is_active: boolean;
+  /** "generic" (movable sections) or "fixed"; null without a profile. */
+  section_mode?: string | null;
+  /** Switched to movable sections automatically; the fixed layout can be restored. */
+  can_revert_fixed?: boolean;
 };
 
 export type TemplateLibraryResponse = {
@@ -305,6 +322,22 @@ export async function activateTemplateLibrary(
 ): Promise<TemplateBuildResponse> {
   const qs = options?.calibrate ? "?calibrate=true" : "";
   const res = await fetch(`/api/template/library/${encodeURIComponent(entryId)}/activate${qs}`, {
+    method: "POST",
+  });
+  if (!res.ok) {
+    throw new Error(await templateErrorDetail(res));
+  }
+  return res.json() as Promise<TemplateBuildResponse>;
+}
+
+/**
+ * Restore the fixed layout a saved template had before it was switched to movable
+ * sections, and keep it fixed.
+ */
+export async function revertTemplateLibraryToFixed(
+  entryId: string,
+): Promise<TemplateBuildResponse> {
+  const res = await fetch(`/api/template/library/${encodeURIComponent(entryId)}/revert-fixed`, {
     method: "POST",
   });
   if (!res.ok) {

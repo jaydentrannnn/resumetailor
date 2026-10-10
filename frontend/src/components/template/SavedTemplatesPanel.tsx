@@ -41,6 +41,7 @@ export function SavedTemplatesPanel() {
     libraryBusy,
     uploading,
     activateLibraryEntry,
+    revertLibraryEntry,
     renameLibraryEntry,
     deleteLibraryEntry,
     error,
@@ -60,6 +61,19 @@ export function SavedTemplatesPanel() {
     });
     if (!ok) return;
     void deleteLibraryEntry(id);
+  }
+
+  async function handleRevert(id: string, label: string) {
+    const ok = await confirm({
+      title: "Revert to fixed layout",
+      message:
+        `Restore “${label}” to its fixed layout? Its sections go back to the order and ` +
+        "headings baked into the template, so moving or renaming sections will no longer " +
+        "show on the page. Your resume content is not changed.",
+      confirmLabel: "Revert",
+    });
+    if (!ok) return;
+    void revertLibraryEntry(id);
   }
 
   return (
@@ -150,6 +164,16 @@ export function SavedTemplatesPanel() {
                     >
                       Rename
                     </Button>
+                    {entry.can_revert_fixed ? (
+                      <Button
+                        size="sm"
+                        disabled={busy}
+                        title="This template was switched to movable sections automatically"
+                        onClick={() => void handleRevert(entry.id, entry.label)}
+                      >
+                        Revert to fixed layout
+                      </Button>
+                    ) : null}
                     <Button
                       variant="danger"
                       size="sm"

@@ -18,11 +18,13 @@ import {
   type TemplateSnapshot,
   activateTemplateLibrary,
   analyzeTemplate,
+  buildLogWithTitles,
   deleteTemplateLibrary,
   fetchTemplateSnapshot,
   installDefaultTemplate,
   remapTemplateHeadings,
   renameTemplateLibrary,
+  revertTemplateLibraryToFixed,
   uploadTemplate,
 } from "../api";
 import { emitAppEvent } from "../lib/appEvents";
@@ -71,6 +73,8 @@ type TemplateStateValue = {
   confirmInstall: () => Promise<boolean>;
   resetWizard: () => void;
   activateLibraryEntry: (id: string) => Promise<void>;
+  /** Restore the fixed layout of a template switched to movable sections. */
+  revertLibraryEntry: (id: string) => Promise<void>;
   renameLibraryEntry: (id: string, label: string) => Promise<void>;
   deleteLibraryEntry: (id: string) => Promise<void>;
 };
@@ -271,7 +275,7 @@ export function TemplateProvider({ children }: { children: ReactNode }) {
         label: installLabel.trim() || undefined,
         convertBullets,
       });
-      setBuildLog(result.log || null);
+      setBuildLog(buildLogWithTitles(result));
       setLastBuildOk(true);
       if (result.info) {
         setInfo(result.info);
@@ -330,6 +334,30 @@ export function TemplateProvider({ children }: { children: ReactNode }) {
     [library, afterSwitch],
   );
 
+  const revertLibraryEntry = useCallback(
+    async (id: string) => {
+      /** Restore a saved template's fixed layout (switching live when it is in use). */
+      if (switching.current) return;
+      switching.current = true;
+      const token = ++sequence.current;
+      setPendingTemplate(library.find((entry) => entry.id === id)?.label ?? id);
+      setLibraryBusy(true);
+      setError(null);
+      let snapshot: TemplateSnapshot | null | undefined;
+      try {
+        const result = await revertTemplateLibraryToFixed(id);
+        if (token !== sequence.current) return;
+        snapshot = result.snapshot;
+        setBuildLog(result.log || null);
+      } catch (err) {
+        if (token === sequence.current) setError(err instanceof Error ? err.message : String(err));
+      } finally {
+        await afterSwitch(token, snapshot);
+      }
+    },
+    [library, afterSwitch],
+  );
+
   const installDefault = useCallback(
     async (name: string): Promise<boolean> => {
       /** Build and install a starter template, or re-activate its saved copy. */
@@ -344,7 +372,7 @@ export function TemplateProvider({ children }: { children: ReactNode }) {
         const result = await installDefaultTemplate(name, { calibrate: false });
         if (token !== sequence.current) return false;
         snapshot = result.snapshot;
-        setBuildLog(result.log || null);
+        setBuildLog(buildLogWithTitles(result));
         return true;
       } catch (err) {
         if (token === sequence.current) setError(err instanceof Error ? err.message : String(err));
@@ -424,6 +452,7 @@ export function TemplateProvider({ children }: { children: ReactNode }) {
       confirmInstall,
       resetWizard,
       activateLibraryEntry,
+      revertLibraryEntry,
       renameLibraryEntry,
       deleteLibraryEntry,
     }),
@@ -457,6 +486,7 @@ export function TemplateProvider({ children }: { children: ReactNode }) {
       confirmInstall,
       resetWizard,
       activateLibraryEntry,
+      revertLibraryEntry,
       renameLibraryEntry,
       deleteLibraryEntry,
     ],

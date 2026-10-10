@@ -35,6 +35,20 @@ from resume_tailor.content.data import (
     SkillGroup,
     SkillsSection,
 )
+from resume_tailor.document.template_profile import SpacingProfile, TemplateProfile
+
+
+def as_fixed(profile: TemplateProfile) -> TemplateProfile:
+    """`profile` with its generic-mode fields cleared: the fixed-mode build the analyzer
+    no longer suggests, kept testable until fixed mode is removed."""
+    return profile.model_copy(
+        update={
+            "section_mode": "fixed",
+            "sections": [],
+            "heading_prototype": None,
+            "spacing": SpacingProfile(),
+        }
+    )
 
 # --------------------------------------------------------------------------------------
 # Low-level DOCX construction helpers
@@ -271,10 +285,9 @@ def _full_featured_resume(document) -> None:
     to never be substrings of one another, so a contact-field-override test can assert
     one is absent without a false negative from an unrelated section using the same
     text. `synthetic_resume()` below is the matching `MasterResume` — kept in
-    section-kind-and-order lockstep, though under `section_mode="fixed"` (what this
-    fixture builds, since it has exactly one heading per kind) only THIS docx's own
-    heading text and paragraph shapes affect what renders; `synthetic_resume()`'s
-    section titles are inert prototypes, not templated in.
+    section-kind-and-order lockstep, with section titles equal to this docx's heading
+    text: the analyzer builds every template in generic mode, where each heading prints
+    the resume's `section.title`.
     """
     num_id = _add_bullet_numbering(document)
     document.add_paragraph("Jordan Rivera")
@@ -322,12 +335,11 @@ def _full_featured_resume(document) -> None:
 def synthetic_resume() -> MasterResume:
     """A `MasterResume` matching `_full_featured_resume`'s shape and kind order.
 
-    Under `section_mode="fixed"` (what `_full_featured_resume` builds) the tagged
-    template's headings and prototype text come entirely from the uploaded docx, not
-    from this resume — so nothing here needs to textually match the docx builder above
-    except the *kind* and *count* of sections (one experience entry, one project, one
-    education entry, one skills group), which is what determines whether a bullet has
-    anywhere to render into.
+    The tagged template is generic-mode, so each section's `title` is what its heading
+    prints; the titles equal `_full_featured_resume`'s heading text, as an import or
+    template install would leave them. Beyond that only the *kind* and *count* of
+    sections (one experience entry, one project, one education entry, one skills group)
+    matter — that is what determines whether a bullet has anywhere to render into.
     """
     return MasterResume(
         contact=Contact(
@@ -341,7 +353,7 @@ def synthetic_resume() -> MasterResume:
         sections=[
             EducationSection(
                 id="education",
-                title="Education",
+                title="EDUCATION",
                 entries=[
                     Education(
                         school="State University",
@@ -356,7 +368,7 @@ def synthetic_resume() -> MasterResume:
             ),
             ExperienceSection(
                 id="experience",
-                title="Work Experience",
+                title="WORK EXPERIENCES",
                 entries=[
                     Experience(
                         id="example-corp",
@@ -385,7 +397,7 @@ def synthetic_resume() -> MasterResume:
             ),
             ProjectSection(
                 id="projects",
-                title="Projects",
+                title="PROJECTS",
                 entries=[
                     Project(
                         id="note-engine",
@@ -406,7 +418,7 @@ def synthetic_resume() -> MasterResume:
             ),
             SkillsSection(
                 id="skills",
-                title="Skills",
+                title="SKILLS",
                 entries=[
                     SkillGroup(label="Tools", items=["Python", "Data & Analytics"]),
                 ],

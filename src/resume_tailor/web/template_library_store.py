@@ -143,6 +143,7 @@ def _entry_to_schema(meta: dict, *, active_id: str | None) -> TemplateLibraryEnt
     entry_dir = _library_entry_dir(entry_id)
     baseline = entry_dir / "original_export.docx"
     size = baseline.stat().st_size if baseline.exists() else None
+    section_mode = _section_mode(entry_dir / "template_profile.json")
     return TemplateLibraryEntry(
         id=entry_id,
         label=str(meta.get("label") or entry_id),
@@ -151,7 +152,20 @@ def _entry_to_schema(meta: dict, *, active_id: str | None) -> TemplateLibraryEnt
         size_bytes=size,
         has_profile=bool(meta.get("has_profile")),
         is_active=entry_id == active_id,
+        section_mode=section_mode,
+        can_revert_fixed=(
+            section_mode == "generic" and (entry_dir / template_ops.FIXED_BACKUP_DIR).is_dir()
+        ),
     )
+
+
+def _section_mode(profile_file: Path) -> str | None:
+    """The saved profile's `section_mode` (legacy profiles without one are fixed)."""
+    try:
+        raw = json.loads(profile_file.read_text(encoding="utf-8"))
+    except (OSError, ValueError):
+        return None
+    return str(raw.get("section_mode") or "fixed")
 
 def _snapshot_live_to_library(
     *,

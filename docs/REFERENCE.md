@@ -663,19 +663,14 @@ rest. Formatting is inherited from real XML rather than reconstructed: each tagg
 or field is rebuilt as its own run, cloned from whichever source run covered that character
 range in the upload.
 
-**Two build modes**, chosen by the analyzer, recorded as `TemplateProfile.section_mode`:
+**Two build modes**, recorded as `TemplateProfile.section_mode`. **Every new template is
+`"generic"`**; `"fixed"` survives only for profiles saved before that and is pending
+removal (one release after the startup migration below shipped).
 
-- **`"fixed"`** (default, and the exact historical contract): one hard-coded
-  `{%p for job in experience %}`-style loop per kind, anchored on that kind's own heading
-  paragraph. A resume with exactly one heading per kind — the common case — always gets
-  this, byte-for-byte identical to before section support existed. Adding a *second*
-  same-kind resume section under a fixed-mode template still works, but both entries render
-  under the one physical heading the template was built with; renaming/reordering a section
-  has no visible effect until the template is rebuilt.
-- **`"generic"`** — chosen automatically when detection finds something fixed mode cannot
-  represent (two-plus headings of one kind, or any `list`-kind heading). Tags **one shared
+- **`"generic"`** (every new import): tags **one shared
   `{%p for section in sections %}` block**: a cloned, `{{ section.title }}`-tagged heading
-  paragraph (`TemplateProfile.heading_prototype`, the formatting donor) followed by one
+  paragraph (`TemplateProfile.heading_prototype`, the formatting donor — the first
+  detected heading) followed by one
   `{%p if section.kind == '<kind>' %}` branch per enabled kind — independent blocks, not an
   `elif` ladder, so a kind with no prototype is just omitted with no ladder bookkeeping.
   Each branch has its own `{%p for <var> in section.entries %}` loop reusing the *exact*
@@ -684,9 +679,42 @@ range in the upload.
   is decided entirely by `MasterResume.sections` at *render* time — the template itself
   needs no rebuild to add, rename, or reorder a section. `TemplateProfile.sections:
   list[DetectedSection]` (what the analyzer found, in doc order) has **no effect on the
-  build** — it exists purely for the wizard UI's confirmation display; only the five
-  kind-level prototype mappings (`experience`, `projects`, `list_section`, `education`,
-  `skills`) matter to `build_generic`.
+  build** — it drives the wizard's confirmation display and the title sync below; only
+  the five kind-level prototype mappings (`experience`, `projects`, `list_section`,
+  `education`, `skills`) matter to `build_generic`.
+  - **Every heading takes the donor's formatting.** A heading whose paragraph or first-run
+    properties differ from the donor's (ignoring rsids, numbering and explicit "off"
+    toggles) is named in a non-blocking `TemplateProfile.warnings` entry
+    (`heading_uniformity.heading_differences`) — never a reason to fall back to fixed.
+  - **Titles come from the resume.** Installing a template (`template_install.
+    install_baseline`, before any calibration) or converting the live one copies its
+    heading text into the active resume's section titles — the n-th section of a kind
+    takes the n-th detected heading of that kind (`content/section_titles.sync_titles`,
+    written by `web/section_title_sync` through the versioned master-resume writer and
+    reported as `TemplateBuildResponse.title_changes`). Switching between saved templates
+    never rewrites titles.
+  - An empty section renders no heading at all.
+- **`"fixed"`** (legacy): one hard-coded `{%p for job in experience %}`-style loop per
+  kind, anchored on that kind's own heading paragraph, which keeps its own literal text
+  and formatting. Same-kind sections share the one physical heading; renaming/reordering a
+  section has no visible effect, and Include's section order is ignored.
+- **Startup migration** (`web/template_migration.migrate_all`, run in the app lifespan
+  right after `workspace.bootstrap`, before serving, never raising): every fixed profile in
+  every workspace — each library entry, then the live slot — is converted by
+  `document/template_convert.to_generic` (re-analyses the stored baseline with the
+  confirmed headings forced as overrides and lifts only `sections`, `heading_prototype`,
+  `spacing`, `paragraph_count`; confirmed mappings untouched), rebuilt and
+  `verify_tagged`-checked in a temp dir, then swapped in. The fixed profile + tagged
+  template are kept in `<slot>/fixed_backup/` first (never overwritten). A failure leaves
+  the slot fixed with a `"Could not switch to movable sections: …"` warning. The live slot
+  mirrors the active library entry when both hold the same baseline. The active
+  workspace's titles sync immediately; another workspace gets a `title_sync_pending`
+  marker, applied on its next activation (`routes/workspaces.activate_workspace`).
+  Calibration goes stale by itself (its digest covers profile, template and resume).
+- **Revert** (`POST /api/template/library/{id}/revert-fixed`, "Revert to fixed layout" in
+  the Template tab, offered when `TemplateLibraryEntry.can_revert_fixed`): restores
+  `fixed_backup/`, writes a `fixed_pinned` marker so the migration never redoes it, and
+  re-activates the entry when it is live. Titles are reverted through resume history.
 - A resume section whose kind the active template has no prototype for is skipped at render
   time (`render.build_context`) and surfaced as a warning in `FitResult.warnings`
   (`fit.fit`) — loud skip, never synthesized layout.

@@ -280,6 +280,29 @@ def activate_template_library_entry(
         ) from exc
 
 
+@router.post(
+    "/api/template/library/{entry_id}/revert-fixed", response_model=TemplateBuildResponse
+)
+def revert_template_library_entry(entry_id: str) -> TemplateBuildResponse:
+    """Undo the automatic switch to movable sections for one saved template: restore its
+    fixed layout and keep it fixed. Refuses while a tailoring job is busy."""
+    if get_queue().busy():
+        raise HTTPException(
+            status_code=409,
+            detail="A tailoring job is in progress; wait for it to finish before "
+            "changing templates.",
+        )
+    try:
+        return template_state.switched(template_library.revert_library_entry_to_fixed(entry_id))
+    except TemplateValidationError as exc:
+        raise HTTPException(status_code=400, detail=str(exc)) from exc
+    except TemplateBuildError as exc:
+        raise HTTPException(
+            status_code=422,
+            detail={"message": str(exc), "log": exc.log},
+        ) from exc
+
+
 @router.patch("/api/template/library/{entry_id}", response_model=TemplateLibraryResponse)
 def rename_template_library_entry(
     entry_id: str,

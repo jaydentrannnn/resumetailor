@@ -31,7 +31,9 @@ same text (`tests/tooling/test_agent_docs.py` enforces it).
   `job_tailor_run.py`, with `job_types`, `job_routing`, `job_outputs`, `job_followups`.
 - `template_ops.py` — the Template tab's shared `LOCK`, limits and errors; the ops live in
   `template_info`, `template_library_store`, `template_library`, `template_preview`,
-  `template_uploads`, `template_install`, `template_defaults`.
+  `template_uploads`, `template_install`, `template_defaults`; `template_migration` (startup
+  switch of fixed templates to generic, with backup/revert) and `section_title_sync`
+  (template headings → resume section titles).
 - `schemas.py` — request/response models (keep in sync with `frontend/src/api/`).
 - `routes/` — one router module per area; `routes/run_lookup.py` is the shared run/artifact
   lookup (helpers, no router) used by `jobs` and `applications`. Routers: `jobs`,

@@ -86,7 +86,7 @@ def test_edit_reassesses_missing_sections_using_saved_page_capacity(run_dir, mea
     assert quality.verified
     assert quality.fill_ratio == pytest.approx(40 / 60)
     assert quality.fill_target == 0.95
-    assert [section.title for section in quality.missing_sections] == ["Projects"]
+    assert [section.title for section in quality.missing_sections] == ["PROJECTS"]
 
 
 def test_rows_pair_each_rendered_bullet_with_its_source(run_dir):

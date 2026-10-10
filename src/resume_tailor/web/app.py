@@ -28,7 +28,7 @@ from resume_tailor.apply.funnel import operations as apply_operations
 from resume_tailor.apply.funnel import scheduler as apply_scheduler
 from resume_tailor.content import data_transfer
 from resume_tailor.infra import fake_llm, housekeeping, logs
-from resume_tailor.web import security, template_ops
+from resume_tailor.web import security, template_migration, template_ops
 from resume_tailor.web import state as web_state
 from resume_tailor.web.schemas import (
     JobSettings,
@@ -88,6 +88,8 @@ async def lifespan(app: FastAPI):
     result = workspace.bootstrap()
     if result is not None:
         web_state.migrated_from_legacy = result.migrated
+    # Before serving: no request may see a half-converted template. Never raises.
+    template_migration.migrate_all()
     try:
         recovered = apply_daily.recover_orphaned_tailoring()
     except Exception:  # noqa: BLE001 — a bad store must not block startup

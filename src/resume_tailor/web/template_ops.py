@@ -27,6 +27,12 @@ _LIBRARY_MAX_ENTRIES = 20
 #: Max length for a user-facing library label.
 _LIBRARY_LABEL_MAX = 80
 
+#: Beside a template slot's files: the fixed-mode profile + tagged template kept when the
+#: slot was switched to movable sections (`template_migration`), and the marker "Revert to
+#: fixed layout" leaves so the switch is never redone.
+FIXED_BACKUP_DIR = "fixed_backup"
+FIXED_PIN_MARKER = "fixed_pinned"
+
 #: Serialises preview render and baseline install so Word/LibreOffice is never concurrent.
 LOCK = threading.Lock()
 

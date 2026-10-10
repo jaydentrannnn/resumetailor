@@ -164,6 +164,31 @@ def activate_library_entry(
         log = template_install._maybe_calibrate(log, do_calibrate=True)
     return TemplateBuildResponse(ok=True, log=log, info=template_info.info())
 
+def revert_library_entry_to_fixed(entry_id: str) -> TemplateBuildResponse:
+    """Restore the fixed-mode layout an entry had before it was switched to movable
+    sections, and pin it so the startup migration never switches it again. An active
+    entry is re-activated so the live template follows."""
+    with template_ops.LOCK:
+        meta = template_library_store._load_entry_meta(entry_id)
+        if meta is None:
+            raise template_ops.TemplateValidationError(f"Unknown template library id: {entry_id}")
+        entry_dir = template_library_store._library_entry_dir(entry_id)
+        backup = entry_dir / template_ops.FIXED_BACKUP_DIR
+        if not backup.is_dir():
+            raise template_ops.TemplateValidationError(
+                "This template has no fixed layout to restore."
+            )
+        for item in backup.iterdir():
+            shutil.copy2(item, entry_dir / item.name)
+        (entry_dir / template_ops.FIXED_PIN_MARKER).touch()
+        shutil.rmtree(backup)
+        active_id, _ = template_library_store._library_active_meta()
+        log = f"Restored the fixed layout of “{meta.get('label', entry_id)}”."
+    if active_id == entry_id:
+        activated = activate_library_entry(entry_id)
+        return TemplateBuildResponse(ok=True, log=f"{log}\n{activated.log}", info=activated.info)
+    return TemplateBuildResponse(ok=True, log=log, info=template_info.info())
+
 def _library_record_after_install(*, label: str, source_filename: str) -> None:
     """Snapshot the just-installed live slot and mark it active."""
     cleaned = template_library_store._normalize_library_label(label)
