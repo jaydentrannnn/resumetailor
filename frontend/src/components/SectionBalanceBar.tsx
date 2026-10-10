@@ -1,10 +1,14 @@
 import { useRef, type KeyboardEvent, type PointerEvent } from "react";
 import { type BalanceSection, STEP, moveDivider, setDivider } from "../lib/sectionBalance";
 
-/** Segment `i` of `n`: full accent on the left, fading towards the track colour. */
+/**
+ * Segment `i` of `n`: the ends are fixed — full accent on the left, the bare track
+ * colour on the right — and each extra section adds an evenly spaced step between them.
+ * Mixed in oklab so the steps look evenly different.
+ */
 function tint(i: number, n: number): string {
-  const strength = n > 1 ? 100 - (i * 85) / (n - 1) : 100;
-  return `color-mix(in srgb, var(--color-accent) ${strength}%, var(--color-line-hover))`;
+  const strength = n > 1 ? 100 - (i * 100) / (n - 1) : 100;
+  return `color-mix(in oklab, var(--color-accent) ${strength}%, var(--color-line-hover))`;
 }
 
 /**
