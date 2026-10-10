@@ -4,6 +4,7 @@ import { type RunSort, type RunStatusFilter, filterRuns, sortRuns } from "../lib
 import { useConfirm } from "../state/confirmState";
 import { useRunState } from "../state/runState";
 import { CompareRunsDialog } from "./CompareRunsDialog";
+import { SkillMatchMeter } from "./SkillMatchMeter";
 import { DataTable, Pagination, RowActionsMenu, type TableColumn } from "./TableControls";
 import { Button, SelectionBar, StatusChip, Tile, TruncatedText, type Tone } from "./ui";
 
@@ -169,9 +170,11 @@ export function RunHistoryPanel() {
       sortable: true,
       cell: (run) =>
         run.coverage_total != null && run.coverage_total > 0 ? (
-          <span className="font-mono tabular-nums" title="Required skills the resume covers">
-            {run.coverage_matched ?? 0}/{run.coverage_total} required
-          </span>
+          <SkillMatchMeter
+            matched={run.coverage_matched ?? 0}
+            total={run.coverage_total}
+            label={`Skill match for ${run.title || "this run"}`}
+          />
         ) : (
           <span className="text-ink-muted">—</span>
         ),

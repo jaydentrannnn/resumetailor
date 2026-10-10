@@ -4,7 +4,6 @@ import type { ApplicationRow } from "../../api";
 import { RowActionsMenu, type MenuItem, type TableColumn } from "../../components/TableControls";
 import {
   buttonClass,
-  Meter,
   StatusChip,
   TruncatedText,
   type ButtonVariant,
@@ -25,6 +24,7 @@ import {
   readyBlockLabel,
   reviewReason,
 } from "../../lib/applyPage";
+import { SkillMatchMeter } from "../../components/SkillMatchMeter";
 import { DetailChip } from "../../components/ui/DetailChip";
 import { CapturedBadge } from "../CapturedStubs";
 import type { TableActions } from "./ApplicationsTable";
@@ -237,26 +237,16 @@ function RowAction({
   );
 }
 
-/** Matched skills as a number out of 100 with a mini meter; the raw count is the tooltip. */
+/** Matched skills out of 100 with a mini meter, or "Not checked" before screening. */
 function SkillMatch({ row }: { row: ApplicationRow }) {
   const total = row.screen?.coverage_total;
   if (!total) return <span className="text-xs text-ink-muted">Not checked</span>;
-  const matched = row.screen!.coverage_matched;
-  const pct = Math.round((matched / total) * 100);
   return (
-    <span
-      className="inline-flex items-center gap-2"
-      title={`${matched} of ${total} skills matched`}
-    >
-      <span className="font-mono text-[13px] tabular-nums text-ink">{pct}</span>
-      <Meter
-        className="w-11"
-        tone="ink"
-        value={pct}
-        label={`Skill match for ${row.company}`}
-        valueText={`${matched} of ${total} skills matched`}
-      />
-    </span>
+    <SkillMatchMeter
+      matched={row.screen!.coverage_matched}
+      total={total}
+      label={`Skill match for ${row.company}`}
+    />
   );
 }
 

@@ -391,6 +391,31 @@ def test_diagnosis_reads_the_unfaceted_master():
     assert "No evidence in the master resume" not in text
 
 
+def test_coverage_reads_the_unfaceted_master():
+    """A Skills item facets trimmed still counts toward coverage.
+
+    `known_terms` detects bullet text against the resume's own Skills/tech/coursework, and
+    facets trims those lists — so measuring the faceted copy undercounted skills the Apply
+    screen (which measures the master) counted: 100% in the table, 67% in the report.
+    """
+    resume = _synthetic_resume(bullet_tags=(), skill_items=("Zorblax",))
+    resume.experience[0].bullets[0].text = "Shipped Zorblax pipelines."
+    faceted = resume.model_copy(deep=True)
+    faceted.skills[0].items = []
+    reqs = JobRequirements(
+        title="T",
+        seniority="entry",
+        keywords=[Keyword(phrase="Zorblax", canonical="zorblax", importance="must_have")],
+    )
+    assert report.keyword_coverage(reqs, faceted) == (0, 1)  # the trap
+
+    result = _result(resume, {"b1": "Shipped Zorblax pipelines."})
+    data = report.report_data(faceted, reqs, result, master=resume)
+    assert (data.coverage_matched, data.coverage_total) == (1, 1)
+    assert data.missing_must_haves == []
+    assert "1/1" in report.format_report(faceted, reqs, result, master=resume)
+
+
 def test_report_states_which_ranking_was_used():
     """With semantic scoring off, ranking is pure tag overlap — worth saying so."""
     resume = _synthetic_resume()

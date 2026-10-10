@@ -381,20 +381,22 @@ def report_data(
 ) -> RunReport:
     """Assemble the run summary as structured data.
 
-    `master` should be the *pre-facets* resume, for `diagnose_gaps` — see its docstring
-    for why. Defaults to `resume` so every existing 3-argument call site (and every test
+    `master` should be the *pre-facets* resume — see `diagnose_gaps` for why. Coverage,
+    missing must-haves and unmatched canonicals read it too: facets truncates project tech,
+    so measuring the faceted resume undercounts skills the Apply screen (which measures
+    the master) counts, and the two Skill match figures disagreed. Defaults to `resume` so every existing 3-argument call site (and every test
     that predates this parameter) keeps working unchanged.
     """
     master = master or resume
-    matched, total = keyword_coverage(requirements, resume)
+    matched, total = keyword_coverage(requirements, master)
     return RunReport(
         title=requirements.title,
         seniority=requirements.seniority,
         coverage_matched=matched,
         coverage_total=total,
         extraction_diagnosis=extraction_diagnosis(requirements),
-        missing_must_haves=missing_must_haves(requirements, resume),
-        unmatched_canonicals=unmatched_canonicals(requirements, resume),
+        missing_must_haves=missing_must_haves(requirements, master),
+        unmatched_canonicals=unmatched_canonicals(requirements, master),
         gaps=diagnose_gaps(requirements, master),
         model=backends_used(),
         semantic_used=result.semantic_used,
@@ -448,7 +450,7 @@ def format_report(
     to `resume` so every existing 3-argument call site keeps working unchanged.
     """
     master = master or resume
-    matched, total = keyword_coverage(requirements, resume)
+    matched, total = keyword_coverage(requirements, master)
     diagnosis = extraction_diagnosis(requirements)
     if diagnosis is None:
         pct = f"{matched / total:.0%}" if total else "n/a"
@@ -469,11 +471,11 @@ def format_report(
         coverage_line,
     ]
 
-    missing = missing_must_haves(requirements, resume)
+    missing = missing_must_haves(requirements, master)
     if missing:
         lines.append(f"  Not supported by the master resume: {', '.join(missing)}")
 
-    unmatched = unmatched_canonicals(requirements, resume)
+    unmatched = unmatched_canonicals(requirements, master)
     if unmatched:
         lines.append(
             f"  Matched no tag ({len(unmatched)} of {len(requirements.keywords)} keywords): "
