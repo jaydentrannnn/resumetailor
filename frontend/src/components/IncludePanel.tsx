@@ -156,7 +156,7 @@ function SectionList({ outline, settings, setInclude }: PartProps) {
     <fieldset className="mt-5 space-y-2">
       <legend className="text-sm font-semibold text-ink">Sections</legend>
       {!isGeneric && <FixedOrderNote />}
-      <ul className="divide-y divide-line border-y border-line">
+      <ul className="space-y-1">
         {sections.map((section, i) => (
           <SectionIncludeRow
             key={section.id}

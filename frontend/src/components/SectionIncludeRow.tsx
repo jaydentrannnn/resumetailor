@@ -52,7 +52,7 @@ export function SectionIncludeRow({
 
   return (
     <li>
-      <div className="flex items-center gap-2 py-2 text-sm">
+      <div className="flex items-center gap-2 text-sm">
         <button
           type="button"
           onClick={() => setOpen((o) => !o)}
@@ -112,7 +112,7 @@ export function SectionIncludeRow({
       {open && expandable && (
         <div
           id={bodyId}
-          className={`space-y-2 pb-3 pl-5 ${included ? "" : "opacity-60"}`}
+          className={`space-y-2 pt-1.5 pb-2.5 pl-5 ${included ? "" : "opacity-60"}`}
         >
           {extra}
           {section.entries.map((entry) => {
