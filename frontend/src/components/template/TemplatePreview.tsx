@@ -74,7 +74,7 @@ export function TemplatePreview({
       </p>
     );
   return (
-    <div className="mx-auto min-w-0 max-w-[760px] overflow-hidden rounded-sm">
+    <div className="min-w-0 overflow-hidden rounded-sm">
       <div className="flex items-center justify-between gap-3 pb-2">
         <span className="text-xs text-ink-muted">Active: {activeLabel || "Current template"}</span>
         <a href={pdf.url} target="_blank" rel="noreferrer" className="rt-link text-xs">

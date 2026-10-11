@@ -8,7 +8,7 @@ import { useCoverPreview } from "../../../lib/useCoverPreview";
 export function CoverLetterPreviewPane({ settings }: { settings: CoverLetterSettings }) {
   const { url, loading, error } = useCoverPreview(settings);
   return (
-    <div className="mx-auto min-w-0 max-w-[760px]">
+    <div className="min-w-0">
       <div className="flex items-center justify-between gap-3 pb-2">
         <span className="text-xs text-ink-muted">
           Sample body text; your letters are written for each job.
