@@ -33,19 +33,22 @@ export function MapTemplateStep({
       </p>
       <AnalyzeReport
         analysis={analysis}
+        fromLayout={state.fromLayout}
         actions={{
           busy: uploading || importBusy,
-          onConvertBullets: draftFile
-            ? () => void beginAnalyze(draftFile, { convertBullets: true })
-            : undefined,
-          onImportContent: draftFile
-            ? () =>
-                void importContent(draftFile).then(() =>
-                  document
-                    .getElementById("starter-templates")
-                    ?.scrollIntoView({ behavior: "smooth", block: "start" }),
-                )
-            : undefined,
+          onConvertBullets:
+            draftFile && !state.fromLayout
+              ? () => void beginAnalyze(draftFile, { convertBullets: true })
+              : undefined,
+          onImportContent:
+            draftFile && !state.fromLayout
+              ? () =>
+                  void importContent(draftFile).then(() =>
+                    document
+                      .getElementById("starter-templates")
+                      ?.scrollIntoView({ behavior: "smooth", block: "start" }),
+                  )
+              : undefined,
         }}
       />
       {profileDraft ? (

@@ -1,14 +1,20 @@
-"""Edit layout in Word: the session behind the Template page's button (desktop only)."""
+"""Edit layout in Word (desktop only) and Quick adjustments (everywhere): both edit the
+layout file and hand its read-back to the template wizard."""
 
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response
 
+from resume_tailor.document.template_adjust import Adjustments
 from resume_tailor.web import state as web_state
 from resume_tailor.web import template_edit, template_ops
 from resume_tailor.web.jobs import get_queue
-from resume_tailor.web.schemas import TemplateAnalyzeResponse, TemplateEditStatus
+from resume_tailor.web.schemas import (
+    TemplateAdjustmentsResponse,
+    TemplateAnalyzeResponse,
+    TemplateEditStatus,
+)
 
 router = APIRouter()
 
@@ -69,17 +75,6 @@ def import_edit() -> TemplateAnalyzeResponse:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
 
 
-@router.get("/api/template/edit-session/file/{sha}")
-def edit_file(sha: str) -> Response:
-    """The read-back file, for the wizard to install as its upload."""
-    _desktop_only()
-    try:
-        raw = template_edit.realised(sha)
-    except template_ops.TemplateValidationError as exc:
-        raise HTTPException(status_code=404, detail=str(exc)) from exc
-    return Response(content=raw, media_type=_DOCX)
-
-
 @router.delete("/api/template/edit-session", status_code=204)
 def end_edit() -> Response:
     """End the session and delete the layout file."""
@@ -87,3 +82,36 @@ def end_edit() -> Response:
     with template_ops.LOCK:
         template_edit.end()
     return Response(status_code=204)
+
+
+@router.get("/api/template/adjustments", response_model=TemplateAdjustmentsResponse)
+def adjustment_form() -> TemplateAdjustmentsResponse:
+    """The live template's margins, font and field emphasis (Quick adjustments)."""
+    with template_ops.LOCK:
+        try:
+            current, table = template_edit.adjustment_form()
+        except template_edit.EditSessionError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+    return TemplateAdjustmentsResponse(current=current, table_layout=table)
+
+
+@router.post("/api/template/adjustments", response_model=TemplateAnalyzeResponse)
+def adjust_template(body: Adjustments) -> TemplateAnalyzeResponse:
+    """Apply quick adjustments to the layout file and read it back for the wizard.
+
+    Nothing is installed: the wizard previews the result and installs on confirmation."""
+    with template_ops.LOCK:
+        try:
+            return template_edit.adjust(body)
+        except template_edit.EditSessionError as exc:
+            raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.get("/api/template/drafts/{sha}")
+def draft_file(sha: str) -> Response:
+    """A read-back file (Word edit or quick adjustments), for the wizard to install."""
+    try:
+        raw = template_edit.realised(sha)
+    except template_ops.TemplateValidationError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    return Response(content=raw, media_type=_DOCX)

@@ -97,7 +97,7 @@ def test_saved_layout_reads_back_and_installs(desktop, monkeypatch):
     body = analysis.json()
     assert body["ready"], body["issues"]
     sha = body["source_sha256"]
-    realised = c.get(f"/api/template/edit-session/file/{sha}")
+    realised = c.get(f"/api/template/drafts/{sha}")
     assert realised.status_code == 200
     assert b"\xc2\xab" not in realised.content  # no « left in the package bytes' text
 
@@ -133,3 +133,33 @@ def test_import_without_a_session_or_with_a_broken_file_is_refused(desktop):
     res = c.post("/api/template/edit-session/import")
     assert res.status_code == 409
     assert "still being saved" in res.json()["detail"]
+
+
+def test_quick_adjustments_read_the_layout_and_return_an_installable_draft(desktop):
+    c, opened = desktop
+    form = c.get("/api/template/adjustments").json()
+    current = form["current"]
+    assert form["table_layout"] is False
+    assert current["margins"]["left"] > 0 and current["font_size"] > 0
+    company = next(f for f in current["fields"] if f["label"] == "Company")
+    assert company["bold"] is True
+
+    res = c.post(
+        "/api/template/adjustments",
+        json={
+            "margins": {**current["margins"], "left": 0.5, "right": 0.5},
+            "font_family": "Georgia",
+            "font_size": current["font_size"] + 1,
+            "fields": [{"label": "Company", "bold": False, "italic": True}],
+        },
+    )
+    assert res.status_code == 200, res.json()
+    body = res.json()
+    assert body["ready"], body["issues"]
+    draft = docx.Document(io.BytesIO(c.get(f"/api/template/drafts/{body['source_sha256']}").content))
+    assert round(draft.sections[0].left_margin.inches, 2) == 0.5
+    header = body["suggested_profile"]["experience"]["header"]["header_paragraph_id"]
+    paragraphs = [p for p, _loc in docx_text.iter_document_paragraphs(draft)]
+    run = paragraphs[header].runs[0]
+    assert run.italic and not run.bold and run.font.name == "Georgia"
+    assert opened == []  # no word processor involved

@@ -18,6 +18,7 @@ from ..apply.funnel.screen import ScreenResult, ScreenSettings
 from ..apply.funnel.store_models import ApplicationStatus, AtsKind, FillResult, StatusChange
 from ..content import industries
 from ..document.cover_settings import CoverSettings
+from ..document.template_adjust import CurrentLayout
 from ..pipeline.include import IncludeOptions
 
 #: Every `source_sha256` request field below is interpolated straight into a filesystem
@@ -1038,6 +1039,14 @@ class TemplateEditStatus(BaseModel):
     editor_open: bool = False
     started_at: str | None = None
     path: str | None = None
+
+
+class TemplateAdjustmentsResponse(BaseModel):
+    """The Quick adjustments form's starting values (`document/template_adjust.py`)."""
+
+    current: CurrentLayout
+    #: A table layout: its fixed-width tables keep their width when margins change.
+    table_layout: bool = False
 
 
 class TemplateAnalyzeResponse(BaseModel):

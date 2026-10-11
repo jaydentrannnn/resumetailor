@@ -888,6 +888,18 @@ file, and on import caches the realised bytes as an already-prepared upload
 (`template_uploads.cache_prepared`, origin = own hash) so the ordinary wizard installs
 them unchanged. The wizard's `fromLayout` hides content merge and heading re-detection.
 Only the first heading's formatting and the first entry of each kind are read back.
+The read-back drops the skeleton's `rt_sec_*` bookmarks (`template_skeleton.strip_bookmarks`,
+also run before a new skeleton is annotated), so a template installed from a read-back can
+be edited again.
+
+**Quick adjustments** (every platform, `document/template_adjust.py`): margins, one font
+family for every run and paragraph mark (theme fonts resolved from `theme1.xml` and
+dropped in favour of the explicit name), a body text size (bullet runs' most common size;
+every other size moves by the same delta), and per-«field» bold/italic/underline. It edits
+the live template's skeleton in code and reads it back through the same
+`skeleton_parse` → wizard path (`GET/POST /api/template/adjustments`, draft bytes at
+`GET /api/template/drafts/{sha}`) — no override settings are stored. A table layout's
+fixed-width tables keep their width when margins change (the drawer says so).
 
 ---
 

@@ -45,7 +45,7 @@ from .template_profile import (
     SkillsMapping,
     TemplateProfile,
 )
-from .template_skeleton import BOOKMARK_PREFIX
+from .template_skeleton import BOOKMARK_PREFIX, strip_bookmarks
 
 
 @dataclass
@@ -190,6 +190,7 @@ def parse_skeleton(raw: bytes, meta: dict, resume: MasterResume | None = None) -
     in_table = [loc is not None for _p, loc in docx_text.iter_document_paragraphs(doc)]
     issues: list[Issue] = []
     marks = _bookmarked(doc, paragraphs)
+    strip_bookmarks(doc)
     headings = _locate_headings(meta, marks, paragraphs, issues)
     found = _find_tokens(paragraphs, issues)
     custom_text = {

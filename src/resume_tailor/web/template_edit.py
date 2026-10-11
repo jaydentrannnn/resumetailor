@@ -24,6 +24,7 @@ from resume_tailor.content import data
 from resume_tailor.document import (
     docx_normalize,
     skeleton_parse,
+    template_adjust,
     template_profile,
     template_skeleton,
 )
@@ -123,10 +124,7 @@ def start() -> TemplateEditStatus:
         raise EditSessionError(
             "The layout file is already open for editing. Finish or discard that session first."
         )
-    profile = template_profile.load_profile()
-    if profile is None or not config.DEFAULT_TEMPLATE_PATH.exists():
-        raise EditSessionError("Set up a template first: there is no layout to edit yet.")
-    skeleton = template_skeleton.make_skeleton(config.DEFAULT_TEMPLATE_PATH, profile, _resume())
+    skeleton = _live_skeleton()
     directory = _dir()
     if directory.exists():
         shutil.rmtree(directory, ignore_errors=True)
@@ -168,12 +166,39 @@ def read_back() -> TemplateAnalyzeResponse:
         )
     # Accept tracked changes and drop comments the same way an upload is cleaned.
     raw, _counts = docx_normalize.normalize(raw)
+    return _analysis(raw, session["meta"])
+
+
+def _analysis(raw: bytes, meta: dict) -> TemplateAnalyzeResponse:
+    """Parse a layout file and cache its realised bytes for the wizard's install."""
     try:
-        parsed = skeleton_parse.parse_skeleton(raw, session["meta"], _resume())
+        parsed = skeleton_parse.parse_skeleton(raw, meta, _resume())
     except (KeyError, ValueError, zipfile.BadZipFile) as exc:
         raise EditSessionError(f"Couldn't read the layout file: {exc}") from exc
     template_uploads.cache_prepared(parsed.raw)
     return template_uploads._analysis_to_response(parsed.result)
+
+
+def _live_skeleton() -> template_skeleton.Skeleton:
+    profile = template_profile.load_profile()
+    if profile is None or not config.DEFAULT_TEMPLATE_PATH.exists():
+        raise EditSessionError("Set up a template first: there is no layout to edit yet.")
+    return template_skeleton.make_skeleton(config.DEFAULT_TEMPLATE_PATH, profile, _resume())
+
+
+def adjustment_form() -> tuple[template_adjust.CurrentLayout, bool]:
+    """The live template's margins, font and field emphasis, and whether it is a table
+    layout (its fixed-width tables do not follow a margin change)."""
+    profile = template_profile.load_profile()
+    return template_adjust.current(_live_skeleton().raw), bool(
+        profile is not None and profile.layout == "table"
+    )
+
+
+def adjust(adj: template_adjust.Adjustments) -> TemplateAnalyzeResponse:
+    """Quick adjustments: edit the layout file in code, then read it back like a Word edit."""
+    skeleton = _live_skeleton()
+    return _analysis(template_adjust.apply(skeleton.raw, adj), skeleton.meta())
 
 
 def realised(sha: str) -> bytes:

@@ -204,3 +204,17 @@ def test_unknown_token_is_reported_and_comments_are_stripped(built):
     rels = zipfile.ZipFile(io.BytesIO(parsed.raw)).read("word/_rels/document.xml.rels").decode()
     assert "comments" not in rels
     assert names  # still a valid package
+
+
+def test_a_template_installed_from_a_read_back_can_be_edited_again(built, tmp_path, monkeypatch):
+    """The read-back used to keep the skeleton's heading bookmarks, so the next layout
+    file held two of each and every field read as misplaced."""
+    src, tpl, profile = built(_full_featured_resume)
+    before = _render(tpl, profile, tmp_path)
+    for generation in range(2):
+        skeleton = template_skeleton.make_skeleton(tpl, profile, synthetic_resume())
+        parsed = skeleton_parse.parse_skeleton(skeleton.raw, skeleton.meta(), synthetic_resume())
+        assert parsed.result.ready, (generation, parsed.result.issues)
+        assert b"rt_sec_" not in zipfile.ZipFile(io.BytesIO(parsed.raw)).read("word/document.xml")
+        assert _rebuild(tmp_path, parsed, monkeypatch) == before
+        profile, tpl = parsed.result.suggested_profile, tmp_path / "tagged2.docx"

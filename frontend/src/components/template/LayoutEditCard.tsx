@@ -17,8 +17,7 @@ function savedLabel(iso: string | null): string {
  * wizard. Nothing changes until the wizard's Install.
  */
 export function LayoutEditCard() {
-  const { desktop, status, busy, error, start, reopen, review, discard } =
-    useLayoutEditSession();
+  const { desktop, status, busy, error, start, reopen, review, discard } = useLayoutEditSession();
   const { confirm } = useConfirm();
   if (!desktop) return null;
 

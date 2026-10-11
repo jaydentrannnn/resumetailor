@@ -33,9 +33,9 @@ export function importEditSession(): Promise<TemplateAnalyzeResponse> {
   return request<TemplateAnalyzeResponse>(`${BASE}/import`, { method: "POST" });
 }
 
-/** The read-back file, as the upload the template wizard installs. */
+/** A read-back file (Word edit or quick adjustments), as the upload the wizard installs. */
 export async function fetchEditedLayout(sha: string): Promise<File> {
-  const res = await fetch(`${BASE}/file/${encodeURIComponent(sha)}`);
+  const res = await fetch(`/api/template/drafts/${encodeURIComponent(sha)}`);
   if (!res.ok) throw await apiError(res);
   return new File([await res.blob()], "layout.docx", {
     type: "application/vnd.openxmlformats-officedocument.wordprocessingml.document",
@@ -45,4 +45,34 @@ export async function fetchEditedLayout(sha: string): Promise<File> {
 export async function endEditSession(): Promise<void> {
   const res = await fetch(BASE, { method: "DELETE" });
   if (!res.ok) throw await apiError(res);
+}
+
+// -- Quick adjustments (`document/template_adjust.py`) ----------------------------------
+
+export type Margins = { top: number; bottom: number; left: number; right: number };
+export type FieldEmphasis = { label: string; bold: boolean; italic: boolean; underline: boolean };
+export type CurrentLayout = {
+  margins: Margins;
+  font_family: string;
+  font_size: number;
+  fields: FieldEmphasis[];
+};
+export type TemplateAdjustmentsResponse = { current: CurrentLayout; table_layout: boolean };
+export type TemplateAdjustments = {
+  margins?: Margins;
+  font_family?: string;
+  font_size?: number;
+  fields?: Partial<FieldEmphasis>[];
+};
+
+export function fetchTemplateAdjustments(): Promise<TemplateAdjustmentsResponse> {
+  return request<TemplateAdjustmentsResponse>("/api/template/adjustments");
+}
+
+/** Apply adjustments to the layout file and read it back; nothing is installed. */
+export function adjustTemplate(adj: TemplateAdjustments): Promise<TemplateAnalyzeResponse> {
+  return request<TemplateAnalyzeResponse>("/api/template/adjustments", {
+    method: "POST",
+    body: JSON.stringify(adj),
+  });
 }

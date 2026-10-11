@@ -451,3 +451,6 @@ siblings are unchanged.
 - The realised read-back is cached with an origin file equal to its own hash: install must not re-`prepare` it (the profile's `source_sha256` is the realised hash).
 - Content merge is hidden for a layout draft (its text is sample text), and heading remap is locked (it would re-guess and throw away the token mapping).
 - Desktop only because opening a local file in Word only makes sense on the person's machine; the PDF export uses a private Word (`DispatchEx`, commit 8da09c4) so a render never closes the layout file the person is editing.
+- Quick adjustments (Phase 5) edit the skeleton and go through the same read-back + wizard rather than storing margin/font overrides on the profile: one source of formatting, and the previous template stays in the library as the undo.
+- Text size is a delta, not an absolute: setting every run to one size would flatten the name and headings. The body size shown is the bullets' most common effective size.
+- Found by the browser check: the first read-back kept `rt_sec_*` bookmarks in the installed baseline, so its next skeleton carried two marks per heading and every field read as "above the first heading". Bookmarks are now stripped on read-back and before annotating.

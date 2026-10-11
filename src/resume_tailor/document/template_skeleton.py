@@ -170,6 +170,22 @@ def _matches(text: str, *, header_zone: bool) -> list[tuple[int, int, str, str]]
     return sorted(found)
 
 
+def strip_bookmarks(doc) -> None:
+    """Remove the skeleton's own `rt_sec_*` heading bookmarks (start and matching end).
+
+    The read-back becomes a baseline, so it must not carry them: a later skeleton of that
+    template would otherwise hold two marks of each name."""
+    body = doc.element.body
+    ids = set()
+    for mark in list(body.iter(qn("w:bookmarkStart"))):
+        if (mark.get(qn("w:name")) or "").startswith(BOOKMARK_PREFIX):
+            ids.add(mark.get(qn("w:id")))
+            mark.getparent().remove(mark)
+    for mark in list(body.iter(qn("w:bookmarkEnd"))):
+        if mark.get(qn("w:id")) in ids:
+            mark.getparent().remove(mark)
+
+
 def _add_bookmark(paragraph: Paragraph, name: str, bookmark_id: int) -> None:
     start = OxmlElement("w:bookmarkStart")
     start.set(qn("w:id"), str(bookmark_id))
@@ -325,6 +341,7 @@ def make_skeleton(
         out = Path(tmp) / "skeleton.docx"
         render.render(sentinel, template=template, out=out, layout=layout)
         doc = docx.Document(str(out))
+    strip_bookmarks(doc)  # a template installed from an earlier read-back
     paras = _tokenise(doc, profile)
     sections = _annotate(doc, paras, _headings(paras, sentinel))
     buffer = io.BytesIO()

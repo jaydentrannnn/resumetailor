@@ -4,6 +4,8 @@ import { IssueList, type IssueActions } from "./IssueList";
 type Props = {
   analysis: TemplateAnalyzeResponse;
   actions?: IssueActions;
+  /** The draft is a layout read-back: fixes happen in the layout file, not a re-upload. */
+  fromLayout?: boolean;
 };
 
 //: Fields the wizard cares about seeing even when nothing was detected for them —
@@ -60,7 +62,7 @@ function SectionFieldRows({
 /**
  * Compatibility summary: blockers, warnings, detected sections, and per-field spans.
  */
-export function AnalyzeReport({ analysis, actions }: Props) {
+export function AnalyzeReport({ analysis, actions, fromLayout = false }: Props) {
   const blockers = analysis.issues.filter((i) => i.blocking);
   const warnings = analysis.issues.filter((i) => !i.blocking);
 
@@ -105,8 +107,9 @@ export function AnalyzeReport({ analysis, actions }: Props) {
         </p>
       ) : (
         <p className="border-t border-line pt-4 text-danger">
-          Can't install yet. Fix the items above in your document, save it as .docx, and upload it
-          again.
+          {fromLayout
+            ? "Can't install yet. Fix the items above in the layout file (Edit layout in Word › Open again), save it, then review the changes again."
+            : "Can't install yet. Fix the items above in your document, save it as .docx, and upload it again."}
         </p>
       )}
     </div>

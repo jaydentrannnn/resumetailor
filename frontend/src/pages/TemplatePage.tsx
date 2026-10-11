@@ -2,6 +2,7 @@ import { Button, DataList, Page, PageHeader, Tile } from "../components/ui";
 import { TemplatePreview } from "../components/template/TemplatePreview";
 import { PageFitCard } from "../components/template/PageFitCard";
 import { LayoutEditCard } from "../components/template/LayoutEditCard";
+import { QuickAdjustCard } from "../components/template/adjust/QuickAdjustCard";
 import { WIZARD_ANCHOR } from "../lib/useLayoutEditSession";
 import { CoverLetterCard } from "../components/template/coverLetter/CoverLetterCard";
 import { SavedTemplatesPanel } from "../components/template/SavedTemplatesPanel";
@@ -153,6 +154,7 @@ export function TemplatePage() {
           </div>
         </div>
       </Tile>
+      {info?.tagged.exists && <QuickAdjustCard />}
       {info?.tagged.exists && <LayoutEditCard />}
       {info?.tagged.exists && <PageFitCard calibration={info.calibration} />}
       {info?.tagged.exists && <CoverLetterCard reloadKey={previewRevision} />}
