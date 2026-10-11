@@ -4,7 +4,7 @@ from __future__ import annotations
 
 from .. import config
 from ..content.data import Bullet
-from ..document import render
+from ..document import render, template_style
 from . import events, facets_budget, fit_lines, fit_selection, fit_state, fit_types
 from .bullet_merge import merge_into, pull_back
 from .followups import _polish
@@ -160,7 +160,8 @@ class _FitShrink(fit_state._FitState):
             if only is None else None
         )
         course_text = (
-            "Relevant Coursework: " + ", ".join(course_edu.coursework)
+            "Relevant Coursework: "
+            + template_style.active().separators.coursework.join(course_edu.coursework)
             if course_edu else None
         )
         requested = dict(self.rewritten)

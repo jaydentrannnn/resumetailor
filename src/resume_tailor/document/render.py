@@ -19,7 +19,7 @@ from docxtpl import DocxTemplate, RichText
 from .. import config
 from ..content.data import MasterResume
 from ..infra import telemetry
-from . import convert, date_style
+from . import convert, date_style, template_style
 from .cover_settings import CoverSettings
 from .template_profile import ContactField, active_layout
 
@@ -83,26 +83,45 @@ def _tag_formats(tpl: DocxTemplate) -> dict[str, dict]:
     return found
 
 
-def _add_hyperlink(rt: RichText, text: str, url_id: str | None, fmt: dict | None = None) -> None:
+def _add_hyperlink(
+    rt: RichText,
+    text: str,
+    url_id: str | None,
+    fmt: dict | None = None,
+    links: template_style.Links | None = None,
+) -> None:
     """Append linked (or plain) text with the LibreOffice-safe InternetLink run style.
 
     `url_id` None means a labelled project with no URL — keep the label, skip the link.
     `fmt` is the surrounding template run's font/size, restated because RichText drops it.
+    `links` is the template's link look (`template_style.Links`; default blue, underlined).
+    The InternetLink style stays either way (LibreOffice needs it for a live PDF link);
+    colour and underline are restated on the run, which wins over the style.
     """
     fmt = fmt or {}
-    if url_id:
-        rt.add(
-            text,
-            **{
-                **fmt,
-                "url_id": url_id,
-                "style": _HYPERLINK_STYLE,
-                "color": _LINK_COLOR,
-                "underline": True,
-            },
-        )
-    else:
+    links = links or template_style.DEFAULT.links
+    if not url_id:
         rt.add(text, **fmt)
+        return
+    if links.color == "blue":
+        color = _LINK_COLOR
+    else:
+        color = fmt.get("color") if fmt.get("color") != _LINK_COLOR else None
+    start = len(rt.xml)
+    rt.add(
+        text,
+        **{
+            **fmt,
+            "url_id": url_id,
+            "style": _HYPERLINK_STYLE,
+            "color": color or "auto",
+            "underline": links.underline,
+        },
+    )
+    if not links.underline:
+        # RichText cannot write `w:u="none"`, which the run needs to beat the style.
+        added = rt.xml[start:].replace("</w:rPr>", '<w:u w:val="none"/></w:rPr>', 1)
+        rt.xml = rt.xml[:start] + added
 
 
 def _ensure_pdf_hyperlink_styles(docx_path: Path) -> None:
@@ -267,11 +286,11 @@ def _degree_line(edu) -> str:
     return edu.degree
 
 
-def _education_details(edu) -> list[str]:
+def _education_details(edu, separator: str = ", ") -> list[str]:
     """Detail bullets for one education entry: coursework line first, then free-text."""
     details: list[str] = []
     if edu.coursework:
-        details.append("Relevant Coursework: " + ", ".join(edu.coursework))
+        details.append("Relevant Coursework: " + separator.join(edu.coursework))
     details.extend(edu.details)
     return details
 
@@ -283,6 +302,7 @@ def _contact_richtext(
     field_order: list[ContactField] | None = None,
     separator: str | None = None,
     tag: str = "contact",
+    links: template_style.Links | None = None,
 ) -> RichText:
     """Build the contact line as RichText with labelled LinkedIn/GitHub hyperlinks.
 
@@ -328,7 +348,7 @@ def _contact_richtext(
         if i:
             rt.add(sep, **fmt)
         if url:
-            _add_hyperlink(rt, text, tpl.build_url_id(url), fmt)
+            _add_hyperlink(rt, text, tpl.build_url_id(url), fmt, links)
         else:
             rt.add(text, **fmt)
     return rt
@@ -366,6 +386,7 @@ def build_context(
     against the template's own default.
     """
     layout = layout if layout is not None else active_layout()
+    style = template_style.from_layout(layout)
     enabled = layout.get("enabled") or {
         "education": True,
         "experience": True,
@@ -412,18 +433,21 @@ def build_context(
             link = RichText()
             if include_project_links and proj.link:
                 link_fmt = _tag_formats(tpl).get("proj.link", {})
-                link.add(" | ", **link_fmt)
+                # The separator is plain text even when the tag run carries a link's blue.
+                sep_fmt = {k: v for k, v in link_fmt.items() if v != _LINK_COLOR}
+                link.add(style.separators.project_link, **sep_fmt)
                 _add_hyperlink(
                     link,
                     proj.link,
                     tpl.build_url_id(proj.url) if proj.url else None,
                     link_fmt,
+                    style.links,
                 )
 
             out.append(
                 {
                     "name": proj.name,
-                    "tech": ", ".join(proj.tech),
+                    "tech": style.separators.tech_items.join(proj.tech),
                     "link": link,
                     "date": project_date(proj, layout.get("date_style")),
                     "bullets": rendered,
@@ -443,7 +467,7 @@ def build_context(
                 "location": edu.location,
                 "dates": edu.dates,
                 "degree_line": _degree_line(edu),
-                "details": _education_details(edu),
+                "details": _education_details(edu, style.separators.coursework),
             }
             for edu in entries
         ]
@@ -452,7 +476,10 @@ def build_context(
         # Key is `entries`, never `items`: in Jinja, `group.items` resolves to the dict's
         # built-in method rather than the key, and rendering that method's repr injects
         # invalid markup into the document. Keep context keys clear of dict attribute names.
-        return [{"label": g.label, "entries": ", ".join(g.items)} for g in entries]
+        return [
+            {"label": g.label, "entries": style.separators.skills_items.join(g.items)}
+            for g in entries
+        ]
 
     _kind_renderers = {
         "experience": render_experience,
@@ -502,6 +529,7 @@ def build_context(
                 "contact_field_order"
             ),
             separator=layout.get("contact_separator"),
+            links=style.links,
         ),
         "education": education,
         "experience": experience,
@@ -534,7 +562,7 @@ def _contact_slots(
         slots[f"contact_slot_{i}"] = (
             _contact_richtext(
                 resume, tpl, field_order=fields, separator=slot.get("separator"),
-                tag=f"contact_slot_{i}",
+                tag=f"contact_slot_{i}", links=template_style.from_layout(layout).links,
             )
             if fields
             else RichText()
@@ -642,6 +670,7 @@ def build_letter_context(
                 "contact_field_order"
             ),
             separator=layout.get("contact_separator"),
+            links=template_style.from_layout(layout).links,
         )
     )
     custom = {

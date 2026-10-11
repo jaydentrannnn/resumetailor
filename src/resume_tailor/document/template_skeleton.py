@@ -68,6 +68,9 @@ class Skeleton:
     #: "kind.field" -> sample text that must keep the template's own style (dates: the
     #: baseline's date text is what `date_style.detect` reads the month style from).
     samples: dict[str, str] = field(default_factory=dict)
+    #: `TemplateProfile.style` (`template_style`): nothing in the document holds it, so it
+    #: rides along for the read-back to keep.
+    style: dict = field(default_factory=dict)
 
     def meta(self) -> dict:
         """JSON-able description `skeleton_parse.parse_skeleton` reads back."""
@@ -75,6 +78,7 @@ class Skeleton:
             "sections": [vars(s) for s in self.sections],
             "custom": list(self.custom),
             "samples": dict(self.samples),
+            "style": dict(self.style),
         }
 
 
@@ -138,9 +142,17 @@ def sentinel_resume(resume: MasterResume | None, profile: TemplateProfile) -> Ma
 
 def _unwrap_hyperlinks(paragraph: Paragraph) -> None:
     """Lift every hyperlink's runs into the paragraph in place: the link is a render-time
-    detail, and a token inside one would carry a stray URL into the layout file."""
+    detail, and a token inside one would carry a stray URL into the layout file. The
+    runs lose the link's own look (style, colour, underline) too: that comes from
+    `TemplateStyle.links` at render time, and left here it would pass to the text and
+    separators around the token on the next build."""
     for link in paragraph._p.findall(qn("w:hyperlink")):
         for child in list(link):
+            rpr = child.find(qn("w:rPr"))
+            if rpr is not None:
+                for tag in ("w:rStyle", "w:color", "w:u"):
+                    for el in rpr.findall(qn(tag)):
+                        rpr.remove(el)
             link.addprevious(child)
         link.getparent().remove(link)
 
@@ -355,4 +367,7 @@ def make_skeleton(
         "education.dates": render.format_range("2019-09", "2023-06", style),
         "project.date": render.format_month("2024-03", style),
     }
-    return Skeleton(raw=buffer.getvalue(), sections=sections, custom=custom, samples=samples)
+    return Skeleton(
+        raw=buffer.getvalue(), sections=sections, custom=custom, samples=samples,
+        style=profile.style.model_dump(),
+    )

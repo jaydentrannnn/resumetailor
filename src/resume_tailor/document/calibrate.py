@@ -25,7 +25,7 @@ from resume_tailor.content.data import (
     Project,
     ProjectSection,
 )
-from resume_tailor.document import render, template_profile
+from resume_tailor.document import render, template_profile, template_style
 from resume_tailor.document import calibration_cache, calibration_sample
 
 
@@ -285,7 +285,7 @@ def _header_lines(base: MasterResume, tech_chars: int) -> tuple[int, int]:
     layout = render.line_layout(pdf, {"header": text})
     if "header" not in layout:
         raise CalibrationError("Could not find the header probe in the rendered PDF.")
-    tech = ", ".join(proj.tech)
+    tech = template_style.active().separators.tech_items.join(proj.tech)
     return facets_budget.header_overhead(proj) + len(tech), layout["header"].lines
 
 

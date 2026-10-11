@@ -46,6 +46,7 @@ from .template_profile import (
     TemplateProfile,
 )
 from .template_skeleton import BOOKMARK_PREFIX, strip_bookmarks
+from .template_style import TemplateStyle
 
 
 @dataclass
@@ -313,6 +314,7 @@ class _ProfileBuilder:
         )
         tabled = any(self.in_table[t.span.paragraph_id] for t in self.found if t.token)
         update["layout"] = "table" if tabled else "paragraph"
+        update["style"] = TemplateStyle.model_validate(self.meta.get("style") or {})
         data = (base.model_dump() if base is not None else {}) | {
             k: (v.model_dump() if hasattr(v, "model_dump") else
                 [x.model_dump() if hasattr(x, "model_dump") else x for x in v]

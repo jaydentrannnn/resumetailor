@@ -16,6 +16,8 @@ from pydantic import BaseModel, ConfigDict, Field, model_validator
 from .. import config
 from ..content.data import CUSTOM_KEY_PATTERN
 from . import date_style
+from .template_style import DEFAULT as DEFAULT_STYLE
+from .template_style import TemplateStyle
 
 SCHEMA_VERSION = 2
 
@@ -345,6 +347,8 @@ class TemplateProfile(_Strict):
     custom_fields: list[CustomFieldSlot] = Field(default_factory=list)
     #: Unmapped lines the user chose to remove from the template.
     dropped_paragraph_ids: list[int] = Field(default_factory=list)
+    #: Separators, bullet marker and link look set by Quick adjustments (`template_style`).
+    style: TemplateStyle = Field(default_factory=TemplateStyle)
 
     @model_validator(mode="after")
     def _custom_fields_consistent(self) -> TemplateProfile:
@@ -453,8 +457,13 @@ def active_layout(profile: TemplateProfile | None = None) -> dict:
     if contact.slots:
         layout["contact_slots"] = [s.model_dump() for s in contact.slots]
     style = date_style.detect(config.BASELINE_TEMPLATE_PATH)
+    dates = profile.style.separators.dates
+    if dates is not None:
+        style = {**(style or date_style.DEFAULT), "separator": dates}
     if style is not None:
         layout["date_style"] = style
+    if profile.style != DEFAULT_STYLE:
+        layout["style"] = profile.style.model_dump()
     if profile.section_mode == "generic":
         layout["sections"] = [s.model_dump() for s in profile.sections]
         layout["spacing"] = profile.spacing.model_dump()

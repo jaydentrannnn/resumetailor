@@ -6,6 +6,7 @@ import math
 
 from .. import config
 from ..content.data import Project
+from ..document import template_style
 from ..document.render import project_date
 from . import facets_labels
 
@@ -31,19 +32,21 @@ def project_header_tech_budget(
 
 def header_overhead(proj: Project, *, include_project_links: bool = True) -> int:
     """Characters a project header spends on everything but its tech list."""
+    seps = template_style.active().separators
     link_suffix = ""
     if include_project_links and proj.link:
-        link_suffix = f" | {proj.link}"
+        link_suffix = f"{seps.project_link}{proj.link}"
     return len(proj.name) + len(" | ") + len(link_suffix) + len(project_date(proj))
 
 
 def header_text(proj: Project, *, include_project_links: bool = True) -> str:
     """The project header line as rendered (`render.build_context`), tab as a space."""
+    seps = template_style.active().separators
     text = proj.name
     if proj.tech:
-        text += " | " + ", ".join(proj.tech)
+        text += " | " + seps.tech_items.join(proj.tech)
     if include_project_links and proj.link:
-        text += " | " + proj.link
+        text += seps.project_link + proj.link
     return f"{text} {project_date(proj)}".rstrip()
 
 def coursework_char_budget() -> int:
@@ -70,7 +73,7 @@ def fit_tech_to_budget(
         if len(kept) >= cap:
             break
         candidate = kept + [tag]
-        if len(", ".join(candidate)) > budget:
+        if len(template_style.active().separators.tech_items.join(candidate)) > budget:
             break
         kept = candidate
     return kept
@@ -91,6 +94,7 @@ def fit_coursework_to_budget(
     if chars_per_line is not None and budget is None:
         limit = max(0, int(config.COURSEWORK_MAX_LINES * span - len(_COURSEWORK_PREFIX)
                            - config.WIDOW_SAFETY))
+    sep = template_style.active().separators.coursework
     source_pool = list(dict.fromkeys(pool if pool is not None else ordered))
     keyword_words = facets_labels._token_set(" ".join(jd_keywords or []))
     remainder = [course for course in source_pool if course not in ordered]
@@ -102,10 +106,10 @@ def fit_coursework_to_budget(
     offset = 0.0
     if last_fill is not None and rendered_lines is not None and ordered:
         offset = ((rendered_lines - 1 + last_fill) * span
-                  - len(_COURSEWORK_PREFIX + ", ".join(ordered)))
+                  - len(_COURSEWORK_PREFIX + sep.join(ordered)))
 
     def length(courses: list[str]) -> float:
-        return len(_COURSEWORK_PREFIX + ", ".join(courses)) + offset if courses else 0
+        return len(_COURSEWORK_PREFIX + sep.join(courses)) + offset if courses else 0
 
     def fill(courses: list[str]) -> float:
         remainder_chars = length(courses) % span
