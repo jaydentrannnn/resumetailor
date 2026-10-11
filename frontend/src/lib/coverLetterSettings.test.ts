@@ -1,7 +1,8 @@
 import { describe, expect, it } from "vitest";
 import type { CoverLetterField, CoverLetterSettings } from "../api";
 import {
-  coverSummary,
+  LETTER_PARTS,
+  partSummary,
   letterheadShows,
   subjectExample,
   withLetterheadField,
@@ -54,16 +55,34 @@ describe("summaries", () => {
     );
   });
 
-  it("summarises the defaults and the changes", () => {
-    expect(coverSummary(base, fields)).toBe("Letterhead matches your resume");
-    const changed: CoverLetterSettings = {
-      ...base,
-      letterhead: "custom",
-      letterhead_fields: ["email"],
-      blocks: { ...base.blocks, subject: true, date: false },
-    };
-    expect(coverSummary(changed, fields)).toBe(
-      "Letterhead: Email · with a subject line · no date",
+  it("lists the parts in print order; only parts with options expand", () => {
+    expect(LETTER_PARTS.map((p) => p.id)).toEqual([
+      "letterhead",
+      "date",
+      "recipient",
+      "subject",
+      "salutation",
+      "body",
+      "closing",
+      "signature",
+    ]);
+    expect(LETTER_PARTS.filter((p) => p.expands).map((p) => p.id)).toEqual([
+      "letterhead",
+      "subject",
+      "closing",
+    ]);
+    expect(LETTER_PARTS.find((p) => p.id === "body")?.block).toBeUndefined();
+  });
+
+  it("summarises a collapsed part", () => {
+    const part = (id: string) => LETTER_PARTS.find((p) => p.id === id)!;
+    expect(partSummary(part("letterhead"), base, fields)).toBe("Same as your resume");
+    const custom = { ...base, letterhead: "custom" as const, letterhead_fields: ["email"] };
+    expect(partSummary(part("letterhead"), custom, fields)).toBe("Name, Email");
+    expect(partSummary(part("letterhead"), { ...custom, letterhead_fields: [] }, fields)).toBe(
+      "Name",
     );
+    expect(partSummary(part("subject"), base, fields)).toBe("“Application for Data Analyst”");
+    expect(partSummary(part("closing"), base, fields)).toBe("Sincerely,");
   });
 });

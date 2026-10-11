@@ -10,6 +10,8 @@ export type TemplateEditStatus = {
   saved_at: string | null;
   /** Word or LibreOffice still has the file open. */
   editor_open: boolean;
+  /** The editor had the file open this session and has closed it since. */
+  editor_closed?: boolean;
   started_at: string | null;
   path: string | null;
 };

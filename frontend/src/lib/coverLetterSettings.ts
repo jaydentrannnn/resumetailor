@@ -43,24 +43,42 @@ export function subjectExample(format: string): string {
     .trim();
 }
 
-/** One-line summary for the Template page card. */
-export function coverSummary(settings: CoverLetterSettings, fields: CoverLetterField[]): string {
-  const head =
-    settings.design === "own"
-      ? "Your own letter"
-      : settings.letterhead === "same_as_resume"
-        ? "Letterhead matches your resume"
-        : `Letterhead: ${
-            fields
-              .filter((f) => settings.letterhead_fields.includes(f.id))
-              .map((f) => f.label)
-              .join(", ") || "name only"
-          }`;
-  const off = COVER_BLOCKS.filter((b) => b.id !== "subject" && !settings.blocks[b.id]).map((b) =>
-    b.label.toLowerCase(),
-  );
-  const parts = [head];
-  if (settings.blocks.subject) parts.push("with a subject line");
-  if (off.length) parts.push(`no ${off.join(", ")}`);
-  return parts.join(" · ");
+/** A part of the letter, in print order. `block` is its on/off switch (the body has
+ * none); `expands` marks a part with options to show beneath it. */
+export type LetterPart = {
+  id: "letterhead" | CoverBlockName | "body";
+  label: string;
+  block?: CoverBlockName;
+  expands: boolean;
+};
+
+const blockPart = (id: CoverBlockName): LetterPart => ({
+  id,
+  label: COVER_BLOCKS.find((b) => b.id === id)?.label ?? id,
+  block: id,
+  expands: id === "subject" || id === "closing",
+});
+
+export const LETTER_PARTS: LetterPart[] = [
+  { id: "letterhead", label: "Letterhead", expands: true },
+  ...(["date", "recipient", "subject", "salutation"] as const).map(blockPart),
+  { id: "body", label: "Body", expands: false },
+  ...(["closing", "signature"] as const).map(blockPart),
+];
+
+/** What a part prints, shown under its name (the only text a collapsed part shows). */
+export function partSummary(
+  part: LetterPart,
+  settings: CoverLetterSettings,
+  fields: CoverLetterField[],
+): string {
+  if (part.id === "letterhead") {
+    if (settings.letterhead === "same_as_resume") return "Same as your resume";
+    const shown = fields.filter((f) => settings.letterhead_fields.includes(f.id));
+    return ["Name", ...shown.map((f) => f.label)].join(", ");
+  }
+  if (part.id === "subject") return `“${subjectExample(settings.subject_format)}”`;
+  if (part.id === "closing") return settings.closing_text || "Sincerely,";
+  if (part.id === "body") return "Your paragraphs, written for each job. Always prints.";
+  return COVER_BLOCKS.find((b) => b.id === part.id)?.help ?? "";
 }

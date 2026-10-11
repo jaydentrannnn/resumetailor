@@ -692,3 +692,26 @@ wash to `sunken`. Archive was suggested green and declined: green is reserved fo
   starts while a save's refresh is in flight waits for it (`skill_refresh.wait_idle`,
   polled in 1 s slices so cancel still works, capped at `JOIN_TIMEOUT_S`) rather than
   sending the same bullets to the model twice, then clears the failure on success.
+
+## Template page: one tile, Resume | Cover letter views (2026-10-11)
+
+The preview, Quick adjustments, Edit layout in Word, Page fit and the Cover letter card
+were five stacked tiles; the cover letter's settings lived in a drawer with its own small
+preview. They are now one tile (`components/template/workspace/TemplateWorkspace.tsx`)
+with a segmented view switch kept in the URL (`?view=cover`): the document on the left,
+the tools that apply to *that* document on the right. The views deliberately differ —
+Resume: look (font/margin summary, Quick adjustments, Word round trip), page fit,
+technical details; Cover letter: design (matches resume / own letter) and the letter's
+parts in print order. No look controls on the letter: a generated letter inherits the
+resume template's look and an own letter's look is its file, so a second set would let
+them drift. Quick adjustments still opens the right-hand panel (its per-field table needs
+~480px; the column is 320). Only parts with options (Letterhead, Subject, Sign-off)
+expand; on/off-only parts are plain switch rows. Cover settings autosave (debounced,
+revert on failure — `lib/useCoverAutosave.ts`); "Your own letter" is not saved until a
+letter is uploaded. Saved/Starter/Upload stay below the tile: a template switch changes
+both documents.
+
+Edit layout in Word now tells "closed without saving" from "not opened yet": `status()`
+records `seen_open` in `session.json` the first time the editor's lock file appears, and
+returns `editor_closed`; reopening clears it. A lock file left by a crashed Word still
+reads as open.

@@ -58,7 +58,7 @@ def test_session_is_desktop_only(client, monkeypatch):
     assert c.get("/api/config").json()["desktop"] is False
     assert c.get("/api/template/edit-session").json() == {
         "active": False, "changed": False, "saved_at": None, "editor_open": False,
-        "started_at": None, "path": None,
+        "editor_closed": False, "started_at": None, "path": None,
     }  # fmt: skip
     assert c.post("/api/template/edit-session").status_code == 404
 
@@ -85,7 +85,21 @@ def test_status_notices_a_save_and_the_editor_lock_file(desktop):
     _save_in_word(lambda _p: lock.unlink())
     body = c.get("/api/template/edit-session").json()
     assert body["changed"] is True and body["saved_at"]
-    assert body["editor_open"] is False
+    assert body["editor_open"] is False and body["editor_closed"] is True
+
+
+def test_status_tells_closed_without_saving_from_not_opened_yet(desktop):
+    c, _opened = desktop
+    c.post("/api/template/edit-session")
+    assert c.get("/api/template/edit-session").json()["editor_closed"] is False
+    lock = template_edit.layout_path().parent / "~$yout.docx"
+    lock.write_bytes(b"owner")
+    c.get("/api/template/edit-session")
+    lock.unlink()
+    body = c.get("/api/template/edit-session").json()
+    assert body["editor_closed"] is True and body["changed"] is False
+    c.post("/api/template/edit-session/open")  # opening again starts the wait over
+    assert c.get("/api/template/edit-session").json()["editor_closed"] is False
 
 
 def test_saved_layout_reads_back_and_installs(desktop, monkeypatch):

@@ -56,6 +56,13 @@ def _session() -> dict | None:
         return None
 
 
+def _write_session(session: dict) -> None:
+    target = _dir() / _SESSION_NAME
+    temp = target.with_suffix(".tmp")
+    temp.write_text(json.dumps(session), encoding="utf-8")
+    os.replace(temp, target)
+
+
 def _stamp(path: Path) -> tuple[int, int] | None:
     try:
         stat = path.stat()
@@ -80,7 +87,8 @@ def _open_file(path: Path) -> None:
 
 def _editor_open(path: Path) -> bool:
     """Whether a word processor holds the file: Word's `~$` owner file, LibreOffice's
-    `.~lock.<name>#`. Word shortens the name to fit, so match on the tail."""
+    `.~lock.<name>#`. Word shortens the name to fit, so match on the tail. A lock file
+    left behind by a crashed editor still reads as open until it is deleted."""
     tail = path.name[2:]
     for sibling in path.parent.iterdir():
         name = sibling.name
@@ -101,11 +109,17 @@ def status() -> TemplateEditStatus:
     saved_at = None
     if changed and stamp is not None:
         saved_at = datetime.fromtimestamp(stamp[0] / 1e9, UTC).isoformat()
+    editor_open = _editor_open(path)
+    if editor_open and not session.get("seen_open"):
+        # Remembered so "closed" can be told apart from "not opened yet".
+        _write_session({**session, "seen_open": True})
+        session["seen_open"] = True
     return TemplateEditStatus(
         active=True,
         changed=changed,
         saved_at=saved_at,
-        editor_open=_editor_open(path),
+        editor_open=editor_open,
+        editor_closed=bool(session.get("seen_open")) and not editor_open,
         started_at=session.get("started_at"),
         path=str(path),
     )
@@ -136,15 +150,17 @@ def start() -> TemplateEditStatus:
         "stamp": list(_stamp(path) or (0, 0)),
         "started_at": datetime.now(UTC).isoformat(),
     }
-    (directory / _SESSION_NAME).write_text(json.dumps(session), encoding="utf-8")
+    _write_session(session)
     _open_file(path)
     return status()
 
 
 def reopen() -> TemplateEditStatus:
     """Open the session's file again (the person closed the window before saving)."""
-    if _session() is None or not layout_path().exists():
+    session = _session()
+    if session is None or not layout_path().exists():
         raise EditSessionError("No layout file is open for editing.")
+    _write_session({**session, "seen_open": False})
     _open_file(layout_path())
     return status()
 

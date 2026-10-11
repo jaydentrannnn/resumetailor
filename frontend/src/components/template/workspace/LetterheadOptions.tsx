@@ -8,7 +8,7 @@ const MODES = [
 ];
 
 /** Letterhead: the resume header's lines, or a chosen subset. Your name always prints. */
-export function LetterheadSection({
+export function LetterheadOptions({
   settings,
   fields,
   onChange,
@@ -20,12 +20,8 @@ export function LetterheadSection({
   const custom = settings.letterhead === "custom";
   const seeded = () => fields.filter((f) => f.has_value).map((f) => f.id);
   return (
-    <section aria-labelledby="cover-letterhead">
-      <h3 id="cover-letterhead" className="font-semibold">
-        Letterhead
-      </h3>
+    <div>
       <Segmented
-        className="mt-2"
         label="Letterhead lines"
         items={MODES}
         value={settings.letterhead}
@@ -43,7 +39,7 @@ export function LetterheadSection({
           )
         }
       />
-      <fieldset className="mt-3 grid grid-cols-1 gap-1.5 sm:grid-cols-2">
+      <fieldset className="mt-3 space-y-1.5">
         <legend className="sr-only">Lines in the letterhead</legend>
         {fields.map((field) => (
           <label key={field.id} className="flex items-center gap-2">
@@ -66,6 +62,6 @@ export function LetterheadSection({
           : "Shows what your resume header shows. Untick a line to choose your own."}{" "}
         Edit the values under Profile › Personal.
       </p>
-    </section>
+    </div>
   );
 }

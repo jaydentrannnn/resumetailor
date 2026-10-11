@@ -2,18 +2,18 @@ import { useState } from "react";
 import { COVER_STARTER_URL, type CoverLetterSettings } from "../../../api";
 import { describe } from "../../../lib/errors";
 import { useConfirm } from "../../../state/confirmState";
-import { Button, buttonClass, Segmented } from "../../ui";
+import { Button, buttonClass, Segmented, TileSection } from "../../ui";
 import { UploadDropzone } from "../UploadDropzone";
 
 const DESIGNS = [
-  { id: "generated", label: "From my resume template" },
-  { id: "own", label: "My own letter" },
+  { id: "generated", label: "Matches resume" },
+  { id: "own", label: "Your own letter" },
 ];
 
 /**
  * Where the letter's design comes from: built from the resume template, or a letter the
  * person uploaded with «fields» where the words go. Uploading and removing take effect
- * at once; choosing between them is part of the draft.
+ * at once; the parent decides when a choice is saved (not before a letter exists).
  */
 export function LetterDesignSection({
   settings,
@@ -66,12 +66,8 @@ export function LetterDesignSection({
   };
 
   return (
-    <section aria-labelledby="cover-design">
-      <h3 id="cover-design" className="font-semibold">
-        Letter design
-      </h3>
+    <TileSection title="Letter design">
       <Segmented
-        className="mt-2"
         label="Letter design"
         items={DESIGNS}
         value={own ? "own" : "generated"}
@@ -80,9 +76,8 @@ export function LetterDesignSection({
       {own && (
         <div className="mt-3 space-y-3">
           <p className="text-ink-muted">
-            Start from your current letter: download it with «fields» in place of the words, restyle
-            it in Word (keep «Body» on its own line), then upload it. Your letter&apos;s fields
-            decide the letterhead.
+            Download your current letter with «fields» in place of the words, restyle it in Word
+            (keep «Body» on its own line), then upload it.
           </p>
           <a className={buttonClass("plain", "sm")} href={COVER_STARTER_URL} download>
             Download starter letter
@@ -109,6 +104,11 @@ export function LetterDesignSection({
           )}
         </div>
       )}
-    </section>
+      {!own && (
+        <p className="mt-2 text-xs text-ink-muted">
+          Uses your resume template&apos;s fonts, margins and header.
+        </p>
+      )}
+    </TileSection>
   );
 }

@@ -1,7 +1,8 @@
 // @vitest-environment jsdom
 import { cleanup, fireEvent, render, screen, waitFor } from "@testing-library/react";
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-import { LayoutEditCard } from "./LayoutEditCard";
+import { sessionMessage } from "../../../lib/layoutEditMessage";
+import { LayoutEditSection } from "./LayoutEditSection";
 
 const api = vi.hoisted(() => ({
   fetchConfig: vi.fn(),
@@ -12,16 +13,16 @@ const api = vi.hoisted(() => ({
   fetchEditedLayout: vi.fn(),
   endEditSession: vi.fn(),
 }));
-vi.mock("../../api", () => api);
+vi.mock("../../../api", () => api);
 
 const template = vi.hoisted(() => ({
   info: { active_label: "Nina" },
   wizardStep: "idle",
   beginFromAnalysis: vi.fn(),
 }));
-vi.mock("../../state/templateState", () => ({ useTemplateState: () => template }));
+vi.mock("../../../state/templateState", () => ({ useTemplateState: () => template }));
 const confirm = vi.hoisted(() => vi.fn());
-vi.mock("../../state/confirmState", () => ({ useConfirm: () => ({ confirm }) }));
+vi.mock("../../../state/confirmState", () => ({ useConfirm: () => ({ confirm }) }));
 
 const idle = {
   active: false,
@@ -43,7 +44,7 @@ afterEach(() => {
 
 it("renders nothing outside the desktop app", async () => {
   api.fetchConfig.mockResolvedValue({ desktop: false });
-  const { container } = render(<LayoutEditCard />);
+  const { container } = render(<LayoutEditSection />);
   await waitFor(() => expect(api.fetchConfig).toHaveBeenCalled());
   expect(container.textContent).toBe("");
   expect(api.fetchEditSession).not.toHaveBeenCalled();
@@ -55,7 +56,7 @@ it("starts a session, then reviews the saved file in the wizard", async () => {
     api.fetchEditSession.mockResolvedValue(opened);
     return opened;
   });
-  render(<LayoutEditCard />);
+  render(<LayoutEditSection />);
   fireEvent.click(await screen.findByRole("button", { name: "Edit layout in Word" }));
   expect(await screen.findByText(/Open in Word/)).toBeTruthy();
   expect(screen.getByRole("button", { name: "Review changes" }).hasAttribute("disabled")).toBe(
@@ -83,7 +84,7 @@ it("starts a session, then reviews the saved file in the wizard", async () => {
 
 it("discards only after confirming", async () => {
   api.fetchEditSession.mockResolvedValue({ ...idle, active: true });
-  render(<LayoutEditCard />);
+  render(<LayoutEditSection />);
   confirm.mockResolvedValueOnce(false);
   fireEvent.click(await screen.findByRole("button", { name: "Discard" }));
   await waitFor(() => expect(confirm).toHaveBeenCalled());
@@ -96,4 +97,14 @@ it("discards only after confirming", async () => {
   fireEvent.click(screen.getByRole("button", { name: "Discard" }));
   await waitFor(() => expect(api.endEditSession).toHaveBeenCalled());
   expect(await screen.findByRole("button", { name: "Edit layout in Word" })).toBeTruthy();
+});
+
+it("tells a Word closed without saving apart from one not opened yet", () => {
+  const waiting = { ...idle, active: true };
+  expect(sessionMessage(waiting)).toMatch(/^Waiting for the layout file to open/);
+  expect(sessionMessage({ ...waiting, editor_closed: true })).toBe(
+    "Word was closed without saving. Open it again, or discard.",
+  );
+  const saved = { ...waiting, changed: true, editor_closed: true, saved_at: null };
+  expect(sessionMessage(saved)).not.toMatch(/keep Word open/);
 });

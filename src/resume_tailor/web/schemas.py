@@ -1037,6 +1037,8 @@ class TemplateEditStatus(BaseModel):
     saved_at: str | None = None
     #: A word processor holds the file open (its lock file is present).
     editor_open: bool = False
+    #: The editor had the file open this session and has closed it since.
+    editor_closed: bool = False
     started_at: str | None = None
     path: str | None = None
 
