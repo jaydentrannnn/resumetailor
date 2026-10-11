@@ -1,6 +1,7 @@
 import { AnalyzeReport } from "./AnalyzeReport";
 import { PreviewCompare } from "./PreviewCompare";
 import { SectionMapStep } from "./SectionMapStep";
+import { UnmappedLinesPanel } from "./UnmappedLinesPanel";
 import type { useTemplateState } from "../../state/templateState";
 type TemplateState = ReturnType<typeof useTemplateState>;
 export function MapTemplateStep({
@@ -56,6 +57,11 @@ export function MapTemplateStep({
             headingOverrides={headingOverrides}
             remapBusy={remapBusy}
             onRemapHeading={(paragraphId, kind) => void remapHeading(paragraphId, kind)}
+          />
+          <UnmappedLinesPanel
+            lines={analysis.unmapped ?? []}
+            profile={profileDraft}
+            onChange={setProfileDraft}
           />
           <PreviewCompare sourceSha256={analysis.source_sha256} profile={profileDraft} />
         </>

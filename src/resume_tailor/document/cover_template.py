@@ -18,14 +18,14 @@ from docx.shared import Emu, Inches, Pt
 from docx.text.paragraph import Paragraph
 
 from .. import config
-from . import docx_text
+from . import docx_text, template_custom
 from .template_profile import TemplateProfile, load_profile
 from .template_profile_build import build_contact_profile, build_name_profile
 from .template_tagging import _para_by_id
 from .template_xml import delete, make_para, set_run_text
 
 #: Bump when ``build_cover_template`` output changes so ``ensure_cover_template`` rebuilds.
-_BUILDER_VERSION = 1
+_BUILDER_VERSION = 2
 
 DATE_TAG = "{{ date }}"
 SALUTATION_TAG = "{{ salutation }}"
@@ -148,6 +148,19 @@ def _contact_paragraph_ids(profile: TemplateProfile) -> list[int]:
     return sorted({i for i in ids if i is not None})
 
 
+def _letterhead_custom(profile: TemplateProfile, last_keep_id: int) -> TemplateProfile:
+    """`profile` restricted to the custom/dropped lines inside the kept letterhead —
+    every later line is deleted with the resume body, so tagging it would be wasted."""
+    return profile.model_copy(
+        update={
+            "custom_fields": [f for f in profile.custom_fields if f.paragraph_id <= last_keep_id],
+            "dropped_paragraph_ids": [
+                pid for pid in profile.dropped_paragraph_ids if pid <= last_keep_id
+            ],
+        }
+    )
+
+
 def _find_body_donor(doc: Document, after_id: int) -> Paragraph:
     """Return the first numbered paragraph after the letterhead, for body formatting."""
     for para_id, (paragraph, _location) in enumerate(docx_text.iter_document_paragraphs(doc)):
@@ -203,16 +216,20 @@ def build_cover_template(
     section.top_margin = margin
     section.bottom_margin = margin
 
+    custom = None
     if profile is not None:
         build_name_profile(doc, profile)
         build_contact_profile(doc, profile)
         _apply_letterhead_rule(doc, profile)
         last_keep_id = max(_contact_paragraph_ids(profile), default=-1)
+        custom = template_custom.tag(doc, _letterhead_custom(profile, last_keep_id))
     else:
         last_keep_id = 1
 
     donor = _find_body_donor(doc, last_keep_id)
     _remove_paragraphs_after(doc, last_keep_id)
+    if custom is not None:
+        template_custom.finish(custom)
 
     # One blank line of the document's own body font between letter blocks. A bullet
     # donor has no space-after (resume bullets sit flush against each other), which would

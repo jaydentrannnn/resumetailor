@@ -12,6 +12,7 @@ from resume_tailor.document import (
 )
 from resume_tailor.web.schemas import (
     CalibrationInfo,
+    TemplateCustomFieldOut,
     TemplateFileInfo,
     TemplateInfoResponse,
     TemplateProfileSummary,
@@ -140,6 +141,10 @@ def _profile_summary() -> TemplateProfileSummary:
         enabled=profile.enabled.model_dump(),
         warnings=list(profile.warnings),
         contact_separator=profile.contact.separator if profile.contact else None,
+        custom_fields=[
+            TemplateCustomFieldOut(key=f.key, label=f.label, text=f.text)
+            for f in profile.custom_fields
+        ],
     )
 
 def _preview_paths() -> tuple[Path, Path]:

@@ -34,6 +34,7 @@ from .template_tags import (
     BULLET_TAG,
     CONTACT_SLOT_TAG_FMT,
     CONTACT_TAG,
+    CUSTOM_FIELD_TAG_FMT,
     EDUCATION_DEGREE_TAG,
     EDUCATION_DETAIL_TAG,
     EDUCATION_HEADER_TAGS,
@@ -107,6 +108,7 @@ def expected_tags(profile: TemplateProfile) -> set[str]:
     if profile.section_mode == "generic":
         tags.add(SECTION_TITLE_TAG)
 
+    tags |= {CUSTOM_FIELD_TAG_FMT % f.key for f in profile.custom_fields}
     return tags
 
 
@@ -348,5 +350,9 @@ def verify_roundtrip(
                 )
             if profile.projects.link.present:
                 _check(proj.link, f"Project link label for {proj.name!r}")
+
+    custom = render_mod.custom_values(resume, layout)
+    for slot in profile.custom_fields:
+        _check(custom.get(slot.key, ""), f"Custom line {slot.label!r}")
 
     return issues

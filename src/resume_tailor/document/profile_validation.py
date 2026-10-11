@@ -63,7 +63,31 @@ class _ProfileValidator:
             self._check_skills(profile.skills)
         if profile.section_mode == "generic":
             self._check_generic_sections()
+        self._check_custom_lines()
         return issues
+
+    def _check_custom_lines(self) -> None:
+        """Custom and dropped lines must exist and must not be the name or contact line —
+        tagging one of those twice would overwrite the other tag."""
+        profile = self.profile
+        claimed = set() if profile.name_in_header else {profile.name_paragraph_id}
+        if profile.contact is not None:
+            claimed.add(profile.contact.paragraph_id)
+            claimed |= {s.paragraph_id for s in profile.contact.slots}
+        lines = [(f.paragraph_id, f"Custom field {f.label!r}") for f in profile.custom_fields]
+        lines += [(pid, "Removed line") for pid in profile.dropped_paragraph_ids]
+        for pid, label in lines:
+            if pid not in self.para_by_id:
+                problem = f"points at paragraph {pid}, which is out of range."
+            elif pid in claimed:
+                problem = f"points at paragraph {pid}, which is the name or contact line."
+            else:
+                continue
+            self.issues.append(
+                analysis_types.Issue(
+                    code="bad_custom_line", message=f"{label} {problem}", blocking=True
+                )
+            )
 
     # -- per-section -------------------------------------------------------------------
 

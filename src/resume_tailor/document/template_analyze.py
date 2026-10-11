@@ -19,9 +19,11 @@ from . import (
     profile_validation,
     section_mapping,
     table_layout,
+    unmapped_lines,
 )
 from .template_profile import (
     ContactMapping,
+    CustomFieldSlot,
     DetectedSection,
     EnabledSections,
     HeadingPrototype,
@@ -202,6 +204,7 @@ class _Analyzer(section_mapping._SectionMapper):
             suggested_profile=suggested,
             field_candidates=self.field_candidates,
             issues=self.issues,
+            unmapped=self.unmapped,
             ready=suggested is not None and not blockers,
         )
 
@@ -467,6 +470,16 @@ class _Analyzer(section_mapping._SectionMapper):
                     blocking=True,
                 )
             )
+        claimed = {self.name_id} | {s.paragraph_id for s in self.contact_slots}
+        if self.contact_para is not None:
+            claimed.add(self.contact_para.id)
+        self.unmapped = (
+            []
+            if self.contact_in_header
+            else unmapped_lines.detect(
+                paras, first_heading_id=first_heading_id, claimed_ids=claimed
+            )
+        )
         for p in unmapped_contact_paras:
             issues.append(
                 analysis_types.Issue(
@@ -474,7 +487,8 @@ class _Analyzer(section_mapping._SectionMapper):
                     message=(
                         f"{p.text.strip()!r} (paragraph {p.id}) is part of the contact "
                         "block but doesn't look like an email, phone, location, or "
-                        "profile link. It will stay a literal in the template."
+                        "profile link. Choose below whether to keep it as an editable "
+                        "line, keep it as-is, or remove it."
                     ),
                     blocking=False,
                 )
@@ -551,6 +565,16 @@ class _Analyzer(section_mapping._SectionMapper):
             spacing=spacing,
             layout="table" if is_table_layout else "paragraph",
             paragraph_count=len(self.paras),
+            custom_fields=[
+                CustomFieldSlot(
+                    key=line.suggested_key,
+                    label=line.suggested_label,
+                    paragraph_id=line.paragraph_id,
+                    text=line.text,
+                )
+                for line in self.unmapped
+                if line.suggestion == "field"
+            ],
         )
 
 

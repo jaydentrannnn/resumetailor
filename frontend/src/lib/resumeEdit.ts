@@ -118,7 +118,11 @@ export type MasterResume = {
   };
   sections: Section[];
   tag_vocabulary?: string[];
+  /** Values for the active template's editable extra lines (see `lib/customLines`). */
+  custom_fields?: CustomFieldValue[];
 };
+
+export type CustomFieldValue = { key: string; label?: string; value?: string };
 
 /** Human-facing label for a section kind, e.g. in the "Add section" picker. */
 export const SECTION_KIND_LABELS: Record<SectionKind, string> = {

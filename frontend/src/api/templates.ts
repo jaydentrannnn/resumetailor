@@ -37,7 +37,11 @@ export type TemplateProfileSummary = {
   enabled: Record<string, boolean>;
   warnings: string[];
   contact_separator: string | null;
+  /** The active template's editable extra lines; `text` is the line as uploaded. */
+  custom_fields: TemplateCustomField[];
 };
+
+export type TemplateCustomField = { key: string; label: string; text: string };
 
 export type TemplateInfo = {
   baseline: TemplateFileInfo;
@@ -138,6 +142,15 @@ export type TemplateFieldCandidate = {
   section_heading_paragraph_id: number | null;
 };
 
+/** A line above the first section that maps to no name/contact field. */
+export type TemplateUnmappedLine = {
+  paragraph_id: number;
+  text: string;
+  suggestion: "field" | "static";
+  suggested_key: string;
+  suggested_label: string;
+};
+
 export type TemplateAnalyzeResponse = {
   source_sha256: string;
   paragraphs: TemplateParagraph[];
@@ -145,6 +158,7 @@ export type TemplateAnalyzeResponse = {
   field_candidates: TemplateFieldCandidate[];
   suggested_profile: Record<string, unknown> | null;
   issues: TemplateIssue[];
+  unmapped: TemplateUnmappedLine[];
   ready: boolean;
 };
 

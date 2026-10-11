@@ -6,6 +6,7 @@ from __future__ import annotations
 import hashlib
 import re
 from dataclasses import dataclass, field
+from typing import Literal
 
 from docx.oxml.ns import qn
 from docx.text.paragraph import Paragraph
@@ -113,6 +114,21 @@ class Issue(_Strict):
     message: str
     blocking: bool = False
 
+class UnmappedLine(_Strict):
+    """A non-blank line above the first section that maps to no name/contact field.
+
+    `suggestion` is what the wizard pre-selects: `"field"` (an editable custom field —
+    `suggested_key`/`suggested_label` name it), or `"static"` (kept verbatim) for a line
+    whose content a single collapsed tag would damage, e.g. one carrying a hyperlink.
+    """
+
+    paragraph_id: int
+    text: str
+    suggestion: Literal["field", "static"] = "field"
+    suggested_key: str = ""
+    suggested_label: str = ""
+
+
 class AnalyzeResult(_Strict):
     """Full preflight report returned by POST /api/template/analyze."""
 
@@ -122,6 +138,7 @@ class AnalyzeResult(_Strict):
     suggested_profile: TemplateProfile | None = None
     field_candidates: list[FieldCandidate] = Field(default_factory=list)
     issues: list[Issue] = Field(default_factory=list)
+    unmapped: list[UnmappedLine] = Field(default_factory=list)
     ready: bool = False
 
     @property

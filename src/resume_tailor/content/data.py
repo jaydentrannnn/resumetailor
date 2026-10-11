@@ -90,6 +90,20 @@ class Contact(_Strict):
     links: list[str] = Field(default_factory=list)
 
 
+#: A custom field key: a Jinja-subscript-safe slug (`{{ custom["street_address"] }}`).
+CUSTOM_KEY_PATTERN = r"^[a-z][a-z0-9_]{0,39}$"
+
+
+class CustomField(_Strict):
+    """The person's value for one template line the importer kept as an editable field
+    (`template_profile.CustomFieldSlot`) — an address line, a tagline. Rendered verbatim,
+    never sent to the model. An empty `value` removes the line from the page."""
+
+    key: str = Field(pattern=CUSTOM_KEY_PATTERN)
+    label: str = ""
+    value: str = ""
+
+
 class SummaryVariant(_Strict):
     """An alternative framing of the same career, e.g. IC vs lead."""
 
@@ -276,6 +290,9 @@ class MasterResume(_Strict):
     #: Shared tag options for the editor and a hint for TAG_ALIASES coverage.
     #: Canonicalised at load; removing an option in the UI also strips it from bullets.
     tag_vocabulary: list[str] = Field(default_factory=list)
+    #: Values for the active template's editable extra lines, keyed by
+    #: `CustomField.key`. A key with no entry renders the template's own text.
+    custom_fields: list[CustomField] = Field(default_factory=list)
 
     @model_validator(mode="before")
     @classmethod
@@ -360,6 +377,11 @@ class MasterResume(_Strict):
         entry_dupes = [i for i, n in Counter(entry_ids).items() if n > 1]
         if entry_dupes:
             raise ValueError(f"duplicate entry id(s): {', '.join(sorted(entry_dupes))}")
+
+        custom_keys = [f.key for f in self.custom_fields]
+        custom_dupes = [k for k, n in Counter(custom_keys).items() if n > 1]
+        if custom_dupes:
+            raise ValueError(f"duplicate custom field key(s): {', '.join(sorted(custom_dupes))}")
 
         section_ids = [s.id for s in self.sections]
         section_dupes = [i for i, n in Counter(section_ids).items() if n > 1]

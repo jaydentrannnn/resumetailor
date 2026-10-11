@@ -20,6 +20,7 @@ from .. import config
 from . import (
     docx_text,
     template_bullets,
+    template_custom,
     template_generic,
     template_generic_table,
     template_profile_build,
@@ -45,6 +46,10 @@ def build_from_profile(
                 f"-> {actual}); every mapped paragraph id would resolve to the wrong "
                 "paragraph. Re-analyze the upload."
             )
+
+    # Before any section work: tagging rewrites runs in place, so every id the section
+    # builders resolve afterwards still points where the profile says.
+    custom = template_custom.tag(doc, profile)
 
     if profile.layout == "table":
         template_generic_table.build_generic_table(doc, profile)
@@ -99,6 +104,8 @@ def build_from_profile(
                 template_profile_build.build_skills_profile(
                     doc, profile, other_headings=other_headings
                 )
+
+    template_custom.finish(custom)
 
     if profile.normalization.normalize_bullet_font:
         template_bullets.normalize_bullet_numbering(doc)

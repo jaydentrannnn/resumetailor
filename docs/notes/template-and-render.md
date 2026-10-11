@@ -437,3 +437,10 @@ siblings are unchanged.
 - `normalize_bullet_numbering` now rewrites a known Symbol/Wingdings private-use marker to its Unicode twin before pinning Noto (`_SYMBOL_FONT_GLYPHS`; U+F0B7 → U+2022), and leaves an unknown private-use marker in its own font.
 - `retarget_bullet` moves a paragraph onto the canonical list only when that list draws the same marker (compared after the Symbol mapping) or the paragraph has no list yet. Merging near-duplicate lists of one glyph — the Google Docs case it was written for — still happens.
 - Verified by rendering HEAD vs new bullet code on "Main", NGOC and the three starters (pixel-identical) and on the upload (only the markers change, to match the source).
+
+## Custom lines for unmapped header text (2026-10)
+- Prompted by an extra street-address line in a table contact block: it stayed frozen text in the template and in the cover letterhead, editable nowhere. Now each unmapped line above the first section can be an editable line, kept as-is, or removed (wizard "Other lines in your header").
+- Values live in `MasterResume.custom_fields`; the template slot carries the original text as the fallback. Chosen over seeding the resume at install: no install-time resume write, survives template switches, and a never-edited key keeps tracking its template's text.
+- Scope is lines above the first heading only. Trailing lines after the last section stay in that section's body (deleted at build, as before): telling a trailing "References available" from the last entry's own lines is guesswork, so it was left out rather than guessed. Per-entry extra lines are a later phase.
+- Fixed in passing: the cover-letter context never set `contact_slot_<i>`, so a table-layout letterhead rendered its contact slots empty (`render._contact_slots` is now shared).
+- `{{ custom["k"] }}`, not `custom.k`: dot access resolves dict attributes first (the `items` gotcha).

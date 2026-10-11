@@ -14,6 +14,7 @@ from typing import Literal
 from pydantic import BaseModel, ConfigDict, Field, model_validator
 
 from .. import config
+from ..content.data import CUSTOM_KEY_PATTERN
 from . import date_style
 
 SCHEMA_VERSION = 2
@@ -112,6 +113,19 @@ class ContactMapping(_Strict):
         if len(seen) != len(set(seen)):
             raise ValueError(f"a contact field appears in more than one slot: {seen}")
         return self
+
+
+class CustomFieldSlot(_Strict):
+    """A whole paragraph outside every section (an address line, a tagline) that the
+    analysis could not map to a contact field, kept as an editable field instead of
+    frozen text. The person's value lives in `MasterResume.custom_fields` under `key`;
+    `text` is the line as uploaded, rendered whenever the resume has no value for
+    `key` — so a fresh install looks exactly like the original."""
+
+    key: str = Field(pattern=CUSTOM_KEY_PATTERN)
+    label: str
+    paragraph_id: int
+    text: str = ""
 
 
 class HeaderFieldMapping(_Strict):
@@ -326,6 +340,24 @@ class TemplateProfile(_Strict):
     #: span corruption (the flattened id space and the document having drifted apart)
     #: into a named failure instead of a build that quietly tags the wrong paragraphs.
     paragraph_count: int | None = None
+    #: Unmapped lines kept as editable fields (see `CustomFieldSlot`). Empty for every
+    #: profile saved before this existed, which then builds exactly as it always did.
+    custom_fields: list[CustomFieldSlot] = Field(default_factory=list)
+    #: Unmapped lines the user chose to remove from the template.
+    dropped_paragraph_ids: list[int] = Field(default_factory=list)
+
+    @model_validator(mode="after")
+    def _custom_fields_consistent(self) -> TemplateProfile:
+        """Keys and paragraphs are each claimed once; a dropped line is not a field."""
+        keys = [f.key for f in self.custom_fields]
+        if len(keys) != len(set(keys)):
+            raise ValueError(f"duplicate custom field key: {keys}")
+        ids = [f.paragraph_id for f in self.custom_fields]
+        if len(ids) != len(set(ids)):
+            raise ValueError("a paragraph is mapped to more than one custom field")
+        if set(ids) & set(self.dropped_paragraph_ids):
+            raise ValueError("a dropped paragraph cannot also be a custom field")
+        return self
 
     @model_validator(mode="after")
     def _optional_consistency(self) -> TemplateProfile:
@@ -426,4 +458,6 @@ def active_layout(profile: TemplateProfile | None = None) -> dict:
     if profile.section_mode == "generic":
         layout["sections"] = [s.model_dump() for s in profile.sections]
         layout["spacing"] = profile.spacing.model_dump()
+    if profile.custom_fields:
+        layout["custom_defaults"] = {f.key: f.text for f in profile.custom_fields}
     return layout

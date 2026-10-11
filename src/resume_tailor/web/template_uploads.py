@@ -23,6 +23,7 @@ from resume_tailor.web.schemas import (
     TemplateIssueOut,
     TemplateParagraphOut,
     TemplateSectionOut,
+    TemplateUnmappedLineOut,
 )
 
 from . import template_ops
@@ -171,6 +172,7 @@ def _analysis_to_response(result: analysis_types.AnalyzeResult) -> TemplateAnaly
             else None
         ),
         issues=[TemplateIssueOut(**i.model_dump()) for i in result.issues],
+        unmapped=[TemplateUnmappedLineOut(**u.model_dump()) for u in result.unmapped],
         ready=result.ready,
     )
 

@@ -125,8 +125,8 @@ export const TEMPLATE_ISSUES: Record<string, IssueHelp> = {
     docs: "Move the contact line out of the header (double-click the header, cut, paste into the page).",
   },
   contact_unmapped_paragraph: {
-    title: "Contact line kept as written",
-    why: "A line in your contact block isn't an email, phone, location or link, so it is kept exactly as written.",
+    title: "Extra line in your contact block",
+    why: "A line in your contact block isn't an email, phone, location or link. Under “Other lines in your header” below, choose whether it becomes an editable line, stays as written, or is removed.",
   },
   manual_bullets: {
     title: "Typed bullet characters",
@@ -224,6 +224,10 @@ export const TEMPLATE_ISSUES: Record<string, IssueHelp> = {
   bad_contact: mapping(
     "Contact line not found",
     "The mapped contact line no longer exists in the file.",
+  ),
+  bad_custom_line: mapping(
+    "An extra header line can't be used",
+    "An extra line you kept or removed is missing from the file, or is your name or contact line.",
   ),
   bad_span: mapping("A mapped field is out of range", "A field points past the end of its line."),
   span_has_tab: mapping(

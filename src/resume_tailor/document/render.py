@@ -509,15 +509,28 @@ def build_context(
         "sections": sections,
     }
 
-    # Table-layout contact block: one RichText per `ContactSlot`, keyed by index
-    # (`contact_slot_0`, …) — see `template_tags.CONTACT_SLOT_TAG_FMT` for why a
-    # named key rather than a `contact_slots[i]` subscript. Empty `layout["contact_slots"]`
-    # (every profile without a table-layout contact block) adds nothing.
+    context.update(_contact_slots(resume, tpl, layout, contact_fields))
+    context["custom"] = custom_values(resume, layout)
+    return context
+
+
+def _contact_slots(
+    resume: MasterResume,
+    tpl: DocxTemplate,
+    layout: dict,
+    contact_fields: list[ContactField] | None,
+) -> dict[str, RichText]:
+    """Table-layout contact block: one RichText per `ContactSlot`, keyed by index
+    (`contact_slot_0`, …) — see `template_tags.CONTACT_SLOT_TAG_FMT` for why a named
+    key rather than a `contact_slots[i]` subscript. Empty `layout["contact_slots"]`
+    (every profile without a table-layout contact block) adds nothing. Shared by the
+    resume and the cover letter, whose letterhead carries the same slot tags."""
+    slots: dict[str, RichText] = {}
     for i, slot in enumerate(layout.get("contact_slots") or []):
         fields = slot.get("fields", [])
         if contact_fields is not None:
             fields = [f for f in fields if f in contact_fields]
-        context[f"contact_slot_{i}"] = (
+        slots[f"contact_slot_{i}"] = (
             _contact_richtext(
                 resume, tpl, field_order=fields, separator=slot.get("separator"),
                 tag=f"contact_slot_{i}",
@@ -525,8 +538,16 @@ def build_context(
             if fields
             else RichText()
         )
+    return slots
 
-    return context
+
+def custom_values(resume: MasterResume, layout: dict) -> dict[str, str]:
+    """`{{ custom["key"] }}` values: the resume's own value for each key, else the line
+    as uploaded (`layout["custom_defaults"]`), so a key the person never edited renders
+    exactly like the original. A resume value of "" is a deliberate removal."""
+    values = dict(layout.get("custom_defaults") or {})
+    values.update({f.key: f.value for f in resume.custom_fields})
+    return values
 
 
 @telemetry.stage("render")
@@ -619,6 +640,8 @@ def build_letter_context(
         "paragraphs": list(letter.paragraphs),
         "closing": letter.closing,
         "signature": letter.signature,
+        **_contact_slots(resume, tpl, layout, contact_fields),
+        "custom": custom_values(resume, layout),
     }
 
 

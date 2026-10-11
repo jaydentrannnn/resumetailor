@@ -26,6 +26,16 @@ CONTACT_TAG = "{{r contact }}"
 #: least be a KeyError during development. See `TemplateProfile.contact.slots`.
 CONTACT_SLOT_TAG_FMT = "{{r contact_slot_%d }}"
 
+#: An unmapped line kept as an editable field (`TemplateProfile.custom_fields`). A
+#: subscript, not `custom.key`: Jinja's dot access tries the dict's *attributes* first, so
+#: a key like `items` or `keys` would resolve to a method (the `items` gotcha).
+CUSTOM_FIELD_TAG_FMT = '{{ custom["%s"] }}'
+
+#: Wraps a body-level custom line so clearing its value removes the line, not just its
+#: text. Table cells skip the wrap: a cell must keep at least one paragraph.
+CUSTOM_FIELD_IF_FMT = '{%%p if custom["%s"] %%}'
+CUSTOM_FIELD_ENDIF = "{%p endif %}"
+
 EXPERIENCE_HEADER_TAGS: dict[str, str] = {
     "company": "{{ job.company }}",
     "location": "{{ job.location }}",

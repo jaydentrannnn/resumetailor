@@ -193,7 +193,8 @@ fit.fit(): over → combine → pull back near-widows → drop weakest (else Fit
 ## Non-obvious gotchas (index — full explanations in `docs/REFERENCE.md` §8)
 
 Each produced well-formed XML that passed a naive parse check yet was broken. Never name
-a context key `items` (Jinja resolves the dict method; the skills key is `entries`);
+a context key `items` (Jinja resolves the dict method; the skills key is `entries`;
+custom lines use the subscript `custom["key"]` for the same reason);
 `tpl.render(context, autoescape=True)` is required; `{%p %}` for control flow, `{{r }}`
 for RichText; tabs are `<w:tab/>` elements rendered as `"\t"`; a numbering level's `rPr`
 does not render the bullet glyph (`shrink_bullet_marker` scales the paragraph mark);

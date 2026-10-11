@@ -4,6 +4,7 @@ import { fieldLabel } from "../../lib/profileForm";
 import type { MasterResume } from "../../lib/resumeEdit";
 import { useApplicantProfile } from "../../state/applicantProfileState";
 import type { FieldContext } from "./fieldContext";
+import { CustomLinesFields } from "./CustomLinesFields";
 import { ProfileField } from "./ProfileField";
 
 const RESUME_CONTACT = ["name", "email", "phone", "location", "linkedin", "github"] as const;
@@ -67,6 +68,7 @@ export function PersonalTab({
               </label>
             ))}
           </div>
+          {resume && <CustomLinesFields resume={resume} setResume={setResume} />}
         </Tile>
         <Tile id="application-contact" title="Application contact">
           <p className="text-xs text-ink-muted">

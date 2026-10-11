@@ -747,6 +747,21 @@ removal (one release after the startup migration below shipped).
   single-paragraph joined line; empty `slots` (every non-table profile, and any
   single-paragraph contact block) is byte-identical to before this field existed.
 
+**Custom lines (unmapped header lines)**: a non-blank, non-bullet line above the first
+section that is neither the name nor a contact line/slot (a street address in a table
+contact block, a tagline) is listed in `AnalyzeResult.unmapped` (`unmapped_lines.py`). The
+wizard's "Other lines in your header" panel sets each to an editable line
+(`TemplateProfile.custom_fields: list[CustomFieldSlot]`), keep-as-is (in neither list), or
+remove (`dropped_paragraph_ids`). `template_custom.tag` collapses each line to
+`{{ custom["key"] }}` *before* section work (runs only, no inserts, so ids stay valid);
+`template_custom.finish` adds the `{%p if custom["key"] %}` wrapper (body paragraphs only —
+a table cell must keep a paragraph) and deletes dropped lines afterwards, through
+`Paragraph` objects. Values live on the person, `MasterResume.custom_fields`, edited under
+Profile › Personal; a key with no resume value renders the slot's own `text`
+(`layout["custom_defaults"]`, `render.custom_values`), so a fresh install needs no
+resume write and looks identical. `""` removes the line. The cover letterhead tags the
+custom lines it keeps (`cover_template._letterhead_custom`). Never sent to the model.
+
 **One upload path**: `POST /api/template/analyze` proposes a mapping; `POST /api/template`
 (profile *required* — the hard-coded-headings legacy path was retired once
 `templates/original_export.docx` was confirmed to analyze `ready: true` under the current

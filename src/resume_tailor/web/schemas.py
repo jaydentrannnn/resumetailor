@@ -868,6 +868,14 @@ class CalibrateResponse(BaseModel):
     calibration: CalibrationInfo
 
 
+class TemplateCustomFieldOut(BaseModel):
+    """One editable extra line of the active template."""
+
+    key: str
+    label: str
+    text: str = ""
+
+
 class TemplateProfileSummary(BaseModel):
     """Active template-profile metadata shown on the Template tab."""
 
@@ -876,6 +884,9 @@ class TemplateProfileSummary(BaseModel):
     enabled: dict[str, bool] = Field(default_factory=dict)
     warnings: list[str] = Field(default_factory=list)
     contact_separator: str | None = None
+    #: The active template's editable extra lines (`TemplateProfile.custom_fields`),
+    #: so the resume editor can list them with the template's own text as default.
+    custom_fields: list[TemplateCustomFieldOut] = Field(default_factory=list)
 
 
 class TemplateInfoResponse(BaseModel):
@@ -1001,6 +1012,17 @@ class TemplateFieldCandidateOut(BaseModel):
     section_heading_paragraph_id: int | None = None
 
 
+class TemplateUnmappedLineOut(BaseModel):
+    """A line above the first section that maps to no name/contact field — the wizard
+    lets the user keep it as an editable field, keep it as-is, or remove it."""
+
+    paragraph_id: int
+    text: str
+    suggestion: Literal["field", "static"] = "field"
+    suggested_key: str = ""
+    suggested_label: str = ""
+
+
 class TemplateAnalyzeResponse(BaseModel):
     """Preflight analysis for an uploaded baseline (no disk writes)."""
 
@@ -1010,6 +1032,7 @@ class TemplateAnalyzeResponse(BaseModel):
     field_candidates: list[TemplateFieldCandidateOut] = Field(default_factory=list)
     suggested_profile: dict[str, Any] | None = None
     issues: list[TemplateIssueOut] = Field(default_factory=list)
+    unmapped: list[TemplateUnmappedLineOut] = Field(default_factory=list)
     ready: bool = False
 
 
