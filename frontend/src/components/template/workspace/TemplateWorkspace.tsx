@@ -45,7 +45,7 @@ export function TemplateWorkspace() {
     <Tabs variant="segmented" label="Template view" items={VIEWS} value={view} onChange={select} />
   );
   return (
-    <Tile aria-label="Current template">
+    <Tile aria-label="Current template" padding="none">
       {view === "cover" ? (
         <CoverLetterView reloadKey={previewRevision} switcher={switcher} />
       ) : (
