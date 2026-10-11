@@ -6,7 +6,7 @@ anthropic>=1.8
 httpx>=0.27
 httpx2>=2.13
 docxtpl>=0.17
-python-docx>=1.1
+python-docx>=1.2.0
 # Word PDF export over COM (document/convert.py drives a private Word itself).
 pywin32>=306 ; sys_platform == 'win32'
 pypdf>=5.0
