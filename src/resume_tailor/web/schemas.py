@@ -1043,6 +1043,14 @@ class TemplateEditStatus(BaseModel):
     path: str | None = None
 
 
+class TemplateFontsResponse(BaseModel):
+    """Font families installed where PDFs are made (`document/system_fonts.py`)."""
+
+    families: list[str]
+    #: The usual resume fonts among them, offered first.
+    common: list[str]
+
+
 class TemplateAdjustmentsResponse(BaseModel):
     """The Quick adjustments form's starting values (`document/template_adjust.py`)."""
 

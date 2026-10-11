@@ -201,3 +201,12 @@ def test_quick_adjustments_change_separators_bullets_and_link_look(desktop):
     assert style["links"] == {"color": "text", "underline": False}
     bad = c.post("/api/template/adjustments", json={"separators": {"contact": "and"}})
     assert bad.status_code == 422
+
+
+def test_fonts_route_lists_installed_families_with_common_ones_first(client, monkeypatch):
+    from resume_tailor.document import system_fonts
+
+    monkeypatch.setattr(system_fonts, "installed", lambda: ["Arial", "Fira Sans", "Georgia"])
+    c, _queue = client
+    body = c.get("/api/template/fonts").json()
+    assert body == {"families": ["Arial", "Fira Sans", "Georgia"], "common": ["Arial", "Georgia"]}

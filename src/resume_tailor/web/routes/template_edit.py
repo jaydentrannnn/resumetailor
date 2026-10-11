@@ -6,6 +6,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 from fastapi.responses import Response
 
+from resume_tailor.document import system_fonts
 from resume_tailor.document.template_adjust import Adjustments
 from resume_tailor.web import state as web_state
 from resume_tailor.web import template_edit, template_ops
@@ -14,6 +15,7 @@ from resume_tailor.web.schemas import (
     TemplateAdjustmentsResponse,
     TemplateAnalyzeResponse,
     TemplateEditStatus,
+    TemplateFontsResponse,
 )
 
 router = APIRouter()
@@ -93,6 +95,13 @@ def adjustment_form() -> TemplateAdjustmentsResponse:
         except template_edit.EditSessionError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
     return TemplateAdjustmentsResponse(current=current, table_layout=table)
+
+
+@router.get("/api/template/fonts", response_model=TemplateFontsResponse)
+def template_fonts() -> TemplateFontsResponse:
+    """Installed font families for Quick adjustments' font box (read-only, cached)."""
+    families = system_fonts.installed()
+    return TemplateFontsResponse(families=families, common=system_fonts.common(families))
 
 
 @router.post("/api/template/adjustments", response_model=TemplateAnalyzeResponse)
