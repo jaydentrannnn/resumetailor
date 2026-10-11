@@ -1,18 +1,24 @@
-import { useState } from "react";
+import { type ReactNode, useState } from "react";
 import type { CoverLetterSettings } from "../../../api";
 import { useCoverAutosave } from "../../../lib/useCoverAutosave";
 import { useCoverLetterSettings } from "../../../lib/useCoverLetterSettings";
 import { CoverLetterPreviewPane } from "./CoverLetterPreviewPane";
 import { LetterDesignSection } from "./LetterDesignSection";
 import { LetterPartsSection } from "./LetterPartsSection";
-import { WORKSPACE_GRID } from "./workspaceLayout";
+import { DOCUMENT_CELL, SWITCH_CELL, TOOLS_CELL, WORKSPACE_GRID } from "./workspaceLayout";
 
 /**
  * Template page › Cover letter view: the sample letter on the left; its design and parts
  * on the right, saved as they change. No look controls here — a generated letter takes
  * the resume template's look and an own letter's look is its file.
  */
-export function CoverLetterView({ reloadKey }: { reloadKey: unknown }) {
+export function CoverLetterView({
+  reloadKey,
+  switcher,
+}: {
+  reloadKey: unknown;
+  switcher: ReactNode;
+}) {
   const { settings, fields, ownLetter, error, save, uploadOwn, removeOwn } =
     useCoverLetterSettings(reloadKey);
   const autosave = useCoverAutosave(settings, save);
@@ -22,12 +28,15 @@ export function CoverLetterView({ reloadKey }: { reloadKey: unknown }) {
 
   if (!draft)
     return (
-      <p
-        role={error ? "alert" : "status"}
-        className={`py-8 text-sm ${error ? "text-danger" : "text-ink-muted"}`}
-      >
-        {error ?? "Loading cover letter settings…"}
-      </p>
+      <div className={WORKSPACE_GRID}>
+        <div className={SWITCH_CELL}>{switcher}</div>
+        <p
+          role={error ? "alert" : "status"}
+          className={`${DOCUMENT_CELL} py-8 text-sm ${error ? "text-danger" : "text-ink-muted"}`}
+        >
+          {error ?? "Loading cover letter settings…"}
+        </p>
+      </div>
     );
 
   const shown: CoverLetterSettings = pickingOwn ? { ...draft, design: "own" } : draft;
@@ -41,11 +50,12 @@ export function CoverLetterView({ reloadKey }: { reloadKey: unknown }) {
   };
 
   return (
-    <div className={WORKSPACE_GRID}>
-      <div className="min-w-0">
+    <div className={WORKSPACE_GRID} role="region" aria-label="Cover letter">
+      <div className={SWITCH_CELL}>{switcher}</div>
+      <div className={DOCUMENT_CELL}>
         <CoverLetterPreviewPane settings={draft} />
       </div>
-      <div className="min-w-0 space-y-5 text-sm">
+      <div className={`${TOOLS_CELL} text-sm`}>
         <div>
           <h2 className="rt-tile-title">Cover letter</h2>
           <p className="mt-1 text-ink-muted">

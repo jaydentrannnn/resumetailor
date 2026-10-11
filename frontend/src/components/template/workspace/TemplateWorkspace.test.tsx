@@ -1,11 +1,26 @@
 // @vitest-environment jsdom
+import type { ReactNode } from "react";
 import { cleanup, fireEvent, render, screen } from "@testing-library/react";
 import { MemoryRouter, useLocation } from "react-router-dom";
 import { afterEach, expect, it, vi } from "vitest";
 import { TemplateWorkspace } from "./TemplateWorkspace";
 
-vi.mock("./ResumeView", () => ({ ResumeView: () => <p>resume tools</p> }));
-vi.mock("./CoverLetterView", () => ({ CoverLetterView: () => <p>letter tools</p> }));
+vi.mock("./ResumeView", () => ({
+  ResumeView: ({ switcher }: { switcher: ReactNode }) => (
+    <>
+      {switcher}
+      <p>resume tools</p>
+    </>
+  ),
+}));
+vi.mock("./CoverLetterView", () => ({
+  CoverLetterView: ({ switcher }: { switcher: ReactNode }) => (
+    <>
+      {switcher}
+      <p>letter tools</p>
+    </>
+  ),
+}));
 const template = vi.hoisted(() => ({
   info: { tagged: { exists: true } } as { tagged: { exists: boolean } } | null,
   loading: false,

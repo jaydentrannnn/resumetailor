@@ -1,17 +1,17 @@
+import type { ReactNode } from "react";
 import { useLayoutSummary } from "../../../lib/useLayoutSummary";
 import { useTemplateState } from "../../../state/templateState";
 import { Button, DataList } from "../../ui";
 import { TemplatePreview } from "../TemplatePreview";
 import { LookSection } from "./LookSection";
-import { PageFitSection } from "./PageFitSection";
 import { ResumeDetails } from "./ResumeDetails";
-import { WORKSPACE_GRID } from "./workspaceLayout";
+import { DOCUMENT_CELL, SWITCH_CELL, TOOLS_CELL, WORKSPACE_GRID } from "./workspaceLayout";
 
 /**
  * Template page › Resume view: the template filled with the full master resume on the
- * left; on the right what it is, its look, its page fit and the technical details.
+ * left; on the right the view switch, what it is, its look and the technical details.
  */
-export function ResumeView() {
+export function ResumeView({ switcher }: { switcher: ReactNode }) {
   const {
     info,
     loading,
@@ -26,8 +26,9 @@ export function ResumeView() {
   if (!info) return null;
 
   return (
-    <div className={WORKSPACE_GRID}>
-      <div className="min-w-0">
+    <div className={WORKSPACE_GRID} role="region" aria-label="Resume">
+      <div className={SWITCH_CELL}>{switcher}</div>
+      <div className={DOCUMENT_CELL}>
         <TemplatePreview
           revision={previewRevision}
           pending={pendingTemplate}
@@ -35,7 +36,7 @@ export function ResumeView() {
           activeLabel={info.active_label}
         />
       </div>
-      <div className="min-w-0 space-y-5">
+      <div className={TOOLS_CELL}>
         <div>
           <div className="flex items-start justify-between gap-3">
             <h2 className="rt-tile-title min-w-0">
@@ -64,11 +65,14 @@ export function ResumeView() {
                 label: "Master resume",
                 value: `${info.experience_entries} jobs · ${info.project_entries} projects · ${info.bullets} bullets`,
               },
+              {
+                label: "Lines per page",
+                value: <span className="font-mono">{info.calibration.lines_per_page}</span>,
+              },
             ]}
           />
         </div>
         <LookSection summary={layout?.summary ?? null} />
-        <PageFitSection calibration={info.calibration} />
         <ResumeDetails info={info} />
       </div>
     </div>

@@ -41,20 +41,16 @@ export function TemplateWorkspace() {
       { replace: true },
     );
 
+  const switcher = (
+    <Tabs variant="segmented" label="Template view" items={VIEWS} value={view} onChange={select} />
+  );
   return (
     <Tile aria-label="Current template">
-      <div className="mb-5">
-        <Tabs
-          variant="segmented"
-          label="Template view"
-          items={VIEWS}
-          value={view}
-          onChange={select}
-        />
-      </div>
-      <div role="tabpanel" aria-label={view === "cover" ? "Cover letter" : "Resume"}>
-        {view === "cover" ? <CoverLetterView reloadKey={previewRevision} /> : <ResumeView />}
-      </div>
+      {view === "cover" ? (
+        <CoverLetterView reloadKey={previewRevision} switcher={switcher} />
+      ) : (
+        <ResumeView switcher={switcher} />
+      )}
     </Tile>
   );
 }

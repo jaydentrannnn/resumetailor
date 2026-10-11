@@ -55,7 +55,7 @@ afterEach(() => {
 });
 
 it("lists the parts in print order and saves a switch as it changes", async () => {
-  render(<CoverLetterView reloadKey="r1" />);
+  render(<CoverLetterView reloadKey="r1" switcher={null} />);
   const subject = await screen.findByRole("switch", { name: "Subject line" });
   const names = screen.getAllByRole("listitem").map((li) => li.textContent ?? "");
   expect(names[0]).toMatch(/Letterhead/);
@@ -75,7 +75,7 @@ it("lists the parts in print order and saves a switch as it changes", async () =
 });
 
 it("opens only parts with options, and only while they print", async () => {
-  render(<CoverLetterView reloadKey="r1" />);
+  render(<CoverLetterView reloadKey="r1" switcher={null} />);
   const letterhead = await screen.findByRole("button", { name: /Letterhead/ });
   expect(letterhead.getAttribute("aria-expanded")).toBe("false");
   expect(screen.queryByRole("button", { name: /^Date/ })).toBeNull();
@@ -92,7 +92,7 @@ it("opens only parts with options, and only while they print", async () => {
 });
 
 it("coalesces typing into one save and reverts when the save fails", async () => {
-  render(<CoverLetterView reloadKey="r1" />);
+  render(<CoverLetterView reloadKey="r1" switcher={null} />);
   fireEvent.click(await screen.findByRole("button", { name: /Sign-off/ }));
   vi.useFakeTimers();
   const input = screen.getByRole("textbox", { name: "Sign-off word" });
@@ -111,7 +111,7 @@ it("coalesces typing into one save and reverts when the save fails", async () =>
 });
 
 it("choosing your own letter waits for an upload before saving", async () => {
-  render(<CoverLetterView reloadKey="r1" />);
+  render(<CoverLetterView reloadKey="r1" switcher={null} />);
   fireEvent.click(await screen.findByRole("radio", { name: "Your own letter" }));
   expect(screen.getByRole("link", { name: "Download starter letter" })).toBeTruthy();
   // An own letter's letterhead is its file, so that part leaves the list.

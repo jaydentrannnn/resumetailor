@@ -71,7 +71,7 @@ test("template page: gallery card and page fit card", async ({ page }) => {
   await expect(page.getByRole("heading", { name: "Your templates" })).toBeVisible();
   await expect(page.getByText("E2E template").first()).toBeVisible();
   await expect(page.getByRole("img", { name: "First page of E2E template" })).toBeVisible();
-  await expect(page.getByRole("heading", { name: "Page fit" })).toBeVisible();
+  await expect(page.getByRole("heading", { name: "Page fit tuning" })).toBeVisible();
   await expectAccessible(page);
 });
 

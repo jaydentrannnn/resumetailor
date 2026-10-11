@@ -715,3 +715,10 @@ Edit layout in Word now tells "closed without saving" from "not opened yet": `st
 records `seen_open` in `session.json` the first time the editor's lock file appears, and
 returns `editor_closed`; reopening clears it. A lock file left by a crashed Word still
 reads as open.
+
+Follow-up (2026-10-11, supersedes the placement above): the view switch sits at the top
+of the right column, so the document fills the left column from the tile's top edge to
+its bottom (`workspace/workspaceLayout.ts`: switch, document, tools cells; on phones they
+stack switch → document → tools). Page fit tuning is back as its own tile under the
+Template tile, exactly as before the redesign (`PageFitCard`), and "Lines per page" is
+back in the Resume view's summary.
