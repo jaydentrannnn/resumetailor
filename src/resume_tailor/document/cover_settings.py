@@ -50,6 +50,10 @@ class CoverSettings(BaseModel):
     #: `{job_title}` and `{company}` are filled from the posting; anything else is literal.
     subject_format: str = Field(default="Application for {job_title}", max_length=200)
     closing_text: str = Field(default="Sincerely,", max_length=80)
+    #: `generated`: built from the resume template. `own`: the person's uploaded letter
+    #: (`config.COVER_OWN_PATH`, `document/cover_own.py`), whose «fields» decide the
+    #: letterhead, so `letterhead`/`letterhead_fields` do not apply to it.
+    design: Literal["generated", "own"] = "generated"
 
     @field_validator("letterhead_fields")
     @classmethod

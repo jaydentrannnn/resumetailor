@@ -10,7 +10,10 @@ const api = vi.hoisted(() => ({
   saveCoverLetterSettings: vi.fn(),
   fetchCoverLetterPreview: vi.fn(),
 }));
-vi.mock("../../../api", () => api);
+vi.mock("../../../api", () => ({ ...api, COVER_STARTER_URL: "/api/cover-letter/starter" }));
+vi.mock("../../../state/confirmState", () => ({
+  useConfirm: () => ({ confirm: vi.fn(async () => true) }),
+}));
 
 const settings: CoverLetterSettings = {
   letterhead: "same_as_resume",

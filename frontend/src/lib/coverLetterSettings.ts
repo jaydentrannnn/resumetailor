@@ -46,16 +46,18 @@ export function subjectExample(format: string): string {
 /** One-line summary for the Template page card. */
 export function coverSummary(settings: CoverLetterSettings, fields: CoverLetterField[]): string {
   const head =
-    settings.letterhead === "same_as_resume"
-      ? "Letterhead matches your resume"
-      : `Letterhead: ${
-          fields
-            .filter((f) => settings.letterhead_fields.includes(f.id))
-            .map((f) => f.label)
-            .join(", ") || "name only"
-        }`;
-  const off = COVER_BLOCKS.filter((b) => b.id !== "subject" && !settings.blocks[b.id]).map(
-    (b) => b.label.toLowerCase(),
+    settings.design === "own"
+      ? "Your own letter"
+      : settings.letterhead === "same_as_resume"
+        ? "Letterhead matches your resume"
+        : `Letterhead: ${
+            fields
+              .filter((f) => settings.letterhead_fields.includes(f.id))
+              .map((f) => f.label)
+              .join(", ") || "name only"
+          }`;
+  const off = COVER_BLOCKS.filter((b) => b.id !== "subject" && !settings.blocks[b.id]).map((b) =>
+    b.label.toLowerCase(),
   );
   const parts = [head];
   if (settings.blocks.subject) parts.push("with a subject line");

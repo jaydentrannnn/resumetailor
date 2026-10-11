@@ -282,6 +282,7 @@ def _copy_workspace_files(source: dict[str, Path], dest: dict[str, Path]) -> Non
     for key in (
         "BASELINE_TEMPLATE_PATH", "DEFAULT_TEMPLATE_PATH", "TEMPLATE_PROFILE_PATH",
         "COVER_SETTINGS_PATH",
+        "COVER_OWN_PATH",
     ):
         if source[key].exists():
             shutil.copy2(source[key], dest[key])

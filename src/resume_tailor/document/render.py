@@ -665,6 +665,13 @@ def build_letter_context(
         "signature": letter.signature,
         "blocks": blocks,
         **_contact_slots(resume, tpl, layout, contact_fields),
+        # One field each, for an own letter's «Email» etc. (`document/cover_own.py`).
+        **{
+            f"contact_field_{name}": _contact_richtext(
+                resume, tpl, field_order=[name], separator="", tag=f"contact_field_{name}"
+            )
+            for name in ("location", "email", "phone", "linkedin", "github")
+        },
         "custom": custom,
     }
 

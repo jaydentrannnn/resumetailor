@@ -19,7 +19,8 @@ from docx.shared import Emu, Inches, Pt
 from docx.text.paragraph import Paragraph
 
 from .. import config
-from . import docx_text, template_custom
+from . import cover_own, cover_settings, docx_text, template_custom
+from .cover_settings import CoverSettings
 from .template_profile import TemplateProfile, load_profile
 from .template_profile_build import build_contact_profile, build_name_profile
 from .template_tagging import _para_by_id
@@ -413,24 +414,20 @@ def build_cover_template(
     doc.save(str(dst))
 
 
-def _read_builder_version(meta_path: Path) -> int | None:
-    """Return the recorded builder version, or ``None`` when the sidecar is absent."""
-    if not meta_path.exists():
-        return None
+def _read_meta(meta_path: Path) -> dict:
+    """The sidecar beside the generated cover template ({} when absent or unreadable)."""
     try:
         data = json.loads(meta_path.read_text(encoding="utf-8"))
-        return int(data.get("builder_version", 0))
-    except (json.JSONDecodeError, OSError, TypeError, ValueError):
-        return None
+    except (json.JSONDecodeError, OSError):
+        return {}
+    return data if isinstance(data, dict) else {}
 
 
-def _write_builder_version(meta_path: Path) -> None:
-    """Persist ``_BUILDER_VERSION`` beside the generated cover template."""
+def _write_meta(meta_path: Path, design: str) -> None:
+    """Persist ``_BUILDER_VERSION`` and the letter design beside the cover template."""
     meta_path.parent.mkdir(parents=True, exist_ok=True)
-    meta_path.write_text(
-        json.dumps({"builder_version": _BUILDER_VERSION}, indent=2) + "\n",
-        encoding="utf-8",
-    )
+    meta = {"builder_version": _BUILDER_VERSION, "design": design}
+    meta_path.write_text(json.dumps(meta, indent=2) + "\n", encoding="utf-8")
 
 
 def ensure_cover_template(
@@ -439,16 +436,37 @@ def ensure_cover_template(
     dst: Path | None = None,
     profile: TemplateProfile | None = None,
     meta_path: Path | None = None,
+    settings: CoverSettings | None = None,
 ) -> Path:
-    """Build ``cover_template.docx`` when missing, stale, or on a builder version bump."""
+    """Build ``cover_template.docx`` when missing, stale, or on a builder version bump.
+
+    With ``settings.design == "own"`` and an uploaded letter at ``config.COVER_OWN_PATH``
+    the template is built from that letter (`cover_own.build`); otherwise from the resume
+    baseline. Switching design rebuilds."""
     src = src or config.BASELINE_TEMPLATE_PATH
     dst = dst or config.COVER_TEMPLATE_PATH
     meta_path = meta_path or config.COVER_TEMPLATE_META_PATH
     profile = profile if profile is not None else load_profile()
-    version_stale = _read_builder_version(meta_path) != _BUILDER_VERSION
-    baseline_stale = not dst.exists() or dst.stat().st_mtime < src.stat().st_mtime
-    if dst.exists() and not version_stale and not baseline_stale:
+    settings = settings if settings is not None else cover_settings.load()
+    own = config.COVER_OWN_PATH
+    design = "own" if settings.design == "own" and own.exists() else "generated"
+    source = own if design == "own" else src
+    meta = _read_meta(meta_path)
+    stale = (
+        not dst.exists()
+        or meta.get("builder_version") != _BUILDER_VERSION
+        or meta.get("design", "generated") != design
+        or dst.stat().st_mtime < source.stat().st_mtime
+    )
+    if not stale:
         return dst
-    build_cover_template(src, dst, profile=profile)
-    _write_builder_version(meta_path)
+    if design == "own":
+        keys = {
+            (slot.label or slot.key).casefold(): slot.key
+            for slot in (profile.custom_fields if profile is not None else [])
+        }
+        cover_own.build(own, dst, custom_keys=keys)
+    else:
+        build_cover_template(src, dst, profile=profile)
+    _write_meta(meta_path, design)
     return dst

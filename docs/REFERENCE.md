@@ -1240,6 +1240,19 @@ fixed overhead the fit loop never trims.
   the looped address cannot space its own last line. `POST /api/cover-letter/preview`
   returns a PNG of a sample letter (an image, not a PDF frame, beside the page's own
   PDF preview). Replaced `config.COVER_CONTACT_FIELDS`.
+- **Own cover letter** (`document/cover_own.py`, `settings.design == "own"`, the upload at
+  `templates/cover_own.docx`): `GET /api/cover-letter/starter` renders the generated cover
+  template with a sentinel letter and swaps the sentinels for «Date», «Recipient»,
+  «Subject», «Salutation», «Body», «Closing», «Signature», «Name», contact and
+  «custom: …» tokens (Word comments explain the repeating lines). `POST
+  /api/cover-letter/own` cleans the upload (`docx_normalize.prepare`), refuses it with
+  `detail.problems` (no «Body», «Body»/«Recipient» sharing a line, a duplicate or unknown
+  token), stores it and switches the design. `cover_template.ensure_cover_template`
+  dispatches to `cover_own.build`, which writes the same tags and block guards the
+  generated template uses (contact tokens become per-field `{{r contact_field_<name> }}`),
+  so it stays the one producer of `cover_template.docx`; the meta records the design, so
+  switching rebuilds. The letter's own fields decide its letterhead; block toggles still
+  apply. The preview builds into the cache, never the live cover template.
 - **The fabrication guard's whitelist is the source text plus Extra skills
   (`bullet.tags`) only.** Detected skills are already in the text; inferred skills
   (`tag_infer`) never reach the guard, `<permitted_skills>` or the Skills pool — a model's

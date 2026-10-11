@@ -1522,3 +1522,6 @@ class CoverLetterSettingsResponse(BaseModel):
 
     settings: CoverSettings
     fields: list[CoverLetterFieldOut] = Field(default_factory=list)
+    #: An own letter is uploaded (`config.COVER_OWN_PATH`); `settings.design` says whether
+    #: it is the one in use.
+    own_letter: bool = False

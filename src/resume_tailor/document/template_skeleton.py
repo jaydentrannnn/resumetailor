@@ -145,7 +145,7 @@ def _unwrap_hyperlinks(paragraph: Paragraph) -> None:
         link.getparent().remove(link)
 
 
-def _matches(text: str, *, header_zone: bool) -> list[tuple[int, int, str, str]]:
+def sentinel_matches(text: str, *, header_zone: bool) -> list[tuple[int, int, str, str]]:
     """(start, end, kind, label) for every sentinel in `text`, left to right."""
     found: list[tuple[int, int, str, str]] = []
     taken: list[tuple[int, int]] = []
@@ -229,7 +229,7 @@ def _tokenise(doc, profile: TemplateProfile) -> list[_Para]:
     header_zone = True
     for para in paras:
         text = para.paragraph.text
-        found = _matches(text, header_zone=header_zone)
+        found = sentinel_matches(text, header_zone=header_zone)
         if not found:
             continue
         _unwrap_hyperlinks(para.paragraph)

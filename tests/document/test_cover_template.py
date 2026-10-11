@@ -190,7 +190,7 @@ def test_ensure_cover_template_rebuilds_on_builder_version_mismatch(
     meta.write_text('{"builder_version": 0}\n', encoding="utf-8")
     cover_template.ensure_cover_template(src=src, dst=dst, meta_path=meta, profile=profile)
     assert zipfile.is_zipfile(dst)
-    assert cover_template._read_builder_version(meta) == cover_template._BUILDER_VERSION
+    assert cover_template._read_meta(meta)["builder_version"] == cover_template._BUILDER_VERSION
 
 
 def test_render_cover_letter_against_synthetic_resume(cover_template_paths, tmp_path):

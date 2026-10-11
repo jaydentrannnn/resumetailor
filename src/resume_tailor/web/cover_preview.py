@@ -98,9 +98,16 @@ def preview(settings: CoverSettings) -> Path:
     directory = config.CACHE_DIR / "cover_preview"
     directory.mkdir(parents=True, exist_ok=True)
     with template_ops.LOCK:
-        template = cover_template.ensure_cover_template()
+        # Built into the cache, not the live cover template: the preview may show a
+        # letter design that hasn't been saved yet.
+        template = cover_template.ensure_cover_template(
+            dst=directory / f"cover_{settings.design}.docx",
+            meta_path=directory / f"cover_{settings.design}.meta.json",
+            settings=settings,
+        )
         digest = hashlib.sha256(settings.model_dump_json().encode())
-        for path in (template, config.MASTER_RESUME_PATH, config.TEMPLATE_PROFILE_PATH):
+        for path in (template, config.MASTER_RESUME_PATH, config.TEMPLATE_PROFILE_PATH,
+                     config.COVER_OWN_PATH):
             digest.update(path.read_bytes() if path.is_file() else b"missing")
         digest.update(date.today().isoformat().encode())
         key = digest.hexdigest()[:24]

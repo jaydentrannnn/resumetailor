@@ -5,6 +5,7 @@ import { useToast } from "../../../lib/toast";
 import { Button, Modal } from "../../ui";
 import { CoverBlocksSection } from "./CoverBlocksSection";
 import { CoverPreview } from "./CoverPreview";
+import { LetterDesignSection } from "./LetterDesignSection";
 import { LetterheadSection } from "./LetterheadSection";
 
 /**
@@ -14,18 +15,26 @@ import { LetterheadSection } from "./LetterheadSection";
 export function CoverLetterDrawer({
   initial,
   fields,
+  ownLetter,
   onSave,
+  onUpload,
+  onRemove,
   onClose,
 }: {
   initial: CoverLetterSettings;
   fields: CoverLetterField[];
+  ownLetter: boolean;
   onSave: (next: CoverLetterSettings) => Promise<void>;
+  onUpload: (file: File) => Promise<string[]>;
+  onRemove: () => Promise<void>;
   onClose: () => void;
 }) {
   const [draft, setDraft] = useState(initial);
   const [saving, setSaving] = useState(false);
   const toast = useToast();
   const dirty = JSON.stringify(draft) !== JSON.stringify(initial);
+  // An own letter chosen but not uploaded can't be saved: there is nothing to use yet.
+  const blocked = draft.design === "own" && !ownLetter;
 
   async function save() {
     setSaving(true);
@@ -46,7 +55,16 @@ export function CoverLetterDrawer({
         Applies to every cover letter written from now on.
       </p>
       <div className="mt-5 space-y-5 text-sm">
-        <LetterheadSection settings={draft} fields={fields} onChange={setDraft} />
+        <LetterDesignSection
+          settings={draft}
+          ownLetter={ownLetter}
+          onChange={setDraft}
+          onUpload={onUpload}
+          onRemove={onRemove}
+        />
+        {draft.design !== "own" && (
+          <LetterheadSection settings={draft} fields={fields} onChange={setDraft} />
+        )}
         <CoverBlocksSection settings={draft} onChange={setDraft} />
         <CoverPreview settings={draft} />
       </div>
@@ -54,7 +72,12 @@ export function CoverLetterDrawer({
         <Button variant="ghost" onClick={onClose}>
           Cancel
         </Button>
-        <Button variant="primary" loading={saving} disabled={!dirty} onClick={() => void save()}>
+        <Button
+          variant="primary"
+          loading={saving}
+          disabled={!dirty || blocked}
+          onClick={() => void save()}
+        >
           Save
         </Button>
       </div>

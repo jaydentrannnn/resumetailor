@@ -81,3 +81,35 @@ def test_preview_without_a_template_is_404(client, tmp_path, monkeypatch):
     _point_templates_at(tmp_path, monkeypatch)
     monkeypatch.setattr(config, "CACHE_DIR", tmp_path / "cache")
     assert c.post("/api/cover-letter/preview", json={}).status_code == 404
+
+
+def test_starter_upload_and_remove_own_letter(client, tmp_path, monkeypatch):
+    import io
+
+    import docx as docx_mod
+
+    c, _ = client
+    templates = _install_table_template(tmp_path, monkeypatch)
+    monkeypatch.setattr(config, "COVER_OWN_PATH", templates / "cover_own.docx")
+    monkeypatch.setattr(config, "COVER_SETTINGS_PATH", templates / "cover_settings.json")
+    starter = c.get("/api/cover-letter/starter")
+    assert starter.status_code == 200
+    assert "cover-letter-starter.docx" in starter.headers["content-disposition"]
+
+    mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+    res = c.post("/api/cover-letter/own", files={"file": ("mine.docx", starter.content, mime)})
+    assert res.status_code == 200, res.json()
+    assert res.json()["own_letter"] is True
+    assert res.json()["settings"]["design"] == "own"
+
+    doc = docx_mod.Document()
+    doc.add_paragraph("No fields here")
+    buffer = io.BytesIO()
+    doc.save(buffer)
+    bad = c.post("/api/cover-letter/own", files={"file": ("bad.docx", buffer.getvalue(), mime)})
+    assert bad.status_code == 422
+    assert any("«Body»" in p for p in bad.json()["detail"]["problems"])
+    assert c.get("/api/cover-letter/settings").json()["settings"]["design"] == "own"
+
+    gone = c.delete("/api/cover-letter/own").json()
+    assert gone["own_letter"] is False and gone["settings"]["design"] == "generated"

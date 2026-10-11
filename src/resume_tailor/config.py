@@ -194,6 +194,7 @@ def workspace_paths(workspace_id: str) -> dict[str, Path]:
         "COVER_TEMPLATE_PATH": templates / "cover_template.docx",
         "COVER_TEMPLATE_META_PATH": templates / "cover_template.meta.json",
         "COVER_SETTINGS_PATH": templates / "cover_settings.json",
+        "COVER_OWN_PATH": templates / "cover_own.docx",
     }
 
 
@@ -1218,7 +1219,7 @@ _PATH_NAMES = (
     "APPLICATIONS_PATH",
     "APPLICANT_PROFILE_PATH", "APPLICATIONS_OUTPUT_DIR", "DEFAULT_TEMPLATE_PATH",
     "BASELINE_TEMPLATE_PATH", "TEMPLATE_PROFILE_PATH", "TEMPLATE_LIBRARY_DIR",
-    "COVER_TEMPLATE_PATH", "COVER_TEMPLATE_META_PATH", "COVER_SETTINGS_PATH",
+    "COVER_TEMPLATE_PATH", "COVER_TEMPLATE_META_PATH", "COVER_SETTINGS_PATH", "COVER_OWN_PATH",
 )
 _CALIBRATION_NAMES = (
     "CHARS_PER_LINE", "LINES_PER_PAGE", "CALIBRATION_SOURCE", "CALIBRATION_REJECTION",
@@ -1259,6 +1260,7 @@ def _legacy_paths() -> dict[str, Path]:
         "COVER_TEMPLATE_PATH": templates / "cover_template.docx",
         "COVER_TEMPLATE_META_PATH": templates / "cover_template.meta.json",
         "COVER_SETTINGS_PATH": templates / "cover_settings.json",
+        "COVER_OWN_PATH": templates / "cover_own.docx",
     }
 
 

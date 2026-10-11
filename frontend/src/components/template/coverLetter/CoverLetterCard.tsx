@@ -10,7 +10,8 @@ import { CoverLetterDrawer } from "./CoverLetterDrawer";
  * angles stay per run on the Tailor page.
  */
 export function CoverLetterCard({ reloadKey }: { reloadKey: unknown }) {
-  const { settings, fields, error, save } = useCoverLetterSettings(reloadKey);
+  const { settings, fields, ownLetter, error, save, uploadOwn, removeOwn } =
+    useCoverLetterSettings(reloadKey);
   const [open, setOpen] = useState(false);
   return (
     <Tile aria-label="Cover letter">
@@ -18,8 +19,8 @@ export function CoverLetterCard({ reloadKey }: { reloadKey: unknown }) {
         <div className="min-w-0 flex-1">
           <h2 className="rt-tile-title">Cover letter</h2>
           <p className="mt-1 text-sm text-ink-muted">
-            Cover letters use this template&apos;s fonts and header. Choose what the letterhead
-            shows and which parts of the letter print.
+            Cover letters use this template&apos;s fonts and header, or a letter you design
+            yourself. Choose what the letterhead shows and which parts of the letter print.
           </p>
           {settings && (
             <p className="mt-3 text-sm text-ink" aria-live="polite">
@@ -36,7 +37,10 @@ export function CoverLetterCard({ reloadKey }: { reloadKey: unknown }) {
         <CoverLetterDrawer
           initial={settings}
           fields={fields}
+          ownLetter={ownLetter}
           onSave={save}
+          onUpload={uploadOwn}
+          onRemove={removeOwn}
           onClose={() => setOpen(false)}
         />
       )}

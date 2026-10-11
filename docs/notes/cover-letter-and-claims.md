@@ -75,3 +75,9 @@ earlier ones. Cross-check any number against the code.
 - **Decision:** toggles are applied at render (`blocks` in the Jinja context), never at build — `ensure_cover_template` does not watch settings, and a rebuild per toggle would be wasted work. The default letterhead became "same as resume", replacing `COVER_CONTACT_FIELDS` (location/email/phone): letters now show LinkedIn/GitHub when the resume does, as the user asked for.
 - **Decision:** the subject line is code-filled from the posting title — no prompt change, no cache-key change. The subject block defaults off, so a default letter prints exactly as before.
 - **Fix found while verifying in Word:** a table-layout resume's cover template was a corrupt `.docx` (cells emptied of every `w:p`, and letter paragraphs appended after the body `w:sectPr`). python-docx parsed it, so the tests never saw it. Also: such a letterhead now keeps the resume's side margins (its fixed column widths overflowed 1" margins) and the body is indented to the table's text edge.
+
+---
+
+- Own cover letter (Phase 6): tokens, not guessing — a letter has no structure the analyzer could find reliably (the body is just paragraphs), so the person marks where each part goes. The starter is the generated letter rendered with sentinels, so the easiest path is "download, restyle, upload".
+- The starter renders with the subject line on, which carries the gap under the address; the greeting is given the same space-before so it keeps the gap when the subject is off (found in the visual check).
+- Per-entry custom lines (a "Tools used:" line inside each job) were not built in this phase: they need a new per-entry data field, editor inputs and builder support inside entry prototypes. Left for a later change.
