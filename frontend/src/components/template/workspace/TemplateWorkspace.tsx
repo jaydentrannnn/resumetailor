@@ -1,6 +1,6 @@
 import { useSearchParams } from "react-router-dom";
 import { useTemplateState } from "../../../state/templateState";
-import { Tabs, Tile } from "../../ui";
+import { Button, Tabs, Tile } from "../../ui";
 import { CoverLetterView } from "./CoverLetterView";
 import { ResumeView } from "./ResumeView";
 
@@ -15,7 +15,7 @@ const VIEWS = [
  * so reload and Back keep it.
  */
 export function TemplateWorkspace() {
-  const { info, loading, previewRevision } = useTemplateState();
+  const { info, loading, uploading, libraryBusy, previewRevision, refresh } = useTemplateState();
   const [params, setParams] = useSearchParams();
   const view = params.get("view") === "cover" ? "cover" : "resume";
 
@@ -41,8 +41,29 @@ export function TemplateWorkspace() {
       { replace: true },
     );
 
+  // Refresh reloads the template state both views read, so it sits beside the switch.
   const switcher = (
-    <Tabs variant="segmented" label="Template view" items={VIEWS} value={view} onChange={select} />
+    <div className="flex items-center justify-between gap-3">
+      {/* -ml-1 cancels the track's 1px border + 3px padding, so the selected button (not
+          the track around it) lines up with the text below. */}
+      <div className="-ml-1">
+        <Tabs
+          variant="segmented"
+          label="Template view"
+          items={VIEWS}
+          value={view}
+          onChange={select}
+        />
+      </div>
+      <Button
+        variant="plain"
+        size="sm"
+        onClick={() => void refresh()}
+        disabled={loading || uploading || libraryBusy}
+      >
+        Refresh
+      </Button>
+    </div>
   );
   return (
     <Tile aria-label="Current template" padding="none">

@@ -68,6 +68,8 @@ export function LetterDesignSection({
   return (
     <TileSection title="Letter design">
       <Segmented
+        // Two equal halves across the column: an either/or choice with even weight.
+        className="w-full [&>button]:flex-1 [&>button]:justify-center"
         label="Letter design"
         items={DESIGNS}
         value={own ? "own" : "generated"}

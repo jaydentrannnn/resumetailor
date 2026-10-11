@@ -37,21 +37,24 @@ export function LayoutEditSection() {
           </Button>
         )}
         {status.active && (
-          <>
+          // Small buttons keep the 36px height of Quick adjustments (every size shares
+          // that floor) and fit the three on one line in the 296px column.
+          <div className="flex flex-nowrap gap-2 whitespace-nowrap">
             <Button
               variant="primary"
+              size="sm"
               disabled={busy || !status.changed}
               onClick={() => void review()}
             >
               Review changes
             </Button>
-            <Button variant="plain" disabled={busy} onClick={() => void reopen()}>
+            <Button variant="plain" size="sm" disabled={busy} onClick={() => void reopen()}>
               Open again
             </Button>
-            <Button variant="danger" disabled={busy} onClick={() => void onDiscard()}>
+            <Button variant="danger" size="sm" disabled={busy} onClick={() => void onDiscard()}>
               Discard
             </Button>
-          </>
+          </div>
         )}
       </div>
     </div>

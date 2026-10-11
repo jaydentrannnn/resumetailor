@@ -24,7 +24,10 @@ vi.mock("./CoverLetterView", () => ({
 const template = vi.hoisted(() => ({
   info: { tagged: { exists: true } } as { tagged: { exists: boolean } } | null,
   loading: false,
+  uploading: false,
+  libraryBusy: false,
   previewRevision: "r1",
+  refresh: vi.fn(),
 }));
 vi.mock("../../../state/templateState", () => ({ useTemplateState: () => template }));
 
@@ -51,6 +54,8 @@ it("switches views and keeps the view in the URL", () => {
   expect(screen.getByTestId("where").textContent).toBe("?view=cover");
   fireEvent.click(screen.getByRole("tab", { name: "Resume" }));
   expect(screen.getByTestId("where").textContent).toBe("");
+  fireEvent.click(screen.getByRole("button", { name: "Refresh" }));
+  expect(template.refresh).toHaveBeenCalled();
 });
 
 it("opens on the cover letter from a link, and has no views without a template", () => {

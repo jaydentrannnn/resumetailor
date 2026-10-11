@@ -1,7 +1,7 @@
 import type { ReactNode } from "react";
 import { useLayoutSummary } from "../../../lib/useLayoutSummary";
 import { useTemplateState } from "../../../state/templateState";
-import { Button, DataList } from "../../ui";
+import { DataList } from "../../ui";
 import { TemplatePreview } from "../TemplatePreview";
 import { LookSection } from "./LookSection";
 import { ResumeDetails } from "./ResumeDetails";
@@ -12,16 +12,7 @@ import { DOCUMENT_CELL, SWITCH_CELL, TOOLS_CELL, WORKSPACE_GRID } from "./worksp
  * left; on the right the view switch, what it is, its look and the technical details.
  */
 export function ResumeView({ switcher }: { switcher: ReactNode }) {
-  const {
-    info,
-    loading,
-    uploading,
-    previewKey,
-    previewRevision,
-    pendingTemplate,
-    libraryBusy,
-    refresh,
-  } = useTemplateState();
+  const { info, previewKey, previewRevision, pendingTemplate } = useTemplateState();
   const layout = useLayoutSummary(previewRevision);
   if (!info) return null;
 
@@ -38,21 +29,11 @@ export function ResumeView({ switcher }: { switcher: ReactNode }) {
       </div>
       <div className={TOOLS_CELL}>
         <div>
-          <div className="flex items-start justify-between gap-3">
-            <h2 className="rt-tile-title min-w-0">
-              {pendingTemplate
-                ? `Switching to ${pendingTemplate}…`
-                : info.active_label || "Current template"}
-            </h2>
-            <Button
-              variant="plain"
-              size="sm"
-              onClick={() => void refresh()}
-              disabled={loading || uploading || libraryBusy}
-            >
-              Refresh
-            </Button>
-          </div>
+          <h2 className="rt-tile-title">
+            {pendingTemplate
+              ? `Switching to ${pendingTemplate}…`
+              : info.active_label || "Current template"}
+          </h2>
           <p className="mt-1 text-sm text-ink-muted">
             Your template filled with your full master resume. Only the words change when a resume
             is tailored.
