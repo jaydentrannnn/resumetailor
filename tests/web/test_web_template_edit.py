@@ -177,3 +177,27 @@ def test_quick_adjustments_read_the_layout_and_return_an_installable_draft(deskt
     run = paragraphs[header].runs[0]
     assert run.italic and not run.bold and run.font.name == "Georgia"
     assert opened == []  # no word processor involved
+
+
+def test_quick_adjustments_change_separators_bullets_and_link_look(desktop):
+    c, _opened = desktop
+    current = c.get("/api/template/adjustments").json()["current"]
+    assert current["bullets"] == {"list": "keep", "skills": "keep"}
+    assert current["links"] == {"color": "blue", "underline": True}
+    assert current["separators"]["tech_items"] == ", "
+    res = c.post(
+        "/api/template/adjustments",
+        json={
+            "separators": {"tech_items": " / ", "dates": " \u2013 "},
+            "bullets": {"list": "\u2022", "skills": "none_flush"},
+            "links": {"color": "text", "underline": False},
+        },
+    )
+    assert res.status_code == 200, res.json()
+    style = res.json()["suggested_profile"]["style"]
+    assert style["separators"]["tech_items"] == " / "
+    assert style["separators"]["dates"] == " \u2013 "
+    assert style["bullets"] == {"list": "\u2022", "skills": "none_flush"}
+    assert style["links"] == {"color": "text", "underline": False}
+    bad = c.post("/api/template/adjustments", json={"separators": {"contact": "and"}})
+    assert bad.status_code == 422

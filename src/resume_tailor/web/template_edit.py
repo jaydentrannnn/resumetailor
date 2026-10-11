@@ -27,6 +27,7 @@ from resume_tailor.document import (
     template_adjust,
     template_profile,
     template_skeleton,
+    template_style,
 )
 from resume_tailor.web.schemas import TemplateAnalyzeResponse, TemplateEditStatus
 
@@ -203,18 +204,29 @@ def _live_skeleton() -> template_skeleton.Skeleton:
 
 
 def adjustment_form() -> tuple[template_adjust.CurrentLayout, bool]:
-    """The live template's margins, font and field emphasis, and whether it is a table
-    layout (its fixed-width tables do not follow a margin change)."""
+    """The live template's margins, font, field emphasis, separators, bullets and link
+    look, and whether it is a table layout (its fixed-width tables do not follow a
+    margin change)."""
     profile = template_profile.load_profile()
-    return template_adjust.current(_live_skeleton().raw), bool(
-        profile is not None and profile.layout == "table"
-    )
+    skeleton = _live_skeleton()
+    style = profile.style if profile is not None else template_style.DEFAULT
+    dates = (template_profile.active_layout(profile).get("date_style") or {}).get("separator")
+    current = template_adjust.current(skeleton.raw, style, dates or " - ")
+    return current, bool(profile is not None and profile.layout == "table")
+
+
+def adjusted(adj: template_adjust.Adjustments) -> tuple[bytes, dict]:
+    """The live layout file with `adj` applied, and the meta it reads back with."""
+    skeleton = _live_skeleton()
+    meta = skeleton.meta()
+    style = template_style.TemplateStyle.model_validate(meta.get("style") or {})
+    meta["style"] = template_adjust.styled(style, adj).model_dump()
+    return template_adjust.apply(skeleton.raw, adj), meta
 
 
 def adjust(adj: template_adjust.Adjustments) -> TemplateAnalyzeResponse:
     """Quick adjustments: edit the layout file in code, then read it back like a Word edit."""
-    skeleton = _live_skeleton()
-    return _analysis(template_adjust.apply(skeleton.raw, adj), skeleton.meta())
+    return _analysis(*adjusted(adj))
 
 
 def realised(sha: str) -> bytes:

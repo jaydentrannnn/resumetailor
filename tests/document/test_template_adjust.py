@@ -84,3 +84,32 @@ def test_adjusted_layout_reads_back_ready(skeleton):
     paragraphs = [p for p, _loc in docx_text.iter_document_paragraphs(doc)]
     assert paragraphs[title_id].runs[0].italic
     assert round(doc.sections[0].top_margin.inches, 2) == 0.5
+
+
+def test_separator_rows_report_and_rewrite_the_literal_gaps(skeleton):
+    from resume_tailor.document.template_adjust import SeparatorChoices
+
+    sk = skeleton(_full_featured_resume)
+    current = template_adjust.current(sk.raw)
+    assert current.separators["contact"] == " \u2022 "
+    assert current.separators["project_tech"] == " | "
+    assert set(current.separators) >= {"tech_items", "project_link", "skills_items", "dates"}
+    adj = Adjustments(separators=SeparatorChoices(contact=" | ", project_tech=" \u2013 "))
+    raw = template_adjust.apply(sk.raw, adj)
+    after = template_adjust.current(raw).separators
+    assert after["contact"] == " | " and after["project_tech"] == " \u2013 "
+    text = "\n".join(p.text for p, _l in docx_text.iter_document_paragraphs(_doc(raw)))
+    assert "«Location» | «Email» | «Phone»" in text
+    parsed = skeleton_parse.parse_skeleton(raw, sk.meta())
+    assert parsed.result.ready, parsed.result.issues
+    assert parsed.result.suggested_profile.contact.separator == " | "
+
+
+def test_styled_keeps_file_rows_out_of_the_style():
+    from resume_tailor.document import template_style
+    from resume_tailor.document.template_adjust import SeparatorChoices
+
+    adj = Adjustments(separators=SeparatorChoices(contact=" | ", coursework="; "))
+    style = template_adjust.styled(template_style.DEFAULT, adj)
+    assert style.separators.coursework == "; "
+    assert style.separators.model_dump().keys().isdisjoint({"contact", "project_tech"})

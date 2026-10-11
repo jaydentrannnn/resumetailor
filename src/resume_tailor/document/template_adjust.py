@@ -1,9 +1,12 @@
-"""Quick adjustments: margins, font and per-field bold/italic/underline, without Word.
+"""Quick adjustments: margins, font, per-field bold/italic/underline, separators,
+bullets and link look, without Word.
 
 Edits the Edit-layout-in-Word skeleton (`template_skeleton.py`) the way a person would in
 Word, so the result goes through the same read-back (`skeleton_parse.py`) and template
 wizard as a Word edit. The layout file stays the one source of formatting: there are no
-override settings stacked on top of a template.
+override settings stacked on top of a template. The exceptions are what the document
+cannot hold (separators the renderer writes, the bullet marker the build applies, the
+link look): those change `TemplateStyle`, which travels with the layout file's meta.
 """
 
 from __future__ import annotations
@@ -15,10 +18,11 @@ from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Inches, Pt
 from lxml import etree
-from pydantic import BaseModel, Field
+from pydantic import BaseModel, Field, field_validator
 
-from resume_tailor.document import docx_text, skeleton_tokens
+from resume_tailor.document import adjust_separators, docx_text, skeleton_tokens, template_style
 from resume_tailor.document.skeleton_tokens import TOKEN_RE
+from resume_tailor.document.template_style import Bullets, Links, TemplateStyle
 
 _DRAWINGML = "http://schemas.openxmlformats.org/drawingml/2006/main"
 #: Word's own fallback when no style or default sets a size.
@@ -43,6 +47,26 @@ class FieldStyle(BaseModel):
     underline: bool | None = None
 
 
+class SeparatorChoices(BaseModel):
+    """One value per panel row (`adjust_separators.ROWS`); `None` leaves a row alone."""
+
+    contact: str | None = None
+    project_tech: str | None = None
+    tech_items: str | None = None
+    project_link: str | None = None
+    skills_items: str | None = None
+    coursework: str | None = None
+    dates: str | None = None
+
+    @field_validator("contact", "project_tech")
+    @classmethod
+    def _literal(cls, value: str | None) -> str | None:
+        return None if value is None else template_style._check_separator(value)
+
+    def chosen(self) -> dict[str, str]:
+        return {k: v for k, v in self.model_dump().items() if v is not None}
+
+
 class Adjustments(BaseModel):
     margins: Margins | None = None
     #: Every run's font family (headings included, so the page stays one typeface).
@@ -51,6 +75,9 @@ class Adjustments(BaseModel):
     #: headings and the name stay as much larger as they were.
     font_size: float | None = Field(default=None, ge=6, le=20)
     fields: list[FieldStyle] = Field(default_factory=list)
+    separators: SeparatorChoices | None = None
+    bullets: Bullets | None = None
+    links: Links | None = None
 
 
 class FieldState(BaseModel):
@@ -67,6 +94,11 @@ class CurrentLayout(BaseModel):
     font_family: str
     font_size: float
     fields: list[FieldState]
+    #: Each separator row the template prints, with its current value.
+    separators: dict[str, str] = Field(default_factory=dict)
+    bullets: Bullets = Field(default_factory=Bullets)
+    #: None when the template prints no links.
+    links: Links | None = None
 
 
 def _runs(doc):
@@ -167,7 +199,11 @@ def _body_runs(doc, tokens: dict[str, list]) -> list:
     return bullets or [r for runs in tokens.values() for r in runs] or list(_runs(doc))
 
 
-def current(raw: bytes) -> CurrentLayout:
+def current(
+    raw: bytes,
+    style: TemplateStyle = template_style.DEFAULT,
+    date_separator: str = " - ",
+) -> CurrentLayout:
     doc = docx.Document(io.BytesIO(raw))
     section = doc.sections[0]
     tokens = _token_runs(doc)
@@ -193,7 +229,22 @@ def current(raw: bytes) -> CurrentLayout:
         font_family=max(set(families), key=families.count) if families else _default_family(doc),
         font_size=max(set(sizes), key=sizes.count) if sizes else _default_size(doc),
         fields=fields,
+        separators=adjust_separators.current(doc, style, date_separator),
+        bullets=style.bullets,
+        links=style.links if _prints_links(tokens) else None,
     )
+
+
+def _prints_links(tokens: dict[str, list]) -> bool:
+    return any(label in tokens for label in ("LinkedIn", "GitHub", "Project"))
+
+
+def styled(style: TemplateStyle, adj: Adjustments) -> TemplateStyle:
+    """`style` with the adjustments that live outside the document."""
+    if adj.separators is not None:
+        style = adjust_separators.styled(style, adj.separators.chosen())
+    update = {k: v for k, v in (("bullets", adj.bullets), ("links", adj.links)) if v}
+    return style.model_copy(update=update) if update else style
 
 
 def _set_family(rpr, family: str) -> None:
@@ -255,6 +306,8 @@ def apply(raw: bytes, adj: Adjustments) -> bytes:
             _set_family(run._r.get_or_add_rPr(), adj.font_family)
         for _paragraph, rpr in _paragraph_marks(doc):
             _set_family(rpr, adj.font_family)
+    if adj.separators is not None:
+        adjust_separators.apply(doc, adj.separators.chosen())
     for style in adj.fields:
         for run in tokens.get(style.label, []):
             for attr in ("bold", "italic", "underline"):
