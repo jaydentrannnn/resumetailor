@@ -475,7 +475,6 @@ export function completenessErrors(resume: MasterResume): string[] {
         job.bullets.forEach((b, bi) => {
           const bl = `${label} — bullet ${bi + 1} (${b.id})`;
           if (!b.text.trim()) errors.push(`${bl}: text is empty`);
-          if (b.tags.length === 0) errors.push(`${bl}: needs at least one tag`);
         });
       });
     } else if (section.kind === "project") {
@@ -485,7 +484,6 @@ export function completenessErrors(resume: MasterResume): string[] {
         proj.bullets.forEach((b, bi) => {
           const bl = `${label} — bullet ${bi + 1} (${b.id})`;
           if (!b.text.trim()) errors.push(`${bl}: text is empty`);
-          if (b.tags.length === 0) errors.push(`${bl}: needs at least one tag`);
         });
       });
     } else if (section.kind === "list") {
