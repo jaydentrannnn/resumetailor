@@ -23,9 +23,7 @@ const resume = (bulletText: string): MasterResume => ({
       id: "projects",
       title: "Projects",
       kind: "project",
-      entries: [
-        { id: "p", name: "Parser", bullets: [{ id: "p_b1", text: bulletText, tags: [] }] },
-      ],
+      entries: [{ id: "p", name: "Parser", bullets: [{ id: "p_b1", text: bulletText, tags: [] }] }],
     },
   ],
 });

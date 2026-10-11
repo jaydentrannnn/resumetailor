@@ -205,7 +205,26 @@ def get_bullet_skills() -> BulletSkillsResponse:
         for skill in inferred.get(bullet.text, []):
             shown.setdefault(config.canonical_tag(skill), skill)
         bullets[bullet.id] = [s for c, s in shown.items() if c not in have]
-    return BulletSkillsResponse(running=running, error=error, waiting=waiting, bullets=bullets)
+    # A failure only matters while bullets still lack skills; a later pass (a save, a
+    # run's start) that filled them makes it history.
+    return BulletSkillsResponse(
+        running=running, error=error if waiting else None, waiting=waiting, bullets=bullets
+    )
+
+
+@router.post("/api/master-resume/skills/refresh", response_model=BulletSkillsResponse)
+def refresh_bullet_skills() -> BulletSkillsResponse:
+    """Start skill detection for the saved resume's bullets that still lack it — the
+    editor's automatic retry after a failed pass. No-op without a saved resume; never
+    waits for the model."""
+    with template_ops.LOCK:
+        try:
+            resume = data.load()
+        except (FileNotFoundError, ValueError):
+            resume = None
+        if resume is not None:
+            skill_refresh.schedule(resume)
+    return get_bullet_skills()
 
 
 @router.post("/api/master-resume/validate", response_model=ValidateResponse)

@@ -8,6 +8,9 @@ The refresh captures the active workspace and the Tailor settings' model routing
 schedule time and runs under them (`config.use_context` + `config.pinned`), so a profile
 switch mid-refresh can never write one profile's skills into another's cache. It never
 fails a save: errors are logged and reported through `status()`.
+
+Nothing waits on a refresh except a tailoring run, which joins one already in flight
+(`wait_idle`) instead of sending the same bullets to the model a second time.
 """
 
 from __future__ import annotations
@@ -36,6 +39,10 @@ class _Job:
 
 
 _LOCK = threading.Lock()
+#: Signalled whenever the worker picks up a job or goes idle (`wait_idle`).
+_CHANGED = threading.Condition(_LOCK)
+#: How long a tailoring run waits for an in-flight refresh before inferring on its own.
+JOIN_TIMEOUT_S = 180.0
 _pending: _Job | None = None
 _running: str | None = None  # workspace id being refreshed ("" for the legacy default)
 _thread: threading.Thread | None = None
@@ -84,6 +91,7 @@ def _worker() -> None:
         with _LOCK:
             job, _pending = _pending, None
             _running = None if job is None else _slot(job.workspace_id)
+            _CHANGED.notify_all()
             if job is None:
                 return
         _run(job)
@@ -114,9 +122,27 @@ def _run(job: _Job) -> None:
             _errors.pop(_slot(job.workspace_id), None)
 
 
+def _busy(slot: str) -> bool:
+    """Caller holds `_LOCK`."""
+    return _running == slot or (_pending is not None and _slot(_pending.workspace_id) == slot)
+
+
 def status() -> tuple[bool, str | None]:
     """`(running, last_error)` for the active workspace."""
     slot = _slot(config.active_workspace_id())
     with _LOCK:
-        busy = _running == slot or (_pending is not None and _slot(_pending.workspace_id) == slot)
-        return busy, _errors.get(slot)
+        return _busy(slot), _errors.get(slot)
+
+
+def wait_idle(workspace_id: str | None, timeout: float) -> bool:
+    """Block until no refresh is running or pending for `workspace_id`, or `timeout`
+    seconds pass. Returns whether it went idle. Never raises."""
+    slot = _slot(workspace_id)
+    with _LOCK:
+        return _CHANGED.wait_for(lambda: not _busy(slot), timeout=timeout)
+
+
+def clear_error(workspace_id: str | None) -> None:
+    """Forget a failed refresh once inference has since succeeded (e.g. at run start)."""
+    with _LOCK:
+        _errors.pop(_slot(workspace_id), None)

@@ -5,6 +5,7 @@ import { Modal } from "../../components/Modal";
 import { ResumeHistoryList } from "../../components/ResumeHistoryList";
 import { ImportResumePanel } from "../../components/ImportResumePanel";
 import { BulletSkillsProvider } from "../../state/bulletSkillsState";
+import { BulletSkillsNotice } from "./BulletSkillsNotice";
 import { useEditorState } from "../../state/editorState";
 import { AddSectionPanel, SectionShell } from "./SectionShell";
 import { ContactSection } from "./ContactSection";
@@ -182,6 +183,7 @@ export function EditorPage({
             </div>
           </div>
           <div>
+            <BulletSkillsNotice />
             {message && (
               <p
                 role="status"

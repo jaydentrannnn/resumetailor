@@ -684,3 +684,11 @@ wash to `sunken`. Archive was suggested green and declined: green is reserved fo
 **Project links switch moved to the options column** beside "Projects to include": it is one global setting (`no_project_links`), and a resume can have several project sections, so it does not belong inside any one of them. Hidden when the template has no projects section.
 
 **Project link labels come from the URL** (`lib/linkLabel.ts`): known hosts get their brand spelling (GitHub, not the old "Github" default), hosted-app subdomains (`*.vercel.app`, `*.github.io`, …) get "Live demo", anything else the capitalised domain name. The label follows the URL while it is still a default (empty, derived from the old URL, or legacy "Github"); a typed label is kept. Stored labels are not rewritten in bulk. The field is now "Project link"; the contact field stays "GitHub URL" (it is the GitHub profile).
+- **Skill detection: quiet failure note, automatic retry, runs join the pass in flight
+  (2026-10).** `GET /api/master-resume/skills` reports `error` only while bullets still wait
+  (a later successful pass makes a stale failure history). The editor calls
+  `POST /api/master-resume/skills/refresh` once per visit when bullets wait with nothing
+  running, and shows one muted note, never a button or a blocker. A tailoring run that
+  starts while a save's refresh is in flight waits for it (`skill_refresh.wait_idle`,
+  polled in 1 s slices so cancel still works, capped at `JOIN_TIMEOUT_S`) rather than
+  sending the same bullets to the model twice, then clears the failure on success.

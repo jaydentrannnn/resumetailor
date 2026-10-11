@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import json
 import logging
+import time
 from concurrent.futures import ThreadPoolExecutor
 from pathlib import Path
 
@@ -33,7 +34,7 @@ from resume_tailor.pipeline.events import ProgressCallback, ProgressEvent
 from resume_tailor.pipeline.fabrication import FabricationError
 from resume_tailor.pipeline.fit_types import FitError
 
-from . import job_followups, job_outputs, job_routing, job_types
+from . import job_followups, job_outputs, job_routing, job_types, skill_refresh
 
 logger = logging.getLogger(__name__)
 
@@ -130,9 +131,26 @@ class _TailorJobRun:
             raise RuntimeError(str(exc)) from exc
 
         self.resume = data.load()
-        tag_infer.prepare_run(self.resume, on_event=self.on_event)
+        self._join_skill_refresh()
+        inference = tag_infer.prepare_run(self.resume, on_event=self.on_event)
+        if inference.error is None:
+            skill_refresh.clear_error(config.active_workspace_id())
         self.known_tags = bullet_tags.known_terms(self.resume)
         job.check_cancelled()
+
+    def _join_skill_refresh(self) -> None:
+        """Let the background skill detection a save started finish first, so the run
+        then infers only what is still missing instead of repeating those calls. Bounded
+        by `skill_refresh.JOIN_TIMEOUT_S`; cancellable."""
+        if not skill_refresh.status()[0]:
+            return
+        self._emit("infer", "Waiting for skill detection to finish")
+        workspace_id = config.active_workspace_id()
+        deadline = time.monotonic() + skill_refresh.JOIN_TIMEOUT_S
+        while not skill_refresh.wait_idle(workspace_id, timeout=1.0):
+            self.job.check_cancelled()
+            if time.monotonic() >= deadline:
+                return
 
     def _extract(self) -> None:
         job, settings, out_dir = self.job, self.settings, self.out_dir

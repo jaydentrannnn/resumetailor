@@ -146,6 +146,11 @@ export function fetchBulletSkills(): Promise<BulletSkills> {
   return request("/api/master-resume/skills");
 }
 
+/** Restart skill detection for saved bullets that still lack it; never waits for the model. */
+export function refreshBulletSkills(): Promise<BulletSkills> {
+  return request("/api/master-resume/skills/refresh", { method: "POST" });
+}
+
 export function listResumeVersions(): Promise<{ versions: ResumeVersion[]; keep: number }> {
   /** Saved master-resume versions, newest first. */
   return request("/api/master-resume/versions");
