@@ -1,4 +1,5 @@
 import { DateParts } from "../../components/DateParts";
+import { BufferedField } from "./BufferedField";
 
 /** A labelled month + year date for the resume editor (stored as `YYYY-MM`). */
 export function DateField({
@@ -15,7 +16,11 @@ export function DateField({
   return (
     <div className="block text-sm">
       <span className="mb-1 block text-ink-muted">{label}</span>
-      <DateParts label={label} value={value} onChange={onChange} allowPresent={allowPresent} />
+      <BufferedField value={value} onChange={onChange}>
+        {(draft, setDraft) => (
+          <DateParts label={label} value={draft} onChange={setDraft} allowPresent={allowPresent} />
+        )}
+      </BufferedField>
     </div>
   );
 }

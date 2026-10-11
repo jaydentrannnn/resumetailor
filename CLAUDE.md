@@ -176,6 +176,11 @@ fit.fit(): over → combine → pull back near-widows → drop weakest (else Fit
 - **The resume is an ordered list of sections** (`MasterResume.sections`, discriminated
   union on `kind`), not four fixed lists; read-only `@property` flatten same-kind sections
   for legacy call sites — **never `@computed_field`** (`docs/REFERENCE.md` §9).
+- **Dated entries are chronological within each section** (`content/entry_order.py`):
+  ongoing first, then end/start descending, unknown dates last, stable ties.
+  `MasterResume` normalises after validation/ID assignment; the editor mirrors this rule.
+  Cross-section moves accept matching kinds only; Skills/plain lists keep manual order.
+  Recency weighting is independent of display order.
 - **The relevance table is computed once, before the loop, never inside it.** Tag overlap +
   `SEMANTIC_WEIGHT` × LLM score, added not blended (`--no-semantic` = keyword-only, the A/B
   control). Debug a surprising ranking from `output/*.requirements.json` / `*.scores.json`

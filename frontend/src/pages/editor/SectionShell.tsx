@@ -5,6 +5,7 @@ import { EducationEntries } from "./EducationEntries";
 import { ExperienceEntries } from "./ExperienceEntries";
 import { ProjectEntries } from "./ProjectEntries";
 import { ListEntries } from "./ListEntries";
+import { EntryDropTarget } from "./EntryDropTarget";
 import { SkillsEntries } from "./SkillsEntries";
 import {
   type Section,
@@ -97,55 +98,57 @@ export function SectionShell({
   onChange: (next: Section) => void;
 }) {
   return (
-    <Tile className="space-y-4">
-      <div className="flex flex-wrap items-start justify-between gap-2">
-        <div className="min-w-0 flex-1">
-          <div className="flex items-center gap-2">
-            <input
-              type="text"
-              value={section.title}
-              onChange={(e) => onChange({ ...section, title: e.target.value } as Section)}
-              placeholder="Section title"
-              className="min-h-9 w-full max-w-sm rounded-sm border border-transparent bg-transparent text-[15px] font-semibold hover:border-line focus:border-accent"
-            />
-            <span className="shrink-0 font-mono text-xs text-ink-muted">
-              {SECTION_KIND_LABELS[section.kind]}
-            </span>
+    <EntryDropTarget section={section}>
+      <Tile className="space-y-4">
+        <div className="flex flex-wrap items-start justify-between gap-2">
+          <div className="min-w-0 flex-1">
+            <div className="flex items-center gap-2">
+              <input
+                type="text"
+                value={section.title}
+                onChange={(e) => onChange({ ...section, title: e.target.value } as Section)}
+                placeholder="Section title"
+                className="min-h-9 w-full max-w-sm rounded-sm border border-transparent bg-transparent text-[15px] font-semibold hover:border-line focus:border-accent"
+              />
+              <span className="shrink-0 font-mono text-xs text-ink-muted">
+                {SECTION_KIND_LABELS[section.kind]}
+              </span>
+            </div>
+            <code className="mt-1 block text-xs text-ink-muted">{section.id}</code>
           </div>
-          <code className="mt-1 block text-xs text-ink-muted">{section.id}</code>
+          <EntryControls index={index} total={total} onMove={onMove} onRemove={onRemove} />
         </div>
-        <EntryControls index={index} total={total} onMove={onMove} onRemove={onRemove} />
-      </div>
 
-      {section.kind === "experience" && (
-        <ExperienceEntries
-          section={section}
-          vocabList={vocabList}
-          takenBulletIds={takenBulletIds}
-          takenEntryIds={takenEntryIds}
-          pushUndo={pushUndo}
-          onChange={onChange}
-        />
-      )}
-      {section.kind === "project" && (
-        <ProjectEntries
-          section={section}
-          vocabList={vocabList}
-          takenBulletIds={takenBulletIds}
-          takenEntryIds={takenEntryIds}
-          pushUndo={pushUndo}
-          onChange={onChange}
-        />
-      )}
-      {section.kind === "list" && (
-        <ListEntries section={section} pushUndo={pushUndo} onChange={onChange} />
-      )}
-      {section.kind === "education" && (
-        <EducationEntries section={section} pushUndo={pushUndo} onChange={onChange} />
-      )}
-      {section.kind === "skills" && (
-        <SkillsEntries section={section} pushUndo={pushUndo} onChange={onChange} />
-      )}
-    </Tile>
+        {section.kind === "experience" && (
+          <ExperienceEntries
+            section={section}
+            vocabList={vocabList}
+            takenBulletIds={takenBulletIds}
+            takenEntryIds={takenEntryIds}
+            pushUndo={pushUndo}
+            onChange={onChange}
+          />
+        )}
+        {section.kind === "project" && (
+          <ProjectEntries
+            section={section}
+            vocabList={vocabList}
+            takenBulletIds={takenBulletIds}
+            takenEntryIds={takenEntryIds}
+            pushUndo={pushUndo}
+            onChange={onChange}
+          />
+        )}
+        {section.kind === "list" && (
+          <ListEntries section={section} pushUndo={pushUndo} onChange={onChange} />
+        )}
+        {section.kind === "education" && (
+          <EducationEntries section={section} pushUndo={pushUndo} onChange={onChange} />
+        )}
+        {section.kind === "skills" && (
+          <SkillsEntries section={section} pushUndo={pushUndo} onChange={onChange} />
+        )}
+      </Tile>
+    </EntryDropTarget>
   );
 }

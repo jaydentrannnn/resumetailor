@@ -1,4 +1,4 @@
-import { EntryEditorProvider } from "./EntryCard";
+import { EntryEditorProvider } from "./EntryEditorContext";
 import { moveEntryToSection } from "../../lib/resumeEntryEdit";
 import { useEffect, useRef, useState } from "react";
 import { Modal } from "../../components/Modal";

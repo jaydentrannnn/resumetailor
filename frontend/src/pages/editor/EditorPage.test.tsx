@@ -124,7 +124,7 @@ function section(id: string) {
   return within(document.getElementById(`resume-section-${id}`)!);
 }
 
-it("collapses every entry kind and keeps edits and chip drafts across collapse/reorder", async () => {
+it("collapses every entry kind and keeps edits and chip drafts across date reordering", async () => {
   await editor();
   for (const title of [
     "State University",
@@ -140,9 +140,12 @@ it("collapses every entry kind and keeps edits and chip drafts across collapse/r
   }
   expect(screen.queryByRole("textbox", { name: "Company" })).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Expand State University" }));
-  const school = section("education").getAllByLabelText("School")[0];
+  const school = section("education").getByRole("textbox", { name: "School", exact: true });
   fireEvent.change(school, { target: { value: "Updated University" } });
-  const coursework = section("education").getAllByLabelText("Relevant coursework")[0];
+  const coursework = section("education").getByRole("textbox", {
+    name: "Relevant coursework",
+    exact: true,
+  });
   fireEvent.change(coursework, { target: { value: "Algorithms" } });
   fireEvent.click(screen.getByRole("button", { name: "Collapse Updated University" }));
   expect(school).not.toBeVisible();
@@ -150,8 +153,20 @@ it("collapses every entry kind and keeps edits and chip drafts across collapse/r
   const card = screen
     .getByRole("button", { name: "Expand Updated University" })
     .closest("[data-resume-entry]")!;
-  fireEvent.click(within(card as HTMLElement).getByRole("button", { name: "Move down" }));
+  expect(
+    within(card as HTMLElement).queryByRole("button", { name: "Move down" }),
+  ).not.toBeInTheDocument();
   fireEvent.click(screen.getByRole("button", { name: "Expand Updated University" }));
+  const dates = within(card as HTMLElement).getByRole("textbox", { name: "Dates", exact: true });
+  fireEvent.focus(dates);
+  fireEvent.change(dates, { target: { value: "2028–2030" } });
+  expect(
+    section("education").getAllByRole("button", { name: /^(Expand|Collapse)/ })[0],
+  ).toHaveTextContent("Other University");
+  fireEvent.blur(dates);
+  expect(
+    section("education").getAllByRole("button", { name: /^(Expand|Collapse)/ })[0],
+  ).toHaveTextContent("Updated University");
   expect(school).toBeVisible();
   expect(school).toHaveValue("Updated University");
   expect(coursework).toHaveValue("Algorithms");
@@ -159,6 +174,54 @@ it("collapses every entry kind and keeps edits and chip drafts across collapse/r
     "aria-expanded",
     "false",
   );
+});
+
+it("drags only between matching sections, preserves edits and expansion, and undoes", async () => {
+  await editor();
+  fireEvent.click(screen.getByRole("button", { name: "Expand Acme · Engineer" }));
+  fireEvent.change(section("experience").getByRole("textbox", { name: "Company" }), {
+    target: { value: "Revised" },
+  });
+  const dataTransfer = { setData: vi.fn(), effectAllowed: "", dropEffect: "" };
+  const handle = screen.getByRole("button", { name: "Drag Revised · Engineer to another section" });
+  fireEvent.dragStart(handle, { dataTransfer });
+  fireEvent.drop(document.querySelector('[data-entry-drop-target="projects"]')!, { dataTransfer });
+  expect(section("experience").getByRole("textbox", { name: "Company" })).toHaveValue("Revised");
+  fireEvent.dragStart(handle, { dataTransfer });
+  fireEvent.dragOver(document.querySelector('[data-entry-drop-target="research"]')!, {
+    dataTransfer,
+  });
+  fireEvent.drop(document.querySelector('[data-entry-drop-target="research"]')!, { dataTransfer });
+  expect(section("research").getByRole("textbox", { name: "Company" })).toHaveValue("Revised");
+  expect(section("experience").queryByRole("button", { name: /Revised/ })).not.toBeInTheDocument();
+  expect(saveMasterResume).not.toHaveBeenCalled();
+  fireEvent.click(screen.getByRole("button", { name: "Undo" }));
+  expect(section("experience").getByRole("textbox", { name: "Company" })).toHaveValue("Revised");
+});
+
+it("loads chronological order without a dirty draft and saves a date edit committed on blur", async () => {
+  await editor();
+  expect(section("education").getAllByRole("button", { name: /^Expand/ })[0]).toHaveTextContent(
+    "Other University",
+  );
+  expect(screen.queryByText("Unsaved changes")).not.toBeInTheDocument();
+  fireEvent.click(screen.getByRole("button", { name: "Expand Acme · Engineer" }));
+  const endYear = section("experience").getByRole("textbox", { name: "End, year" });
+  // Leave the Present checkbox to pick an explicit end date.
+  const present = section("experience").getByRole("checkbox", { name: "Present" });
+  fireEvent.focus(present);
+  fireEvent.click(present);
+  fireEvent.change(section("experience").getByRole("combobox", { name: "End, month" }), {
+    target: { value: "6" },
+  });
+  fireEvent.change(endYear, { target: { value: "2025" } });
+  expect(screen.queryByText("Unsaved changes")).not.toBeInTheDocument();
+  fireEvent.blur(endYear);
+  fireEvent.click(screen.getByRole("button", { name: "Save", exact: true }));
+  await waitFor(() => expect(saveMasterResume).toHaveBeenCalledTimes(1));
+  const payload = vi.mocked(saveMasterResume).mock.calls[0][0] as unknown as MasterResume;
+  const job = payload.sections.find((s) => s.kind === "experience")!.entries[0];
+  expect(job).toMatchObject({ end: "2025-06" });
 });
 
 it("opens new entries for all five kinds without opening existing entries", async () => {
@@ -235,6 +298,31 @@ it("keeps list rows independent when their ids collide in the destination", asyn
 });
 
 describe("moveEntryToSection", () => {
+  it("inserts a moved dated entry in chronological order in the destination", () => {
+    const resume = withRowKeys(fixture());
+    const target = resume.sections.find((s) => s.id === "research")!;
+    if (target.kind !== "experience") throw new Error("Expected experience section");
+    target.entries = [
+      {
+        id: "prior",
+        company: "Prior",
+        title: "Engineer",
+        start: "2020-01",
+        end: "2023-06",
+        bullets: [],
+      },
+      { id: "undated", company: "Unknown", title: "Engineer", start: "", end: "", bullets: [] },
+    ];
+    const result = moveEntryToSection(resume, "experience", "acme", "research");
+    expect(result.sections.find((s) => s.id === "experience")?.entries).toEqual([]);
+    expect(result.sections.find((s) => s.id === "research")?.entries.map(resumeEntryKey)).toEqual([
+      "acme",
+      "prior",
+      "undated",
+    ]);
+    expect(target.entries.map(resumeEntryKey)).toEqual(["prior", "undated"]);
+  });
+
   it.each(["experience", "project", "education", "skills", "list"] as const)(
     "transfers %s entries unchanged and appends after existing entries",
     (kind) => {
