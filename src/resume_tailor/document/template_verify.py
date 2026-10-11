@@ -94,8 +94,8 @@ def expected_tags(profile: TemplateProfile) -> set[str]:
         for name, field in proj.header.fields.items():
             if field.present and name in PROJECT_HEADER_TAGS:
                 tags.add(PROJECT_HEADER_TAGS[name])
-        if proj.link.present:
-            tags.add(PROJECT_LINK_TAG)
+        # Always: a template with no link of its own gets a slot after the tools.
+        tags.add(PROJECT_LINK_TAG)
         tags.add(BULLET_TAG)
 
     if profile.enabled.skills and profile.skills is not None:
@@ -348,8 +348,7 @@ def verify_roundtrip(
                     render_mod.project_date(proj, layout.get("date_style")),
                     f"Project date for {proj.name!r}",
                 )
-            if profile.projects.link.present:
-                _check(proj.link, f"Project link label for {proj.name!r}")
+            _check(proj.link, f"Project link label for {proj.name!r}")
 
     custom = render_mod.custom_values(resume, layout)
     for slot in profile.custom_fields:

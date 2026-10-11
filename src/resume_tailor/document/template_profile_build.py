@@ -209,11 +209,31 @@ def _tag_project_prototype(doc, mapping, *, noto_num_id: str | None) -> tuple[Pa
     header_para = _tag_mapped_header(
         doc, header_mapping, tag_for, render_owned_separator_before=frozenset({"link"})
     )
+    if "link" not in tag_for:
+        _add_link_slot(doc, header_mapping)
 
     bullet = template_tagging._para_by_id(doc, mapping.bullet_paragraph_id)
     template_bullets.retarget_bullet(doc, bullet, noto_num_id)
     template_tagging.tag_bullet(bullet, template_tags.PROJECT_BULLET_TAG)
     return header_para, bullet
+
+
+def _add_link_slot(doc, header_mapping) -> None:
+    """Give a template with nowhere for a project's link a slot right after the tools
+    (else the name), so a link is never dropped because the original resume had none.
+    The tag run copies the tools' formatting. The separator before it and the link come
+    from the renderer only when a project has a link, so one without prints as before;
+    and it sits before any tab, so a right-aligned date stays put."""
+    for name in ("tech", "name"):
+        field = header_mapping.fields.get(name)
+        if field is None or not field.present or field.span is None:
+            continue
+        paragraph = template_tagging._para_by_id(doc, field.span.paragraph_id)
+        tag = template_tags.PROJECT_HEADER_TAGS[name]
+        for run in paragraph.runs:
+            if run.text.strip() == tag:
+                template_xml.clone_run_after(run, template_tags.PROJECT_LINK_TAG)
+                return
 
 def build_projects_profile(
     doc, profile: TemplateProfile, *, noto_num_id: str | None, other_headings: list[Paragraph]

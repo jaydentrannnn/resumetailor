@@ -116,3 +116,51 @@ def test_unwrapped_link_runs_lose_the_link_look(built):
 def test_separators_reject_text_that_is_not_punctuation(bad):
     with pytest.raises(ValidationError):
         Separators(tech_items=bad)
+
+
+def test_a_template_without_a_link_slot_still_prints_project_links(tmp_path, monkeypatch):
+    from resume_tailor.document import template_profile
+
+    raw = _docx_bytes(_full_featured_resume)
+    profile = template_analyze.analyze_docx(raw=raw).suggested_profile
+    profile = profile.model_copy(update={"projects": profile.projects.model_copy(
+        update={"link": template_profile.OptionalSpan(present=False)},
+    )})  # fmt: skip
+    src, tpl = tmp_path / "baseline.docx", tmp_path / "tagged.docx"
+    src.write_bytes(raw)
+    monkeypatch.setattr(config, "BASELINE_TEMPLATE_PATH", src)
+    template_build.build_from_profile(src, tpl, profile)
+    texts = _texts(_render(tmp_path, profile, tpl))
+    line = next(t for t in texts if t.startswith("Note Engine"))
+    assert line.split("\t")[0] == "Note Engine | Python, FastAPI | Repo"
+    assert line.endswith("\t2024")
+
+
+def test_the_link_separator_defaults_to_the_name_to_tools_gap():
+    from types import SimpleNamespace
+
+    from resume_tailor.document.template_analyze import _link_style
+    from resume_tailor.document.template_profile import (
+        CharSpan,
+        HeaderFieldMapping,
+        OptionalSpan,
+        ProjectsMapping,
+    )
+
+    def mapping(link: bool) -> ProjectsMapping:
+        return ProjectsMapping(
+            heading_paragraph_id=0, heading_text="PROJECTS", prototype_entry_start=1,
+            bullet_paragraph_id=2,
+            header=HeaderFieldMapping(header_paragraph_id=1, fields={
+                "name": OptionalSpan(span=CharSpan(paragraph_id=1, start=0, end=4)),
+                "tech": OptionalSpan(span=CharSpan(paragraph_id=1, start=7, end=13)),
+            }),
+            link=OptionalSpan(span=CharSpan(paragraph_id=1, start=14, end=18))
+            if link else OptionalSpan(present=False),
+        )  # fmt: skip
+
+    paras = [SimpleNamespace(text=""), SimpleNamespace(text="Name \u2013 Python Repo"), None]
+    assert _link_style(mapping(False), paras).separators.project_link == " \u2013 "
+    assert _link_style(mapping(True), paras) == template_style.DEFAULT
+    paras[1] = SimpleNamespace(text="Name with Python")
+    assert _link_style(mapping(False), paras) == template_style.DEFAULT

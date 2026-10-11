@@ -289,12 +289,16 @@ def test_project_header_without_tech_maps_link_only(tmp_path: Path):
 
 
 def test_unmapped_hyperlink_label_is_dropped(tmp_path: Path):
-    """A hyperlink label with no link mapping is dropped, and its separator does not dangle."""
+    """A hyperlink label with no link mapping is dropped, and its separator does not dangle.
+    The project link still gets a slot: right after the tools, before the date's tab,
+    styled like the tools (the renderer adds its separator only when there is a link)."""
     doc = _build_project_template(tmp_path, keep_link=False)
     header = _paragraph_containing(doc, "{{ proj.name }}")
     text = header.text
     assert "Github" not in text
-    assert "{{r proj.link }}" not in text
+    assert "{{ proj.tech }}{{r proj.link }}\t" in text
+    tech = _run_with_text(header, "{{ proj.tech }}")
+    assert _run_bold(_run_with_text(header, "{{r proj.link }}")) == _run_bold(tech)
     assert re.search(r"[|•·–—/]\s*\t", text) is None
 
 

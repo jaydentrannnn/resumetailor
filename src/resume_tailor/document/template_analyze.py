@@ -21,6 +21,8 @@ from . import (
     table_layout,
     unmapped_lines,
 )
+from .template_style import TemplateStyle
+from .template_style import _check_separator
 from .template_profile import (
     ContactMapping,
     CustomFieldSlot,
@@ -575,7 +577,27 @@ class _Analyzer(section_mapping._SectionMapper):
                 for line in self.unmapped
                 if line.suggestion == "field"
             ],
+            style=_link_style(self.projects_mapping if enabled.projects else None, self.paras),
         )
+
+
+def _link_style(projects, paras) -> TemplateStyle:
+    """A template with no project link of its own gets one after the tools at build time;
+    it reads best with the separator the template already puts between name and tools."""
+    style = TemplateStyle()
+    if projects is None or projects.link.present:
+        return style
+    name, tech = projects.header.fields.get("name"), projects.header.fields.get("tech")
+    if not (name and tech and name.span and tech.span):
+        return style
+    if name.span.paragraph_id != tech.span.paragraph_id:
+        return style
+    gap = paras[name.span.paragraph_id].text[name.span.end : tech.span.start]
+    try:
+        seps = style.separators.model_copy(update={"project_link": _check_separator(gap)})
+    except ValueError:
+        return style
+    return style.model_copy(update={"separators": seps})
 
 
 def _resolve_section_bodies(
