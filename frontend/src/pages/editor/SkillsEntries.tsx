@@ -1,4 +1,5 @@
-import { EntryCard, useEntryEditor } from "./EntryCard";
+import { EntryCard } from "./EntryCard";
+import { useEntryEditor } from "./EntryEditorContext";
 import { resumeEntryKey } from "../../lib/resumeEntryEdit";
 import { ChipListField } from "../../components/ChipListField";
 import { AddButton } from "../../components/ListControls";

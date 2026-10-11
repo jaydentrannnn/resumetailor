@@ -1,10 +1,12 @@
-import { EntryCard, useEntryEditor } from "./EntryCard";
+import { EntryCard } from "./EntryCard";
+import { useEntryEditor } from "./EntryEditorContext";
 import { resumeEntryKey } from "../../lib/resumeEntryEdit";
 import { ChipListField } from "../../components/ChipListField";
 import { AddButton } from "../../components/ListControls";
 import { DateField } from "./DateField";
 import { EducationDegreeFields } from "./EducationDegreeFields";
 import { TextField } from "./TextField";
+import { BufferedField } from "./BufferedField";
 import {
   type Education,
   type EducationSection as EducationSectionData,
@@ -74,8 +76,7 @@ export function EducationEntries({
                     setEntries(next);
                   }}
                 />
-                <TextField
-                  label="Dates"
+                <BufferedField
                   value={edu.dates}
                   onChange={(v) => {
                     const next = [...entries];
@@ -83,7 +84,11 @@ export function EducationEntries({
                     next[i] = { ...edu, dates: v, start: "", end: "" };
                     setEntries(next);
                   }}
-                />
+                >
+                  {(draft, setDraft) => (
+                    <TextField label="Dates" value={draft} onChange={setDraft} />
+                  )}
+                </BufferedField>
                 <EducationDegreeFields
                   edu={edu}
                   onChange={(updated) => {

@@ -428,6 +428,13 @@ class MasterResume(_Strict):
             raise ValueError(f"duplicate section id(s): {', '.join(sorted(section_dupes))}")
         return self
 
+    @model_validator(mode="after")
+    def _order_dated_entries(self) -> MasterResume:
+        from .entry_order import sort_dated_sections
+
+        sort_dated_sections(self.sections)
+        return self
+
     # ------------------------------------------------------------------------------
     # Flattened views — read-only. Every pre-`sections` call site reads the resume
     # through these, unchanged. Never `@computed_field`: that would put these keys

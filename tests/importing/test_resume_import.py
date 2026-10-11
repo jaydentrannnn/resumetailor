@@ -661,10 +661,10 @@ def test_merge_pairs_duplicate_match_keys_in_document_order():
     assert stats.added == []
     entries = merged.experience
     assert len(entries) == 2
-    assert entries[0].id == "acme-1"
-    assert entries[0].title == "Intern (updated)"
-    assert entries[1].id == "acme-2"
-    assert entries[1].title == "Engineer (updated)"
+    assert entries[0].id == "acme-2"
+    assert entries[0].title == "Engineer (updated)"
+    assert entries[1].id == "acme-1"
+    assert entries[1].title == "Intern (updated)"
 
 
 def test_merge_skills_group_items_are_replaced_on_label_match():

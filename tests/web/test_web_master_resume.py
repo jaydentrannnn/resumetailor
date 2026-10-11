@@ -137,11 +137,11 @@ def test_master_resume_get_put_round_trips_sections_natively(client, tmp_path, m
 
     got2 = c.get("/api/master-resume").json()
     exp_section2 = next(s for s in got2["sections"] if s["kind"] == "experience")
-    last = exp_section2["entries"][-1]
-    assert last["company"] == "Editor Test Co"
-    assert last["bullets"][0]["id"] == "edittest_b2"
+    added = next(e for e in exp_section2["entries"] if e["company"] == "Editor Test Co")
+    assert exp_section2["entries"][0] is added  # ongoing entry precedes completed work
+    assert added["bullets"][0]["id"] == "edittest_b2"
     # Tags come back canonicalised the way data.Bullet._normalise_tags stores them.
-    assert "python" in [t.lower() for t in last["bullets"][0]["tags"]]
+    assert "python" in [t.lower() for t in added["bullets"][0]["tags"]]
 
 
 def test_import_master_resume_returns_a_draft_without_writing(client, tmp_path, monkeypatch):

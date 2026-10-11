@@ -1167,6 +1167,17 @@ carry two sources of truth. `resume.entry_sections` is `experience`+`project` ki
 (the ones that carry bullets and go through selection); `list`/`education`/`skills` are
 fixed overhead the fit loop never trims.
 
+- **Dated entries sort automatically within their own section.** Experience, Projects,
+  and Education use ongoing first, then latest end date (start when end is absent), then
+  latest start date; ties retain their prior order and unknown dates go last. Structured
+  dates take precedence, with legacy project/education text as a fallback; year-only
+  dates use December for sorting without changing printed text. `content/entry_order.py`
+  normalises `MasterResume` after validation and ID assignment, so API, CLI, and render
+  share the order. The editor mirrors the same rule and commits date controls on blur
+  so partial typing does not move the row. Skills/plain lists and section order remain
+  manually reorderable. Drag handles and the compact Move to dropdown transfer entries
+  between matching kinds, with Undo; the destination re-sorts dated entries. Recency
+  weighting still affects inclusion/bullet retention separately from display order.
 - **Selection ranks each section independently.** `fit_selection.choose_entries` loops
   `resume.entry_sections`, ranking each against a per-kind default cap
   (`config.MAX_EXPERIENCE_ENTRIES`/`MAX_PROJECT_ENTRIES`) — a "Leadership" section's

@@ -6,6 +6,7 @@ import type {
   Project,
   SkillGroup,
 } from "./resumeEdit";
+import { orderResumeEntries } from "./resumeEntryOrder";
 
 export type ResumeEntry = Experience | Project | Education | SkillGroup | ListItem;
 
@@ -30,7 +31,7 @@ export function moveEntryToSection(
   }
   const entry = source.entries.find((item) => resumeEntryKey(item) === entryKey);
   if (!entry) return resume;
-  return {
+  return orderResumeEntries({
     ...resume,
     sections: resume.sections.map((section) => {
       if (section === source) {
@@ -45,5 +46,5 @@ export function moveEntryToSection(
       }
       return section;
     }),
-  };
+  });
 }

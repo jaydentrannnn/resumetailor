@@ -15,6 +15,7 @@ import {
   validateMasterResume,
 } from "../api";
 import { onAppEvent } from "../lib/appEvents";
+import { orderResumeEntries } from "../lib/resumeEntryOrder";
 import {
   type MasterResume,
   completenessErrors,
@@ -70,7 +71,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
      */
     setResumeState((prev) => {
       if (!prev) return prev;
-      return typeof next === "function" ? next(prev) : next;
+      return orderResumeEntries(typeof next === "function" ? next(prev) : next);
     });
   }, []);
 
@@ -105,7 +106,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
         // have no server-assigned id at all) before the draft ever renders — see
         // `withRowKeys`. `savedSnapshot` is computed from the *stripped* shape so
         // this backfill alone never reads as an unsaved edit.
-        const withKeys = withRowKeys(raw as MasterResume);
+        const withKeys = orderResumeEntries(withRowKeys(raw as MasterResume));
         setResumeState(withKeys);
         setSavedSnapshot(JSON.stringify(stripRowKeys(withKeys)));
         setConfig(cfg);
@@ -161,7 +162,7 @@ export function EditorProvider({ children }: { children: ReactNode }) {
         setMessage(
           `Saved — ${result.summary.name}: ${result.summary.bullets} bullets (previous file backed up)`,
         );
-        const fresh = withRowKeys((await fetchMasterResume()) as MasterResume);
+        const fresh = orderResumeEntries(withRowKeys((await fetchMasterResume()) as MasterResume));
         setResumeState(fresh);
         setSavedSnapshot(JSON.stringify(stripRowKeys(fresh)));
         const cfg = await fetchConfig();
@@ -202,13 +203,13 @@ export function EditorProvider({ children }: { children: ReactNode }) {
   }, [dirty]);
 
   const loadDraft = useCallback((next: MasterResume, draftMessage?: string) => {
-    setResumeState(withRowKeys(next));
+    setResumeState(orderResumeEntries(withRowKeys(next)));
     setErrors([]);
     setMessage(draftMessage ?? "Imported draft loaded — review and save to keep it.");
   }, []);
 
   const syncFromDisk = useCallback((next: MasterResume, syncMessage?: string) => {
-    const withKeys = withRowKeys(next);
+    const withKeys = orderResumeEntries(withRowKeys(next));
     setResumeState(withKeys);
     setSavedSnapshot(JSON.stringify(stripRowKeys(withKeys)));
     setErrors([]);
