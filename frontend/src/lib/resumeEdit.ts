@@ -46,6 +46,8 @@ export type SkillGroup = {
   _key?: string;
 };
 
+export type DegreeFormat = "semicolon" | "comma" | "pipe";
+
 export type Education = {
   school: string;
   degree: string;
@@ -55,8 +57,15 @@ export type Education = {
   gpa?: string;
   show_gpa?: boolean;
   details?: string[];
-  /** Field of study for application forms; never printed on the resume. */
-  major?: string;
+  /** Degree type as written ("B.A.", "Bachelor of Science"). */
+  degree_type?: string;
+  /** Fields of study; the first answers a single "Major" form field. */
+  majors?: string[];
+  minors?: string[];
+  /** "generated": `degree` is built from the parts above (`lib/degreeLine`); "manual":
+   * `degree` is exactly what was typed. */
+  degree_mode?: "manual" | "generated";
+  degree_format?: DegreeFormat;
   /** Start and (expected) graduation month, `YYYY-MM`, for application forms. Never
    * printed; the server fills them from `dates` on save when empty. */
   start?: string;
@@ -324,6 +333,12 @@ export function blankEducation(): Education {
     gpa: "",
     show_gpa: false,
     details: [],
+    degree_type: "",
+    majors: [],
+    minors: [],
+    // A new entry builds its printed line from its parts; existing ones stay as typed.
+    degree_mode: "generated",
+    degree_format: "semicolon",
   };
 }
 

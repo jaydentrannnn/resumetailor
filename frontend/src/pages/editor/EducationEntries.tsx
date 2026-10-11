@@ -3,6 +3,7 @@ import { resumeEntryKey } from "../../lib/resumeEntryEdit";
 import { ChipListField } from "../../components/ChipListField";
 import { AddButton } from "../../components/ListControls";
 import { DateField } from "./DateField";
+import { EducationDegreeFields } from "./EducationDegreeFields";
 import { TextField } from "./TextField";
 import {
   type Education,
@@ -74,15 +75,6 @@ export function EducationEntries({
                   }}
                 />
                 <TextField
-                  label="Degree"
-                  value={edu.degree}
-                  onChange={(v) => {
-                    const next = [...entries];
-                    next[i] = { ...edu, degree: v };
-                    setEntries(next);
-                  }}
-                />
-                <TextField
                   label="Dates"
                   value={edu.dates}
                   onChange={(v) => {
@@ -92,20 +84,14 @@ export function EducationEntries({
                     setEntries(next);
                   }}
                 />
-                <div className="sm:col-span-2">
-                  <TextField
-                    label="Major (field of study)"
-                    value={edu.major ?? ""}
-                    onChange={(v) => {
-                      const next = [...entries];
-                      next[i] = { ...edu, major: v };
-                      setEntries(next);
-                    }}
-                  />
-                  <p className="mt-1 text-xs text-ink-muted">
-                    Used to answer application forms; never printed on the resume.
-                  </p>
-                </div>
+                <EducationDegreeFields
+                  edu={edu}
+                  onChange={(updated) => {
+                    const next = [...entries];
+                    next[i] = updated;
+                    setEntries(next);
+                  }}
+                />
                 <div className="grid grid-cols-1 gap-3 sm:col-span-2 sm:grid-cols-2">
                   <DateField
                     label="Start"

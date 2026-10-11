@@ -145,14 +145,53 @@ class Education(_Strict):
     show_gpa: bool = False
     #: Extra education bullets (not coursework). Coursework has its own field.
     details: list[str] = Field(default_factory=list)
-    #: Field of study for application forms ("Computer Science"). Never rendered: the
-    #: printed degree line is `degree`. The apply packet's only source of a major.
-    major: str = ""
+    #: Degree type as the person writes it ("B.A.", "Bachelor of Science").
+    degree_type: str = ""
+    #: Fields of study, in order; the first is the one a single "Major" form field gets.
+    #: Read by application forms, and by `degree_line.compose` when `degree_mode` is
+    #: "generated". A legacy single `major` is folded in by `_fold_major`.
+    majors: list[str] = Field(default_factory=list)
+    minors: list[str] = Field(default_factory=list)
+    #: "manual": `degree` is exactly what the person typed. "generated": `degree` is
+    #: rebuilt from `degree_type`/`majors`/`minors` in `degree_format` on every save
+    #: (`web/routes/resume._write_master_resume`), so render and every other reader of
+    #: `degree` stay unchanged.
+    degree_mode: Literal["manual", "generated"] = "manual"
+    degree_format: Literal["semicolon", "comma", "pipe"] = "semicolon"
     #: Start and (expected) graduation month as ``YYYY-MM`` for application forms. Never
     #: rendered: the printed line is `dates`. Filled from `dates` on save when empty
     #: (`edu_dates.fill`); "" when the printed dates give no month.
     start: str = ""
     end: str = ""
+
+    @model_validator(mode="before")
+    @classmethod
+    def _fold_major(cls, data: Any) -> Any:
+        """A file written before `majors` existed has one `major` string: it becomes the
+        first major (only when `majors` is not already set). The printed `degree` is
+        untouched — such an entry stays `degree_mode="manual"`."""
+        if isinstance(data, dict) and "major" in data:
+            data = dict(data)
+            major = str(data.pop("major") or "").strip()
+            if major and not data.get("majors"):
+                data["majors"] = [major]
+        return data
+
+    @field_validator("majors", "minors")
+    @classmethod
+    def _clean_list(cls, values: list[str]) -> list[str]:
+        return [v.strip() for v in values if v.strip()]
+
+    @property
+    def major(self) -> str:
+        """The first major — what a single-valued "Major" form field gets."""
+        return self.majors[0] if self.majors else ""
+
+    @major.setter
+    def major(self, value: str) -> None:
+        """Replace the first major ("" removes it), keeping any others."""
+        rest = self.majors[1:]
+        self.majors = ([value.strip()] if value.strip() else []) + rest
 
     @field_validator("start", "end")
     @classmethod

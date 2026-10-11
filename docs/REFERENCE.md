@@ -1136,6 +1136,15 @@ fixed overhead the fit loop never trims.
   reword skill items toward the posting's wording, but item counts/order are fixed. A skill
   rename requires three guards together (`rename_is_jd_anchored`, `labels_are_equivalent`,
   `rename_preserves_claim`) and must not push the group's line count above its original.
+- **Degree line: majors, minors, generated or manual.** `Education.degree` stays the printed
+  line every reader uses (render, `include.education_key`, importers, MCP). Beside it:
+  `degree_type`, `majors`, `minors`, `degree_mode` (`manual` default, so migrated entries
+  never change text) and `degree_format` (`semicolon`/`comma`/`pipe` before "Minor in").
+  A legacy `major` string folds into `majors` on load (`_fold_major`); `edu.major` is a
+  property (first major). In `generated` mode `web/routes/resume._write_master_resume`
+  recomposes `degree` with `content/degree_line.compose` on every save (web, MCP, import);
+  `degree_line.detect` only backs the editor's "Fill … from this line" button. The apply
+  packet carries `majors`/`minors`/`minor` (`major` = first). No JD-ranking effect.
 - **`include.py` is a pure resume transform, applied once, after scoring, before facets.**
   `IncludeOptions.exclude_entries`/`exclude_sections` are the general form (one flat id
   namespace across every experience/project section, matching

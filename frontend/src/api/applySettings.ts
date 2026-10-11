@@ -227,6 +227,9 @@ export type ApplicantProfileResponse = {
 export type ProfileOptions = {
   education_levels: string[];
   education_level_aliases: Record<string, string>;
+  /** Suggestions for the education editor; anything typed is accepted. */
+  degree_types: string[];
+  fields_of_study: string[];
   countries: { code: string; name: string; dial: string; aliases: string[] }[];
   subdivisions: Record<string, { code: string; name: string }[]>;
   pronouns: string[];

@@ -794,3 +794,10 @@ comes back `updated` (not `added`), still exactly one education entry, coursewor
 - `Project` gained `start`/`end` (`YYYY-MM` or `Present`); the old single `date` stays only as free text ("Spring 2025") printed when no start/end is set. A `before` validator reads a real date in `date` ("2025-03", "Mar 2025 - May 2025") into start/end on load, so old files and both importers migrate without code in the importers (`dates.read_span`).
 - Printing: `render.project_date` -> `format_range`; start equal to end, or a blank end, prints one month ("Mar 2025"). `format_range` collapses equal ends for experience too. The template tag stays `{{ proj.date }}`, so templates are untouched.
 - Header-length budgeting (`facets_budget`), template verification and recency scoring read the printed/ended date, not `date`.
+
+## Majors, minors and a generated degree line (2026-10-11)
+
+- `Education.major` (one hidden string) became `majors`/`minors` lists plus `degree_type`; `degree` stays the stored printed line so nothing that reads it changed. Migration folds `major` into `majors` and sets no `degree_mode`, i.e. `manual` — an existing printed line never changes on load.
+- Generated mode recomposes on save in `_write_master_resume` (one hook covering web, MCP and import saves), not at render time: the printed line stays a plain field the guards and `include.education_key` already understand.
+- `detect` is never automatic — "B.A. in Economics and Math" is ambiguous enough that a silent parse could reorder or split a major; the editor offers it as a button on manual entries with empty parts.
+- Deferred: a "minor" form-field classifier (the bare word collides with "Are you a minor?" age questions) and Workday multi-major selection; `minor` exists only in the packet fields for now.

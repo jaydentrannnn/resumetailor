@@ -17,6 +17,11 @@ class PacketEducation(BaseModel):
     school: str = ""
     degree: str = ""
     major: str = ""
+    #: Every major, then every minor, for forms with a repeatable or multi-select field
+    #: of study; `major`/`minor` are the first of each for a single-valued field.
+    majors: list[str] = Field(default_factory=list)
+    minor: str = ""
+    minors: list[str] = Field(default_factory=list)
     start: str = ""
     end: str = ""
     gpa: str = ""

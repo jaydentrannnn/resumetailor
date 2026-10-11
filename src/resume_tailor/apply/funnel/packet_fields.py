@@ -174,6 +174,7 @@ def build_fields(profile: ApplicantProfile, resume: MasterResume) -> dict[str, s
         _maybe_set(fields, "graduation_month", primary.end or None)
         _maybe_set(fields, "degree_level", primary.degree_level or None)
         _maybe_set(fields, "major", primary.major or None)
+        _maybe_set(fields, "minor", primary.minor or None)
         _maybe_set(fields, "school", primary.school or None)
         _maybe_set(fields, "gpa", primary.gpa or None)
     # Profile overrides for what the resume states differently or not at all.
@@ -242,11 +243,14 @@ def _build_education(resume: MasterResume) -> list[packet_models.PacketEducation
                 school=edu.school,
                 degree=edu.degree,
                 major=edu.major,
+                majors=list(edu.majors),
+                minor=edu.minors[0] if edu.minors else "",
+                minors=list(edu.minors),
                 start=start,
                 end=end,
                 gpa=edu.gpa,
                 entry_key=f"resume:education:{index}",
-                degree_level=_degree_label(edu.degree),
+                degree_level=_degree_label(edu.degree_type or edu.degree),
                 degree_name=edu.degree,
                 source="resume",
             )

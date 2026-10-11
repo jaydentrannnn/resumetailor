@@ -283,3 +283,28 @@ def test_put_master_resume_rejects_an_invalid_body(client):
     res = c.put("/api/master-resume", json={"not": "a valid resume"})
     assert res.status_code == 400
     assert "detail" in res.json()
+
+
+def test_master_resume_put_regenerates_a_generated_degree_line(client, tmp_path, monkeypatch):
+    """A "generated" entry's printed `degree` is rebuilt from its parts on save; a
+    "manual" one keeps exactly what was typed."""
+    c, _ = client
+    resume = load()
+    path = tmp_path / "master_resume.json"
+    monkeypatch.setattr(config, "MASTER_RESUME_PATH", path)
+    monkeypatch.setattr(config, "DATA_DIR", tmp_path)
+    payload = resume.model_dump(by_alias=True)
+    section = next(s for s in payload["sections"] if s["kind"] == "education")
+    first = section["entries"][0]
+    first.update(
+        degree="stale text", degree_type="B.A.", majors=["Economics", "Art"],
+        minors=["Music"], degree_mode="generated", degree_format="pipe",
+    )
+    second = {**first, "school": "Other U", "degree": "Typed by hand", "degree_mode": "manual"}
+    section["entries"].append(second)
+
+    assert c.put("/api/master-resume", json=payload).status_code == 200
+    saved = json.loads(path.read_text(encoding="utf-8"))
+    entries = next(s for s in saved["sections"] if s["kind"] == "education")["entries"]
+    assert entries[0]["degree"] == "B.A. in Economics and Art | Minor in Music"
+    assert entries[-1]["degree"] == "Typed by hand"

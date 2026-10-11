@@ -601,3 +601,18 @@ def test_build_packet_carries_uploaded_profile_documents(job_dir, tmp_path):
     # A recorded path whose file is gone is not offered to a fill.
     portfolio.unlink()
     assert "portfolio_pdf" not in build_packet("test-job", applicant_profile=profile).artifacts
+
+
+def test_packet_education_carries_every_major_and_minor():
+    resume = synthetic_resume()
+    edu = resume.education[0]
+    edu.degree_type = "B.A."
+    edu.majors = ["Economics", "Mathematics"]
+    edu.minors = ["Art"]
+    [row] = _build_education(resume)
+    assert (row.major, row.majors, row.minor, row.minors) == (
+        "Economics", ["Economics", "Mathematics"], "Art", ["Art"],
+    )
+    assert row.degree_level == "Bachelor of Arts"
+    fields = build_fields(ApplicantProfile(), resume)
+    assert (fields["major"], fields["minor"]) == ("Economics", "Art")

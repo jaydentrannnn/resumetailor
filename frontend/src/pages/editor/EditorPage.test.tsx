@@ -14,6 +14,7 @@ vi.mock("../../api", () => ({
   fetchMasterResume: vi.fn(),
   saveMasterResume: vi.fn(),
   validateMasterResume: vi.fn(),
+  fetchProfileOptions: vi.fn(async () => ({ degree_types: ["B.A."], fields_of_study: [] })),
   fetchBulletSkills: vi.fn(async () => ({
     running: false,
     error: null,

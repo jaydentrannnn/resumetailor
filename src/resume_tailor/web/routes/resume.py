@@ -15,7 +15,7 @@ from fastapi import APIRouter, File, Form, HTTPException, UploadFile
 from pydantic import ValidationError
 
 from resume_tailor import config
-from resume_tailor.content import bullet_tags, data, edu_dates, resume_versions
+from resume_tailor.content import bullet_tags, data, degree_line, edu_dates, resume_versions
 from resume_tailor.content.data import MasterResume
 from resume_tailor.document import template_analyze
 from resume_tailor.importing import (
@@ -91,6 +91,15 @@ def _write_master_resume(resume: MasterResume, note: str = "") -> Path | None:
     # where the student left them empty (`edu_dates`).
     for education in resume.education:
         edu_dates.fill(education)
+        # A "generated" degree line is rebuilt from its parts, so every reader of
+        # `degree` (render, exclusions, cover letter, forms) sees the printed text.
+        if education.degree_mode == "generated":
+            education.degree = degree_line.compose(
+                education.degree_type,
+                education.majors,
+                education.minors,
+                education.degree_format,
+            )
     # Round-trip through the model so tags are canonicalised and unknown keys stripped
     # before anything hits disk — same guarantees `data.load` enforces on the way in.
     payload = resume.model_dump(by_alias=True)

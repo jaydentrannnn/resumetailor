@@ -320,8 +320,8 @@ def _migrate_education(path: Path, raw: dict[str, Any]) -> None:
     if len(entries) == 1:
         entry = entries[0]
         major, gpa = str(raw.get("major") or "").strip(), str(raw.get("gpa") or "").strip()
-        if (major and not entry.major) or (gpa and not entry.gpa):
-            entry.major = entry.major or major
+        if (major and not entry.majors) or (gpa and not entry.gpa):
+            entry.majors = entry.majors or ([major] if major else [])
             entry.gpa = entry.gpa or gpa
             resume_path = config.MASTER_RESUME_PATH
             _backup(resume_path)
