@@ -19,6 +19,7 @@ import docx
 from .. import config
 from . import (
     docx_text,
+    template_bullet_style,
     template_bullets,
     template_custom,
     template_generic,
@@ -109,6 +110,8 @@ def build_from_profile(
 
     if profile.normalization.normalize_bullet_font:
         template_bullets.normalize_bullet_numbering(doc)
+    # Last of the bullet passes: the marker Quick adjustments chose wins over both above.
+    template_bullet_style.apply_bullet_style(doc, profile.style.bullets)
     if profile.normalization.force_single_spacing:
         template_xml.normalize_single_spacing(doc)
     template_xml.clamp_tab_stops(doc)
