@@ -4,6 +4,7 @@ from __future__ import annotations
 
 import docx
 import pytest
+from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 
 from resume_tailor import config
@@ -20,9 +21,21 @@ from resume_tailor.document.template_style import Bullets, TemplateStyle
 from tests.fixtures import _docx_bytes, _full_featured_resume, synthetic_resume
 
 
+def _indented_resume(document) -> None:
+    """`_full_featured_resume` with the hanging indent a real export gives its bullets."""
+    _full_featured_resume(document)
+    for paragraph in document.paragraphs:
+        ppr = paragraph._p.pPr
+        if ppr is not None and ppr.find(qn("w:numPr")) is not None:
+            ind = OxmlElement("w:ind")
+            ind.set(qn("w:left"), "540")
+            ind.set(qn("w:hanging"), "360")
+            ppr.append(ind)
+
+
 @pytest.fixture
 def build(tmp_path, monkeypatch):
-    raw = _docx_bytes(_full_featured_resume)
+    raw = _docx_bytes(_indented_resume)
     base = template_analyze.analyze_docx(raw=raw).suggested_profile
     src = tmp_path / "baseline.docx"
     src.write_bytes(raw)
@@ -97,9 +110,10 @@ def test_none_indented_keeps_the_text_where_it_was(build):
     before = _ind(_tagged(keep, template_tags.BULLET_TAG)[0])
     doc, _p, _o = build("none_indent")
     bullet = _tagged(doc, template_tags.BULLET_TAG)[0]
+    assert before == {"left": "540", "hanging": "360"}
     assert _marker(doc, bullet) == ""
-    assert _lvl0(doc, bullet).find(qn("w:suff")) is None
-    assert _ind(bullet) == before
+    assert _lvl0(doc, bullet).find(qn("w:suff")).get(qn("w:val")) == "nothing"
+    assert _ind(bullet) == {"left": "540", "hanging": "0"}
 
 
 def test_none_flush_drops_the_indent_and_the_tab(build):
@@ -135,4 +149,4 @@ def test_none_survives_the_layout_file_and_a_glyph_brings_bullets_back(build, tm
     bullet = _tagged(again, template_tags.BULLET_TAG)[0]
     assert _marker(again, bullet) == "•"
     assert _lvl0(again, bullet).find(qn("w:suff")) is None
-    assert _ind(bullet).get("left") != "0"
+    assert _ind(bullet) == {"left": "540", "hanging": "360"}
