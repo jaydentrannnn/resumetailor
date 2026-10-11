@@ -55,7 +55,7 @@ export function MapTemplateStep({
             profile={profileDraft}
             onChange={setProfileDraft}
             headingOverrides={headingOverrides}
-            remapBusy={remapBusy}
+            remapBusy={remapBusy || state.fromLayout}
             onRemapHeading={(paragraphId, kind) => void remapHeading(paragraphId, kind)}
           />
           <UnmappedLinesPanel

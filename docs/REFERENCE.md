@@ -870,6 +870,25 @@ Education first; because the render order follows the master resume, the UI offe
 the student's Education sections up. `scripts/build_default_templates.py --out DIR --pdf`
 writes each bundle plus a filled sample PDF for checking a design change by eye.
 
+**Edit layout in Word** (desktop app only, `ConfigResponse.desktop` ← `web/state.desktop`,
+set by `infra/desktop_main.py`). `template_skeleton.make_skeleton` renders a sentinel
+resume (two entries per section, letter-only `QQ…QQ` sentinels) through the live tagged
+template and swaps each sentinel for a «token» (`skeleton_tokens.TOKENS`; one unique label
+per section kind and field, typed `<<Label>>` also accepted). Headings keep their text and
+get a bookmark `rt_sec_<n>`; Word comments explain what repeats (all stripped on read
+back). `skeleton_parse.parse_skeleton` finds tokens by text across runs, locates headings
+by bookmark then exact text, swaps tokens for sample text (the template's own date style,
+from `Skeleton.meta()["samples"]`), runs `analyze_docx` with heading overrides, and builds
+the profile from where each token now sits (the first entry wins; `layout_*` issue codes
+for a missing, misplaced or unknown token). `web/template_edit.py` keeps one session per
+profile under `<templates>/edit/` (`layout.docx` + `session.json` with the start stamp),
+opens it (`os.startfile`; macOS Word, else LibreOffice — never Pages), reports
+`changed` from mtime/size and `editor_open` from Word's `~$` / LibreOffice's `.~lock`
+file, and on import caches the realised bytes as an already-prepared upload
+(`template_uploads.cache_prepared`, origin = own hash) so the ordinary wizard installs
+them unchanged. The wizard's `fromLayout` hides content merge and heading re-detection.
+Only the first heading's formatting and the first entry of each kind are read back.
+
 ---
 
 ## 6. Fit-loop tuning and measurement

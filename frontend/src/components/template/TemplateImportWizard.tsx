@@ -47,7 +47,7 @@ export function TemplateImportWizard({
   const runInstall = async () => {
     setImportOutcome(null);
     const installed = await confirmInstall();
-    if (!installed || !alsoImportContent || !draftFile) return;
+    if (!installed || !alsoImportContent || !draftFile || state.fromLayout) return;
     await importContent(draftFile);
   };
 

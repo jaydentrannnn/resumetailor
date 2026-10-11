@@ -16,7 +16,8 @@ from pathlib import Path
 
 ROOT = Path(__file__).resolve().parents[1]
 #: Modules that create analyzer issues: the analyzer (`template_analyze` and the modules
-#: split out of it) and the upload clean-up. Add a module here when it starts creating
+#: split out of it), the upload clean-up and the Edit-layout read-back
+#: (`skeleton_parse`). Add a module here when it starts creating
 #: `Issue`s, or its codes go unexplained on the Template page.
 _DOCUMENT = ROOT / "src" / "resume_tailor" / "document"
 SOURCES = tuple(
@@ -32,6 +33,7 @@ SOURCES = tuple(
         "profile_validation",
         "section_mapping",
         "docx_normalize",
+        "skeleton_parse",
     )
 )
 OUT = ROOT / "frontend" / "src" / "lib" / "templateIssueCodes.json"
@@ -47,6 +49,8 @@ def issue_codes(source: str | None = None) -> list[str]:
         else "\n".join(path.read_text(encoding="utf-8") for path in SOURCES)
     )
     codes = set(re.findall(r'code="([a-z_]+)"', text))
+    # `skeleton_parse._ProfileBuilder._block("code", ...)` raises a blocking issue.
+    codes.update(re.findall(r'_block\(\s*"([a-z_]+)"', text))
     for prefix in re.findall(r'code=f"([a-z_]+)\{', text):
         codes.update(prefix + key for key in _TEMPLATED.get(prefix, ()))
     return sorted(codes)

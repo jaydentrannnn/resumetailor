@@ -1,6 +1,8 @@
 import { Button, DataList, Page, PageHeader, Tile } from "../components/ui";
 import { TemplatePreview } from "../components/template/TemplatePreview";
 import { PageFitCard } from "../components/template/PageFitCard";
+import { LayoutEditCard } from "../components/template/LayoutEditCard";
+import { WIZARD_ANCHOR } from "../lib/useLayoutEditSession";
 import { CoverLetterCard } from "../components/template/coverLetter/CoverLetterCard";
 import { SavedTemplatesPanel } from "../components/template/SavedTemplatesPanel";
 import { StarterTemplatesPanel } from "../components/template/StarterTemplatesPanel";
@@ -151,11 +153,14 @@ export function TemplatePage() {
           </div>
         </div>
       </Tile>
+      {info?.tagged.exists && <LayoutEditCard />}
       {info?.tagged.exists && <PageFitCard calibration={info.calibration} />}
       {info?.tagged.exists && <CoverLetterCard reloadKey={previewRevision} />}
       <SavedTemplatesPanel />
       <StarterTemplatesPanel />
-      <TemplateImportWizard />
+      <div id={WIZARD_ANCHOR} className="scroll-mt-4">
+        <TemplateImportWizard />
+      </div>
     </Page>
   );
 }

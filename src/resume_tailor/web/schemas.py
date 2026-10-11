@@ -735,6 +735,9 @@ class ConfigResponse(BaseModel):
     #: True on the first response after the legacy single-slot layout was migrated
     #: into a "Default" profile. The UI shows a one-time banner and never sets it again.
     migrated_from_legacy: bool = False
+    #: Running as the desktop app on the person's own machine (`state.desktop`): the UI
+    #: offers actions that open local files, such as Edit layout in Word.
+    desktop: bool = False
 
 
 class ResumeOutlineEntryOut(BaseModel):
@@ -1022,6 +1025,19 @@ class TemplateUnmappedLineOut(BaseModel):
     suggestion: Literal["field", "static"] = "field"
     suggested_key: str = ""
     suggested_label: str = ""
+
+
+class TemplateEditStatus(BaseModel):
+    """The Edit-layout-in-Word session (`web/template_edit.py`)."""
+
+    active: bool
+    #: The file was saved since it was written (its size or modification time moved).
+    changed: bool = False
+    saved_at: str | None = None
+    #: A word processor holds the file open (its lock file is present).
+    editor_open: bool = False
+    started_at: str | None = None
+    path: str | None = None
 
 
 class TemplateAnalyzeResponse(BaseModel):

@@ -444,3 +444,10 @@ siblings are unchanged.
 - Scope is lines above the first heading only. Trailing lines after the last section stay in that section's body (deleted at build, as before): telling a trailing "References available" from the last entry's own lines is guesswork, so it was left out rather than guessed. Per-entry extra lines are a later phase.
 - Fixed in passing: the cover-letter context never set `contact_slot_<i>`, so a table-layout letterhead rendered its contact slots empty (`render._contact_slots` is now shared).
 - `{{ custom["k"] }}`, not `custom.k`: dot access resolves dict attributes first (the `items` gotcha).
+
+---
+
+- Edit layout in Word (Phase 4): the skeleton is made by rendering a sentinel resume through the live template and swapping sentinels for «tokens», not by threading a token table through the builders — one build path, and the skeleton looks exactly like the output. Read-back reuses `analyze_docx` with heading overrides, then overrides its guesses with token positions, so the wizard/install path is unchanged.
+- The realised read-back is cached with an origin file equal to its own hash: install must not re-`prepare` it (the profile's `source_sha256` is the realised hash).
+- Content merge is hidden for a layout draft (its text is sample text), and heading remap is locked (it would re-guess and throw away the token mapping).
+- Desktop only because opening a local file in Word only makes sense on the person's machine; the PDF export uses a private Word (`DispatchEx`, commit 8da09c4) so a render never closes the layout file the person is editing.

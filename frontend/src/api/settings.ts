@@ -52,6 +52,8 @@ export type AppConfig = {
   target_fields?: { id: string; label: string; summary: string }[];
   active_workspace_id: string | null;
   active_workspace_label: string | null;
+  /** Running as the desktop app: actions that open local files are offered. */
+  desktop?: boolean;
   /** True once, on the first /api/config response after a legacy-layout migration. */
   migrated_from_legacy: boolean;
 };

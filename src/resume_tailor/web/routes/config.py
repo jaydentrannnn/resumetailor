@@ -142,6 +142,7 @@ def _config_response(*, consume_migrated: bool = True) -> ConfigResponse:
         active_workspace_id=active_id,
         active_workspace_label=active_label,
         migrated_from_legacy=migrated,
+        desktop=web_state.desktop,
     )
 
 

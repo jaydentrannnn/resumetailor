@@ -32,6 +32,10 @@ const layout = (title: string, why: string): IssueHelp => ({
   useDefault: true,
 });
 
+const LAYOUT_FILE =
+  "Open the layout file again (Edit layout in Word › Open again), undo the change or put the «field» back, save, then Review changes.";
+const layoutFile = (title: string, why: string): IssueHelp => ({ title, why, app: LAYOUT_FILE });
+
 const mapping = (title: string, why: string): IssueHelp => ({ title, why, app: REMAP });
 
 export const TEMPLATE_ISSUES: Record<string, IssueHelp> = {
@@ -270,6 +274,44 @@ export const TEMPLATE_ISSUES: Record<string, IssueHelp> = {
     title: "A spacer line will be dropped",
     why: "A blank or rule line used for spacing has moved, so it will be left out of the template.",
   },
+  // The Edit layout in Word read-back (`skeleton_parse.py`).
+  layout_unknown_token: layoutFile(
+    "Unknown «field»",
+    "The layout file has a «name» the app doesn't know, so it will print as typed.",
+  ),
+  layout_section_missing: layoutFile(
+    "A section heading is gone",
+    "A section heading was deleted or retyped, so that section can't be found in the layout file.",
+  ),
+  layout_token_misplaced: layoutFile(
+    "A «field» is in the wrong place",
+    "A «field» was moved into another section or above the first heading.",
+  ),
+  layout_no_sections: layoutFile(
+    "No sections left",
+    "Every section heading was deleted from the layout file.",
+  ),
+  layout_profile_invalid: layoutFile(
+    "The layout couldn't be read",
+    "The edited layout file doesn't make a usable template.",
+  ),
+  layout_name_missing: layoutFile("«Name» was deleted", "Your name would not print on the resume."),
+  layout_custom_misplaced: layoutFile(
+    "A custom line is inside a section",
+    "«custom: …» lines belong in the header, above the first section heading.",
+  ),
+  layout_custom_shared: layoutFile(
+    "A custom line shares its line",
+    "«custom: …» needs a line of its own, with nothing else on it.",
+  ),
+  layout_contact_twice: layoutFile(
+    "A contact field appears twice",
+    "Each contact «field» can appear once in the header.",
+  ),
+  layout_field_missing: layoutFile(
+    "A required «field» was deleted",
+    "Each section needs its main «field» (for example «Company» or «Job bullet») to print.",
+  ),
 };
 
 /** Explanation for `code`, or a generic one for a code this build doesn't know. */

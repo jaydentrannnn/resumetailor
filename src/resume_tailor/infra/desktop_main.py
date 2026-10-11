@@ -190,7 +190,10 @@ def main(argv: list[str] | None = None) -> int:
 
     import uvicorn
 
+    from resume_tailor.web import state as web_state
     from resume_tailor.web.app import app
+
+    web_state.desktop = True
 
     class _Server(uvicorn.Server):
         async def startup(self, sockets: list[socket.socket] | None = None) -> None:

@@ -91,6 +91,15 @@ def _cache_upload(raw: bytes, sha: str, *, origin_sha: str | None = None) -> Non
     if origin_sha and origin_sha != sha:
         (directory / f"{sha}.origin").write_text(origin_sha, encoding="ascii")
 
+def cache_prepared(raw: bytes) -> str:
+    """Cache bytes the server produced itself (the Edit-layout read-back) as an upload
+    that is already prepared: install finds them by their own hash and skips `prepare`."""
+    sha = hashlib.sha256(raw).hexdigest()
+    _cache_upload(raw, sha)
+    (_upload_cache_dir() / f"{sha}.origin").write_text(sha, encoding="ascii")
+    return sha
+
+
 def _prepared_for(raw: bytes, sha: str) -> bytes | None:
     """The cached prepared upload `sha`, if it was made from exactly these bytes."""
     directory = _upload_cache_dir()

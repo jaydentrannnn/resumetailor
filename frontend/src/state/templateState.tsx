@@ -45,6 +45,9 @@ type TemplateStateValue = {
   pendingTemplate: string | null;
   wizardStep: WizardStep;
   draftFile: File | null;
+  /** The draft is the Edit layout in Word read-back: its text is sample text and its
+   * headings are pinned by bookmarks, so content merge and heading re-detection are off. */
+  fromLayout: boolean;
   analysis: TemplateAnalyzeResponse | null;
   profileDraft: Record<string, unknown> | null;
   /** Accumulated user-confirmed heading reassignments, keyed by paragraph id, sent
@@ -69,6 +72,9 @@ type TemplateStateValue = {
   refreshLibrary: () => Promise<void>;
   /** Re-analyze with `convertBullets` to turn typed bullets into a real list. */
   beginAnalyze: (file: File, options?: { convertBullets?: boolean }) => Promise<void>;
+  /** Open the mapping step with an analysis the server already made (the Edit layout in
+   * Word read-back), so `file` installs exactly as analyzed. */
+  beginFromAnalysis: (file: File, analysis: TemplateAnalyzeResponse, label: string) => void;
   setProfileDraft: (profile: Record<string, unknown> | null) => void;
   confirmInstall: () => Promise<boolean>;
   resetWizard: () => void;
@@ -110,6 +116,7 @@ export function TemplateProvider({ children }: { children: ReactNode }) {
   const switching = useRef(false);
   const [wizardStep, setWizardStep] = useState<WizardStep>("idle");
   const [draftFile, setDraftFile] = useState<File | null>(null);
+  const [fromLayout, setFromLayout] = useState(false);
   const [analysis, setAnalysis] = useState<TemplateAnalyzeResponse | null>(null);
   const [profileDraft, setProfileDraft] = useState<Record<string, unknown> | null>(null);
   const [headingOverrides, setHeadingOverrides] = useState<Record<number, TemplateHeadingKind>>({});
@@ -198,6 +205,7 @@ export function TemplateProvider({ children }: { children: ReactNode }) {
     setProfileDraft(null);
     setHeadingOverrides({});
     setInstallLabel("");
+    setFromLayout(false);
     setConvertBullets(false);
     setError(null);
     setBuildLog(null);
@@ -213,6 +221,7 @@ export function TemplateProvider({ children }: { children: ReactNode }) {
     setBuildLog(null);
     setLastBuildOk(null);
     setDraftFile(file);
+    setFromLayout(false);
     setInstallLabel(labelFromFilename(file.name));
     setWizardStep("analyzing");
     setAnalysis(null);
@@ -231,6 +240,23 @@ export function TemplateProvider({ children }: { children: ReactNode }) {
       setUploading(false);
     }
   }, []);
+
+  const beginFromAnalysis = useCallback(
+    (file: File, result: TemplateAnalyzeResponse, label: string) => {
+      setConvertBullets(false);
+      setError(null);
+      setBuildLog(null);
+      setLastBuildOk(null);
+      setDraftFile(file);
+      setFromLayout(true);
+      setInstallLabel(label.slice(0, 80));
+      setHeadingOverrides({});
+      setAnalysis(result);
+      setProfileDraft(result.suggested_profile);
+      setWizardStep("mapping");
+    },
+    [],
+  );
 
   const remapHeading = useCallback(
     async (paragraphId: number, kind: TemplateHeadingKind) => {
@@ -431,6 +457,7 @@ export function TemplateProvider({ children }: { children: ReactNode }) {
       pendingTemplate,
       wizardStep,
       draftFile,
+      fromLayout,
       analysis,
       profileDraft,
       headingOverrides,
@@ -448,6 +475,7 @@ export function TemplateProvider({ children }: { children: ReactNode }) {
       refresh,
       refreshLibrary,
       beginAnalyze,
+      beginFromAnalysis,
       setProfileDraft,
       confirmInstall,
       resetWizard,
@@ -468,6 +496,7 @@ export function TemplateProvider({ children }: { children: ReactNode }) {
       pendingTemplate,
       wizardStep,
       draftFile,
+      fromLayout,
       analysis,
       profileDraft,
       headingOverrides,
@@ -483,6 +512,7 @@ export function TemplateProvider({ children }: { children: ReactNode }) {
       refresh,
       refreshLibrary,
       beginAnalyze,
+      beginFromAnalysis,
       confirmInstall,
       resetWizard,
       activateLibraryEntry,

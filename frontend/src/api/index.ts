@@ -14,3 +14,4 @@ export * from "./applications";
 export * from "./sources";
 export * from "./modelQueue";
 export * from "./coverLetter";
+export * from "./templateEdit";
