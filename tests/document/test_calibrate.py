@@ -22,7 +22,7 @@ import pytest
 
 from resume_tailor import config
 from resume_tailor.content.data import Bullet, Experience, ExperienceSection, MasterResume
-from resume_tailor.document import calibrate
+from resume_tailor.document import calibrate, calibration_sample
 
 
 def _resume() -> MasterResume:
@@ -348,6 +348,58 @@ def test_run_never_writes_when_the_boundary_check_fails(tmp_path, monkeypatch):
 
     assert written == []
     assert not (tmp_path / "calibration").exists()
+
+
+def _stub_measurements(monkeypatch, tmp_path, seen: list[MasterResume]) -> None:
+    monkeypatch.setattr(config, "DEFAULT_TEMPLATE_PATH", tmp_path / "main_template.docx")
+    (tmp_path / "main_template.docx").touch()
+    monkeypatch.setattr(config, "CALIBRATION_DIR", tmp_path / "calibration")
+    monkeypatch.setattr(
+        calibrate, "calibrate_chars_per_line", lambda base: seen.append(base) or 101
+    )
+    monkeypatch.setattr(calibrate, "verify_chars_per_line_boundary", lambda base, cpl: None)
+    monkeypatch.setattr(calibrate, "calibrate_lines_per_page", lambda base, cpl: 50)
+    monkeypatch.setattr(calibrate, "calibrate_header_chars", lambda base: 80)
+
+
+def test_run_with_no_master_resume_measures_the_built_in_sample(tmp_path, monkeypatch):
+    seen: list[MasterResume] = []
+    _stub_measurements(monkeypatch, tmp_path, seen)
+
+    def missing():
+        raise FileNotFoundError("no master resume")
+
+    monkeypatch.setattr(calibrate.data, "load", missing)
+    monkeypatch.setattr(
+        calibrate, "measure_anchors", lambda resume: pytest.fail("anchors need a real resume")
+    )
+
+    result = calibrate.run(verify_anchors=True)
+
+    assert seen[0].contact.name == "Alex Sample"
+    assert "built-in sample resume" in result.log
+    written = json.loads(result.path.read_text("utf-8"))
+    assert (written["chars_per_line"], written["lines_per_page"]) == (101, 50)
+    assert "anchors" not in written
+
+
+def test_run_still_fails_on_a_corrupt_master_resume(tmp_path, monkeypatch):
+    _stub_measurements(monkeypatch, tmp_path, [])
+
+    def corrupt():
+        raise ValueError("master_resume.json is not valid JSON")
+
+    monkeypatch.setattr(calibrate.data, "load", corrupt)
+    with pytest.raises(ValueError, match="not valid JSON"):
+        calibrate.run(verify_anchors=True)
+    assert not (tmp_path / "calibration").exists()
+
+
+def test_sample_resume_has_what_the_probes_read():
+    sample = calibration_sample.sample_resume()
+    assert MasterResume.model_validate(sample.model_dump(by_alias=True)) == sample
+    assert any(proj.link for proj in sample.projects)
+    assert sample.education and sample.skills
 
 
 # ----------------------------------------------------------------------------------

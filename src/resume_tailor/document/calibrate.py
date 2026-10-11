@@ -26,7 +26,7 @@ from resume_tailor.content.data import (
     ProjectSection,
 )
 from resume_tailor.document import render, template_profile
-from resume_tailor.document import calibration_cache
+from resume_tailor.document import calibration_cache, calibration_sample
 
 
 class CalibrationError(RuntimeError):
@@ -556,8 +556,19 @@ def run(*, verify_anchors: bool = True, rebaseline: bool = False) -> Calibration
             "Build it before calibrating."
         )
 
-    base = data.load()
     lines: list[str] = [f"PDF backend: {config.PDF_BACKEND}"]
+    try:
+        base = data.load()
+        sample = False
+    except FileNotFoundError:
+        # A brand-new profile: the wizard calibrates before it imports content. The
+        # probes are synthetic, so a stand-in resume measures the same template.
+        base = calibration_sample.sample_resume()
+        sample = True
+        lines.append(
+            "Measured with a built-in sample resume (no master resume yet); the render "
+            "check runs on the next tune."
+        )
 
     lines.append("Calibrating CHARS_PER_LINE…")
     chars_per_line = calibrate_chars_per_line(base)
@@ -584,7 +595,8 @@ def run(*, verify_anchors: bool = True, rebaseline: bool = False) -> Calibration
 
     previous_anchors = _load_previous_anchors()
     anchors: dict | None = previous_anchors
-    if verify_anchors:
+    # Anchors record how *this* resume renders — meaningless for the stand-in.
+    if verify_anchors and not sample:
         lines.append("Verifying render anchors…")
         try:
             measured = measure_anchors(base)
