@@ -112,7 +112,8 @@ export function useApplyRowActions({
           auto_submit: apply.auto_submit_enabled,
           blocker_mode: "continue",
           model_provider: apply.model_provider,
-          model_name: apply.model_name,
+          model_name: apply.model_name || "default",
+          model_selection: apply.model_selection,
         }),
       );
     } catch (reason) {

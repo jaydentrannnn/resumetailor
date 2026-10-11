@@ -36,7 +36,7 @@ from resume_tailor.apply.funnel import store as apply_store
 from resume_tailor.content import data, dates
 from resume_tailor.content.data import MasterResume
 from resume_tailor.pipeline import jd
-from resume_tailor.web import template_ops
+from resume_tailor.web import job_routing, template_ops
 from resume_tailor.web.jobs import get_queue
 from resume_tailor.web.routes.run_lookup import _resolve_run
 from resume_tailor.web.schemas import (
@@ -387,12 +387,7 @@ def answer_job_question(job_id: str, body: AnswerRequest) -> AnswerResponse:
 
     # A web run records its routing; a CLI-made run does not, and an unpinned route would
     # fall through to the claude fallback, which a default (ollama) install has no key for.
-    backends_path = out_dir / "backends.json"
-    pinned = (
-        config.pinned_specs(json.loads(backends_path.read_text(encoding="utf-8")), effort=None)
-        if backends_path.is_file()
-        else config.pinned(config.ONE_OFF_PROFILE)
-    )
+    pinned = job_routing.pinned_role("heavy")
     with pinned:
         result = answer_question(
             body.question,

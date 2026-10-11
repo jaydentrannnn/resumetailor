@@ -8,8 +8,8 @@ import { CheckResultLine } from "./CheckResultLine";
 
 const ENGINE_NAMES: Record<string, string> = { soffice: "LibreOffice", word: "Microsoft Word" };
 const CHECKS = [
-  { id: "tailor", label: "Tailoring model" },
-  { id: "autofill", label: "Autofill model" },
+  { id: "tailor", label: "Light task model" },
+  { id: "autofill", label: "Heavy task model" },
   { id: "pdf", label: "PDF conversion" },
 ] as const;
 type CheckId = (typeof CHECKS)[number]["id"];

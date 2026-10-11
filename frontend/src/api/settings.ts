@@ -9,6 +9,8 @@ export type AppConfig = {
   experience: number;
   projects: number;
   model_profiles: string[];
+  model_defaults?: Record<string, string>;
+  model_base_urls?: Record<string, string>;
   /** Server-side OLLAMA_MODEL / OLLAMA_BASE_URL defaults, shown when no override is set. */
   ollama_model: string;
   ollama_base_url: string;
@@ -190,6 +192,10 @@ export function fetchSecrets(): Promise<{ backend: string; secrets: SecretState[
   return request("/api/secrets");
 }
 
+export function fetchSecretState(name: string): Promise<SecretState> {
+  return request(`/api/secrets/${encodeURIComponent(name)}`);
+}
+
 export function saveSecret(name: string, value: string): Promise<SecretState> {
   return request(`/api/secrets/${encodeURIComponent(name)}`, {
     method: "PUT",
@@ -210,7 +216,7 @@ export interface CheckResult {
 
 export function testModel(
   settings: JobSettings,
-  target: "tailor" | "autofill" = "tailor",
+  target: "tailor" | "autofill" | "light" | "heavy" = "tailor",
 ): Promise<CheckResult> {
   /** One tiny model call with these settings (a fraction of a cent on paid APIs). */
   return request("/api/models/test", {

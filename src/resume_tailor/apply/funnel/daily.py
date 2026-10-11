@@ -108,7 +108,7 @@ def prepare_application(
     refresh_artifacts = force_prepare or not existing_preparation.eligible
 
     raw = workspace.load_settings()
-    job_defaults = JobSettings.model_validate(raw["defaults"])
+    job_defaults = settings._job_defaults or JobSettings.model_validate(raw["defaults"])
     resume = data.load()
     known_tags = bullet_tags.known_terms(resume)
     row = source_rows.SourceRow(
@@ -205,7 +205,10 @@ def run_daily(
 
     try:
         raw = workspace.load_settings()
-        job_defaults = JobSettings.model_validate(raw["defaults"])
+        job_defaults = (
+            settings._job_defaults if settings is not None and settings._job_defaults is not None
+            else JobSettings.model_validate(raw["defaults"])
+        )
         apply_settings = settings if settings is not None else job_defaults.apply
 
         if settings is None and not apply_settings.enabled:

@@ -1,6 +1,7 @@
 /** Tailoring runs: job settings, progress and reports, run history, artifacts, re-render. */
 
 import type { ApplySettings } from "./applySettings";
+import type { AiModels } from "../lib/aiModels";
 import { apiError, request } from "./core";
 
 export type ContactField = "location" | "email" | "phone" | "linkedin" | "github";
@@ -41,6 +42,7 @@ export type CoverAngles = {
 };
 
 export type JobSettings = {
+  ai_models?: AiModels | null;
   pages: number;
   experience: number | null;
   projects: number | null;

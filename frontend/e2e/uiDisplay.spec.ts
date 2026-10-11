@@ -112,14 +112,14 @@ for (const touch of [false, true]) {
         }),
       );
       await page.goto("/settings?tab=models");
-      const model = page.locator(".rt-model-label").first().locator("..").locator("input");
-      const effort = page.locator(".rt-model-label").nth(1).locator("..").locator("select");
+      const model = page.getByLabel("Model", { exact: true }).first();
+      const provider = page.getByRole("combobox", { name: "Provider", exact: true }).first();
       await expect(model).toBeVisible();
-      await expect(effort).toBeVisible();
+      await expect(provider).toBeVisible();
       const modelBox = (await model.boundingBox())!;
-      const effortBox = (await effort.boundingBox())!;
-      expect(Math.abs(modelBox.y - effortBox.y)).toBeLessThan(1);
-      expect(Math.abs(modelBox.height - effortBox.height)).toBeLessThan(1);
+      const providerBox = (await provider.boundingBox())!;
+      expect(Math.abs(modelBox.y - providerBox.y)).toBeLessThan(1);
+      expect(Math.abs(modelBox.height - providerBox.height)).toBeLessThan(1);
 
       const pills = [
         page.getByRole("button", { name: "Ready", exact: true }),
@@ -145,16 +145,10 @@ for (const touch of [false, true]) {
       expect(fonts[2]).toEqual(fonts[0]);
       expect(fonts[0]).toEqual(["12px", "16px", "600"]);
 
-      const help = page.getByRole("button", { name: "What is effort?" });
-      await help.click();
-      await expect(page.getByRole("note")).toBeVisible();
-      await page.keyboard.press("Escape");
-      await expect(page.getByRole("note")).toHaveCount(0);
-
       await page.setViewportSize({ width: 390, height: 844 });
       await expect(model).toBeVisible();
-      await expect(effort).toBeVisible();
-      expect((await effort.boundingBox())!.y).toBeGreaterThan((await model.boundingBox())!.y);
+      await expect(provider).toBeVisible();
+      expect((await model.boundingBox())!.y).toBeGreaterThan((await provider.boundingBox())!.y);
       expect(await page.evaluate(() => document.documentElement.scrollWidth)).toBeLessThanOrEqual(
         390,
       );

@@ -35,7 +35,7 @@ _log = logging.getLogger(__name__)
 class _Job:
     workspace_id: str | None
     resume: MasterResume
-    routing: tuple[str, dict[str, str] | None, str | None]
+    routing: tuple[str, dict[str, config.ModelSpec] | None, str | None]
 
 
 _LOCK = threading.Lock()
@@ -53,7 +53,7 @@ def _slot(workspace_id: str | None) -> str:
     return workspace_id or ""
 
 
-def tailor_routing() -> tuple[str, dict[str, str] | None, str | None]:
+def tailor_routing() -> tuple[str, dict[str, config.ModelSpec] | None, str | None]:
     """The active profile's Tailor routing — the backend inference runs (and is cached)
     under, so anything reading the cache must pin the same one."""
     settings = JobSettings.model_validate(workspace.load_settings()["defaults"])

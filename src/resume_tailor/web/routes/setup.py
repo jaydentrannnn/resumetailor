@@ -106,9 +106,10 @@ def _model_item() -> dict[str, Any]:
         }
     # `credential_gaps` covers only origins whose key `llm.py` checks up front; the
     # Anthropic key is enforced later, by `config.anthropic_api_key`.
-    if any(b.provider == "anthropic" for b in backends) and not config.credential(
-        "ANTHROPIC_API_KEY"
-    ):
+    needs_anthropic = any(
+        b.provider == "anthropic" and not b.credential_ref for b in backends
+    )
+    if needs_anthropic and not config.credential("ANTHROPIC_API_KEY"):
         return _item(
             "model", "AI model", False, "An API key is missing (ANTHROPIC_API_KEY).",
             "Add your key", "/settings",

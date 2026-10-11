@@ -17,9 +17,13 @@ export function profileDefaultModel(
 /** "profile · model" label for the Tailor tab's model settings, which Prepare also
  * uses (see `daily._job_settings` on the backend). */
 export function tailorModelLabel(
-  settings: Pick<JobSettings, "model" | "model_name">,
+  settings: Pick<JobSettings, "model" | "model_name" | "ai_models">,
   config: AppConfig | null,
 ): string {
+  if (settings.ai_models) {
+    const light = settings.ai_models.light;
+    return `${light.provider} ? ${light.model_name || profileDefaultModel({ model: light.provider === "anthropic" ? "claude" : light.provider }, config)}`;
+  }
   const model = settings.model_name || (config ? profileDefaultModel(settings, config) : "");
   return model ? `${settings.model} · ${model}` : settings.model;
 }

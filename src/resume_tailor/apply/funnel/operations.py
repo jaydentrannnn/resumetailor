@@ -315,9 +315,14 @@ def active() -> ApplyOperation | None:
 
 def _captured_settings(request: ApplyOperationRequest) -> ApplySettings:
     raw = workspace.load_settings()
-    settings = JobSettings.model_validate(raw["defaults"]).apply.model_copy(deep=True)
+    job_defaults = JobSettings.model_validate(raw["defaults"])
+    settings = job_defaults.apply.model_copy(deep=True)
+    settings._job_defaults = job_defaults
     settings.model_provider = request.model_provider
     settings.model_name = request.model_name.strip()
+    settings.model_selection = (
+        request.model_selection.model_copy(deep=True) if request.model_selection else None
+    )
     settings.auto_submit_enabled = request.auto_submit
     settings.blocker_mode = request.blocker_mode
     return settings
@@ -330,6 +335,9 @@ def _effective_model(request: ApplyOperationRequest) -> str:
     and Prepare tailor and screen with the Tailor tab's routing (`daily_rows._job_settings`).
     """
     if request.action == "fill":
+        if request.model_selection is not None:
+            spec = request.model_selection.spec("heavy")
+            return config._backend(spec, "answer", None).label()
         return f"{request.model_provider}:{request.model_name.strip()}"
     from resume_tailor.web.job_routing import model_label
 

@@ -126,14 +126,14 @@ templates/workspaces/<id>/library/ , backups/
 output/workspaces/<id>/{cache/, jobs/<job_id>/, template/}
 ```
 
-**AI settings are app-wide, not per profile**: `model`, `model_name`, `ollama_model`,
-`gemini_model`, `effort`, `extract_runs`, `max_concurrent_jobs` and the Autofill model
-(`apply.model_provider`/`apply.model_name`) live in `DATA_ROOT/ai_settings.json`
-(`app_settings.py`). `workspace.load_settings` lays them over a profile's `defaults` and
-`save_settings` strips them back out, so every caller still reads one merged dict. Only keys
-present in the app file override; `bootstrap` seeds it once from the active profile, so an
-upgrade keeps the model in use. Retired run options (`no_cache`, `no_skills`, `no_facets`,
-`initial_bullet_share`) are dropped on load — a request (MCP, scripts) may still set them.
+**AI settings are app-wide, not per profile**: `ai_models.light`, `ai_models.heavy`,
+`effort`, `extract_runs` and `max_concurrent_jobs` live in `DATA_ROOT/ai_settings.json`
+(`app_settings.py`). `workspace.load_settings` overlays them onto a profile's `defaults`;
+`save_settings` strips them back out. Startup migrates existing choices and stage routes;
+editing Light clears preserved stage overrides. Heavy mirrors into `apply.model_selection`.
+Legacy `model`/`model_name` and Apply provider/name requests remain supported, and CLI
+flags/defaults retain their legacy semantics. Retired run options (`no_cache`, `no_skills`,
+`no_facets`, `initial_bullet_share`) are dropped on load; requests may still set them.
 
 Ids are slugs derived from the label, not opaque — browsed by hand. **Rename never moves
 the directory**; the id is fixed at creation. Template library cap is 20 entries, per
@@ -194,13 +194,12 @@ update, move data): `docs/GUIDE.md`.
 ## 3. Application automation
 
 `src/resume_tailor/apply/` owns the daily discover → screen → tailor → packet → fill
-funnel. Prepare tailors and screens with the **Tailor tab's** model settings (profile,
-model name, effort, per-stage overrides): `daily_rows._job_settings` leaves them untouched, and
-the screening `jd.extract_consensus` call is pinned to the same `web.job_routing.model_routing` with
-the same `extract_runs`, so the tailor job's own extraction is a cache hit.
-`ApplySettings.model_provider`/`model_name` (default `ollama`/`nemotron-3-super:cloud`, the
-Apply page's "Autofill model") covers only Fill's LLM calls — prepared long answers and
-hybrid/model resolver assistance — which run under `config.pinned(settings.model_spec)`.
+funnel. Prepare tailors and screens with the **Light task model**, preserving its effort,
+stage overrides and `extract_runs` through `web.job_routing.model_routing`. Fill's prepared
+answers and model/hybrid resolvers use the **Heavy task model**, mirrored into
+`ApplySettings.model_selection` and pinned via `settings.model_spec`. The Ask AI answer
+panel also uses Heavy. Apply operations capture both roles at start so later settings edits
+cannot repoint an in-progress operation. Rewrite, expansion and cover letters stay on Light.
 
 Form filling injects `filler.js` into the user's host browser over CDP (`CHROME_CDP_URL`,
 default `http://127.0.0.1:9222`, or `http://host.docker.internal:9222` in the Docker image
@@ -509,7 +508,7 @@ A combobox leftover carries the planned value to `_fill_declared_combobox`.
 `selectorFor` only returns a selector that matches one element.
 
 **The model fallback.** Choice questions that no rule keys go in one batch to
-`answer.classify_questions` under the Autofill model. It returns a key from the closed
+`answer.classify_questions` under the Heavy task model. It returns a key from the closed
 `questions.MODEL_KEYS` list, or none. Each result is cached by wording and options (and
 `_CLASSIFY_PROMPT_VERSION`). The key passes the same gates, and code still computes the
 answer.
@@ -1005,8 +1004,9 @@ The panel is a mode of the Resume view with a live draft preview:
 Every physical model request enters one shared FIFO queue per endpoint, including
 retries. Local servers default to one simultaneous request; cloud endpoints default
 to three. A queued request starts as soon as a slot opens, with no pause between
-batches. HTTP 429 Retry-After delays the whole endpoint. Settings > AI > Advanced > Speed
-(presets over these limits; Custom shows them raw) controls these app-wide limits and shows active/waiting requests; settings persist under
+batches. HTTP 429 Retry-After delays the whole endpoint. Settings > AI model > Advanced > Request concurrency
+controls these app-wide limits. Custom shows local/cloud defaults with collapsed per-server
+overrides, friendly provider labels and queue activity only while requests are active; settings persist under
 `DATA_ROOT/model_queue.json`. Limits are shared within one server process.
 
 - **The default profile is `ollama`, not `claude`.** Both `tailor.py --model` and
@@ -1015,16 +1015,18 @@ batches. HTTP 429 Retry-After delays the whole endpoint. Settings > AI > Advance
   `backend_for`'s resolve-if-unresolved still default to `"claude"` — they guard importable
   library functions called by scripts/tests that never went through the CLI, and flipping
   them would silently reroute callers that never asked for a backend.
-- **`config._ACTIVE` is only ever populated by `web/job_tailor_run.py`'s tailoring-job runner** — it
-  is the sole `config.resolve()` call site under `src/`. A web route reached outside a job
-  (PDF structuring on import, vocabulary-proposal generation) that calls an
-  LLM stage therefore hits `backend_for`'s `"claude"` fallback on a freshly started server,
-  regardless of the saved Model setting. A route that must not do that — and must not call
-  `resolve()` either, since that would repoint a job's remaining stages mid-run — wraps its
-  call in `config.pinned(config.ONE_OFF_PROFILE)` (a `ContextVar` overlay `backend_for`
-  checks first, invisible to other requests/threads). Only the import route's
-  tag-suggestion pass is pinned today; `generate_library_proposals` still inherits
-  `_ACTIVE`/the claude fallback.
+- **`config._ACTIVE` is only populated by the tailoring-job runner.** Import and vocabulary
+  routes use `web.job_routing.pinned_role("light")`; application answers use `"heavy"`.
+  These ContextVar pins cannot repoint another job. Cover-letter/expansion regeneration uses
+  `backends.json` from the original run. New custom/OpenAI snapshots include API format,
+  endpoint, effort and a credential reference; older string snapshots still work.
+- **Custom servers** choose OpenAI-compatible or Anthropic-compatible API format and a
+  base URL, with an optional key stored by role + format + URL in the secret store. Changing
+  the URL or format does not reuse another endpoint's key. The named OpenAI provider uses
+  `OPENAI_API_KEY` and the official endpoint; its requests use `max_completion_tokens` and
+  omit optional sampling parameters to support reasoning models. Other compatible servers
+  retain their existing request parameters. No credential values enter saved settings,
+  run snapshots or model cache fingerprints.
 - Every call uses `client.messages.parse()` with a Pydantic model — schema-validated, never
   prose parsing. On the Anthropic path, non-streaming calls cap reasoning+output at 21,333
   tokens (SDK limit), so effort and `MAX_TOKENS` are coupled there. **On the

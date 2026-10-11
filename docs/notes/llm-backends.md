@@ -362,3 +362,22 @@ deterministic draft and a `"Tag suggestion pass failed: …"` warning instead of
 **What:** Every CLI/web run records versioned telemetry under its workspace output/telemetry directory; the usage_report module groups measured physical requests, cache events, and timings by routing, implementation version and extraction cache state.
 **Why:** Retries and cached/reasoning token subsets cannot be inferred accurately from stage estimates; concurrent stage durations cannot be summed into total run time. Usage absent from a provider response stays unknown.
 **Impact:** Metadata only is recorded, with atomic best-effort persistence on success/failure/cancellation. Skills copy/download/autofill signals measure observed consumption; the seven-day review window excludes incomplete observations and does not claim to observe manual reading. JD voting and skills defaults stay unchanged pending normal-run evidence and paired JD quality review.
+### 2026-10-11 — Unified app Light/Heavy model roles
+
+Settings now uses one connection editor for both roles, with named OpenAI and custom
+OpenAI/Anthropic-compatible URLs. Light owns tailoring, rewrite, expand, cover letters,
+import and vocabulary tools; Heavy owns autofill and Ask AI application answers. Review
+remains CLI-only. Existing app choices and different stage routes migrate without changing
+routing; an explicit Light edit removes those compatibility overrides. Apply snapshots both
+roles at operation start. Custom keys use role + format + URL references, and run snapshots
+retain the connection plus effort for later cover/expansion regeneration. Advanced precedes
+Usage; Custom request concurrency shows local/cloud defaults and collapsed server overrides,
+with idle queue counts hidden. Official OpenAI requests use max_completion_tokens and omit
+sampling controls; other compatible providers preserve their existing payloads. CLI flags
+and defaults remain independent of the app role controls.
+
+Cache identity (2026-10-11): `config.fingerprint` keeps `origin|model|effort` for built-in
+origins; only `origin == "custom"` appends `|provider|base_url` (two servers can share a
+model name, over either API format). The first AI-model draft appended them for every
+backend, which would have invalidated every cached extraction, score and inferred skill on
+upgrade.

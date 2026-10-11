@@ -10,20 +10,12 @@ import { Card } from "../../../components/ui";
 import { browserView } from "../../../lib/browserState";
 import { describe } from "../../../lib/errors";
 import { SKIP_WARNINGS } from "../../../lib/onboarding";
-import { autofillProviderId, PROVIDERS, providerInfo } from "../../../lib/providers";
 import { useRunState } from "../../../state/runState";
 import { BrowserPicker, ConnectionStatus } from "../../apply/BrowserConnection";
-import { ApiKeysCard } from "../../settings/ApiKeysCard";
 import { AutofillModelCard } from "../../settings/AutofillModelCard";
 import { TailorModelCard } from "../../settings/TailorModelCard";
 import { useSecrets } from "../../settings/useSecrets";
 import { StepFrame, type StepNav } from "../StepFrame";
-
-/** Keys a model provider reads; job-search keys wait for the Applications page. */
-const MODEL_KEYS = [...new Set(PROVIDERS.flatMap((p) => p.keys))];
-
-const autofillKeys = (provider: ApplySettings["model_provider"]) =>
-  providerInfo(autofillProviderId(provider))?.keys ?? [];
 
 /**
  * Step 2: API keys, then the model that tailors, the model that fills application forms,
@@ -31,7 +23,7 @@ const autofillKeys = (provider: ApplySettings["model_provider"]) =>
  */
 export function ToolsStep({ nav }: { nav: StepNav }) {
   const { settings, setSettings, flushSettings } = useRunState();
-  const { secrets, storeBackend, reload } = useSecrets();
+  const { secrets, reload } = useSecrets();
   const [tailorOk, setTailorOk] = useState(false);
   const [browser, setBrowser] = useState<BrowserStatus | null>(null);
   const [launching, setLaunching] = useState(false);
@@ -70,38 +62,31 @@ export function ToolsStep({ nav }: { nav: StepNav }) {
   }
 
   const view = browserView(browser, apply.browser ?? null);
-  const highlighted = [
-    ...(providerInfo(settings.model)?.keys ?? []),
-    ...autofillKeys(apply.model_provider),
-  ];
-
   return (
     <StepFrame
       title="AI & browser"
-      intro="Add any API keys first, then pick the model that tailors your resume and the one that fills in application forms."
+      intro="Choose the light model for tailoring and app tools, and the heavy model for application answers and form filling."
       nav={nav}
       complete={tailorOk}
       onSave={save}
       skipWarning={SKIP_WARNINGS.tools}
       error={error}
     >
-      <ApiKeysCard
-        embedded
-        secrets={secrets}
-        storeBackend={storeBackend}
-        reload={reload}
-        highlighted={highlighted}
-        only={MODEL_KEYS}
-      />
       <TailorModelCard
         embedded
         className="border-t border-line pt-4"
         secrets={secrets}
-        title="Tailoring model"
+        reload={reload}
+        title="Light task model"
         description="Rewrites your bullets for each job in many small steps. A lightweight model is plenty and saves usage; leave the model blank for the default (gemma4:cloud on Ollama). It is tested automatically; continue once it works."
         onResult={(result) => setTailorOk(!!result?.ok)}
       />
-      <AutofillModelCard embedded className="border-t border-line pt-4" secrets={secrets} />
+      <AutofillModelCard
+        embedded
+        className="border-t border-line pt-4"
+        secrets={secrets}
+        reload={reload}
+      />
       <Card
         embedded
         className="border-t border-line pt-4"

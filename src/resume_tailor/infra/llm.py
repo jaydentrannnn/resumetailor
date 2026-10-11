@@ -50,8 +50,10 @@ import json
 import math
 import time
 from typing import Any, TypeVar
+from urllib.parse import urlsplit
 
 import httpx
+import httpx2
 from pydantic import BaseModel, ValidationError
 
 from .. import config
@@ -255,6 +257,37 @@ class _Messages:
         )
 
 
+def _completion_payload(
+    base_url: str, model: str, ceiling: int, messages: list[dict[str, Any]],
+) -> dict[str, Any]:
+    """Official OpenAI supports reasoning models; compatible servers retain their shape."""
+    payload: dict[str, Any] = {"model": model, "messages": messages}
+    if urlsplit(base_url).hostname == "api.openai.com":
+        payload["max_completion_tokens"] = ceiling
+        # Omit optional sampling controls, which some reasoning models reject.
+    else:
+        payload.update(max_tokens=ceiling, temperature=0)
+    return payload
+
+
+def _anthropic_connection(backend: config.Backend, key: str) -> dict[str, Any]:
+    """Custom auth never inherits unrelated Anthropic environment credentials."""
+    options: dict[str, Any] = {"api_key": key}
+    if backend.base_url:
+        options["base_url"] = backend.base_url
+    if backend.origin == "custom":
+        import anthropic
+
+        options.update(
+            api_key=key or "unused", auth_token=None,
+            default_headers={
+                "Authorization": anthropic.omit,
+                **({"x-api-key": anthropic.omit} if not key else {}),
+            },
+        )
+    return options
+
+
 class _OpenAICompatClient:
     """Minimal `/chat/completions` client that gets JSON out of unconstrained models."""
 
@@ -379,14 +412,7 @@ class _OpenAICompatClient:
 
         rung = 0
         while True:
-            payload: dict[str, Any] = {
-                "model": model,
-                # `max_tokens` only. Ollama maps it to num_predict; stricter servers reject
-                # `max_completion_tokens` alongside it.
-                "max_tokens": ceiling,
-                "temperature": 0,
-                "messages": messages,
-            }
+            payload = _completion_payload(self.base_url, model, ceiling, messages)
             response_format = ladder[rung]
             if response_format is not None:
                 payload["response_format"] = response_format
@@ -506,11 +532,13 @@ def client_for(purpose: str) -> Any:
         import anthropic
 
         return llm_telemetry.wrap(anthropic.Anthropic(
-            api_key=config.api_key_for(purpose),
-            http_client=httpx.Client(transport=model_queue.ScheduledTransport()),
+            **_anthropic_connection(backend, config.api_key_for(purpose)),
+            http_client=httpx2.Client(transport=model_queue.ScheduledTransport()),
         ), purpose, backend.origin)
 
     if backend.provider == "openai":
+        if backend.credential_ref == "OPENAI_API_KEY" and not config.api_key_for(purpose):
+            raise LLMError("OpenAI needs an API key. Add it in AI model settings.")
         if not backend.base_url:
             raise LLMError(
                 f"Provider 'openai' for {purpose!r} needs a base URL. Use "
@@ -640,10 +668,7 @@ class _AsyncOpenAICompatClient:
         rung = 0
         escalations = 0
         while True:
-            payload: dict[str, Any] = {
-                "model": model, "max_tokens": ceiling, "temperature": 0,
-                "messages": messages,
-            }
+            payload = _completion_payload(self.base_url, model, ceiling, messages)
             if ladder[rung] is not None:
                 payload["response_format"] = ladder[rung]
             response = await self._post(payload, stage_deadline)
@@ -695,11 +720,14 @@ def async_client_for(purpose: str) -> Any:
         import anthropic
 
         return llm_telemetry.wrap(anthropic.AsyncAnthropic(
-            api_key=config.api_key_for(purpose), max_retries=0,
+            **_anthropic_connection(backend, config.api_key_for(purpose)),
+            max_retries=0,
             timeout=min(config.LLM_TIMEOUT, 60),
-            http_client=httpx.AsyncClient(transport=model_queue.AsyncScheduledTransport()),
+            http_client=httpx2.AsyncClient(transport=model_queue.AsyncScheduledTransport()),
         ), purpose, backend.origin, asynchronous=True)
     if backend.provider == "openai":
+        if backend.credential_ref == "OPENAI_API_KEY" and not config.api_key_for(purpose):
+            raise LLMError("OpenAI needs an API key. Add it in AI model settings.")
         if not backend.base_url:
             raise LLMError(f"Provider {backend.origin!r} needs a base URL")
         if config.requires_key(backend.origin, backend.base_url) and not config.api_key_for(

@@ -253,7 +253,7 @@ sessions. (The [browser extension](#browser-extension) is an alternative.)
    app must be running; the tray is enough, and a run missed while the PC was off starts
    at the next launch.
 3. Select postings and press **Tailor files for selected**. It tailors with the Tailor
-   page's model settings, several at once (Settings → AI → Advanced → **Resumes at once**,
+   page's model settings, several at once (Settings → AI model → Advanced → **Resumes at once**,
    default 2, up to 4).
 4. Select prepared postings and press **Fill selected**. It fills several at once, each in
    its own tab (**Parallel fills** in the Apply settings drawer, default 2, up to 4), and
@@ -267,8 +267,10 @@ sessions. (The [browser extension](#browser-extension) is an alternative.)
      SmartRecruiters. There you always press Submit yourself.
    - **Pause all automation** in the header stops everything at once.
 
-The **Autofill model** selector covers only Fill's AI tasks (drafted written answers and
-hybrid form resolution). For calling-code menus shared by several countries, set the
+Settings → **AI model** has unified **Light task model** and **Heavy task model** selectors.
+Light handles tailoring, rewrite, expansion, cover letters and app tools; Heavy handles
+autofill and application answers. Both support OpenAI and custom OpenAI-compatible or
+Anthropic-compatible servers. For calling-code menus shared by several countries, set the
 profile's optional **Phone region**.
 
 From a dev checkout with Docker, `docker compose up -d` sets

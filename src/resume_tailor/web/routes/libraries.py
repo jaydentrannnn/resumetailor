@@ -11,6 +11,7 @@ from resume_tailor import config
 from resume_tailor.content import bullet_tags, data, libraries, library_models
 from resume_tailor.pipeline import jd, propose
 from resume_tailor.web import template_ops
+from resume_tailor.web.job_routing import pinned_role
 from resume_tailor.web.jobs import get_queue
 from resume_tailor.web.routes.workspaces import _busy_conflict
 from resume_tailor.web.schemas import (
@@ -133,10 +134,8 @@ def generate_library_proposals(body: ProposalGenerateRequest) -> LibraryStateRes
     switch mid-call cannot land a draft in the wrong profile's queue.
 
     Not a tailoring job, so `config._ACTIVE` is never populated for it (only the job
-    runner does that) — both LLM calls below are pinned to `config.ONE_OFF_PROFILE`
-    so this never silently falls
-    through to `backend_for`'s claude default on a fresh server with no Anthropic key,
-    regardless of the user's saved Model setting.
+    runner does that) — both LLM calls below use the saved Light task model through
+    `pinned_role("light")`, without repointing a running job's backends.
     """
     workspace_id_at_start = config.active_workspace_id()
     try:
@@ -150,7 +149,7 @@ def generate_library_proposals(body: ProposalGenerateRequest) -> LibraryStateRes
     unmatched: list[tuple[str, str]] = []
     if jd_text:
         try:
-            with config.pinned(config.ONE_OFF_PROFILE):
+            with pinned_role("light"):
                 requirements = jd.extract(jd_text, known_tags=known_tags)
             unmatched = propose.near_miss_alias_candidates(requirements, resume)
         except Exception as exc:
@@ -168,7 +167,7 @@ def generate_library_proposals(body: ProposalGenerateRequest) -> LibraryStateRes
     warning: str | None = None
     if unmatched or unknown_verbs:
         try:
-            with config.pinned(config.ONE_OFF_PROFILE):
+            with pinned_role("light"):
                 raw = propose.propose_vocabulary(
                     known_tags=known_tags,
                     unmatched=unmatched,

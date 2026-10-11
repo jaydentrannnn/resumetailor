@@ -24,6 +24,7 @@ from typing import Any
 from urllib.parse import urlsplit, urlunsplit
 
 import httpx
+import httpx2
 from pydantic import BaseModel, Field, field_validator
 
 from resume_tailor import config
@@ -263,7 +264,7 @@ class RequestQueue:
         finally:
             self._cleanup(pool, ticket, admitted)
 
-    def rate_limited(self, url: str, response: httpx.Response) -> None:
+    def rate_limited(self, url: str, response: httpx.Response | httpx2.Response) -> None:
         if response.status_code != 429:
             return
         delay = 2.0
@@ -285,10 +286,10 @@ class RequestQueue:
 queue = RequestQueue()
 
 
-class ScheduledTransport(httpx.HTTPTransport):
+class ScheduledTransport(httpx2.HTTPTransport):
     """Covers Anthropic SDK retries at the physical HTTP boundary."""
 
-    def handle_request(self, request: httpx.Request) -> httpx.Response:
+    def handle_request(self, request: httpx2.Request) -> httpx2.Response:
         endpoint = str(request.url.copy_with(path="", query=None))
         from . import telemetry
 
@@ -303,8 +304,8 @@ class ScheduledTransport(httpx.HTTPTransport):
             return response
 
 
-class AsyncScheduledTransport(httpx.AsyncHTTPTransport):
-    async def handle_async_request(self, request: httpx.Request) -> httpx.Response:
+class AsyncScheduledTransport(httpx2.AsyncHTTPTransport):
+    async def handle_async_request(self, request: httpx2.Request) -> httpx2.Response:
         from . import telemetry
 
         endpoint = str(request.url.copy_with(path="", query=None))

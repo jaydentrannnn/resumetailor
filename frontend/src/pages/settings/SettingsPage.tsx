@@ -7,7 +7,7 @@ import { BrowserSection } from "./BrowserSection";
 import { DataSection } from "./DataSection";
 
 const TABS = [
-  { id: "ai", label: "AI" },
+  { id: "ai", label: "AI model" },
   { id: "data", label: "Data & backups" },
   { id: "browser", label: "Browser extension" },
   { id: "about", label: "About" },

@@ -16,7 +16,7 @@ import re
 import shutil
 import sys
 import threading
-from collections.abc import Callable, Iterator
+from collections.abc import Callable, Iterator, Mapping
 from concurrent.futures import Executor, Future
 from contextlib import contextmanager
 from contextvars import ContextVar, copy_context
@@ -225,6 +225,7 @@ SAVABLE_CREDENTIALS: tuple[str, ...] = (
     "GOOGLE_API_KEY",
     "LLM_API_KEY",
     "OLLAMA_API_KEY",
+    "OPENAI_API_KEY",
     "USAJOBS_API_KEY",
     "USAJOBS_EMAIL",
 )
@@ -237,7 +238,9 @@ def credential(name: str) -> str:
     one. A secret store that cannot be read counts as "not set".
     """
     value = os.environ.get(name, "")
-    if value or name not in SAVABLE_CREDENTIALS:
+    from resume_tailor.model_selection import is_custom_credential
+
+    if value or (name not in SAVABLE_CREDENTIALS and not is_custom_credential(name)):
         return value
     from resume_tailor.infra import secret_store
 
@@ -600,6 +603,7 @@ class Backend(NamedTuple):
     base_url: str | None
     effort: str
     origin: str = ""
+    credential_ref: str = ""
 
     def label(self) -> str:
         """Human-readable identity, for the run report."""
@@ -721,8 +725,18 @@ def _default_base(provider: str) -> str | None:
     }.get(provider)
 
 
-def _backend(spec: str, purpose: str, effort: str | None) -> Backend:
+ModelSpec = str | dict[str, Any]
+
+
+def _backend(spec: ModelSpec, purpose: str, effort: str | None) -> Backend:
     """Resolve a raw spec into a Backend, remapping local aliases to OpenAI-compat."""
+    if isinstance(spec, dict):
+        return Backend(
+            provider=spec["provider"], model=spec["model"], base_url=spec.get("base_url"),
+            origin=spec.get("origin") or spec["provider"],
+            effort=effort or spec.get("effort") or DEFAULT_EFFORT.get(purpose, EFFORT),
+            credential_ref=spec.get("credential_ref", ""),
+        )
     provider, model, base_url = parse_spec(spec)
     origin = provider
     # All three speak /v1/chat/completions; keep distinct env defaults so switching
@@ -743,9 +757,9 @@ _ACTIVE: dict[str, Backend] = {}  # compatibility view of default routing
 
 
 def _backends_for(
-    profile: str | None,
+    profile: ModelSpec | None,
     *,
-    overrides: dict[str, str] | None = None,
+    overrides: Mapping[str, ModelSpec] | None = None,
     effort: str | None = None,
 ) -> dict[str, Backend]:
     """Shared spec-resolution logic behind both `resolve()` and `pinned()`.
@@ -755,6 +769,10 @@ def _backends_for(
     A bare model id in an override keeps the profile stage's ollama/lmstudio backend
     (so `lmstudio` + `google/gemma-4-12b` does not silently call Ollama).
     """
+    if isinstance(profile, dict):
+        return {
+            p: _backend((overrides or {}).get(p, profile), p, effort) for p in PURPOSES
+        }
     profile = (profile or "claude").strip()
 
     if profile in MODEL_PROFILES:
@@ -768,18 +786,21 @@ def _backends_for(
             f"'ollama:{OLLAMA_MODEL}'."
         )
 
+    resolved_specs: dict[str, ModelSpec] = dict(specs)
     for purpose, spec in (overrides or {}).items():
         if purpose not in PURPOSES:
             raise ValueError(f"Unknown stage {purpose!r}. Expected one of {PURPOSES}.")
-        specs[purpose] = _bind_bare_override(spec, specs[purpose])
+        resolved_specs[purpose] = (
+            spec if isinstance(spec, dict) else _bind_bare_override(spec, specs[purpose])
+        )
 
-    return {p: _backend(specs[p], p, effort) for p in PURPOSES}
+    return {p: _backend(resolved_specs[p], p, effort) for p in PURPOSES}
 
 
 def resolve(
     profile: str | None = None,
     *,
-    overrides: dict[str, str] | None = None,
+    overrides: Mapping[str, ModelSpec] | None = None,
     effort: str | None = None,
 ) -> dict[str, Backend]:
     """Decide which backend serves each stage, for the whole run.
@@ -808,9 +829,9 @@ _PINNED: ContextVar[dict[str, Backend] | None] = ContextVar("_pinned_backends", 
 
 @contextmanager
 def pinned(
-    profile: str,
+    profile: ModelSpec,
     *,
-    overrides: dict[str, str] | None = None,
+    overrides: Mapping[str, ModelSpec] | None = None,
     effort: str | None = None,
 ) -> Iterator[dict[str, Backend]]:
     """Route every stage through `profile` (plus per-stage `overrides`) for this block only.
@@ -828,9 +849,10 @@ def pinned(
         _PINNED.reset(token)
 
 
-def backend_spec_for(purpose: str) -> str:
-    """Serialize one resolved backend as a ``provider:model[@base_url]`` spec string."""
-    backend = backend_for(purpose)
+def spec_for_backend(backend: Backend) -> ModelSpec:
+    """A durable connection description; contains secret references, never values."""
+    if backend.credential_ref or backend.origin == "custom":
+        return backend._asdict()
     origin = backend.origin or backend.provider
     spec = f"{origin}:{backend.model}"
     if backend.base_url:
@@ -838,14 +860,19 @@ def backend_spec_for(purpose: str) -> str:
     return spec
 
 
-def backend_specs_snapshot() -> dict[str, str]:
+def backend_spec_for(purpose: str) -> ModelSpec:
+    """Serialize one resolved backend as a ``provider:model[@base_url]`` spec string."""
+    return spec_for_backend(backend_for(purpose))
+
+
+def backend_specs_snapshot() -> dict[str, ModelSpec]:
     """Snapshot every active stage's spec for persisting with a job directory."""
     return {purpose: backend_spec_for(purpose) for purpose in PURPOSES}
 
 
 @contextmanager
 def pinned_specs(
-    specs: dict[str, str],
+    specs: dict[str, ModelSpec],
     *,
     effort: str | None = None,
 ) -> Iterator[dict[str, Backend]]:
@@ -858,7 +885,7 @@ def pinned_specs(
         purpose: _backend(
             specs[purpose],
             purpose,
-            effort or DEFAULT_EFFORT.get(purpose, "medium"),
+            effort,
         )
         for purpose in specs
     }
@@ -979,6 +1006,8 @@ def api_key_for(purpose: str) -> str:
     (see PROVIDERS_REQUIRING_KEY), so an empty string here would never actually be sent.
     """
     backend = backend_for(purpose)
+    if backend.credential_ref:
+        return credential(backend.credential_ref)
     if backend.provider == "anthropic":
         return anthropic_api_key()
     for name in api_key_env_for(backend.origin, backend.base_url):
@@ -988,7 +1017,7 @@ def api_key_for(purpose: str) -> str:
     return ""
 
 
-def credential_gaps(profile: str, overrides: dict[str, str] | None = None) -> list[str]:
+def credential_gaps(profile: str, overrides: Mapping[str, ModelSpec] | None = None) -> list[str]:
     """Which stages of `profile` would fail for lack of a credential, without resolving it.
 
     Pure: built on `parse_spec` alone, never calls `resolve`, never touches `_ACTIVE`. That
@@ -1006,13 +1035,24 @@ def credential_gaps(profile: str, overrides: dict[str, str] | None = None) -> li
             return []
         specs = dict.fromkeys(PURPOSES, profile)
 
+    resolved_specs: dict[str, ModelSpec] = dict(specs)
     for purpose, spec in (overrides or {}).items():
         if purpose in PURPOSES:
-            specs[purpose] = _bind_bare_override(spec, specs.get(purpose, spec))
+            resolved_specs[purpose] = (
+                spec if isinstance(spec, dict)
+                else _bind_bare_override(spec, specs.get(purpose, spec))
+            )
 
     gaps: list[str] = []
     seen: set[tuple[str, bool]] = set()
-    for spec in specs.values():
+    for spec in resolved_specs.values():
+        if isinstance(spec, dict):
+            key = spec.get("credential_ref", "")
+            if spec.get("origin") == "openai" and key and not credential(key):
+                message = f"{key} is not set — required by OpenAI."
+                if message not in gaps:
+                    gaps.append(message)
+            continue
         try:
             origin, _model, base_url = parse_spec(spec)
         except ValueError:
@@ -1041,6 +1081,10 @@ def fingerprint(purpose: str) -> str:
     """
     backend = backend_for(purpose)
     value = f"{backend.origin or backend.provider}|{backend.model}|{backend.effort}"
+    if backend.origin == "custom":
+        # Two custom servers may serve one model name, over either API format. Built-in
+        # origins keep the shorter identity so an upgrade keeps every cached result.
+        value += f"|{backend.provider}|{backend.base_url or ''}"
     guidance = active_guidance()
     if guidance is not None and purpose in (
         "extract", "score", "facets", "rewrite", "expand", "skills", "cover"

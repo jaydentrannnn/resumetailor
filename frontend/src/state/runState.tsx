@@ -165,7 +165,11 @@ export function RunProvider({ children }: { children: ReactNode }) {
         setSettingsSaveState("saving");
         try {
           await saveSettings(next);
-          if (next.model !== savedSettings.current.model) emitAppEvent("rt:setup-changed");
+          if (
+            next.model !== savedSettings.current.model ||
+            JSON.stringify(next.ai_models) !== JSON.stringify(savedSettings.current.ai_models)
+          )
+            emitAppEvent("rt:setup-changed");
           savedSettings.current = next;
           lastWriteFailed.current = false;
           if (revision === settingsRevision.current) {

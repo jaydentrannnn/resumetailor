@@ -73,16 +73,33 @@ def test_full_resume_sends_every_bullet_and_only_safe_profile_facts(answer_route
     assert seen["use_cache"] is False
 
 
-def test_cli_run_without_backends_uses_the_one_off_profile(answer_route, monkeypatch):
-    """No ``backends.json`` means the one-off profile, never the claude fallback."""
+def test_application_answers_use_heavy_even_when_run_snapshot_uses_light(answer_route, monkeypatch):
+    """Ask AI uses the current heavy selection, independent of saved tailoring routes."""
     client, _seen, _resume, _tailored = answer_route
-    pinned: list[str] = []
+    from resume_tailor import workspace
+    from resume_tailor.model_selection import AiModels, ModelSelection
+    from resume_tailor.web.schemas import JobSettings
+
+    settings = JobSettings(ai_models=AiModels(
+        light=ModelSelection(model_name="writer"),
+        heavy=ModelSelection(model_name="filler"),
+    ))
+    monkeypatch.setattr(workspace, "load_settings", lambda: {"defaults": settings.model_dump()})
+    snapshot = config.OUTPUT_DIR / "jobs" / "ask01" / "backends.json"
+    snapshot.write_text(json.dumps(dict.fromkeys(config.PURPOSES, "ollama:old-writer")))
+    seen_models: list[str] = []
     real = config.pinned
 
     def spy(spec, *args, **kwargs):
-        pinned.append(spec)
-        return real(spec, *args, **kwargs)
+        from contextlib import contextmanager
+
+        @contextmanager
+        def capture():
+            with real(spec, *args, **kwargs) as backends:
+                seen_models.append(config.model_for("answer"))
+                yield backends
+        return capture()
 
     monkeypatch.setattr(config, "pinned", spy)
     assert client.post("/api/jobs/ask01/answer", json={"question": "Why?"}).status_code == 200
-    assert pinned == [config.ONE_OFF_PROFILE]
+    assert seen_models == ["filler"]

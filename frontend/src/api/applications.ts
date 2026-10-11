@@ -256,6 +256,7 @@ export function startApplyOperation(options: {
   blocker_mode: "pause" | "continue";
   model_provider: ApplySettings["model_provider"];
   model_name: string;
+  model_selection?: import("../lib/aiModels").ModelSelection | null;
 }): Promise<ApplyOperation> {
   return request("/api/applications/operations", {
     method: "POST",

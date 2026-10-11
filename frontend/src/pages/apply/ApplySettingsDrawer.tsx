@@ -5,7 +5,7 @@ import { Modal } from "../../components/Modal";
 import { Button, buttonClass, StatusChip, Switch } from "../../components/ui";
 import { autoSubmitCapLabel, autoSubmitSummary, SOURCES_PATH } from "../../lib/applyPage";
 import { tailorModelLabel } from "../../lib/modelLabel";
-import { autofillLabel } from "../../lib/providers";
+import { modelsFor, selectionLabel } from "../../lib/aiModels";
 import { sourcesSummary } from "../../lib/sources";
 import { useConfirm } from "../../state/confirmState";
 import type { BrowserView } from "../../lib/browserState";
@@ -281,11 +281,11 @@ export function ApplySettingsDrawer({
 
         <Section title="AI models">
           <p className="text-xs text-ink-muted">
-            Autofill writes answers with{" "}
+            Heavy task model:{" "}
             <span className="font-mono text-ink">
-              {autofillLabel(apply.model_provider)} · {apply.model_name}
+              {selectionLabel(modelsFor(settings).heavy, config)}
             </span>
-            ; tailoring uses{" "}
+            ; light task model:{" "}
             <span className="font-mono text-ink">{tailorModelLabel(settings, config)}</span>.{" "}
             <Link className="rt-link" to="/settings?tab=ai" onClick={onClose}>
               Change in Settings

@@ -13,6 +13,7 @@ from pydantic import BaseModel, Field
 
 from resume_tailor import config
 from resume_tailor.infra import secret_store
+from resume_tailor.model_selection import custom_credential_name, is_custom_credential
 
 router = APIRouter()
 
@@ -44,17 +45,33 @@ def _state(name: str) -> SecretState:
 
 
 def _check_name(name: str) -> None:
-    if name not in config.SAVABLE_CREDENTIALS:
+    if name not in config.SAVABLE_CREDENTIALS and not is_custom_credential(name):
         raise HTTPException(status_code=404, detail=f"Unknown secret {name!r}.")
 
 
 @router.get("/api/secrets", response_model=SecretsResponse)
 def list_secrets() -> SecretsResponse:
     """Which API keys are set, and whether from the environment or saved in the app."""
+    from resume_tailor import app_settings
+
+    names = list(config.SAVABLE_CREDENTIALS)
+    models = app_settings.load().get("ai_models") or {}
+    for role in ("light", "heavy"):
+        selection = models.get(role) or {}
+        if selection.get("provider") == "custom" and selection.get("base_url"):
+            names.append(custom_credential_name(
+                role, selection.get("api_format", "openai"), selection["base_url"],
+            ))
     return SecretsResponse(
         backend=secret_store.backend().name,
-        secrets=[_state(name) for name in config.SAVABLE_CREDENTIALS],
+        secrets=[_state(name) for name in names],
     )
+
+
+@router.get("/api/secrets/{name}", response_model=SecretState)
+def get_secret_state(name: str) -> SecretState:
+    _check_name(name)
+    return _state(name)
 
 
 @router.put("/api/secrets/{name}", response_model=SecretState)

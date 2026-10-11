@@ -69,7 +69,9 @@ httpx==0.28.1
 httpx-sse==0.4.3
     # via mcp
 httpx2==2.13.1
-    # via anthropic
+    # via
+    #   -r requirements.txt
+    #   anthropic
 httpx2-jsfetch==1.0 ; sys_platform == 'emscripten'
     # via httpx2
 idna==3.20

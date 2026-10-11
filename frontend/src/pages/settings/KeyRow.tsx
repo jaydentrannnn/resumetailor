@@ -23,12 +23,14 @@ export function KeyRow({
   highlighted,
   onChange,
   check = null,
+  label,
 }: {
   secret: SecretState;
   highlighted: boolean;
   onChange: () => void;
   /** The connection test of a model that uses this key (set keys only). */
   check?: ModelCheck;
+  label?: string;
 }) {
   const toast = useToast();
   const [value, setValue] = useState("");
@@ -77,7 +79,7 @@ export function KeyRow({
           htmlFor={inputId}
           className={`text-sm font-medium ${highlighted ? "text-accent" : "text-ink"}`}
         >
-          {KEY_LABELS[secret.name] ?? secret.name}
+          {label ?? KEY_LABELS[secret.name] ?? secret.name}
         </label>
         {help && (
           <a href={help.href} target="_blank" rel="noopener noreferrer" className="rt-link text-xs">

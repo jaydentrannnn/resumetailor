@@ -28,6 +28,7 @@ from resume_tailor.importing import (
 )
 from resume_tailor.pipeline import tag_infer
 from resume_tailor.web import skill_refresh, template_ops, template_uploads
+from resume_tailor.web.job_routing import pinned_role
 from resume_tailor.web.schemas import (
     BulletSkillsResponse,
     MasterResumeImportResponse,
@@ -271,8 +272,8 @@ def import_master_resume(
 
     A PDF (by extension or its ``%PDF`` signature) goes through `resume_import_pdf`;
     truthy `use_model` adds that module's guarded model-assisted structuring pass,
-    pinned to `config.ONE_OFF_PROFILE` (`config.pinned`) — not a tailoring job, so it
-    never touches `config._ACTIVE` or falls through to `backend_for`'s claude default.
+    pinned to the saved Light task model — not a tailoring job, so it never touches
+    `config._ACTIVE` or falls through to `backend_for`'s claude default.
 
     Writes nothing: the editor loads the result as unsaved state and the user saves
     through the existing `PUT /api/master-resume`, same as a hand edit. Bullets carry no
@@ -311,7 +312,7 @@ def _import_pdf(raw: bytes, known_tags: set[str], use_model: bool) -> import_com
             detail=f"Upload is {len(raw)} bytes; maximum is {template_ops._MAX_UPLOAD_BYTES}.",
         )
     try:
-        with config.pinned(config.ONE_OFF_PROFILE):
+        with pinned_role("light"):
             return resume_import_pdf.import_pdf(raw, known_tags=known_tags, use_model=use_model)
     except pdf_lines.PdfImportError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

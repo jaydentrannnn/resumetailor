@@ -2,8 +2,9 @@ import { useCallback, useEffect, useRef, useState } from "react";
 import { testModel, type CheckResult, type JobSettings } from "../../api";
 import { emitAppEvent } from "../../lib/appEvents";
 import { describe } from "../../lib/errors";
+import { modelsFor } from "../../lib/aiModels";
 
-export type ModelTarget = "tailor" | "autofill";
+export type ModelTarget = "tailor" | "autofill" | "light" | "heavy";
 export type ModelCheck = CheckResult | "testing" | null;
 
 const DEBOUNCE_MS = 800;
@@ -12,6 +13,7 @@ const results = new Map<string, CheckResult>();
 const listeners = new Set<() => void>();
 /** Tests in flight, so two components showing the same model share one call. */
 const pending = new Map<string, Promise<CheckResult>>();
+let credentialRevision = 0;
 
 function test(key: string, target: ModelTarget, settings: JobSettings): Promise<CheckResult> {
   let call = pending.get(key);
@@ -31,13 +33,14 @@ function test(key: string, target: ModelTarget, settings: JobSettings): Promise<
 }
 
 function keyFor(target: ModelTarget, settings: JobSettings): string {
-  return target === "tailor"
-    ? `tailor|${settings.model}|${settings.model_name ?? ""}`
-    : `autofill|${settings.apply.model_provider}|${settings.apply.model_name}`;
+  const role = target === "tailor" || target === "light" ? "light" : "heavy";
+  const models = modelsFor(settings);
+  return `${role}|${JSON.stringify(models[role])}|${settings.effort}|${credentialRevision}|${role === "light" ? JSON.stringify(models.legacy_light_overrides) : ""}`;
 }
 
 /** Forget every result and retest what is on screen (a key was saved or removed). */
 export function clearModelChecks(): void {
+  credentialRevision++;
   results.clear();
   listeners.forEach((listener) => listener());
 }

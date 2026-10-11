@@ -23,7 +23,7 @@ from resume_tailor.content import data_transfer, libraries
 from resume_tailor.document import convert
 from resume_tailor.infra import llm, usage_spend
 from resume_tailor.web import template_ops
-from resume_tailor.web.job_routing import model_routing
+from resume_tailor.web.job_routing import model_routing, pinned_role
 from resume_tailor.web.jobs import get_queue
 from resume_tailor.web.schemas import JobSettings
 
@@ -38,9 +38,8 @@ _LOCAL_BASES = {
 class ModelTestRequest(BaseModel):
     #: Settings to test with; omitted = the profile's saved defaults.
     settings: JobSettings | None = None
-    #: ``tailor`` tests the Tailor routing; ``autofill`` tests ``apply``'s Autofill model,
-    #: pinned exactly as Fill pins it (`ApplySettings.model_spec`).
-    target: Literal["tailor", "autofill"] = "tailor"
+    #: Light/heavy roles, with tailor/autofill retained as aliases for older clients.
+    target: Literal["tailor", "autofill", "light", "heavy"] = "tailor"
 
 
 class _Ping(BaseModel):
@@ -51,19 +50,18 @@ class _Ping(BaseModel):
 def test_model(body: ModelTestRequest) -> dict[str, Any]:
     """One tiny call through the extraction stage's backend: proves the key and model work.
 
-    Only ever runs when the user presses "Test" (on a paid backend it costs a fraction
-    of a cent). Failures come back as ``ok: false`` with the provider's message.
+    Runs automatically after connection edits or manually on Retest. Failures come
+    back as ``ok: false`` with the provider's message.
     """
     settings = body.settings or JobSettings.model_validate(workspace.load_settings()["defaults"])
-    if body.target == "autofill":
-        pin = config.pinned(settings.apply.model_spec)
-        label = settings.apply.model_spec
-    else:
-        profile, overrides, effort = model_routing(settings)
-        pin = config.pinned(profile, overrides=overrides, effort=effort)
-        label = profile
+    label = body.target
     started = time.monotonic()
     try:
+        if body.target in {"autofill", "heavy"}:
+            pin = pinned_role("heavy", settings)
+        else:
+            profile, overrides, effort = model_routing(settings)
+            pin = config.pinned(profile, overrides=overrides, effort=effort)
         with pin:
             backend = config.backend_for("extract")
             label = f"{backend.origin or backend.provider}:{backend.model}"

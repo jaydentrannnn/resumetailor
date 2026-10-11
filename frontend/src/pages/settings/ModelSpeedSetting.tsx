@@ -4,6 +4,8 @@ import { Button } from "../../components/ui";
 import { startAdaptivePoll } from "../../lib/adaptivePoll";
 import { presetFor, settingsFor, SPEED_PRESETS, type SpeedPresetId } from "../../lib/speedPresets";
 import { useToast } from "../../lib/toast";
+import { queueEndpoints } from "../../lib/modelEndpoints";
+import { useRunState } from "../../state/runState";
 import { SELECT_WIDTH } from "./selectWidth";
 import { SettingRow } from "./SettingRow";
 
@@ -16,6 +18,7 @@ export function ModelSpeedSetting() {
   const [busy, setBusy] = useState(false);
   const [custom, setCustom] = useState(false);
   const toast = useToast();
+  const { settings: appSettings, config } = useRunState();
   useEffect(() => {
     let live = true;
     const poll = startAdaptivePoll(async () => {
@@ -47,6 +50,7 @@ export function ModelSpeedSetting() {
   if (!status) return null;
   const preset: SpeedPresetId = custom ? "custom" : presetFor(status.settings);
   const help = SPEED_PRESETS.find((p) => p.id === preset)?.help;
+  const endpoints = queueEndpoints(appSettings, config, status);
 
   function setLimit(key: string, value: number) {
     const settings = { ...status!.settings };
@@ -76,13 +80,15 @@ export function ModelSpeedSetting() {
 
   return (
     <SettingRow
-      label="Speed"
-      layout="split"
-      description={help ?? "Requests at once, per kind of server. Requests wait for a free slot."}
+      label="Request concurrency"
+      layout="stacked"
+      description={
+        help ?? "Maximum simultaneous requests to each server. Extra requests wait for a free slot."
+      }
     >
       <select
         className={`field ${SELECT_WIDTH}`}
-        aria-label="Speed"
+        aria-label="Request concurrency"
         value={preset}
         disabled={busy}
         onChange={(e) => {
@@ -100,16 +106,54 @@ export function ModelSpeedSetting() {
       </select>
       {preset === "custom" && (
         <div className="mt-3 space-y-3">
-          {limit("On this computer", "local_concurrency", status.settings.local_concurrency)}
-          {limit("Cloud providers", "cloud_concurrency", status.settings.cloud_concurrency)}
-          {status.endpoints.map((e) =>
-            limit(
-              e.endpoint,
-              e.endpoint,
-              e.limit,
-              `${e.active} running · ${e.waiting} waiting${e.cooldown_seconds > 0 ? ` · rate limited, retrying in ${e.cooldown_seconds}s` : ""}`,
-            ),
-          )}
+          {limit("Local requests at once", "local_concurrency", status.settings.local_concurrency)}
+          {limit("Cloud requests at once", "cloud_concurrency", status.settings.cloud_concurrency)}
+          <details className="border-t border-line pt-3">
+            <summary className="cursor-pointer text-sm font-medium">Per-server overrides</summary>
+            <div className="mt-3 space-y-3">
+              {endpoints.map(({ endpoint, label, inherited, live }) => (
+                <div
+                  key={endpoint}
+                  className="min-w-0 border-t border-line pt-3 first:border-0 first:pt-0"
+                >
+                  <label className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+                    <span className="min-w-0 text-sm" title={endpoint}>
+                      {label}
+                      <span className="block truncate text-xs text-ink-muted">{endpoint}</span>
+                    </span>
+                    <select
+                      className={`field ${SELECT_WIDTH}`}
+                      aria-label={`${label} limit`}
+                      disabled={busy}
+                      value={status.settings.endpoint_limits[endpoint] ?? ""}
+                      onChange={(e) => {
+                        const limits = { ...status.settings.endpoint_limits };
+                        if (e.target.value) limits[endpoint] = Number(e.target.value);
+                        else delete limits[endpoint];
+                        void save({ ...status.settings, endpoint_limits: limits });
+                      }}
+                    >
+                      <option value="">Use default ({inherited})</option>
+                      {Array.from({ length: 16 }, (_, i) => i + 1).map((n) => (
+                        <option key={n}>{n}</option>
+                      ))}
+                    </select>
+                  </label>
+                  {live && (live.active > 0 || live.waiting > 0 || live.cooldown_seconds > 0) && (
+                    <p className="mt-1 text-xs text-ink-muted" role="status">
+                      {live.active} running · {live.waiting} waiting
+                      {live.cooldown_seconds > 0 ? ` · retrying in ${live.cooldown_seconds}s` : ""}
+                    </p>
+                  )}
+                </div>
+              ))}
+              {!endpoints.length && (
+                <p className="text-xs text-ink-muted">
+                  Choose a model to configure its server limit.
+                </p>
+              )}
+            </div>
+          </details>
           {Object.keys(status.settings.endpoint_limits).length > 0 && (
             <Button
               size="sm"

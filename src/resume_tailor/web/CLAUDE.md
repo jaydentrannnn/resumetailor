@@ -12,8 +12,10 @@ same text (`tests/tooling/test_agent_docs.py` enforces it).
 - **Single process is a hard requirement.** Jobs run one at a time because `config._ACTIVE`
   is process-wide and workspaces rebind `config` module globals.
 - **`config._ACTIVE` is populated only by `job_tailor_run.py`'s runner.** A route calling an LLM
-  outside a job must use `config.pinned(config.ONE_OFF_PROFILE)` or it hits the claude
-  fallback. `style.activate()` sits beside `config.resolve()` in the runner.
+  outside a job uses `job_routing.pinned_role("light")` for app tools or `"heavy"` for
+  application answers. This uses saved app-wide selections without repointing a running job.
+  Regenerated cover letters/expansion pin the saved run's connection snapshots instead.
+  `style.activate()` sits beside `config.resolve()` in the runner.
 - **Mutating workspace routes hold `get_queue().busy()` then `template_ops.LOCK`**, in that
   order.
 - **Vocabulary edits never touch resume data**: additions/hides/approvals write the

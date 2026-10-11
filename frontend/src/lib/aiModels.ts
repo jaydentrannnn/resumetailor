@@ -1,0 +1,113 @@
+import type { AppConfig, JobSettings } from "../api";
+import { profileDefaultModel } from "./modelLabel";
+import { providerInfo } from "./providers";
+
+export type ModelRole = "light" | "heavy";
+export type ModelProvider =
+  "ollama" | "ollama-cloud" | "lmstudio" | "gemini" | "anthropic" | "openai" | "custom";
+export type ModelSelection = {
+  provider: ModelProvider;
+  model_name: string;
+  api_format: "openai" | "anthropic";
+  base_url: string;
+};
+export type AiModels = {
+  light: ModelSelection;
+  heavy: ModelSelection;
+  legacy_light_overrides: Record<string, string>;
+};
+
+export function modelsFor(settings: JobSettings): AiModels {
+  return (
+    settings.ai_models ?? {
+      light: {
+        provider: (settings.model === "claude" ? "anthropic" : settings.model) as ModelProvider,
+        model_name: settings.model_name || settings.ollama_model || settings.gemini_model || "",
+        api_format: "openai",
+        base_url: "",
+      },
+      heavy: settings.apply.model_selection ?? {
+        provider: settings.apply.model_provider,
+        model_name: settings.apply.model_name,
+        api_format: "openai",
+        base_url: "",
+      },
+      legacy_light_overrides: {},
+    }
+  );
+}
+
+export function withSelection(
+  settings: JobSettings,
+  role: ModelRole,
+  selection: ModelSelection,
+): JobSettings {
+  const models = modelsFor(settings);
+  return {
+    ...settings,
+    ai_models: {
+      ...models,
+      [role]: selection,
+      legacy_light_overrides: role === "light" ? {} : models.legacy_light_overrides,
+    },
+    // Keep the Apply request snapshot in sync with unsaved edits.
+    apply:
+      role === "heavy"
+        ? {
+            ...settings.apply,
+            model_provider: selection.provider,
+            model_name: selection.model_name,
+            model_selection: selection,
+          }
+        : settings.apply,
+  };
+}
+
+export function selectionProvider(selection: ModelSelection) {
+  return providerInfo(selection.provider === "anthropic" ? "claude" : selection.provider);
+}
+
+export function selectionDefault(selection: ModelSelection, config: AppConfig | null): string {
+  if (selection.provider === "custom" || selection.provider === "openai") return "Enter model name";
+  return (
+    config?.model_defaults?.[selection.provider] ??
+    profileDefaultModel(
+      { model: selection.provider === "anthropic" ? "claude" : selection.provider },
+      config,
+    )
+  );
+}
+
+export function selectionReady(selection: ModelSelection): boolean {
+  if (selection.provider === "openai") return !!selection.model_name.trim();
+  if (selection.provider !== "custom") return true;
+  try {
+    const url = new URL(selection.base_url);
+    return (
+      !!selection.model_name.trim() &&
+      ["http:", "https:"].includes(url.protocol) &&
+      !url.username &&
+      !url.password &&
+      !url.search &&
+      !url.hash
+    );
+  } catch {
+    return false;
+  }
+}
+
+export function selectionLabel(selection: ModelSelection, config: AppConfig | null): string {
+  return `${selectionProvider(selection)?.name ?? selection.provider} · ${selection.model_name || selectionDefault(selection, config)}`;
+}
+
+export async function customCredentialName(
+  role: ModelRole,
+  selection: ModelSelection,
+): Promise<string> {
+  const identity = `${selection.api_format}|${selection.base_url.trim().replace(/\/+$/, "")}`;
+  const hash = await crypto.subtle.digest("SHA-256", new TextEncoder().encode(identity));
+  const digest = Array.from(new Uint8Array(hash), (n) => n.toString(16).padStart(2, "0"))
+    .join("")
+    .slice(0, 24);
+  return `CUSTOM_${role.toUpperCase()}_${digest}`;
+}

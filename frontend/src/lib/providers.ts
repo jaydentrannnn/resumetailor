@@ -20,6 +20,23 @@ const sentTo = (company: string) =>
 
 export const PROVIDERS: ProviderInfo[] = [
   {
+    id: "openai",
+    name: "OpenAI",
+    summary: "Runs on OpenAI's servers. Needs an API key.",
+    keys: ["OPENAI_API_KEY"],
+    local: false,
+    privacy: sentTo("OpenAI"),
+    link: { label: "Get an API key", href: "https://platform.openai.com/api-keys" },
+  },
+  {
+    id: "custom",
+    name: "Custom server",
+    summary: "Connect an OpenAI-compatible or Anthropic-compatible API.",
+    keys: [],
+    local: false,
+    privacy: "Your resume text is sent to the server you configure.",
+  },
+  {
     id: "ollama",
     name: "Ollama",
     summary:
@@ -83,9 +100,10 @@ export const KEY_LABELS: Record<string, string> = {
   ADZUNA_APP_ID: "Adzuna App ID (job search)",
   ADZUNA_APP_KEY: "Adzuna App Key (job search)",
   ANTHROPIC_API_KEY: "Anthropic API key",
+  OPENAI_API_KEY: "OpenAI API key",
   GEMINI_API_KEY: "Gemini API key",
   GOOGLE_API_KEY: "Google API key (alternative to the Gemini key)",
-  LLM_API_KEY: "Custom server key (OpenAI-compatible)",
+  LLM_API_KEY: "Compatibility API key (legacy)",
   OLLAMA_API_KEY: "Ollama cloud key (only for Ollama cloud models)",
   USAJOBS_API_KEY: "USAJobs API Key (job search)",
   USAJOBS_EMAIL: "USAJobs Email (User-Agent header)",
@@ -107,6 +125,8 @@ export const KEY_HELP: Record<string, { label: string; href: string }> = {
 
 /** Providers the Autofill model can use (`ApplySettings.model_provider`), labelled. */
 export const AUTOFILL_PROVIDERS: { id: ApplySettings["model_provider"]; label: string }[] = [
+  { id: "openai", label: "OpenAI" },
+  { id: "custom", label: "Custom server" },
   { id: "ollama", label: "Ollama" },
   { id: "ollama-cloud", label: "Ollama Cloud" },
   { id: "lmstudio", label: "LM Studio" },

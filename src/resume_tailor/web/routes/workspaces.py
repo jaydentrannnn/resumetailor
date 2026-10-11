@@ -10,6 +10,7 @@ from resume_tailor import (
     workspace,
 )
 from resume_tailor.apply.funnel import daily_progress
+from resume_tailor.model_selection import migrated_models
 from resume_tailor.web import section_title_sync, template_info, template_ops
 from resume_tailor.web.jobs import get_queue
 from resume_tailor.web.routes.config import (
@@ -104,6 +105,12 @@ def activate_workspace(workspace_id: str) -> WorkspaceActivateResponse:
         entries = workspace.list_workspaces()
         raw_defaults = workspace.load_settings()["defaults"]
         activated_settings = JobSettings.model_validate(raw_defaults)
+        if activated_settings.ai_models is None:
+            try:
+                activated_settings.ai_models = migrated_models(activated_settings.model_dump())
+                activated_settings = JobSettings.model_validate(activated_settings.model_dump())
+            except ValueError:
+                pass  # Keep invalid legacy choices editable.
         _seed_include_gpa_if_missing(raw_defaults, activated_settings)
         return WorkspaceActivateResponse(
             active_id=workspace_id,

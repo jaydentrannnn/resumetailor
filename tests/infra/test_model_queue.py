@@ -5,6 +5,7 @@ import threading
 import time
 
 import httpx
+import httpx2
 import pytest
 
 from resume_tailor.infra import model_queue
@@ -156,12 +157,12 @@ def test_anthropic_transport_holds_slot_through_response_body_and_cooldown(monke
 
     def send(transport, request):
         observed.append(q.status()["endpoints"][0]["active"])
-        return httpx.Response(429, headers={"Retry-After": "30"}, content=b"rate limited")
+        return httpx2.Response(429, headers={"Retry-After": "30"}, content=b"rate limited")
 
-    monkeypatch.setattr(httpx.HTTPTransport, "handle_request", send)
+    monkeypatch.setattr(httpx2.HTTPTransport, "handle_request", send)
     with model_queue.ScheduledTransport() as transport:
         response = transport.handle_request(
-            httpx.Request("POST", "https://api.example.com/v1/messages")
+            httpx2.Request("POST", "https://api.example.com/v1/messages")
         )
     assert response.content == b"rate limited"
     assert observed == [1]
@@ -175,14 +176,14 @@ def test_anthropic_async_transport_admits_physical_attempt(monkeypatch):
 
     async def send(transport, request):
         assert q.status()["endpoints"][0]["active"] == 1
-        return httpx.Response(200, content=b"reply")
+        return httpx2.Response(200, content=b"reply")
 
-    monkeypatch.setattr(httpx.AsyncHTTPTransport, "handle_async_request", send)
+    monkeypatch.setattr(httpx2.AsyncHTTPTransport, "handle_async_request", send)
 
     async def scenario():
         async with model_queue.AsyncScheduledTransport() as transport:
             response = await transport.handle_async_request(
-                httpx.Request("POST", "https://api.example.com/v1/messages")
+                httpx2.Request("POST", "https://api.example.com/v1/messages")
             )
         assert response.content == b"reply"
 

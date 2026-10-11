@@ -13,8 +13,9 @@ same text (`tests/tooling/test_agent_docs.py` enforces it).
   labels/options and resume text in, plain text/JSON out. Everything else here is
   deterministic (`screen`, `eligibility`, `salary`, `field_matcher` are pure, no LLM).
 - **Every click goes through `clicks.py`**; every automatic submit passes `submit_guard.py`.
-- **Prepare uses the Tailor settings' model routing; Fill runs under
-  `config.pinned(ApplySettings.model_spec)`** (the Apply page's "Autofill model").
+- **Prepare uses Light task model routing; Fill runs under
+  `config.pinned(ApplySettings.model_spec)`**, mirrored from the app-wide Heavy task model.
+  Apply operations capture both roles at start; later settings edits affect new operations.
 - **Fill failures self-heal in code** (retry/recover) rather than producing a review item.
 - **Dedupe is by ATS requisition** (`identity.canonical_key`); rows live in the workspace's
   `app.db` (`store.py`, via `storage/db.py`).

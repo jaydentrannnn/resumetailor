@@ -8,7 +8,7 @@ from __future__ import annotations
 
 from typing import Any, Literal
 
-from pydantic import BaseModel, Field, field_validator, model_validator
+from pydantic import BaseModel, Field, PrivateAttr, field_validator, model_validator
 
 from .. import config
 from ..apply.answers.profile import ApplicantProfile
@@ -19,6 +19,7 @@ from ..apply.funnel.store_models import ApplicationStatus, AtsKind, FillResult, 
 from ..content import industries
 from ..document.cover_settings import CoverSettings
 from ..document.template_adjust import CurrentLayout
+from ..model_selection import AiModels, ModelProvider, ModelSelection
 from ..pipeline.include import IncludeOptions
 
 #: Every `source_sha256` request field below is interpolated straight into a filesystem
@@ -165,6 +166,7 @@ class ApplySettings(BaseModel):
     """Daily apply-funnel knobs nested on ``JobSettings`` so they persist with settings."""
 
     enabled: bool = False
+    _job_defaults: Any = PrivateAttr(default=None)
     schedule_time: str = "02:00"
     #: Legacy single-source fields — kept so existing settings.json still loads.
     #: They are no longer read: a missing ``sources`` key gets the built-in defaults, and
@@ -215,19 +217,22 @@ class ApplySettings(BaseModel):
     #: a Tailor-tab run. Fill's calls run outside the job queue, so without this explicit
     #: pin they would fall through to `config.backend_for`'s hardcoded Claude default
     #: whenever `_ACTIVE` is empty (e.g. right after a fresh restart) — see CLAUDE.md.
-    model_provider: Literal["ollama", "ollama-cloud", "lmstudio", "gemini", "anthropic"] = "ollama"
+    model_provider: ModelProvider = "ollama"
     model_name: str = "nemotron-3-super:cloud"
+    model_selection: ModelSelection | None = None
     #: Browser the app starts for Fill and JD fetch (`apply.driver.browser_launch`);
     #: ``None`` picks the first installed one, Edge first.
     browser: Literal["edge", "chrome", "comet"] | None = None
 
     @property
-    def model_spec(self) -> str:
+    def model_spec(self) -> config.ModelSpec:
         """``provider:model`` spec for `config.pinned`, covering Fill's autofill calls.
 
         ``ollama-cloud`` is not a provider word `config.parse_spec` knows: it is Ollama
         pinned to Ollama Cloud's API, so it becomes ``ollama:<tag>@<cloud URL>``.
         """
+        if self.model_selection is not None:
+            return self.model_selection.spec("heavy")
         if self.model_provider == "ollama-cloud":
             return f"ollama:{self.model_name}@{config.OLLAMA_CLOUD_BASE_URL}"
         return f"{self.model_provider}:{self.model_name}"
@@ -276,6 +281,7 @@ class JobSettings(BaseModel):
     #: Defaults to `ollama` rather than `claude` so a fresh install runs without an
     #: Anthropic key — the Ollama free tier is what makes bulk applying affordable.
     model: str = "ollama"
+    ai_models: AiModels | None = None
     #: Ollama tag for *every* Ollama-routed stage of the chosen profile, overriding the
     #: `OLLAMA_MODEL` env default without an edit-and-restart. Under `hybrid` this leaves
     #: the Anthropic rewrite stage alone (see `config.ollama_stages`). The two per-stage
@@ -360,6 +366,14 @@ class JobSettings(BaseModel):
     model_name: str | None = None
     #: Daily discover/screen/fill funnel settings (persisted with profile defaults).
     apply: ApplySettings = Field(default_factory=ApplySettings)
+
+    @model_validator(mode="after")
+    def _shared_heavy_model(self) -> JobSettings:
+        if self.ai_models is not None:
+            self.apply.model_selection = self.ai_models.heavy.model_copy(deep=True)
+            self.apply.model_provider = self.ai_models.heavy.provider
+            self.apply.model_name = self.ai_models.heavy.model_name
+        return self
 
     @field_validator("section_weights")
     @classmethod
@@ -685,6 +699,8 @@ class ConfigResponse(BaseModel):
     #: invisible in `.env`.
     ollama_model: str = ""
     ollama_base_url: str = ""
+    model_defaults: dict[str, str] = Field(default_factory=dict)
+    model_base_urls: dict[str, str] = Field(default_factory=dict)
     #: Profiles with at least one Ollama-routed stage, so the UI knows when the tag field
     #: applies without hardcoding `["ollama", "hybrid"]` against `config.MODEL_PROFILES`.
     ollama_profiles: list[str] = Field(default_factory=list)
@@ -1441,8 +1457,9 @@ class ApplyOperationRequest(BaseModel):
     dry_run: bool = False
     auto_submit: bool = False
     blocker_mode: Literal["pause", "continue"] = "continue"
-    model_provider: Literal["ollama", "ollama-cloud", "lmstudio", "gemini", "anthropic"]
+    model_provider: ModelProvider
     model_name: str = Field(min_length=1, max_length=200)
+    model_selection: ModelSelection | None = None
 
 
 class ApplyOperationControlRequest(BaseModel):

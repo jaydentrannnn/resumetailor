@@ -225,10 +225,11 @@ user's own open Word (`convert._convert_word`).
   deliberately (importable library callers that never went through the CLI).
 - **`config._ACTIVE` is populated only by `web/job_tailor_run.py`'s job runner.** A web route calling
   an LLM outside a job hits the claude fallback; one that must not does
-  `config.pinned(config.ONE_OFF_PROFILE)` (ContextVar overlay). Apply's Prepare (screening
-  extraction in `apply/funnel/daily.py` + the tailor job) uses the Tailor settings' routing
-  (`web.job_routing.model_routing`); Fill's answer/resolver calls (`fill*.py`, `engine.py`) run under
-  `config.pinned(ApplySettings.model_spec)` — the Apply page's "Autofill model".
+  `web.job_routing.pinned_role("light")` (ContextVar overlay). App-wide `ai_models.light`
+  routes tailoring, rewrite, expansion, cover letters, import and vocabulary tools;
+  `ai_models.heavy` routes Fill and Ask AI application answers. Prepare uses Light via
+  `web.job_routing.model_routing`; Fill pins `ApplySettings.model_spec`, mirrored from Heavy.
+  Legacy stage overrides remain until Light is edited; CLI flags and defaults stay independent.
 - **Structured output**: non-frontier backends may accept a schema and ignore it — `llm.py`
   puts the schema in the prompt and escalates on **parse failure, not status code**; on the
   OpenAI-compatible path `MAX_TOKENS` is only the starting request (escalation memoised in

@@ -57,7 +57,11 @@ def test_bootstrap_seeds_from_the_active_profile_once(isolated_roots):  # noqa: 
     )
     app_settings.path().unlink(missing_ok=True)
     bootstrap()
-    assert app_settings.load() == {"model": "gemini", "apply": {"model_name": "m"}}
+    saved = app_settings.load()
+    assert saved["model"] == "gemini"
+    assert saved["apply"] == {"model_name": "m"}
+    assert saved["ai_models"]["light"]["provider"] == "gemini"
+    assert saved["ai_models"]["heavy"]["model_name"] == "m"
     path.write_text(json.dumps({"defaults": {"model": "lmstudio"}}), encoding="utf-8")
     bootstrap()  # the file exists now: no re-seed
     assert app_settings.load()["model"] == "gemini"
@@ -73,3 +77,28 @@ def test_retired_run_options_are_ignored_on_load(isolated_roots):  # noqa: F811
         encoding="utf-8",
     )
     assert workspace.load_settings()["defaults"] == {"pages": 2}
+
+
+def test_legacy_save_clears_stale_canonical_apply_selection(isolated_roots):  # noqa: F811
+    bootstrap()
+    app_settings.save({
+        "ai_models": {"light": {"provider": "ollama"}, "heavy": {"provider": "gemini"}},
+        "apply": {"model_selection": {"provider": "gemini", "model_name": "previous"}},
+    })
+    workspace.save_settings({"apply": {"model_provider": "lmstudio", "model_name": "new"}})
+    saved = app_settings.load()
+    assert "ai_models" not in saved
+    assert saved["apply"] == {"model_provider": "lmstudio", "model_name": "new"}
+
+
+def test_legacy_custom_key_is_migrated_without_saving_its_value(monkeypatch):
+    from resume_tailor import config
+    from resume_tailor.model_selection import AiModels
+
+    monkeypatch.setenv("LLM_API_KEY", "legacy-test-key")
+    assert app_settings.seed({"model": "openai:writer@https://proxy.example/v1"})
+    saved = app_settings.load()
+    models = AiModels.model_validate(saved["ai_models"])
+    with config.pinned(models.light.spec("light")):
+        assert config.api_key_for("rewrite") == "legacy-test-key"
+    assert "legacy-test-key" not in json.dumps(saved)

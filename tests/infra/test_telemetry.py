@@ -6,6 +6,7 @@ from datetime import UTC, datetime, timedelta
 from types import SimpleNamespace
 
 import httpx
+import httpx2
 import pytest
 from pydantic import BaseModel
 
@@ -96,7 +97,7 @@ def test_anthropic_retries_are_observed_at_transport(tmp_path, monkeypatch):
 
     def send(self, request):
         status = responses.pop(0)
-        return httpx.Response(
+        return httpx2.Response(
             status,
             request=request,
             json={
@@ -109,7 +110,7 @@ def test_anthropic_retries_are_observed_at_transport(tmp_path, monkeypatch):
             },
         )
 
-    monkeypatch.setattr(httpx.HTTPTransport, "handle_request", send)
+    monkeypatch.setattr(httpx2.HTTPTransport, "handle_request", send)
     with (
         telemetry.recording(tmp_path, run_id="sdk") as measured,
         telemetry.call("extract", "test-anthropic", "anthropic"),
@@ -117,7 +118,7 @@ def test_anthropic_retries_are_observed_at_transport(tmp_path, monkeypatch):
         transport = model_queue.ScheduledTransport()
         for retry in range(2):
             transport.handle_request(
-                httpx.Request(
+                httpx2.Request(
                     "POST",
                     "https://api.example/v1/messages",
                     headers={"x-stainless-retry-count": str(retry)},

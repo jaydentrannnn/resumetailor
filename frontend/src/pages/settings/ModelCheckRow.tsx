@@ -10,11 +10,13 @@ export function ModelCheckRow({
   provider,
   needsKey,
   onRetest,
+  disabled = false,
 }: {
   check: ModelCheck;
   provider: ProviderInfo | undefined;
   needsKey: boolean;
   onRetest: () => void;
+  disabled?: boolean;
 }) {
   let status;
   if (needsKey) status = `${provider?.name ?? "This provider"} needs an API key. Add it below.`;
@@ -38,7 +40,7 @@ export function ModelCheckRow({
           <Button
             size="sm"
             variant="plain"
-            disabled={needsKey}
+            disabled={needsKey || disabled}
             loading={check === "testing"}
             onClick={onRetest}
           >

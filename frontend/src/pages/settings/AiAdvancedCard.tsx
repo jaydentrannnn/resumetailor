@@ -29,6 +29,28 @@ export function AiAdvancedCard() {
       {open && (
         <div id={bodyId}>
           <SettingRow
+            label="Reasoning effort"
+            layout="split"
+            description="Overrides the recommended effort per step for tailoring and app tools."
+          >
+            <select
+              className={`field ${SELECT_WIDTH}`}
+              aria-label="Reasoning effort"
+              value={settings.effort ?? ""}
+              onChange={(e) =>
+                setSettings({
+                  ...settings,
+                  effort: (e.target.value || null) as typeof settings.effort,
+                })
+              }
+            >
+              <option value="">Recommended per step</option>
+              <option value="low">Low</option>
+              <option value="medium">Medium</option>
+              <option value="high">High</option>
+            </select>
+          </SettingRow>
+          <SettingRow
             label="Job posting reads"
             layout="split"
             description="How many times the AI reads each posting and compares notes. More reads catch more requirements but take longer."
@@ -49,7 +71,7 @@ export function AiAdvancedCard() {
           <SettingRow
             label="Resumes at once"
             layout="split"
-            description="How many tailoring runs may work at the same time. Each one still waits for the speed limit above."
+            description="How many tailoring runs may work at the same time. Model requests still wait for a free slot."
           >
             <select
               className={`field ${SELECT_WIDTH}`}

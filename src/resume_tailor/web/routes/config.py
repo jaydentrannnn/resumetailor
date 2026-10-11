@@ -11,6 +11,7 @@ from fastapi import APIRouter
 from resume_tailor import config, workspace
 from resume_tailor.content import bullet_tags, data, industries, style
 from resume_tailor.infra import model_queue
+from resume_tailor.model_selection import migrated_models
 from resume_tailor.pipeline import coverletter, expand, fit_types, rewrite_prompts
 from resume_tailor.pipeline.events import ProgressEvent
 from resume_tailor.web import state as web_state
@@ -97,6 +98,15 @@ def _config_response(*, consume_migrated: bool = True) -> ConfigResponse:
         experience=config.MAX_EXPERIENCE_ENTRIES,
         projects=config.MAX_PROJECT_ENTRIES,
         model_profiles=sorted(config.MODEL_PROFILES),
+        model_defaults={
+            ("anthropic" if name == "claude" else name): config.parse_spec(specs["rewrite"])[1]
+            for name, specs in config.MODEL_PROFILES.items() if name != "hybrid"
+        },
+        model_base_urls={
+            ("anthropic" if name == "claude" else name):
+                config._backends_for(name)["rewrite"].base_url or "https://api.anthropic.com"
+            for name in config.MODEL_PROFILES if name != "hybrid"
+        },
         ollama_model=config.OLLAMA_MODEL,
         ollama_base_url=config.OLLAMA_BASE_URL,
         ollama_profiles=sorted(
@@ -189,6 +199,12 @@ def get_settings() -> SettingsResponse:
     """The active profile's saved run defaults, seeded from `JobSettings()` if unset."""
     raw = workspace.load_settings()
     settings = JobSettings.model_validate(raw["defaults"])
+    if settings.ai_models is None:
+        try:
+            settings.ai_models = migrated_models(settings.model_dump())
+            settings = JobSettings.model_validate(settings.model_dump())
+        except ValueError:
+            pass  # Keep invalid legacy choices editable.
     _seed_include_gpa_if_missing(raw["defaults"], settings)
     return SettingsResponse(
         workspace_id=config.active_workspace_id(),

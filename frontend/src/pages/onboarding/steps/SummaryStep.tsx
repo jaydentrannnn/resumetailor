@@ -5,7 +5,7 @@ import { browserLabel } from "../../../lib/browserState";
 import { tailorModelLabel } from "../../../lib/modelLabel";
 import { applicationSummary, reviewResume } from "../../../lib/onboarding";
 import { CHOICE_FIELDS, PROFILE_GROUPS, fieldLabel } from "../../../lib/profileForm";
-import { AUTOFILL_PROVIDERS } from "../../../lib/providers";
+import { modelsFor, selectionLabel } from "../../../lib/aiModels";
 import { FIELD_LABELS } from "../../../lib/sources";
 import { useApplicantProfile } from "../../../state/applicantProfileState";
 import { useEditorState } from "../../../state/editorState";
@@ -41,8 +41,6 @@ export function SummaryStep({
   const target = config?.target_fields?.find((f) => f.id === config?.target_field);
   const review = reviewResume(resume);
   const contact = resume?.contact;
-  const autofillProvider =
-    AUTOFILL_PROVIDERS.find((p) => p.id === apply.model_provider)?.label ?? apply.model_provider;
   const name = draft?.first_name ? [draft.first_name, draft.last_name].join(" ").trim() : "";
   const answers = applicationSummary(
     draft as Record<string, unknown> | null,
@@ -101,8 +99,11 @@ export function SummaryStep({
           "AI & browser",
           <DataList
             items={[
-              { label: "Tailoring model", value: tailorModelLabel(settings, config) },
-              { label: "Autofill model", value: `${autofillProvider} · ${apply.model_name}` },
+              { label: "Light task model", value: tailorModelLabel(settings, config) },
+              {
+                label: "Heavy task model",
+                value: selectionLabel(modelsFor(settings).heavy, config),
+              },
               {
                 label: "Browser",
                 value: apply.browser ? browserLabel(apply.browser) : "Automatic",

@@ -87,8 +87,9 @@ export type ApplySettings = {
   cover_letter: boolean;
   // Provider + model for the funnel's own extract/answer calls — separate from the
   // Tailor model setting. See `ApplySettings.model_spec` on the backend.
-  model_provider: "ollama" | "ollama-cloud" | "lmstudio" | "gemini" | "anthropic";
+  model_provider: import("../lib/aiModels").ModelProvider;
   model_name: string;
+  model_selection?: import("../lib/aiModels").ModelSelection | null;
   /** Browser the app starts for Fill and job fetches; null picks the first installed. */
   browser?: BrowserId | null;
 };

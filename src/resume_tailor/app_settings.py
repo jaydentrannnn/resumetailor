@@ -23,6 +23,7 @@ from resume_tailor import config
 
 #: Top-level `JobSettings` keys that are app-wide.
 TOP_KEYS = (
+    "ai_models",
     "model",
     "model_name",
     "ollama_model",
@@ -31,8 +32,8 @@ TOP_KEYS = (
     "extract_runs",
     "max_concurrent_jobs",
 )
-#: `JobSettings.apply` keys that are app-wide (the Autofill model).
-APPLY_KEYS = ("model_provider", "model_name")
+#: `JobSettings.apply` keys that are app-wide (the Heavy task model).
+APPLY_KEYS = ("model_provider", "model_name", "model_selection")
 
 _LOCK = threading.Lock()
 
@@ -82,6 +83,17 @@ def split(defaults: dict[str, Any]) -> dict[str, Any]:
         merged = {**current, **app}
         if "apply" in app:
             merged["apply"] = {**(current.get("apply") or {}), **app["apply"]}
+        if not defaults.get("ai_models") and (
+            any(k in defaults for k in ("model", "model_name", "ollama_model", "gemini_model"))
+            or any(k in (defaults.get("apply") or {}) for k in APPLY_KEYS)
+        ):
+            # A legacy client edited model fields: do not let a stale canonical selection win.
+            merged.pop("ai_models", None)
+            legacy_apply = defaults.get("apply") or {}
+            if "model_selection" not in legacy_apply and any(
+                k in legacy_apply for k in ("model_provider", "model_name")
+            ):
+                merged["apply"].pop("model_selection", None)
         save(merged)
     profile = {k: v for k, v in defaults.items() if k not in TOP_KEYS}
     if isinstance(profile.get("apply"), dict):
@@ -107,7 +119,40 @@ def seed(defaults: dict[str, Any]) -> bool:
     Run at bootstrap with the active profile, so upgrading keeps the model that
     profile was using. Returns True when the file was written.
     """
-    if path().exists():
+    from resume_tailor.model_selection import migrated_models
+
+    current = load() if path().exists() else _pick(defaults)
+    if current.get("ai_models"):
         return False
-    save(_pick(defaults))
+    has_light = any(
+        defaults.get(k) for k in ("model", "model_name", "ollama_model", "gemini_model")
+    )
+    if not has_light and not any(
+        (defaults.get("apply") or {}).get(k)
+        for k in ("model_provider", "model_name", "model_selection")
+    ):
+        if path().exists():
+            return False
+        save(current)
+        return True
+    try:
+        models = migrated_models(defaults)
+        current["ai_models"] = models.model_dump()
+        if models.light.provider == "custom":
+            from resume_tailor.infra import secret_store
+            from resume_tailor.model_selection import legacy_routing
+
+            profile, overrides, effort = legacy_routing(defaults)
+            with config.pinned(profile, overrides=overrides, effort=effort):
+                key = config.api_key_for("rewrite")
+            spec = models.light.spec("light")
+            assert isinstance(spec, dict)
+            name = spec["credential_ref"]
+            if key and not config.credential(name):
+                secret_store.set(f"api_key:{name}", key)
+    except ValueError:
+        # An invalid legacy profile must remain editable in Settings.
+        if path().exists():
+            return False
+    save(current)
     return True
