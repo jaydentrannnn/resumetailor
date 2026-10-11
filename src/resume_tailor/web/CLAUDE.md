@@ -53,5 +53,6 @@ the `client` fixture defaults), `test_apply_api.py`, `test_extension*.py`, `test
 
 - `template_state.snapshot()` returns metadata, library badges, starter badges and a preview revision together under `template_ops.LOCK`. The SPA commits this snapshot together.
 - Revision previews render under the template lock, then convert their immutable document outside it. Gallery conversions also run outside this lock.
+- Quick-adjustment previews (`adjust_preview.py`) build under `template_ops.LOCK` and convert outside it on `document/convert_warm`'s one thread, which keeps Word warm (quit after 90s idle); a newer request supersedes an older one before it converts.
 - Ordinary template activation never calibrates automatically. `calibration_cache` restores measurements only when template, profile and PDF backend digests match (never the resume: a content edit keeps them, and switching back to a tuned template restores its numbers); otherwise use Tune page fit.
 - `infra/model_queue.py` admits each physical model request (including retries), shared across threads, async callers and profiles in this process. Settings are app-wide at `DATA_ROOT/model_queue.json`; `/api/model-queue` exposes limits and status.

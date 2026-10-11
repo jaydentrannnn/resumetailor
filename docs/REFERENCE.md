@@ -899,7 +899,52 @@ every other size moves by the same delta), and per-«field» bold/italic/underli
 the live template's skeleton in code and reads it back through the same
 `skeleton_parse` → wizard path (`GET/POST /api/template/adjustments`, draft bytes at
 `GET /api/template/drafts/{sha}`) — no override settings are stored. A table layout's
-fixed-width tables keep their width when margins change (the drawer says so).
+fixed-width tables keep their width when margins change (the panel says so).
+
+It also sets separators, bullets and the link look. Contact info and project → tools
+are literal text in the template, so `document/adjust_separators.py` rewrites them in
+the skeleton. Everything else lives on `TemplateProfile.style`
+(`document/template_style.py`):
+
+- **`separators`**: `tech_items`, `project_link`, `skills_items`, `coursework`, and
+  `dates`. When `dates` is unset, the detected `date_style.separator` is used.
+- **`bullets`**: `list` covers job, project and education bullets; `skills` covers skills
+  lines. Each takes `keep`, a glyph, `none_indent` or `none_flush`.
+- **`links`**: `color` is `blue` or `text`, plus `underline`.
+
+The defaults reproduce the old output exactly. The style is carried through the
+skeleton's meta, so it survives Edit layout in Word and later adjustments.
+
+Who reads it:
+
+- `render.py` reads the separators and the link look. `facets_budget`, `fit_shrink` and
+  `calibrate` read the separators through `template_style.active()`, so the page-fit
+  budget matches what is printed.
+- Bullets are applied at build time (`template_bullet_style.apply_bullet_style`, the
+  last build step). A glyph moves the group onto a cloned list. A "none" choice uses an
+  empty marker with `suff=nothing`, and stores the original indent on the cloned level
+  so choosing a glyph again restores it.
+- A template with no project-link slot gets one after the tools (or after the name)
+  from `template_profile_build._add_link_slot`.
+
+Fonts come from `GET /api/template/fonts` (`document/system_fonts.py`):
+
+- Windows: the registry plus each file's OpenType name table.
+- macOS: the font folders.
+- Linux: `fc-list`.
+
+The panel is a mode of the Resume view with a live draft preview:
+
+- `POST /api/template/adjustments/preview` builds the adjusted template under
+  `template_ops.LOCK`, renders the master resume, and converts outside the lock on
+  `convert_warm`'s single thread. That thread keeps Word warm and quits it after 90s
+  idle. The result is served as page PNGs from
+  `GET /api/template/adjustments/preview/{key}/{page}.png`.
+- Results are cached by the adjustment and input bytes. A request superseded by a newer
+  one returns 409 before converting.
+- Apply installs the read-back directly (`uploadTemplate` with `suggested_profile`).
+  It calibrates when lines can move (`changesFit`). A read-back that isn't ready goes to
+  the wizard instead.
 
 ---
 

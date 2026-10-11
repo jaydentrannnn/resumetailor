@@ -1,7 +1,8 @@
-import type { ReactNode } from "react";
+import { useState, type ReactNode } from "react";
 import { useLayoutSummary } from "../../../lib/useLayoutSummary";
 import { useTemplateState } from "../../../state/templateState";
 import { DataList } from "../../ui";
+import { AdjustMode } from "../adjust/AdjustMode";
 import { TemplatePreview } from "../TemplatePreview";
 import { LookSection } from "./LookSection";
 import { ResumeDetails } from "./ResumeDetails";
@@ -10,11 +11,14 @@ import { DOCUMENT_CELL, SWITCH_CELL, TOOLS_CELL, WORKSPACE_GRID } from "./worksp
 /**
  * Template page › Resume view: the template filled with the full master resume on the
  * left; on the right the view switch, what it is, its look and the technical details.
+ * Quick adjustments swaps the whole view for its adjust mode until applied or cancelled.
  */
 export function ResumeView({ switcher }: { switcher: ReactNode }) {
   const { info, previewKey, previewRevision, pendingTemplate } = useTemplateState();
   const layout = useLayoutSummary(previewRevision);
+  const [adjusting, setAdjusting] = useState(false);
   if (!info) return null;
+  if (adjusting) return <AdjustMode onDone={() => setAdjusting(false)} />;
 
   return (
     <div className={WORKSPACE_GRID} role="region" aria-label="Resume">
@@ -53,7 +57,7 @@ export function ResumeView({ switcher }: { switcher: ReactNode }) {
             ]}
           />
         </div>
-        <LookSection summary={layout?.summary ?? null} />
+        <LookSection summary={layout?.summary ?? null} onAdjust={() => setAdjusting(true)} />
         <ResumeDetails info={info} />
       </div>
     </div>

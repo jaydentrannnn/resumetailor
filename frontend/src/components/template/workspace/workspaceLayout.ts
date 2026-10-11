@@ -11,3 +11,11 @@ export const WORKSPACE_GRID =
 export const SWITCH_CELL = "min-w-0 lg:col-start-2 lg:row-start-1 lg:pr-5 lg:pt-5";
 export const DOCUMENT_CELL = "min-w-0 lg:col-start-1 lg:row-span-2 lg:row-start-1 lg:py-5 lg:pl-5";
 export const TOOLS_CELL = "min-w-0 space-y-5 lg:col-start-2 lg:row-start-2 lg:pb-5 lg:pr-5";
+
+/**
+ * Quick adjustments' grid: the same cells and 20px margins, with a wider right column
+ * (420px less its margin leaves 400px) so the settings rows aren't cramped beside the
+ * draft preview.
+ */
+export const ADJUST_GRID =
+  "grid min-w-0 gap-6 p-5 sm:px-6 lg:grid-cols-[minmax(0,1fr)_420px] lg:grid-rows-[auto_1fr] lg:gap-5 lg:p-0";

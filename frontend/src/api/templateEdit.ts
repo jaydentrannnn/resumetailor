@@ -53,11 +53,28 @@ export async function endEditSession(): Promise<void> {
 
 export type Margins = { top: number; bottom: number; left: number; right: number };
 export type FieldEmphasis = { label: string; bold: boolean; italic: boolean; underline: boolean };
+/** Separator rows (`document/adjust_separators.py` ROWS). */
+export type SeparatorRow =
+  | "contact"
+  | "project_tech"
+  | "tech_items"
+  | "project_link"
+  | "skills_items"
+  | "coursework"
+  | "dates";
+/** A marker glyph, or "keep" / "none_indent" / "none_flush" (`template_style.Bullets`). */
+export type BulletStyle = { list: string; skills: string };
+export type LinkLook = { color: "blue" | "text"; underline: boolean };
 export type CurrentLayout = {
   margins: Margins;
   font_family: string;
   font_size: number;
   fields: FieldEmphasis[];
+  /** Only the rows this template prints, with their current values. */
+  separators: Partial<Record<SeparatorRow, string>>;
+  bullets: BulletStyle;
+  /** null when the template prints no links. */
+  links: LinkLook | null;
 };
 export type TemplateAdjustmentsResponse = { current: CurrentLayout; table_layout: boolean };
 export type TemplateAdjustments = {
@@ -65,7 +82,34 @@ export type TemplateAdjustments = {
   font_family?: string;
   font_size?: number;
   fields?: Partial<FieldEmphasis>[];
+  separators?: Partial<Record<SeparatorRow, string>>;
+  bullets?: BulletStyle;
+  links?: LinkLook;
 };
+export type TemplateFonts = { families: string[]; common: string[] };
+export type AdjustPreview = { key: string; pages: number };
+
+/** Font families installed where PDFs are made. */
+export function fetchTemplateFonts(): Promise<TemplateFonts> {
+  return request<TemplateFonts>("/api/template/fonts");
+}
+
+/** Render the resume through the adjusted template (nothing installed). A 409 means a
+ * newer preview request superseded this one. */
+export function fetchAdjustPreview(
+  adj: TemplateAdjustments,
+  signal?: AbortSignal,
+): Promise<AdjustPreview> {
+  return request<AdjustPreview>("/api/template/adjustments/preview", {
+    method: "POST",
+    body: JSON.stringify(adj),
+    signal,
+  });
+}
+
+export function adjustPreviewPageUrl(key: string, page: number): string {
+  return `/api/template/adjustments/preview/${key}/${page}.png`;
+}
 
 export function fetchTemplateAdjustments(): Promise<TemplateAdjustmentsResponse> {
   return request<TemplateAdjustmentsResponse>("/api/template/adjustments");

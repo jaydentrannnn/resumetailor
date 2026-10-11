@@ -1,0 +1,89 @@
+import { useId } from "react";
+import type { CurrentLayout, TemplateFonts } from "../../../api";
+import { MARGIN_SIDES } from "../../../lib/templateAdjust";
+import { Field, TileSection } from "../../ui";
+import { FontPicker } from "./FontPicker";
+
+const SIDE_LABEL = { top: "Top", bottom: "Bottom", left: "Left", right: "Right" };
+
+type Props = { draft: CurrentLayout; onChange: (next: CurrentLayout) => void };
+
+function number(value: string, fallback: number): number {
+  const n = Number(value);
+  return Number.isFinite(n) ? n : fallback;
+}
+
+/** Page margins in inches, two by two. */
+export function PageSection({ draft, onChange, tableLayout }: Props & { tableLayout: boolean }) {
+  return (
+    <TileSection title="Margins (inches)">
+      <div className="grid grid-cols-2 gap-3">
+        {MARGIN_SIDES.map((side) => (
+          <Field key={side} label={SIDE_LABEL[side]}>
+            <input
+              type="number"
+              className="field w-full"
+              min={0}
+              max={3}
+              step={0.05}
+              value={draft.margins[side]}
+              onChange={(e) =>
+                onChange({
+                  ...draft,
+                  margins: {
+                    ...draft.margins,
+                    [side]: number(e.target.value, draft.margins[side]),
+                  },
+                })
+              }
+            />
+          </Field>
+        ))}
+      </div>
+      {tableLayout && (
+        <p className="mt-2 text-xs text-ink-muted">
+          This template is laid out in a table with a fixed width, so the table keeps its width when
+          margins change. Use Edit layout in Word to resize it.
+        </p>
+      )}
+    </TileSection>
+  );
+}
+
+/** The one typeface for every line, and the body text size. */
+export function FontSection({ draft, onChange, fonts }: Props & { fonts: TemplateFonts }) {
+  const labelId = useId();
+  return (
+    <TileSection title="Font">
+      <div className="grid grid-cols-[minmax(0,1fr)_5.5rem] gap-3">
+        <div className="min-w-0 text-sm">
+          <span id={labelId} className="mb-1.5 block text-xs font-medium text-ink-2">
+            Typeface
+          </span>
+          <FontPicker
+            value={draft.font_family}
+            fonts={fonts}
+            labelId={labelId}
+            onChange={(font_family) => onChange({ ...draft, font_family })}
+          />
+        </div>
+        <Field label="Size (pt)">
+          <input
+            type="number"
+            className="field w-full"
+            min={6}
+            max={20}
+            step={0.5}
+            value={draft.font_size}
+            onChange={(e) =>
+              onChange({ ...draft, font_size: number(e.target.value, draft.font_size) })
+            }
+          />
+        </Field>
+      </div>
+      <p className="mt-2 text-xs text-ink-muted">
+        Every line uses it; headings keep their size difference.
+      </p>
+    </TileSection>
+  );
+}

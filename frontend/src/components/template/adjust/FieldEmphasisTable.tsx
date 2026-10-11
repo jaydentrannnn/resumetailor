@@ -1,5 +1,5 @@
 import type { FieldEmphasis } from "../../../api";
-import { buttonClass } from "../../ui";
+import { buttonClass, TileSection } from "../../ui";
 
 const MARKS = [
   { key: "bold", text: "B", name: "Bold", className: "font-bold" },
@@ -18,15 +18,14 @@ export function FieldEmphasisTable({
   const toggle = (index: number, key: (typeof MARKS)[number]["key"]) =>
     onChange(fields.map((f, i) => (i === index ? { ...f, [key]: !f[key] } : f)));
   return (
-    <section>
-      <h3 className="text-xs font-medium text-ink-2">Field emphasis</h3>
-      <p className="mt-1 text-xs text-ink-muted">
+    <TileSection title="Field emphasis">
+      <p className="text-xs text-ink-muted">
         Applies to every entry: bolding Company bolds every company name.
       </p>
       <ul className="mt-2 divide-y divide-line">
         {fields.map((field, index) => (
           <li key={field.label} className="flex items-center justify-between gap-3 py-1.5">
-            <span className="min-w-0 truncate">{field.label}</span>
+            <span className="min-w-0 truncate text-sm">{field.label}</span>
             <span className="flex gap-1" role="group" aria-label={`${field.label} emphasis`}>
               {MARKS.map((mark) => (
                 <button
@@ -44,6 +43,6 @@ export function FieldEmphasisTable({
           </li>
         ))}
       </ul>
-    </section>
+    </TileSection>
   );
 }

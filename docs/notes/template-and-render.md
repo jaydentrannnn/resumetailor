@@ -454,3 +454,42 @@ siblings are unchanged.
 - Quick adjustments (Phase 5) edit the skeleton and go through the same read-back + wizard rather than storing margin/font overrides on the profile: one source of formatting, and the previous template stays in the library as the undo.
 - Text size is a delta, not an absolute: setting every run to one size would flatten the name and headings. The body size shown is the bullets' most common effective size.
 - Found by the browser check: the first read-back kept `rt_sec_*` bookmarks in the installed baseline, so its next skeleton carried two marks per heading and every field read as "above the first heading". Bookmarks are now stripped on read-back and before annotating.
+
+
+## Quick adjustments: separators, bullets, links, fonts, live preview (2026-10-11)
+
+- **Separators.** Separators the template prints as literal text (contact info,
+  project → tools) are rewritten in the skeleton. Separators `render.py` used to
+  hard-code moved to `TemplateProfile.style`. There is one source per separator, so the
+  page-fit budget (`facets_budget`, `fit_shrink`, `calibrate`) reads the same value that
+  is printed.
+- **Style carried in skeleton meta.** The read-back rebuilds the profile from a fresh
+  analysis, so anything stored only on the profile would be lost after a Word edit.
+  `Skeleton.meta()` carries `style`, the same way `custom` and `samples` already are.
+- **Bullets applied at build time, not in the skeleton.** `retarget_bullet` and
+  `normalize_bullet_numbering` re-impose the shared Noto list on every build, so a
+  skeleton edit would not stick.
+- **"None" keeps a numbered list.** It uses an empty `lvlText` with `suff=nothing`
+  instead of removing `numPr`, so `retarget_bullet` leaves the paragraph alone. The
+  original indent is stored on the cloned level. An empty marker drops its tab, so
+  "None, indented" has to set the paragraph's left indent to the text position itself;
+  the real-Word check caught it printing flush (cef8abb).
+- **Link look.**
+  - "Text colour" sets the template run's colour (or `auto`) on the link.
+  - "No underline" writes `<w:u w:val="none"/>`.
+  - The `InternetLink` rStyle stays, because LibreOffice needs it for clickable PDF
+    links.
+  - The separator before a link no longer inherits the link's blue.
+- **Project-link slot.** It is added in the build, not marked by the analyzer: one place,
+  and `template_verify` now always checks the link tag.
+- **Live preview.**
+  - It converts on a dedicated thread with Word kept warm: about 1.3s per change once
+    warm, against about 9s for a cold start.
+  - Pages come back as PNGs, not a PDF frame, because Chrome's single PDF plugin blanks a
+    second frame.
+  - The cache key is built from the input bytes, not the layout file. The layout file's
+    zip timestamps change on every save, so the first key never hit.
+- **Calibration reuses one Word instance.** Calibration (`calibrate.run`) now runs inside
+  `convert.held()`, so all of its probes share one Word. A cold start per probe made
+  Apply take 204s in the browser check; it now takes about 26s. The wizard install and
+  Tune page fit get the same speed-up.

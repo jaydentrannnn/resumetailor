@@ -722,3 +722,22 @@ its bottom (`workspace/workspaceLayout.ts`: switch, document, tools cells; on ph
 stack switch → document → tools). Page fit tuning is back as its own tile under the
 Template tile, exactly as before the redesign (`PageFitCard`), and "Lines per page" is
 back in the Resume view's summary.
+
+Quick adjustments as an adjust mode (2026-10-11):
+
+- **Layout.** The right-hand drawer is gone. Quick adjustments turns the Resume view into
+  an adjust mode:
+  - The draft preview (page images, sticky) is on the left.
+  - The settings are on the right, in a column widened to 420px (`ADJUST_GRID`), so the
+    select rows aren't cramped.
+  - The view switch is replaced by Cancel and Apply, so a draft can't be lost by
+    switching to the Cover letter view.
+- **Cancel** asks first only when something has changed.
+- **Apply** installs the result as "<label> (adjusted)" (`adjustedLabel` never stacks the
+  suffix) and returns to the normal view. A read-back that needs review opens in the
+  import wizard as before.
+- **What's shown.**
+  - Separator rows appear only for parts the template prints.
+  - The Links section appears only when the template prints links.
+  - The font box is a searchable combobox over the installed fonts (`FontPicker`,
+    `lib/fontSearch.ts`).
