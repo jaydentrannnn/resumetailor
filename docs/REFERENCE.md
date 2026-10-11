@@ -1183,10 +1183,25 @@ fixed overhead the fit loop never trims.
   it. The web Template tab regenerates it after a resume-template install. Rebuild also
   triggers when `cover_template.meta.json`'s `builder_version` lags
   `cover_template._BUILDER_VERSION` (code changes would otherwise leave stale files on
-  disk). Layout constants: `config.COVER_MARGIN_INCHES` (1.0"),
-  `config.COVER_CONTACT_FIELDS` (location/email/phone only — drops LinkedIn/GitHub from
-  the letterhead), 1.15 body line spacing, and a cloned section-heading rule under the
-  contact line.
+  disk). Layout constants: `config.COVER_MARGIN_INCHES` (1.0"; a table letterhead keeps
+  the resume's side margins and indents the body to its text edge,
+  `cover_template._table_text_inset`), 1.15 body line spacing, and a cloned
+  section-heading rule under the contact line. Deleting the resume body removes whole
+  table rows/tables and refills emptied cells, and letter paragraphs go before the body
+  `w:sectPr` — either mistake gives a file Word calls corrupted.
+- **Cover-letter settings** (`document/cover_settings.py`, per profile in
+  `templates/cover_settings.json`, `GET/PUT /api/cover-letter/settings`, Template page ›
+  Cover letter): letterhead `same_as_resume` (the template's contact fields and every
+  custom line) or `custom` (`letterhead_fields`: contact names and `custom:<key>`), block
+  toggles (date, recipient, subject — off by default — salutation, closing, signature;
+  the body always prints), `subject_format` (`{job_title}`/`{company}`, filled by code
+  from `JobRequirements.title`; a placeholder with no value drops the line) and
+  `closing_text`. Applied at render time only: every block is in the template behind
+  `{%p if blocks["name"] %}`, so a settings change never rebuilds it. A block that may
+  follow the inside address comes in two spacings (`{%p if … %}`/`{%p else %}`), since
+  the looped address cannot space its own last line. `POST /api/cover-letter/preview`
+  returns a PNG of a sample letter (an image, not a PDF frame, beside the page's own
+  PDF preview). Replaced `config.COVER_CONTACT_FIELDS`.
 - **The fabrication guard's whitelist is the source text plus Extra skills
   (`bullet.tags`) only.** Detected skills are already in the text; inferred skills
   (`tag_infer`) never reach the guard, `<permitted_skills>` or the Skills pool — a model's

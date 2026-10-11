@@ -17,6 +17,7 @@ from ..apply.funnel.eligibility import EligibilitySettings
 from ..apply.funnel.screen import ScreenResult, ScreenSettings
 from ..apply.funnel.store_models import ApplicationStatus, AtsKind, FillResult, StatusChange
 from ..content import industries
+from ..document.cover_settings import CoverSettings
 from ..pipeline.include import IncludeOptions
 
 #: Every `source_sha256` request field below is interpolated straight into a filesystem
@@ -1479,3 +1480,20 @@ class DailyStatusResponse(BaseModel):
     summary: dict[str, Any] | None = None
     #: `apply.scheduler.status()`: last/next scheduled run, today's miss, bad time.
     scheduler: dict[str, Any] | None = None
+
+
+class CoverLetterFieldOut(BaseModel):
+    """One line the cover letterhead can show: a contact field or a custom line."""
+
+    id: str
+    label: str
+    #: False when the resume has no value for it (it would print nothing).
+    has_value: bool = True
+
+
+class CoverLetterSettingsResponse(BaseModel):
+    """`GET`/`PUT /api/cover-letter/settings`: the saved settings plus the letterhead
+    lines there are to choose from."""
+
+    settings: CoverSettings
+    fields: list[CoverLetterFieldOut] = Field(default_factory=list)

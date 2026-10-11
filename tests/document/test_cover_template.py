@@ -69,23 +69,38 @@ def test_letter_paragraphs_drop_the_bullet_hanging_indent(cover_template_paths):
         assert p_pr.find(qn("w:numPr")) is None, f"{para.text!r} kept bullet numbering"
 
 
-def test_letter_blocks_are_separated_but_address_stays_tight(cover_template_paths):
+def _letter(resume, **overrides) -> CoverLetter:
+    fields = dict(
+        company="Example Corp",
+        company_location="Irvine, CA",
+        addressee="",
+        paragraphs=["First paragraph.", "Second paragraph."],
+        salutation="Dear Hiring Manager,",
+        closing="Sincerely,",
+        signature=resume.contact.name,
+        inside_address=["Example Corp", "Irvine, CA"],
+        date="August 29, 2026",
+        job_title="Data Analyst",
+    )
+    fields.update(overrides)
+    return CoverLetter(**fields)
+
+
+def test_letter_blocks_are_separated_but_address_stays_tight(cover_template_paths, tmp_path):
     """Body blocks get one blank line; the repeating address line and closing do not."""
     _src, cover_dst, _profile = cover_template_paths
-    doc = Document(str(cover_dst))
-    by_tag = {
-        p.text.strip(): p
-        for p, _loc in docx_text.iter_document_paragraphs(doc)
-        if p.text.strip()
-    }
-    assert by_tag["{{ para }}"].paragraph_format.space_after > 0
-    assert by_tag["{{ date }}"].paragraph_format.space_after > 0
+    resume = synthetic_resume()
+    out = tmp_path / "cover.docx"
+    render.render_letter(resume, _letter(resume), template=cover_dst, out=out)
+    by_text = {p.text: p.paragraph_format for p, _loc in docx_text.iter_document_paragraphs(Document(str(out)))}
+    assert by_text["First paragraph."].space_after > 0
+    assert by_text["August 29, 2026"].space_after > 0
     # The address repeats in a loop, so it cannot space only its last line; the gap
     # before the salutation is carried by the salutation's own space-before instead.
-    assert by_tag["{{ line }}"].paragraph_format.space_after == 0
-    assert by_tag["{{ salutation }}"].paragraph_format.space_before > 0
-    assert by_tag["{{ closing }}"].paragraph_format.space_after == 0
-    assert by_tag["{{ signature }}"].paragraph_format.space_after == 0
+    assert by_text["Irvine, CA"].space_after == 0
+    assert by_text["Dear Hiring Manager,"].space_before > 0
+    assert by_text["Sincerely,"].space_after == 0
+    assert by_text[resume.contact.name].space_after == 0
 
 
 def test_cover_template_uses_wider_margins(cover_template_paths):

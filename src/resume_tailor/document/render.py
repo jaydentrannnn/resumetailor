@@ -20,6 +20,7 @@ from .. import config
 from ..content.data import MasterResume
 from ..infra import telemetry
 from . import convert, date_style
+from .cover_settings import CoverSettings
 from .template_profile import ContactField, active_layout
 
 #: Word renders hyperlinks in this blue by convention; matching it keeps a rendered
@@ -617,31 +618,54 @@ def build_letter_context(
     *,
     contact_fields: list[ContactField] | None = None,
     layout: dict | None = None,
+    settings: CoverSettings | None = None,
 ) -> dict:
     """Assemble the Jinja context for a cover-letter template.
 
     ``letter`` is a ``coverletter.CoverLetter`` instance. Letterhead fields come from
-    ``resume.contact``; body fields come from the drafted letter.
+    ``resume.contact``; body fields come from the drafted letter. ``settings`` (default:
+    every block but the subject, letterhead same as the resume) picks the letterhead lines
+    and the blocks that print; an explicit ``contact_fields`` still wins for the contact
+    line.
     """
     layout = layout if layout is not None else active_layout()
-    return {
-        "name": resume.contact.name,
-        "contact": _contact_richtext(
+    settings = settings if settings is not None else CoverSettings()
+    if contact_fields is None:
+        contact_fields = settings.contact_fields(layout)
+    contact = (
+        RichText()
+        if contact_fields == []  # `_contact_richtext` reads an empty order as "all"
+        else _contact_richtext(
             resume,
             tpl,
             field_order=contact_fields if contact_fields is not None else layout.get(
                 "contact_field_order"
             ),
             separator=layout.get("contact_separator"),
-        ),
+        )
+    )
+    custom = {
+        key: (value if settings.custom_shown(key) else "")
+        for key, value in custom_values(resume, layout).items()
+    }
+    subject = settings.subject(
+        job_title=getattr(letter, "job_title", ""), company=letter.company
+    )
+    blocks = settings.blocks.model_dump()
+    blocks["subject"] = bool(subject)
+    return {
+        "name": resume.contact.name,
+        "contact": contact,
         "date": letter.date,
         "inside_address": list(letter.inside_address),
+        "subject": subject,
         "salutation": letter.salutation,
         "paragraphs": list(letter.paragraphs),
-        "closing": letter.closing,
+        "closing": settings.closing_text.strip() or letter.closing,
         "signature": letter.signature,
+        "blocks": blocks,
         **_contact_slots(resume, tpl, layout, contact_fields),
-        "custom": custom_values(resume, layout),
+        "custom": custom,
     }
 
 
@@ -653,6 +677,7 @@ def render_letter(
     out: Path | None = None,
     contact_fields: list[ContactField] | None = None,
     layout: dict | None = None,
+    settings: CoverSettings | None = None,
 ) -> Path:
     """Render a drafted cover letter to a ``.docx`` using the derived cover template."""
     template = template or config.COVER_TEMPLATE_PATH
@@ -668,6 +693,7 @@ def render_letter(
         tpl,
         contact_fields=contact_fields,
         layout=layout,
+        settings=settings,
     )
     tpl.render(context, autoescape=True)
     out = out or config.OUTPUT_DIR / "cover_letter.docx"

@@ -68,3 +68,10 @@ earlier ones. Cross-check any number against the code.
   `check_claims`. Helpers stay private; one new public symbol.
 - **Tradeoff:** Checking every sentence is stricter than cover letters (company-description
   prose would also be checked) — correct for `verify_claim`'s input contract.
+
+## Cover-letter settings: letterhead and blocks (2026-10-11)
+
+- **Decision:** letterhead and block choices live in `templates/cover_settings.json` (`document/cover_settings.py`), not in `WorkspaceSettings`: they describe the letter's layout, belong beside the cover template, and must be readable by the CLI and both web render paths (`render_cover_letter` has no web settings object). Workspace clone copies the file.
+- **Decision:** toggles are applied at render (`blocks` in the Jinja context), never at build — `ensure_cover_template` does not watch settings, and a rebuild per toggle would be wasted work. The default letterhead became "same as resume", replacing `COVER_CONTACT_FIELDS` (location/email/phone): letters now show LinkedIn/GitHub when the resume does, as the user asked for.
+- **Decision:** the subject line is code-filled from the posting title — no prompt change, no cache-key change. The subject block defaults off, so a default letter prints exactly as before.
+- **Fix found while verifying in Word:** a table-layout resume's cover template was a corrupt `.docx` (cells emptied of every `w:p`, and letter paragraphs appended after the body `w:sectPr`). python-docx parsed it, so the tests never saw it. Also: such a letterhead now keeps the resume's side margins (its fixed column widths overflowed 1" margins) and the body is indented to the table's text edge.

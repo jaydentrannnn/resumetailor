@@ -13,6 +13,7 @@ import json
 from pathlib import Path
 
 from docx import Document
+from docx.oxml import OxmlElement
 from docx.oxml.ns import qn
 from docx.shared import Emu, Inches, Pt
 from docx.text.paragraph import Paragraph
@@ -22,12 +23,13 @@ from . import docx_text, template_custom
 from .template_profile import TemplateProfile, load_profile
 from .template_profile_build import build_contact_profile, build_name_profile
 from .template_tagging import _para_by_id
-from .template_xml import delete, make_para, set_run_text
+from .template_xml import make_para, set_run_text
 
 #: Bump when ``build_cover_template`` output changes so ``ensure_cover_template`` rebuilds.
-_BUILDER_VERSION = 2
+_BUILDER_VERSION = 3
 
 DATE_TAG = "{{ date }}"
+SUBJECT_TAG = "{{ subject }}"
 SALUTATION_TAG = "{{ salutation }}"
 CLOSING_TAG = "{{ closing }}"
 SIGNATURE_TAG = "{{ signature }}"
@@ -37,6 +39,14 @@ INSIDE_CLOSE = "{%p endfor %}"
 BODY_OPEN = "{%p for para in paragraphs %}"
 BODY_BODY = "{{ para }}"
 BODY_CLOSE = "{%p endfor %}"
+#: Every block but the body prints behind one of these (`cover_settings.CoverBlocks`). A
+#: subscript, not `blocks.date`: attribute-first lookup is the `items` gotcha.
+BLOCK_IF_FMT = '{%%p if blocks["%s"] %%}'
+ELSE = "{%p else %}"
+ENDIF = "{%p endif %}"
+#: The inside address cannot space its own last line (it repeats in a loop), so the block
+#: after it carries the gap — but only when the address actually printed.
+AFTER_RECIPIENT = 'blocks["recipient"] and inside_address'
 
 
 def _strip_numbering(paragraph_element) -> None:
@@ -75,6 +85,7 @@ def _clone_donor_paragraph(
     *,
     space_before: Pt,
     space_after: Pt,
+    inset: tuple[Emu, Emu] = (Emu(0), Emu(0)),
 ) -> Paragraph:
     """Deep-copy ``donor`` as a letter paragraph carrying ``text``.
 
@@ -91,8 +102,8 @@ def _clone_donor_paragraph(
     # `w:ind`/`w:spacing` into `w:pPr` in OOXML schema order. Appending them by hand would
     # produce a file that parses but that Word rejects.
     fmt = cloned.paragraph_format
-    fmt.left_indent = Emu(0)
-    fmt.right_indent = Emu(0)
+    # `inset` lines the letter up with a table letterhead's text (`_table_text_inset`).
+    fmt.left_indent, fmt.right_indent = inset
     # 0 (not None) so a `w:hanging` on the donor is actively cleared, not just left to
     # whatever the underlying style says.
     fmt.first_line_indent = Emu(0)
@@ -148,6 +159,76 @@ def _contact_paragraph_ids(profile: TemplateProfile) -> list[int]:
     return sorted({i for i in ids if i is not None})
 
 
+#: Word's default left/right cell padding (0.075") when neither the table nor its style
+#: sets one.
+_DEFAULT_CELL_MARGIN_DXA = 108
+
+
+def _letterhead_table(doc: Document, profile: TemplateProfile):
+    """The ``w:tbl`` holding the letterhead, or None for a paragraph letterhead."""
+    ids = set(_contact_paragraph_ids(profile))
+    for para_id, (paragraph, _location) in enumerate(docx_text.iter_document_paragraphs(doc)):
+        if para_id in ids:
+            table = next(paragraph._p.iterancestors(qn("w:tbl")), None)
+            if table is not None:
+                return table
+    return None
+
+
+def _dxa(element, name: str) -> int | None:
+    """``w:w`` of child ``name`` when it is a ``dxa`` measure."""
+    child = element.find(qn(name)) if element is not None else None
+    if child is None or child.get(qn("w:type"), "dxa") != "dxa":
+        return None
+    try:
+        return int(child.get(qn("w:w")))
+    except (TypeError, ValueError):
+        return None
+
+
+def _cell_margin(doc: Document, tbl_pr, side: str) -> int:
+    """Left/right cell padding in dxa: the table's own, else its style's, else Word's."""
+    names = ("w:left", "w:start") if side == "left" else ("w:right", "w:end")
+    sources = [tbl_pr.find(qn("w:tblCellMar")) if tbl_pr is not None else None]
+    style = tbl_pr.find(qn("w:tblStyle")) if tbl_pr is not None else None
+    if style is not None:
+        for st in doc.styles.element.findall(qn("w:style")):
+            if st.get(qn("w:styleId")) == style.get(qn("w:val")):
+                st_pr = st.find(qn("w:tblPr"))
+                sources.append(st_pr.find(qn("w:tblCellMar")) if st_pr is not None else None)
+    for mar in sources:
+        for name in names:
+            value = _dxa(mar, name)
+            if value is not None:
+                return value
+    return _DEFAULT_CELL_MARGIN_DXA
+
+
+def _table_text_inset(doc: Document, table) -> tuple[Emu, Emu]:
+    """How far the letterhead table's text sits inside the page margins, left and right,
+    so the letter body can line up with it. A table with no fixed width (percentage or
+    auto) is taken to start at its indent and span the text width."""
+    tbl_pr = table.find(qn("w:tblPr"))
+    section = doc.sections[0]
+    text_dxa = int((section.page_width - section.left_margin - section.right_margin) / 635)
+    width = _dxa(tbl_pr, "w:tblW")
+    if not width:
+        left = (_dxa(tbl_pr, "w:tblInd") or 0) + _cell_margin(doc, tbl_pr, "left")
+        return Emu(max(left, 0) * 635), Emu(_cell_margin(doc, tbl_pr, "right") * 635)
+    jc = tbl_pr.find(qn("w:jc"))
+    align = jc.get(qn("w:val")) if jc is not None else "left"
+    if align == "center":
+        left = (text_dxa - width) // 2
+    elif align in ("right", "end"):
+        left = text_dxa - width
+    else:
+        left = _dxa(tbl_pr, "w:tblInd") or 0
+    right = text_dxa - width - left
+    left += _cell_margin(doc, tbl_pr, "left")
+    right += _cell_margin(doc, tbl_pr, "right")
+    return Emu(max(left, 0) * 635), Emu(max(right, 0) * 635)
+
+
 def _letterhead_custom(profile: TemplateProfile, last_keep_id: int) -> TemplateProfile:
     """`profile` restricted to the custom/dropped lines inside the kept letterhead —
     every later line is deleted with the resume body, so tagging it would be wasted."""
@@ -180,19 +261,54 @@ def _find_body_donor(doc: Document, after_id: int) -> Paragraph:
 
 
 def _remove_paragraphs_after(doc: Document, last_keep_id: int) -> None:
-    """Delete every document paragraph with an id greater than ``last_keep_id``."""
+    """Delete every document paragraph with an id greater than ``last_keep_id``.
+
+    A table-layout resume keeps its letterhead and its sections in one table, so deleting
+    paragraphs alone would leave rows of empty cells — and a ``w:tc`` with no ``w:p`` is
+    a file Word refuses to open. Rows left with nothing kept go whole, then tables with
+    no rows; any cell still emptied gets a blank paragraph back.
+    """
     victims = [
-        paragraph
+        paragraph._p
         for para_id, (paragraph, _location) in enumerate(docx_text.iter_document_paragraphs(doc))
         if para_id > last_keep_id
     ]
-    for paragraph in victims:
-        delete(paragraph)
+    victim_set = set(victims)
+    body = doc.element.body
+    for row in list(body.iter(qn("w:tr"))):
+        if not _attached(row, body):
+            continue  # inside a row already removed
+        paras = list(row.iter(qn("w:p")))
+        if paras and all(p in victim_set for p in paras):
+            row.getparent().remove(row)
+    for p in victims:
+        if _attached(p, body):
+            p.getparent().remove(p)
+    for table in list(body.iter(qn("w:tbl"))):
+        if _attached(table, body) and table.find(qn("w:tr")) is None:
+            table.getparent().remove(table)
+    for cell in body.iter(qn("w:tc")):
+        if cell.find(qn("w:p")) is None:
+            cell.append(OxmlElement("w:p"))
+
+
+def _attached(element, body) -> bool:
+    """Whether ``element`` is still inside ``body`` (not under a removed row)."""
+    node = element.getparent()
+    while node is not None and node is not body:
+        node = node.getparent()
+    return node is body
 
 
 def _append_paragraph(doc: Document, element) -> None:
-    """Append an OOXML paragraph element to the document body."""
-    doc.element.body.append(element)
+    """Append an OOXML paragraph element to the end of the document body — before the
+    body's ``w:sectPr``, which must stay its last child."""
+    body = doc.element.body
+    sect_pr = body.find(qn("w:sectPr"))
+    if sect_pr is not None:
+        sect_pr.addprevious(element)
+    else:
+        body.append(element)
 
 
 def build_cover_template(
@@ -209,10 +325,16 @@ def build_cover_template(
     profile = profile if profile is not None else load_profile()
     doc = Document(str(src))
 
+    # A table letterhead keeps the resume's own side margins: its column widths are
+    # fixed to the resume's text width, so wider margins would push it past the letter
+    # body on both sides.
+    table = _letterhead_table(doc, profile) if profile is not None else None
+    in_table = table is not None
     margin = Inches(config.COVER_MARGIN_INCHES)
     section = doc.sections[0]
-    section.left_margin = margin
-    section.right_margin = margin
+    if not in_table:
+        section.left_margin = margin
+        section.right_margin = margin
     section.top_margin = margin
     section.bottom_margin = margin
 
@@ -236,26 +358,53 @@ def build_cover_template(
     # otherwise render the whole letter as a single unbroken block of text.
     gap = _donor_font_size(donor)
     none = Pt(0)
+    inset = _table_text_inset(doc, table) if in_table else (Emu(0), Emu(0))
 
     def letter_para(text: str, *, before: Pt = none, after: Pt = gap):
         """Clone the donor into one normalized letter paragraph element."""
-        return _clone_donor_paragraph(donor, text, space_before=before, space_after=after)._p
+        return _clone_donor_paragraph(
+            donor, text, space_before=before, space_after=after, inset=inset
+        )._p
 
     # Block spacing follows business-letter convention rather than being uniform: the
     # inside address is a tight stack, and so are the closing and signature, so the gap
-    # before the salutation is carried by the salutation's own space-before instead of by
-    # the address lines (which repeat in a loop and cannot space only their last one).
+    # before the next block is carried by that block's own space-before instead of by the
+    # address lines (which repeat in a loop and cannot space only their last one). A
+    # block that may or may not follow the address comes in two spacings, chosen at
+    # render time.
+    def guarded(name: str, *elements) -> list:
+        return [make_para(BLOCK_IF_FMT % name), *elements, make_para(ENDIF)]
+
+    def after_address(text: str, cond: str, *, after: Pt = gap) -> list:
+        return [
+            make_para(f"{{%p if {cond} %}}"),
+            letter_para(text, before=gap, after=after),
+            make_para(ELSE),
+            letter_para(text, after=after),
+            make_para(ENDIF),
+        ]
+
     sequence: list = [
-        letter_para(DATE_TAG),
-        make_para(INSIDE_OPEN),
-        letter_para(INSIDE_BODY, after=none),
-        make_para(INSIDE_CLOSE),
-        letter_para(SALUTATION_TAG, before=gap),
+        # A table letterhead has no space under it (a paragraph contact line carries
+        # the rule and its spacing), so the letter starts one blank line lower.
+        *([letter_para("", after=none)] if in_table else []),
+        *guarded("date", letter_para(DATE_TAG)),
+        *guarded(
+            "recipient",
+            make_para(INSIDE_OPEN),
+            letter_para(INSIDE_BODY, after=none),
+            make_para(INSIDE_CLOSE),
+        ),
+        *guarded("subject", *after_address(SUBJECT_TAG, AFTER_RECIPIENT)),
+        *guarded(
+            "salutation",
+            *after_address(SALUTATION_TAG, f'{AFTER_RECIPIENT} and not blocks["subject"]'),
+        ),
         make_para(BODY_OPEN),
         letter_para(BODY_BODY),
         make_para(BODY_CLOSE),
-        letter_para(CLOSING_TAG, after=none),
-        letter_para(SIGNATURE_TAG, after=none),
+        *guarded("closing", letter_para(CLOSING_TAG, after=none)),
+        *guarded("signature", letter_para(SIGNATURE_TAG, after=none)),
     ]
     for element in sequence:
         _append_paragraph(doc, element)

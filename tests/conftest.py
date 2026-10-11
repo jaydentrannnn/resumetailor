@@ -204,7 +204,8 @@ def _isolated_template_paths(tmp_path, monkeypatch):
              "DEFAULT_TEMPLATE_PATH": tmp_path / "no-such-template.docx",
              "BASELINE_TEMPLATE_PATH": tmp_path / "no-such-baseline.docx",
              "COVER_TEMPLATE_PATH": tmp_path / "no-such-cover-template.docx",
-             "COVER_TEMPLATE_META_PATH": tmp_path / "no-such-cover-meta.json"}
+             "COVER_TEMPLATE_META_PATH": tmp_path / "no-such-cover-meta.json",
+             "COVER_SETTINGS_PATH": tmp_path / "no-such-cover-settings.json"}
     paths["CALIBRATION_DIR"] = tmp_path / "calibration"
     monkeypatch.setattr(config, "_DEFAULT", replace(config._DEFAULT, paths=paths))
 

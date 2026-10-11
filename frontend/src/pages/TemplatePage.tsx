@@ -1,6 +1,7 @@
 import { Button, DataList, Page, PageHeader, Tile } from "../components/ui";
 import { TemplatePreview } from "../components/template/TemplatePreview";
 import { PageFitCard } from "../components/template/PageFitCard";
+import { CoverLetterCard } from "../components/template/coverLetter/CoverLetterCard";
 import { SavedTemplatesPanel } from "../components/template/SavedTemplatesPanel";
 import { StarterTemplatesPanel } from "../components/template/StarterTemplatesPanel";
 import { TemplateImportWizard } from "../components/template/TemplateImportWizard";
@@ -151,6 +152,7 @@ export function TemplatePage() {
         </div>
       </Tile>
       {info?.tagged.exists && <PageFitCard calibration={info.calibration} />}
+      {info?.tagged.exists && <CoverLetterCard reloadKey={previewRevision} />}
       <SavedTemplatesPanel />
       <StarterTemplatesPanel />
       <TemplateImportWizard />

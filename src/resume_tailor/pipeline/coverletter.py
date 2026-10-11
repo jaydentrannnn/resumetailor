@@ -547,6 +547,7 @@ def draft_letter(
         salutation=coverletter_format._build_salutation(addressee),
         signature=resume.contact.name,
         inside_address=coverletter_format._build_inside_address(company, location),
+        job_title=requirements.title,
         date=coverletter_format._format_date_long(),
         warnings=warnings,
         model=model_label,
@@ -562,15 +563,10 @@ def render_cover_letter(
     out: Path,
 ) -> coverletter_models.CoverLetter:
     """Render ``letter`` to ``out`` and attempt PDF conversion plus a one-page check."""
-    from ..document import cover_template, render
+    from ..document import cover_settings, cover_template, render
 
     cover_template.ensure_cover_template()
-    docx_path = render.render_letter(
-        resume,
-        letter,
-        out=out,
-        contact_fields=list(config.COVER_CONTACT_FIELDS),
-    )
+    docx_path = render.render_letter(resume, letter, out=out, settings=cover_settings.load())
     letter.docx_path = docx_path
     pdf_path = out.with_suffix(".pdf")
     try:

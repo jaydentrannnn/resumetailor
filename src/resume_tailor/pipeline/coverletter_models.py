@@ -108,6 +108,8 @@ class CoverLetter:
     signature: str = ""
     inside_address: list[str] = field(default_factory=list)
     date: str = ""
+    #: The posting's title, for the optional subject line (`cover_settings`).
+    job_title: str = ""
     warnings: list[str] = field(default_factory=list)
     model: str = ""
     word_count: int = 0

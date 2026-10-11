@@ -138,8 +138,8 @@ def apply_fill_engine() -> str:
 #: Page margins for the cover letter — wider than the resume's cram-to-one-page setup.
 COVER_MARGIN_INCHES = 1.0
 
-#: Letterhead contact fields rendered on the cover letter (drops LinkedIn/GitHub).
-COVER_CONTACT_FIELDS: tuple[str, ...] = ("location", "email", "phone")
+#: Which letterhead fields and letter blocks print: `document/cover_settings.py`
+#: (per profile, `COVER_SETTINGS_PATH`).
 
 
 def active_workspace_id() -> str | None:
@@ -193,6 +193,7 @@ def workspace_paths(workspace_id: str) -> dict[str, Path]:
         "TEMPLATE_LIBRARY_DIR": templates / "library",
         "COVER_TEMPLATE_PATH": templates / "cover_template.docx",
         "COVER_TEMPLATE_META_PATH": templates / "cover_template.meta.json",
+        "COVER_SETTINGS_PATH": templates / "cover_settings.json",
     }
 
 
@@ -1217,7 +1218,7 @@ _PATH_NAMES = (
     "APPLICATIONS_PATH",
     "APPLICANT_PROFILE_PATH", "APPLICATIONS_OUTPUT_DIR", "DEFAULT_TEMPLATE_PATH",
     "BASELINE_TEMPLATE_PATH", "TEMPLATE_PROFILE_PATH", "TEMPLATE_LIBRARY_DIR",
-    "COVER_TEMPLATE_PATH", "COVER_TEMPLATE_META_PATH",
+    "COVER_TEMPLATE_PATH", "COVER_TEMPLATE_META_PATH", "COVER_SETTINGS_PATH",
 )
 _CALIBRATION_NAMES = (
     "CHARS_PER_LINE", "LINES_PER_PAGE", "CALIBRATION_SOURCE", "CALIBRATION_REJECTION",
@@ -1257,6 +1258,7 @@ def _legacy_paths() -> dict[str, Path]:
         "TEMPLATE_LIBRARY_DIR": templates / "library",
         "COVER_TEMPLATE_PATH": templates / "cover_template.docx",
         "COVER_TEMPLATE_META_PATH": templates / "cover_template.meta.json",
+        "COVER_SETTINGS_PATH": templates / "cover_settings.json",
     }
 
 

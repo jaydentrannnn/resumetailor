@@ -279,7 +279,10 @@ def _copy_workspace_files(source: dict[str, Path], dest: dict[str, Path]) -> Non
         shutil.copy2(source["LIBRARIES_PATH"], dest["LIBRARIES_PATH"])
     else:
         _write_default_libraries(dest["LIBRARIES_PATH"])
-    for key in ("BASELINE_TEMPLATE_PATH", "DEFAULT_TEMPLATE_PATH", "TEMPLATE_PROFILE_PATH"):
+    for key in (
+        "BASELINE_TEMPLATE_PATH", "DEFAULT_TEMPLATE_PATH", "TEMPLATE_PROFILE_PATH",
+        "COVER_SETTINGS_PATH",
+    ):
         if source[key].exists():
             shutil.copy2(source[key], dest[key])
     if source["TEMPLATE_LIBRARY_DIR"].exists():
