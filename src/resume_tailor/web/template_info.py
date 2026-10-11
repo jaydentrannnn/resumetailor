@@ -108,11 +108,11 @@ def _calibration_info(tagged: Path) -> CalibrationInfo:
     # template is newer than the cal file, those numbers describe a previous layout.
     import json
 
-    from resume_tailor.document.calibration_cache import input_digest
+    from resume_tailor.document import calibration_cache
 
     raw = json.loads(cal_path.read_text("utf-8"))
     stale = (
-        raw["input_digest"] != input_digest()
+        not calibration_cache.matches(raw["input_digest"])
         if raw.get("input_digest") else tagged.stat().st_mtime > cal_path.stat().st_mtime
     )
     return CalibrationInfo(

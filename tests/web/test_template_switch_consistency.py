@@ -71,9 +71,54 @@ def test_calibration_restores_only_matching_inputs(tmp_path, monkeypatch):
     calibration_cache.activate()
     assert config.CHARS_PER_LINE == 99
     assert config.LINES_PER_PAGE == 49
+    # A resume edit is not a template change: the measurement stays in effect.
     master.write_bytes(b"resume B")
     calibration_cache.activate()
-    assert config.CALIBRATION_SOURCE == "fallback"
+    assert config.CHARS_PER_LINE == 99
+    assert config.CALIBRATION_SOURCE != "fallback"
+
+
+def test_switching_back_to_a_tuned_template_restores_its_numbers(tmp_path, monkeypatch):
+    template = tmp_path / "main_template.docx"
+    master = tmp_path / "master_resume.json"
+    monkeypatch.setattr(config, "DEFAULT_TEMPLATE_PATH", template)
+    monkeypatch.setattr(config, "MASTER_RESUME_PATH", master)
+    template.write_bytes(b"template A")
+    master.write_bytes(b"resume A")
+    calibrate.write_calibration(99, 49)
+    template.write_bytes(b"template B")
+    calibration_cache.activate()
+    calibrate.write_calibration(120, 60)
+    master.write_bytes(b"resume edited between switches")
+    calibration_cache.remember()
+    template.write_bytes(b"template A")
+    calibration_cache.activate()
+    assert (config.CHARS_PER_LINE, config.LINES_PER_PAGE) == (99, 49)
+    template.write_bytes(b"template B")
+    calibration_cache.activate()
+    assert (config.CHARS_PER_LINE, config.LINES_PER_PAGE) == (120, 60)
+
+
+def test_a_file_tuned_under_the_legacy_digest_is_kept_and_upgraded(tmp_path, monkeypatch):
+    import json
+
+    template = tmp_path / "main_template.docx"
+    master = tmp_path / "master_resume.json"
+    monkeypatch.setattr(config, "DEFAULT_TEMPLATE_PATH", template)
+    monkeypatch.setattr(config, "MASTER_RESUME_PATH", master)
+    template.write_bytes(b"template A")
+    master.write_bytes(b"resume A")
+    path = calibrate.write_calibration(99, 49)
+    raw = json.loads(path.read_text("utf-8"))
+    raw["input_digest"] = calibration_cache.legacy_input_digest()
+    path.write_text(json.dumps(raw), encoding="utf-8")
+
+    config.reload_calibration()
+    assert config.CHARS_PER_LINE == 99
+    assert json.loads(path.read_text("utf-8"))["input_digest"] == calibration_cache.input_digest()
+    master.write_bytes(b"resume B")
+    config.reload_calibration()
+    assert config.CHARS_PER_LINE == 99
 
 
 def test_template_snapshot_has_one_active_identity(client):
@@ -117,4 +162,6 @@ def test_calibration_loader_uses_requested_workspace_inputs(tmp_path):
         None,
     )
     paths["MASTER_RESUME_PATH"].write_bytes(b"changed")
+    assert config._load_calibration("word", tmp_path, paths=paths)[0] == 99
+    paths["TEMPLATE_PROFILE_PATH"].write_bytes(b"changed")
     assert config._load_calibration("word", tmp_path, paths=paths)[2] == "fallback"

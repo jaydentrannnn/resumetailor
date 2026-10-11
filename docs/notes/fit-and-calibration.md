@@ -432,3 +432,11 @@ Two code-only changes:
   Its order is the order the resume prints: Include's per-run section order under a
   "generic" template, the resume's own order under a fixed one (which ignores Include's
   order). Reordering never changes a share, only which neighbours a thumb trades between.
+- **Calibration fingerprint drops the master resume (2026-10).** `calibration_cache.input_digest`
+  now hashes template + template profile + PDF backend only. The resume was in it, so every
+  save (an import merge, a section-title sync, an editor edit) silently put the app back on
+  fallback constants, and the per-template cache (`templates/<digest>.json`) never matched
+  after a switch. The constants are template properties: every probe renders synthetic
+  bullets, and the one resume-specific check (render anchors) keeps its own `resume_sha256`.
+  Files measured under the old digest are accepted when it still matches the current inputs
+  and rewritten in place (`upgrade_legacy`), so existing users don't have to re-tune.

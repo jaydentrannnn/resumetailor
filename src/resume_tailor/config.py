@@ -1185,13 +1185,14 @@ def _load_calibration(
 
     chars_lo, chars_hi = PLAUSIBLE_CHARS_PER_LINE
     if raw.get("input_digest"):
-        from resume_tailor.document.calibration_cache import input_digest
+        from resume_tailor.document import calibration_cache
 
-        if raw["input_digest"] != input_digest(paths=paths, backend=backend):
+        if not calibration_cache.matches(raw["input_digest"], paths=paths, backend=backend):
             return (
                 _FALLBACK_CHARS_PER_LINE, _FALLBACK_LINES_PER_PAGE, "fallback",
-                "Page fit needs tuning for the current template and resume.",
+                "Page fit needs tuning for the current template.",
             )
+        calibration_cache.upgrade_legacy(path, paths=paths, backend=backend)
     lines_lo, lines_hi = PLAUSIBLE_LINES_PER_PAGE
     if not (chars_lo <= chars_per_line <= chars_hi) or not (lines_lo <= lines_per_page <= lines_hi):
         # A bad file must not brick the app — fall back rather than raise, but name

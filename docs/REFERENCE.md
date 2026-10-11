@@ -758,7 +758,7 @@ errors clearly when no profile is found (on disk or passed in) rather than silen
 back to anything.
 
 Ordinary saved/starter template switching skips calibration. Matching measurements are
-restored by a digest of template, profile, master resume and PDF backend. Otherwise use
+restored by a digest of template, profile and PDF backend (not the resume). Otherwise use
 **Tune page fit** (or `python scripts/calibrate.py`). Uploaded templates still offer
 calibrate-on-install. Preview conversions use immutable revision snapshots and do not
 hold the template mutation lock during PDF conversion.
