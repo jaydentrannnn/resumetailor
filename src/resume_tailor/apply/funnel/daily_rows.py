@@ -145,7 +145,42 @@ def _link_reused_packet(app: store_models.Application, prior_job_id: str) -> Non
     """Point ``app`` at an existing tailoring run without re-queueing."""
     app.reused_from_job_id = prior_job_id
     app.job_id = prior_job_id
+    adopt_run_coverage(app, run_coverage(prior_job_id))
     store.set_status(app, "ready", note=f"reused tailoring from {prior_job_id}")
+
+
+def run_coverage(job_id: str) -> tuple[int, int] | None:
+    """``(matched, total)`` must-haves from a finished run's saved report, if any."""
+    try:
+        raw = json.loads((config.OUTPUT_DIR / "jobs" / job_id / "run.json").read_text("utf-8"))
+    except (OSError, ValueError):
+        return None
+    report = raw.get("report") if isinstance(raw, dict) else None
+    matched = report.get("coverage_matched") if isinstance(report, dict) else None
+    total = report.get("coverage_total") if isinstance(report, dict) else None
+    if isinstance(matched, int) and isinstance(total, int):
+        return matched, total
+    return None
+
+
+def adopt_run_coverage(
+    app: store_models.Application, coverage: tuple[int, int] | None
+) -> bool:
+    """Show the tailor run's must-have count on the row; True when the row changed.
+
+    Once a row has a run, the run report is the figure of record: the row and the
+    report then always agree, including rows screened before screening and tailoring
+    shared one JD extraction.
+    """
+    if app.screen is None or coverage is None:
+        return False
+    matched, total = coverage
+    if (app.screen.coverage_matched, app.screen.coverage_total) == (matched, total):
+        return False
+    app.screen.coverage_matched = matched
+    app.screen.coverage_total = total
+    app.screen.coverage = matched / total if total else 1.0
+    return True
 
 def _job_settings(base: JobSettings, apply: ApplySettings) -> JobSettings:
     """Merge Apply knobs into one tailor run.

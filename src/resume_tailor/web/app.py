@@ -97,6 +97,10 @@ async def lifespan(app: FastAPI):
     else:
         if recovered:
             _log.info("marked %d orphaned tailoring row(s) tailor_failed", recovered)
+    try:
+        apply_daily.sync_run_coverage()
+    except Exception:  # noqa: BLE001 — a display backfill must not block startup
+        _log.exception("could not sync application coverage from run reports")
     threading.Thread(target=housekeeping.run, name="housekeeping", daemon=True).start()
     _scheduler_stop.clear()
     scheduler = threading.Thread(

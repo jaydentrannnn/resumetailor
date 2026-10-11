@@ -6,10 +6,14 @@ import contextlib
 from collections.abc import Callable
 from contextlib import contextmanager
 
-from resume_tailor import workspace
+from resume_tailor import config, workspace
 from resume_tailor.apply.discovery import source_rows
 from resume_tailor.apply.funnel import store, store_models, store_views
 from resume_tailor.content import bullet_tags, data
+from resume_tailor.content.data import MasterResume
+from resume_tailor.pipeline import tag_infer
+from resume_tailor.web import skill_refresh
+from resume_tailor.web.job_routing import model_routing
 from resume_tailor.web.jobs import get_queue
 from resume_tailor.web.schemas import ApplySettings, JobSettings
 
@@ -50,6 +54,20 @@ def recover_orphaned_tailoring() -> int:
 RETAINED_TAB_STATUSES = frozenset({"awaiting_review", "awaiting_otp"})
 
 
+def sync_run_coverage() -> int:
+    """Copy each tailored row's run-report coverage onto the row; returns rows changed.
+
+    Covers rows tailored before finished runs updated their row (`adopt_run_coverage`).
+    Idempotent and cheap: one small file read per row with a run.
+    """
+    changed = 0
+    for app in store.load_all().values():
+        if app.job_id and daily_rows.adopt_run_coverage(app, daily_rows.run_coverage(app.job_id)):
+            store.upsert(app)
+            changed += 1
+    return changed
+
+
 def _heal_missing_expansion(app, settings: ApplySettings):
     """Write the one artifact a finished run lacks instead of re-tailoring it.
 
@@ -66,6 +84,23 @@ def _heal_missing_expansion(app, settings: ApplySettings):
     return preparation.check(
         app, require_cover=settings.cover_letter, require_acknowledgement=False,
     )
+
+
+def _resume_skills(resume: MasterResume, job_defaults: JobSettings) -> list[str]:
+    """The resume's skills as a tailor job computes them, inferred skills included.
+
+    Screening extracts the JD with this list as `known_tags`, which is part of the
+    extraction's cache key. A list without inferred skills missed the tailor job's cache,
+    so the posting was read twice and the Apply row and run report could count different
+    must-haves. Inference runs under the Light routing a tailor job uses (its cache is
+    per model), after any refresh a resume save started. The inferred skills are passed
+    explicitly, never installed, because tailor jobs run beside the screen threads.
+    """
+    skill_refresh.wait_idle(config.active_workspace_id(), timeout=skill_refresh.JOIN_TIMEOUT_S)
+    profile, overrides, effort = model_routing(job_defaults)
+    with config.pinned(profile, overrides=overrides, effort=effort):
+        inference = tag_infer.ensure(resume, preferred=bullet_tags.known_terms(resume, {}))
+    return bullet_tags.known_terms(resume, inference.skills)
 
 
 def prepare_application(
@@ -110,7 +145,7 @@ def prepare_application(
     raw = workspace.load_settings()
     job_defaults = settings._job_defaults or JobSettings.model_validate(raw["defaults"])
     resume = data.load()
-    known_tags = bullet_tags.known_terms(resume)
+    known_tags = _resume_skills(resume, job_defaults)
     row = source_rows.SourceRow(
         company=app.company,
         role=app.role,
@@ -219,7 +254,7 @@ def run_daily(
         settings = apply_settings
 
         resume = data.load()
-        known_tags = bullet_tags.known_terms(resume)
+        known_tags = _resume_skills(resume, job_defaults)
 
         try:
             from resume_tailor.apply.discovery import ats_api

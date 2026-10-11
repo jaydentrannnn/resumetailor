@@ -370,7 +370,8 @@ class _RowRun:
         if requirements is None:
             return None
         screen_result = screen(
-            jd_text, requirements, self.resume, settings=self.settings.screen, role=app.role
+            jd_text, requirements, self.resume, settings=self.settings.screen, role=app.role,
+            known_tags=self.known_tags,
         )
         # Carry prefilter flags into the screen result so the queue shows one list.
         screen_result.flags = list(
@@ -472,6 +473,11 @@ class _RowRun:
             daily_progress._row_error(self.summary, f"{app.company}: tailor {err}", app)
             self._log(f"[tailor_failed] {app.company}: {err}")
         else:
+            report = finished.report
+            if report is not None:
+                daily_rows.adopt_run_coverage(
+                    app, (report.coverage_matched, report.coverage_total)
+                )
             store.set_status(app, "ready", note=f"tailored as {job.job_id}")
             store.upsert(app)
             self._count("tailored", "ready")

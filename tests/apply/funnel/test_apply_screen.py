@@ -94,3 +94,21 @@ def test_screen_label(reasons, label):
 def test_default_block_patterns_all_have_names():
     """A default pattern without a name would store its regex source as the reason."""
     assert set(ScreenSettings().block_patterns) == set(screen_mod._NAMED_BLOCKS)
+
+
+def test_screen_coverage_counts_against_the_passed_skill_list():
+    from resume_tailor.pipeline.jd import JobRequirements, Keyword
+    from tests.fixtures import synthetic_resume
+
+    requirements = JobRequirements(
+        title="Intern",
+        seniority="intern",
+        keywords=[
+            Keyword(phrase="Kubernetes", canonical="kubernetes", importance="must_have"),
+            Keyword(phrase="Fortran", canonical="fortran", importance="must_have"),
+        ],
+    )
+    result = screen_mod.screen(
+        "An internship.", requirements, synthetic_resume(), known_tags=["kubernetes"]
+    )
+    assert (result.coverage_matched, result.coverage_total, result.coverage) == (1, 2, 0.5)

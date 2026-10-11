@@ -1713,3 +1713,20 @@ matched on school + major, so each major claims its own row), and SmartRecruiter
 `fill_education`. Single-answer questions keep `packet.education` (first major in `major`;
 every major in `majors`). Considered and rejected: storing majors as separate resume
 entries — it prints the school and dates twice.
+
+## Screen coverage matches the tailor report (2026-10-11)
+
+Apply's "Coverage" and the run report's "Required skills covered" count the same thing
+(must-haves among the master resume's known skills) but disagreed (7/10 vs 6/9 on one
+posting): screening extracted the JD with `known_tags` lacking inferred skills, the tailor
+job with them (`tag_infer.prepare_run` first). `known_tags` is in the extraction cache
+key, so the job missed the screen's cache and re-read the posting; the second vote dropped
+a must-have. Screen threads also read the process-wide `bullet_tags` annotation of
+whatever tailor job ran last. Now `daily._resume_skills` (once per Find/Prepare) joins any
+`skill_refresh`, runs `tag_infer.ensure` under Light routing, and passes the inferred map
+to `bullet_tags.known_terms(resume, inferred)` without installing it (`prepare_run` would
+clear a running job's context). `screen()` takes that list as `known_tags` and counts
+with the report's rule. Rows with a run show the report's figure
+(`daily_rows.adopt_run_coverage`: on tailor success and reuse; `daily.sync_run_coverage`
+at startup for older rows). "Force fresh results" still extracts twice (rejected:
+passing the screen's requirements into the job — more plumbing for a rare setting).

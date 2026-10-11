@@ -97,3 +97,17 @@ def test_inferred_skills_never_reach_the_skills_pool_or_the_whitelist():
 def test_extra_skills_still_extend_the_whitelist():
     bullet = Bullet(id="b1", text="Built dashboards", tags=["Tableau"])
     assert "Tableau" not in fabrication.check_fabrication(bullet, "Built Tableau dashboards")
+
+
+def test_known_terms_with_explicit_inferred_skills_ignores_the_run_context():
+    resume = _resume(_bullet("Wrote unit tests for the billing service"))
+    bullet_tags.annotate(resume, {"Wrote unit tests for the billing service": ["mocking"]})
+
+    explicit = bullet_tags.known_terms(
+        resume, {"Wrote unit tests for the billing service": ["Load Testing"]}
+    )
+
+    assert "load testing" in explicit and "mocking" not in explicit
+    assert "mocking" not in bullet_tags.known_terms(resume, {})
+    # The installed context is read, never replaced, by an explicit call.
+    assert "mocking" in bullet_tags.known_terms(resume)

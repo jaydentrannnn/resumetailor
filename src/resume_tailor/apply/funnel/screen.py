@@ -3,13 +3,14 @@
 from __future__ import annotations
 
 import re
-from dataclasses import dataclass, field
+from collections.abc import Iterable
+from dataclasses import dataclass
 
 from pydantic import BaseModel, Field
 
+from resume_tailor.content import bullet_tags
 from resume_tailor.content.data import MasterResume
 from resume_tailor.pipeline.jd import JobRequirements
-from resume_tailor.pipeline.report import diagnose_gaps
 
 #: Phrases that flag a posting for human review without hard-rejecting it.
 _ENROLLMENT_FLAG_PATTERNS = [
@@ -66,39 +67,21 @@ class _Coverage:
 
     matched: int = 0
     total: int = 0
-    no_evidence: int = 0
     ratio: float = 0.0
-    reasons: list[str] = field(default_factory=list)
 
 
-def _coverage(
-    requirements: JobRequirements,
-    resume: MasterResume,
-) -> _Coverage:
-    """Compute must-have coverage and count ``no_evidence`` gaps."""
+def _coverage(requirements: JobRequirements, known_tags: Iterable[str]) -> _Coverage:
+    """Must-have coverage: the share of must-haves among the resume's known skills.
+
+    The same rule as the tailor report's `rewrite.keyword_coverage`, so the Apply row and
+    the run report agree whenever they read the same extraction.
+    """
     must = [k for k in requirements.keywords if k.importance == "must_have"]
     if not must:
         return _Coverage(matched=0, total=0, ratio=1.0)
-    gaps = diagnose_gaps(requirements, resume)
-    by_canonical = {g.canonical: g for g in gaps}
-    no_evidence = 0
-    matched = 0
-    for kw in must:
-        gap = by_canonical.get(kw.canonical)
-        if gap is None:
-            matched += 1
-        elif gap.reason == "no_evidence":
-            no_evidence += 1
-    total = len(must)
-    ratio = matched / total if total else 1.0
-    reasons: list[str] = []
-    return _Coverage(
-        matched=matched,
-        total=total,
-        no_evidence=no_evidence,
-        ratio=ratio,
-        reasons=reasons,
-    )
+    known = set(known_tags)
+    matched = sum(1 for kw in must if kw.canonical in known)
+    return _Coverage(matched=matched, total=len(must), ratio=matched / len(must))
 
 
 def _sentence_around(text: str, start: int, end: int) -> str:
@@ -160,11 +143,14 @@ def screen(
     settings: ScreenSettings | None = None,
     *,
     role: str = "",
+    known_tags: Iterable[str] | None = None,
 ) -> ScreenResult:
     """Return whether a posting should be tailored, with reasons and soft flags.
 
     The block patterns normally already ran in the prefilter stage (`check_blocks`);
     they are re-applied here so a direct caller still gets the full screen.
+    `known_tags` is the resume's skill list including inferred skills (Find passes the
+    list it extracted with); without it the installed run context is read.
     """
     settings = settings or ScreenSettings()
     seniority = requirements.seniority or ""
@@ -180,7 +166,9 @@ def screen(
     # `coverage_matched`/`coverage_total`) — it never rejects a posting. Low overlap
     # between a JD's must-haves and the resume's own tags is exactly what the tailoring
     # stage (facets/rewrite) exists to bridge, not a reason to skip trying.
-    cov = _coverage(requirements, resume)
+    cov = _coverage(
+        requirements, bullet_tags.known_terms(resume) if known_tags is None else known_tags
+    )
 
     return ScreenResult(
         passed=not reasons,

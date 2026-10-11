@@ -144,13 +144,16 @@ def annotate(resume: MasterResume, inferred: Mapping[str, Iterable[str]] | None 
     still finds them, and one with new text simply falls back to detection.
     """
     global _ANNOTATION
-    _ANNOTATION = _Annotation(
-        extra=resume_terms(resume),
-        inferred={
-            text: tuple(sorted({config.canonical_tag(s) for s in skills if s.strip()}))
-            for text, skills in (inferred or {}).items()
-        },
-    )
+    _ANNOTATION = _Annotation(extra=resume_terms(resume), inferred=_canonical_inferred(inferred))
+
+
+def _canonical_inferred(
+    inferred: Mapping[str, Iterable[str]] | None,
+) -> dict[str, tuple[str, ...]]:
+    return {
+        text: tuple(sorted({config.canonical_tag(s) for s in skills if s.strip()}))
+        for text, skills in (inferred or {}).items()
+    }
 
 
 def clear() -> None:
@@ -188,13 +191,22 @@ def skill_evidence(bullet: Bullet) -> list[str]:
     return labels
 
 
-def known_terms(resume: MasterResume) -> list[str]:
+def known_terms(
+    resume: MasterResume, inferred: Mapping[str, Iterable[str]] | None = None
+) -> list[str]:
     """Every canonical skill any bullet of `resume` matches — JD canonicalisation's
-    vocabulary (`known_tags`) and the gap report's "available" set."""
+    vocabulary (`known_tags`) and the gap report's "available" set.
+
+    `inferred` (bullet text → skills, as `tag_infer` returns them) replaces the installed
+    run context. Apply's screen threads pass it so they never read, or replace, the
+    context of a tailor job running beside them; the result equals what that job computes
+    after `tag_infer.prepare_run`, so both land on one cached JD extraction.
+    """
     extra = resume_terms(resume)
+    by_text = _ANNOTATION.inferred if inferred is None else _canonical_inferred(inferred)
     found: set[str] = set()
     for bullet in resume.all_bullets():
         found |= user_tags(bullet)
         found |= {canonical for canonical, _ in detect(bullet.text, extra)}
-        found |= set(_ANNOTATION.inferred.get(bullet.text, ()))
+        found |= set(by_text.get(bullet.text, ()))
     return sorted(found)
