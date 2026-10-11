@@ -109,8 +109,8 @@ export function EducationDegreeFields({
           </div>
         )}
         <p className="mt-2 text-xs text-ink-muted">
-          Majors and minors also answer application forms; the first major fills a single
-          “Major” field.
+          Majors and minors also answer application forms; the first major fills a single “Major”
+          field.
         </p>
       </div>
     </div>

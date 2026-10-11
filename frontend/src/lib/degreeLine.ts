@@ -54,10 +54,7 @@ export function detectDegree(degree: string): [string, string[], string[]] {
   return ["", split(text), minors];
 }
 
-type DegreeParts = Pick<
-  Education,
-  "degree_type" | "majors" | "minors" | "degree_format"
->;
+type DegreeParts = Pick<Education, "degree_type" | "majors" | "minors" | "degree_format">;
 
 /** The line a "generated" entry prints, from its current parts. */
 export function generatedDegree(edu: DegreeParts): string {
@@ -70,10 +67,7 @@ export function generatedDegree(edu: DegreeParts): string {
 }
 
 /** `edu` with `patch` applied; a "generated" entry's printed line follows its parts. */
-export function withDegreeParts<T extends Education>(
-  edu: T,
-  patch: Partial<T>,
-): T {
+export function withDegreeParts<T extends Education>(edu: T, patch: Partial<T>): T {
   const next = { ...edu, ...patch };
   return next.degree_mode === "generated" ? { ...next, degree: generatedDegree(next) } : next;
 }

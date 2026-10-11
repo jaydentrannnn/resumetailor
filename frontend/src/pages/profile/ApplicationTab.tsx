@@ -201,7 +201,9 @@ function EducationSummary({
               { label: "School", value: entry.school || "School not set" },
               {
                 label: "Degree",
-                value: [entry.degree, (entry.majors ?? []).join(", ")].filter(Boolean).join(" · ") || "—",
+                value:
+                  [entry.degree, (entry.majors ?? []).join(", ")].filter(Boolean).join(" · ") ||
+                  "—",
               },
               {
                 label: "Dates",

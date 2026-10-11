@@ -28,7 +28,9 @@ export function CustomLinesFields({
               className="field mt-1"
               value={row.value}
               placeholder="Left off the page"
-              onChange={(e) => setResume(withCustomValue(resume, row.key, row.label, e.target.value))}
+              onChange={(e) =>
+                setResume(withCustomValue(resume, row.key, row.label, e.target.value))
+              }
             />
             {row.edited && row.value !== row.templateText && (
               <button

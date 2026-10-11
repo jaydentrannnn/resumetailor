@@ -3,12 +3,19 @@ import { composeDegree, detectDegree, withDegreeParts, withDetectedParts } from 
 
 describe("composeDegree", () => {
   it.each([
-    [["B.A.", ["Business Administration"], ["Digital Information Systems"], "semicolon"],
-      "B.A. in Business Administration; Minor in Digital Information Systems"],
+    [
+      ["B.A.", ["Business Administration"], ["Digital Information Systems"], "semicolon"],
+      "B.A. in Business Administration; Minor in Digital Information Systems",
+    ],
     [["B.S.", ["Math", "Physics"], [], "semicolon"], "B.S. in Math and Physics"],
-    [["B.S.", ["Math", "CS", "Physics"], ["Art", "Music"], "pipe"],
-      "B.S. in Math, CS and Physics | Minors in Art and Music"],
-    [["Bachelor of Arts", ["Economics"], ["Art"], "comma"], "Bachelor of Arts in Economics, Minor in Art"],
+    [
+      ["B.S.", ["Math", "CS", "Physics"], ["Art", "Music"], "pipe"],
+      "B.S. in Math, CS and Physics | Minors in Art and Music",
+    ],
+    [
+      ["Bachelor of Arts", ["Economics"], ["Art"], "comma"],
+      "Bachelor of Arts in Economics, Minor in Art",
+    ],
     [["B.A.", [], [], "semicolon"], "B.A."],
     [["", ["Economics"], [" "], "semicolon"], "Economics"],
     [["", [], ["Art"], "semicolon"], "Minor in Art"],
@@ -20,11 +27,15 @@ describe("composeDegree", () => {
 
 describe("detectDegree", () => {
   it.each([
-    ["B.A. in Business Administration; Minor in Digital Information Systems",
-      ["B.A.", ["Business Administration"], ["Digital Information Systems"]]],
+    [
+      "B.A. in Business Administration; Minor in Digital Information Systems",
+      ["B.A.", ["Business Administration"], ["Digital Information Systems"]],
+    ],
     ["BS Computer Science | GPA: 3.9", ["BS", ["Computer Science"], []]],
-    ["Bachelor of Science in Economics and Mathematics, Minors in Art and Music",
-      ["Bachelor of Science", ["Economics", "Mathematics"], ["Art", "Music"]]],
+    [
+      "Bachelor of Science in Economics and Mathematics, Minors in Art and Music",
+      ["Bachelor of Science", ["Economics", "Mathematics"], ["Art", "Music"]],
+    ],
     ["Liberal Studies", ["", ["Liberal Studies"], []]],
   ] as const)("%s", (text, expected) => {
     expect(detectDegree(text)).toEqual(expected);

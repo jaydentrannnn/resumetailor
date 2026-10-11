@@ -24,8 +24,7 @@ export function choiceFor(profile: Profile, line: TemplateUnmappedLine): LineCho
 /** The label of the line's custom field, or its suggestion when it is not one. */
 export function labelFor(profile: Profile, line: TemplateUnmappedLine): string {
   return (
-    slots(profile).find((s) => s.paragraph_id === line.paragraph_id)?.label ??
-    line.suggested_label
+    slots(profile).find((s) => s.paragraph_id === line.paragraph_id)?.label ?? line.suggested_label
   );
 }
 
