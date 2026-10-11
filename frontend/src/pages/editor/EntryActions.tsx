@@ -35,7 +35,7 @@ export function EntryActions({
           value=""
           aria-label={`Move ${title} to section`}
           onChange={(event) => moveEntry(section.id, key, event.target.value)}
-          className="field rt-control w-28 shrink-0 text-xs sm:w-36"
+          className="field rt-control w-24 shrink-0 px-2 text-xs"
         >
           <option value="" disabled>
             Move to…
