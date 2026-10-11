@@ -209,7 +209,9 @@ entry header unless `_is_chrome` filters it; a section body boundary is found by
 paragraph identity, never another heading's text; a `{%p for %}` loop cannot repeat a
 table row (use `_marker_row`); `Table.rows[i].cells` expands over `gridSpan` (count
 `row._tr.findall(qn("w:tc"))`); a cell with stacked repeatable paragraphs needs
-everything *after* the loop prototype stripped (`_wrap_cell_loop`).
+everything *after* the loop prototype stripped (`_wrap_cell_loop`); Word PDF export
+must use a private `DispatchEx` instance — `Dispatch` + `Quit()` (docx2pdf) closes the
+user's own open Word (`convert._convert_word`).
 
 ## Environment notes
 

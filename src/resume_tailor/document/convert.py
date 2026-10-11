@@ -33,21 +33,62 @@ from .. import config
 from ..infra import telemetry
 
 
+#: Per-thread private Word instance kept alive between `keep_active` conversions.
+_WORD = threading.local()
+#: `wdFormatPDF` / `wdDoNotSaveChanges`.
+_WD_FORMAT_PDF = 17
+_WD_DO_NOT_SAVE = 0
+
+
 def _convert_word(docx_path: Path, pdf_path: Path, *, keep_active: bool) -> None:
     """Convert with Microsoft Word over COM. Windows only.
 
-    `keep_active` leaves Word running afterwards. The fit loop measures several drafts per
-    run and passes True for every call but the last, which avoids paying Word's ~9s
-    startup on each retry.
+    Always a private, invisible Word (`DispatchEx`), never the user's: `Dispatch`
+    (what docx2pdf uses) attaches to a Word the person already has open and `Quit()`
+    then closes it under them — documents and all — which the Edit-layout-in-Word
+    round trip makes routine. `keep_active` keeps this thread's instance for the next
+    call (the fit loop measures several drafts per run; Word's ~9s startup is paid
+    once); the call without it quits the instance. COM is per thread and every job runs
+    on its own, so each thread initialises COM and owns its instance.
     """
-    import pythoncom  # pywin32; docx2pdf's own dependency on Windows
-    from docx2pdf import convert
+    import pythoncom  # pywin32
+    import win32com.client
 
-    # COM is per thread, and pywin32 only initialises the thread that first imports it.
-    # Tailoring jobs each run on their own thread, so every call initialises its own.
-    pythoncom.CoInitialize()
+    if getattr(_WORD, "app", None) is None:
+        pythoncom.CoInitialize()
+        try:
+            app = win32com.client.DispatchEx("Word.Application")
+            app.Visible = False
+            app.DisplayAlerts = 0
+        except Exception:
+            pythoncom.CoUninitialize()
+            raise
+        _WORD.app = app
+    app = _WORD.app
     try:
-        convert(str(docx_path.resolve()), str(pdf_path.resolve()), keep_active=keep_active)
+        doc = app.Documents.Open(
+            str(docx_path.resolve()), ReadOnly=True, AddToRecentFiles=False, Visible=False
+        )
+        try:
+            doc.SaveAs(str(pdf_path.resolve()), FileFormat=_WD_FORMAT_PDF)
+        finally:
+            doc.Close(_WD_DO_NOT_SAVE)
+    except Exception:
+        keep_active = False  # never reuse an instance that just failed
+        raise
+    finally:
+        if not keep_active:
+            _release_word(pythoncom)
+
+
+def _release_word(pythoncom) -> None:
+    """Quit this thread's private Word and release COM. Quit errors are ignored: the
+    instance may already be gone (the failure that brought us here)."""
+    app, _WORD.app = _WORD.app, None
+    try:
+        app.Quit(_WD_DO_NOT_SAVE)
+    except Exception:  # noqa: BLE001 - a dead RPC server raises com_error
+        pass
     finally:
         pythoncom.CoUninitialize()
 

@@ -15,8 +15,6 @@ anyio==4.15.1
     #   sse-starlette
     #   starlette
     #   watchfiles
-appscript==1.4.0 ; sys_platform == 'darwin'
-    # via docx2pdf
 attrs==26.1.0
     # via
     #   jsonschema
@@ -43,8 +41,6 @@ cryptography==50.0.1
     #   secretstorage
 docstring-parser==0.18.0
     # via anthropic
-docx2pdf==0.1.8
-    # via -r requirements.txt
 docxtpl==0.20.2
     # via -r requirements.txt
 fastapi==0.141.1
@@ -156,7 +152,7 @@ python-multipart==0.0.32
     #   mcp
 pywin32==312 ; sys_platform == 'win32'
     # via
-    #   docx2pdf
+    #   -r requirements.txt
     #   mcp
 pywin32-ctypes==0.2.3 ; sys_platform == 'win32'
     # via keyring
@@ -183,8 +179,6 @@ starlette==1.7.0
     #   fastapi
     #   mcp
     #   sse-starlette
-tqdm==4.70.1
-    # via docx2pdf
 truststore==0.10.4 ; sys_platform != 'emscripten'
     # via
     #   httpcore2

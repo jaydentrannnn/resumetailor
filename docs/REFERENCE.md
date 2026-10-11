@@ -1058,6 +1058,13 @@ file that was **well-formed XML and passed a naive parse check**, yet was broken
   the loop actually produces. Never strips a paragraph *before* the wrapped one — that is
   fixed content (a school/degree line the education fallback's synthetic single-paragraph
   detail clone sits after), not a repeatable sibling.
+- **Word PDF export never touches the person's own Word.** `win32com.client.Dispatch`
+  attaches to a Word that is already running, and `Quit()` then closes it — open
+  documents included (docx2pdf did exactly this; it was replaced). `convert._convert_word`
+  starts a private invisible instance with `DispatchEx`, opens the file read-only, keeps
+  the instance per thread while `keep_active`, and quits it on the last call or any
+  failure. Pinned by `tests/document/test_convert_word_com.py` (a `Dispatch` call fails
+  the test).
 
 ---
 

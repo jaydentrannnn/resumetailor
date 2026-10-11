@@ -6,7 +6,8 @@ anthropic>=0.40
 httpx>=0.27
 docxtpl>=0.17
 python-docx>=1.1
-docx2pdf>=0.1.8
+# Word PDF export over COM (document/convert.py drives a private Word itself).
+pywin32>=306 ; sys_platform == 'win32'
 pypdf>=5.0
 # First-page PNG thumbnails of template previews (web/template_ops.py). Apache-2.0/BSD;
 # pdfium ships inside the wheel, so no system package is needed.
