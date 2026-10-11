@@ -1043,6 +1043,13 @@ class TemplateEditStatus(BaseModel):
     path: str | None = None
 
 
+class TemplateAdjustPreviewResponse(BaseModel):
+    """A rendered Quick adjustments preview: fetch pages 1..`pages` by `key`."""
+
+    key: str
+    pages: int
+
+
 class TemplateFontsResponse(BaseModel):
     """Font families installed where PDFs are made (`document/system_fonts.py`)."""
 

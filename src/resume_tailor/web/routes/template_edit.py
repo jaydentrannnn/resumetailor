@@ -4,14 +4,15 @@ layout file and hand its read-back to the template wizard."""
 from __future__ import annotations
 
 from fastapi import APIRouter, HTTPException
-from fastapi.responses import Response
+from fastapi.responses import FileResponse, Response
 
 from resume_tailor.document import system_fonts
 from resume_tailor.document.template_adjust import Adjustments
 from resume_tailor.web import state as web_state
-from resume_tailor.web import template_edit, template_ops
+from resume_tailor.web import adjust_preview, template_edit, template_ops
 from resume_tailor.web.jobs import get_queue
 from resume_tailor.web.schemas import (
+    TemplateAdjustPreviewResponse,
     TemplateAdjustmentsResponse,
     TemplateAnalyzeResponse,
     TemplateEditStatus,
@@ -114,6 +115,32 @@ def adjust_template(body: Adjustments) -> TemplateAnalyzeResponse:
             return template_edit.adjust(body)
         except template_edit.EditSessionError as exc:
             raise HTTPException(status_code=409, detail=str(exc)) from exc
+
+
+@router.post("/api/template/adjustments/preview", response_model=TemplateAdjustPreviewResponse)
+def preview_adjustments(body: Adjustments) -> TemplateAdjustPreviewResponse:
+    """Render the resume through the template with `body` applied, nothing installed.
+    409 when a newer preview request superseded this one (the client has moved on)."""
+    try:
+        key, pages = adjust_preview.preview(body)
+    except adjust_preview.Superseded as exc:
+        raise HTTPException(status_code=409, detail="superseded") from exc
+    except (adjust_preview.PreviewError, template_edit.EditSessionError) as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except RuntimeError as exc:
+        raise HTTPException(status_code=503, detail=str(exc)) from exc
+    return TemplateAdjustPreviewResponse(key=key, pages=pages)
+
+
+@router.get("/api/template/adjustments/preview/{key}/{page}.png")
+def preview_adjustments_page(key: str, page: int) -> FileResponse:
+    """One page of a rendered preview (immutable: its key covers everything shown)."""
+    try:
+        path = adjust_preview.page_path(key, page)
+    except FileNotFoundError as exc:
+        raise HTTPException(status_code=404, detail="Preview page not found.") from exc
+    return FileResponse(path, media_type="image/png",
+                        headers={"Cache-Control": "private, max-age=3600, immutable"})  # fmt: skip
 
 
 @router.get("/api/template/drafts/{sha}")

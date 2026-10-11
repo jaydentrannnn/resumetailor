@@ -39,6 +39,23 @@ def _png(width: int, height: int, rows: list[bytes]) -> bytes:
     )
 
 
+def _page_png(page, out: Path, width: int) -> None:
+    bitmap = page.render(
+        scale=width / page.get_width(), rev_byteorder=True, fill_color=(255, 255, 255, 255)
+    )
+    channels = bitmap.n_channels
+    buffer = bytes(bitmap.buffer)
+    rows = []
+    for y in range(bitmap.height):
+        line = buffer[y * bitmap.stride : y * bitmap.stride + bitmap.width * channels]
+        if channels == 4:  # RGBx: drop the padding byte
+            line = b"".join(line[i : i + 3] for i in range(0, len(line), 4))
+        rows.append(line)
+    tmp = out.with_suffix(".tmp.png")
+    tmp.write_bytes(_png(bitmap.width, bitmap.height, rows))
+    os.replace(tmp, out)
+
+
 def pdf_first_page_png(pdf_path: Path, out: Path, *, width: int = WIDTH) -> Path:
     """Rasterise page one of ``pdf_path`` to ``out`` (PNG, ``width`` pixels wide)."""
     import pypdfium2 as pdfium  # imported lazily: only the gallery needs it
@@ -47,24 +64,25 @@ def pdf_first_page_png(pdf_path: Path, out: Path, *, width: int = WIDTH) -> Path
     try:
         if len(doc) == 0:
             raise ValueError(f"{pdf_path.name} has no pages")
-        page = doc[0]
-        bitmap = page.render(
-            scale=width / page.get_width(), rev_byteorder=True, fill_color=(255, 255, 255, 255)
-        )
-        channels = bitmap.n_channels
-        buffer = bytes(bitmap.buffer)
-        rows = []
-        for y in range(bitmap.height):
-            line = buffer[y * bitmap.stride : y * bitmap.stride + bitmap.width * channels]
-            if channels == 4:  # RGBx: drop the padding byte
-                line = b"".join(line[i : i + 3] for i in range(0, len(line), 4))
-            rows.append(line)
-        tmp = out.with_suffix(".tmp.png")
-        tmp.write_bytes(_png(bitmap.width, bitmap.height, rows))
-        os.replace(tmp, out)
+        _page_png(doc[0], out, width)
     finally:
         doc.close()
     return out
+
+
+def pdf_pages_png(pdf_path: Path, out_dir: Path, *, width: int = WIDTH) -> int:
+    """Rasterise every page of ``pdf_path`` to ``out_dir/<n>.png`` (from 1); the count."""
+    import pypdfium2 as pdfium  # noqa: PLC0415
+
+    doc = pdfium.PdfDocument(str(pdf_path))
+    try:
+        if len(doc) == 0:
+            raise ValueError(f"{pdf_path.name} has no pages")
+        for i in range(len(doc)):
+            _page_png(doc[i], out_dir / f"{i + 1}.png", width)
+        return len(doc)
+    finally:
+        doc.close()
 
 
 def docx_thumbnail(docx_path: Path, out: Path, *, width: int = WIDTH) -> Path:
