@@ -892,9 +892,11 @@ The read-back drops the skeleton's `rt_sec_*` bookmarks (`template_skeleton.stri
 also run before a new skeleton is annotated), so a template installed from a read-back can
 be edited again.
 
-**Quick adjustments** (every platform, `document/template_adjust.py`): margins, one font
-family for every run and paragraph mark (theme fonts resolved from `theme1.xml` and
-dropped in favour of the explicit name), a body text size (bullet runs' most common size;
+**Quick adjustments** (every platform, `document/template_adjust.py`): margins, the body
+font (the bullets' most common family; a change replaces it on every run and paragraph
+mark set in it, theme fonts resolved from `theme1.xml` and dropped in favour of the
+explicit name, while text in another font, such as a name or headings font, keeps it;
+`CurrentLayout.other_fonts` lists those), a body text size (bullet runs' most common size;
 every other size moves by the same delta), and per-«field» bold/italic/underline. It edits
 the live template's skeleton in code and reads it back through the same
 `skeleton_parse` → wizard path (`GET/POST /api/template/adjustments`, draft bytes at

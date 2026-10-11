@@ -43,7 +43,7 @@ export function AdjustSettings({
 
   return (
     <div>
-      <FontSection draft={draft} onChange={onChange} fonts={fonts} />
+      <FontSection draft={draft} onChange={onChange} fonts={fonts} current={current} />
       <AdjustSection
         title="Margins"
         summary={marginsSummary(draft.margins)}

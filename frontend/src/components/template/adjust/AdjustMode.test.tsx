@@ -27,6 +27,7 @@ const CURRENT = {
   margins: { top: 1, bottom: 1, left: 1, right: 1 },
   font_family: "Calibri",
   font_size: 11,
+  other_fonts: [],
   fields: [
     { label: "Company", bold: true, italic: false, underline: false },
     { label: "GitHub", bold: false, italic: false, underline: false },

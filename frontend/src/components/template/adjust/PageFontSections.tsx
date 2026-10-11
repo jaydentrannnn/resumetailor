@@ -1,6 +1,6 @@
 import { useId } from "react";
 import type { CurrentLayout, TemplateFonts } from "../../../api";
-import { MARGIN_SIDES } from "../../../lib/templateAdjust";
+import { fontHint, MARGIN_SIDES } from "../../../lib/templateAdjust";
 import { Field, TileSection } from "../../ui";
 import { FontPicker } from "./FontPicker";
 
@@ -49,9 +49,14 @@ export function MarginFields({ draft, onChange, tableLayout }: Props & { tableLa
   );
 }
 
-/** The one typeface for every line, and the body text size. Always open: it is the
- * change people make most. */
-export function FontSection({ draft, onChange, fonts }: Props & { fonts: TemplateFonts }) {
+/** The body typeface and text size. Always open: it is the change people make most.
+ * `current` is the template as it is, whose body font the choice replaces. */
+export function FontSection({
+  draft,
+  onChange,
+  fonts,
+  current,
+}: Props & { fonts: TemplateFonts; current: CurrentLayout }) {
   const labelId = useId();
   return (
     <TileSection title="Font" className="pb-4">
@@ -82,7 +87,7 @@ export function FontSection({ draft, onChange, fonts }: Props & { fonts: Templat
         </Field>
       </div>
       <p className="mt-2 text-xs text-ink-muted">
-        Every line uses it; headings keep their size difference.
+        {fontHint(current.font_family, current.other_fonts)}
       </p>
     </TileSection>
   );

@@ -113,3 +113,28 @@ def test_styled_keeps_file_rows_out_of_the_style():
     style = template_adjust.styled(template_style.DEFAULT, adj)
     assert style.separators.coursework == "; "
     assert style.separators.model_dump().keys().isdisjoint({"contact", "project_tech"})
+
+
+def test_font_change_replaces_only_the_body_font(skeleton):
+    """A template with a second font (here the name line) keeps it; the body font moves."""
+    doc = _doc(skeleton(_full_featured_resume).raw)
+    name = next(p for p, _loc in docx_text.iter_document_paragraphs(doc) if p.text.strip())
+    for run in name.runs:
+        template_adjust._set_family(run._r.get_or_add_rPr(), "Courier New")
+    buffer = io.BytesIO()
+    doc.save(buffer)
+    raw = buffer.getvalue()
+
+    current = template_adjust.current(raw)
+    assert current.font_family != "Courier New"
+    assert current.other_fonts == ["Courier New"]
+
+    out = _doc(template_adjust.apply(raw, Adjustments(font_family="Georgia")))
+    paragraphs = [p for p, _loc in docx_text.iter_document_paragraphs(out)]
+    first = next(p for p in paragraphs if p.text.strip())
+    assert {r.font.name for r in first.runs if r.text.strip()} == {"Courier New"}
+    rest = [r for p in paragraphs if p is not first for r in p.runs if r.text.strip()]
+    assert rest and all(template_adjust._family(r, out) == "Georgia" for r in rest)
+    assert template_adjust.current(template_adjust.apply(raw, Adjustments(font_size=12))).other_fonts == [
+        "Courier New"
+    ]

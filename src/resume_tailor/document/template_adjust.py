@@ -91,8 +91,12 @@ class CurrentLayout(BaseModel):
     """What the adjustments form starts from."""
 
     margins: Margins
+    #: The body font (what bullets are set in); changing it replaces only this font.
     font_family: str
     font_size: float
+    #: Other fonts the template's text uses (a name or headings font, say), which a
+    #: font change leaves alone.
+    other_fonts: list[str] = Field(default_factory=list)
     fields: list[FieldState]
     #: Each separator row the template prints, with its current value.
     separators: dict[str, str] = Field(default_factory=dict)
@@ -199,6 +203,38 @@ def _body_runs(doc, tokens: dict[str, list]) -> list:
     return bullets or [r for runs in tokens.values() for r in runs] or list(_runs(doc))
 
 
+#: Symbol fonts set on a hand-typed marker or icon: not a "font the text uses".
+_SYMBOL_FONT_WORDS = ("symbol", "wingdings", "webdings", "dingbat")
+
+
+def _body_family(doc, tokens: dict[str, list]) -> str:
+    families = [_family(r, doc) for r in _body_runs(doc, tokens)]
+    return max(set(families), key=families.count) if families else _default_family(doc)
+
+
+def _other_families(doc, body: str) -> list[str]:
+    """Fonts that set visible text, other than `body`, in first-seen order."""
+    seen: dict[str, str] = {}
+    for run in _runs(doc):
+        if not run.text.strip():
+            continue
+        family = _family(run, doc)
+        key = family.casefold()
+        if key == body.casefold() or any(w in key for w in _SYMBOL_FONT_WORDS):
+            continue
+        seen.setdefault(key, family)
+    return list(seen.values())
+
+
+def _mark_family(paragraph, rpr, doc) -> str:
+    found = _rfonts_family(rpr, doc)
+    style = paragraph.style
+    while found is None and style is not None:
+        found = _rfonts_family(style.element.rPr, doc)
+        style = style.base_style
+    return found or _default_family(doc)
+
+
 def current(
     raw: bytes,
     style: TemplateStyle = template_style.DEFAULT,
@@ -209,7 +245,7 @@ def current(
     tokens = _token_runs(doc)
     body = _body_runs(doc, tokens)
     sizes = [_size(r, doc) for r in body]
-    families = [_family(r, doc) for r in body]
+    family = _body_family(doc, tokens)
     fields = [
         FieldState(
             label=label,
@@ -226,7 +262,8 @@ def current(
             left=round(section.left_margin.inches, 2),
             right=round(section.right_margin.inches, 2),
         ),
-        font_family=max(set(families), key=families.count) if families else _default_family(doc),
+        font_family=family,
+        other_fonts=_other_families(doc, family),
         font_size=max(set(sizes), key=sizes.count) if sizes else _default_size(doc),
         fields=fields,
         separators=adjust_separators.current(doc, style, date_separator),
@@ -283,6 +320,15 @@ def apply(raw: bytes, adj: Adjustments) -> bytes:
             section.left_margin = Inches(adj.margins.left)
             section.right_margin = Inches(adj.margins.right)
     tokens = _token_runs(doc)
+    # Read before any write: which runs and marks are in the body font decides what a
+    # font change touches (a second font, for the name or headings, keeps its own).
+    body_family = _body_family(doc, tokens).casefold()
+    in_body = [r for r in _runs(doc) if _family(r, doc).casefold() == body_family]
+    marks_in_body = [
+        rpr
+        for paragraph, rpr in _paragraph_marks(doc)
+        if _mark_family(paragraph, rpr, doc).casefold() == body_family
+    ]
     if adj.font_size is not None:
         body = [_size(r, doc) for r in _body_runs(doc, tokens)]
         delta = adj.font_size - max(set(body), key=body.count) if body else 0
@@ -302,9 +348,9 @@ def apply(raw: bytes, adj: Adjustments) -> bytes:
             for rpr, size in marks:
                 rpr.sz_val = Pt(max(4.0, size + delta))
     if adj.font_family:
-        for run in _runs(doc):
+        for run in in_body:
             _set_family(run._r.get_or_add_rPr(), adj.font_family)
-        for _paragraph, rpr in _paragraph_marks(doc):
+        for rpr in marks_in_body:
             _set_family(rpr, adj.font_family)
     if adj.separators is not None:
         adjust_separators.apply(doc, adj.separators.chosen())

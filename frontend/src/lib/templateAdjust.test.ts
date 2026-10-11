@@ -6,6 +6,7 @@ import {
   bulletsSummary,
   changesFit,
   emphasisChanged,
+  fontHint,
   hasAdjustments,
   marginsSummary,
   separatorsChanged,
@@ -17,6 +18,7 @@ const current: CurrentLayout = {
   margins: { top: 1, bottom: 1, left: 1, right: 1 },
   font_family: "Calibri",
   font_size: 11,
+  other_fonts: [],
   fields: [
     { label: "Company", bold: true, italic: false, underline: false },
     { label: "Job title", bold: false, italic: false, underline: false },
@@ -102,5 +104,15 @@ describe("section summaries", () => {
     const draft = { ...base, separators: { contact: " • ", tech_items: ", " } };
     expect(separatorsChanged(base, draft)).toBe(1);
     expect(emphasisChanged(base, base)).toBe(0);
+  });
+});
+
+describe("fontHint", () => {
+  it("says a second font is kept", () => {
+    expect(fontHint("Cambria", [])).toMatch(/^Every line uses it/);
+    expect(fontHint("Cambria", ["Georgia"])).toBe(
+      "Replaces Cambria wherever it’s used; text set in Georgia keeps its font.",
+    );
+    expect(fontHint("Cambria", ["Georgia", "Arial", "Lato"])).toMatch(/Georgia, Arial and Lato/);
   });
 });

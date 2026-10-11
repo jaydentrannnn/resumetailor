@@ -493,3 +493,12 @@ siblings are unchanged.
   `convert.held()`, so all of its probes share one Word. A cold start per probe made
   Apply take 204s in the browser check; it now takes about 26s. The wizard install and
   Tune page fit get the same speed-up.
+
+- **A typeface change replaces only the body font (2026-10-11).** The body font is the
+  bullets' most common family, the one the panel shows. Runs and paragraph marks in any
+  other font keep it, so a template with a serif name and a sans body stays two-font.
+  - Which runs and marks are in the body font is read before anything is written, so a
+    size change in the same adjustment can't change the answer.
+  - Fonts on a hand-typed symbol (Symbol, Wingdings and the like) aren't reported as
+    other fonts.
+  - Before this, every run became the chosen font.

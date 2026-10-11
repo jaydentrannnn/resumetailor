@@ -68,6 +68,8 @@ export type LinkLook = { color: "blue" | "text"; underline: boolean };
 export type CurrentLayout = {
   margins: Margins;
   font_family: string;
+  /** Other fonts the text uses (a name or headings font); a font change leaves them. */
+  other_fonts: string[];
   font_size: number;
   fields: FieldEmphasis[];
   /** Only the rows this template prints, with their current values. */
