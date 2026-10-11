@@ -144,7 +144,11 @@ def _tag_education_prototype(
     split as `_tag_experience_prototype`. Returns `(header, degree, detail)`."""
     header = _tag_mapped_header(doc, mapping.header, template_tags.EDUCATION_HEADER_TAGS)
     degree = template_tagging._para_by_id(doc, mapping.degree_paragraph_id)
-    template_bullets.retarget_bullet(doc, degree, noto_num_id)
+    # A plain degree line (no list of its own) stays plain: `retarget_bullet` would
+    # otherwise attach the canonical bullet list to it, adding a marker and the list's
+    # hanging indent the original never had.
+    if template_bullets.is_bullet(degree):
+        template_bullets.retarget_bullet(doc, degree, noto_num_id)
     template_tagging.tag_bullet(degree, template_tags.EDUCATION_DEGREE_TAG)
 
     if mapping.detail_paragraph_id is not None:
