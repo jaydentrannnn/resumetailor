@@ -29,3 +29,22 @@ def test_greenhouse_education_uses_prepared_row_and_year():
     assert adapter.classify(year) == ("known", "education_end_year")
     assert adapter.value_for(year, "education_end_year", packet, {}) == "2027"
     assert adapter.value_for(_field("School", "school--2", "2"), "school", packet, {}) == ""
+
+
+def test_greenhouse_double_major_fills_one_row_per_major():
+    packet = Packet(
+        job_id="one", built_at="2026-01-01",
+        education=[
+            PacketEducation(
+                school="UC Irvine", degree_name="Bachelor of Arts", major="Economics",
+                majors=["Economics", "Psychology"], end="2027-06", entry_key="edu-1",
+            ),
+        ],
+    )  # fmt: skip
+    adapter = GreenhouseAdapter()
+    assert adapter.value_for(_field("Discipline", "discipline--0"), "major", packet, {}) == "Economics"
+    second = _field("Discipline", "discipline--1", "1")
+    assert adapter.value_for(second, "major", packet, {}) == "Psychology"
+    assert adapter.value_for(_field("School", "school--1", "1"), "school", packet, {}) == "UC Irvine"
+    assert adapter.value_for(_field("End date year", "end-year--1", "1"), "education_end_year", packet, {}) == "2027"
+    assert adapter.value_for(_field("School", "school--2", "2"), "school", packet, {}) == ""

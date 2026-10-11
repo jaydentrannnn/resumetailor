@@ -616,3 +616,22 @@ def test_packet_education_carries_every_major_and_minor():
     assert row.degree_level == "Bachelor of Arts"
     fields = build_fields(ApplicantProfile(), resume)
     assert (fields["major"], fields["minor"]) == ("Economics", "Art")
+
+
+def test_education_rows_split_a_double_major_only():
+    from resume_tailor.apply.funnel import packet_fields
+    from resume_tailor.apply.funnel.packet_models import PacketEducation
+
+    single = PacketEducation(school="A", major="Math", majors=["Math"], entry_key="a")
+    double = PacketEducation(
+        school="B", major="Econ", majors=["Econ", "Psych"], minors=["Art"], start="2023-09",
+        end="2027-06", entry_key="b",
+    )  # fmt: skip
+    rows = packet_fields.education_rows([single, double])
+    assert rows[0] is single
+    assert [(r.school, r.major, r.majors, r.end) for r in rows[1:]] == [
+        ("B", "Econ", ["Econ"], "2027-06"),
+        ("B", "Psych", ["Psych"], "2027-06"),
+    ]
+    assert len({r.entry_key for r in rows}) == 3
+    assert double.majors == ["Econ", "Psych"]  # the packet row itself is untouched

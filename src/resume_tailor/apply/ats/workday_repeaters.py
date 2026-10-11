@@ -15,6 +15,7 @@ from typing import Any
 
 from resume_tailor.apply.driver import clicks
 from resume_tailor.apply.forms import field_matcher
+from resume_tailor.apply.funnel import packet_fields
 from resume_tailor.apply.funnel.packet_models import Packet
 
 from . import workday_dates, workday_rows
@@ -259,7 +260,8 @@ def fill(
 
     workday_dates._recheck_dates(page, placed, filled, review, progress)
 
-    education = packet.education
+    # One row per major for a double major: Workday's Field of Study is per row.
+    education = packet_fields.education_rows(packet.education)
     school = workday_dates._school_field(page)
     if education and not workday_rows._section_present(page, "Education", school):
         progress("This Workday step has no Education section; skipping education rows")
@@ -425,7 +427,7 @@ async def fill_education_years_async(page: Any, packet: Packet) -> tuple[list[di
     filled: list[dict[str, str]] = []
     review: list[str] = []
     for row in rows or []:
-        matches = [edu for edu in packet.education if edu.school.strip().casefold() == str(row["school"]).strip().casefold()
+        matches = [edu for edu in packet_fields.education_rows(packet.education) if edu.school.strip().casefold() == str(row["school"]).strip().casefold()
                    and (not row["major"] or edu.major.strip().casefold() == str(row["major"]).strip().casefold())]
         if len(matches) != 1:
             continue

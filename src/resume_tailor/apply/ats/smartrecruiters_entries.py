@@ -7,6 +7,7 @@ from collections.abc import Callable
 from typing import Any
 
 from resume_tailor.apply.forms import form_guards
+from resume_tailor.apply.funnel import packet_fields
 from resume_tailor.apply.funnel.packet_models import Packet, PacketEducation, PacketExperience
 
 from . import smartrecruiters_location, smartrecruiters_page
@@ -242,7 +243,7 @@ def fill_education(
     page: Any, packet: Packet, progress: Callable[[str], None], *, deadline: float | None = None,
 ) -> tuple[list[dict[str, str]], list[str]]:
     return _fill_section(
-        page, "education", list(packet.education),
+        page, "education", packet_fields.education_rows(packet.education),
         describe=lambda edu: edu.school, listed=_listed_education, fill_one=_education_entry,
         progress=progress, deadline=deadline,
     )

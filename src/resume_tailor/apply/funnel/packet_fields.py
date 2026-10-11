@@ -257,6 +257,27 @@ def _build_education(resume: MasterResume) -> list[packet_models.PacketEducation
         )
     return rows
 
+def education_rows(
+    education: list[packet_models.PacketEducation],
+) -> list[packet_models.PacketEducation]:
+    """Education as a form's repeatable rows: a double major (one degree, two majors) is
+    one row per major, same school, degree and dates, since such forms take one field of
+    study per row. The resume keeps it as one entry; single-answer questions read
+    `packet.education`, one row per entry."""
+    rows: list[packet_models.PacketEducation] = []
+    for row in education:
+        if len(row.majors) < 2:
+            rows.append(row)
+            continue
+        rows.extend(
+            row.model_copy(
+                update={"major": major, "majors": [major], "entry_key": f"{row.entry_key}:{i}"}
+            )
+            for i, major in enumerate(row.majors)
+        )
+    return rows
+
+
 def current_education(
     education: list[packet_models.PacketEducation],
 ) -> packet_models.PacketEducation:

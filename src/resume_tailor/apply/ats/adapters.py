@@ -9,6 +9,7 @@ from resume_tailor.apply.answers import education, form_facts, questions
 from resume_tailor.apply.forms.field_catalog import classify
 from resume_tailor.apply.forms.field_matcher import choice_values, normalize
 from resume_tailor.apply.forms.field_types import FieldObservation
+from resume_tailor.apply.funnel import packet_fields
 from resume_tailor.apply.funnel.packet_models import Packet
 
 
@@ -97,12 +98,13 @@ class GreenhouseAdapter(FormAdapter):
         if not row_id.isdigit():
             if len(packet.education) != 1:
                 return ""
-            row_index = 0
+            rows, row_index = packet.education, 0
         else:
-            row_index = int(row_id)
-        if row_index >= len(packet.education):
+            # Repeated rows: a double major takes one row per major.
+            rows, row_index = packet_fields.education_rows(packet.education), int(row_id)
+        if row_index >= len(rows):
             return ""
-        education = packet.education[row_index]
+        education = rows[row_index]
         if key == "school":
             return education.school
         if key == "degree_level":

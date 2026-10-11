@@ -1701,3 +1701,15 @@ Magnite (op 5c6c59f2) blocked inside the Workday Skills loop at 23:07:40 (second
 - The nightly run discovers, fetches, screens and tailors only the postings it found itself; rows waiting from an earlier Find are left alone (`_process_one(include_known=False)`; `_rows_to_process` no longer sweeps pending `discovered` rows). Prepare still carries a known row on (default `include_known=True`).
 - The nightly run never fills or submits: `_run_batch_submit`, `operations.batch_browser_owner`, `run_daily(auto_submit_max_per_run=)`, `apply_daily.py --max-submissions` and the summary's submit counters are gone. Auto-submit lives only in Fill, which still honours `auto_submit_*` (the per-run cap now reads "per Fill" in the UI).
 - Since it never submits, the scheduler dropped the 12 h catch-up window / "missed" day (`missed_today`) and the automation-pause gate: a due run starts on the next tick however late.
+
+## Double majors on application forms (2026-10-11)
+
+A double major stays one education entry on the resume (one school, one date line, the
+combined degree line). Forms are different: a repeatable education row usually takes one
+field of study. `packet_fields.education_rows()` expands an entry with 2+ majors into one
+row per major (same school/dates/degree, `entry_key` suffixed `:i`). It is used only where
+rows repeat: the Greenhouse adapter's numbered rows, Workday's education repeater (rows are
+matched on school + major, so each major claims its own row), and SmartRecruiters'
+`fill_education`. Single-answer questions keep `packet.education` (first major in `major`;
+every major in `majors`). Considered and rejected: storing majors as separate resume
+entries — it prints the school and dates twice.
