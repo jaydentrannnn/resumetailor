@@ -182,7 +182,12 @@ it("drags only between matching sections, preserves edits and expansion, and und
   fireEvent.change(section("experience").getByRole("textbox", { name: "Company" }), {
     target: { value: "Revised" },
   });
-  const dataTransfer = { setData: vi.fn(), effectAllowed: "", dropEffect: "" };
+  const dataTransfer = {
+    setData: vi.fn(),
+    setDragImage: vi.fn(),
+    effectAllowed: "",
+    dropEffect: "",
+  };
   const handle = screen.getByRole("button", { name: "Drag Revised · Engineer to another section" });
   fireEvent.dragStart(handle, { dataTransfer });
   fireEvent.drop(document.querySelector('[data-entry-drop-target="projects"]')!, { dataTransfer });

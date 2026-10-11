@@ -19,7 +19,7 @@ export function EntryCard({
   onRemove: (index: number) => void;
   children: ReactNode;
 }) {
-  const { expanded, setExpanded } = useEntryEditor();
+  const { expanded, setExpanded, dragging } = useEntryEditor();
   const key = resumeEntryKey(section.entries[index]);
   const open = expanded.has(key);
   const bodyId = useId();
@@ -43,7 +43,11 @@ export function EntryCard({
           : "";
 
   return (
-    <div data-resume-entry data-entry-key={key} className="border-t border-line py-4 last:pb-0">
+    <div
+      data-resume-entry
+      data-entry-key={key}
+      className={`border-t border-line py-4 last:pb-0 ${dragging?.key === key && dragging.sourceId === section.id ? "opacity-40" : ""}`}
+    >
       <div data-entry-summary className="flex flex-wrap items-center gap-x-3 gap-y-2">
         <div className="min-w-0 flex-1 basis-48">
           <button

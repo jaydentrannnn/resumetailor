@@ -42,6 +42,14 @@ test("resume content: collapse, edit, move, undo and save through the real API",
     expect(Math.abs(alignment.right)).toBeLessThan(1);
     expect(Math.abs(alignment.center)).toBeLessThan(1);
     const handle = source.getByRole("button", { name: /^Drag Example Corp revised/ });
+    const controls = await source
+      .locator("[data-entry-actions]")
+      .evaluate((node) =>
+        [...node.querySelectorAll("button")].map(
+          (button) => button.getAttribute("aria-label") || button.textContent,
+        ),
+      );
+    expect(controls).toEqual(["Remove", expect.stringMatching(/^Drag Example Corp revised/)]);
     await handle.scrollIntoViewIfNeeded();
     const from = (await handle.boundingBox())!;
     await page.mouse.move(from.x + from.width / 2, from.y + from.height / 2);
@@ -50,11 +58,17 @@ test("resume content: collapse, edit, move, undo and save through the real API",
     await page.mouse.move(from.x + from.width / 2 + 12, from.y + from.height / 2 + 12, {
       steps: 3,
     });
+    const preview = page.locator("[data-entry-drag-preview]");
+    await expect(preview).toHaveCount(1);
+    await expect(preview).toContainText("Example Corp revised");
+    await expect(preview.locator("input, textarea")).toHaveCount(0);
+    await expect(source.locator("[data-resume-entry]")).toHaveClass(/opacity-40/);
     const drop = target.locator("[data-entry-drop-target]");
     await drop.scrollIntoViewIfNeeded();
     const to = (await drop.boundingBox())!;
     await page.mouse.move(to.x + to.width / 2, to.y + to.height / 2, { steps: 5 });
     await page.mouse.up();
+    await expect(preview).toHaveCount(0);
     await expect(target.getByRole("textbox", { name: "Company", exact: true })).toHaveValue(
       "Example Corp revised",
     );
