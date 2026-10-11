@@ -189,9 +189,22 @@ def revert_library_entry_to_fixed(entry_id: str) -> TemplateBuildResponse:
         return TemplateBuildResponse(ok=True, log=f"{log}\n{activated.log}", info=activated.info)
     return TemplateBuildResponse(ok=True, log=log, info=template_info.info())
 
-def _library_record_after_install(*, label: str, source_filename: str) -> None:
-    """Snapshot the just-installed live slot and mark it active."""
+def _library_record_after_install(
+    *, label: str, source_filename: str, replace: bool = False
+) -> None:
+    """Snapshot the just-installed live slot and mark it active.
+
+    `replace` overwrites an entry already named `label` (Quick adjustments re-saving
+    "<name> (adjusted)") instead of adding "<label> (2)".
+    """
     cleaned = template_library_store._normalize_library_label(label)
+    existing = template_library_store._find_entry_by_label(cleaned) if replace else None
+    if existing is not None:
+        meta = template_library_store._overwrite_library_entry(
+            existing, source_filename=source_filename
+        )
+        template_library_store._write_library_index(active_id=meta["id"])
+        return
     # Cap / uniqueness were checked before install; re-check in case of races.
     if template_library_store._label_taken(cleaned):
         # Install already committed — disambiguate rather than failing the install.

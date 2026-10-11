@@ -165,6 +165,7 @@ def install_baseline(
     do_calibrate: bool = False,
     label: str | None = None,
     convert_bullets: bool = False,
+    replace: bool = False,
 ) -> TemplateBuildResponse:
     """Validate an uploaded .docx, rebuild the tagged template, then swap live files.
 
@@ -179,7 +180,8 @@ def install_baseline(
     install and reload them in-process (no server restart).
 
     After a successful install the live slot is snapshotted into the named library under
-    `label` (default: upload filename stem).
+    `label` (default: upload filename stem). With `replace`, an entry already named
+    `label` is overwritten in place rather than refusing the label.
 
     Raises `TemplateValidationError` for bad inputs and `TemplateBuildError` on build
     failure.
@@ -205,12 +207,16 @@ def install_baseline(
     with template_ops.LOCK:
         template_library_store._library_seed_if_empty()
         template_library_store._library_preserve_orphan_live()
-        template_library_store._library_ensure_room_for_new(label=resolved_label)
+        template_library_store._library_ensure_room_for_new(
+            label=resolved_label, replace=replace
+        )
 
     # `_install_with_profile` snapshots the library entry itself, inside the same
     # `LOCK` hold as its commit — see its docstring. It is not done here, in a second
     # separate acquisition, specifically to close that gap.
-    response = _install_with_profile(raw, filename, profile, label=resolved_label)
+    response = _install_with_profile(
+        raw, filename, profile, label=resolved_label, replace=replace
+    )
 
     # The wizard's cached upload (for remap/preview) has now become the live template;
     # nothing further needs it, and keeping it around would just be dead weight until
@@ -237,6 +243,7 @@ def _install_with_profile(
     profile: TemplateProfile | dict,
     *,
     label: str,
+    replace: bool = False,
 ) -> TemplateBuildResponse:
     """Staged profile install: build + smoke-render, then atomic commit.
 
@@ -373,7 +380,7 @@ def _install_with_profile(
             # Snapshotted here, still under `LOCK`, rather than by the caller after this
             # function returns — see the docstring above for why the gap mattered.
             template_library._library_record_after_install(
-                label=label, source_filename=Path(filename).name
+                label=label, source_filename=Path(filename).name, replace=replace
             )
             template_preview.invalidate_preview()
             calibration_cache.activate()

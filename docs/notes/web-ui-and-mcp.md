@@ -741,3 +741,26 @@ Quick adjustments as an adjust mode (2026-10-11):
   - The Links section appears only when the template prints links.
   - The font box is a searchable combobox over the installed fonts (`FontPicker`,
     `lib/fontSearch.ts`).
+
+Quick adjustments follow-up (2026-10-11, supersedes the notes above where they differ):
+
+- **Collapsible groups.** Font stays open at the top. Margins, Bullet styles, Separators
+  and Field emphasis are collapsed groups, and only one is open at a time
+  (`adjust/AdjustSettings.tsx`, `AdjustSection.tsx`). Each header shows what the group
+  is set to, or "N changed", so a collapsed group still tells you its state.
+- **Links row.** The Links section became an "All links" row at the top of Field
+  emphasis, with toggles styled like B/I/U: an "A" over a `doc-link` bar for blue, and
+  U for underline.
+  - The row's U sits in the U column.
+  - Link fields (LinkedIn, GitHub, Project link) no longer offer their own U, because
+    the links row's underline always wins on a link run.
+- **Typeface box.** It shows the same down chevron as the native selects below it, and
+  the chevron turns up while the list is open.
+- **Re-applying under the same name.** Applying again under the same "(adjusted)" name
+  used to fail with "already exists". `POST /api/template` now accepts
+  `replace=true`, which overwrites the entry with that label in place: same id, files
+  staged and then swapped (`template_library_store._overwrite_library_entry`).
+  - Quick adjustments always sends it.
+  - The template being adjusted keeps its own name, so it is never overwritten.
+  - The note under Apply says whether this saves a new template, updates the active
+    one, or replaces an earlier copy.

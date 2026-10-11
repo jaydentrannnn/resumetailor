@@ -3,8 +3,12 @@ import type { CurrentLayout } from "../api";
 import {
   adjustedLabel,
   BULLET_CHOICES,
+  bulletsSummary,
   changesFit,
+  emphasisChanged,
   hasAdjustments,
+  marginsSummary,
+  separatorsChanged,
   toAdjustments,
   withCurrent,
 } from "./templateAdjust";
@@ -72,5 +76,31 @@ describe("adjustedLabel", () => {
     expect(adjustedLabel("Nina (adjusted)")).toBe("Nina (adjusted)");
     expect(adjustedLabel("Nina (adjusted) (adjusted)")).toBe("Nina (adjusted)");
     expect(adjustedLabel("")).toBe("Template (adjusted)");
+  });
+});
+
+describe("section summaries", () => {
+  it("summarises margins compactly", () => {
+    expect(marginsSummary({ top: 1, bottom: 1, left: 1, right: 1 })).toBe('1" all sides');
+    expect(marginsSummary({ top: 1, bottom: 1, left: 1.25, right: 1.25 })).toBe(
+      '1" top/bottom · 1.25" sides',
+    );
+    expect(marginsSummary({ top: 0.5, bottom: 1, left: 1, right: 1 })).toBe(
+      'T 0.5" · B 1" · L 1" · R 1"',
+    );
+  });
+
+  it("names the bullet choices", () => {
+    expect(bulletsSummary({ list: "keep", skills: "none_indent" })).toBe(
+      "Lists template's · Skills none",
+    );
+    expect(bulletsSummary({ list: "–", skills: "✓" })).toBe("Lists – · Skills ✓");
+  });
+
+  it("counts changed separator and emphasis rows", () => {
+    const base = { ...current, separators: { contact: " | ", tech_items: ", " } };
+    const draft = { ...base, separators: { contact: " • ", tech_items: ", " } };
+    expect(separatorsChanged(base, draft)).toBe(1);
+    expect(emphasisChanged(base, base)).toBe(0);
   });
 });

@@ -62,6 +62,8 @@
   /* Same value in both themes — represents an actual white document/PDF page
      behind a preview iframe, not a UI surface, so it does not follow data-theme. */
   --color-doc-preview: #ffffff;
+  /* A document's link blue, for controls that stand for it (Quick adjustments' links row). */
+  --color-doc-link: #1a4fd6;
 
   /* Shared size for uppercase micro-labels (status pills, "Customized" tags). */
   --text-micro: 0.6875rem;
@@ -134,6 +136,7 @@
   --color-danger-tint: color-mix(in srgb, #d17875 14%, transparent);
   --color-danger-tint-hover: color-mix(in srgb, #d17875 22%, transparent);
   --color-scrim: rgb(0 0 0 / 0.6);
+  --color-doc-link: #7ea2ff;
   --rt-overlay: 0 0 0 1px var(--color-line-hover);
 }
 

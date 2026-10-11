@@ -170,6 +170,7 @@ def upload_template(
     calibrate: str | None = Form(None),
     label: str | None = Form(None),
     convert_bullets: str | None = Form(None),
+    replace: str | None = Form(None),
 ) -> TemplateBuildResponse:
     """Replace the baseline export and regenerate the tagged template.
 
@@ -181,7 +182,8 @@ def upload_template(
     Optional multipart field `calibrate` (truthy: ``1``/``true``/``yes``) measures fit
     constants after a successful install and hot-reloads them in-process.
 
-    Optional multipart field `label` names the library snapshot (default: filename stem).
+    Optional multipart field `label` names the library snapshot (default: filename stem);
+    truthy `replace` overwrites a saved template already named `label`.
 
     Refuses while a tailoring job is queued or running so the fit loop never
     measures against a template that is mid-rebuild.
@@ -216,6 +218,7 @@ def upload_template(
             do_calibrate=do_calibrate,
             label=label,
             convert_bullets=_truthy(convert_bullets),
+            replace=_truthy(replace),
         )
     except TemplateValidationError as exc:
         raise HTTPException(status_code=400, detail=str(exc)) from exc

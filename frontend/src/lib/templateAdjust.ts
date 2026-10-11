@@ -124,3 +124,57 @@ export function adjustedLabel(active: string | null | undefined): string {
   const base = (active || "Template").replace(/(\s*\(adjusted\))+$/, "");
   return `${base} (adjusted)`;
 }
+
+/** Fields printed as links: their underline is the links row's, not their own. */
+export const LINK_FIELDS = new Set(["LinkedIn", "GitHub", "Project link"]);
+
+const inches = (n: number) => `${n}"`;
+
+/** One line for a collapsed Margins header. */
+export function marginsSummary(m: CurrentLayout["margins"]): string {
+  const values = MARGIN_SIDES.map((side) => m[side]);
+  if (values.every((v) => v === values[0])) return `${inches(values[0])} all sides`;
+  if (m.top === m.bottom && m.left === m.right)
+    return `${inches(m.top)} top/bottom · ${inches(m.left)} sides`;
+  return MARGIN_SIDES.map((side) => `${side[0].toUpperCase()} ${inches(m[side])}`).join(" · ");
+}
+
+function bulletName(value: string): string {
+  if (value === "keep") return "template's";
+  if (value === "none_indent") return "none";
+  if (value === "none_flush") return "none, flush";
+  return value;
+}
+
+/** One line for a collapsed Bullet styles header. */
+export function bulletsSummary(b: BulletStyle): string {
+  return `Lists ${bulletName(b.list)} · Skills ${bulletName(b.skills)}`;
+}
+
+/** The separator rows this template prints, in panel order. */
+export function printedSeparatorRows(draft: CurrentLayout) {
+  return SEPARATOR_ROWS.filter(({ row }) => draft.separators[row] !== undefined);
+}
+
+/** How many separator rows differ from the template's. */
+export function separatorsChanged(current: CurrentLayout, draft: CurrentLayout): number {
+  return Object.entries(draft.separators).filter(
+    ([row, value]) => value !== current.separators[row as SeparatorRow],
+  ).length;
+}
+
+/** How many emphasis rows (and the links row) differ from the template's. */
+export function emphasisChanged(current: CurrentLayout, draft: CurrentLayout): number {
+  const before = new Map(current.fields.map((f) => [f.label, f]));
+  const fields = draft.fields.filter((f) => {
+    const was = before.get(f.label);
+    return was && (["bold", "italic", "underline"] as const).some((k) => f[k] !== was[k]);
+  }).length;
+  const links =
+    draft.links &&
+    current.links &&
+    (draft.links.color !== current.links.color || draft.links.underline !== current.links.underline)
+      ? 1
+      : 0;
+  return fields + links;
+}

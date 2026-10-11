@@ -263,7 +263,7 @@ export async function fetchTemplateDraftPreview(
 export async function uploadTemplate(
   file: File,
   profile: Record<string, unknown>,
-  options?: { calibrate?: boolean; label?: string; convertBullets?: boolean },
+  options?: { calibrate?: boolean; label?: string; convertBullets?: boolean; replace?: boolean },
 ): Promise<TemplateBuildResponse> {
   const form = new FormData();
   form.append("file", file);
@@ -273,6 +273,9 @@ export async function uploadTemplate(
   }
   if (options?.calibrate) {
     form.append("calibrate", "true");
+  }
+  if (options?.replace) {
+    form.append("replace", "true");
   }
   if (options?.label) {
     form.append("label", options.label);

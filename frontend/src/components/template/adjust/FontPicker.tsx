@@ -22,7 +22,10 @@ export function FontPicker({
   const [active, setActive] = useState(0);
   const listId = useId();
   const open = query !== null;
-  const families = fonts.families.length ? fonts.families : [value];
+  const families = useMemo(
+    () => (fonts.families.length ? fonts.families : [value]),
+    [fonts.families, value],
+  );
   const groups = useMemo(
     () => fontGroups(families, fonts.common, query ?? ""),
     [families, fonts.common, query],
@@ -65,7 +68,7 @@ export function FontPicker({
         aria-controls={listId}
         aria-autocomplete="list"
         aria-activedescendant={open && flat.length ? optionId(active) : undefined}
-        className="field w-full"
+        className="field w-full pr-8"
         style={{ fontFamily: open ? undefined : `"${value}"` }}
         value={open ? query : value}
         placeholder={value}
@@ -80,6 +83,22 @@ export function FontPicker({
         }}
         onKeyDown={onKeyDown}
       />
+      {/* Says "this is a list", like the selects below it: down while closed, up while
+          open. Decorative — the input itself opens the list. */}
+      <svg
+        aria-hidden
+        viewBox="0 0 16 16"
+        className={`pointer-events-none absolute right-2.5 top-[18px] size-4 -translate-y-1/2 text-ink-2 transition-transform ${open ? "rotate-180" : ""}`}
+      >
+        <path
+          d="M4 6l4 4 4-4"
+          fill="none"
+          stroke="currentColor"
+          strokeWidth="1.6"
+          strokeLinecap="round"
+          strokeLinejoin="round"
+        />
+      </svg>
       {open && (
         <div
           id={listId}

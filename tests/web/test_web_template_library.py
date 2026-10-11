@@ -483,3 +483,31 @@ def test_default_template_install_refused_while_tailoring(client):
     c, q = client
     q.busy = lambda: True  # type: ignore[method-assign]
     assert c.post("/api/template/defaults/classic/install").status_code == 409
+
+
+def test_upload_with_replace_overwrites_the_entry_of_that_name(client, tmp_path, monkeypatch):
+    """Quick adjustments re-save "<name> (adjusted)": `replace` overwrites it in place."""
+    c, _ = client
+    _point_templates_at(tmp_path, monkeypatch)
+    monkeypatch.setattr(template_install, "_run_build", lambda **_k: (1, "stub"))
+    mime = "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+
+    def post(**extra):
+        upload, profile = _resume_upload_with_profile()
+        return c.post(
+            "/api/template",
+            data={"label": "Nina (adjusted)", "profile": profile, **extra},
+            files={"file": ("layout.docx", upload, mime)},
+        )
+
+    assert post().status_code == 200
+    first = next(e for e in c.get("/api/template/library").json()["entries"] if e["is_active"])
+
+    refused = post()
+    assert refused.status_code == 400 and "already exists" in refused.json()["detail"]
+
+    assert post(replace="true").status_code == 200
+    entries = c.get("/api/template/library").json()["entries"]
+    named = [e for e in entries if e["label"] == "Nina (adjusted)"]
+    assert len(named) == 1 and named[0]["id"] == first["id"] and named[0]["is_active"]
+    assert not any(p.name.startswith(".") for p in template_library_store._library_root().iterdir())

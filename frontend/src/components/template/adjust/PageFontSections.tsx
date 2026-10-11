@@ -13,10 +13,10 @@ function number(value: string, fallback: number): number {
   return Number.isFinite(n) ? n : fallback;
 }
 
-/** Page margins in inches, two by two. */
-export function PageSection({ draft, onChange, tableLayout }: Props & { tableLayout: boolean }) {
+/** Page margins in inches, two by two (the body of the Margins section). */
+export function MarginFields({ draft, onChange, tableLayout }: Props & { tableLayout: boolean }) {
   return (
-    <TileSection title="Margins (inches)">
+    <>
       <div className="grid grid-cols-2 gap-3">
         {MARGIN_SIDES.map((side) => (
           <Field key={side} label={SIDE_LABEL[side]}>
@@ -40,21 +40,21 @@ export function PageSection({ draft, onChange, tableLayout }: Props & { tableLay
           </Field>
         ))}
       </div>
-      {tableLayout && (
-        <p className="mt-2 text-xs text-ink-muted">
-          This template is laid out in a table with a fixed width, so the table keeps its width when
-          margins change. Use Edit layout in Word to resize it.
-        </p>
-      )}
-    </TileSection>
+      <p className="mt-2 text-xs text-ink-muted">
+        In inches.
+        {tableLayout &&
+          " This template is laid out in a table with a fixed width, so the table keeps its width when margins change. Use Edit layout in Word to resize it."}
+      </p>
+    </>
   );
 }
 
-/** The one typeface for every line, and the body text size. */
+/** The one typeface for every line, and the body text size. Always open: it is the
+ * change people make most. */
 export function FontSection({ draft, onChange, fonts }: Props & { fonts: TemplateFonts }) {
   const labelId = useId();
   return (
-    <TileSection title="Font">
+    <TileSection title="Font" className="pb-4">
       <div className="grid grid-cols-[minmax(0,1fr)_5.5rem] gap-3">
         <div className="min-w-0 text-sm">
           <span id={labelId} className="mb-1.5 block text-xs font-medium text-ink-2">

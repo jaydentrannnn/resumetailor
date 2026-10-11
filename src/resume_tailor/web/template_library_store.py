@@ -214,6 +214,51 @@ def _snapshot_live_to_library(
         raise
     return meta
 
+def _find_entry_by_label(label: str) -> dict | None:
+    """The library meta named `label` (case-insensitive), if any."""
+    for meta in _iter_library_metas():
+        if label_taken(label, [str(meta.get("label") or "")]):
+            return meta
+    return None
+
+
+def _overwrite_library_entry(meta: dict, *, source_filename: str | None) -> dict:
+    """Replace an entry's files with the live slot's, keeping its id and label.
+
+    Caller must hold `LOCK`. The files are copied into a sibling directory first and
+    swapped in, so a failed copy leaves the old entry as it was.
+    """
+    entry_id = str(meta["id"])
+    entry_dir = _library_entry_dir(entry_id)
+    staged = entry_dir.with_name(f".{entry_id}.new")
+    shutil.rmtree(staged, ignore_errors=True)
+    staged.mkdir(parents=True)
+    try:
+        shutil.copy2(config.BASELINE_TEMPLATE_PATH, staged / "original_export.docx")
+        shutil.copy2(config.DEFAULT_TEMPLATE_PATH, staged / "main_template.docx")
+        profile_file = template_profile.profile_path()
+        has_profile = profile_file.exists()
+        if has_profile:
+            shutil.copy2(profile_file, staged / "template_profile.json")
+        updated = {
+            **meta,
+            "created_at": datetime.now(UTC).isoformat(timespec="seconds"),
+            "source_filename": source_filename,
+            "sha256": _sha256_file(staged / "original_export.docx"),
+            "has_profile": has_profile,
+        }
+        (staged / "meta.json").write_text(json.dumps(updated, indent=2) + "\n", encoding="utf-8")
+    except Exception:
+        shutil.rmtree(staged, ignore_errors=True)
+        raise
+    old = entry_dir.with_name(f".{entry_id}.old")
+    shutil.rmtree(old, ignore_errors=True)
+    entry_dir.rename(old)
+    staged.rename(entry_dir)
+    shutil.rmtree(old, ignore_errors=True)
+    return updated
+
+
 def _find_entry_by_sha(sha: str | None) -> dict | None:
     """Return the first library meta whose baseline sha256 matches `sha`."""
     if not sha:
@@ -234,9 +279,15 @@ def _library_seed_if_empty() -> None:
     meta = _snapshot_live_to_library(label="Default", source_filename=None)
     _write_library_index(active_id=meta["id"])
 
-def _library_ensure_room_for_new(*, label: str) -> None:
-    """Raise if the library cannot accept a new entry with `label`."""
+def _library_ensure_room_for_new(*, label: str, replace: bool = False) -> None:
+    """Raise if the library cannot accept a new entry with `label`.
+
+    `replace`: an entry already named `label` will be overwritten, so no new entry (and
+    no room) is needed.
+    """
     label = _normalize_library_label(label)
+    if replace and _find_entry_by_label(label) is not None:
+        return
     if _label_taken(label):
         raise template_ops.TemplateValidationError(
             f"A saved template named “{label}” already exists. Choose another label."

@@ -19,8 +19,9 @@ export type ApplyOutcome =
 
 /**
  * Quick adjustments' draft: the template's current look, the edited copy, the
- * installed fonts, and Apply. Apply installs the adjusted layout as a new template
- * (`label`), the current one staying in Your templates, so switching back undoes it.
+ * installed fonts, and Apply. Apply installs the adjusted layout as a template named
+ * `label` (replacing an earlier template of that name), the current one staying in Your
+ * templates, so switching back undoes it.
  * Page fit is re-measured when the change moves lines (`changesFit`).
  */
 export function useQuickAdjust(label: string, afterInstall: () => Promise<void>) {
@@ -67,6 +68,7 @@ export function useQuickAdjust(label: string, afterInstall: () => Promise<void>)
       await uploadTemplate(file, analysis.suggested_profile, {
         calibrate: changesFit(adj),
         label,
+        replace: true,
       });
       await afterInstall();
       return { kind: "installed" };

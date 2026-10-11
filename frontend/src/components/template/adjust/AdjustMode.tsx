@@ -7,23 +7,29 @@ import { useTemplateState } from "../../../state/templateState";
 import { Button, Spinner } from "../../ui";
 import { ADJUST_GRID, DOCUMENT_CELL, SWITCH_CELL, TOOLS_CELL } from "../workspace/workspaceLayout";
 import { AdjustPreviewPane } from "./AdjustPreviewPane";
-import { FieldEmphasisTable } from "./FieldEmphasisTable";
-import { BulletsSection, LinksSection, SeparatorsSection } from "./MarksSections";
-import { FontSection, PageSection } from "./PageFontSections";
+import { AdjustSettings } from "./AdjustSettings";
 
 /**
  * The Resume view while adjusting: the draft rendered on the left (refreshed a moment
  * after each change, nothing installed), the settings on the right in a wider column.
- * Apply installs the result as a new template; Cancel drops the draft. The view switch
+ * Apply installs the result as "<name> (adjusted)", replacing an earlier one of that
+ * name (the original is never touched); Cancel drops the draft. The view switch
  * is replaced by these two so a draft can't be left behind by switching views.
  */
 export function AdjustMode({ onDone }: { onDone: () => void }) {
-  const { info, beginFromAnalysis, refreshLibrary } = useTemplateState();
+  const { info, library, beginFromAnalysis, refreshLibrary } = useTemplateState();
   const { confirm } = useConfirm();
   const label = adjustedLabel(info?.active_label);
   const q = useQuickAdjust(label, refreshLibrary);
   const preview = useAdjustPreview(q.adj);
   const draft = q.draft;
+  const active = info?.active_label || "The current template";
+  const existing = library.find((e) => e.label.toLowerCase() === label.toLowerCase());
+  const note = !existing
+    ? `Apply saves this as “${label}”; ${active} stays in Your templates.`
+    : existing.is_active
+      ? `Apply updates “${label}”.`
+      : `Apply replaces your earlier “${label}”; ${active} stays as it is.`;
 
   async function cancel() {
     if (
@@ -74,9 +80,7 @@ export function AdjustMode({ onDone }: { onDone: () => void }) {
             </Button>
           </div>
         </div>
-        <p className="mt-1 text-sm text-ink-muted">
-          Apply saves this as a new template; the current one stays in Your templates.
-        </p>
+        <p className="mt-1 text-sm text-ink-muted">{note}</p>
         {q.error && (
           <p role="alert" className="mt-2 text-sm text-danger">
             {q.error}
@@ -93,21 +97,17 @@ export function AdjustMode({ onDone }: { onDone: () => void }) {
         </div>
       </div>
       <div className={TOOLS_CELL}>
-        {!draft ? (
-          !q.error && <Spinner />
-        ) : (
-          <>
-            <PageSection draft={draft} onChange={q.setDraft} tableLayout={q.tableLayout} />
-            <FontSection draft={draft} onChange={q.setDraft} fonts={q.fonts} />
-            <BulletsSection draft={draft} onChange={q.setDraft} />
-            <SeparatorsSection draft={draft} onChange={q.setDraft} />
-            <LinksSection draft={draft} onChange={q.setDraft} />
-            <FieldEmphasisTable
-              fields={draft.fields}
-              onChange={(fields) => q.setDraft({ ...draft, fields })}
-            />
-          </>
-        )}
+        {!draft
+          ? !q.error && <Spinner />
+          : q.current && (
+              <AdjustSettings
+                current={q.current}
+                draft={draft}
+                onChange={q.setDraft}
+                fonts={q.fonts}
+                tableLayout={q.tableLayout}
+              />
+            )}
       </div>
     </div>
   );
