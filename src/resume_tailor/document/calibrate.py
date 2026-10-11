@@ -25,7 +25,7 @@ from resume_tailor.content.data import (
     Project,
     ProjectSection,
 )
-from resume_tailor.document import render, template_profile, template_style
+from resume_tailor.document import convert, render, template_profile, template_style
 from resume_tailor.document import calibration_cache, calibration_sample
 
 
@@ -549,7 +549,15 @@ def run(*, verify_anchors: bool = True, rebaseline: bool = False) -> Calibration
     (`verify_chars_per_line_boundary`), which always runs and always hard-fails —
     `CalibrationError` propagates out of this function, and `write_calibration` is never
     reached, so a bad measurement is never written regardless of `verify_anchors`.
+
+    Every probe converts through one Word instance (`convert.held`): a cold start per
+    probe made calibration take minutes.
     """
+    with convert.held():
+        return _run(verify_anchors=verify_anchors, rebaseline=rebaseline)
+
+
+def _run(*, verify_anchors: bool, rebaseline: bool) -> CalibrationResult:
     if not config.DEFAULT_TEMPLATE_PATH.exists():
         raise FileNotFoundError(
             f"Tagged template not found: {config.DEFAULT_TEMPLATE_PATH}. "

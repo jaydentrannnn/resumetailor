@@ -27,6 +27,8 @@ import tempfile
 import threading
 import time
 import uuid
+from collections.abc import Iterator
+from contextlib import contextmanager
 from pathlib import Path
 
 from .. import config
@@ -91,6 +93,25 @@ def _release_word(pythoncom) -> None:
         pass
     finally:
         pythoncom.CoUninitialize()
+
+
+@contextmanager
+def held() -> Iterator[None]:
+    """Keep this thread's Word open across every conversion inside the block, then quit
+    it. For a caller that converts many documents in a row (calibration renders a
+    dozen-plus probes) and should pay Word's startup once, without threading
+    `keep_active` through each call. Nested blocks release only at the outermost exit;
+    LibreOffice is unaffected (it ignores `keep_active`)."""
+    outer = getattr(_WORD, "hold", False)
+    _WORD.hold = True
+    try:
+        yield
+    finally:
+        _WORD.hold = outer
+        if not outer and getattr(_WORD, "app", None) is not None:
+            import pythoncom  # pywin32; only reachable once Word was started
+
+            _release_word(pythoncom)
 
 
 #: Prefix of the LibreOffice user profiles this module creates under the temp dir.
@@ -249,6 +270,7 @@ def convert(
     backend name. Returns the PDF path for convenience.
     """
     name = backend or config.PDF_BACKEND
+    keep_active = keep_active or getattr(_WORD, "hold", False)
     try:
         impl = _BACKENDS[name]
     except KeyError:

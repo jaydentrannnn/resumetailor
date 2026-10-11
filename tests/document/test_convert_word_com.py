@@ -110,3 +110,23 @@ def test_a_failed_conversion_quits_even_with_keep_active(com, tmp_path: Path):
     state["fail"] = False
     convert._convert_word(tmp_path / "a.docx", tmp_path / "a.pdf", keep_active=False)  # noqa: SLF001
     assert state["instances"] == 2  # a fresh instance, not the failed one
+
+
+def test_held_keeps_one_word_across_conversions_and_quits_at_the_end(com, tmp_path: Path):
+    log, state = com
+    (tmp_path / "a.pdf").write_bytes(b"%PDF")  # the fake Word writes nothing
+    with convert.held():
+        for _ in range(3):
+            convert.convert(tmp_path / "a.docx", tmp_path / "a.pdf", backend="word")
+        with convert.held():  # nested: the outer block still owns the instance
+            convert.convert(tmp_path / "a.docx", tmp_path / "a.pdf", backend="word")
+        assert ("quit", 0) not in log
+    assert state["instances"] == 1
+    assert [e[0] for e in log if e[0] in ("quit", "uninit")] == ["quit", "uninit"]
+
+
+def test_held_without_a_conversion_starts_nothing(com):
+    log, state = com
+    with convert.held():
+        pass
+    assert state["instances"] == 0 and log == []
