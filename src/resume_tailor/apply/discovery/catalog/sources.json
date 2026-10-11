@@ -760,6 +760,338 @@
           "chief"
         ]
       }
+    },
+    {
+      "id": "jobright-sales-internship",
+      "name": "Jobright internships: sales & business development",
+      "description": "Jobright.ai's daily internship sales list, filtered to business development, sales development and partnerships. Links open the posting on jobright.ai.",
+      "fields": [
+        "business"
+      ],
+      "levels": [
+        "intern"
+      ],
+      "tracks": [],
+      "version": "2026.10.10",
+      "template": {
+        "id": "jobright-sales-internship",
+        "kind": "pipe_table",
+        "url": "https://raw.githubusercontent.com/jobright-ai/2026-Sales-Internship/master/README.md",
+        "categories": [
+          "Daily Job List"
+        ],
+        "include": [
+          "business development",
+          "sales development",
+          "account development",
+          "partnership",
+          "alliances",
+          "bdr",
+          "sdr"
+        ],
+        "exclude": [
+          "senior",
+          "sr",
+          "principal",
+          "director",
+          "vice president",
+          "vp",
+          "managing director",
+          "head of",
+          "chief"
+        ]
+      }
+    },
+    {
+      "id": "jobright-sales-newgrad",
+      "name": "Jobright new grad: sales & business development",
+      "description": "Jobright.ai's daily new-grad sales list, filtered to business development, sales development and partnerships. Links open the posting on jobright.ai.",
+      "fields": [
+        "business"
+      ],
+      "levels": [
+        "new_grad"
+      ],
+      "tracks": [],
+      "version": "2026.10.10",
+      "template": {
+        "id": "jobright-sales-newgrad",
+        "kind": "pipe_table",
+        "url": "https://raw.githubusercontent.com/jobright-ai/2026-Sales-New-Grad/master/README.md",
+        "categories": [
+          "Daily Job List"
+        ],
+        "include": [
+          "business development",
+          "sales development",
+          "account development",
+          "partnership",
+          "alliances",
+          "bdr",
+          "sdr"
+        ],
+        "exclude": [
+          "senior",
+          "sr",
+          "principal",
+          "director",
+          "vice president",
+          "vp",
+          "managing director",
+          "head of",
+          "chief"
+        ]
+      }
+    },
+    {
+      "id": "adzuna-business-development-intern",
+      "name": "Adzuna search: business development internships",
+      "description": "Keyword search for internships in business development. Keeps internship titles and skips explicitly senior titles. Needs Adzuna API keys (connect them once on this page).",
+      "fields": [
+        "business"
+      ],
+      "levels": [
+        "intern"
+      ],
+      "tracks": [],
+      "version": "2026.10.10",
+      "template": {
+        "id": "adzuna-business-development-intern",
+        "kind": "job_search",
+        "provider": "adzuna",
+        "query": "business development associate intern, business development analyst intern, business development representative intern",
+        "include": [
+          "intern",
+          "summer analyst",
+          "summer associate"
+        ],
+        "exclude": [
+          "senior",
+          "sr",
+          "principal",
+          "director",
+          "vice president",
+          "vp",
+          "managing director",
+          "head of",
+          "chief"
+        ]
+      }
+    },
+    {
+      "id": "adzuna-business-development-newgrad",
+      "name": "Adzuna search: business development entry level",
+      "description": "Keyword search for entry-level roles in business development. Skips explicitly senior titles; screening checks actual seniority. Needs Adzuna API keys (connect them once on this page).",
+      "fields": [
+        "business"
+      ],
+      "levels": [
+        "new_grad"
+      ],
+      "tracks": [],
+      "version": "2026.10.10",
+      "template": {
+        "id": "adzuna-business-development-newgrad",
+        "kind": "job_search",
+        "provider": "adzuna",
+        "query": "entry level business development associate, entry level business development analyst, entry level business development representative",
+        "include": [],
+        "exclude": [
+          "senior",
+          "sr",
+          "principal",
+          "director",
+          "vice president",
+          "vp",
+          "managing director",
+          "head of",
+          "chief"
+        ]
+      }
+    },
+    {
+      "id": "adzuna-sales-development-intern",
+      "name": "Adzuna search: sales development internships",
+      "description": "Keyword search for internships in sales development. Keeps internship titles and skips explicitly senior titles. Needs Adzuna API keys (connect them once on this page).",
+      "fields": [
+        "business"
+      ],
+      "levels": [
+        "intern"
+      ],
+      "tracks": [],
+      "version": "2026.10.10",
+      "template": {
+        "id": "adzuna-sales-development-intern",
+        "kind": "job_search",
+        "provider": "adzuna",
+        "query": "sales development representative intern, account development representative intern, sales development associate intern",
+        "include": [
+          "intern",
+          "summer analyst",
+          "summer associate"
+        ],
+        "exclude": [
+          "senior",
+          "sr",
+          "principal",
+          "director",
+          "vice president",
+          "vp",
+          "managing director",
+          "head of",
+          "chief"
+        ]
+      }
+    },
+    {
+      "id": "adzuna-sales-development-newgrad",
+      "name": "Adzuna search: sales development entry level",
+      "description": "Keyword search for entry-level roles in sales development. Skips explicitly senior titles; screening checks actual seniority. Needs Adzuna API keys (connect them once on this page).",
+      "fields": [
+        "business"
+      ],
+      "levels": [
+        "new_grad"
+      ],
+      "tracks": [],
+      "version": "2026.10.10",
+      "template": {
+        "id": "adzuna-sales-development-newgrad",
+        "kind": "job_search",
+        "provider": "adzuna",
+        "query": "entry level sales development representative, entry level account development representative, entry level sales development associate",
+        "include": [],
+        "exclude": [
+          "senior",
+          "sr",
+          "principal",
+          "director",
+          "vice president",
+          "vp",
+          "managing director",
+          "head of",
+          "chief"
+        ]
+      }
+    },
+    {
+      "id": "adzuna-partnerships-intern",
+      "name": "Adzuna search: partnerships & alliances internships",
+      "description": "Keyword search for internships in partnerships & alliances. Keeps internship titles and skips explicitly senior titles. Needs Adzuna API keys (connect them once on this page).",
+      "fields": [
+        "business"
+      ],
+      "levels": [
+        "intern"
+      ],
+      "tracks": [],
+      "version": "2026.10.10",
+      "template": {
+        "id": "adzuna-partnerships-intern",
+        "kind": "job_search",
+        "provider": "adzuna",
+        "query": "partnerships associate intern, strategic partnerships associate intern, channel partnerships associate intern",
+        "include": [
+          "intern",
+          "summer analyst",
+          "summer associate"
+        ],
+        "exclude": [
+          "senior",
+          "sr",
+          "principal",
+          "director",
+          "vice president",
+          "vp",
+          "managing director",
+          "head of",
+          "chief"
+        ]
+      }
+    },
+    {
+      "id": "adzuna-partnerships-newgrad",
+      "name": "Adzuna search: partnerships & alliances entry level",
+      "description": "Keyword search for entry-level roles in partnerships & alliances. Skips explicitly senior titles; screening checks actual seniority. Needs Adzuna API keys (connect them once on this page).",
+      "fields": [
+        "business"
+      ],
+      "levels": [
+        "new_grad"
+      ],
+      "tracks": [],
+      "version": "2026.10.10",
+      "template": {
+        "id": "adzuna-partnerships-newgrad",
+        "kind": "job_search",
+        "provider": "adzuna",
+        "query": "entry level partnerships associate, entry level strategic partnerships associate, entry level channel partnerships associate",
+        "include": [],
+        "exclude": [
+          "senior",
+          "sr",
+          "principal",
+          "director",
+          "vice president",
+          "vp",
+          "managing director",
+          "head of",
+          "chief"
+        ]
+      }
+    },
+    {
+      "id": "business-development-watchlist",
+      "name": "Company watchlist: business development & partnerships",
+      "description": "Direct employer postings at Klaviyo, Brex and Ramp, filtered to business development, sales development, partnerships and alliances. Boards verified October 10, 2026. Screening checks actual seniority.",
+      "fields": [
+        "business"
+      ],
+      "levels": [],
+      "tracks": [],
+      "version": "2026.10.10",
+      "template": {
+        "id": "business-development-watchlist",
+        "kind": "ats_board",
+        "boards": [
+          {
+            "ats": "greenhouse",
+            "slug": "klaviyo",
+            "company": "Klaviyo"
+          },
+          {
+            "ats": "greenhouse",
+            "slug": "brex",
+            "company": "Brex"
+          },
+          {
+            "ats": "ashby",
+            "slug": "ramp",
+            "company": "Ramp"
+          }
+        ],
+        "include": [
+          "business development",
+          "sales development",
+          "account development",
+          "partnership",
+          "alliances",
+          "bdr",
+          "sdr"
+        ],
+        "exclude": [
+          "senior",
+          "sr",
+          "principal",
+          "director",
+          "vice president",
+          "vp",
+          "managing director",
+          "head of",
+          "chief"
+        ]
+      }
     }
   ]
 }
