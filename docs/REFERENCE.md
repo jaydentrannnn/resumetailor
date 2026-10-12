@@ -396,7 +396,9 @@ existing secret.
 
 Selected Apply table Fill actions use the same `max_parallel_fills` limit, except extension
 mode and "Pause on blocker" use one worker. Selected Prepare actions use the Tailor page's
-`max_concurrent_jobs` limit, while rows from the same posting group prepare in order.
+`max_concurrent_jobs` limit; same-role postings in other locations prepare side by side
+(each is its own row and tailor run). The nightly run still takes a posting group in
+order, because later rows reuse the first one's tailor run.
 The operation records each active row in `in_flight`; legacy current-item fields continue
 to show the most recently active row. Pause holds new work until resumed, and automatic
 submits reserve a run-limit slot before a fill starts.

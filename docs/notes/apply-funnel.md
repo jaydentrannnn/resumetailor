@@ -1788,3 +1788,5 @@ follow the upload rule (owner's call), so a "Cover letter" textarea gets the let
 Ask-AI draft. A letter written during Fill does not hold auto-submit (owner's call;
 Workday never auto-submits anyway). Under `off`, a letter already on hand (an older
 packet, a Tailor-tab run) is still used for a required field.
+
+2026-10-12 - Table Prepare no longer serializes rows that share a posting group (same company + role, other locations). Each selected row is already in the store, so `prepare_application` takes the `_merge_known` path and never reuses a sibling's run; the wait only cost a slot (4 selected, "Preparing 3 at once"). The nightly `daily_batch` keeps its group order: `_join_group` reuses the first row's tailor run there.

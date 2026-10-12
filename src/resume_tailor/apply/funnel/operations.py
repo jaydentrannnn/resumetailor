@@ -20,7 +20,6 @@ from pydantic import BaseModel, Field
 
 from resume_tailor import config, workspace
 from resume_tailor.apply.answers import profile
-from resume_tailor.apply.discovery import identity
 from resume_tailor.apply.driver import browser
 from resume_tailor.apply.forms import fill, submit_guard
 from resume_tailor.apply.funnel import attention as attention_mod
@@ -656,8 +655,6 @@ def _dispatch_items(
     # A paused Prepare item goes back on the front, to run again on Resume.
     pending = deque(operation.application_ids)
     dispatch_lock = threading.Lock()
-    group_locks: dict[str, threading.Lock] = {}
-    prior_by_group: dict[str, threading.Event] = {}
     reserved = 0
 
     def reserve_submit() -> bool:
@@ -702,20 +699,9 @@ def _dispatch_items(
                 if not pending:
                     return
                 application_id = pending.popleft()
-                if operation.action == "prepare":
-                    app = store.get(application_id)
-                    group = (
-                        (app.group_key or identity.group_key(app.company, app.role))
-                        if app
-                        else application_id
-                    )
-                    group_lock = group_locks.setdefault(group, threading.Lock())
-                    prior = prior_by_group.get(group)
-                    finished = threading.Event()
-                    prior_by_group[group] = finished
-                else:
-                    group_lock = None
-            item_args = (
+            # Same-role postings in other locations prepare side by side: each is its own
+            # store row with its own tailor run, so nothing is shared between them.
+            stopped = _process_item(
                 operation,
                 request,
                 settings,
@@ -724,16 +710,6 @@ def _dispatch_items(
                 reserve_submit,
                 release_submit,
             )
-            if group_lock is None:
-                stopped = _process_item(*item_args)
-            else:
-                try:
-                    if prior is not None:
-                        prior.wait()
-                    with group_lock:
-                        stopped = _process_item(*item_args)
-                finally:
-                    finished.set()
             if stopped and not _CANCEL.is_set():
                 pending.appendleft(application_id)
 

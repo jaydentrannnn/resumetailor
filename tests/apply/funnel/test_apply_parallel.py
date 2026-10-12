@@ -213,10 +213,9 @@ def test_prepare_uses_tailor_job_concurrency(batch, monkeypatch):
     assert (peak, operation.processed, operation.completed, operation.failed) == (2, 4, 4, 0)
 
 
-def test_same_group_prepares_serially(batch, monkeypatch):
-    first_started = threading.Event()
-    release_first = threading.Event()
-    second_started = threading.Event()
+def test_same_group_prepares_in_parallel(batch, monkeypatch):
+    # Same company and role in two locations: separate rows, so neither waits.
+    both_started = threading.Barrier(2, timeout=3)
     monkeypatch.setattr(
         operations.store,
         "get",
@@ -230,11 +229,7 @@ def test_same_group_prepares_serially(batch, monkeypatch):
     )
 
     def fake_prepare(application_id, **_kwargs):
-        if application_id == "one":
-            first_started.set()
-            assert release_first.wait(3)
-        else:
-            second_started.set()
+        both_started.wait()
         return store_models.Application(
             source="test",
             source_job_id=application_id,
@@ -244,18 +239,8 @@ def test_same_group_prepares_serially(batch, monkeypatch):
         )
 
     monkeypatch.setattr(operations.daily, "prepare_application", fake_prepare)
-    results = []
-    worker = threading.Thread(
-        target=lambda: results.append(batch(action="prepare", ids=("one", "two")))
-    )
-    worker.start()
-    assert first_started.wait(3)
-    assert not second_started.wait(0.1)
-    release_first.set()
-    worker.join(3)
-    assert not worker.is_alive()
-    assert second_started.is_set()
-    assert results[0].completed == 2
+    operation = batch(action="prepare", ids=("one", "two"))
+    assert (operation.completed, operation.failed) == (2, 0)
 
 
 def test_pause_holds_new_dispatch_after_in_flight_fills(batch, monkeypatch):
