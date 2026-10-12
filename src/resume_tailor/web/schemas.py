@@ -22,6 +22,10 @@ from ..document.template_adjust import CurrentLayout
 from ..model_selection import AiModels, ModelProvider, ModelSelection
 from ..pipeline.include import IncludeOptions
 
+EffortLevel = Literal["low", "medium", "high"]
+#: Keys of `config.EFFORT_STEPS`.
+EffortStep = Literal["analysis", "rewrite", "expand", "cover", "answer"]
+
 #: Every `source_sha256` request field below is interpolated straight into a filesystem
 #: path in `web/template_ops.py` (`_upload_cache_dir() / f"{sha}.docx"`, etc.). Since
 #: these arrive in a JSON body rather than a path param, nothing else stops a value
@@ -167,6 +171,8 @@ class ApplySettings(BaseModel):
 
     enabled: bool = False
     _job_defaults: Any = PrivateAttr(default=None)
+    #: The app-wide effort for application answers, set by `JobSettings` (`answer_effort`).
+    _answer_effort: str | None = PrivateAttr(default=None)
     schedule_time: str = "02:00"
     #: Legacy single-source fields — kept so existing settings.json still loads.
     #: They are no longer read: a missing ``sources`` key gets the built-in defaults, and
@@ -242,6 +248,11 @@ class ApplySettings(BaseModel):
             return f"ollama:{self.model_name}@{config.OLLAMA_CLOUD_BASE_URL}"
         return f"{self.model_provider}:{self.model_name}"
 
+    @property
+    def answer_effort(self) -> str | None:
+        """Effort for Fill's own calls, pinned beside `model_spec`; None = recommended."""
+        return self._answer_effort
+
     @model_validator(mode="before")
     @classmethod
     def _legacy_cover_switch(cls, data: Any) -> Any:
@@ -290,7 +301,7 @@ class JobSettings(BaseModel):
     """Per-run knobs, mirroring the CLI flags in `tailor.py`."""
 
     pages: int = Field(default=1, ge=1, le=5)
-    max_concurrent_jobs: int = Field(default=2, ge=1, le=4)
+    max_concurrent_jobs: int = Field(default=2, ge=1, le=8)
     experience: int | None = Field(default=None, ge=1, le=10)
     projects: int | None = Field(default=None, ge=1, le=10)
     #: Defaults to `ollama` rather than `claude` so a fresh install runs without an
@@ -315,7 +326,11 @@ class JobSettings(BaseModel):
     review_model: str | None = None
     #: Override for application-form free-text answers (`apply.answer`).
     answer_model: str | None = None
-    effort: Literal["low", "medium", "high"] | None = None
+    #: Reasoning effort: ``None`` uses each stage's recommended effort; one level applies
+    #: to every stage (the older single setting, still accepted from MCP and scripts); a
+    #: per-step dict (Settings → Advanced, Custom) sets `config.EFFORT_STEPS` steps and
+    #: leaves the rest recommended. The ``answer`` step reaches Fill via `ApplySettings`.
+    effort: EffortLevel | dict[EffortStep, EffortLevel] | None = None
     no_semantic: bool = False
     no_widow_repair: bool = False
     no_verb_repair: bool = False
@@ -388,6 +403,7 @@ class JobSettings(BaseModel):
             self.apply.model_selection = self.ai_models.heavy.model_copy(deep=True)
             self.apply.model_provider = self.ai_models.heavy.provider
             self.apply.model_name = self.ai_models.heavy.model_name
+        self.apply._answer_effort = config._stage_effort(self.effort, "answer")  # noqa: SLF001
         return self
 
     @field_validator("section_weights")
@@ -730,6 +746,9 @@ class ConfigResponse(BaseModel):
     #: only — never the key value itself.
     provider_keys: dict[str, bool] = Field(default_factory=dict)
     effort_options: list[str]
+    #: Recommended effort per Advanced step (`config.EFFORT_STEPS`) and provider:
+    #: ``anthropic``, ``openai``, ``gemini`` or ``other``.
+    recommended_effort: dict[str, dict[str, str]] = Field(default_factory=dict)
     pdf_backend: str
     calibration_source: str
     #: See `report.RunReport.calibration_rejection`.

@@ -195,6 +195,9 @@ def _response_format_ladder(  # noqa: UP047 - shares module-level `T` with 3 sib
 #: Tests MUST clear this between cases or a call-count assertion becomes flaky for reasons
 #: that have nothing to do with the test — see the `client` fixture in tests/infra/test_llm.py.
 _LEARNED_CEILING: dict[tuple[str, str], int] = {}
+#: `(base_url, model)` pairs that rejected `reasoning_effort` (e.g. OpenAI's non-reasoning
+#: models): later requests leave it out instead of paying for the rejection again.
+_NO_REASONING_EFFORT: set[tuple[str, str]] = set()
 _sleep = time.sleep
 _async_sleep = asyncio.sleep
 _RETRYABLE_STATUSES = {429, 500, 502, 503, 504}
@@ -243,10 +246,9 @@ class _Messages:
     ) -> _Response:
         """Translate an Anthropic-shaped request into `/chat/completions`.
 
-        `output_config` (Anthropic's reasoning-effort control) has no portable equivalent
-        and is accepted-and-dropped rather than rejected, so the same call site works
-        against both providers. Endpoints that expose reasoning do so under incompatible
-        names; forwarding a guess would break more endpoints than it would help.
+        `output_config`'s effort becomes `reasoning_effort` only for a client built with
+        `send_effort` (official OpenAI and Gemini, `config.forwards_effort`); every other
+        server drops it, since their reasoning controls go by incompatible names.
         """
         return self._client.request(
             model=model,
@@ -254,11 +256,13 @@ class _Messages:
             system=system,
             user="\n\n".join(str(m.get("content", "")) for m in messages),
             output_format=output_format,
+            effort=_sent_effort(self._client, output_config),
         )
 
 
 def _completion_payload(
     base_url: str, model: str, ceiling: int, messages: list[dict[str, Any]],
+    effort: str | None = None,
 ) -> dict[str, Any]:
     """Official OpenAI supports reasoning models; compatible servers retain their shape."""
     payload: dict[str, Any] = {"model": model, "messages": messages}
@@ -267,7 +271,26 @@ def _completion_payload(
         # Omit optional sampling controls, which some reasoning models reject.
     else:
         payload.update(max_tokens=ceiling, temperature=0)
+    if effort and (base_url, model) not in _NO_REASONING_EFFORT:
+        payload["reasoning_effort"] = effort
     return payload
+
+
+def _sent_effort(client: Any, output_config: dict[str, Any] | None) -> str | None:
+    if not getattr(client, "send_effort", False):
+        return None
+    return (output_config or {}).get("effort")
+
+
+def _rejected_effort(base_url: str, payload: dict[str, Any], response: httpx.Response) -> bool:
+    """A 400/422 about `reasoning_effort`: remember the model and resend without it."""
+    if "reasoning_effort" not in payload or response.status_code not in (400, 422):
+        return False
+    if "reasoning" not in response.text.lower():
+        return False
+    _NO_REASONING_EFFORT.add((base_url, payload["model"]))
+    telemetry.retry_reason("effort_fallback")
+    return True
 
 
 def _anthropic_connection(backend: config.Backend, key: str) -> dict[str, Any]:
@@ -300,9 +323,11 @@ class _OpenAICompatClient:
         structured_mode: str,
         max_token_cap: int = 0,
         origin: str = "",
+        send_effort: bool = False,
     ):
         self.base_url = base_url.rstrip("/")
         self.origin = origin
+        self.send_effort = send_effort
         self.api_key = api_key
         self.timeout = timeout
         self.structured_mode = structured_mode
@@ -390,6 +415,7 @@ class _OpenAICompatClient:
         system: str,
         user: str,
         output_format: type[T],
+        effort: str | None = None,
     ) -> _Response:
         schema = output_format.model_json_schema()
         messages = [
@@ -412,12 +438,14 @@ class _OpenAICompatClient:
 
         rung = 0
         while True:
-            payload = _completion_payload(self.base_url, model, ceiling, messages)
+            payload = _completion_payload(self.base_url, model, ceiling, messages, effort)
             response_format = ladder[rung]
             if response_format is not None:
                 payload["response_format"] = response_format
 
             response = self._post(payload)
+            if _rejected_effort(self.base_url, payload, response):
+                continue
 
             # Some endpoints reject `response_format` in any form. Walk the ladder toward
             # less structure rather than jumping straight to none.
@@ -562,6 +590,7 @@ def client_for(purpose: str) -> Any:
             timeout=config.LLM_TIMEOUT,
             structured_mode=config.structured_mode_for(purpose),
             max_token_cap=config.max_token_cap_for(purpose),
+            send_effort=config.forwards_effort(backend),
         ), purpose, backend.origin)
 
     raise LLMError(
@@ -577,12 +606,14 @@ class _AsyncMessages:
     async def parse(
         self, *, model: str, max_tokens: int, system: str,
         messages: list[dict[str, str]], output_format: type[T],
-        deadline: float | None = None, **_ignored: Any,
+        deadline: float | None = None, output_config: dict[str, Any] | None = None,
+        **_ignored: Any,
     ) -> _Response:
         return await self._client.request(
             model=model, max_tokens=max_tokens, system=system,
             user="\n\n".join(str(m.get("content", "")) for m in messages),
             output_format=output_format, deadline=deadline,
+            effort=_sent_effort(self._client, output_config),
         )
 
 
@@ -592,10 +623,11 @@ class _AsyncOpenAICompatClient:
     def __init__(
         self, *, base_url: str, api_key: str, structured_mode: str,
         max_token_cap: int = 0, timeout: float = 60,
-        origin: str = "",
+        origin: str = "", send_effort: bool = False,
     ):
         self.base_url = base_url.rstrip("/")
         self.origin = origin
+        self.send_effort = send_effort
         self.api_key = api_key
         self.structured_mode = structured_mode
         self.max_token_cap = max_token_cap
@@ -650,7 +682,7 @@ class _AsyncOpenAICompatClient:
 
     async def request(
         self, *, model: str, max_tokens: int, system: str, user: str,
-        output_format: type[T], deadline: float | None = None,
+        output_format: type[T], deadline: float | None = None, effort: str | None = None,
     ) -> _Response:
         stage_deadline = min(
             deadline if deadline is not None else float("inf"), time.monotonic() + 60,
@@ -668,10 +700,12 @@ class _AsyncOpenAICompatClient:
         rung = 0
         escalations = 0
         while True:
-            payload = _completion_payload(self.base_url, model, ceiling, messages)
+            payload = _completion_payload(self.base_url, model, ceiling, messages, effort)
             if ladder[rung] is not None:
                 payload["response_format"] = ladder[rung]
             response = await self._post(payload, stage_deadline)
+            if _rejected_effort(self.base_url, payload, response):
+                continue
             if response.status_code in (400, 422) and rung < len(ladder) - 1:
                 telemetry.retry_reason("structured_fallback")
                 rung += 1
@@ -741,5 +775,6 @@ def async_client_for(purpose: str) -> Any:
             structured_mode=config.structured_mode_for(purpose),
             max_token_cap=config.max_token_cap_for(purpose),
             timeout=min(config.LLM_TIMEOUT, 60),
+            send_effort=config.forwards_effort(backend),
         ), purpose, backend.origin, asynchronous=True)
     raise LLMError(f"Unknown provider {backend.provider!r} for {purpose!r}")

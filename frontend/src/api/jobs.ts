@@ -59,7 +59,7 @@ export type JobSettings = {
   review_model: string | null;
   /** Override for application-form free-text answers (`apply.answer`). */
   answer_model: string | null;
-  effort: "low" | "medium" | "high" | null;
+  effort: import("../lib/effortSteps").EffortSetting;
   no_semantic: boolean;
   no_widow_repair: boolean;
   no_verb_repair: boolean;

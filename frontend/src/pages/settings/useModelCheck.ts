@@ -35,7 +35,7 @@ function test(key: string, target: ModelTarget, settings: JobSettings): Promise<
 function keyFor(target: ModelTarget, settings: JobSettings): string {
   const role = target === "tailor" || target === "light" ? "light" : "heavy";
   const models = modelsFor(settings);
-  return `${role}|${JSON.stringify(models[role])}|${settings.effort}|${credentialRevision}|${role === "light" ? JSON.stringify(models.legacy_light_overrides) : ""}`;
+  return `${role}|${JSON.stringify(models[role])}|${JSON.stringify(settings.effort)}|${credentialRevision}|${role === "light" ? JSON.stringify(models.legacy_light_overrides) : ""}`;
 }
 
 /** Forget every result and retest what is on screen (a key was saved or removed). */

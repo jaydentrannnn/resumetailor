@@ -445,7 +445,9 @@ async def fill_application(
                             max_length = field.constraints.get("max_length")
                             max_chars = min(1500, max_length) if isinstance(max_length, int) and max_length > 0 else 1500
                             try:
-                                with config.pinned(settings.model_spec):
+                                with config.pinned(
+                                    settings.model_spec, effort=settings.answer_effort,
+                                ):
                                     drafted = await answer.answer_question_async(
                                         field.label, resume=resume, bullets=bullets,
                                         requirements=requirements, profile=applicant,
@@ -554,7 +556,7 @@ async def fill_application(
                             break
                         progress(f"Step {step_number}: resolving remaining choices, pass {model_pass + 1}")
                         try:
-                            with config.pinned(settings.model_spec):
+                            with config.pinned(settings.model_spec, effort=settings.answer_effort):
                                 proposals = await model_resolver.propose(
                                     unresolved_choices, model_resolver.safe_facts(fields), deadline=deadline,
                                 )

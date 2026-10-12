@@ -141,6 +141,19 @@ def test_clean_llm_answer_passes_guard(answer_calls):
     assert result.offenders == []
 
 
+def test_answer_call_sends_the_answer_effort(answer_calls):
+    """The answer step's effort reaches the model (Settings → Advanced, Custom)."""
+    resume, bullets = _resume_and_bullets()
+    calls = answer_calls(AnswerLLM(answer="I built production Python services."))
+    with config.pinned("claude", effort={"answer": "high"}):
+        answer_question(
+            "Why are you a good fit?", resume=resume, bullets=bullets,
+            requirements=_reqs(), profile=ApplicantProfile(),
+            jd_text="Python engineer role.", use_cache=False,
+        )
+    assert calls[0]["output_config"] == {"effort": "high"}
+
+
 def test_fabricated_answer_retries_then_empty(answer_calls):
     """Unsupported claims retry once, then return an empty guarded answer."""
     resume, bullets = _resume_and_bullets()

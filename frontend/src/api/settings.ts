@@ -25,6 +25,8 @@ export type AppConfig = {
    * Booleans only — never the key value itself. */
   provider_keys: Record<string, boolean>;
   effort_options: string[];
+  /** Recommended effort per Advanced step and provider (anthropic, openai, gemini, other). */
+  recommended_effort?: Record<string, Record<string, string>>;
   pdf_backend: string;
   calibration_source: string;
   /** Non-null only when a calibration file existed but was rejected as implausible. */

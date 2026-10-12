@@ -1063,6 +1063,16 @@ overrides, friendly provider labels and queue activity only while requests are a
   per `(base_url, model)` in `llm._LEARNED_CEILING` so a multi-call run doesn't rediscover
   it every call. This exists because Gemini counts thinking tokens against the same budget
   as the answer.
+- **Reasoning effort** (`Backend.effort`) reaches Anthropic as `output_config`, and official
+  OpenAI and Gemini as `reasoning_effort` (`config.forwards_effort`); Ollama, LM Studio and
+  other OpenAI-format servers get none. A 400/422 naming `reasoning_effort` is resent
+  without it and the `(base_url, model)` remembered (`llm._NO_REASONING_EFFORT`).
+  Forwarding backends add `|effort-sent` to `config.fingerprint`. `JobSettings.effort` is
+  `None` (recommended: `config.default_effort`, `DEFAULT_EFFORT` plus
+  `PROVIDER_DEFAULT_EFFORT` — expansion is low on Claude/OpenAI/Gemini), one level for
+  every stage, or a per-step map over `config.EFFORT_STEPS` (Settings → Advanced, Custom:
+  analysis, rewrite, expand, cover, answer). The answer step reaches Fill through
+  `ApplySettings.answer_effort`, pinned beside `model_spec`.
 - **Non-frontier backends may accept a JSON schema and ignore it** — measured against
   `nemotron-3-super:cloud`, `response_format: json_schema` returned HTTP 200 carrying
   markdown prose. `llm.py` puts the schema in the system prompt and escalates on **parse

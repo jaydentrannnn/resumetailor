@@ -59,7 +59,10 @@ export function ModelSpeedSetting() {
     void save(settings);
   }
   const limit = (label: string, key: string, value: number, note?: string) => (
-    <label key={key} className="grid min-w-0 gap-1 text-sm sm:grid-cols-[minmax(0,1fr)_auto]">
+    <label
+      key={key}
+      className="grid min-w-0 gap-2 text-sm sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-6"
+    >
       <span className="min-w-0 break-words">
         {label}
         {note && <span className="block text-xs text-ink-muted">{note}</span>}
@@ -79,33 +82,36 @@ export function ModelSpeedSetting() {
   );
 
   return (
-    <SettingRow
-      label="Request concurrency"
-      layout="stacked"
-      description={
-        help ?? "Maximum simultaneous requests to each server. Extra requests wait for a free slot."
-      }
-    >
-      <select
-        className={`field ${SELECT_WIDTH}`}
-        aria-label="Request concurrency"
-        value={preset}
-        disabled={busy}
-        onChange={(e) => {
-          const id = e.target.value as SpeedPresetId;
-          setCustom(id === "custom");
-          if (id !== "custom") void save(settingsFor(id));
-        }}
+    <>
+      <SettingRow
+        label="Request concurrency"
+        layout="split"
+        description={
+          help ??
+          "Maximum simultaneous requests to each server. Extra requests wait for a free slot."
+        }
       >
-        {SPEED_PRESETS.map((p) => (
-          <option key={p.id} value={p.id}>
-            {p.label}
-          </option>
-        ))}
-        <option value="custom">Custom</option>
-      </select>
+        <select
+          className={`field ${SELECT_WIDTH}`}
+          aria-label="Request concurrency"
+          value={preset}
+          disabled={busy}
+          onChange={(e) => {
+            const id = e.target.value as SpeedPresetId;
+            setCustom(id === "custom");
+            if (id !== "custom") void save(settingsFor(id));
+          }}
+        >
+          {SPEED_PRESETS.map((p) => (
+            <option key={p.id} value={p.id}>
+              {p.label}
+            </option>
+          ))}
+          <option value="custom">Custom</option>
+        </select>
+      </SettingRow>
       {preset === "custom" && (
-        <div className="mt-3 space-y-3">
+        <div className="space-y-3 pb-4">
           {limit("Local requests at once", "local_concurrency", status.settings.local_concurrency)}
           {limit("Cloud requests at once", "cloud_concurrency", status.settings.cloud_concurrency)}
           <details className="border-t border-line pt-3">
@@ -116,7 +122,7 @@ export function ModelSpeedSetting() {
                   key={endpoint}
                   className="min-w-0 border-t border-line pt-3 first:border-0 first:pt-0"
                 >
-                  <label className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_auto]">
+                  <label className="grid min-w-0 gap-2 sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-6">
                     <span className="min-w-0 text-sm" title={endpoint}>
                       {label}
                       <span className="block truncate text-xs text-ink-muted">{endpoint}</span>
@@ -165,6 +171,6 @@ export function ModelSpeedSetting() {
           )}
         </div>
       )}
-    </SettingRow>
+    </>
   );
 }

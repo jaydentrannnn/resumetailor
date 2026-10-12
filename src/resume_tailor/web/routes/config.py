@@ -125,6 +125,13 @@ def _config_response(*, consume_migrated: bool = True) -> ConfigResponse:
             for origin in config.PROVIDERS_REQUIRING_KEY
         },
         effort_options=["low", "medium", "high"],
+        recommended_effort={
+            step: {
+                key: config.default_effort(purposes[0], "custom" if key == "other" else key)
+                for key in ("anthropic", "openai", "gemini", "other")
+            }
+            for step, purposes in config.EFFORT_STEPS.items()
+        },
         pdf_backend=config.PDF_BACKEND,
         calibration_source=config.CALIBRATION_SOURCE,
         calibration_rejection=config.CALIBRATION_REJECTION,

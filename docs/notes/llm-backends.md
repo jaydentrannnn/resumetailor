@@ -381,3 +381,21 @@ origins; only `origin == "custom"` appends `|provider|base_url` (two servers can
 model name, over either API format). The first AI-model draft appended them for every
 backend, which would have invalidated every cached extraction, score and inferred skill on
 upgrade.
+
+## Per-step reasoning effort; effort reaches OpenAI and Gemini (2026-10-12)
+- **Measured (Haiku 5.5, 4 postings, same day):** at medium, rewrite returned 16-20k output
+  tokens (~1.6k visible: the rest is thinking), 64-84s; low cut it to 11.6-12.5k, 44-51s,
+  and wording got slightly flatter (the user's quality scores dipped). Expansion at low: ~4s
+  instead of 9-17s, ~1k tokens instead of 2.4-4.3k, no visible loss. Cost ~1.7c -> ~1.3c
+  per resume with every step low.
+- **Decision:** expansion is recommended low on Claude/OpenAI/Gemini
+  (`config.PROVIDER_DEFAULT_EFFORT`); rewrite and cover stay medium. Settings → Advanced
+  gains Recommended | Custom with per-step levels (analysis, rewrite, expand, cover,
+  answer); a saved single level still means every stage. The answer step now reaches Fill
+  (`ApplySettings.answer_effort`) and its calls send `output_config` (before, Anthropic
+  answers ran at the API's default effort).
+- **Forwarding:** official OpenAI and Gemini get `reasoning_effort`; a model that rejects
+  it is retried without it once and remembered. Fingerprints of forwarding backends gain
+  `|effort-sent` so results cached without effort are not reused.
+- **Resumes at once:** 1-8 (was 1-4). A run makes at most ~3 model calls at once, so cloud
+  request limits above ~12 add nothing at 4; paid providers can now use the extra slots.

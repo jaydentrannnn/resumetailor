@@ -112,6 +112,7 @@ async def propose(
             response = await client.messages.parse(
                 model=config.model_for("answer"),
                 max_tokens=config.max_tokens_for("answer"),
+                output_config={"effort": config.effort_for("answer")},
                 system=system,
                 messages=[{"role": "user", "content": json.dumps(request, ensure_ascii=False)}],
                 output_format=ControlProposals,

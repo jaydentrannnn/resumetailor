@@ -1,6 +1,7 @@
 import { useId, useState } from "react";
 import { Card } from "../../components/ui";
 import { useRunState } from "../../state/runState";
+import { EffortSetting } from "./EffortSetting";
 import { ModelSpeedSetting } from "./ModelSpeedSetting";
 import { SELECT_WIDTH } from "./selectWidth";
 import { SettingRow } from "./SettingRow";
@@ -28,28 +29,7 @@ export function AiAdvancedCard() {
     >
       {open && (
         <div id={bodyId}>
-          <SettingRow
-            label="Reasoning effort"
-            layout="split"
-            description="Overrides the recommended effort per step for tailoring and app tools."
-          >
-            <select
-              className={`field ${SELECT_WIDTH}`}
-              aria-label="Reasoning effort"
-              value={settings.effort ?? ""}
-              onChange={(e) =>
-                setSettings({
-                  ...settings,
-                  effort: (e.target.value || null) as typeof settings.effort,
-                })
-              }
-            >
-              <option value="">Recommended per step</option>
-              <option value="low">Low</option>
-              <option value="medium">Medium</option>
-              <option value="high">High</option>
-            </select>
-          </SettingRow>
+          <EffortSetting />
           <SettingRow
             label="Job posting reads"
             layout="split"
@@ -71,7 +51,7 @@ export function AiAdvancedCard() {
           <SettingRow
             label="Resumes at once"
             layout="split"
-            description="How many tailoring runs may work at the same time. Model requests still wait for a free slot."
+            description="How many tailoring runs may work at the same time. Above 4 suits paid cloud models; a model on this computer still answers one request at a time."
           >
             <select
               className={`field ${SELECT_WIDTH}`}
@@ -81,7 +61,7 @@ export function AiAdvancedCard() {
                 setSettings({ ...settings, max_concurrent_jobs: Number(e.target.value) })
               }
             >
-              {[1, 2, 3, 4].map((count) => (
+              {[1, 2, 3, 4, 5, 6, 7, 8].map((count) => (
                 <option key={count} value={count}>
                   {count}
                 </option>

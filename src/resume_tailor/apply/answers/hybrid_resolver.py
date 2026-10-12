@@ -97,6 +97,7 @@ def choose_skill_options(
     response = client.messages.parse(
         model=config.model_for("answer"),
         max_tokens=config.max_tokens_for("answer"),
+        output_config={"effort": config.effort_for("answer")},
         system=_SKILLS_SYSTEM_PROMPT,
         messages=[{"role": "user", "content": f"<skills>\n{json.dumps(payload, indent=2)}\n</skills>"}],
         output_format=SkillPicks,
@@ -661,6 +662,7 @@ class _StepResolver:
             response = client.messages.parse(
                 model=config.model_for("answer"),
                 max_tokens=config.max_tokens_for("answer"),
+                output_config={"effort": config.effort_for("answer")},
                 system=_SYSTEM_PROMPT,
                 messages=[{"role": "user", "content": "\n\n".join(user_content)}],
                 output_format=resolver_types.StepResolution,

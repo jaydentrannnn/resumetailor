@@ -457,6 +457,46 @@ DEFAULT_EFFORT: dict[str, str] = {
     "answer": os.environ.get("LLM_EFFORT_ANSWER", "low"),
 }
 
+#: Recommended effort that depends on the provider, used unless `LLM_EFFORT_<STAGE>` is
+#: set. Measured on Haiku 5.5 (2026-10-11): expansion at low took ~4s instead of 9-17s
+#: with a third of the output tokens and no visible loss. Origins missing here keep
+#: `DEFAULT_EFFORT`; they ignore effort anyway (`forwards_effort`).
+PROVIDER_DEFAULT_EFFORT: dict[str, dict[str, str]] = {
+    "expand": {"anthropic": "low", "openai": "low", "gemini": "low"},
+}
+_EFFORT_FROM_ENV = frozenset(p for p in DEFAULT_EFFORT if os.environ.get(f"LLM_EFFORT_{p.upper()}"))
+
+#: The steps Settings → AI model → Advanced lets a user tune, and the stages each covers.
+#: `review` is not offered and always uses its recommended effort.
+EFFORT_STEPS: dict[str, tuple[str, ...]] = {
+    "analysis": ("extract", "score", "facets", "skills"),
+    "rewrite": ("rewrite",),
+    "expand": ("expand",),
+    "cover": ("cover",),
+    "answer": ("answer",),
+}
+_STEP_OF = {purpose: step for step, purposes in EFFORT_STEPS.items() for purpose in purposes}
+
+#: One effort for every stage, or a per-step choice keyed by `EFFORT_STEPS` (a step left
+#: out keeps its recommended effort).
+Effort = str | Mapping[str, str] | None
+
+
+def default_effort(purpose: str, origin: str) -> str:
+    """The recommended effort for one stage on one provider."""
+    if purpose not in _EFFORT_FROM_ENV:
+        by_origin = PROVIDER_DEFAULT_EFFORT.get(purpose, {}).get(origin)
+        if by_origin:
+            return by_origin
+    return DEFAULT_EFFORT.get(purpose, EFFORT)
+
+
+def _stage_effort(effort: Effort, purpose: str) -> str | None:
+    if isinstance(effort, Mapping):
+        step = _STEP_OF.get(purpose)
+        return effort.get(step) if step else None
+    return effort
+
 #: How many independent extractions `jd.extract_consensus` runs and votes over. Measured
 #: on one posting at `temperature=0` (already the default — see `llm.py`'s `_OpenAICompatClient`):
 #: identical JD, identical resume, 8 extractions still ranged 3/10 to 6/11 must-have coverage,
@@ -735,13 +775,15 @@ def _default_base(provider: str) -> str | None:
 ModelSpec = str | dict[str, Any]
 
 
-def _backend(spec: ModelSpec, purpose: str, effort: str | None) -> Backend:
+def _backend(spec: ModelSpec, purpose: str, effort: Effort) -> Backend:
     """Resolve a raw spec into a Backend, remapping local aliases to OpenAI-compat."""
+    chosen = _stage_effort(effort, purpose)
     if isinstance(spec, dict):
+        origin = spec.get("origin") or spec["provider"]
         return Backend(
             provider=spec["provider"], model=spec["model"], base_url=spec.get("base_url"),
-            origin=spec.get("origin") or spec["provider"],
-            effort=effort or spec.get("effort") or DEFAULT_EFFORT.get(purpose, EFFORT),
+            origin=origin,
+            effort=chosen or spec.get("effort") or default_effort(purpose, origin),
             credential_ref=spec.get("credential_ref", ""),
         )
     provider, model, base_url = parse_spec(spec)
@@ -754,7 +796,7 @@ def _backend(spec: ModelSpec, purpose: str, effort: str | None) -> Backend:
         provider=provider,
         model=model,
         base_url=base_url,
-        effort=effort or DEFAULT_EFFORT.get(purpose, EFFORT),
+        effort=chosen or default_effort(purpose, origin),
         origin=origin,
     )
 
@@ -767,7 +809,7 @@ def _backends_for(
     profile: ModelSpec | None,
     *,
     overrides: Mapping[str, ModelSpec] | None = None,
-    effort: str | None = None,
+    effort: Effort = None,
 ) -> dict[str, Backend]:
     """Shared spec-resolution logic behind both `resolve()` and `pinned()`.
 
@@ -808,7 +850,7 @@ def resolve(
     profile: str | None = None,
     *,
     overrides: Mapping[str, ModelSpec] | None = None,
-    effort: str | None = None,
+    effort: Effort = None,
 ) -> dict[str, Backend]:
     """Decide which backend serves each stage, for the whole run.
 
@@ -839,7 +881,7 @@ def pinned(
     profile: ModelSpec,
     *,
     overrides: Mapping[str, ModelSpec] | None = None,
-    effort: str | None = None,
+    effort: Effort = None,
 ) -> Iterator[dict[str, Backend]]:
     """Route every stage through `profile` (plus per-stage `overrides`) for this block only.
 
@@ -881,7 +923,7 @@ def backend_specs_snapshot() -> dict[str, ModelSpec]:
 def pinned_specs(
     specs: dict[str, ModelSpec],
     *,
-    effort: str | None = None,
+    effort: Effort = None,
 ) -> Iterator[dict[str, Backend]]:
     """Pin exact per-stage specs for one-off calls outside the job runner.
 
@@ -936,6 +978,26 @@ def base_url_for(purpose: str) -> str | None:
 
 def effort_for(purpose: str) -> str:
     return backend_for(purpose).effort
+
+
+def forwards_effort(backend: Backend) -> bool:
+    """Whether `backend` receives the effort setting at all.
+
+    Anthropic takes it as `output_config`; official OpenAI and Gemini as
+    `reasoning_effort` (`llm._completion_payload`). Ollama, LM Studio and other
+    OpenAI-compatible servers get nothing: their reasoning controls differ per server.
+    """
+    if backend.provider == "anthropic":
+        return True
+    if backend.origin == "gemini":
+        return True
+    return backend.origin == "openai" and _is_official_openai(backend.base_url)
+
+
+def _is_official_openai(base_url: str | None) -> bool:
+    from urllib.parse import urlsplit
+
+    return bool(base_url) and urlsplit(base_url).hostname == "api.openai.com"
 
 
 def max_token_cap_for(purpose: str) -> int:
@@ -1091,6 +1153,9 @@ def fingerprint(purpose: str, *, include_guidance: bool = True) -> str:
     """
     backend = backend_for(purpose)
     value = f"{backend.origin or backend.provider}|{backend.model}|{backend.effort}"
+    if backend.provider == "openai" and forwards_effort(backend):
+        # Results cached before OpenAI/Gemini received the effort were made without it.
+        value += "|effort-sent"
     if backend.origin == "custom":
         # Two custom servers may serve one model name, over either API format. Built-in
         # origins keep the shorter identity so an upgrade keeps every cached result.

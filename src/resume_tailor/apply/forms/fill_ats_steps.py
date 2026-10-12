@@ -96,7 +96,7 @@ class _FillAtsSteps(fill_state._FillState):
 
     def _workday_skills(self) -> list[dict[str, Any]]:
         skills_deadline = min(self.deadline, time.monotonic() + 120)
-        with config.pinned(self.settings.model_spec):
+        with config.pinned(self.settings.model_spec, effort=self.settings.answer_effort):
             skill_chips, skills_left = workday_skills.fill_skills(
                 self.page, list(self.pkt.skills), progress=self.progress,
                 deadline=skills_deadline,

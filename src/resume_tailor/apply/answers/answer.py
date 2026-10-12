@@ -256,6 +256,7 @@ def _call_model(
     response = client.messages.parse(
         model=config.model_for("answer"),
         max_tokens=config.max_tokens_for("answer"),
+        output_config={"effort": config.effort_for("answer")},
         system=_system_for(extras.applicant_given()),
         messages=[{"role": "user", "content": "\n\n".join(user_parts)}],
         output_format=AnswerLLM,
@@ -309,6 +310,7 @@ async def _call_model_async(
             response = await client.messages.parse(
                 model=config.model_for("answer"),
                 max_tokens=config.max_tokens_for("answer"),
+                output_config={"effort": config.effort_for("answer")},
                 system=_system_for(extras.applicant_given()),
                 messages=[{"role": "user", "content": "\n\n".join(user_parts)}],
                 output_format=AnswerLLM,
@@ -564,6 +566,7 @@ def classify_questions(asked: list[questions.Question]) -> list[str | None]:
         response = client.messages.parse(
             model=config.model_for("answer"),
             max_tokens=config.max_tokens_for("answer"),
+            output_config={"effort": config.effort_for("answer")},
             system=_CLASSIFY_SYSTEM,
             messages=[{
                 "role": "user",

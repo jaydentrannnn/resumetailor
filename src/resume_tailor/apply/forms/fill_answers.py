@@ -182,7 +182,7 @@ class _FillAnswers(fill_state._FillState):
                     target.fill(sel, text)
 
     def _answer_long_text(self) -> None:
-        with config.pinned(self.settings.model_spec):
+        with config.pinned(self.settings.model_spec, effort=self.settings.answer_effort):
             for item in self.merged.get("long_text") or []:
                 if self._stop_if_out_of_time(
                     "Fill stopped before all written answers were checked"

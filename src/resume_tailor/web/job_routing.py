@@ -37,6 +37,7 @@ def pinned_role(role: ModelRole, settings: JobSettings | None = None):
         spec = settings.apply.model_spec
         with config.pinned(
             "ollama", overrides=dict.fromkeys(config.PURPOSES, spec),
+            effort=settings.apply.answer_effort,
         ) as backends:
             yield backends
 

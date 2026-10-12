@@ -1,8 +1,8 @@
 import type { ReactNode } from "react";
 
 const GRID = {
-  // Label/description left, control right.
-  split: "sm:grid-cols-[minmax(0,1fr)_minmax(180px,0.9fr)] sm:items-start sm:gap-6",
+  // Label/description left, control right-aligned and vertically centred.
+  split: "sm:grid-cols-[minmax(0,1fr)_auto] sm:items-center sm:gap-6",
   // Label/description on top, the control full width underneath.
   stacked: "",
   // Text takes the room it needs on the left; buttons sit right-aligned at the end.
@@ -30,7 +30,7 @@ export function SettingRow({
         {description && <div className="mt-1 text-xs text-ink-muted">{description}</div>}
       </div>
       <div
-        className={layout === "action" ? "flex min-w-0 flex-wrap gap-2 sm:justify-end" : "min-w-0"}
+        className={layout === "stacked" ? "min-w-0" : "flex min-w-0 flex-wrap gap-2 sm:justify-end"}
       >
         {children}
       </div>

@@ -260,7 +260,7 @@ class _FillState:
         return recovered
 
     def classify_unkeyed(self, asked: list[questions.Question]) -> list[str | None]:
-        with config.pinned(self.settings.model_spec):
+        with config.pinned(self.settings.model_spec, effort=self.settings.answer_effort):
             return answer.classify_questions(asked)
 
     @property
