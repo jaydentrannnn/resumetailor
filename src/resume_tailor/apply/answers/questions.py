@@ -87,7 +87,7 @@ SHORT_FIELD_KEYS = frozenset({
     "first_name", "middle_name", "last_name", "preferred_name", "full_name", "email", "phone",
     "address_line1", "address_line2", "city", "state", "postal_code", "country", "school",
     "major", "degree_level", "gpa", "website", "current_company", "current_title",
-    "linkedin_url", "github_url", "portfolio_url", "school_email", "pronouns",
+    "linkedin_url", "github_url", "portfolio_url", "school_email", "pronouns", "citizenship",
 })
 
 #: Keys answered by typing, never by picking Yes/No.
@@ -104,7 +104,8 @@ YES_NO_KEYS = frozenset({
     "noncompete", "drivers_license", "has_preferred_name", "previous_worker",
     "work_authorization", "relatives_at_company",
     "currently_enrolled", "degree_by", "returning_to_school", "gpa_at_least",
-    "located_or_relocate", "has_prior_internship",
+    "located_or_relocate", "has_prior_internship", "us_citizen", "us_person_status",
+    "government_employee", "conflict_of_interest", "export_control_country",
 }) | field_matcher.EEO_KEYS
 
 _MONTH_RE = "|".join(month.lower() for month in MONTHS)
@@ -153,12 +154,14 @@ _DERIVED: tuple[tuple[str, str], ...] = (
         "has_prior_internship",
     ),
     (
+        # Government or military service is its own fact (`government_employee`).
+        r"^(?![\s\S]*\b(?:government|military|federal|armed forces|public sector)\b)[\s\S]*?(?:"
         r"\bhave you (?:ever )?(?:previously )?(?:worked|been employed)\s+(?:at|for|by|with)\b"
         r"|previous(?:ly)?\s+(?:worked|employed)|ever\s+(?:been\s+)?(?:worked|employed)"
         # "current or former" alone is not enough: American Century's non-compete question
         # ("...agreement with a current or former employer?") is the noncompete fact.
         r"|(?:current\s+or\s+)?former\s+(?:employee|worker|intern|contractor)"
-        r"|worked\s+(?:for|at)\s+.{0,40}before",
+        r"|worked\s+(?:for|at)\s+.{0,40}before)",
         "previous_worker",
     ),
 )
@@ -299,15 +302,20 @@ def classify(question: Question) -> Match | None:
     if not text:
         return None
     low = text.casefold()
+    typed = question.kind in {"text", "textarea"}
+    if typed:
+        consent_text = form_facts.typed_consent(text, question.help_text)
+        if consent_text:
+            return Match(form_facts.TYPED_CONSENT, consent_text)
     semantic = form_facts.semantic_key(text, question.help_text)
-    if semantic:
-        if (
-            semantic == form_facts.ACKNOWLEDGEMENT
-            and form_facts.acknowledgement(f"{text} {question.help_text}") != "routine"
-        ):
-            return None
+    # A declaration that states a fact ("I confirm I am authorized to work") is answered
+    # from that fact; a notice never answers a text box ("Confirm your email").
+    claim = semantic == form_facts.ACKNOWLEDGEMENT and (
+        typed or form_facts.acknowledgement(f"{text} {question.help_text}") == "fact"
+    )
+    if semantic and not claim:
         return Match(semantic)
-    if _CONSENT.search(low):
+    if not claim and _CONSENT.search(low):
         return None
     if education.not_education(text):
         return None
@@ -432,6 +440,22 @@ def _named_employer(facts: Facts, question: str) -> bool:
     )
 
 
+#: Declining an optional opt-in (a talent pool, marketing, text messages).
+_DECLINE = ["No", "I do not consent", "Do not consent", "I do not agree"]
+
+
+def _named_country(question: str, fields: dict[str, str]) -> bool | None:
+    """Whether the applicant's citizenship or home country is one the question lists
+    (export control: "a citizen, national or resident of Iran, Cuba, ...")."""
+    asked = field_matcher.normalize(question)
+    mine = [field_matcher.normalize(fields.get(key, "")) for key in ("citizenship", "country")]
+    # The United States is never on these lists, while the questions often cite U.S. law.
+    mine = [country for country in mine if country and country not in {"united states", "usa"}]
+    if not mine:
+        return False if fields.get("country") else None
+    return any(re.search(rf"\b{re.escape(country)}\b", asked) for country in mine)
+
+
 def _date_part(value: str, part: str) -> str:
     """The part of a "2027-06" (or "June 2027") date a split question asks for; "" when the
     date lacks it."""
@@ -454,12 +478,27 @@ def answers(match: Match | None, question: Question, facts: Facts) -> list[str]:
     if match.key == form_facts.SKILLS:
         return form_facts.skill_options(question.options, facts.skills)
     if match.key == form_facts.ACKNOWLEDGEMENT:
-        context = " ".join((question.text, question.help_text, *question.options))
-        routine = form_facts.acknowledgement(context) == "routine"
+        kind = form_facts.acknowledgement(f"{question.text} {question.help_text}")
+        if kind == "optional":
+            return _DECLINE
         opted_in = facts.fields.get("auto_accept_routine_acknowledgements") == "Yes"
-        return ["Yes"] if routine and opted_in else []
+        return ["Yes"] if kind == "routine" and opted_in else []
+    if match.key == form_facts.TYPED_CONSENT:
+        if facts.fields.get("auto_accept_routine_acknowledgements") != "Yes":
+            return []
+        if match.param == "full_name":
+            name = facts.fields.get("full_name") or " ".join(
+                part for part in (facts.fields.get("first_name"), facts.fields.get("last_name"))
+                if part
+            )
+            return [name] if name else []
+        if match.param == "today":
+            return [facts.today.strftime("%m/%d/%Y")]
+        return [match.param]
+    if match.key == "export_control_country":
+        return _yes(_named_country(question.text, facts.fields))
     if match.key == form_facts.TALENT_POOL:
-        return ["No", "I do not consent", "Do not consent", "I do not agree"]
+        return _DECLINE
     if match.key == "relatives_at_company":
         value = facts.fields.get(match.key, "")
         if (value == "Yes" and question.kind in {"text", "textarea"}
@@ -503,10 +542,8 @@ def choose(question: Question, key: str, candidates: Iterable[str]) -> str | Non
     for candidate in candidates:
         if key == form_facts.HIGH_SCHOOL:
             return form_facts.year_option(options, candidate)
-        if key == form_facts.ACKNOWLEDGEMENT:
-            hits = [option for option in options
-                    if re.match(r"^(?:yes\b|i agree\b|acknowledge\b)", option, re.I)]
-            return hits[0] if len(hits) == 1 else None
+        if key == form_facts.ACKNOWLEDGEMENT and candidate == "Yes":
+            return field_matcher.affirmative_option(options)
         wanted = field_matcher.normalize(candidate)
         if wanted in {"yes", "no"} and yes_no_options(options):
             hits = [option for option in options if _yes_no_head(option) == wanted]
@@ -621,10 +658,7 @@ def plan_for(
         stated = str(item.get("attr_key") or "")
         edu_key = education.question_key(question.text, question.help_text)
         semantic = form_facts.semantic_key(question.text, question.help_text)
-        blocked = education.not_education(question.text) or (
-            semantic == form_facts.ACKNOWLEDGEMENT
-            and form_facts.acknowledgement(f"{question.text} {question.help_text}") != "routine"
-        )
+        blocked = education.not_education(question.text)
         match = (None if blocked else classify(question) if edu_key or semantic
                  else Match(stated) if stated else classify(question))
         name_key = str(item.get("name_key") or "")

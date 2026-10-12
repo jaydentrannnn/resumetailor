@@ -96,15 +96,15 @@ def test_social_only_auth_chooser_hands_off(page):
     assert form_routes.choose_email_sync(page, deadline=time.monotonic() + 5) == "unavailable"
 
 
-def test_required_certification_stays_for_review_even_with_routine_opt_in(page):
+def test_required_certification_is_agreed_but_talent_community_is_not(page):
     page.set_content("""
       <div class="form-group"><label><input type="checkbox" required>I certify that this application is accurate</label></div>
       <div class="form-group"><label><input type="checkbox">Join the talent community</label></div>
     """)
     filled, unresolved = form_routes.accept_workday_sync(page, allow_routine=True)
-    assert unresolved == ["I certify that this application is accurate"]
-    assert filled == []
-    assert not page.locator("input[type=checkbox]").nth(0).is_checked()
+    assert unresolved == []
+    assert [row["label"] for row in filled] == ["I certify that this application is accurate"]
+    assert page.locator("input[type=checkbox]").nth(0).is_checked()
     assert not page.locator("input[type=checkbox]").nth(1).is_checked()
 
 

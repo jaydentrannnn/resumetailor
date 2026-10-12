@@ -348,11 +348,7 @@ class _FillFinish(fill_state._FillState):
             final_step_reached=self.final_step_reached,
             field_outcomes=list(outcomes.values()),
             missing_profile=packet_profile_fields.missing_profile(
-                # Withheld for another country's posting, not blank in the profile.
-                [
-                    item for item in self.blank_facts
-                    if not (self.mismatch and item.get("key") == "authorized_to_work")
-                ],
+                self.blank_facts,
                 {
                     str(item.get("label") or "") for item in merged.get("filled") or []
                     if isinstance(item, dict)

@@ -231,6 +231,9 @@ class ApplySettings(BaseModel):
     model_provider: ModelProvider = "ollama"
     model_name: str = "nemotron-3-super:cloud"
     model_selection: ModelSelection | None = None
+    #: The Light task model, mirrored like Heavy: Fill answers with it once Heavy is at
+    #: its limit (`apply.answers.model_fallback`). None = no fallback.
+    fallback_selection: ModelSelection | None = None
     #: Browser the app starts for Fill and JD fetch (`apply.driver.browser_launch`);
     #: ``None`` picks the first installed one, Edge first.
     browser: Literal["edge", "chrome", "comet"] | None = None
@@ -247,6 +250,16 @@ class ApplySettings(BaseModel):
         if self.model_provider == "ollama-cloud":
             return f"ollama:{self.model_name}@{config.OLLAMA_CLOUD_BASE_URL}"
         return f"{self.model_provider}:{self.model_name}"
+
+    @property
+    def fallback_model_spec(self) -> config.ModelSpec | None:
+        """Light's spec for Fill's fallback; None without one or when it cannot run."""
+        if self.fallback_selection is None:
+            return None
+        try:
+            return self.fallback_selection.spec("light")
+        except ValueError:
+            return None
 
     @property
     def answer_effort(self) -> str | None:
@@ -401,6 +414,7 @@ class JobSettings(BaseModel):
     def _shared_heavy_model(self) -> JobSettings:
         if self.ai_models is not None:
             self.apply.model_selection = self.ai_models.heavy.model_copy(deep=True)
+            self.apply.fallback_selection = self.ai_models.light.model_copy(deep=True)
             self.apply.model_provider = self.ai_models.heavy.provider
             self.apply.model_name = self.ai_models.heavy.model_name
         self.apply._answer_effort = config._stage_effort(self.effort, "answer")  # noqa: SLF001

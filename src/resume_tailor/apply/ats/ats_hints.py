@@ -121,6 +121,24 @@ SYNONYMS: list[tuple[str, str]] = [
     # Whole words: "opt" inside "optionID" / "optional" is not OPT.
     (r"\bf-?1\b|\bopt\b|\bcpt\b", "f1_opt_eligible"),
     (r"current(?:ly)?\s*(?:or|and|/)\s*future.*sponsor|now,?\s*or\s*(?:will\s*you\s*)?in\s*the\s*future.*sponsor", "requires_sponsorship_any"),
+    # Export control: "a citizen, national or resident of Iran, Cuba, North Korea...?"
+    (
+        r"(?:citizen|national|resident).{0,120}\b(?:iran|cuba|north\s*korea|syria|crimea)\b"
+        r"|export\s*control.{0,200}\b(?:citizen|national|resident)",
+        "export_control_country",
+    ),
+    # "Are you a US Citizen, Lawful Permanent Resident, Asylee, or Refugee?" (a U.S. person)
+    (
+        r"citizen.{0,80}(?:permanent\s*resident|green\s*card).{0,120}(?:asylee|refugee)"
+        r"|\bu\.?\s?s\.?\s*person\b|protected\s*individual",
+        "us_person_status",
+    ),
+    # "Are you a U.S. citizen?"; never "Country of citizenship" (a country, not Yes/No).
+    (
+        r"^(?![\s\S]*(?:countr(?:y|ies)\s*of\s*citizenship|which\s*countr|dual))"
+        r"[\s\S]*\b(?:u\.?\s?s\.?|united\s*states)\s*citizen",
+        "us_citizen",
+    ),
     # A free-text "What languages do you speak?"; not Workday's per-row "Language"
     # dropdown (`workday_repeaters`) and never programming languages.
     (r"^(?!.*programming).*(?:languages?\b.{0,30}\b(?:speak|spoken|fluent)|\bspoken languages?\b|\bspeak\b.{0,30}\blanguages\b)", "languages"),
@@ -153,8 +171,31 @@ SYNONYMS: list[tuple[str, str]] = [
     (r"hispanic|latino", "hispanic_latino"),
     (r"race|ethnicity", "race"),
     (r"veteran", "veteran_status"),
+    # "Are you a current or former US government employee OR have you served in the US
+    # Military?" — not "related to ... a government official" (a conflict of interest).
+    (
+        r"\b(?:current|former)\s*(?:or\s*(?:current|former)\s*)?(?:u\.?\s?s\.?\s*|federal\s*)?"
+        r"government\s*employee|employee\s*of\s*(?:the\s*)?(?:u\.?\s?s\.?\s*|united\s*states\s*"
+        r"|federal\s*)?government|served\s*in\s*the\s*(?:u\.?\s?s\.?\s*)?(?:military|armed\s*forces)"
+        r"|(?:employed|worked)\s*(?:by|for|at)\s*(?:an?\s*|the\s*)?(?:u\.?\s?s\.?\s*|federal\s*"
+        r"|state\s*|local\s*)?government",
+        "government_employee",
+    ),
     (r"disability", "disability_status"),
-    (r"salary|compensation|pay expectation|desired pay|pay rate|\bwage", "salary_expectation"),
+    # Outside work, ties to a customer/supplier/competitor or an official: not a salary
+    # question although it says "receiving compensation" (Itron, 2026-10-12).
+    (
+        r"conflict\s*of\s*interest|related\s*to\s*(?:an?\s*)?(?:employee|official)"
+        r".{0,60}(?:customer|supplier|vendor|competitor|government)",
+        "conflict_of_interest",
+    ),
+    (
+        r"salary|pay expectation|desired pay|pay rate|\bwage"
+        r"|compensation.{0,40}(?:expect|desire|requir|range|target)"
+        r"|(?:expect|desire|requir|target)\w*.{0,40}compensation"
+        r"|^\W*(?:desired\s*|expected\s*)?compensation\W*$",
+        "salary_expectation",
+    ),
     (r"relocat", "willing_to_relocate"),
     (r"current company|employer", "current_company"),
     (r"current title|job title", "current_title"),
@@ -176,6 +217,7 @@ SYNONYMS: list[tuple[str, str]] = [
     (r"\bcity\b", "city"),
     (r"\bstate\b|province", "state"),
     (r"zip|postal", "postal_code"),
+    (r"countr(?:y|ies)\s*of\s*citizenship|^\W*citizenship\W*$|nationality", "citizenship"),
     (r"country", "country"),
     (r"website|url", "website"),
     (education.DETAIL_PATTERN, education.DETAIL_KEY),

@@ -117,12 +117,23 @@ CONSENT_JS = r"""() => [...document.querySelectorAll('input[type="checkbox"]')].
 })"""
 
 _CONSENT = re.compile(r"consent|privacy|personal data|data processing|terms|agree|accurate|certif|attest", re.I)
-_EXCLUDE = re.compile(r"marketing|job alert|talent community|newsletter|background check|arbitration|signature", re.I)
+#: Opt-ins the applicant declines: never ticked, even when a form marks them required.
+_EXCLUDE = re.compile(
+    r"marketing|job alert|talent community|newsletter|text messages?|\bsms\b", re.I
+)
+_NOTICE_WORDS = re.compile(r"acknowledge|confirm|read|understand|authori[sz]e|declar", re.I)
 
 
 def consent_candidates(
     rows: list[dict[str, Any]], *, allow_routine: bool = False,
 ) -> tuple[list[dict[str, Any]], list[str]]:
+    """Required consent boxes to tick, and the labels left for the applicant.
+
+    Every required notice is agreed to when ``allow_routine`` (the applicant's "Agree to
+    required notices and consents"): privacy, background checks, screening, accuracy,
+    terms, arbitration, signatures. A box that states a fact about the applicant ("I
+    confirm I am authorized to work...") is left for them (2026-10-12).
+    """
     accepted = []
     unresolved = []
     for row in rows:
@@ -132,13 +143,11 @@ def consent_candidates(
         if not label:
             unresolved.append(row)
             continue
-        if _CONSENT.search(label) or re.search(r"acknowledge|confirm|read", label, re.I):
-            routine = form_facts.acknowledgement(str(row.get("context") or label)) == "routine"
-            target = accepted if allow_routine and routine and row.get("enabled") \
+        if _CONSENT.search(label) or _NOTICE_WORDS.search(label):
+            fact = form_facts.acknowledgement(str(row.get("context") or label)) == "fact"
+            target = accepted if allow_routine and not fact and row.get("enabled") \
                 and row.get("visible") else unresolved
             target.append(row)
-        elif re.search(r"acknowledge|understand|authorize|declaration", label, re.I):
-            unresolved.append(row)
     return accepted, [str(row.get("label") or "Consent") for row in unresolved]
 
 
@@ -205,6 +214,7 @@ def is_required_consent(leftover: dict[str, Any]) -> bool:
         and leftover.get("selector")
         and _CONSENT.search(label)
         and not _EXCLUDE.search(label)
+        and form_facts.acknowledgement(label) != "fact"
     )
 
 

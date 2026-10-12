@@ -183,18 +183,41 @@ _ANY_OPTION_KEYS = frozenset({"how_heard"})
 
 _OTHER_OPTION = re.compile(r"^other\b", re.I)
 
+#: Source options that say nothing checkable about the applicant, safest first.
+_GENERIC_SOURCES = (
+    re.compile(r"\blinked\s*in\b|job\s*boards?|online|internet|web\s*site|website"
+               r"|careers?\s*(?:site|page|website)|company\s*site|social\s*media|indeed"
+               r"|glassdoor|handshake|search\s*engine|google", re.I),
+    _OTHER_OPTION,
+    re.compile(r"career\s*fairs?|job\s*fairs?|university|college|campus|school|event", re.I),
+)
+#: A person vouching for the applicant: a claim they cannot back, often with a required
+#: "referrer name" follow-up.
+_PERSON_SOURCE = re.compile(
+    r"referr|recruit|employee|faculty|professor|friend|family|colleague|word\s*of\s*mouth"
+    r"|agency|contacted|headhunt",
+    re.I,
+)
+
+
 def any_option(options: list[str], value: str) -> str | None:
-    """The option naming ``value`` ("LinkedIn" in "Social Media - LinkedIn"), else the
-    first starting with "Other", else the first option."""
+    """A source answer that is always safe (2026-10-12): the option naming ``value``
+    ("LinkedIn" in "Social Media - LinkedIn"), else a generic online source, else
+    "Other", else a career fair or campus event, else any option that does not claim a
+    person referred the applicant. Never a referral or a recruiter."""
     wanted = field_matcher.normalize(value)
     usable = [
         text for text in dict.fromkeys(options) if text and not workday_skills._NO_ITEMS.match(text)
     ]
-    return (
-        next((t for t in usable if wanted and wanted in field_matcher.normalize(t)), None)
-        or next((t for t in usable if _OTHER_OPTION.match(t)), None)
-        or (usable[0] if usable else None)
-    )
+    named = next((t for t in usable if wanted and wanted in field_matcher.normalize(t)), None)
+    if named:
+        return named
+    impersonal = [t for t in usable if not _PERSON_SOURCE.search(t)]
+    for tier in _GENERIC_SOURCES:
+        hit = next((t for t in impersonal if tier.search(t)), None)
+        if hit:
+            return hit
+    return impersonal[0] if impersonal else None
 
 def salary_range_spec(label: str, fields: dict[str, str]) -> str | None:
     """The applicant's range for a salary question, in the unit it asks for (else the
@@ -282,7 +305,8 @@ def fill_dropdowns(
             if not is_blank and not (key == "country" and not _same_option(current, value, key)):
                 continue
             tried.add(selector)
-            for candidate in answers:
+            # A source list is read once: `any_option` ranks its fallbacks in one look.
+            for candidate in answers[:1] if key in _ANY_OPTION_KEYS else answers:
                 if select(page, selector, candidate, key=key):
                     progress(f"Workday: selected {item['label']} = {candidate}")
                     committed.append(

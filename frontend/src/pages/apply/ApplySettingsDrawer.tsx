@@ -170,6 +170,30 @@ export function ApplySettingsDrawer({
           />
         </Section>
 
+        <Section title="Filling">
+          <div className="flex flex-wrap items-center gap-3">
+            <label className="block">
+              Parallel fills{" "}
+              <input
+                className="field mx-1 inline-block w-16"
+                type="number"
+                min={1}
+                max={4}
+                aria-label="Parallel fills"
+                value={apply.max_parallel_fills}
+                onChange={(e) =>
+                  patch({
+                    max_parallel_fills: Math.min(4, Math.max(1, Number(e.target.value) || 1)),
+                  })
+                }
+              />
+            </label>
+            <p className="text-xs text-ink-muted">
+              Tabs filled at once. More tabs raise the chance of bot checks.
+            </p>
+          </div>
+        </Section>
+
         <Section title="Auto-submit">
           <label className="flex items-center gap-2.5 font-medium">
             <Switch
@@ -211,25 +235,6 @@ export function ApplySettingsDrawer({
             disabled={!apply.auto_submit_enabled}
           >
             <legend className="text-xs font-medium">Limits on automatic submits</legend>
-            <label className="block">
-              Parallel fills{" "}
-              <input
-                className="field mx-1 inline-block w-16"
-                type="number"
-                min={1}
-                max={4}
-                aria-label="Parallel fills"
-                value={apply.max_parallel_fills}
-                onChange={(e) =>
-                  patch({
-                    max_parallel_fills: Math.min(4, Math.max(1, Number(e.target.value) || 1)),
-                  })
-                }
-              />
-            </label>
-            <p className="self-center text-xs text-ink-muted">
-              More tabs raise the chance of bot checks.
-            </p>
             <label className="block">
               <span className="mb-1 block">Each Fill: at most</span>
               <input

@@ -28,10 +28,10 @@ def classify(field: FieldObservation) -> tuple[Classification, str]:
         return "manual_review", "not_an_education_question"
     semantic = form_facts.semantic_key(field.label, field.help_text)
     if semantic:
-        if (semantic == form_facts.ACKNOWLEDGEMENT
-                and form_facts.acknowledgement(f"{field.label} {field.help_text}") != "routine"):
-            return "manual_review", "agreement_or_signature"
-        return "known", semantic
+        kind = (form_facts.acknowledgement(f"{field.label} {field.help_text}")
+                if semantic == form_facts.ACKNOWLEDGEMENT else "")
+        if kind != "fact":
+            return "known", semantic
     # Self-identification before salary: VEVRAA's veteran question quotes "entitled to
     # compensation" (CACI, 2026-09).
     if "veteran" in label:
@@ -40,7 +40,10 @@ def classify(field: FieldObservation) -> tuple[Classification, str]:
         return "known", "disability_status"
     if re.search(r"\bgender\b|\bsex\b", label):
         return "known", "gender"
-    if re.search(r"\b(salary|compensation|pay expectation|desired pay|pay rate|wages?)\b", label):
+    if re.search(r"\b(salary|pay expectation|desired pay|pay rate|wages?)\b", label) or (
+        re.search(r"\bcompensation\b", label) and "conflict of interest" not in label
+        and re.search(r"expect|desire|requir|range|target|^\W*compensation\W*$", label)
+    ):
         # Deterministic per-posting answer (`apply/salary.py`), in the unit asked for.
         unit = "salary_hourly" if "hour" in label else "salary_yearly" if re.search(r"\b(year|annual)", label) else "salary_expectation"
         return "known", f"{unit}_number" if input_type == "number" else unit

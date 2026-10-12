@@ -3,6 +3,7 @@ job, the same rule for uploads and text boxes, and never failing the fill."""
 
 from __future__ import annotations
 
+import time
 from pathlib import Path
 from types import SimpleNamespace
 
@@ -87,6 +88,9 @@ def _fill(tmp_path: Path, *, mode: str) -> fill_answers._FillAnswers:
     run.needs_review = []
     run.long_text_answers = {}
     run.on_progress = None
+    run.on_deadline = None
+    run.started = time.monotonic()
+    run.deadline = run.started + 240
     run.applicant_name = "Ada Lovelace"
     run.app = SimpleNamespace(role="Analyst")
     run.out_dir = tmp_path

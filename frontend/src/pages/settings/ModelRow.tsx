@@ -1,9 +1,12 @@
 import { useId } from "react";
+import type { ModelQueueStatus } from "../../api";
 import { Button, StatusChip } from "../../components/ui";
 import { modelsFor, selectionDefault, type ModelProvider } from "../../lib/aiModels";
+import { limitLabel } from "../../lib/modelLimits";
 import { PROVIDERS, privacyFor, providerInfo } from "../../lib/providers";
 import { useRunState } from "../../state/runState";
 import { CheckResultLine } from "./CheckResultLine";
+import { CustomServerFields, PlanField } from "./ModelRowFields";
 import type { RoleModel } from "./useRoleModel";
 
 const ROLES = {
@@ -13,8 +16,15 @@ const ROLES = {
 
 const LOCAL_PRIVACY = providerInfo("ollama")?.privacy;
 
-/** One role's provider and model, with its automatic connection test. */
-export function ModelRow({ model }: { model: RoleModel }) {
+/** One role's provider, model and plan (plus a custom server's URL), with its automatic
+ * connection test and rate-limit state. */
+export function ModelRow({
+  model,
+  queue = null,
+}: {
+  model: RoleModel;
+  queue?: ModelQueueStatus | null;
+}) {
   const { settings, config } = useRunState();
   const { role, selection, connection, patch } = model;
   const id = useId();
@@ -33,7 +43,7 @@ export function ModelRow({ model }: { model: RoleModel }) {
           </h3>
           <p className="text-xs text-ink-muted">{ROLES[role].uses}</p>
         </div>
-        <RowStatus model={model} />
+        <RowStatus model={model} limit={limitLabel(queue, role)} />
       </div>
       <div className="mt-3 grid min-w-0 gap-3 sm:grid-cols-2">
         <label className="block min-w-0 text-sm font-medium">
@@ -47,6 +57,7 @@ export function ModelRow({ model }: { model: RoleModel }) {
                 model_name: "",
                 base_url: "",
                 api_format: "openai",
+                plan: null,
               })
             }
           >
@@ -74,6 +85,10 @@ export function ModelRow({ model }: { model: RoleModel }) {
             </datalist>
           )}
         </label>
+        {selection.provider === "custom" && (
+          <CustomServerFields selection={selection} patch={patch} />
+        )}
+        <PlanField selection={selection} patch={patch} />
       </div>
       <RowNotes model={model} />
       {privacy && privacy !== LOCAL_PRIVACY && (
@@ -88,11 +103,13 @@ export function ModelRow({ model }: { model: RoleModel }) {
   );
 }
 
-/** The test result as a chip, with Test again once the model can be tested. */
-function RowStatus({ model }: { model: RoleModel }) {
+/** The test result (or the provider's rate limit) as a chip, with Test again once the
+ * model can be tested. */
+function RowStatus({ model, limit }: { model: RoleModel; limit: string | null }) {
   const { check, ready, connection, retest } = model;
   let chip;
   if (connection.needsKey) chip = <StatusChip tone="attention">Needs a key</StatusChip>;
+  else if (limit) chip = <StatusChip tone="attention">{limit}</StatusChip>;
   else if (!ready) chip = <StatusChip tone="muted">Incomplete</StatusChip>;
   else if (check === "testing") chip = <StatusChip tone="live">Testing…</StatusChip>;
   else if (check?.ok) chip = <StatusChip tone="done">Working</StatusChip>;
@@ -125,9 +142,7 @@ function RowNotes({ model }: { model: RoleModel }) {
       </p>
     );
   if (selection.provider === "custom" && !selection.base_url.trim())
-    return (
-      <p className="mt-2 text-xs text-ink-muted">Enter the server URL under API keys below.</p>
-    );
+    return <p className="mt-2 text-xs text-ink-muted">Enter the server URL above.</p>;
   if (connection.local && !connection.local.reachable)
     return (
       <p className="mt-2 text-xs text-ink-muted">

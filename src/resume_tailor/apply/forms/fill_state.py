@@ -7,7 +7,7 @@ from collections.abc import Callable
 from typing import Any, Literal
 
 from resume_tailor import config
-from resume_tailor.apply.answers import answer, questions
+from resume_tailor.apply.answers import answer, model_fallback, questions
 from resume_tailor.apply.answers import profile as profile_mod
 from resume_tailor.apply.answers import salary as salary_mod
 from resume_tailor.apply.ats import ats_hints, workday_auth, workday_flow, workday_page
@@ -20,7 +20,7 @@ from resume_tailor.apply.funnel.store_models import FillResult
 from resume_tailor.content import data
 from resume_tailor.web.schemas import ApplySettings
 
-from . import fill_page, fill_widgets
+from . import fill_outcomes, fill_page, fill_widgets
 
 
 def _workday_handoff(
@@ -94,6 +94,7 @@ class _FillState:
         should_cancel: Callable[[], bool] | None,
         on_progress: Callable[[str], None] | None,
         applicant_profile: profile_mod.ApplicantProfile | None,
+        on_deadline: Callable[[float], None] | None = None,
     ) -> None:
         self.app = app
         self.source_job_id = source_job_id
@@ -102,6 +103,15 @@ class _FillState:
         self.fill_mode = fill_mode
         self.should_cancel = should_cancel
         self.on_progress = on_progress
+        #: Told the new deadline (epoch seconds) whenever progress extends it.
+        self.on_deadline = on_deadline
+        self.started = time.monotonic()
+        #: Heavy for Fill's model calls, Light once Heavy is at its limit.
+        self.model_route = model_fallback.Fallback(
+            heavy=settings.model_spec, light=settings.fallback_model_spec,
+            effort=settings.answer_effort, progress=self.progress,
+        )
+        self.deadline = self.started + fill_outcomes.BASE_BUDGET_S
 
         self.previous_fill = FillResult.model_validate(app.fill) if app.fill else FillResult()
         store.set_status(app, "filling", note="")
@@ -146,7 +156,6 @@ class _FillState:
         self.wizard = None if self.is_workday else wizards.for_ats(wizard_ats)
         self.ats_name = (app.ats or pkt.ats or "").lower()
         self.out_dir = config.APPLICATIONS_OUTPUT_DIR / source_job_id
-        self.deadline = time.monotonic() + 240
         self.page: Any = None
         self.context: Any = None
         self.target_id = self.previous_fill.browser_target_id
@@ -206,28 +215,53 @@ class _FillState:
             fields["posting_location"] = self.app.location
 
     def _check_work_authorization(self) -> None:
-        # "Authorized to work" answers for the profile's country; a posting clearly in
-        # another country leaves eligibility questions to the applicant, the model included.
-        self.authorization_note = ""
+        # "Authorized to work" answers for the profile's countries. A posting clearly in
+        # another country is answered as it is there (2026-10-12): not authorized, and in
+        # need of sponsorship now and later. The model is told the same facts.
         self.mismatch = packet_profile_fields.authorization_mismatch(
             self.profile, self.app.location or ""
         )
         if self.mismatch:
-            self.fields.pop("authorized_to_work", None)
-            self.pkt.fields.pop("authorized_to_work", None)
-            self.profile = self.profile.model_copy(update={"authorized_to_work": None})
-            self.authorization_note = (
+            abroad = {
+                "authorized_to_work": "No", "requires_sponsorship": "Yes",
+                "requires_sponsorship_future": "Yes", "requires_sponsorship_any": "Yes",
+            }
+            self.fields.update(abroad)
+            self.pkt.fields.update(abroad)
+            self.profile = self.profile.model_copy(update={
+                "authorized_to_work": False, "requires_sponsorship_now": True,
+                "requires_sponsorship_future": True,
+            })
+            self.progress(
                 f"Job is in {self.mismatch[0]}; your work authorization is for "
-                f"{self.mismatch[1]}. Answer eligibility questions yourself"
+                f"{self.mismatch[1]}, so eligibility is answered as not authorized there "
+                "and needing sponsorship"
             )
-            self.progress(self.authorization_note)
 
     # -- small helpers -----------------------------------------------------------------
 
     def progress(self, msg: str) -> None:
-        """Forward a progress line when a callback is set."""
+        """Forward a progress line when a callback is set; forward progress (a step, a
+        row, a skill, an upload) buys the fill more time, up to the hard cap."""
+        if fill_outcomes.is_forward_progress(msg):
+            self.extend_deadline()
         if self.on_progress:
             self.on_progress(msg)
+
+    def answer_pin(self) -> Any:
+        """Pin Fill's answer model: Heavy, or Light once Heavy is at its limit."""
+        return model_fallback.pin(self.model_route)
+
+    def hard_deadline(self) -> float:
+        return self.started + fill_outcomes.HARD_CAP_S
+
+    def extend_deadline(self) -> None:
+        now = time.monotonic()
+        later = fill_outcomes.extended_deadline(self.deadline, self.started, now)
+        if later > self.deadline + 1:
+            self.deadline = later
+            if self.on_deadline:
+                self.on_deadline(time.time() + later - now)
 
     def _cancelled(self) -> bool:
         return bool(self.should_cancel and self.should_cancel())
@@ -260,7 +294,7 @@ class _FillState:
         return recovered
 
     def classify_unkeyed(self, asked: list[questions.Question]) -> list[str | None]:
-        with config.pinned(self.settings.model_spec, effort=self.settings.answer_effort):
+        with self.answer_pin():
             return answer.classify_questions(asked)
 
     @property

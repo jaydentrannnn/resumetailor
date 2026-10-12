@@ -72,7 +72,7 @@ function rowMenu(row: ApplicationRow, archived: boolean, actions: TableActions):
     });
   const tabOpen = !!row.fill?.browser_target_id && !isTabClosed(row, openTabs);
   if (tabOpen) items.push({ label: "Open application tab", action: () => actions.focusTab(row) });
-  if (tabOpen && !["submitted", "filling", "submit_unconfirmed"].includes(row.status))
+  if (canContinueFill(row, openTabs))
     items.push({
       label: "Continue fill",
       disabled: busy || active || !canFillAfterReview(row),
@@ -80,7 +80,7 @@ function rowMenu(row: ApplicationRow, archived: boolean, actions: TableActions):
     });
   if (canReopenFill(row))
     items.push({
-      label: "Reopen and fill",
+      label: "Start over",
       disabled: busy || active,
       action: () => actions.reopen([row]),
     });
@@ -100,7 +100,7 @@ function rowMenu(row: ApplicationRow, archived: boolean, actions: TableActions):
 }
 
 /**
- * The row's next step as one button (Continue / Reopen / Fill / Retry / Review / View) plus
+ * The row's next step as one button (Continue / Start over / Fill / Retry / Review / View) plus
  * its menu. A ready row the server won't fill ("Check resume") gets Review, not View.
  */
 function RowAction({
@@ -142,12 +142,12 @@ function RowAction({
               ? "retry"
               : "view";
   // The primary action is left out of the menu; Review stays one menu item away
-  // when Continue or Reopen takes its place.
+  // when Continue or Start over takes its place.
   const primaryLabel =
     kind === "continue"
       ? "Continue fill"
       : kind === "reopen"
-        ? "Reopen and fill"
+        ? "Start over"
         : kind === "fill"
           ? "Fill"
           : null;
@@ -164,7 +164,11 @@ function RowAction({
       <button
         type="button"
         className={action("attention")}
-        title={browserUsable ? "Continue the fill in its open tab" : needsBrowser}
+        title={
+          browserUsable
+            ? "Continue the fill (a closed tab is reopened with the saved draft)"
+            : needsBrowser
+        }
         disabled={busy || active || !browserUsable}
         onClick={() => actions.start("fill", [row.source_job_id], "continue")}
       >
@@ -176,11 +180,11 @@ function RowAction({
       <button
         type="button"
         className={action("attention")}
-        title="The tab was closed: open the posting again and fill it from the start"
+        title="Open the posting again and fill it from the start"
         disabled={busy || active || !browserUsable}
         onClick={() => actions.reopen([row])}
       >
-        Reopen
+        Start over
       </button>
     );
   else if (kind === "fill")

@@ -87,3 +87,66 @@ export function LocationField(props: {
     </FieldFrame>
   );
 }
+
+/**
+ * Countries the applicant may work in without sponsorship, as removable chips plus an
+ * "Add country" picker. Saves `authorization_countries`; the older single
+ * `authorization_country` mirrors the first entry.
+ */
+export function AuthorizationCountriesField(props: {
+  name: keyof ApplicantProfile;
+  ctx: FieldContext;
+  label?: string;
+  hint?: ReactNode;
+  auto?: boolean;
+}) {
+  const { ctx } = props;
+  const options = useProfileOptions();
+  const id = `pf-${props.name}`;
+  const saved = ctx.draft.authorization_countries ?? [];
+  const chosen = saved.length
+    ? saved
+    : ctx.draft.authorization_country
+      ? [ctx.draft.authorization_country]
+      : [];
+  const save = (next: string[]) =>
+    ctx.setMany({ authorization_countries: next, authorization_country: next[0] ?? "" });
+  const remaining = (options?.countries ?? []).filter((country) => !chosen.includes(country.name));
+  return (
+    <FieldFrame {...props} blank={chosen.length === 0}>
+      {chosen.length > 0 && (
+        <ul className="mt-1 flex flex-wrap gap-1" aria-label="Authorized countries">
+          {chosen.map((country) => (
+            <li
+              key={country}
+              className="flex items-center gap-1 rounded border border-line px-2 py-0.5 text-xs"
+            >
+              {country}
+              <button
+                type="button"
+                className="text-ink-muted hover:text-ink"
+                aria-label={`Remove ${country}`}
+                onClick={() => save(chosen.filter((c) => c !== country))}
+              >
+                ×
+              </button>
+            </li>
+          ))}
+        </ul>
+      )}
+      <select
+        id={id}
+        className="field mt-1"
+        value=""
+        onChange={(e) => e.target.value && save([...chosen, e.target.value])}
+      >
+        <option value="">{chosen.length ? "Add another country" : "Add a country"}</option>
+        {remaining.map((country) => (
+          <option key={country.code} value={country.name}>
+            {country.name}
+          </option>
+        ))}
+      </select>
+    </FieldFrame>
+  );
+}

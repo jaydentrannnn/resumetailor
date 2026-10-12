@@ -12,7 +12,7 @@ import {
 import type { FieldContext } from "./fieldContext";
 import { FieldFrame } from "./FieldFrame";
 import { EducationField } from "./EducationField";
-import { LocationField } from "./LocationFields";
+import { AuthorizationCountriesField, LocationField } from "./LocationFields";
 import { NoticePeriodField } from "./NoticePeriodField";
 import { PhoneCountryField } from "./PhoneCountryField";
 import { PronounsField } from "./PronounsField";
@@ -75,7 +75,8 @@ export function ProfileField({
   if (name === "phone_country_code") return <PhoneCountryField {...frame} />;
   if (name === "pronouns") return <PronounsField {...frame} />;
   if (name === "highest_education_obtained") return <EducationField ctx={ctx} />;
-  if (name === "country" || name === "state" || name === "authorization_country")
+  if (name === "authorization_country") return <AuthorizationCountriesField {...frame} />;
+  if (name === "country" || name === "state" || name === "citizenship")
     return <LocationField {...frame} />;
   const precision = DATE_FIELDS[name];
   if (precision) {

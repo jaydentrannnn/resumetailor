@@ -1,12 +1,11 @@
 import { useRunState } from "../../state/runState";
-import { AiAdvancedCard } from "./AiAdvancedCard";
 import { ModelKeysCard } from "./ModelKeysCard";
 import { ModelsCard } from "./ModelsCard";
 import { UsageCard } from "./UsageCard";
 import { useRoleModel } from "./useRoleModel";
 import { useSecrets } from "./useSecrets";
 
-/** Settings → AI: one tile for both models, every API key in one list, advanced, usage. */
+/** Settings → AI: one tile for both models (Advanced inside it), every API key, usage. */
 export function AiSection() {
   const { settingsLoaded } = useRunState();
   const { secrets, storeBackend, reload } = useSecrets();
@@ -14,7 +13,7 @@ export function AiSection() {
   const heavy = useRoleModel("heavy", secrets);
   return (
     <div className="space-y-4">
-      <ModelsCard light={light} heavy={heavy} />
+      <ModelsCard light={light} heavy={heavy} advanced />
       {settingsLoaded && (
         <ModelKeysCard
           models={[light, heavy]}
@@ -23,7 +22,6 @@ export function AiSection() {
           reload={reload}
         />
       )}
-      <AiAdvancedCard />
       <UsageCard />
     </div>
   );

@@ -6,7 +6,6 @@ import contextlib
 import time
 from typing import Any
 
-from resume_tailor import config
 from resume_tailor.apply.answers import hybrid_resolver, questions, resolver_types
 from resume_tailor.apply.ats import (
     smartrecruiters_page,
@@ -32,9 +31,9 @@ class _FillWizard(fill_answers._FillAnswers, fill_ats_steps._FillAtsSteps):
                 self.needs_review.append("Fill cancelled")
                 break
             if time.monotonic() >= self.deadline:
-                self.needs_review.append("Application fill reached its four-minute limit")
+                self.needs_review.append("Application fill reached its time limit")
                 self.progress(
-                    f"Fill reached its four-minute limit before step {step + 1}; "
+                    f"Fill reached its time limit before step {step + 1}; "
                     "Continue fill picks up from here"
                 )
                 break
@@ -230,7 +229,7 @@ class _FillWizard(fill_answers._FillAnswers, fill_ats_steps._FillAtsSteps):
         last_step = step >= fill_outcomes._MAX_WIZARD_STEPS - 1
         advance_btn = self._advance_button()
         if (not advance_btn or self.merged.get("required_empty")) and not last_step:
-            with config.pinned(self.settings.model_spec, effort=self.settings.answer_effort):
+            with self.answer_pin():
                 for frame_index, frame in enumerate(self.frames):
                     hybrid_resolver.resolve_step_blockers(
                         frame, self.pkt, self.profile, on_progress=self.progress,
@@ -285,7 +284,7 @@ class _FillWizard(fill_answers._FillAnswers, fill_ats_steps._FillAtsSteps):
         return before_step is not None and fill_page._form_step_signature(self.page) == before_step
 
     def _resolve_invalid_blockers(self) -> None:
-        with config.pinned(self.settings.model_spec, effort=self.settings.answer_effort):
+        with self.answer_pin():
             hybrid_resolver.resolve_step_blockers(
                 self.page, self.pkt, self.profile, max_retries=1, on_progress=self.progress,
                 deadline=self.deadline,

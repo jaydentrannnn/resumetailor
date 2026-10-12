@@ -285,6 +285,42 @@ def _recover_row(
     found = blank_rows()
     return found[0] if found else None
 
+#: Marks the Delete button of the row whose controls start with ``prefix``: the nearest
+#: ancestor holding one Delete and no other row's controls (each added row is a
+#: ``div[role=group][aria-labelledby=Languages-2-panel]`` with its own Delete, 2026-10).
+_DELETE_BUTTON_JS = r"""(prefix) => {
+  document.querySelectorAll('[data-rt-delete]').forEach(e => e.removeAttribute('data-rt-delete'));
+  const ctl = document.querySelector(`[id^="${CSS.escape(prefix)}"]`);
+  if (!ctl) return false;
+  const rowOf = el => (el.id.match(/^(.+?--)/) || [])[1];
+  for (let node = ctl.parentElement; node && node !== document.body; node = node.parentElement) {
+    const rows = new Set([...node.querySelectorAll('[id*="--"]')].map(rowOf).filter(Boolean));
+    if (rows.size > 1) return false;
+    const deletes = [...node.querySelectorAll('button')].filter(b =>
+      /^delete$/i.test((b.innerText || '').trim())
+      || /^delete\b/i.test(b.getAttribute('aria-label') || ''));
+    if (deletes.length === 1) { deletes[0].setAttribute('data-rt-delete', '1'); return true; }
+    if (deletes.length > 1) return false;
+  }
+  return false;
+}"""
+
+
+def _delete_row(page: Any, prefix: str) -> bool:
+    """Delete the row whose controls start with ``prefix``; True once its controls are gone."""
+    try:
+        if not page.evaluate(_DELETE_BUTTON_JS, prefix):
+            return False
+        clicks.safe_click(page.locator("[data-rt-delete]").first, purpose="select", timeout=3000)
+        for _ in range(12):
+            if page.locator(f"[id^='{prefix}']").count() == 0:
+                return True
+            page.wait_for_timeout(250)
+    except Exception:  # noqa: BLE001 - a row that stays is reported by the caller
+        return False
+    return False
+
+
 def _attempt(action: Callable[[], bool]) -> bool:
     """One row field: an exception is that field's failure, not the whole row's."""
     try:

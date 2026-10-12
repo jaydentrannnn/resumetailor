@@ -14,6 +14,12 @@ from resume_tailor.apply.funnel.store_models import FillResult
 from . import fill_buttons, fill_page, fill_state, fill_widgets
 
 
+#: Progress line when Continue finds the review tab gone and opens the posting again.
+CLOSED_TAB_REOPENED = (
+    "Review tab was closed; reopening the posting (Workday restores the saved draft)"
+)
+
+
 class _FillEntry(fill_state._FillState):
     """`_FillRun` steps that get from the posting to the first form step."""
 
@@ -22,10 +28,11 @@ class _FillEntry(fill_state._FillState):
         if self.fill_mode == "continue":
             self.page = browser.find_target(context, self.target_id)
             if self.page is None:
-                raise RuntimeError(
-                    "Review tab was closed. Use Reopen and fill to start a new tab; "
-                    "unsaved answers may be lost."
-                )
+                # A closed tab is reopened rather than failing: Workday restores the
+                # saved draft once the applicant is signed in again.
+                self.progress(CLOSED_TAB_REOPENED)
+                self.fill_mode = "reopen"
+        if self.fill_mode == "continue":
             self.progress("continuing the existing application tab")
             if self.is_workday:
                 # A popup left open by the last fill or by the applicant blocks this one.
@@ -147,9 +154,7 @@ class _FillEntry(fill_state._FillState):
         self.completed_step_outcomes: dict[tuple[int, str], dict[str, Any]] = {}
         self.uploaded_controls: set[tuple[str, str]] = set()
         self.long_text_answers: dict[str, str] = {}
-        self.needs_review: list[str] = (
-            [self.authorization_note] if self.authorization_note else []
-        )
+        self.needs_review: list[str] = []
         # Questions recognised as a profile fact the profile leaves blank (every step).
         self.blank_facts: list[dict[str, Any]] = []
         self.facts = questions.facts_from_packet(self.pkt, fields=self.fields)

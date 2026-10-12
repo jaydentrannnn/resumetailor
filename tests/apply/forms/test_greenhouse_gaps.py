@@ -68,18 +68,19 @@ def test_transcript_uses_question_not_attach_caption(page):
     assert fill_widgets._attachment_purpose(item["label"], item["selector"], {}) == "transcript"
 
 
-def test_routine_notices_require_preference_and_full_context(page):
+def test_required_notices_are_answered_from_the_default_setting(page):
     args = {"fields": {}, "hints": {}, "synonyms": ats_hints.SYNONYMS}
     scan = page.evaluate(FILLER, {**args, "scan": True})
     plan = questions.plan_for(scan["questions"], questions.Facts({}))
     page.evaluate(FILLER, {**args, "plan": plan})
+    # No saved preference: the plan has no setting to act on, so nothing is ticked.
     assert not page.locator("#privacy").is_checked()
-    assert page.locator("#read-notice").input_value() == ""
     assert (
         form_facts.acknowledgement("I certify this application is accurate. Privacy policy")
-        == "manual"
+        == "routine"
     )
-    assert form_facts.acknowledgement("Acknowledge/Confirm") == "manual"
+    assert form_facts.acknowledgement("I confirm I am legally authorized to work") == "fact"
+    assert form_facts.acknowledgement("I agree to receive marketing emails") == "optional"
 
 
 def test_readiness_accepts_chips_and_ignores_internal_required_input(page):
@@ -116,11 +117,11 @@ def test_high_school_unmatched_boundary_stays_unanswered():
     assert form_facts.year_option(['2021 or before', '2022'], '2021') == '2021 or before'
 
 
-def test_privacy_notice_with_certification_option_is_manual():
+def test_privacy_notice_with_certification_option_is_agreed():
     question = questions.Question('I agree to the privacy notice', kind='choice',
         options=('Yes, I certify this application is accurate', 'No'))
     assert questions.answers(questions.classify(question), question,
-        questions.Facts({'auto_accept_routine_acknowledgements': 'Yes'})) == []
+        questions.Facts({'auto_accept_routine_acknowledgements': 'Yes'})) == ['Yes']
 
 
 def test_high_school_default_uses_earliest_undergraduate_start_and_override():

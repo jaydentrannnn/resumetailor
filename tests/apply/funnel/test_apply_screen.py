@@ -117,3 +117,19 @@ def test_screen_coverage_counts_against_the_passed_skill_list():
 def test_check_blocks_tolerates_odd_whitespace():
     reasons, _evidence = check_blocks("Must hold an active security\nclearance. US citizen only.")
     assert reasons == ["citizenship_required", "clearance_required"]
+
+
+def test_a_posting_for_another_schools_students_is_screened_out():
+    from types import SimpleNamespace
+
+    resume = SimpleNamespace(education=[SimpleNamespace(school="University of California, Irvine")])
+    assert (
+        screen_mod.other_school_only("Software Intern (Queens University Only)", resume)
+        == "Queens University"
+    )
+    assert screen_mod.other_school_only(
+        "Open only to students of Ohio State University.", resume
+    ).startswith("Ohio State University")
+    assert screen_mod.other_school_only("Research Intern (UC Irvine Students Only)", resume) == ""
+    assert screen_mod.other_school_only("Software Engineering Intern", resume) == ""
+    assert screen_label(["school_only:Queens University"]) == "Other school only"

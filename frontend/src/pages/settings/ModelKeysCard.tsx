@@ -62,42 +62,18 @@ export function ModelKeysCard({
   );
 }
 
-/** A custom server's API format, URL and optional key — the key is bound to all three. */
+/** A custom server's optional key, bound to its API format and URL (set in the model tile). */
 function CustomServerBlock({ model, reload }: { model: RoleModel; reload: () => void }) {
   const { settingsLoaded } = useRunState();
-  const { role, selection, connection, check, patch } = model;
+  const { role, selection, connection, check } = model;
   const name = `Custom server (${role === "light" ? "Light" : "Heavy"})`;
   return (
     <li className="min-w-0 py-4 first:pt-0 last:pb-0">
       <fieldset disabled={!settingsLoaded} className="min-w-0 space-y-3">
         <legend className="text-sm font-medium text-accent">{name}</legend>
-        <div className="grid min-w-0 gap-3 sm:grid-cols-[minmax(0,13rem)_minmax(0,1fr)]">
-          <label className="block min-w-0 text-sm font-medium">
-            API format
-            <select
-              className="field mt-1"
-              value={selection.api_format}
-              onChange={(e) => patch({ api_format: e.target.value as typeof selection.api_format })}
-            >
-              <option value="openai">OpenAI-compatible</option>
-              <option value="anthropic">Anthropic-compatible</option>
-            </select>
-          </label>
-          <label className="block min-w-0 text-sm font-medium">
-            Server URL
-            <input
-              className="field mt-1 font-mono"
-              type="url"
-              value={selection.base_url}
-              placeholder={
-                selection.api_format === "openai"
-                  ? "https://server.example/v1"
-                  : "https://server.example"
-              }
-              onChange={(e) => patch({ base_url: e.target.value })}
-            />
-          </label>
-        </div>
+        {selection.base_url && (
+          <p className="truncate font-mono text-xs text-ink-muted">{selection.base_url}</p>
+        )}
         {connection.keys.length ? (
           <ul>
             {connection.keys.map((key) => (
@@ -112,7 +88,9 @@ function CustomServerBlock({ model, reload }: { model: RoleModel; reload: () => 
             ))}
           </ul>
         ) : (
-          <p className="text-xs text-ink-muted">Enter a server URL to add its API key.</p>
+          <p className="text-xs text-ink-muted">
+            Enter the server URL in AI models to add its API key.
+          </p>
         )}
       </fieldset>
     </li>

@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 from typing import Any
 
 from . import fill_buttons
@@ -19,6 +20,28 @@ SESSION_EXPIRED_MSG = (
     "Workday signed you out partway through (the session timed out). Sign in again in "
     "this tab, then Continue fill; the steps you already saved are kept."
 )
+
+#: A fill's time budget: four minutes to start, pushed out by `PROGRESS_GRACE_S` whenever it
+#: makes forward progress (a step, a row, a skill, an upload), never past `HARD_CAP_S`.
+BASE_BUDGET_S = 240
+PROGRESS_GRACE_S = 75
+HARD_CAP_S = 600
+
+#: Progress lines that mean the fill moved forward (not "needs review", not scanning).
+_FORWARD = re.compile(
+    r"^(?:Workday: (?:filled|added skill)|scanning form step|uploading )"
+    r"|language list; removed",
+)
+
+
+def is_forward_progress(message: str) -> bool:
+    return bool(_FORWARD.search(message))
+
+
+def extended_deadline(deadline: float, started: float, now: float) -> float:
+    """``deadline`` pushed to at least ``now + PROGRESS_GRACE_S``, capped at the hard cap."""
+    return min(started + HARD_CAP_S, max(deadline, now + PROGRESS_GRACE_S))
+
 
 #: One pass more than the steps a fill may advance: a blank Workday step is rescanned once.
 _MAX_WIZARD_STEPS = 9

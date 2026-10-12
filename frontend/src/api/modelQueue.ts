@@ -7,13 +7,21 @@ export interface ModelQueueSettings {
 }
 export interface ModelQueueStatus {
   settings: ModelQueueSettings;
+  /** The server each saved task model sends its requests to. */
+  roles?: Partial<Record<"light" | "heavy", string>>;
   endpoints: {
     endpoint: string;
     local: boolean;
     limit: number;
+    /** Lower than `limit` for a while after the provider said "too many requests". */
+    limit_effective?: number;
     active: number;
     waiting: number;
     cooldown_seconds: number;
+    /** Seconds until a used-up quota should work again; 0 when it does. */
+    exhausted_seconds?: number;
+    rate_limited_today?: number;
+    quota?: string;
   }[];
 }
 export const fetchModelQueue = () => request<ModelQueueStatus>("/api/model-queue");

@@ -134,11 +134,11 @@ export function useApplyRowActions({
     }
     const many = ids.length > 1;
     void confirm({
-      title: many ? `Reopen ${ids.length} application tabs?` : "Reopen application tab?",
+      title: many ? `Start ${ids.length} applications over?` : "Start this application over?",
       message: many
         ? "Unsaved answers in tabs that are still open may be lost."
         : "Unsaved answers in the old browser tab may be lost.",
-      confirmLabel: "Reopen and fill",
+      confirmLabel: "Start over",
     }).then((ok) => {
       if (ok) void start("fill", ids, "reopen");
     });

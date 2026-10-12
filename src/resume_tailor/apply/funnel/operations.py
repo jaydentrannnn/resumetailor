@@ -52,17 +52,30 @@ def _now() -> str:
     return datetime.now(UTC).replace(microsecond=0).isoformat()
 
 
-#: Per-application budget, matching `fill.fill_application`'s own 240s deadline.
+#: Per-application starting budget, matching `fill.fill_application`'s own deadline;
+#: the fill pushes it out on progress (`_on_deadline`).
 _APPLICATION_BUDGET_SEC = 240
 
 
-def _deadline_iso() -> str:
+def _deadline_iso(at: float | None = None) -> str:
     """When the current application's fill budget runs out, for the UI's countdown."""
     return (
-        datetime.fromtimestamp(time.time() + _APPLICATION_BUDGET_SEC, UTC)
+        datetime.fromtimestamp(at or time.time() + _APPLICATION_BUDGET_SEC, UTC)
         .replace(microsecond=0)
         .isoformat()
     )
+
+
+def _on_deadline(operation: ApplyOperation, item: InFlightItem) -> Any:
+    """A fill's `on_deadline`: move this item's countdown to the extended deadline."""
+
+    def moved(at: float) -> None:
+        with _LOCK:
+            item.deadline_at = _deadline_iso(at)
+            if operation.current_application_id == item.application_id:
+                operation.application_deadline_at = item.deadline_at
+
+    return moved
 
 
 class InFlightItem(BaseModel):
@@ -126,6 +139,15 @@ class ApplyOperation(BaseModel):
     excluded: dict[str, list[str]] = Field(default_factory=dict)
     idempotency_key: str = ""
     request_body_hash: str = ""
+    #: Fill items handed back only because the model was at its limit; Continue fill
+    #: runs them once more at the end when the model has recovered.
+    model_limited: list[str] = Field(default_factory=list)
+    #: The one operation-level "model at its limit" notice was shown.
+    model_limit_noticed: bool = False
+
+
+#: `FillResult.handoff_reason` of a fill whose required answers waited on the model.
+_MODEL_UNAVAILABLE = "autofill model unavailable"
 
 
 #: Most recent idempotent correction operations kept past the general history cap.
@@ -605,6 +627,7 @@ def _process_item(
                         operation, "filling", message, application_id
                     ),
                     applicant_profile=applicant_snapshot,
+                    on_deadline=_on_deadline(operation, item),
                 )
             except BaseException:
                 release_submit(submit_allowed, False)
@@ -621,6 +644,8 @@ def _process_item(
                     attention_mod.record(operation.attention, application_id, item.label, "ready_for_review", "Ready to submit — final check")
                 break
             if result.status in {"awaiting_review", "awaiting_otp"}:
+                if result.handoff_reason == _MODEL_UNAVAILABLE:
+                    _note_model_limit(operation, settings, application_id)
                 with _LOCK:
                     operation.blocked += 1
                     operation.needs_input += 1
@@ -781,6 +806,71 @@ def _dispatch_items(
         futures = [config.submit_in_context(executor, process_next) for _ in range(workers)]
         for future in futures:
             future.result()
+    _retry_model_limited(
+        operation, request, settings, applicant_snapshot, reserve_submit, release_submit
+    )
+
+
+def _model_exhausted(settings: ApplySettings) -> bool:
+    from resume_tailor.apply.answers import model_fallback
+
+    return model_fallback.heavy_exhausted(settings.model_spec)
+
+
+def _note_model_limit(
+    operation: ApplyOperation, settings: ApplySettings, application_id: str
+) -> None:
+    """Remember a fill the model's limit held back; say so once for the operation."""
+    with _LOCK:
+        if application_id not in operation.model_limited:
+            operation.model_limited.append(application_id)
+        if operation.model_limit_noticed:
+            return
+        operation.model_limit_noticed = True
+    light = settings.fallback_model_spec is not None
+    _event(
+        operation,
+        "model_limit",
+        "The AI model is at its limit; fills continue without AI answers"
+        + (" (Light answers where it can)" if light else "")
+        + ". They are filled again at the end if it recovers.",
+    )
+
+
+def _retry_model_limited(
+    operation: ApplyOperation,
+    request: ApplyOperationRequest,
+    settings: ApplySettings,
+    applicant_snapshot: profile.ApplicantProfile | None,
+    reserve_submit: Any,
+    release_submit: Any,
+) -> None:
+    """Once, at the end of a Fill: Continue the fills the model's limit held back, when
+    its quota has recovered by then."""
+    if operation.action != "fill" or not operation.model_limited or _CANCEL.is_set():
+        return
+    if _model_exhausted(settings):
+        _event(operation, "model_limit", "The AI model is still at its limit; not refilling")
+        return
+    again = request.model_copy(update={"fill_mode": "continue", "blocker_mode": "continue"})
+    ids, operation.model_limited = list(operation.model_limited), []
+    _event(operation, "model_limit", f"Model available again; refilling {len(ids)} application(s)")
+    for application_id in ids:
+        if _CANCEL.is_set():
+            return
+        app = store.get(application_id)
+        if app is None or app.status not in {"awaiting_review", "awaiting_otp"}:
+            continue
+        with _LOCK:
+            # This application was counted once already; the rerun replaces that result.
+            operation.blocked -= 1
+            operation.needs_input -= 1
+            operation.processed -= 1
+            attention_mod.remove(operation.attention, application_id)
+        _process_item(
+            operation, again, settings, applicant_snapshot, application_id,
+            reserve_submit, release_submit,
+        )
 
 
 def _worker(

@@ -635,3 +635,30 @@ def test_education_rows_split_a_double_major_only():
     ]
     assert len({r.entry_key for r in rows}) == 3
     assert double.majors == ["Econ", "Psych"]  # the packet row itself is untouched
+
+
+@pytest.mark.parametrize(
+    "location,country",
+    [
+        ("Remote in USA", "United States"),
+        ("Vancouver, BC", "Canada"),
+        ("Atlanta, Georgia", "United States"),
+        ("Tbilisi, Georgia", "Georgia"),
+        ("Toronto, ON | New York, NY", None),
+    ],
+)
+def test_job_country_reads_provinces_remote_and_georgia(location, country):
+    assert job_country(location) == country
+
+
+def test_authorization_mismatch_checks_every_authorized_country():
+    profile = ApplicantProfile(
+        country="United States", authorization_countries=["United States", "Vietnam"],
+    )
+    assert authorization_mismatch(profile, "Ho Chi Minh City, Vietnam") is None
+    assert authorization_mismatch(profile, "Belfast, United Kingdom") == (
+        "United Kingdom", "United States or Vietnam",
+    )
+    # A profile saved before the list existed seeds it from the single country.
+    legacy = ApplicantProfile.model_validate({"authorization_country": "Canada"})
+    assert legacy.authorization_countries == ["Canada"]

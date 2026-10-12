@@ -8,7 +8,7 @@ from datetime import date
 from typing import Any
 
 from resume_tailor import config
-from resume_tailor.apply.answers import hybrid_resolver
+from resume_tailor.apply.answers import hybrid_resolver, model_fallback
 from resume_tailor.apply.ats import (
     smartrecruiters_flow,
     smartrecruiters_page,
@@ -137,20 +137,24 @@ class _FillAtsSteps(fill_state._FillState):
         self._workday_phone_code()
 
     def _workday_skills(self) -> list[dict[str, Any]]:
-        # Searches get up to two minutes; the model gets at most 45s of it so an
-        # overloaded provider cannot starve the steps after My Experience.
-        skills_deadline = min(self.deadline, time.monotonic() + 120)
+        # Searches get two minutes, or 6s a skill for a long list (24 skills), within the
+        # fill's hard cap; the model gets at most 45s of it so an overloaded provider
+        # cannot starve the steps after My Experience. Each added skill extends the fill.
+        budget = max(120, 6 * len(self.pkt.skills))
+        skills_deadline = min(self.hard_deadline(), time.monotonic() + budget)
 
         def choose_many(unmatched: dict[str, list[str]]) -> dict[str, str | None]:
             model_deadline = min(skills_deadline, time.monotonic() + 45)
             try:
-                return hybrid_resolver.choose_skill_options(unmatched, deadline=model_deadline)
-            except llm.LLMError as exc:
-                if re.search(r"\bHTTP (429|5\d\d)\b", str(exc)):
+                return model_fallback.call(
+                    lambda: hybrid_resolver.choose_skill_options(unmatched, deadline=model_deadline)
+                )
+            except Exception as exc:
+                if llm.unavailable(exc):
                     self.model_unavailable = True
                 raise
 
-        with config.pinned(self.settings.model_spec, effort=self.settings.answer_effort):
+        with self.answer_pin():
             skill_chips, skills_left = workday_skills.fill_skills(
                 self.page, list(self.pkt.skills), progress=self.progress,
                 deadline=skills_deadline, choose_many=choose_many,

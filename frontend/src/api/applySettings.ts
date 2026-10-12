@@ -132,6 +132,11 @@ export type ApplicantProfile = {
   work_authorization: string;
   authorized_to_work?: boolean | null;
   authorization_country?: string;
+  /** Countries the applicant may work in; the first mirrors `authorization_country`. */
+  authorization_countries?: string[];
+  citizenship?: string;
+  government_employee?: boolean | null;
+  conflict_of_interest?: boolean | null;
   requires_sponsorship_now: boolean | null;
   requires_sponsorship_future: boolean | null;
   f1_opt_eligible: boolean | null;

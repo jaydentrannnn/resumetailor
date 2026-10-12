@@ -421,16 +421,15 @@ def test_cancel_stops_the_run_and_hands_off(engine_env):
     assert result.handoff_reason == "Batch cancelled"
 
 
-def test_continue_with_closed_review_tab_fails_without_navigating(engine_env):
+def test_continue_with_closed_review_tab_reopens_the_posting(engine_env):
     state = engine_env([[FIRST]], target="old-target")
     _seed_app(fill={"browser_target_id": "gone"})
+    messages: list[str] = []
 
-    result = _run(fill_mode="continue")
+    _run(fill_mode="continue", progress=messages.append)
 
-    assert state["page"].gotos == []
-    assert result.status == "fill_failed"
-    assert "review tab is closed" in (result.error or "")
-    assert store.get("src-1").status == "fill_failed"
+    assert state["page"].gotos[:1] == [POSTING]
+    assert any(m.startswith("Review tab was closed; reopening the posting") for m in messages)
 
 
 def test_continue_resumes_the_recorded_tab(engine_env):

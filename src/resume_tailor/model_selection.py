@@ -12,6 +12,10 @@ from pydantic import BaseModel, Field, field_validator
 from resume_tailor import config
 
 ModelRole = Literal["light", "heavy"]
+#: How the model is paid for; sets its server's default request concurrency
+#: (`infra.model_queue.PLAN_CONCURRENCY`). "subscription" = an API plan with a monthly
+#: allowance (BytePlus ModelArk, Cursor), as opposed to pay-as-you-go ("paid").
+ModelPlan = Literal["free", "paid", "subscription", "local"]
 ModelProvider = Literal[
     "ollama", "ollama-cloud", "lmstudio", "gemini", "anthropic", "openai", "custom"
 ]
@@ -32,6 +36,19 @@ class ModelSelection(BaseModel):
     model_name: str = Field(default="", max_length=200)
     api_format: Literal["openai", "anthropic"] = "openai"
     base_url: str = Field(default="", max_length=2048)
+    #: None = inferred from the provider (`effective_plan`).
+    plan: ModelPlan | None = None
+
+    def effective_plan(self) -> ModelPlan | None:
+        """The chosen plan, else a guess: Gemini's free tier, paid Anthropic/OpenAI.
+        None (Ollama, LM Studio, a custom server) keeps the queue's local/cloud default."""
+        if self.plan is not None:
+            return self.plan
+        if self.provider == "gemini":
+            return "free"
+        if self.provider in {"anthropic", "openai"}:
+            return "paid"
+        return None
 
     @field_validator("model_name", "base_url")
     @classmethod

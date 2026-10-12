@@ -54,7 +54,7 @@ export function retryTitle(kind: NonNullable<ApplicationRow["retry_kind"]>): str
 /** Statuses where a fill stopped for the applicant and left its tab open. */
 const CONTINUABLE = new Set(["awaiting_review", "awaiting_otp", "fill_failed"]);
 
-/** Statuses whose tab can be replaced by a fresh one ("Reopen and fill"). */
+/** Statuses whose tab can be replaced by a fresh one ("Start over"). */
 const REOPENABLE = new Set(["awaiting_review", "awaiting_otp", "fill_failed"]);
 
 /**
@@ -70,27 +70,26 @@ export function isTabClosed(row: Pick<ApplicationRow, "fill">, openTabs: OpenTab
 }
 
 /**
- * Whether Fill can resume in the row's retained browser tab: the fill stopped for input
- * (or failed mid-way), the server kept that tab's target id, and — when the browser was
- * reachable — that tab is still open.
+ * Whether Fill can pick up where it stopped: the fill stopped for input (or failed
+ * mid-way) and the server kept that tab's target id. A tab closed since is no obstacle:
+ * Continue reopens the posting and Workday restores the saved draft.
  */
 export function canContinueFill(
   row: Pick<
     ApplicationRow,
     "status" | "archived_at" | "preparation_eligible" | "preparation_reasons" | "fill"
   >,
-  openTabs: OpenTabs = null,
+  _openTabs: OpenTabs = null,
 ): boolean {
   return (
     !!row.fill?.browser_target_id &&
     !row.archived_at &&
     canFillAfterReview(row) &&
-    CONTINUABLE.has(row.status) &&
-    !isTabClosed(row, openTabs)
+    CONTINUABLE.has(row.status)
   );
 }
 
-/** Whether "Reopen and fill" applies: a prepared row whose fill stopped for the applicant. */
+/** Whether "Start over" applies: a prepared row whose fill stopped for the applicant. */
 export function canReopenFill(
   row: Pick<ApplicationRow, "status" | "archived_at" | "job_id">,
 ): boolean {

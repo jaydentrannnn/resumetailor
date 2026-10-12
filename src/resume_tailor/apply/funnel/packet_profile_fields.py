@@ -77,6 +77,13 @@ PROFILE_FIELDS: dict[str, ProfileFieldInfo] = {
         label="Requires sponsorship now and future", section=_WORK_AUTH
     ),
     "f1_opt_eligible": ProfileFieldInfo(label="F1 opt eligible", section=_WORK_AUTH),
+    "us_citizen": ProfileFieldInfo(label="Work authorization", section=_WORK_AUTH),
+    "us_person_status": ProfileFieldInfo(label="Work authorization", section=_WORK_AUTH),
+    "citizenship": ProfileFieldInfo(label="Country of citizenship", section=_WORK_AUTH),
+    "government_employee": ProfileFieldInfo(
+        label="Current or former government employee", section=_WORK_AUTH,
+    ),
+    "conflict_of_interest": ProfileFieldInfo(label="Conflict of interest", section=_SAVED),
     "earliest_start": ProfileFieldInfo(label="Earliest start", section=_AVAILABILITY, common=True),
     "notice_period": ProfileFieldInfo(label="Notice period", section=_AVAILABILITY),
     "willing_to_relocate": ProfileFieldInfo(label="Willing to relocate", section=_AVAILABILITY),
@@ -111,7 +118,7 @@ PROFILE_FIELDS: dict[str, ProfileFieldInfo] = {
     ),
     "relatives_at_company": ProfileFieldInfo(label="Relatives at the company", section=_VOLUNTARY),
     "auto_accept_routine_acknowledgements": ProfileFieldInfo(
-        label="Routine acknowledgements", section=_SAVED,
+        label="Agree to required notices and consents", section=_SAVED,
     ),
     "school_email": ProfileFieldInfo(label="School email", section=_EDUCATION),
     "security_clearance": ProfileFieldInfo(label="Security clearance", section=_AVAILABILITY),
@@ -193,36 +200,98 @@ _COUNTRY_ALIASES: dict[str, str] = {
     "brazil": "Brazil", "israel": "Israel", "philippines": "Philippines",
     "vietnam": "Vietnam", "costa rica": "Costa Rica", "romania": "Romania",
     "switzerland": "Switzerland", "sweden": "Sweden", "portugal": "Portugal",
+    "taiwan": "Taiwan", "south korea": "South Korea", "korea": "South Korea",
+    "hong kong": "Hong Kong", "new zealand": "New Zealand", "belgium": "Belgium",
+    "denmark": "Denmark", "norway": "Norway", "finland": "Finland", "austria": "Austria",
+    "czech republic": "Czech Republic", "czechia": "Czech Republic", "hungary": "Hungary",
+    "argentina": "Argentina", "colombia": "Colombia", "chile": "Chile", "egypt": "Egypt",
+    "south africa": "South Africa", "nigeria": "Nigeria", "kenya": "Kenya",
+    "united arab emirates": "United Arab Emirates", "uae": "United Arab Emirates",
+    "saudi arabia": "Saudi Arabia", "malaysia": "Malaysia", "indonesia": "Indonesia",
+    "thailand": "Thailand", "pakistan": "Pakistan", "bangladesh": "Bangladesh",
+    "turkey": "Turkey", "greece": "Greece", "ukraine": "Ukraine", "serbia": "Serbia",
+    "estonia": "Estonia", "lithuania": "Lithuania", "luxembourg": "Luxembourg",
+    "northern ireland": "United Kingdom", "wales": "United Kingdom",
+    # The country, not the U.S. state (which a bare "Georgia" stays).
+    "tbilisi": "Georgia",
 }
+
+#: Canadian provinces and territories, by name and by postal code ("Vancouver, BC").
+_CA_PROVINCES = frozenset({
+    "ontario", "quebec", "british columbia", "alberta", "manitoba", "saskatchewan",
+    "nova scotia", "new brunswick", "newfoundland and labrador", "newfoundland",
+    "prince edward island", "yukon", "northwest territories", "nunavut",
+})
+_CA_PROVINCE_CODES = frozenset({
+    "ON", "QC", "BC", "AB", "MB", "SK", "NS", "NB", "NL", "PE", "YT", "NT", "NU",
+})
+
+
+def _part_country(raw: str) -> set[str]:
+    """Countries one comma-separated part of a location names."""
+    text = raw.casefold()
+    if raw in _US_STATE_CODES or text in _US_STATES:
+        return {"United States"}
+    if raw in _CA_PROVINCE_CODES or text in _CA_PROVINCES:
+        return {"Canada"}
+    found: set[str] = set()
+    for alias, country in _COUNTRY_ALIASES.items():
+        if len(alias) <= 4:
+            # Short aliases ("us", "uk") only as the whole part or after "in"/"remote"
+            # ("Remote in USA"): "us" is a word too.
+            pattern = rf"(?:^|\b(?:in|remote)\s+){re.escape(alias)}$"
+        else:
+            pattern = rf"\b{re.escape(alias)}\b"
+        if re.search(pattern, text):
+            found.add(country)
+    return found
+
+
+def location_countries(location: str) -> list[set[str]]:
+    """The countries each " | "-separated place of a posting names, in order."""
+    places = []
+    for place in re.split(r"\s*\|\s*|\s*;\s*", location or ""):
+        found: set[str] = set()
+        for part in re.split(r"[,/()\-–—]+|\s+(?:or|and|&)\s+", place):
+            if part.strip():
+                found |= _part_country(part.strip())
+        # "Tbilisi, Georgia": the bare "Georgia" was read as the U.S. state.
+        if {"Georgia", "United States"} <= found and not re.search(
+            r"united states|\busa?\b|\bu\.s\.", place, re.I
+        ):
+            found.discard("United States")
+        if place.strip():
+            places.append(found)
+    return places
+
 
 def job_country(location: str) -> str | None:
     """The one country a location names ("Plymouth, Minnesota, United States" -> United
-    States), or None when it names none or several. US states count as United States."""
-    found: set[str] = set()
-    for part in re.split(r"[,;/|()\-–—]+|\s+(?:or|and|&)\s+", location or ""):
-        raw = part.strip()
-        text = raw.casefold()
-        if not text:
-            continue
-        if raw in _US_STATE_CODES or text in _US_STATES:
-            found.add("United States")
-            continue
-        for alias, country in _COUNTRY_ALIASES.items():
-            # Two-letter aliases ("us", "uk") only as the whole part: "us" is a word too.
-            if (text == alias) if len(alias) <= 4 else re.search(rf"\b{re.escape(alias)}\b", text):
-                found.add(country)
+    States), or None when it names none or several. US states count as United States,
+    Canadian provinces as Canada."""
+    found = set().union(*location_countries(location)) if location else set()
     return found.pop() if len(found) == 1 else None
 
-def authorization_mismatch(profile: ApplicantProfile, location: str) -> tuple[str, str] | None:
-    """``(job country, authorised country)`` when the posting is clearly elsewhere.
 
-    The profile's "Authorized to work" answer is for its authorization country (or its
+def authorized_countries(profile: ApplicantProfile) -> set[str]:
+    """Every country the profile may work in (its home country when none is listed)."""
+    named = profile.authorization_countries or [profile.country]
+    known = set(_COUNTRY_ALIASES.values())
+    # A listed country is taken as named ("Georgia" the country, not the U.S. state).
+    found = (name if name in known else job_country(name) for name in named)
+    return {country for country in found if country}
+
+
+def authorization_mismatch(profile: ApplicantProfile, location: str) -> tuple[str, str] | None:
+    """``(job country, authorised countries)`` when the posting is clearly elsewhere.
+
+    The profile's "Authorized to work" answer is for its authorization countries (or its
     home country); a posting in another country must not reuse it.
     """
     job = job_country(location)
-    authorised = job_country(profile.authorization_country or profile.country)
-    if job and authorised and job != authorised:
-        return job, authorised
+    authorised = authorized_countries(profile)
+    if job and authorised and job not in authorised:
+        return job, " or ".join(sorted(authorised))
     return None
 
 def field_info(key: str) -> ProfileFieldInfo:

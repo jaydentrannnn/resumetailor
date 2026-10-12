@@ -48,7 +48,7 @@ function blankLabelFor(key: keyof ApplicantProfile, draft: ApplicantProfile): st
 function hintFor(key: keyof ApplicantProfile): ReactNode {
   switch (key) {
     case "auto_accept_routine_acknowledgements":
-      return "Accepts routine privacy and read-notice acknowledgements. Certifications and signatures stay for your review.";
+      return "Agrees to required privacy, background-check, arbitration and similar notices, including typed signatures. Statements about you are answered from your facts; optional opt-ins stay No.";
     case "visa_status":
       return "Sets the sponsorship answers below unless you choose them yourself.";
     case "hours_per_week_available":

@@ -8,7 +8,10 @@ from __future__ import annotations
 
 import asyncio
 import ipaddress
+import json
+import logging
 import os
+import re
 import threading
 import time
 from collections import deque
@@ -29,6 +32,17 @@ from pydantic import BaseModel, Field, field_validator
 
 from resume_tailor import config
 from resume_tailor.pipeline.events import ProgressCallback, emit
+
+log = logging.getLogger(__name__)
+
+#: Successful calls in a row before a halved limit steps back up by one.
+_RECOVER_AFTER = 20
+#: Cooldowns within this window that mark a pool used up (`_EXHAUSTED_FOR_S`).
+_COOLDOWN_WINDOW_S = 120
+_COOLDOWNS_TO_EXHAUST = 3
+_EXHAUSTED_FOR_S = 600.0
+#: Default concurrency for an endpoint by the plan its model is on.
+PLAN_CONCURRENCY = {"free": 1, "subscription": 2, "paid": 4, "local": 1}
 
 
 def endpoint_key(url: str) -> str:
@@ -68,6 +82,51 @@ class _Pool:
     active: int = 0
     waiting: deque[object] = field(default_factory=deque)
     cooldown_until: float = 0
+    #: Halved after each 429 (never below 1); None = the configured limit.
+    limit_cut: int | None = None
+    successes: int = 0
+    cooldowns: deque[float] = field(default_factory=deque)
+    #: Set when the provider's quota looks used up (a per-day quota, or repeated 429s).
+    exhausted_until: float = 0
+    rate_limited_today: int = 0
+    day: str = ""
+    quota: str = ""
+
+
+@dataclass(frozen=True)
+class RateLimit:
+    """What a 429 body says: the quota id and how long to wait, when it says so."""
+
+    quota: str = ""
+    retry_after: float | None = None
+
+    @property
+    def per_day(self) -> bool:
+        return "perday" in self.quota.casefold().replace("_", "")
+
+
+def parse_rate_limit(body: str) -> RateLimit:
+    """Gemini's ``QuotaFailure`` quota id and ``RetryInfo.retryDelay`` ("37s") from a 429
+    body; an empty `RateLimit` for anything else."""
+    try:
+        data = json.loads(body)
+        # Gemini's OpenAI-compatible endpoint wraps the error in a one-item list.
+        if isinstance(data, list) and data:
+            data = data[0]
+        details = data.get("error", {}).get("details", [])
+    except (ValueError, AttributeError):
+        details = []
+    quota, retry = "", None
+    for detail in details if isinstance(details, list) else []:
+        if not isinstance(detail, dict):
+            continue
+        for violation in detail.get("violations") or []:
+            if isinstance(violation, dict) and violation.get("quotaId") and not quota:
+                quota = str(violation["quotaId"])
+        delay = re.fullmatch(r"(\d+(?:\.\d+)?)s", str(detail.get("retryDelay") or ""))
+        if delay:
+            retry = float(delay.group(1))
+    return RateLimit(quota=quota, retry_after=retry)
 
 
 _OBSERVER: ContextVar[tuple[ProgressCallback | None, Callable[[], None] | None]] = ContextVar(
@@ -136,6 +195,10 @@ class RequestQueue:
         self._pools: dict[str, _Pool] = {}
         self._settings = QueueSettings()
         self._stamp: tuple[str, int] | None = None
+        self._plans: dict[str, int] = {}
+        self._file_plans: dict[str, int] = {}
+        self._plan_stamp: int | None = None
+        self._roles: dict[str, str] = {}
 
     def settings(self) -> QueueSettings:
         with self._condition:
@@ -161,21 +224,70 @@ class RequestQueue:
             self.settings()
             self._condition.notify_all()
 
-    def _limit(self, key: str, pool: _Pool) -> int:
+    def set_plan(self, url: str, plan: str | None) -> None:
+        """Default concurrency for ``url`` from its model's plan (`PLAN_CONCURRENCY`);
+        an explicit per-server limit in the settings still wins."""
+        with self._condition:
+            key = endpoint_key(url)
+            if plan in PLAN_CONCURRENCY:
+                self._plans[key] = PLAN_CONCURRENCY[plan]
+            else:
+                self._plans.pop(key, None)
+            self._condition.notify_all()
+
+    def _model_plans(self) -> dict[str, int]:
+        """Default limits from the Light/Heavy models' plans (`app_settings`), re-read
+        when that file changes; `set_plan` entries win."""
+        from resume_tailor import app_settings
+
+        target = app_settings.path()
+        stamp = target.stat().st_mtime_ns if target.exists() else 0
+        if stamp != self._plan_stamp:
+            self._plan_stamp = stamp
+            ai_models = app_settings.load().get("ai_models") or {}
+            self._file_plans = _plans_from(ai_models)
+            self._roles = _role_endpoints(ai_models)
+        return {**self._file_plans, **self._plans}
+
+    def _configured(self, key: str, pool: _Pool) -> int:
         settings = self.settings()
-        return settings.endpoint_limits.get(
-            key, settings.local_concurrency if pool.local else settings.cloud_concurrency
-        )
+        if key in settings.endpoint_limits:
+            return settings.endpoint_limits[key]
+        plans = self._model_plans()
+        if key in plans:
+            return plans[key]
+        return settings.local_concurrency if pool.local else settings.cloud_concurrency
+
+    def _limit(self, key: str, pool: _Pool) -> int:
+        configured = self._configured(key, pool)
+        return min(configured, pool.limit_cut) if pool.limit_cut else configured
+
+    def exhausted_for(self, url: str) -> float:
+        """Seconds until ``url``'s provider quota should be usable again; 0 when it is."""
+        with self._condition:
+            pool = self._pools.get(endpoint_key(url))
+            return max(0.0, pool.exhausted_until - time.monotonic()) if pool else 0.0
 
     def status(self) -> dict[str, Any]:
         with self._condition:
+            self._model_plans()
             return {
                 "settings": self.settings().model_dump(),
+                #: The server each saved task model sends its requests to.
+                "roles": dict(self._roles),
                 "endpoints": [
                     {
                         "endpoint": key,
                         "local": pool.local,
-                        "limit": self._limit(key, pool),
+                        "limit": self._configured(key, pool),
+                        "limit_effective": self._limit(key, pool),
+                        "exhausted_seconds": max(
+                            0, round(pool.exhausted_until - time.monotonic(), 1)
+                        ),
+                        "rate_limited_today": (
+                            pool.rate_limited_today if pool.day == _today() else 0
+                        ),
+                        "quota": pool.quota,
                         "active": pool.active,
                         "waiting": len(pool.waiting),
                         "cooldown_seconds": max(
@@ -265,22 +377,103 @@ class RequestQueue:
             self._cleanup(pool, ticket, admitted)
 
     def rate_limited(self, url: str, response: httpx.Response | httpx2.Response) -> None:
+        """Every response passes here: a 429 halves the pool's limit and cools it down
+        (marking it used up after a per-day quota or repeated 429s); a success counts
+        toward stepping a halved limit back up."""
+        key = endpoint_key(url)
         if response.status_code != 429:
+            if response.status_code < 400:
+                self._succeeded(key)
             return
-        delay = 2.0
+        body = ""
+        with suppress(Exception):
+            body = response.text
+        limit = parse_rate_limit(body)
+        delay = limit.retry_after if limit.retry_after is not None else 2.0
         header = response.headers.get("Retry-After", "")
-        try:
-            delay = float(header)
-        except ValueError:
-            with suppress(TypeError, ValueError, OverflowError):
-                delay = (parsedate_to_datetime(header) - datetime.now(UTC)).total_seconds()
+        if header:
+            try:
+                delay = float(header)
+            except ValueError:
+                with suppress(TypeError, ValueError, OverflowError):
+                    delay = (parsedate_to_datetime(header) - datetime.now(UTC)).total_seconds()
         if not 0 <= delay < float("inf"):
             delay = 2.0
+        log.warning(
+            "HTTP 429 from %s (quota %s, retry in %.0fs): %s",
+            key, limit.quota or "unknown", delay, " ".join(body.split())[:300],
+        )
         with self._condition:
-            pool = self._pools.get(endpoint_key(url))
-            if pool:
-                pool.cooldown_until = max(pool.cooldown_until, time.monotonic() + delay)
+            pool = self._pools.get(key)
+            if not pool:
+                return
+            now = time.monotonic()
+            pool.cooldown_until = max(pool.cooldown_until, now + delay)
+            pool.limit_cut = max(1, self._limit(key, pool) // 2)
+            pool.successes = 0
+            today = _today()
+            if pool.day != today:
+                pool.day, pool.rate_limited_today = today, 0
+            pool.rate_limited_today += 1
+            pool.quota = limit.quota or pool.quota
+            pool.cooldowns.append(now)
+            while pool.cooldowns and now - pool.cooldowns[0] > _COOLDOWN_WINDOW_S:
+                pool.cooldowns.popleft()
+            if limit.per_day or len(pool.cooldowns) >= _COOLDOWNS_TO_EXHAUST:
+                wait = limit.retry_after if limit.retry_after else _EXHAUSTED_FOR_S
+                pool.exhausted_until = max(pool.exhausted_until, now + wait)
+                log.warning("%s looks used up; pausing it for %.0fs", key, wait)
+            self._condition.notify_all()
+
+    def _succeeded(self, key: str) -> None:
+        with self._condition:
+            pool = self._pools.get(key)
+            if not pool or not pool.limit_cut:
+                return
+            pool.successes += 1
+            if pool.successes >= _RECOVER_AFTER:
+                pool.successes = 0
+                pool.limit_cut += 1
+                if pool.limit_cut >= self._configured(key, pool):
+                    pool.limit_cut = None
                 self._condition.notify_all()
+
+
+def _saved_models(ai_models: dict[str, Any]) -> Iterator[tuple[str, Any, str]]:
+    """``(role, selection, endpoint)`` for each saved task model that has a server."""
+    from resume_tailor.model_selection import ModelSelection
+
+    for role in ("light", "heavy"):
+        if not isinstance(ai_models.get(role), dict):
+            continue
+        try:
+            selection = ModelSelection.model_validate(ai_models[role])
+            backend = config._backends_for(selection.spec(role))["answer"]  # noqa: SLF001
+        except Exception:  # noqa: BLE001 - an incomplete draft has no server yet
+            continue
+        url = backend.base_url or (
+            "https://api.anthropic.com" if backend.provider == "anthropic" else ""
+        )
+        if url:
+            yield role, selection, endpoint_key(url)
+
+
+def _plans_from(ai_models: dict[str, Any]) -> dict[str, int]:
+    """``{endpoint: limit}`` for each saved task model whose plan is known."""
+    limits: dict[str, int] = {}
+    for _role, selection, key in _saved_models(ai_models):
+        plan = selection.effective_plan()
+        if plan is not None:
+            limits[key] = PLAN_CONCURRENCY[plan]
+    return limits
+
+
+def _role_endpoints(ai_models: dict[str, Any]) -> dict[str, str]:
+    return {role: key for role, _selection, key in _saved_models(ai_models)}
+
+
+def _today() -> str:
+    return datetime.now(UTC).date().isoformat()
 
 
 queue = RequestQueue()

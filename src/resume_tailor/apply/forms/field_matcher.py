@@ -170,6 +170,11 @@ def match_option(
         return _match_notice(available, target)
     if not matches and key == "phone_device_type" and normalize(target) in _MOBILE_DEVICE:
         return _match_mobile(available)
+    if not matches and key == "routine_acknowledgement" and wanted == "yes":
+        hit = affirmative_option([option.label for option in available])
+        found = [option for option in available if option.label == hit]
+        if len(found) == 1:
+            return OptionMatch(status="matched", option_id=found[0].option_id, method="alias")
     if not matches:
         # Most specific category first; a tier that names no option falls through to the
         # next, a tier that names two stops (never a guess between them).
@@ -181,6 +186,24 @@ def match_option(
             if matches:
                 break
     return OptionMatch(status="ambiguous" if matches else "no_match")
+
+
+#: An option accepting a notice ("Yes", "I acknowledge", "I agree", "Accept")...
+_AFFIRM = re.compile(
+    r"^(?:yes|i\s+(?:agree|acknowledge|accept|understand|consent|confirm|certify|have read)"
+    r"|agree|acknowledge[ds]?|accept(?:ed)?|consent|confirm(?:ed)?|understood)\b"
+)
+#: ...and never one declining it ("I do not agree", "No, I decline").
+_DISSENT = re.compile(r"\b(?:no|not|don t|do not|decline|disagree|refuse|withdraw)\b")
+
+
+def affirmative_option(labels: list[str]) -> str | None:
+    """The one option that accepts a notice, else None."""
+    hits = [
+        label for label in labels
+        if _AFFIRM.match(normalize(label)) and not _DISSENT.search(normalize(label))
+    ]
+    return hits[0] if len(hits) == 1 else None
 
 
 def _match_mobile(available: list[ObservedOption]) -> OptionMatch:
@@ -551,7 +574,12 @@ def fallback_values(key: str, value: str) -> list[str]:
     if not value:
         return []
     if key == "how_heard" and normalize(value) != "other":
-        return [value, "Other"]
+        # Always an answer, never a referral (2026-10-12): generic online sources, then
+        # "Other", then a career fair.
+        return list(dict.fromkeys([
+            value, "LinkedIn", "Job Board", "Online Job Board", "Internet", "Online",
+            "Company Website", "Careers Website", "Social Media", "Other", "Career Fair",
+        ]))
     if key == "phone_device_type" and normalize(value) in _MOBILE_DEVICE:
         # Tenants name the same device "Mobile", "Cell" or "Mobile Phone".
         return list(dict.fromkeys([value, "Mobile", "Cell", "Mobile Phone", "Cell Phone"]))

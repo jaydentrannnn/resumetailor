@@ -54,7 +54,9 @@ def _fill_language(page: Any, row: str, entry: Any, select: Callable[..., bool] 
     is a gap for the applicant, not a guess.
     """
     from resume_tailor.apply.answers.profile import LANGUAGE_CATEGORIES  # noqa: PLC0415
+    from resume_tailor.apply.ats import workday_dropdowns  # noqa: PLC0415
 
+    workday_dropdowns.last_listbox.clear()
     results = {
         "Language": workday_rows._attempt(
             lambda: _choose(
@@ -62,6 +64,10 @@ def _fill_language(page: Any, row: str, entry: Any, select: Callable[..., bool] 
             )
         )
     }
+    seen = workday_dropdowns.last_listbox
+    if not results["Language"] and seen.get("status") == "no_match" and seen.get("options"):
+        # The form's list does not offer this language (Magnite has no Vietnamese).
+        return {"Language": False, NOT_OFFERED: True}
     try:
         controls = page.evaluate(workday_rows._ROW_CONTROLS_JS, row) or []
     except Exception:  # noqa: BLE001
@@ -80,10 +86,25 @@ def _fill_language(page: Any, row: str, entry: Any, select: Callable[..., bool] 
         if workday_rows._value(page, row, field):
             continue
         name = label or category
-        results[name] = bool(level) and workday_rows._attempt(
-            lambda f=field, v=level: bool(select and select(page, f"[id='{row}{f}']", v, key="language_level")),
-        )
+        results[name] = bool(level) and _select_twice(page, f"[id='{row}{field}']", level, select)
     return results
+
+
+#: `_fill_language`'s marker for a language the form's list does not offer.
+NOT_OFFERED = "_not_offered"
+
+
+def _select_twice(page: Any, selector: str, value: str, select: Callable[..., bool] | None) -> bool:
+    """A level choice, retried once: right after the Language pick, Itron's first level
+    did not commit (2026-10-12) while every later one on the same scale did."""
+    for attempt in range(2):
+        if workday_rows._attempt(
+            lambda: bool(select and select(page, selector, value, key="language_level"))
+        ):
+            return True
+        if attempt == 0:
+            page.wait_for_timeout(600)
+    return False
 
 
 def _reuse_or_guard(
@@ -394,14 +415,27 @@ def fill(
                 workday_rows._rows(page, workday_rows._LANGUAGE),
                 (entry.language,),
                 (workday_rows._LANGUAGE,),
+                exclude=claimed,
             )
+            added = row is None
             if row is None:
                 row = add("Languages", workday_rows._LANGUAGE)
             if row is None:
                 progress(f"Workday: no language row available for {entry.language}")
                 review.append(label)
                 continue
+            claimed.add(row)
             results = _fill_language(page, row, entry, select)
+            if results.pop(NOT_OFFERED, False):
+                # Not on this form's list: an extra row would block the step, so the row
+                # this fill added goes again (a row that was already there stays).
+                if added and workday_rows._delete_row(page, row):
+                    progress(f"Workday: {entry.language} is not on this form's language list; "
+                             "removed the row added for it")
+                    continue
+                progress(f"Workday: {entry.language} is not on this form's language list")
+                review.append(f"{label} (not offered)")
+                continue
             failed = [name for name, ok in results.items() if not ok]
             if not failed:
                 progress(f"Workday: filled {label}")

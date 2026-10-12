@@ -6,7 +6,6 @@ import contextlib
 from pathlib import Path
 from typing import Any
 
-from resume_tailor import config
 from resume_tailor.apply.answers import answer, answer_memory, education, form_facts, widget_actions
 from resume_tailor.apply.forms import form_guards, form_routes
 from resume_tailor.apply.funnel import cover_on_demand
@@ -182,7 +181,7 @@ class _FillAnswers(fill_state._FillState):
                     target.fill(sel, text)
 
     def _answer_long_text(self) -> None:
-        with config.pinned(self.settings.model_spec, effort=self.settings.answer_effort):
+        with self.answer_pin():
             for item in self.merged.get("long_text") or []:
                 if self._stop_if_out_of_time(
                     "Fill stopped before all written answers were checked"

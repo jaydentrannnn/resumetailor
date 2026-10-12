@@ -132,6 +132,17 @@ def build_fields(profile: ApplicantProfile, resume: MasterResume) -> dict[str, s
     _maybe_set(fields, "work_authorization", _work_authorization_label(profile.work_authorization))
     _maybe_set(fields, "authorized_to_work", _yes_no(profile.authorized_to_work))
     _maybe_set(fields, "authorization_country", profile.authorization_country or None)
+    # "Are you a U.S. citizen?" and "...citizen, permanent resident, asylee or refugee?"
+    # (U.S. person, for export control) follow from the work-authorization category.
+    status = profile.work_authorization
+    if status:
+        fields["us_citizen"] = "Yes" if status == "citizen" else "No"
+        if status != "other":
+            us_person = status in {"citizen", "permanent_resident"}
+            fields["us_person_status"] = "Yes" if us_person else "No"
+    _maybe_set(fields, "citizenship", profile.citizenship or None)
+    fields["government_employee"] = _yes_no(profile.government_employee)
+    fields["conflict_of_interest"] = _yes_no(profile.conflict_of_interest)
     # An explicit Yes/No wins; otherwise the visa status implies one (`sponsorship_from_visa`).
     implied = profile_mod.sponsorship_from_visa(profile.visa_status)
     sponsor_now = profile.requires_sponsorship_now

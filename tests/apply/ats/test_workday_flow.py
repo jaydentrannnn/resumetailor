@@ -1020,8 +1020,9 @@ def test_fill_prompts_falls_back_to_other_when_the_source_is_not_listed():
 
     committed = workday_prompts.fill_prompts(
         page, {"how_heard": "LinkedIn"}, select=select,
+        select_any=lambda _page, _input_id, _value: "Other",
     )
-    assert tried == ["LinkedIn", "Other"]
+    assert tried == ["LinkedIn"]
     assert [item["value"] for item in committed] == ["Other"]
 
 
@@ -1275,31 +1276,43 @@ def test_pick_listbox_option_finds_no_range_in_a_yes_no_list():
 # -- "any reasonable option" for a source question ------------------------------------
 
 
-def test_any_option_prefers_the_named_source_then_other_then_the_first():
+def test_any_option_prefers_named_then_online_then_other_then_career_fair():
+    """How-heard is always answered with the safest source, never a person."""
     assert (
         workday_dropdowns.any_option(["Job Board", "Social Media - LinkedIn", "Other"], "LinkedIn")
         == "Social Media - LinkedIn"
     )
     assert (
         workday_dropdowns.any_option(
-            ["Job Board", "Other (please specify)", "Referral"], "LinkedIn"
+            ["Referral", "Other (please specify)", "Job Board"], "LinkedIn"
+        )
+        == "Job Board"
+    )
+    assert (
+        workday_dropdowns.any_option(
+            ["Contacted by Recruiter", "Career Fair", "Other (please specify)"], "LinkedIn"
         )
         == "Other (please specify)"
     )
-    assert workday_dropdowns.any_option(["Job Board", "Referral"], "LinkedIn") == "Job Board"
+    assert (
+        workday_dropdowns.any_option(
+            ["Faculty Recommendation", "Employee Referral", "Career Fair"], "LinkedIn"
+        )
+        == "Career Fair"
+    )
 
 
 def test_any_option_ignores_empty_search_rows():
     assert workday_dropdowns.any_option(["No Items."], "LinkedIn") is None
-    assert workday_dropdowns.any_option(["No Items.", "Referral"], "LinkedIn") == "Referral"
+    assert workday_dropdowns.any_option(["No Items.", "Referral"], "LinkedIn") is None
     assert workday_dropdowns.any_option([], "LinkedIn") is None
 
 
 def test_pick_listbox_option_any_option_key_takes_the_closest_option():
-    options = _listbox_options("Job Board", "Other", "Referral")
+    options = _listbox_options("Referral", "Other", "Job Board")
     assert workday_dropdowns._pick_listbox_option(  # noqa: SLF001
         options, "LinkedIn", workday_dropdowns.ANY_OPTION_KEY,
-    ) == ("Other", "opt-1")
+    ) == ("Job Board", "opt-2")
 
 
 def test_fill_dropdowns_settles_for_any_option_when_the_source_is_not_listed(monkeypatch):
@@ -1380,7 +1393,7 @@ class _HierarchyPromptPage:
 
 def test_select_prompt_any_walks_down_to_a_leaf_when_the_source_is_not_listed():
     page = _HierarchyPromptPage({
-        "": ["Job Board", "Other", "Social Media"],
+        "": ["Referral", "Other", "Career Fair"],
         "Other": ["Career Fair", "Other Source"],
     })
     assert workday_prompts.select_prompt_any(page, "source--source", "LinkedIn") == "Other Source"
@@ -1417,7 +1430,7 @@ def test_fill_prompts_falls_back_to_any_option_when_every_candidate_fails():
     committed = workday_prompts.fill_prompts(
         page, {"how_heard": "LinkedIn"}, select=select, select_any=select_any
     )
-    assert tried == ["LinkedIn", "Other"]
+    assert tried == ["LinkedIn"]
     assert any_calls == [("source--source", "LinkedIn")]
     assert [(c["key"], c["value"], c["selector"]) for c in committed] == [
         ("how_heard", "Other Source", "[id='source--source']"),

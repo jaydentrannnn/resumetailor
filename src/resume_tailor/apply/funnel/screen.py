@@ -145,6 +145,37 @@ def seniority_reasons(
     return [f"seniority {seniority!r} not in {settings.allowed_seniority}"], []
 
 
+#: "(Queens University Only)", "open only to students of Ohio State University".
+_SCHOOL_ONLY = (
+    re.compile(
+        r"\b((?:[A-Z][\w&.'’-]*\s+){1,6}(?:University|College))\s+(?:[Ss]tudents?\s+)?[Oo]nly\b"
+    ),
+    re.compile(
+        r"\b(?i:open|limited|restricted|available)\s+(?i:only\s+)?to\s+(?i:current\s+)?"
+        r"(?i:students)\s+(?:of|at|from)\s+(?:the\s+)?((?:[A-Z][\w&.'’-]*\s*){1,6})"
+    ),
+)
+
+
+def other_school_only(text: str, resume: MasterResume) -> str:
+    """The school a posting is limited to, when it is not one of the resume's; else ""."""
+    from resume_tailor.apply.forms import field_matcher  # noqa: PLC0415
+
+    schools = [entry.school for entry in getattr(resume, "education", []) or [] if entry.school]
+    for pattern in _SCHOOL_ONLY:
+        found = pattern.search(text)
+        if not found:
+            continue
+        named = found.group(1).strip()
+        mine = any(
+            field_matcher.closest_option([school], named, key="school")
+            or field_matcher.normalize(named) in field_matcher.normalize(school)
+            for school in schools
+        )
+        return "" if mine else named
+    return ""
+
+
 def screen(
     jd_text: str,
     requirements: JobRequirements,
@@ -166,6 +197,9 @@ def screen(
     reasons, flags = seniority_reasons(seniority, role, settings)
     block_reasons, evidence = check_blocks(jd_text, settings)
     reasons += block_reasons
+    school = other_school_only(f"{role}\n{jd_text[:3000]}", resume)
+    if school:
+        reasons.append(f"school_only:{school}")
 
     for pattern in _ENROLLMENT_FLAG_PATTERNS:
         if re.search(pattern, jd_text, re.IGNORECASE):
@@ -196,6 +230,7 @@ _LABELS: list[tuple[re.Pattern[str], str]] = [
     (re.compile(r"citizenship_required|citizen", re.I), "Citizenship required"),
     (re.compile(r"clearance", re.I), "Clearance required"),
     (re.compile(r"advanced_degree"), "Grad degree only"),
+    (re.compile(r"^school_only:"), "Other school only"),
     (re.compile(r"^title_senior$"), "Senior title"),
     (re.compile(r"^seniority "), "Too senior"),
     (re.compile(r"^requires_(\d+)_years$"), "{0}+ yrs experience"),

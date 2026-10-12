@@ -145,7 +145,17 @@ class ApplicantProfile(BaseModel):
     portfolio_only_when_asked: bool = True
     work_authorization: WorkAuthorization = ""
     authorized_to_work: bool | None = None
+    #: The first of ``authorization_countries`` (kept for older readers).
     authorization_country: str = ""
+    #: Every country the applicant may work in without sponsorship ("United States",
+    #: "Vietnam"); a posting elsewhere is answered "not authorized, needs sponsorship".
+    authorization_countries: list[str] = Field(default_factory=list)
+    #: Country of citizenship, for export-control questions ("a citizen of Iran, Cuba...").
+    citizenship: str = ""
+    #: "Are you a current or former government employee / have you served in the military?"
+    government_employee: bool = False
+    #: "Do you have a conflict of interest (outside work, ties to a customer or competitor)?"
+    conflict_of_interest: bool = False
     requires_sponsorship_now: bool | None = None
     requires_sponsorship_future: bool | None = None
     f1_opt_eligible: bool | None = None
@@ -185,7 +195,9 @@ class ApplicantProfile(BaseModel):
     class_year: ClassYear = ""
     #: Blank = earliest undergraduate start year, like automatic class standing.
     high_school_graduation_year: str = Field(default="", pattern=r"^$|^\d{4}$")
-    auto_accept_routine_acknowledgements: bool = False
+    #: Agree to required notices and consents (privacy, background check, screening,
+    #: accuracy, terms, arbitration); optional opt-ins are always declined.
+    auto_accept_routine_acknowledgements: bool = True
     #: Overrides the resume's GPA on forms ("3.7/4.0"). Blank = resume.
     gpa_display: str = ""
     #: Uploaded transcript (PDF) in the workspace's files folder, for transcript uploads.
@@ -261,6 +273,24 @@ class ApplicantProfile(BaseModel):
             if isinstance(raw, str) and raw.strip():
                 out[key] = dates.normalize(raw, precision)
         return out
+
+    @model_validator(mode="before")
+    @classmethod
+    def _sync_authorization_countries(cls, data: Any) -> Any:
+        """The list is the source of truth; a profile saved before it existed seeds it
+        from ``authorization_country``, which then mirrors the list's first entry."""
+        if not isinstance(data, dict):
+            return data
+        raw = data.get("authorization_countries") or []
+        countries = list(dict.fromkeys(str(c).strip() for c in raw if str(c).strip()))
+        single = str(data.get("authorization_country") or "").strip()
+        if not countries and single:
+            countries = [single]
+        return {
+            **data,
+            "authorization_countries": countries,
+            "authorization_country": countries[0] if countries else "",
+        }
 
     @model_validator(mode="before")
     @classmethod

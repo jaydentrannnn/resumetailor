@@ -281,7 +281,7 @@ def focus_target(expected_id: str) -> str:
             if page is not None:
                 page.bring_to_front()
                 return str(page.url)
-    raise RuntimeError("The review tab is closed. Use Reopen and fill if you want to start again.")
+    raise RuntimeError("The review tab is closed. Continue fill reopens the posting.")
 
 
 @asynccontextmanager

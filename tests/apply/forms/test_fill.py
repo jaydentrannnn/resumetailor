@@ -758,9 +758,9 @@ def test_fill_application_failure_sets_fill_failed(fill_paths, monkeypatch):
     assert store.get("src-1").status == "fill_failed"
 
 
-def test_a_posting_in_another_country_withholds_the_work_authorization_answer(fill_paths, monkeypatch):
-    """"Authorized to work" answers for the profile's country; a Canadian posting leaves
-    its eligibility questions to the applicant, the resolver model included."""
+def test_a_posting_in_another_country_answers_not_authorized(fill_paths, monkeypatch):
+    """"Authorized to work" answers for the profile's countries; a Canadian posting is
+    answered as not authorized there, needing sponsorship."""
     store.upsert(_ready_app(location="Toronto, ON, Canada"))
     sample_packet = Packet(
         job_id="job-1", built_at="2026-01-01T00:00:00+00:00",
@@ -780,7 +780,8 @@ def test_a_posting_in_another_country_withholds_the_work_authorization_answer(fi
     monkeypatch.setattr(browser, "cdp_browser", _broken_browser)
     messages: list[str] = []
     fill.fill_application("src-1", on_progress=messages.append)
-    assert "authorized_to_work" not in sample_packet.fields
+    assert sample_packet.fields["authorized_to_work"] == "No"
+    assert sample_packet.fields["requires_sponsorship"] == "Yes"
     assert any("Job is in Canada; your work authorization is for United States" in m for m in messages)
 
 
@@ -1206,3 +1207,21 @@ def test_apply_click_follows_only_a_popup_of_its_own_page():
     assert clicked == [True] and page.waits == [5000]
     stay = _PopupPage(None)
     assert fill_buttons._click_and_track_popup(stay, _SharedContext(), lambda: None) is stay  # noqa: SLF001
+
+
+def test_continue_with_a_closed_tab_reopens_the_posting(fill_paths, monkeypatch):
+    """Continue no longer fails on a closed review tab: it opens the posting again."""
+    page = _stub_greenhouse_form(
+        fill_paths, monkeypatch, status="awaiting_review",
+        fill={"browser_target_id": "gone", "status": "awaiting_review"},
+    )
+    monkeypatch.setattr(browser, "find_target", lambda _context, _target: None)
+    monkeypatch.setattr(browser, "target_id", lambda _context, _page: "new-tab")
+    messages: list[str] = []
+
+    fill.fill_application(
+        "src-1", settings=ApplySettings(), fill_mode="continue", on_progress=messages.append,
+    )
+
+    assert any(m.startswith("Review tab was closed; reopening the posting") for m in messages)
+    assert page.goto.call_args.args[0] == "https://example.com/apply"

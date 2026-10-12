@@ -35,7 +35,9 @@ function test(key: string, target: ModelTarget, settings: JobSettings): Promise<
 function keyFor(target: ModelTarget, settings: JobSettings): string {
   const role = target === "tailor" || target === "light" ? "light" : "heavy";
   const models = modelsFor(settings);
-  return `${role}|${JSON.stringify(models[role])}|${JSON.stringify(settings.effort)}|${credentialRevision}|${role === "light" ? JSON.stringify(models.legacy_light_overrides) : ""}`;
+  // The plan only sets request concurrency; changing it needs no new connection test.
+  const { plan: _plan, ...selection } = models[role];
+  return `${role}|${JSON.stringify(selection)}|${JSON.stringify(settings.effort)}|${credentialRevision}|${role === "light" ? JSON.stringify(models.legacy_light_overrides) : ""}`;
 }
 
 /** Forget every result and retest what is on screen (a key was saved or removed). */

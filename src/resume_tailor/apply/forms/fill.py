@@ -32,8 +32,12 @@ def fill_application(
     should_cancel: Callable[[], bool] | None = None,
     on_progress: Callable[[str], None] | None = None,
     applicant_profile: profile_mod.ApplicantProfile | None = None,
+    on_deadline: Callable[[float], None] | None = None,
 ) -> FillResult:
-    """Fill one application's ATS form; leave the tab open under policy A."""
+    """Fill one application's ATS form; leave the tab open under policy A.
+
+    ``on_deadline`` hears the fill's new deadline (epoch seconds) each time forward
+    progress extends it, so a countdown can follow."""
     app = store.get(source_job_id)
     if app is None:
         raise KeyError(f"Unknown application {source_job_id!r}")
@@ -56,6 +60,7 @@ def fill_application(
             source_job_id, settings=settings, submit_mode=submit_mode,
             fill_mode=fill_mode, should_cancel=should_cancel,
             on_progress=on_progress, applicant_profile=applicant_profile,
+            on_deadline=on_deadline,
         ))
 
     if not app.job_id:
@@ -74,6 +79,7 @@ def fill_application(
         should_cancel=should_cancel,
         on_progress=on_progress,
         applicant_profile=applicant_profile,
+        on_deadline=on_deadline,
     ).run()
 
 

@@ -212,7 +212,8 @@ def fill_prompts(
         value = answers[0] if answers else ""
         if not key or not value:
             continue
-        for candidate in answers:
+        any_ok = key in workday_dropdowns._ANY_OPTION_KEYS
+        for candidate in answers[:1] if any_ok else answers:
             if choose(page, item["input_id"], candidate, key=key):
                 progress(f"Workday: selected {item['label']} = {candidate}")
                 committed.append({

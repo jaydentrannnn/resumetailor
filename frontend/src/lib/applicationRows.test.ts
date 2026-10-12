@@ -73,11 +73,9 @@ describe("canContinueFill", () => {
     expect(canContinueFill({ ...row, preparation_eligible: false })).toBe(false);
   });
 
-  it("hides Continue only when the browser was reached and the tab is gone", () => {
+  it("offers Continue for a closed tab too (it reopens the posting)", () => {
     expect(canContinueFill(row, new Set(["T1", "T2"]))).toBe(true);
-    expect(canContinueFill(row, new Set(["T2"]))).toBe(false);
-    expect(canContinueFill(row, new Set())).toBe(false);
-    // Unreachable browser: unknown, so keep offering Continue.
+    expect(canContinueFill(row, new Set(["T2"]))).toBe(true);
     expect(canContinueFill(row, null)).toBe(true);
   });
 });

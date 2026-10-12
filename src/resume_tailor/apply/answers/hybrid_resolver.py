@@ -21,6 +21,7 @@ from typing import Any
 from pydantic import BaseModel, Field
 
 from resume_tailor import config
+from resume_tailor.apply.answers import model_fallback
 from resume_tailor.apply.answers.profile import ApplicantProfile
 from resume_tailor.apply.driver import clicks
 from resume_tailor.apply.funnel.packet_models import Packet
@@ -368,10 +369,10 @@ class _StepResolver:
             f for f in unresolved
             if education.question_key(
                 str(f.get("label") or ""), str(f.get("help") or f.get("help_text") or ""),
-            ) in education.RESERVED_KEYS or re.search(
+            ) in education.RESERVED_KEYS or (re.search(
                 r"salary|compensation|race|ethnic|hispanic|latino",
                 str(f.get("label") or ""), re.I,
-            )
+            ) and not re.search(r"conflict of interest", str(f.get("label") or ""), re.I))
         ]
         ledger.asked |= {str(f.get("selector")) for f in reserved}  # never the model's to answer
         unresolved = [f for f in unresolved if f not in reserved]
@@ -651,7 +652,9 @@ class _StepResolver:
             f"<candidate_profile>\n{json.dumps(safe_profile, indent=2)}\n</candidate_profile>",
             f"<packet_fields>\n{json.dumps(self.packet.fields, indent=2)}\n</packet_fields>",
         ]
-        try:
+
+        def ask() -> Any:
+            # Built per call: a Light retry (`model_fallback.call`) re-pins the route.
             client = llm.client_for("answer")
             if self.deadline is not None:
                 timeout = max(1.0, min(60.0, self.deadline - time.monotonic()))
@@ -659,7 +662,7 @@ class _StepResolver:
                     client.timeout = min(float(client.timeout), timeout)
                 elif hasattr(client, "with_options"):
                     client = client.with_options(timeout=timeout)
-            response = client.messages.parse(
+            return client.messages.parse(
                 model=config.model_for("answer"),
                 max_tokens=config.max_tokens_for("answer"),
                 output_config={"effort": config.effort_for("answer")},
@@ -667,21 +670,20 @@ class _StepResolver:
                 messages=[{"role": "user", "content": "\n\n".join(user_content)}],
                 output_format=resolver_types.StepResolution,
             )
-            resolution: resolver_types.StepResolution = response.parsed_output
+
+        try:
+            resolution: resolver_types.StepResolution = model_fallback.call(ask).parsed_output
             return resolution
-        except llm.LLMError as exc:
-            status = re.search(r"\bHTTP (429|5\d\d)\b", str(exc))
+        except Exception as exc:  # noqa: BLE001
+            status = llm.unavailable(exc)
             if status:
                 self.ledger.model_unavailable = True
                 self.log(
-                    f"Autofill model unavailable (HTTP {status.group(1)}); leaving "
+                    f"Autofill model unavailable (HTTP {status}); leaving "
                     f"{len(to_ask)} question(s) for review"
                 )
             else:
                 self.log(f"LLM call failed: {exc}")
-            return None
-        except Exception as exc:  # noqa: BLE001
-            self.log(f"LLM call failed: {exc}")
             return None
 
     # -- applying ----------------------------------------------------------------------

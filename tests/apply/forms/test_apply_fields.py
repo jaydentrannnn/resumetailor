@@ -50,7 +50,7 @@ def test_manual_and_contextual_field_classification():
     # Salary is a deterministic per-posting answer (`apply/salary.py`), in the unit asked for.
     assert classify(observation("Desired salary")) == ("known", "salary_expectation")
     assert classify(observation("Desired hourly pay rate")) == ("known", "salary_hourly")
-    assert classify(observation("Certification of accuracy"))[0] == "manual_review"
+    assert classify(observation("Certification of accuracy"))[0] == "known"
     assert classify(observation("Start date", section="Work Experience"))[0] == "unknown"
     assert classify(observation("When can you start?")) == ("known", "earliest_start")
     assert classify(observation("Country", section="Phone", kind="combobox", phone_sibling=True)) == ("known", "phone_country_code")
@@ -229,13 +229,13 @@ def test_choice_values_try_the_named_degree_before_the_level():
     assert choice_values("degree_level", fields) == ["Bachelor of Science", "Bachelors"]
     assert choice_values("degree_level", {"degree_level": "Bachelors"}) == ["Bachelors"]
     assert choice_values("race", {"race": "Asian", "race_detail": "Southeast Asian"}) == ["Southeast Asian", "Asian"]
-    assert choice_values("how_heard", {"how_heard": "LinkedIn"}) == ["LinkedIn", "Other"]
+    assert choice_values("how_heard", {"how_heard": "LinkedIn"}) == ["LinkedIn", "Job Board", "Online Job Board", "Internet", "Online", "Company Website", "Careers Website", "Social Media", "Other", "Career Fair"]
     assert "BS" in search_terms("degree_level", "Bachelor of Science")
 
 
-def test_how_heard_falls_back_to_other():
-    assert fallback_values("how_heard", "LinkedIn") == ["LinkedIn", "Other"]
-    assert fallback_values("how_heard", "Other") == ["Other"]
+def test_how_heard_falls_back_to_online_then_other_then_career_fair():
+    assert fallback_values("how_heard", "LinkedIn") == ["LinkedIn", "Job Board", "Online Job Board", "Internet", "Online", "Company Website", "Careers Website", "Social Media", "Other", "Career Fair"]
+    assert fallback_values("how_heard", "Other")[0] == "Other"
     assert fallback_values("gender", "Decline") == ["Decline"]
     assert fallback_values("how_heard", "") == []
 

@@ -5,11 +5,15 @@ import { providerInfo } from "./providers";
 export type ModelRole = "light" | "heavy";
 export type ModelProvider =
   "ollama" | "ollama-cloud" | "lmstudio" | "gemini" | "anthropic" | "openai" | "custom";
+/** How the model is paid for; sets its server's default request concurrency. */
+export type ModelPlan = "free" | "paid" | "subscription" | "local";
 export type ModelSelection = {
   provider: ModelProvider;
   model_name: string;
   api_format: "openai" | "anthropic";
   base_url: string;
+  /** null/absent = guessed from the provider. */
+  plan?: ModelPlan | null;
 };
 export type AiModels = {
   light: ModelSelection;

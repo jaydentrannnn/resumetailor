@@ -217,3 +217,37 @@ def test_a_step_without_a_languages_section_skips_languages(page):
     page.set_content('<div data-automation-id="applyFlowPage"><h3>Education</h3></div>')
     packet = SimpleNamespace(experience=[], education=[], languages=[SimpleNamespace(language="English", fluent=True, levels={})])
     assert workday_repeaters.fill(page, packet, lambda _m: None, select=_fake_select) == ([], [])
+
+
+def test_a_language_the_form_does_not_offer_removes_the_row_it_added(page):
+    """Magnite (2026-10-12) lists no Vietnamese: the row the fill added would block the
+    step, so it is deleted again instead of left for review."""
+    from resume_tailor.apply.ats import workday_dropdowns
+
+    page.set_content(_LANGUAGES)
+    page.evaluate("""() => {
+      const original = window.addLanguage;
+      window.addLanguage = () => {
+        original();
+        const rows = document.querySelectorAll('.row');
+        const row = rows[rows.length - 1];
+        row.insertAdjacentHTML('beforeend', '<button type="button">Delete</button>');
+        row.lastElementChild.onclick = () => row.remove();
+      };
+    }""")
+
+    def select(page_, selector, value, *, key=""):
+        if key == "language":
+            workday_dropdowns.last_listbox.update(status="no_match", options=["English", "French"])
+            return False
+        return _fake_select(page_, selector, value, key=key)
+
+    messages: list[str] = []
+    packet = SimpleNamespace(experience=[], education=[], languages=[SimpleNamespace(
+        language="Vietnamese", fluent=True, levels={"Reading": "Advanced"},
+    )])
+    filled, review = workday_repeaters.fill(page, packet, messages.append, select=select)
+
+    assert (filled, review) == ([], [])
+    assert page.locator(".row").count() == 0
+    assert any("not on this form's language list; removed" in m for m in messages)

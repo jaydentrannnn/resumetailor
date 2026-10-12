@@ -2,7 +2,7 @@ import type { ApplicationRow } from "../../api";
 import { Button } from "../../components/ui";
 import { canContinueFill, canReopenFill, type OpenTabs } from "../../lib/applicationRows";
 
-/** Needs you tab, selection bar: Continue fill and Reopen and fill for the checked rows. */
+/** Needs you tab, selection bar: Continue fill and Start over for the checked rows. */
 export function ReviewToolbar({
   selected,
   openTabs,
@@ -30,20 +30,24 @@ export function ReviewToolbar({
     <>
       {selected.length > continueIds.length && (
         <span className="mr-1 text-xs text-ink-muted">
-          {selected.length - continueIds.length} selected can't continue (tab closed or not started)
+          {selected.length - continueIds.length} selected can't continue (not started yet)
         </span>
       )}
       <Button
         variant="attention"
         size="sm"
         disabled={busy || active || !continueIds.length || !browserUsable}
-        title={idleNote ?? (browserUsable ? "Resume the fills in their open tabs" : notConnected)}
+        title={
+          idleNote ??
+          (browserUsable
+            ? "Resume the fills (closed tabs reopen with the saved draft)"
+            : notConnected)
+        }
         onClick={() => onContinue(continueIds)}
       >
         Continue fill ({continueIds.length})
       </Button>
       <Button
-        variant="attention"
         size="sm"
         disabled={busy || active || !reopenRows.length || !browserUsable}
         title={
@@ -52,7 +56,7 @@ export function ReviewToolbar({
         }
         onClick={() => onReopen(reopenRows)}
       >
-        Reopen and fill ({reopenRows.length})
+        Start over ({reopenRows.length})
       </Button>
     </>
   );

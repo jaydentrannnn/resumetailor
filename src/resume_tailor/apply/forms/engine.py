@@ -17,6 +17,7 @@ from resume_tailor.apply.answers import (
     answer_memory,
     education,
     form_facts,
+    model_fallback,
     model_resolver,
     notice,
     profile,
@@ -29,7 +30,13 @@ from resume_tailor.apply.ats import (
     workday_repeaters,
 )
 from resume_tailor.apply.driver import browser, clicks, controls, scanner
-from resume_tailor.apply.forms import attachments, field_catalog, form_guards, form_routes
+from resume_tailor.apply.forms import (
+    attachments,
+    field_catalog,
+    fill_outcomes,
+    form_guards,
+    form_routes,
+)
 from resume_tailor.apply.forms.field_types import AttachmentOutcome, FieldObservation, FieldOutcome
 from resume_tailor.apply.funnel import (
     cover_on_demand,
@@ -45,7 +52,7 @@ from resume_tailor.infra import model_queue
 from resume_tailor.pipeline.jd import JobRequirements
 from resume_tailor.web.schemas import ApplySettings
 
-APPLICATION_BUDGET_SECONDS = 240
+APPLICATION_BUDGET_SECONDS = fill_outcomes.BASE_BUDGET_S
 MAX_FORM_STEPS = 8
 
 
@@ -128,6 +135,7 @@ async def fill_application(
     should_cancel: Callable[[], bool] | None,
     on_progress: Callable[[str], None] | None,
     applicant_profile: profile.ApplicantProfile | None = None,
+    on_deadline: Callable[[float], None] | None = None,
 ) -> store_models.FillResult:
     """Run one attempt; only verified outcomes can contribute to readiness."""
     app = store.get(source_job_id)
@@ -186,12 +194,25 @@ async def fill_application(
     store.upsert(app)
     started = time.monotonic()
     deadline = started + APPLICATION_BUDGET_SECONDS
+    #: Heavy for this fill's model calls, Light once Heavy is at its limit.
+    model_route = model_fallback.Fallback(
+        heavy=settings.model_spec, light=settings.fallback_model_spec,
+        effort=settings.answer_effort, progress=on_progress,
+    )
     last_checkpoint = 0.0
     outcomes: dict[str, FieldOutcome] = {}
     attachment_outcomes: dict[str, dict] = {}
     inspection_errors: list[str] = []
 
     def progress(message: str) -> None:
+        nonlocal deadline
+        if fill_outcomes.is_forward_progress(message):
+            now = time.monotonic()
+            later = fill_outcomes.extended_deadline(deadline, started, now)
+            if later > deadline + 1:
+                deadline = later
+                if on_deadline:
+                    on_deadline(time.time() + later - now)
         if on_progress:
             on_progress(message)
 
@@ -199,7 +220,7 @@ async def fill_application(
         if should_cancel and should_cancel():
             raise _Cancelled("Batch cancelled")
         if time.monotonic() >= deadline:
-            raise TimeoutError("Application automation reached its four-minute budget")
+            raise TimeoutError("Application automation reached its time limit")
 
     def checkpoint(*, force: bool = False) -> None:
         nonlocal last_checkpoint
@@ -228,18 +249,24 @@ async def fill_application(
         checkpoint()
 
     try:
-        async with asyncio.timeout(APPLICATION_BUDGET_SECONDS):
+        async with asyncio.timeout(fill_outcomes.HARD_CAP_S):
             progress("Connecting to browser")
             async with browser.async_cdp_browser() as connected:
                 if not connected.contexts:
                     raise RuntimeError("No connected browser context is available")
                 context = connected.contexts[0]
+                page = None
                 if fill_mode == "continue":
                     page = await browser.async_find_target(context, previous.browser_target_id)
                     if page is None:
-                        raise RuntimeError("The recorded review tab is closed. Use Reopen and fill.")
-                    progress("Resuming the current review tab")
-                else:
+                        progress(
+                            "Review tab was closed; reopening the posting "
+                            "(Workday restores the saved draft)"
+                        )
+                        fill_mode = "reopen"
+                    else:
+                        progress("Resuming the current review tab")
+                if page is None:
                     page, target_id = await browser.open_background_page(connected, context)
                     result.browser_target_id = target_id
                     result.browser_url = str(page.url)
@@ -445,15 +472,19 @@ async def fill_application(
                             max_length = field.constraints.get("max_length")
                             max_chars = min(1500, max_length) if isinstance(max_length, int) and max_length > 0 else 1500
                             try:
-                                with config.pinned(
-                                    settings.model_spec, effort=settings.answer_effort,
-                                ):
-                                    drafted = await answer.answer_question_async(
-                                        field.label, resume=resume, bullets=bullets,
-                                        requirements=requirements, profile=applicant,
-                                        max_chars=max_chars, jd_text=jd_text,
-                                        deadline=deadline,
-                                        extras=answer.AnswerExtras(company=app.company or ""),
+                                with model_fallback.pin(model_route):
+                                    drafted = await model_fallback.acall(
+                                        lambda label=field.label, chars=max_chars: (
+                                            answer.answer_question_async(
+                                                label, resume=resume, bullets=bullets,
+                                                requirements=requirements, profile=applicant,
+                                                max_chars=chars, jd_text=jd_text,
+                                                deadline=deadline,
+                                                extras=answer.AnswerExtras(
+                                                    company=app.company or ""
+                                                ),
+                                            )
+                                        )
                                     )
                                 if drafted.answer and not drafted.warnings:
                                     value = drafted.answer
@@ -556,9 +587,12 @@ async def fill_application(
                             break
                         progress(f"Step {step_number}: resolving remaining choices, pass {model_pass + 1}")
                         try:
-                            with config.pinned(settings.model_spec, effort=settings.answer_effort):
-                                proposals = await model_resolver.propose(
-                                    unresolved_choices, model_resolver.safe_facts(fields), deadline=deadline,
+                            with model_fallback.pin(model_route):
+                                proposals = await model_fallback.acall(
+                                    lambda choices=unresolved_choices: model_resolver.propose(
+                                        choices, model_resolver.safe_facts(fields),
+                                        deadline=deadline,
+                                    )
                                 )
                         except Exception as exc:  # noqa: BLE001
                             progress(f"Choice resolution needs review ({type(exc).__name__})")

@@ -48,6 +48,7 @@ from __future__ import annotations
 import asyncio
 import json
 import math
+import re
 import time
 from typing import Any, TypeVar
 from urllib.parse import urlsplit
@@ -66,8 +67,33 @@ class LLMError(RuntimeError):
     """A provider call failed in a way no retry inside this module could repair.
 
     Subclasses `RuntimeError` so the existing handlers in `tailor.py` catch it without
-    needing a new except clause.
+    needing a new except clause. ``status`` is the provider's HTTP status, when it gave one.
     """
+
+    def __init__(self, message: str = "", *, status: int | None = None) -> None:
+        super().__init__(message)
+        self.status = status
+
+
+def unavailable(exc: BaseException) -> int | None:
+    """The HTTP status (429 or 5xx) when ``exc`` means the model is at its limit or down:
+    an `LLMError` carrying one, or an Anthropic SDK status error; else None."""
+    status = getattr(exc, "status", None)
+    if status is None:
+        status = getattr(exc, "status_code", None)
+    if isinstance(status, int) and (status == 429 or 500 <= status < 600):
+        return status
+    found = re.search(r"\bHTTP (429|5\d\d)\b", str(exc))
+    return int(found.group(1)) if found else None
+
+
+def _exhausted_error(base_url: str) -> LLMError:
+    wait = model_queue.queue.exhausted_for(base_url)
+    return LLMError(
+        f"{base_url} returned HTTP 429: quota used up; try again in about "
+        f"{max(1, round(wait / 60))} min",
+        status=429,
+    )
 
 
 _JSON_INSTRUCTION = (
@@ -213,6 +239,12 @@ def _retry_delay(response: httpx.Response, retry: int) -> float:
                 return min(seconds, 15.0)
         except ValueError:
             pass
+    if response.status_code == 429:
+        # Gemini says how long in the body ("retryDelay": "37s"); the caller still
+        # returns instead when the wait does not fit what is left of its budget.
+        body = model_queue.parse_rate_limit(response.text).retry_after
+        if body is not None:
+            return min(body, 60.0)
     return _RETRY_BACKOFF[retry]
 
 
@@ -350,6 +382,8 @@ class _OpenAICompatClient:
         # shortens it to what is left of its budget, and a 503 storm must not overrun it.
         spent = 0.0
         for retry in range(len(_RETRY_BACKOFF) + 1):
+            if model_queue.queue.exhausted_for(self.base_url):
+                raise _exhausted_error(self.base_url)
             attempt_started = time.monotonic()
             try:
                 with telemetry.request(self.origin, payload["model"], retry) as measured, \
@@ -376,6 +410,8 @@ class _OpenAICompatClient:
             spent += time.monotonic() - attempt_started
             if response.status_code not in _RETRYABLE_STATUSES or retry == len(_RETRY_BACKOFF):
                 return response
+            if model_queue.queue.exhausted_for(self.base_url):
+                return response
             delay = _retry_delay(response, retry)
             # A retry needs the backoff plus at least a second to answer in.
             if delay + 1.0 >= self.timeout - spent:
@@ -396,7 +432,8 @@ class _OpenAICompatClient:
                 f"`ollama pull {model}`, or run `ollama signin` if it is a :cloud tag."
             )
         raise LLMError(
-            f"{self.base_url} returned HTTP {response.status_code} for {model!r}: {detail}"
+            f"{self.base_url} returned HTTP {response.status_code} for {model!r}: {detail}",
+            status=response.status_code,
         )
 
     @staticmethod
@@ -657,6 +694,8 @@ class _AsyncOpenAICompatClient:
             raise RuntimeError("Async model client must be used as a context manager")
         slept = 0.0
         for retry in range(len(_RETRY_BACKOFF) + 1):
+            if model_queue.queue.exhausted_for(self.base_url):
+                raise _exhausted_error(self.base_url)
             remaining = deadline - time.monotonic()
             if remaining <= 0:
                 raise TimeoutError("Apply model stage exceeded its deadline")
@@ -677,6 +716,8 @@ class _AsyncOpenAICompatClient:
             except httpx.RequestError as exc:
                 raise LLMError(f"Could not reach {self.base_url}: {exc}") from exc
             if response.status_code not in _RETRYABLE_STATUSES or retry == len(_RETRY_BACKOFF):
+                return response
+            if model_queue.queue.exhausted_for(self.base_url):
                 return response
             delay = _retry_delay(response, retry)
             if delay >= min(self.timeout - slept, deadline - time.monotonic()):

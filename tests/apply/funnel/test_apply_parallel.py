@@ -364,3 +364,30 @@ def test_cancel_stops_tailoring_now_without_failing_it(batch, monkeypatch):
     assert not worker.is_alive()
     assert sorted(calls) == ["one", "two"]  # "three" never starts; nothing restarts
     assert (operation.processed, operation.failed) == (0, 0)
+
+
+def test_fills_held_back_by_the_model_limit_are_refilled_once_at_the_end(batch, monkeypatch):
+    calls: list[tuple[str, str]] = []
+
+    def fake_fill(application_id, **kwargs):
+        calls.append((application_id, kwargs["fill_mode"]))
+        operations.store.get(application_id).status = "awaiting_review"
+        if kwargs["fill_mode"] == "continue":
+            return store_models.FillResult(status="awaiting_review", ready_to_submit=True)
+        return store_models.FillResult(
+            status="awaiting_review", handoff_reason=operations._MODEL_UNAVAILABLE,
+        )
+
+    monkeypatch.setattr(operations.fill, "fill_application", fake_fill)
+    monkeypatch.setattr(operations, "_model_exhausted", lambda _settings: False)
+    events: list[str] = []
+    monkeypatch.setattr(
+        operations, "_event", lambda _op, stage, message, *_a: events.append(stage)
+    )
+    operation = batch(ids=("one",))
+
+    assert calls == [("one", "initial"), ("one", "continue")]
+    assert events.count("model_limit") == 2  # the notice, then the refill
+    assert operation.needs_input == operation.blocked == 0
+    assert operation.processed == 1
+    assert [item.kind for item in operation.attention] == ["ready_for_review"]
