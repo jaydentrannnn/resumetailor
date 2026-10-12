@@ -3,6 +3,7 @@
 from __future__ import annotations
 
 import threading
+import time
 
 import pytest
 
@@ -16,6 +17,7 @@ def batch(monkeypatch):
     operations._PAUSE.clear()
     operations._RESUME.clear()
     operations._SKIP.clear()
+    operations._HOLD.clear()
     monkeypatch.setattr(operations, "_persist", lambda _operation: None)
     monkeypatch.setattr(operations.browser, "extension_mode", lambda: False)
     monkeypatch.setattr(operations.submit_guard, "is_paused", lambda: False)
@@ -64,6 +66,7 @@ def batch(monkeypatch):
     operations._PAUSE.clear()
     operations._RESUME.clear()
     operations._SKIP.clear()
+    operations._HOLD.clear()
 
 
 def test_fill_uses_exactly_two_workers(batch, monkeypatch):
@@ -292,3 +295,87 @@ def test_pause_holds_new_dispatch_after_in_flight_fills(batch, monkeypatch):
     worker.join(3)
     assert not worker.is_alive()
     assert results[0].completed == 3
+
+
+def _controlled_prepare(monkeypatch, ids, replies):
+    """A Prepare run on its own thread that `operations.control` can reach.
+
+    ``replies`` is called per prepare attempt: it waits on ``should_stop`` or returns."""
+    request = ApplyOperationRequest(
+        action="prepare", application_ids=list(ids), model_provider="ollama", model_name="test"
+    )
+    operation = operations.ApplyOperation(
+        operation_id="test",
+        action="prepare",
+        state="running",
+        application_ids=list(ids),
+        total=len(ids),
+    )
+    monkeypatch.setattr(operations, "_ACTIVE_ID", "test")
+    monkeypatch.setattr(operations, "get", lambda _id: operation)
+    monkeypatch.setattr(operations.daily, "prepare_application", replies)
+    worker = threading.Thread(
+        target=operations._dispatch_items, args=(operation, request, ApplySettings(), None)
+    )
+    worker.start()
+    return operation, worker
+
+
+def _until(check) -> None:
+    deadline = time.monotonic() + 3
+    while not check():
+        assert time.monotonic() < deadline
+        time.sleep(0.01)
+
+
+def _ready(application_id):
+    return store_models.Application(
+        source="test", source_job_id=application_id, company=application_id, role="Engineer",
+        status="ready",
+    )
+
+
+def _stop_first_attempt(calls, started):
+    def fake_prepare(application_id, *, should_stop, **_kwargs):
+        calls.append(application_id)
+        if calls.count(application_id) > 1:
+            return _ready(application_id)
+        started.release()
+        _until(should_stop)
+        raise operations.PrepareInterrupted()
+
+    return fake_prepare
+
+
+def test_pause_stops_tailoring_now_and_resume_restarts_it(batch, monkeypatch):
+    calls: list[str] = []
+    started = threading.Semaphore(0)
+    operation, worker = _controlled_prepare(
+        monkeypatch, ("one",), _stop_first_attempt(calls, started)
+    )
+    assert started.acquire(timeout=3)
+    operations.control("test", "pause")
+    # The page reads "paused" straight from the control call's reply.
+    assert (operation.state, operation.stage) == ("paused", "paused_by_user")
+    _until(lambda: not operation.in_flight)
+    assert operation.processed == operation.failed == 0
+    operations.control("test", "resume")
+    worker.join(3)
+    assert not worker.is_alive()
+    assert calls == ["one", "one"]
+    assert (operation.processed, operation.completed, operation.failed) == (1, 1, 0)
+
+
+def test_cancel_stops_tailoring_now_without_failing_it(batch, monkeypatch):
+    calls: list[str] = []
+    started = threading.Semaphore(0)
+    operation, worker = _controlled_prepare(
+        monkeypatch, ("one", "two", "three"), _stop_first_attempt(calls, started)
+    )
+    assert started.acquire(timeout=3) and started.acquire(timeout=3)
+    operations.control("test", "cancel")
+    assert operation.events[-1]["stage"] == "cancel_requested"
+    worker.join(3)
+    assert not worker.is_alive()
+    assert sorted(calls) == ["one", "two"]  # "three" never starts; nothing restarts
+    assert (operation.processed, operation.failed) == (0, 0)

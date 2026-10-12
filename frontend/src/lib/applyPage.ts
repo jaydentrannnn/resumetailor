@@ -42,6 +42,21 @@ export function canRetailor(row: { job_id: string | null; status: string }): boo
   return !!row.job_id && !TERMINAL_STATUSES.has(row.status) && !NO_RETAILOR.has(row.status);
 }
 
+/**
+ * The selection bar splits rows in two. Tailor again: rows with finished files to
+ * replace. Tailor files: rows without them yet, a failed tailor included (a retry, not
+ * a redo). A row with a run in flight is in neither.
+ */
+export function hasTailoredFiles(row: { job_id: string | null; status: string }): boolean {
+  return canRetailor(row) && row.status !== "tailor_failed";
+}
+
+export function canTailorFiles(row: { job_id: string | null; status: string }): boolean {
+  return (
+    !TERMINAL_STATUSES.has(row.status) && !NO_RETAILOR.has(row.status) && !hasTailoredFiles(row)
+  );
+}
+
 const PRE_READY = new Set([
   "discovered",
   "jd_fetched",
@@ -193,6 +208,21 @@ const ACTION_VERB: Record<string, string> = {
   inspect: "Checking",
   correct: "Correcting",
 };
+
+const CONTROL_STAGES = new Set(["pause_requested", "paused_by_user", "resumed"]);
+
+/**
+ * Pause or Cancel pressed and not in effect yet. Read from the whole event list, not the
+ * newest event: progress from the item still running would otherwise hide it at once.
+ */
+export function pendingControl(op: ApplyOperation): { pausing: boolean; cancelling: boolean } {
+  const active = ["queued", "running", "paused"].includes(op.state);
+  const control = op.events.findLast((event) => CONTROL_STAGES.has(event.stage ?? ""));
+  return {
+    pausing: op.state === "running" && control?.stage === "pause_requested",
+    cancelling: active && op.events.some((event) => event.stage === "cancel_requested"),
+  };
+}
 
 /** "Tailoring 3 of 12 · Acme" for the operation banner. */
 export function operationHeadline(op: ApplyOperation): string {

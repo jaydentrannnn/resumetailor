@@ -110,11 +110,14 @@ def prepare_application(
     on_progress: Callable[[str], None] | None = None,
     force_prepare: bool = False,
     on_job: Callable[[str], None] | None = None,
+    should_stop: Callable[[], bool] | None = None,
 ) -> store_models.Application:
     """Prepare one selected application through the existing fetch/screen/tailor path.
 
     ``on_job`` is called with the tailor job's id as soon as it is queued, so the Apply
-    page can show that job's own progress inside the current item.
+    page can show that job's own progress inside the current item. ``should_stop``
+    (Pause/Cancel) ends the attempt early: the row is put back exactly as it was and
+    `daily_row_run.PrepareInterrupted` propagates.
     """
     app = store.get(source_job_id)
     if app is None:
@@ -178,7 +181,11 @@ def prepare_application(
             index=store.build_index(),
             force_tailor=refresh_artifacts,
             on_job=on_job,
+            should_stop=should_stop,
         )
+    except daily_row_run.PrepareInterrupted:
+        store.restore(previous)
+        raise
     except Exception as exc:
         daily_rows._settle_failed_prepare(previous, source_job_id, error=str(exc))
         raise

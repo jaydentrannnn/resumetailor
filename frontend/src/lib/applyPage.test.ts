@@ -12,6 +12,9 @@ import {
   formatEta,
   operationEtaSeconds,
   operationHeadline,
+  canTailorFiles,
+  hasTailoredFiles,
+  pendingControl,
   readyBlockLabel,
   resolveApplyTab,
   reviewReason,
@@ -210,6 +213,24 @@ describe("operation banner", () => {
     expect(formatEta(20)).toBe("under a minute");
   });
 
+  it("keeps a pending Pause or Cancel visible under later progress", () => {
+    const events = (...stages: string[]) => stages.map((stage) => ({ stage, message: stage }));
+    expect(pendingControl(op({ events: events("pause_requested", "filling") }))).toEqual({
+      pausing: true,
+      cancelling: false,
+    });
+    expect(pendingControl(op({ events: events("pause_requested", "resumed") })).pausing).toBe(
+      false,
+    );
+    expect(pendingControl(op({ events: events("cancel_requested", "preparing") }))).toEqual({
+      pausing: false,
+      cancelling: true,
+    });
+    expect(
+      pendingControl(op({ state: "cancelled", events: events("cancel_requested") })).cancelling,
+    ).toBe(false);
+  });
+
   it("never lets a cap of 0 read as unlimited", () => {
     expect(autoSubmitCapLabel(0)).toBe("No auto-submits");
     expect(autoSubmitCapLabel(5)).toBe("At most 5 per Fill");
@@ -332,5 +353,18 @@ describe("attentionSummary", () => {
 
   it("is just the total when there is nothing", () => {
     expect(attentionSummary([])).toBe("Needs attention (0)");
+  });
+});
+
+describe("Tailor files and Tailor again", () => {
+  it.each([
+    ["no files yet", { status: "jd_fetched", job_id: null }, true, false],
+    ["files to replace", { status: "ready", job_id: "j" }, false, true],
+    ["a failed tailor", { status: "tailor_failed", job_id: "j" }, true, false],
+    ["a tailor in flight", { status: "tailoring", job_id: "j" }, false, false],
+    ["a finished application", { status: "submitted", job_id: "j" }, false, false],
+  ])("sorts %s", (_name, patch, files, again) => {
+    expect(canTailorFiles(row(patch))).toBe(files);
+    expect(hasTailoredFiles(row(patch))).toBe(again);
   });
 });

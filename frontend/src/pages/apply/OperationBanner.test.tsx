@@ -135,4 +135,20 @@ describe("OperationBanner", () => {
     );
     expect(screen.getByRole("heading", { name: "Preparing 2 at once" })).toBeTruthy();
   });
+
+  it("keeps Cancel and a fill's Pause visibly pending under later progress", () => {
+    const op = operation([]);
+    op.events = [
+      { stage: "pause_requested", message: "Pausing after the current application…" },
+      { stage: "cancel_requested", message: "Cancelling…" },
+      { stage: "filling", message: "Completing form" },
+    ];
+    render(
+      <MemoryRouter>
+        <OperationBanner operation={op} onControl={vi.fn()} />
+      </MemoryRouter>,
+    );
+    expect(screen.getByRole("button", { name: "Pausing…" })).toHaveProperty("disabled", true);
+    expect(screen.getByRole("button", { name: "Cancelling…" })).toHaveProperty("disabled", true);
+  });
 });

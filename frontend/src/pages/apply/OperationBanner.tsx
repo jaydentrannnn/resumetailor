@@ -9,6 +9,7 @@ import {
   itemProgress,
   operationEtaSeconds,
   operationHeadline,
+  pendingControl,
 } from "../../lib/applyPage";
 
 /** Poll the tailor jobs Prepare is running, for progress inside each item. */
@@ -45,7 +46,8 @@ export type OperationControl = "pause" | "resume" | "skip" | "cancel";
 /**
  * The current (or last) Apply task, pinned to the top of the page while it runs: a
  * plain phase ("Tailoring 3 of 12 · Acme"), an estimate of time left, and Pause /
- * Resume / Skip / Cancel. Pause takes effect between applications, never mid-form.
+ * Resume / Skip / Cancel. Pause stops tailoring at once (Resume starts it again); a
+ * fill pauses between applications, never mid-form.
  */
 export function OperationBanner({
   operation,
@@ -91,8 +93,7 @@ export function OperationBanner({
   const pct = (n: number) =>
     operation.total > 0 ? Math.max(0, Math.min(100, (n / operation.total) * 100)) : 0;
   const userPaused = operation.state === "paused" && operation.stage === "paused_by_user";
-  const pauseRequested =
-    operation.state === "running" && operation.events.at(-1)?.stage === "pause_requested";
+  const { pausing, cancelling } = pendingControl(operation);
   const events = operation.events
     .filter((event, index, all) => index === 0 || event.message !== all[index - 1].message)
     .reverse();
@@ -175,7 +176,8 @@ export function OperationBanner({
         <OperationControls
           operation={operation}
           userPaused={userPaused}
-          pauseRequested={pauseRequested}
+          pausing={pausing}
+          cancelling={cancelling}
           onControl={onControl}
         />
       </div>
@@ -288,12 +290,15 @@ function OperationActivity({
 function OperationControls({
   operation,
   userPaused,
-  pauseRequested,
+  pausing,
+  cancelling,
   onControl,
 }: {
   operation: ApplyOperation;
   userPaused: boolean;
-  pauseRequested: boolean;
+  /** Pause pressed during a fill: it takes effect once the form in progress is done. */
+  pausing: boolean;
+  cancelling: boolean;
   onControl: (action: OperationControl) => void;
 }) {
   if (!["queued", "running", "paused"].includes(operation.state)) return null;
@@ -302,27 +307,36 @@ function OperationControls({
       {operation.state === "running" && operation.action !== "find" && (
         <Button
           size="sm"
-          disabled={pauseRequested}
-          title="Stop before the next application; the one in progress finishes first"
+          disabled={pausing || cancelling}
+          title={
+            operation.action === "prepare"
+              ? "Stop tailoring now; Resume starts it again"
+              : "Stop before the next application; the form in progress finishes first"
+          }
           onClick={() => onControl("pause")}
         >
-          Pause
+          {pausing ? "Pausing…" : "Pause"}
         </Button>
       )}
       {operation.state === "paused" && (
         <>
-          <Button size="sm" variant="primary" onClick={() => onControl("resume")}>
+          <Button
+            size="sm"
+            variant="primary"
+            disabled={cancelling}
+            onClick={() => onControl("resume")}
+          >
             Resume
           </Button>
           {!userPaused && (
-            <Button size="sm" onClick={() => onControl("skip")}>
+            <Button size="sm" disabled={cancelling} onClick={() => onControl("skip")}>
               Skip this one
             </Button>
           )}
         </>
       )}
-      <Button size="sm" variant="danger" onClick={() => onControl("cancel")}>
-        Cancel
+      <Button size="sm" variant="danger" disabled={cancelling} onClick={() => onControl("cancel")}>
+        {cancelling ? "Cancelling…" : "Cancel"}
       </Button>
     </div>
   );

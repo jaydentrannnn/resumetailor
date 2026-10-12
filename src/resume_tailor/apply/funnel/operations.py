@@ -9,6 +9,7 @@ import re
 import threading
 import time
 import uuid
+from collections import deque
 from concurrent.futures import ThreadPoolExecutor
 from contextlib import contextmanager
 from datetime import UTC, datetime
@@ -31,6 +32,7 @@ from resume_tailor.apply.funnel import (
     store_models,
     store_views,
 )
+from resume_tailor.apply.funnel.daily_row_run import PrepareInterrupted
 from resume_tailor.infra import logs
 from resume_tailor.web.schemas import ApplyOperationRequest, ApplySettings, JobSettings
 
@@ -151,6 +153,9 @@ _RESUME = threading.Event()
 _SKIP = threading.Event()
 #: The applicant pressed Pause: stop before the next application (never mid-form).
 _PAUSE = threading.Event()
+#: Pause or Cancel during Prepare: every item stops now (cancelling its tailor job)
+#: instead of finishing first; a paused one runs again from the start on Resume.
+_HOLD = threading.Event()
 
 
 def _path() -> Path:
@@ -409,6 +414,7 @@ def start(request: ApplyOperationRequest) -> ApplyOperation:
     _RESUME.clear()
     _SKIP.clear()
     _PAUSE.clear()
+    _HOLD.clear()
     with _LOCK:
         _ACTIVE_ID = operation.operation_id
     _persist(operation)
@@ -434,11 +440,13 @@ def _wait_if_paused(operation: ApplyOperation) -> Literal["resume", "skip", "can
     while not _CANCEL.is_set():
         if _SKIP.wait(timeout=0.25):
             _SKIP.clear()
+            _HOLD.clear()
             operation.state = "running"
             _event(operation, "resumed", "Skipped blocked application")
             return "skip"
         if _RESUME.wait(timeout=0.25):
             _RESUME.clear()
+            _HOLD.clear()
             operation.state = "running"
             _event(operation, "resumed", "Batch resumed")
             return "resume"
@@ -472,7 +480,8 @@ def _process_item(
     application_id: str,
     reserve_submit: Any,
     release_submit: Any,
-) -> None:
+) -> bool:
+    """Run one item; True when Pause/Cancel stopped it before it finished."""
     app = store.get(application_id)
     started_at = _now()
     item = InFlightItem(
@@ -486,28 +495,41 @@ def _process_item(
         operation.current_step_number = 0
         _mirror_item(operation, item)
         _persist(operation)
+    interrupted = False
     try:
         if app is None:
             with _LOCK:
                 operation.failed += 1
                 attention_mod.record(operation.attention, application_id, item.label, "failed", "Application no longer exists")
             _event(operation, "failed", "Application no longer exists", application_id)
-            return
+            return False
         if app.archived_at:
             with _LOCK:
                 operation.excluded[application_id] = ["archived_application"]
             _event(operation, "excluded", "Application is archived", application_id)
-            return
+            return False
         if operation.action == "prepare":
             _event(operation, "preparing", "Fetching and tailoring application", application_id)
-            result_app = daily.prepare_application(
-                application_id,
-                settings=settings,
-                on_progress=lambda message: _event(operation, "preparing", message, application_id),
-                force_prepare=request.force_prepare,
-                on_job=lambda job_id: _set_job(operation, job_id, application_id),
-            )
-            _set_job(operation, "", application_id)
+
+            def progress(message: str) -> None:
+                # A stopped item stays quiet: its late progress would bury "Paused".
+                if not _HOLD.is_set():
+                    _event(operation, "preparing", message, application_id)
+
+            try:
+                result_app = daily.prepare_application(
+                    application_id,
+                    settings=settings,
+                    on_progress=progress,
+                    force_prepare=request.force_prepare,
+                    on_job=lambda job_id: _set_job(operation, job_id, application_id),
+                    should_stop=_HOLD.is_set,
+                )
+            except PrepareInterrupted:
+                interrupted = True
+                return True
+            finally:
+                _set_job(operation, "", application_id)
             with _LOCK:
                 if result_app.status == "ready" or result_app.status in daily.RETAINED_TAB_STATUSES:
                     operation.completed += 1
@@ -531,7 +553,7 @@ def _process_item(
                     f"[ready] packet refreshed; {result_app.status.replace('_', ' ')} tab retained",
                     application_id,
                 )
-            return
+            return False
 
         # Resume after a blocker reuses the retained tab and its answers.
         attempt_mode = request.fill_mode
@@ -606,11 +628,13 @@ def _process_item(
         _event(operation, "failed", str(exc), application_id)
     finally:
         with _LOCK:
-            operation.processed += 1
+            if not interrupted:
+                operation.processed += 1
             operation.in_flight.remove(item)
             if operation.in_flight:
                 _mirror_item(operation, operation.in_flight[-1])
             _persist(operation)
+    return False
 
 
 def _dispatch_items(
@@ -630,12 +654,12 @@ def _dispatch_items(
             else settings.max_parallel_fills
         )
     workers = min(workers, len(operation.application_ids))
-    next_id = iter(operation.application_ids)
+    # A paused Prepare item goes back on the front, to run again on Resume.
+    pending = deque(operation.application_ids)
     dispatch_lock = threading.Lock()
     group_locks: dict[str, threading.Lock] = {}
     prior_by_group: dict[str, threading.Event] = {}
     reserved = 0
-    dispatched = 0
 
     def reserve_submit() -> bool:
         nonlocal reserved
@@ -657,28 +681,28 @@ def _dispatch_items(
                 operation.submitted += 1
 
     def process_next() -> None:
-        nonlocal dispatched
         while True:
             with dispatch_lock:
-                if dispatched >= len(operation.application_ids):
+                if not pending:
                     return
                 if not _wait_while_automation_paused(operation):
                     return
                 if _PAUSE.is_set() and not _CANCEL.is_set():
                     _PAUSE.clear()
-                    with _LOCK:
-                        operation.state = "paused"
-                    _event(
-                        operation,
-                        "paused_by_user",
-                        "Paused. Resume continues with the next application.",
-                    )
+                    # A paused Prepare already said so when Pause was pressed.
+                    if operation.state != "paused":
+                        with _LOCK:
+                            operation.state = "paused"
+                        _event(
+                            operation,
+                            "paused_by_user",
+                            "Paused. Resume continues with the next application.",
+                        )
                 if _CANCEL.is_set() or _wait_if_paused(operation) == "cancel":
                     return
-                application_id = next(next_id, None)
-                if application_id is None:
+                if not pending:
                     return
-                dispatched += 1
+                application_id = pending.popleft()
                 if operation.action == "prepare":
                     app = store.get(application_id)
                     group = (
@@ -692,32 +716,27 @@ def _dispatch_items(
                     prior_by_group[group] = finished
                 else:
                     group_lock = None
+            item_args = (
+                operation,
+                request,
+                settings,
+                applicant_snapshot,
+                application_id,
+                reserve_submit,
+                release_submit,
+            )
             if group_lock is None:
-                _process_item(
-                    operation,
-                    request,
-                    settings,
-                    applicant_snapshot,
-                    application_id,
-                    reserve_submit,
-                    release_submit,
-                )
+                stopped = _process_item(*item_args)
             else:
                 try:
                     if prior is not None:
                         prior.wait()
                     with group_lock:
-                        _process_item(
-                            operation,
-                            request,
-                            settings,
-                            applicant_snapshot,
-                            application_id,
-                            reserve_submit,
-                            release_submit,
-                        )
+                        stopped = _process_item(*item_args)
                 finally:
                     finished.set()
+            if stopped and not _CANCEL.is_set():
+                pending.appendleft(application_id)
 
     with ThreadPoolExecutor(max_workers=workers) as executor:
         futures = [config.submit_in_context(executor, process_next) for _ in range(workers)]
@@ -807,11 +826,24 @@ def control(
             raise RuntimeError("Apply operation is no longer active")
     if action == "cancel":
         _CANCEL.set()
+        _HOLD.set()
+        _event(operation, "cancel_requested", "Cancelling…")
     elif action == "pause":
         if operation.action == "find":
             raise RuntimeError("Finding jobs cannot be paused; cancel it instead")
         _PAUSE.set()
-        _event(operation, "pause_requested", "Pausing after the current application…")
+        if operation.action == "prepare":
+            # Tailoring stops now; a form fill is never left half-done.
+            _HOLD.set()
+            with _LOCK:
+                operation.state = "paused"
+            _event(
+                operation,
+                "paused_by_user",
+                "Paused. Tailoring stopped; Resume starts it again.",
+            )
+        else:
+            _event(operation, "pause_requested", "Pausing after the current application…")
     elif action == "skip":
         _SKIP.set()
     else:

@@ -1730,3 +1730,23 @@ with the report's rule. Rows with a run show the report's figure
 (`daily_rows.adopt_run_coverage`: on tailor success and reuse; `daily.sync_run_coverage`
 at startup for older rows). "Force fresh results" still extracts twice (rejected:
 passing the screen's requirements into the job — more plumbing for a rare setting).
+
+## Prepare Pause/Cancel stop tailoring at once (2026-10-11)
+
+Pause and Cancel used to wait for every in-flight Prepare item (multi-minute tailor
+jobs) to finish, and the banner lost "Pausing…" under the next progress event, so both
+read as dead buttons. Now, during Prepare, both set `operations._HOLD`. Each item polls
+it between stages (`_RowRun._stop_point`) and every 0.5 s while waiting on its tailor
+job (`_wait_for_job(should_stop=…)` cancels the job). It raises `PrepareInterrupted`,
+and `prepare_application` puts the row back exactly as it was (`store.restore`). A
+paused item goes back on the front of the dispatcher's deque and runs again from the
+start on Resume (LLM caches make that cheap). A cancelled item isn't counted as failed.
+`control()` sets `state="paused"` itself, so the reply flips the banner immediately. A
+model call already running still finishes before its thread unwinds. Fill keeps its old
+behavior: Pause waits for the form in progress. The SPA reads pending Pause/Cancel from
+the whole event list (`pendingControl`), not the newest event. Also,
+`resume_review.state` skips rows that are mid-Prepare
+(discovered/jd_fetched/screened_in/tailoring): their `job_id` names a run that has no
+quality report yet, which used to flash "Resume needs review". The selection bar now
+splits rows in two: Tailor files gets rows without files, failed tailors included;
+Tailor again gets rows with files (`canTailorFiles` / `hasTailoredFiles`).

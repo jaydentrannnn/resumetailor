@@ -26,12 +26,17 @@ from resume_tailor.web.schemas import ApplySettings, JobSettings, RunMetadata
 from . import daily_progress, daily_rows
 
 
+class PrepareInterrupted(Exception):
+    """Pause or Cancel stopped this Prepare mid-way; its tailor job was cancelled."""
+
+
 def _wait_for_job(
     job_id: str,
     *,
     timeout_sec: float = 3600.0,
     poll_sec: float = 0.5,
     on_progress: Callable[[str], None] | None = None,
+    should_stop: Callable[[], bool] | None = None,
 ):
     """Poll the process queue until ``job_id`` reaches a terminal status.
 
@@ -41,10 +46,16 @@ def _wait_for_job(
     wait (like the Apply funnel's "Fetching and tailoring application") sees which
     pipeline stage it is actually on, instead of one static message for the whole
     multi-minute run.
+
+    ``should_stop`` returning True cancels the job and raises `PrepareInterrupted` at
+    once; the job itself winds down at its next stage checkpoint.
     """
     deadline = time.monotonic() + timeout_sec
     last_message = ""
     while time.monotonic() < deadline:
+        if should_stop is not None and should_stop():
+            get_queue().cancel(job_id)
+            raise PrepareInterrupted()
         job = get_queue().get(job_id)
         if job is not None:
             if on_progress is not None and job.events:
@@ -75,11 +86,14 @@ def _process_one(
     force_tailor: bool = False,
     on_job: Callable[[str], None] | None = None,
     include_known: bool = True,
+    should_stop: Callable[[], bool] | None = None,
 ) -> None:
     """Run the funnel for one newly discovered posting.
 
     ``include_known=False`` (the nightly run) leaves an application that already exists
-    and is waiting for the user alone; Prepare passes True to carry it on."""
+    and is waiting for the user alone; Prepare passes True to carry it on.
+    ``should_stop`` (Prepare's Pause/Cancel) is checked between stages and while the
+    tailor job runs; True raises `PrepareInterrupted`."""
     if not row.job_id:
         daily_progress._bump(summary, "skipped_count")
         return
@@ -100,6 +114,7 @@ def _process_one(
         force_tailor=force_tailor,
         on_job=on_job,
         include_known=include_known,
+        should_stop=should_stop,
     ).run()
 
 class _RowRun:
@@ -125,6 +140,7 @@ class _RowRun:
         force_tailor: bool,
         on_job: Callable[[str], None] | None,
         include_known: bool = True,
+        should_stop: Callable[[], bool] | None = None,
     ) -> None:
         self.row = row
         self.settings = settings
@@ -142,6 +158,7 @@ class _RowRun:
         self.force_tailor = force_tailor
         self.on_job = on_job
         self.include_known = include_known
+        self.should_stop = should_stop
 
         wrapper_or_direct = row.application_link or ""
         self.final_url = (
@@ -163,6 +180,7 @@ class _RowRun:
             app = self._register()
         if app is None:
             return
+        self._stop_point()
         fetch = self._fetch_jd(app)
         if fetch is None:
             return
@@ -173,13 +191,20 @@ class _RowRun:
             store.upsert(app)
             self._count("processed")
             return
+        self._stop_point()
         requirements = self._screen(app, fetch.text)
         if requirements is None:
             return
+        self._stop_point()
         if self._reuse_prior_run(app, fetch.text, requirements):
             return
         self._tailor(app, fetch.text)
         self._count("processed")
+
+    def _stop_point(self) -> None:
+        """Between stages: Pause or Cancel ends the row here (a model call never splits)."""
+        if self.should_stop is not None and self.should_stop():
+            raise PrepareInterrupted()
 
     def _count(self, *fields: str) -> None:
         for name in fields:
@@ -463,6 +488,7 @@ class _RowRun:
         finished = _wait_for_job(
             job.job_id,
             on_progress=lambda message: self.log(f"[tailoring] {app.company}: {message}"),
+            should_stop=self.should_stop,
         )
         if finished is None or finished.status != "succeeded":
             err = finished.error if finished else "timed out waiting for tailor job"

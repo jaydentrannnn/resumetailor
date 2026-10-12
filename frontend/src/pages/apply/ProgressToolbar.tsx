@@ -6,7 +6,7 @@ import {
 } from "../../api";
 import { Button, buttonClass, Switch } from "../../components/ui";
 import { canFillAfterReview } from "../../lib/applicationRows";
-import { canRetailor, fillBlockers, TERMINAL_STATUSES } from "../../lib/applyPage";
+import { canTailorFiles, fillBlockers, hasTailoredFiles } from "../../lib/applyPage";
 import { GLOSSARY } from "../../lib/glossary";
 import { sourcesHeadline } from "../../lib/sources";
 import { AgeWindowPicker } from "./AgeWindowPicker";
@@ -113,10 +113,8 @@ export function ProgressBulkActions({
   onRetailor: (rows: ApplicationRow[]) => void;
   onFill: (ids: string[]) => void;
 }) {
-  const prepareIds = selected
-    .filter((row) => !TERMINAL_STATUSES.has(row.status))
-    .map((row) => row.source_job_id);
-  const retailorRows = selected.filter(canRetailor);
+  const prepareIds = selected.filter(canTailorFiles).map((row) => row.source_job_id);
+  const retailorRows = selected.filter(hasTailoredFiles);
   const fillIds = selected
     .filter((row) => row.status === "ready" && canFillAfterReview(row))
     .map((row) => row.source_job_id);

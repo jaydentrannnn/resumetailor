@@ -21,10 +21,21 @@ class ReviewState(BaseModel):
     required: bool = False
 
 
+#: The steps a Prepare passes through before its new files exist. ``job_id`` may already
+#: name a run with no quality report yet, which would read as "could not be verified";
+#: the review waits for the finished files.
+_PREPARING_STATUSES = frozenset({"discovered", "jd_fetched", "screened_in", "tailoring"})
+
+
 def state(app: store_models.Application) -> ReviewState:
     # A finished or archived application will not be filled again: nothing to review, and
     # no reason to hash both resume artifacts on every Apply-list poll.
-    if not app.job_id or app.status in store_models.TERMINAL_STATUSES or app.archived_at:
+    if (
+        not app.job_id
+        or app.status in store_models.TERMINAL_STATUSES
+        or app.status in _PREPARING_STATUSES
+        or app.archived_at
+    ):
         return ReviewState()
     out_dir = config.OUTPUT_DIR / "jobs" / app.job_id
     quality = resume_quality.read(out_dir)

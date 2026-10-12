@@ -103,3 +103,14 @@ def test_finished_or_archived_applications_need_no_review(prepared):
     assert resume_review.state(submitted) == resume_review.ReviewState()
     archived = app.model_copy(update={"archived_at": "2026-10-02T00:00:00+00:00"})
     assert not resume_review.state(archived).warnings
+
+
+@pytest.mark.parametrize("status", ["discovered", "jd_fetched", "screened_in", "tailoring"])
+def test_no_review_while_prepare_runs(prepared, status):
+    app, _out = prepared
+    # The new run's folder has no quality report until the tailor finishes.
+    (config.OUTPUT_DIR / "jobs" / "run2").mkdir()
+    in_flight = app.model_copy(update={"status": status, "job_id": "run2"})
+    assert resume_review.state(in_flight) == resume_review.ReviewState()
+    finished = in_flight.model_copy(update={"status": "ready"})
+    assert resume_review.state(finished).required
