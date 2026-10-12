@@ -1,3 +1,4 @@
+import type { ReactNode } from "react";
 import type { SecretState } from "../../api";
 import { Card } from "../../components/ui";
 import { KeyRow } from "./KeyRow";
@@ -13,6 +14,7 @@ export function ApiKeysCard({
   className = "",
   only,
   checks = {},
+  before,
 }: {
   secrets: SecretState[];
   storeBackend: string;
@@ -24,6 +26,8 @@ export function ApiKeysCard({
   only?: string[];
   /** Connection-test status per key name, for the models that use it. */
   checks?: Record<string, ModelCheck>;
+  /** Rows listed first: the custom servers the chosen models use. */
+  before?: ReactNode;
 }) {
   return (
     <Card
@@ -37,7 +41,10 @@ export function ApiKeysCard({
       }
     >
       <ul className="divide-y divide-line">
+        {before}
         {secrets
+          // Custom server keys belong to their server's block (`before`), not this list.
+          .filter((secret) => !secret.name.startsWith("CUSTOM_"))
           .filter((secret) => !only || only.includes(secret.name))
           .map((secret) => (
             <KeyRow

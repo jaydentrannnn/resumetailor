@@ -12,8 +12,9 @@ import { describe } from "../../../lib/errors";
 import { SKIP_WARNINGS } from "../../../lib/onboarding";
 import { useRunState } from "../../../state/runState";
 import { BrowserPicker, ConnectionStatus } from "../../apply/BrowserConnection";
-import { AutofillModelCard } from "../../settings/AutofillModelCard";
-import { TailorModelCard } from "../../settings/TailorModelCard";
+import { ModelKeysCard } from "../../settings/ModelKeysCard";
+import { ModelsCard } from "../../settings/ModelsCard";
+import { useRoleModel } from "../../settings/useRoleModel";
 import { useSecrets } from "../../settings/useSecrets";
 import { StepFrame, type StepNav } from "../StepFrame";
 
@@ -22,8 +23,10 @@ import { StepFrame, type StepNav } from "../StepFrame";
  * and the browser Fill opens. Only a working tailoring model is required.
  */
 export function ToolsStep({ nav }: { nav: StepNav }) {
-  const { settings, setSettings, flushSettings } = useRunState();
-  const { secrets, reload } = useSecrets();
+  const { settings, setSettings, flushSettings, settingsLoaded } = useRunState();
+  const { secrets, storeBackend, reload } = useSecrets();
+  const light = useRoleModel("light", secrets);
+  const heavy = useRoleModel("heavy", secrets);
   const [tailorOk, setTailorOk] = useState(false);
   const [browser, setBrowser] = useState<BrowserStatus | null>(null);
   const [launching, setLaunching] = useState(false);
@@ -41,6 +44,10 @@ export function ToolsStep({ nav }: { nav: StepNav }) {
       .then(setBrowser)
       .catch(() => undefined);
   }, []);
+
+  useEffect(() => {
+    if (light.check !== "testing") setTailorOk(!!light.check?.ok);
+  }, [light.check]);
 
   async function launch() {
     setLaunching(true);
@@ -72,21 +79,24 @@ export function ToolsStep({ nav }: { nav: StepNav }) {
       skipWarning={SKIP_WARNINGS.tools}
       error={error}
     >
-      <TailorModelCard
+      <ModelsCard
         embedded
         className="border-t border-line pt-4"
-        secrets={secrets}
-        reload={reload}
-        title="Light task model"
-        description="Rewrites your bullets for each job in many small steps. A lightweight model is plenty and saves usage; leave the model blank for the default (gemma4:cloud on Ollama). It is tested automatically; continue once it works."
-        onResult={(result) => setTailorOk(!!result?.ok)}
+        light={light}
+        heavy={heavy}
+        description="The light model rewrites your bullets for each job in many small steps; a lightweight one is plenty and saves usage. Leave its model blank for the default (gemma4:cloud on Ollama). The heavy model answers application questions. Both are tested automatically; continue once the light model works."
       />
-      <AutofillModelCard
-        embedded
-        className="border-t border-line pt-4"
-        secrets={secrets}
-        reload={reload}
-      />
+      {settingsLoaded && (
+        <ModelKeysCard
+          embedded
+          className="border-t border-line pt-4"
+          models={[light, heavy]}
+          secrets={secrets}
+          storeBackend={storeBackend}
+          reload={reload}
+          onlyNeeded
+        />
+      )}
       <Card
         embedded
         className="border-t border-line pt-4"

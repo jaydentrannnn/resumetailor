@@ -1,46 +1,28 @@
-import { modelsFor, selectionProvider } from "../../lib/aiModels";
-import { Card } from "../../components/ui";
 import { useRunState } from "../../state/runState";
 import { AiAdvancedCard } from "./AiAdvancedCard";
-import { ApiKeysCard } from "./ApiKeysCard";
-import { AutofillModelCard } from "./AutofillModelCard";
-import { TailorModelCard } from "./TailorModelCard";
+import { ModelKeysCard } from "./ModelKeysCard";
+import { ModelsCard } from "./ModelsCard";
 import { UsageCard } from "./UsageCard";
+import { useRoleModel } from "./useRoleModel";
 import { useSecrets } from "./useSecrets";
 
+/** Settings → AI: one tile for both models, every API key in one list, advanced, usage. */
 export function AiSection() {
-  const { settings, settingsLoaded } = useRunState();
+  const { settingsLoaded } = useRunState();
   const { secrets, storeBackend, reload } = useSecrets();
-  const models = modelsFor(settings);
-  const selectedKeys = new Set([
-    ...(selectionProvider(models.light)?.keys ?? []),
-    ...(selectionProvider(models.heavy)?.keys ?? []),
-  ]);
+  const light = useRoleModel("light", secrets);
+  const heavy = useRoleModel("heavy", secrets);
   return (
     <div className="space-y-4">
-      <TailorModelCard secrets={secrets} reload={reload} />
-      <AutofillModelCard secrets={secrets} reload={reload} />
-      <Card
-        title="Other API keys"
-        description="Saved credentials for other providers and job-search services."
-      >
-        <details>
-          <summary className="cursor-pointer text-sm font-medium">Manage other keys</summary>
-          {settingsLoaded && (
-            <div className="mt-4">
-              <ApiKeysCard
-                embedded
-                secrets={secrets.filter(
-                  (secret) => !secret.name.startsWith("CUSTOM_") && !selectedKeys.has(secret.name),
-                )}
-                storeBackend={storeBackend}
-                reload={reload}
-                highlighted={[]}
-              />
-            </div>
-          )}
-        </details>
-      </Card>
+      <ModelsCard light={light} heavy={heavy} />
+      {settingsLoaded && (
+        <ModelKeysCard
+          models={[light, heavy]}
+          secrets={secrets}
+          storeBackend={storeBackend}
+          reload={reload}
+        />
+      )}
       <AiAdvancedCard />
       <UsageCard />
     </div>

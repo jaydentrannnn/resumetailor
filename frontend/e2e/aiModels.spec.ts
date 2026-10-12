@@ -52,35 +52,44 @@ for (const width of [1280, 390]) {
     });
     await page.goto("/settings?tab=ai");
     await expect(page.getByRole("tab", { name: "AI model", exact: true })).toBeVisible();
-    const light = page
+    // One tile holds both roles' provider and model; everything else lives in API keys.
+    const tile = page
       .locator("section")
-      .filter({ has: page.getByRole("heading", { name: "Light task model", exact: true }) })
+      .filter({ has: page.getByRole("heading", { name: "AI models", exact: true }) })
       .last();
-    const heavy = page
+    const light = tile.getByRole("group", { name: "Light task model", exact: true });
+    const heavy = tile.getByRole("group", { name: "Heavy task model", exact: true });
+    const keys = page
       .locator("section")
-      .filter({ has: page.getByRole("heading", { name: "Heavy task model", exact: true }) })
+      .filter({ has: page.getByRole("heading", { name: "API keys", exact: true }) })
       .last();
     await heavy.getByRole("combobox", { name: "Provider", exact: true }).selectOption("custom");
     await heavy.getByLabel("Model", { exact: true }).fill("filler");
-    await heavy
+    await expect(tile.getByLabel("Server URL")).toHaveCount(0);
+    const server = keys.getByRole("group", { name: "Custom server (Heavy)", exact: true });
+    await server
       .getByRole("combobox", { name: "API format", exact: true })
       .selectOption("anthropic");
-    await heavy.getByLabel("Server URL", { exact: true }).fill("https://proxy.example/api");
-    await expect(heavy.getByLabel("Server API key (optional)")).toBeVisible();
+    await server.getByLabel("Server URL", { exact: true }).fill("https://proxy.example/api");
+    await expect(server.getByLabel("Server API key (optional)")).toBeVisible();
     await expect.poll(() => saved.ai_models?.heavy.base_url).toBe("https://proxy.example/api");
     expect(saved.ai_models?.light.provider).toBe("ollama");
     await expect.poll(() => checks.includes("heavy")).toBe(true);
 
     // A key belongs to this endpoint/format/role. A different endpoint gets an empty slot.
-    await heavy.getByLabel("Server API key (optional)").fill("dummy-test-key");
-    await heavy.getByRole("button", { name: "Save", exact: true }).click();
-    await expect(heavy.getByText("Saved", { exact: true })).toBeVisible();
-    await heavy.getByLabel("Server URL", { exact: true }).fill("https://other.example/api");
-    await expect(heavy.getByText("Not set", { exact: true })).toBeVisible();
+    await server.getByLabel("Server API key (optional)").fill("dummy-test-key");
+    await server.getByRole("button", { name: "Save", exact: true }).click();
+    await expect(server.getByText("Saved", { exact: true })).toBeVisible();
+    await server.getByLabel("Server URL", { exact: true }).fill("https://other.example/api");
+    await expect(server.getByText("Not set", { exact: true })).toBeVisible();
 
     await light.getByRole("combobox", { name: "Provider", exact: true }).selectOption("openai");
     await light.getByLabel("Model", { exact: true }).fill("reasoner");
-    await expect(light.getByLabel("OpenAI API key")).toBeVisible();
+    await expect(light.getByText("Needs a key", { exact: true })).toBeVisible();
+    await expect(keys.getByLabel("OpenAI API key")).toBeVisible();
+    await expect(keys.getByText("Manage other keys")).toHaveCount(0);
+    await tile.screenshot({ path: `test-results/ai-models-${width}.png` });
+    await keys.screenshot({ path: `test-results/ai-keys-${width}.png` });
     await expect.poll(() => saved.ai_models?.light.model_name).toBe("reasoner");
     expect(saved.ai_models?.heavy.model_name).toBe("filler");
 

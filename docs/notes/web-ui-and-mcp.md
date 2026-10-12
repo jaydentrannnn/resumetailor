@@ -764,3 +764,17 @@ Quick adjustments follow-up (2026-10-11, supersedes the notes above where they d
   - The template being adjusted keeps its own name, so it is never overwritten.
   - The note under Apply says whether this saves a new template, updates the active
     one, or replaces an earlier copy.
+
+### Settings → AI: one models tile, one keys list (2026-10-11)
+
+The Light/Heavy split (v1.6.0) gave each role its own card with its own key rows and
+hid every other key behind "Manage other keys". Users found keys scattered. Now one
+**AI models** tile holds a row per role with only Provider + Model and a status chip;
+**API keys** is one combined list again (the chosen providers' keys highlighted, each
+with the test result of the model that uses it, a failure on either role winning). A
+role on a custom server gets a "Custom server (Light/Heavy)" block at the top of that
+list holding API format, server URL and its optional key — the key stays bound to role +
+format + URL (unchanged backend), so changing the URL shows Not set. Needed keys are
+listed even if `/api/secrets` has no slot for them yet. `useRoleModel` holds each
+role's selection, connection and test once per page so the tile and the keys list
+never test twice. Onboarding's Tools step uses the same tile with only the needed keys.
