@@ -112,3 +112,8 @@ def test_screen_coverage_counts_against_the_passed_skill_list():
         "An internship.", requirements, synthetic_resume(), known_tags=["kubernetes"]
     )
     assert (result.coverage_matched, result.coverage_total, result.coverage) == (1, 2, 0.5)
+
+
+def test_check_blocks_tolerates_odd_whitespace():
+    reasons, _evidence = check_blocks("Must hold an active security\nclearance. US citizen only.")
+    assert reasons == ["citizenship_required", "clearance_required"]

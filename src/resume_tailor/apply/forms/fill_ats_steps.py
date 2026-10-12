@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import re
 import time
 from datetime import date
 from typing import Any
@@ -18,10 +19,20 @@ from resume_tailor.apply.ats import (
     workday_prompts,
     workday_skills,
 )
+from resume_tailor.apply.funnel import store
 from resume_tailor.apply.funnel.store_models import FillResult
-from resume_tailor.infra import telemetry
+from resume_tailor.infra import llm, telemetry
 
 from . import fill_outcomes, fill_page, fill_state, fill_widgets
+
+#: A form statement that the job itself requires citizenship or a clearance, as opposed
+#: to a plain "Are you a U.S. citizen?" asked for export-control or EEO records.
+_CITIZENSHIP_REQUIRED = re.compile(
+    r"\b(?:requires?|required|must (?:be|have|hold|obtain|possess))\b[^?\n]{0,80}?"
+    r"\b(?:security clearance|u\.?\s?s\.? citizen(?:ship)?)\b"
+    r"|\b(?:security clearance|u\.?\s?s\.? citizenship)\b[^?\n]{0,40}?\bis required\b",
+    re.I,
+)
 
 
 class _FillAtsSteps(fill_state._FillState):
@@ -50,6 +61,37 @@ class _FillAtsSteps(fill_state._FillState):
         if not workday_flow.wait_for_step_ready(self.page, deadline=self.deadline):
             return self._handoff(self.SITE_ERROR_MSG)
         return None
+
+    def _workday_citizenship_stop(self) -> FillResult | None:
+        """Stop when the form says the job needs U.S. citizenship or a clearance.
+
+        CMU's SEI posting (2026-10-12) said so only in an Application Question, never in
+        the job description, so screening could not catch it. For a visa holder the
+        application cannot succeed: it is marked screened out instead of filled further.
+        """
+        if self.profile is None or self.profile.work_authorization != "visa_holder":
+            return None
+        text = str(workday_page.snapshot(self.page).get("text") or "")
+        found = _CITIZENSHIP_REQUIRED.search(text)
+        if found is None:
+            return None
+        clearance = "clearance" in found.group(0).casefold()
+        needs = "a U.S. security clearance" if clearance else "U.S. citizenship"
+        reason = (
+            f"Not eligible: the application form says this job requires {needs}, "
+            "and your profile is a visa holder. Stopped filling."
+        )
+        self.progress(reason)
+        result = FillResult(
+            status="awaiting_review",
+            browser_target_id=self.target_id,
+            browser_url=str(self.page.url),
+            handoff_reason=reason,
+        )
+        store.set_status(self.app, "screened_out", note=reason)
+        self.app.fill = result
+        store.upsert(self.app)
+        return result
 
     def _workday_fill_widgets(self) -> None:
         """Workday's own dropdowns, radios, self-identification and prompts."""
@@ -95,14 +137,23 @@ class _FillAtsSteps(fill_state._FillState):
         self._workday_phone_code()
 
     def _workday_skills(self) -> list[dict[str, Any]]:
+        # Searches get up to two minutes; the model gets at most 45s of it so an
+        # overloaded provider cannot starve the steps after My Experience.
         skills_deadline = min(self.deadline, time.monotonic() + 120)
+
+        def choose_many(unmatched: dict[str, list[str]]) -> dict[str, str | None]:
+            model_deadline = min(skills_deadline, time.monotonic() + 45)
+            try:
+                return hybrid_resolver.choose_skill_options(unmatched, deadline=model_deadline)
+            except llm.LLMError as exc:
+                if re.search(r"\bHTTP (429|5\d\d)\b", str(exc)):
+                    self.model_unavailable = True
+                raise
+
         with config.pinned(self.settings.model_spec, effort=self.settings.answer_effort):
             skill_chips, skills_left = workday_skills.fill_skills(
                 self.page, list(self.pkt.skills), progress=self.progress,
-                deadline=skills_deadline,
-                choose_many=lambda unmatched: hybrid_resolver.choose_skill_options(
-                    unmatched, deadline=skills_deadline,
-                ),
+                deadline=skills_deadline, choose_many=choose_many,
             )
         if skills_left:
             note = f"Skills not found on the form: {', '.join(skills_left)}"

@@ -109,12 +109,21 @@ def check_blocks(
     settings = settings or ScreenSettings()
     reasons: list[str] = []
     evidence: list[str] = []
+    # Patterns are written with plain spaces; a JD can use a non-breaking space or tab
+    # between the words, or break "security\nclearance" across lines. Line breaks also
+    # end sentences for the evidence, so the joined text is only the fallback.
+    jd_text = re.sub(r"[^\S\n]+", " ", jd_text)
+    joined = re.sub(r"(?<=\w) ?\n ?(?=\w)", " ", jd_text)
     for pattern in settings.block_patterns:
-        match = re.search(pattern, jd_text, re.IGNORECASE)
+        text = jd_text
+        match = re.search(pattern, text, re.IGNORECASE)
+        if match is None:
+            text = joined
+            match = re.search(pattern, text, re.IGNORECASE)
         if match is None:
             continue
         reasons.append(_NAMED_BLOCKS.get(pattern) or f"blocked by pattern {pattern!r}")
-        evidence.append(_sentence_around(jd_text, match.start(), match.end()))
+        evidence.append(_sentence_around(text, match.start(), match.end()))
     return reasons, evidence
 
 

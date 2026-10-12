@@ -216,13 +216,28 @@ def _sponsorship_key(low: str) -> str | None:
     return "requires_sponsorship_future" if future else "requires_sponsorship"
 
 
+#: A long label that still asks directly for the current employer or title, e.g. Aptiv's
+#: "Who is your current or most recent employer? (Enter the legal company name)".
+_DIRECT_CURRENT_JOB = {
+    "current_company": re.compile(
+        r"^\W*(?:who|what) is (?:the name of )?your (?:current|present|most recent|latest)"
+        r"(?: or (?:most recent|previous|last))? (?:employer|company)\b"
+    ),
+    "current_title": re.compile(
+        r"^\W*what is your (?:current|present|most recent|latest)"
+        r"(?: or (?:most recent|previous|last))? (?:job |position )?title\b"
+    ),
+}
+
+
 def _synonym_key(text: str) -> str | None:
     low = text.casefold()
     sponsorship = _sponsorship_key(low)
     if sponsorship:
         return sponsorship
     for pattern, key in ats_hints.SYNONYMS:
-        if len(text) > 60 and key in SHORT_FIELD_KEYS:
+        direct = _DIRECT_CURRENT_JOB.get(key)
+        if len(text) > 60 and key in SHORT_FIELD_KEYS and not (direct and direct.search(low)):
             continue
         if re.search(pattern, low, re.I):
             return key
@@ -443,6 +458,8 @@ def answers(match: Match | None, question: Question, facts: Facts) -> list[str]:
         routine = form_facts.acknowledgement(context) == "routine"
         opted_in = facts.fields.get("auto_accept_routine_acknowledgements") == "Yes"
         return ["Yes"] if routine and opted_in else []
+    if match.key == form_facts.TALENT_POOL:
+        return ["No", "I do not consent", "Do not consent", "I do not agree"]
     if match.key == "relatives_at_company":
         value = facts.fields.get(match.key, "")
         if (value == "Yes" and question.kind in {"text", "textarea"}

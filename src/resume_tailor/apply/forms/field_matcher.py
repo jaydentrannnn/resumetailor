@@ -168,6 +168,8 @@ def match_option(
         return _match_level(available, target)
     if not matches and key == "notice_period":
         return _match_notice(available, target)
+    if not matches and key == "phone_device_type" and normalize(target) in _MOBILE_DEVICE:
+        return _match_mobile(available)
     if not matches:
         # Most specific category first; a tier that names no option falls through to the
         # next, a tier that names two stops (never a guess between them).
@@ -178,6 +180,20 @@ def match_option(
                 return OptionMatch(status="matched", option_id=matches[0].option_id, method="alias")
             if matches:
                 break
+    return OptionMatch(status="ambiguous" if matches else "no_match")
+
+
+def _match_mobile(available: list[ObservedOption]) -> OptionMatch:
+    """A mobile phone under any tenant's name ("Personal Cell", "Mobile - Personal");
+    a work/business mobile only when it is the sole mobile option."""
+    def says(pattern: str, option: ObservedOption) -> bool:
+        return bool(re.search(pattern, normalize(option.label)))
+
+    mobile = [o for o in available if says(r"\b(?:mobile|cell|cellular)\b", o)]
+    personal = [o for o in mobile if not says(r"\b(?:work|business|office)\b", o)]
+    matches = personal or mobile
+    if len(matches) == 1:
+        return OptionMatch(status="matched", option_id=matches[0].option_id, method="alias")
     return OptionMatch(status="ambiguous" if matches else "no_match")
 
 
@@ -196,16 +212,19 @@ def _match_notice(available: list[ObservedOption], target: str) -> OptionMatch:
 
 #: Language proficiency wording by rank, most specific first ("limited working" is 2,
 #: not the bare "limited" of rank 1).
-_LEVEL_RANKS: tuple[tuple[str, int], ...] = (
+_LEVEL_RANKS: tuple[tuple[str, float], ...] = (
     (r"\bnative\b|\bbilingual\b|\bmother tongue\b", 5),
-    (r"\bfull professional\b|\bfluent\b|\bexpert\b", 4),
-    (r"\bprofessional working\b|\badvanced\b|\bproficient\b", 3),
-    (r"\blimited working\b|\bintermediate\b|\bconversational\b|\bmoderate\b", 2),
-    (r"\belementary\b|\bbeginner\b|\bbasic\b|\bnovice\b|\blimited\b", 1),
+    (r"\bfull professional\b|\bfluent\b|\bexpert\b|\bexcellent\b|\bsuperior\b", 4),
+    # Between "Good" and "Excellent" on five-step scales.
+    (r"\bvery good\b", 3.5),
+    (r"\bprofessional working\b|\badvanced\b|\bproficient\b|\bgood\b|\bhigh\b|\bstrong\b", 3),
+    (r"\blimited working\b|\bintermediate\b|\bconversational\b|\bmoderate\b|\bfair\b|"
+     r"\bmedium\b|\baverage\b", 2),
+    (r"\belementary\b|\bbeginner\b|\bbasic\b|\bnovice\b|\blimited\b|\bpoor\b|\blow\b", 1),
 )
 
 
-def level_rank(text: str) -> int | None:
+def level_rank(text: str) -> float | None:
     """1 (beginner) .. 5 (native) for a proficiency answer or option, else None."""
     wanted = normalize(text)
     return next((rank for pattern, rank in _LEVEL_RANKS if re.search(pattern, wanted)), None)
@@ -222,6 +241,10 @@ def _match_level(available: list[ObservedOption], target: str) -> OptionMatch:
     if not below:
         return OptionMatch(status="no_match")
     matches = [option for option, rank in ranked if rank == below[0]]
+    if len(matches) > 1:
+        # Two words for one rank ("Advanced", "Proficient"): the one naming the answer.
+        named = [option for option in matches if normalize(target) in normalize(option.label)]
+        matches = named or matches
     if len(matches) == 1:
         return OptionMatch(status="matched", option_id=matches[0].option_id, method="alias")
     return OptionMatch(status="ambiguous")

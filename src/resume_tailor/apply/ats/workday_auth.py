@@ -12,8 +12,9 @@ import logging
 import re
 import secrets
 import string
+import threading
 import time
-from collections.abc import Callable
+from collections.abc import Callable, Iterator
 from pathlib import Path
 from typing import Any, Literal
 from urllib.parse import urlparse
@@ -22,11 +23,14 @@ from resume_tailor import config
 from resume_tailor.apply.answers.profile import ApplicantProfile
 from resume_tailor.apply.driver import clicks
 from resume_tailor.apply.funnel import store
-from resume_tailor.infra import secret_store
+from resume_tailor.infra import atomic, secret_store
 
 _log = logging.getLogger(__name__)
 
 _VAULT_FILENAME = "workday_vault.json"
+
+#: Guards every read-modify-write of the vault; reentrant so a helper may nest inside.
+_VAULT_LOCK = threading.RLock()
 
 
 def _vault_path() -> Path:
@@ -83,9 +87,22 @@ def _save_vault(vault: dict[str, dict[str, str]]) -> None:
                 _log.warning("password for %s kept in %s: %s", tenant, path.name, exc)
                 entry["password"] = password
         on_disk[tenant] = entry
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(json.dumps(on_disk, indent=2) + "\n", encoding="utf-8")
-    tmp.replace(path)
+    atomic.write_text(path, json.dumps(on_disk, indent=2) + "\n")
+
+
+@contextlib.contextmanager
+def _vault_entry(tenant: str) -> Iterator[dict[str, str]]:
+    """Read-modify-write one tenant's vault entry under the vault lock.
+
+    Parallel fills share this file: without the lock, two fills on one new site each
+    generate a password and the last save wins, leaving the account with a password
+    the vault no longer has.
+    """
+    with _VAULT_LOCK:
+        vault = _load_vault()
+        entry = vault.setdefault(tenant, {})
+        yield entry
+        _save_vault(vault)
 
 
 def extract_workday_tenant(url: str) -> str:
@@ -107,21 +124,15 @@ def get_tenant_credentials(
 ) -> tuple[str, str]:
     """Return (email, password) for the given Workday URL from profile or vault."""
     tenant = extract_workday_tenant(url)
-    vault = _load_vault()
 
     email = (getattr(profile, "workday_email", None) or profile.email or "").strip()
     if not email:
         raise ValueError("Applicant email is required for Workday authentication")
 
     password = (getattr(profile, "workday_password", None) or "").strip()
-    if not password:
-        if tenant in vault and vault[tenant].get("password"):
-            password = vault[tenant]["password"]
-        else:
-            password = generate_compliant_password()
-
-    vault[tenant] = {**vault.get(tenant, {}), "email": email, "password": password}
-    _save_vault(vault)
+    with _vault_entry(tenant) as entry:
+        password = password or entry.get("password") or generate_compliant_password()
+        entry.update(email=email, password=password)
     return email, password
 
 
@@ -234,15 +245,13 @@ _EXISTS = re.compile(r"already (?:exists|in use|registered)|already have an acco
 
 
 def _mark_created(tenant: str) -> None:
-    vault = _load_vault()
-    vault.setdefault(tenant, {})["created"] = True
-    _save_vault(vault)
+    with _vault_entry(tenant) as entry:
+        entry["created"] = True
 
 
 def _mark_signed_in(tenant: str) -> None:
-    vault = _load_vault()
-    vault.setdefault(tenant, {})["signed_in"] = True
-    _save_vault(vault)
+    with _vault_entry(tenant) as entry:
+        entry["signed_in"] = True
 
 
 def _known_site(tenant: str) -> bool:
@@ -696,9 +705,7 @@ async def handle_workday_auth_async(
         ).first, purpose="auth", timeout=remaining())
         await page.wait_for_timeout(min(1000, remaining()))
         if await detect_auth_state_async(page) == "none" and await _authenticated_evidence_async(page):
-            vault = _load_vault()
-            vault.setdefault(tenant, {})["created"] = True
-            _save_vault(vault)
+            _mark_created(tenant)
             return "authenticated"
         body = (await page.locator("body").inner_text(timeout=remaining())).casefold()
         if "already exists" in body or "already have an account" in body:

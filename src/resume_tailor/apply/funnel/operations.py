@@ -26,13 +26,14 @@ from resume_tailor.apply.funnel import attention as attention_mod
 from resume_tailor.apply.funnel import (
     daily,
     daily_progress,
+    fill_hosts,
     preparation,
     store,
     store_models,
     store_views,
 )
 from resume_tailor.apply.funnel.daily_row_run import PrepareInterrupted
-from resume_tailor.infra import logs
+from resume_tailor.infra import atomic, logs
 from resume_tailor.web.schemas import ApplyOperationRequest, ApplySettings, JobSettings
 
 OperationState = Literal[
@@ -175,12 +176,10 @@ def _load() -> dict[str, ApplyOperation]:
 def _save(operations: dict[str, ApplyOperation]) -> None:
     path = _path()
     path.parent.mkdir(parents=True, exist_ok=True)
-    tmp = path.with_suffix(".tmp")
-    tmp.write_text(
+    atomic.write_text(
+        path,
         json.dumps({key: value.model_dump() for key, value in operations.items()}, indent=2) + "\n",
-        encoding="utf-8",
     )
-    tmp.replace(path)
 
 
 def _persist(operation: ApplyOperation) -> None:
@@ -262,8 +261,30 @@ def _event(operation: ApplyOperation, stage: str, message: str, application_id: 
         operation.events.append(
             {"at": _now(), "stage": stage, "message": message, "application_id": application_id}
         )
-        operation.events = operation.events[-100:]
+        operation.events = _trim_events(operation.events)
         _persist(operation)
+
+
+#: Events kept per application, and in total. A single shared cap let one chatty fill
+#: push a parallel fill's whole history (and Pause/Cancel markers) out of the log.
+_EVENTS_PER_APPLICATION = 60
+_EVENTS_MAX = 400
+
+
+def _trim_events(events: list[dict[str, Any]]) -> list[dict[str, Any]]:
+    """Keep each application's latest events and every operation-level event."""
+    if len(events) <= _EVENTS_PER_APPLICATION:
+        return events
+    seen: dict[str, int] = {}
+    kept: list[dict[str, Any]] = []
+    for event in reversed(events):
+        owner = str(event.get("application_id") or "")
+        if owner:
+            seen[owner] = seen.get(owner, 0) + 1
+            if seen[owner] > _EVENTS_PER_APPLICATION:
+                continue
+        kept.append(event)
+    return kept[:_EVENTS_MAX][::-1]
 
 
 def _set_find_progress(operation: ApplyOperation, progress: daily_progress.FindProgress) -> None:
@@ -470,6 +491,21 @@ def _wait_while_automation_paused(operation: ApplyOperation) -> bool:
     return False
 
 
+def _label(app: store_models.Application | None, application_id: str) -> str:
+    return f"{app.company} — {app.role}".strip(" —") if app else application_id
+
+
+def _hold_for_verification(operation: ApplyOperation, application_id: str, reason: str) -> None:
+    """Hand an application back unfilled: its Workday site's new account is unverified."""
+    label = _label(store.get(application_id), application_id)
+    with _LOCK:
+        operation.processed += 1
+        operation.blocked += 1
+        operation.needs_input += 1
+        attention_mod.record(operation.attention, application_id, label, "needs_input", reason)
+    _event(operation, "filling", reason, application_id)
+
+
 def _process_item(
     operation: ApplyOperation,
     request: ApplyOperationRequest,
@@ -484,7 +520,7 @@ def _process_item(
     started_at = _now()
     item = InFlightItem(
         application_id=application_id,
-        label=f"{app.company} — {app.role}".strip(" —") if app else application_id,
+        label=_label(app, application_id),
         started_at=started_at,
         deadline_at=_deadline_iso(),
     )
@@ -676,6 +712,10 @@ def _dispatch_items(
             if submitted:
                 operation.submitted += 1
 
+    # Fill only: one application per Workday site at a time (see fill_hosts).
+    gate = fill_hosts.HostGate() if operation.action == "fill" else None
+    site_free = threading.Condition(dispatch_lock)
+
     def process_next() -> None:
         while True:
             with dispatch_lock:
@@ -698,20 +738,44 @@ def _dispatch_items(
                     return
                 if not pending:
                     return
-                application_id = pending.popleft()
-            # Same-role postings in other locations prepare side by side: each is its own
-            # store row with its own tailor run, so nothing is shared between them.
-            stopped = _process_item(
-                operation,
-                request,
-                settings,
-                applicant_snapshot,
-                application_id,
-                reserve_submit,
-                release_submit,
-            )
+                if gate is None:
+                    application_id = pending.popleft()
+                else:
+                    taken = gate.take(pending)
+                    if taken is None:
+                        # Every pending application is on a site another worker is
+                        # filling; wait for one to finish (or for Pause/Cancel).
+                        site_free.wait(timeout=0.5)
+                        continue
+                    application_id = taken
+                hold = gate.verification_hold(application_id) if gate else ""
+            try:
+                if hold:
+                    _hold_for_verification(operation, application_id, hold)
+                    continue
+                # Same-role postings in other locations prepare side by side: each is its
+                # own store row with its own tailor run, so nothing is shared between them.
+                stopped = _process_item(
+                    operation,
+                    request,
+                    settings,
+                    applicant_snapshot,
+                    application_id,
+                    reserve_submit,
+                    release_submit,
+                )
+            finally:
+                if gate is not None:
+                    with dispatch_lock:
+                        gate.release(application_id)
+                        site_free.notify_all()
+            if gate is not None:
+                label = _label(store.get(application_id), application_id)
+                with dispatch_lock:
+                    gate.record_result(application_id, label)
             if stopped and not _CANCEL.is_set():
-                pending.appendleft(application_id)
+                with dispatch_lock:
+                    pending.appendleft(application_id)
 
     with ThreadPoolExecutor(max_workers=workers) as executor:
         futures = [config.submit_in_context(executor, process_next) for _ in range(workers)]

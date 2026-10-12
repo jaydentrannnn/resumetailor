@@ -164,6 +164,35 @@ def _follow_href_or_click(page: Any, locator: Any, *, deadline: float) -> None:
     clicks.safe_click(locator, purpose="enter", timeout=_remaining_ms(deadline, 5000))
 
 
+#: Extra wait for a slow tenant's auth step (Itron took over 20s to paint Create Account).
+_SLOW_STEP_EXTRA_S = 25
+
+
+def _still_loading(page: Any) -> bool:
+    """The apply-flow shell (or nothing at all) is up, but no screen has painted yet."""
+    snap = workday_page.snapshot(page)
+    ids = set(snap.get("ids") or [])
+    return not ids or bool(ids & {"applyFlowPage", "progressBar"})
+
+
+def _wait_past_loading(
+    page: Any,
+    allowed: set[str],
+    *,
+    deadline: float,
+    progress: Callable[[str], None],
+) -> workday_page.WorkdayState:
+    """Keep waiting on a slow tenant, bringing a background tab forward halfway through."""
+    progress("Workday: the application is still loading; waiting a little longer")
+    half = _SLOW_STEP_EXTRA_S / 2
+    state = wait_for_state(page, allowed, timeout_s=half, deadline=deadline)
+    if state == "unknown":
+        with contextlib.suppress(Exception):  # a tab that cannot come forward still waits
+            page.bring_to_front()
+        state = wait_for_state(page, allowed, timeout_s=half, deadline=deadline)
+    return state
+
+
 def enter_application(
     page: Any,
     context: Any,
@@ -209,6 +238,8 @@ def enter_application(
             return page, state
         _follow_href_or_click(page, manual.first, deadline=deadline)
         state = wait_for_state(page, terminal, timeout_s=20, deadline=deadline)
+        if state == "unknown" and _still_loading(page):
+            state = _wait_past_loading(page, terminal, deadline=deadline, progress=progress)
     if state not in terminal:
         # The error page can also replace the form right after Apply / Apply Manually.
         recovered, reloads = recover_site_error(page, deadline=deadline, progress=progress)

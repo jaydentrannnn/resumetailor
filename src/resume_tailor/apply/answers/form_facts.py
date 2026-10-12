@@ -8,7 +8,24 @@ from collections.abc import Iterable
 HIGH_SCHOOL = "high_school_graduation_year"
 SKILLS = "programming_languages"
 ACKNOWLEDGEMENT = "routine_acknowledgement"
-PROTECTED_KEYS = frozenset({HIGH_SCHOOL, SKILLS, ACKNOWLEDGEMENT, "relatives_at_company"})
+TALENT_POOL = "talent_pool_consent"
+PROTECTED_KEYS = frozenset({
+    HIGH_SCHOOL, SKILLS, ACKNOWLEDGEMENT, TALENT_POOL, "relatives_at_company",
+})
+
+#: Consent to keep the applicant's data for OTHER openings (a talent pool), as opposed to
+#: processing it for this application. The applicant declines these (2026-10-12).
+_TALENT_POOL = re.compile(
+    r"(?:consent|agree|permission|allow|may we|keep|retain|store).{0,160}"
+    r"(?:(?:other|future|additional|similar)\s+(?:job|career|employment|work)?\s*"
+    r"(?:opportunit|opening|position|role|vacanc)|talent (?:pool|community|network))",
+    re.S,
+)
+
+
+def talent_pool(text: str) -> bool:
+    """A question asking to keep the applicant's data for other job opportunities."""
+    return bool(_TALENT_POOL.search(text.casefold()))
 
 
 def acknowledgement(text: str) -> str:
@@ -51,6 +68,8 @@ def semantic_key(text: str, help_text: str = "") -> str:
         and not re.search(r"\bcompetitor|\bother compan", low)
     ):
         return "relatives_at_company"
+    if talent_pool(text):
+        return TALENT_POOL
     if acknowledgement(f"{text} {help_text}"):
         return ACKNOWLEDGEMENT
     return ""

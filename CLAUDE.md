@@ -133,7 +133,7 @@ Docs cite bare module names (`fit.py`, `render.py`); the few that repeat across 
 | `document/` | `render`, `convert`, `docx_text`, `docx_normalize`, `template_*` (analysis helpers: `analysis_types`, `contact_detect`, `entry_structure`, `field_candidates`, `header_fields`, `section_mapping`, `table_layout`, `profile_validation`), `cover_template`, `default_templates`, `calibrate`, `rerender`, `thumbnails` — no LLM, ever |
 | `content/` | `data` (the master-resume model), `data_transfer`, `edu_dates`, `libraries` (+ `library_models`; one built-in dictionary + app-wide user additions), `bullet_tags` (computed match tags), `industries`, `style`, `labels`, `onboarding`, `resume_versions` |
 | `importing/` | `resume_import` (.docx entry; `import_common`, `import_contact`, `import_entries`, `import_merge_match`, `import_merge`, `import_layout`), `resume_import_pdf` (PDF entry + its LLM call; `pdf_patterns`, `pdf_lines`, `pdf_structure`, `pdf_build`) |
-| `infra/` | `llm`, `fake_llm`, `logs`, `secret_store`, `housekeeping`, `desktop_main`, `desktop_update` |
+| `infra/` | `llm`, `fake_llm`, `logs`, `secret_store`, `atomic` (unique-temp atomic writes), `housekeeping`, `desktop_main`, `desktop_update` |
 | `apply/`, `web/`, `mcp_server/`, `storage/`, `library_seeds/` | see their own `CLAUDE.md` / docstrings |
 
 ## Code organization

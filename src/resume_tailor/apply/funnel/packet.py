@@ -9,10 +9,6 @@ from __future__ import annotations
 
 import hashlib
 import json
-import os
-import threading
-import time
-import uuid
 from datetime import datetime, timezone
 from pathlib import Path
 
@@ -20,6 +16,7 @@ from resume_tailor import config
 from resume_tailor.apply.answers import profile as profile_mod
 from resume_tailor.apply.ats import ats_hints
 from resume_tailor.content.data import MasterResume, load
+from resume_tailor.infra import atomic
 from resume_tailor.pipeline.expand import ExpandedEntry, Expansion
 
 from . import packet_fields, packet_models
@@ -228,23 +225,6 @@ def build_packet(
     )
 
 
-#: One writer at a time: on Windows, two threads replacing the same ``packet.json`` at
-#: once fail with "Access is denied" (the job thread and a rebuild request can race).
-_WRITE_LOCK = threading.Lock()
-
-
-def _replace(src: Path, dst: Path, attempts: int = 10) -> None:
-    """``os.replace``, retried briefly while a reader holds ``dst`` open (Windows)."""
-    for attempt in range(attempts):
-        try:
-            os.replace(src, dst)
-            return
-        except PermissionError:
-            if attempt == attempts - 1:
-                raise
-            time.sleep(0.05 * (attempt + 1))
-
-
 def write_packet(job_id: str) -> packet_models.Packet:
     """Build and persist ``packet.json`` for ``job_id``."""
     packet = build_packet(job_id)
@@ -255,11 +235,5 @@ def write_packet(job_id: str) -> packet_models.Packet:
     # (the Apply page, the MCP server) can open the file mid-write. An in-place
     # write_text truncates first and was read back as empty JSON. The temp name is
     # unique because the job thread and a rebuild request can write at the same time.
-    tmp = path.with_name(f"packet.{uuid.uuid4().hex}.tmp")
-    try:
-        tmp.write_text(packet.model_dump_json(indent=2) + "\n", encoding="utf-8")
-        with _WRITE_LOCK:
-            _replace(tmp, path)
-    finally:
-        tmp.unlink(missing_ok=True)
+    atomic.write_text(path, packet.model_dump_json(indent=2) + "\n")
     return packet

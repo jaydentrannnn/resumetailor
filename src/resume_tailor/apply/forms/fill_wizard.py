@@ -33,6 +33,10 @@ class _FillWizard(fill_answers._FillAnswers, fill_ats_steps._FillAtsSteps):
                 break
             if time.monotonic() >= self.deadline:
                 self.needs_review.append("Application fill reached its four-minute limit")
+                self.progress(
+                    f"Fill reached its four-minute limit before step {step + 1}; "
+                    "Continue fill picks up from here"
+                )
                 break
             outcome = self._fill_step(step)
             if isinstance(outcome, FillResult):
@@ -48,6 +52,9 @@ class _FillWizard(fill_answers._FillAnswers, fill_ats_steps._FillAtsSteps):
             handoff = self._workday_step_ready(step)
             if handoff is not None:
                 return handoff
+            stop = self._workday_citizenship_stop()
+            if stop is not None:
+                return stop
             self._workday_fill_widgets()
         if self.wizard is not None:
             handoff = self._wizard_gate(self.wizard)

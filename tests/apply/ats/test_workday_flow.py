@@ -309,6 +309,38 @@ def test_enter_application_resumes_from_the_open_dialog(clock):
     assert page.clicks == ["applyManually"]
 
 
+class _SlowAuthPage(_FakePage):
+    """The auth step's shell is up at once; its Create Account form paints at `ready_at`."""
+
+    ready_at = 0.0
+
+    def snap(self) -> dict:
+        if self.screen == "auth_step_loading" and self.clock.now >= self.ready_at:
+            self.screen = "create_account"
+        return super().snap()
+
+
+def test_a_slow_auth_step_is_waited_for_not_handed_over(clock):
+    """Itron (2026-10-12) painted Create Account ~23s after Apply Manually."""
+    page = _SlowAuthPage("start_dialog", {("start_dialog", "applyManually"): "auth_step_loading"}, clock=clock)
+    page.ready_at = clock.now + 30
+    lines: list[str] = []
+    _page, state = workday_flow.enter_application(
+        page, None, deadline=clock.now + 120, progress=lines.append,
+    )
+    assert state == "create_account"
+    assert any("still loading" in line for line in lines)
+
+
+def test_a_never_painting_auth_step_still_hands_over(clock):
+    page = _SlowAuthPage("start_dialog", {("start_dialog", "applyManually"): "auth_step_loading"}, clock=clock)
+    page.ready_at = clock.now + 999
+    start = clock.now
+    _page, state = workday_flow.enter_application(page, None, deadline=clock.now + 120)
+    assert state == "unknown"
+    assert clock.now - start <= 20 + workday_flow._SLOW_STEP_EXTRA_S + 1
+
+
 def test_apply_manually_href_is_navigated_not_clicked(clock):
     """A background tab never sees the animating dialog stable, so the link is followed."""
     page = _FakePage("start_dialog", {

@@ -346,8 +346,11 @@ class _OpenAICompatClient:
         # header outright, so send one only when there is a key.
         if self.api_key:
             headers["Authorization"] = f"Bearer {self.api_key}"
-        slept = 0.0
+        # `timeout` bounds the whole call, retries and backoff included: an Apply fill
+        # shortens it to what is left of its budget, and a 503 storm must not overrun it.
+        spent = 0.0
         for retry in range(len(_RETRY_BACKOFF) + 1):
+            attempt_started = time.monotonic()
             try:
                 with telemetry.request(self.origin, payload["model"], retry) as measured, \
                         model_queue.queue.slot(self.base_url, self.origin):
@@ -356,7 +359,7 @@ class _OpenAICompatClient:
                         f"{self.base_url}/chat/completions",
                         headers=headers,
                         json=payload,
-                        timeout=self.timeout,
+                        timeout=max(1.0, self.timeout - spent),
                     )
                     measured.response(response)
                     model_queue.queue.rate_limited(self.base_url, response)
@@ -370,13 +373,15 @@ class _OpenAICompatClient:
                     f"Profile 'lmstudio' uses LM Studio for all stages unless Rewrite/Expand "
                     f"model overrides (or profile hybrid/ollama) point elsewhere."
                 ) from exc
+            spent += time.monotonic() - attempt_started
             if response.status_code not in _RETRYABLE_STATUSES or retry == len(_RETRY_BACKOFF):
                 return response
             delay = _retry_delay(response, retry)
-            if delay >= self.timeout - slept:
+            # A retry needs the backoff plus at least a second to answer in.
+            if delay + 1.0 >= self.timeout - spent:
                 return response
             _sleep(delay)
-            slept += delay
+            spent += delay
         return response
 
     def _check_status(self, response: httpx.Response, model: str) -> None:

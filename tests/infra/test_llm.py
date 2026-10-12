@@ -754,3 +754,42 @@ def test_client_for_accepts_local_ollama_without_a_key(monkeypatch):
 def test_llm_error_is_catchable_as_runtime_error():
     """`tailor.py`'s existing handlers catch RuntimeError; this keeps them working."""
     assert issubclass(llm.LLMError, RuntimeError)
+
+
+def test_slow_failing_attempts_count_against_the_timeout(client, monkeypatch):
+    """`timeout` bounds the whole call: time spent waiting on 503s leaves less for retries."""
+    sleeps: list[float] = []
+    timeouts: list[float] = []
+    clock = {"now": 0.0}
+    def fake_sleep(seconds):
+        sleeps.append(seconds)
+        clock["now"] += seconds
+
+    monkeypatch.setattr(llm, "_sleep", fake_sleep)
+    monkeypatch.setattr(llm.time, "monotonic", lambda: clock["now"])
+    c = client(timeout=20)
+
+    def slow_503(url, *, headers=None, json=None, timeout=None):
+        c.recorder.payloads.append(json)
+        timeouts.append(timeout)
+        clock["now"] += 8.0  # each failing attempt takes 8s to answer
+        return httpx.Response(503)
+
+    monkeypatch.setattr(llm.httpx, "post", slow_503)
+    with pytest.raises(llm.LLMError, match="HTTP 503"):
+        _request(c)
+    # 8s attempt + 2s backoff + 8s attempt = 18s; a 5s backoff no longer fits in 20s.
+    assert sleeps == [2.0]
+    assert timeouts == [20.0, 10.0]
+
+
+def test_telemetry_wrapper_forwards_timeout_to_the_real_client():
+    from resume_tailor.infra import llm_telemetry
+
+    raw = llm._OpenAICompatClient(
+        base_url="http://x/v1", api_key="", timeout=900, structured_mode="prompt"
+    )
+    wrapped = llm_telemetry.Client(raw, "answer", "gemini")
+    wrapped.timeout = min(wrapped.timeout, 42.0)
+    assert raw.timeout == 42.0
+    assert wrapped.purpose == "answer"

@@ -244,7 +244,12 @@ def fill_skills(
         try:
             picks = choose_many(unmatched)
         except Exception as exc:  # noqa: BLE001
-            progress(f"Workday: skill matching failed ({type(exc).__name__}); left for review")
+            status = re.search(r"\bHTTP (429|5\d\d)\b", str(exc))
+            reason = f"model unavailable, HTTP {status.group(1)}" if status else type(exc).__name__
+            progress(
+                f"Workday: skill matching failed ({reason}); "
+                f"{len(unmatched)} skill(s) left for review"
+            )
             picks = {}
         used: set[str] = {str(c["value"]) for c in committed}
         for skill, options in unmatched.items():

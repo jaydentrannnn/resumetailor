@@ -35,6 +35,14 @@ class Client:
     def __getattr__(self, name: str):
         return getattr(self.raw, name)
 
+    def __setattr__(self, name: str, value: Any) -> None:
+        # Callers tune the client (an Apply fill shortens `timeout` to its remaining
+        # budget); that must reach the real client, not stop at this wrapper.
+        if name in {"raw", "purpose", "origin", "messages"}:
+            object.__setattr__(self, name, value)
+        else:
+            setattr(self.raw, name, value)
+
     async def __aenter__(self):
         await self.raw.__aenter__()
         return self
