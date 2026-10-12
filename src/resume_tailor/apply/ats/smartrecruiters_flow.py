@@ -92,10 +92,17 @@ def fill_resume(page: Any, resume_path: str | None) -> tuple[list[dict[str, str]
     return [], [f"Resume: {name} was set but is not listed on the form"]
 
 
-def fill_message(page: Any, cover_letter: str) -> tuple[list[dict[str, str]], list[str]]:
-    """Put the cover letter in "Message to the Hiring Team" when the box is empty."""
+def fill_message(
+    page: Any, cover_letter: str | Callable[[bool], str],
+) -> tuple[list[dict[str, str]], list[str]]:
+    """Put the cover letter in "Message to the Hiring Team" when the box is empty.
+
+    ``cover_letter`` is the text, or a callable given whether the box is required that
+    returns it ("" to leave the box empty) — Fill's cover-letter rule, which may write a
+    letter first (`cover_on_demand`). A required box left empty is listed for review.
+    """
     boxes = page.locator(smartrecruiters_page._MESSAGE)
-    if not smartrecruiters_page._present(boxes) or not cover_letter.strip():
+    if not smartrecruiters_page._present(boxes):
         return [], []
     box = boxes.first
     try:
@@ -105,6 +112,17 @@ def fill_message(page: Any, cover_letter: str) -> tuple[list[dict[str, str]], li
     if current.strip():
         kept = {"label": "Message to the Hiring Team", "value": current[:60], "state": "preserved"}
         return [kept], []
+    if callable(cover_letter):
+        required = False
+        with contextlib.suppress(Exception):
+            required = bool(box.evaluate(
+                "e => e.required || e.getAttribute('aria-required') === 'true'"
+            ))
+        cover_letter = cover_letter(required)
+        if not cover_letter.strip():
+            return [], ["Message to the Hiring Team"] if required else []
+    if not cover_letter.strip():
+        return [], []
     review: list[str] = []
     if smartrecruiters_entries._set_text(
         box, cover_letter.strip(), label="Message to the Hiring Team", review=review
@@ -343,8 +361,12 @@ def fill(
     *,
     resume_path: str | None = None,
     deadline: float | None = None,
+    cover_text: Callable[[bool], str] | None = None,
 ) -> tuple[list[dict[str, str]], list[str]]:
     """Fill every area this form step shows; ``(filled, needs_review)`` like Workday's.
+
+    ``cover_text`` decides the hiring-team message (see `fill_message`); without it the
+    packet's letter, if any, is used.
 
     ``filled`` records are ``{"label", "value"}`` (plus ``"state"`` "preserved" for an
     answer that was already there, "partial" for a saved entry with a field left for
@@ -356,7 +378,7 @@ def fill(
     for step in (
         lambda: smartrecruiters_location.fill_city(page, packet.fields),
         lambda: fill_resume(page, resume_path),
-        lambda: fill_message(page, packet.cover_letter),
+        lambda: fill_message(page, cover_text or packet.cover_letter),
         lambda: smartrecruiters_entries.fill_experience(page, packet, progress, deadline=deadline),
         lambda: smartrecruiters_entries.fill_education(page, packet, progress, deadline=deadline),
         lambda: fill_screening(page, packet, progress),

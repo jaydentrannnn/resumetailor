@@ -157,7 +157,7 @@ Two halves that never mix, joined by a measure-and-retry loop (`fit.py` owns the
 ```
 master_resume.json + jd.txt
   → tag_infer.prepare_run()   inferred bullet skills (LLM, cached per text) + annotate
-  → jd.extract()              JD → JobRequirements (LLM, voted ×3, cached)
+  → jd.extract()              JD → JobRequirements (LLM, one read, cached)
   → relevance.score_table()     all bullets → 0-10 relevance (LLM, once, cached)
   → include.apply()           drop exclusions (pure)
   → facets.select_facets()    project tech + coursework (LLM, once, cached)
@@ -187,7 +187,7 @@ fit.fit(): over → combine → pull back near-widows → drop weakest (else Fit
   first.
 - **`bullets: dict[id -> text]` is the pipeline's currency** — content source *and*
   selection filter; an entry whose bullets all dropped is omitted entirely. **JD keywords
-  are canonicalised against the skills the resume shows** (`bullet_tags.known_terms`); extraction is voted. Education/skills
+  are canonicalised against the skills the resume shows** (`bullet_tags.known_terms`); one read by default (voting is opt-in). Education/skills
   are tailored in wording, never resized. `include.py` is applied once, after scoring,
   before facets.
 - **Web UI and MCP are front doors, not second pipelines**; jobs run one at a time because

@@ -10,6 +10,7 @@ import { sourcesSummary } from "../../lib/sources";
 import { useConfirm } from "../../state/confirmState";
 import type { BrowserView } from "../../lib/browserState";
 import { BrowserPicker, ConnectionStatus } from "./BrowserConnection";
+import { CoverLetterSetting } from "./CoverLetterSetting";
 
 /**
  * Platforms that may auto-submit. Workday, LinkedIn, Indeed, Handshake and SmartRecruiters
@@ -25,7 +26,7 @@ const AUTO_SUBMIT_ATS: { id: string; label: string }[] = [
 
 /**
  * Apply settings in a right-hand drawer: the nightly run first (on/off, time, how much
- * it finds), then what to search, whether and where to auto-submit, the Autofill model,
+ * it finds), then what to search, cover letters, whether and where to auto-submit, the Autofill model,
  * the browser to start for Fill and desktop notifications. Every change autosaves through
  * `runState`. One-off search options ("this search only") live beside Find jobs.
  */
@@ -160,6 +161,13 @@ export function ApplySettingsDrawer({
               {sourcesSummary(apply.sources)}
             </p>
           </div>
+        </Section>
+
+        <Section title="Cover letters">
+          <CoverLetterSetting
+            value={apply.cover_letter_mode}
+            onChange={(mode) => patch({ cover_letter_mode: mode })}
+          />
         </Section>
 
         <Section title="Auto-submit">

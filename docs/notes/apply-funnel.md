@@ -1750,3 +1750,41 @@ the whole event list (`pendingControl`), not the newest event. Also,
 quality report yet, which used to flash "Resume needs review". The selection bar now
 splits rows in two: Tailor files gets rows without files, failed tailors included;
 Tailor again gets rows with files (`canTailorFiles` / `hasTailoredFiles`).
+
+## Faster Apply batch prep on Ollama Free (2026-10-11)
+
+Ollama Free serves one request at a time (3 parallel extraction calls: 13.2s wall vs
+12.5s sequential), so batch time is the sum of every model call. Telemetry showed ~18
+calls per Apply item, a third redundant. Changes:
+- **One shared JD extraction.** Screening extracted without the profile guidance, which
+  is in `jd._slug`'s fingerprint, so the tailor job hit the extract cache in 2 of 48 runs.
+  Screening now extracts under `web.job_routing.tailoring_guidance` + `tailoring_context`,
+  the same snapshot `JobQueue.submit` captures. Default extraction is one read
+  (`EXTRACT_CONSENSUS_RUNS = 1`; see pipeline-and-guards.md).
+- **Cover letters at fill time.** Prepare wrote a letter for every item (2 calls each;
+  266 of 268 gemma letters failed the old 300–380 band even after the retry). Whether a
+  posting asks is only known in its form (Workday shows it pages in), so Fill writes one
+  via `cover_on_demand.ensure` only for a required cover-letter upload with Apply's switch
+  on; an optional field is left empty (`not_requested`, not a readiness blocker).
+  `preparation.check` lost `require_cover` and `missing_configured_cover_letter`.
+- **Near-empty postings** (47 of 292 runs) are still tailored, with the run warning
+  `jd.THIN_POSTING_WARNING` (text < 1,200 chars or no keywords). Not a resume-review
+  warning, so it never blocks Fill.
+- Model bake-off on 3 postings (full runs, medians): gemma4 70s / 0 fallbacks;
+  gpt-oss:120b (low) 94s / 6 fallbacks; nemotron-3-super (no thinking) 139s / 13 invented
+  skills dropped; nemotron-3-nano 157s; gpt-oss:20b (low) 183s. Qwen cloud models are
+  retired (410/404); deepseek/glm/kimi/mistral/minimax need a paid plan (402). gemma4
+  stays the default.
+
+## Cover-letter choice in Apply settings (2026-10-11)
+
+The on/off `ApplySettings.cover_letter` became `cover_letter_mode`: Off / Required only
+(default) / Required and optional / Every application. One four-way setting rather than a
+switch plus a choice, which could contradict each other; old settings migrate (true →
+`required`, false → `off`). Only `every` writes in Prepare — the user's trade: about 15–30s
+per batch item for a faster Fill and a letter readable before it is sent. `optional` writes
+during Fill and fires on most Greenhouse/Lever forms (their optional upload). Text boxes
+follow the upload rule (owner's call), so a "Cover letter" textarea gets the letter, not an
+Ask-AI draft. A letter written during Fill does not hold auto-submit (owner's call;
+Workday never auto-submits anyway). Under `off`, a letter already on hand (an older
+packet, a Tailor-tab run) is still used for a required field.

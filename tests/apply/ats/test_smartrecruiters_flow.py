@@ -406,6 +406,24 @@ def test_the_cover_letter_goes_into_an_empty_message_box(browser):
     )
 
 
+
+def test_the_message_box_follows_the_cover_letter_rule(browser):
+    """The rule sees whether the box is required; "" leaves an optional box empty and
+    lists a required one for review."""
+    page = _open(browser)
+    asked: list[bool] = []
+
+    def nothing(required: bool) -> str:
+        asked.append(required)
+        return ""
+
+    assert sr.fill_message(page, nothing) == ([], [])
+    page.locator(smartrecruiters_page._MESSAGE).evaluate("e => e.required = true")
+    assert sr.fill_message(page, nothing) == ([], ["Message to the Hiring Team"])
+    assert asked == [False, True]
+    filled, _ = sr.fill_message(page, lambda required: "I would like to join the team.")
+    assert filled == [{"label": "Message to the Hiring Team", "value": "cover letter"}]
+
 def test_a_written_message_is_kept(browser):
     page = _open(browser)
     page.locator(smartrecruiters_page._MESSAGE).fill("My own note.")

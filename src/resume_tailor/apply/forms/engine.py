@@ -29,15 +29,17 @@ from resume_tailor.apply.ats import (
     workday_repeaters,
 )
 from resume_tailor.apply.driver import browser, clicks, controls, scanner
-from resume_tailor.apply.forms import attachments, field_catalog, form_routes
-from resume_tailor.apply.forms.field_types import FieldObservation, FieldOutcome
+from resume_tailor.apply.forms import attachments, field_catalog, form_guards, form_routes
+from resume_tailor.apply.forms.field_types import AttachmentOutcome, FieldObservation, FieldOutcome
 from resume_tailor.apply.funnel import (
+    cover_on_demand,
     packet,
     packet_profile_fields,
     preparation,
     store,
     store_models,
 )
+from resume_tailor.apply.funnel.packet_models import Packet
 from resume_tailor.content import data
 from resume_tailor.infra import model_queue
 from resume_tailor.pipeline.jd import JobRequirements
@@ -106,6 +108,18 @@ def _current_outcome(field: FieldObservation, prior: FieldOutcome | None) -> Fie
     )
 
 
+
+async def _cover_letter(
+    pkt: Packet, settings: ApplySettings, *, required: bool, progress: Callable[[], None],
+) -> tuple[cover_on_demand.Action, bool]:
+    """`cover_on_demand.resolve` off the event loop, announcing a letter being written."""
+    mode = settings.cover_letter_mode
+    if cover_on_demand.plan(
+        mode, required=required, has_letter=cover_on_demand.has_cover(pkt)
+    ) == "write":
+        progress()
+    return await asyncio.to_thread(cover_on_demand.resolve, pkt, mode, required=required)
+
 @model_queue.observe_progress
 async def fill_application(
     source_job_id: str, *, settings: ApplySettings,
@@ -119,7 +133,7 @@ async def fill_application(
     app = store.get(source_job_id)
     if app is None:
         raise KeyError(source_job_id)
-    eligible = preparation.check(app, require_cover=settings.cover_letter)
+    eligible = preparation.check(app)
     if not eligible.eligible:
         raise RuntimeError(f"Application needs Prepare: {', '.join(eligible.reasons)}")
     if not app.job_id:
@@ -297,6 +311,21 @@ async def fill_application(
                             purpose = attachments.purpose_for(field)
                             if purpose and purpose in attachment_outcomes and attachment_outcomes[purpose].get("state") in {"verified", "preserved"}:
                                 continue
+                            cover_note = ""
+                            if purpose == "cover_letter" and not field.current_value:
+                                action, written = await _cover_letter(
+                                    pkt, settings, required=field.required,
+                                    progress=lambda: progress(f"Step {step_number}: writing a cover letter"),
+                                )
+                                check_budget()
+                                if action == "skip":
+                                    attachment_outcomes[purpose] = AttachmentOutcome(
+                                        purpose=purpose, state="not_requested",
+                                        reason=cover_on_demand.SKIPPED_NOTE,
+                                    ).model_dump()
+                                    continue
+                                if written:
+                                    cover_note = cover_on_demand.GENERATED_NOTE
                             progress(f"Step {step_number}: attaching {purpose or field.label}")
                             attachment = await attachments.upload(
                                 field_snapshot, field, pkt,
@@ -304,6 +333,8 @@ async def fill_application(
                                 role=app.role, out_dir=config.APPLICATIONS_OUTPUT_DIR / source_job_id,
                                 deadline=deadline,
                             )
+                            if cover_note and not attachment.reason:
+                                attachment.reason = cover_note
                             attachment_outcomes[purpose or field.field_id] = attachment.model_dump()
                             record(step_id, FieldOutcome(
                                 field_id=field.field_id, frame_id=field.frame_id,
@@ -365,6 +396,29 @@ async def fill_application(
                         # "decline" picks a decline option; it is never typed into a text box.
                         if value == "decline" and field.control_kind in {"text", "textarea"}:
                             value = ""
+                        if (not value and not field.current_value
+                                and field.control_kind in {"text", "textarea"}
+                                and cover_on_demand.is_cover_field(field.label)):
+                            # A cover-letter text box follows the cover-letter upload's rule.
+                            action, _written = await _cover_letter(
+                                pkt, settings, required=field.required,
+                                progress=lambda: progress(f"Step {step_number}: writing a cover letter"),
+                            )
+                            check_budget()
+                            max_length = field.constraints.get("max_length")
+                            value, _shortened = form_guards.fit_to_limit(
+                                pkt.cover_letter if action == "use" else "",
+                                max_length if isinstance(max_length, int) else 0,
+                            )
+                            if not value:
+                                record(step_id, FieldOutcome(
+                                    field_id=field.field_id, frame_id=field.frame_id,
+                                    label=field.label, canonical_key=key,
+                                    state="unanswered", required=field.required,
+                                    reason_code="cover_letter_skipped" if action == "skip"
+                                    else "cover_letter_missing",
+                                ))
+                                continue
                         generated = False
                         remembered = False
                         if (not value and not field.current_value
@@ -605,7 +659,7 @@ async def fill_application(
                                 }
                     record(current_step_id, _current_outcome(field, earlier.get(field.field_id)))
                 result.final_step_reached = final_step
-                if settings.cover_letter and "cover_letter" not in attachment_outcomes:
+                if settings.cover_letter_mode != "off" and "cover_letter" not in attachment_outcomes:
                     attachment_outcomes["cover_letter"] = {
                         "purpose": "cover_letter", "state": "not_requested",
                         "reason": "No cover-letter upload control was observed",

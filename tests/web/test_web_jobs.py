@@ -167,6 +167,8 @@ def test_job_runs_to_success_with_stubbed_pipeline(client, monkeypatch, tmp_path
     assert status["report"]["title"] == "Stub Role"
     assert status["report"]["pages"] == 1
     assert status["report"]["verb_collisions_remaining"] == 0
+    # A one-line posting is still tailored, with a warning to check the result.
+    assert "Posting text looks incomplete — check the tailored resume" in status["report"]["warnings"]
     # The final render's inputs are kept so bullets can be edited and re-rendered later.
     job_dir = config.OUTPUT_DIR / "jobs" / job_id
     snapshot = json.loads((job_dir / "render_snapshot.json").read_text())

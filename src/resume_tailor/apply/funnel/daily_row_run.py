@@ -19,7 +19,7 @@ from resume_tailor.apply.funnel.screen import screen
 from resume_tailor.content import data
 from resume_tailor.pipeline import jd, runs
 from resume_tailor.web import template_ops
-from resume_tailor.web.job_routing import model_routing
+from resume_tailor.web.job_routing import model_routing, tailoring_context, tailoring_guidance
 from resume_tailor.web.jobs import get_queue
 from resume_tailor.web.schemas import ApplySettings, JobSettings, RunMetadata
 
@@ -419,11 +419,19 @@ class _RowRun:
     def _extract(self, app: store_models.Application, jd_text: str) -> jd.JobRequirements | None:
         job_defaults = self.job_defaults
         try:
-            # Same routing and vote count as the tailor job below, so its own extraction
-            # is a cache hit ("Reusing cached job-description analysis") rather than a
-            # second full round of JD reads.
+            # Same routing, vote count and profile guidance (all in the cache key) as the
+            # tailor job below, so its own extraction is a cache hit ("Reusing cached
+            # job-description analysis") rather than a second full round of JD reads.
+            workspace_id = config.active_workspace_id()
+            guidance = tailoring_guidance(
+                daily_rows._job_settings(job_defaults, self.settings), workspace_id,
+                self.resume,
+            )
             profile, overrides, effort = model_routing(job_defaults)
-            with config.pinned(profile, overrides=overrides, effort=effort):
+            with (
+                tailoring_context(guidance, workspace_id),
+                config.pinned(profile, overrides=overrides, effort=effort),
+            ):
                 return jd.extract_consensus(
                     jd_text,
                     known_tags=self.known_tags,

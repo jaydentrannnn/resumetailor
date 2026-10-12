@@ -29,8 +29,9 @@ from .jd import JobRequirements
 from .rewrite_prompts import _format_keywords
 
 #: Bumped when ``_SYSTEM`` or the cover request shape changes. Version 2 added
-#: ATS/trust keyword split, anti-generic self-check, and optional CoverAngles.
-_COVER_PROMPT_VERSION = 4
+#: ATS/trust keyword split, anti-generic self-check, and optional CoverAngles. Version 5
+#: sized the structure in sentences per paragraph instead of "about 350 words".
+_COVER_PROMPT_VERSION = 5
 
 
 _SYSTEM = """\
@@ -76,12 +77,13 @@ supports one, mirror the posting's own wording for it in the body.
 - Treat soft skills and nice-to-haves as trust signals for a human reader: show them \
 through the work rather than naming them as traits.
 
-Structure, four paragraphs, about 350 words
-- Opening: name the role and open on something concrete. Never "I am writing to apply for".
-- Body 1: connect the single most relevant experience to the employer's top stated need.
-- Body 2: one quantified accomplishment addressing a second need, in two or three tight \
-sentences.
-- Close: a confident, specific call to action. Not "I hope to hear from you".
+Structure, four paragraphs, with a total length inside <word_band>
+- Opening, two or three sentences: name the role and open on something concrete. Never \
+"I am writing to apply for".
+- Body 1, three or four sentences: connect the single most relevant experience to the \
+employer's top stated need.
+- Body 2, three or four sentences: one quantified accomplishment addressing a second need.
+- Close, two sentences: a confident, specific call to action. Not "I hope to hear from you".
 - Select two or three experiences in total. Never recap the whole resume.
 - Mirror the posting's own verbs and vocabulary only where the source honestly supports it.
 
@@ -298,8 +300,10 @@ def _accept_letter(
     source_bullets: list[Bullet],
     jd_text: str,
     word_band: tuple[int, int],
+    aim: tuple[int, int] | None = None,
 ) -> _GuardResult:
-    """Run the full guard ladder on one model draft."""
+    """Run the full guard ladder on one model draft. A length outside `word_band` is a
+    hard offender (retried); one inside it but outside `aim` is only a warning."""
     company, location, addressee, field_warnings = _validate_posting_fields(
         llm_result, jd_text
     )
@@ -328,6 +332,8 @@ def _accept_letter(
     lo, hi = word_band
     if count < lo or count > hi:
         hard.append(f"word count {count} outside band {lo}-{hi}")
+    elif aim is not None and not aim[0] <= count <= aim[1]:
+        warnings.append(f"Letter is {count} words; aimed for {aim[0]}-{aim[1]}")
 
     # Mechanical fix for long dashes that survived a retry.
     cleaned = [coverletter_style._replace_long_dashes(p) for p in paragraphs]
@@ -451,7 +457,9 @@ def draft_letter(
     ``angles`` is a separate, cacheable parameter — do not route durable per-application
     inputs through ``instruction``, which deliberately bypasses cache and the guard retry.
     """
-    word_band = config.COVER_WORD_BAND
+    # The model is asked for the aim; the guard only retries outside the wider band.
+    word_band = config.COVER_WORD_AIM
+    limits = config.COVER_WORD_BAND
     model_label = config.backend_for("cover").label()
     source_bullets = _source_bullets(resume, bullets)
     angles = angles or coverletter_models.CoverAngles()
@@ -502,7 +510,8 @@ def draft_letter(
         llm_result,
         source_bullets=source_bullets,
         jd_text=jd_text,
-        word_band=word_band,
+        word_band=limits,
+        aim=word_band,
     )
 
     if accepted.hard_offenders and not instruction.strip():
@@ -526,7 +535,8 @@ def draft_letter(
             llm_result,
             source_bullets=source_bullets,
             jd_text=jd_text,
-            word_band=word_band,
+            word_band=limits,
+            aim=word_band,
         )
         cache_path.write_text(llm_result.model_dump_json(indent=2), encoding="utf-8")
 

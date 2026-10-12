@@ -82,7 +82,7 @@ def _heal_missing_expansion(app, settings: ApplySettings):
     with contextlib.suppress(Exception):
         job_followups.generate_expansion(app.job_id)
     return preparation.check(
-        app, require_cover=settings.cover_letter, require_acknowledgement=False,
+        app, require_acknowledgement=False,
     )
 
 
@@ -136,7 +136,7 @@ def prepare_application(
     from resume_tailor.apply.funnel import preparation
 
     existing_preparation = preparation.check(
-        app, require_cover=settings.cover_letter, require_acknowledgement=False,
+        app, require_acknowledgement=False,
     )
     if existing_preparation.reasons == ["missing_expansion"] and not force_prepare:
         existing_preparation = _heal_missing_expansion(app, settings)

@@ -209,7 +209,12 @@ class ApplySettings(BaseModel):
     auto_submit_max_per_company_per_day: int = Field(default=2, ge=0)
     blocker_mode: Literal["pause", "continue"] = "continue"
     reuse_threshold: float = 0.72
-    cover_letter: bool = True
+    #: When Apply writes a cover letter (`apply.funnel.cover_on_demand.plan`): ``off``
+    #: never (a required field is left for review); ``required`` during Fill, only for a
+    #: required cover-letter field; ``optional`` during Fill, for any cover-letter field;
+    #: ``every`` during Prepare, for every application. Replaces the old ``cover_letter``
+    #: switch (true -> ``required``, false -> ``off``; `_legacy_cover_switch`).
+    cover_letter_mode: Literal["off", "required", "optional", "every"] = "required"
     #: Provider + model for Fill's own LLM calls only — written-answer drafting and
     #: choice/blocker resolution (the "Autofill model" on the Apply page). Prepare's
     #: tailoring and its screening JD extraction use the Tailor tab's routing instead
@@ -236,6 +241,16 @@ class ApplySettings(BaseModel):
         if self.model_provider == "ollama-cloud":
             return f"ollama:{self.model_name}@{config.OLLAMA_CLOUD_BASE_URL}"
         return f"{self.model_provider}:{self.model_name}"
+
+    @model_validator(mode="before")
+    @classmethod
+    def _legacy_cover_switch(cls, data: Any) -> Any:
+        """Settings saved with the on/off ``cover_letter`` switch keep their meaning."""
+        if isinstance(data, dict) and "cover_letter" in data:
+            data = dict(data)
+            legacy = data.pop("cover_letter")
+            data.setdefault("cover_letter_mode", "required" if legacy else "off")
+        return data
 
     @model_validator(mode="before")
     @classmethod

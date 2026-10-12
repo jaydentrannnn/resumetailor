@@ -201,6 +201,27 @@ answers and model/hybrid resolvers use the **Heavy task model**, mirrored into
 panel also uses Heavy. Apply operations capture both roles at start so later settings edits
 cannot repoint an in-progress operation. Rewrite, expansion and cover letters stay on Light.
 
+Screening's JD extraction runs under the tailor job's exact routing, vote count and
+profile guidance (`web.job_routing.tailoring_guidance` + `tailoring_context`, shared with
+`JobQueue.submit`), so the tailor run's extraction is a cache hit. Posting text under
+`jd.THIN_POSTING_CHARS` (1,200) or with nothing extracted is still tailored, with the run
+warning `jd.THIN_POSTING_WARNING`.
+
+**Cover letters follow `ApplySettings.cover_letter_mode`** (Apply settings → Cover
+letters; the old `cover_letter` switch migrates: true → `required`, false → `off`):
+`off` never writes one; `required` writes one during Fill for a required cover-letter
+field; `optional` during Fill for any cover-letter field; `every` during Prepare
+(`daily_rows._job_settings` turns the run's cover letter on only for `every`; the Tailor
+tab's switch never decides it). Fill applies `funnel/cover_on_demand.plan` to every
+cover-letter field, uploads and text boxes alike (a label with "cover" and "letter", and
+SmartRecruiters' hiring-team message): an optional field the mode does not cover is left
+empty (`state: "not_requested"`, not a readiness blocker); a letter already on hand is
+used; otherwise one is written (`ensure`, reusing `job_followups.regenerate_cover_letter`
+and rebuilding the packet) or, under `off`, a required field is left for review.
+`filler.js` reports `required` per file input; the verified engine reads
+`FieldObservation.required`. A letter written during Fill does not hold auto-submit.
+`preparation.check` never requires a cover letter.
+
 Form filling injects `filler.js` into the user's host browser over CDP (`CHROME_CDP_URL`,
 default `http://127.0.0.1:9222`, or `http://host.docker.internal:9222` in the Docker image
 — name kept for backward compatibility, value is browser-agnostic) — no Chromium in the
@@ -630,8 +651,14 @@ plus opening-verb families) minus what the user hid, plus what the user added.
   (`known_terms`) read match tags; the Skills pool reads Extra skills + detected surface
   text (`skill_evidence`).
 - **`tag_infer.py`** asks the extract-purpose model which skills each bullet shows, one
-  batched call per uncached chunk; cached in the workspace's `inferred_tags.json`, keyed by
-  text + `_PROMPT_VERSION` + `config.fingerprint("extract")`. Every master-resume save
+  batched call per uncached chunk; cached in the workspace's `inferred_tags.json` (format
+  v2: one table per model identity, `_PROMPT_VERSION` +
+  `config.fingerprint("extract", include_guidance=False)`, keyed by bullet-text hash). The
+  profile guidance is not in the key (the prompt never reads it; keying on it split the
+  cache between the Apply screen and the tailor run). The three most recent models' tables
+  are kept, pruned only of bullets that no longer exist; a v1 flat file migrates on read
+  with no model call; concurrent `ensure` calls for one file and model infer once. The
+  server warms the active profile at startup (`web/app.py` lifespan). Every master-resume save
   schedules `web/skill_refresh.py` (coalesced background thread, under the saving profile's
   context and Tailor routing); each run calls `prepare_run` first, which fills anything
   missing and installs the run's annotation. A failed call is a run warning, never an
@@ -1211,12 +1238,16 @@ fixed overhead the fit loop never trims.
 - **JD keywords are canonicalised against the resume's own tag vocabulary**, not in a
   vacuum — `TAG_ALIASES` is a small global spelling-collapser (does not generalise, by its
   own docstring); `known_tags` steering the model is what actually generalises.
-- **Extraction is voted, not trusted from one call** — the same JD against the same
-  resume, temperature 0, still ranged 3/10 to 6/11 must-have coverage across 8 runs on a
+- **Extraction is one read by default; voting is opt-in** — the same JD against the same
+  resume, temperature 0, once ranged 3/10 to 6/11 must-have coverage across 8 runs on a
   live posting, because `canonical` is free text the model re-derives per call.
-  `jd.extract_consensus` (`--extract-runs`, default `config.EXTRACT_CONSENSUS_RUNS = 3`)
-  groups by verbatim `phrase`, keeps a phrase only if a majority proposed it, and prefers a
-  canonical that hits `known_tags` over a more frequent one that doesn't.
+  `jd.extract_consensus` (`--extract-runs` / `extract_runs`, default
+  `config.EXTRACT_CONSENSUS_RUNS = 1`) groups by verbatim `phrase`, keeps a phrase only if
+  a majority proposed it, and prefers a canonical that hits `known_tags` over a more
+  frequent one that doesn't. The default dropped from 3 in 2026-10: on gemma4:cloud, one
+  read vs three scored keyword Jaccard 0.857 vs 0.875 and identical seniority, while on a
+  one-request-at-a-time plan the extra reads cost the whole batch. Use 3 or more, never 2
+  (two votes act as a union).
 - **A missed keyword says why, not just that it missed.** `report.diagnose_gaps`
   classifies every unmatched canonical as `near_miss` (a skill some bullet shows names the
   same thing, spelled differently), `untagged_evidence` (matches `Project.tech`/skills/
@@ -1339,6 +1370,9 @@ fixed overhead the fit loop never trims.
   not the JD's vocabulary) and the raw JD for numbers only; company/location/addressee
   must appear verbatim in the posting or are blanked; AI tells (long dashes, phrase
   blocklist) and consecutive-"I" openers are enforced in code with one targeted retry.
+  Length: the model is asked for `config.COVER_WORD_AIM` (270–380 words, structure sized
+  in sentences per paragraph); outside it is only a warning, and only outside the hard
+  `config.COVER_WORD_BAND` (230–400) does the length earn the retry.
   Cover letters may issue one guard retry.
 - **Merge checks**: `bullet_merge._merge_bullets` fires only after a measured overflow
   (`fit.fit`'s `attempt >= 1`), and is accepted only when non-regressive, guard-clean,

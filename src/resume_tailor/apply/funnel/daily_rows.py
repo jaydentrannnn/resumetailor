@@ -188,12 +188,16 @@ def _job_settings(base: JobSettings, apply: ApplySettings) -> JobSettings:
     Model routing is deliberately left as the Tailor tab's (``base``): Prepare tailors
     exactly like a Tailor-tab run would. ``apply.model_spec`` is the autofill model
     only — Fill's form-answer and choice-resolution calls — never the tailoring model.
+
+    The cover letter follows Apply's `cover_letter_mode`, never the Tailor tab's switch:
+    written here only for ``every``; the other modes leave it to Fill
+    (`cover_on_demand`), since most applications never ask for one.
     """
     settings = base.model_copy(deep=True)
     settings.no_expand = False
-    if apply.cover_letter:
-        settings.cover_letter = True
-        settings.no_cover_letter = False
+    every = apply.cover_letter_mode == "every"
+    settings.cover_letter = every
+    settings.no_cover_letter = not every
     return settings
 
 def _settle_failed_prepare(

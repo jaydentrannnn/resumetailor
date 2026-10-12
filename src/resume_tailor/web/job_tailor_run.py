@@ -96,6 +96,8 @@ class _TailorJobRun:
                 self.resume, self.requirements, self.result, master=self.master_resume
             )
         )
+        if jd.thin_posting(job.jd_text, self.requirements):
+            job.report.warnings.append(jd.THIN_POSTING_WARNING)
         self._write_run_files()
 
         job.check_cancelled()

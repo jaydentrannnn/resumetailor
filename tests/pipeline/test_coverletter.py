@@ -87,6 +87,7 @@ def cover_calls(monkeypatch, tmp_path):
     monkeypatch.setattr(config, "CACHE_DIR", tmp_path / "cache")
     config.CACHE_DIR.mkdir()
     monkeypatch.setattr(config, "COVER_WORD_BAND", (10, 80))
+    monkeypatch.setattr(config, "COVER_WORD_AIM", (10, 80))
     config.resolve("claude")
     style.activate(cover=None)
 
@@ -190,6 +191,18 @@ def test_draft_letter_word_band_enforced(cover_calls):
     assert any("word count" in w for w in letter.warnings)
 
 
+def test_a_letter_short_of_the_aim_but_inside_the_band_is_kept(cover_calls, monkeypatch):
+    """Below the aim but inside the hard band: one call, a length warning, no retry."""
+    monkeypatch.setattr(config, "COVER_WORD_AIM", (60, 80))
+    resume = synthetic_resume()
+    calls = cover_calls(CoverLetterLLM(paragraphs=_paragraphs([20, 20, 15])))
+    letter = draft_letter(resume, _reqs(), _bullets(resume), "Python role.", use_cache=False)
+    assert len(calls) == 1
+    assert "<word_band>60-80</word_band>" in calls[0]["messages"][0]["content"]
+    assert any(w.startswith("Letter is 55 words; aimed for 60-80") for w in letter.warnings)
+    assert not any("Guard issues" in w for w in letter.warnings)
+
+
 def test_cache_key_changes_when_cover_style_changes(cover_calls):
     """``style.digest('cover')`` is folded into the cache path."""
     resume = synthetic_resume()
@@ -198,11 +211,11 @@ def test_cache_key_changes_when_cover_style_changes(cover_calls):
     jd = "Python role at Example Corp."
     style.activate(cover=None)
     path_default = _cache_path(
-        bullets, reqs, jd_text=jd, word_band=config.COVER_WORD_BAND
+        bullets, reqs, jd_text=jd, word_band=config.COVER_WORD_AIM
     )
     style.activate(cover="Use shorter sentences.")
     path_override = _cache_path(
-        bullets, reqs, jd_text=jd, word_band=config.COVER_WORD_BAND
+        bullets, reqs, jd_text=jd, word_band=config.COVER_WORD_AIM
     )
     assert path_default != path_override
 
@@ -340,7 +353,7 @@ def test_cache_key_changes_with_each_angle_field():
     reqs = _reqs()
     bullets = _bullets(resume)
     jd = "Python role."
-    base = _cache_path(bullets, reqs, jd_text=jd, word_band=config.COVER_WORD_BAND)
+    base = _cache_path(bullets, reqs, jd_text=jd, word_band=config.COVER_WORD_AIM)
     for field, value in (
         ("why_company", "why"),
         ("problem", "prob"),
@@ -351,7 +364,7 @@ def test_cache_key_changes_with_each_angle_field():
             bullets,
             reqs,
             jd_text=jd,
-            word_band=config.COVER_WORD_BAND,
+            word_band=config.COVER_WORD_AIM,
             angles=coverletter_models.CoverAngles(**{field: value}),
         )
         assert other != base, field
@@ -388,7 +401,7 @@ def test_angles_do_not_disable_caching_or_guard_retry(cover_calls, tmp_path, mon
     )
     assert len(calls) == 2, "angles must not skip the guard retry"
     cache = _cache_path(
-        bullets, reqs, jd_text=jd, word_band=config.COVER_WORD_BAND, angles=angles
+        bullets, reqs, jd_text=jd, word_band=config.COVER_WORD_AIM, angles=angles
     )
     assert cache.exists(), "angles must not skip the cache write"
     assert letter.paragraphs == good.paragraphs

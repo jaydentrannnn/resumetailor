@@ -68,18 +68,22 @@ def test_apply_job_settings_keeps_tailor_model_routing():
         model_name="gemma4:cloud",
         effort="low",
         rewrite_model="rewrite-model",
-        cover_letter=False,
+        cover_letter=True,
     )
-    merged = daily_rows._job_settings(
-        base,
-        ApplySettings(model_provider="lmstudio", model_name="autofill-model", cover_letter=True),
-    )
+    apply = ApplySettings(model_provider="lmstudio", model_name="autofill-model")
+    merged = daily_rows._job_settings(base, apply)
     assert merged.model == "ollama"
     assert merged.model_name == "gemma4:cloud"
     assert merged.effort == "low"
     assert merged.rewrite_model == "rewrite-model"
-    assert merged.cover_letter is True
-    assert base.cover_letter is False  # the workspace defaults object is not mutated
+    # Only "every application" writes the letter in Prepare; the Tailor tab's switch
+    # never decides it.
+    assert merged.cover_letter is False and merged.no_cover_letter is True
+    assert base.cover_letter is True  # the workspace defaults object is not mutated
+    for mode, written in (("off", False), ("optional", False), ("every", True)):
+        apply.cover_letter_mode = mode
+        merged = daily_rows._job_settings(base.model_copy(update={"cover_letter": False}), apply)
+        assert (merged.cover_letter, merged.no_cover_letter) == (written, not written)
 
 
 @pytest.fixture
@@ -701,8 +705,11 @@ def test_extract_consensus_pinned_to_tailor_routing(apply_paths, monkeypatch):
     `jd.extract_consensus` used to fall through to `config.backend_for`'s hardcoded
     Claude default; (2026-09-23) it then ran on the Apply autofill model with a single
     vote, so the tailor job — on different routing, asking for `extract_runs` votes —
-    cache-missed and re-read the JD `extract_runs` more times.
+    cache-missed and re-read the JD `extract_runs` more times; (2026-10-11) it ran
+    without the profile guidance, which is in the extraction's cache key, so the tailor
+    job of a profile with a target field still missed.
     """
+    from resume_tailor.web.job_routing import tailoring_guidance
     from tests.fixtures import synthetic_resume
 
     resume_path = apply_paths / "master_resume.json"
@@ -735,6 +742,7 @@ def test_extract_consensus_pinned_to_tailor_routing(apply_paths, monkeypatch):
         seen["origin"] = backend.origin
         seen["model"] = backend.model
         seen["runs"] = kwargs.get("runs")
+        seen["guidance"] = config.active_guidance()
         raise RuntimeError("stop before tailoring — only checking the pin")
 
     monkeypatch.setattr(jd, "extract_consensus", _extract)
@@ -744,7 +752,8 @@ def test_extract_consensus_pinned_to_tailor_routing(apply_paths, monkeypatch):
     config._ACTIVE.clear()
     tailor = JobSettings(model="lmstudio", model_name="tailor-model", extract_runs=3)
     monkeypatch.setattr(
-        daily.workspace, "load_settings", lambda: {"defaults": tailor.model_dump()}
+        daily.workspace, "load_settings",
+        lambda *_: {"defaults": tailor.model_dump(), "target_field": "software-data"},
     )
     settings = ApplySettings(
         enabled=True,
@@ -753,7 +762,14 @@ def test_extract_consensus_pinned_to_tailor_routing(apply_paths, monkeypatch):
         model_name="autofill-model",
     )
     summary = daily.run_daily(settings=settings)
+    guidance = seen.pop("guidance")
     assert seen == {"origin": "lmstudio", "model": "tailor-model", "runs": 3}
+    # The snapshot the tailor job's `JobQueue.submit` would capture for this row.
+    expected = tailoring_guidance(
+        daily_rows._job_settings(tailor, settings), config.active_workspace_id()
+    )
+    assert guidance is not None and guidance.fingerprint() == expected.fingerprint()
+    assert config.active_guidance() is None  # bound for the extraction only
     assert summary.tailor_failed == 1
     assert "stop before tailoring" in summary.errors[0]
 

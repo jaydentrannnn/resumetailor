@@ -118,6 +118,18 @@ def test_workday_generic_upload_reports_its_hint_and_section(page):
     assert upload["section"] == "Resume/CV"
 
 
+
+def test_file_inputs_say_whether_they_are_required(page):
+    """Fill writes a cover letter only for a required upload, so the scan reports it."""
+    page.set_content("""
+      <label for="r">Resume⁠*⁠:</label><input id="r" type="file">
+      <div aria-required="true"><label for="c">Cover Letter</label><input id="c" type="file"></div>
+      <label for="o">Cover Letter</label><input id="o" type="file">
+      <label for="p">Portfolio (required)</label><input id="p" type="file">
+    """)
+    required = {item["selector"]: item["required"] for item in _fill(page, {})["file_inputs"]}
+    assert required == {"#r": True, "#c": True, "#o": False, "#p": True}
+
 def test_how_heard_without_linkedin_picks_other_and_specifies(page):
     page.set_content("""
       <label for="src">How did you hear about us?</label>

@@ -84,7 +84,8 @@ export type ApplySettings = {
   auto_submit_enabled: boolean;
   blocker_mode: "pause" | "continue";
   reuse_threshold: number;
-  cover_letter: boolean;
+  /** When Apply writes a cover letter; see `CoverLetterSetting`. */
+  cover_letter_mode: CoverLetterMode;
   // Provider + model for the funnel's own extract/answer calls — separate from the
   // Tailor model setting. See `ApplySettings.model_spec` on the backend.
   model_provider: import("../lib/aiModels").ModelProvider;
@@ -376,3 +377,6 @@ export async function fetchSubmitEvidence(applicationId: string): Promise<Submit
 export function submitEvidenceFileUrl(applicationId: string, stamp: string, name: string): string {
   return `/api/applications/${encodeURIComponent(applicationId)}/submit-evidence/${encodeURIComponent(stamp)}/${encodeURIComponent(name)}`;
 }
+
+/** `off` never; `required` / `optional` at Fill for those fields; `every` during Prepare. */
+export type CoverLetterMode = "off" | "required" | "optional" | "every";

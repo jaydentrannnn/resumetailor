@@ -26,9 +26,9 @@ from resume_tailor.apply.funnel import daily as apply_daily
 from resume_tailor.apply.funnel import daily_progress
 from resume_tailor.apply.funnel import operations as apply_operations
 from resume_tailor.apply.funnel import scheduler as apply_scheduler
-from resume_tailor.content import data_transfer
+from resume_tailor.content import data, data_transfer
 from resume_tailor.infra import fake_llm, housekeeping, logs
-from resume_tailor.web import security, template_migration, template_ops
+from resume_tailor.web import security, skill_refresh, template_migration, template_ops
 from resume_tailor.web import state as web_state
 from resume_tailor.web.schemas import (
     JobSettings,
@@ -101,6 +101,12 @@ async def lifespan(app: FastAPI):
         apply_daily.sync_run_coverage()
     except Exception:  # noqa: BLE001 — a display backfill must not block startup
         _log.exception("could not sync application coverage from run reports")
+    try:
+        # Fill any bullet-skill inferences the cache lacks (a new model, an upgrade's key
+        # migration) in the background, before a batch needs them. A no-op when warm.
+        skill_refresh.schedule(data.load())
+    except Exception:  # noqa: BLE001 — no resume yet, or unreadable: nothing to warm
+        _log.info("skill cache warm-up skipped", exc_info=True)
     threading.Thread(target=housekeeping.run, name="housekeeping", daemon=True).start()
     _scheduler_stop.clear()
     scheduler = threading.Thread(

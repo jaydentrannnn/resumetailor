@@ -43,7 +43,7 @@ def fill_application(
         from resume_tailor import workspace
 
         settings = JobSettings.model_validate(workspace.load_settings()["defaults"]).apply
-    eligibility = preparation.check(app, require_cover=settings.cover_letter)
+    eligibility = preparation.check(app)
     if not eligibility.eligible:
         raise RuntimeError(f"Application needs Prepare: {', '.join(eligibility.reasons)}")
     engine_name = config.apply_fill_engine()

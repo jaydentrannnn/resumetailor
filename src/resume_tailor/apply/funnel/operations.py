@@ -357,7 +357,6 @@ def start(request: ApplyOperationRequest) -> ApplyOperation:
     selected = list(dict.fromkeys(request.application_ids))
     excluded: dict[str, list[str]] = {}
     if request.action == "fill":
-        require_cover = settings_snapshot.cover_letter
         for application_id in selected:
             app = store.get(application_id)
             if app is None:
@@ -366,7 +365,7 @@ def start(request: ApplyOperationRequest) -> ApplyOperation:
             if app.archived_at:
                 excluded[application_id] = ["archived_application"]
                 continue
-            eligibility = preparation.check(app, require_cover=require_cover)
+            eligibility = preparation.check(app)
             if not eligibility.eligible:
                 excluded[application_id] = eligibility.reasons
         selected = [application_id for application_id in selected if application_id not in excluded]

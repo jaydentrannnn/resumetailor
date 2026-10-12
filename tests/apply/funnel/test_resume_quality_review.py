@@ -62,10 +62,10 @@ def test_unsupported_section_warning_uses_section_identity():
 def test_acknowledgement_required_and_invalidated_by_artifact_or_quality_changes(prepared):
     app, out = prepared
     resume_quality.save(out, resume_quality.ResumeQuality(fill_ratio=0.8, fill_target=0.93))
-    assert "resume_quality_ack_required" in preparation.check(app, require_cover=False).reasons
+    assert "resume_quality_ack_required" in preparation.check(app).reasons
     state = resume_review.state(app)
     app = resume_review.acknowledge("one", state.revision)
-    assert preparation.check(app, require_cover=False).eligible
+    assert preparation.check(app).eligible
     assert resume_review.state(store.get("one")).acknowledged
     (out / "tailored.docx").write_bytes(b"edited resume")
     assert resume_review.state(app).required
@@ -78,11 +78,11 @@ def test_acknowledgement_required_and_invalidated_by_artifact_or_quality_changes
 
 def test_clean_resume_needs_no_ack_and_unknown_legacy_run_needs_prepare(prepared):
     app, out = prepared
-    assert "resume_quality_unverified" in preparation.check(app, require_cover=False).reasons
+    assert "resume_quality_unverified" in preparation.check(app).reasons
     with pytest.raises(ValueError, match="verified"):
         resume_review.acknowledge("one", resume_review.state(app).revision)
     resume_quality.save(out, resume_quality.ResumeQuality(fill_ratio=0.94, fill_target=0.93))
-    assert preparation.check(app, require_cover=False).eligible
+    assert preparation.check(app).eligible
     assert not resume_review.state(app).required
 
 

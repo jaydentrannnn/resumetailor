@@ -14,8 +14,8 @@ from resume_tailor.apply.ats import ats_hints, workday_auth, workday_flow, workd
 from resume_tailor.apply.discovery import fetch_jd
 from resume_tailor.apply.driver import browser
 from resume_tailor.apply.forms import form_guards, wizards
+from resume_tailor.apply.funnel import cover_on_demand, packet_fields, packet_profile_fields, store
 from resume_tailor.apply.funnel import packet as apply_packet
-from resume_tailor.apply.funnel import packet_fields, packet_profile_fields, store
 from resume_tailor.apply.funnel.store_models import FillResult
 from resume_tailor.content import data
 from resume_tailor.web.schemas import ApplySettings
@@ -270,6 +270,21 @@ class _FillState:
     @property
     def cover_path(self) -> Any:
         return self.pkt.artifacts.get("cover_pdf") or self.pkt.artifacts.get("cover_docx")
+
+    def _cover_letter(self, required: bool) -> tuple[str, bool]:
+        """`cover_on_demand.resolve` for one cover-letter field, with a progress line
+        when a letter has to be written."""
+        mode = self.settings.cover_letter_mode
+        if cover_on_demand.plan(
+            mode, required=required, has_letter=cover_on_demand.has_cover(self.pkt)
+        ) == "write":
+            self.progress("writing a cover letter for this form")
+        return cover_on_demand.resolve(self.pkt, mode, required=required)
+
+    def _cover_text(self, required: bool) -> str:
+        """The letter's text for a cover-letter text box, or "" to leave it empty."""
+        action, _written = self._cover_letter(required)
+        return self.pkt.cover_letter if action == "use" else ""
 
     def _stop_if_out_of_time(self, note: str) -> bool:
         if self._out_of_time():

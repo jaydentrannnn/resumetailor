@@ -191,7 +191,7 @@ class _FillAtsSteps(fill_state._FillState):
         )
         sr_filled, sr_review = smartrecruiters_flow.fill(
             page, self.pkt, self.progress, resume_path=self.resume_path,
-            deadline=self.deadline - 45,
+            deadline=self.deadline - 45, cover_text=self._cover_text,
         )
         # The screening step's controls read as "*" to the generic pass; the flow answered
         # or listed them, so those records are dropped too.

@@ -97,9 +97,10 @@ def _usable_file(path: Path) -> bool:
 
 
 def check(
-    app: store_models.Application, *, require_cover: bool | None = None,
-    require_acknowledgement: bool = True,
+    app: store_models.Application, *, require_acknowledgement: bool = True,
 ) -> PreparationEligibility:
+    """Whether `app`'s packet can be filled. No cover letter is required: Fill writes one
+    when a form's required cover-letter field asks for it (`cover_on_demand`)."""
     reasons: list[str] = []
     if app.archived_at:
         reasons.append("archived_application")
@@ -125,11 +126,6 @@ def check(
         except (OSError, ValueError, AttributeError):
             reasons.append("invalid_tailor_job")
             raw = {}
-    if require_cover is None:
-        settings = raw.get("settings") or {}
-        require_cover = isinstance(settings, dict) and bool(
-            settings.get("cover_letter") and not settings.get("no_cover_letter")
-        )
     if not any(_usable_file(job_dir / name) for name in ("tailored.pdf", "tailored.docx")):
         reasons.append("missing_resume")
     else:
@@ -140,10 +136,6 @@ def check(
             reasons.append("resume_quality_unverified")
         elif review.required and require_acknowledgement:
             reasons.append("resume_quality_ack_required")
-    if require_cover and not any(
-        _usable_file(job_dir / name) for name in ("cover.pdf", "cover.docx")
-    ):
-        reasons.append("missing_configured_cover_letter")
     expansion_path = job_dir / "expansion.json"
     if not expansion_path.is_file():
         reasons.append("missing_expansion")

@@ -9,6 +9,7 @@ from typing import Any
 from resume_tailor import config
 from resume_tailor.apply.answers import answer, answer_memory, education, form_facts, widget_actions
 from resume_tailor.apply.forms import form_guards, form_routes
+from resume_tailor.apply.funnel import cover_on_demand
 
 from . import fill_buttons, fill_outcomes, fill_state, fill_widgets
 
@@ -106,6 +107,17 @@ class _FillAnswers(fill_state._FillState):
             })
             self.verified_purposes.add((purpose, frame_index))
             return False
+        if purpose == "cover_letter":
+            action, written = self._cover_letter(bool(is_dict and fin.get("required")))
+            if action == "skip":
+                self.uploads.append({
+                    **record, "state": "not_requested", "verified": False,
+                    "reason": cover_on_demand.SKIPPED_NOTE, "frame_index": frame_index,
+                })
+                return False
+            path = self.cover_path
+            if written:
+                record["reason"] = cover_on_demand.GENERATED_NOTE
         if not path or not Path(path).is_file():
             missing = (
                 f"No {purpose} PDF saved; add one in Profile → Application"
@@ -184,6 +196,9 @@ class _FillAnswers(fill_state._FillState):
                 self._answer_one_long_text(item, label)
 
     def _answer_one_long_text(self, item: dict[str, Any], label: str) -> None:
+        if cover_on_demand.is_cover_field(label):
+            self._fill_cover_text(item, label)
+            return
         if form_facts.semantic_key(label, str(item.get("help") or "")) in form_facts.PROTECTED_KEYS:
             if item.get("required"):
                 self.needs_review.append(label)
@@ -235,6 +250,22 @@ class _FillAnswers(fill_state._FillState):
             return
         self.long_text_answers[label] = ans.answer
         self._fill_if_empty(item, ans.answer)
+
+    def _fill_cover_text(self, item: dict[str, Any], label: str) -> None:
+        """A cover-letter text box follows the same rule as a cover-letter upload."""
+        required = bool(item.get("required"))
+        text = self._cover_text(required)
+        if not text:
+            if required:
+                self.needs_review.append(label)
+            return
+        fitted, shortened = form_guards.fit_to_limit(text, int(item.get("maxlength") or 0))
+        if shortened:
+            self.needs_review.append(label)
+            if not fitted:
+                return
+        self.long_text_answers[label] = fitted
+        self._fill_if_empty(item, fitted)
 
     def _resolve_leftovers(self) -> None:
         for leftover in list(self.merged.get("leftovers") or []):

@@ -916,6 +916,15 @@
     return "";
   }
 
+  /** Upload widgets hide the real input, so "required" may sit on the input, on an
+   *  ancestor (aria-required) or only in the label/heading text ("Cover Letter *"). */
+  function fileRequired(el, label, section) {
+    if (el.required || el.getAttribute("aria-required") === "true") return true;
+    if (el.closest('[aria-required="true"]')) return true;
+    // Trailing star, maybe wrapped in U+2060 or followed by a colon ("Cover Letter⁠*⁠:").
+    return [label, section].some((text) => /[*✱][\s⁠:]*$|\(required\)/i.test(text || ""));
+  }
+
   for (const fileEl of deepQueryAll(document, 'input[type="file"]')) {
     const fileSel = selectorFor(fileEl);
     const section = sectionHeading(fileEl);
@@ -923,7 +932,10 @@
     if (!file_inputs.some((f) => f.selector === fileSel)) {
       // Workday labels its resume input "Upload a file (5MB max)"; the hint and the
       // "Resume/CV" heading say what it is for.
-      file_inputs.push({ selector: fileSel, label: fileLbl, section, hint_key: hintKeyFor(fileEl) });
+      file_inputs.push({
+        selector: fileSel, label: fileLbl, section, hint_key: hintKeyFor(fileEl),
+        required: fileRequired(fileEl, fileLbl, section),
+      });
     }
   }
 

@@ -2,9 +2,11 @@
 
 from __future__ import annotations
 
-from contextlib import contextmanager
+from contextlib import contextmanager, suppress
+from typing import Any
 
 from resume_tailor import config, workspace
+from resume_tailor.content import data, industries
 from resume_tailor.model_selection import ModelRole, legacy_routing
 from resume_tailor.web.schemas import (
     JobSettings,
@@ -37,6 +39,41 @@ def pinned_role(role: ModelRole, settings: JobSettings | None = None):
             "ollama", overrides=dict.fromkeys(config.PURPOSES, spec),
         ) as backends:
             yield backends
+
+
+def tailoring_guidance(
+    settings: JobSettings, workspace_id: str | None, resume: Any = None
+) -> industries.GuidanceSnapshot | None:
+    """The profile guidance a tailor job with `settings` runs under (None: no target field).
+
+    One helper for the job queue and the Apply screen: the guidance is part of the JD
+    extraction's cache key, so the screen's extraction is the tailor job's cache hit only
+    when both capture the identical snapshot. `resume` defaults to the saved one.
+    """
+    target_field = workspace.load_settings(workspace_id).get("target_field")
+    if target_field is not None and resume is None:
+        # The pipeline still reports source errors in the normal job flow.
+        with suppress(FileNotFoundError, ValueError):
+            resume = data.load()
+    return industries.capture(
+        target_field,
+        {"rewrite": settings.rewrite_style, "expand": settings.expand_style,
+         "cover": settings.cover_style},
+        workspace_id=workspace_id, resume=resume,
+    )
+
+
+@contextmanager
+def tailoring_context(guidance: industries.GuidanceSnapshot | None, workspace_id: str | None):
+    """Run a block in `workspace_id`'s context with `guidance` bound, as a tailor job does
+    (`JobQueue._execute`) — without touching the process default."""
+    context = (
+        config.context_for_workspace(workspace_id)
+        if workspace_id is not None else config.default_context()
+    )
+    with config.use_context(context):
+        industries.bind(guidance)
+        yield
 
 
 def model_label(settings: JobSettings) -> str:

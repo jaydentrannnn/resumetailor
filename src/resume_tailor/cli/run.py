@@ -225,6 +225,8 @@ class _CliRun:
                 file=sys.stderr,
             )
 
+        if jd.thin_posting(self.jd_text, self.requirements):
+            print(f"warning: {jd.THIN_POSTING_WARNING}", file=sys.stderr)
         diagnosis = jd.extraction_diagnosis(self.requirements)
         if diagnosis is not None:
             print(

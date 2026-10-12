@@ -81,3 +81,12 @@ earlier ones. Cross-check any number against the code.
 - Own cover letter (Phase 6): tokens, not guessing — a letter has no structure the analyzer could find reliably (the body is just paragraphs), so the person marks where each part goes. The starter is the generated letter rendered with sentinels, so the easiest path is "download, restyle, upload".
 - The starter renders with the subject line on, which carries the gap under the address; the greeting is given the same space-before so it keeps the gap when the subject is off (found in the visual check).
 - Per-entry custom lines (a "Tools used:" line inside each job) were not built in this phase: they need a new per-entry data field, editor inputs and builder support inside entry prototypes. Left for a later change.
+
+---
+
+- **2026-10-11 — Length aim vs hard band.** Told 300–380 words, gemma4 wrote a median 258
+  and 266 of 268 letters failed the band even after the retry: a spent call that fixed
+  nothing. The model is now asked for `COVER_WORD_AIM` (270–380) with the structure sized
+  in sentences per paragraph (opening 2–3, two bodies of 3–4, close 2;
+  `_COVER_PROMPT_VERSION` 5); outside the aim is a warning only, and the retry fires on
+  length only outside `COVER_WORD_BAND` (230–400). Other hard offenders still retry.

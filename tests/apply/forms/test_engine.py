@@ -21,7 +21,7 @@ from resume_tailor.apply.ats import adapters
 from resume_tailor.apply.driver import browser, clicks, controls, scanner
 from resume_tailor.apply.forms import engine, form_routes
 from resume_tailor.apply.forms.field_types import FieldObservation, FieldOutcome
-from resume_tailor.apply.funnel import packet, preparation, store, store_models
+from resume_tailor.apply.funnel import cover_on_demand, packet, preparation, store, store_models
 from resume_tailor.apply.funnel.packet_models import Packet
 from resume_tailor.content import data
 from resume_tailor.web.schemas import ApplySettings
@@ -94,7 +94,7 @@ def engine_env(tmp_path, monkeypatch):
 
     monkeypatch.setattr(
         preparation, "check",
-        lambda app, require_cover: preparation.PreparationEligibility(eligible=True),
+        lambda app: preparation.PreparationEligibility(eligible=True),
     )
     monkeypatch.setattr(packet, "build_packet", lambda job_id, **_k: Packet(
         job_id=job_id, built_at="2026-01-01T00:00:00+00:00", posting_url=POSTING,
@@ -175,7 +175,7 @@ def _seed_app(**overrides) -> store_models.Application:
 
 def _run(*, fill_mode="initial", should_cancel=None, settings=None, progress=None):
     return asyncio.run(engine.fill_application(
-        "src-1", settings=settings or ApplySettings(cover_letter=False),
+        "src-1", settings=settings or ApplySettings(cover_letter_mode="off"),
         submit_mode=None, fill_mode=fill_mode, should_cancel=should_cancel,
         on_progress=progress,
     ))
@@ -345,13 +345,54 @@ def test_missing_cover_letter_upload_is_recorded_when_requested(engine_env):
     engine_env([[FIRST, EMAIL]])
     _seed_app()
 
-    result = _run(settings=ApplySettings(cover_letter=True))
+    result = _run(settings=ApplySettings(cover_letter_mode="required"))
 
     assert {u["purpose"]: u["state"] for u in result.uploads} == {
         "cover_letter": "not_requested"
     }
     assert result.ready_to_submit is True
 
+
+
+def _cover_box(*, required: bool) -> dict:
+    return {"field_id": "cover", "label": "Cover Letter", "control_kind": "textarea",
+            "required": required}
+
+
+@pytest.fixture
+def written(monkeypatch):
+    """`cover_on_demand.ensure` writes a letter into the packet; returns its call count."""
+    calls: list[str] = []
+
+    def ensure(pkt):
+        calls.append(pkt.job_id)
+        pkt.artifacts["cover_pdf"] = "cover.pdf"
+        pkt.cover_letter = "I build data tools."
+        return True
+
+    monkeypatch.setattr(cover_on_demand, "ensure", ensure)
+    return calls
+
+
+def test_a_required_cover_letter_box_gets_a_letter_written(engine_env, written):
+    state = engine_env([[FIRST, _cover_box(required=True)]])
+    _seed_app()
+    _run(settings=ApplySettings(cover_letter_mode="required"))
+    assert written == ["job-1"]
+    assert ("Cover Letter", "I build data tools.") in state["applied"]
+
+
+def test_an_optional_cover_letter_box_follows_the_mode(engine_env, written):
+    state = engine_env([[FIRST, _cover_box(required=False)]])
+    _seed_app()
+    result = _run(settings=ApplySettings(cover_letter_mode="required"))
+    assert written == [] and all(label != "Cover Letter" for label, _ in state["applied"])
+    assert result.ready_to_submit is True
+
+    state = engine_env([[FIRST, _cover_box(required=False)]])
+    _run(settings=ApplySettings(cover_letter_mode="optional"), fill_mode="reopen")
+    assert written == ["job-1"]
+    assert ("Cover Letter", "I build data tools.") in state["applied"]
 
 # -- hand-offs and failures ----------------------------------------------------------
 
@@ -425,7 +466,7 @@ def test_unprepared_application_raises_before_touching_the_store(engine_env, mon
     _seed_app()
     monkeypatch.setattr(
         preparation, "check",
-        lambda app, require_cover: preparation.PreparationEligibility(
+        lambda app: preparation.PreparationEligibility(
             eligible=False, reasons=["no resume"]
         ),
     )

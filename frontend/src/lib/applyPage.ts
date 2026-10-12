@@ -151,12 +151,11 @@ export function reviewReason(row: ApplicationRow): ReviewReason {
 }
 
 const RESUME_BLOCKS = new Set(["resume_quality_unverified", "missing_resume"]);
-const COVER_LETTER_BLOCKS = new Set(["missing_configured_cover_letter"]);
 
 /**
  * The attention label for a ready row the server will not fill (`canFillAfterReview`
- * false), from its `preparation_reasons`: the resume ("Check resume"), the cover letter,
- * or any other file problem. Null when the row can be filled.
+ * false), from its `preparation_reasons`: the resume ("Check resume") or any other file
+ * problem. Null when the row can be filled.
  */
 export function readyBlockLabel(
   row: Pick<ApplicationRow, "status" | "preparation_eligible" | "preparation_reasons">,
@@ -164,7 +163,6 @@ export function readyBlockLabel(
   if (row.status !== "ready" || canFillAfterReview(row)) return null;
   const reasons = row.preparation_reasons ?? [];
   if (reasons.some((reason) => RESUME_BLOCKS.has(reason))) return "Check resume";
-  if (reasons.some((reason) => COVER_LETTER_BLOCKS.has(reason))) return "Check cover letter";
   return "Check files";
 }
 

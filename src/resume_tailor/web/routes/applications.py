@@ -84,8 +84,7 @@ def _application_out(
     payload["status_at"] = apply_store.status_at(app)
     from resume_tailor.apply.funnel import preparation
 
-    apply_settings = JobSettings.model_validate(workspace.load_settings()["defaults"]).apply
-    eligible = preparation.check(app, require_cover=apply_settings.cover_letter)
+    eligible = preparation.check(app)
     payload["preparation_eligible"] = eligible.eligible
     payload["preparation_reasons"] = eligible.reasons
     from resume_tailor.apply.funnel import resume_review

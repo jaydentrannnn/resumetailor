@@ -16,6 +16,13 @@ from resume_tailor.apply.funnel.store_models import FillResult
 from . import fill_buttons, fill_outcomes, fill_page, fill_state, fill_widgets
 
 
+def upload_failed(uploads: list[dict[str, Any]]) -> bool:
+    """An attachment that should be on the form is not; an optional cover-letter field
+    left empty on purpose (``state == "not_requested"``) does not count."""
+    return any(
+        not item.get("verified") and item.get("state") != "not_requested" for item in uploads
+    )
+
 class _FillFinish(fill_state._FillState):
     """`_FillRun` steps that verify, optionally submit, and record the result."""
 
@@ -36,7 +43,7 @@ class _FillFinish(fill_state._FillState):
 
         self.progress("verifying required fields and attachments")
         self._verify_uploads()
-        required_upload_failed = any(not item.get("verified") for item in self.uploads)
+        required_upload_failed = upload_failed(self.uploads)
         ready_to_submit = (
             len(required_empty) == 0
             and not self.needs_review

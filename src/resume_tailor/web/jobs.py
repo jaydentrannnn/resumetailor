@@ -15,10 +15,9 @@ import shutil
 import threading
 import traceback
 import uuid
-from contextlib import suppress
 
-from resume_tailor import config, workspace
-from resume_tailor.content import data, industries
+from resume_tailor import config
+from resume_tailor.content import industries
 from resume_tailor.infra import housekeeping, logs, model_queue
 from resume_tailor.pipeline.events import ProgressEvent
 from resume_tailor.web.schemas import (
@@ -26,7 +25,7 @@ from resume_tailor.web.schemas import (
     RunMetadata,
 )
 
-from . import job_outputs, job_tailor_run, job_types
+from . import job_outputs, job_routing, job_tailor_run, job_types
 
 logger = logging.getLogger(__name__)
 
@@ -62,18 +61,7 @@ class JobQueue:
         """Enqueue a run. Returns `(job, 1-based queue position)`."""
         job_id = uuid.uuid4().hex[:12]
         workspace_id = config.active_workspace_id()
-        target_field = workspace.load_settings(workspace_id).get("target_field")
-        resume = None
-        if target_field is not None:
-            # The pipeline still reports source errors in the normal job flow.
-            with suppress(FileNotFoundError, ValueError):
-                resume = data.load()
-        guidance = industries.capture(
-            target_field,
-            {"rewrite": settings.rewrite_style, "expand": settings.expand_style,
-             "cover": settings.cover_style},
-            workspace_id=workspace_id, resume=resume,
-        )
+        guidance = job_routing.tailoring_guidance(settings, workspace_id)
         job = job_types.Job(
             job_id=job_id,
             jd_text=jd_text,

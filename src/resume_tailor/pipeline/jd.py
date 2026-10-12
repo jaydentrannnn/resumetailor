@@ -326,6 +326,21 @@ def _norm_phrase(text: str) -> str:
     return " ".join(text.lower().split())
 
 
+#: Posting text shorter than this is almost always a stub the fetch got instead of the
+#: description (a title, a location, a cookie banner). 2026-10: 47 of 292 Apply runs
+#: tailored against such text. They are still tailored, with `THIN_POSTING_WARNING`.
+THIN_POSTING_CHARS = 1200
+THIN_POSTING_WARNING = "Posting text looks incomplete — check the tailored resume"
+
+
+def thin_posting(jd_text: str, requirements: JobRequirements) -> bool:
+    """Whether the posting looks like a stub: too short, or nothing extracted from it."""
+    return (
+        len(jd_text.strip()) < THIN_POSTING_CHARS
+        or extraction_diagnosis(requirements) == "no_keywords"
+    )
+
+
 def extraction_diagnosis(requirements: JobRequirements) -> str | None:
     """A reason code when extraction produced nothing usable, else None.
 

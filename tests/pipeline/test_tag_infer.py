@@ -115,7 +115,74 @@ def test_a_different_model_infers_afresh(model, monkeypatch):
     calls, _ = model
     resume = _resume("Built Tableau dashboards")
     tag_infer.ensure(resume)
-    monkeypatch.setattr(config, "fingerprint", lambda purpose: "another-model")
+    monkeypatch.setattr(config, "fingerprint", lambda purpose, **_: "another-model")
     assert tag_infer.cached(resume).skills == {}
     tag_infer.ensure(resume)
     assert len(calls) == 2
+
+
+def test_switching_back_to_a_model_reuses_its_table(model, monkeypatch):
+    calls, _ = model
+    resume = _resume("Built Tableau dashboards")
+    real = config.fingerprint
+    tag_infer.ensure(resume)
+    monkeypatch.setattr(config, "fingerprint", lambda purpose, **_: "another-model")
+    tag_infer.ensure(resume)
+    monkeypatch.setattr(config, "fingerprint", real)
+    tag_infer.ensure(resume)
+    assert len(calls) == 2
+
+
+def test_profile_guidance_does_not_split_the_cache(model, monkeypatch):
+    """The Apply screen runs without guidance, the tailor run with it: one cache."""
+    calls, _ = model
+    resume = _resume("Built Tableau dashboards")
+
+    def fingerprint(purpose, *, include_guidance=True):
+        return "gemma|guidance:abc" if include_guidance else "gemma"
+
+    monkeypatch.setattr(config, "fingerprint", fingerprint)
+    tag_infer.ensure(resume)
+    monkeypatch.setattr(
+        config, "fingerprint",
+        lambda purpose, *, include_guidance=True: "gemma|guidance:xyz" if include_guidance
+        else "gemma",
+    )
+    assert tag_infer.ensure(resume).skills == {"Built Tableau dashboards": ["data visualization"]}
+    assert len(calls) == 1
+
+
+def test_a_version_1_file_migrates_without_a_model_call(model, tmp_path):
+    calls, _ = model
+    text = "Built Tableau dashboards"
+    (tmp_path / "inferred_tags.json").write_text(
+        f'{{"{tag_infer._legacy_key(text)}": ["dashboards"], "stale": ["x"]}}', encoding="utf-8"
+    )
+    resume = _resume(text)
+    assert tag_infer.cached(resume).skills == {text: ["dashboards"]}
+    assert tag_infer.ensure(resume).skills == {text: ["dashboards"]}
+    assert calls == []
+    stored = tag_infer._read(tmp_path / "inferred_tags.json")
+    assert stored == {tag_infer._model(): {tag_infer._key(text): ["dashboards"]}}
+
+
+def test_removed_bullets_are_pruned_from_every_table(model, monkeypatch, tmp_path):
+    tag_infer.ensure(_resume("Old bullet", "Kept bullet"))
+    monkeypatch.setattr(config, "fingerprint", lambda purpose, **_: "another-model")
+    tag_infer.ensure(_resume("Kept bullet"))
+    stored = tag_infer._read(tmp_path / "inferred_tags.json")
+    assert len(stored) == 2
+    assert all(set(entries) == {tag_infer._key("Kept bullet")} for entries in stored.values())
+
+
+def test_concurrent_runs_infer_once(model):
+    import threading
+
+    calls, _ = model
+    resume = _resume("Built Tableau dashboards")
+    threads = [threading.Thread(target=tag_infer.ensure, args=(resume,)) for _ in range(3)]
+    for thread in threads:
+        thread.start()
+    for thread in threads:
+        thread.join()
+    assert len(calls) == 1

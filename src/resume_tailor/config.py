@@ -464,13 +464,20 @@ DEFAULT_EFFORT: dict[str, str] = {
 #: (how many must-haves the posting has) was not stable either. Voting on the majority reading
 #: of each verbatim `phrase` fixes this without inventing anything the model did not itself
 #: propose — see `extract_consensus`'s docstring for the exact rule. 3 is the minimum that
-#: produces a majority; 1 restores today's single-call behaviour exactly.
-EXTRACT_CONSENSUS_RUNS = int(os.environ.get("LLM_EXTRACT_CONSENSUS_RUNS", "3"))
+#: produces a majority; 1 is a single call.
+#:
+#: The default is 1. A 2026-10 trial on gemma4:cloud (8 postings x 6 reads) put a single read
+#: within ~2 points of a 3-vote consensus against an independent 3-vote reference (keyword
+#: Jaccard 0.857 vs 0.875, top-15 bullet ranking 0.858 vs 0.889) with seniority — the only
+#: field screening reads — identical in every comparison. On a one-request-at-a-time plan
+#: (Ollama Free) the two extra calls are pure wall time. `LLM_EXTRACT_CONSENSUS_RUNS` or a
+#: run's `extract_runs` still asks for a vote.
+EXTRACT_CONSENSUS_RUNS = int(os.environ.get("LLM_EXTRACT_CONSENSUS_RUNS", "1"))
 #: Set only when the environment pins the vote count; otherwise it follows the backend.
 _EXTRACT_RUNS_PINNED = bool(os.environ.get("LLM_EXTRACT_CONSENSUS_RUNS"))
-#: Extraction origins stable enough that one call is the default: the frontier APIs
-#: rarely disagree with themselves, and a vote there triples a paid call. Local models
-#: (ollama, lmstudio) and generic OpenAI-compatible servers keep the 3-way vote.
+#: Extraction origins that always default to one call, whatever `EXTRACT_CONSENSUS_RUNS`
+#: says: the frontier APIs rarely disagree with themselves, and a vote there triples a paid
+#: call.
 SINGLE_EXTRACT_ORIGINS: frozenset[str] = frozenset({"anthropic", "gemini"})
 
 
@@ -1069,7 +1076,7 @@ def credential_gaps(profile: str, overrides: Mapping[str, ModelSpec] | None = No
     return gaps
 
 
-def fingerprint(purpose: str) -> str:
+def fingerprint(purpose: str, *, include_guidance: bool = True) -> str:
     """Identity of the backend serving a stage, for cache keys.
 
     Folded into `jd._slug` and `relevance._score_cache_path`. Without it, switching models
@@ -1078,6 +1085,9 @@ def fingerprint(purpose: str) -> str:
     meaningless. Keyed on `origin or provider`, not `provider` alone: after `_backend`'s
     remap, Ollama, LM Studio, and Gemini all share `provider == "openai"`, so two backends
     with the same model string but different origins would otherwise collide.
+
+    `include_guidance=False` drops the profile-guidance suffix, for callers whose prompt
+    never reads the guidance (`tag_infer`): keying them on it only splits one cache in two.
     """
     backend = backend_for(purpose)
     value = f"{backend.origin or backend.provider}|{backend.model}|{backend.effort}"
@@ -1085,7 +1095,7 @@ def fingerprint(purpose: str) -> str:
         # Two custom servers may serve one model name, over either API format. Built-in
         # origins keep the shorter identity so an upgrade keeps every cached result.
         value += f"|{backend.provider}|{backend.base_url or ''}"
-    guidance = active_guidance()
+    guidance = active_guidance() if include_guidance else None
     if guidance is not None and purpose in (
         "extract", "score", "facets", "rewrite", "expand", "skills", "cover"
     ):
@@ -1930,17 +1940,19 @@ MAX_SKILLS_SUGGESTED = 24
 #: sorted first (see `skills.build_pool`), so truncation only ever drops unmatched evidence.
 SKILLS_POOL_LIMIT = 120
 
-#: Target length for the cover letter's body, in words. Unlike every other length budget in
-#: this file, this one is *not* derived from calibration: at ~350 words a letter occupies
-#: well under half the page budget (`LINES_PER_PAGE * CHARS_PER_LINE`), so the page is never
-#: the binding constraint and the word count is what actually shapes the output. The
-#: one-page render check downstream is a safety net, not the driver.
-COVER_WORD_TARGET = 350
+#: Length the cover letter's body aims for, in words: advertised to the model as its
+#: `<word_band>`, and a letter outside it only earns a warning. Unlike every other length
+#: budget in this file, this one is *not* derived from calibration: at ~350 words a letter
+#: occupies well under half the page budget (`LINES_PER_PAGE * CHARS_PER_LINE`), so the
+#: page is never the binding constraint and the word count is what actually shapes the
+#: output. The one-page render check downstream is a safety net, not the driver.
+COVER_WORD_AIM = (270, 380)
 
-#: Accepted word range for the body. Advertised to the model and enforced in code. The band
-#: is deliberately wider below the target than above it: a slightly short letter reads
-#: tight, a long one reads padded.
-COVER_WORD_BAND = (300, 380)
+#: Hard limits on the body, enforced in code: a letter outside them gets the guard's one
+#: retry. Wider than the aim on purpose (2026-10): told 300-380, gemma4 wrote a median
+#: 258 words and 266 of 268 letters failed even after the retry — a spent call that
+#: never fixed a letter that reads fine at 240 words.
+COVER_WORD_BAND = (230, 400)
 
 
 class _ConfigModule(ModuleType):

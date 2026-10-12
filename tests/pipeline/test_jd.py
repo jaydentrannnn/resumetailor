@@ -589,6 +589,15 @@ def test_extraction_diagnosis_no_keywords():
     assert jd.extraction_diagnosis(reqs) == "no_keywords"
 
 
+def test_thin_posting_is_a_stub_or_an_empty_extraction():
+    full = "Build data pipelines in Python and SQL for our analytics team. " * 25
+    keywords = [Keyword(phrase="Python", canonical="python", importance="must_have")]
+    found = JobRequirements(title="T", seniority="entry", keywords=keywords)
+    assert not jd.thin_posting(full, found)
+    assert jd.thin_posting("Data Analyst Intern · Remote", found)
+    assert jd.thin_posting(full, JobRequirements(title="T", seniority="entry", keywords=[]))
+
+
 def test_extraction_diagnosis_no_must_haves():
     reqs = JobRequirements(
         title="T",

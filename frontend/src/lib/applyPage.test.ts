@@ -189,10 +189,9 @@ describe("readyBlockLabel", () => {
     expect(blocked(["resume_quality_unverified"], "discovered")).toBeNull();
   });
 
-  it("names the resume, the cover letter, or the files", () => {
+  it("names the resume or the files", () => {
     expect(blocked(["resume_quality_unverified"])).toBe("Check resume");
-    expect(blocked(["missing_configured_cover_letter", "missing_resume"])).toBe("Check resume");
-    expect(blocked(["missing_configured_cover_letter"])).toBe("Check cover letter");
+    expect(blocked(["invalid_expansion", "missing_resume"])).toBe("Check resume");
     expect(blocked(["invalid_expansion"])).toBe("Check files");
     expect(blocked([])).toBe("Check files");
   });

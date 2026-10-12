@@ -532,3 +532,16 @@ opener (`_REPAIR_PROMPT_VERSION = 6`).
 **What:** The five vocabulary packs became one always-on `library_seeds/dictionary.json` (120 terms, 230 spellings, 18 verb families; the ambiguous `mrr` and `10k` aliases dropped) plus app-wide user additions/hides in `data/libraries/vocabulary.json`; per-profile pack selection and overrides were migrated in (`libraries.migrate_legacy`) and retired. Bullet tags stopped being a required hand-maintained field: `Bullet.tags` is now optional "Extra skills", stored as typed, and match tags are computed per run (`content/bullet_tags.py`) as Extra skills ∪ detected-in-text (dictionary + the resume's own Skills/tech/coursework) ∪ inferred (`pipeline/tag_infer.py`, extract-purpose model, cached per text in `inferred_tags.json`, refreshed in the background after every save and filled at run start).
 **Why:** Tags did three jobs at once (JD matching key, fabrication whitelist, Skills evidence) and consumers found them confusing; packs silently rewrote stored tags on the next save, which is why approvals needed the 409 acknowledgement rule. Canonicalising at read time removes that hazard, so the 409 rule is retired.
 **Impact:** Inferred skills are matching-only — never the whitelist, `<permitted_skills>` or the Skills pool — so a model's guess can raise a bullet's rank but never license a claim. Detected skills already appear in the text; a rewrite that expands an abbreviation the user did not list (DCF → discounted cash flow) is now rejected by the guard unless it is an Extra skill. Imports no longer seed bullet tags or emit the `"untagged"` sentinel; `suggest-tags`, `suggest-tags-ai`, `propose_bullet_tags`, `suggest_open_tags` and `tag_suggest.py` are gone. The skills status endpoint must read the cache under the Tailor routing (`skill_refresh.pinned_tailor`) — the key folds in the backend fingerprint, and an unpinned read found nothing.
+
+## 2026-10-11 — One extraction read by default; skill cache v2
+
+- `EXTRACT_CONSENSUS_RUNS` 3 → 1. Trial on live postings (gemma4:cloud): one read vs
+  three-vote consensus, keyword Jaccard 0.857 vs 0.875, must-haves 0.868 vs 0.886, top-15
+  ranking 0.858 vs 0.889, seniority identical (100%). Two votes behave as a union — use 1
+  or ≥3. Voting code is unchanged and still selectable (`extract_runs`, `--extract-runs`).
+- `tag_infer` cache keyed without guidance (`config.fingerprint(..., include_guidance=False)`):
+  the prompt never reads it, and keying on it split one cache between the Apply screen and
+  the tailor run, each pruning the other's entries, so most runs re-inferred. File format
+  v2 keeps one table per model (3 most recent), prunes only removed bullets, migrates v1
+  entries with no model call, and serialises concurrent `ensure` per file + model. The
+  server warms the active profile at startup.

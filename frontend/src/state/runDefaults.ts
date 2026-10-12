@@ -132,7 +132,7 @@ export const DEFAULT_SETTINGS: JobSettings = {
     auto_submit_enabled: false,
     blocker_mode: "continue",
     reuse_threshold: 0.72,
-    cover_letter: true,
+    cover_letter_mode: "required",
     model_provider: "ollama",
     model_name: "nemotron-3-super:cloud",
     browser: null,
