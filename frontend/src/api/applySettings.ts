@@ -260,14 +260,6 @@ export function fetchProfileOptions(): Promise<ProfileOptions> {
   return request("/api/reference/profile-options");
 }
 
-/** Fold a custom answer into the built-in field it restates, then drop the entry. */
-export function mergeCustomAnswer(question: string): Promise<ApplicantProfileResponse> {
-  return request("/api/applicant-profile/merge-custom-answer", {
-    method: "POST",
-    body: JSON.stringify({ question }),
-  });
-}
-
 /** Load the applicant form-filling profile for the active workspace. */
 export function getApplicantProfile(): Promise<ApplicantProfileResponse> {
   return request("/api/applicant-profile");
@@ -300,13 +292,14 @@ export function putApplicantProfile(profile: ApplicantProfile): Promise<Applican
   });
 }
 
-/** One answer remembered from a review correction (`GET /api/answer-memory`). */
+/** One Answer book entry (`GET /api/answer-memory`), one per question. */
 export type SavedAnswer = {
   id: number;
   label: string;
   answer: string;
   ats: string;
   company: string;
+  /** correction | edited (you), page (typed on a form), custom, ai (the model's pick). */
   source: string;
   uses: number;
   updated_at: string;
@@ -316,10 +309,25 @@ export type SavedAnswer = {
   sites?: string[];
   /** The sites' answers disagree; the one shown is the most recent. */
   differs?: boolean;
+  /** "type": a learned question type (`canonical_key`); "answer" otherwise. */
+  kind?: "answer" | "type";
+  canonical_key?: string;
+  /** The options the form offered, for a pick. */
+  options?: string[];
 };
 
 export async function fetchSavedAnswers(): Promise<SavedAnswer[]> {
   return (await request<{ answers: SavedAnswer[] }>("/api/answer-memory")).answers;
+}
+
+/** Add a custom answer: a question no profile field covers. */
+export async function addSavedAnswer(label: string, answer: string): Promise<SavedAnswer[]> {
+  return (
+    await request<{ answers: SavedAnswer[] }>("/api/answer-memory", {
+      method: "POST",
+      body: JSON.stringify({ label, answer }),
+    })
+  ).answers;
 }
 
 export function updateSavedAnswer(id: number, answer: string): Promise<SavedAnswer> {
@@ -333,22 +341,6 @@ export async function deleteSavedAnswer(id: number): Promise<SavedAnswer[]> {
   return (
     await request<{ answers: SavedAnswer[] }>(`/api/answer-memory/${id}`, { method: "DELETE" })
   ).answers;
-}
-
-/** A dropdown/radio choice the autofill model made, reused until forgotten. */
-export type AIChoice = { key: string; label: string; answer: string };
-
-export async function fetchAIChoices(): Promise<AIChoice[]> {
-  return (await request<{ choices: AIChoice[] }>("/api/answer-memory/ai-choices")).choices;
-}
-
-export async function forgetAIChoice(key: string): Promise<AIChoice[]> {
-  return (
-    await request<{ choices: AIChoice[] }>(
-      `/api/answer-memory/ai-choices/${encodeURIComponent(key)}`,
-      { method: "DELETE" },
-    )
-  ).choices;
 }
 
 // --- Auto-submit guard rails (P4-S) ---------------------------------------------------

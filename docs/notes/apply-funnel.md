@@ -1839,3 +1839,28 @@ sponsorship" via `authorization_mismatch`), and per source `keep_unknown_remote`
 Applied once per source in `daily_batch.by_location` right after the fetch (not inside
 each fetcher), and in the Test-source route so its preview and `dropped["location"]`
 match Find. A place naming no country is never dropped on country grounds.
+
+## 2026-10-12 — Answer book (one store, learns from the page)
+
+Four answer stores (answer_memory corrections, `resolver-choices.json`, profile
+`custom_answers`, the classifier's file cache) were invisible to each other and the user
+barely used them; answers typed on the page after a handoff were never kept. Migration 3
+rebuilds `answer_memory` with `kind`, `options_digest`, `action`, `canonical_key`,
+`options`, `profile_digest`, unique on (kind, label_norm, ats, options_digest).
+`answer_book.import_legacy` (marker `answer_book_import_v1`) imports the resolver file
+(options_digest = the old choice key, so picks keep matching exactly) and moves custom
+answers (profile-field ones fill the blank field; backup in `backups/custom_answers-*.json`;
+the profile field is then cleared). The resolver still shows the model custom answers
+(`hybrid_resolver._model_profile` reads them from the book), so the profile digest — and
+every cached pick — survives the move. Deviation from plan: AI picks stay keyed on the
+whole-profile digest; the model does not say which profile keys it used, so per-key
+invalidation would be a guess. Plain `recall` reads only kind 'answer' rows with no
+options_digest; with `options` it returns the offered option's wording or nothing.
+Learned types: `LEARNABLE_TYPES` excludes authorized_to_work, sponsorship*, noncompete,
+previous_worker and EEO keys; forgetting a type also deletes its classifier cache file.
+Harvest (`funnel/answer_harvest.py`) saves only questions the fill left (field_outcomes in
+unanswered/ambiguous/invalid/manual_review/failed, leftovers, required_empty), never fields
+it answered (those are corrections), never passwords/files/checkboxes/`review._PROTECTED`
+labels, and never logs values. The background pass only reads tabs `/json/list` shows open
+(never launches a browser), skips tabs in `answer_harvest.FILLING`, is off in extension
+mode, and exits when nothing is watched. Tests stub `collect`/`watch` in conftest.

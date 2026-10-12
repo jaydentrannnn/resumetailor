@@ -867,6 +867,21 @@ def test_fill_prompts_answers_only_empty_prompts_with_a_profile_fact():
     assert committed[0]["label"] == "How Did You Hear About Us?"
 
 
+def test_fill_prompts_uses_the_answer_book_for_a_question_no_fact_answers():
+    page = _PromptPage([{"input_id": "q--hobby", "label": "Favourite hobby", "chips": 0}])
+    calls: list[tuple[str, str, str]] = []
+
+    def select(_page, input_id, value, *, key):
+        calls.append((input_id, value, key))
+        return True
+
+    committed = workday_prompts.fill_prompts(
+        page, {}, select=select, recall=lambda label: "Chess" if label == "Favourite hobby" else None,
+    )
+    assert calls == [("q--hobby", "Chess", "")]
+    assert committed[0]["key"] == "answer_book"
+
+
 class _SearchPromptPage:
     """A hierarchical prompt whose search lists the same leaf under two categories."""
 

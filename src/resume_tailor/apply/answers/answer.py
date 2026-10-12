@@ -10,6 +10,7 @@ fact a choice question asks for; it never answers one.
 from __future__ import annotations
 
 import asyncio
+import contextlib
 import hashlib
 import json
 import re
@@ -20,7 +21,7 @@ from pathlib import Path
 from pydantic import BaseModel, Field
 
 from resume_tailor import config
-from resume_tailor.apply.answers import questions
+from resume_tailor.apply.answers import answer_book, questions
 from resume_tailor.apply.answers.profile import ApplicantProfile
 from resume_tailor.content.data import MasterResume
 from resume_tailor.infra import llm
@@ -96,7 +97,14 @@ def _profile_answer(question: str, profile: ApplicantProfile) -> str | None:
             continue
         if norm_key == norm_q:
             return answer.strip()
-    return None
+    # Custom answers now live in the Answer book (`answer_book.import_legacy`).
+    try:
+        from resume_tailor.apply.answers import answer_memory  # noqa: PLC0415
+
+        saved = answer_memory.recall(question)
+    except Exception:  # noqa: BLE001 - the book is a shortcut, never a blocker
+        return None
+    return saved.answer if saved is not None and not saved.needs_review else None
 
 
 def _format_bullets(resume: MasterResume, bullets: dict[str, str]) -> str:
@@ -544,7 +552,10 @@ def classify_questions(asked: list[questions.Question]) -> list[str | None]:
     pending: list[int] = []
     for index, question in enumerate(asked):
         path = _classify_cache_path(question)
-        if path.is_file():
+        learned = _learned(question)
+        if learned is not None:
+            keys[index] = learned
+        elif path.is_file():
             cached = json.loads(path.read_text(encoding="utf-8")).get("key")
             keys[index] = cached if cached in questions.MODEL_KEYS else None
         else:
@@ -585,4 +596,18 @@ def classify_questions(asked: list[questions.Question]) -> list[str | None]:
         _classify_cache_path(asked[index]).write_text(
             json.dumps({"key": key or "none"}) + "\n", encoding="utf-8"
         )
+        if key:
+            with contextlib.suppress(Exception):
+                answer_book.learn_type(
+                    asked[index].text, asked[index].options, key, questions.MODEL_KEYS[key]
+                )
     return keys
+
+
+def _learned(question: questions.Question) -> str | None:
+    """A type the Answer book learned for this question (`answer_book.learned_type`)."""
+    try:
+        key = answer_book.learned_type(question.text, question.options)
+    except Exception:  # noqa: BLE001 - the book is a shortcut, never a blocker
+        return None
+    return key if key in questions.MODEL_KEYS else None

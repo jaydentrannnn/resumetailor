@@ -18,6 +18,12 @@ already answers (`profile_key`): those corrections fill the blank profile field 
 (`save_to_profile`), so the Profile page never shows one fact twice. Rows live in the
 workspace's SQLite database next to the applications, one per (question, ATS); the
 Profile page sees them grouped by question (`list_answers`).
+
+The same table is the Answer book (`answer_book`): besides corrections (source
+``correction``/``edited``) it holds answers typed on the page (``page``, harvested by
+`funnel.answer_harvest`), custom answers (``custom``), the model's dropdown picks
+(``ai``, keyed by ``options_digest``) and learned question types (kind ``type``).
+Plain recall only reads kind ``answer`` rows with no ``options_digest``.
 """
 
 from __future__ import annotations
@@ -94,6 +100,11 @@ class SavedAnswer(BaseModel):
     ids: list[int] = []
     sites: list[str] = []
     differs: bool = False
+    #: ``answer`` or ``type`` (a learned question type: ``canonical_key`` is the type).
+    kind: str = "answer"
+    canonical_key: str = ""
+    #: The options the form offered, when the answer is a pick ([] for text).
+    options: list[str] = []
 
 
 @dataclass(frozen=True)
@@ -259,6 +270,7 @@ def remember(
     canonical_key: str = "",
     input_type: str = "",
     source: str = "correction",
+    options: list[str] | None = None,
 ) -> SavedAnswer | None:
     """Save (or replace) the answer to ``label``; None when it must not be stored."""
     answer = (answer or "").strip()
@@ -274,35 +286,76 @@ def remember(
     with db.transaction(conn):
         conn.execute(
             "INSERT INTO answer_memory(label_norm, ats, label, answer, company, source, "
-            "created_at, updated_at) VALUES (?, ?, ?, ?, ?, ?, ?, ?) "
-            "ON CONFLICT(label_norm, ats) DO UPDATE SET label = excluded.label, "
-            "answer = excluded.answer, company = excluded.company, "
-            "source = excluded.source, updated_at = excluded.updated_at",
-            (norm, (ats or "").lower(), label.strip(), answer, company.strip(), source, now, now),
+            "canonical_key, options, created_at, updated_at) "
+            "VALUES (?, ?, ?, ?, ?, ?, ?, ?, ?, ?) "
+            "ON CONFLICT(kind, label_norm, ats, options_digest) DO UPDATE SET "
+            "label = excluded.label, answer = excluded.answer, company = excluded.company, "
+            "source = excluded.source, canonical_key = excluded.canonical_key, "
+            "options = excluded.options, updated_at = excluded.updated_at",
+            (norm, (ats or "").lower(), label.strip(), answer, company.strip(), source,
+             canonical_key, json.dumps(list(options or [])[:50]), now, now),
         )
         row = conn.execute(
-            "SELECT id FROM answer_memory WHERE label_norm = ? AND ats = ?",
+            "SELECT id FROM answer_memory WHERE kind = 'answer' AND label_norm = ? AND ats = ? "
+            "AND options_digest = ''",
             (norm, (ats or "").lower()),
         ).fetchone()
     return get(int(row[0]))
 
 
+def _option_norm(text: str) -> str:
+    return re.sub(r"[^\w]+", " ", (text or "").casefold()).strip()
+
+
+def _offered(answer: str, options: list[str]) -> str | None:
+    """The option ``answer`` names (exact, then a unique prefix), or None."""
+    want = _option_norm(answer)
+    if not want:
+        return None
+    exact = [option for option in options if _option_norm(option) == want]
+    if exact:
+        return exact[0]
+    prefix = [option for option in options if _option_norm(option).startswith(want)]
+    return prefix[0] if len(prefix) == 1 else None
+
+
 def recall(
-    label: str, *, company: str = "", ats: str = "", canonical_key: str = ""
+    label: str,
+    *,
+    company: str = "",
+    ats: str = "",
+    canonical_key: str = "",
+    options: list[str] | None = None,
 ) -> Recall | None:
-    """The remembered answer to ``label``: same ATS first, then any; None when unknown."""
+    """The remembered answer to ``label``: same ATS first, then any; None when unknown.
+
+    With ``options`` (a dropdown or radio question) only an answer naming one of them is
+    used, and the option's own wording comes back."""
     if not storable(label, canonical_key=canonical_key):
         return None
     norm = normalize_label(label, company)
     if not norm:
         return None
+    from resume_tailor.apply.answers import answer_book  # noqa: PLC0415
+
     conn = _conn()
+    answer_book.import_legacy(conn)
     cleanup_profile_duplicates(conn)
-    row = conn.execute(
-        "SELECT id, answer, company FROM answer_memory WHERE label_norm = ? "
-        "ORDER BY (ats = ?) DESC, updated_at DESC, id DESC LIMIT 1",
+    rows = conn.execute(
+        "SELECT id, answer, company FROM answer_memory WHERE kind = 'answer' "
+        "AND label_norm = ? AND options_digest = '' "
+        "ORDER BY (ats = ?) DESC, updated_at DESC, id DESC",
         (norm, (ats or "").lower()),
-    ).fetchone()
+    ).fetchall()
+    row = None
+    for candidate in rows:
+        if not options:
+            row = candidate
+            break
+        picked = _offered(str(candidate[1]), options)
+        if picked is not None:
+            row = (candidate[0], picked, candidate[2])
+            break
     if row is None:
         return None
     row_id, answer, origin = int(row[0]), str(row[1]), str(row[2])
@@ -323,11 +376,24 @@ def recall(
 
 
 def _row(values) -> SavedAnswer:
-    keys = ("id", "label", "answer", "ats", "company", "source", "uses", "updated_at")
-    return SavedAnswer(**dict(zip(keys, values, strict=True)))
+    keys = (
+        "id", "label", "answer", "ats", "company", "source", "uses", "updated_at",
+        "kind", "canonical_key", "options",
+    )
+    data = dict(zip(keys, values, strict=True))
+    try:
+        options = json.loads(data["options"] or "[]")
+    except ValueError:
+        options = []
+    data["options"] = [str(option) for option in options] if isinstance(options, list) else []
+    return SavedAnswer(**data)
 
 
-_COLUMNS = "id, label, answer, ats, company, source, uses, updated_at"
+_COLUMNS = (
+    "id, label, answer, ats, company, source, uses, updated_at, kind, canonical_key, options"
+)
+#: Rows that are one question for the Profile page (and for edits and deletes).
+_GROUP = "kind || char(31) || label_norm || char(31) || options_digest"
 
 
 def get(answer_id: int) -> SavedAnswer | None:
@@ -340,12 +406,21 @@ def get(answer_id: int) -> SavedAnswer | None:
 
 
 def list_answers() -> list[SavedAnswer]:
-    """One entry per question, most recently updated first (see `SavedAnswer`)."""
+    """One entry per question, most recently updated first (see `SavedAnswer`).
+
+    The model's picks for an older profile are left out: they are never reused
+    (`answer_book.stale_ai_ids`)."""
+    from resume_tailor.apply.answers import answer_book  # noqa: PLC0415
+
     conn = _conn()
     cleanup_profile_duplicates(conn)
-    rows = conn.execute(
-        f"SELECT label_norm, {_COLUMNS} FROM answer_memory ORDER BY updated_at DESC, id DESC"
-    ).fetchall()
+    stale = answer_book.stale_ai_ids(conn)
+    rows = [
+        row for row in conn.execute(
+            f"SELECT {_GROUP}, {_COLUMNS} FROM answer_memory ORDER BY updated_at DESC, id DESC"
+        ).fetchall()
+        if int(row[1]) not in stale
+    ]
     grouped: dict[str, list[SavedAnswer]] = {}
     for row in rows:
         grouped.setdefault(str(row[0]), []).append(_row(row[1:]))
@@ -363,12 +438,12 @@ def list_answers() -> list[SavedAnswer]:
 
 def _question_ids(conn: sqlite3.Connection, answer_id: int) -> list[int]:
     """Every row for the same question as ``answer_id``; raises `KeyError` when unknown."""
-    row = conn.execute("SELECT label_norm FROM answer_memory WHERE id = ?", (answer_id,)).fetchone()
+    row = conn.execute(f"SELECT {_GROUP} FROM answer_memory WHERE id = ?", (answer_id,)).fetchone()
     if row is None:
         raise KeyError(answer_id)
     return [
         int(r[0])
-        for r in conn.execute("SELECT id FROM answer_memory WHERE label_norm = ?", (row[0],))
+        for r in conn.execute(f"SELECT id FROM answer_memory WHERE {_GROUP} = ?", (row[0],))
     ]
 
 
@@ -378,6 +453,9 @@ def update(answer_id: int, answer: str) -> SavedAnswer:
     if not answer or len(answer) > MAX_ANSWER_CHARS:
         raise ValueError(f"An answer must be 1 to {MAX_ANSWER_CHARS} characters.")
     conn = _conn()
+    kind = conn.execute("SELECT kind FROM answer_memory WHERE id = ?", (answer_id,)).fetchone()
+    if kind is not None and kind[0] == "type":
+        raise ValueError("A learned question type can only be forgotten.")
     with db.transaction(conn):
         # The Profile page shows one row per question: an edit answers it on every site.
         ids = _question_ids(conn, answer_id)
@@ -393,10 +471,15 @@ def update(answer_id: int, answer: str) -> SavedAnswer:
 
 def delete(answer_id: int) -> None:
     """Forget the question ``answer_id`` belongs to, on every site."""
+    from resume_tailor.apply.answers import answer_book  # noqa: PLC0415
+
     conn = _conn()
+    gone = get(answer_id)
     with db.transaction(conn):
         ids = _question_ids(conn, answer_id)
         conn.executemany("DELETE FROM answer_memory WHERE id = ?", [(row_id,) for row_id in ids])
+    if gone is not None and gone.kind == "type":
+        answer_book.forget_type_cache(gone.label, gone.options)
 
 
 def cleanup_profile_duplicates(conn: sqlite3.Connection | None = None) -> int:
@@ -412,7 +495,8 @@ def cleanup_profile_duplicates(conn: sqlite3.Connection | None = None) -> int:
     if db.marker(conn, CLEANUP_MARKER):
         return 0
     rows = conn.execute(
-        f"SELECT {_COLUMNS} FROM answer_memory ORDER BY updated_at DESC, id DESC"
+        f"SELECT {_COLUMNS} FROM answer_memory WHERE kind = 'answer' AND options_digest = '' "
+        "ORDER BY updated_at DESC, id DESC"
     ).fetchall()
     doomed = [(item, key) for item in map(_row, rows) if (key := profile_key(item.label))]
     if doomed:

@@ -27,7 +27,15 @@ from resume_tailor.apply.driver import clicks
 from resume_tailor.apply.funnel.packet_models import Packet
 from resume_tailor.infra import llm
 
-from . import form_facts, page_blockers, questions, resolver_types, widget_actions
+from . import (
+    answer_book,
+    answer_memory,
+    form_facts,
+    page_blockers,
+    questions,
+    resolver_types,
+    widget_actions,
+)
 
 _log = logging.getLogger(__name__)
 
@@ -157,38 +165,17 @@ def current_digest() -> str:
     from resume_tailor.apply.answers import profile as profile_mod  # noqa: PLC0415
 
     saved, _seeded = profile_mod.load_profile()
-    return _profile_digest(saved.model_dump(exclude={"workday_password", "workday_email"}, mode="json"))
+    return _profile_digest(_model_profile(saved))
 
 
-def list_choices() -> list[dict[str, str]]:
-    """The model's cached dropdown/radio picks that still apply to the saved profile.
-
-    A pick made for an older profile is never reused (its key hashes the profile), so it
-    is not listed; one written before entries carried a digest is hidden for the same
-    reason. Newest-looking order is not tracked; sorted by question.
-    """
-    digest = current_digest()
-    rows = [
-        {"key": key, "label": str(entry.get("label") or ""), "answer": str(entry.get("value") or "")}
-        for key, entry in _read_choices().items()
-        if isinstance(entry, dict) and entry.get("version") == _RESOLVER_PROMPT_VERSION
-        and entry.get("digest") == digest and entry.get("value")
-    ]
-    return sorted(rows, key=lambda row: row["label"].casefold())
-
-
-def forget_choice(key: str) -> bool:
-    """Drop one cached pick so the next fill asks the model again; False when unknown."""
-    with _CHOICES_LOCK:
-        known = _read_choices()
-        if key not in known:
-            return False
-        del known[key]
-        path = _choices_path()
-        tmp = path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(known, indent=1, ensure_ascii=False), encoding="utf-8")
-        tmp.replace(path)
-    return True
+def _model_profile(profile: ApplicantProfile) -> dict[str, Any]:
+    """The profile as the model sees it: no credentials, and the custom answers from
+    the Answer book (where they moved from the profile, `answer_book.import_legacy`)."""
+    data = profile.model_dump(exclude={"workday_password", "workday_email"}, mode="json")
+    if not data.get("custom_answers"):
+        with contextlib.suppress(Exception):
+            data["custom_answers"] = answer_book.custom_answers()
+    return data
 
 
 def _read_choices() -> dict[str, dict[str, str]]:
@@ -199,17 +186,10 @@ def _read_choices() -> dict[str, dict[str, str]]:
     return data if isinstance(data, dict) else {}
 
 
-def _write_choices(new: dict[str, dict[str, str]]) -> None:
-    """Merge ``new`` into the cache file (read-modify-write under `_CHOICES_LOCK`)."""
-    if not new:
-        return
-    with _CHOICES_LOCK, contextlib.suppress(OSError):
-        path = _choices_path()
-        path.parent.mkdir(parents=True, exist_ok=True)
-        merged = _read_choices() | new
-        tmp = path.with_suffix(".tmp")
-        tmp.write_text(json.dumps(merged, indent=1, ensure_ascii=False), encoding="utf-8")
-        tmp.replace(path)
+def _write_choices(new: dict[str, dict[str, Any]]) -> None:
+    """Remember the model's picks in the Answer book (`answer_book.save_ai_choices`)."""
+    with _CHOICES_LOCK:
+        answer_book.save_ai_choices(new)
 
 
 def _remembered(
@@ -217,7 +197,7 @@ def _remembered(
 ) -> list[resolver_types.FieldAction]:
     """Choices already made for these very questions (another tab, an earlier run), as
     actions on this page's selectors; one whose option this form does not list is skipped."""
-    known = _read_choices()
+    known = answer_book.ai_choices(keys.values())
     hits = []
     for selector, key in keys.items():
         hit = known.get(key)
@@ -516,10 +496,7 @@ class _StepResolver:
         """(actions to apply, selectors the model answered, the controls by selector);
         None when the model call failed."""
         ledger = self.ledger
-        safe_profile = self.profile.model_dump(
-            exclude={"workday_password", "workday_email"},
-            mode="json",
-        )
+        safe_profile = _model_profile(self.profile)
         profile_digest = _profile_digest({"profile": safe_profile, "fields": self.packet.fields,
                                           "skills": self.packet.master_skills})
         observed = {str(item.get("selector")): item for item in unresolved if item.get("selector")}
@@ -580,7 +557,39 @@ class _StepResolver:
                 event.wait(max(0.0, wait_until - time.monotonic()))
             actions = _remembered(keys, observed)
             answered = {action.selector for action in actions}
-        return actions, answered
+        mine = self._your_answers(observed, answered)
+        return actions + mine, answered | {action.selector for action in mine}
+
+    def _your_answers(
+        self, observed: dict[str, dict[str, Any]], answered: set[str]
+    ) -> list[resolver_types.FieldAction]:
+        """Answers from the Answer book (yours, typed on a page, or custom) naming one of
+        a dropdown's or radio group's options."""
+        verbs = {"combobox": "select_combobox", "radiogroup": "choose_radio"}
+        hits = []
+        for selector, field in observed.items():
+            verb = verbs.get(str(field.get("type") or ""))
+            options = [str(option) for option in field.get("options") or []]
+            if selector in answered or verb is None or not options:
+                continue
+            try:
+                recalled = answer_memory.recall(
+                    str(field.get("label") or ""), company=self.packet.company,
+                    ats=self.packet.ats, options=options,
+                )
+            except Exception:  # noqa: BLE001 - the book is a shortcut, never a blocker
+                continue
+            if recalled is None or recalled.needs_review:
+                continue
+            action = resolver_types.FieldAction(
+                label=str(field.get("label") or ""), selector=selector, action=verb,
+                value=recalled.answer, rationale="your saved answer",
+            )
+            if _usable(action, field):
+                hits.append(action)
+        if hits:
+            self.log(f"using {len(hits)} answer(s) from your Answer book")
+        return hits
 
     def _ask_model(
         self,
@@ -630,8 +639,8 @@ class _StepResolver:
                     keys[action.selector]: {
                         "action": action.action, "value": action.value,
                         "label": str(observed[action.selector].get("label") or "")[:200],
-                        "digest": _profile_digest(safe_profile),
-                        "version": _RESOLVER_PROMPT_VERSION,
+                        "options": list(observed[action.selector].get("options") or []),
+                        "digest": answer_book.ai_digest(_profile_digest(safe_profile)),
                     }
                     for action in model_actions
                     if action.action in {"select_combobox", "choose_radio", "check_options"}

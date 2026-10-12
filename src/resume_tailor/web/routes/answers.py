@@ -1,8 +1,8 @@
-"""`/api/answer-memory`: the answers remembered from review corrections (P3-A).
+"""`/api/answer-memory`: the Answer book (`apply/answers/answer_book.py`).
 
-The Profile page lists them with where they came from and when, and lets the student
-fix or forget one. New answers are only ever added by a verified correction in the
-review flow (`apply/review.correct`), never through this API.
+The Profile page lists every saved answer with where it came from (your corrections,
+answers typed on the page, custom answers, the AI's picks, learned question types) and
+lets the student add a question, fix an answer or forget one.
 """
 
 from __future__ import annotations
@@ -10,7 +10,7 @@ from __future__ import annotations
 from fastapi import APIRouter, HTTPException
 from pydantic import BaseModel, Field
 
-from resume_tailor.apply.answers import answer_memory, hybrid_resolver
+from resume_tailor.apply.answers import answer_memory
 
 router = APIRouter()
 
@@ -23,8 +23,27 @@ class SavedAnswerUpdate(BaseModel):
     answer: str = Field(min_length=1, max_length=answer_memory.MAX_ANSWER_CHARS)
 
 
+class SavedAnswerCreate(SavedAnswerUpdate):
+    label: str = Field(min_length=1, max_length=500)
+
+
 @router.get("/api/answer-memory", response_model=SavedAnswersResponse)
 def list_saved_answers() -> SavedAnswersResponse:
+    return SavedAnswersResponse(answers=answer_memory.list_answers())
+
+
+@router.post("/api/answer-memory", response_model=SavedAnswersResponse)
+def add_saved_answer(body: SavedAnswerCreate) -> SavedAnswersResponse:
+    """A custom answer: a question no profile field covers, and its answer."""
+    if answer_memory.profile_key(body.label):
+        raise HTTPException(
+            status_code=400, detail="Your profile has a field for this question; fill it there."
+        )
+    if answer_memory.remember(body.label, body.answer, source="custom") is None:
+        raise HTTPException(
+            status_code=400,
+            detail="Equal-opportunity, password and identity questions are never saved here.",
+        )
     return SavedAnswersResponse(answers=answer_memory.list_answers())
 
 
@@ -45,26 +64,3 @@ def delete_saved_answer(answer_id: int) -> SavedAnswersResponse:
     except KeyError as exc:
         raise HTTPException(status_code=404, detail="No such saved answer.") from exc
     return SavedAnswersResponse(answers=answer_memory.list_answers())
-
-
-class AIChoice(BaseModel):
-    key: str
-    label: str
-    answer: str
-
-
-class AIChoicesResponse(BaseModel):
-    choices: list[AIChoice]
-
-
-@router.get("/api/answer-memory/ai-choices", response_model=AIChoicesResponse)
-def list_ai_choices() -> AIChoicesResponse:
-    """Dropdown/radio picks the autofill model made, which fills reuse until forgotten."""
-    return AIChoicesResponse(choices=[AIChoice(**row) for row in hybrid_resolver.list_choices()])
-
-
-@router.delete("/api/answer-memory/ai-choices/{key}", response_model=AIChoicesResponse)
-def forget_ai_choice(key: str) -> AIChoicesResponse:
-    if not hybrid_resolver.forget_choice(key):
-        raise HTTPException(status_code=404, detail="No such saved choice.")
-    return list_ai_choices()

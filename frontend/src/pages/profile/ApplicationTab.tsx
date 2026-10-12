@@ -3,7 +3,7 @@ import { Link } from "react-router-dom";
 import type { ApplicantProfile } from "../../api";
 import { LanguagesEditor } from "../../components/LanguagesEditor";
 import { ProfileGapBanner } from "../../components/ProfileGapBanner";
-import { DataList, Tile, TileSection } from "../../components/ui";
+import { DataList, Tile } from "../../components/ui";
 import {
   PROFILE_GROUPS,
   REMEMBERED_ANSWERS_GROUP,
@@ -14,11 +14,9 @@ import type { Education } from "../../lib/resumeEdit";
 import { useApplicantProfile } from "../../state/applicantProfileState";
 import type { FieldContext } from "./fieldContext";
 import { ProfileField } from "./ProfileField";
-import { AIChoicesList } from "./AIChoicesList";
-import { CustomAnswers } from "./CustomAnswers";
+import { AnswerBook } from "./AnswerBook";
 import { DocumentUpload } from "./DocumentUpload";
 import { EeoFields } from "./EeoFields";
-import { SavedAnswersList } from "./SavedAnswersList";
 
 const yesNo = (value: boolean) => (value ? "Yes" : "No");
 
@@ -158,7 +156,6 @@ export function ApplicationTab({
                 onChange={(languages) => setDraft({ languages })}
               />
             )}
-            {group.id === "Saved answers and other preferences" && <CustomAnswers />}
           </details>
         </Tile>
       ))}
@@ -167,13 +164,8 @@ export function ApplicationTab({
           open={open.has(REMEMBERED_ANSWERS_GROUP)}
           onToggle={(e) => onToggle(REMEMBERED_ANSWERS_GROUP, e.currentTarget.open)}
         >
-          <summary className="rt-tile-title cursor-pointer">Remembered answers</summary>
-          <TileSection className="mt-4" title="Saved answers">
-            <SavedAnswersList />
-          </TileSection>
-          <TileSection className="mt-4">
-            <AIChoicesList />
-          </TileSection>
+          <summary className="rt-tile-title cursor-pointer">Answer book</summary>
+          <AnswerBook />
         </details>
       </Tile>
     </div>

@@ -77,6 +77,15 @@ def test_answer_memory_routes_list_edit_and_forget(client, tmp_path, monkeypatch
     assert c.delete(f"/api/answer-memory/{saved.id}").json() == {"answers": []}
     assert c.delete(f"/api/answer-memory/{saved.id}").status_code == 404
 
+    added = c.post("/api/answer-memory", json={"label": "Willing to travel?", "answer": "Yes"})
+    assert [(a["label"], a["source"]) for a in added.json()["answers"]] == [
+        ("Willing to travel?", "custom")
+    ]
+    profile_question = {"label": "Middle name", "answer": "Lovelace"}
+    assert c.post("/api/answer-memory", json=profile_question).status_code == 400
+    eeo_question = {"label": "What is your gender?", "answer": "x"}
+    assert c.post("/api/answer-memory", json=eeo_question).status_code == 400
+
 
 def test_job_start_event_is_not_a_fit_stage(tmp_path, monkeypatch):
     """The worker's pick-up event is `start`, not `fit`: the SPA's stepper and bar

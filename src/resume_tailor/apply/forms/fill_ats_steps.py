@@ -8,7 +8,7 @@ from datetime import date
 from typing import Any
 
 from resume_tailor import config
-from resume_tailor.apply.answers import hybrid_resolver, model_fallback
+from resume_tailor.apply.answers import answer_memory, hybrid_resolver, model_fallback
 from resume_tailor.apply.ats import (
     smartrecruiters_flow,
     smartrecruiters_page,
@@ -131,10 +131,22 @@ class _FillAtsSteps(fill_state._FillState):
                 page, fields, today=date.today(), progress=self.progress, review=self_id_review,
             )
         self._review(self_id_review)
-        wd_filled += workday_prompts.fill_prompts(page, fields, progress=self.progress)
+        wd_filled += workday_prompts.fill_prompts(
+            page, fields, progress=self.progress, recall=self._book_answer
+        )
         wd_filled += self._workday_skills()
         self.merged["filled"].extend({**item, "frame_index": 0} for item in wd_filled)
         self._workday_phone_code()
+
+    def _book_answer(self, label: str) -> str | None:
+        """The Answer book's answer to ``label`` for this posting, or None."""
+        try:
+            saved = answer_memory.recall(
+                label, company=self.app.company or self.pkt.company or "", ats=self.ats_name
+            )
+        except Exception:  # noqa: BLE001 - the book is a shortcut, never a blocker
+            return None
+        return saved.answer if saved is not None and not saved.needs_review else None
 
     def _workday_skills(self) -> list[dict[str, Any]]:
         # Searches get two minutes, or 6s a skill for a long list (24 skills), within the

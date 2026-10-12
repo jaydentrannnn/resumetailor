@@ -177,6 +177,16 @@ def _isolated_resolver_choices(tmp_path, monkeypatch):
 
 
 @pytest.fixture(autouse=True)
+def _no_answer_harvest(monkeypatch):
+    """Never read a real browser tab or start the background pass: a thread outliving
+    its test would see the developer's own store and browser."""
+    from resume_tailor.apply.funnel import answer_harvest
+
+    monkeypatch.setattr(answer_harvest, "collect", lambda _application_id: 0)
+    monkeypatch.setattr(answer_harvest, "watch", lambda _application_id: None)
+
+
+@pytest.fixture(autouse=True)
 def _isolated_submit_guard(tmp_path, monkeypatch):
     """Keep the pause switch, blocked hosts and extension pairings per test; never sleep."""
     monkeypatch.setattr(submit_guard, "pause_path", lambda: tmp_path / "automation.json")

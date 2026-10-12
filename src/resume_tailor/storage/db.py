@@ -74,6 +74,37 @@ MIGRATIONS: tuple[str, ...] = (
         UNIQUE(label_norm, ats)
     );
     """,
+    # 3: the Answer book (`apply/answers/answer_book.py`): the same table also holds the
+    # autofill model's dropdown picks (source 'ai', ``options_digest`` = the resolver's
+    # choice key), custom answers (source 'custom'), answers typed on the page (source
+    # 'page') and question types the classifier learned (kind 'type').
+    """
+    CREATE TABLE answer_book(
+        id INTEGER PRIMARY KEY,
+        kind TEXT NOT NULL DEFAULT 'answer',
+        label_norm TEXT NOT NULL,
+        ats TEXT NOT NULL DEFAULT '',
+        options_digest TEXT NOT NULL DEFAULT '',
+        label TEXT NOT NULL,
+        answer TEXT NOT NULL,
+        action TEXT NOT NULL DEFAULT '',
+        canonical_key TEXT NOT NULL DEFAULT '',
+        options TEXT NOT NULL DEFAULT '[]',
+        profile_digest TEXT NOT NULL DEFAULT '',
+        company TEXT NOT NULL DEFAULT '',
+        source TEXT NOT NULL DEFAULT 'correction',
+        uses INTEGER NOT NULL DEFAULT 0,
+        created_at TEXT NOT NULL,
+        updated_at TEXT NOT NULL,
+        UNIQUE(kind, label_norm, ats, options_digest)
+    );
+    INSERT INTO answer_book(id, label_norm, ats, label, answer, company, source, uses,
+        created_at, updated_at)
+        SELECT id, label_norm, ats, label, answer, company, source, uses, created_at,
+        updated_at FROM answer_memory;
+    DROP TABLE answer_memory;
+    ALTER TABLE answer_book RENAME TO answer_memory;
+    """,
 )
 
 SCHEMA_VERSION = len(MIGRATIONS)

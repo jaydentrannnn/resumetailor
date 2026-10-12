@@ -186,13 +186,15 @@ def fill_prompts(
     select: Callable[..., bool] | None = None,
     select_any: Callable[..., str | None] | None = None,
     progress: Callable[[str], None] = lambda _msg: None,
+    recall: Callable[[str], str | None] = lambda _label: None,
 ) -> list[dict[str, Any]]:
     """Commit known profile facts in empty prompts ("How Did You Hear About Us?").
 
     A prompt that already holds a chip is the applicant's answer and is left alone; one
     whose label maps to no profile fact, or whose search finds no exact option, is left
     for review — except a source question (`_ANY_OPTION_KEYS`), which takes the closest
-    available option (`select_prompt_any`).
+    available option (`select_prompt_any`). A prompt no profile fact answers gets the
+    Answer book's answer to the same question (``recall``), when one is saved.
     """
     choose = select or select_prompt
     choose_any = select_any or select_prompt_any
@@ -211,6 +213,13 @@ def fill_prompts(
         answers = questions.answers(match, question, questions.facts_for(fields))
         value = answers[0] if answers else ""
         if not key or not value:
+            saved = recall(question.text) if not key else None
+            if saved and choose(page, item["input_id"], saved, key=""):
+                progress(f"Workday: selected {item['label']} from your Answer book")
+                committed.append({
+                    "key": "answer_book", "label": item["label"], "value": saved,
+                    "selector": f"[id='{item['input_id']}']",
+                })
             continue
         any_ok = key in workday_dropdowns._ANY_OPTION_KEYS
         for candidate in answers[:1] if any_ok else answers:

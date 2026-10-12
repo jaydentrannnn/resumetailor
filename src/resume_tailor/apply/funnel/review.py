@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+import contextlib
 import hashlib
 import json
 import logging
@@ -13,7 +14,7 @@ from resume_tailor.apply.ats import adapters, workday_auth
 from resume_tailor.apply.driver import browser, controls, scanner
 from resume_tailor.apply.forms import attachments, field_catalog
 from resume_tailor.apply.forms.field_types import FieldObservation, FieldOutcome
-from resume_tailor.apply.funnel import store, store_models
+from resume_tailor.apply.funnel import answer_harvest, store, store_models
 
 _log = logging.getLogger(__name__)
 
@@ -73,6 +74,9 @@ async def _record(app: store_models.Application, page: Any) -> store_models.Fill
     result = (
         store_models.FillResult.model_validate(app.fill) if app.fill else store_models.FillResult()
     )
+    with contextlib.suppress(Exception):  # the book is a bonus, never a failed refresh
+        answer_harvest.from_review(app, result, observed.fields)
+        await answer_harvest.install(page)
     current_step_id = await adapters.for_url(str(page.url)).step_id(page, observed.fields)
     prior_step_id = result.current_step_id
     completed_steps = [

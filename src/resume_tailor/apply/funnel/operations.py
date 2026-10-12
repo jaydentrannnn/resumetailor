@@ -24,6 +24,7 @@ from resume_tailor.apply.driver import browser
 from resume_tailor.apply.forms import fill, submit_guard
 from resume_tailor.apply.funnel import attention as attention_mod
 from resume_tailor.apply.funnel import (
+    answer_harvest,
     daily,
     daily_progress,
     fill_hosts,
@@ -614,8 +615,11 @@ def _process_item(
         # Resume after a blocker reuses the retained tab and its answers.
         attempt_mode = request.fill_mode
         while True:
+            if attempt_mode == "continue":
+                _harvest_typed(operation, application_id)
             _event(operation, "filling", "Opening application form", application_id)
             submit_allowed = reserve_submit()
+            answer_harvest.FILLING.add(application_id)
             try:
                 result = fill.fill_application(
                     application_id,
@@ -632,7 +636,11 @@ def _process_item(
             except BaseException:
                 release_submit(submit_allowed, False)
                 raise
+            finally:
+                answer_harvest.FILLING.discard(application_id)
             release_submit(submit_allowed, result.status == "submitted")
+            if result.status in {"awaiting_review", "awaiting_otp"}:
+                answer_harvest.watch(application_id)
             if result.status == "submitted":
                 with _LOCK:
                     operation.completed += 1
@@ -815,6 +823,16 @@ def _model_exhausted(settings: ApplySettings) -> bool:
     from resume_tailor.apply.answers import model_fallback
 
     return model_fallback.heavy_exhausted(settings.model_spec)
+
+
+def _harvest_typed(operation: ApplyOperation, application_id: str) -> None:
+    """Before Continue fill touches the tab: save what the applicant typed there."""
+    saved = answer_harvest.collect(application_id)
+    if saved:
+        _event(
+            operation, "filling",
+            f"Saved {saved} answer(s) you typed to your Answer book", application_id,
+        )
 
 
 def _note_model_limit(

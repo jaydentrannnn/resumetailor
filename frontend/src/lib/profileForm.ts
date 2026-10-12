@@ -252,7 +252,7 @@ export const PROFILE_GROUPS: ProfileGroup[] = [
   { id: "Application accounts", title: "Accounts", fields: ["workday_email", "workday_password"] },
   {
     id: "Saved answers and other preferences",
-    title: "Saved answers",
+    title: "Referral and preferences",
     fields: [
       "referred_by",
       "how_heard",
@@ -268,7 +268,7 @@ export function groupForField(key: string): string | undefined {
   return PROFILE_GROUPS.find((group) => group.fields.includes(key as keyof ApplicantProfile))?.id;
 }
 
-/** The "Remembered answers" tile: collapsible like the groups, but not a profile section. */
+/** The "Answer book" tile: collapsible like the groups, but not a profile section. */
 export const REMEMBERED_ANSWERS_GROUP = "remembered-answers";
 
 /** Every collapsible block on the Application details tab. */

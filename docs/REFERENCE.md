@@ -316,6 +316,30 @@ added to each source's own words by `apply/discovery/source_filters.with_global_
 `sources.fetch_source_rows` (Find jobs, the nightly run and the source Test); `SourceConfig.ignore_global_include`
 opts one source out of the global keep words. Settings saved without `source_filters` get the
 words every source shares hoisted into it on load (`source_filters.hoist_shared`, ≥2 sources).
+The **location policy** in the same settings (`work_types` On-site/Hybrid/Remote, `countries`
+— empty = the profile's `authorization_countries` — and `other_countries`, default on) is
+applied to every fetched row by `daily_batch.by_location` (`apply/discovery/posting_location.py`);
+a remote row naming no country is kept unless the source turns off `keep_unknown_remote`.
+Postings kept outside the authorized countries are answered as needing sponsorship.
+
+**Answer book** (`apply/answers/answer_book.py`, Profile → Application details): one table
+(the workspace `app.db`'s `answer_memory`, schema migration 3) for review corrections
+("You"), answers typed on the page into questions the fill left (`funnel/answer_harvest.py`:
+at Continue start, on review refresh, every 20 s on retained review tabs, plus an injected
+`change`/option-click listener), custom answers (the profile's old `custom_answers`, moved
+once with a backup), the model's dropdown picks (the old `resolver-choices.json`, keyed by the
+resolver's choice key) and learned question types (`classify_questions` results for low-risk
+keys only; eligibility, sponsorship, legal and EEO types are never stored). The hybrid
+resolver and Workday prompts consult it before the model.
+
+**Fill settings added 2026-10.** `auto_accept_routine_acknowledgements` ("Agree to required
+notices and consents", default on) agrees to required process notices and typed consents
+(`form_facts.typed_consent`); statements of fact stay profile answers. `authorization_countries`
+is a list; a posting elsewhere is answered "not authorized / needs sponsorship". The fill
+deadline starts at 240 s and extends 75 s on forward progress up to 600 s
+(`forms/fill_outcomes`). Each AI model row has a plan (Free / Pay as you go / API subscription
+/ On this computer) that sets its default request concurrency; on a 429 the pool halves its
+limit and a quota-exhausted pool makes Fill answer with Light (`answers/model_fallback.py`).
 Keys (`ADZUNA_APP_ID`, `ADZUNA_APP_KEY`, `USAJOBS_API_KEY`, `USAJOBS_EMAIL`) are
 `config.SAVABLE_CREDENTIALS`, never `settings.json`; a missing key is one run error for that
 source, and error text is redacted because Adzuna carries its keys in the query string.
