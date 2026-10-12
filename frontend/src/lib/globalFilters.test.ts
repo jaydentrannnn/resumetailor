@@ -4,6 +4,7 @@ import {
   effectiveFilters,
   eligibilitySummary,
   globalFiltersOf,
+  locationPolicySummary,
   ownFilterCount,
   shortList,
 } from "./globalFilters";
@@ -61,5 +62,24 @@ describe("globalFilters", () => {
         },
       }),
     ).toBe("Skips no visa sponsorship, grad degree required, 4+ years' experience");
+  });
+});
+
+describe("locationPolicySummary", () => {
+  const none = { include: [], exclude: [], locations: [] };
+  it("keeps everything by default", () => {
+    expect(locationPolicySummary(none)).toBe(
+      "On-site, Hybrid, Remote · your work countries and elsewhere",
+    );
+  });
+  it("names the countries and the switched-off work types", () => {
+    expect(
+      locationPolicySummary({
+        ...none,
+        work_types: { onsite: true, hybrid: false, remote: true },
+        countries: ["United States", "Vietnam"],
+        other_countries: false,
+      }),
+    ).toBe("On-site, Remote · United States, Vietnam only");
   });
 });

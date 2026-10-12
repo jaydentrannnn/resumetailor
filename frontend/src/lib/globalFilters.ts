@@ -1,4 +1,4 @@
-import type { ApplySettings, SourceConfig, SourceFilters } from "../api";
+import type { ApplySettings, SourceConfig, SourceFilters, WorkTypes } from "../api";
 
 export const NO_FILTERS: SourceFilters = { include: [], exclude: [], locations: [] };
 
@@ -12,6 +12,22 @@ export function shortList(words: string[], empty: string, shown = 2): string {
   if (!words.length) return empty;
   const more = words.length - shown;
   return words.slice(0, shown).join(", ") + (more > 0 ? ` +${more} more` : "");
+}
+
+export const ALL_WORK_TYPES: WorkTypes = { onsite: true, hybrid: true, remote: true };
+
+/** Where postings may be, as one line ("On-site, Remote · United States, Vietnam only"). */
+export function locationPolicySummary(filters: SourceFilters): string {
+  const work = { ...ALL_WORK_TYPES, ...filters.work_types };
+  const types = [work.onsite && "On-site", work.hybrid && "Hybrid", work.remote && "Remote"]
+    .filter(Boolean)
+    .join(", ");
+  const countries = filters.countries?.length
+    ? shortList(filters.countries, "")
+    : "your work countries";
+  const where =
+    filters.other_countries === false ? `${countries} only` : `${countries} and elsewhere`;
+  return `${types || "No work type"} · ${where}`;
 }
 
 /** What the eligibility switches and years limit skip, as one line ("Skips no sponsorship, …"). */

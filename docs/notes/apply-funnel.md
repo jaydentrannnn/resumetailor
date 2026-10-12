@@ -1824,3 +1824,18 @@ From three live Fill runs (ops 390ef872, 11b1a1ae, d348b8dc; 10 Workday tabs han
 - **One operation notice**: a fill handed back as "autofill model unavailable" adds one `model_limit` event per operation; at the end of a Fill those applications get one Continue fill if the Heavy endpoint is no longer used up (counters adjusted so they count once).
 - **Plan per model** (`ModelSelection.plan`: free / paid / subscription / local; None = Gemini free, Anthropic/OpenAI paid, else the queue's local/cloud default) sets the endpoint's default concurrency (1/4/2/1); a saved per-server limit still wins. Read from `ai_settings.json` by mtime.
 - **AI tile**: Advanced is a switch in the AI models tile header (Settings only) revealing effort, posting reads, request speed and resumes at once inside the tile (`AiAdvancedCard` removed). Each row has a Plan select, a custom server's format and URL inline (its key stays in API keys), and a chip "At limit, resumes HH:MM" / "Quota used up" from `/api/model-queue` (`roles` maps each task model to its endpoint).
+
+## 2026-10-12 — Location policy for Find (work types + countries)
+
+Postings outside the applicant's countries were only filtered by free-text `locations`
+words, so Belfast/Toronto rows reached Prepare. `apply/discovery/posting_location.py`
+(pure) splits a row's location on `|`/`;`, reads each place's countries through
+`packet_profile_fields.location_countries` and its work type (hybrid > remote > on-site >
+unknown, unknown counted as on-site). A posting passes when any place passes. New
+settings: `SourceFilters.work_types` (all on), `countries` (empty = the profile's
+`authorization_countries`), `other_countries` (default **True** — the user can get
+sponsored anywhere; those applications already answer "not authorized / needs
+sponsorship" via `authorization_mismatch`), and per source `keep_unknown_remote` (True).
+Applied once per source in `daily_batch.by_location` right after the fetch (not inside
+each fetcher), and in the Test-source route so its preview and `dropped["location"]`
+match Find. A place naming no country is never dropped on country grounds.

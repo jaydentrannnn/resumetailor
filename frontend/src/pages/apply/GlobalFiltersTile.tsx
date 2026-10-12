@@ -1,7 +1,12 @@
 import { useId } from "react";
 import type { ApplySettings } from "../../api";
 import { Button, DataList, Tile } from "../../components/ui";
-import { eligibilitySummary, globalFiltersOf, shortList } from "../../lib/globalFilters";
+import {
+  eligibilitySummary,
+  globalFiltersOf,
+  locationPolicySummary,
+  shortList,
+} from "../../lib/globalFilters";
 import { GlobalFiltersForm } from "./GlobalFiltersForm";
 
 /**
@@ -52,6 +57,7 @@ export function GlobalFiltersTile({
             { label: "Keep titles", value: shortList(filters.include, "Any title") },
             { label: "Skip titles", value: shortList(filters.exclude, "Nothing") },
             { label: "Locations", value: shortList(filters.locations, "Anywhere") },
+            { label: "Work and countries", value: locationPolicySummary(filters) },
             {
               label: "Posted within",
               value: `${apply.max_age_days} day${apply.max_age_days === 1 ? "" : "s"}`,

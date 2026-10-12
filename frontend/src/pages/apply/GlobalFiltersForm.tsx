@@ -3,6 +3,7 @@ import { Switch, TileSection } from "../../components/ui";
 import { globalFiltersOf } from "../../lib/globalFilters";
 import { AgeWindowPicker } from "./AgeWindowPicker";
 import { ChipInput } from "./ChipInput";
+import { LocationPolicyFields } from "./LocationPolicyFields";
 
 const ELIGIBILITY_SWITCHES = [
   ["exclude_no_sponsorship", "Skip jobs that won't sponsor a visa"],
@@ -22,7 +23,7 @@ export function GlobalFiltersForm({
   onChange: (patch: Partial<ApplySettings>) => void;
 }) {
   const filters = globalFiltersOf(apply);
-  const setWords = (key: keyof typeof filters) => (words: string[]) =>
+  const setWords = (key: "include" | "exclude" | "locations") => (words: string[]) =>
     onChange({ source_filters: { ...filters, [key]: words } });
   const eligibility = apply.eligibility;
 
@@ -50,6 +51,10 @@ export function GlobalFiltersForm({
             chips={filters.locations}
             placeholder="e.g. New York, Remote (empty means anywhere)"
             onChange={setWords("locations")}
+          />
+          <LocationPolicyFields
+            filters={filters}
+            onChange={(source_filters) => onChange({ source_filters })}
           />
           <div className="text-xs">
             <p className="mb-1 font-medium">Only postings from the last</p>

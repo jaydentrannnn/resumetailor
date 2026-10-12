@@ -131,7 +131,7 @@ export type SourceTestResult = {
   rows_kept: number;
   sample: SourceTestRow[];
   errors: string[];
-  /** Why rows fell out of `rows_total`: too_old, title, citizenship, advanced_degree, no_sponsorship. */
+  /** Why rows fell out of `rows_total`: too_old, title, citizenship, advanced_degree, no_sponsorship, location. */
   dropped?: Record<string, number>;
   /** The posting-age limit the test applied, in days. */
   max_age_days?: number;

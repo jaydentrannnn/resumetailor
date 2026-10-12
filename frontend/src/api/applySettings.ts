@@ -34,6 +34,8 @@ export type SourceConfig = {
   locations?: string[];
   /** Skip the global keep words (`ApplySettings.source_filters.include`) for this source. */
   ignore_global_include?: boolean;
+  /** Keep a remote posting that names no country (default true). */
+  keep_unknown_remote?: boolean;
   /** Widens the funnel-wide age limit (the longer wins); watchlists default to 7 days, job_search 14 days. */
   max_age_days?: number | null;
   /** Keyword job search (`job_search`) sources only. */
@@ -49,7 +51,15 @@ export type SourceFilters = {
   include: string[];
   exclude: string[];
   locations: string[];
+  /** Which ways of working to keep; missing on settings from an older server. */
+  work_types?: WorkTypes;
+  /** Countries to keep; empty = the profile's authorized countries. */
+  countries?: string[];
+  /** Also keep postings in other countries (answered as needing sponsorship). */
+  other_countries?: boolean;
 };
+
+export type WorkTypes = { onsite: boolean; hybrid: boolean; remote: boolean };
 
 export type EligibilitySettings = {
   hard_reject_years: number;

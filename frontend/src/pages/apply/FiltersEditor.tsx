@@ -74,6 +74,15 @@ export function FiltersEditor({
         placeholder="e.g. New York, Remote (empty means anywhere)"
         onChange={(locations) => onChange({ ...source, locations })}
       />
+      <label className="flex items-center gap-2 text-xs text-ink-muted">
+        <input
+          type="checkbox"
+          className="accent-[var(--color-accent)]"
+          checked={source.keep_unknown_remote !== false}
+          onChange={(e) => onChange({ ...source, keep_unknown_remote: e.target.checked })}
+        />
+        Keep remote postings that don't say which country
+      </label>
       <label className="block text-xs">
         <span className="font-medium">Only postings from the last</span>
         <input

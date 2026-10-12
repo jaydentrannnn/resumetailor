@@ -36,6 +36,7 @@ from resume_tailor.apply.discovery import (
     source_status,
     sources,
 )
+from resume_tailor.apply.funnel import daily_batch
 from resume_tailor.web.schemas import JobSettings, SourceConfig
 
 router = APIRouter()
@@ -292,6 +293,8 @@ def test_source(body: SourceTestRequest) -> SourceTestResult:
         )
     except Exception as exc:  # noqa: BLE001 - a failed source is a result, not a 500
         return SourceTestResult(rows_total=0, rows_kept=0, sample=[], errors=[str(exc)])
+    rows_total = len(rows)
+    rows, outside = daily_batch.by_location(rows, src, settings)
     age_limit = (
         max(src.max_age_days, settings.max_age_days)
         if src.max_age_days is not None
@@ -316,9 +319,10 @@ def test_source(body: SourceTestRequest) -> SourceTestResult:
         "citizenship": filtered.excluded_citizenship,
         "advanced_degree": filtered.excluded_advanced_degree,
         "no_sponsorship": filtered.excluded_no_sponsorship,
+        "location": outside,
     }
     return SourceTestResult(
-        rows_total=len(rows),
+        rows_total=rows_total,
         rows_kept=len(filtered.new_rows),
         dropped={reason: n for reason, n in dropped.items() if n},
         max_age_days=age_limit,

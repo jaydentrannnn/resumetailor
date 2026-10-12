@@ -118,6 +118,8 @@ class SourceConfig(BaseModel):
     locations: list[str] = Field(default_factory=list)
     #: Skip the global keep words (`ApplySettings.source_filters.include`) for this source.
     ignore_global_include: bool = False
+    #: Keep a remote posting that names no country (`posting_location`).
+    keep_unknown_remote: bool = True
     max_age_days: int | None = Field(default=None, ge=0, le=365)
     provider: Literal["adzuna", "usajobs"] | None = None
     query: str = ""
@@ -157,13 +159,28 @@ def _default_apply_sources() -> list[SourceConfig]:
     return [source_catalog.bundled_template(entry_id) for entry_id in DEFAULT_SOURCE_IDS]
 
 
+class WorkTypes(BaseModel):
+    """Which ways of working Find keeps (`apply.discovery.posting_location`)."""
+
+    onsite: bool = True
+    hybrid: bool = True
+    remote: bool = True
+
+
 class SourceFilters(BaseModel):
     """Filters for every source: added to each source's own words before it is fetched
-    (`apply.discovery.source_filters.with_global_filters`)."""
+    (`apply.discovery.source_filters.with_global_filters`). ``work_types``,
+    ``countries`` and ``other_countries`` are the location policy
+    (`apply.discovery.posting_location`), applied to every source's rows."""
 
     include: list[str] = Field(default_factory=list)
     exclude: list[str] = Field(default_factory=list)
     locations: list[str] = Field(default_factory=list)
+    work_types: WorkTypes = Field(default_factory=WorkTypes)
+    #: Countries to keep; empty = the profile's authorized countries.
+    countries: list[str] = Field(default_factory=list)
+    #: Also keep postings in other countries (answered as needing sponsorship).
+    other_countries: bool = True
 
 
 class ApplySettings(BaseModel):

@@ -13,6 +13,7 @@ const DROPPED_REASONS: Record<string, (result: SourceTestResult) => string> = {
   citizenship: () => "needing US citizenship",
   advanced_degree: () => "needing an advanced degree",
   no_sponsorship: () => "with no visa sponsorship",
+  location: () => "outside your ways of working or countries",
 };
 
 /** "Dropped: 593 older than 1 day (…), 2 needing US citizenship" - why found is not kept. */

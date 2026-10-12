@@ -9,14 +9,16 @@ from pathlib import Path
 from typing import Any
 
 from resume_tailor import config
+from resume_tailor.apply.answers import profile as profile_mod
 from resume_tailor.apply.discovery import (
     identity,
+    posting_location,
     source_filters,
     source_rows,
     source_status,
     sources,
 )
-from resume_tailor.apply.funnel import store, store_models
+from resume_tailor.apply.funnel import packet_profile_fields, store, store_models
 from resume_tailor.content import data
 from resume_tailor.web.schemas import ApplySettings, JobSettings
 
@@ -120,6 +122,11 @@ def _filter_source(
         rows, source_errors = sources.fetch_source_rows(
             source_filters.with_global_filters(src, settings.source_filters)
         )
+        rows, dropped = by_location(rows, src, settings)
+        if dropped:
+            daily_rows._append_log(
+                log_file, f"[source {src.id}] {dropped} posting(s) outside your locations", log
+            )
         for message in source_errors:
             summary.errors.append(f"{src.id}: {message}")
             daily_rows._append_log(log_file, f"[source {src.id}] {message}", log)
@@ -151,6 +158,25 @@ def _filter_source(
         "; ".join(source_errors),
     )
     return filtered
+
+def by_location(
+    rows: list[source_rows.SourceRow], src: Any, settings: ApplySettings
+) -> tuple[list[source_rows.SourceRow], int]:
+    """``rows`` that pass the location policy, and how many did not."""
+    policy = posting_location.policy_for(
+        settings.source_filters, src, _authorized_countries()
+    )
+    kept = [row for row in rows if posting_location.allowed(row.location, policy)]
+    return kept, len(rows) - len(kept)
+
+
+def _authorized_countries() -> list[str]:
+    try:
+        applicant, _ = profile_mod.load_profile()
+    except Exception:  # noqa: BLE001 - no profile yet: any country
+        return []
+    return sorted(packet_profile_fields.authorized_countries(applicant))
+
 
 def _rows_to_process(
     all_new: list[source_rows.SourceRow], *, cap: int
